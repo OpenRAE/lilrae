@@ -11,11 +11,21 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
+# The upstream Caddy binary uses Go and golang.org/x/net releases with known
+# CVEs. Build the same Caddy release with a patched toolchain and x/net.
+FROM golang:1.26-alpine@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade AS caddy-builder
+
+WORKDIR /src
+COPY caddy-build/ ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/caddy . \
+    && /out/caddy version
+
 FROM caddy:2-alpine@sha256:881bbc60f9986d5ab8e7cfd6cf7e4ef3c9c0439fef2429d035d065577882f028
 # Apply every pending Alpine update, as operator-access-proxy does. The pinned
 # base predates them; currently they are libcrypto3, libssl3 and zlib, whose
 # 1.3.2-r1 fixes CVE-2026-85091.
 RUN apk upgrade --no-cache
+COPY --from=caddy-builder /out/caddy /usr/bin/caddy
 COPY --from=builder /app/build /srv
 COPY Caddyfile /etc/caddy/Caddyfile
 
