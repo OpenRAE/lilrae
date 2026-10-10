@@ -17,7 +17,8 @@ COPY Caddyfile /etc/caddy/Caddyfile
 
 # Run unprivileged (issue #1193): Caddy listens on unprivileged port 3000 and
 # only needs its own state directories writable.
-RUN addgroup -S -g 10001 caddy \
+RUN apk add --no-cache zlib=1.3.2-r1 \
+    && addgroup -S -g 10001 caddy \
     && adduser -S -D -H -u 10001 -G caddy caddy \
     && chown -R caddy:caddy /data /config
 USER 10001:10001
