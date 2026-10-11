@@ -2,8 +2,8 @@
  * Per-run directory contract shared with Python `src/aptl/core/runstore.py`.
  *
  * OBS-003 routes all per-scenario captures (MCP-side tool-call JSONL,
- * OCSF records, continuous PTY streams, and the Kali-side audit / pcap
- * / pty / process-accounting artifacts pulled out of the container)
+ * OCSF records, continuous PTY streams, and the Kali-side session record
+ * that the capture broker writes and the harvest copies out of the sidecar)
  * into the same per-run tree:
  *
  *   <run_store_base>/<trace_id>/
@@ -12,7 +12,7 @@
  *       ocsf.jsonl
  *       sessions/<session_id>.jsonl    # continuous PTY tee
  *     kali-side/<session_id>/
- *       pty/   pcap/   audit/   proc-acct/
+ *       frames.jsonl   metadata.json   # or capture-harvest-failure.json
  *
  * `trace_id` is the natural cross-process correlation key — Python
  * generates it at scenario start, writes it to

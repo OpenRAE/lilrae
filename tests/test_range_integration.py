@@ -1547,9 +1547,12 @@ class TestMCPSessionHarvest:
         import secrets
 
         repo_root = Path(__file__).resolve().parent.parent
-        red_env = json.loads((repo_root / ".mcp.json").read_text())[
-            "mcpServers"
-        ]["aptl-red"]["env"]
+        mcp_config = repo_root / ".mcp.json"
+        assert mcp_config.is_file(), (
+            f"{mcp_config} is missing: lab start did not sync the MCP client "
+            "config, so the red server has no capture container or run store"
+        )
+        red_env = json.loads(mcp_config.read_text())["mcpServers"]["aptl-red"]["env"]
         for key, value in red_env.items():
             monkeypatch.setenv(key, value)
 
