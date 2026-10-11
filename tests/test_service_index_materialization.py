@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import shlex
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -41,11 +42,17 @@ _DIGEST = sis.canonical_field_schema_digest(_FIELDS)
 _GET_CURL_OPTIONS = frozenset({"-s", "-w"})
 
 
-def _realization(address: str = _ADDRESS, content_name: str = _CONTENT, digest: str = _DIGEST):
+def _realization(
+    address: str = _ADDRESS,
+    content_name: str = _CONTENT,
+    digest: str = _DIGEST,
+    fields: dict[str, str] | None = None,
+):
+    declared = dict(_FIELDS if fields is None else fields)
     return SimpleNamespace(
         address=address,
         content_name=content_name,
-        field_semantics_map=lambda: dict(_FIELDS),
+        field_semantics_map=lambda: dict(declared),
         field_schema_digest=digest,
     )
 
@@ -84,6 +91,16 @@ class _FakeES:
         return SimpleNamespace(returncode=0, stdout=json.dumps({_INDEX: {"mappings": self.state}}) + "\n200")
 
 
+class _KeywordRelationsES(_FakeES):
+    """Stores a created index with a ``keyword`` relations field, unlike the PUT."""
+
+    def __call__(self, payload: str):
+        reply = super().__call__(payload)
+        if self.methods[-1] == "PUT":
+            self.state["properties"]["relations"] = {"type": "keyword"}
+        return reply
+
+
 class _Backend(ComposeRealizationServiceIndexMixin):
     """The Compose realization step over the fake search service."""
 
@@ -95,15 +112,31 @@ class _Backend(ComposeRealizationServiceIndexMixin):
         return self.es(payload)
 
 
-def _realize_schema(es: _FakeES) -> str:
+def _realize_schema(es: _FakeES, realization: SimpleNamespace | None = None) -> str:
     """Run the realization step for the Cortex schema and return its error."""
 
     failure = _Backend(es)._materialize_and_verify_schemas(
-        (_realization(),), {_ADDRESS: _CONTAINER}
+        (realization or _realization(),), {_ADDRESS: _CONTAINER}
     )
     assert failure is not None
     assert failure.success is False
     return failure.error
+
+
+def _created_mapping() -> dict:
+    """Return the mapping that this release creates for the Cortex schema."""
+
+    es = _FakeES(initial=None)
+    assert m.materialize_search_index_schema(es, _realization()).ok is True
+    return es.state
+
+
+def _earlier_release_mapping() -> dict:
+    """Return the owned mapping of v5.2.0 and v5.3.0: declared fields only."""
+
+    return sis.desired_native_mapping(
+        _FIELDS, owner_address=_ADDRESS, field_schema_digest=_DIGEST
+    )["mappings"]
 
 
 def _handoff_error(error: str) -> str:
@@ -139,6 +172,7 @@ def test_fresh_create_materializes_and_proves_by_readback() -> None:
     assert result.ok is True
     assert result.reason is None
     assert es.puts == 1
+    assert result.adopted is False
     assert result.projection == _FIELDS
     assert result.field_schema_digest == _DIGEST
     # Created index carries the ownership marker binding it to the content address.
@@ -161,6 +195,7 @@ def test_owned_existing_index_is_idempotent_no_recreate() -> None:
     result = m.materialize_search_index_schema(es, _realization())
     assert result.ok is True
     assert es.puts == 0  # never recreates an owned index
+    assert result.adopted is True
 
 
 def test_owned_keyword_relations_mapping_fails_the_cortex_product_contract() -> None:
@@ -173,6 +208,7 @@ def test_owned_keyword_relations_mapping_fails_the_cortex_product_contract() -> 
 
     assert result.ok is False
     assert result.reason == "native-product-contract-mismatch"
+    assert result.adopted is True
     assert es.puts == 0
 
 
@@ -218,8 +254,50 @@ def test_unowned_index_error_names_the_index_and_its_container(
     assert "keyword" not in error
 
 
-def test_lab_start_adds_backup_then_reset_and_the_section_for_an_unowned_index() -> None:
-    error = _realize_schema(_FakeES(initial={"properties": {}}))
+def test_drifted_owned_index_error_names_the_index_and_its_container() -> None:
+    # Owned by this content, but not with the mapping this release creates
+    # (#1280): left by v5.2.0 or v5.3.0, or with a Cortex field changed since.
+    earlier = _FakeES(initial=_earlier_release_mapping())
+    changed_mapping = _created_mapping()
+    changed_mapping["properties"]["status"] = {"type": "text"}
+    changed = _FakeES(initial=changed_mapping)
+
+    error = _realize_schema(earlier)
+
+    # Nothing read from either index reaches the message, so both read the same.
+    assert _realize_schema(changed) == error
+    # Every request was a GET, so nothing was changed or deleted.
+    assert set(earlier.methods) == set(changed.methods) == {"GET"}
+    assert error in _handoff_error(error)
+    for fact in (
+        "(reason=native-product-contract-mismatch)",
+        f"search index {_INDEX} in container {_CONTAINER}",
+        "carries this content's ownership marker",
+        "did not change or delete it",
+    ):
+        assert fact in error
+    assert "aptl lab" not in error
+
+
+@pytest.mark.parametrize(
+    ("existing", "section"),
+    [
+        pytest.param(
+            {"properties": {}},
+            "aptl-lab-start-reports-an-unowned-search-index",
+            id="unowned",
+        ),
+        pytest.param(
+            _earlier_release_mapping(),
+            "aptl-lab-start-reports-a-search-index-whose-mapping-drifted",
+            id="drifted",
+        ),
+    ],
+)
+def test_lab_start_adds_backup_then_reset_and_the_section_for_a_refused_index(
+    existing: dict, section: str
+) -> None:
+    error = _realize_schema(_FakeES(initial=existing))
     handoff = _handoff_error(error)
 
     headline, _, hint = _lab_start_failure_error(handoff).partition("\n")
@@ -234,20 +312,38 @@ def test_lab_start_adds_backup_then_reset_and_the_section_for_an_unowned_index()
     site_url = re.search(r"(?m)^site_url: (\S+)$", mkdocs)
     page, _, anchor = hint.rpartition(" ")[2].partition("#")
     assert page == f"{site_url.group(1)}troubleshooting/"
+    assert anchor == section
     assert anchor in _heading_anchors("docs/troubleshooting/index.md")
 
 
-def test_other_failures_keep_the_plain_message_without_reset_advice() -> None:
-    # Owned by this content, but its relations mapping fails Cortex's contract.
-    owned = sis.desired_native_mapping(
-        _FIELDS, owner_address=_ADDRESS, field_schema_digest=_DIGEST
-    )["mappings"]
-    error = _realize_schema(_FakeES(initial=owned))
+@pytest.mark.parametrize(
+    ("make_es", "fields", "reason"),
+    [
+        # Created by this attempt and read back without Cortex's join field, so
+        # a reset would only create the same index again.
+        pytest.param(
+            _KeywordRelationsES,
+            _FIELDS,
+            "native-product-contract-mismatch",
+            id="index-this-attempt-created",
+        ),
+        # Adopted with Cortex's mapping, which lacks a declared field, so a new
+        # index fails the same way.
+        pytest.param(
+            lambda: _FakeES(initial=_created_mapping()),
+            {**_FIELDS, "observable": "exact-token"},
+            "declared field 'observable' is absent from the native index mapping",
+            id="field-the-product-mapping-lacks",
+        ),
+    ],
+)
+def test_other_failures_keep_the_plain_message_without_reset_advice(
+    make_es: Callable[[], _FakeES], fields: dict[str, str], reason: str
+) -> None:
+    digest = sis.canonical_field_schema_digest(fields)
+    error = _realize_schema(make_es(), _realization(digest=digest, fields=fields))
 
-    assert error == (
-        f"service materialization failed for {_ADDRESS} "
-        "(reason=native-product-contract-mismatch)"
-    )
+    assert error == f"service materialization failed for {_ADDRESS} (reason={reason})"
     handoff = _handoff_error(error)
     assert _lab_start_failure_error(handoff) == f"Lab start failed: {handoff}"
 

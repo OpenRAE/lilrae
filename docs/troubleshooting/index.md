@@ -359,6 +359,50 @@ Recover in this order, with the index and container names from your error:
     `--scenario-path` option. Restore required data separately; restoring the
     conflicting index unchanged also restores its unowned state.
 
+### `aptl lab start` reports a search index whose mapping drifted
+
+The search service already holds an index with the scenario content's
+ownership marker, but its mapping differs from the mapping that this release
+creates. For example, a data volume kept from an earlier lab can hold an index
+that an earlier release created with another mapping. APTL doesn't
+change the mapping of an index that it finds, and it doesn't delete or
+re-create the index. Startup stops before the workload starts, and the error
+names the index and its container:
+
+```
+Lab start failed.
+  error: Lab start failed: RAES runtime handoff failed:
+  aptl.provisioner.backend-start-failed at runtime.apply.provisioning: service
+  materialization failed for provision.content.cortex-job-index-schema
+  (reason=native-product-contract-mismatch): search index cortex_6 in
+  container aptl-thehive-es carries this content's ownership marker, ...
+```
+
+`aptl lab stop` keeps the volume, so a later start finds the same index and
+fails the same way. Recover in this order, with the index and container names
+from your error:
+
+1.  Inspect the index read-only, then take an Elasticsearch snapshot of the
+    data that you need and test its restoration, as steps 1 and 2 of
+    [the unowned index section](#aptl-lab-start-reports-an-unowned-search-index)
+    describe. Keep the snapshot repository outside every lab volume, and
+    back up required data in other lab services with their own procedures.
+
+2.  Reset only when all lab data is disposable or its required backups have
+    passed restoration checks:
+
+    ```shell
+    aptl lab stop --volumes
+    ```
+
+    This is a destructive reset. It permanently deletes all of this project's
+    lab volumes, not only the drifted index. The command asks for confirmation
+    first. Then start the lab again with the same `--scenario` or
+    `--scenario-path` option. The search service then starts without the
+    index, so APTL creates it with this release's mapping. Restore required
+    data separately; restoring the drifted index unchanged also restores its
+    drifted mapping, and the next start fails the same way.
+
 ### macOS: Docker Desktop uninstall leftovers
 
 If you uninstalled Docker Desktop and switched to Colima (or brew-installed
