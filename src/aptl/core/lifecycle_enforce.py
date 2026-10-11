@@ -6,13 +6,15 @@ the activity signal, resolves a decision via the pure evaluators in
 (``lab_status`` / ``stop_lab`` / ``clean_boot_lab``), and persists narrow state.
 
 ``enforce_once`` is a single idempotent evaluate-and-act tick; ``run_monitor``
-is a thin single-owner loop over it. See ADR-045.
+is a thin loop over it that admits one monitor per project and holds the shared
+lifecycle lock only while a tick runs. See ADR-045.
 """
 
 from __future__ import annotations
 
 import time
 from collections.abc import Callable, Iterator
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -32,6 +34,7 @@ from aptl.core.lab_types import (
     StartupOutcome,
 )
 from aptl.core.lifecycle_policy import (
+    LifecycleBusyError,
     LifecycleDecision,
     LifecycleState,
     _parse_iso,
@@ -42,6 +45,7 @@ from aptl.core.lifecycle_policy import (
 )
 from aptl.core.lifecycle_guard import (
     canonical_lifecycle_project_root,
+    lifecycle_monitor_lock,
     lifecycle_mutation_lock,
 )
 from aptl.core.runstore import resolve_active_run_dir
@@ -269,6 +273,44 @@ def _enforce_locked(
     return result
 
 
+def _monitor_tick(
+    project_root: Path,
+    policy: LabLifecyclePolicyConfig,
+    backend: Optional["DeploymentBackend"],
+    grace_minutes: float,
+) -> LabResult:
+    """Run one monitor tick under the shared lock, or skip it while busy.
+
+    Only a busy acquisition skips the tick: a start, stop or kill owns the
+    project right now, and the next tick evaluates the policy again.
+    """
+    with ExitStack() as stack:
+        try:
+            locked_root = stack.enter_context(_single_owner_lock(project_root))
+        except LifecycleBusyError:
+            log.info("Lifecycle monitor tick skipped: the project lock is busy")
+            return LabResult(
+                success=True,
+                message=(
+                    "lifecycle: tick skipped (another lab lifecycle operation "
+                    "is active)"
+                ),
+            )
+        now = datetime.now(timezone.utc)
+        return _enforce_locked(locked_root, policy, now, backend, grace_minutes)
+
+
+def _record(
+    results: list[LabResult],
+    result: LabResult,
+    on_result: Optional[Callable[[LabResult], None]],
+) -> None:
+    """Keep one monitor result and hand it to the caller's callback, if any."""
+    results.append(result)
+    if on_result is not None:
+        on_result(result)
+
+
 # ---------------------------------------------------------------------------
 # Public entrypoints
 # ---------------------------------------------------------------------------
@@ -309,35 +351,41 @@ def run_monitor(
     backend: Optional["DeploymentBackend"] = None,
     grace_minutes: float = 60.0,
     sleep: Callable[[float], None] = time.sleep,
+    on_result: Optional[Callable[[LabResult], None]] = None,
 ) -> list[LabResult]:
-    """Run ``enforce`` in a single-owner loop until ``max_ticks`` (or forever).
+    """Run ``enforce`` ticks in a one-monitor loop until ``max_ticks`` (or forever).
 
-    Holds the project lock for the whole loop so a second monitor — or a
-    one-shot ``enforce`` — cannot interleave. Each tick reloads the policy so
-    edits to ``aptl.json`` take effect without a restart.
+    The monitor lock, held for the whole loop, refuses a second monitor. The
+    shared lifecycle lock is held only while a tick runs, so start, stop, kill
+    and a one-shot ``enforce`` can act between ticks. A tick that finds that
+    lock busy is recorded as skipped, counts toward ``max_ticks``, and the
+    loop goes on. Each tick reloads the policy so edits to ``aptl.json`` take
+    effect without a restart. ``on_result``, when given, receives each result
+    as soon as it exists, so a caller can report ticks while the loop runs and
+    keep them when the loop is interrupted.
     """
+    results: list[LabResult] = []
     project_root = canonical_lifecycle_project_root(project_dir)
     policy, failure = _policy_or_failure(project_root)
     if failure is not None:
-        return [failure]
+        _record(results, failure, on_result)
+        return results
     if policy is None:
         log.info("No lifecycle_policy configured; monitor has nothing to do")
-        return []
-    results: list[LabResult] = []
-    with _single_owner_lock(project_root) as locked_project_root:
+        return results
+    with lifecycle_monitor_lock(project_root) as monitor_root:
         tick = 0
         while max_ticks is None or tick < max_ticks:
-            policy, failure = _policy_or_failure(locked_project_root)
+            policy, failure = _policy_or_failure(monitor_root)
             if failure is not None:
-                results.append(failure)
+                _record(results, failure, on_result)
                 break
             if policy is None:
                 break
-            now = datetime.now(timezone.utc)
-            results.append(
-                _enforce_locked(
-                    locked_project_root, policy, now, backend, grace_minutes
-                )
+            _record(
+                results,
+                _monitor_tick(monitor_root, policy, backend, grace_minutes),
+                on_result,
             )
             tick += 1
             if max_ticks is not None and tick >= max_ticks:
