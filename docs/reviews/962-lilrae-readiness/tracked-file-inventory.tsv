@@ -152,9 +152,7 @@ containers/kali-capture/Dockerfile	split-pack-delivery	Inventory exact content o
 containers/kali-capture/broker.py	backend-substrate	Post-baseline capture apparatus; retain with evidence custody authority
 containers/kali-capture/entrypoint.sh	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/kali-capture/sshd_config	backend-substrate	Post-baseline capture apparatus; retain with evidence custody authority
-containers/kali-capture/writer.py	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/kali/audit/aptl.rules	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
-containers/kali/scripts/aptl-capture-client	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/kali/scripts/aptl-wrap-shell.sh	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/keys/aptl_lab_key.pub	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/keys/authorized_keys	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
@@ -1487,7 +1485,6 @@ tests/test_base_container_admission_integration.py	tests-follow-owner	Retain mea
 tests/test_realization_declaration_gate_contract.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_in_process_agents.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_kali_capture_compose.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
-tests/test_kali_capture_writer.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_kill.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_lab.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_lab_core_only_artifact.py	tests-follow-owner	Installed wheel smoke proof for optional startup isolation
@@ -1528,7 +1525,6 @@ tests/test_network_boundary_helper.py	tests-follow-owner	Retain meaningful bound
 tests/test_network_boundary_probe.py	tests-follow-owner	Retain boundary probe tests with migrated owner
 tests/test_no_silent_privilege_escalation.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_node_materialization_integration.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
-tests/test_obs003_kali_capture.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_operator_access.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_out_of_tree_bundle_integration.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_pack_adapter_install_artifact.py	tests-follow-owner	Retain real installed second-adapter acceptance coverage
