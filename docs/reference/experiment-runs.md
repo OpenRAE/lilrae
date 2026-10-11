@@ -24,33 +24,87 @@ The same capability backs `aptl lab validate-live`, which clean-boots the lab be
 
 ## Run Directory Structure
 
-Each run is stored under `<project_dir>/runs/<run_id>/` with:
+Runs live in the run store, which `run_storage.local_path` in `aptl.json` sets
+(default `./runs`, relative to the project directory). Each run is one
+directory, `<run store>/<run_id>/`. `aptl lab start` creates one run per start
+and names it `run_<UTC timestamp>`, for example `run_20261011T135200Z`. The
+`aptl runs` commands list only run directories that contain a `manifest.json`,
+which `aptl lab start` writes as its last step.
+
+A run holds only what its writers produced. The tree shows the layout that the
+shipped code writes; most paths appear only when the scenario, command, or
+capture that writes them ran.
 
 ```
 <run_id>/
-  manifest.json          # Terminal attempts: the sealed RAES experiment-run/v1 record
-  seal.json              # Atomic seal marker (digest, inventory, completeness statement)
-  snapshot.json          # Range snapshot (software, containers, rules, networks, config hashes)
-  flags.json             # Captured flags
+  manifest.json                   # Run record: lab start, or a sealed terminal attempt
+  seal.json                       # Atomic seal marker (terminal attempt)
+  attempt-intent.json             # Attempt intent (terminal attempt)
+  correlation.json                # Correlation-identity and clock projection
+  continuity-events.jsonl         # Continuity audit events
   provenance/
-    startup-provenance.json  # Provisional apparatus provenance, written at lab start
-    run-provenance.json      # Canonical ready-to-seal provenance, written at the seal boundary
-  scenario/
-    definition.yaml      # Scenario YAML copy
-    events.jsonl         # Scenario events timeline
-  wazuh/
-    alerts.jsonl         # Wazuh alerts from the run window
-  suricata/
-    eve.jsonl            # Suricata IDS events (if available)
-  soc/
-    thehive-cases.json   # TheHive cases (if available)
-    misp-correlations.json  # MISP events (if available)
-    shuffle-executions.json # Shuffle SOAR executions (if available)
-  containers/
-    <name>.log           # Container logs for each aptl- container
-  agents/
-    traces.jsonl         # MCP agent traces (if available)
+    startup-provenance.json       # Provisional apparatus provenance
+    run-provenance.json           # Canonical ready-to-seal provenance
+  orchestration/<workflow>/
+    result.json                   # Workflow result
+    history.jsonl                 # Workflow history events
+  evidence/
+    capture-plans/<plan_id>.json  # Admitted capture plan
+    blobs/<sha256>                # Content-addressed raw evidence
+    records/<record_id>.json      # Evidence records
+  lifecycle/<sha256>              # Lifecycle attestation (terminal attempt)
+  participant/
+    inject-deliveries.jsonl       # Participant inject deliveries
+    observations.jsonl            # Participant action observations
+  evaluator/
+    participant-action-transactions/<transaction>.json
+    participant-action-evidence.jsonl
+    participant-control-evidence.jsonl
+  participant-profile/
+    qualification.json            # Participant profile qualification
+  live-gate/
+    manifest.json                 # Live validation gate manifest
+  mcp-side/
+    tool-calls.jsonl              # Red MCP tool calls
+    ocsf.jsonl                    # OCSF-aligned red MCP records
+    sessions/<session_id>.jsonl   # SSH session output
+  kali-side/<session_id>/         # Capture harvest for one MCP session
 ```
+
+| Path | Writer | Written when |
+|------|--------|--------------|
+| `manifest.json` (lab start) | `_write_run_record` in `src/aptl/core/lab.py`, built by `src/aptl/backends/raes_repro.py` | The last step of a successful `aptl lab start`: the REP-001 reproducibility record (`aptl.run-record/v2`), which embeds the [range snapshot](#range-snapshot) |
+| `manifest.json`, `seal.json` (terminal attempt) | `src/aptl/core/archival/coordinator.py` | A terminal attempt is sealed: the RAES `experiment-run/v1` record and its seal marker, both create-once |
+| `attempt-intent.json` | `src/aptl/core/execution/executor.py` | A terminal attempt starts |
+| `lifecycle/` | `src/aptl/core/execution/assembly.py` | A terminal attempt ends: its lifecycle attestation, with an evidence record in `evidence/records/` |
+| `provenance/startup-provenance.json` | `src/aptl/core/provenance/record.py`, called by `aptl lab start` | After the lab-start run record |
+| `provenance/run-provenance.json` | `publish_provenance_record` in `src/aptl/core/provenance/record.py` | A caller that holds the admitted and executed run context publishes it; no `aptl` command does |
+| `correlation.json` | `src/aptl/core/correlation/persistence.py` | After the lab-start run record, built from `manifest.json` and `orchestration/` |
+| `orchestration/<workflow>/` | `src/aptl/backends/raes_orchestrator.py` | `aptl lab start` runs a scenario workflow |
+| `evidence/capture-plans/` | `src/aptl/backends/_raes_native_evidence_acquisition.py` | `aptl lab start` acquires native captures or activates a full-run transcript capture |
+| `evidence/blobs/`, `evidence/records/` | `src/aptl/core/evidence/` | `aptl lab start` acquires the scenario's native captures, `aptl lab stop` finalizes a full-run transcript capture, or a terminal attempt acquires its declared captures |
+| `participant/`, `evaluator/` | `src/aptl/backends/_raes_participant_execution.py`, `src/aptl/backends/raes_participant_evidence_publication.py`, `src/aptl/backends/raes_participant_control_evidence.py` | `aptl lab start` delivers participant injects or realizes participant actions |
+| `continuity-events.jsonl` | `src/aptl/core/continuity.py` | `aptl lab continuity-audit --run-id <run-id>` records at least one event |
+| `participant-profile/qualification.json` | `src/aptl/validation/participant_qualification.py` | `aptl lab qualify-profile --run-id <run-id>` accepts a report |
+| `live-gate/manifest.json` | `src/aptl/validation/_live_gate_checks.py` | `aptl lab validate-live` records its check outcomes |
+| `mcp-side/tool-calls.jsonl`, `mcp-side/ocsf.jsonl` | `mcp/mcp-red/src/capture.ts`, `mcp/mcp-red/src/logger.ts` | Each red MCP tool call, plus an OCSF record for each command it runs |
+| `mcp-side/sessions/` | `createPtyTeeWriter` in `mcp/aptl-mcp-common/src/runs.ts` | Each SSH session or one-shot command an MCP server runs, appended as output arrives |
+| `kali-side/<session_id>/` | `harvestSession` in `mcp/aptl-mcp-common/src/captures.ts` | An MCP server whose lab config names a container (the shipped red and reverse configs do) finishes a `<prefix>_run_command` call, or closes a session through `<prefix>_close_session` or `<prefix>_close_all_sessions`. The harvest copies `<run_id>/<session_id>/` under `/var/log/aptl/captures` from the server's capture container, or from its workload container when it has none, and that container's `_audit` and `_proc-acct` roots into `_global/`. No shipped container writes those paths: the capture broker records each session under `<run_id>/sessions/<session_id>/`, so the directory holds only an empty `_global/` |
+
+Only the execution controller (`src/aptl/core/execution/`) produces terminal
+attempts. A run that `aptl lab start` created never holds `seal.json`, so it
+stays unsealed.
+
+MCP servers write `mcp-side/` and `kali-side/` into the run that
+`APTL_MCP_ADMITTED_RUN_ID` names in their environment. `aptl lab start` sets it
+in `.mcp.json` for the red and blue servers when it connects them to the lab's
+Kali ingress; a server started without it writes under an `_unbound` run
+instead. The capture broker's own record of the Kali sessions reaches the run
+under `evidence/` when `aptl lab stop` finalizes a full-run transcript capture.
+
+The participant workbench (`src/aptl/workbench/runtime.py`) keeps its own run
+store under its state directory and appends session events to
+`<run_id>/workbench/events.jsonl` there.
 
 ## Run Provenance (`provenance/`)
 
@@ -118,9 +172,9 @@ so the run record's mandatory evidence, traceability, and result fields are
 satisfied even when a trial ends before any authored capture starts.
 
 - `manifest.json` is the canonical serialized RAES run record for a terminal
-  attempt. It replaces the legacy `aptl.run-record/v2` shape as the single
-  permanent run model; existing archives stay readable through one
-  version-dispatching adapter.
+  attempt. In a run that `aptl lab start` created, `manifest.json` is the
+  `aptl.run-record/v2` reproducibility record instead. One version-dispatching
+  adapter reads every shape, including older `aptl.run-record/v1` archives.
 - `seal.json` is the atomic seal marker. A run is discoverable as sealed only
   after this marker is durably committed. Before it exists the attempt is an
   unsealed recovery candidate even if `manifest.json` is present. The marker
@@ -155,9 +209,15 @@ marker, so restart discovery works without scanning or trusting arbitrary
 filesystem paths. The index is derived and rebuildable from sealed archives; its
 loss never changes the portable record or the seal.
 
-## Range Snapshot (`snapshot.json`)
+## Range Snapshot
 
-Captured at the start of each run for reproducibility. Contains:
+The range snapshot records the realized lab for reproducibility. No separate
+snapshot file exists: `aptl lab start` captures the snapshot in the step before
+its run record and embeds it in `manifest.json` at
+`backend_evidence.range_snapshot`. `aptl lab status --json` prints a fresh
+snapshot, and `aptl lab status --output <file>` writes one to a file with mode
+`0600`. Capture and serialization live in `src/aptl/core/snapshot.py` and
+`src/aptl/core/snapshot_models.py`. Contains:
 
 | Field | Description |
 |-------|-------------|
@@ -168,14 +228,17 @@ Captured at the start of each run for reproducibility. Contains:
 | `software.wazuh_manager_version` | Wazuh manager version (from `/var/ossec/bin/wazuh-control`) |
 | `software.wazuh_indexer_version` | OpenSearch version on the Wazuh indexer |
 | `software.aptl_version` | APTL package version |
-| `containers[]` | Name, image, image ID, status, health, labels for each `aptl-*` container |
+| `software.raes_version` | Installed `raes` package version |
+| `containers[]` | Name, image, status, health, labels, networks, ports, and restart policy for each container the project owns |
 | `wazuh_rules.total_rules` | Total Wazuh rules loaded |
 | `wazuh_rules.custom_rules` | Custom rules in `/var/ossec/etc/rules/` |
 | `wazuh_rules.custom_rule_files` | List of custom rule XML filenames |
 | `wazuh_rules.total_decoders` | Total decoders loaded |
 | `wazuh_rules.custom_decoders` | Custom decoders count |
 | `networks[]` | Docker network name, subnet, gateway, connected containers |
-| `config_hashes` | SHA-256 of `aptl.json` and `docker-compose.yml`. `.env` is deliberately excluded: it holds control-plane secrets whose values have a small guessable domain, so a digest of it would be a confirmation oracle rather than an opaque identity. |
+| `config_hashes` | SHA-256 of `aptl.json` and of each `docker-compose*.yml` or `docker-compose*.yaml` file in the project directory. `.env` is deliberately excluded: it holds control-plane secrets whose values have a small guessable domain, so a digest of it would be a confirmation oracle rather than an opaque identity. |
+| `services[]` | Service endpoints (name, URL, host, port, protocol) of running containers |
+| `ssh[]` | SSH endpoints (name, host, port, user, key path, command) of running containers |
 
 Snapshots and trace exports must not contain live credentials, API keys, bearer
 tokens, cookies, JWTs, private key material, or default lab passwords. Redact at
@@ -200,15 +263,24 @@ aptl runs export <run-id>
 
 # Export to S3 (requires pip install aptl-labs[s3])
 aptl runs export <run-id> --s3-bucket my-bucket --s3-prefix runs/
+
+# Build a portable evidence bundle (written to ./exports by default)
+aptl runs export-bundle <run-id>
+
+# Verify an evidence bundle
+aptl runs verify-bundle ./exports/<run-id>.evidence-bundle.tar
 ```
+
+[Portable Evidence Bundle Export](evidence-bundle-export.md) describes the
+bundle options, layout, and verification.
 
 ## Key Source Files
 
 - `src/aptl/core/runstore.py`: Storage backend protocol and local filesystem implementation, seal-marker commit, and sealed-state immutability
 - `src/aptl/core/archival/`: Terminal-attempt archival, covering RAES run-record composition, terminal-cause status mapping, atomic seal marker, discovery index, and the legacy-manifest read adapter
 - `src/aptl/core/execution/`: The execution controller that drives admitted trials to sealed terminal records, plus the owner-native RAES sub-model bridges (clock, apparatus context, parameters, stochastic controls, evidence artifacts, result summaries)
-- `src/aptl/core/run_assembler.py`: Orchestrates data collection after scenario stop
-- `src/aptl/core/snapshot.py`: Range snapshot dataclasses and capture logic
+- `src/aptl/core/lab.py`: The `aptl lab start` steps that capture the range snapshot and write the run record, provisional provenance, and correlation projection
+- `src/aptl/core/snapshot.py`, `src/aptl/core/snapshot_models.py`: Range snapshot capture logic and dataclasses
 - `src/aptl/core/exporter.py`: Local tar.gz and S3 export
-- `src/aptl/core/collectors.py`: Individual data collectors (Wazuh, Suricata, TheHive, etc.)
-- `src/aptl/cli/runs.py`: CLI commands (`aptl runs list|show|path|export`)
+- `src/aptl/core/evidence_bundle/`: Portable evidence bundle build and verification
+- `src/aptl/cli/runs.py`: CLI commands (`aptl runs list|show|path|export|export-bundle|verify-bundle`)
