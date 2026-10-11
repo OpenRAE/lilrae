@@ -26,10 +26,20 @@ Options:
 
 - `--projection / -p` selects a derived projection: `jsonl`, `parquet`, or
   `ocsf`. Repeat the flag for more than one. Parquet requires the optional
-  `pyarrow` dependency (`pip install aptl[parquet]`); without it, the bundle
-  records a `projection-unavailable` limitation instead of failing.
-- `--output-dir / -o` is the destination directory. It must be outside the run
-  tree, and the exporter never overwrites an existing bundle.
+  `pyarrow` dependency of the `parquet` extra (`pipx inject aptl-labs pyarrow`
+  for a pipx install, or `pip install -e ".[parquet]"` in a source checkout);
+  without it, the bundle records a `projection-unavailable` limitation instead
+  of failing.
+- `--output-dir / -o` is the destination directory, `./exports` by default. It
+  must be outside the run tree, and the exporter never overwrites an existing
+  bundle. Because a bundle carries restricted evidence, an existing directory
+  must be a real directory, not a symlink, that the current user owns and that
+  grants no group or other permissions; otherwise the command fails and writes
+  nothing. A missing directory is created with mode 0700. `aptl runs export`
+  creates a missing output directory, including its default `./exports`, with
+  mode 0700 as well, so the two commands can share it. To reuse a directory
+  with wider permissions, such as one that an earlier release of
+  `aptl runs export` created, run `chmod 700` on it first.
 - `--verify / --no-verify` controls the local self-verification pass that runs
   after the archive is written (on by default).
 
@@ -43,11 +53,15 @@ aptl runs verify-bundle ./exports/<run_id>.evidence-bundle.tar
 ```
 
 Verification streams the archive, enforces its own resource bounds, recomputes
-every member digest and size against the inventory, recomputes the reproducible
-root identity, and, when a seal claims to be verified, checks that the seal
-binds that root. The verifier depends only on the standard library and the JSON
-canonicalization library, so a third party can lift it out of the tree and run
-it anywhere.
+every member digest and size against the inventory, and recomputes the
+reproducible root identity. It does not compare a seal with that root. A bundle
+carries no attestation material that a third party could authenticate, so the
+verifier fails every bundle whose seal scope is `verified`, whatever root the
+seal names, with the issue `seal claims 'verified' but carries no verifiable
+attestation material`. The exporter writes only `unsealed` bundles; see
+[Seal state and partial runs](#seal-state-and-partial-runs). The verifier
+depends only on the standard library and the JSON canonicalization library, so
+a third party can lift it out of the tree and run it anywhere.
 
 ## Bundle layout
 

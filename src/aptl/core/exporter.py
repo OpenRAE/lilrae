@@ -7,11 +7,17 @@ Export is read-only over the run archive (ADR-050 "Export and projections are
 read-only after sealing"): the checksum manifest travels *inside* the archive as
 a synthetic member and is never written back into the source run directory,
 which for a sealed attempt is immutable.
+
+An archive carries restricted run evidence, so export creates a missing output
+directory with mode 0700 and the archive with mode 0600, whatever the umask.
+``aptl runs export-bundle`` shares the default ``./exports`` directory and
+refuses a parent with group or other permission bits (issue #1282).
 """
 
 import hashlib
 import io
 import json
+import os
 import tarfile
 from pathlib import Path
 
@@ -24,6 +30,45 @@ try:
     import boto3 as boto3
 except ImportError:
     boto3 = None  # type: ignore[assignment]
+
+#: Owner-only modes for the output directory export creates and for the archive.
+_EXPORT_DIR_MODE = 0o700
+_EXPORT_FILE_MODE = 0o600
+#: Windows has no ``O_NOFOLLOW``; there the archive open follows links as before.
+_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+
+
+def _ensure_output_dir(output_dir: Path) -> None:
+    """Create a missing output directory owner-only; keep an existing one as is.
+
+    ``mkdir`` applies the umask to its mode, so the mode is set again afterwards,
+    as the evidence-bundle writer does for its own parent. An existing directory,
+    such as one named with ``--output-dir``, keeps the mode its owner chose.
+    """
+    if output_dir.is_dir():
+        return
+    output_dir.mkdir(mode=_EXPORT_DIR_MODE, parents=True, exist_ok=True)
+    output_dir.chmod(_EXPORT_DIR_MODE)
+
+
+def _create_owner_only(path: str, flags: int) -> int:
+    """``open()`` opener that creates the archive with mode 0600.
+
+    ``O_NOFOLLOW`` refuses a symlink at the archive path, so neither the
+    truncation nor the export bytes reach a file the link points to.
+    """
+    return os.open(path, flags | _O_NOFOLLOW, _EXPORT_FILE_MODE)
+
+
+def _restrict_open_archive(fd: int) -> None:
+    """Set mode 0600 on the open archive, whatever mode an older file had.
+
+    Truncating an archive that an earlier export left keeps that file's mode.
+    Python 3.12 on Windows has no ``os.fchmod``, and Windows has no group or
+    other permission bits to drop.
+    """
+    if hasattr(os, "fchmod"):
+        os.fchmod(fd, _EXPORT_FILE_MODE)
 
 
 def _sha256_file(path: Path) -> str:
@@ -71,6 +116,9 @@ def export_local(
 ) -> Path:
     """Export a run as a tar.gz archive with SHA-256 checksums.
 
+    The archive is written with mode 0600. A missing ``output_dir`` is created
+    with mode 0700; an existing one keeps its mode.
+
     Args:
         store: The run store containing the run data.
         run_id: The run identifier.
@@ -81,6 +129,8 @@ def export_local(
 
     Raises:
         FileNotFoundError: If the run directory does not exist.
+        OSError: If a symlink sits at the archive path (POSIX), or the archive
+            cannot be written.
     """
     from aptl.core.runstore import LocalRunStore
 
@@ -88,7 +138,7 @@ def export_local(
     if not run_path.exists():
         raise FileNotFoundError(f"Run directory not found: {run_path}")
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    _ensure_output_dir(output_dir)
 
     # A sealed run is packaged as EXACTLY its verified seal inventory: the seal is
     # verified (marker shape/identity, manifest digest, and every inventory
@@ -107,16 +157,19 @@ def export_local(
     archive_name = f"{run_id}.tar.gz"
     archive_path = output_dir / archive_name
 
-    with tarfile.open(archive_path, "w:gz") as tar:
-        if members is None:
-            tar.add(run_path, arcname=run_id)
-        else:
-            for member in members:
-                tar.add(run_path / member, arcname=f"{run_id}/{member}")
-        info = tarfile.TarInfo(name=f"{run_id}/checksums.sha256")
-        info.size = len(checksums_bytes)
-        info.mode = 0o600
-        tar.addfile(info, io.BytesIO(checksums_bytes))
+    with open(archive_path, "wb", opener=_create_owner_only) as raw:
+        # Set the mode before any run bytes are written.
+        _restrict_open_archive(raw.fileno())
+        with tarfile.open(fileobj=raw, mode="w:gz") as tar:
+            if members is None:
+                tar.add(run_path, arcname=run_id)
+            else:
+                for member in members:
+                    tar.add(run_path / member, arcname=f"{run_id}/{member}")
+            info = tarfile.TarInfo(name=f"{run_id}/checksums.sha256")
+            info.size = len(checksums_bytes)
+            info.mode = 0o600
+            tar.addfile(info, io.BytesIO(checksums_bytes))
 
     log.info("Exported run %s to %s (%d files)", run_id, archive_path, len(checksums))
     return archive_path
@@ -151,7 +204,8 @@ def export_s3(
     if boto3 is None:
         raise ImportError(
             "boto3 is required for S3 export. "
-            "Install it with: pip install aptl[s3]"
+            "Install it with: pipx inject aptl-labs boto3 "
+            '(source checkout: pip install -e ".[s3]")'
         )
 
     # Create local archive first
