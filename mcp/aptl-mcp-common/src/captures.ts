@@ -142,6 +142,15 @@ function resolveHarvestParams(opts: HarvestOptions): ResolvedHarvestParams {
 type PerSessionCopy = 'copied' | 'failed' | 'container-missing';
 
 /**
+ * Whether `docker cp` failed only because its source path does not exist
+ * inside the container: Docker 29's `Could not find the file …`, or
+ * `No such file or directory`. A missing container is a different reply.
+ */
+function isMissingSourcePath(stderr: string): boolean {
+  return /No such file or directory/i.test(stderr) || /Could not find the file/i.test(stderr);
+}
+
+/**
  * Copy one session's per-session capture subtree out of the container.
  * Returns `failed` (and logs) when docker cp failed for a reason worth
  * surfacing, including a missing source subtree; `container-missing` when the
@@ -162,10 +171,7 @@ async function copyPerSessionCaptures(
     console.error(`[captures] capture container ${containerName} is missing (${CONTAINER_MISSING})`);
     return 'container-missing';
   }
-  if (
-    /No such file or directory/i.test(cpResult.stderr) ||
-    /Could not find the file/i.test(cpResult.stderr)
-  ) {
+  if (isMissingSourcePath(cpResult.stderr)) {
     // Surface the missing-source case loudly. ADR-033 + codex
     // cycle 2 finding-9: with the kali user owning the capture
     // subtree, an attacker who deletes their own session dir
@@ -217,7 +223,9 @@ async function recordContainerMissing(
  * Pull container-wide capture roots (auditd log + process accounting pacct)
  * into `<destDir>/_global/`. These are scenario-wide and useful even when the
  * per-session subtree is missing — they may explain WHY it is gone.
- * Best-effort: logs but never fails the harvest.
+ * Best-effort: logs but never fails the harvest. A root that does not exist
+ * is absent, not a failure: the capture broker writes neither root today
+ * (#1275), so logging it would add two false failures to every harvest.
  */
 async function harvestGlobalCaptures(
   containerName: string,
@@ -241,7 +249,7 @@ async function harvestGlobalCaptures(
       ],
       env,
     );
-    if (gRes.code !== 0 && !/No such file or directory/i.test(gRes.stderr)) {
+    if (gRes.code !== 0 && !isMissingSourcePath(gRes.stderr)) {
       console.error(
         `[captures] global ${globalSub} harvest failed (rc=${gRes.code}):`,
         gRes.stderr.trim(),

@@ -13,7 +13,7 @@
  *   - failures never throw out of harvestSession.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import {
   cpSync,
   mkdtempSync,
@@ -42,6 +42,8 @@ interface SpawnControl {
   callCount: number;
   /** When set, `docker cp` reads from `root` as the filesystem of `name`. */
   container?: { name: string; root: string };
+  /** Replies for given `<name>:<path>` sources, ahead of the stand-in container. */
+  replies?: Record<string, DockerResult>;
 }
 const spawnControl: SpawnControl = {
   exitCode: 0,
@@ -51,8 +53,13 @@ const spawnControl: SpawnControl = {
   callCount: 0,
 };
 
-/** Answer one `docker cp` from the stand-in container, else with the set reply. */
+/**
+ * Answer one `docker cp` with the reply set for its source, else from the
+ * stand-in container, else with the set reply.
+ */
 function replay(args: string[]): DockerResult {
+  const reply = spawnControl.replies?.[args[1]];
+  if (reply) return reply;
   if (spawnControl.container) return copyFromContainer(spawnControl.container, args);
   return { code: spawnControl.exitCode, stderr: spawnControl.stderrText };
 }
@@ -149,6 +156,7 @@ beforeEach(() => {
   spawnControl.capturedCmds = [];
   spawnControl.callCount = 0;
   spawnControl.container = undefined;
+  spawnControl.replies = undefined;
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -455,6 +463,44 @@ describe('#1242: workspace-scoped capture container (recorded docker cp)', () =>
 
     expect(await harvest(SCOPED)).toBe(false);
     expect(readFileSync(outside, 'utf-8')).toBe('untouched');
+  });
+
+  describe('#1275: global capture roots the broker never writes', () => {
+    // The broker writes neither `_audit` nor `_proc-acct`, so the stand-in has
+    // neither and answers both global copies as Docker 29 did.
+    const globalSources = ['_audit', '_proc-acct'].map((sub) => `${SCOPED}:${ROOT}/${sub}/.`);
+    /** Answer both global copies with `reply`; the session copy still reads the stand-in. */
+    const answerGlobals = (reply: DockerResult) => {
+      spawnControl.replies = Object.fromEntries(globalSources.map((source) => [source, reply]));
+    };
+    let errors: MockInstance<typeof console.error>;
+
+    beforeEach(() => {
+      brokerContainer(SCOPED, 'sess-1');
+      errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    });
+    afterEach(() => errors.mockRestore());
+
+    it.each([
+      ["Docker 29's `Could not find the file`", undefined],
+      ['`No such file or directory`', { code: 1, stderr: 'Error: No such file or directory\n' }],
+    ])('treats a missing global root as absent (%s)', async (_reply, globalReply) => {
+      if (globalReply) answerGlobals(globalReply);
+
+      expect(await harvest(SCOPED)).toBe(true);
+      expect(spawnControl.capturedArgs.slice(1).map(([, source]) => source)).toEqual(globalSources);
+      expect(errors).not.toHaveBeenCalled();
+    });
+
+    it('still reports a global copy that fails for another reason', async () => {
+      answerGlobals({ code: 1, stderr: 'Error: permission denied\n' });
+
+      expect(await harvest(SCOPED)).toBe(true);
+      expect(errors.mock.calls).toEqual([
+        ['[captures] global _audit harvest failed (rc=1):', 'Error: permission denied'],
+        ['[captures] global _proc-acct harvest failed (rc=1):', 'Error: permission denied'],
+      ]);
+    });
   });
 });
 
