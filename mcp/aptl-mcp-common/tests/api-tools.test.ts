@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { generateAPIToolDefinitions } from '../src/tools/api-definitions.js';
 import { generateAPIToolHandlers } from '../src/tools/api-handlers.js';
 
@@ -87,6 +87,101 @@ describe('generateAPIToolHandlers', () => {
 
     expect(handlers['wazuh_recent_alerts']).toBeDefined();
     expect(typeof handlers['wazuh_recent_alerts']).toBe('function');
+  });
+
+  describe('predefined query path parameters', () => {
+    const ruleFileQuery = {
+      upload_rule_file: {
+        url: 'https://wazuh.example:55000/rules/files/{filename}',
+        method: 'PUT' as const,
+        path_param_patterns: { filename: '[A-Za-z0-9][A-Za-z0-9_.-]*\\.xml' },
+        description: 'Upload a rules file',
+      },
+    };
+    const genericQuery = {
+      search_index: {
+        url: 'https://indexer.example:9200/{index}/_search',
+        method: 'POST' as const,
+        description: 'Search one index',
+      },
+    };
+
+    function context() {
+      const makeRequest = vi.fn().mockResolvedValue({ status: 200, data: {} });
+      return { makeRequest, ctx: { httpClient: { makeRequest }, labConfig: {} } as any };
+    }
+
+    async function call(queries: any, name: string, args: any) {
+      const { makeRequest, ctx } = context();
+      const handlers = generateAPIToolHandlers(mockServerConfig, queries);
+      const result = await handlers[`wazuh_${name}`](args, ctx);
+      return { makeRequest, payload: JSON.parse(result.content[0].text) };
+    }
+
+    it('substitutes a valid file name and keeps other params as query params', async () => {
+      const { makeRequest, payload } = await call(ruleFileQuery, 'upload_rule_file', {
+        params: { filename: 'custom_rules.xml', overwrite: true },
+        body: '<group name="custom,"></group>',
+      });
+
+      expect(payload.success).toBe(true);
+      expect(makeRequest).toHaveBeenCalledWith(
+        'https://wazuh.example:55000/rules/files/custom_rules.xml',
+        'PUT',
+        expect.objectContaining({
+          params: { overwrite: true },
+          body: '<group name="custom,"></group>',
+        }),
+      );
+    });
+
+    it.each(['', '.', '..', '../ossec.conf', 'nested/rules.xml', '.hidden.xml', 'rules.txt'])(
+      'rejects the file name %j before any request',
+      async (filename) => {
+        const { makeRequest, payload } = await call(ruleFileQuery, 'upload_rule_file', {
+          params: { filename },
+          body: '<group/>',
+        });
+
+        expect(payload.success).toBe(false);
+        expect(payload.error).toMatch(/path parameter filename/);
+        expect(makeRequest).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rejects a missing path parameter before any request', async () => {
+      const { makeRequest, payload } = await call(ruleFileQuery, 'upload_rule_file', {
+        body: '<group/>',
+      });
+
+      expect(payload.success).toBe(false);
+      expect(payload.error).toBe('path parameter filename is required');
+      expect(makeRequest).not.toHaveBeenCalled();
+    });
+
+    it.each(['', '.', '..'])(
+      'rejects the dot segment %j for a parameter without a pattern',
+      async (index) => {
+        const { makeRequest, payload } = await call(genericQuery, 'search_index', {
+          params: { index },
+        });
+
+        expect(payload.success).toBe(false);
+        expect(payload.error).toMatch(/single non-empty path segment/);
+        expect(makeRequest).not.toHaveBeenCalled();
+      },
+    );
+
+    it('encodes a parameter without a pattern as one path segment', async () => {
+      const { makeRequest, payload } = await call(genericQuery, 'search_index', {
+        params: { index: 'wazuh-alerts-*' },
+      });
+
+      expect(payload.success).toBe(true);
+      expect(makeRequest.mock.calls[0][0]).toBe(
+        'https://indexer.example:9200/wazuh-alerts-*/_search',
+      );
+    });
   });
 
   it('works with different server configs', () => {

@@ -97,7 +97,7 @@
       "asset_id": "mcp-wazuh-config",
       "kind": "project-file",
       "source": "mcp/mcp-wazuh/docker-lab-config.json",
-      "sha256": "03b880da744ae2dcab13263a1d549a2959017911e6694e22e41efc2816e6bcc6"
+      "sha256": "8b867822b8ea0b9d3e38741d8b57b3ca724c726761a0046a6426fc917b7e7091"
     },
     {
       "asset_id": "image-kali",
