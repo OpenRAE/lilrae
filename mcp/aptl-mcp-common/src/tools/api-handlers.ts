@@ -73,7 +73,7 @@ function buildQueryUrl(
       queryParams[key] = value;
     }
   }
-  const missing = url.match(/\{(\w+)\}/);
+  const missing = /\{(\w+)\}/.exec(url);
   if (missing) {
     throw new Error(`path parameter ${missing[1]} is required`);
   }
