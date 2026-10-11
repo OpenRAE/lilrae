@@ -26,7 +26,7 @@ import yaml
 
 from aptl.core.certs import ensure_ssl_certs
 from aptl.core.soc_ca import ensure_soc_certs
-from aptl.core.config import AptlConfig, find_config, load_config
+from aptl.core.config import AptlConfig, DeploymentConfig, find_config, load_config
 from aptl.core.contracts import (
     backend_is_initialized,
     config_is_loaded,
@@ -54,6 +54,7 @@ from aptl.core.lab_types import (
     STOP_RECOVERY_ROUTES,
     DiagnosticImpact as DiagnosticImpact,
     DiagnosticSeverity as DiagnosticSeverity,
+    LabResetResult as LabResetResult,
     LabResult as LabResult,
     LabStatus as LabStatus,
     StartResidue,
@@ -505,12 +506,32 @@ def _stop_lab_owned(
     assert profiles is not None
     if backend is None:
         backend = _get_backend(search_dir, config)
+    return _tear_down_owned(
+        search_dir, backend, profiles, remove_volumes=remove_volumes
+    )
+
+
+def _tear_down_owned(
+    search_dir: Path,
+    backend: "DeploymentBackend",
+    profiles: list[str],
+    *,
+    remove_volumes: bool,
+    retry_command: str | None = None,
+) -> LabResult:
+    """Stop the project and, when its volumes go, finish pending host cleanup.
+
+    ``retry_command`` is the command a cleanup failure names for the retry.
+    ``None`` names ``aptl lab stop -v --yes``.
+    """
 
     capture_failure = _finalize_required_transcript_capture(search_dir, backend)
     stop_result = backend.stop(profiles, remove_volumes=remove_volumes)
     result = stop_result
     if remove_volumes:
-        cleanup_failure = _run_pending_host_cleanup(search_dir, backend, stop_result)
+        cleanup_failure = _run_pending_host_cleanup(
+            search_dir, backend, stop_result, retry_command
+        )
         if cleanup_failure is not None:
             result = cleanup_failure
     if result is stop_result and capture_failure is not None:
@@ -518,10 +539,119 @@ def _stop_lab_owned(
     return result
 
 
+#: The command a failed reset names for the retry (#1218).
+_RESET_RETRY_COMMAND = "aptl lab reset --yes"
+
+#: Why a reset refuses when the recorded workspace scope can't be read (#1218).
+_RESET_WORKSPACE_STATE_UNREADABLE = (
+    "[lifecycle-state-invalid] Lab reset blocked: unreadable workspace "
+    "ownership state; refusing to guess which project to remove. Repair or "
+    "restore .aptl/lifecycle/workspace-ownership-v1.json and retry."
+)
+
+
+def reset_lab(
+    project_dir: Path,
+    backend: Optional["DeploymentBackend"] = None,
+) -> LabResetResult:
+    """Return the lab to a clean, stopped state (#1218).
+
+    Inside the lifecycle lock it counts the project, then runs the same
+    project-scoped teardown as ``aptl lab stop -v``: the project's containers,
+    networks and volumes go, and every pending host-side cleanup record runs
+    (``aptl.core.lifecycle_cleanup``). Other host files, such as ``aptl.json``,
+    ``.env``, SSH keys, certificates and run records, stay. Repeating it is
+    safe: a reset project has nothing left to remove, and a cleanup record that
+    failed is retried.
+    """
+
+    try:
+        with lifecycle_mutation_lock(project_dir) as project_root:
+            return _reset_lab_owned(project_root, backend)
+    except LifecycleBusyError:
+        return LabResetResult(_lifecycle_busy_result("reset"))
+    except LifecycleLockUnavailableError:
+        return LabResetResult(_lifecycle_lock_unavailable_result())
+
+
+def _reset_lab_owned(
+    project_root: Path, backend: Optional["DeploymentBackend"]
+) -> LabResetResult:
+    """Count the project, then reset it while the caller holds the lock."""
+
+    config, profiles, failure = _stop_recovery_configuration(
+        project_root, backend, command="reset"
+    )
+    if failure is not None:
+        return LabResetResult(failure)
+    assert profiles is not None
+    recorded = _workspace_scope_recorded(project_root, config)
+    if recorded is None:
+        return LabResetResult(
+            LabResult(success=False, error=_RESET_WORKSPACE_STATE_UNREADABLE)
+        )
+    selected = backend or _get_backend(project_root, config)
+    counts = _reset_counts(selected) if recorded else (0, 0)
+    result = _tear_down_owned(
+        project_root,
+        selected,
+        profiles,
+        remove_volumes=True,
+        retry_command=_RESET_RETRY_COMMAND,
+    )
+    return LabResetResult(result, *counts)
+
+
+def _workspace_scope_recorded(
+    project_root: Path, config: AptlConfig | None
+) -> bool | None:
+    """Whether a start recorded the workspace scope that a reset removes.
+
+    Every start since #1054 labels its containers and networks with the
+    workspace-scoped project name recorded under ``.aptl/lifecycle``, and the
+    teardown removes only that project. Without the record, the teardown
+    creates a new, empty scope, so nothing there exists to count, even when an
+    unscoped project from before #1054 runs on the same daemon. ``None`` means
+    the record exists but can't be read.
+    """
+
+    from aptl.core.deployment._compose_resource_ownership import (
+        OwnershipConflictError,
+        WorkspaceOwnership,
+    )
+
+    deployment = DeploymentConfig() if config is None else config.deployment
+    try:
+        scope = WorkspaceOwnership.load(project_root, deployment.project_name)
+    except OwnershipConflictError:
+        return None
+    return scope is not None
+
+
+def _reset_counts(backend: "DeploymentBackend") -> tuple[int | None, int | None]:
+    """Count the workspace-scoped project's containers and networks.
+
+    ``observe_project_runtime`` binds the recorded workspace scope before it
+    counts, so this is the project the teardown removes. Both counts are
+    ``None`` when the backend could not observe them.
+    """
+
+    presence = backend.observe_project_runtime()
+    if presence.error:
+        return None, None
+    return presence.container_count, presence.network_count
+
+
 def _stop_recovery_configuration(
-    search_dir: Path, backend: Optional["DeploymentBackend"]
+    search_dir: Path,
+    backend: Optional["DeploymentBackend"],
+    *,
+    command: str = "stop",
 ) -> tuple[AptlConfig | None, list[str] | None, LabResult | None]:
-    """Resolve safe teardown profiles and any blocking recovery failure."""
+    """Resolve safe teardown profiles and any blocking recovery failure.
+
+    ``command`` names the blocked ``aptl lab`` command in the failure text.
+    """
 
     configured_profiles: list[str] = []
     config_path = find_config(search_dir)
@@ -537,7 +667,7 @@ def _stop_recovery_configuration(
                 failure = LabResult(
                     success=False,
                     error=(
-                        "[lifecycle-invalid-configuration] Lab stop blocked: "
+                        f"[lifecycle-invalid-configuration] Lab {command} blocked: "
                         "invalid configuration; refusing to guess the deployment "
                         "project identity. Repair aptl.json and retry."
                     ),
@@ -551,7 +681,10 @@ def _stop_recovery_configuration(
         except (OSError, ValueError):
             failure = LabResult(
                 success=False,
-                error="[lifecycle-state-invalid] Lab stop blocked: invalid operator-group recovery state.",
+                error=(
+                    f"[lifecycle-state-invalid] Lab {command} blocked: invalid "
+                    "operator-group recovery state."
+                ),
             )
         else:
             profiles = (
@@ -566,30 +699,38 @@ def _run_pending_host_cleanup(
     project_dir: Path,
     backend: object,
     stop_result: LabResult,
+    retry_command: str | None = None,
 ) -> LabResult | None:
     """Finish pending host cleanup once Docker volume removal is verified.
 
     A Docker failure leaves host state untouched, because it still describes
     retained volumes, and says what remains pending. After verified teardown
     every pending action runs, including on a repeat reset whose Docker
-    resources were already gone.
+    resources were already gone. A failure names ``retry_command``, or
+    ``aptl lab stop -v --yes`` when it is ``None``.
     """
 
     from aptl.core.lifecycle_cleanup import (
+        RETRY_COMMAND,
         docker_teardown_failed_message,
         pending_cleanup_message,
         run_pending_cleanup,
     )
 
+    retry = retry_command or RETRY_COMMAND
     if not stop_result.success:
         return LabResult(
             success=False,
-            error=docker_teardown_failed_message(project_dir, stop_result.error),
+            error=docker_teardown_failed_message(
+                project_dir, stop_result.error, retry_command=retry
+            ),
         )
     report = run_pending_cleanup(project_dir, backend)
     if report.ok:
         return None
-    return LabResult(success=False, error=pending_cleanup_message(report))
+    return LabResult(
+        success=False, error=pending_cleanup_message(report, retry_command=retry)
+    )
 
 
 def _finalize_required_transcript_capture(
