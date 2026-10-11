@@ -24,6 +24,7 @@ from aptl.core.credentials import PathContainmentError
 from aptl.core.certs import CertResult
 from aptl.core.deployment.docker_compose import DockerComposeBackend
 from aptl.core.deployment._compose_stateful_artifact_helpers import (
+    base_container_environment_bindings,
     write_artifact_environment_files,
 )
 from aptl.core.deployment._compose_stateful_model import (
@@ -627,10 +628,6 @@ def test_a_symlinked_generated_output_is_refused_not_read(
 ) -> None:
     """A link planted at an output path never delivers its target as a value."""
 
-    from aptl.core.deployment._compose_stateful_artifact_helpers import (
-        base_container_environment_bindings,
-    )
-
     artifact, sources = _write_cortex_outputs(tmp_path)
     outside = tmp_path / "outside-secret"
     outside.write_text("host-secret\n", encoding="utf-8")
@@ -668,10 +665,6 @@ def test_base_container_generated_values_follow_the_docker_env_file_rules(
     tmp_path: Path, value: str, bound: str | None, named: str | None
 ) -> None:
     """The early check and the env-file writer apply the same rules."""
-
-    from aptl.core.deployment._compose_stateful_artifact_helpers import (
-        base_container_environment_bindings,
-    )
 
     artifact, _sources = _write_cortex_outputs(tmp_path, connector_api_key=value)
     bindings: dict[str, dict[str, str]] = {}
