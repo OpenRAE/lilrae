@@ -171,9 +171,9 @@ def rendered_techvault(tmp_path_factory):
     pack takes over ten seconds, so one realization is shared per session
     (per worker under pytest-xdist).
     """
-    from tests.test_env_pack_realization import _realize_pack
+    from tests.techvault_pack import realize_techvault_pack
 
-    return _realize_pack(tmp_path_factory.mktemp("rendered-techvault"))
+    return realize_techvault_pack(tmp_path_factory.mktemp("rendered-techvault"))
 
 
 @pytest.fixture(scope="session")
