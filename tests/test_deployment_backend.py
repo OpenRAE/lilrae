@@ -2005,6 +2005,7 @@ class TestDockerComposeBackendContainerInteraction:
     def _make_backend(self, tmp_path: Path) -> DockerComposeBackend:
         backend = DockerComposeBackend(project_dir=tmp_path, project_name="test")
         backend._resolve_owned_container_id = lambda selector: selector  # type: ignore[method-assign]
+        backend._find_owned_container_id = lambda selector: selector  # type: ignore[method-assign]
         return backend
 
     # container_list -------------------------------------------------------
