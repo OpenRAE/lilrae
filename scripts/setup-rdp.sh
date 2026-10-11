@@ -27,9 +27,7 @@ APT=(sudo -E apt-get -o DPkg::Lock::Timeout=600 -y)
 # session (reads as "the box is frozen"). Native = instant.
 "${APT[@]}" install epiphany-browser >>/tmp/rdp-apt.log 2>&1 || true
 
-# xfce pulls in avahi-daemon (mDNS on UDP :5353), which collides with the aptl
-# `dns` node's port and breaks `aptl lab start` on a fresh boot. Not needed for
-# the workshop -- mask it so it never grabs the port.
+# xfce pulls in avahi-daemon (mDNS). The workshop does not need it -- mask it.
 sudo systemctl disable --now avahi-daemon.service avahi-daemon.socket 2>/dev/null || true
 sudo systemctl mask avahi-daemon.service avahi-daemon.socket 2>/dev/null || true
 

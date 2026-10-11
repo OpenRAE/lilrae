@@ -2,8 +2,7 @@
 
 Docker Compose aborts an entire ``up`` if it cannot bind a requested host
 port, and on Windows/macOS other software routinely holds ports the lab wants
-— mDNS on UDP 5353, an editor's automatic port-forwarding, another service on
-3100, and so on. On Windows a held IPv6 ``::1:PORT`` even blocks Docker's IPv4
+— an editor's automatic port-forwarding, another service on 3100, and so on. On Windows a held IPv6 ``::1:PORT`` even blocks Docker's IPv4
 ``127.0.0.1:PORT`` publish, so the clash is easy to hit and fails the whole
 start.
 
