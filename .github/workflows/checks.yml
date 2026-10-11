@@ -73,6 +73,18 @@ jobs:
       # went stale behind contract changes (#1141, #1152) unnoticed (#1193).
       - name: Property-based (fuzz) tests
         run: python -m pytest tests/ -q -m fuzz -k "not integration"
+      # The env-file writers must deliver each value exactly (#966). Only the
+      # real Docker and Compose readers can prove that. The readback tests are
+      # integration-marked, so the run above deselects them. The runner has
+      # Docker and Compose. The probes stop the step if either is missing, so
+      # the tests cannot pass by a skip.
+      - name: Env-file readback through Docker and Compose
+        run: |
+          docker info > /dev/null
+          docker compose version
+          python -m pytest -q -m integration \
+            tests/test_raes_runtime_environment.py::test_docker_reads_the_env_file_back_exactly \
+            tests/test_deployment_stateful_realization.py::test_compose_reads_the_generated_env_file_back_exactly
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: python-coverage

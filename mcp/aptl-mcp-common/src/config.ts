@@ -81,6 +81,12 @@ export interface LabConfig {
         auth_url?: string;
       };
       params?: Record<string, any>;
+      /**
+       * Regular expressions that each `{name}` path parameter value must
+       * match in full. A value without a pattern still must not be empty,
+       * `.` or `..`.
+       */
+      path_param_patterns?: Record<string, string>;
       body?: any;
       description: string;
       response_type?: 'json' | 'text';

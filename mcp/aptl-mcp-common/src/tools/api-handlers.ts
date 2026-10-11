@@ -44,6 +44,18 @@ function resolveQueryBody(body: unknown, queryConfig: QueryConfig): any {
   return queryConfig.body ? { ...queryConfig.body, ...(body as Record<string, unknown>) } : body;
 }
 
+// Reject a path parameter value that would change the request path. Encoding
+// removes separators, but an empty, `.` or `..` segment still moves the path.
+function assertSafePathParam(queryConfig: QueryConfig, key: string, value: string): void {
+  if (value === '' || value === '.' || value === '..') {
+    throw new Error(`path parameter ${key} must be a single non-empty path segment`);
+  }
+  const pattern = queryConfig.path_param_patterns?.[key];
+  if (pattern !== undefined && !new RegExp(`^(?:${pattern})$`).test(value)) {
+    throw new Error(`path parameter ${key} does not match ${pattern}`);
+  }
+}
+
 // Substitute `{key}` path parameters into the query URL and collect the
 // remaining params as query-string params.
 function buildQueryUrl(
@@ -55,10 +67,15 @@ function buildQueryUrl(
   for (const [key, value] of Object.entries(finalParams)) {
     const placeholder = `{${key}}`;
     if (url.includes(placeholder)) {
+      assertSafePathParam(queryConfig, key, String(value));
       url = url.replace(placeholder, encodeURIComponent(String(value)));
     } else {
       queryParams[key] = value;
     }
+  }
+  const missing = /\{(\w+)\}/.exec(url);
+  if (missing) {
+    throw new Error(`path parameter ${missing[1]} is required`);
   }
   return { url, queryParams };
 }
@@ -181,9 +198,9 @@ const baseAPIHandlers = {
     // Merge provided params with template
     const finalParams = { ...queryConfig.params, ...params };
     const finalBody = resolveQueryBody(body, queryConfig);
-    const { url, queryParams } = buildQueryUrl(queryConfig, finalParams);
 
     try {
+      const { url, queryParams } = buildQueryUrl(queryConfig, finalParams);
       const result = await runPredefinedQuery(queryConfig, context, url, queryParams, finalBody);
 
       return {
