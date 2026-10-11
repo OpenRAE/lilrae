@@ -56,11 +56,9 @@ echo "--- set RDP password ---"
 echo "${APTL_RDP_USER:-ubuntu}:${RANGE_PASS}" | sudo chpasswd || true
 sudo passwd -u "${APTL_RDP_USER:-ubuntu}" >/dev/null 2>&1 || true
 
-# 0. Free UDP :5353 for the aptl `dns` node. The RDP desktop pulls in
-#    avahi-daemon (mDNS on 5353); on a fresh boot it wins the port before the
-#    lab starts, so the dns container cannot bind and the whole realization
-#    fails (BaseSubstrateOp on node dns). avahi is not needed here -- mask it.
-echo "--- free :5353 (mask avahi) ---"
+# 0. The RDP desktop pulls in avahi-daemon (mDNS). The range host does not
+#    need it -- mask it.
+echo "--- mask avahi ---"
 sudo systemctl disable --now avahi-daemon.service avahi-daemon.socket 2>/dev/null || true
 sudo systemctl mask avahi-daemon.service avahi-daemon.socket 2>/dev/null || true
 
