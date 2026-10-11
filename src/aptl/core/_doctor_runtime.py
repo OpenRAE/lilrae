@@ -29,8 +29,6 @@ if TYPE_CHECKING:
 
 Runner = Callable[..., Any]
 
-# The prerequisites page: "the full `techvault` stack needs more than 20GB".
-_FULL_STACK_MEMORY_BYTES = 20 * 10**9
 _MIN_COMPOSE_MAJOR = 2
 # The checks that need an answering daemon, in report order.
 _DAEMON_CHECK_IDS = (
@@ -98,7 +96,7 @@ def _configured_backend_checks(
             unavailable,
             "the configured deployment backend cannot be created (see docker-daemon)",
         )
-    return _backend_checks(backend)
+    return _backend_checks(backend, config.scenario.identity)
 
 
 def _without_backend(daemon: DoctorCheck, reason: str) -> list[DoctorCheck]:
@@ -116,7 +114,9 @@ def _without_backend(daemon: DoctorCheck, reason: str) -> list[DoctorCheck]:
     ]
 
 
-def _backend_checks(backend: BoundaryProbeBackend) -> list[DoctorCheck]:
+def _backend_checks(
+    backend: BoundaryProbeBackend, scenario: str
+) -> list[DoctorCheck]:
     """Probe the selected daemon through the backend's own runner."""
 
     # The Compose and Buildx plugins belong to the Docker CLI, so they are
@@ -137,7 +137,7 @@ def _backend_checks(backend: BoundaryProbeBackend) -> list[DoctorCheck]:
         rootful,
         _substrate_check(backend._run, rootful),
         _max_map_count_check(backend),
-        _memory_check(backend._run),
+        _memory_check(backend._run, scenario),
     ]
 
 
@@ -234,9 +234,9 @@ def _compose_check(run: Runner) -> DoctorCheck:
 
     ``compose_version`` reads a distribution build such as
     ``2.40.3+ds1-0ubuntu1~24.04.1`` as 2.40.3. Lab start refuses Compose older
-    than 2.24.4 only for a scenario whose Wazuh services consume generated
-    certificates or volumes, as techvault's do. Doctor does not stage a
-    scenario to find out, so an older Compose v2 is a warning.
+    than 2.24.4 only for a scenario that consumes generated certificates or
+    volumes. Doctor does not stage a scenario to find out, so an older Compose
+    v2 is a warning.
     """
 
     from aptl.core.deployment._compose_stateful_constants import (
@@ -262,7 +262,8 @@ def _compose_check(run: Runner) -> DoctorCheck:
             "docker-compose",
             CheckStatus.WARNING,
             f"Docker Compose {found} is older than {floor}, which lab start "
-            "requires for techvault's Wazuh services.",
+            "requires for a scenario that consumes generated certificates or "
+            "volumes.",
             f"Upgrade the Docker Compose plugin to {floor} or newer.",
         )
     return DoctorCheck(
@@ -312,7 +313,7 @@ def _max_map_count_check(backend: BoundaryProbeBackend) -> DoctorCheck:
     return DoctorCheck(
         "max-map-count",
         CheckStatus.FAILED,
-        f"{observed}; OpenSearch needs at least {result.required_value}.",
+        f"{observed}; lab start requires at least {result.required_value}.",
         f"Run {_sysctl_change(result.required_value)}",
     )
 
@@ -344,15 +345,15 @@ def _max_map_count_not_read(
     return DoctorCheck(
         "max-map-count",
         CheckStatus.WARNING,
-        f"vm.max_map_count was not checked: {engine}. OpenSearch needs at least "
-        f"{required} on that host.",
+        f"vm.max_map_count was not checked: {engine}. Lab start requires at "
+        f"least {required} on that host.",
         "On the host that runs the selected Docker engine, run "
         f"{_sysctl_change(required)}",
     )
 
 
 def _sysctl_change(required: int) -> str:
-    """Return the sysctl change OpenSearch needs, for the user to run."""
+    """Return the sysctl change lab start requires, for the user to run."""
 
     return (
         f"`sudo sysctl -w vm.max_map_count={required}` and add "
@@ -361,27 +362,22 @@ def _sysctl_change(required: int) -> str:
     )
 
 
-def _memory_check(run: Runner) -> DoctorCheck:
-    """Warn when the engine has less memory than the full stack needs."""
+def _memory_check(run: Runner, scenario: str) -> DoctorCheck:
+    """Report the engine's memory without comparing it to a threshold.
+
+    A memory need is a fact of the selected scenario. No env-pack declares one
+    yet (OpenRAE/env-packs#440), so there is no requirement to check against.
+    """
 
     result = _probe(run, ["docker", "info", "--format", "{{.MemTotal}}"])
     raw = str(getattr(result, "stdout", "") or "").strip() if _ok(result) else ""
     if not raw.isdigit():
         return skipped("docker-memory", "the daemon did not report its memory")
     memory_gb = int(raw) / 10**9
-    if int(raw) > _FULL_STACK_MEMORY_BYTES:
-        return DoctorCheck(
-            "docker-memory",
-            CheckStatus.PASSED,
-            f"Docker can use {memory_gb:.1f} GB of memory.",
-        )
-    return DoctorCheck(
+    return skipped(
         "docker-memory",
-        CheckStatus.WARNING,
-        f"Docker can use {memory_gb:.1f} GB of memory; the full techvault stack "
-        "needs more than 20 GB.",
-        "Give Docker more memory (Docker Desktop: Settings > Resources; Colima: "
-        "`colima start --memory <GiB>`), or start a smaller environment.",
+        f"scenario {scenario} declares no memory requirement; Docker can use "
+        f"{memory_gb:.1f} GB",
     )
 
 

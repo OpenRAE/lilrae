@@ -197,7 +197,9 @@ def test_a_ready_host_passes_every_check(tmp_path, host):
 
     assert report.ok is True
     assert [check.check_id for check in report.checks] == list(_CHECK_IDS)
-    assert {check.status for check in report.checks} == {CheckStatus.PASSED}
+    statuses = {check.check_id: check.status for check in report.checks}
+    assert statuses.pop("docker-memory") is CheckStatus.SKIPPED
+    assert set(statuses.values()) == {CheckStatus.PASSED}
     assert all(check.fix == "" for check in report.checks)
     assert "Docker Engine 28.0.4" in _by_id(report)["docker-daemon"].summary
 
@@ -377,16 +379,10 @@ def test_doctor_changes_nothing_and_only_queries(tmp_path, host):
             (
                 "max-map-count",
                 CheckStatus.FAILED,
-                "vm.max_map_count is 65530; OpenSearch needs at least 262144",
+                "vm.max_map_count is 65530; lab start requires at least 262144",
                 "sudo sysctl -w vm.max_map_count=262144",
             ),
             id="low-max-map-count",
-        ),
-        pytest.param(
-            {"daemon": {"memory": str(8 * 10**9)}},
-            (),
-            ("docker-memory", CheckStatus.WARNING, "8.0 GB", "more memory"),
-            id="low-memory",
         ),
     ],
 )
@@ -409,6 +405,26 @@ def test_each_unmet_prerequisite_is_named_with_its_fix(
     assert summary in check.summary
     assert fix in check.fix
     assert report.ok is (status is not CheckStatus.FAILED)
+
+
+def test_memory_is_not_compared_to_a_threshold_no_scenario_declares(tmp_path, host):
+    """No env-pack declares a memory need, so doctor names the scenario and skips."""
+    host["daemon"] = _FakeDaemon(memory=str(8 * 10**9))
+    project = _project(
+        tmp_path,
+        '{"lab": {"name": "doctor"}, "scenario": {"identity": "example-pack"}}',
+    )
+
+    report = run_doctor(project, which=_which())
+
+    check = _by_id(report)["docker-memory"]
+    assert check.status is CheckStatus.SKIPPED
+    assert check.summary == (
+        "Not checked: scenario example-pack declares no memory requirement; "
+        "Docker can use 8.0 GB."
+    )
+    assert check.fix == ""
+    assert report.ok is True
 
 
 def _lab_start_compose_refusal(tmp_path, daemon, mocker):
@@ -446,15 +462,15 @@ def _lab_start_compose_refusal(tmp_path, daemon, mocker):
             CheckStatus.PASSED,
             "Docker Compose 2.24 is available.",
             "",
-            id="wazuh-floor",
+            id="compose-floor",
         ),
         pytest.param(
             "2.24.3",
             CheckStatus.WARNING,
             "Docker Compose 2.24.3 is older than 2.24.4, which lab start requires "
-            "for techvault",
+            "for a scenario that consumes generated certificates or volumes.",
             "Upgrade the Docker Compose plugin to 2.24.4 or newer.",
-            id="below-the-wazuh-floor",
+            id="below-the-compose-floor",
         ),
         pytest.param(
             "1.29.2",
@@ -468,11 +484,11 @@ def _lab_start_compose_refusal(tmp_path, daemon, mocker):
 def test_compose_is_read_the_way_lab_start_reads_it(
     tmp_path, host, mocker, answer, status, summary, fix
 ):
-    """A Compose that lab start accepts for techvault's Wazuh services passes.
+    """A Compose that lab start accepts passes.
 
     Doctor parses the answer with lab start's parser, so a distribution build
-    string passes. Older v2 releases that lab start refuses only for such a
-    scenario are a warning.
+    string passes. Older v2 releases that lab start refuses only for a scenario
+    that consumes generated certificates or volumes are a warning.
     """
     host["daemon"] = _FakeDaemon(compose=answer)
 
