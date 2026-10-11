@@ -24,8 +24,9 @@ the full rationale.
 - **OBS-003 capture stack**: auditd, acct (process accounting), tcpdump,
   bsdmainutils (provides `script(1)` for PTY recording)
 - **User**: `kali` with sudo privileges
-- **SSH**: Key-based authentication only. The `aptl-kali-capture` sidecar
-  shares the Kali network namespace and owns port 22. Its sshd accepts
+- **SSH**: Key-based authentication only. The Kali capture sidecar
+  (`aptl-w<id>-kali-capture`, named per workspace) shares the Kali network
+  namespace and owns port 22. Its sshd accepts
   `APTL_SESSION_ID`, `APTL_RUN_ID` and `APTL_TRACE_ID` from the MCP server.
   The Kali sshd listens on loopback port 2222 behind the sidecar.
 - **ForceCommand**: the sidecar sshd runs `/usr/local/bin/broker.py` for

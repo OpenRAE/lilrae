@@ -137,9 +137,17 @@ fi
 echo "--- verify ---"
 UP=$(docker ps -q --filter name=aptl- | wc -l)
 echo "containers up: $UP"
-KALI=$(docker exec aptl-kali sh -c 'echo KALI_OK' 2>/dev/null | tail -1)
+# The backend names each lab container per workspace (aptl-w<12 hex>-<name>).
+lab_container() {
+    docker ps --format '{{.Names}}' | grep -E "^aptl-(w[0-9a-f]{12}-)?$1\$" | head -1
+}
+KALI_CTR=$(lab_container kali)
+SURI_CTR=$(lab_container suricata)
+KALI=""
+[ -n "$KALI_CTR" ] && KALI=$(docker exec "$KALI_CTR" sh -c 'echo KALI_OK' 2>/dev/null | tail -1)
 echo "kali shell: ${KALI:-UNREACHABLE}"
-SURI=$(docker logs aptl-suricata 2>&1 | grep -a 'rules successfully loaded' | tail -1)
+SURI=""
+[ -n "$SURI_CTR" ] && SURI=$(docker logs "$SURI_CTR" 2>&1 | grep -a 'rules successfully loaded' | tail -1)
 echo "suricata: ${SURI:-no-rule-load-line}"
 BADCTRS=$(docker ps -a --filter name=aptl- --format '{{.Names}} {{.Status}}' | grep -iE 'unhealthy|Exited|Restarting' || true)
 [ -n "$BADCTRS" ] && echo "UNHEALTHY/EXITED:" && echo "$BADCTRS"
