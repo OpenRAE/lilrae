@@ -32,6 +32,12 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && \
     && rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Remove the unused Canonical pebble init helper. This image runs systemd as
+# PID 1, so pebble never runs. The ubuntu:26.04 image bakes the Go binary in
+# outside dpkg, and it carries net/http and crypto/tls advisories that no newer
+# base image fixes yet. Deleting dead code removes the attack surface.
+RUN rm -f /usr/bin/pebble
+
 RUN (cd /lib/systemd/system/sysinit.target.wants/; for i in *; do [ $i == systemd-tmpfiles-setup.service ] || rm -f $i; done); \
     rm -f /lib/systemd/system/multi-user.target.wants/*;\
     rm -f /etc/systemd/system/*.wants/*;\

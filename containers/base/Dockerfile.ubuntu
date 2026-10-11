@@ -29,6 +29,13 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && \
     && rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Remove the unused Canonical pebble init helper. These containers run systemd
+# as PID 1 (CMD /usr/sbin/init), so pebble never runs. The ubuntu:26.04 image
+# bakes it in outside dpkg, and its Go binary carries net/http and crypto/tls
+# advisories that no newer base image fixes yet. Deleting dead code removes the
+# attack surface instead of waiting on an upstream rebuild.
+RUN rm -f /usr/bin/pebble
+
 # Trim systemd for container usage
 RUN (cd /lib/systemd/system/sysinit.target.wants/; for i in *; do [ $i == systemd-tmpfiles-setup.service ] || rm -f $i; done); \
     rm -f /lib/systemd/system/multi-user.target.wants/*;\

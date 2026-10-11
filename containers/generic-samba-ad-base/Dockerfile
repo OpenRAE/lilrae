@@ -19,6 +19,11 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
     && apt-get clean \
     && find /var/lib/apt/lists -mindepth 1 -delete
 
+# Remove the unused Canonical pebble init helper (tini is PID 1 here). The
+# ubuntu:26.04 image bakes the Go binary in outside dpkg, and it carries
+# net/http and crypto/tls advisories that no newer base image fixes yet.
+RUN rm -f /usr/bin/pebble
+
 COPY provider-start.sh /usr/local/sbin/aptl-samba-provider-start
 COPY provision-domain.sh /usr/local/sbin/aptl-provision-samba-domain
 RUN chmod 0755 \

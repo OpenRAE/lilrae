@@ -112,3 +112,46 @@ vulnerabilities:
   - id: CVE-2026-85024
     purls: [pkg:npm/undici@6.28.0]
     statement: Bundled by npm 11.21.0; no npm release bundles undici >= 6.28.1 yet.
+  # Go net/http, crypto/tls, and html/template advisories embedded in the
+  # official caddy binary of the web image (FROM caddy:2-alpine). The caddy
+  # image was last built on 2026-10-06 with Go 1.26.8. Go 1.26.9 and 1.27.2
+  # fix these on 2026-10-08, but no rebuilt caddy image ships that Go yet. Each
+  # waiver pins the exact embedded Go version (1.26.8); when the caddy image
+  # rebuilds on a patched Go, the pin stops matching and the gate checks again.
+  - id: CVE-2026-56866
+    purls: [pkg:golang/stdlib@v1.26.8]
+    statement: Embedded in the official caddy:2-alpine binary, built with Go 1.26.8; no rebuilt caddy image ships Go >= 1.26.9 yet.
+  - id: CVE-2026-78663
+    purls: [pkg:golang/stdlib@v1.26.8]
+    statement: Embedded in the official caddy:2-alpine binary, built with Go 1.26.8; no rebuilt caddy image ships Go >= 1.26.9 yet.
+  - id: CVE-2026-78667
+    purls: [pkg:golang/stdlib@v1.26.8]
+    statement: Embedded in the official caddy:2-alpine binary, built with Go 1.26.8; no rebuilt caddy image ships Go >= 1.26.9 yet.
+  - id: CVE-2026-78669
+    purls: [pkg:golang/stdlib@v1.26.8]
+    statement: Embedded in the official caddy:2-alpine binary, built with Go 1.26.8; no rebuilt caddy image ships Go >= 1.26.9 yet.
+  - id: CVE-2026-94439
+    purls: [pkg:golang/stdlib@v1.26.8]
+    statement: Embedded in the official caddy:2-alpine binary, built with Go 1.26.8; no rebuilt caddy image ships Go >= 1.26.9 yet.
+  - id: CVE-2026-94448
+    purls: [pkg:golang/stdlib@v1.26.8]
+    statement: Embedded in the official caddy:2-alpine binary, built with Go 1.26.8; no rebuilt caddy image ships Go >= 1.26.9 yet.
+  - id: CVE-2026-97031
+    purls: [pkg:golang/stdlib@v1.26.8]
+    statement: Embedded in the official caddy:2-alpine binary, built with Go 1.26.8; no rebuilt caddy image ships Go >= 1.26.9 yet.
+  - id: CVE-2026-97032
+    purls: [pkg:golang/stdlib@v1.26.8]
+    statement: Embedded in the official caddy:2-alpine binary, built with Go 1.26.8; no rebuilt caddy image ships Go >= 1.26.9 yet.
+  # golang.org/x/net/http2 advisories in the same caddy binary. caddy v2.11.7
+  # pins golang.org/x/net v0.59.0; v0.60.0 fixes these, and caddy master has
+  # taken the bump, but no caddy release ships it yet. The pin on v0.59.0 stops
+  # matching once a caddy release builds against x/net >= 0.60.0.
+  - id: CVE-2026-78663
+    purls: [pkg:golang/golang.org/x/net@v0.59.0]
+    statement: Embedded in the official caddy:2-alpine binary via caddy v2.11.7; no caddy release builds against golang.org/x/net >= 0.60.0 yet.
+  - id: CVE-2026-78669
+    purls: [pkg:golang/golang.org/x/net@v0.59.0]
+    statement: Embedded in the official caddy:2-alpine binary via caddy v2.11.7; no caddy release builds against golang.org/x/net >= 0.60.0 yet.
+  - id: CVE-2026-97032
+    purls: [pkg:golang/golang.org/x/net@v0.59.0]
+    statement: Embedded in the official caddy:2-alpine binary via caddy v2.11.7; no caddy release builds against golang.org/x/net >= 0.60.0 yet.
