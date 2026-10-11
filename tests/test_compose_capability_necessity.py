@@ -45,6 +45,7 @@ from aptl.backends import _raes_backend_implementation_profiles as profiles
 from aptl.backends._raes_backend_implementation_images import SAMBA_AD_BASE_IMAGE
 from aptl.backends.raes_node_materialization import realize_node
 from aptl.core.deployment.docker_compose import DockerComposeBackend
+from tests.techvault_pack import realize_techvault_pack
 
 PROJECT_ROOT = Path(__file__).parents[1]
 
@@ -73,6 +74,12 @@ def test_the_samba_capability_rationale_is_recorded_beside_the_grant():
 
     assert "security.NTACL" in source
     assert "955" in source
+
+
+@pytest.fixture(scope="module")
+def rendered_techvault(tmp_path_factory):
+    """The pinned TechVault pack, realized once per module without Docker."""
+    return realize_techvault_pack(tmp_path_factory.mktemp("rendered-techvault"))
 
 
 class _StartRecorder:

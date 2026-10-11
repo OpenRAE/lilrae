@@ -6,9 +6,8 @@ interpreted by ``interpret_provisioning_plan()``, which the provisioner runs on
 start. Nothing boots.
 
 Deliberately import-safe: unlike ``tests.helpers`` it reads no project ``.env``
-and runs no lab script, so ``conftest.py`` or a test module may import it at
-collection time. Named without a ``test_`` prefix so pytest does not collect
-it.
+and runs no lab script, so a test module may import it at collection time.
+Named without a ``test_`` prefix so pytest does not collect it.
 """
 
 from __future__ import annotations
