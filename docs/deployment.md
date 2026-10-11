@@ -134,11 +134,14 @@ own `docker-compose.yml`: the one in the project directory. APTL uses that file
 unchanged as the base Compose model. Its `${NAME}` references resolve from
 `.env` and from the variables that the `docker compose` process keeps, such as
 the `APTL_*` settings, so it can pass any `.env` value to whatever image the
-scenario picks. Run only a scenario you trust from the project tree. The file's
-services take no grant or startup-adapter value: those apply only to the
-scenario's base-container nodes. A generated-artifact output still reaches each
-service that declares it, through the artifact's own env file. APTL refuses an
-environment pack that ships a `docker-compose.yml` at its root.
+scenario picks. Run only a scenario you trust from the project tree. Neither
+the file's services nor the scenario's base-container nodes take a grant or
+startup-adapter value, because a project-tree scenario has no pack identity. A
+value-less `operator_secret`, `redacted` or `secret_fixture` variable on a
+base-container node therefore stops `aptl lab start`. A generated-artifact
+output still reaches each service that declares it, through the artifact's own
+env file. APTL refuses an environment pack that ships a `docker-compose.yml` at
+its root.
 
 A grant names the admitted pack's identifier, the consuming node, the variable
 that node declares, and the source. The source is either an exact variable of
