@@ -1585,7 +1585,7 @@ def _step_resolve_host_ports(ctx: _LabStartContext) -> LabResult | None:
 
     Docker Compose aborts the whole ``up`` if it cannot bind a requested host
     port, and on Windows/macOS other software routinely holds ports the lab
-    wants (mDNS on 5353, an editor's port-forwarding, etc.). This probes each
+    wants (an editor's port-forwarding, another app, etc.). This probes each
     published port and, for any that are taken, exports a free alternate through
     the ``${VAR:-default}`` indirection Compose reads from the environment — so
     startup succeeds and the access summary can report the real port. Ports the
