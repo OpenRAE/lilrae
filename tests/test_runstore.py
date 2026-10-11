@@ -454,6 +454,18 @@ class TestSessionScopedHelpers:
             with pytest.raises(ValueError):
                 store.mcp_session_jsonl("run-A", bad)
 
+    def test_id_validation_rejects_non_ascii_word_characters(self, tmp_path):
+        # The capture broker, the capture writer and the MCP ID_RE accept
+        # only ASCII. A Unicode-aware `\w` here would admit ids that every
+        # other layer of the OBS-003 contract rejects.
+        store = LocalRunStore(tmp_path / "runs")
+
+        for bad in ["sess-\u00e9", "\u0663run", "run-\u4e00"]:
+            with pytest.raises(ValueError):
+                store.kali_side_session_dir("run-A", bad)
+            with pytest.raises(ValueError):
+                store.mcp_side_dir(bad)
+
     def test_run_id_validation_rejects_path_traversal(self, tmp_path):
         store = LocalRunStore(tmp_path / "runs")
 

@@ -24,13 +24,14 @@ the full rationale.
 - **OBS-003 capture stack**: auditd, acct (process accounting), tcpdump,
   bsdmainutils (provides `script(1)` for PTY recording)
 - **User**: `kali` with sudo privileges
-- **SSH**: Key-based authentication only (port 22, lab-internal; no host port is published);
-  `AcceptEnv APTL_*` enabled so the MCP server can pass
-  `APTL_SESSION_ID` / `APTL_RUN_ID` / `APTL_TRACE_ID` into the shell.
-- **ForceCommand**: every `kali` user SSH session is wrapped through
-  `/usr/local/bin/aptl-wrap-shell.sh`, which starts per-session
-  `script` + `tcpdump` and execs the agent's command (or an
-  interactive bash).
+- **SSH**: Key-based authentication only. The `aptl-kali-capture` sidecar
+  shares the Kali network namespace and owns port 22. Its sshd accepts
+  `APTL_SESSION_ID`, `APTL_RUN_ID` and `APTL_TRACE_ID` from the MCP server.
+  The Kali sshd listens on loopback port 2222 behind the sidecar.
+- **ForceCommand**: the sidecar sshd runs `/usr/local/bin/broker.py` for
+  every `kali` session. The broker records the session transcript in the
+  sidecar and relays the session to the Kali sshd. It refuses the session
+  when no capture authority is active.
 
 See [containers/kali/Dockerfile](https://github.com/OpenRAE/lilrae/blob/main/containers/kali/Dockerfile) for
 complete build configuration.
