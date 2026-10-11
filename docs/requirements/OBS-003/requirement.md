@@ -50,8 +50,6 @@ Current tracing records tool invocations but not the reasoning behind them. Unde
 - TESTS → TEST `mcp/aptl-mcp-common/tests/tools-handlers.test.ts` (assertSessionIdContract rejection across handlers + close_session/close_all_sessions envelope)
 - TESTS → TEST `mcp/mcp-red/tests/capture.test.ts` (Per-run tool-call JSONL routing + result-content content-equality + experimentalRedact)
 - TESTS → TEST `mcp/mcp-red/tests/logger.test.ts` (localOcsfJsonlSink + defaultRedTeamSinks + sink-error return-value contract)
-- IMPLEMENTS → CODE_FILE `containers/kali-capture/writer.py` (Kali capture sidecar writer daemon: connection-owned per-session typescript + tcpdump, abstract-socket RPC (ADR-041))
-- TESTS → TEST `tests/test_kali_capture_writer.py` (Unit tests for the capture sidecar writer: id/frame validation, connection ownership, reopen-refuse, pcap lifecycle)
 - TESTS → TEST `tests/test_kali_capture_compose.py` (Compose-consistency tests for the ADR-041 boundary: no kali mount, sidecar caps/namespaces/ports)
 - IMPLEMENTS → CODE_FILE `mcp/aptl-mcp-common/src/ssh-session.ts` (Continuous PTY tee + SendEnv APTL_* + boundRunId in PersistentSession (split from ssh.ts, issue #790))
 - IMPLEMENTS → CODE_FILE `scenarios/techvault-operational.sdl.yaml` (kali node runtime: capsh CAP_AUDIT_CONTROL drop + AcceptEnv/ForceCommand capture-wrapper bootstrap (containers/kali Dockerfile/entrypoint/healthcheck retired, issue #581))

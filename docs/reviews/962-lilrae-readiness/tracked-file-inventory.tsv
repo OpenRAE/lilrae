@@ -152,7 +152,6 @@ containers/kali-capture/Dockerfile	split-pack-delivery	Inventory exact content o
 containers/kali-capture/broker.py	backend-substrate	Post-baseline capture apparatus; retain with evidence custody authority
 containers/kali-capture/entrypoint.sh	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/kali-capture/sshd_config	backend-substrate	Post-baseline capture apparatus; retain with evidence custody authority
-containers/kali-capture/writer.py	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/kali/audit/aptl.rules	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/keys/aptl_lab_key.pub	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/keys/authorized_keys	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
@@ -1485,7 +1484,6 @@ tests/test_base_container_admission_integration.py	tests-follow-owner	Retain mea
 tests/test_realization_declaration_gate_contract.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_in_process_agents.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_kali_capture_compose.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
-tests/test_kali_capture_writer.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_kill.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_lab.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_lab_core_only_artifact.py	tests-follow-owner	Installed wheel smoke proof for optional startup isolation
