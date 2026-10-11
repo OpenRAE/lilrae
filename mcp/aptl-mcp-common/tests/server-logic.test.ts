@@ -91,6 +91,34 @@ const queryConfig = {
   }
 };
 
+// The shape of mcp-wazuh's `create_detection_rule` query: the rules file
+// name is a path parameter and the rules XML is a raw string body.
+const ruleFileConfig = {
+  ...apiConfig,
+  queries: {
+    create_detection_rule: {
+      url: 'https://wazuh.example:55000/rules/files/{filename}',
+      method: 'PUT',
+      path_param_patterns: { filename: '[A-Za-z0-9][A-Za-z0-9_.-]*\\.xml' },
+      description: 'Upload a custom Wazuh rules file'
+    }
+  }
+};
+
+const RULE_XML = [
+  '<group name="custom,">',
+  '  <rule id="100100" level="10">',
+  '    <if_sid>5710</if_sid>',
+  '    <description>SSH login for "admin" from $(id)</description>',
+  '  </rule>',
+  '</group>',
+].join('\n');
+
+// Neither branch of the API tools' `body: anyOf [object, string]` admits the
+// value, so Ajv reports both branches and the anyOf itself.
+const BODY_TYPE_VIOLATION = 'arguments/body must be object; arguments/body must be string; '
+  + 'arguments/body must match a schema in anyOf';
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -226,6 +254,11 @@ describe('tool arguments over an MCP transport', () => {
       'arguments/method must be equal to one of the allowed values'],
     ['a query parameter string instead of an object', queryConfig, 'wazuh_query_alerts', { params: 'size=1' },
       'arguments/params must be object'],
+    ['a number for an API request body', apiConfig, 'wazuh_api_call', { endpoint: '/agents', method: 'POST', body: 42 },
+      BODY_TYPE_VIOLATION],
+    ['a list for a raw rules body', ruleFileConfig, 'wazuh_create_detection_rule',
+      { params: { filename: 'custom_rules.xml' }, body: [RULE_XML] }, BODY_TYPE_VIOLATION],
+    ['a null query body', queryConfig, 'wazuh_query_alerts', { body: null }, BODY_TYPE_VIOLATION],
   ])('refuses %s before any trace span, hook or backend operation', async (_label, config, tool, args, violation) => {
     const hook = vi.fn();
     const client = await connect(config, { postToolHook: hook });
@@ -339,6 +372,29 @@ describe('tool arguments over an MCP transport', () => {
       'https://indexer.example:9200/wazuh-alerts-*/_search',
       'POST',
       { params: {}, body: { size: 1, query: { match: { 'rule.id': '5710' } } }, responseType: 'json' },
+    );
+  });
+
+  it.each([
+    ['the API call tool', apiConfig, 'wazuh_api_call',
+      { endpoint: '/rules/files/custom_rules.xml', method: 'PUT', params: { overwrite: true }, body: RULE_XML },
+      '/rules/files/custom_rules.xml'],
+    ['a predefined query', ruleFileConfig, 'wazuh_create_detection_rule',
+      { params: { filename: 'custom_rules.xml', overwrite: true }, body: RULE_XML },
+      'https://wazuh.example:55000/rules/files/custom_rules.xml'],
+  ])('dispatches a raw-string body through %s unchanged', async (_label, config, tool, args, url) => {
+    fakes.http.makeRequest.mockResolvedValue({ status: 200, data: { error: 0 } });
+    const client = await connect(config);
+
+    const result = await client.callTool({ name: tool, arguments: args });
+
+    expect(result.isError).not.toBe(true);
+    expect(payload(result)).toMatchObject({ success: true, status: 200 });
+    expect(fakes.http.makeRequest).toHaveBeenCalledTimes(1);
+    expect(fakes.http.makeRequest).toHaveBeenCalledWith(
+      url,
+      'PUT',
+      { params: { overwrite: true }, body: RULE_XML, responseType: 'json' },
     );
   });
 
