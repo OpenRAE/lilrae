@@ -42,6 +42,8 @@ def kill_command(
     # Print summary
     if result.mcp_processes_killed > 0:
         typer.echo(f"Killed {result.mcp_processes_killed} MCP server process(es).")
+    elif result.mcp_discovery_unavailable:
+        typer.echo("Could not look for MCP server processes.")
     else:
         typer.echo("No MCP server processes found.")
 

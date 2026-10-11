@@ -59,10 +59,15 @@ class KillResult:
 
     success: bool
     mcp_processes_killed: int = 0
+    mcp_discovery_unavailable: bool = False
     containers_stopped: bool = False
     session_cleared: bool = False
     trace_context_cleaned: bool = False
     errors: list[str] = field(default_factory=list)
+
+
+class McpDiscoveryUnavailableError(RuntimeError):
+    """This host offers no way to look for MCP server processes."""
 
 
 def find_mcp_processes() -> list[McpProcess]:
@@ -75,6 +80,10 @@ def find_mcp_processes() -> list[McpProcess]:
     Returns:
         List of dicts with keys ``pid`` (int), ``cmdline`` (str), and
         ``name`` (str, the matched server name).
+
+    Raises:
+        McpDiscoveryUnavailableError: ``pgrep`` is needed but cannot run,
+            as on native Windows.
     """
     if sys.platform == "linux":
         return _find_via_proc()
@@ -119,7 +128,11 @@ def _find_via_proc() -> list[McpProcess]:
 
 
 def _find_via_pgrep() -> list[McpProcess]:
-    """Discover MCP processes using pgrep (non-Linux fallback)."""
+    """Discover MCP processes using pgrep (non-Linux fallback).
+
+    A ``pgrep`` that cannot run raises instead of returning an empty list:
+    a host that cannot look must not report that no MCP server is running.
+    """
     found: list[McpProcess] = []
     for name in MCP_SERVER_NAMES:
         pattern = f"{name}/build/index.js"
@@ -133,7 +146,15 @@ def _find_via_pgrep() -> list[McpProcess]:
                 for line in result.stdout.strip().splitlines():
                     pid = int(line.strip())
                     found.append({"pid": pid, "cmdline": pattern, "name": name})
-        except (OSError, ValueError):
+        except OSError as exc:
+            raise McpDiscoveryUnavailableError(
+                "MCP process discovery is unavailable: pgrep could not run "
+                f"({exc}). Any MCP servers that are running were not stopped; "
+                "end each node process running an mcp-*/build/index.js server "
+                "by hand, for example with Task Manager or Stop-Process on "
+                "Windows."
+            ) from exc
+        except ValueError:
             continue
     return found
 
@@ -241,6 +262,10 @@ def kill_mcp_processes(
 
     Returns:
         Tuple of (number of processes killed, list of error messages).
+
+    Raises:
+        McpDiscoveryUnavailableError: The host cannot look for MCP server
+            processes, so none was signalled.
     """
     processes = find_mcp_processes()
     if not processes:
@@ -430,9 +455,15 @@ def _execute_kill_owned(containers: bool, resolved_dir: Path) -> KillResult:
 
     # Step 1: Kill MCP processes (highest priority)
     mcp_killed = 0
+    mcp_discovery_unavailable = False
     try:
         mcp_killed, mcp_errors = kill_mcp_processes()
         errors.extend(mcp_errors)
+    except McpDiscoveryUnavailableError as exc:
+        mcp_discovery_unavailable = True
+        msg = str(exc)
+        log.error(msg)
+        errors.append(msg)
     except Exception as exc:
         msg = f"MCP process kill failed: {exc}"
         log.error(msg)
@@ -471,15 +502,17 @@ def _execute_kill_owned(containers: bool, resolved_dir: Path) -> KillResult:
         errors.append(msg)
 
     # Success if any step accomplished something, or if there was simply
-    # nothing to kill (no errors).
+    # nothing to kill (no errors). A kill that could not look for MCP servers
+    # fails either way: the servers it exists to stop may still be running.
     any_action = (
         mcp_killed > 0 or containers_stopped or session_cleared or trace_cleaned
     )
-    success = any_action or len(errors) == 0
+    success = (any_action or len(errors) == 0) and not mcp_discovery_unavailable
 
     result = KillResult(
         success=success,
         mcp_processes_killed=mcp_killed,
+        mcp_discovery_unavailable=mcp_discovery_unavailable,
         containers_stopped=containers_stopped,
         session_cleared=session_cleared,
         trace_context_cleaned=trace_cleaned,

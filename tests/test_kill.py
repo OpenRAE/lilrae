@@ -201,6 +201,32 @@ class TestFindMcpProcesses:
         assert result[0]["pid"] == 12345
         assert result[0]["name"] == "mcp-wazuh"
 
+    @pytest.mark.parametrize("platform", ["win32", "linux"])
+    @patch("aptl.core.kill.os.listdir", side_effect=PermissionError("/proc"))
+    @patch("aptl.core.kill.sys")
+    def test_missing_pgrep_is_not_reported_as_no_processes(
+        self, mock_sys, mock_listdir, platform, tmp_path, monkeypatch
+    ):
+        """Issue #1295: a host without pgrep cannot look for MCP servers.
+
+        PATH holds no pgrep, so subprocess raises the FileNotFoundError that
+        native Windows raises. On Linux the same happens once /proc cannot be
+        listed. An empty list here would tell the kill that nothing runs.
+        """
+        from aptl.core.kill import McpDiscoveryUnavailableError, find_mcp_processes
+
+        mock_sys.platform = platform
+        monkeypatch.setenv("PATH", str(tmp_path))
+
+        with pytest.raises(McpDiscoveryUnavailableError) as excinfo:
+            find_mcp_processes()
+
+        # Linux reaches pgrep only after /proc cannot be listed.
+        assert mock_listdir.called is (platform == "linux")
+        assert isinstance(excinfo.value.__cause__, FileNotFoundError)
+        assert "pgrep could not run" in str(excinfo.value)
+        assert "mcp-*/build/index.js server by hand" in str(excinfo.value)
+
 
 class TestKillMcpProcesses:
     """Tests for SIGTERM/SIGKILL process termination."""
@@ -659,3 +685,52 @@ class TestExecuteKill:
         assert result.trace_context_cleaned is True
         mock_session.assert_called_once()
         mock_trace.assert_called_once()
+
+    @pytest.mark.parametrize("trace_context_present", [False, True])
+    @patch("aptl.core.kill.sys")
+    def test_fails_when_pgrep_is_missing(
+        self, mock_sys, trace_context_present, tmp_path, monkeypatch
+    ):
+        """Issue #1295: without pgrep the kill could not look for MCP servers.
+
+        It fails and says why even when another step acted (here, removing
+        the trace context), because the MCP servers may still be running.
+        """
+        from aptl.core.kill import execute_kill
+
+        mock_sys.platform = "win32"
+        empty_bin = tmp_path / "empty-bin"
+        empty_bin.mkdir()
+        monkeypatch.setenv("PATH", str(empty_bin))
+        project = tmp_path / "project"
+        (project / ".aptl").mkdir(parents=True)
+        if trace_context_present:
+            (project / ".aptl" / "trace-context.json").write_text("{}")
+
+        result = execute_kill(containers=False, project_dir=project)
+
+        assert result.success is False
+        assert result.mcp_discovery_unavailable is True
+        assert result.mcp_processes_killed == 0
+        assert result.trace_context_cleaned is trace_context_present
+        assert len(result.errors) == 1
+        assert "pgrep could not run" in result.errors[0]
+
+    @patch("aptl.core.kill.sys")
+    @patch("aptl.core.kill.subprocess.run")
+    def test_succeeds_when_pgrep_matches_nothing(self, mock_run, mock_sys, tmp_path):
+        """pgrep ran for every server and matched none: a real empty result."""
+        from aptl.core.kill import MCP_SERVER_NAMES, execute_kill
+
+        mock_sys.platform = "darwin"
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["pgrep"], returncode=1, stdout="", stderr=""
+        )
+
+        result = execute_kill(containers=False, project_dir=tmp_path)
+
+        assert mock_run.call_count == len(MCP_SERVER_NAMES)
+        assert result.success is True
+        assert result.mcp_discovery_unavailable is False
+        assert result.mcp_processes_killed == 0
+        assert result.errors == []
