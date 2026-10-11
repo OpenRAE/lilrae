@@ -195,6 +195,23 @@ class LabResult:
         self.success = self.outcome is not StartupOutcome.FAILED
 
 
+@dataclass(frozen=True)
+class LabResetResult:
+    """Outcome of ``aptl lab reset`` (#1218).
+
+    ``result`` is the project-scoped teardown with volume removal and pending
+    host-side cleanup, the same work as ``aptl lab stop -v``. The counts are the
+    containers and networks of the workspace-scoped project that teardown
+    removes, observed just before it, and zero when no start recorded that
+    scope. They are ``None`` when that observation failed or the reset never
+    reached it.
+    """
+
+    result: LabResult
+    containers_found: int | None = None
+    networks_found: int | None = None
+
+
 @dataclass
 class LabStatus:
     """Current status of the lab environment."""
