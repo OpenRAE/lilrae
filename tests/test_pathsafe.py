@@ -89,6 +89,28 @@ class TestHappyPath:
         finally:
             nested.chmod(0o700)
 
+    def test_traverses_with_o_search_where_o_path_is_missing(
+        self, tmp_path, monkeypatch
+    ):
+        # macOS has O_SEARCH but no O_PATH. The walk must use O_SEARCH there,
+        # because O_RDONLY cannot open an execute-only directory.
+        o_search = 0x40000000
+        opened_flags = []
+        real_open = os.open
+
+        def recording_open(path, flags, *args, **kwargs):
+            opened_flags.append(flags)
+            return real_open(path, flags & ~o_search, *args, **kwargs)
+
+        (tmp_path / "private-names").mkdir()
+        (tmp_path / "private-names" / "binding.json").write_bytes(b"{}")
+        monkeypatch.delattr(os, "O_PATH", raising=False)
+        monkeypatch.setattr(os, "O_SEARCH", o_search, raising=False)
+        monkeypatch.setattr(os, "open", recording_open)
+
+        assert read_contained_nofollow(tmp_path, "private-names/binding.json") == b"{}"
+        assert any(flags & o_search for flags in opened_flags)
+
     def test_open_contained_nofollow_returns_a_closeable_binary_handle(self, tmp_path):
         (tmp_path / "f.txt").write_bytes(b"payload")
 
