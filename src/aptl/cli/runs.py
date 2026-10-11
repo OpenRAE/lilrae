@@ -8,14 +8,21 @@ from rich.console import Console
 from rich.table import Table
 
 from aptl.cli._common import resolve_run_store
+from aptl.core.archival import SealVerificationError
 from aptl.core.archival.legacy_manifest import summarize_manifest
 from aptl.core.runstore import LocalRunStore
 from aptl.utils.logging import get_logger
+from aptl.utils.pathsafe import PathContainmentError
 
 log = get_logger("cli.runs")
 
 app = typer.Typer(help="Experiment run management.")
 console = Console()
+
+#: Errors with which the export refuses a run whose seal it cannot verify: the
+#: sealed bytes or marker no longer match (``SealVerificationError``), or a run
+#: file cannot be opened safely, for example a symlink (``PathContainmentError``).
+_SEAL_REFUSALS = (SealVerificationError, PathContainmentError)
 
 
 def _get_store(project_dir: Path) -> LocalRunStore:
@@ -198,6 +205,23 @@ def _resolve_run_id(store: LocalRunStore, run_id: str) -> str:
     return matches[0]
 
 
+def _export_refused(run_id: str, exc: Exception) -> typer.Exit:
+    """Print a refused export as one line on stderr and return the exit to raise.
+
+    The reason can quote a path from the tampered run, so characters that are
+    not printable are escaped: they cannot break the line or reach the terminal.
+    """
+    line = f"Error: refused to export run {run_id}: {exc}"
+    typer.echo(
+        "".join(
+            ch if ch.isprintable() else ch.encode("unicode_escape").decode("ascii")
+            for ch in line
+        ),
+        err=True,
+    )
+    return typer.Exit(code=1)
+
+
 @app.command("export")
 def export_run(
     run_id: str = typer.Argument(help="Run UUID (full or prefix)."),
@@ -237,8 +261,13 @@ def export_run(
         except ImportError as e:
             typer.echo(f"Error: {e}")
             raise typer.Exit(code=1)
+        except _SEAL_REFUSALS as exc:
+            raise _export_refused(resolved_id, exc) from exc
     else:
-        archive = export_local(store, resolved_id, output_dir)
+        try:
+            archive = export_local(store, resolved_id, output_dir)
+        except _SEAL_REFUSALS as exc:
+            raise _export_refused(resolved_id, exc) from exc
         typer.echo(f"Exported to: {archive}")
 
 
