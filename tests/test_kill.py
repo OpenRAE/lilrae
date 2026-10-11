@@ -27,6 +27,13 @@ _skip_no_sigkill = pytest.mark.skipif(
     reason="SIGKILL escalation is POSIX-only (Windows uses TerminateProcess)",
 )
 
+# The container kill reads the operator-group state through the pathsafe walk,
+# which needs os.O_DIRECTORY, so it fails on native Windows (#1315).
+_skip_no_posix_pathsafe = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="container kill reads state through the POSIX-only pathsafe walk (#1315)",
+)
+
 
 class TestFindMcpProcesses:
     """Tests for MCP server process discovery."""
@@ -414,6 +421,7 @@ class TestKillMcpProcesses:
         assert errors == []
 
 
+@_skip_no_posix_pathsafe
 class TestKillLabContainers:
     """Tests for emergency container stop."""
 
