@@ -400,6 +400,139 @@ describe('OBS-003: SendEnv + continuous PTY tee', () => {
   });
 });
 
+describe('#1290: one-shot exec timeout stops the remote command', () => {
+  // SSHConnectionManager.executeCommand backs run_command. When its timer
+  // fires, the remote command must be stopped and its channel closed, not
+  // left running and streaming into a buffer nobody reads.
+  let tmp = '';
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    const { mkdtempSync } = require('node:fs');
+    const { tmpdir } = require('node:os');
+    const { join } = require('node:path');
+    // The exec path tees every chunk into a per-session JSONL under the
+    // state directory; keep it out of the source tree.
+    tmp = mkdtempSync(join(tmpdir(), 'aptl-ssh-exec-timeout-'));
+    process.env.APTL_STATE_DIR = tmp;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    const { rmSync } = require('node:fs');
+    rmSync(tmp, { recursive: true, force: true });
+    delete process.env.APTL_STATE_DIR;
+  });
+
+  // Stand-in for ssh2's ClientChannel. A real server answers close() later
+  // with the channel's 'close' event, so the tests emit that themselves.
+  const execChannel = () =>
+    Object.assign(new EventEmitter(), {
+      stderr: new EventEmitter(),
+      signal: vi.fn(),
+      close: vi.fn(),
+    });
+
+  type OpenChannel = (err: Error | undefined, channel: unknown) => void;
+
+  // Runs a command through a connection whose exec() hands its callback to
+  // `open`, so each test decides when the server opens the channel.
+  const run = (open: (callback: OpenChannel) => void) => {
+    const manager = new SSHConnectionManager();
+    (manager as any).createConnection = vi.fn(async () => ({
+      exec: vi.fn((_command: string, _options: unknown, callback: OpenChannel) => open(callback)),
+    }));
+    return manager
+      .executeCommand('target', 'kali', '/key', 'nmap -sV 10.0.0.5', 22, 5000, { sessionId: 'exec-timeout' })
+      .catch((e: unknown) => e);
+  };
+
+  // Directions of the chunks the exec path teed into its capture JSONL.
+  const teed = (): string[] => {
+    const { readFileSync } = require('node:fs');
+    const { join } = require('node:path');
+    const file = join(tmp, 'runs', '_unbound', 'mcp-side', 'sessions', 'exec-timeout.jsonl');
+    return readFileSync(file, 'utf-8').split('\n').filter(Boolean).map((line: string) => JSON.parse(line).dir);
+  };
+
+  it('signals the command, closes the channel and stops buffering when the timer fires', async () => {
+    const channel = execChannel();
+    const outcome = run((open) => open(undefined, channel));
+    await vi.advanceTimersByTimeAsync(4999);
+    const early = Buffer.from('Starting Nmap\n');
+    const decodeEarly = vi.spyOn(early, 'toString');
+    channel.emit('data', early);
+    expect(decodeEarly).toHaveBeenCalled();
+    expect(channel.close).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    const err = await outcome;
+    expect(err).toBeInstanceOf(SSHError);
+    expect((err as SSHError).message).toBe('Command timeout after 5000ms: nmap -sV 10.0.0.5');
+    expect(channel.signal).toHaveBeenCalledWith('TERM');
+    expect(channel.close).toHaveBeenCalledTimes(1);
+    // ssh2 sends a signal only on an open channel, so it has to come first.
+    expect(channel.signal.mock.invocationCallOrder[0]).toBeLessThan(channel.close.mock.invocationCallOrder[0]);
+
+    // Output still in flight before the server's close is not buffered, but
+    // the capture tee keeps every chunk the channel delivered.
+    const late = Buffer.from('Discovered open port 22/tcp\n');
+    const decodeLate = vi.spyOn(late, 'toString');
+    channel.emit('data', late);
+    channel.stderr.emit('data', late);
+    channel.emit('close', null, 'TERM');
+    expect(decodeLate).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(teed()).toEqual(['out', 'out', 'err']));
+  });
+
+  it('stops a channel the server opens only after the timer fired', async () => {
+    const channel = execChannel();
+    let openLate: OpenChannel | undefined;
+    const outcome = run((open) => {
+      openLate = open;
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await outcome).toBeInstanceOf(SSHError);
+
+    openLate?.(undefined, channel);
+    expect(channel.signal).toHaveBeenCalledWith('TERM');
+    expect(channel.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('still rejects when ssh2 throws because the connection is already gone', async () => {
+    // ssh2 throws from signal() and close() once its connection is torn
+    // down. That must not escape the timer callback and crash the server.
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const channel = execChannel();
+    channel.signal.mockImplementation(() => {
+      throw new Error('Instance unusable after fatal error');
+    });
+    const outcome = run((open) => open(undefined, channel));
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(await outcome).toBeInstanceOf(SSHError);
+    expect(log).toHaveBeenCalledWith('[SSH] could not stop a timed-out command:', expect.any(Error));
+  });
+
+  it('leaves a command that finishes in time alone', async () => {
+    const channel = execChannel();
+    const outcome = run((open) => open(undefined, channel));
+    await vi.advanceTimersByTimeAsync(0);
+    channel.emit('data', Buffer.from('Nmap done\n'));
+    channel.stderr.emit('data', Buffer.from('warning\n'));
+    channel.emit('close', 0, null);
+
+    expect(await outcome).toEqual({
+      stdout: 'Nmap done\n', stderr: 'warning\n', code: 0, signal: null, sessionId: 'exec-timeout', mode: 'normal',
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(channel.signal).not.toHaveBeenCalled();
+    expect(channel.close).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(teed()).toEqual(['out', 'err']));
+  });
+});
+
 describe('Session Cleanup and Timeout Handling', () => {
   let mockStream: EventEmitter & { write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn>; stderr: EventEmitter };
   let mockClient: any;
