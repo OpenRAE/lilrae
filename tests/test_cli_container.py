@@ -372,7 +372,7 @@ class TestContainerShellKaliCaptureRefusal:
 
     @pytest.mark.parametrize("selector", _KALI_SELECTORS)
     def test_capture_refuses_every_selector_of_kali(
-        self, runner, project_dir, owned_lab, selector
+        self, runner, project_dir, owned_lab, selector, caplog
     ):
         selectors, calls = owned_lab
         self._admit_capture(project_dir)
@@ -381,6 +381,10 @@ class TestContainerShellKaliCaptureRefusal:
 
         assert calls == []
         assert result.exit_code == 1
+        # A crash or the project-membership rejection also exits 1 without a
+        # docker exec, so pin a clean exit and the refusal reason.
+        assert isinstance(result.exception, SystemExit)
+        assert "Direct Kali container TTY refused" in caplog.text
 
     @pytest.mark.parametrize("selector", _KALI_SELECTORS)
     def test_every_selector_opens_kali_without_capture(
