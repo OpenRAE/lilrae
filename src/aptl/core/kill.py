@@ -16,7 +16,7 @@ from aptl.core.lifecycle_guard import (
     lifecycle_mutation_lock,
 )
 from aptl.core.lifecycle_policy import LifecycleBusyError
-from aptl.core.session import ScenarioSession
+from aptl.core.session import clean_trace_context, clear_session
 from aptl.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -49,8 +49,6 @@ MCP_SERVER_NAMES = [
     "mcp-network",
     "mcp-threatintel",
 ]
-
-_TRACE_CONTEXT_FILENAME = "trace-context.json"
 
 
 @dataclass
@@ -369,44 +367,6 @@ def _kill_backend(
             else:
                 resolved_backend = get_backend(config, project_dir)
     return resolved_backend, error
-
-
-def clear_session(state_dir: Path) -> bool:
-    """Clear any active scenario session.
-
-    Args:
-        state_dir: Path to the ``.aptl/`` state directory.
-
-    Returns:
-        True if a session was cleared, False if none existed.
-    """
-    session_mgr = ScenarioSession(state_dir)
-    active = session_mgr.get_active()
-    if active is None:
-        log.debug("No active session to clear")
-        return False
-
-    log.info("Clearing active session for scenario '%s'", active.scenario_id)
-    session_mgr.clear()
-    return True
-
-
-def clean_trace_context(state_dir: Path) -> bool:
-    """Remove the trace context file if it exists.
-
-    Args:
-        state_dir: Path to the ``.aptl/`` state directory.
-
-    Returns:
-        True if the file was removed, False if it did not exist.
-    """
-    trace_file = state_dir / _TRACE_CONTEXT_FILENAME
-    if trace_file.exists():
-        trace_file.unlink()
-        log.info("Removed trace context file: %s", trace_file)
-        return True
-    log.debug("No trace context file at %s", trace_file)
-    return False
 
 
 def execute_kill(
