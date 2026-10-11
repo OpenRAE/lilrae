@@ -14,6 +14,11 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+# Imported before any test below patches builtins.open. The first import of
+# aptl.core.kill reaches zoneinfo, whose sysconfig call reads the macOS version
+# file through open, so importing the module under that mock fails.
+import aptl.core.kill  # noqa: F401
+
 # The SIGTERM->SIGKILL escalation these exercise is POSIX-only: Windows has no
 # SIGKILL, and os.kill there maps every non-CTRL_* signal to the same forceful
 # TerminateProcess, so there is no distinct force signal to assert ordering on.
@@ -226,6 +231,43 @@ class TestFindMcpProcesses:
         assert isinstance(excinfo.value.__cause__, FileNotFoundError)
         assert "pgrep could not run" in str(excinfo.value)
         assert "mcp-*/build/index.js server by hand" in str(excinfo.value)
+
+    @pytest.mark.parametrize(
+        ("returncode", "stderr", "reason"),
+        [
+            (
+                2,
+                "pgrep: illegal option -- f\nusage: pgrep [-Lfilnoqvx] pattern\n",
+                "pgrep exited with status 2 (pgrep: illegal option -- f)",
+            ),
+            (3, "", "pgrep exited with status 3 (no error output)"),
+            (-9, "", "pgrep exited with status -9 (no error output)"),
+        ],
+        ids=["invalid-options", "internal-error", "ended-by-signal"],
+    )
+    @patch("aptl.core.kill.sys")
+    @patch("aptl.core.kill.subprocess.run")
+    def test_failing_pgrep_is_not_reported_as_no_processes(
+        self, mock_run, mock_sys, returncode, stderr, reason
+    ):
+        """pgrep exits 0 on a match and 1 on none; any other status is an error.
+
+        Both the procps and the BSD pgrep exit 2 for invalid options and 3 for
+        an internal error, and a negative status means that a signal ended it.
+        """
+        from aptl.core.kill import McpDiscoveryUnavailableError, find_mcp_processes
+
+        mock_sys.platform = "darwin"
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["pgrep"], returncode=returncode, stdout="", stderr=stderr
+        )
+
+        with pytest.raises(McpDiscoveryUnavailableError) as excinfo:
+            find_mcp_processes()
+
+        message = str(excinfo.value)
+        assert message.startswith(f"MCP process discovery is unavailable: {reason}.")
+        assert "mcp-*/build/index.js server by hand" in message
 
 
 class TestKillMcpProcesses:
@@ -734,3 +776,27 @@ class TestExecuteKill:
         assert result.mcp_discovery_unavailable is False
         assert result.mcp_processes_killed == 0
         assert result.errors == []
+
+    @patch("aptl.core.kill.sys")
+    @patch("aptl.core.kill.subprocess.run")
+    def test_fails_when_pgrep_reports_an_error(self, mock_run, mock_sys, tmp_path):
+        """pgrep ran but exited 3, an internal error, so it could not look."""
+        from aptl.core.kill import execute_kill
+
+        mock_sys.platform = "darwin"
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["pgrep"],
+            returncode=3,
+            stdout="",
+            stderr="pgrep: Cannot get process list\n",
+        )
+
+        result = execute_kill(containers=False, project_dir=tmp_path)
+
+        assert result.success is False
+        assert result.mcp_discovery_unavailable is True
+        assert result.mcp_processes_killed == 0
+        assert len(result.errors) == 1
+        assert "pgrep exited with status 3 (pgrep: Cannot get process list)" in (
+            result.errors[0]
+        )

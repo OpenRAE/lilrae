@@ -65,7 +65,15 @@ class KillResult:
 
 
 class McpDiscoveryUnavailableError(RuntimeError):
-    """This host offers no way to look for MCP server processes."""
+    """The kill could not look for MCP server processes on this host."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(
+            f"MCP process discovery is unavailable: {reason}. Any MCP servers "
+            "that are running were not stopped; end each node process running "
+            "an mcp-*/build/index.js server by hand, for example with Task "
+            "Manager or Stop-Process on Windows."
+        )
 
 
 def find_mcp_processes() -> list[McpProcess]:
@@ -81,7 +89,7 @@ def find_mcp_processes() -> list[McpProcess]:
 
     Raises:
         McpDiscoveryUnavailableError: ``pgrep`` is needed but cannot run,
-            as on native Windows.
+            as on native Windows, or it runs and reports an error.
     """
     if sys.platform == "linux":
         return _find_via_proc()
@@ -128,8 +136,9 @@ def _find_via_proc() -> list[McpProcess]:
 def _find_via_pgrep() -> list[McpProcess]:
     """Discover MCP processes using pgrep (non-Linux fallback).
 
-    A ``pgrep`` that cannot run raises instead of returning an empty list:
-    a host that cannot look must not report that no MCP server is running.
+    A ``pgrep`` that cannot run, or exits with neither 0 (a match) nor 1 (no
+    match), raises instead of returning an empty list: a host that cannot
+    look must not report that no MCP server is running.
     """
     found: list[McpProcess] = []
     for name in MCP_SERVER_NAMES:
@@ -140,18 +149,16 @@ def _find_via_pgrep() -> list[McpProcess]:
                 capture_output=True,
                 text=True,
             )
+            if result.returncode not in (0, 1):
+                stderr = result.stderr.strip().splitlines() or ["no error output"]
+                status = f"pgrep exited with status {result.returncode}"
+                raise McpDiscoveryUnavailableError(f"{status} ({stderr[0]})")
             if result.returncode == 0:
                 for line in result.stdout.strip().splitlines():
                     pid = int(line.strip())
                     found.append({"pid": pid, "cmdline": pattern, "name": name})
         except OSError as exc:
-            raise McpDiscoveryUnavailableError(
-                "MCP process discovery is unavailable: pgrep could not run "
-                f"({exc}). Any MCP servers that are running were not stopped; "
-                "end each node process running an mcp-*/build/index.js server "
-                "by hand, for example with Task Manager or Stop-Process on "
-                "Windows."
-            ) from exc
+            raise McpDiscoveryUnavailableError(f"pgrep could not run ({exc})") from exc
         except ValueError:
             continue
     return found
