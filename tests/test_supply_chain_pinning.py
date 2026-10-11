@@ -193,9 +193,10 @@ def test_actions_are_sha_pinned(workflow: Path) -> None:
 
 # --------------------------------------------------------------- npm and pip
 
-# Shell files that drive builds or provision a shipped artifact. Scenario
-# fixtures are excluded deliberately - see
-# test_scenario_fixture_scripts_are_out_of_scope below.
+# Shell files that drive builds or provision a shipped artifact. The npm, pip
+# and source-build tests below read no other shell file;
+# test_every_listed_build_script_is_a_pinning_source fails if an entry here
+# stops pointing at a file.
 _BUILD_SHELL = [
     "mcp/build-all-mcps.sh",
     "tools/vale-lint-all.sh",
@@ -423,21 +424,18 @@ def test_source_builds_do_not_re_open_an_unhashed_resolver(source: Path) -> None
     )
 
 
-def test_scenario_fixture_scripts_are_out_of_scope() -> None:
-    """The lab's fake corporate content is not part of APTL's supply chain.
+def test_every_listed_build_script_is_a_pinning_source() -> None:
+    """A renamed or deleted build script fails here instead of going unchecked.
 
-    ``scenarios/fixtures/techvault-content/`` holds the files a red-team agent
-    discovers on a compromised TechVault host. Its ``deploy.sh`` is a prop: it is
-    never executed by a build, and hash-pinning it would make the artifact read
-    as machine-generated rather than as something a developer checked in. It is
-    excluded here by evidence, not by convenience - and this test fails if the
-    file stops being a fixture, so the exclusion cannot quietly widen.
+    ``_pinning_sources()`` keeps only the ``_BUILD_SHELL`` entries that exist.
+    Without this test, a listed script that moved would drop out of the npm,
+    pip and source-build tests above while every one of them still passed, and
+    the set of shell files those tests never read would grow unnoticed.
     """
-    fixture = (
-        REPO_ROOT
-        / "scenarios/fixtures/techvault-content/dev-user-home/projects/techvault-portal/deploy.sh"
+    sources = set(_pinning_sources())
+    unread = [rel for rel in _BUILD_SHELL if REPO_ROOT / rel not in sources]
+    assert not unread, (
+        f"_BUILD_SHELL lists {unread}, but _pinning_sources() does not return "
+        "them, so no pinning test reads them. Point each entry at the script's "
+        "current path, or remove it if the script is gone."
     )
-    if not fixture.is_file():
-        pytest.skip("fixture removed or relocated")
-    assert fixture not in _pinning_sources()
-    assert "scenarios/fixtures/" in str(fixture.relative_to(REPO_ROOT))
