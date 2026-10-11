@@ -54,6 +54,32 @@ def _docker_available() -> bool:
     )
 
 
+def _stage_build_context(dockerfile: str, project_dir: Path) -> None:
+    """Copy a Dockerfile's directory and every repo path it COPYs or ADDs.
+
+    The staged project holds the same files a real lab directory holds for this
+    build. Reading the sources from the Dockerfile keeps the stage in step when
+    the Dockerfile gains a COPY.
+    """
+
+    source = _REPO_ROOT / dockerfile
+    shutil.copytree(source.parent, project_dir / source.parent.relative_to(_REPO_ROOT))
+    for line in source.read_text(encoding="utf-8").splitlines():
+        words = line.split()
+        if not words or words[0].upper() not in {"COPY", "ADD"}:
+            continue
+        if any(word.startswith("--from=") for word in words):
+            continue
+        for relative in [word for word in words[1:-1] if not word.startswith("--")]:
+            origin = _REPO_ROOT / relative
+            staged = project_dir / relative
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            if origin.is_dir():
+                shutil.copytree(origin, staged, dirs_exist_ok=True)
+            else:
+                shutil.copyfile(origin, staged)
+
+
 @pytest.mark.skipif(not _docker_available(), reason="docker daemon not available")
 def test_admit_and_realize_base_container_scenario_on_real_docker(tmp_path):
     bundle = admit_fixture_pack(tmp_path / "staged-packs")
@@ -62,14 +88,8 @@ def test_admit_and_realize_base_container_scenario_on_real_docker(tmp_path):
     # the init-capable generic substrate, which the backend builds from the
     # Dockerfile its own project dir ships (issue #1006). Stage that context
     # exactly as a real lab directory holds it.
-    shutil.copytree(
-        _REPO_ROOT / "containers" / "generic-systemd-base-debian",
-        tmp_path / "containers" / "generic-systemd-base-debian",
-    )
-    (tmp_path / "requirements").mkdir()
-    shutil.copyfile(
-        _REPO_ROOT / "requirements" / "runtime.txt",
-        tmp_path / "requirements" / "runtime.txt",
+    _stage_build_context(
+        "containers/generic-systemd-base-debian/Dockerfile", tmp_path
     )
     container = "aptl-smoke-box"
     subprocess.run(["docker", "rm", "-f", container], capture_output=True, text=True)

@@ -1,0 +1,1 @@
+Fixed Wazuh rule authoring through MCP. The API tools now accept a raw string body, such as rules XML. `wazuh_create_detection_rule` now uploads to the authenticated rules-file API under a file name that the caller supplies and the tool validates. Predefined queries now reject a missing path parameter, or an empty, `.` or `..` path segment, before they send a request.
