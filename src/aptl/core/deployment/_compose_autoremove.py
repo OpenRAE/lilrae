@@ -32,7 +32,7 @@ class ComposeAutoremoveMixin:
         Compose has no service-level equivalent of ``docker run --rm``.  The
         backend therefore waits for a zero exit, captures only evidence needed
         by the post-apply gate, removes the exact project-owned container, and
-        records a receipt only after Docker confirms that name is absent.
+        records a receipt only after Docker confirms its native ID is absent.
         """
 
         image_addresses = {image.address for image in realization.images}
@@ -146,18 +146,22 @@ class ComposeAutoremoveMixin:
         return files, failure
 
     def _remove_completed_container(self, name: str) -> str | None:
-        """Remove one exact container and verify that it is absent."""
+        """Remove one exact container and verify that its native ID is absent.
 
+        The absence check inspects the removed native ID directly. Resolving
+        ``name`` again would go through its receipt, and the resolver reports
+        a recorded container that no longer exists as an ownership conflict.
+        """
+
+        native_id = self._resolve_owned_container_id(name)
         result = self._run(
-            remove_container_command(
-                self._resolve_owned_container_id(name), force=False
-            ),
+            remove_container_command(native_id, force=False),
             timeout=_REMOVE_TIMEOUT,
         )
         failure = None
         if result.returncode != 0:
             failure = f"container {name!r} could not be auto-removed"
-        elif self.container_inspect(name):
+        elif self._raw_container_inspect(native_id):
             failure = f"container {name!r} remained after auto-remove"
         return failure
 
