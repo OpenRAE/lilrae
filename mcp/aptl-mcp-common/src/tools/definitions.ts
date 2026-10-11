@@ -29,6 +29,20 @@ const SESSION_ID_SCHEMA = {
   maxLength: 128,
 };
 
+/**
+ * Millisecond timeouts run on Node timers, which accept 1 to 2^31-1 ms and
+ * fire after 1 ms for any other delay. A new session would then close at once,
+ * and a raw-mode command would end immediately and report its partial output
+ * as a success. A command timeout of 0 sets no timer, so a raw-mode command
+ * would not return until its session closed. The bounds make the server
+ * refuse such a value before dispatch (#967).
+ */
+const TIMER_MS_SCHEMA = {
+  type: 'number' as const,
+  minimum: 1,
+  maximum: 2_147_483_647,
+};
+
 export function generateToolDefinitions(serverConfig: LabConfig['server']): Tool[] {
   return [
   {
@@ -64,7 +78,7 @@ export function generateToolDefinitions(serverConfig: LabConfig['server']): Tool
           description: 'Unique session identifier (optional, auto-generated if not provided)',
         },
         timeout_ms: {
-          type: 'number',
+          ...TIMER_MS_SCHEMA,
           description: 'Session timeout in milliseconds before automatic closure (default: 600000 = 10 minutes)',
           default: 600000,
         },
@@ -88,7 +102,7 @@ export function generateToolDefinitions(serverConfig: LabConfig['server']): Tool
           default: false,
         },
         timeout_ms: {
-          type: 'number',
+          ...TIMER_MS_SCHEMA,
           description: 'Session timeout in milliseconds before automatic closure (default: 600000 = 10 minutes)',
           default: 600000,
         },
@@ -111,7 +125,7 @@ export function generateToolDefinitions(serverConfig: LabConfig['server']): Tool
           description: 'Command to execute',
         },
         timeout: {
-          type: 'number',
+          ...TIMER_MS_SCHEMA,
           description: 'Command timeout in milliseconds (default: 30000)',
           default: 30000,
         },
@@ -163,7 +177,10 @@ export function generateToolDefinitions(serverConfig: LabConfig['server']): Tool
           description: 'Session identifier to get output from',
         },
         lines: {
+          // 0 would return the whole buffer, and a negative count would drop
+          // its oldest lines instead.
           type: 'number',
+          minimum: 1,
           description: 'Number of recent lines to retrieve (optional, default: all)',
         },
         clear: {
