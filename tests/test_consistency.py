@@ -11,6 +11,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.techvault_pack import realize_techvault_pack
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Published host ports are parameterized (`${VAR:-default}`) so `aptl lab start`
@@ -43,6 +45,18 @@ def techvault_sdl(tmp_path_factory) -> Path:
     from tests.helpers import techvault_scenario_path
 
     return techvault_scenario_path(tmp_path_factory.mktemp("techvault-consistency"))
+
+
+@pytest.fixture(scope="module")
+def rendered_techvault(tmp_path_factory):
+    """The pinned TechVault pack, realized once per module without Docker."""
+    return realize_techvault_pack(tmp_path_factory.mktemp("rendered-techvault"))
+
+
+@pytest.fixture(scope="module")
+def rendered_techvault_spec(rendered_techvault):
+    """The deployment spec the realization hands the Compose backend."""
+    return rendered_techvault.deployment_spec(sorted(rendered_techvault.profiles))
 
 
 class TestComposeConsistency:

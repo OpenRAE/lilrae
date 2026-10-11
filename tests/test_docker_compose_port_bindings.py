@@ -25,6 +25,7 @@ import pytest
 import yaml
 
 from aptl.core.deployment._compose_port_realization import compose_port_entry
+from tests.techvault_pack import realize_techvault_pack
 
 # Compose variable references (``${VAR}`` / ``${VAR:-default}``) can appear in a
 # port mapping — published host ports are parameterized so `aptl lab start` can
@@ -138,7 +139,7 @@ def compose() -> dict:
 
 
 @pytest.fixture(scope="module")
-def rendered(rendered_techvault_spec) -> dict:
+def rendered(tmp_path_factory) -> dict:
     """Every node publication the realization carries for the pinned TechVault pack.
 
     `aptl lab start` writes an image node's publications into the Compose port
@@ -146,11 +147,14 @@ def rendered(rendered_techvault_spec) -> dict:
     render these declarations, so each node is checked here whichever way it
     starts. Backend apparatus outside the realization, such as the
     operator-access relays, is checked in ``tests/test_operator_access.py``.
+    The pack is realized once per module, without Docker.
     """
+    realization = realize_techvault_pack(tmp_path_factory.mktemp("rendered-techvault"))
+    spec = realization.deployment_spec(sorted(realization.profiles))
     return {
         "services": {
             node.name: {"ports": [compose_port_entry(p) for p in node.published_ports]}
-            for node in rendered_techvault_spec.nodes
+            for node in spec.nodes
             if node.published_ports
         }
     }

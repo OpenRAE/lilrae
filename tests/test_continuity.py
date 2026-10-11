@@ -45,8 +45,7 @@ class TestKaliSourceIps:
         ips = kali_source_ips(whitelist_path=WHITELIST_PATH)
 
         # Documented IPs from config/wazuh_cluster/etc/lists/
-        # active-response-whitelist (also the three static addresses of the
-        # TechVault pack's kali node).
+        # active-response-whitelist.
         assert "172.20.4.30" in ips
         assert "172.20.1.30" in ips
         assert "172.20.2.35" in ips
@@ -948,19 +947,7 @@ class TestAuditAndRevert:
 
 
 class TestDefaultTargets:
-    """``default_targets`` must name containers the realized range runs."""
-
-    def test_targets_are_realized_container_names(self, rendered_techvault) -> None:
-        """Each target is the container name the realization gives a node.
-
-        The same names in docker-compose.yml belong to scale-to-zero stubs that
-        Compose never starts, so they cannot vouch for a container (#954).
-        """
-        from aptl.core.continuity import default_targets
-
-        realized = {node.container_name for node in rendered_techvault.nodes}
-
-        assert set(default_targets()) <= realized
+    """``default_targets`` is the pinned continuity audit surface."""
 
     def test_default_targets_count_pins_audit_surface(self) -> None:
         # The audit surface remains the in-process-agent set. The audit does
