@@ -1683,6 +1683,9 @@ tools/workshop/hosted_seat.py	backend-substrate	Retain hosted fallback provision
 tools/workshop/stage_hosted_seat_payload.py	backend-substrate	Retain private hosted payload staging tool
 uv.lock	build-governance	Migrate policy by surface; remove bundle-of-entire-repository from generic artifact
 web/.dockerignore	optional-operator-ui	Preserve authenticated local UI; project acquired pack data
+web/caddy-build/go.mod	optional-operator-ui	Preserve authenticated local UI; project acquired pack data
+web/caddy-build/go.sum	optional-operator-ui	Preserve authenticated local UI; project acquired pack data
+web/caddy-build/main.go	optional-operator-ui	Preserve authenticated local UI; project acquired pack data
 web/Caddyfile	optional-operator-ui	Preserve authenticated local UI; project acquired pack data
 web/Dockerfile	optional-operator-ui	Preserve authenticated local UI; project acquired pack data
 web/Dockerfile.api	optional-operator-ui	Preserve authenticated local UI; project acquired pack data

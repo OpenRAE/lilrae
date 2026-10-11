@@ -105,3 +105,15 @@ updates:
     ignore:
       - dependency-name: "node"
         update-types: ["version-update:semver-major"]
+
+  # The web image builds Caddy from source so that it can take Go and
+  # golang.org/x/net security fixes before the upstream Caddy image does. This
+  # entry keeps the Caddy module and its dependencies patched.
+  - package-ecosystem: "gomod"
+    directory: "/web/caddy-build"
+    target-branch: "dev"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build"
