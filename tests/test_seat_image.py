@@ -15,6 +15,7 @@ from aptl.appliance.download import (
     StagedDownload,
 )
 from aptl.appliance.seat import image as seat_image
+from aptl.appliance.seat import image_token
 from aptl.appliance.seat.image import (
     DISK_MEDIA_TYPE,
     SeatImageError,
@@ -322,7 +323,7 @@ def test_cleartext_token_realm_is_refused(registry, tmp_path) -> None:
 
 
 def test_quoted_pairs_in_a_challenge_are_unescaped() -> None:
-    parameters = seat_image._bearer_parameters(
+    parameters = image_token.bearer_parameters(
         'Bearer realm="https://auth.example/t\\"x",error="invalid_token"'
     )
 

@@ -206,10 +206,10 @@ def test_metadata_401_hands_every_challenge_to_the_caller() -> None:
 def test_metadata_failure_without_a_challenge_for_the_url_stays_generic(
     answers,
 ) -> None:
+    open_request = _through_urllib(answers)
+
     with pytest.raises(ApplianceDownloadError, match="download failed") as raised:
-        fetch_https_metadata(
-            REGISTRY_PING, max_bytes=1024, open_request=_through_urllib(answers)
-        )
+        fetch_https_metadata(REGISTRY_PING, max_bytes=1024, open_request=open_request)
 
     assert not isinstance(raised.value, ApplianceAuthenticationRequired)
 
@@ -220,18 +220,21 @@ def test_unframed_metadata_is_admitted_only_when_asked_and_stays_bounded() -> No
     def unframed(body: bytes):
         return lambda _request: _Response(body, status=200, headers={})
 
+    chunked = unframed(payload)
+
     with pytest.raises(ApplianceDownloadError, match="response is invalid"):
-        fetch_https_metadata(INDEX_URL, max_bytes=1024, open_request=unframed(payload))
+        fetch_https_metadata(INDEX_URL, max_bytes=1024, open_request=chunked)
     fetched = fetch_https_metadata(
-        INDEX_URL, max_bytes=1024, open_request=unframed(payload), require_length=False
+        INDEX_URL, max_bytes=1024, open_request=chunked, require_length=False
     )
     assert fetched == payload
     for body in (b"x" * 1025, b""):
+        open_request = unframed(body)
         with pytest.raises(ApplianceDownloadError, match="length did not match"):
             fetch_https_metadata(
                 INDEX_URL,
                 max_bytes=1024,
-                open_request=unframed(body),
+                open_request=open_request,
                 require_length=False,
             )
 
