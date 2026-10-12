@@ -10,8 +10,11 @@ from threading import Event
 from unittest.mock import MagicMock
 
 import pytest
+import typer
 import yaml
 
+from aptl.backends._raes_observation_helpers import safe_inspect
+from aptl.cli.continuity import _validate_continuity_targets
 from aptl.core.deployment._compose_owner_labels import complete_owner_labels
 from aptl.core.deployment._compose_resource_ownership import (
     OwnershipConflictError,
@@ -20,6 +23,7 @@ from aptl.core.deployment._compose_resource_ownership import (
     write_compose_ownership_override,
 )
 from aptl.core.deployment.docker_compose import DockerComposeBackend
+from aptl.core.deployment.observation import DeploymentObservationContext
 from aptl.core.deployment.realization import DeploymentNetworkRealization
 from aptl.core.lab_types import LabResult
 from aptl.runtime_authority import DeploymentSpawnImageRequirement
@@ -726,17 +730,15 @@ def test_clean_volume_cleanup_retires_already_absent_receipt(tmp_path: Path) -> 
     assert ownership.receipts("volume")[0].attempt_id == "run-b"
 
 
-def test_receipted_container_resolution_retries_only_inconclusive_inspect(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    backend = DockerComposeBackend(tmp_path, project_name="aptl")
-    ownership = backend._ensure_resource_ownership(attempt_id="run-a")
-    backend._docker_daemon_id = "daemon-a"
-    external_name = ownership.container_name("worker")
+def _record_worker(
+    ownership: WorkspaceOwnership, native_id: str, external_name: str
+) -> dict[str, object]:
+    """Record one ``worker`` container and return its current inspect payload."""
+
     ownership.record(
         ResourceReceipt(
             kind="container",
-            native_id=_ID_A,
+            native_id=native_id,
             external_name=external_name,
             semantic_name="worker",
             node_address="provision.node.worker",
@@ -746,16 +748,36 @@ def test_receipted_container_resolution_retries_only_inconclusive_inspect(
             attempt_id="run-a",
         )
     )
-    current = {
-        "Id": _ID_A,
+    return {
+        "Id": native_id,
         "Name": f"/{external_name}",
         "Config": {
             "Labels": {
                 "aptl.workspace.id": ownership.workspace_id,
                 "aptl.lifecycle.project": ownership.project_name,
+                "com.docker.compose.project": ownership.project_name,
             }
         },
     }
+
+
+def _backend_recording_worker(
+    tmp_path: Path,
+) -> tuple[DockerComposeBackend, dict[str, object]]:
+    """Return a backend on daemon-a that records one ``worker`` container."""
+
+    backend = DockerComposeBackend(tmp_path, project_name="aptl")
+    ownership = backend._ensure_resource_ownership(attempt_id="run-a")
+    backend._docker_daemon_id = "daemon-a"
+    return backend, _record_worker(
+        ownership, _ID_A, ownership.container_name("worker")
+    )
+
+
+def test_receipted_container_resolution_retries_only_inconclusive_inspect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    backend, current = _backend_recording_worker(tmp_path)
     sleeps: list[float] = []
     monkeypatch.setattr(
         "aptl.core.deployment._compose_resource_resolution.time.sleep",
@@ -778,6 +800,83 @@ def test_receipted_container_resolution_retries_only_inconclusive_inspect(
         backend._resolve_owned_container_id("worker")
     assert sleeps == []
     assert backend._raw_container_inspect.call_count == 1
+
+
+def test_container_membership_never_creates_the_workspace_scope(
+    tmp_path: Path,
+) -> None:
+    backend = DockerComposeBackend(tmp_path, project_name="aptl")
+    backend._run = MagicMock(side_effect=AssertionError("no Docker command expected"))
+
+    assert backend.container_exists("aptl-victim") is False
+    assert WorkspaceOwnership.load(tmp_path, "aptl") is None
+
+
+@pytest.mark.parametrize("selector", ["unrecorded", "worker"])
+def test_names_without_a_live_receipt_are_not_members_and_stay_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, selector: str
+) -> None:
+    """No receipt names ``unrecorded``; ``worker``'s recorded container is gone."""
+
+    backend, _current = _backend_recording_worker(tmp_path)
+    monkeypatch.setattr(
+        "aptl.core.deployment._compose_resource_resolution.time.sleep",
+        lambda _seconds: None,
+    )
+    backend._raw_container_inspect = MagicMock(return_value={})
+
+    assert backend.container_exists(selector) is False
+    with pytest.raises(OwnershipConflictError, match="container ownership"):
+        backend._resolve_owned_container_id(selector)
+
+
+@pytest.mark.parametrize(
+    ("daemon_id", "change", "match"),
+    [
+        ("daemon-b", {}, "daemon identity changed"),
+        ("daemon-a", {"Id": _ID_B}, "native identity changed"),
+        ("daemon-a", {"Config": {"Labels": {}}}, "labels changed"),
+        ("daemon-a", {"Name": "/foreign"}, "semantic binding changed"),
+    ],
+)
+def test_container_membership_still_raises_when_a_recorded_container_changed(
+    tmp_path: Path, daemon_id: str, change: dict[str, object], match: str
+) -> None:
+    backend, current = _backend_recording_worker(tmp_path)
+    backend._docker_daemon_id = daemon_id
+    backend._raw_container_inspect = MagicMock(return_value={**current, **change})
+
+    with pytest.raises(OwnershipConflictError, match=match):
+        backend.container_exists("worker")
+
+
+def test_container_membership_refuses_an_ambiguous_selector(tmp_path: Path) -> None:
+    backend, current = _backend_recording_worker(tmp_path)
+    ownership = backend._resource_ownership
+    twin = _record_worker(ownership, _ID_B, ownership.container_name("worker-twin"))
+    backend._raw_container_inspect = MagicMock(
+        side_effect={_ID_A: current, _ID_B: twin}.get
+    )
+
+    with pytest.raises(OwnershipConflictError, match="ambiguous"):
+        backend.container_exists("worker")
+
+
+def test_membership_callers_read_an_unrecorded_name_as_absent(tmp_path: Path) -> None:
+    backend, _current = _backend_recording_worker(tmp_path)
+    backend._run = MagicMock(side_effect=AssertionError("no Docker command expected"))
+
+    assert safe_inspect(backend, "unrecorded") == {}
+    assert backend._retire_completed_autoremove_node(
+        "unrecorded",
+        "",
+        DeploymentObservationContext(),
+        require_image_digest=False,
+        require_image_config_id=False,
+    ) == "container 'unrecorded' is not owned by this Compose project"
+    with pytest.raises(typer.Exit) as refused:
+        _validate_continuity_targets(backend, ["unrecorded"], explicit=True)
+    assert refused.value.exit_code == 2
 
 
 def test_compose_override_labels_networks_and_volumes_and_plans_exact_names(

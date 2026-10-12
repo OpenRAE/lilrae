@@ -57,6 +57,9 @@ _ABS_SSH_KEY = (
 _ABS_SSH_KEY_TRAVERSAL = (
     "C:\\Users\\..\\etc\\passwd" if _IS_WINDOWS else "/home/../etc/passwd"
 )
+# The `docker inspect` Config of a container in this module's "test" Compose
+# project: `container_exists` counts a container as a member only with it.
+_COMPOSE_CONTAINER_CONFIG = {"Labels": {"com.docker.compose.project": "test"}}
 
 
 def _network_inspect_payload(
@@ -382,6 +385,7 @@ class TestDockerComposeBackend:
         )
         backend._docker_daemon_id = "test-daemon"
         backend._resolve_owned_container_id = lambda selector: selector  # type: ignore[method-assign]
+        backend._find_owned_container_id = lambda selector: selector  # type: ignore[method-assign]
         backend._resolve_owned_network_id = lambda selector: selector  # type: ignore[method-assign]
         backend._verify_compose_namespace_is_owned = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
         backend._record_compose_network_receipts = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
@@ -551,6 +555,7 @@ services:
         inspect_payload = json.dumps(
             [
                 {
+                    "Config": _COMPOSE_CONTAINER_CONFIG,
                     "State": {"Running": True},
                     "NetworkSettings": {
                         "Networks": {
@@ -670,6 +675,7 @@ services:
         inspect_payload = json.dumps(
             [
                 {
+                    "Config": _COMPOSE_CONTAINER_CONFIG,
                     "State": {"Running": True},
                     "NetworkSettings": {
                         "Networks": {
@@ -740,6 +746,7 @@ services:
         inspect_payload = json.dumps(
             [
                 {
+                    "Config": _COMPOSE_CONTAINER_CONFIG,
                     "State": {"Running": True},
                     "NetworkSettings": {
                         "Networks": {
@@ -807,7 +814,13 @@ services:
             ),
         )
         inspect_payload = json.dumps(
-            [{"State": {"Running": True}, "NetworkSettings": {"Networks": {}}}]
+            [
+                {
+                    "Config": _COMPOSE_CONTAINER_CONFIG,
+                    "State": {"Running": True},
+                    "NetworkSettings": {"Networks": {}},
+                }
+            ]
         )
         network_ls_calls = 0
 
@@ -963,6 +976,7 @@ services:
         inspect_payload = json.dumps(
             [
                 {
+                    "Config": _COMPOSE_CONTAINER_CONFIG,
                     "State": {"Running": True},
                     "NetworkSettings": {
                         "Networks": {
@@ -1123,7 +1137,13 @@ services:
         )
 
         inspect_payload = json.dumps(
-            [{"State": {"Running": True}, "NetworkSettings": {"Networks": {}}}]
+            [
+                {
+                    "Config": _COMPOSE_CONTAINER_CONFIG,
+                    "State": {"Running": True},
+                    "NetworkSettings": {"Networks": {}},
+                }
+            ]
         )
 
         def fake_run(cmd, **kwargs):
@@ -2229,6 +2249,7 @@ class TestDockerComposeBackendContainerInteraction:
     def _make_backend(self, tmp_path: Path) -> DockerComposeBackend:
         backend = DockerComposeBackend(project_dir=tmp_path, project_name="test")
         backend._resolve_owned_container_id = lambda selector: selector  # type: ignore[method-assign]
+        backend._find_owned_container_id = lambda selector: selector  # type: ignore[method-assign]
         return backend
 
     # container_list -------------------------------------------------------

@@ -9,6 +9,11 @@ import pytest
 from typer.testing import CliRunner
 
 from aptl.cli.main import app
+from aptl.core.deployment._compose_resource_ownership import (
+    ResourceReceipt,
+    WorkspaceOwnership,
+)
+from aptl.core.deployment.docker_compose import DockerComposeBackend
 
 
 @pytest.fixture
@@ -274,3 +279,181 @@ class TestContainerProjectMembershipGuard:
         assert result.exit_code != 0
         assert "not part of this lab" in result.stderr.lower()
         fake_backend.container_shell.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Kali shell refusal during admitted capture
+# ---------------------------------------------------------------------------
+
+_KALI_ID = "a" * 64
+_VICTIM_ID = "b" * 64
+_KALI_SELECTORS = ("semantic name", "workspace-scoped name", "native ID")
+
+
+@pytest.fixture
+def owned_lab(project_dir, mocker):
+    """Drive a real Compose backend whose Kali and victim receipts exist.
+
+    Only the ``docker`` binary is faked: ``docker inspect`` answers for the
+    two recorded native IDs and every other command is kept in ``calls``.
+    The backend resolves a selector through its receipts, which accept the
+    semantic name, the workspace-scoped name (what ``aptl container list``
+    prints) and the native ID of the same container.
+    """
+    backend = DockerComposeBackend(project_dir, project_name="aptl")
+    backend._docker_daemon_id = "daemon-a"
+    ownership = backend._ensure_resource_ownership(attempt_id="run-a")
+    inspected = {}
+    for native_id, semantic in ((_KALI_ID, "aptl-kali"), (_VICTIM_ID, "aptl-victim")):
+        external = ownership.container_name(semantic)
+        ownership.record(
+            ResourceReceipt(
+                kind="container",
+                native_id=native_id,
+                external_name=external,
+                semantic_name=semantic,
+                node_address=f"provision.node.{semantic}",
+                workspace_id=ownership.workspace_id,
+                project_name=ownership.project_name,
+                daemon_id="daemon-a",
+                attempt_id="run-a",
+            )
+        )
+        labels = {
+            "aptl.workspace.id": ownership.workspace_id,
+            "aptl.lifecycle.project": ownership.project_name,
+            "com.docker.compose.project": ownership.project_name,
+        }
+        inspected[native_id] = {
+            "Id": native_id,
+            "Name": f"/{external}",
+            "Config": {"Labels": labels},
+        }
+    calls = []
+
+    def docker(argv, **_kwargs):
+        if argv[:2] == ["docker", "inspect"] and argv[2] in inspected:
+            payload = json.dumps([inspected[argv[2]]])
+            return subprocess.CompletedProcess(argv, 0, stdout=payload, stderr="")
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    mocker.patch("subprocess.run", side_effect=docker)
+    mocker.patch("aptl.cli.container.get_backend", return_value=backend)
+    selectors = dict(
+        zip(
+            _KALI_SELECTORS,
+            ("aptl-kali", ownership.container_name("aptl-kali"), _KALI_ID),
+        )
+    )
+    return selectors, calls
+
+
+class TestContainerShellKaliCaptureRefusal:
+    """``shell`` refuses a Kali TTY during admitted capture by any selector."""
+
+    @staticmethod
+    def _admit_capture(project_dir: Path) -> None:
+        authorities = project_dir / ".aptl" / "capture-authorities"
+        authorities.mkdir(parents=True)
+        (authorities / "run-1.json").write_text("{}")
+
+    @staticmethod
+    def _shell(runner, project_dir: Path, name: str):
+        return runner.invoke(
+            app,
+            [
+                "container",
+                "shell",
+                name,
+                "--shell",
+                "/bin/bash",
+                "--project-dir",
+                str(project_dir),
+            ],
+        )
+
+    @pytest.mark.parametrize("selector", _KALI_SELECTORS)
+    def test_capture_refuses_every_selector_of_kali(
+        self, runner, project_dir, owned_lab, selector, caplog
+    ):
+        selectors, calls = owned_lab
+        self._admit_capture(project_dir)
+
+        result = self._shell(runner, project_dir, selectors[selector])
+
+        assert calls == []
+        assert result.exit_code == 1
+        # A crash or the project-membership rejection also exits 1 without a
+        # docker exec, so pin a clean exit and the refusal reason.
+        assert isinstance(result.exception, SystemExit)
+        assert "Direct Kali container TTY refused" in caplog.text
+
+    @pytest.mark.parametrize("selector", _KALI_SELECTORS)
+    def test_every_selector_opens_kali_without_capture(
+        self, runner, project_dir, owned_lab, selector
+    ):
+        selectors, calls = owned_lab
+
+        result = self._shell(runner, project_dir, selectors[selector])
+
+        assert result.exit_code == 0
+        assert calls == [["docker", "exec", "-it", _KALI_ID, "/bin/bash"]]
+
+    def test_capture_still_opens_other_containers(
+        self, runner, project_dir, owned_lab
+    ):
+        _selectors, calls = owned_lab
+        self._admit_capture(project_dir)
+
+        result = self._shell(runner, project_dir, "aptl-victim")
+
+        assert result.exit_code == 0
+        assert calls == [["docker", "exec", "-it", _VICTIM_ID, "/bin/bash"]]
+
+
+# ---------------------------------------------------------------------------
+# Names the lab holds no live receipt for
+# ---------------------------------------------------------------------------
+
+_GONE_ID = "c" * 64
+
+
+class TestContainerCommandsRejectUnrecordedNames:
+    """``logs`` and ``shell`` print the lab guidance, not a traceback, for a
+    name with no receipt or whose recorded container is gone."""
+
+    @staticmethod
+    def _record_gone_container(project_dir: Path) -> None:
+        # The fake daemon answers no inspect for this native ID.
+        ownership = WorkspaceOwnership.load(project_dir, "aptl")
+        ownership.record(
+            ResourceReceipt(
+                kind="container",
+                native_id=_GONE_ID,
+                external_name=ownership.container_name("aptl-gone"),
+                semantic_name="aptl-gone",
+                node_address="provision.node.aptl-gone",
+                workspace_id=ownership.workspace_id,
+                project_name=ownership.project_name,
+                daemon_id="daemon-a",
+                attempt_id="run-a",
+            )
+        )
+
+    @pytest.mark.parametrize("command", ["logs", "shell"])
+    @pytest.mark.parametrize("name", ["evil-other-project", "aptl-gone"])
+    def test_name_without_a_live_receipt_is_not_part_of_this_lab(
+        self, runner, project_dir, owned_lab, mocker, command, name
+    ):
+        _selectors, calls = owned_lab
+        self._record_gone_container(project_dir)
+        mocker.patch("aptl.core.deployment._compose_resource_resolution.time.sleep")
+
+        result = runner.invoke(
+            app, ["container", command, name, "--project-dir", str(project_dir)]
+        )
+
+        assert result.exit_code == 1
+        assert "not part of this lab" in result.stderr.lower()
+        assert all(argv[:2] == ["docker", "inspect"] for argv in calls)
