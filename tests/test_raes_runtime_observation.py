@@ -391,6 +391,55 @@ def test_environment_operator_secret_is_presence_only():
     assert "value_commitment" not in disclosed[0]
 
 
+@pytest.mark.parametrize(
+    "explicitness, codes",
+    [(ExplicitnessClass.OPEN, []), (ExplicitnessClass.EXACT, [_GATE_REJECT])],
+)
+def test_environment_sourced_secret_fixture_leaves_no_value_or_digest(
+    explicitness, codes
+):
+    """A grant or adapter value is never read back or committed (#965).
+
+    A value-less ``secret_fixture`` takes its value from outside the scenario,
+    so RAES's unsalted commitment of it could be checked against a guess. The
+    readback leaves it out of the disclosure, the snapshot and the run record.
+    An open environment passes with what remains. An exact one is rejected, as
+    it was when the commitment contradicted the declared empty value (#1332).
+    """
+
+    from raes_processor.semantics.realization import project_realization_concern
+
+    from aptl.backends.raes_repro import runtime_snapshot_record_payload
+
+    canary = "fixture-canary-0c1d"
+    fixture = {
+        "name": "FIXTURE",
+        "value": "",
+        "value_classification": "secret_fixture",
+        "provenance": "runtime",
+        "source": "x",
+    }
+    runtime = _runtime(environment=[fixture, _env_runtime().environment[0]])
+    backend = _Backend({_CONTAINER: _inspect(env=[f"FIXTURE={canary}", "FOO=bar"])})
+
+    gate_codes, _provenance, observations = _gate(
+        runtime, backend, "runtime-environment", explicitness=explicitness
+    )
+    plan, _observations = _observe(runtime, backend)
+    record = runtime_snapshot_record_payload(
+        snapshot_after_apply(plan, RuntimeSnapshot(), observations)
+    )
+    digest = project_realization_concern(
+        "runtime-environment", [{**fixture, "value": canary}]
+    )[0]["value_commitment"]
+
+    assert gate_codes == codes
+    disclosed = observations[_ADDRESS].concerns[_ENV_PATH]
+    assert [item["name"] for item in disclosed] == ["FOO"]
+    assert canary not in str(record)
+    assert digest.rsplit(":", 1)[1] not in str(record)
+
+
 def test_environment_undeclared_operator_value_is_rejected():
     # The contract declares the variable with no value, so "realized" means
     # realized empty. A value arriving out of band -- an operator `.env` entry

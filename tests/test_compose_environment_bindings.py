@@ -1048,6 +1048,47 @@ def test_the_released_techvault_model_is_escaped_and_passes_the_model_check(
     assert issues == ()
 
 
+def test_the_released_techvault_readback_records_no_adapter_value_or_digest(
+    techvault,
+):
+    """After start, evidence names no adapter value and commits to none.
+
+    The readback sees each service with its adapter values in place. The six
+    Wazuh ``secret_fixture`` names are left out of the disclosed environment,
+    MISP's ``operator_secret`` ``ADMIN_KEY`` is disclosed by presence, and every
+    commitment left is the one RAES derives from the scenario's own value.
+    """
+
+    from raes_processor.semantics.realization import project_realization_concern
+
+    from aptl.backends._raes_runtime_environment_observation import (
+        observe_environment,
+    )
+
+    disclosed: dict[str, list[dict[str, object]]] = {}
+    for node in techvault.nodes:
+        if node.name in _TECHVAULT_SOURCED:
+            declared = node.runtime.environment
+            info = {
+                "Config": {"Env": [f"{v.name}={v.value or _ADAPTER}" for v in declared]}
+            }
+            disclosed[node.name] = observe_environment(info, node.runtime)
+            authored = [v.model_dump(mode="json", by_alias=True) for v in declared]
+            planned = project_realization_concern("runtime-environment", authored)
+            assert [r for r in disclosed[node.name] if "value_commitment" in r] == [
+                r for r in planned if "value_commitment" in r
+            ]
+
+    assert {
+        service: {r["name"] for r in records} & _TECHVAULT_SOURCED[service]
+        for service, records in disclosed.items()
+    } == {"wazuh-manager": set(), "wazuh-dashboard": set(), "misp": {"ADMIN_KEY"}}
+    admin_key = next(r for r in disclosed["misp"] if r["name"] == "ADMIN_KEY")
+    assert admin_key["value_present"] is True
+    assert "value_commitment" not in admin_key
+    assert _ADAPTER not in json.dumps(disclosed)
+
+
 def test_the_released_techvault_pack_without_its_env_stops_before_mutation(
     techvault, tmp_path
 ):

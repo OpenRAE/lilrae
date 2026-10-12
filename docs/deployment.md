@@ -175,6 +175,14 @@ for a grant that matches no value-less secret. Logs and errors name each source,
 such as `grant:process-environment:LAB_DB_PASSWORD`, and never its value.
 `aptl.json` stores only these names.
 
+The run's evidence holds no grant or startup-adapter value and no digest of
+one. After the start, APTL reads back a value-less `operator_secret` or
+`redacted` variable by presence only. It leaves a value-less `secret_fixture`
+out of the realized environment that it records, because RAES would record
+that value as an unsalted SHA-256 digest, which a guessed value can be checked
+against. A value that the scenario authors is recorded as RAES's digest of
+that value, as before.
+
 ## Observe A Deployment
 
 Use APTL's runtime projections after startup:
