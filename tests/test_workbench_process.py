@@ -23,6 +23,7 @@ from unittest import mock
 
 import pytest
 
+from aptl.workbench._pipe_exchange import PipeExchange
 from aptl.workbench.process import (
     _REAP_SECONDS,
     _RELEASE_SECONDS,
@@ -31,7 +32,6 @@ from aptl.workbench.process import (
     BoundedProcessError,
     BoundedProcessRunner,
     ProcessResult,
-    _PipeExchange,
 )
 from tests.test_participant_workbench_adapter import _poll_until_absent
 
@@ -509,7 +509,8 @@ def test_a_write_that_would_block_is_retried(tmp_path: Path) -> None:
         return real_write(fd, data)
 
     with mock.patch(
-        "aptl.workbench.process.os.write", side_effect=refuse_the_first_input_write
+        "aptl.workbench._pipe_exchange.os.write",
+        side_effect=refuse_the_first_input_write,
     ):
         result = _run(
             (sys.executable, "-c", _READ_TO_END),
@@ -544,10 +545,10 @@ def test_capture_after_exit_takes_only_what_is_already_waiting() -> None:
     )
     try:
         with selectors.DefaultSelector() as selector:
-            exchange = _PipeExchange(selector, b"", 1 << 20)
+            exchange = PipeExchange(selector, b"", 1 << 20)
             exchange.attach(exited_child)
             with mock.patch(
-                "aptl.workbench.process.os.read",
+                "aptl.workbench._pipe_exchange.os.read",
                 side_effect=lambda _fd, size: b"x" * size,
             ):
                 within_budget = exchange.drain()

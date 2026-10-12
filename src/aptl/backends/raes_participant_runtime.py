@@ -196,11 +196,7 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         request: ParticipantDecisionSolicitation,
         budget_key: tuple[str, str],
     ) -> tuple[ParticipantDecisionSurfaceSelectionV2Model | None, str | None]:
-        """Reserve one proposal and invoke the bound provider fail-closed.
-
-        Returns the selection, or ``None`` with the bounded runner's failure
-        when the provider process timed out, overflowed or left residue.
-        """
+        """Reserve one proposal; return the selection or the runner's failure."""
 
         seen = self._seen_solicitations.setdefault(budget_key, set())
         seen.add(request.solicitation_id)
@@ -215,7 +211,8 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
             if provider is not None:
                 selection = parse_provider_selection(provider.select(request))
         except BoundedProcessError as exc:
-            failure = _provider_process_failure(exc)
+            # Timings and process ids vary between runs: only the report keeps them.
+            failure = f"participant selection provider failed: {exc.stable_summary()}"
         except Exception:
             selection = None
         finally:
@@ -455,19 +452,6 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
             action_result=result,
             post_state_digest=request.post_state_digest,
         )
-
-
-def _provider_process_failure(failure: BoundedProcessError) -> str:
-    """Describe a bounded provider process failure in stable, secret-free words.
-
-    Only the reason and the residue reach the diagnostic. Timings and process
-    ids vary from run to run, so they stay in the runner's report.
-    """
-
-    return (
-        f"participant selection provider failed: {failure.reason}; "
-        f"cleanup residual: {failure.cleanup.residual_summary()}"
-    )
 
 
 def _selection_failure(

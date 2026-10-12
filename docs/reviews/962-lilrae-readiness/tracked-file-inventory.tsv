@@ -1275,6 +1275,7 @@ src/aptl/validation/scenario_verification_discovery.py	split-verification	Keep g
 src/aptl/validation/techvault_gate.py	split-verification	Keep generic conformance/verification interface; externalize TechVault/research qualification
 src/aptl/validation/techvault_live_gate.py	split-verification	Keep generic conformance/verification interface; externalize TechVault/research qualification
 src/aptl/workbench/__init__.py	optional-participant	Provider/workbench extension; generic supervision remains backend-owned
+src/aptl/workbench/_pipe_exchange.py	optional-participant	Provider/workbench extension; generic supervision remains backend-owned
 src/aptl/workbench/access.py	optional-participant	Provider/workbench extension; generic supervision remains backend-owned
 src/aptl/workbench/access_clients.py	optional-participant	Provider/workbench extension; generic supervision remains backend-owned
 src/aptl/workbench/agent.py	optional-participant	Provider/workbench extension; generic supervision remains backend-owned
