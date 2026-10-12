@@ -6,7 +6,7 @@ type: FUNCTIONAL
 priority: MUST
 wave: 2
 created_at: 2026-03-20T06:10:16.877657Z
-updated_at: 2026-03-20T06:18:11.649016Z
+updated_at: 2026-10-12T18:00:18.618385Z
 ---
 
 # SIEM-001: Host-Level Monitoring via Wazuh Agents
@@ -28,5 +28,5 @@ Agent-based monitoring provides host-level telemetry that syslog cannot.
 - IMPLEMENTS → CODE_FILE `containers/_wazuh-agent/wazuh-agent.sh` (Shared Wazuh agent runtime bootstrap (registers, starts daemon, supervises))
 - IMPLEMENTS → CODE_FILE `containers/_wazuh-agent/ossec.conf.template` (Shared Wazuh agent ossec.conf template)
 - IMPLEMENTS → CONFIG `config/wazuh_cluster/wazuh_manager.conf` (Wazuh manager: &lt;auth&gt;&lt;force&gt; allows in-process takeover from sidecar)
-- TESTS → TEST `tests/test_in_process_agents.py` (Integration tests for in-process Wazuh agent placement, NET_ADMIN, daemons, log paths)
+- TESTS → TEST `tests/test_in_process_agents.py` (Realized workload substrates and rendered Wazuh agent identity, manager and log-source contracts)
 - IMPLEMENTS → GITHUB_ISSUE `249` (Issue #249: extends in-process agent platform's AR-execution surface (wrapper deploys to every agent))
