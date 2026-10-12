@@ -37,6 +37,12 @@ from aptl.backends.raes_participant_realizations import BPA_ACTION_REALIZATIONS
 from aptl.core.config import AptlConfig
 from aptl.core.lab_types import LabResult
 from aptl.core.runstore import LocalRunStore
+from aptl.workbench.process import (
+    REASON_RESIDUE,
+    REASON_TIMEOUT,
+    BoundedProcessError,
+    ProcessCleanup,
+)
 
 PROJECT_ROOT = Path(__file__).parents[1]
 SCENARIO = PROJECT_ROOT / "scenarios/bounded-participant-agency-techvault.sdl.yaml"
@@ -1210,40 +1216,94 @@ def test_consumed_solicitation_cannot_invoke_provider_again(
     assert provider.calls == 2
 
 
-def test_malformed_and_out_of_set_provider_outputs_fail_before_admission(
+class _BoundedFailureProvider:
+    """Fail the way the managed provider fails when its bounded runner does."""
+
+    implementation_name = "bounded-failure-provider"
+    implementation_version = "1.0.0"
+
+    def __init__(self, reason: str, residual: tuple[str, ...]) -> None:
+        self._reason = reason
+        self._residual = residual
+
+    def select(self, solicitation: ParticipantDecisionSolicitation) -> str:
+        del solicitation
+        raise BoundedProcessError(
+            self._reason,
+            cleanup=ProcessCleanup(4242, 1.25, self._residual),
+            stdout_bytes=7,
+            stderr_bytes=0,
+        )
+
+
+@pytest.mark.parametrize(
+    ("provider", "diagnostic"),
+    [
+        pytest.param(
+            _MalformedProvider(),
+            "participant selection provider failed or returned malformed output",
+            id="malformed",
+        ),
+        pytest.param(
+            _OutOfSetProvider(),
+            "participant provider selected outside the delivered candidate set",
+            id="out-of-set",
+        ),
+        pytest.param(
+            _BoundedFailureProvider(REASON_TIMEOUT, ()),
+            "participant selection provider failed: agent request exceeded the "
+            "configured timeout; cleanup residual: none observed",
+            id="timeout",
+        ),
+        pytest.param(
+            _BoundedFailureProvider(REASON_RESIDUE, ("output-streams-held",)),
+            "participant selection provider failed: agent process cleanup left "
+            "residual processes; cleanup residual: output-streams-held",
+            id="residue",
+        ),
+    ],
+)
+def test_failed_provider_selections_fail_before_admission_with_their_cause(
     tmp_path: Path,
+    provider: object,
+    diagnostic: str,
 ) -> None:
-    for index, provider in enumerate((_MalformedProvider(), _OutOfSetProvider())):
-        control, model, backend, store = _runtime(tmp_path / str(index))
-        behavior = "participant.behavior-specification.complete-normal-session"
-        participant = _participant_for(model, behavior)
-        control.initialize_participant_episode(
-            participant, episode_id=f"rejected-{index}"
-        )
+    """Invalid output and bounded-runner failures never reach admission.
 
-        try:
-            run_participant_turn(
-                control,
-                behavior_specification_address=behavior,
-                apparatus=_apparatus(participant),
-                provider=provider,
-            )
-        except ValueError as exc:
-            assert str(exc) == "participant selection operation failed"
-        else:
-            raise AssertionError("invalid provider output reached admission")
+    Each failure is recorded with its own cause. The regression (#963): a
+    provider timeout or cleanup residue was recorded as "failed or returned
+    malformed output", which hid both.
+    """
 
-        assert control.snapshot.participant_behavior_history == {}
-        assert backend.calls == []
-        control_evidence = (
-            store.get_run_path("readiness-run")
-            / "evaluator/participant-control-evidence.jsonl"
+    control, model, backend, store = _runtime(tmp_path)
+    behavior = "participant.behavior-specification.complete-normal-session"
+    participant = _participant_for(model, behavior)
+    control.initialize_participant_episode(participant, episode_id="rejected")
+
+    try:
+        run_participant_turn(
+            control,
+            behavior_specification_address=behavior,
+            apparatus=_apparatus(participant),
+            provider=provider,
         )
-        assert control_evidence.exists()
-        record = json.loads(control_evidence.read_text())
-        assert record["solicitation_state"] == "failed"
-        assert record["admission_operation_id"] is None
-        assert record["selected_action_contract_address"] is None
+    except ValueError as exc:
+        assert str(exc) == "participant selection operation failed"
+    else:
+        raise AssertionError("invalid provider output reached admission")
+
+    assert control.snapshot.participant_behavior_history == {}
+    assert backend.calls == []
+    control_evidence = (
+        store.get_run_path("readiness-run")
+        / "evaluator/participant-control-evidence.jsonl"
+    )
+    assert control_evidence.exists()
+    record = json.loads(control_evidence.read_text())
+    assert record["solicitation_state"] == "failed"
+    assert record["solicitation_diagnostics"][0] == diagnostic
+    assert record["admission_operation_id"] is None
+    assert record["selected_action_contract_address"] is None
 
 
 def test_proposal_and_admitted_action_budgets_fail_closed(
