@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 from textwrap import dedent
@@ -18,8 +17,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 def _build_second_adapter(tmp_path: Path) -> Path:
     """Build and install a real distribution exposing all issue-980 seams."""
 
-    if shutil.which("uv") is None:
-        pytest.skip("uv is required for the installed-adapter artifact proof")
     project = tmp_path / "otherpack-adapter"
     package = project / "src" / "otherpack_adapter"
     package.mkdir(parents=True)
@@ -254,11 +251,12 @@ def _build_second_adapter(tmp_path: Path) -> Path:
     dist = tmp_path / "dist"
     completed = subprocess.run(
         [
-            "uv",
+            sys.executable,
+            "-m",
             "build",
             "--wheel",
-            "--no-build-isolation",
-            "--out-dir",
+            "--no-isolation",
+            "--outdir",
             str(dist),
             str(project),
         ],

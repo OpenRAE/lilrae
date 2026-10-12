@@ -11,6 +11,11 @@
     they mean LilRAE. See
     [ADR-062](adrs/adr-062-lilrae-name-and-naming-convention.md).
 
+    `aptl-labs` 7.0.0 is planned as the last `aptl-labs` release. Later
+    releases will publish to PyPI as `lilrae`, starting at version 8.0.0. When
+    `lilrae` 8.0.0 shows on PyPI, follow
+    [Move to the lilrae package](getting-started/installation.md#move-to-the-lilrae-package).
+
 LilRAE is a local purple-team lab where human operators and AI agents exercise
 red- and blue-team workflows against an intentionally vulnerable enterprise
 range. The released Python package supplies the CLI and materializes the lab

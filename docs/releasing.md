@@ -90,8 +90,11 @@ hand-edited.
 
 ## PyPI trusted publisher (one-time)
 
-pypi.org → Account → Publishing → add pending publisher: project `aptl-labs`, owner
-`Brad-Edwards`, repo `aptl`, workflow `release-please.yml`, environment `pypi`.
+On pypi.org, open the project → Settings → Publishing. The trusted publisher
+for project `aptl-labs` must have owner `OpenRAE`, repository `lilrae`, workflow
+`release-please.yml`, and environment `pypi`. The repository moved from
+`Brad-Edwards/aptl`, and PyPI matches the owner and repository names in the
+OIDC token. A publisher with the old names rejects the upload.
 `raes` must be on PyPI first (aptl depends on it). The distribution is named
 `aptl-labs` because `aptl` is reserved on PyPI; the import package and CLI stay `aptl`.
 
