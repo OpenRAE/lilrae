@@ -89,7 +89,9 @@ def _registry_base_refs(dockerfile: Path) -> list[str]:
     }
     required_args = {
         match.group("name")
-        for match in _REQUIRED_ARG.finditer(text[: first_from.start() if first_from else 0])
+        for match in _REQUIRED_ARG.finditer(
+            text[: first_from.start() if first_from else 0]
+        )
     }
     stages = {
         m.group(1).lower()
@@ -201,6 +203,7 @@ _BUILD_SHELL = [
     "mcp/build-all-mcps.sh",
     "tools/vale-lint-all.sh",
     "appliance/guest/provision-offline.sh",
+    "scripts/appliance/build-seat-image.sh",
 ]
 
 _NPM_INSTALL = re.compile(r"\bnpm\s+install\b")
