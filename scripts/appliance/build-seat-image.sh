@@ -111,7 +111,14 @@ install -d -m 0700 "$payload/wheelhouse"
 "$target_python" -m pip download --require-hashes \
   -r "$source_root/requirements/runtime.txt" --dest "$payload/wheelhouse"
 cp "$source_root/requirements/runtime.txt" "$payload/requirements.txt"
-uv build --wheel --out-dir "$payload/wheelhouse" "$source_root"
+# Build the application wheel offline, from the build backend the hashed
+# download above just staged. runtime.txt carries hatchling and its
+# dependencies with hashes; without these flags uv would build in an isolated
+# environment and fetch the unbounded [build-system].requires from the package
+# index unhashed.
+uv build --wheel --no-index --find-links "$payload/wheelhouse" \
+  --build-constraints "$source_root/requirements/runtime.txt" --require-hashes \
+  --out-dir "$payload/wheelhouse" "$source_root"
 python3 - "$source_root/pyproject.toml" "$payload/wheelhouse" \
   "$payload/aptl-wheel-requirements.txt" <<'PYTHON'
 import hashlib
