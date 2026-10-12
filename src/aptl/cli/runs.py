@@ -19,10 +19,12 @@ log = get_logger("cli.runs")
 app = typer.Typer(help="Experiment run management.")
 console = Console()
 
-#: Errors with which the export refuses a run whose seal it cannot verify: the
-#: sealed bytes or marker no longer match (``SealVerificationError``), or a run
-#: file cannot be opened safely, for example a symlink (``PathContainmentError``).
-_SEAL_REFUSALS = (SealVerificationError, PathContainmentError)
+#: Errors with which the export refuses a run: the sealed bytes or marker no
+#: longer match (``SealVerificationError``), a run file cannot be opened safely,
+#: for example a symlink (``PathContainmentError``), or the run cannot be read or
+#: the archive cannot be written (``OSError``), for example when the output
+#: directory is a file or a no-follow open meets a symlink (``ELOOP``).
+_EXPORT_REFUSALS = (SealVerificationError, PathContainmentError, OSError)
 
 
 def _get_store(project_dir: Path) -> LocalRunStore:
@@ -261,12 +263,12 @@ def export_run(
         except ImportError as e:
             typer.echo(f"Error: {e}")
             raise typer.Exit(code=1)
-        except _SEAL_REFUSALS as exc:
+        except _EXPORT_REFUSALS as exc:
             raise _export_refused(resolved_id, exc) from exc
     else:
         try:
             archive = export_local(store, resolved_id, output_dir)
-        except _SEAL_REFUSALS as exc:
+        except _EXPORT_REFUSALS as exc:
             raise _export_refused(resolved_id, exc) from exc
         typer.echo(f"Exported to: {archive}")
 

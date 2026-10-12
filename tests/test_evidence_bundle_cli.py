@@ -90,6 +90,29 @@ def _forge_marker_path(run_dir: Path) -> None:
     marker_file.write_text(json.dumps(marker))
 
 
+def _output_dir_is_a_file(out: Path) -> None:
+    out.write_text("not a directory")
+
+
+def _archive_path_is_a_directory(out: Path) -> None:
+    (out / "run-1.tar.gz").mkdir(parents=True)
+
+
+def _archive_path_is_a_symlink_loop(out: Path) -> None:
+    """Make the archive path a link to itself: any open of it fails with ELOOP."""
+    out.mkdir()
+    (out / "run-1.tar.gz").symlink_to("run-1.tar.gz")
+
+
+def _assert_refused_on_one_line(result, run_id: str) -> None:
+    assert result.exit_code == 1
+    # A clean typer.Exit, not an exception that escaped the command.
+    assert isinstance(result.exception, SystemExit), result.exception
+    assert result.stdout == ""
+    assert result.stderr.startswith(f"Error: refused to export run {run_id}: ")
+    assert result.stderr.count("\n") == 1
+
+
 class TestExportBundleCommand:
     def test_exports_and_reports_unsealed(self, tmp_path: Path) -> None:
         project = _project_with_run(tmp_path)
@@ -147,14 +170,19 @@ class TestVerifyBundleCommand:
         ("make_input", "reason"),
         [
             (_missing_bundle, f"cannot read bundle: [Errno {errno.ENOENT}] "),
-            (_truncated_bundle, "archive is truncated or corrupt: unexpected end of data"),
+            (
+                _truncated_bundle,
+                "archive is truncated or corrupt: unexpected end of data",
+            ),
         ],
         ids=["missing-path", "truncated"],
     )
     def test_reports_unreadable_input_without_a_traceback(
         self, tmp_path: Path, make_input, reason: str
     ) -> None:
-        result = runner.invoke(app, ["runs", "verify-bundle", str(make_input(tmp_path))])
+        result = runner.invoke(
+            app, ["runs", "verify-bundle", str(make_input(tmp_path))]
+        )
         assert result.exit_code == 1
         # A clean typer.Exit, not an exception that escaped the command.
         assert isinstance(result.exception, SystemExit), result.exception
@@ -179,7 +207,11 @@ class TestExportCommand:
                 [],
                 "inventory artifact is absent: evidence/x\\n\\x1b[31mforged",
             ),
-            (_rewrite_artifact, ["--s3-bucket", "bucket"], "does not match its checksum"),
+            (
+                _rewrite_artifact,
+                ["--s3-bucket", "bucket"],
+                "does not match its checksum",
+            ),
         ],
         ids=["rewritten-artifact", "symlinked-artifact", "control-characters", "s3"],
     )
@@ -196,14 +228,47 @@ class TestExportCommand:
             ["runs", "export", run_dir.name, "-d", str(project), "-o", str(out)]
             + extra_args,
         )
-        assert result.exit_code == 1
-        # A clean typer.Exit, not an exception that escaped the command.
-        assert isinstance(result.exception, SystemExit), result.exception
-        assert result.stdout == ""
-        assert result.stderr.startswith(f"Error: refused to export run {run_dir.name}: ")
+        _assert_refused_on_one_line(result, run_dir.name)
         assert reason in result.stderr
-        assert result.stderr.count("\n") == 1
         assert "\x1b" not in result.stderr
         # Nothing is written: no archive, and nothing is uploaded.
         assert not [path for path in out.rglob("*") if path.is_file()]
+        boto3.client.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("block_output", "extra_args", "errno_code"),
+        [
+            (_output_dir_is_a_file, [], errno.EEXIST),
+            (_archive_path_is_a_directory, [], errno.EISDIR),
+            (_archive_path_is_a_symlink_loop, [], errno.ELOOP),
+            (_output_dir_is_a_file, ["--s3-bucket", "bucket"], errno.EEXIST),
+        ],
+        ids=[
+            "output-dir-is-a-file",
+            "archive-path-is-a-directory",
+            "archive-path-is-a-symlink-loop",
+            "s3",
+        ],
+    )
+    def test_refuses_an_archive_it_cannot_write_on_one_line(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+        block_output,
+        extra_args: list[str],
+        errno_code: int,
+    ) -> None:
+        project = _project_with_run(tmp_path)
+        out = tmp_path / "exports"
+        block_output(out)
+        boto3 = MagicMock()
+        monkeypatch.setattr("aptl.core.exporter.boto3", boto3)
+        result = runner.invoke(
+            app,
+            ["runs", "export", "run-1", "-d", str(project), "-o", str(out)]
+            + extra_args,
+        )
+        _assert_refused_on_one_line(result, "run-1")
+        assert f": [Errno {errno_code}] " in result.stderr
+        assert not (out / "run-1.tar.gz").is_file()
         boto3.client.assert_not_called()
