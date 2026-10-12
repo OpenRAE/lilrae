@@ -1,11 +1,12 @@
 """Static consistency tests for APTL configuration files.
 
-These tests validate that docker-compose.yml, aptl.json, scripts, and code
-references are internally consistent. No running Docker environment needed.
+These tests check the live project-tree configuration and the realized
+TechVault pack. No running Docker environment is needed. The former profile
+comparison relied on inactive stubs, and the docker-exec scan matched no real
+references; both were removed for #954. Pack profile/dependency validation is
+covered by test_env_pack_realization.py and test_raes_backend.py.
 """
 
-import json
-import re
 from pathlib import Path
 
 import pytest
@@ -15,28 +16,11 @@ from tests.techvault_pack import realize_techvault_pack
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# Published host ports are parameterized (`${VAR:-default}`) so `aptl lab start`
-# can remap an in-use default to a free port. Resolve to the default so these
-# static checks compare against the value the stack publishes out of the box.
-_COMPOSE_VAR = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*(?::-([^}]*))?\}")
-
-
-def _resolve_compose_vars(text: str) -> str:
-    return _COMPOSE_VAR.sub(lambda m: m.group(1) or "", text)
-
-
 @pytest.fixture
 def compose_config():
     compose_path = PROJECT_ROOT / "docker-compose.yml"
     with open(compose_path) as f:
         return yaml.safe_load(f)
-
-
-@pytest.fixture
-def aptl_config():
-    config_path = PROJECT_ROOT / "aptl.json"
-    with open(config_path) as f:
-        return json.load(f)
 
 
 @pytest.fixture(scope="module")
@@ -330,55 +314,6 @@ class TestKaliContainerLifecycle:
             "access is published by backend apparatus, not by the node"
         )
         assert not kali.published_ports, "kali must publish no host port itself"
-
-
-class TestCodeReferencesMatchCompose:
-    """Ensure docker exec references in code match actual container_name values."""
-
-    def test_docker_exec_references(self, compose_config):
-        """All 'docker exec <name>' in .py and .sh files must reference a real container_name."""
-        services = compose_config.get("services", {})
-        valid_names = {
-            svc["container_name"]
-            for svc in services.values()
-            if "container_name" in svc
-        }
-
-        pattern = re.compile(r"docker\s+exec\s+(aptl-[\w.-]+)")
-        bad_refs = []
-
-        for ext in ("**/*.py", "**/*.sh"):
-            for fpath in PROJECT_ROOT.glob(ext):
-                if "node_modules" in str(fpath):
-                    continue
-                text = fpath.read_text(errors="replace")
-                for match in pattern.finditer(text):
-                    ref = match.group(1)
-                    if ref not in valid_names:
-                        bad_refs.append((str(fpath.relative_to(PROJECT_ROOT)), ref))
-
-        assert not bad_refs, (
-            "docker exec references to non-existent container names:\n"
-            + "\n".join(f"  {f}: {n}" for f, n in bad_refs)
-        )
-
-
-class TestProfileConsistency:
-    """Validate profiles between aptl.json and docker-compose.yml."""
-
-    def test_config_profiles_exist_in_compose(self, compose_config, aptl_config):
-        """Every profile in aptl.json containers must be used in docker-compose.yml."""
-        config_profiles = set(aptl_config.get("containers", {}).keys())
-
-        compose_profiles = set()
-        for svc in compose_config.get("services", {}).values():
-            for p in svc.get("profiles", []):
-                compose_profiles.add(p)
-
-        missing = config_profiles - compose_profiles
-        assert not missing, (
-            f"Profiles in aptl.json but not in docker-compose.yml: {missing}"
-        )
 
 
 class TestNetworkEgressControls:

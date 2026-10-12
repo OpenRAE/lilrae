@@ -1,5 +1,12 @@
 # Web GUI Design Preflight Guardrails
 
+> Historical design record (scope notice added 2026-10-12): this preflight
+> predates the completed FastAPI browser boundary and web workbench migration.
+> References to removed SvelteKit hooks and workbench modules describe that
+> earlier design. Current interfaces are documented in the
+> [Web reference](../reference/web.md), and contributor verification follows
+> the [coding standards](../CODING_STANDARDS.md).
+
 ## Scope
 
 This note is the architecture preflight for UI-007 and the binding guardrail

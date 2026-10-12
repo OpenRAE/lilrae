@@ -6,10 +6,15 @@ type: FUNCTIONAL
 priority: MUST
 wave: 4
 created_at: 2026-03-20T06:12:40.178955Z
-updated_at: 2026-03-20T06:18:11.649875Z
+updated_at: 2026-10-12T18:00:18.618385Z
 ---
 
 # SCN-009: Scenario Prerequisite Validation
+
+> Historical requirement record (scope notice added 2026-10-12): The statement names the retired scenario command group. The shipped `aptl lab start --scenario` path validates the admitted scenario and its prerequisite contracts.
+> The audited statement and status remain as recorded. See the current
+> [CLI reference](../../reference/cli.md) and
+> [Experiment Runs](../../reference/experiment-runs.md).
 
 ## Statement
 

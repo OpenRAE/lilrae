@@ -52,8 +52,7 @@ awareness through the SIEM. See ADR-033 for the full rationale.
 ## Host Access
 
 The pack declares `agents.red-team-operator.interactive_access.kali-ssh`.
-Docker never routes host traffic onto an internal network, so LilRAE
-satisfies that declaration with an operator-access relay: a separate
+LilRAE satisfies that operator-access declaration with a relay: a separate
 container (`aptl-operator-ssh-kali`, shown with the workspace prefix in
 `docker ps`, for example `aptl-w<id>-operator-ssh-kali`) that publishes
 `127.0.0.1:2023` and forwards it to port 22 on `kali`. The relay carries no
@@ -64,6 +63,10 @@ other published port and prints the new one:
 ```text
 [lab start] Host port 2023 for aptl-operator-ssh-kali is in use; publishing on <port> instead.
 ```
+
+Host MCP clients use the backend's native Kali ingress, which names the
+workload address. The relay describes the declared operator-access endpoint;
+it does not establish that the Docker host cannot reach the workload directly.
 
 The pack's transcript requirement turns on session capture, so port 22 on
 `kali` belongs to the capture sidecar and the relay ends at the capture

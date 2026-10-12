@@ -6,10 +6,15 @@ type: FUNCTIONAL
 priority: MUST
 wave: 1
 created_at: 2026-03-20T06:09:44.776757Z
-updated_at: 2026-10-10T05:27:04.000000Z
+updated_at: 2026-10-12T18:00:18.618385Z
 ---
 
 # CLI-005: Scenario Start/Stop/List Commands
+
+> Historical requirement record (scope notice added 2026-10-12): The statement names the retired scenario command group. Current lifecycle commands are `aptl lab scenarios`, `aptl lab start --scenario` and `aptl lab stop`.
+> The audited statement and status remain as recorded. See the current
+> [CLI reference](../../reference/cli.md) and
+> [Experiment Runs](../../reference/experiment-runs.md).
 
 ## Statement
 
@@ -17,7 +22,9 @@ The CLI shall provide aptl scenario start, aptl scenario stop, and aptl scenario
 
 ## Rationale
 
-UPDATED 2026-10-09: ba1e5491 removed the aptl scenario start, stop and list commands named above on 2026-03-29, with src/aptl/cli/scenario.py and tests/test_cli_scenario.py. aptl lab scenarios, aptl lab start --scenario and aptl lab stop now provide that lifecycle, and the traces point at them. The statement is left as written for the requirement audit. See GitHub issue #954. --- Original rationale: Scenario execution is the primary research workflow.
+Scenario execution is the primary research workflow. The lifecycle traces
+now point to the shipped lab commands; the historical notice dates the
+retirement of the command names in the statement. See GitHub issue #954.
 
 ## Traceability
 

@@ -6,7 +6,7 @@ type: NON_FUNCTIONAL
 priority: MUST
 wave: 6
 created_at: 2026-07-25T22:39:26.836288Z
-updated_at: 2026-07-26T00:06:36.824860Z
+updated_at: 2026-10-12T18:00:18.618385Z
 ---
 
 # APP-2: Versioned participant profile conformance
@@ -39,9 +39,9 @@ Issue #820 defines the reusable bounded workshop/classroom profile and qualifica
 - IMPLEMENTS → CODE_FILE `src/aptl/workbench/profiles.py` (Participant capability allow-list registry)
 - IMPLEMENTS → GITHUB_ISSUE `820` (Issue #820: resource-bounded participant lab profile)
 - TESTS → TEST `tests/test_participant_workbench.py` (Participant workbench profile tests)
-- IMPLEMENTS → CODE_FILE `src/aptl/appliance/inputs.py` (Canonical full-TechVault input and profile assembly)
+- IMPLEMENTS → CODE_FILE `src/aptl/appliance/input_profile.py` (Full-TechVault profile and qualification document assembly)
 - IMPLEMENTS → CODE_FILE `src/aptl/workbench/dispatch.py` (Server-side capability admission)
-- TESTS → TEST `tests/test_full_techvault_inputs.py` (Canonical pack, runtime inventory and readiness coverage)
+- TESTS → TEST `tests/test_seat_image_build.py` (Canonical pack, saved image identities and full-profile assembly)
 - TESTS → TEST `tests/test_mcp_transport_processes.py` (Real MCP process, role and browser transport integration)
 - TESTS → TEST `tests/test_mcp_payload_processes.py` (Every MCP initializes from the extracted runtime payload)
 - TESTS → TEST `tests/test_mcp_guest_management.py` (Private enrollment, inventory rejection and guest-only launch credentials)

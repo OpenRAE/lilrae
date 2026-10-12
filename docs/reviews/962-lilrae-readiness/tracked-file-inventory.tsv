@@ -188,6 +188,7 @@ containers/windows-victim/setup-x64dbg.ps1	split-pack-delivery	Inventory exact c
 docker-compose.capture.yml	backend-substrate	Post-baseline capture apparatus; retain with evidence custody authority
 docker-compose.observability.yml	backend-substrate	Post-baseline optional observability apparatus; retain with deployment authority
 docker-compose.yml	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
+docs/CODING_STANDARDS.md	core	Canonical issue delivery and verification standards
 docs/adrs/README.md	architecture-history	Preserve immutable record with proposed disposition ledger
 docs/adrs/adr-000-use-adrs.md	architecture-history	Preserve immutable record with proposed disposition ledger
 docs/adrs/adr-001-docker-compose-deployment.md	architecture-history	Preserve immutable record with proposed disposition ledger
@@ -298,6 +299,7 @@ docs/architecture/issue-913-shuffle-post-realization-mutation-preflight.md	docs-
 docs/architecture/issue-934-rename-boundary-preflight.md	architecture-history	Binding #934 rename-boundary inventory and retirement guardrails
 docs/architecture/issue-949-orborus-control-authority-preflight.md	architecture-history	Post-baseline architecture guidance; retain with its owning issue
 docs/architecture/issue-951-fresh-env-pack-start-preflight.md	docs-follow-owner	Separate current user guidance from historical evidence and scenario-pack-specific docs
+docs/architecture/issue-954-runtime-docs-and-test-authority-preflight.md	core	Runtime documentation and test authority guidance for issue 954
 docs/architecture/issue-955-systemd-substrate-privilege-preflight.md	architecture-history	Preserve issue 955 substrate posture decisions and daemon-gate guardrails
 docs/architecture/issue-956-sdl-runtime-authority-materialization-preflight.md	architecture-history	Preserve runtime-authority materialization decisions and implementation guardrails
 docs/architecture/issue-957-wazuh-attestation-evidence-credentials-preflight.md	architecture-history	Preserve Wazuh attestation, evidence-source, and scenario-credential ownership decisions

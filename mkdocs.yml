@@ -86,6 +86,8 @@ nav:
   - Workshop:
     - Playbook: workshop/playbook.md
     - Lab Walkthrough: workshop/walkthrough.md
+  - Development:
+    - Coding Standards: CODING_STANDARDS.md
   - Architecture:
     - Overview: architecture/index.md
     - Networking: architecture/networking.md

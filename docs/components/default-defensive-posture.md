@@ -1,5 +1,12 @@
 # Default Defensive Posture
 
+> Historical runtime record (scope notice added 2026-10-12): the body below
+> describes the former repository-owned images and defensive configuration.
+> Its image paths and fixed defaults are retained as historical evidence.
+> For the shipped runtime, use the admitted scenario configuration and the
+> [deployment observations](../deployment.md#observe-a-deployment).
+> The current [Kali guide](kali-redteam.md) describes the red-team node.
+
 The lab ships with an **intentionally weak** starting posture. Every
 defensive surface is either off, empty, or runs in detect-only mode at
 first boot. Every target weakness is intentional and unhardened.
