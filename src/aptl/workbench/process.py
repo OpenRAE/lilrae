@@ -23,13 +23,14 @@ nothing else, so processes outside it, such as scenario-owned persistent
 services, keep their declared lifecycle. A descendant that leaves the group is
 out of reach too; cleanup reports one only while it still holds the output
 streams. Residue is what cleanup can observe without trusting an errno: a
-child it could not reap, or output streams still held open. Reports name what
-remains, never argv, environment or output.
+child it could not reap, output streams still held open, or a process group
+whose disappearance it could not confirm. The last case can include unreaped
+zombies or a permission failure; it does not assert that a helper is live.
+Reports name these facts, never argv, environment or output.
 """
 
 from __future__ import annotations
 
-import contextlib
 import os
 import selectors
 import signal
@@ -67,6 +68,7 @@ REASON_OVERFLOW = "agent output exceeded the configured limit"
 REASON_RESIDUE = "agent process cleanup left residual processes"
 _RESIDUAL_AGENT_RUNNING = "agent-process-running"
 _RESIDUAL_STREAMS_HELD = "output-streams-held"
+_RESIDUAL_GROUP_UNCONFIRMED = "process-group-cleanup-unconfirmed"
 
 
 class AgentExecutionError(RuntimeError):
@@ -259,11 +261,12 @@ def _end_invocation(
     started = time.monotonic()
     exchange.stop_capture()
     exchange.close_input()
-    _terminate_process_group(process, exchange, grace_seconds)
+    group_ended = _terminate_process_group(process, exchange, grace_seconds)
     held = exchange.release(time.monotonic() + _RELEASE_SECONDS)
     observed = (
         (_RESIDUAL_AGENT_RUNNING, process.returncode is None),
         (_RESIDUAL_STREAMS_HELD, held),
+        (_RESIDUAL_GROUP_UNCONFIRMED, not group_ended),
     )
     return ProcessCleanup(
         process_group=process.pid,
@@ -341,12 +344,14 @@ def _terminate_process_group(
     process: subprocess.Popen[bytes],
     exchange: PipeExchange | None = None,
     grace_seconds: float = _TERM_GRACE_SECONDS,
-) -> None:
+) -> bool:
     """Terminate the child's whole process group while the group exists.
 
     SIGTERM, a grace period of ``grace_seconds``, then SIGKILL to the whole
     group if it has not ended, whether or not the direct child has gone, then
-    a bounded reap. An interrupted grace period, such as a second
+    a bounded wait for the child to be reaped and the group to disappear.
+    Return whether the group's disappearance was confirmed; sending SIGKILL
+    alone is not proof of cleanup. An interrupted grace period, such as a second
     KeyboardInterrupt, still sends the SIGKILL before the interruption
     propagates.
 
@@ -366,7 +371,7 @@ def _terminate_process_group(
     """
 
     if _group_ended(process):
-        return
+        return True
     ended = False
     try:
         _signal_group(process.pid, signal.SIGTERM)
@@ -375,5 +380,6 @@ def _terminate_process_group(
     finally:
         if not ended:
             _signal_group(process.pid, signal.SIGKILL)
-    with contextlib.suppress(subprocess.TimeoutExpired):
-        process.wait(timeout=_REAP_SECONDS)
+    if ended:
+        return True
+    return _await_group_exit(process, exchange, time.monotonic() + _REAP_SECONDS)

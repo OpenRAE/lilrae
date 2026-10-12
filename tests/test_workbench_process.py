@@ -582,6 +582,87 @@ def test_cleanup_signals_nothing_once_the_group_is_gone(tmp_path: Path) -> None:
     assert sent == {0}, "only the membership probe may reach the group"
 
 
+@pytest.mark.parametrize("probe_denied", [False, True])
+def test_cleanup_reports_an_unsignalable_helper_with_closed_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    probe_denied: bool,
+) -> None:
+    """Closed output pipes do not prove that an owned helper stopped.
+
+    A real helper closes its output and stays in the invocation's group.
+    Simulate permission failures without starting a privileged process: neither
+    stop signal can reach it, and the membership probe either sees the group
+    or cannot inspect it. Both cases must report unconfirmed cleanup rather
+    than return the parent's successful answer.
+    """
+
+    monkeypatch.setattr("aptl.workbench.process._SHUTDOWN_GRACE_SECONDS", 0.05)
+    monkeypatch.setattr("aptl.workbench.process._REAP_SECONDS", 0.1)
+    pid_file = tmp_path / "helper.pid"
+    helper = "import os; os.close(1); os.close(2);\n" + _HELPER
+    real_killpg = os.killpg
+    denied: list[int] = []
+
+    def deny_cleanup(group: int, number: int) -> None:
+        if number != 0 or probe_denied:
+            denied.append(number)
+            raise PermissionError(1, "Operation not permitted")
+        real_killpg(group, number)
+
+    try:
+        with mock.patch("aptl.workbench.process.os.killpg", side_effect=deny_cleanup):
+            with pytest.raises(BoundedProcessError) as raised:
+                _run(
+                    _parent(pid_file, "owned", "exit", helper=helper),
+                    cwd=tmp_path,
+                    timeout_seconds=30.0,
+                )
+
+        error = raised.value
+        assert error.reason == "agent process cleanup left residual processes"
+        assert error.cleanup.residual == ("process-group-cleanup-unconfirmed",)
+        assert (error.stdout_bytes, error.stderr_bytes) == (len(_RESULT), 0)
+        assert {signal.SIGTERM, signal.SIGKILL}.issubset(denied)
+        assert error.cleanup.seconds < _CLEANUP_BOUND + _SLACK
+        assert not _poll_until_absent(_published_pid(pid_file), timeout=0.1)
+    finally:
+        _end_helper(pid_file)
+
+
+def test_cleanup_confirms_group_exit_after_a_denied_stop_signal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A denied signal is inconclusive when a later probe proves disappearance."""
+
+    monkeypatch.setattr("aptl.workbench.process._SHUTDOWN_GRACE_SECONDS", 0.05)
+    killed = False
+
+    def disappearing_group(_group: int, number: int) -> None:
+        nonlocal killed
+        if number == 0:
+            if killed:
+                raise ProcessLookupError
+            return
+        if number == signal.SIGKILL:
+            killed = True
+        raise PermissionError(1, "Operation not permitted")
+
+    with mock.patch(
+        "aptl.workbench.process.os.killpg", side_effect=disappearing_group
+    ):
+        result = _run(
+            (sys.executable, "-c", "print('{\"ok\": true}')"),
+            cwd=tmp_path,
+            timeout_seconds=30.0,
+        )
+
+    assert killed
+    assert result.stdout == _RESULT
+    assert result.cleanup.residual == ()
+
+
 def test_cancellation_still_cleans_up_and_notes_the_cleanup(
     tmp_path: Path,
     outside_service: subprocess.Popen[bytes],
