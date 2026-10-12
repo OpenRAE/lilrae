@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import json
-from typing import NoReturn, TypeAlias, TypeVar
+from typing import NoReturn, TypeAlias
 
 from pydantic import BaseModel
 
 JsonValue: TypeAlias = (
     None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
 )
-ModelT = TypeVar("ModelT", bound=BaseModel)
+
+
 def _closed_object(pairs: list[tuple[str, JsonValue]]) -> dict[str, JsonValue]:
     """Build one object while rejecting ambiguous duplicate member names."""
 
@@ -38,7 +39,7 @@ def loads_strict(payload: bytes | str) -> JsonValue:
     )
 
 
-def model_validate_json_strict(
+def model_validate_json_strict[ModelT: BaseModel](
     model_type: type[ModelT], payload: bytes | str
 ) -> ModelT:
     """Reject ambiguous JSON, then retain Pydantic's JSON-aware strict coercion."""
