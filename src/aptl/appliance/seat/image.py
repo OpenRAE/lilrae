@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from aptl.appliance.download import (
+    ApplianceAuthenticationRequired,
     ApplianceDownloadError,
     fetch_https_metadata,
     stage_https_artifact,
@@ -47,6 +48,14 @@ _REPOSITORY_COMPONENT = r"[a-z0-9]+(?:(?:[._-]|__)[a-z0-9]+)*"
 _REPOSITORY = re.compile(rf"^{_REPOSITORY_COMPONENT}(?:/{_REPOSITORY_COMPONENT})*$")
 _TAG = re.compile(r"^\w[\w.-]{0,127}$", re.ASCII)
 _REGISTRY = re.compile(r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(?::\d{1,5})?$", re.ASCII)
+
+# RFC 9110 challenge syntax, enough to read one Bearer challenge's parameters.
+_HTTP_TOKEN = r"[\w!#$%&'*+.^`|~-]+"
+_BEARER_SCHEME = re.compile(r"Bearer[ \t]+", re.IGNORECASE)
+_AUTH_PARAM_NAME = re.compile(rf"({_HTTP_TOKEN})[ \t]*=[ \t]*", re.ASCII)
+_AUTH_PARAM_VALUE = re.compile(rf'({_HTTP_TOKEN})|"((?:[^"\\]|\\.)*)"', re.ASCII)
+_AUTH_PARAM_END = re.compile(r"[ \t]*(?:,[ \t]*|\Z)")
+_QUOTED_PAIR = re.compile(r"\\(.)")
 
 # One seat disk is a single blob in an OCI artifact. Accepting the index as
 # well lets a published reference point at a multi-architecture entry.
@@ -138,18 +147,92 @@ def parse_seat_image_reference(reference: str) -> SeatImageReference:
     )
 
 
-def _anonymous_token(reference: SeatImageReference) -> str | None:
-    """Obtain a pull token, returning ``None`` when the registry needs none."""
+def _auth_param(challenge: str, position: int) -> tuple[str, str, int] | None:
+    """Read one ``name=value`` auth-param, returning it and where the next starts."""
 
-    query = urllib.parse.urlencode(
-        {
-            "service": reference.registry,
-            "scope": f"repository:{reference.repository}:pull",
-        }
-    )
-    url = f"https://{reference.registry}/token?{query}"
+    name = _AUTH_PARAM_NAME.match(challenge, position)
+    if name is None:
+        return None
+    value = _AUTH_PARAM_VALUE.match(challenge, name.end())
+    if value is None:
+        return None
+    end = _AUTH_PARAM_END.match(challenge, value.end())
+    if end is None:
+        return None
+    token, quoted = value.groups()
+    text = token if quoted is None else _QUOTED_PAIR.sub(r"\1", quoted)
+    return name.group(1).lower(), text, end.end()
+
+
+def _bearer_parameters(challenge: str) -> dict[str, str] | None:
+    """Parse one ``Bearer`` challenge, or return ``None`` for anything else.
+
+    A malformed list or a repeated parameter is refused rather than guessed.
+    """
+
+    scheme = _BEARER_SCHEME.match(challenge)
+    if scheme is None:
+        return None
+    parameters: dict[str, str] = {}
+    position = scheme.end()
+    while position < len(challenge):
+        param = _auth_param(challenge, position)
+        if param is None or param[0] in parameters:
+            return None
+        name, value, position = param
+        parameters[name] = value
+    return parameters
+
+
+def _bearer_challenge(registry: str) -> dict[str, str] | None:
+    """Return the one Bearer challenge an unauthenticated request receives.
+
+    ``None`` means the registry sent no usable challenge: it answered without
+    asking for a token, or its answer named no single Bearer scheme.
+    """
+
     try:
-        payload = fetch_https_metadata(url, max_bytes=_MAX_METADATA_BYTES)
+        fetch_https_metadata(f"https://{registry}/v2/", max_bytes=_MAX_METADATA_BYTES)
+    except ApplianceAuthenticationRequired as exc:
+        bearers = [
+            parameters
+            for parameters in map(_bearer_parameters, exc.challenges)
+            if parameters is not None
+        ]
+        return bearers[0] if len(bearers) == 1 else None
+    except ApplianceDownloadError:
+        return None
+    return None
+
+
+def _anonymous_token(reference: SeatImageReference) -> str | None:
+    """Obtain a pull token from the token service the registry advertises.
+
+    A registry names that service in the ``realm`` and ``service`` of the
+    ``WWW-Authenticate: Bearer`` challenge it answers an unauthenticated
+    request with.  A registry that sends no challenge needs no token, so the
+    pull proceeds without one.
+    """
+
+    challenge = _bearer_challenge(reference.registry) or {}
+    realm = challenge.get("realm")
+    if not realm:
+        return None
+    if not realm.lower().startswith("https://"):
+        raise SeatImageError(
+            f"seat image registry {reference.registry} advertises a token "
+            "service that is not HTTPS"
+        )
+    query = {"scope": f"repository:{reference.repository}:pull"}
+    if challenge.get("service"):
+        query = {"service": challenge["service"], **query}
+    separator = "&" if "?" in realm else "?"
+    url = f"{realm}{separator}{urllib.parse.urlencode(query)}"
+    try:
+        # Token services may reply chunked; the read stays size-bounded.
+        payload = fetch_https_metadata(
+            url, max_bytes=_MAX_METADATA_BYTES, require_length=False
+        )
         document = json.loads(payload)
     except (ApplianceDownloadError, ValueError):
         return None

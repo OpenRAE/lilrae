@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import io
+import urllib.request
+import urllib.response
+from email.message import Message
 from pathlib import Path
 
 import pytest
 
+from aptl.appliance import download
 from aptl.appliance.download import (
+    ApplianceAuthenticationRequired,
     ApplianceDownloadError,
     fetch_https_metadata,
     stage_https_artifact,
@@ -120,4 +125,124 @@ def test_metadata_fetch_rejects_oversized_declaration() -> None:
                 status=200,
                 headers={"Content-Length": "9"},
             ),
+        )
+
+
+INDEX_URL = "https://github.example.test/release/index.json"
+REGISTRY_PING = "https://registry.example.test/v2/"
+CHALLENGE = 'Bearer realm="https://auth.example.test/token",service="registry"'
+
+
+class _Origin(urllib.request.BaseHandler):
+    """Answer HTTPS requests from a table, ahead of the network handler."""
+
+    handler_order = 100
+
+    def __init__(self, answers: dict[str, tuple[int, list[tuple[str, str]]]]):
+        self.answers = answers
+
+    def https_open(self, request: urllib.request.Request):
+        status, headers = self.answers[request.full_url]
+        message = Message()
+        for name, value in headers:
+            message[name] = value
+        response = urllib.response.addinfourl(
+            io.BytesIO(b""), message, request.full_url, status
+        )
+        response.msg = "answer"
+        return response
+
+
+def _through_urllib(answers: dict[str, tuple[int, list[tuple[str, str]]]]):
+    """Open requests with urllib's real error and bounded redirect handling."""
+
+    opener = urllib.request.build_opener(
+        download._BoundedRedirectHandler(), _Origin(answers)
+    )
+    return lambda request: opener.open(request, timeout=5)
+
+
+def test_metadata_401_hands_every_challenge_to_the_caller() -> None:
+    second = 'Basic realm="registry"'
+    open_request = _through_urllib(
+        {
+            REGISTRY_PING: (
+                401,
+                [("WWW-Authenticate", CHALLENGE), ("WWW-Authenticate", second)],
+            )
+        }
+    )
+
+    with pytest.raises(ApplianceAuthenticationRequired) as raised:
+        fetch_https_metadata(REGISTRY_PING, max_bytes=1024, open_request=open_request)
+
+    assert raised.value.challenges == (CHALLENGE, second)
+
+
+@pytest.mark.parametrize(
+    "answers",
+    [
+        pytest.param({REGISTRY_PING: (401, [])}, id="401-without-challenge"),
+        pytest.param(
+            {REGISTRY_PING: (404, [("WWW-Authenticate", CHALLENGE)])},
+            id="challenge-on-404",
+        ),
+        pytest.param(
+            {
+                REGISTRY_PING: (302, [("Location", "https://other.example.test/v2/")]),
+                "https://other.example.test/v2/": (
+                    401,
+                    [("WWW-Authenticate", CHALLENGE)],
+                ),
+            },
+            id="challenge-from-redirect-target",
+        ),
+        pytest.param(
+            {REGISTRY_PING: (302, [("Location", "http://registry.example.test/v2/")])},
+            id="cleartext-redirect",
+        ),
+    ],
+)
+def test_metadata_failure_without_a_challenge_for_the_url_stays_generic(
+    answers,
+) -> None:
+    with pytest.raises(ApplianceDownloadError, match="download failed") as raised:
+        fetch_https_metadata(
+            REGISTRY_PING, max_bytes=1024, open_request=_through_urllib(answers)
+        )
+
+    assert not isinstance(raised.value, ApplianceAuthenticationRequired)
+
+
+def test_unframed_metadata_is_admitted_only_when_asked_and_stays_bounded() -> None:
+    payload = b'{"token":"chunked"}'
+
+    def unframed(body: bytes):
+        return lambda _request: _Response(body, status=200, headers={})
+
+    with pytest.raises(ApplianceDownloadError, match="response is invalid"):
+        fetch_https_metadata(INDEX_URL, max_bytes=1024, open_request=unframed(payload))
+    fetched = fetch_https_metadata(
+        INDEX_URL, max_bytes=1024, open_request=unframed(payload), require_length=False
+    )
+    assert fetched == payload
+    for body in (b"x" * 1025, b""):
+        with pytest.raises(ApplianceDownloadError, match="length did not match"):
+            fetch_https_metadata(
+                INDEX_URL,
+                max_bytes=1024,
+                open_request=unframed(body),
+                require_length=False,
+            )
+
+
+def test_unframed_admission_still_checks_a_declared_length() -> None:
+    with pytest.raises(ApplianceDownloadError, match="length did not match"):
+        fetch_https_metadata(
+            INDEX_URL,
+            max_bytes=1024,
+            open_request=lambda _request: _Response(
+                b"short", status=200, headers={"Content-Length": "9"}
+            ),
+            require_length=False,
         )
