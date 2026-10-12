@@ -32,6 +32,8 @@ cross-repository catalog abstraction.
 
 ## Repository documentation inventory
 
+- `docs/architecture/issue-954-runtime-docs-and-test-authority-preflight.md`: candidate runtime and test authority boundaries.
+
 The repository-scoped terminology inventory at this preflight has these
 surfaces. Generated dependency files and source/test identifiers are excluded
 from the documentation inventory, but their contracts are named below because
