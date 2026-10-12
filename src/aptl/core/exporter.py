@@ -117,7 +117,9 @@ def export_local(
     """Export a run as a tar.gz archive with SHA-256 checksums.
 
     The archive is written with mode 0600. A missing ``output_dir`` is created
-    with mode 0700; an existing one keeps its mode.
+    with mode 0700; an existing one keeps its mode. It is created only after
+    the run's seal verifies and its checksums are computed, so an export that
+    refuses the run leaves no new directory behind (issue #1334).
 
     Args:
         store: The run store containing the run data.
@@ -129,6 +131,9 @@ def export_local(
 
     Raises:
         FileNotFoundError: If the run directory does not exist.
+        SealVerificationError: If the run is sealed and its seal does not verify.
+        PathContainmentError: If a sealed run's file cannot be opened safely,
+            for example because it is a symlink.
         OSError: If a symlink sits at the archive path (POSIX), or the archive
             cannot be written.
     """
@@ -137,8 +142,6 @@ def export_local(
     run_path = store.get_run_path(run_id)
     if not run_path.exists():
         raise FileNotFoundError(f"Run directory not found: {run_path}")
-
-    _ensure_output_dir(output_dir)
 
     # A sealed run is packaged as EXACTLY its verified seal inventory: the seal is
     # verified (marker shape/identity, manifest digest, and every inventory
@@ -151,6 +154,9 @@ def export_local(
     checksums_bytes = "".join(
         f"{digest}  {name}\n" for name, digest in sorted(checksums.items())
     ).encode("utf-8")
+
+    # Every check that can refuse the run has passed, so the directory is needed.
+    _ensure_output_dir(output_dir)
 
     # Create tar.gz archive; the checksum manifest is a synthetic member added to
     # the archive only, never written back into the run directory.

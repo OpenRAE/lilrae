@@ -37,8 +37,10 @@ Options:
   grants no group or other permissions; otherwise the command fails and writes
   nothing. A missing directory is created with mode 0700. `aptl runs export`
   creates a missing output directory, including its default `./exports`, with
-  mode 0700 as well, so the two commands can share it. To reuse a directory
-  with wider permissions, such as one that an earlier release of
+  mode 0700 as well, so the two commands can share it. It creates that
+  directory only after the run passes the checks that can refuse it, such as
+  seal verification, so a refused export leaves no directory behind. To reuse
+  a directory with wider permissions, such as one that an earlier release of
   `aptl runs export` created, run `chmod 700` on it first.
 - `--verify / --no-verify` controls the local self-verification pass that runs
   after the archive is written (on by default).

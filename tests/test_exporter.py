@@ -10,8 +10,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from aptl.core.archival import SealVerificationError
 from aptl.core.exporter import export_local, export_s3, _sha256_file
 from aptl.core.runstore import LocalRunStore
+from aptl.utils.pathsafe import PathContainmentError
 
 posix_modes = pytest.mark.skipif(os.name != "posix", reason="POSIX modes only")
 
@@ -220,6 +222,89 @@ class TestExportThenExportBundle:
             "run-1.evidence-bundle.tar",
             "run-1.tar.gz",
         ]
+
+
+def _sealed_project(tmp_path: Path) -> tuple[Path, LocalRunStore, str]:
+    """Seal one run under ``project/runs``; return the project, store and run id."""
+    from aptl.core.archival.coordinator import finalize_terminal_attempt
+    from tests.archival_fixtures import completed_context
+
+    project = tmp_path / "project"
+    store = LocalRunStore(project / "runs")
+    context = completed_context()
+    finalize_terminal_attempt(context, store=store)
+    return project, store, context.attempt_id
+
+
+def _rewrite_manifest(run_path: Path) -> None:
+    """Change the sealed manifest's bytes, so its digest no longer matches."""
+    manifest = run_path / "manifest.json"
+    manifest.write_bytes(manifest.read_bytes() + b"\n")
+
+
+def _symlink_manifest(run_path: Path) -> None:
+    """Swap the sealed manifest for a symlink to a copy of its own bytes."""
+    manifest = run_path / "manifest.json"
+    copy = run_path.parents[1] / "manifest-copy.json"
+    copy.write_bytes(manifest.read_bytes())
+    manifest.unlink()
+    manifest.symlink_to(copy)
+
+
+def _reported(result) -> str:
+    """What the command printed, plus the error that ended it, if any."""
+    return f"{result.output}{result.exception!r}"
+
+
+class TestRefusedExportCreatesNoDirectory:
+    """A run that export refuses leaves no new output directory (#1334)."""
+
+    @pytest.mark.parametrize(
+        ("tamper", "error"),
+        [
+            (_rewrite_manifest, SealVerificationError),
+            (_symlink_manifest, PathContainmentError),
+        ],
+        ids=["rewritten-manifest", "symlinked-manifest"],
+    )
+    def test_export_local_checks_the_seal_before_creating_the_directory(
+        self, tmp_path, tamper, error
+    ):
+        _, store, run_id = _sealed_project(tmp_path)
+        tamper(store.get_run_path(run_id))
+
+        with pytest.raises(error):
+            export_local(store, run_id, tmp_path / "exports" / "nested")
+
+        assert not (tmp_path / "exports").exists()
+
+    @pytest.mark.parametrize(
+        "extra_args",
+        [[], ["-o", "out/nested"], ["--s3-bucket", "bucket"]],
+        ids=["default-output-dir", "missing-output-dir", "s3"],
+    )
+    def test_runs_export_refusal_creates_no_output_directory(
+        self, tmp_path, monkeypatch, extra_args
+    ):
+        from typer.testing import CliRunner
+
+        from aptl.cli.main import app
+
+        project, store, run_id = _sealed_project(tmp_path)
+        _rewrite_manifest(store.get_run_path(run_id))
+        boto3 = MagicMock()
+        monkeypatch.setattr("aptl.core.exporter.boto3", boto3)
+        monkeypatch.chdir(tmp_path)
+
+        result = CliRunner().invoke(
+            app, ["runs", "export", run_id, "-d", str(project), *extra_args]
+        )
+
+        assert result.exit_code == 1
+        assert "manifest does not match the marker digest" in _reported(result)
+        # Neither ./exports, ./out nor anything else appeared beside the project.
+        assert [path.name for path in tmp_path.iterdir()] == ["project"]
+        boto3.client.assert_not_called()
 
 
 class TestExportS3:
