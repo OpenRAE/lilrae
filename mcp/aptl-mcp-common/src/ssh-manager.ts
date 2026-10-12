@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { createPtyTeeWriter } from './runs.js';
 import {
   SSHError,
+  CommandTimeoutError,
   require_,
   ensure,
   TIMEOUTS,
@@ -71,7 +72,9 @@ export class SSHConnectionManager {
    * so it can trigger a per-exec capture harvest.
    *
    * When the timeout fires, the remote command is sent TERM and its
-   * channel is closed before the promise rejects (#1290).
+   * channel is closed before the promise rejects (#1290). The rejection is a
+   * CommandTimeoutError that names the session and run ids; its channelClosed
+   * settles once the channel has closed (#1319).
    */
   public async executeCommand(
     host: string,
@@ -98,6 +101,10 @@ export class SSHConnectionManager {
       const output = { stdout: '', stderr: '' };
       let hasTimedOut = false;
       let channel: ClientChannel | undefined;
+      let markClosed: () => void = () => {};
+      const closed = new Promise<void>((settle) => {
+        markClosed = settle;
+      });
 
       // Every chunk still reaches the capture tee, but output that arrives
       // after the timer fired is not buffered for a result nobody reads.
@@ -110,12 +117,18 @@ export class SSHConnectionManager {
       const timeoutId = setTimeout(() => {
         hasTimedOut = true;
         stopTimedOutCommand(channel);
-        reject(new SSHError(`Command timeout after ${timeout}ms: ${redactCommand(command)}`));
+        reject(new CommandTimeoutError(
+          `Command timeout after ${timeout}ms: ${redactCommand(command)}`,
+          sessionId,
+          shellEnv.APTL_RUN_ID,
+          closed,
+        ));
       }, timeout);
 
       client.exec(command, { env: shellEnv }, (err, stream) => {
         if (err) {
           clearTimeout(timeoutId);
+          markClosed();
           reject(new SSHError(`Failed to execute command: ${err.message}`, err));
           return;
         }
@@ -123,6 +136,7 @@ export class SSHConnectionManager {
 
         stream.on('close', (code: number | null, signal: string | null) => {
           clearTimeout(timeoutId);
+          markClosed();
           if (!hasTimedOut) {
             // One-shot exec has no session-level mode; the wrapping always
             // emits a real exit code so the effective mode is 'normal'.

@@ -140,6 +140,15 @@ the time. It does not contain the `docker cp` output.
 | `aptl.capture-harvest.session-missing` | The container has no directory for the session. |
 | `aptl.capture-harvest.copy-failed` | `docker cp` failed for a different reason, for example the Docker daemon is not reachable. |
 
+A `kali_run_command` call is harvested the same way, under its exec session
+ID, when the command finishes. When the command times out, the server stops it
+and harvests the session once its SSH channel has closed, so the broker's final
+records are included. The timeout error waits up to three seconds for that. If
+the channel is still open then, the server returns the error and harvests the
+session when the channel closes. OpenSSH refuses the stop signal for the
+broker's forced-command session, so the channel can stay open until the
+command exits.
+
 ## Experimental record redaction toggle
 
 By default the MCP-side captures (tool-calls.jsonl, ocsf.jsonl)

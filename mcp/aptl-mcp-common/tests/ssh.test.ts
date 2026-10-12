@@ -4,7 +4,7 @@ vi.mock('ssh2', () => ({
   Client: vi.fn(),
 }));
 
-import { PersistentSession, SSHConnectionManager, SSHError } from '../src/ssh.js';
+import { CommandTimeoutError, PersistentSession, SSHConnectionManager, SSHError } from '../src/ssh.js';
 import { ShellType } from '../src/shells.js';
 import { EventEmitter } from 'events';
 
@@ -530,6 +530,64 @@ describe('#1290: one-shot exec timeout stops the remote command', () => {
     expect(channel.signal).not.toHaveBeenCalled();
     expect(channel.close).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(teed()).toEqual(['out', 'err']));
+  });
+
+  describe('#1319: the timeout names the session and reports when its channel closed', () => {
+    // run_command harvests a timed-out exec's captures from the rejection, and
+    // must wait for the channel to close so the broker's final records exist.
+    // The harvest reads the run the exec was started under, not the one that
+    // is active when the channel finally closes.
+    beforeEach(() => {
+      process.env.APTL_MCP_ADMITTED_RUN_ID = 'run-1319';
+    });
+
+    afterEach(() => {
+      delete process.env.APTL_MCP_ADMITTED_RUN_ID;
+    });
+
+    const timedOut = async (outcome: Promise<unknown>) => {
+      await vi.advanceTimersByTimeAsync(5000);
+      const err = (await outcome) as CommandTimeoutError;
+      expect(err).toBeInstanceOf(CommandTimeoutError);
+      expect(err.sessionId).toBe('exec-timeout');
+      expect(err.runId).toBe('run-1319');
+      const state = { settled: false };
+      void err.channelClosed.then(() => {
+        state.settled = true;
+      });
+      return state;
+    };
+
+    it('settles channelClosed when the server confirms the close', async () => {
+      const channel = execChannel();
+      const closed = await timedOut(run((open) => open(undefined, channel)));
+      // A forced-command session's close can come as late as the command's exit.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(closed.settled).toBe(false);
+
+      channel.emit('close', null, 'TERM');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(closed.settled).toBe(true);
+    });
+
+    it.each([
+      ['opens the channel and then closes it', (open: OpenChannel, channel: ReturnType<typeof execChannel>) => {
+        open(undefined, channel);
+        channel.emit('close', null, 'TERM');
+      }],
+      ['refuses to open the channel', (open: OpenChannel) => open(new Error('channel open failure'), undefined)],
+    ])('settles channelClosed when, after the timer fired, the server %s', async (_label, answer) => {
+      const channel = execChannel();
+      let openLate: OpenChannel = () => {};
+      const closed = await timedOut(run((open) => {
+        openLate = open;
+      }));
+      expect(closed.settled).toBe(false);
+
+      answer(openLate, channel);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(closed.settled).toBe(true);
+    });
   });
 });
 

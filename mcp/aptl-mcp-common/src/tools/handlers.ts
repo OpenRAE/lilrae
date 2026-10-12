@@ -1,9 +1,10 @@
 
 
-import { SSHConnectionManager, SessionMetadata, SSHError } from '../ssh.js';
+import { SSHConnectionManager, SessionMetadata, SSHError, CommandTimeoutError } from '../ssh.js';
 import { LabConfig, getTargetCredentials } from '../config.js';
 import { ShellType } from '../shells.js';
 import { harvestSession } from '../captures.js';
+import { harvestOnceClosed } from './timeout-harvest.js';
 
 /** Fallback message when a caught value is not an Error (SonarCloud S1192 —
  * the literal otherwise repeats in every handler's catch block). */
@@ -242,6 +243,9 @@ const baseHandlers: Record<string, ToolHandler> = {
         ],
       };
     } catch (error) {
+      if (error instanceof CommandTimeoutError) {
+        await harvestOnceClosed(error, (sessionId, runId) => maybeHarvest(labConfig, sessionId, runId));
+      }
       return {
         content: [
           {
