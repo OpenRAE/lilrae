@@ -81,6 +81,7 @@ assets/images/qradar_offences.png	repository-metadata	Inspect identity/content o
 bin/install-raes-inventory-skill.sh	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 changelog.d/+ghcr-candidate-package-visibility.fixed.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 changelog.d/+git-env-isolation.fixed.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
+changelog.d/+participant-mcp-browser-readiness.fixed.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 changelog.d/+techvault-live-boot-honesty.fixed.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 changelog.d/1021.fixed.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 changelog.d/1034.fixed.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
@@ -151,9 +152,7 @@ containers/kali-capture/Dockerfile	split-pack-delivery	Inventory exact content o
 containers/kali-capture/broker.py	backend-substrate	Post-baseline capture apparatus; retain with evidence custody authority
 containers/kali-capture/entrypoint.sh	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/kali-capture/sshd_config	backend-substrate	Post-baseline capture apparatus; retain with evidence custody authority
-containers/kali-capture/writer.py	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/kali/audit/aptl.rules	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
-containers/kali/scripts/aptl-capture-client	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/keys/aptl_lab_key.pub	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/keys/authorized_keys	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/mailserver/setup.sh	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
@@ -953,9 +952,11 @@ src/aptl/backends/scenario_startup.py	core-candidate	Generic content-identified 
 src/aptl/backends/scenario_startup_policy.py	core-candidate	Generic content-identified startup readiness policy; retain behind scenario-independent contract
 src/aptl/cli/__init__.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/cli/_common.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/cli/_start_residue.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/cli/config.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/cli/container.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/cli/continuity.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/cli/doctor.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/cli/experiment.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/cli/kill.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/cli/lab.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
@@ -969,6 +970,8 @@ src/aptl/cli/runs.py	core-candidate	Migrate only after public-import, history an
 src/aptl/cli/seat.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/cli/web.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/__init__.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/core/_doctor_common.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/core/_doctor_runtime.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/_pack_staging.py	core-candidate	Retain bounded no-follow pack acquisition with generic loading
 src/aptl/core/_port_bindings.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/_soc_ca_builders.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
@@ -1110,6 +1113,7 @@ src/aptl/core/deployment/realization.py	core-candidate	Migrate only after public
 src/aptl/core/deployment/runtime_materialization.py	backend-substrate	Retain faithful runtime materialization qualification
 src/aptl/core/deployment/ssh_compose.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/detection.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/core/doctor.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/endpoints.py	mixed-lifecycle-policy	Separate scenario/provider policy from reusable lifecycle or mechanism; do not copy wholesale
 src/aptl/core/env.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/evidence/__init__.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
@@ -1428,6 +1432,7 @@ tests/test_detection.py	tests-follow-owner	Retain meaningful boundary and parity
 tests/test_deterministic_archive.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_docker_compose_port_bindings.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_docker_image_identity.py	tests-follow-owner	Retain exact pinned child-image identity tests with deployment authority
+tests/test_doctor.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_endpoints.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_env.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_env_fuzz.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
@@ -1478,8 +1483,8 @@ tests/test_hostenv.py	tests-follow-owner	Retain meaningful boundary and parity t
 tests/test_base_container_admission_integration.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_realization_declaration_gate_contract.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_in_process_agents.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_kali_capture_broker.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_kali_capture_compose.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
-tests/test_kali_capture_writer.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_kill.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_lab.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_lab_core_only_artifact.py	tests-follow-owner	Installed wheel smoke proof for optional startup isolation
@@ -1520,7 +1525,6 @@ tests/test_network_boundary_helper.py	tests-follow-owner	Retain meaningful bound
 tests/test_network_boundary_probe.py	tests-follow-owner	Retain boundary probe tests with migrated owner
 tests/test_no_silent_privilege_escalation.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_node_materialization_integration.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
-tests/test_obs003_kali_capture.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_operator_access.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_out_of_tree_bundle_integration.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_pack_adapter_install_artifact.py	tests-follow-owner	Retain real installed second-adapter acceptance coverage
