@@ -79,31 +79,41 @@ def monitor(
         60, "--grace-minutes", help="Scheduled-provisioning grace window in minutes."
     ),
 ) -> None:
-    """Run lifecycle enforcement in a single-owner loop (DEP-003).
+    """Run lifecycle enforcement in a loop, one monitor per project (DEP-003).
 
     A thin convenience wrapper over ``aptl lab enforce`` for hosts without a
-    systemd timer / cron. Holds the project lifecycle lock for its whole run,
-    so a second monitor (or a one-shot ``enforce``) cannot act concurrently.
+    systemd timer / cron. A second monitor for the same project is refused.
+    The project lifecycle lock is held only while a tick runs, so start, stop
+    and kill work between ticks; a tick that finds the lock busy is skipped.
+    Each tick's result is printed as it happens. The command exits 1 when any
+    tick failed, as ``aptl lab enforce`` does, including after Ctrl-C.
     """
     from aptl.core.lifecycle_enforce import run_monitor
     from aptl.core.lifecycle_policy import LifecycleBusyError
 
+    printed: list[LabResult] = []
+
+    def print_tick(result: LabResult) -> None:
+        """Print one monitor result now and keep it for the exit status."""
+        _render_lifecycle_result(result)
+        printed.append(result)
+
     try:
-        results = run_monitor(
+        run_monitor(
             project_dir,
             interval_seconds=interval,
             max_ticks=max_ticks,
             grace_minutes=grace_minutes,
+            on_result=print_tick,
         )
     except LifecycleBusyError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1)
     except KeyboardInterrupt:
         typer.echo("monitor stopped.")
-        raise typer.Exit(code=0)
 
-    for result in results:
-        _render_lifecycle_result(result)
+    if any(not result.success for result in printed):
+        raise typer.Exit(code=1)
 
 
 @policy_app.command("show")
