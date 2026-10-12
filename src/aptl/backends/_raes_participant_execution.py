@@ -296,7 +296,11 @@ class _ParticipantDeliveryExecutor:
         if complete:
             return acquisition, controlled_snapshot
         if trial.failure is not None:
-            raise AgentExecutionError("participant delivery attempt failed")
+            # Only the runner's summary is carried: it names the reason, the
+            # withheld output sizes and the cleanup, never argv or output.
+            failure = collector.runner_failure
+            cause = "" if failure is None else f": {failure}"
+            raise AgentExecutionError(f"participant delivery attempt failed{cause}")
         raise AgentExecutionError(
             "participant delivery evidence acquisition did not complete"
         )

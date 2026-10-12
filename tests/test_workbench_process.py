@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import os
+import re
 import selectors
 import signal
 import subprocess
@@ -23,6 +24,10 @@ from unittest import mock
 import pytest
 
 from aptl.workbench.process import (
+    _REAP_SECONDS,
+    _RELEASE_SECONDS,
+    _SHUTDOWN_GRACE_SECONDS,
+    _TERM_GRACE_SECONDS,
     BoundedProcessError,
     BoundedProcessRunner,
     ProcessResult,
@@ -34,9 +39,14 @@ pytestmark = pytest.mark.skipif(
     os.name != "posix", reason="process-group supervision is POSIX-only"
 )
 
+_REPO = Path(__file__).resolve().parents[1]
 _ENVIRONMENT = {"PATH": "/usr/local/bin:/usr/bin:/bin"}
-# Cleanup has three one-second phases: SIGTERM grace, reap and stream release.
-_CLEANUP_BOUND = 3.0
+# Cleanup has three phases: SIGTERM grace, reap and stream release. The grace
+# period is short when the child was stopped and long once it exited itself.
+_CLEANUP_BOUND = _TERM_GRACE_SECONDS + _REAP_SECONDS + _RELEASE_SECONDS
+_SHUTDOWN_BOUND = _SHUTDOWN_GRACE_SECONDS + _REAP_SECONDS + _RELEASE_SECONDS
+# Still longer than the short grace period, so a test can tell the two apart.
+_SHORTENED_SHUTDOWN_GRACE = 3.0
 # Absorbs interpreter start-up and scheduling on loaded CI runners.
 _SLACK = 3.0
 # Long enough for the parent and its helper to start before the deadline.
@@ -44,6 +54,9 @@ _HANG_DEADLINE = 5.0
 # Covers interpreter start-up and writing a few pipe buffers of output.
 _INPUT_DEADLINE = 3.0
 _RESULT = b'{"ok": true}\n'
+# The OpenTelemetry OTLP exporter's default export timeout, which bounds the
+# trace flush that starts the common MCP server's SIGTERM handler.
+_OTLP_EXPORT_TIMEOUT_SECONDS = 10.0
 # Never periodic, so a lost, repeated or reordered chunk changes the digest.
 _PAYLOAD = hashlib.shake_256(b"#963 standard input").digest(1 << 20)
 
@@ -77,6 +90,21 @@ _TERM_RECORDER = """
 import os, pathlib, signal, sys, time
 marker = pathlib.Path(sys.argv[1] + ".term")
 signal.signal(signal.SIGTERM, lambda *_: marker.touch())
+staged = pathlib.Path(sys.argv[1] + ".tmp")
+staged.write_text(str(os.getpid()))
+staged.replace(sys.argv[1])
+time.sleep(60)
+"""
+
+# Shuts down slowly on SIGTERM, the way an MCP server awaits its SSH teardown,
+# and records that its shutdown finished before it exits.
+_SLOW_SHUTDOWN = """
+import os, pathlib, signal, sys, time
+def shut_down(*_):
+    time.sleep(3)
+    pathlib.Path(sys.argv[1] + ".done").touch()
+    sys.exit(0)
+signal.signal(signal.SIGTERM, shut_down)
 staged = pathlib.Path(sys.argv[1] + ".tmp")
 staged.write_text(str(os.getpid()))
 staged.replace(sys.argv[1])
@@ -143,7 +171,7 @@ def _run(
 
     worker = threading.Thread(target=invoke, daemon=True)
     worker.start()
-    worker.join(timeout_seconds + _CLEANUP_BOUND + 30)
+    worker.join(timeout_seconds + _SHUTDOWN_BOUND + 30)
     assert not worker.is_alive(), "the runner outlived its deadline and cleanup"
     if errors:
         raise errors[0]
@@ -318,26 +346,56 @@ def test_input_arrives_whole_and_then_closes(
 
 
 @pytest.mark.parametrize(
-    ("ending", "timeout_seconds", "failure"),
+    ("ending", "timeout_seconds", "failure", "grace", "bound"),
     [
-        pytest.param("exit", 30.0, None, id="success"),
-        pytest.param("flood", 30.0, "output exceeded", id="error"),
-        pytest.param("hang", _HANG_DEADLINE, "timeout", id="timeout"),
+        pytest.param(
+            "exit",
+            30.0,
+            None,
+            _SHORTENED_SHUTDOWN_GRACE,
+            _SHORTENED_SHUTDOWN_GRACE + _REAP_SECONDS + _RELEASE_SECONDS,
+            id="success",
+        ),
+        pytest.param(
+            "flood",
+            30.0,
+            "output exceeded",
+            _TERM_GRACE_SECONDS,
+            _CLEANUP_BOUND,
+            id="error",
+        ),
+        pytest.param(
+            "hang",
+            _HANG_DEADLINE,
+            "timeout",
+            _TERM_GRACE_SECONDS,
+            _CLEANUP_BOUND,
+            id="timeout",
+        ),
     ],
 )
 def test_cleanup_kills_owned_helpers_and_spares_outside_services(
     ending: str,
     timeout_seconds: float,
     failure: str | None,
+    grace: float,
+    bound: float,
     tmp_path: Path,
     outside_service: subprocess.Popen[bytes],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A SIGTERM-ignoring helper that outlives its parent never survives.
 
+    It is killed once its grace period is over: the long one after the child
+    exited on its own, the short one after the child was stopped at a limit.
+    The long one is shortened here so that the test does not wait it out.
     The regression: success skipped group cleanup entirely, so the helper and
     the output streams it held outlived every successful request.
     """
 
+    monkeypatch.setattr(
+        "aptl.workbench.process._SHUTDOWN_GRACE_SECONDS", _SHORTENED_SHUTDOWN_GRACE
+    )
     pid_file = tmp_path / "helper.pid"
     try:
         outcome = _outcome(
@@ -357,11 +415,112 @@ def test_cleanup_kills_owned_helpers_and_spares_outside_services(
             assert failure in outcome.reason
 
         assert outcome.cleanup.residual == ()
-        assert outcome.cleanup.seconds < _CLEANUP_BOUND + _SLACK
+        assert grace <= outcome.cleanup.seconds < bound + _SLACK
         assert _confirm_gone(pid_file), "a helper survived"
         assert outside_service.poll() is None, "cleanup reached a service"
     finally:
         _end_helper(pid_file)
+
+
+@pytest.mark.parametrize(
+    ("ending", "timeout_seconds", "finished"),
+    [
+        pytest.param("exit", 30.0, True, id="success"),
+        pytest.param("hang", _HANG_DEADLINE, False, id="timeout"),
+    ],
+)
+def test_helpers_finish_a_graceful_shutdown_only_after_the_child_exits(
+    ending: str,
+    timeout_seconds: float,
+    finished: bool,
+    tmp_path: Path,
+) -> None:
+    """After a success, helpers get time to shut down before SIGKILL.
+
+    The helper takes 3 s to act on SIGTERM, as the common MCP server does
+    while it closes its SSH sessions and the Kali capture wrapper flushes.
+    After the child exits on its own, cleanup waits for it. After a timeout,
+    the short grace period still applies, so the deadline does not stretch.
+    The regression: cleanup sent SIGKILL 1 s after SIGTERM in both cases, so
+    every successful turn cut off its MCP servers' teardown.
+    """
+
+    pid_file = tmp_path / "helper.pid"
+    done = Path(f"{pid_file}.done")
+    try:
+        outcome = _outcome(
+            _parent(pid_file, "owned", ending, helper=_SLOW_SHUTDOWN),
+            cwd=tmp_path,
+            timeout_seconds=timeout_seconds,
+        )
+        assert _confirm_gone(pid_file), "a helper survived"
+        assert done.exists() is finished
+        assert outcome.cleanup.residual == ()
+        if finished:
+            assert isinstance(outcome, ProcessResult)
+            assert outcome.stdout == _RESULT
+            assert outcome.cleanup.seconds < _SHUTDOWN_BOUND + _SLACK
+        else:
+            assert isinstance(outcome, BoundedProcessError)
+            assert outcome.cleanup.seconds < _CLEANUP_BOUND + _SLACK
+    finally:
+        _end_helper(pid_file)
+
+
+def test_shutdown_grace_covers_the_mcp_server_teardown_bounds() -> None:
+    """The long grace period outlasts the common MCP server's SIGTERM path.
+
+    The server flushes its traces, bounded by the OTLP exporter's default
+    10 s timeout, then ``disconnectAll`` waits up to ``REMOTE_CLOSE_AWAIT``
+    for the sessions' remote close and up to ``SESSION_CLOSE`` for the
+    connections. If either SSH bound grows, this fails until the grace period
+    is resized with it.
+    """
+
+    contracts = (_REPO / "mcp/aptl-mcp-common/src/ssh-contracts.ts").read_text(
+        encoding="utf-8"
+    )
+    bounds = dict(
+        re.findall(r"^\s*(REMOTE_CLOSE_AWAIT|SESSION_CLOSE): (\d+),", contracts, re.M)
+    )
+
+    assert set(bounds) == {"REMOTE_CLOSE_AWAIT", "SESSION_CLOSE"}
+    ssh_seconds = sum(int(milliseconds) for milliseconds in bounds.values()) / 1000
+    assert _OTLP_EXPORT_TIMEOUT_SECONDS + ssh_seconds < _SHUTDOWN_GRACE_SECONDS
+
+
+def test_a_write_that_would_block_is_retried(tmp_path: Path) -> None:
+    """Standard input survives a write that fails with EAGAIN.
+
+    The runner treats the selector's readiness as a hint. If a write still
+    fails with EAGAIN, which a real pipe does only when it has no room, the
+    chunk stays pending and is offered again at the next readiness, so the
+    child reads the whole prompt exactly once and the request succeeds. The
+    stub refuses the first write of the prompt.
+    """
+
+    real_write = os.write
+    refused: list[int] = []
+
+    def refuse_the_first_input_write(fd: int, data: bytes) -> int:
+        if not refused and bytes(data[:13]) == _PAYLOAD[:13]:
+            refused.append(fd)
+            raise BlockingIOError
+        return real_write(fd, data)
+
+    with mock.patch(
+        "aptl.workbench.process.os.write", side_effect=refuse_the_first_input_write
+    ):
+        result = _run(
+            (sys.executable, "-c", _READ_TO_END),
+            cwd=tmp_path,
+            stdin=_PAYLOAD,
+            timeout_seconds=30.0,
+        )
+
+    assert refused, "no write was refused"
+    assert (result.returncode, result.stdout) == (0, _digest(_PAYLOAD))
+    assert result.cleanup.residual == ()
 
 
 def test_capture_after_exit_takes_only_what_is_already_waiting() -> None:

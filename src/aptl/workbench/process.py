@@ -13,7 +13,10 @@ keeps two separate bounds:
 - **Cleanup** follows every outcome: success, error, cancellation or timeout.
   It signals the whole process group while the group still exists, reaps the
   child and waits a bounded time for the output streams to close. It is timed
-  and reported apart from the deadline.
+  and reported apart from the deadline. Once the child has exited on its own,
+  its helpers, such as the MCP servers a provider CLI started, get a longer
+  SIGTERM grace period to finish a graceful shutdown; a child stopped at a
+  limit or by cancellation gets the short one, so the deadline stays tight.
 
 Process supervision is not OS isolation. Cleanup reaches the process group and
 nothing else, so processes outside it, such as scenario-owned persistent
@@ -42,13 +45,28 @@ _CHUNK_BYTES = 65536
 
 # Cleanup bounds, each applied once: the SIGTERM grace period for the group,
 # reaping the child after SIGKILL, and waiting for the output streams to close.
+# The grace period depends on how the invocation ended. When the runner stops
+# a child that is still running, at a timeout or an overflow, or the request is
+# cancelled, the group gets the short one.
 _TERM_GRACE_SECONDS = 1.0
+# After the child has exited on its own, its remaining helpers are winding
+# down, so they get time to finish a graceful shutdown before SIGKILL. The
+# common MCP server's SIGTERM handler (mcp/aptl-mcp-common/src/server.ts) first
+# flushes its traces, which the OTLP exporter bounds at its default 10 s
+# timeout, then awaits sshManager.disconnectAll(). That allows each session up
+# to REMOTE_CLOSE_AWAIT (3 s) for the remote close that the Kali capture
+# wrapper's transcript flush depends on, then each connection up to
+# SESSION_CLOSE (5 s), both in mcp/aptl-mcp-common/src/ssh-contracts.ts. The
+# other 2 s cover the signal delivery and the process exit. A group that ends
+# sooner ends the wait sooner.
+_SHUTDOWN_GRACE_SECONDS = 20.0
 _REAP_SECONDS = 1.0
 _RELEASE_SECONDS = 1.0
 
-_TIMEOUT = "agent request exceeded the configured timeout"
-_OVERFLOW = "agent output exceeded the configured limit"
-_RESIDUE = "agent process cleanup left residual processes"
+# Why a bounded invocation failed: BoundedProcessError.reason is one of these.
+REASON_TIMEOUT = "agent request exceeded the configured timeout"
+REASON_OVERFLOW = "agent output exceeded the configured limit"
+REASON_RESIDUE = "agent process cleanup left residual processes"
 _RESIDUAL_AGENT_RUNNING = "agent-process-running"
 _RESIDUAL_STREAMS_HELD = "output-streams-held"
 
@@ -73,11 +91,24 @@ class ProcessCleanup:
     def summary(self) -> str:
         """Describe the cleanup without any process content."""
 
-        remaining = ", ".join(self.residual) or "none observed"
         return (
             f"process group {self.process_group} cleanup took "
-            f"{self.seconds:.2f}s; residual: {remaining}"
+            f"{self.seconds:.2f}s; residual: {self.residual_summary()}"
         )
+
+    def residual_summary(self) -> str:
+        """Name what cleanup could still observe, or say that it saw nothing."""
+
+        return ", ".join(self.residual) or "none observed"
+
+    def record(self) -> dict[str, object]:
+        """Return the cleanup as a JSON-ready record for run evidence."""
+
+        return {
+            "process_group": self.process_group,
+            "seconds": self.seconds,
+            "residual": list(self.residual),
+        }
 
 
 @dataclass(frozen=True)
@@ -113,6 +144,16 @@ class BoundedProcessError(AgentExecutionError):
         self.cleanup = cleanup
         self.stdout_bytes = stdout_bytes
         self.stderr_bytes = stderr_bytes
+
+    def record(self) -> dict[str, object]:
+        """Return the failure as a JSON-ready record for run evidence."""
+
+        return {
+            "reason": self.reason,
+            "withheld_stdout_bytes": self.stdout_bytes,
+            "withheld_stderr_bytes": self.stderr_bytes,
+            "cleanup": self.cleanup.record(),
+        }
 
 
 class ProcessRunner(Protocol):
@@ -163,11 +204,16 @@ class BoundedProcessRunner:
                 reason = _supervise(process, exchange, deadline)
             except BaseException as interrupted:
                 # Cancellation or an unexpected error still ends the invocation.
-                interrupted.add_note(_end_invocation(process, exchange).summary())
+                cleanup = _end_invocation(process, exchange, _TERM_GRACE_SECONDS)
+                interrupted.add_note(cleanup.summary())
                 raise
-            cleanup = _end_invocation(process, exchange)
+            # A child that exited on its own leaves helpers that are winding
+            # down; a child stopped at a limit gets the short grace period.
+            exited = process.returncode is not None
+            grace = _SHUTDOWN_GRACE_SECONDS if exited else _TERM_GRACE_SECONDS
+            cleanup = _end_invocation(process, exchange, grace)
         if reason is None and cleanup.residual:
-            reason = _RESIDUE
+            reason = REASON_RESIDUE
         if reason is not None:
             raise BoundedProcessError(
                 reason,
@@ -361,23 +407,24 @@ def _supervise(
     while process.poll() is None:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            return _TIMEOUT
+            return REASON_TIMEOUT
         if not exchange.pump(min(remaining, _POLL_SECONDS)):
-            return _OVERFLOW
+            return REASON_OVERFLOW
     exchange.close_input()
-    return None if exchange.drain() else _OVERFLOW
+    return None if exchange.drain() else REASON_OVERFLOW
 
 
 def _end_invocation(
     process: subprocess.Popen[bytes],
     exchange: _PipeExchange,
+    grace_seconds: float,
 ) -> ProcessCleanup:
     """Clean up the invocation's process group within its own fixed bound."""
 
     started = time.monotonic()
     exchange.stop_capture()
     exchange.close_input()
-    _terminate_process_group(process, exchange)
+    _terminate_process_group(process, exchange, grace_seconds)
     held = exchange.release(time.monotonic() + _RELEASE_SECONDS)
     observed = (
         (_RESIDUAL_AGENT_RUNNING, process.returncode is None),
@@ -458,13 +505,15 @@ def _await_group_exit(
 def _terminate_process_group(
     process: subprocess.Popen[bytes],
     exchange: _PipeExchange | None = None,
+    grace_seconds: float = _TERM_GRACE_SECONDS,
 ) -> None:
     """Terminate the child's whole process group while the group exists.
 
-    SIGTERM, a bounded grace period, then SIGKILL to the whole group if it has
-    not ended, whether or not the direct child has gone, then a bounded reap.
-    An interrupted grace period, such as a second KeyboardInterrupt, still
-    sends the SIGKILL before the interruption propagates.
+    SIGTERM, a grace period of ``grace_seconds``, then SIGKILL to the whole
+    group if it has not ended, whether or not the direct child has gone, then
+    a bounded reap. An interrupted grace period, such as a second
+    KeyboardInterrupt, still sends the SIGKILL before the interruption
+    propagates.
 
     Escalating only when the *direct child* outlived the grace period was the
     defect: a descendant that ignores or outlives SIGTERM stayed alive
@@ -486,7 +535,7 @@ def _terminate_process_group(
     ended = False
     try:
         _signal_group(process.pid, signal.SIGTERM)
-        grace_ends = time.monotonic() + _TERM_GRACE_SECONDS
+        grace_ends = time.monotonic() + grace_seconds
         ended = _await_group_exit(process, exchange, grace_ends)
     finally:
         if not ended:
