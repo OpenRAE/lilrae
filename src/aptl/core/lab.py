@@ -407,6 +407,34 @@ def _get_backend(
     )
 
 
+def _configured_backend(
+    project_dir: Path,
+    config: AptlConfig | None,
+    *,
+    command: str,
+    offline_staged: bool = False,
+) -> tuple[Optional["DeploymentBackend"], LabResult | None]:
+    """Create the configured backend, or the refusal that names its bad settings.
+
+    ``aptl.json`` can load and still hold deployment settings that only the
+    backend constructor checks, such as an ssh-compose block without
+    ``ssh_host``. ``command`` names the blocked ``aptl lab`` command.
+    """
+
+    try:
+        return _get_backend(project_dir, config, offline_staged=offline_staged), None
+    except ValueError as exc:
+        # The refusal carries the reason to the caller, which reports it.
+        return None, LabResult(
+            success=False,
+            error=(
+                f"[lifecycle-invalid-configuration] Lab {command} blocked: "
+                f"invalid deployment settings in aptl.json: {exc}. "
+                "Repair aptl.json and retry."
+            ),
+        )
+
+
 def build_compose_command(
     action: str,
     profiles: list[str],
@@ -505,7 +533,10 @@ def _stop_lab_owned(
         return failure
     assert profiles is not None
     if backend is None:
-        backend = _get_backend(search_dir, config)
+        backend, failure = _configured_backend(search_dir, config, command="stop")
+        if failure is not None:
+            return failure
+    assert backend is not None
     return _tear_down_owned(
         search_dir, backend, profiles, remove_volumes=remove_volumes
     )
@@ -590,7 +621,12 @@ def _reset_lab_owned(
         return LabResetResult(
             LabResult(success=False, error=_RESET_WORKSPACE_STATE_UNREADABLE)
         )
-    selected = backend or _get_backend(project_root, config)
+    selected = backend
+    if selected is None:
+        selected, failure = _configured_backend(project_root, config, command="reset")
+        if failure is not None:
+            return LabResetResult(failure)
+    assert selected is not None
     counts = _reset_counts(selected) if recorded else (0, 0)
     result = _tear_down_owned(
         project_root,
@@ -996,17 +1032,18 @@ def _clean_boot_rootless_refusal(
     Asks the daemon the teardown would use: the caller's backend or the
     verified appliance backend when there is one, otherwise the backend
     :func:`stop_lab` builds from ``aptl.json``, or from the defaults when there
-    is no ``aptl.json``. An ``aptl.json`` that does not load is left to
-    :func:`stop_lab`, which refuses it before any teardown.
+    is no ``aptl.json``. An ``aptl.json`` that does not load, or whose
+    deployment settings the backend rejects, is left to :func:`stop_lab`,
+    which refuses it before any teardown.
     """
 
     if backend is None:
         config_path = find_config(project_root)
         try:
             config = load_config(config_path) if config_path is not None else None
+            backend = _get_backend(project_root, config)
         except (FileNotFoundError, ValueError):
             return None
-        backend = _get_backend(project_root, config)
     return _rootless_daemon_refusal(backend)
 
 
@@ -1649,22 +1686,32 @@ def _step_load_config(ctx: _LabStartContext) -> LabResult | None:
             log.exception("Failed to load config")
             result = LabResult(success=False, error=f"Failed to load config: {exc}")
         if result is None:
-            ctx.backend = _get_backend(
-                ctx.project_dir,
-                ctx.config,
-                offline_staged=ctx.offline_staged,
-            )
-            result = _configure_verified_appliance_launch(ctx)
-            ctx.execution_boundary = (
-                bind_execution_boundary(
-                    ctx.backend,
-                    seat_guest=ctx.appliance_launch_descriptor is not None,
-                )
-                if result is None
-                else observe_execution_boundary(ctx.backend)
-            )
+            result = _bind_start_backend(ctx)
         if result is None:
             result = _load_admitted_start_surface(ctx)
+    return result
+
+
+def _bind_start_backend(ctx: _LabStartContext) -> LabResult | None:
+    """Create the configured backend and bind the start's execution boundary."""
+
+    ctx.backend, result = _configured_backend(
+        ctx.project_dir,
+        ctx.config,
+        command="start",
+        offline_staged=ctx.offline_staged,
+    )
+    if result is not None:
+        return result
+    result = _configure_verified_appliance_launch(ctx)
+    ctx.execution_boundary = (
+        bind_execution_boundary(
+            ctx.backend,
+            seat_guest=ctx.appliance_launch_descriptor is not None,
+        )
+        if result is None
+        else observe_execution_boundary(ctx.backend)
+    )
     return result
 
 

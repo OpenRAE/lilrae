@@ -5,6 +5,8 @@ Integration tests verify CLI commands call the correct core functions.
 We test our CLI wiring, not typer internals.
 """
 
+import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import ANY, MagicMock
@@ -2681,3 +2683,160 @@ class TestLabContinuityAuditCommand:
         )
 
         assert result.exit_code != 0
+
+
+# Issue #1354: an aptl.json that a command cannot use is reported, not raised.
+_UNLOADABLE_CONFIGS = [
+    pytest.param('{"lab": {"name": ', "Invalid JSON in", id="malformed-json"),
+    pytest.param("[]", "Config root must be a JSON object", id="list-root"),
+    pytest.param(
+        '{"deployment": {"provider": "kubernetes"}}',
+        "Unknown deployment provider",
+        id="failed-validation",
+    ),
+]
+_RUNS_COMMANDS = [
+    pytest.param(["runs", "list"], id="runs-list"),
+    pytest.param(["runs", "show", "run-1"], id="runs-show"),
+    pytest.param(["runs", "path", "run-1"], id="runs-path"),
+    pytest.param(["runs", "export", "run-1"], id="runs-export"),
+    pytest.param(["runs", "export-bundle", "run-1"], id="runs-export-bundle"),
+]
+# Settings that load as aptl.json but that the backend constructor rejects.
+_REJECTED_DEPLOYMENTS = [
+    pytest.param(
+        {"provider": "ssh-compose"},
+        "deployment.ssh_host is required for ssh-compose provider",
+        id="ssh-without-host",
+    ),
+    pytest.param(
+        {
+            "provider": "ssh-compose",
+            "ssh_host": "lab.example.com",
+            "ssh_user": "operator",
+            "ssh_key": "keys/id_ed25519",
+        },
+        "ssh_key must be an absolute path",
+        id="ssh-relative-key",
+    ),
+]
+_BACKEND_CLI_COMMANDS = [
+    pytest.param(["container", "list"], id="container-list"),
+    pytest.param(["container", "logs", "kali"], id="container-logs"),
+    pytest.param(["container", "shell", "kali"], id="container-shell"),
+    pytest.param(["lab", "status", "--json"], id="lab-status-json"),
+    pytest.param(["lab", "continuity-audit"], id="lab-continuity-audit"),
+    pytest.param(["config", "validate"], id="config-validate"),
+]
+_LIFECYCLE_COMMANDS = [
+    pytest.param(["lab", "start", "--json"], "start", id="lab-start"),
+    pytest.param(
+        ["lab", "start", "--clean", "--yes", "--json"], "stop", id="lab-start-clean"
+    ),
+    pytest.param(["lab", "stop", "--json"], "stop", id="lab-stop"),
+    pytest.param(["lab", "reset", "--yes", "--json"], "reset", id="lab-reset"),
+]
+
+
+class TestUnusableConfigIsReported:
+    """Issue #1354: commands name the aptl.json problem instead of raising it."""
+
+    @staticmethod
+    def _project(tmp_path: Path, content: str) -> str:
+        (tmp_path / "aptl.json").write_text(content)
+        return str(tmp_path)
+
+    @staticmethod
+    def _deployment(tmp_path: Path, deployment: dict) -> str:
+        return TestUnusableConfigIsReported._project(
+            tmp_path, json.dumps({"lab": {"name": "x"}, "deployment": deployment})
+        )
+
+    @staticmethod
+    def _assert_reported_exit(result) -> None:
+        # CliRunner records an escaped ValueError with exit code 1 as well, so
+        # the exception type is what tells a report from a traceback.
+        assert result.exit_code == 1
+        assert isinstance(result.exception, SystemExit), result.exception
+
+    @pytest.mark.parametrize("command", _RUNS_COMMANDS)
+    @pytest.mark.parametrize(("content", "reason"), _UNLOADABLE_CONFIGS)
+    def test_runs_commands_report_a_config_that_does_not_load(
+        self, runner, tmp_path, command, content, reason
+    ):
+        from aptl.cli.main import app
+
+        project = self._project(tmp_path, content)
+
+        result = runner.invoke(app, [*command, "--project-dir", project])
+
+        self._assert_reported_exit(result)
+        assert reason in result.stderr
+        assert result.stdout == ""
+
+    @pytest.mark.parametrize("command", _BACKEND_CLI_COMMANDS)
+    @pytest.mark.parametrize(("deployment", "reason"), _REJECTED_DEPLOYMENTS)
+    def test_cli_commands_report_rejected_deployment_settings_on_stderr(
+        self, runner, tmp_path, command, deployment, reason
+    ):
+        from aptl.cli.main import app
+
+        project = self._deployment(tmp_path, deployment)
+
+        result = runner.invoke(app, [*command, "--project-dir", project])
+
+        self._assert_reported_exit(result)
+        assert result.stderr.startswith(
+            f"invalid deployment settings in aptl.json: {reason}"
+        )
+        assert result.stdout == ""
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="the lab lifecycle lock opens directories with os.O_DIRECTORY, "
+        "which Windows does not provide",
+    )
+    @pytest.mark.parametrize(("command", "blocked"), _LIFECYCLE_COMMANDS)
+    @pytest.mark.parametrize(("deployment", "reason"), _REJECTED_DEPLOYMENTS)
+    def test_lifecycle_commands_refuse_rejected_deployment_settings(
+        self, runner, tmp_path, mocker, command, blocked, deployment, reason
+    ):
+        from aptl.cli.main import app
+
+        from aptl.core import lab as core_lab
+
+        project = self._deployment(tmp_path, deployment)
+        teardown = mocker.spy(core_lab, "_tear_down_owned")
+
+        result = runner.invoke(app, [*command, "--project-dir", project])
+
+        self._assert_reported_exit(result)
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is False
+        assert (
+            f"[lifecycle-invalid-configuration] Lab {blocked} blocked: invalid "
+            f"deployment settings in aptl.json: {reason}"
+        ) in payload["error"]
+        teardown.assert_not_called()
+
+    def test_config_validate_still_accepts_a_complete_ssh_compose_block(
+        self, runner, tmp_path
+    ):
+        from aptl.cli.main import app
+
+        project = self._deployment(
+            tmp_path,
+            {
+                "provider": "ssh-compose",
+                "ssh_host": "lab.example.com",
+                "ssh_user": "operator",
+                # tmp_path is absolute on every platform; "/home/..." is not
+                # absolute on Windows, which SSHComposeBackend would reject.
+                "ssh_key": str(tmp_path / "id_ed25519"),
+            },
+        )
+
+        result = runner.invoke(app, ["config", "validate", "--project-dir", project])
+
+        assert result.exit_code == 0
+        assert result.stdout.strip().endswith("aptl.json: OK")
