@@ -1,5 +1,9 @@
 # Issue 957: Wazuh Attestation, Evidence, and Credentials Preflight
 
+> **Dated preflight record.** Written on 2026-09-21 and kept as written. Since
+> then, #1152 (d1871df3, 2026-09-21) removed
+> `config/wazuh_indexer/internal_users.yml`, which it cites.
+
 **Status:** Accepted implementation guidance
 
 **Scope:** Architecture guardrails for issue 957; this note is not an

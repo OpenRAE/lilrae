@@ -160,8 +160,9 @@ non-contamination): red activity must not be ingested by the
 defensive stack via the SIEM. Red-side captures live in the
 per-run experimental record under `.aptl/runs/<run_id>/`.
 
-- Decoders for postgresql and samba ship at
-  [`config/wazuh_cluster/{postgresql,samba}_decoders.xml`](https://github.com/OpenRAE/lilrae/tree/main/config/wazuh_cluster).
+- Decoders for postgresql and samba ship in the acquired TechVault pack as
+  [`postgresql_decoders.xml` and `samba_decoders.xml`](https://github.com/OpenRAE/env-packs/tree/main/packs/techvault/assets/content),
+  which the pack installs under `/var/ossec/etc/decoders/`.
   (`kali_decoders.xml` deleted under ADR-033.)
 - **`zzz_purple_loop.xml` ships absent from the repo by design.** It
   only appears under `.aptl/loop/run-*/iter-NN/` (runtime artifacts
@@ -201,8 +202,8 @@ TheHive). Both of those are wired but disabled at first boot.
 |---|---|
 | Rule include order | [`config/wazuh_cluster/wazuh_manager.conf:356-368`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf) |
 | Hot rule directory | [`config/wazuh_cluster/wazuh_manager.conf:345-346`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf) |
-| Custom rule files | [`config/wazuh_cluster/*.xml`](https://github.com/OpenRAE/lilrae/tree/main/config/wazuh_cluster) |
-| Custom decoders | [`config/wazuh_cluster/*_decoders.xml`](https://github.com/OpenRAE/lilrae/tree/main/config/wazuh_cluster) |
+| Custom rule files | `*_rules.xml` in the acquired [`techvault` environment pack](https://github.com/OpenRAE/env-packs/tree/main/packs/techvault/assets/content) |
+| Custom decoders | `*_decoders.xml` in the acquired [`techvault` environment pack](https://github.com/OpenRAE/env-packs/tree/main/packs/techvault/assets/content) |
 | Purple-loop hot file (runtime-only) | not shipped; written under `.aptl/loop/run-*/iter-NN/zzz_purple_loop.xml` |
 
 ---
@@ -352,8 +353,9 @@ has zero graduated indicators on purpose.
   to Shuffle
   ([`config/wazuh_cluster/wazuh_manager.conf:316-320`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf)).
 - The integration is gated by a **runtime-written webhook URL**. The
-  custom forwarder script
-  ([`config/wazuh_cluster/custom-shuffle:3`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/custom-shuffle))
+  custom forwarder script, `custom-shuffle`, ships in the acquired
+  TechVault pack's [`wazuh-integrations.tar`](https://github.com/OpenRAE/env-packs/blob/main/packs/techvault/assets/content/wazuh-integrations.tar), which the pack
+  installs in `/var/ossec/integrations`. It
   reads the URL from `/var/ossec/etc/shuffle_webhook_url` inside the
   manager container and **silently exits if the file does not exist**.
   Until that file is written, Wazuh's `<integration>` block is wired
@@ -406,7 +408,7 @@ firing into a missing webhook.
 | Surface | File |
 |---|---|
 | Wazuh→Shuffle forwarder (declaration) | [`config/wazuh_cluster/wazuh_manager.conf:316-320`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf) |
-| Forwarder script (gated by webhook file) | [`config/wazuh_cluster/custom-shuffle`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/custom-shuffle) |
+| Forwarder script (gated by webhook file) | `custom-shuffle` in the acquired TechVault pack's [`wazuh-integrations.tar`](https://github.com/OpenRAE/env-packs/blob/main/packs/techvault/assets/content/wazuh-integrations.tar) |
 | Workflow seed script | [`scripts/seed-shuffle.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-shuffle.sh) |
 | Prime master seed | [`scripts/seed-prime.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh) |
 
@@ -448,67 +450,69 @@ prescriptive template would steer the experiment.
 ## Identity controls (Active Directory)
 
 **Tag:** This section mixes both banners. The intentional account-side
-weaknesses are `WEAKNESS BY DESIGN`. The provisioner's account-lockout
-policy is `BASELINE ENABLED` and is documented separately below.
+weaknesses are `WEAKNESS BY DESIGN`. The account-lockout state is
+documented separately below.
 
 **Default state—account weaknesses (`WEAKNESS BY DESIGN`)**
 
-The TechVault AD provisioner
-([`containers/ad/provision-users.sh`](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh))
-seeds these intentional vulnerabilities:
+The acquired TechVault pack declares the domain's accounts in the
+`accounts` section of its SDL
+([`techvault.sdl.yaml`](https://github.com/OpenRAE/env-packs/blob/main/packs/techvault/sdl/techvault.sdl.yaml)).
+Each account has a `password_strength`, its groups and, for a service
+account, an SPN. LilRAE's Samba AD provider creates the accounts on the
+`ad` node. These declarations are the intentional vulnerabilities:
 
-| Surface | What ships | Line |
+| Surface | What ships | SDL account |
 |---|---|---|
-| Weak password—`michael.thompson` | trivial seasonal pattern (string in source) | [65](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
-| Weak password—`jessica.williams` | trivial dictionary pattern (string in source) | [82](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
-| Default-issued—`contractor.temp` | over-privileged contractor account with default password (string in source) | [122-127](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
-| Stale account—`former.employee` | unrevoked account with old password (string in source) | [130](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
-| Over-privilege—`emily.chen` | DevOps account in `Domain Admins` | [62](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
-| Over-privilege—`svc-backup` | service account in `Domain Admins` | [119](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
-| Kerberoastable—`svc-sql` | SPN set on `MSSQLSvc/db.techvault.local` | [104-105](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
-| Kerberoastable—`svc-web` | SPN set on `HTTP/webapp.techvault.local` | [112](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
+| Weak password—`Administrator` | built-in domain administrator, declared `weak` | `ad-administrator` |
+| Weak password—`michael.thompson` | seasonal password, declared `weak` | `ad-michael-thompson` |
+| Weak password—`jessica.williams` | declared `weak` | `ad-jessica-williams` |
+| Default-issued—`contractor.temp` | abandoned contractor account with a default password, declared `weak`, in `VPN-Users`, `Remote-Desktop` and `Engineering` | `ad-contractor-temp` |
+| Stale account—`former.employee` | still enabled, declared `weak` | `ad-former-employee` |
+| Over-privilege—`emily.chen` | DevOps account in `Domain Admins` | `ad-emily-chen` |
+| Over-privilege—`svc-backup` | service account in `Domain Admins` | `ad-svc-backup` |
+| Kerberoastable—`svc-sql` | SPN `MSSQLSvc/db.techvault.local:1433`, declared `weak` | `ad-svc-sql` |
+| Kerberoastable—`svc-web` | SPN `HTTP/webapp.techvault.local`, declared `weak` | `ad-svc-web` |
 
-The actual password literals are in
-[`containers/ad/provision-users.sh`](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh)—
-this document deliberately does not reproduce them. Running labs are
-intended to be isolated by `internal: true` Docker networks; if a
-deployment exposes the AD container externally, the in-source
-passwords become a credential-reuse risk against that deployment.
-Operators should rotate them post-provision when the container is not
-strictly local.
+The pack declares no password values. For each `weak` or `medium`
+account, LilRAE mints a password of the declared class, proves it by
+authenticating as that account, and writes it only to the project's
+`.aptl/realization/account-credentials/` directory: mode 0600 files under
+a 0700 directory. A `strong` account gets a password that the target
+generates with `samba-tool user create --random-password`, and nothing
+reads it back. When any declared account is `weak`, LilRAE first relaxes
+the domain password policy with `samba-tool domain passwordsettings set
+--complexity=off --min-pwd-length=1 --min-pwd-age=0 --history-length=0`,
+so that the weak passwords hold
+([`_compose_account_realization.py`](https://github.com/OpenRAE/lilrae/blob/main/src/aptl/core/deployment/_compose_account_realization.py),
+[`_account_provider.py`](https://github.com/OpenRAE/lilrae/blob/main/src/aptl/core/deployment/_account_provider.py)).
+Running labs are intended to be isolated by `internal: true` Docker
+networks. If a deployment exposes the AD container externally, the weak
+passwords become a credential-guessing risk against that deployment.
 
-**Default state—account-lockout policy (`BASELINE ENABLED`)**
+**Default state—account lockout**
 
-The provisioner enables a baseline AD account-lockout policy
-([`containers/ad/provision-users.sh:135-138`](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh)):
-
-| Setting | Value |
-|---|---|
-| `account-lockout-threshold` | 10 failed attempts |
-| `account-lockout-duration` | 30 minutes |
-| `reset-account-lockout-after` | 15 minutes |
-
-This is **on at first boot**—brute-force/spray attempts that exceed
-ten failures will trigger AD-side lockout regardless of whether Wazuh
-detection rules or `<active-response>` blocks are enabled. Researchers
-reading run results should expect baseline-rate password spraying to
-trip this lockout, which is independent of the SOC stack.
+Neither the pack nor LilRAE sets an account-lockout policy. The domain
+keeps the lockout settings that `samba-tool domain provision` writes,
+and the password-policy change above leaves them unchanged.
 
 **Samba configuration baseline**
 
-The AD DC's `smb.conf` is generated by `samba-tool domain provision`
-([`containers/ad/setup-ad.sh:21-28`](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/setup-ad.sh))
+The AD DC's `smb.conf` is generated by `samba-tool domain provision` on
+the Samba provider's first start
+([`containers/generic-samba-ad-base/provision-domain.sh:21-28`](https://github.com/OpenRAE/lilrae/blob/main/containers/generic-samba-ad-base/provision-domain.sh))
 with stock provisioning parameters (`--server-role=dc`,
-`--use-rfc2307`, `--dns-backend=SAMBA_INTERNAL`). The repo does **not**
-ship an override `smb.conf`, an `extra_smb_conf` snippet, or any
-post-provision sed/append that locks down anonymous null-session
-policy, RPC pipe access, or SMB1 fallback. Whether the running DC
-permits anonymous SMB enumeration depends on Samba's stock defaults
-for the AD DC role at the version baked into the container image
-([`containers/ad/Dockerfile`](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/Dockerfile))—and
-those defaults historically have been permissive enough that a SOC-101
-"check what an unauthenticated null-session can list" exercise
-produces meaningful output.
+`--use-rfc2307`, `--dns-backend=SAMBA_INTERNAL`). Neither the repository
+nor the pack ships an override `smb.conf` for the `ad` node, an
+`extra_smb_conf` snippet, or any post-provision sed/append that locks
+down anonymous null-session policy, RPC pipe access, or SMB1 fallback.
+Whether the running DC permits anonymous SMB enumeration depends on
+Samba's stock defaults for the AD DC role at the version in the
+provider image
+([`containers/generic-samba-ad-base/Dockerfile`](https://github.com/OpenRAE/lilrae/blob/main/containers/generic-samba-ad-base/Dockerfile),
+Ubuntu's Samba packages). Those defaults historically have been
+permissive enough that a SOC-101 "check what an unauthenticated
+null-session can list" exercise produces meaningful output.
 
 If blue rotates this from a passive baseline to a hardened one, the
 expected per-iteration action is to drop an override `smb.conf` (or
@@ -524,9 +528,8 @@ These are the *target's* deliberate flaws. Red exploits them
 accounts, anonymous SMB enumeration) and blue defends against them by
 detecting (Wazuh AD rules), responding (active-response), or
 hardening (rotating to strong passwords, removing Domain Admin
-membership, disabling null-sessions). The provisioner echoes the
-intentional weaknesses on stdout for transparency
-([`containers/ad/provision-users.sh:143-150`](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh)).
+membership, disabling null-sessions). Each account's SDL `description`
+names its intentional weakness.
 
 **What blue would do to raise it**
 
@@ -547,7 +550,9 @@ intentional weaknesses on stdout for transparency
 
 | Surface | File |
 |---|---|
-| AD provisioner with weak passwords + over-priv | [`containers/ad/provision-users.sh`](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
+| Account declarations (weak passwords, over-privilege, SPNs) | `accounts` in the acquired pack's [`techvault.sdl.yaml`](https://github.com/OpenRAE/env-packs/blob/main/packs/techvault/sdl/techvault.sdl.yaml) |
+| Account realization and password disclosure | [`src/aptl/core/deployment/_compose_account_realization.py`](https://github.com/OpenRAE/lilrae/blob/main/src/aptl/core/deployment/_compose_account_realization.py) |
+| Domain provisioning | [`containers/generic-samba-ad-base/provision-domain.sh`](https://github.com/OpenRAE/lilrae/blob/main/containers/generic-samba-ad-base/provision-domain.sh) |
 | Wazuh AD detection rules | Acquired [`techvault` environment pack](https://github.com/OpenRAE/env-packs/tree/main/packs/techvault) |
 
 ---

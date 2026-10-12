@@ -1,5 +1,10 @@
 # Issue #880 TechVault Env-Pack Consumption Preflight
 
+> **Dated preflight record.** Written on 2026-09-21 and kept as written. Since
+> then, #1149 (4191a3d5, 2026-09-21) removed
+> `config/wazuh_cluster/suricata_rules.xml`, which it cites. The acquired
+> TechVault pack ships that rule file.
+
 Reconciled against the current working tree on 2026-09-21. The supplied issue is
 the contract; there is no formal requirement. This is boundary guidance,
 not an implementation plan or completion claim. TechVault already belongs in

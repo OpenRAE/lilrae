@@ -207,7 +207,6 @@ aptl runs export <run-id> --s3-bucket my-bucket --s3-prefix runs/
 - `src/aptl/core/runstore.py`: Storage backend protocol and local filesystem implementation, seal-marker commit, and sealed-state immutability
 - `src/aptl/core/archival/`: Terminal-attempt archival, covering RAES run-record composition, terminal-cause status mapping, atomic seal marker, discovery index, and the legacy-manifest read adapter
 - `src/aptl/core/execution/`: The execution controller that drives admitted trials to sealed terminal records, plus the owner-native RAES sub-model bridges (clock, apparatus context, parameters, stochastic controls, evidence artifacts, result summaries)
-- `src/aptl/core/run_assembler.py`: Orchestrates data collection after scenario stop
 - `src/aptl/core/snapshot.py`: Range snapshot dataclasses and capture logic
 - `src/aptl/core/exporter.py`: Local tar.gz and S3 export
 - `src/aptl/core/collectors.py`: Individual data collectors (Wazuh, Suricata, TheHive, etc.)

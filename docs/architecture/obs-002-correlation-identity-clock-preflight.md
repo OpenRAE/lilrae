@@ -1,5 +1,10 @@
 # OBS-002 Correlation Identity And Clock Context Preflight
 
+> **Dated preflight record.** Written on 2026-07-19 and kept as written. Since
+> then, #1257 (1abe440b, 2026-10-11) removed
+> `containers/kali-capture/writer.py`, which it cites. The capture broker,
+> `containers/kali-capture/broker.py`, records the session transcript.
+
 This note is the architecture preflight for OBS-002 / issue #447. It is
 guidance, not an implementation plan. No new ADR is needed: ADR-012 owns
 OpenTelemetry integration, ADR-027 owns red-team structured logging, ADR-029

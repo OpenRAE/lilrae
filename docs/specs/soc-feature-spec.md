@@ -1,6 +1,10 @@
 # Scenario & Observability Core—Architecture Spec
 
-> Historical note: this document describes the pre-SDL scenario runtime that was removed in the SDL-only branch. It is retained for context until a new SDL-native runtime lands.
+> Historical record: this document describes the pre-SDL scenario runtime, which
+> ba1e5491 removed on 2026-03-29 together with the `aptl scenario` commands,
+> `src/aptl/cli/scenario.py` and the tests this spec names. It is kept as written
+> for context. LilRAE now lists scenarios with `aptl lab scenarios` and starts
+> one with `aptl lab start --scenario`.
 
 ## 1. Overview
 
