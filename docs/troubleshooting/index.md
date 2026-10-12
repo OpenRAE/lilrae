@@ -311,42 +311,53 @@ Recover in this order, with the index and container names from your error:
     curl -s 'http://localhost:9200/<index>/_mapping'
     ```
 
-2.  Back up any data that you need before you reset anything. The index lives
-    in a Docker volume that the container mounts. Docker names that container
-    with an added workspace marker, for example `aptl-w<id>-thehive-es` for
-    `aptl-thehive-es`, and `aptl container list` shows that name. While the
-    container still exists, list the volumes that it mounts and where:
+2.  Back up any data that you need before you reset anything. Use
+    [Elasticsearch snapshots](https://www.elastic.co/guide/en/elasticsearch/reference/7.17/snapshot-restore.html#warnings).
+    A copy or tar archive of the service's data directory is not a supported
+    backup, even when the service is stopped.
+
+    APTL does not configure a snapshot repository. Use an existing registered
+    repository or follow Elasticsearch's
+    [repository setup](https://www.elastic.co/guide/en/elasticsearch/reference/7.17/snapshots-register-repository.html#snapshots-filesystem-repository).
+    For local filesystem storage, mount a separate backup directory into the
+    search container, set `path.repo`, and restart the service before
+    registering it. Keep the repository outside every lab volume that
+    `aptl lab stop --volumes` deletes.
+    On a remote Docker host, that directory belongs on the remote host.
+    Until backup is available, keep the existing volumes; `aptl lab stop`
+    without `--volumes` preserves them.
+
+    With the search service running and a repository registered, run these
+    commands from its container shell. Replace `<repository>` with that
+    repository's name and `<snapshot>` with a new snapshot name:
 
     ```shell
-    docker inspect <container-name> --format '{{range .Mounts}}{{println .Name .Destination}}{{end}}'
+    curl -fsS -X POST 'http://localhost:9200/_snapshot/<repository>/_verify'
+    curl -fsS -X PUT 'http://localhost:9200/_snapshot/<repository>/<snapshot>?wait_for_completion=true'
+    curl -fsS 'http://localhost:9200/_snapshot/<repository>/<snapshot>'
     ```
 
-    The index is in the `<volume>` mounted at the service's data directory.
-    For `aptl-thehive-es`, that line reads
-    `aptl-w<id>_thehive_es_data /usr/share/elasticsearch/data`. `aptl lab stop`
-    without `-v` removes the lab's containers and keeps every volume. Stop the
-    lab, then archive that volume into the current directory from a throwaway
-    container that mounts it read-only:
+    The snapshot includes all open indices by default. Before any reset,
+    check that its `state` is `SUCCESS`, `shards.failed` is `0`, and `indices`
+    includes the conflicting index and every other index you need. Then
+    [test restoration](https://www.elastic.co/guide/en/elasticsearch/reference/7.17/snapshots-restore-snapshot.html#restore-different-cluster)
+    in a separate compatible cluster with the repository registered read-only.
+    Verify the restored data before deleting the original volumes. Preserve
+    any required data in other lab services with their own backup procedures;
+    an Elasticsearch snapshot does not cover those services.
 
-    ```shell
-    aptl lab stop
-    docker run --rm -v <volume>:/data:ro -v "$PWD":/backup ubuntu tar -cf /backup/<volume>.tar -C /data .
-    ```
-
-    Copy the volume name exactly, because Docker creates an empty volume for a
-    name that it doesn't know. If the lab runs on a remote Docker host, run the
-    `docker` commands on that host.
-
-3.  Reset only when the data is disposable:
+3.  Reset only when all lab data is disposable or its required backups have
+    passed restoration checks:
 
     ```shell
     aptl lab stop --volumes
     ```
 
     This is a destructive reset. It permanently deletes all of this project's
-    lab volumes, not only the conflicting index, and only your backup can
-    restore that data. The command asks for confirmation first. Then start the
-    lab again with the same `--scenario` or `--scenario-path` option.
+    lab volumes, not only the conflicting index. The command asks for
+    confirmation first. Then start the lab again with the same `--scenario` or
+    `--scenario-path` option. Restore required data separately; restoring the
+    conflicting index unchanged also restores its unowned state.
 
 ### macOS: Docker Desktop uninstall leftovers
 
