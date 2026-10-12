@@ -136,8 +136,12 @@ master, plus sidecar-owned lifecycle metadata, not a workload-supplied log.
   `mcp/aptl-mcp-common/src/runs.ts`, and
   `mcp/aptl-mcp-common/src/captures.ts` as the run-layout and harvest
   boundaries. Harvest still targets the configured `capture_container_name`
-  and preserves chmod repair, global `_audit` / `_proc-acct` collection, and
-  fail-loud missing-source behavior.
+  and preserves chmod repair and fail-loud missing-source behavior.
+  Update (2026-10-11, #1242): the sidecar runs no auditd or process
+  accounting, so the harvest no longer copies global `_audit` /
+  `_proc-acct` directories. A failed harvest writes a named
+  `capture-harvest-failure.json` record into the session's kali-side
+  evidence.
 - **Error envelopes and observability:** preserve existing `SSHError`, MCP
   JSON result envelopes, `harvest_warning`, stderr logging style, and degraded
   readiness patterns. Do not introduce a second exception hierarchy or make
