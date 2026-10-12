@@ -62,13 +62,22 @@ class KillResult:
 
 
 class McpDiscoveryUnavailableError(RuntimeError):
-    """The kill could not look for MCP server processes on this host."""
+    """The kill could not look for every MCP server process on this host.
 
-    def __init__(self, reason: str) -> None:
+    ``found`` lists the processes that discovery found anyway.
+    ``kill_mcp_processes`` stops them before it re-raises, and records the
+    outcome in ``killed`` and ``errors``.
+    """
+
+    def __init__(self, reason: str, found: list[McpProcess]) -> None:
+        self.found = found
+        self.killed = 0
+        self.errors: list[str] = []
+        missed = "that it did not find" if found else "that are running"
         super().__init__(
             f"MCP process discovery is unavailable: {reason}. Any MCP servers "
-            "that are running were not stopped; end each node process running "
-            "an mcp-*/build/index.js server by hand, for example with Task "
+            f"{missed} were not stopped; end each node process running an "
+            "mcp-*/build/index.js server by hand, for example with Task "
             "Manager or Stop-Process on Windows."
         )
 
@@ -135,9 +144,12 @@ def _find_via_pgrep() -> list[McpProcess]:
 
     A ``pgrep`` that cannot run, or exits with neither 0 (a match) nor 1 (no
     match), raises instead of returning an empty list: a host that cannot
-    look must not report that no MCP server is running.
+    look must not report that no MCP server is running. The scan still asks
+    about every server, and the error carries the first failure and the
+    processes that were found, so that the kill can stop them.
     """
     found: list[McpProcess] = []
+    failures: list[tuple[str, Optional[OSError]]] = []
     for name in MCP_SERVER_NAMES:
         pattern = f"{name}/build/index.js"
         try:
@@ -149,15 +161,18 @@ def _find_via_pgrep() -> list[McpProcess]:
             if result.returncode not in (0, 1):
                 stderr = result.stderr.strip().splitlines() or ["no error output"]
                 status = f"pgrep exited with status {result.returncode}"
-                raise McpDiscoveryUnavailableError(f"{status} ({stderr[0]})")
+                failures.append((f"{status} ({stderr[0]})", None))
             if result.returncode == 0:
                 for line in result.stdout.strip().splitlines():
                     pid = int(line.strip())
                     found.append({"pid": pid, "cmdline": pattern, "name": name})
         except OSError as exc:
-            raise McpDiscoveryUnavailableError(f"pgrep could not run ({exc})") from exc
+            failures.append((f"pgrep could not run ({exc})", exc))
         except ValueError:
             continue
+    if failures:
+        reason, cause = failures[0]
+        raise McpDiscoveryUnavailableError(reason, found) from cause
     return found
 
 
@@ -266,14 +281,32 @@ def kill_mcp_processes(
         Tuple of (number of processes killed, list of error messages).
 
     Raises:
-        McpDiscoveryUnavailableError: The host cannot look for MCP server
-            processes, so none was signalled.
+        McpDiscoveryUnavailableError: The host could not look for every MCP
+            server process. The processes that it found are still stopped
+            first, and the error's ``killed`` and ``errors`` report that.
     """
-    processes = find_mcp_processes()
+    try:
+        processes = find_mcp_processes()
+    except McpDiscoveryUnavailableError as exc:
+        # Stop what discovery did find before reporting that it failed.
+        if exc.found:
+            exc.killed, exc.errors = _stop_processes(
+                exc.found, timeout, time_source, sleep
+            )
+        raise
     if not processes:
         log.info("No MCP server processes found")
         return 0, []
+    return _stop_processes(processes, timeout, time_source, sleep)
 
+
+def _stop_processes(
+    processes: list[McpProcess],
+    timeout: float,
+    time_source: Callable[[], float],
+    sleep: Callable[[float], None],
+) -> tuple[int, list[str]]:
+    """SIGTERM *processes*, then SIGKILL the survivors; return (killed, errors)."""
     log.info(
         "Found %d MCP server process(es): %s",
         len(processes),
@@ -341,6 +374,8 @@ def _execute_kill_owned(containers: bool, resolved_dir: Path) -> KillResult:
         errors.extend(mcp_errors)
     except McpDiscoveryUnavailableError as exc:
         mcp_discovery_unavailable = True
+        mcp_killed = exc.killed
+        errors.extend(exc.errors)
         msg = str(exc)
         log.error(msg)
         errors.append(msg)

@@ -4,6 +4,7 @@ All process discovery, signal sending, and Docker Compose interactions
 are mocked. No real processes are killed or containers stopped.
 """
 
+import errno
 import json
 import os
 import signal
@@ -808,3 +809,63 @@ class TestExecuteKill:
         assert "pgrep exited with status 3 (pgrep: Cannot get process list)" in (
             result.errors[0]
         )
+
+    @pytest.mark.parametrize(
+        ("failure", "reason"),
+        [
+            (
+                subprocess.CompletedProcess(
+                    ["pgrep"], 3, "", "pgrep: Cannot get process list\n"
+                ),
+                "pgrep exited with status 3 (pgrep: Cannot get process list)",
+            ),
+            (
+                BlockingIOError(errno.EAGAIN, "Resource temporarily unavailable"),
+                f"pgrep could not run ([Errno {errno.EAGAIN}] Resource temporarily"
+                " unavailable)",
+            ),
+        ],
+        ids=["exit-status", "os-error"],
+    )
+    @patch("aptl.core.kill._process_exited", return_value=True)
+    @patch("aptl.core.kill.os.kill")
+    @patch("aptl.core.kill.sys")
+    @patch("aptl.core.kill.subprocess.run")
+    def test_stops_found_servers_when_a_later_pgrep_fails(
+        self, mock_run, mock_sys, mock_kill, mock_exited, failure, reason, tmp_path
+    ):
+        """pgrep fails for mcp-red alone: the kill still stops what it found.
+
+        It keeps asking about the other servers, sends SIGTERM to the
+        mcp-wazuh process found before the failure and the mcp-threatintel
+        process found after it, and still fails, because an mcp-red server
+        may be running.
+        """
+        from aptl.core.kill import MCP_SERVER_NAMES, execute_kill
+
+        def run(cmd, **kwargs):
+            name = cmd[2].removesuffix("/build/index.js")
+            if name == "mcp-red" and isinstance(failure, OSError):
+                raise failure
+            if name == "mcp-red":
+                return failure
+            pid = {"mcp-wazuh": "4242\n", "mcp-threatintel": "4343\n"}.get(name, "")
+            return subprocess.CompletedProcess(cmd, 0 if pid else 1, pid, "")
+
+        mock_sys.platform = "darwin"
+        mock_run.side_effect = run
+
+        result = execute_kill(containers=False, project_dir=tmp_path)
+
+        assert mock_run.call_count == len(MCP_SERVER_NAMES)
+        assert mock_kill.call_args_list == [
+            call(4242, signal.SIGTERM),
+            call(4343, signal.SIGTERM),
+        ]
+        assert result.success is False
+        assert result.mcp_discovery_unavailable is True
+        assert result.mcp_processes_killed == 2
+        assert len(result.errors) == 1
+        message = result.errors[0]
+        assert message.startswith(f"MCP process discovery is unavailable: {reason}.")
+        assert "Any MCP servers that it did not find were not stopped" in message
