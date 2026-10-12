@@ -52,4 +52,5 @@ Current tracing records tool invocations but not the reasoning behind them. Unde
 - TESTS → TEST `mcp/mcp-red/tests/logger.test.ts` (localOcsfJsonlSink + defaultRedTeamSinks + sink-error return-value contract)
 - TESTS → TEST `tests/test_kali_capture_compose.py` (Compose-consistency tests for the ADR-041 boundary: no kali mount, sidecar caps/namespaces/ports)
 - IMPLEMENTS → CODE_FILE `mcp/aptl-mcp-common/src/ssh-session.ts` (Continuous PTY tee + SendEnv APTL_* + boundRunId in PersistentSession (split from ssh.ts, issue #790))
-- IMPLEMENTS → CODE_FILE `containers/kali-capture/broker.py` (Backend-owned session transcript broker and capture authority validation)
+- IMPLEMENTS → CODE_FILE `containers/kali-capture/broker.py` (Kali session transcript broker: the capture sidecar's ForceCommand, which refuses a session without the active run's custody environment and records frames.jsonl per session)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/deployment/_compose_capture_apparatus.py` (Admits the kali-capture sidecar and moves the Kali sshd to 127.0.0.1:2222 behind it)

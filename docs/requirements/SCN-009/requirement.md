@@ -1,7 +1,7 @@
 ---
 id: SCN-009
 title: "Scenario Prerequisite Validation"
-status: ACTIVE
+status: DEPRECATED
 type: FUNCTIONAL
 priority: MUST
 wave: 4
@@ -12,7 +12,8 @@ updated_at: 2026-10-12T18:00:18.618385Z
 # SCN-009: Scenario Prerequisite Validation
 
 > Historical requirement record (scope notice added 2026-10-12): The statement names the retired scenario command group. The shipped `aptl lab start --scenario` path validates the admitted scenario and its prerequisite contracts.
-> The audited statement and status remain as recorded. See the current
+> The original statement is retained; the rationale records its retirement.
+> See the current
 > [CLI reference](../../reference/cli.md) and
 > [Experiment Runs](../../reference/experiment-runs.md).
 
@@ -22,4 +23,4 @@ aptl scenario start shall validate that all required lab profiles (as declared i
 
 ## Rationale
 
-Prerequisite validation catches configuration mismatches before the scenario begins.
+DEPRECATED 2026-10-12: ADR-009 now opens with a historical note: it documents the retired pre-SDL scenario runtime, and its aptl scenario commands and runtime modules are not part of the current branch. ba1e5491 removed the aptl scenario start command this statement names on 2026-03-29, together with the scenario YAML and the session it describes. An RAES SDL scenario now selects its Compose profiles when aptl lab start admits it. See GitHub issue #954. --- Original rationale: Prerequisite validation catches configuration mismatches before the scenario begins.

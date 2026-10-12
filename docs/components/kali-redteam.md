@@ -30,11 +30,18 @@ awareness through the SIEM. See ADR-033 for the full rationale.
 - **User**: `kali`. Its `authorized_keys` comes from the pack's
   `techvault-ssh-keys` generated artifact and authorizes the LilRAE
   control-plane key, `~/.ssh/aptl_lab_key` on the operator's host.
-- **SSH**: under session capture, which the pack's transcript requirement
-  turns on, the node's own `ssh.service` listens on `127.0.0.1:2222` and the
-  capture sidecar's sshd holds port 22 (see
-  [Session Capture](#session-capture)). Without a capture sidecar,
-  `ssh.service` listens on port 22. The node itself publishes no host port.
+- **SSH**: Key-based authentication only. The Kali capture sidecar
+  (`aptl-w<id>-kali-capture`, named per workspace) shares the Kali network
+  namespace and owns port 22. Its sshd accepts
+  `APTL_SESSION_ID`, `APTL_RUN_ID` and `APTL_TRACE_ID` from the MCP server.
+  The Kali sshd listens on loopback port 2222 behind the sidecar.
+- **ForceCommand**: the sidecar sshd runs `/usr/local/bin/broker.py` for
+  every `kali` session. The broker records the session transcript in the
+  sidecar and relays the session to the Kali sshd. It refuses the session
+  when no capture authority is active.
+- **Without capture**: when no capture sidecar runs, the node's own sshd
+  listens on port 22 (see [Session Capture](#session-capture)). The node
+  itself publishes no host port.
 - **Capabilities**: the scenario grants the node no Linux capability of its
   own.
 

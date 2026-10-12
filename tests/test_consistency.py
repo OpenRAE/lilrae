@@ -16,6 +16,7 @@ from tests.techvault_pack import realize_techvault_pack
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+
 @pytest.fixture
 def compose_config():
     compose_path = PROJECT_ROOT / "docker-compose.yml"
