@@ -23,6 +23,7 @@ Required before any autonomous agent operation. RedTeamLLM includes a kill switc
 
 - DOCUMENTS → GITHUB_ISSUE `229` (SAF-001: Kill Switch for All Agent and MCP Operations)
 - IMPLEMENTS → CODE_FILE `src/aptl/core/kill.py` (Kill switch core logic)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/kill_containers.py` (Kill switch container stop)
 - IMPLEMENTS → CODE_FILE `src/aptl/cli/kill.py` (Kill switch CLI command)
 - IMPLEMENTS → CODE_FILE `src/aptl/api/routers/kill.py` (Kill switch API endpoint)
 - TESTS → TEST `tests/test_kill.py` (Kill switch core logic tests)
