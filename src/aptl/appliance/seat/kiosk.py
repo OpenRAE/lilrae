@@ -23,9 +23,13 @@ def _kiosk_login_token(seat_root: Path, record: SeatRecord) -> str | None:
     if record.lifecycle_state != "ready":
         return None
     token_path = seat_root / "access" / f"generation-{record.generation}" / "web-launch-token"
-    if token_path.is_symlink() or not token_path.is_file():
-        raise SeatLauncherError("missing-web-login", "seat browser login is unavailable")
-    return token_path.read_text(encoding="utf-8").strip()
+    unavailable = SeatLauncherError("missing-web-login", "seat browser login is unavailable")
+    try:
+        if not token_path.is_symlink() and token_path.is_file():
+            return token_path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise unavailable from exc
+    raise unavailable
 
 
 def resolve_kiosk_access(
@@ -80,10 +84,21 @@ def build_kiosk_launch_plan(
         url,
     )
     argv = (
-        (*enter_private_network(namespace_pid), *browser_argv)
+        (*_private_network_prefix(namespace_pid), *browser_argv)
         if namespace_pid is not None else browser_argv
     )
     return KioskLaunchPlan(argv=argv, url=url)
+
+
+def _private_network_prefix(namespace_pid: int) -> tuple[str, ...]:
+    """Enter the seat desktop's network, or fail with a bounded seat error."""
+
+    try:
+        return enter_private_network(namespace_pid)
+    except ValueError as exc:
+        raise SeatLauncherError("desktop-unavailable", str(exc)) from exc
+    except OSError as exc:
+        raise SeatLauncherError("vm-not-running", "seat desktop VM is not running") from exc
 
 
 def open_participant_kiosk(
@@ -124,14 +139,19 @@ def open_participant_kiosk(
         finally:
             temporary.unlink(missing_ok=True)
         plan = KioskLaunchPlan(argv=(*plan.argv[:-1], bootstrap.absolute().as_uri()), url=plan.url)
-    subprocess.Popen(
-        list(plan.argv),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        close_fds=True,
-        start_new_session=True,
-    )
+    try:
+        subprocess.Popen(
+            list(plan.argv),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        raise SeatLauncherError(
+            "browser-unavailable", "kiosk browser command could not be started"
+        ) from exc
     return plan
 
 
