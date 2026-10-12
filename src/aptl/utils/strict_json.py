@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-from typing import NoReturn, TypeAlias
+from typing import NoReturn
 
 from pydantic import BaseModel
 
-JsonValue: TypeAlias = (
-    None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
+type JsonValue = (
+    None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]
 )
 
 
