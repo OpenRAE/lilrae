@@ -1,7 +1,8 @@
 """Emergency stop of the lab containers, the optional step of the kill switch.
 
-``aptl.core.kill`` runs it when ``aptl kill --containers`` asks for it and
-re-exports ``kill_lab_containers``.
+``aptl.core.kill`` runs it when the kill is asked to stop the containers too
+(``aptl kill --containers``, or ``POST /api/lab/kill`` with ``containers``
+set), and re-exports ``kill_lab_containers``.
 """
 
 from pathlib import Path
