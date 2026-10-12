@@ -1333,6 +1333,7 @@ tests/fixtures/mcp_transport_dispatch.py	backend-owned-runtime	Constrain the tem
 tests/fixtures/redaction_parity_corpus.json	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/fixtures/workbench_mcp_server.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/helpers.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/techvault_pack.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_account_credentials.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_account_provider.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_adr_049_appliance_contract.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
