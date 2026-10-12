@@ -229,7 +229,18 @@ snapshot, and `aptl lab status --output <file>` writes one to a file with mode
 | `software.wazuh_indexer_version` | OpenSearch version on the Wazuh indexer |
 | `software.aptl_version` | APTL package version |
 | `software.raes_version` | Installed `raes` package version |
-| `containers[]` | Name, image, status, health, labels, networks, ports, and restart policy for each container the project owns |
+| `containers[]` | One entry for each container the project owns, in any state |
+| `containers[].name` | Container name |
+| `containers[].container_id` | Full 64-hex ID of this container instance, read from backend inspection. Empty when the inspected container isn't the one the project inventory listed |
+| `containers[].image` | Image reference from `docker ps`, usually the tag the container was created from |
+| `containers[].image_id` | The daemon's `sha256:` ID of the image this container runs, from the same inspection. Empty when that inspection doesn't prove it |
+| `containers[].image_digest` | Immutable registry digest of the image, which the run record copies into `container_image_digests`. Snapshot capture doesn't set it, so it's empty ([#1340](https://github.com/OpenRAE/lilrae/issues/1340)) |
+| `containers[].status` | Status text from `docker ps`, for example `Up 5 minutes (healthy)` |
+| `containers[].health` | `healthy`, `unhealthy` or `starting`, parsed from the status text. Empty for a container without a health check |
+| `containers[].labels` | Container labels |
+| `containers[].networks` | The container's IPv4 address on each network, keyed by network name |
+| `containers[].ports` | Published port mappings, as `docker ps` reports them |
+| `containers[].restart_policy` | Docker restart-policy name (`no`, `always`, `unless-stopped`). It tells a run-to-completion helper from a long-running service |
 | `wazuh_rules.total_rules` | Total Wazuh rules loaded |
 | `wazuh_rules.custom_rules` | Custom rules in `/var/ossec/etc/rules/` |
 | `wazuh_rules.custom_rule_files` | List of custom rule XML filenames |
@@ -239,6 +250,14 @@ snapshot, and `aptl lab status --output <file>` writes one to a file with mode
 | `config_hashes` | SHA-256 of `aptl.json` and of each `docker-compose*.yml` or `docker-compose*.yaml` file in the project directory. `.env` is deliberately excluded: it holds control-plane secrets whose values have a small guessable domain, so a digest of it would be a confirmation oracle rather than an opaque identity. |
 | `services[]` | Service endpoints (name, URL, host, port, protocol) of running containers |
 | `ssh[]` | SSH endpoints (name, host, port, user, key path, command) of running containers |
+
+Container identity, image identity and the image's registry digest are three
+separate fields, as
+[ADR-059](../adrs/adr-059-canonical-techvault-delivery-and-host-mcp-access.md)
+requires. Snapshots recorded before `containers[].container_id` existed hold the
+`docker ps` container ID, which can be truncated, in `containers[].image_id`. In
+a manifest whose container entries have no `container_id` key, read `image_id`
+as that container ID, not as an image identity.
 
 Snapshots and trace exports must not contain live credentials, API keys, bearer
 tokens, cookies, JWTs, private key material, or default lab passwords. Redact at

@@ -208,7 +208,7 @@ class _StubContainer:
     def __init__(self, name, image_digest="sha256:" + "f" * 64, image="img:tag"):
         self.name = name
         self.image = image
-        self.image_id = "container-id-volatile"
+        self.container_id = "container-id-volatile"
         self.image_digest = image_digest
         self.status = "running"
         self.health = "healthy"
@@ -272,7 +272,7 @@ class TestRuntimeFactsProvider:
         volatile = _StubContainer("aptl-victim")
         volatile.status = "restarting"
         volatile.health = "unhealthy"
-        volatile.image_id = "different-volatile-id"
+        volatile.container_id = "different-volatile-id"
         before = RuntimeFactsProvider(_StubSnapshot([stable])).collect(
             _context(RUNTIME_PROVIDER_ID)
         )

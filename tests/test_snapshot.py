@@ -6,6 +6,8 @@ from dataclasses import asdict
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
+import pytest
+
 from aptl.core.snapshot import (
     SoftwareVersions,
     ContainerSnapshot,
@@ -256,22 +258,31 @@ class TestGetSoftwareVersions:
         assert sv.python_version  # still set
 
 
+# A container ID as `docker inspect` reports it, and the daemon's ID of the
+# image that container runs: two different objects with two different IDs.
+CONTAINER_ID = "c0ffee" + "1" * 58
+IMAGE_ID = "sha256:" + "a" * 64
+
+
 class TestGetContainerSnapshots:
     """Tests for ``_get_container_snapshots`` driven by typed backend methods."""
 
     LAB_CONTAINER_ROW = {
         "name": "aptl-victim",
         "image": "aptl/victim:latest",
-        "id": "abc123",
+        "id": CONTAINER_ID[:12],
         "status": "Up 5 minutes (healthy)",
         "labels": {"com.docker.compose.service": "victim"},
         "ports": ["0.0.0.0:2022->22/tcp"],
     }
 
     INSPECT_DICT = {
+        "Id": CONTAINER_ID,
+        "Image": IMAGE_ID,
+        "HostConfig": {"RestartPolicy": {"Name": "unless-stopped"}},
         "NetworkSettings": {
             "Networks": {"aptl_aptl-internal": {"IPAddress": "172.20.2.20"}}
-        }
+        },
     }
 
     def _backend(self, *, rows=None, inspect=None):
@@ -290,11 +301,71 @@ class TestGetContainerSnapshots:
         c = containers[0]
         assert c.name == "aptl-victim"
         assert c.image == "aptl/victim:latest"
-        assert c.image_id == "abc123"
+        assert c.container_id == CONTAINER_ID
+        assert c.image_id == IMAGE_ID
         assert c.health == "healthy"
         assert c.networks["aptl_aptl-internal"] == "172.20.2.20"
         assert c.ports == ["0.0.0.0:2022->22/tcp"]
         assert c.labels["com.docker.compose.service"] == "victim"
+        assert c.restart_policy == "unless-stopped"
+
+    @pytest.mark.parametrize(
+        "listed_id",
+        [CONTAINER_ID[:12], CONTAINER_ID],
+        ids=["docker-ps-truncated", "docker-ps-no-trunc"],
+    )
+    def test_records_the_inspected_container_and_image_ids(self, listed_id):
+        """The row's container ID and its image ID land under their own names."""
+        backend = self._backend(rows=[{**self.LAB_CONTAINER_ROW, "id": listed_id}])
+
+        # The serialized form is what manifest.json and `lab status` carry.
+        snapshot = RangeSnapshot(containers=_get_container_snapshots(backend))
+        recorded = snapshot.to_dict()["containers"][0]
+        assert recorded["container_id"] == CONTAINER_ID
+        assert recorded["image_id"] == IMAGE_ID
+        # One inspection per container supplies identities, networks and the
+        # restart policy, so they all describe the same container object.
+        backend.container_inspect.assert_called_once_with("aptl-victim")
+
+    @pytest.mark.parametrize(
+        ("listed_id", "inspected", "expected"),
+        [
+            (CONTAINER_ID[:12], {}, ("", "")),
+            ("", INSPECT_DICT, ("", "")),
+            ("deadbeef0000", INSPECT_DICT, ("", "")),
+            (CONTAINER_ID[:12], {**INSPECT_DICT, "Id": CONTAINER_ID[:12]}, ("", "")),
+            (
+                CONTAINER_ID[:12].upper(),
+                {**INSPECT_DICT, "Id": CONTAINER_ID.upper()},
+                ("", ""),
+            ),
+            (
+                CONTAINER_ID[:12],
+                {**INSPECT_DICT, "Image": "aptl/victim:latest"},
+                (CONTAINER_ID, ""),
+            ),
+            (CONTAINER_ID[:12], {**INSPECT_DICT, "Image": None}, (CONTAINER_ID, "")),
+        ],
+        ids=[
+            "inspection-failed",
+            "row-without-id",
+            "inspected-another-container",
+            "inspected-id-truncated",
+            "inspected-id-not-docker-form",
+            "image-is-a-tag",
+            "image-missing",
+        ],
+    )
+    def test_leaves_an_unproven_identity_empty(self, listed_id, inspected, expected):
+        """No identity is guessed: an unproven ID is empty, never the row's ID."""
+        row = {**self.LAB_CONTAINER_ROW, "id": listed_id}
+
+        (container,) = _get_container_snapshots(
+            self._backend(rows=[row], inspect=inspected)
+        )
+
+        recorded = (container.container_id, container.image_id)
+        assert recorded == expected
 
     def test_parses_unhealthy_status(self):
         row = {**self.LAB_CONTAINER_ROW, "status": "Up 1 minute (unhealthy)"}
