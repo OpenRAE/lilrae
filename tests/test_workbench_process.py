@@ -610,11 +610,12 @@ def test_cleanup_reports_an_unsignalable_helper_with_closed_output(
             raise PermissionError(1, "Operation not permitted")
         real_killpg(group, number)
 
+    argv = _parent(pid_file, "owned", "exit", helper=helper)
     try:
         with mock.patch("aptl.workbench.process.os.killpg", side_effect=deny_cleanup):
             with pytest.raises(BoundedProcessError) as raised:
                 _run(
-                    _parent(pid_file, "owned", "exit", helper=helper),
+                    argv,
                     cwd=tmp_path,
                     timeout_seconds=30.0,
                 )
