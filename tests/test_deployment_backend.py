@@ -3143,7 +3143,9 @@ class TestKillBackwardCompat:
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
         backend = TestDockerComposeBackend()._make_backend(tmp_path)
-        with patch("aptl.core.kill._kill_backend", return_value=(backend, "")):
+        with patch(
+            "aptl.core.kill_containers._kill_backend", return_value=(backend, "")
+        ):
             success, error = kill_lab_containers(project_dir=tmp_path)
 
         assert success is True

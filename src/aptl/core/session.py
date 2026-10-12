@@ -26,6 +26,7 @@ except ModuleNotFoundError:
     fcntl = None
 
 _SESSION_FILENAME = "session.json"
+_TRACE_CONTEXT_FILENAME = "trace-context.json"
 
 
 class SessionState(str, Enum):
@@ -406,3 +407,41 @@ def _lock_exclusive(fd: int) -> None:
     """Take an exclusive file lock where the host OS supports POSIX flock."""
     if fcntl is not None:
         fcntl.flock(fd, fcntl.LOCK_EX)
+
+
+def clear_session(state_dir: Path) -> bool:
+    """Clear any active scenario session.
+
+    Args:
+        state_dir: Path to the ``.aptl/`` state directory.
+
+    Returns:
+        True if a session was cleared, False if none existed.
+    """
+    session_mgr = ScenarioSession(state_dir)
+    active = session_mgr.get_active()
+    if active is None:
+        log.debug("No active session to clear")
+        return False
+
+    log.info("Clearing active session for scenario '%s'", active.scenario_id)
+    session_mgr.clear()
+    return True
+
+
+def clean_trace_context(state_dir: Path) -> bool:
+    """Remove the trace context file if it exists.
+
+    Args:
+        state_dir: Path to the ``.aptl/`` state directory.
+
+    Returns:
+        True if the file was removed, False if it did not exist.
+    """
+    trace_file = state_dir / _TRACE_CONTEXT_FILENAME
+    if trace_file.exists():
+        trace_file.unlink()
+        log.info("Removed trace context file: %s", trace_file)
+        return True
+    log.debug("No trace context file at %s", trace_file)
+    return False

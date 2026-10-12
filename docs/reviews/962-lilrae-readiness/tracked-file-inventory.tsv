@@ -1176,6 +1176,7 @@ src/aptl/core/host_keys.py	core-candidate	Migrate only after public-import, hist
 src/aptl/core/host_ports.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/hostenv.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/kill.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/core/kill_containers.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/lab.py	mixed-lifecycle-policy	Separate scenario/provider policy from reusable lifecycle or mechanism; do not copy wholesale
 src/aptl/core/lab_types.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/lifecycle_cleanup.py	core-candidate	Retain APTL-owned host cleanup and pack cleanup dispatch after volume reset

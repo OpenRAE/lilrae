@@ -118,6 +118,25 @@ class TestKillCommand:
         assert "No MCP server processes found" in result.stdout
 
     @patch("aptl.cli.kill.execute_kill")
+    def test_kill_reports_unavailable_discovery(self, mock_execute, runner):
+        """Issue #1295: a kill that could not look must not claim none run."""
+        from aptl.core.kill import KillResult
+        from aptl.cli.main import app
+
+        mock_execute.return_value = KillResult(
+            success=False,
+            mcp_discovery_unavailable=True,
+            errors=["MCP process discovery is unavailable: pgrep could not run"],
+        )
+
+        result = runner.invoke(app, ["kill"])
+
+        assert result.exit_code == 1
+        assert "Could not look for MCP server processes." in result.stdout
+        assert "No MCP server processes found" not in result.stdout
+        assert "pgrep could not run" in result.stdout
+
+    @patch("aptl.cli.kill.execute_kill")
     def test_kill_exit_0_on_success(self, mock_execute, runner):
         """Exit code 0 when kill succeeds."""
         from aptl.core.kill import KillResult
