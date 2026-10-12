@@ -1276,6 +1276,7 @@ src/aptl/validation/scenario_verification_discovery.py	split-verification	Keep g
 src/aptl/validation/techvault_gate.py	split-verification	Keep generic conformance/verification interface; externalize TechVault/research qualification
 src/aptl/validation/techvault_live_gate.py	split-verification	Keep generic conformance/verification interface; externalize TechVault/research qualification
 src/aptl/workbench/__init__.py	optional-participant	Provider/workbench extension; generic supervision remains backend-owned
+src/aptl/workbench/_pipe_exchange.py	optional-participant	Provider/workbench extension; generic supervision remains backend-owned
 src/aptl/workbench/access.py	optional-participant	Provider/workbench extension; generic supervision remains backend-owned
 src/aptl/workbench/access_clients.py	optional-participant	Provider/workbench extension; generic supervision remains backend-owned
 src/aptl/workbench/agent.py	optional-participant	Provider/workbench extension; generic supervision remains backend-owned
@@ -1667,6 +1668,7 @@ tests/test_wazuh_active_response.py	tests-follow-owner	Retain meaningful boundar
 tests/test_wazuh_identity.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_web_dockerfile_cmd.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_workbench_authorization.py	backend-owned-runtime	Constrain the temporary planning compatibility to identified TechVault open concerns with complete native readback
+tests/test_workbench_process.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_workflow_engine.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tools/.gitignore	build-governance	Migrate policy by surface; remove bundle-of-entire-repository from generic artifact
 tools/check_pr_title.py	build-governance	Migrate policy by surface; remove bundle-of-entire-repository from generic artifact
