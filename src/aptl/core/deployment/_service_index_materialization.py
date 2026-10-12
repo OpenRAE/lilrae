@@ -114,6 +114,8 @@ class ServiceIndexMaterializationResult:
     digest, and the readback strength) — never the raw native response.
     ``adopted`` is true when the index already existed with this content's
     ownership marker, so this attempt read it back instead of creating it.
+    ``created`` is true when this attempt found no index, so it created the
+    index or tried to.
     """
 
     ok: bool
@@ -124,6 +126,7 @@ class ServiceIndexMaterializationResult:
     field_schema_digest: str = ""
     readback_strength: str = "daemon-observed"
     adopted: bool = False
+    created: bool = False
 
     def evidence(self) -> dict[str, object]:
         return {
@@ -433,7 +436,7 @@ def materialize_search_index_schema(
             ok=False, address=address, content_name=content_name, reason=reason
         )
 
-    adopted = False
+    adopted = created = False
     try:
         probe = _wait_for_native_api(
             run_script,
@@ -445,6 +448,7 @@ def materialize_search_index_schema(
         )
         # 1. Existence + ownership check (reject-unowned-collision), then 2. a
         # fresh native readback (proof) — always after any mutation.
+        created = probe.http_code == 404
         adopted = _ensure_index_exists(
             run_script, index, content_name, address, fields, digest, probe
         )
@@ -458,6 +462,7 @@ def materialize_search_index_schema(
             content_name=content_name,
             reason=failure.reason,
             adopted=adopted,
+            created=created,
         )
 
     return ServiceIndexMaterializationResult(
@@ -467,4 +472,5 @@ def materialize_search_index_schema(
         projection=projection,
         field_schema_digest=digest,
         adopted=adopted,
+        created=created,
     )
