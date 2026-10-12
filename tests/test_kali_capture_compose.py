@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import subprocess
@@ -108,6 +109,38 @@ def test_capture_sidecar_owns_sink_with_only_ssh_daemon_capabilities():
     assert "pid" not in service
     assert service.get("read_only") is True
     assert "ALL" in service["cap_drop"]
+
+
+def _adr_041_decision_update() -> str:
+    """Return the dated update note in ADR-041's Decision, or an empty string."""
+    adr = _ROOT / "docs/adrs/adr-041-kali-capture-sidecar-ownership-boundary.md"
+    text = adr.read_text(encoding="utf-8")
+    decision = re.search(r"(?ms)^## Decision$(.*?)^## ", text)
+    assert decision is not None, "ADR-041 must keep its Decision section"
+    note = re.search(
+        r"(?m)^> \*\*Update \(\d{4}-\d{2}-\d{2}, #\d+\):\*\*(?:.*\n)(?:^>.*\n)*",
+        decision.group(1),
+    )
+    return note.group(0) if note else ""
+
+
+@pytest.mark.parametrize("capability", ["AUDIT_CONTROL", "AUDIT_WRITE", "SYS_PACCT"])
+def test_adr_041_capture_capabilities_match_the_shipped_sidecar(capability):
+    # ADR-041's Decision moved these capabilities to the sidecar. Its dated
+    # update must withdraw exactly the ones the shipped sidecar is not granted.
+    granted = capability in _capture_service()["cap_add"]
+    withdrawn = f"`{capability}`" in _adr_041_decision_update()
+
+    assert granted is not withdrawn
+
+
+@pytest.mark.parametrize(
+    "writer", ["`_audit/audit.log`", "`_proc-acct/pacct`", "`auditd`", "`accton`"]
+)
+def test_adr_041_update_withdraws_the_audit_and_accounting_writers(writer):
+    # The shipped sidecar runs neither writer and, since #1242, the harvest
+    # copies neither root, so ADR-041 must not present them as current.
+    assert writer in _adr_041_decision_update()
 
 
 def test_capture_sidecar_has_only_required_writable_filesystems():
