@@ -1,11 +1,12 @@
 
-import { Client } from 'ssh2';
+import { Client, type ClientChannel } from 'ssh2';
 import { readFile } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import { createPtyTeeWriter } from './runs.js';
 import {
   SSHError,
+  CommandTimeoutError,
   require_,
   ensure,
   TIMEOUTS,
@@ -22,6 +23,25 @@ import { PersistentSession } from './ssh-session.js';
 interface ConnectionInfo {
   client: Client;
   connected: boolean;
+}
+
+// Stops a one-shot exec whose timer fired (#1290); otherwise the remote
+// command keeps running and streaming output nobody reads. TERM, which
+// timeout(1) also sends, lets a wrapper that handles it finish its records. A
+// server may refuse the RFC 4254 signal request (OpenSSH does for a
+// ForceCommand session such as the Kali capture broker's), so the channel is
+// closed as well. ssh2 throws from both calls once its connection is torn down,
+// and a timer callback must not throw.
+function stopTimedOutCommand(channel: ClientChannel | undefined): void {
+  if (channel === undefined) {
+    return;
+  }
+  try {
+    channel.signal('TERM');
+    channel.close();
+  } catch (err) {
+    console.error('[SSH] could not stop a timed-out command:', err);
+  }
 }
 
 export class SSHConnectionManager {
@@ -50,6 +70,11 @@ export class SSHConnectionManager {
    * session path writes (codex pre-push cycle 1 finding-3). The
    * caller can read back the session id from the returned envelope
    * so it can trigger a per-exec capture harvest.
+   *
+   * When the timeout fires, the remote command is sent TERM and its
+   * channel is closed before the promise rejects (#1290). The rejection is a
+   * CommandTimeoutError that names the session and run ids; its channelClosed
+   * settles once the channel has closed (#1319).
    */
   public async executeCommand(
     host: string,
@@ -73,39 +98,60 @@ export class SSHConnectionManager {
     const ptyTee = createPtyTeeWriter(sessionId);
 
     return new Promise((resolve, reject) => {
-      let stdout = '';
-      let stderr = '';
+      const output = { stdout: '', stderr: '' };
       let hasTimedOut = false;
+      let channel: ClientChannel | undefined;
+      let markClosed: () => void = () => {};
+      const closed = new Promise<void>((settle) => {
+        markClosed = settle;
+      });
+
+      // Every chunk still reaches the capture tee, but output that arrives
+      // after the timer fired is not buffered for a result nobody reads.
+      const collect = (key: keyof typeof output, data: Buffer): void => {
+        if (!hasTimedOut) {
+          output[key] += data.toString();
+        }
+      };
 
       const timeoutId = setTimeout(() => {
         hasTimedOut = true;
-        reject(new SSHError(`Command timeout after ${timeout}ms: ${redactCommand(command)}`));
+        stopTimedOutCommand(channel);
+        reject(new CommandTimeoutError(
+          `Command timeout after ${timeout}ms: ${redactCommand(command)}`,
+          sessionId,
+          shellEnv.APTL_RUN_ID,
+          closed,
+        ));
       }, timeout);
 
       client.exec(command, { env: shellEnv }, (err, stream) => {
         if (err) {
           clearTimeout(timeoutId);
+          markClosed();
           reject(new SSHError(`Failed to execute command: ${err.message}`, err));
           return;
         }
+        channel = stream;
 
         stream.on('close', (code: number | null, signal: string | null) => {
           clearTimeout(timeoutId);
+          markClosed();
           if (!hasTimedOut) {
             // One-shot exec has no session-level mode; the wrapping always
             // emits a real exit code so the effective mode is 'normal'.
-            resolve({ stdout, stderr, code, signal, sessionId, mode: 'normal' });
+            resolve({ ...output, code, signal, sessionId, mode: 'normal' });
           }
         });
 
         stream.on('data', (data: Buffer) => {
           ptyTee('out', data);
-          stdout += data.toString();
+          collect('stdout', data);
         });
 
         stream.stderr.on('data', (data: Buffer) => {
           ptyTee('err', data);
-          stderr += data.toString();
+          collect('stderr', data);
         });
 
         stream.on('error', (error: Error) => {
@@ -114,6 +160,11 @@ export class SSHConnectionManager {
             reject(new SSHError(`Stream error: ${error.message}`, error));
           }
         });
+
+        if (hasTimedOut) {
+          // The server opened the channel after the timer fired.
+          stopTimedOutCommand(stream);
+        }
       });
     });
   }
