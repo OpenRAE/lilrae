@@ -454,11 +454,24 @@ def test_environment_sourced_secret_fixture_leaves_no_value_or_digest(
         requirement_kind="runtime-environment",
         payload_pointer="/spec/node/runtime/environment",
         mode=(RealizationAuthorityMode.OPEN if explicitness is ExplicitnessClass.OPEN
-              else RealizationAuthorityMode.CLOSED),
+              else RealizationAuthorityMode.EXACT),
         source=RealizationResolutionSource.AUTHORED_SCOPE,
+        verification_scope=RealizationVerificationScope.CONFIGURATION,
+        required_observation_strength=ObservationStrength.DAEMON_OBSERVED,
     )
-    plan = replace(plan, realization_authority=(authority,))
     envelope = create_aptl_realization_envelope()
+    # The full planner gate requires total authority for every declared concern.
+    # This fixture declares only the environment concern being exercised here.
+    payload = {"spec": {"node": {"runtime": {
+        "environment": runtime.model_dump(mode="json", by_alias=True)["environment"]
+    }}}}
+    plan = replace(
+        plan,
+        resources={_ADDRESS: replace(plan.resources[_ADDRESS], payload=payload)},
+        operations=[replace(op, payload=payload) for op in plan.operations],
+        realization_authority=(authority,),
+        realization_envelope=envelope.identity,
+    )
     snapshot = snapshot_after_apply(plan, RuntimeSnapshot(), observations)
     snapshot = replace(snapshot, realization_envelope=envelope.identity)
     corroboration = operational_observation.operational_realization_observations(

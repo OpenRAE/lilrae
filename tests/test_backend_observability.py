@@ -63,6 +63,21 @@ def test_generated_compose_includes_isolated_backend_apparatus(engine, tmp_path)
     assert not list(scenario.iterdir()), "apparatus must not write into the pack"
 
 
+def test_apparatus_mount_paths_are_literal_under_a_dollar_directory(engine):
+    from aptl.core.deployment._compose_observability import observability_compose_file
+    from aptl.core.deployment._compose_runtime_config import compose_readback
+
+    root = engine.with_name("engine${INDEXER_PASSWORD}")
+    engine.rename(root)
+    path = observability_compose_file(root)
+    model = compose_readback(yaml.safe_load(path.read_text()))
+    for service in model["services"].values():
+        for mount in service.get("volumes", []):
+            if mount["type"] == "bind":
+                assert Path(mount["source"]).is_relative_to(root.resolve())
+    assert "engine$${INDEXER_PASSWORD}" in path.read_text()
+
+
 @pytest.mark.parametrize(
     "section,name,definition",
     [

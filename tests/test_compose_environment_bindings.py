@@ -565,7 +565,9 @@ def test_an_empty_scenario_cannot_discover_the_root_compose_model(tmp_path):
 
 @pytest.mark.parametrize("route", ["compose", "base-container"])
 @pytest.mark.parametrize("source", ["grant", "adapter"])
-@pytest.mark.parametrize("mode", [RealizationAuthorityMode.CLOSED, None])
+@pytest.mark.parametrize(
+    "mode", [RealizationAuthorityMode.EXACT, RealizationAuthorityMode.CLOSED, None]
+)
 def test_an_external_fixture_without_open_authority_fails_before_mutation(
     tmp_path, monkeypatch, route, source, mode
 ):
@@ -1164,14 +1166,14 @@ def test_an_adapter_override_writes_its_paths_and_probes_as_literals(
 def techvault(tmp_path_factory):
     """The released TechVault realization and its own startup adapter plan."""
 
-    from tests.test_env_pack_realization import _pack_root, _realize_pack
+    from tests.techvault_pack import _pack_root, realize_techvault_pack
 
     from aptl.backends.scenario_startup import ScenarioStartupSelection
     from aptl.core.scenario_bundle import env_pack_bundle
     from aptl_techvault.startup import TechVaultStartupProvider
 
     root = tmp_path_factory.mktemp("techvault-bindings")
-    realization = _realize_pack(root / "plan")
+    realization = realize_techvault_pack(root / "plan")
     bundle = env_pack_bundle(
         root / "bundle", identity="techvault", source_pack=_pack_root()
     )

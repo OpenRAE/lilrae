@@ -106,7 +106,7 @@ def observability_compose_file(project_dir: Path) -> Path:
                 or not mount.get("read_only")
             ):
                 raise ValueError("invalid backend observability config mount")
-        mount["source"] = compose_literal(str(source))
+            mount["source"] = compose_literal(str(source))
     target = root / ".aptl" / "realization" / OBSERVABILITY_COMPOSE_FILE
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(yaml.safe_dump(model, sort_keys=True), encoding="utf-8")
