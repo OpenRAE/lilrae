@@ -464,22 +464,33 @@ def test_environment_sourced_secret_fixture_leaves_no_value_or_digest(
     # RAES requires total authority, including absent registered concerns. Use
     # its registry and retain CLOSED authority for every concern except the
     # environment under test; no local concern inventory substitutes for it.
-    closed = tuple(
+    remaining = tuple(
         ResolvedRealizationAuthority(
             address=_ADDRESS,
             field_path=f"nodes.vm.{descriptor.authored_suffix}",
             domain=REALIZATION_DOMAIN,
             requirement_kind=descriptor.concern_kind,
             payload_pointer="/" + "/".join(descriptor.payload_path),
-            mode=RealizationAuthorityMode.CLOSED,
-            source=RealizationResolutionSource.LEGACY_DEFAULT,
+            mode=(RealizationAuthorityMode.EXACT
+                  if descriptor.concern_kind in {"node-type", "os-family"}
+                  else RealizationAuthorityMode.CLOSED),
+            source=(RealizationResolutionSource.AUTHORED_SCOPE
+                    if descriptor.concern_kind in {"node-type", "os-family"}
+                    else RealizationResolutionSource.LEGACY_DEFAULT),
         )
         for descriptor in realization_concern_descriptors()
         if descriptor.section == "nodes" and descriptor.concern_kind != "runtime-environment"
     )
+    payload = {
+        "node_kind": "compute", "os_family": "linux",
+        "spec": {"node": {"runtime": {"environment":
+            runtime.model_dump(mode="json", by_alias=True)["environment"]}}},
+    }
     plan = replace(
         plan,
-        realization_authority=(authority, *closed),
+        resources={_ADDRESS: replace(plan.resources[_ADDRESS], payload=payload)},
+        operations=[replace(op, payload=payload) for op in plan.operations],
+        realization_authority=(authority, *remaining),
         realization_envelope=envelope.identity,
     )
     snapshot = snapshot_after_apply(plan, RuntimeSnapshot(), observations)

@@ -397,7 +397,15 @@ class TestDockerComposeBackend:
         """
 
         backend = self._make_backend(tmp_path)
-        backend._start_with_compose_files = MagicMock(return_value=LabResult(success=True))
+
+        def started(profiles, *, compose_files, scenario_root=None, **_kwargs):
+            command = backend._build_command(
+                "up", profiles, compose_files=compose_files, scenario_root=scenario_root
+            )
+            result = backend._run([*command, "-d"])
+            return LabResult(success=result.returncode == 0, error=result.stderr)
+
+        backend._start_with_compose_files = MagicMock(side_effect=started)
         return backend
 
     def test_rejects_unsafe_direct_project_name(self, tmp_path):
@@ -1163,9 +1171,6 @@ services:
 
     def test_realize_returns_start_failure_without_reconciliation(self, tmp_path):
         backend = self._make_network_backend(tmp_path)
-        backend._start_with_compose_files.return_value = LabResult(
-            success=False, error="compose failed"
-        )
         spec = DeploymentRealizationSpec(profiles=("kali",), nodes=(), networks=())
 
         def fake_run(cmd, **_kwargs):
