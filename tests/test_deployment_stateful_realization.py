@@ -422,6 +422,8 @@ def test_base_container_generated_environment_uses_the_declared_output(
             image_ref="debian:13-slim",
             runs_services=True,
             environment_names=("CORTEX_KEY",),
+            # The node declares CORTEX_KEY with value_from (#965).
+            environment_generated=("CORTEX_KEY",),
         ),
     )
     body = Path(argv[1]).read_text()
@@ -2544,18 +2546,17 @@ def test_the_content_override_is_written_under_the_realization_root(
     assert not (scenario_root / ".aptl").exists()
 
 
-def test_an_in_tree_scenario_writes_no_content_override(tmp_path: Path) -> None:
-    """A checked-in docker-compose.yml already binds its own image-node config."""
+def test_an_in_tree_scenario_binds_its_declared_image_content(tmp_path: Path) -> None:
+    """A root Compose file cannot replace the declared content bindings."""
 
     backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
     (tmp_path / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
 
-    assert (
-        backend._write_image_node_content_override(
-            _content_override_spec(tmp_path), tmp_path, tmp_path
-        )
-        is None
+    path = backend._write_image_node_content_override(
+        _content_override_spec(tmp_path), tmp_path, tmp_path
     )
+    document = yaml.safe_load(path.read_text())
+    assert document["services"]["tempo"]["volumes"][0]["target"] == "/etc/tempo/tempo.yaml"
 
 
 def test_no_image_node_content_means_no_override_file(tmp_path: Path) -> None:
@@ -2623,10 +2624,10 @@ def test_image_node_content_is_not_also_seeded_for_a_generated_base(
     assert seeded == [("workstation-config",)]
 
 
-def test_an_in_tree_scenario_still_seeds_every_content_item(
+def test_an_in_tree_scenario_seeds_only_base_container_content(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """In-tree keeps the original seed path, image nodes included."""
+    """Image content uses bind mounts on both scenario source paths."""
 
     backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
     seeded: list[tuple[str, ...]] = []
@@ -2641,7 +2642,7 @@ def test_an_in_tree_scenario_still_seeds_every_content_item(
 
     assert backend._realize_content(_seedable_spec(tmp_path), tmp_path) is None
 
-    assert seeded == [("tempo-config", "workstation-config")]
+    assert seeded == [("workstation-config",)]
 
 
 def test_a_seed_failure_fails_the_realization_closed(

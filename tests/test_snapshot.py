@@ -86,6 +86,17 @@ class TestDataclasses:
         assert d["networks"]["aptl_aptl-internal"] == "172.20.2.20"
         assert len(d["ports"]) == 1
 
+    def test_snapshot_serialization_masks_legacy_compose_fingerprints(self):
+        fingerprint = "d" * 64
+        label = "com.docker.compose.config-hash"
+        snapshot = RangeSnapshot(containers=[ContainerSnapshot(
+            name="aptl-db", labels={label: fingerprint, "com.docker.compose.service": "db"},
+        )])
+        payload = snapshot.to_dict()
+        assert payload["containers"][0]["labels"][label] == "[REDACTED]"
+        assert payload["containers"][0]["labels"]["com.docker.compose.service"] == "db"
+        assert fingerprint not in str(payload)
+
     def test_container_snapshot_defaults(self):
         cs = ContainerSnapshot()
         assert cs.labels == {}
