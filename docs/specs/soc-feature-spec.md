@@ -1,6 +1,10 @@
 # Scenario & Observability Core—Architecture Spec
 
-> Historical note: this document describes the pre-SDL scenario runtime that was removed in the SDL-only branch. It is retained for context until a new SDL-native runtime lands.
+> Historical runtime record (scope notice added 2026-10-12): this document
+> describes the pre-SDL scenario runtime removed on 2026-03-29. Its commands,
+> source paths, and tests are retained as historical design evidence. For the
+> shipped lifecycle and run records, see [Deployment](../deployment.md) and
+> [Experiment Runs](../reference/experiment-runs.md).
 
 ## 1. Overview
 

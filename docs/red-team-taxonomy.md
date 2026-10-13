@@ -188,8 +188,8 @@ Per ADR-027 *as amended by ADR-033*, the OCSF records are NOT
 shipped to Wazuh / OpenSearch. The legacy `kali_redteam` syslog
 ingestion path is removed: the Kali container no longer ships a
 Wazuh agent, no longer forwards rsyslog to the SIEM, and
-`config/wazuh_cluster/kali_redteam_rules.xml` /
-`kali_decoders.xml` are deleted. OCSF records land in the per-run
+The deleted rule and decoder files belong to a historical ingestion path
+(retirement note dated 2026-10-12); they are not current runtime sources. OCSF records land in the per-run
 JSONL at `<state>/runs/<run_id>/mcp-side/ocsf.jsonl` alongside the
 tool-call JSONL and the PTY tee, plus a stderr `[OCSF]` line for
 local development visibility.

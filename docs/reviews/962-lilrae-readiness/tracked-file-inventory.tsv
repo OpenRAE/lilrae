@@ -153,7 +153,6 @@ containers/kali-capture/broker.py	backend-substrate	Post-baseline capture appara
 containers/kali-capture/entrypoint.sh	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/kali-capture/sshd_config	backend-substrate	Post-baseline capture apparatus; retain with evidence custody authority
 containers/kali/audit/aptl.rules	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
-containers/kali/scripts/aptl-wrap-shell.sh	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/keys/aptl_lab_key.pub	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/keys/authorized_keys	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/mailserver/setup.sh	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
@@ -189,6 +188,7 @@ containers/windows-victim/setup-x64dbg.ps1	split-pack-delivery	Inventory exact c
 docker-compose.capture.yml	backend-substrate	Post-baseline capture apparatus; retain with evidence custody authority
 docker-compose.observability.yml	backend-substrate	Post-baseline optional observability apparatus; retain with deployment authority
 docker-compose.yml	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
+docs/CODING_STANDARDS.md	core	Canonical issue delivery and verification standards
 docs/adrs/README.md	architecture-history	Preserve immutable record with proposed disposition ledger
 docs/adrs/adr-000-use-adrs.md	architecture-history	Preserve immutable record with proposed disposition ledger
 docs/adrs/adr-001-docker-compose-deployment.md	architecture-history	Preserve immutable record with proposed disposition ledger
@@ -299,6 +299,7 @@ docs/architecture/issue-913-shuffle-post-realization-mutation-preflight.md	docs-
 docs/architecture/issue-934-rename-boundary-preflight.md	architecture-history	Binding #934 rename-boundary inventory and retirement guardrails
 docs/architecture/issue-949-orborus-control-authority-preflight.md	architecture-history	Post-baseline architecture guidance; retain with its owning issue
 docs/architecture/issue-951-fresh-env-pack-start-preflight.md	docs-follow-owner	Separate current user guidance from historical evidence and scenario-pack-specific docs
+docs/architecture/issue-954-runtime-docs-and-test-authority-preflight.md	core	Runtime documentation and test authority guidance for issue 954
 docs/architecture/issue-955-systemd-substrate-privilege-preflight.md	architecture-history	Preserve issue 955 substrate posture decisions and daemon-gate guardrails
 docs/architecture/issue-956-sdl-runtime-authority-materialization-preflight.md	architecture-history	Preserve runtime-authority materialization decisions and implementation guardrails
 docs/architecture/issue-957-wazuh-attestation-evidence-credentials-preflight.md	architecture-history	Preserve Wazuh attestation, evidence-source, and scenario-credential ownership decisions
@@ -1278,6 +1279,7 @@ src/aptl/validation/scenario_verification_discovery.py	split-verification	Keep g
 src/aptl/validation/techvault_gate.py	split-verification	Keep generic conformance/verification interface; externalize TechVault/research qualification
 src/aptl/validation/techvault_live_gate.py	split-verification	Keep generic conformance/verification interface; externalize TechVault/research qualification
 src/aptl/workbench/__init__.py	optional-participant	Provider/workbench extension; generic supervision remains backend-owned
+src/aptl/workbench/_pipe_exchange.py	optional-participant	Provider/workbench extension; generic supervision remains backend-owned
 src/aptl/workbench/access.py	optional-participant	Provider/workbench extension; generic supervision remains backend-owned
 src/aptl/workbench/access_clients.py	optional-participant	Provider/workbench extension; generic supervision remains backend-owned
 src/aptl/workbench/agent.py	optional-participant	Provider/workbench extension; generic supervision remains backend-owned
@@ -1337,6 +1339,7 @@ tests/fixtures/mcp_transport_dispatch.py	backend-owned-runtime	Constrain the tem
 tests/fixtures/redaction_parity_corpus.json	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/fixtures/workbench_mcp_server.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/helpers.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/techvault_pack.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_account_credentials.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_account_provider.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_adr_049_appliance_contract.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
@@ -1488,6 +1491,7 @@ tests/test_hostenv.py	tests-follow-owner	Retain meaningful boundary and parity t
 tests/test_base_container_admission_integration.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_realization_declaration_gate_contract.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_in_process_agents.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_kali_capture_broker.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_kali_capture_compose.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_kill.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_lab.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
@@ -1668,6 +1672,7 @@ tests/test_wazuh_active_response.py	tests-follow-owner	Retain meaningful boundar
 tests/test_wazuh_identity.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_web_dockerfile_cmd.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_workbench_authorization.py	backend-owned-runtime	Constrain the temporary planning compatibility to identified TechVault open concerns with complete native readback
+tests/test_workbench_process.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_workflow_engine.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tools/.gitignore	build-governance	Migrate policy by surface; remove bundle-of-entire-repository from generic artifact
 tools/check_pr_title.py	build-governance	Migrate policy by surface; remove bundle-of-entire-repository from generic artifact
