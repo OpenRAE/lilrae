@@ -2599,6 +2599,23 @@ class TestDockerComposeBackendContainerInteraction:
         assert row["labels"] == {"service": "victim"}
         assert row["ports"] == ["0.0.0.0:2022->22/tcp"]
 
+    def test_inventory_never_discloses_compose_environment_fingerprints(self, tmp_path):
+        backend = self._make_backend(tmp_path)
+        fingerprint = "d" * 64
+        line = docker_ps_inventory_row(
+            "aptl-db",
+            labels=(f"com.docker.compose.config-hash={fingerprint},"
+                    "com.docker.compose.service=db,com.docker.compose.project=test"),
+        )
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=line, stderr="")
+            rows = backend.host_list_lab_containers()
+            status = backend.status()
+        assert rows[0]["labels"]["com.docker.compose.service"] == "db"
+        assert "com.docker.compose.config-hash" not in rows[0]["labels"]
+        assert fingerprint not in str(rows)
+        assert fingerprint not in str(status.containers)
+
     def test_inventory_survives_image_labels_containing_newlines(self, tmp_path):
         """Image labels are arbitrary text and some contain newlines.
 

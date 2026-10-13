@@ -78,6 +78,8 @@ const SENSITIVE_TOKENS: readonly string[] = [
   'apikey',
   'key', // broad; carved out by SAFE_KEY_NAMES below
   'session',
+  // Compose's service fingerprint includes resolved environment credentials.
+  'com.docker.compose.config-hash',
 ];
 
 // Tightened to names that are unambiguously paths/files: bare `ssh_key`
@@ -109,7 +111,7 @@ function isSensitiveKey(name: string): boolean {
 // conservative: they preserve the labelling token (`Bearer`, `password=`)
 // so log readers know what was redacted, but mask the secret payload.
 const SENSITIVE_KEY_PATTERN =
-  '(?:pass(?:word|wd|phrase)?|secret|token|credential|api[_-]?key|apikey|jwt|bearer|session(?:_id)?|cookie)';
+  '(?:pass(?:word|wd|phrase)?|secret|token|credential|api[_-]?key|apikey|jwt|bearer|session(?:_id)?|cookie|com\\.docker\\.compose\\.config-hash)';
 // `\S+` would greedily consume trailing quotes/punctuation around the
 // secret value (e.g. eat the closing `'` of a curl `-H 'Authorization: ...'`
 // header, corrupting downstream diagnostic structure). Stop at quotes

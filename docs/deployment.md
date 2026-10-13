@@ -191,6 +191,11 @@ that value as an unsalted SHA-256 digest, which a guessed value can be checked
 against. A value that the scenario authors is recorded as RAES's digest of
 that value, as before.
 
+Docker Compose's `com.docker.compose.config-hash` label also fingerprints the
+resolved service environment. APTL omits it from container inventory and status.
+Python and MCP serialization mask that label in older snapshots and in text,
+so archived evidence cannot use it to confirm a guess at a bound credential.
+
 ## Observe A Deployment
 
 Use APTL's runtime projections after startup:
