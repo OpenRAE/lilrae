@@ -1,12 +1,31 @@
 """Unit tests for run export functionality."""
 
+import errno
 import json
+import os
+import stat
 import tarfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from aptl.core.archival import SealVerificationError
 from aptl.core.exporter import export_local, export_s3, _sha256_file
 from aptl.core.runstore import LocalRunStore
+from aptl.utils.pathsafe import PathContainmentError
+
+posix_modes = pytest.mark.skipif(os.name != "posix", reason="POSIX modes only")
+
+
+@pytest.fixture
+def common_umask():
+    """Run under the usual 022 umask, which leaves group and other read bits."""
+    previous = os.umask(0o022)
+    try:
+        yield
+    finally:
+        os.umask(previous)
 
 
 class TestSha256File:
@@ -124,6 +143,169 @@ class TestExportLocal:
         assert archive.exists()
         assert output_dir.exists()
 
+    @posix_modes
+    @pytest.mark.usefixtures("common_umask")
+    def test_export_creates_owner_only_directory_and_archive(self, tmp_path):
+        store = self._make_run(tmp_path)
+        output_dir = tmp_path / "exports"
+
+        archive = export_local(store, "test-run", output_dir)
+
+        assert stat.S_IMODE(output_dir.stat().st_mode) == 0o700
+        assert stat.S_IMODE(archive.stat().st_mode) == 0o600
+
+    @posix_modes
+    @pytest.mark.usefixtures("common_umask")
+    def test_export_keeps_existing_directory_mode_and_tightens_old_archive(
+        self, tmp_path
+    ):
+        # An existing directory keeps the mode its owner chose; an archive an
+        # earlier export left with the umask's mode is rewritten owner-only.
+        store = self._make_run(tmp_path)
+        output_dir = tmp_path / "shared"
+        output_dir.mkdir(mode=0o755)
+        (output_dir / "test-run.tar.gz").write_bytes(b"older export")
+
+        archive = export_local(store, "test-run", output_dir)
+
+        assert stat.S_IMODE(output_dir.stat().st_mode) == 0o755
+        assert stat.S_IMODE(archive.stat().st_mode) == 0o600
+        with tarfile.open(archive, "r:gz") as tar:
+            assert "test-run/manifest.json" in tar.getnames()
+
+    @posix_modes
+    @pytest.mark.usefixtures("common_umask")
+    def test_export_refuses_a_symlink_at_the_archive_path(self, tmp_path):
+        # A link planted in a shared output directory must not redirect the
+        # export, its truncation or its mode change to the file it points to.
+        store = self._make_run(tmp_path)
+        output_dir = tmp_path / "shared"
+        output_dir.mkdir(mode=0o777)
+        unrelated = tmp_path / "unrelated.txt"
+        unrelated.write_text("keep me")
+        (output_dir / "test-run.tar.gz").symlink_to(unrelated)
+
+        with pytest.raises(OSError) as raised:
+            export_local(store, "test-run", output_dir)
+
+        assert raised.value.errno == errno.ELOOP
+        assert unrelated.read_text() == "keep me"
+        assert stat.S_IMODE(unrelated.stat().st_mode) == 0o644
+
+
+class TestExportThenExportBundle:
+    """``aptl runs export`` and ``export-bundle`` share ``./exports`` (#1282)."""
+
+    @posix_modes
+    @pytest.mark.usefixtures("common_umask")
+    def test_bundle_accepts_the_default_directory_export_created(
+        self, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+
+        from aptl.cli.main import app
+        from tests._bundle_fixtures import build_ready_to_seal_run
+
+        project = tmp_path / "project"
+        build_ready_to_seal_run(project / "runs" / "run-1", run_id="run-1")
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+
+        exported = runner.invoke(app, ["runs", "export", "run-1", "-d", str(project)])
+        bundled = runner.invoke(
+            app, ["runs", "export-bundle", "run-1", "-d", str(project)]
+        )
+
+        assert exported.exit_code == 0, exported.output
+        assert bundled.exit_code == 0, bundled.output
+        assert sorted(path.name for path in (tmp_path / "exports").iterdir()) == [
+            "run-1.evidence-bundle.tar",
+            "run-1.tar.gz",
+        ]
+
+
+def _sealed_project(tmp_path: Path) -> tuple[Path, LocalRunStore, str]:
+    """Seal one run under ``project/runs``; return the project, store and run id."""
+    from aptl.core.archival.coordinator import finalize_terminal_attempt
+    from tests.archival_fixtures import completed_context
+
+    project = tmp_path / "project"
+    store = LocalRunStore(project / "runs")
+    context = completed_context()
+    finalize_terminal_attempt(context, store=store)
+    return project, store, context.attempt_id
+
+
+def _rewrite_manifest(run_path: Path) -> None:
+    """Change the sealed manifest's bytes, so its digest no longer matches."""
+    manifest = run_path / "manifest.json"
+    manifest.write_bytes(manifest.read_bytes() + b"\n")
+
+
+def _symlink_manifest(run_path: Path) -> None:
+    """Swap the sealed manifest for a symlink to a copy of its own bytes."""
+    manifest = run_path / "manifest.json"
+    copy = run_path.parents[1] / "manifest-copy.json"
+    copy.write_bytes(manifest.read_bytes())
+    manifest.unlink()
+    manifest.symlink_to(copy)
+
+
+def _reported(result) -> str:
+    """What the command printed, plus the error that ended it, if any."""
+    return f"{result.output}{result.exception!r}"
+
+
+class TestRefusedExportCreatesNoDirectory:
+    """A run that export refuses leaves no new output directory (#1334)."""
+
+    @pytest.mark.parametrize(
+        ("tamper", "error"),
+        [
+            (_rewrite_manifest, SealVerificationError),
+            (_symlink_manifest, PathContainmentError),
+        ],
+        ids=["rewritten-manifest", "symlinked-manifest"],
+    )
+    def test_export_local_checks_the_seal_before_creating_the_directory(
+        self, tmp_path, tamper, error
+    ):
+        _, store, run_id = _sealed_project(tmp_path)
+        tamper(store.get_run_path(run_id))
+
+        with pytest.raises(error):
+            export_local(store, run_id, tmp_path / "exports" / "nested")
+
+        assert not (tmp_path / "exports").exists()
+
+    @pytest.mark.parametrize(
+        "extra_args",
+        [[], ["-o", "out/nested"], ["--s3-bucket", "bucket"]],
+        ids=["default-output-dir", "missing-output-dir", "s3"],
+    )
+    def test_runs_export_refusal_creates_no_output_directory(
+        self, tmp_path, monkeypatch, extra_args
+    ):
+        from typer.testing import CliRunner
+
+        from aptl.cli.main import app
+
+        project, store, run_id = _sealed_project(tmp_path)
+        _rewrite_manifest(store.get_run_path(run_id))
+        boto3 = MagicMock()
+        monkeypatch.setattr("aptl.core.exporter.boto3", boto3)
+        monkeypatch.chdir(tmp_path)
+
+        result = CliRunner().invoke(
+            app, ["runs", "export", run_id, "-d", str(project), *extra_args]
+        )
+
+        assert result.exit_code == 1
+        assert "manifest does not match the marker digest" in _reported(result)
+        # Neither ./exports, ./out nor anything else appeared beside the project.
+        assert [path.name for path in tmp_path.iterdir()] == ["project"]
+        boto3.client.assert_not_called()
+
 
 class TestExportS3:
     """Tests for S3 export (mocked)."""
@@ -191,7 +373,7 @@ class TestExportS3:
         original = exporter_mod.boto3
         exporter_mod.boto3 = None
         try:
-            with pytest.raises(ImportError, match="boto3"):
+            with pytest.raises(ImportError, match="pipx inject aptl-labs boto3"):
                 export_s3(store, "test-run", "bucket", "prefix", tmp_path / "export")
         finally:
             exporter_mod.boto3 = original

@@ -61,7 +61,8 @@ def serve(
     except ImportError:
         typer.echo(
             "Web dependencies not installed. "
-            'Install with: pip install -e ".[web]"',
+            'Install them with: pipx inject aptl-labs "aptl-labs[web]" '
+            '(source checkout: pip install -e ".[web]")',
             err=True,
         )
         raise typer.Exit(1)
