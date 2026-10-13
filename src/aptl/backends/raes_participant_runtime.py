@@ -28,10 +28,10 @@ from aptl.backends.raes_participant_actions import (
 )
 from aptl.backends.raes_participant_provider import (
     ParticipantDecisionSolicitation,
+    ParticipantProviderFailure,
     ParticipantSelectionProvider,
     parse_provider_selection,
 )
-from aptl.workbench.process import BoundedProcessError
 
 if TYPE_CHECKING:
     from aptl.backends.raes_participant_driver import ParticipantPlanAuthority
@@ -210,9 +210,8 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
             provider = self._selection_provider
             if provider is not None:
                 selection = parse_provider_selection(provider.select(request))
-        except BoundedProcessError as exc:
-            # Timings and process ids vary between runs: only the report keeps them.
-            failure = f"participant selection provider failed: {exc.stable_summary()}"
+        except ParticipantProviderFailure as exc:
+            failure = f"participant selection provider failed: {exc}"
         except Exception:
             selection = None
         finally:
