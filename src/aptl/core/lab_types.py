@@ -179,6 +179,10 @@ class LabResult:
     # What a failed start left in the project, or None when it left nothing
     # or failed before it could create anything (#952).
     residue: StartResidue | None = None
+    # A deployment backend failure that a retry of the same admitted plan
+    # cannot clear, such as an unowned search index (#1325). The RAES handoff
+    # reports it with a non-retryable code.
+    unretryable: bool = False
 
     def __post_init__(self) -> None:
         # Make the invariant total: ``outcome`` is the authoritative
