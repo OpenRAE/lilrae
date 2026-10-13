@@ -34,6 +34,7 @@ from aptl.core.deployment._environment_bindings import (
     out_of_band_binding,
     sourced_names,
     unbound_environment_error,
+    unsupported_fixture_binding_error,
     warn_unused_grants,
 )
 from aptl.core.deployment._realization_primitives import (
@@ -190,12 +191,14 @@ def write_sourced_environment(
         for service, bindings in environment.sourced.items()
     }
     if payloads:
+        from aptl.core.deployment._compose_runtime_config import compose_literal
+
         services = {
             service: {"env_file": [str(root / sourced_environment_file(service))]}
             for service in environment.sourced
         }
         payloads[SOURCED_ENVIRONMENT_OVERRIDE] = yaml.safe_dump(
-            {"services": services}, sort_keys=True
+            compose_literal({"services": services}), sort_keys=True
         ).encode()
     for relative, payload in payloads.items():
         replace_private_nofollow(root, relative, payload)
@@ -245,21 +248,19 @@ class ComposeEnvironmentBindingMixin:
         The bindings it records are what each node and service later receives,
         so a grant or adapter value that is missing now never becomes a
         silently omitted variable after containers have changed. Compose
-        services are bound only when APTL generates their model; a project-tree
-        scenario's own ``docker-compose.yml`` carries its own references. The
-        file's presence alone can decide this because ``env_pack_bundle()``
-        refuses a pack that ships one at its root.
+        services always use the generated model, including project-tree
+        scenarios. A root Compose file cannot bypass these bindings.
         """
 
         from aptl.core.deployment._compose_base_container_realization import (
             _base_container_node_addresses,
         )
-        from aptl.core.deployment._compose_node_generation import (
-            STATIC_COMPOSE_FILENAME,
-        )
-
         # Nothing from an earlier request reaches this one's Compose services.
         self._compose_environment = ComposeEnvironment()
+        self._environment_binding_context = None
+        error = unsupported_fixture_binding_error(realization)
+        if error is not None:
+            return LabResult(success=False, error=error)
         context = binding_context(
             realization, self._environment_grants, self._project_dir
         )
@@ -269,10 +270,7 @@ class ComposeEnvironmentBindingMixin:
         }
         addresses = _base_container_node_addresses(realization)
         error = unbound_environment_error(context, realization, addresses)
-        static = scenario_root is not None and (
-            (scenario_root / STATIC_COMPOSE_FILENAME).exists()
-        )
-        if error is None and not static:
+        if error is None:
             try:
                 self._compose_environment = compose_environment(context, realization)
             except EnvironmentBindingError as exc:

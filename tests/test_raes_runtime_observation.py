@@ -45,7 +45,10 @@ from raes_contracts.vocabulary import ObservationStrength
 from aptl.backends.raes_diagnostics import snapshot_after_apply
 from aptl.backends import _raes_operational_observation as operational_observation
 from aptl.backends._raes_observation_helpers import ObservedResource
-from aptl.backends.raes_manifest import create_aptl_manifest
+from aptl.backends.raes_manifest import (
+    create_aptl_manifest,
+    create_aptl_realization_envelope,
+)
 from aptl.backends.raes_observation import observe_realization
 from aptl.backends.raes_planning_compat import DAEMON_READBACK_RUNTIME_CONCERNS
 from aptl.backends.raes_realization_model import AptlRealization, NodeRealization
@@ -438,6 +441,34 @@ def test_environment_sourced_secret_fixture_leaves_no_value_or_digest(
     assert [item["name"] for item in disclosed] == ["FOO"]
     assert canary not in str(record)
     assert digest.rsplit(":", 1)[1] not in str(record)
+
+    # Exercise the same resolved-authority gate the provisioner calls. The
+    # binding preflight now refuses this exact case before a container exists;
+    # OPEN authority still accepts its secret-free readback.
+    from raes_processor.planner import realization_authority_disclosure
+
+    authority = ResolvedRealizationAuthority(
+        address=_ADDRESS,
+        field_path="nodes.vm.runtime.environment",
+        domain=REALIZATION_DOMAIN,
+        requirement_kind="runtime-environment",
+        payload_pointer="/spec/node/runtime/environment",
+        mode=(RealizationAuthorityMode.OPEN if explicitness is ExplicitnessClass.OPEN
+              else RealizationAuthorityMode.CLOSED),
+        source=RealizationResolutionSource.AUTHORED_SCOPE,
+    )
+    plan = replace(plan, realization_authority=(authority,))
+    envelope = create_aptl_realization_envelope()
+    snapshot = snapshot_after_apply(plan, RuntimeSnapshot(), observations)
+    snapshot = replace(snapshot, realization_envelope=envelope.identity)
+    corroboration = operational_observation.operational_realization_observations(
+        plan=plan, observations=observations, envelope=envelope, previous=(),
+    )
+    snapshot = replace(snapshot, realization_observations=corroboration)
+    diagnostics, _ = realization_authority_disclosure(
+        plan, snapshot, manifest=create_aptl_manifest()
+    )
+    assert [item.code for item in diagnostics] == codes
 
 
 def test_environment_undeclared_operator_value_is_rejected():

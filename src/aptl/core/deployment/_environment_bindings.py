@@ -30,6 +30,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from raes_contracts.planning import RealizationAuthorityMode
+
 from aptl.core.config import EnvironmentGrant
 from aptl.core.deployment._realization_primitives import (
     EnvironmentDeliveryRefused,
@@ -388,6 +390,42 @@ def unbound_environment_error(
                     environment_file_line(binding.name, binding.value)
         except (EnvironmentBindingError, EnvironmentDeliveryRefused) as exc:
             return f"Environment binding refused for node {node.name}: {exc}."
+    return None
+
+
+def unsupported_fixture_binding_error(
+    realization: "DeploymentRealizationSpec",
+) -> str | None:
+    """Refuse external fixture values without OPEN environment authority.
+
+    RAES expects a value-less secret fixture under exact authority to be empty.
+    Withholding its commitment protects the secret but cannot satisfy that
+    contract, so refuse before creating any resources rather than at readback.
+    An absent authority is not permission to select a value either.
+    """
+
+    open_addresses = {
+        authority.address
+        for authority in realization.realization_authority
+        if authority.requirement_kind == "runtime-environment"
+        and authority.domain == "runtime-realization"
+        and authority.mode is RealizationAuthorityMode.OPEN
+    }
+    for node in realization.nodes:
+        if node.address in open_addresses:
+            continue
+        declared = declared_environment(node.runtime)
+        for variable in getattr(node.runtime, "environment", ()):
+            if (
+                variable.name in declared.sourced
+                and _classification(variable) == "secret_fixture"
+            ):
+                return (
+                    f"Environment binding refused for node {node.name}: "
+                    f"{variable.name} needs open runtime-environment authority "
+                    "for an external secret_fixture value; exact or unspecified "
+                    "authority requires the fixture to be empty."
+                )
     return None
 
 

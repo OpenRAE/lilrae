@@ -1382,8 +1382,8 @@ class TestCheckBindMounts:
         assert "soc" in ctx.config.containers.enabled_profiles()
         assert _step_check_bind_mounts(ctx) is None
 
-    def test_step_still_fails_an_admitted_service_with_a_missing_source(self, tmp_path):
-        """The compatibility guard still protects the project-tree model."""
+    def test_step_ignores_unused_static_mounts_for_an_admitted_scenario(self, tmp_path):
+        """The backend checks the generated model; root Compose is never applied."""
         from aptl.core.lab import _LabStartContext, _step_check_bind_mounts
 
         (tmp_path / "docker-compose.yml").write_text(
@@ -1401,9 +1401,7 @@ class TestCheckBindMounts:
 
         result = _step_check_bind_mounts(ctx)
 
-        assert result is not None
-        assert result.success is False
-        assert "soc_certs" in result.error
+        assert result is None
 
 
 class TestStartupClassificationTypes:

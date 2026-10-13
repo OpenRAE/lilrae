@@ -1476,7 +1476,8 @@ services:
             for index, token in enumerate(compose_up)
             if token == "-f"
         ]
-        assert str(tmp_path / "docker-compose.yml") in override_paths
+        assert str(tmp_path / ".aptl/realization/compose-base.yml") in override_paths
+        assert str(tmp_path / "docker-compose.yml") not in override_paths
         override_path = tmp_path / ".aptl" / "realization" / "compose-images.yml"
         assert str(override_path) in override_paths
         override = override_path.read_text()

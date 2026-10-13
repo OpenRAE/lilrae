@@ -11,6 +11,7 @@ from pathlib import Path
 
 import yaml
 
+from aptl.core.deployment._compose_node_generation import render_realization_compose
 from aptl.core.deployment.realization import DeploymentRealizationSpec
 from aptl.core.deployment.errors import BackendTimeoutError
 from aptl.core.deployment._compose_capture_config import (
@@ -118,12 +119,7 @@ class ComposeCaptureApparatusMixin:
             self.realization_root,
             require_files=False,
         )
-        source = scenario_root / "docker-compose.yml"
-        model = (
-            yaml.safe_load(source.read_text(encoding="utf-8"))
-            if source.exists()
-            else {}
-        )
+        model = render_realization_compose(realization)
         services = model.get("services") or {}
         volumes = model.get("volumes") or {}
         collision = KALI_CAPTURE_SERVICE in services or KALI_CAPTURE_VOLUME in volumes

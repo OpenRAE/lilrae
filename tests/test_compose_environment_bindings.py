@@ -27,7 +27,13 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 from raes.runtime_configuration import RuntimeConfiguration
-from raes_contracts.planning import PlannedResource, RuntimeDomain
+from raes_contracts.planning import (
+    PlannedResource,
+    RealizationAuthorityMode,
+    RealizationResolutionSource,
+    ResolvedRealizationAuthority,
+    RuntimeDomain,
+)
 
 from aptl.backends.raes_literal_content_realization import (
     resolve_literal_content_placement,
@@ -128,6 +134,19 @@ def _realization(*nodes, adapter_names=(), pack=_PACK) -> DeploymentRealizationS
         images=images,
         pack_identity=pack,
         startup_selection=SimpleNamespace(identity=pack, plan=plan, provider=None),
+        realization_authority=tuple(_environment_authority(n) for n in nodes),
+    )
+
+
+def _environment_authority(node, mode=RealizationAuthorityMode.OPEN):
+    return ResolvedRealizationAuthority(
+        address=node.address,
+        field_path=f"nodes.{node.name}.runtime.environment",
+        domain="runtime-realization",
+        requirement_kind="runtime-environment",
+        payload_pointer="/spec/node/runtime/environment",
+        mode=mode,
+        source=RealizationResolutionSource.AUTHORED_SCOPE,
     )
 
 
@@ -164,7 +183,8 @@ def _delivered(
     override = backend._write_sourced_environment_override(realization, root)
     if override is None:
         return {}
-    services = yaml.safe_load(override.read_text(encoding="utf-8"))["services"]
+    model = compose_readback(yaml.safe_load(override.read_text(encoding="utf-8")))
+    services = model["services"]
     return {
         service: "".join(
             Path(path).read_text(encoding="utf-8") for path in fields["env_file"]
@@ -378,11 +398,10 @@ def test_a_later_request_never_reuses_an_earlier_granted_value(tmp_path, monkeyp
     granted = _realization(_service("db", _secret("DB_PASSWORD")))
     assert backend._environment_binding_preflight(granted, tmp_path) is None
     assert _delivered(backend, granted, tmp_path)
-    (tmp_path / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
+    later = _realization(_service("worker"))
+    assert backend._environment_binding_preflight(later, tmp_path) is None
 
-    assert backend._environment_binding_preflight(granted, tmp_path) is None
-
-    assert _delivered(backend, granted, tmp_path) == {}
+    assert _delivered(backend, later, tmp_path) == {}
     assert os.listdir(tmp_path / SOURCED_ENVIRONMENT_DIR) == []
 
 
@@ -490,15 +509,104 @@ def test_a_compose_service_without_its_binding_stops_before_mutation(
     assert not (tmp_path / SOURCED_ENVIRONMENT_DIR).exists()
 
 
-def test_an_in_tree_static_compose_file_keeps_its_own_references(tmp_path):
-    """APTL binds only the Compose model it generates from the realization."""
+def test_a_root_compose_file_cannot_bypass_a_missing_binding(tmp_path, monkeypatch):
+    """A project-tree run obeys the same binding rules as a pack."""
 
     (tmp_path / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
     backend = DockerComposeBackend(tmp_path)
     realization = _realization(_service("worker", _secret("API_TOKEN")))
+    commands = []
+    monkeypatch.setattr(backend, "_run", lambda cmd, **_: commands.append(cmd))
+    result = backend.realize(realization, scenario_root=tmp_path)
 
+    assert not result.success
+    assert "API_TOKEN has no environment grant" in result.error
+    assert commands == []
+
+
+def test_a_root_compose_file_cannot_consume_a_granted_value(tmp_path, monkeypatch):
+    monkeypatch.setenv("LAB_API_TOKEN", _GRANTED)
+    static = tmp_path / "docker-compose.yml"
+    static.write_text(
+        "services:\n  other:\n    image: example/other:1\n"
+        "    command: echo ${LAB_API_TOKEN}\n",
+        encoding="utf-8",
+    )
+    backend = DockerComposeBackend(
+        tmp_path, environment_grants=(_grant("worker", "API_TOKEN", "LAB_API_TOKEN"),)
+    )
+    realization = _realization(_service("worker", _secret("API_TOKEN")))
     assert backend._environment_binding_preflight(realization, tmp_path) is None
-    assert backend._write_sourced_environment_override(realization, tmp_path) is None
+    files = backend._realization_compose_files(None, realization, tmp_path)
+
+    assert static not in files
+    assert _delivered(backend, realization, tmp_path) == {
+        "worker": f"API_TOKEN='{_GRANTED}'\n"
+    }
+    assert "other" not in yaml.safe_load(files[0].read_text())["services"]
+
+
+@pytest.mark.parametrize("route", ["compose", "base-container"])
+@pytest.mark.parametrize("source", ["grant", "adapter"])
+@pytest.mark.parametrize("mode", [RealizationAuthorityMode.CLOSED, None])
+def test_an_external_fixture_without_open_authority_fails_before_mutation(
+    tmp_path, monkeypatch, route, source, mode
+):
+    node = _service("worker", _secret("API_TOKEN", "secret_fixture"))
+    realization = _realization(
+        node, adapter_names=("API_TOKEN",) if source == "adapter" else ()
+    )
+    realization = replace(
+        realization,
+        images=realization.images if route == "compose" else (),
+        realization_authority=(_environment_authority(node, mode),) if mode else (),
+    )
+    (tmp_path / ".env").write_text(f"API_TOKEN={_ADAPTER}\n", encoding="utf-8")
+    monkeypatch.setenv("LAB_API_TOKEN", _GRANTED)
+    backend = DockerComposeBackend(
+        tmp_path,
+        environment_grants=(_grant("worker", "API_TOKEN", "LAB_API_TOKEN"),)
+        if source == "grant" else (),
+    )
+    commands = []
+    monkeypatch.setattr(backend, "_run", lambda cmd, **_: commands.append(cmd))
+    result = backend.realize(realization, scenario_root=tmp_path)
+
+    assert not result.success
+    assert "node worker: API_TOKEN needs open runtime-environment authority" in result.error
+    assert _GRANTED not in result.error and _ADAPTER not in result.error
+    assert commands == []
+    assert not (tmp_path / SOURCED_ENVIRONMENT_DIR).exists()
+
+
+def test_an_exact_environment_still_accepts_presence_only_secrets(tmp_path, monkeypatch):
+    monkeypatch.setenv("LAB_API_TOKEN", _GRANTED)
+    node = _service("worker", _secret("API_TOKEN"))
+    realization = replace(
+        _realization(node),
+        realization_authority=(_environment_authority(node, RealizationAuthorityMode.CLOSED),),
+    )
+    backend = DockerComposeBackend(
+        tmp_path, environment_grants=(_grant("worker", "API_TOKEN", "LAB_API_TOKEN"),)
+    )
+    assert backend._environment_binding_preflight(realization, tmp_path) is None
+
+
+def test_an_exact_environment_preserves_its_authored_fixture(tmp_path, monkeypatch):
+    node = _service("worker", {"name": "API_TOKEN", "value": "authored-fixture",
+                               "value_classification": "secret_fixture"})
+    realization = replace(
+        _realization(node),
+        realization_authority=(_environment_authority(node, RealizationAuthorityMode.CLOSED),),
+    )
+    monkeypatch.setenv("API_TOKEN", _CANARY)
+    (tmp_path / ".env").write_text(f"API_TOKEN={_ADAPTER}\n", encoding="utf-8")
+    backend = DockerComposeBackend(tmp_path)
+    assert backend._environment_binding_preflight(realization, tmp_path) is None
+    path = base_compose_file(realization, tmp_path)
+    assert yaml.safe_load(path.read_text())["services"]["worker"]["environment"] == {
+        "API_TOKEN": "authored-fixture"
+    }
 
 
 def test_compose_files_for_an_unchecked_request_refuse_a_sourced_service(tmp_path):
@@ -966,6 +1074,73 @@ def test_compose_gives_a_granted_value_to_its_service_only(tmp_path, monkeypatch
     services = json.loads(result.stdout)["services"]
     assert services["db"]["environment"]["DB_PASSWORD"] == _GRANTED
     assert services["other"]["environment"]["DB_PASSWORD"] == ""
+
+
+def test_a_credential_file_path_is_literal_even_under_a_dollar_directory(
+    tmp_path, monkeypatch
+):
+    """Compose must read the private file the binding writer actually wrote."""
+
+    _require_compose_cli()
+    root = tmp_path / "lab${INDEXER_PASSWORD}"
+    root.mkdir()
+    (root / ".env").write_text(f"INDEXER_PASSWORD={_CANARY}\n", encoding="utf-8")
+    monkeypatch.setenv("LAB_DB_PASSWORD", _GRANTED)
+    realization = _realization(_service("db", _secret("DB_PASSWORD")))
+    backend = DockerComposeBackend(
+        root, environment_grants=(_grant("db", "DB_PASSWORD", "LAB_DB_PASSWORD"),)
+    )
+    command = _compose_config(backend, realization, root)
+    result = backend._run([*command, "--format", "json"])
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["services"]["db"]["environment"]["DB_PASSWORD"] == _GRANTED
+    override = (root / SOURCED_ENVIRONMENT_OVERRIDE).read_text(encoding="utf-8")
+    assert "lab$${INDEXER_PASSWORD}" in override
+    assert _CANARY not in result.stdout + result.stderr + override
+
+
+@pytest.mark.parametrize("kind", ["service", "startup"])
+def test_an_adapter_override_writes_its_paths_and_probes_as_literals(
+    tmp_path, monkeypatch, kind
+):
+    from aptl.backends import scenario_service_policy, scenario_startup_policy
+
+    _require_compose_cli()
+    root = tmp_path / "lab${INDEXER_PASSWORD}"
+    root.mkdir()
+    (root / ".env").write_text(f"INDEXER_PASSWORD={_CANARY}\n", encoding="utf-8")
+    realization = _realization(_service("app"))
+    if kind == "service":
+        member = "config${INDEXER_PASSWORD}.pem"
+        (root / member).write_text("synthetic fixture\n", encoding="utf-8")
+        policy = scenario_service_policy.ScenarioComposeServicePolicy(
+            mounts=(scenario_service_policy.ServiceFileMount(
+                "app", member, "/etc/${INDEXER_PASSWORD}/config.pem"
+            ),)
+        )
+        module = scenario_service_policy
+        provider = SimpleNamespace(compose_service_policy=lambda: policy)
+        writer = module.write_scenario_service_override
+    else:
+        policy = scenario_startup_policy.ScenarioComposeStartupPolicy(
+            probes=(scenario_startup_policy.StartupHealthProbe(
+                "app", ("CMD", "printf", "${INDEXER_PASSWORD}")
+            ),)
+        )
+        module = scenario_startup_policy
+        provider = SimpleNamespace(compose_startup_policy=lambda: policy)
+        writer = module.write_scenario_startup_override
+    monkeypatch.setattr(module, "selected_runtime_provider", lambda *_: provider)
+    overlay = writer(realization, root)
+    backend = DockerComposeBackend(root)
+    files = (base_compose_file(realization, root), overlay)
+    command = backend._build_command("config", [], compose_files=files, scenario_root=root)
+    result = backend._run([*command, "--format", "json"])
+
+    assert result.returncode == 0, result.stderr
+    assert _interpolates_nothing(overlay.read_text(encoding="utf-8"))
+    assert _CANARY not in result.stdout + result.stderr
 
 
 @pytest.fixture(scope="module")

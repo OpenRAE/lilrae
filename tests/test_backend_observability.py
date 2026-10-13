@@ -1,6 +1,7 @@
 """Backend apparatus must not depend on, or silently extend, scenario topology."""
 
 from pathlib import Path
+from dataclasses import replace
 import shutil
 import subprocess
 import uuid
@@ -9,7 +10,12 @@ import pytest
 import yaml
 
 from aptl.core.deployment.docker_compose import DockerComposeBackend
-from aptl.core.deployment.realization import DeploymentRealizationSpec
+from aptl.core.deployment.realization import (
+    DeploymentNetworkRealization,
+    DeploymentNodeRealization,
+    DeploymentPersistentVolumeRealization,
+    DeploymentRealizationSpec,
+)
 from aptl.core.host_ports import published_port_specs
 
 
@@ -71,20 +77,43 @@ def test_reserved_ownership_collision_rejects_before_backend_mutation(
 ):
     scenario = tmp_path / "pack"
     scenario.mkdir()
-    (scenario / "docker-compose.yml").write_text(
-        yaml.safe_dump({section: {name: definition}})
-    )
+    spec = DeploymentRealizationSpec(profiles=("otel",), nodes=(), networks=())
+    if section == "services":
+        node = DeploymentNodeRealization(
+            address=f"provision.node.{name}", name=name, service_name=name,
+            container_name=definition.get("container_name"), networks=(),
+        )
+        spec = replace(spec, nodes=(node,))
+    elif section == "networks":
+        spec = replace(spec, networks=(DeploymentNetworkRealization(name=name),))
+    else:
+        volume = DeploymentPersistentVolumeRealization(
+            address=f"provision.volume.{name}", name=name, lifecycle="retain",
+            access_mode="read_write_many", consumers=(),
+        )
+        spec = replace(spec, persistent_volumes=(volume,))
     backend = DockerComposeBackend(engine)
     backend._docker_daemon_id = "test-daemon"
     monkeypatch.setattr(
         backend, "_run", lambda *args, **kwargs: pytest.fail("mutated colliding world")
     )
     result = backend.realize(
-        DeploymentRealizationSpec(profiles=("otel",), nodes=(), networks=()),
+        spec,
         scenario_root=scenario,
     )
     assert not result.success
     assert "observability-ownership-conflict" in result.error
+
+
+def test_an_unused_root_model_cannot_claim_backend_apparatus(engine, tmp_path):
+    scenario = tmp_path / "scenario"
+    scenario.mkdir()
+    (scenario / "docker-compose.yml").write_text(
+        "services:\n  aptl-tempo:\n    image: example/other:1\n", encoding="utf-8"
+    )
+    backend = DockerComposeBackend(engine)
+    spec = DeploymentRealizationSpec(profiles=("otel",), nodes=(), networks=())
+    assert backend._observability_preflight(spec, scenario) is None
 
 
 @pytest.mark.parametrize("password", [None, "", "CHANGE_ME"])

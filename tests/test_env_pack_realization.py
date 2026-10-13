@@ -355,10 +355,13 @@ def test_generated_base_compose_is_written_under_realization_root_not_the_pack(
     validate_pack_content_manifest(str(content_root))
 
 
-def test_in_tree_base_compose_uses_the_static_file(tmp_path):
-    """When a docker-compose.yml is present (in-tree), it is used as-is."""
+def test_in_tree_base_compose_is_generated_even_with_a_static_file(tmp_path):
+    """A root Compose file cannot bypass scenario environment admission."""
 
-    from aptl.core.deployment._compose_node_generation import base_compose_file
+    from aptl.core.deployment._compose_node_generation import (
+        GENERATED_COMPOSE_RELPATH,
+        base_compose_file,
+    )
     from aptl.core.deployment.realization import DeploymentRealizationSpec
 
     root = tmp_path / "engine"
@@ -366,7 +369,10 @@ def test_in_tree_base_compose_uses_the_static_file(tmp_path):
     (root / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
     spec = DeploymentRealizationSpec(profiles=(), nodes=(), networks=())
 
-    assert base_compose_file(spec, root, root) == root / "docker-compose.yml"
+    path = base_compose_file(spec, root, root)
+    assert path == root / GENERATED_COMPOSE_RELPATH
+    assert path.is_file()
+    assert (root / "docker-compose.yml").read_text() == "services: {}\n"
 
 
 def test_operational_config_translates_declared_runtime_fields():

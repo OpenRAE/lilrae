@@ -70,11 +70,9 @@ class ComposeRealizationImageMixin:
     ) -> tuple[LabResult | None, tuple[Path, ...] | None]:
         """Run typed pull/build image operations and write a compose override.
 
-        A static in-tree ``docker-compose.yml`` is read from ``scenario_root``;
-        the generated base and image override are written under
+        The generated base and image override are written under
         ``realization_root`` (the writable engine checkout), never the pristine
-        pack (issue #875). ``realization_root`` defaults to ``scenario_root`` so
-        an in-tree scenario, where the two coincide, is unchanged.
+        pack (issue #875). A root Compose file cannot select another model.
         """
 
         realization_root = realization_root or scenario_root

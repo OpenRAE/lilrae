@@ -19,6 +19,7 @@ from aptl.core.deployment._realization_primitives import (
 if TYPE_CHECKING:
     from aptl.backends.scenario_startup import ScenarioStartupSelection
     from raes.runtime_configuration import RuntimeConfiguration
+    from raes_contracts.planning import ResolvedRealizationAuthority
 
 ImageRealizationMode = _ImageRealizationMode
 valid_environment_variable_name = _valid_environment_variable_name
@@ -495,3 +496,5 @@ class DeploymentRealizationSpec(object):
     startup_selection: ScenarioStartupSelection | None = field(
         default=None, repr=False, compare=False
     )
+    # Preserve RAES's resolved authority for pre-mutation binding admission.
+    realization_authority: tuple[ResolvedRealizationAuthority, ...] = ()

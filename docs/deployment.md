@@ -88,6 +88,16 @@ delivers each variable from a single explicit source:
   image sets a default for it. That is the value RAES expects such a
   declaration to have.
 
+A value-less `secret_fixture` also needs **open `runtime-environment`
+authority**. Under exact authority RAES expects that fixture to be empty, so
+an external value cannot satisfy the contract. APTL refuses that declaration
+in the binding preflight, before realization creates or changes any network,
+volume or container. The error names the node and variable, without reading
+back or disclosing a value or commitment. Missing authority also refuses it.
+For an external operational credential under exact authority, declare an
+`operator_secret` or `redacted` variable instead; its readback proves presence
+without a commitment. Authored fixture values still work under exact authority.
+
 **This changes earlier behavior.** APTL used to fill a declared variable from
 any same-named variable in its own process environment or in `.env`, and a
 shell variable overrode an authored value. A matching name is not authority to
@@ -129,19 +139,17 @@ a pack directory, an image reference and a host address. A
 reaches the container as written instead of as the `.env` value, and a
 container-shell `"$@"` reaches the shell unchanged.
 
-Only a scenario run from the project tree, the development path, can have its
-own `docker-compose.yml`: the one in the project directory. APTL uses that file
-unchanged as the base Compose model. Its `${NAME}` references resolve from
-`.env` and from the variables that the `docker compose` process keeps, such as
-the `APTL_*` settings, so it can pass any `.env` value to whatever image the
-scenario picks. Run only a scenario you trust from the project tree. Neither
-the file's services nor the scenario's base-container nodes take a grant or
-startup-adapter value, because a project-tree scenario has no pack identity. A
-value-less `operator_secret`, `redacted` or `secret_fixture` variable on a
-base-container node therefore stops `aptl lab start`. A generated-artifact
-output still reaches each service that declares it, through the artifact's own
-env file. APTL refuses an environment pack that ships a `docker-compose.yml` at
-its root.
+Every scenario realization uses the Compose model generated from its admitted
+declarations, including a project-tree scenario. A root `docker-compose.yml`
+does not supply services, commands, environment values or content mounts to
+that model. This removes the compatibility path that could read `.env` values
+without a binding. A project-tree scenario has no pack identity, so neither a
+grant nor a pack startup adapter applies to it. A value-less `operator_secret`,
+`redacted` or `secret_fixture` therefore stops its start on either container
+route. Declare authored fixtures or generated-artifact consumers in the SDL,
+or use an acquired pack with explicit grants for operational credentials.
+Generated outputs still reach only their declared consumers. APTL refuses an
+environment pack that ships a `docker-compose.yml` at its root.
 
 A grant names the admitted pack's identifier, the consuming node, the variable
 that node declares, and the source. The source is either an exact variable of
