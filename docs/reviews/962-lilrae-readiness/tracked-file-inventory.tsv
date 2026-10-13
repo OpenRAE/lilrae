@@ -1547,6 +1547,7 @@ tests/test_participant_qualification.py	tests-follow-owner	Retain meaningful bou
 tests/test_participant_workbench.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_participant_workbench_adapter.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_pathsafe.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_pep695_type_parameters.py	tests-follow-owner	Retain PEP 695 type-parameter source policy coverage
 tests/test_platform_ci_gates.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_plugin_pack_compatibility.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_pr_title_guard.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
