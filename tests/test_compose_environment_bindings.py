@@ -280,7 +280,7 @@ def test_a_granted_value_reaches_only_the_service_that_declares_it(
         _service("worker", {"name": "WORKER_MODE", "value": "batch"}),
     )
 
-    assert backend._environment_binding_preflight(realization, tmp_path) is None
+    assert backend._environment_binding_preflight(realization) is None
     delivered = _delivered(backend, realization, tmp_path)
     environment = _compose_env(backend, monkeypatch)
 
@@ -308,7 +308,7 @@ def test_compose_binding_logs_name_each_source_never_a_value(
         _service("worker", _secret("API_TOKEN", "secret_fixture")),
         adapter_names=("API_TOKEN",),
     )
-    assert backend._environment_binding_preflight(realization, tmp_path) is None
+    assert backend._environment_binding_preflight(realization) is None
 
     with caplog.at_level("INFO", logger="aptl"):
         _delivered(backend, realization, tmp_path)
@@ -340,7 +340,7 @@ def test_two_services_get_their_own_value_for_one_name(tmp_path, monkeypatch):
         adapter_names=("API_TOKEN",),
     )
 
-    assert backend._environment_binding_preflight(realization, tmp_path) is None
+    assert backend._environment_binding_preflight(realization) is None
 
     assert _delivered(backend, realization, tmp_path) == {
         "db": f"API_TOKEN='{_GRANTED}'\n",
@@ -361,7 +361,7 @@ def test_a_declared_name_never_changes_the_compose_client_environment(
     )
     realization = _realization(_service("fetcher", _secret("HTTPS_PROXY")))
 
-    assert backend._environment_binding_preflight(realization, tmp_path) is None
+    assert backend._environment_binding_preflight(realization) is None
     delivered = _delivered(backend, realization, tmp_path)
 
     assert delivered == {"fetcher": f"HTTPS_PROXY='{_GRANTED}'\n"}
@@ -381,7 +381,7 @@ def test_a_changed_source_reaches_the_env_file_on_the_next_start(tmp_path, monke
     values = [f"first-{uuid.uuid4().hex[:12]}", f"second-{uuid.uuid4().hex[:12]}"]
     for value in values:
         monkeypatch.setenv("LAB_DB_PASSWORD", value)
-        assert backend._environment_binding_preflight(realization, tmp_path) is None
+        assert backend._environment_binding_preflight(realization) is None
         seen.append(_delivered(backend, realization, tmp_path)["db"])
 
     assert seen == [f"DB_PASSWORD='{value}'\n" for value in values]
@@ -396,10 +396,10 @@ def test_a_later_request_never_reuses_an_earlier_granted_value(tmp_path, monkeyp
         environment_grants=(_grant("db", "DB_PASSWORD", "LAB_DB_PASSWORD"),),
     )
     granted = _realization(_service("db", _secret("DB_PASSWORD")))
-    assert backend._environment_binding_preflight(granted, tmp_path) is None
+    assert backend._environment_binding_preflight(granted) is None
     assert _delivered(backend, granted, tmp_path)
     later = _realization(_service("worker"))
-    assert backend._environment_binding_preflight(later, tmp_path) is None
+    assert backend._environment_binding_preflight(later) is None
 
     assert _delivered(backend, later, tmp_path) == {}
     assert os.listdir(tmp_path / SOURCED_ENVIRONMENT_DIR) == []
@@ -418,7 +418,7 @@ def test_an_adapter_value_comes_from_env_and_ambient_never_overrides_it(
         adapter_names=("INDEXER_PASSWORD",),
     )
 
-    assert backend._environment_binding_preflight(realization, tmp_path) is None
+    assert backend._environment_binding_preflight(realization) is None
 
     delivered = _delivered(backend, realization, tmp_path)
     assert delivered == {"wazuh-manager": f"INDEXER_PASSWORD='{_ADAPTER}'\n"}
@@ -536,7 +536,7 @@ def test_a_root_compose_file_cannot_consume_a_granted_value(tmp_path, monkeypatc
         tmp_path, environment_grants=(_grant("worker", "API_TOKEN", "LAB_API_TOKEN"),)
     )
     realization = _realization(_service("worker", _secret("API_TOKEN")))
-    assert backend._environment_binding_preflight(realization, tmp_path) is None
+    assert backend._environment_binding_preflight(realization) is None
     files = backend._realization_compose_files(None, realization, tmp_path)
 
     assert static not in files
@@ -557,10 +557,12 @@ def test_an_empty_scenario_cannot_discover_the_root_compose_model(tmp_path):
     files = backend._realization_compose_files(None, realization, tmp_path)
     command = backend._build_command("up", [], compose_files=files, scenario_root=tmp_path)
 
-    assert files is not None and len(files) == 1
+    assert files is not None
+    assert len(files) == 1
     assert static not in files
     assert yaml.safe_load(files[0].read_text()) == {"services": {}}
-    assert "-f" in command and str(files[0]) in command
+    assert "-f" in command
+    assert str(files[0]) in command
 
 
 @pytest.mark.parametrize("route", ["compose", "base-container"])
@@ -593,7 +595,8 @@ def test_an_external_fixture_without_open_authority_fails_before_mutation(
 
     assert not result.success
     assert "node worker: API_TOKEN needs open runtime-environment authority" in result.error
-    assert _GRANTED not in result.error and _ADAPTER not in result.error
+    assert _GRANTED not in result.error
+    assert _ADAPTER not in result.error
     assert commands == []
     assert not (tmp_path / SOURCED_ENVIRONMENT_DIR).exists()
 
@@ -608,7 +611,7 @@ def test_an_exact_environment_still_accepts_presence_only_secrets(tmp_path, monk
     backend = DockerComposeBackend(
         tmp_path, environment_grants=(_grant("worker", "API_TOKEN", "LAB_API_TOKEN"),)
     )
-    assert backend._environment_binding_preflight(realization, tmp_path) is None
+    assert backend._environment_binding_preflight(realization) is None
 
 
 def test_an_exact_environment_preserves_its_authored_fixture(tmp_path, monkeypatch):
@@ -621,7 +624,7 @@ def test_an_exact_environment_preserves_its_authored_fixture(tmp_path, monkeypat
     monkeypatch.setenv("API_TOKEN", _CANARY)
     (tmp_path / ".env").write_text(f"API_TOKEN={_ADAPTER}\n", encoding="utf-8")
     backend = DockerComposeBackend(tmp_path)
-    assert backend._environment_binding_preflight(realization, tmp_path) is None
+    assert backend._environment_binding_preflight(realization) is None
     path = base_compose_file(realization, tmp_path)
     assert yaml.safe_load(path.read_text())["services"]["worker"]["environment"] == {
         "API_TOKEN": "authored-fixture"
@@ -652,7 +655,7 @@ def test_a_symlinked_service_env_file_is_refused_and_not_followed(
     env_file = tmp_path / sourced_environment_file("db")
     env_file.parent.mkdir(parents=True)
     env_file.symlink_to(outside)
-    assert backend._environment_binding_preflight(realization, tmp_path) is None
+    assert backend._environment_binding_preflight(realization) is None
 
     with pytest.raises(EnvironmentBindingError, match=r"\(symlink\)"):
         backend._write_sourced_environment_override(realization, tmp_path)
@@ -671,7 +674,7 @@ def test_the_generated_compose_files_attach_each_service_env_file(
         environment_grants=(_grant("db", "DB_PASSWORD", "LAB_DB_PASSWORD"),),
     )
     realization = _realization(_service("db", _secret("DB_PASSWORD")))
-    assert backend._environment_binding_preflight(realization, tmp_path) is None
+    assert backend._environment_binding_preflight(realization) is None
 
     files = backend._realization_compose_files(None, realization, tmp_path)
 
@@ -829,7 +832,7 @@ def _generated_files(backend, realization, root: Path) -> tuple[Path, ...]:
     """
 
     backend._ensure_resource_ownership()
-    assert backend._environment_binding_preflight(realization, root) is None
+    assert backend._environment_binding_preflight(realization) is None
     base = base_compose_file(realization, root)
     images = backend._write_image_override(realization.images, root)
     files = backend._realization_compose_files((base, images), realization, root)
@@ -1075,7 +1078,7 @@ def test_compose_gives_a_granted_value_to_its_service_only(tmp_path, monkeypatch
         environment_grants=(_grant("db", "DB_PASSWORD", "LAB_DB_PASSWORD"),),
     )
     realization = _realization(_service("db", _secret("DB_PASSWORD")))
-    assert backend._environment_binding_preflight(realization, tmp_path) is None
+    assert backend._environment_binding_preflight(realization) is None
     files = backend._realization_compose_files(None, realization, tmp_path)
     other = tmp_path / "other.yml"
     other.write_text(
@@ -1213,7 +1216,7 @@ def test_the_released_techvault_pack_binds_from_its_own_adapter(
         monkeypatch.setenv(name, _CANARY)
     backend = DockerComposeBackend(tmp_path)
 
-    assert backend._environment_binding_preflight(techvault, tmp_path) is None
+    assert backend._environment_binding_preflight(techvault) is None
 
     delivered = _delivered(backend, techvault, tmp_path)
     assert {
@@ -1289,7 +1292,7 @@ def test_the_released_techvault_pack_without_its_env_stops_before_mutation(
     backend = DockerComposeBackend(tmp_path)
     backend._run = MagicMock()
 
-    result = backend._environment_binding_preflight(techvault, tmp_path)
+    result = backend._environment_binding_preflight(techvault)
 
     assert result is not None
     assert "has no value" in result.error

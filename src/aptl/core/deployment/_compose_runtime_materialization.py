@@ -42,12 +42,14 @@ class ComposeRuntimeMaterializationMixin:
         *,
         scenario_root: Path,
     ) -> LabResult:
-        """Expose the read-only graph gate to pre-build scenario admission."""
+        """Expose the read-only graph gate to pre-build scenario admission.
 
-        failure = self._runtime_materialization_preflight(
-            realization,
-            scenario_root=scenario_root,
-        )
+        The backend protocol supplies a scenario root; this pure qualification
+        uses only the typed graph, without reading scenario files.
+        """
+
+        del scenario_root
+        failure = self._runtime_materialization_preflight(realization)
         return failure or LabResult(success=True)
 
     @staticmethod
@@ -62,8 +64,6 @@ class ComposeRuntimeMaterializationMixin:
     def _runtime_materialization_preflight(
         self,
         realization: DeploymentRealizationSpec,
-        *,
-        scenario_root: Path | None = None,
     ) -> LabResult | None:
         """Qualify the complete runtime graph without creating backend state."""
 

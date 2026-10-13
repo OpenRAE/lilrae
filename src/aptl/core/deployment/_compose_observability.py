@@ -117,20 +117,20 @@ class ComposeObservabilityMixin:
     """Apparatus admission and file-set integration for every realization path."""
 
     def _observability_preflight(
-        self, realization: DeploymentRealizationSpec, scenario_root: Path
+        self, realization: DeploymentRealizationSpec
     ) -> LabResult | None:
         """Validate ownership, credentials, and trusted config before mutation."""
 
         if "otel" not in realization.profiles:
             return None
         try:
-            error = self._observability_preflight_error(realization, scenario_root)
+            error = self._observability_preflight_error(realization)
         except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError):
             error = "aptl.observability-config-unavailable"
         return LabResult(success=False, error=error) if error is not None else None
 
     def _observability_preflight_error(
-        self, realization: DeploymentRealizationSpec, scenario_root: Path
+        self, realization: DeploymentRealizationSpec
     ) -> str | None:
         """Return the first observability-specific preflight error."""
 

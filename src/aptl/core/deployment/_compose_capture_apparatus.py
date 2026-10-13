@@ -87,20 +87,20 @@ class ComposeCaptureApparatusMixin:
     """Add the exact admitted capture sidecar to a realization file set."""
 
     def _capture_apparatus_preflight(
-        self, realization: DeploymentRealizationSpec, scenario_root: Path
+        self, realization: DeploymentRealizationSpec
     ) -> LabResult | None:
         """Validate capture ownership, target ingress, and credential sources."""
 
         error = _capture_declaration_error(realization)
         if error is None and _capture_requested(realization):
             try:
-                error = self._capture_preflight_error(realization, scenario_root)
+                error = self._capture_preflight_error(realization)
             except (OSError, TypeError, KeyError, ValueError, yaml.YAMLError):
                 error = "aptl.capture-apparatus.config-unavailable"
         return LabResult(success=False, error=error) if error is not None else None
 
     def _capture_preflight_error(
-        self, realization: DeploymentRealizationSpec, scenario_root: Path
+        self, realization: DeploymentRealizationSpec
     ) -> str | None:
         """Return a stable error after validating capture-specific resources."""
 

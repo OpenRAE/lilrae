@@ -8,6 +8,10 @@ from typing import TYPE_CHECKING, Literal
 from aptl.runtime_authority import DeploymentDockerAuthorityAdmission
 from aptl.core.scenario_bundle import PackIdentity
 from aptl.core.deployment._realization_primitives import (
+    AclAction as _AclAction,
+    AclDirection as _AclDirection,
+    AclProtocol as _AclProtocol,
+    DeploymentAclRealization,
     DeploymentImageRealization,
     DeploymentNetworkAttachment,
     DeploymentNetworkRealization,
@@ -21,6 +25,9 @@ if TYPE_CHECKING:
     from raes.runtime_configuration import RuntimeConfiguration
     from raes_contracts.planning import ResolvedRealizationAuthority
 
+AclAction = _AclAction
+AclDirection = _AclDirection
+AclProtocol = _AclProtocol
 ImageRealizationMode = _ImageRealizationMode
 valid_environment_variable_name = _valid_environment_variable_name
 
@@ -34,41 +41,6 @@ GeneratedArtifactOutputDisposition = Literal["consumer_selected", "producer_priv
 ResourceSensitivity = Literal["public", "restricted", "secret"]
 VolumeLifecycle = Literal["retain", "ephemeral"]
 VolumeAccessMode = Literal["read_write_once", "read_write_many", "read_only_many"]
-AclDirection = Literal["in", "out", "inout"]
-AclAction = Literal["allow", "deny"]
-AclProtocol = Literal["any", "tcp", "udp", "icmp"]
-
-
-@dataclass(frozen=True)
-class DeploymentAclRealization(object):
-    """One admitted RAES infrastructure ACL lowered for backend enforcement."""
-
-    owner_address: str
-    owner_resource_type: Literal["node", "network"]
-    owner_name: str
-    name: str
-    order: int
-    direction: AclDirection
-    from_network: str | None
-    to_network: str | None
-    protocol: AclProtocol
-    ports: tuple[int, ...]
-    action: AclAction
-
-    def details(self) -> dict[str, object]:
-        return {
-            "owner_address": self.owner_address,
-            "owner_resource_type": self.owner_resource_type,
-            "owner_name": self.owner_name,
-            "name": self.name,
-            "order": self.order,
-            "direction": self.direction,
-            "from_network": self.from_network,
-            "to_network": self.to_network,
-            "protocol": self.protocol,
-            "ports": list(self.ports),
-            "action": self.action,
-        }
 
 
 @dataclass(frozen=True)

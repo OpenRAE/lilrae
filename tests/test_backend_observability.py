@@ -128,7 +128,7 @@ def test_an_unused_root_model_cannot_claim_backend_apparatus(engine, tmp_path):
     )
     backend = DockerComposeBackend(engine)
     spec = DeploymentRealizationSpec(profiles=("otel",), nodes=(), networks=())
-    assert backend._observability_preflight(spec, scenario) is None
+    assert backend._observability_preflight(spec) is None
 
 
 @pytest.mark.parametrize("password", [None, "", "CHANGE_ME"])

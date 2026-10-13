@@ -111,7 +111,7 @@ function isSensitiveKey(name: string): boolean {
 // conservative: they preserve the labelling token (`Bearer`, `password=`)
 // so log readers know what was redacted, but mask the secret payload.
 const SENSITIVE_KEY_PATTERN =
-  '(?:pass(?:word|wd|phrase)?|secret|token|credential|api[_-]?key|apikey|jwt|bearer|session(?:_id)?|cookie|com\\.docker\\.compose\\.config-hash)';
+  String.raw`(?:pass(?:word|wd|phrase)?|secret|token|credential|api[_-]?key|apikey|jwt|bearer|session(?:_id)?|cookie|com\.docker\.compose\.config-hash)`;
 // `\S+` would greedily consume trailing quotes/punctuation around the
 // secret value (e.g. eat the closing `'` of a curl `-H 'Authorization: ...'`
 // header, corrupting downstream diagnostic structure). Stop at quotes

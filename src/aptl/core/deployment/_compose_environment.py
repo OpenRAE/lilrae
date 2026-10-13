@@ -240,7 +240,6 @@ class ComposeEnvironmentBindingMixin:
     def _environment_binding_preflight(
         self,
         realization: "DeploymentRealizationSpec",
-        scenario_root: Path | None = None,
     ) -> LabResult | None:
         """Bind the request's declared environment, or refuse it.
 
