@@ -446,6 +446,7 @@ def test_environment_sourced_secret_fixture_leaves_no_value_or_digest(
     # binding preflight now refuses this exact case before a container exists;
     # OPEN authority still accepts its secret-free readback.
     from raes_processor.planner import realization_authority_disclosure
+    from raes_processor.semantics.realization_concerns import realization_concern_descriptors
 
     authority = ResolvedRealizationAuthority(
         address=_ADDRESS,
@@ -460,16 +461,25 @@ def test_environment_sourced_secret_fixture_leaves_no_value_or_digest(
         required_observation_strength=ObservationStrength.DAEMON_OBSERVED,
     )
     envelope = create_aptl_realization_envelope()
-    # The full planner gate requires total authority for every declared concern.
-    # This fixture declares only the environment concern being exercised here.
-    payload = {"spec": {"node": {"runtime": {
-        "environment": runtime.model_dump(mode="json", by_alias=True)["environment"]
-    }}}}
+    # RAES requires total authority, including absent registered concerns. Use
+    # its registry and retain CLOSED authority for every concern except the
+    # environment under test; no local concern inventory substitutes for it.
+    closed = tuple(
+        ResolvedRealizationAuthority(
+            address=_ADDRESS,
+            field_path=f"nodes.vm.{descriptor.authored_suffix}",
+            domain=REALIZATION_DOMAIN,
+            requirement_kind=descriptor.concern_kind,
+            payload_pointer="/" + "/".join(descriptor.payload_path),
+            mode=RealizationAuthorityMode.CLOSED,
+            source=RealizationResolutionSource.LEGACY_DEFAULT,
+        )
+        for descriptor in realization_concern_descriptors()
+        if descriptor.section == "nodes" and descriptor.concern_kind != "runtime-environment"
+    )
     plan = replace(
         plan,
-        resources={_ADDRESS: replace(plan.resources[_ADDRESS], payload=payload)},
-        operations=[replace(op, payload=payload) for op in plan.operations],
-        realization_authority=(authority,),
+        realization_authority=(authority, *closed),
         realization_envelope=envelope.identity,
     )
     snapshot = snapshot_after_apply(plan, RuntimeSnapshot(), observations)
@@ -481,7 +491,7 @@ def test_environment_sourced_secret_fixture_leaves_no_value_or_digest(
     diagnostics, _ = realization_authority_disclosure(
         plan, snapshot, manifest=create_aptl_manifest()
     )
-    assert [item.code for item in diagnostics] == codes
+    assert [item.code for item in diagnostics] == codes, [d.message for d in diagnostics]
 
 
 def test_environment_undeclared_operator_value_is_rejected():

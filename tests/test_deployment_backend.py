@@ -388,6 +388,18 @@ class TestDockerComposeBackend:
         backend._record_compose_volume_receipts = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
         return backend
 
+    def _make_network_backend(self, tmp_path: Path) -> DockerComposeBackend:
+        """Network tests supply an already-started native inventory.
+
+        Isolate the successful startup stage instead of depending on an
+        unrelated root Compose service. Image, binding and ownership tests
+        exercise the real startup stage separately.
+        """
+
+        backend = self._make_backend(tmp_path)
+        backend._start_with_compose_files = MagicMock(return_value=LabResult(success=True))
+        return backend
+
     def test_rejects_unsafe_direct_project_name(self, tmp_path):
         with pytest.raises(ValueError, match="project_name"):
             DockerComposeBackend(project_dir=tmp_path, project_name="../other")
@@ -531,7 +543,7 @@ services:
         assert "raw daemon details" not in presence.error
 
     def test_realize_reconciles_project_networks_after_start(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -652,7 +664,7 @@ services:
             "aptl.core.deployment._compose_port_realization.port_available",
             lambda *_args, **_kwargs: True,
         )
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -723,7 +735,7 @@ services:
         attaches its declared network(s) directly at container creation), so
         reconciliation must not try to disconnect a network the container
         was never on."""
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -779,7 +791,7 @@ services:
         )
 
     def test_realize_creates_declared_networks_and_connects_static_ip(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("enterprise",),
             nodes=(
@@ -940,7 +952,7 @@ services:
     def test_realize_reconnects_network_when_ip_or_dns_aliases_drift(
         self, tmp_path, observed_ip
     ):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("enterprise",),
             nodes=(
@@ -1107,7 +1119,7 @@ services:
         )
 
     def test_realize_skips_nodes_without_declared_networks(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -1150,7 +1162,10 @@ services:
         )
 
     def test_realize_returns_start_failure_without_reconciliation(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
+        backend._start_with_compose_files.return_value = LabResult(
+            success=False, error="compose failed"
+        )
         spec = DeploymentRealizationSpec(profiles=("kali",), nodes=(), networks=())
 
         def fake_run(cmd, **_kwargs):
@@ -1169,7 +1184,7 @@ services:
         )
 
     def test_realize_reports_missing_managed_networks(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -1201,7 +1216,7 @@ services:
         assert "managed networks were not visible" in result.error
 
     def test_realize_reports_unmatched_and_uninspectable_nodes(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -1247,7 +1262,7 @@ services:
         assert "aptl-kali" in result.error
 
     def test_realize_reports_network_reconciliation_command_failures(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
