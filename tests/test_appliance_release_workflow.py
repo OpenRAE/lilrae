@@ -39,7 +39,8 @@ def test_backmerge_binds_values_and_fails_closed() -> None:
     run = step["run"]
     assert "${{" not in run
     assert step["env"]["TAG"] == "${{ needs.release-please.outputs.tag_name }}"
-    assert "|| echo" not in run and "|| true" not in run
+    assert "|| echo" not in run
+    assert "|| true" not in run
     assert "compare/dev...main" in run
     assert '--title "chore: back-merge ${TAG} into dev"' in run
 
