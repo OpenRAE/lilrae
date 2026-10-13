@@ -78,6 +78,10 @@ dev = [
     # requirements/dev.txt, so the projection's mapping/schema-evolution tests
     # run there rather than silently skipping.
     "pyarrow>=17.0.0",
+    # The installed-artifact tests build real wheels with the release job's
+    # toolchain (`python -m build --no-isolation`). CI installs
+    # requirements/dev.txt, so those tests run there rather than skip.
+    "build>=1.2.0",
 ]
 docs = [
     "mkdocs-material>=9.5.0",
