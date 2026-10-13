@@ -226,6 +226,10 @@ class TestRunRaisesBackendTimeoutError:
         (["docker", "private-token"], "docker command"),
         (["docker", "exec", "private-token"], "docker exec"),
         (["docker", "compose", "-f", "private-token", "down"], "docker compose down"),
+        (["docker", "compose", "-f", "private-token"], "docker compose command"),
+        (["docker", "volume", "rm", "private-token"], "docker volume rm"),
+        (["docker", "kill", "private-token"], "docker kill"),
+        (["docker", "private-token", "up"], "docker command"),
     ],
 )
 def test_docker_timeout_operation_never_discloses_arguments(command, expected):
