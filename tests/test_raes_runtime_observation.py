@@ -462,8 +462,8 @@ def test_environment_sourced_secret_fixture_leaves_no_value_or_digest(
     )
     envelope = create_aptl_realization_envelope()
     # RAES requires total authority, including absent registered concerns. Use
-    # its registry and retain CLOSED authority for every concern except the
-    # environment under test; no local concern inventory substitutes for it.
+    # its registry, authorize the declared node type, and retain CLOSED
+    # authority for absent concerns. No local inventory substitutes for it.
     remaining = tuple(
         ResolvedRealizationAuthority(
             address=_ADDRESS,
@@ -472,17 +472,17 @@ def test_environment_sourced_secret_fixture_leaves_no_value_or_digest(
             requirement_kind=descriptor.concern_kind,
             payload_pointer="/" + "/".join(descriptor.payload_path),
             mode=(RealizationAuthorityMode.EXACT
-                  if descriptor.concern_kind in {"node-type", "os-family"}
+                  if descriptor.concern_kind == "node-type"
                   else RealizationAuthorityMode.CLOSED),
             source=(RealizationResolutionSource.AUTHORED_SCOPE
-                    if descriptor.concern_kind in {"node-type", "os-family"}
+                        if descriptor.concern_kind == "node-type"
                     else RealizationResolutionSource.LEGACY_DEFAULT),
         )
         for descriptor in realization_concern_descriptors()
         if descriptor.section == "nodes" and descriptor.concern_kind != "runtime-environment"
     )
     payload = {
-        "node_kind": "compute", "os_family": "linux",
+        "node_kind": "compute",
         "spec": {"node": {"runtime": {"environment":
             runtime.model_dump(mode="json", by_alias=True)["environment"]}}},
     }
@@ -492,6 +492,7 @@ def test_environment_sourced_secret_fixture_leaves_no_value_or_digest(
         operations=[replace(op, payload=payload) for op in plan.operations],
         realization_authority=(authority, *remaining),
         realization_envelope=envelope.identity,
+        operation_id="fixture-binding-apply",
     )
     snapshot = snapshot_after_apply(plan, RuntimeSnapshot(), observations)
     snapshot = replace(snapshot, realization_envelope=envelope.identity)
