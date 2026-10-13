@@ -624,6 +624,7 @@ mcp/aptl-mcp-common/tests/shells.test.ts	tests-follow-owner	Retain meaningful bo
 mcp/aptl-mcp-common/tests/ssh-facade.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/ssh.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/telemetry-export.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+mcp/aptl-mcp-common/tests/telemetry-shutdown.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/telemetry.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/tools-definitions.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/tools-handlers.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
