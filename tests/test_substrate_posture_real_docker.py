@@ -19,8 +19,11 @@ then failed inside a container. Dropping every capability and using the daemon's
 default seccomp profile boots it `running` with zero failed units.
 
 Marked `integration` per-test (not module-level) so the default
-`-k "not integration"` run does not zero this module's coverage, and skipped
-when the daemon, the images, or the required engine version are unavailable.
+`-m "not integration and not fuzz"` run does not zero this module's coverage.
+Each test builds its image through the backend's own
+`ensure_generic_base_image`, as `aptl lab start` does (#1006), and fails if the
+build fails; it skips only when the daemon or the required engine version is
+unavailable (#1321).
 """
 
 from __future__ import annotations
@@ -49,6 +52,7 @@ _IMAGES = {
     "node22": "aptl/generic-systemd-node22-base:latest",
 }
 _ALL_SYSTEMD_IMAGES = list(_IMAGES)
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _docker(*args: str, timeout: int = 120) -> subprocess.CompletedProcess:
@@ -73,6 +77,19 @@ def _daemon_supports_the_posture() -> bool:
         return False
 
 
+def _build_image(image: str) -> str:
+    """Build ``image`` from this checkout's Dockerfile, as a lab start does.
+
+    Skipping when the tag was absent let these tests pass only after some
+    earlier test happened to build it (#1321).
+    """
+
+    builder = DockerComposeBackend(project_dir=_REPO_ROOT, project_name="aptl955")
+    failures = builder.ensure_generic_base_image(image)
+    assert failures == [], failures
+    return image
+
+
 requires_daemon = pytest.mark.skipif(
     not _daemon_supports_the_posture(),
     reason="needs a cgroup v2 Docker daemon at Engine "
@@ -87,9 +104,7 @@ def started_node(tmp_path):
     started: list[str] = []
 
     def start(image_key: str) -> tuple[str, dict]:
-        image = _IMAGES[image_key]
-        if _docker("image", "inspect", image).returncode != 0:
-            pytest.skip(f"{image} is not built on this host")
+        image = _build_image(_IMAGES[image_key])
         name = f"aptl-955-{image_key}-{int(time.time() * 1000)}"
         spec = BaseContainerSpec(
             node_address=f"provision.node.{name}",
@@ -236,9 +251,7 @@ def test_a_retired_recipe_container_is_not_reused(started_node, tmp_path):
     accepted it and the hardening silently never applied.
     """
 
-    image = _IMAGES["debian"]
-    if _docker("image", "inspect", image).returncode != 0:
-        pytest.skip(f"{image} is not built on this host")
+    image = _build_image(_IMAGES["debian"])
 
     name = f"aptl-955-stale-{int(time.time() * 1000)}"
     created = _docker(

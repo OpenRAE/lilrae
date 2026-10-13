@@ -26,8 +26,11 @@ from aptl.backends.raes_materializer import (
 from aptl.backends.raes_node_materialization import realize_node
 from aptl.backends.raes_realization import interpret_provisioning_plan
 from aptl.core.config import AptlConfig
+from aptl.core.deployment._compose_base_container_realization import (
+    _ensure_generic_base_images,
+)
 from aptl.core.deployment.docker_compose import DockerComposeBackend
-from tests.helpers import techvault_scenario_bundle
+from tests.helpers import realized_container_name, techvault_scenario_bundle
 
 pytestmark = pytest.mark.integration
 
@@ -47,25 +50,13 @@ def _docker_available() -> bool:
     )
 
 
+def _remove_container(name: str) -> None:
+    subprocess.run(["docker", "rm", "-f", name], capture_output=True, text=True)
+
+
 @pytest.mark.skipif(not _docker_available(), reason="docker daemon not available")
 def test_dns_node_boots_base_container_materialized_and_resolves(tmp_path):
     repo = Path(__file__).resolve().parent.parent
-    subprocess.run(
-        [
-            "docker",
-            "build",
-            "-t",
-            "aptl/generic-systemd-base-debian:latest",
-            "-f",
-            str(repo / "containers/generic-systemd-base-debian/Dockerfile"),
-            str(repo),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=600,
-        check=True,
-    )
-    subprocess.run(["docker", "rm", "-f", "aptl-dns"], capture_output=True, text=True)
 
     cfg = AptlConfig(lab={"name": "x"}, containers={})
     be = DockerComposeBackend(project_dir=repo, project_name="aptl")
@@ -85,6 +76,12 @@ def test_dns_node_boots_base_container_materialized_and_resolves(tmp_path):
     spec = real.deployment_spec([])
 
     dns_node = next(n for n in spec.nodes if n.name == "dns")
+    # Build the base image the plan selected for this node, the way a lab start
+    # does before it materializes anything. Building one fixed image by hand
+    # went stale when the plan moved the node onto a derived base (#1321).
+    assert _ensure_generic_base_images(be, (dns_node,)) == []
+    dns_container = realized_container_name(be, dns_node.container_name)
+    _remove_container(dns_container)
     dns_content = [c for c in spec.content if c.target_address == dns_node.address]
     ops = []
     for c in dns_content:
@@ -136,6 +133,6 @@ def test_dns_node_boots_base_container_materialized_and_resolves(tmp_path):
         )
         assert "172.20.1.20" in dig.stdout
     finally:
-        subprocess.run(
-            ["docker", "rm", "-f", "aptl-dns"], capture_output=True, text=True
-        )
+        # The realized name is workspace-scoped (#1054): removing the declared
+        # name removed nothing and leaked the container on every run.
+        _remove_container(dns_container)
