@@ -89,7 +89,9 @@ def _registry_base_refs(dockerfile: Path) -> list[str]:
     }
     required_args = {
         match.group("name")
-        for match in _REQUIRED_ARG.finditer(text[: first_from.start() if first_from else 0])
+        for match in _REQUIRED_ARG.finditer(
+            text[: first_from.start() if first_from else 0]
+        )
     }
     stages = {
         m.group(1).lower()
@@ -193,13 +195,15 @@ def test_actions_are_sha_pinned(workflow: Path) -> None:
 
 # --------------------------------------------------------------- npm and pip
 
-# Shell files that drive builds or provision a shipped artifact. Scenario
-# fixtures are excluded deliberately - see
-# test_scenario_fixture_scripts_are_out_of_scope below.
+# Shell files that drive builds or provision a shipped artifact. The npm, pip
+# and source-build tests below read no other shell file;
+# test_every_listed_build_script_is_a_pinning_source fails if an entry here
+# stops pointing at a file.
 _BUILD_SHELL = [
     "mcp/build-all-mcps.sh",
     "tools/vale-lint-all.sh",
     "appliance/guest/provision-offline.sh",
+    "scripts/appliance/build-seat-image.sh",
 ]
 
 _NPM_INSTALL = re.compile(r"\bnpm\s+install\b")
@@ -383,6 +387,61 @@ def test_scenario_verification_artifact_boundary_runs_in_ci() -> None:
     assert "-m integration" in commands
 
 
+_LOCAL_EDITABLE = re.compile(r"\s-e\s+\.(?:/plugins/[a-z0-9][a-z0-9-]*)?(\s|$)")
+_UV_BUILD = re.compile(r"(?:^|\s)uv\s+build\b")
+_BUILD_CONSTRAINTS = re.compile(r"\s(?:--build-constraints?|-b)[=\s]")
+_REMOTE_FIND_LINKS = re.compile(r"\s(?:--find-links|-f)[=\s]*['\"]?https?://")
+
+
+def _uv_build_resolves_unhashed(command: str) -> bool:
+    """Whether a `uv build` may fetch its build backend without a hash check.
+
+    Three forms close the isolated resolver: `--no-build-isolation` (the
+    backend comes from the already-hashed environment), `--require-hashes`
+    with build constraints (every build requirement must match a hash), and
+    `--no-index` with only local `--find-links` (nothing comes from a network).
+    """
+    if "--no-build-isolation" in command:
+        return False
+    if "--require-hashes" in command and _BUILD_CONSTRAINTS.search(command):
+        return False
+    return "--no-index" not in command or bool(_REMOTE_FIND_LINKS.search(command))
+
+
+def _opens_unhashed_build_resolver(command: str) -> bool:
+    """Whether one shell command builds this project with an unhashed backend."""
+    if re.search(r"pip\s+install\b", command) and _LOCAL_EDITABLE.search(command):
+        return "--no-build-isolation" not in command
+    if re.search(r"python\s+-m\s+build\b", command):
+        return "--no-isolation" not in command
+    if _UV_BUILD.search(command):
+        return _uv_build_resolves_unhashed(command)
+    return False
+
+
+@pytest.mark.parametrize(
+    ("command", "unhashed"),
+    [
+        ('uv build --wheel --out-dir "$out" "$src"', True),
+        ('uv build --no-index -f https://example.test/wheels "$src"', True),
+        ("uv build --no-index --find-links=http://mirror.test/ .", True),
+        ("uv build --require-hashes .", True),
+        ("uv build -b requirements/runtime.txt .", True),
+        ('uv build --no-index --find-links "$payload/wheelhouse" "$src"', False),
+        ("uv build --build-constraints runtime.txt --require-hashes .", False),
+        ("uv build --no-build-isolation --wheel .", False),
+        ("pip install -e . --no-deps", True),
+        ("pip install -e ./plugins/aptl-x --no-deps --no-build-isolation", False),
+        ("python -m build --wheel", True),
+        ("python -m build --wheel --no-isolation", False),
+        ("uv run pytest tests/", False),
+    ],
+)
+def test_source_build_classifier(command: str, unhashed: bool) -> None:
+    """Accepted source-build forms pass; isolated, unhashed builds are offenders."""
+    assert _opens_unhashed_build_resolver(command) is unhashed
+
+
 @pytest.mark.parametrize(
     "source", _pinning_sources(), ids=lambda p: str(p.relative_to(REPO_ROOT))
 )
@@ -396,48 +455,35 @@ def test_source_builds_do_not_re_open_an_unhashed_resolver(source: Path) -> None
     hash checking - a second, unverified resolver running underneath the one we
     just pinned. `--no-build-isolation` / `--no-isolation` (against the
     hatchling that every `requirements/*.txt` now carries) is what shuts it.
+    `uv build` isolates the same way; see `_uv_build_resolves_unhashed` for the
+    forms that shut it there.
     """
     text = re.sub(r"\\\n\s*", " ", source.read_text(encoding="utf-8"))
-    offenders = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("#"):
-            continue
-        for command in re.split(r"&&|\|\|", stripped):
-            # An editable/source install of this project.
-            local_editable = re.search(r"\s-e\s+\.(\s|$)", command) or re.search(
-                r"\s-e\s+\./plugins/[a-z0-9][a-z0-9-]*(\s|$)", command
-            )
-            if re.search(r"pip\s+install\b", command) and local_editable:
-                if "--no-build-isolation" not in command:
-                    offenders.append(command.strip())
-            # A wheel/sdist build of this project.
-            if (
-                re.search(r"python\s+-m\s+build\b", command)
-                and "--no-isolation" not in command
-            ):
-                offenders.append(command.strip())
+    offenders = [
+        command.strip()
+        for line in text.splitlines()
+        if not line.strip().startswith("#")
+        for command in re.split(r"&&|\|\|", line)
+        if _opens_unhashed_build_resolver(command)
+    ]
     assert not offenders, (
         f"{source.relative_to(REPO_ROOT)} builds from source with PEP 517 isolation "
         f"enabled, which resolves the build backend unpinned: {offenders}"
     )
 
 
-def test_scenario_fixture_scripts_are_out_of_scope() -> None:
-    """The lab's fake corporate content is not part of APTL's supply chain.
+def test_every_listed_build_script_is_a_pinning_source() -> None:
+    """A renamed or deleted build script fails here instead of going unchecked.
 
-    ``scenarios/fixtures/techvault-content/`` holds the files a red-team agent
-    discovers on a compromised TechVault host. Its ``deploy.sh`` is a prop: it is
-    never executed by a build, and hash-pinning it would make the artifact read
-    as machine-generated rather than as something a developer checked in. It is
-    excluded here by evidence, not by convenience - and this test fails if the
-    file stops being a fixture, so the exclusion cannot quietly widen.
+    ``_pinning_sources()`` keeps only the ``_BUILD_SHELL`` entries that exist.
+    Without this test, a listed script that moved would drop out of the npm,
+    pip and source-build tests above while every one of them still passed, and
+    the set of shell files those tests never read would grow unnoticed.
     """
-    fixture = (
-        REPO_ROOT
-        / "scenarios/fixtures/techvault-content/dev-user-home/projects/techvault-portal/deploy.sh"
+    sources = set(_pinning_sources())
+    unread = [rel for rel in _BUILD_SHELL if REPO_ROOT / rel not in sources]
+    assert not unread, (
+        f"_BUILD_SHELL lists {unread}, but _pinning_sources() does not return "
+        "them, so no pinning test reads them. Point each entry at the script's "
+        "current path, or remove it if the script is gone."
     )
-    if not fixture.is_file():
-        pytest.skip("fixture removed or relocated")
-    assert fixture not in _pinning_sources()
-    assert "scenarios/fixtures/" in str(fixture.relative_to(REPO_ROOT))
