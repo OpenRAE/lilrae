@@ -3,9 +3,10 @@
 Split out of ``runstore.py`` (which owns the :class:`LocalRunStore` filesystem
 implementation) so the module stays focused: this file holds the id/path
 validators, the create-once canonicalization + secret-invariant helpers, the
-per-run lock registry, the create-once error taxonomy, and the cross-process
-run-dir resolution, and the owner-only mode helpers. ``runstore`` re-imports and re-exports these, so existing
-``from aptl.core.runstore import ...`` call sites are unaffected.
+per-run lock registry, the create-once error taxonomy, the cross-process
+run-dir resolution, and the owner-only mode helpers. ``runstore`` re-imports
+and re-exports these, so existing ``from aptl.core.runstore import ...`` call
+sites are unaffected.
 """
 
 import errno
@@ -305,19 +306,33 @@ def _private_opener(path: str, flags: int) -> int:
     return fd
 
 
+def _require_regular_file(status: os.stat_result, path: Path, role: str) -> None:
+    """Raise :class:`shutil.SpecialFileError` unless ``status`` is a regular file."""
+    if not stat.S_ISREG(status.st_mode):
+        raise shutil.SpecialFileError(f"copy_file {role} is not a regular file: {path}")
+
+
 def _copy_private(source: Path, target: Path) -> None:
     """Copy ``source`` bytes and timestamps into an owner-only ``target``.
 
     Unlike ``shutil.copy2`` this copies neither the source's permission bits
     nor its flags or extended attributes (which can carry a POSIX access
     ACL), so a ``0644`` source lands ``0600``. The source is never modified.
+    Only regular files are copied: a source or an existing target that is a
+    FIFO, device, socket or directory raises :class:`shutil.SpecialFileError`
+    before any byte is read or written. The source is opened non-blocking so
+    a FIFO is refused instead of waiting for a writer.
     """
-    with open(source, "rb") as src:
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+    with os.fdopen(os.open(source, flags), "rb") as src:
         source_status = os.fstat(src.fileno())
+        _require_regular_file(source_status, source, "source")
         try:
             target_status = os.stat(target)
         except FileNotFoundError:
             target_status = None
+        if target_status is not None:
+            _require_regular_file(target_status, target, "target")
         if target_status is not None and os.path.samestat(source_status, target_status):
             # copy2 refuses this too; truncating the target would lose the bytes.
             raise shutil.SameFileError(f"{source} and {target} are the same file")

@@ -8,6 +8,7 @@ created, starting at a missing ancestor of the store root.
 
 import json
 import os
+import shutil
 import stat
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -143,6 +144,35 @@ def test_copy_file_onto_its_own_source_keeps_the_bytes(
         store.copy_file(RUN_ID, "artifact.bin", target)
 
     assert target.read_bytes() == SOURCE_BYTES
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs POSIX named pipes")
+def test_copy_file_refuses_a_fifo_source_without_blocking(
+    tmp_path: Path, umask_022: None
+) -> None:
+    fifo = tmp_path / "pipe"
+    os.mkfifo(fifo)
+    store = LocalRunStore(tmp_path / "runs")
+
+    with pytest.raises(shutil.SpecialFileError, match="source is not a regular file"):
+        store.copy_file(RUN_ID, "artifact.bin", fifo)
+
+    assert not (tmp_path / "runs" / RUN_ID / "artifact.bin").exists()
+
+
+def test_copy_file_refuses_a_directory_target(
+    tmp_path: Path, umask_022: None
+) -> None:
+    source = _shared_source(tmp_path)
+    target = tmp_path / "runs" / RUN_ID / "artifact.bin"
+    target.mkdir(parents=True)
+    store = LocalRunStore(tmp_path / "runs")
+
+    with pytest.raises(shutil.SpecialFileError, match="target is not a regular file"):
+        store.copy_file(RUN_ID, "artifact.bin", source)
+
+    assert target.is_dir()
+    assert list(target.iterdir()) == []
 
 
 def test_append_jsonl_new_file_is_private_and_existing_file_is_tightened(
