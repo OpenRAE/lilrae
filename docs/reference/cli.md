@@ -106,6 +106,25 @@ snapshot with `timestamp`, `software`, `containers`, `wazuh_rules`, `networks`,
 `config_hashes`, `services`, and `ssh`. It exits with status 1 when the
 snapshot can't be captured.
 
+## Logging
+
+The CLI writes log lines to standard error, never to standard output, so the
+`--json` object stays alone on standard output. By default it logs warnings and
+errors only. Pass `--verbose` before the command group to add INFO lines, or
+pass it twice to add DEBUG lines:
+
+```shell
+aptl --verbose lab start
+aptl --verbose --verbose lab start
+```
+
+Lines an operator needs at the default level are printed, not logged. Once
+`aptl lab start` proves a declared operator SSH access, it prints
+`[lab start] Operator access <id> (<channel> to <node>) published on
+127.0.0.1:<port>`. The port is the one the start selected, so a port remapped
+away from a collision shows here. With `--json`, this line goes to standard
+error with the rest of the start progress.
+
 ## Destructive And Emergency Operations
 
 `aptl lab reset` and `aptl lab stop -v` are the supported full cleanup for one
