@@ -69,26 +69,36 @@ _DOCKER_COMMAND_ACTIONS = frozenset(
         "version",
     }
 )
+_DOCKER_DIRECT_VERBS = frozenset(
+    {"exec", "inspect", "ps", "run", "start", "stop", "kill"}
+)
+# Timeout diagnostics take their text from this table. A command argument only
+# selects an entry, so no argument text can reach a log or an error message.
+_DOCKER_OPERATION_LABELS: dict[tuple[str, str | None], str] = {
+    **{(group, None): f"docker {group} command" for group in _DOCKER_COMMAND_GROUPS},
+    **{
+        (group, action): f"docker {group} {action}"
+        for group in _DOCKER_COMMAND_GROUPS
+        for action in _DOCKER_COMMAND_ACTIONS
+    },
+    **{(verb, None): f"docker {verb}" for verb in _DOCKER_DIRECT_VERBS},
+}
 
 
 def _safe_command_operation(cmd: list[str]) -> str:
     """Classify a Docker timeout without logging command arguments or secrets."""
 
-    operation = "backend command"
     if not cmd or cmd[0] != "docker":
-        return operation
-    operation = "docker command"
-    if len(cmd) >= 2:
-        verb = cmd[1]
-        if verb in _DOCKER_COMMAND_GROUPS:
-            action = next(
-                (part for part in cmd[2:] if part in _DOCKER_COMMAND_ACTIONS),
-                "command",
-            )
-            operation = f"docker {verb} {action}"
-        elif verb in {"exec", "inspect", "ps", "run", "start", "stop", "kill"}:
-            operation = f"docker {verb}"
-    return operation
+        return "backend command"
+    if len(cmd) < 2:
+        return "docker command"
+    verb = cmd[1]
+    action = None
+    if verb in _DOCKER_COMMAND_GROUPS:
+        action = next(
+            (part for part in cmd[2:] if part in _DOCKER_COMMAND_ACTIONS), None
+        )
+    return _DOCKER_OPERATION_LABELS.get((verb, action), "docker command")
 
 
 def _timed_out_operation(cmd: list[str], timeout: int | None) -> BackendTimeoutError:

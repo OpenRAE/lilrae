@@ -46,9 +46,9 @@ def test_realized_techvault_image_inventory_includes_helpers_and_children(
     assert {
         "scenario." + service for service in matrix.expected_services
     } <= references.keys()
-    assert references["scenario.ad"].startswith("aptl/")
-    assert references["child.shuffle-worker"].startswith("ghcr.io/")
-    assert references["helper.certs"].startswith("wazuh/")
+    assert references["scenario.ad"].split("/", 1)[0] == "aptl"
+    assert references["child.shuffle-worker"].split("/", 1)[0] == "ghcr.io"
+    assert references["helper.certs"].split("/", 1)[0] == "wazuh"
     assert "@sha256:" in references["scenario.misp"]
 
 
