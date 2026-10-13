@@ -423,7 +423,12 @@ def test_environment_sourced_secret_fixture_leaves_no_value_or_digest(
         "source": "x",
     }
     runtime = _runtime(environment=[fixture, _env_runtime().environment[0]])
-    backend = _Backend({_CONTAINER: _inspect(env=[f"FIXTURE={canary}", "FOO=bar"])})
+    backend = _Backend(
+        {_CONTAINER: _inspect(env=[f"FIXTURE={canary}", "FOO=bar"])},
+        file_reads={
+            (_CONTAINER, "/etc/os-release"): b'ID=debian\nVERSION_ID="12"\n'
+        },
+    )
 
     gate_codes, _provenance, observations = _gate(
         runtime, backend, "runtime-environment", explicitness=explicitness
@@ -462,7 +467,7 @@ def test_environment_sourced_secret_fixture_leaves_no_value_or_digest(
     )
     envelope = create_aptl_realization_envelope()
     # RAES requires total authority, including absent registered concerns. Use
-    # its registry, authorize the declared node type, and retain CLOSED
+    # its registry, authorize the declared node type and OS, and retain CLOSED
     # authority for absent concerns. No local inventory substitutes for it.
     remaining = tuple(
         ResolvedRealizationAuthority(
@@ -472,17 +477,25 @@ def test_environment_sourced_secret_fixture_leaves_no_value_or_digest(
             requirement_kind=descriptor.concern_kind,
             payload_pointer="/" + "/".join(descriptor.payload_path),
             mode=(RealizationAuthorityMode.EXACT
-                  if descriptor.concern_kind == "node-type"
+                  if descriptor.concern_kind in {"node-type", "os-family"}
                   else RealizationAuthorityMode.CLOSED),
             source=(RealizationResolutionSource.AUTHORED_SCOPE
-                        if descriptor.concern_kind == "node-type"
+                        if descriptor.concern_kind in {"node-type", "os-family"}
                     else RealizationResolutionSource.LEGACY_DEFAULT),
+            verification_scope=(
+                RealizationVerificationScope.PRESENCE
+                if descriptor.concern_kind == "os-family" else None
+            ),
+            required_observation_strength=(
+                ObservationStrength.GUEST_OBSERVED
+                if descriptor.concern_kind == "os-family" else None
+            ),
         )
         for descriptor in realization_concern_descriptors()
         if descriptor.section == "nodes" and descriptor.concern_kind != "runtime-environment"
     )
     payload = {
-        "node_kind": "compute",
+        "node_kind": "compute", "os_family": "linux",
         "spec": {"node": {"runtime": {"environment":
             runtime.model_dump(mode="json", by_alias=True)["environment"]}}},
     }
@@ -494,16 +507,40 @@ def test_environment_sourced_secret_fixture_leaves_no_value_or_digest(
         realization_envelope=envelope.identity,
         operation_id="fixture-binding-apply",
     )
+    # Observe against the complete authority-bearing plan so OS evidence is
+    # collected from the guest, rather than reusing the earlier platform-only
+    # inventory. Native RAES compares OS identity through bound disclosures.
+    observations = observe_realization(
+        backend,
+        AptlRealization(
+            profiles=frozenset(),
+            nodes=(_node_realization(runtime),),
+            networks=(),
+            placements=(),
+            diagnostics=(),
+            realization_authority=plan.realization_authority,
+        ),
+        plan,
+        Path("."),
+    )
     snapshot = snapshot_after_apply(plan, RuntimeSnapshot(), observations)
     snapshot = replace(snapshot, realization_envelope=envelope.identity)
     corroboration = operational_observation.operational_realization_observations(
         plan=plan, observations=observations, envelope=envelope, previous=(),
     )
+    assert {item.requirement_kind for item in corroboration} == {
+        "operating-system", "runtime-environment"
+    }
     snapshot = replace(snapshot, realization_observations=corroboration)
     diagnostics, _ = realization_authority_disclosure(
         plan, snapshot, manifest=create_aptl_manifest()
     )
     assert [item.code for item in diagnostics] == codes, [d.message for d in diagnostics]
+    assert all(item.address == _ADDRESS and "runtime-environment" in item.message
+               for item in diagnostics)
+    native_record = runtime_snapshot_record_payload(snapshot)
+    assert canary not in str(native_record)
+    assert digest.rsplit(":", 1)[1] not in str(native_record)
 
 
 def test_environment_undeclared_operator_value_is_rejected():
