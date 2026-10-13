@@ -252,6 +252,7 @@ def test_run_path_occupied_by_a_file_still_raises(
 ) -> None:
     base = _legacy_store(tmp_path)
     (base / RUN_ID).write_bytes(b"")
+    store = LocalRunStore(base)
 
     with pytest.raises(FileExistsError):
-        LocalRunStore(base).create_run(RUN_ID)
+        store.create_run(RUN_ID)

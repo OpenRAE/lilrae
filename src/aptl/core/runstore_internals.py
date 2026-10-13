@@ -272,6 +272,28 @@ def _make_private_dirs(directory: Path) -> None:
         _mkdir_private(directory)
 
 
+def _private_store_entry(base_dir: Path, name: str) -> None:
+    """Create ``base_dir`` owner-only and tighten its existing ``name`` entry."""
+    _make_private_dirs(base_dir)
+    _restrict_to_owner(base_dir / name)
+
+
+def _make_private_run_dirs(base_dir: Path, run_id: str, *directories: Path) -> None:
+    """Prepare ``base_dir/run_id`` and ``directories`` for a run write.
+
+    Every directory the store creates is ``0700``, including missing
+    ancestors of ``base_dir``; files are created ``0600`` through
+    :func:`_private_opener`. On each write, the run, namespace or ``locks``
+    directory written into and the written file lose group and other bits
+    when the current user owns them. An existing ``base_dir`` and other
+    existing entries keep their modes. The modes are defense in depth, not a
+    substitute for the ADR-029 redaction at the persistence boundary.
+    """
+    _private_store_entry(base_dir, run_id)
+    for directory in directories:
+        _make_private_dirs(directory)
+
+
 def _private_opener(path: str, flags: int) -> int:
     """``open`` opener: create files ``0600`` and tighten an existing one."""
     fd = os.open(path, flags, _PRIVATE_FILE_MODE)

@@ -12,11 +12,8 @@ disk. ``write_file`` (opaque bytes) and ``copy_file`` (arbitrary files)
 cannot be structurally redacted and are pass-through by design —
 callers must not route control-plane secrets through them.
 
-Every directory the store creates is ``0700`` and every file ``0600``,
-whatever the umask (ADR-033 "Security layers"). On each write, the run,
-namespace or ``locks`` directory it writes into and the written file lose
-group and other bits when the current user owns them. The modes are defense
-in depth, not a substitute for the redaction above.
+Directories are created ``0700`` and files ``0600`` whatever the umask
+(ADR-033); see :func:`aptl.core.runstore_internals._make_private_run_dirs`.
 """
 
 import json
@@ -43,9 +40,9 @@ from aptl.core.runstore_internals import (
     _canonicalize_payload,
     _copy_private,
     _HeldLock,
-    _make_private_dirs,
+    _make_private_run_dirs,
     _private_opener,
-    _restrict_to_owner,
+    _private_store_entry,
     _safe_default,
     _validate_id,
     _validate_relative_path,
@@ -155,28 +152,15 @@ class LocalRunStore:
             )
         return target
 
-    def _prepare_run_dir(self, run_id: str) -> Path:
-        """Create the run directory owner-only and tighten an existing one.
-
-        Missing components, including ancestors of ``base_dir``, are created
-        ``0700``. An existing ``base_dir`` is never re-moded; an existing run
-        directory loses group/other bits if the current user owns it.
-        """
-        run_dir = self._run_dir(run_id)
-        _make_private_dirs(self._base_dir)
-        _restrict_to_owner(self._base_dir / _validate_id(run_id, "run_id"))
-        _make_private_dirs(run_dir)
-        return run_dir
-
     def _prepare_target_parent(self, run_id: str, relative_path: str) -> Path:
         """Resolve a run write target and create its parents owner-only."""
         target = self._resolve_run_target(run_id, relative_path)
-        self._prepare_run_dir(run_id)
-        _make_private_dirs(target.parent)
+        _make_private_run_dirs(self._base_dir, run_id, self._run_dir(run_id), target.parent)
         return target
 
     def create_run(self, run_id: str) -> Path:
-        run_dir = self._prepare_run_dir(run_id)
+        run_dir = self._run_dir(run_id)
+        _make_private_run_dirs(self._base_dir, run_id, run_dir)
         log.info("Created run directory: %s", run_dir)
         return run_dir
 
@@ -278,8 +262,7 @@ class LocalRunStore:
                     del _LOCK_REGISTRY[key]
 
     def _open_run_lock_fd(self, safe_run_id: str) -> int:
-        _make_private_dirs(self._base_dir)
-        _restrict_to_owner(self._base_dir / _LOCKS_DIR)
+        _private_store_entry(self._base_dir, _LOCKS_DIR)
         dir_fd = open_dir_contained_nofollow(self._base_dir, _LOCKS_DIR, create=True)
         try:
             return os.open(
@@ -393,8 +376,7 @@ class LocalRunStore:
         contained_relpath = f"{safe_run_id}/{safe_relpath}"
         canonical, normalized = _canonicalize_payload(payload)
         _assert_no_secret_drift(normalized)
-        _make_private_dirs(self._base_dir)
-        _restrict_to_owner(self._base_dir / safe_run_id)
+        _private_store_entry(self._base_dir, safe_run_id)
         target = self._base_dir / safe_run_id / PurePosixPath(safe_relpath)
         try:
             create_exclusive_nofollow(self._base_dir, contained_relpath, canonical)
@@ -451,8 +433,7 @@ class LocalRunStore:
         canonical, normalized = _canonicalize_payload(payload)
         _assert_no_secret_drift(normalized)
 
-        _make_private_dirs(self._base_dir)
-        _restrict_to_owner(self._base_dir / safe_namespace)
+        _private_store_entry(self._base_dir, safe_namespace)
         relative_path = f"{safe_namespace}/{safe_name}.json"
         target = self._base_dir / safe_namespace / f"{safe_name}.json"
         try:
