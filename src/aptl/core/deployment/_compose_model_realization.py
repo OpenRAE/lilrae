@@ -102,12 +102,8 @@ class ComposeRealizationModelMixin:
             )
             if path is not None
         )
-        if (
-            not overrides
-            and "otel" not in realization.profiles
-            and not realization.capture_apparatus
-        ):
-            return compose_files
+        # Always select a generated base, even for an empty scenario. An unset
+        # file list would let Compose discover the root model on its own.
         base_files = compose_files or (
             base_compose_file(realization, scenario_root, realization_root),
         )

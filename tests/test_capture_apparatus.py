@@ -110,12 +110,14 @@ def test_generated_realization_includes_only_admitted_capture_apparatus(tmp_path
 def test_generated_realization_omits_unadmitted_capture_apparatus(tmp_path):
     scenario = tmp_path / "pack"
     scenario.mkdir()
-    backend = DockerComposeBackend(_ROOT)
+    backend = DockerComposeBackend(tmp_path)
     spec = DeploymentRealizationSpec(profiles=("kali",), nodes=(), networks=())
 
-    files = backend._realization_compose_files(None, spec, scenario, _ROOT)
+    files = backend._realization_compose_files(None, spec, scenario, tmp_path)
 
-    assert not files
+    assert files is not None
+    assert len(files) == 1
+    assert yaml.safe_load(files[0].read_text()) == {"services": {}}
 
 
 def test_capture_apparatus_asset_is_backend_owned_and_distributed():

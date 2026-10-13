@@ -546,6 +546,23 @@ def test_a_root_compose_file_cannot_consume_a_granted_value(tmp_path, monkeypatc
     assert "other" not in yaml.safe_load(files[0].read_text())["services"]
 
 
+def test_an_empty_scenario_cannot_discover_the_root_compose_model(tmp_path):
+    static = tmp_path / "docker-compose.yml"
+    static.write_text(
+        "services:\n  other:\n    image: example/other:1\n"
+        "    command: echo ${INDEXER_PASSWORD}\n", encoding="utf-8",
+    )
+    realization = _realization()
+    backend = DockerComposeBackend(tmp_path)
+    files = backend._realization_compose_files(None, realization, tmp_path)
+    command = backend._build_command("up", [], compose_files=files, scenario_root=tmp_path)
+
+    assert files is not None and len(files) == 1
+    assert static not in files
+    assert yaml.safe_load(files[0].read_text()) == {"services": {}}
+    assert "-f" in command and str(files[0]) in command
+
+
 @pytest.mark.parametrize("route", ["compose", "base-container"])
 @pytest.mark.parametrize("source", ["grant", "adapter"])
 @pytest.mark.parametrize("mode", [RealizationAuthorityMode.CLOSED, None])
