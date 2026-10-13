@@ -1872,6 +1872,7 @@ docs/reviews/1178-seat-desktop-diagnostic.md	architecture-history	Preserve VM se
 docs/specs/1178-vm-seat-access-preflight.md	docs-follow-owner	Keep VM seat implementation guidance with the appliance owner
 src/aptl/appliance/seat/namespace.py	optional-delivery	Keep VM seat delivery with the appliance owner
 tests/test_appliance_seat_namespace.py	tests-follow-owner	Retain VM seat regression coverage with the appliance owner
+tests/test_appliance_versioning.py	tests-follow-owner	Retain appliance wheel-name parsing tests with migrated owner
 tests/test_seat_desktop.py	tests-follow-owner	Retain VM seat regression coverage with the appliance owner
 tests/test_seat_launch_descriptor.py	tests-follow-owner	Retain VM seat regression coverage with the appliance owner
 src/aptl/appliance/seat/private_vm.py	optional-delivery	Keep rootless VM network startup with the appliance owner
@@ -1906,6 +1907,7 @@ containers/_host-identity/install.sh	split-pack-delivery	Inventory exact content
 docs/adrs/adr-062-lilrae-name-and-naming-convention.md	architecture-history	Preserve LilRAE name change and new-code naming decision
 docs/architecture/issue-1232-lilrae-naming-preflight.md	architecture-history	Preserve LilRAE public naming boundary and compatibility guardrails
 docs/architecture/issue-1234-pypi-transition-preflight.md	architecture-history	Preserve PyPI distribution transition and shared-file migration guardrails
+docs/architecture/issue-1367-distribution-cutover-preflight.md	architecture-history	Preserve lilrae distribution cutover and consumer-boundary guardrails
 changelog.d/+install-scenario-packs-doc.added.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 changelog.d/+proxy-addr-cve-2026-90711.fixed.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 changelog.d/+techvault-env-packs-621-compat.fixed.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied

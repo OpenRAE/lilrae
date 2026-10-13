@@ -38,124 +38,6 @@ wheels = [
 ]
 
 [[package]]
-name = "aptl-labs"
-version = "7.0.0"
-source = { editable = "." }
-dependencies = [
-    { name = "blake3" },
-    { name = "cryptography" },
-    { name = "icontract" },
-    { name = "mcp" },
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-exporter-otlp-proto-http" },
-    { name = "opentelemetry-sdk" },
-    { name = "opentelemetry-semantic-conventions" },
-    { name = "packaging" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-    { name = "raes" },
-    { name = "raes-env-packs" },
-    { name = "rfc8785" },
-    { name = "rich" },
-    { name = "typer" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "build" },
-    { name = "coverage" },
-    { name = "httpx" },
-    { name = "hypothesis" },
-    { name = "pyarrow" },
-    { name = "pytest" },
-    { name = "pytest-mock" },
-    { name = "pytest-xdist" },
-    { name = "ruff" },
-]
-docs = [
-    { name = "mkdocs-git-revision-date-localized-plugin" },
-    { name = "mkdocs-material" },
-]
-parquet = [
-    { name = "pyarrow" },
-]
-s3 = [
-    { name = "boto3" },
-]
-web = [
-    { name = "asyncssh" },
-    { name = "fastapi" },
-    { name = "httpx" },
-    { name = "sse-starlette" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.dev-dependencies]
-build = [
-    { name = "editables" },
-    { name = "hatchling" },
-    { name = "pip" },
-]
-ci = [
-    { name = "build" },
-    { name = "cyclonedx-bom" },
-    { name = "pip-audit" },
-    { name = "pre-commit" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "asyncssh", marker = "extra == 'web'", specifier = ">=2.17.0" },
-    { name = "blake3", specifier = ">=1.0.8,<2" },
-    { name = "boto3", marker = "extra == 's3'", specifier = ">=1.28.0" },
-    { name = "build", marker = "extra == 'dev'", specifier = ">=1.2.0" },
-    { name = "coverage", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "cryptography", specifier = ">=50.0.0" },
-    { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.115.0" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },
-    { name = "httpx", marker = "extra == 'web'", specifier = ">=0.28.1" },
-    { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.0.0" },
-    { name = "icontract", specifier = ">=2.6.0,<3.0" },
-    { name = "mcp", specifier = ">=2,<3" },
-    { name = "mkdocs-git-revision-date-localized-plugin", marker = "extra == 'docs'", specifier = ">=1.2.0" },
-    { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5.0" },
-    { name = "opentelemetry-api", specifier = ">=1.33.0" },
-    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.33.0" },
-    { name = "opentelemetry-sdk", specifier = ">=1.33.0" },
-    { name = "opentelemetry-semantic-conventions", specifier = ">=0.54b0" },
-    { name = "packaging", specifier = ">=24.2" },
-    { name = "pyarrow", marker = "extra == 'dev'", specifier = ">=17.0.0" },
-    { name = "pyarrow", marker = "extra == 'parquet'", specifier = ">=17.0.0" },
-    { name = "pydantic", specifier = ">=2.0.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
-    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.12.0" },
-    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "raes", specifier = "==6.0.1" },
-    { name = "raes-env-packs", specifier = "==6.2.1" },
-    { name = "rfc8785", specifier = ">=0.1.4,<0.2.0" },
-    { name = "rich", specifier = ">=13.0.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.0" },
-    { name = "sse-starlette", marker = "extra == 'web'", specifier = ">=2.0.0" },
-    { name = "typer", specifier = ">=0.12.0" },
-    { name = "uvicorn", extras = ["standard"], marker = "extra == 'web'", specifier = ">=0.34.0" },
-]
-provides-extras = ["s3", "parquet", "web", "dev", "docs"]
-
-[package.metadata.requires-dev]
-build = [
-    { name = "editables", specifier = ">=0.5" },
-    { name = "hatchling", specifier = ">=1.27.0" },
-    { name = "pip", specifier = ">=26.2.1" },
-]
-ci = [
-    { name = "build", specifier = ">=1.2.0" },
-    { name = "cyclonedx-bom", specifier = ">=6.0.0" },
-    { name = "pip-audit", specifier = ">=2.7.0" },
-    { name = "pre-commit", specifier = ">=4.0.0" },
-]
-
-[[package]]
 name = "arrow"
 version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1180,6 +1062,124 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/40/71/d89bb0e71b1415453980fd32315f2a037aad9f7f70f695c7cec7035feb13/license_expression-30.4.4.tar.gz", hash = "sha256:73448f0aacd8d0808895bdc4b2c8e01a8d67646e4188f887375398c761f340fd", size = 186402, upload-time = "2025-07-22T11:13:32.17Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/af/40/791891d4c0c4dab4c5e187c17261cedc26285fd41541577f900470a45a4d/license_expression-30.4.4-py3-none-any.whl", hash = "sha256:421788fdcadb41f049d2dc934ce666626265aeccefddd25e162a26f23bcbf8a4", size = 120615, upload-time = "2025-07-22T11:13:31.217Z" },
+]
+
+[[package]]
+name = "lilrae"
+version = "7.0.0"
+source = { editable = "." }
+dependencies = [
+    { name = "blake3" },
+    { name = "cryptography" },
+    { name = "icontract" },
+    { name = "mcp" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "packaging" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "raes" },
+    { name = "raes-env-packs" },
+    { name = "rfc8785" },
+    { name = "rich" },
+    { name = "typer" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "build" },
+    { name = "coverage" },
+    { name = "httpx" },
+    { name = "hypothesis" },
+    { name = "pyarrow" },
+    { name = "pytest" },
+    { name = "pytest-mock" },
+    { name = "pytest-xdist" },
+    { name = "ruff" },
+]
+docs = [
+    { name = "mkdocs-git-revision-date-localized-plugin" },
+    { name = "mkdocs-material" },
+]
+parquet = [
+    { name = "pyarrow" },
+]
+s3 = [
+    { name = "boto3" },
+]
+web = [
+    { name = "asyncssh" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "sse-starlette" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.dev-dependencies]
+build = [
+    { name = "editables" },
+    { name = "hatchling" },
+    { name = "pip" },
+]
+ci = [
+    { name = "build" },
+    { name = "cyclonedx-bom" },
+    { name = "pip-audit" },
+    { name = "pre-commit" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "asyncssh", marker = "extra == 'web'", specifier = ">=2.17.0" },
+    { name = "blake3", specifier = ">=1.0.8,<2" },
+    { name = "boto3", marker = "extra == 's3'", specifier = ">=1.28.0" },
+    { name = "build", marker = "extra == 'dev'", specifier = ">=1.2.0" },
+    { name = "coverage", marker = "extra == 'dev'", specifier = ">=7.0.0" },
+    { name = "cryptography", specifier = ">=50.0.0" },
+    { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.115.0" },
+    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },
+    { name = "httpx", marker = "extra == 'web'", specifier = ">=0.28.1" },
+    { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.0.0" },
+    { name = "icontract", specifier = ">=2.6.0,<3.0" },
+    { name = "mcp", specifier = ">=2,<3" },
+    { name = "mkdocs-git-revision-date-localized-plugin", marker = "extra == 'docs'", specifier = ">=1.2.0" },
+    { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5.0" },
+    { name = "opentelemetry-api", specifier = ">=1.33.0" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.33.0" },
+    { name = "opentelemetry-sdk", specifier = ">=1.33.0" },
+    { name = "opentelemetry-semantic-conventions", specifier = ">=0.54b0" },
+    { name = "packaging", specifier = ">=24.2" },
+    { name = "pyarrow", marker = "extra == 'dev'", specifier = ">=17.0.0" },
+    { name = "pyarrow", marker = "extra == 'parquet'", specifier = ">=17.0.0" },
+    { name = "pydantic", specifier = ">=2.0.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
+    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.12.0" },
+    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "raes", specifier = "==6.0.1" },
+    { name = "raes-env-packs", specifier = "==6.2.1" },
+    { name = "rfc8785", specifier = ">=0.1.4,<0.2.0" },
+    { name = "rich", specifier = ">=13.0.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.0" },
+    { name = "sse-starlette", marker = "extra == 'web'", specifier = ">=2.0.0" },
+    { name = "typer", specifier = ">=0.12.0" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'web'", specifier = ">=0.34.0" },
+]
+provides-extras = ["s3", "parquet", "web", "dev", "docs"]
+
+[package.metadata.requires-dev]
+build = [
+    { name = "editables", specifier = ">=0.5" },
+    { name = "hatchling", specifier = ">=1.27.0" },
+    { name = "pip", specifier = ">=26.2.1" },
+]
+ci = [
+    { name = "build", specifier = ">=1.2.0" },
+    { name = "cyclonedx-bom", specifier = ">=6.0.0" },
+    { name = "pip-audit", specifier = ">=2.7.0" },
+    { name = "pre-commit", specifier = ">=4.0.0" },
 ]
 
 [[package]]

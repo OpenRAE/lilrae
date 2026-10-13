@@ -99,7 +99,7 @@ jobs:
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
           set -euo pipefail
-          cp "$BUNDLE" "dist/aptl-labs-${TAG}.intoto.jsonl"
+          cp "$BUNDLE" "dist/lilrae-${TAG}.intoto.jsonl"
           gh release upload "$TAG" dist/* sbom/* --clobber
 
   backmerge:
@@ -119,13 +119,24 @@ jobs:
         # main is now ahead of dev. Auto-open a back-merge PR so dev stays
         # current. It's opened by GITHUB_TOKEN, so dev's required checks won't
         # run on it — admin-merge it (one click).
+        #
+        # TAG goes through the environment, so no workflow expression is parsed
+        # as shell. Only "dev already contains main" ends without a PR; any
+        # other failure (auth, network, API) fails the job.
+        env:
+          TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
           set -euo pipefail
-          if [ "$(gh pr list --base dev --head main --state open --json number --jq 'length')" != "0" ]; then
+          open_prs="$(gh pr list --base dev --head main --state open --json number --jq 'length')"
+          if [ "$open_prs" != "0" ]; then
             echo "back-merge PR main->dev already open; nothing to do."
             exit 0
           fi
+          ahead="$(gh api "repos/${GH_REPO}/compare/dev...main" --jq '.ahead_by')"
+          if [ "$ahead" = "0" ]; then
+            echo "dev already contains main; no back-merge needed."
+            exit 0
+          fi
           gh pr create --base dev --head main \
-            --title "chore: back-merge ${{ needs.release-please.outputs.tag_name }} into dev" \
-            --body "Automated back-merge of the release commit (version bump + CHANGELOG.md) from \`main\` into \`dev\` so dev stays current after the release. Admin-merge it — dev's required checks don't run on a bot-opened PR." \
-            || echo "no back-merge needed (dev already up to date with main)."
+            --title "chore: back-merge ${TAG} into dev" \
+            --body "Automated back-merge of the release commit (version bump + CHANGELOG.md) from \`main\` into \`dev\` so dev stays current after the release. Admin-merge it — dev's required checks don't run on a bot-opened PR."

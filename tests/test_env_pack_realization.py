@@ -52,7 +52,7 @@ def test_techvault_pack_realizes_without_provisioner_diagnostics(
     # The adapter ships inside the one distribution, so host-observed
     # provenance names it. What the seam still proves is that the provenance
     # comes from installed metadata rather than the provider's own claim.
-    assert evidence["provider"]["distribution"] == "aptl-labs"
+    assert evidence["provider"]["distribution"] == "lilrae"
     assert evidence["provider"]["entry_point"] == "techvault.aptl"
     assert evidence["provider"]["mapping_digest"].startswith("sha256:")
 

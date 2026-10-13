@@ -111,7 +111,7 @@ def resolve_asset_source() -> tuple[Path, bool]:
         return root, False
     raise AssetError(
         "Lab assets not found: the installed package has no bundled "
-        "_labdata and this is not a source checkout. Reinstall aptl-labs."
+        "_labdata and this is not a source checkout. Reinstall lilrae."
     )
 
 

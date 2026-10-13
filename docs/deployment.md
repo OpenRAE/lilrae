@@ -9,7 +9,7 @@ raw Compose commands are not an equivalent deployment path.
 Install the released package and materialize its lab assets:
 
 ```shell
-pipx install aptl-labs
+pipx install lilrae
 aptl lab init my-lab
 cd my-lab
 aptl lab start --scenario techvault
