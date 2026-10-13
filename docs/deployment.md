@@ -32,7 +32,7 @@ selected scenario.
 ## Source Checkout
 
 A source checkout is for contributors. Follow the
-[contribution setup](https://github.com/Brad-Edwards/aptl/blob/dev/CONTRIBUTING.md#development-setup)
+[contribution setup](https://github.com/OpenRAE/lilrae/blob/dev/CONTRIBUTING.md#development-setup)
 to create a virtual environment and editable install. The checkout itself is
 the project directory; do not run `aptl lab init` over it.
 
@@ -83,6 +83,16 @@ URLs, remapped host ports, usernames, and credential locations for the realized
 scenario. `aptl container list` reports project-owned containers. These results
 replace fixed port, service, and credential tables.
 
+Both `lab start` and `lab info` print a separate execution-boundary observation:
+selected transport, whether the daemon appears native, VM-backed, remote or
+unknown, and whether an override selected the endpoint. `info` re-observes the
+backend even when `.env` is absent. Unknown or conflicting facts are reported
+as such. A remote daemon's published ports belong to its host; the CLI does not
+claim they are reachable on the operator's `localhost`. This host-boundary
+observation is separate from RAES-authored scenario VM/container requirements
+and is disclosed in RAES-validated backend-owned `ApplyResult.details` for a run.
+See [tested profiles and limits](getting-started/prerequisites.md#tested-execution-profiles-and-limits).
+
 Inspect one realized service with:
 
 ```shell
@@ -92,6 +102,40 @@ aptl container shell <container-name>
 
 Use a name returned by `aptl container list`. A container in Docker's `running`
 state does not by itself prove that the scenario is ready.
+
+## Host Docker Socket Access
+
+A container that holds the host's Docker socket controls the Docker daemon,
+which is equivalent to root on the Docker host. `aptl lab start` mounts the
+socket only into a node that the admitted scenario declares as a Docker
+control authority:
+
+- In the acquired `techvault` pack, that node is `shuffle-orborus`, Shuffle's
+  worker manager. The pack declares `/var/run/docker.sock` as its read-write
+  control interface because Shuffle runs workflows in worker and app
+  containers. No other TechVault node gets the socket. Before startup, LilRAE
+  prepares the exact worker and app images that the pack's spawn templates
+  name, and the rendered service sets `SHUFFLE_AUTO_IMAGE_DOWNLOAD=false`.
+- Whenever a scenario starts Compose services, `aptl lab start` validates their
+  effective Compose model before startup. It refuses the model when any other
+  service binds the socket, or when the admitted service lacks exactly one
+  read-write `/var/run/docker.sock` bind or sets `DOCKER_HOST` or
+  `DOCKER_CONTEXT`.
+- LilRAE's own Kali capture sidecar and operator-access relays get no socket.
+  Containers that Orborus creates through the daemon are outside these checks,
+  because anything that holds the socket can create further containers.
+
+The root `docker-compose.yml`, which explicit project-tree scenarios start as
+written, also declares the socket for `shuffle-backend`, `shuffle-orborus` and
+`cortex` in the `soc` profile, and for `aptl-web-api` in the `web` profile. No
+in-tree scenario selects the `soc` profile, and the check above refuses those
+binds unless the scenario admits them. The web API container uses the socket
+for the browser's lifecycle controls; it runs as the project owner and joins
+only the socket's group (see [Web](reference/web.md)).
+
+The [issue #949](architecture/issue-949-orborus-control-authority-preflight.md)
+and [issue #974](architecture/issue-974-shuffle-worker-docker-images-preflight.md)
+preflights record the admission rules.
 
 ## Manage The Lifecycle
 
@@ -108,6 +152,12 @@ Lifecycle mutations are single-owner per project. If another start, stop,
 clean boot, policy tick, or container kill owns the project, a second mutation
 fails without removing resources under the active operation. Wait for the
 owner to finish, or stop it and use `aptl lab stop` to reconcile the project.
+
+`aptl lab stop -v` also clears host-side state that described the removed
+volumes, such as the Wazuh agent enrollment baseline. That cleanup is recorded
+at start and survives APTL upgrades. If Docker teardown fails, or the volumes
+are gone but host cleanup remains, the stop names the failed step and the
+retry command. See [pending host cleanup](troubleshooting/index.md#aptl-lab-stop-v-reports-pending-host-cleanup).
 
 `aptl kill` is an emergency process-control surface. It is not normal teardown,
 a data reset, or a replacement for the structured startup result.

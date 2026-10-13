@@ -622,6 +622,30 @@ def test_create_aptl_manifest_is_canonical_backend_manifest_v2():
         {"green", "red", "blue"}
     )
     assert payload["capabilities"]["participant_runtime"] is not None
+    assert manifest.has_time is False
+    assert manifest.orchestrator is not None
+    assert {"injects", "events", "scripts", "stories"} <= set(
+        manifest.orchestrator.supported_sections
+    )
+    participant_delivery_manifest = create_aptl_manifest(
+        participant_inject_delivery=True
+    )
+    assert participant_delivery_manifest.has_time is True
+    assert participant_delivery_manifest.time is not None
+    assert participant_delivery_manifest.time.supported_domain_kinds == frozenset(
+        {"logical"}
+    )
+    assert participant_delivery_manifest.participant_runtime is not None
+    assert any(
+        support.feature == "participant_ingress_admission"
+        and support.support_level.value == "exact"
+        for support in participant_delivery_manifest.participant_runtime.feature_support
+    )
+    assert any(
+        support.feature == "participant_directed_inject_delivery"
+        and support.support_level.value == "exact"
+        for support in participant_delivery_manifest.participant_runtime.feature_support
+    )
 
 
 def test_manifest_provisioner_declares_only_realized_capabilities():
@@ -2241,7 +2265,7 @@ def _workflow_and_evaluation_execution_plan():
               health: {proposition: health, role: postcondition, polarity: positive}
             objectives:
               validate:
-                entity: blue
+                owner: blue
                 success: {assertions: [health]}
             workflows:
               response:
@@ -2826,7 +2850,9 @@ def test_apply_failure_reattaches_backend_diagnostics_after_gate_flood(
     target = MagicMock()
     target.provisioner.last_failure_diagnostics = (backend_diag,)
 
-    failure, _snapshot, retryable = raes._apply_execution_plan(target, MagicMock())
+    failure, _snapshot, retryable, _manager = raes._apply_execution_plan(
+        target, MagicMock()
+    )
 
     assert failure is not None
     assert failure.success is False
@@ -4461,6 +4487,10 @@ def test_apply_provisioning_records_content_type_provenance_when_honored(tmp_pat
     result = _apply_content_disclosure_scenario(tmp_path, "file")
 
     assert result.success is True, [d.message for d in result.diagnostics]
+    boundary = result.details["aptl_execution_boundary"]
+    assert boundary["schema_version"] == "aptl.execution-boundary/v1"
+    assert boundary["containment_verified"] is False
+    assert "aptl_execution_boundary" not in result.snapshot.metadata
     assert "content-type" in {
         entry.requirement_kind for entry in result.snapshot.realization_provenance
     }
@@ -4671,3 +4701,32 @@ def test_large_apply_details_compact_without_losing_added_apparatus():
         "record_count": 2,
     }
     assert bounded["realization"]["nodes"][0]["address"] == "provision.node.kali"
+
+
+def test_runtime_selection_evidence_reports_the_admitted_provider() -> None:
+    from types import SimpleNamespace
+
+    from aptl.backends.raes_execution_helpers import runtime_selection_evidence
+    from aptl.backends.scenario_startup import (
+        ScenarioRuntimeSelection,
+        ScenarioStartupSelection,
+    )
+
+    provider = SimpleNamespace(
+        runtime_selections=(
+            ScenarioRuntimeSelection("db", "database-client-authentication", "x"),
+        )
+    )
+    selection = ScenarioStartupSelection(identity=None, provider=provider, plan=None)
+
+    assert runtime_selection_evidence(
+        SimpleNamespace(provisioner=SimpleNamespace(startup_selection=selection))
+    ) == [
+        {
+            "node": "db",
+            "subject": "database-client-authentication",
+            "choice": "x",
+            "reference": "",
+        }
+    ]
+    assert runtime_selection_evidence(SimpleNamespace(provisioner=None)) == []

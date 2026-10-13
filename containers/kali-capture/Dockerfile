@@ -1,14 +1,18 @@
 # Scope-admitted Kali SSH/PTY capture broker.
-FROM debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+FROM debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# The entrypoint generates the only host key sshd uses (under /run). The
+# package-generated keys are deleted in the layer that creates them, so the
+# image ships no private key (issue #1193).
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && apt-get install -y --no-install-recommends \
         python3 \
         openssh-client \
         openssh-server \
     && useradd --uid 1000 --create-home --shell /bin/sh kali \
     && passwd -d kali \
+    && rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY containers/kali-capture/entrypoint.sh /usr/local/bin/entrypoint.sh

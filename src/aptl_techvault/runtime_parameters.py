@@ -6,12 +6,16 @@ import secrets
 from collections.abc import Mapping
 
 from aptl.backends.scenario_runtime_parameters import EXTENSION_API_VERSION
+from aptl.backends.raes_runtime_attestation import (
+    TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST,
+)
 from aptl.core.scenario_bundle import ScenarioBundle
 
 TECHVAULT_PACK_SET_DIGEST = (
-    "sha256:db98a9daa62a092a0c6b001217027d7f4ad489889e95d01050e77f148e8ef29b"
+    "sha256:1229f94f31bd35d3997d47ef8316ffebb3d2d2919c995838e458420b70456fcf"
 )
-_TECHVAULT_PACK_VERSION = "0.1.0"
+_TECHVAULT_PACK_VERSION = "0.1.1"
+STUDY_PACK_SET_DIGEST = TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST
 _FLAG_HOSTS = ("victim", "workstation", "webapp", "fileshare", "ad")
 
 
@@ -26,7 +30,7 @@ def runtime_parameters_for_bundle(
 ) -> Mapping[str, object] | None:
     """Return the exact runtime-owned bindings for a supported pack.
 
-    The 6.1.0 TechVault release deliberately leaves ten per-host flag values to
+    The 6.2.0 TechVault release deliberately leaves ten per-host flag values to
     the scenario instantiator. Bind only the content-identified release APTL was
     qualified against; another pack or a changed TechVault release remains an
     ordinary required-parameter admission failure.
@@ -37,7 +41,10 @@ def runtime_parameters_for_bundle(
         identity.pack_id,
         identity.pack_version,
         identity.set_digest,
-    ) != ("techvault", _TECHVAULT_PACK_VERSION, TECHVAULT_PACK_SET_DIGEST):
+    ) not in (
+        ("techvault", _TECHVAULT_PACK_VERSION, TECHVAULT_PACK_SET_DIGEST),
+        ("techvault-participant-study", _TECHVAULT_PACK_VERSION, STUDY_PACK_SET_DIGEST),
+    ):
         return None
     return {
         f"flag_{host}_{level}": _flag(host, level)

@@ -99,7 +99,7 @@ def _resolve_base_network_bindings(
     *,
     appliance_boundary: bool,
 ) -> dict[str, tuple[tuple[str, DeploymentNetworkAttachment], ...]]:
-    """Resolve exact Docker network bindings for image-free base containers."""
+    """Resolve exact Docker network bindings for base-container-materialized nodes."""
 
     bindings: dict[str, tuple[tuple[str, DeploymentNetworkAttachment], ...]] = {}
     for node in nodes:
@@ -109,11 +109,11 @@ def _resolve_base_network_bindings(
             project_name,
         )
         if missing:
-            raise BackendSeedError("image-free node network binding was not observed")
+            raise BackendSeedError("base-container node network binding was not observed")
         if desired:
             bindings[str(getattr(node, "address"))] = tuple(desired.items())
         elif appliance_boundary:
-            raise BackendSeedError("appliance image-free node has no admitted network")
+            raise BackendSeedError("appliance base-container node has no admitted network")
     return bindings
 
 
@@ -244,3 +244,56 @@ def _node_network_aliases(node: DeploymentNodeRealization) -> tuple[str, ...]:
     return tuple(
         dict.fromkeys(alias for alias in (node.service_name, node.name) if alias)
     )
+
+
+def _required_ipv4_is_observed(
+    info: dict[str, Any],
+    network_name: str,
+    attachment: DeploymentNetworkAttachment,
+) -> bool:
+    """Require an allocated IPv4 address and honor any authored static address."""
+
+    observed_ip = _container_network_ip(info, network_name)
+    return bool(observed_ip) and (
+        not attachment.ipv4_address or observed_ip == attachment.ipv4_address
+    )
+
+
+def _realized_attachment_failures(
+    node_name: str,
+    info: dict[str, Any],
+    desired: dict[str, DeploymentNetworkAttachment],
+    aliases: tuple[str, ...],
+    managed_networks: set[str],
+) -> list[str]:
+    """Require fresh endpoint readback before accepting reconciliation.
+
+    Command success is not a topology observation. Keep the default bridge
+    until every declared endpoint is observed, so failed attachment does
+    not also remove a materialized node's bootstrap connectivity.
+    """
+
+    if not info:
+        return [f"Node {node_name} was not inspectable after network reconciliation."]
+    settings = info.get("NetworkSettings")
+    networks = settings.get("Networks") if isinstance(settings, dict) else None
+    networks = networks if isinstance(networks, dict) else {}
+    failures: list[str] = []
+    for extra in sorted((set(networks) & managed_networks) - set(desired)):
+        failures.append(
+            f"Node {node_name}: extra project network {extra} remains attached."
+        )
+    for network_name, attachment in desired.items():
+        endpoint = networks.get(network_name)
+        prefix = f"Node {node_name} on {network_name} after network reconciliation"
+        if not isinstance(endpoint, dict):
+            failures.append(f"{prefix}: missing declared network attachment.")
+            continue
+        if not _required_ipv4_is_observed(info, network_name, attachment):
+            failures.append(f"{prefix}: required IPv4 address was not observed.")
+        observed_aliases = endpoint.get("Aliases")
+        if not isinstance(observed_aliases, list) or not set(aliases).issubset(
+            observed_aliases
+        ):
+            failures.append(f"{prefix}: declared DNS aliases were not observed.")
+    return failures

@@ -1,0 +1,353 @@
+"""Base-container-materialized node partitioning and materialization (ADR-048).
+
+Issue #581 introduced this route; issue #1193 renamed it from "image-free",
+because each such node still starts from a real Docker base image.
+
+Split out of ``_compose_realization.py`` (module-length budget): the pure
+helpers that decide which nodes convert to the generic materializer and
+which Compose service names must be scaled to zero, plus the shared
+materialize-a-node-subset entry point both the fully base-container and
+mixed-realization paths dispatch through.
+"""
+
+from __future__ import annotations
+
+from dataclasses import replace
+from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+from aptl.core.deployment.realization import DeploymentRealizationSpec
+from aptl.core.deployment.errors import BackendSeedError
+from aptl.core.lab_types import LabResult
+
+if TYPE_CHECKING:
+    from aptl.backends.raes_base_substrate import VolumeMount
+
+
+def _needs_compose(realization: DeploymentRealizationSpec) -> bool:
+    """Whether any node is left for Compose to start.
+
+    Derived from the nodes themselves rather than a spec-level flag, so a graph
+    that mixes pinned artifacts, per-component builds and materialized nodes
+    routes correctly instead of falling into a whole-graph special case.
+
+    An empty graph keeps the Compose path: having no nodes is not the same as
+    having materialized them all, and the Compose pipeline still owns networks,
+    stateful prerequisites and validation.
+    """
+
+    if realization.capture_apparatus:
+        return True
+    if not realization.nodes:
+        return True
+    materialized = _base_container_node_addresses(realization)
+    return any(
+        node.address not in materialized and node.service_name
+        for node in realization.nodes
+    )
+
+
+def _strip_base_container_published_ports(
+    realization: DeploymentRealizationSpec, base_container_addresses: frozenset[str]
+) -> DeploymentRealizationSpec:
+    """Clear ``published_ports`` on nodes the generic materializer already started.
+
+    A base-container-materialized node's declared host ports were already bound
+    by its own ``docker run -p`` (``start_base_container``) during base-container
+    materialization, which runs before the legacy Compose pipeline below.
+    Left alone, that pipeline's own published-port conflict check and
+    Compose port override would re-probe the same host port their own
+    earlier stage already bound, failing the whole ``realize()`` call on a
+    false conflict with itself (issue #581). The node's docker-compose.yml
+    stub is also never started (``--scale=0``), so a Compose port override
+    for it would be silently inert either way.
+    """
+
+    legacy_nodes = tuple(
+        replace(node, published_ports=())
+        if node.address in base_container_addresses
+        else node
+        for node in realization.nodes
+    )
+    return cast(DeploymentRealizationSpec, replace(realization, nodes=legacy_nodes))
+
+
+def _base_container_node_addresses(
+    realization: DeploymentRealizationSpec,
+) -> frozenset[str]:
+    """Return the addresses of base-container-materialized nodes.
+
+    A node is base-container-materialized only when it declares runtime desired state
+    *and* resolves to no backing image. A node that declares runtime inventory but
+    also carries a real image -- ``suricata`` describing its detection engine while
+    still pulling ``jasonish/suricata``, ``wazuh-manager`` describing its SIEM while
+    pulling ``wazuh/wazuh-manager`` -- is an image node whose Compose service must
+    start, not a bare-OS node to stub.
+
+    Keying on ``runtime`` alone silently scaled those services to zero and started
+    a ``debian:13-slim`` ``sleep infinity`` substrate in their place, so declaring
+    a node's security tooling turned the actual tool off. The image check is the
+    same one the realization-time materializable test applies
+    (``_is_materializable_node``); the two must agree, or a node is realized one
+    way here and scaled the other way there.
+    """
+
+    imaged = {image.address for image in realization.images}
+    return frozenset(
+        node.address
+        for node in realization.nodes
+        if node.runtime is not None and node.address not in imaged
+    )
+
+
+def _base_container_service_names(
+    realization: DeploymentRealizationSpec, base_container_addresses: frozenset[str]
+) -> tuple[str, ...]:
+    """Return the Compose service names of nodes materialized directly (ADR-048).
+
+    These must be scaled to zero when Compose starts the rest of the
+    realization: they were already realized by the generic materializer, and
+    starting them again as Compose containers would either collide on the
+    shared container name or silently duplicate the node.
+    """
+
+    return tuple(
+        sorted(
+            node.service_name
+            for node in realization.nodes
+            if node.address in base_container_addresses and node.service_name
+        )
+    )
+
+
+def _realize_node_subset(
+    backend: object,
+    nodes: tuple[object, ...],
+    content: tuple[object, ...],
+    scenario_root: Path,
+    extra_ops: dict[str, tuple[object, ...]] | None = None,
+    persistent_volumes: tuple[object, ...] = (),
+) -> LabResult | None:
+    """Materialize a node subset's declared state via the generic materializer.
+
+    Shared by the fully base-container path and the mixed-realization path
+    (ADR-048); the only difference between them is which nodes/content are
+    passed in. Lowers each content item to its placement op and dispatches
+    per node, verified by read-after-write. ``extra_ops`` carries additional
+    per-node placement ops (a consumer's generated-artifact outputs, #875)
+    already keyed by node address. ``persistent_volumes`` carries the
+    realization's persistent volumes so a base-container-materialized node that consumes one
+    mounts it: the Compose override defers non-Compose consumers to this
+    materializer rather than declaring a mount no Compose service carries
+    (issue #875).
+    """
+
+    from aptl.backends.raes_node_materialization import realize_nodes
+
+    volume_mounts_by_node = _volume_mounts_by_node(nodes, persistent_volumes)
+    preparation_failure = _prepare_node_subset(backend, nodes)
+    if preparation_failure is not None:
+        return preparation_failure
+
+    content_by_node = _content_ops_by_node(content)
+    for address, ops in (extra_ops or {}).items():
+        content_by_node.setdefault(address, []).extend(ops)
+    return realize_nodes(
+        nodes,
+        backend,
+        {addr: tuple(ops) for addr, ops in content_by_node.items()},
+        scenario_root=scenario_root,
+        volume_mounts_by_node=volume_mounts_by_node,
+    )
+
+
+def _volume_mounts_by_node(
+    nodes: tuple[object, ...],
+    persistent_volumes: tuple[object, ...],
+) -> dict[str, tuple[VolumeMount, ...]]:
+    """Return each node's declared persistent-volume mounts, keyed by address.
+
+    Consumers outside this node subset are skipped: a volume shared with a
+    Compose service is mounted there by the Compose override, not here.
+    """
+
+    from aptl.backends.raes_base_substrate import VolumeMount
+
+    node_addresses = {node.address for node in nodes}
+    mounts: dict[str, tuple[VolumeMount, ...]] = {}
+    for volume in persistent_volumes:
+        for consumer in getattr(volume, "consumers", ()):
+            address = consumer.target_address
+            if address not in node_addresses:
+                continue
+            mounts.setdefault(address, ())
+            mounts[address] += (
+                VolumeMount(
+                    target=consumer.mount_destination,
+                    source=volume.name,
+                    read_only=consumer.access_mode == "read_only",
+                ),
+            )
+    return mounts
+
+
+def _prepare_node_subset(
+    backend: object, nodes: tuple[object, ...]
+) -> LabResult | None:
+    """Run the pre-materialization steps in order, stopping at the first failure.
+
+    The daemon gate comes first so an unsupported daemon is refused before any
+    image build or network attachment (issue #955).
+    """
+
+    for step in (
+        _require_substrate_daemon_for,
+        _generic_base_image_failure,
+        _bind_base_container_networks,
+    ):
+        failure = step(backend, nodes)
+        if failure is not None:
+            return failure
+    return None
+
+
+def _generic_base_image_failure(
+    backend: object, nodes: tuple[object, ...]
+) -> LabResult | None:
+    """Build the subset's generic base images, reporting any failure."""
+
+    failures = _ensure_generic_base_images(backend, nodes)
+    return LabResult(success=False, error="; ".join(failures[:5])) if failures else None
+
+
+def _require_substrate_daemon_for(
+    backend: object, nodes: tuple[object, ...]
+) -> LabResult | None:
+    """Qualify the target daemon before any generic image build (issue #955).
+
+    Runs only when the subset contains a systemd node, since only those request
+    writable cgroups. It sits at this boundary so an unsupported daemon is
+    refused before an image build, network attachment, or container exists;
+    ``start_base_container`` keeps its own guard for direct callers. A backend
+    without the gate (a non-Docker test double) has no substrate posture to
+    qualify.
+    """
+
+    require = getattr(backend, "_require_substrate_daemon", None)
+    if require is None or not any(
+        getattr(getattr(node, "runtime", None), "service_manager_units", None)
+        for node in nodes
+    ):
+        return None
+    try:
+        require()
+    except BackendSeedError as exc:
+        return LabResult(success=False, error=str(exc))
+    return None
+
+
+def _ensure_generic_base_images(
+    backend: object, nodes: tuple[object, ...]
+) -> list[str]:
+    """Build every generic base image this node subset needs, up front.
+
+    A fresh machine has none of the locally-built generic base images in
+    its Docker cache (issue #581 - a developer's existing cache had
+    silently masked this gap since ADR-048 shipped). Ensure every image
+    this node subset needs exists once, up front, rather than having each
+    node's own start_base_container discover it missing one at a time.
+    """
+
+    from aptl.backends.raes_base_substrate import (
+        NodePlanningOptions,
+        base_container_spec,
+    )
+
+    failures: list[str] = []
+    for image_ref in sorted(
+        {
+            base_container_spec(
+                node.address,
+                os=node.os,
+                os_version=node.os_version,
+                runtime=node.runtime,
+                options=NodePlanningOptions(
+                    backend_base_image_ref=getattr(node, "backend_base_image_ref", None)
+                ),
+            ).image_ref
+            for node in nodes
+        }
+    ):
+        failures.extend(backend.ensure_generic_base_image(image_ref))
+    return failures
+
+
+def _bind_base_container_networks(
+    backend: object, nodes: tuple[object, ...]
+) -> LabResult | None:
+    """Attach the node subset to its declared networks, if the backend can."""
+
+    configure_networks = getattr(backend, "configure_base_container_networks", None)
+    if not callable(configure_networks):
+        return None
+    try:
+        configure_networks(nodes)
+    except BackendSeedError:
+        return LabResult(
+            success=False,
+            error="Base-container network binding failed.",
+        )
+    return None
+
+
+def _content_ops_by_node(content: tuple[object, ...]) -> dict[str, list[object]]:
+    """Lower each content item to a placement op, keyed by target node address."""
+
+    by_node: dict[str, list[object]] = {}
+    for item in content:
+        op = _content_placement_op(item)
+        if op is not None:
+            by_node.setdefault(item.target_address, []).append(op)
+    return by_node
+
+
+def _content_placement_op(item: object) -> object | None:
+    """Return one content item's materializer placement op, or ``None``.
+
+    A source kind that carries nothing placeable (an incomplete pack reference,
+    an unset project path) lowers to ``None`` and is skipped.
+    """
+
+    from aptl.backends.raes_materializer import (
+        PlaceFileOp,
+        PlacePackArtifactOp,
+        PlaceProjectContentOp,
+    )
+
+    dest = "/" + item.dest_relpath.lstrip("/")
+    op: object | None = None
+    if item.source_kind == "inline-text" and item.inline_text is not None:
+        op = PlaceFileOp(path=dest, content=item.inline_text)
+    elif (
+        item.source_kind in ("pack-file", "pack-directory")
+        and item.artifact_id
+        and item.artifact_digest
+    ):
+        op = PlacePackArtifactOp(
+            dest_path=dest,
+            artifact_id=item.artifact_id,
+            artifact_digest=item.artifact_digest,
+            is_directory=item.source_kind == "pack-directory",
+            sensitive=item.sensitive,
+            executable=item.media_type in {"text/x-python", "text/x-shellscript"},
+        )
+    elif (
+        item.source_kind in ("project-file", "project-directory")
+        and item.source_relpath
+    ):
+        op = PlaceProjectContentOp(
+            dest_path=dest,
+            source_relpath=item.source_relpath,
+            is_directory=item.source_kind == "project-directory",
+        )
+    return op

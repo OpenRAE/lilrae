@@ -17,7 +17,7 @@ from aptl.backends.pack_interaction import (
 __version__ = "0.1.0"
 
 _PACK_SET_DIGEST = (
-    "sha256:db98a9daa62a092a0c6b001217027d7f4ad489889e95d01050e77f148e8ef29b"
+    "sha256:1229f94f31bd35d3997d47ef8316ffebb3d2d2919c995838e458420b70456fcf"
 )
 
 _GROUP_BY_COMPONENT = {
@@ -60,7 +60,7 @@ class TechVaultPackInteraction:
     provider_id = "techvault-aptl-serving"
     extension_api_version = EXTENSION_API_VERSION
     supported_pack_id = "techvault"
-    supported_pack_versions = ("0.1.0",)
+    supported_pack_versions = ("0.1.1",)
     supported_pack_set_digests = (_PACK_SET_DIGEST,)
     backend_target_name = "aptl"
     backend_target_versions = ("0.1.0",)

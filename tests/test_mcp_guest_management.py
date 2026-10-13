@@ -10,6 +10,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from aptl.core.config import AptlConfig
+from aptl.core.deployment._compose_resource_ownership import WorkspaceOwnership
 from aptl.workbench import guest_binding, preparation
 from aptl.workbench.dispatch import DispatchSelector
 from aptl.workbench.guest_binding import GuestAdmission, GuestDispatchBinding
@@ -27,10 +28,41 @@ def _observation(record, run_id):
     )
 
 
+def test_guest_rejects_pack_switch_after_study_enrollment(tmp_path, monkeypatch):
+    record = access_record(
+        scenario_pack={
+            "pack_id": "techvault-participant-study",
+            "pack_version": "0.1.0",
+            "set_digest": "b" * 64,
+        }
+    )
+    binding = GuestDispatchBinding(
+        schema_version="aptl.mcp-dispatch/v1",
+        access=record,
+        grants=(grant(),),
+        project_dir=tmp_path,
+        node_executable=Path("/usr/bin/node"),
+        management_home=tmp_path,
+        run_id="c" * 32,
+        delivery="rootful-integration",
+    )
+    monkeypatch.setattr(guest_binding, "load_config", lambda _: AptlConfig())
+    with pytest.raises(ValueError, match="deployment mismatch"):
+        guest_binding._observe_stable_guest(binding)
+
+
+@pytest.mark.parametrize("pack_id", ["techvault", "techvault-participant-study"])
 def test_guest_enrollment_publishes_private_forced_keys_and_rejects_bad_inventory(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, pack_id
 ):
-    record = access_record(container_ids={"aptl-kali": "a" * 64})
+    record = access_record(
+        container_ids={"aptl-kali": "a" * 64},
+        scenario_pack={
+            "pack_id": pack_id,
+            "pack_version": "0.1.0",
+            "set_digest": "b" * 64,
+        },
+    )
     original_read_text = Path.read_text
 
     def read_text(path, *args, **kwargs):
@@ -55,15 +87,19 @@ def test_guest_enrollment_publishes_private_forced_keys_and_rejects_bad_inventor
     )
     # This seam cannot reach a daemon, including the host's default Docker socket.
     monkeypatch.setattr(preparation, "DockerComposeBackend", lambda *a, **k: backend)
-    monkeypatch.setattr(preparation, "load_config", lambda _: AptlConfig())
+    monkeypatch.setattr(
+        preparation,
+        "load_config",
+        lambda _: AptlConfig(scenario={"identity": pack_id, "source": "env-pack"}),
+    )
     monkeypatch.setattr(
         preparation, "observe_guest_containers", lambda _: record.container_ids
     )
-    monkeypatch.setattr(
-        preparation,
-        "env_pack_bundle",
-        lambda _: SimpleNamespace(pack_identity=record.scenario_pack),
-    )
+    def staged_pack(_root, identity):
+        assert identity == pack_id
+        return SimpleNamespace(pack_identity=record.scenario_pack)
+
+    monkeypatch.setattr(preparation, "env_pack_bundle", staged_pack)
     monkeypatch.setattr(
         preparation,
         "expected_bundle_matrix",
@@ -171,11 +207,14 @@ def test_guest_launch_binds_native_kali_and_keeps_provider_auth_out(
     (tmp_path / "aptl.json").write_text(
         '{"run_storage":{"local_path":"./custom-runs"}}'
     )
+    workspace_id = WorkspaceOwnership.ensure(tmp_path, "aptl").workspace_id
     monkeypatch.setattr(
         "aptl.core.lab._server_config_port_refs", lambda *a: ("APTL_TEST_PORT",)
     )
     monkeypatch.setattr(guest_binding, "load_config", lambda _: AptlConfig())
     backend = SimpleNamespace(
+        project_dir=tmp_path,
+        logical_project_name="aptl",
         bind_local_docker_socket=lambda: SimpleNamespace(success=True),
         _docker_socket_path=tmp_path / "unused.sock",
         container_inspect=lambda _: {"fixture": True},
@@ -192,6 +231,9 @@ def test_guest_launch_binds_native_kali_and_keeps_provider_auth_out(
     assert argv == (str(executable), str(artifact))
     assert cwd == tmp_path
     assert environment["APTL_MCP_KALI_HOST"] == "192.0.2.44"
+    assert environment["LILRAE_MCP_CAPTURE_CONTAINER"] == (
+        f"aptl-w{workspace_id[:12]}-kali-capture"
+    )
     assert environment["DOCKER_HOST"] == "unix://" + str(tmp_path / "unused.sock")
     assert environment["APTL_MCP_ADMITTED_RUN_ID"] == binding.run_id
     assert environment["APTL_MCP_RUN_STORE_BASE"] == str(tmp_path / "custom-runs")

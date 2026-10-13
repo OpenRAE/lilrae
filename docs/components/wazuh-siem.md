@@ -17,7 +17,6 @@ The Wazuh SIEM stack provides security monitoring and analysis for the APTL lab 
 ```mermaid
 flowchart TD
     J[Victim Container<br/>172.20.2.20] --> |Agent 1514| G[Wazuh Manager<br/>172.20.0.10]
-    L[Kali Container<br/>172.20.4.30] --> |Agent 1514| G
 
     G <--> H[Wazuh Indexer<br/>172.20.0.12]
     H --> I[Wazuh Dashboard<br/>172.20.0.11]
@@ -120,7 +119,7 @@ Emergency      → 100607     → Level 15
 
 **Configuration sources:**
 - Acquired [`techvault` environment pack](https://github.com/OpenRAE/env-packs/tree/main/packs/techvault) - scenario-owned Falco rules
-- [wazuh_manager.conf](https://github.com/Brad-Edwards/aptl/blob/main/config/wazuh_cluster/wazuh_manager.conf) - generic manager config
+- [wazuh_manager.conf](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf) - generic manager config
 
 ## MCP Integration
 

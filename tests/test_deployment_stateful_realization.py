@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import shutil
+import subprocess
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -19,6 +23,15 @@ from cryptography.x509.oid import NameOID
 from aptl.core.credentials import PathContainmentError
 from aptl.core.certs import CertResult
 from aptl.core.deployment.docker_compose import DockerComposeBackend
+from aptl.core.deployment._compose_stateful_artifact_helpers import (
+    base_container_environment_bindings,
+    write_artifact_environment_files,
+)
+from aptl.core.deployment._compose_stateful_model import (
+    artifact_environment_file_path,
+    artifact_source_path,
+)
+from aptl.core.deployment._realization_primitives import EnvironmentDeliveryRefused
 from aptl.core.deployment._compose_stateful_realization import (
     effective_stateful_model_errors,
     stateful_override_payload,
@@ -297,6 +310,36 @@ def test_cortex_credentials_are_generated_distinctly_and_reused(tmp_path: Path) 
     assert (root / "cortex/connector-api-key").read_text().strip() == connector
 
 
+@pytest.mark.parametrize("rewrite", ["  {key}\n", "{key}\r\n"], ids=["padded", "crlf"])
+def test_a_padded_cortex_key_is_regenerated_rather_than_reused(
+    tmp_path: Path, rewrite: str
+) -> None:
+    """Delivery keeps padding, so a reused padded key would reach TheHive (#966)."""
+
+    backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
+    backend._docker_daemon_id = "test-daemon"
+    artifact = _cortex_credentials_spec().generated_artifacts[0]
+    root = tmp_path / ".aptl/realization/cortex-service-credentials"
+    key_file = root / "cortex/connector-api-key"
+    assert (
+        backend._realize_one_generated_artifact(artifact, tmp_path, _EMPTY_REALIZATION)
+        is None
+    )
+    old_key = key_file.read_bytes().removesuffix(b"\n").decode()
+    key_file.write_bytes(rewrite.format(key=old_key).encode())
+
+    assert (
+        backend._realize_one_generated_artifact(artifact, tmp_path, _EMPTY_REALIZATION)
+        is None
+    )
+
+    new_key = key_file.read_bytes().removesuffix(b"\n").decode()
+    assert re.fullmatch(r"[A-Za-z0-9_-]{43,128}", new_key)
+    assert new_key != old_key
+    env_file = artifact_environment_file_path(tmp_path, artifact, "thehive")
+    assert env_file.read_text(encoding="utf-8") == f"TH_CORTEX_KEYS='{new_key}'\n"
+
+
 def test_cortex_credentials_bind_only_declared_environment_names(
     tmp_path: Path,
 ) -> None:
@@ -342,7 +385,7 @@ def test_generated_environment_file_rejects_variable_name_injection(
     assert not list((tmp_path / ".aptl/realization/env").glob("*.env"))
 
 
-def test_image_free_generated_environment_uses_the_declared_output(
+def test_base_container_generated_environment_uses_the_declared_output(
     tmp_path: Path,
 ) -> None:
     from dataclasses import replace
@@ -362,7 +405,7 @@ def test_image_free_generated_environment_uses_the_declared_output(
     artifact = replace(artifact, environment_consumers=(consumer,))
     realization = replace(spec, generated_artifacts=(artifact,))
 
-    failure, operations = backend._image_free_generated_artifact_ops(
+    failure, operations = backend._base_container_generated_artifact_ops(
         realization,
         frozenset({"provision.node.kali"}),
         tmp_path,
@@ -428,14 +471,15 @@ def test_base_environment_file_rejects_value_line_injection(tmp_path: Path) -> N
         environment_defaults=(("SAFE", "value\nINJECTED=1"),),
     )
 
-    with pytest.raises(BackendSeedError, match="environment value"):
+    with pytest.raises(BackendSeedError, match="cannot carry SAFE exactly") as excinfo:
         backend._append_base_environment(argv, spec)
 
+    assert "INJECTED" not in str(excinfo.value)
     assert argv == []
     assert not (tmp_path / ".aptl/realization/env/aptl-kali.env").exists()
 
 
-def test_image_free_environment_binding_rejects_variable_name_injection(
+def test_base_container_environment_binding_rejects_variable_name_injection(
     tmp_path: Path,
 ) -> None:
     backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
@@ -451,7 +495,7 @@ def test_image_free_environment_binding_rejects_variable_name_injection(
     artifact = replace(artifact, environment_consumers=(consumer,))
     realization = replace(spec, generated_artifacts=(artifact,))
 
-    failure, operations = backend._image_free_generated_artifact_ops(
+    failure, operations = backend._base_container_generated_artifact_ops(
         realization,
         frozenset({"provision.node.kali"}),
         tmp_path,
@@ -460,7 +504,274 @@ def test_image_free_environment_binding_rejects_variable_name_injection(
     assert failure is not None
     assert failure.success is False
     assert operations == {}
-    assert backend._image_free_generated_environment == {}
+    assert backend._base_container_generated_environment == {}
+
+
+def _write_cortex_outputs(root: Path, **values: str):
+    """Place generated Cortex outputs, as the generator would, and return them."""
+
+    artifact = _cortex_credentials_spec().generated_artifacts[0]
+    source_root = artifact_source_path(root, artifact)
+    source_root.joinpath("cortex").mkdir(parents=True, exist_ok=True)
+    sources = {}
+    for output in artifact.outputs:
+        source = source_root / output.path
+        source.write_text(values.get(output.name.replace("-", "_"), "x") + "\n")
+        sources[output.name] = source
+    return artifact, sources
+
+
+@pytest.mark.parametrize(
+    ("value", "problem"),
+    [
+        ("it's", "the value contains a single quote"),
+        ("key\\", "the value ends in an odd number of backslashes"),
+        ("key\\\\\\", "the value ends in an odd number of backslashes"),
+    ],
+    ids=["single-quote", "one-trailing-backslash", "three-trailing-backslashes"],
+)
+def test_a_generated_value_compose_would_misread_is_refused_and_unwritten(
+    tmp_path: Path, value: str, problem: str
+) -> None:
+    """Compose reads the value single-quoted, and a backslash escapes a quote.
+
+    So a quote cannot travel, and neither can a final unpaired backslash: it
+    would escape the closing quote and run the value into the next line.
+    """
+
+    artifact, sources = _write_cortex_outputs(tmp_path, connector_api_key=value)
+
+    with pytest.raises(
+        EnvironmentDeliveryRefused,
+        match=f"cannot carry TH_CORTEX_KEYS exactly: {problem}",
+    ) as excinfo:
+        write_artifact_environment_files(
+            artifact,
+            tmp_path,
+            {"thehive": [("TH_CORTEX_KEYS", sources["connector-api-key"])]},
+        )
+
+    assert value not in str(excinfo.value)
+    assert not artifact_environment_file_path(tmp_path, artifact, "thehive").exists()
+
+
+@pytest.mark.parametrize(
+    "value",
+    ['  p$ss #1 "q" \\ end  ', "key\\\\", "in\\\\\\ner"],
+    ids=["markup-and-padding", "two-trailing-backslashes", "inner-backslashes"],
+)
+def test_generated_values_are_single_quoted_and_never_trimmed(
+    tmp_path: Path, value: str
+) -> None:
+    artifact, sources = _write_cortex_outputs(tmp_path, connector_api_key=value)
+
+    write_artifact_environment_files(
+        artifact,
+        tmp_path,
+        {"thehive": [("TH_CORTEX_KEYS", sources["connector-api-key"])]},
+    )
+
+    target = artifact_environment_file_path(tmp_path, artifact, "thehive")
+    assert target.read_text(encoding="utf-8") == f"TH_CORTEX_KEYS='{value}'\n"
+
+
+def test_a_refused_service_leaves_every_env_file_of_the_set_unchanged(
+    tmp_path: Path,
+) -> None:
+    """The whole set is built and checked before any file is replaced."""
+
+    artifact, sources = _write_cortex_outputs(
+        tmp_path, connector_api_key="fine", initializer_api_key="it's"
+    )
+    existing = artifact_environment_file_path(tmp_path, artifact, "thehive")
+    existing.parent.mkdir(parents=True)
+    existing.write_text("TH_CORTEX_KEYS='previous'\n", encoding="utf-8")
+
+    with pytest.raises(EnvironmentDeliveryRefused):
+        write_artifact_environment_files(
+            artifact,
+            tmp_path,
+            {
+                "thehive": [("TH_CORTEX_KEYS", sources["connector-api-key"])],
+                "cortex-initializer": [
+                    ("CORTEX_ADMIN_KEY", sources["initializer-api-key"])
+                ],
+            },
+        )
+
+    assert existing.read_text(encoding="utf-8") == "TH_CORTEX_KEYS='previous'\n"
+
+
+def test_a_base_container_consumer_gets_no_compose_env_file(tmp_path: Path) -> None:
+    """A non-Compose consumer takes its value through Docker's env file instead."""
+
+    backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
+    spec = _cortex_credentials_spec()
+    without_thehive_image = replace(spec, images=spec.images[1:])
+    artifact = spec.generated_artifacts[0]
+
+    failure = backend._realize_one_generated_artifact(
+        artifact, tmp_path, without_thehive_image
+    )
+
+    assert failure is None
+    assert not artifact_environment_file_path(tmp_path, artifact, "thehive").exists()
+    assert artifact_environment_file_path(
+        tmp_path, artifact, "cortex-initializer"
+    ).is_file()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX symlinks")
+@pytest.mark.parametrize("compose", [True, False], ids=["compose", "base-container"])
+def test_a_symlinked_generated_output_is_refused_not_read(
+    tmp_path: Path, compose: bool
+) -> None:
+    """A link planted at an output path never delivers its target as a value."""
+
+    artifact, sources = _write_cortex_outputs(tmp_path)
+    outside = tmp_path / "outside-secret"
+    outside.write_text("host-secret\n", encoding="utf-8")
+    sources["connector-api-key"].unlink()
+    sources["connector-api-key"].symlink_to(outside)
+    consumer = artifact.environment_consumers[0]
+
+    if compose:
+        failure = DockerComposeBackend._realize_artifact_environment_files(
+            artifact, tmp_path
+        )
+    else:
+        bound: dict[str, dict[str, str]] = {}
+        failure = base_container_environment_bindings(
+            bound, artifact, [consumer], tmp_path
+        )
+        assert bound == {}
+
+    assert failure is not None
+    assert failure.error.endswith("environment delivery failed.")
+    assert "host-secret" not in failure.error
+    assert not artifact_environment_file_path(tmp_path, artifact, "thehive").exists()
+
+
+@pytest.mark.parametrize(
+    ("value", "bound", "named"),
+    [
+        ("  inner\rcarriage  ", "  inner\rcarriage  ", None),
+        ("trailing\r", None, "Docker drops a trailing carriage return"),
+        ("multi\nline", None, "the value contains a line break"),
+    ],
+    ids=["exact-with-padding", "trailing-cr", "line-break"],
+)
+def test_base_container_generated_values_follow_the_docker_env_file_rules(
+    tmp_path: Path, value: str, bound: str | None, named: str | None
+) -> None:
+    """The early check and the env-file writer apply the same rules."""
+
+    artifact, _sources = _write_cortex_outputs(tmp_path, connector_api_key=value)
+    bindings: dict[str, dict[str, str]] = {}
+
+    failure = base_container_environment_bindings(
+        bindings, artifact, [artifact.environment_consumers[0]], tmp_path
+    )
+
+    if named is None:
+        assert failure is None
+        assert bindings == {"provision.node.thehive": {"TH_CORTEX_KEYS": bound}}
+    else:
+        assert named in failure.error
+        assert value not in failure.error
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX symlinks")
+def test_generated_environment_file_refuses_a_symlinked_target_and_says_why(
+    tmp_path: Path,
+) -> None:
+    backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
+    artifact = _cortex_credentials_spec().generated_artifacts[0]
+    outside = tmp_path / "outside.env"
+    outside.write_text("keep\n", encoding="utf-8")
+    planted = artifact_environment_file_path(tmp_path, artifact, "thehive")
+    planted.parent.mkdir(parents=True)
+    planted.symlink_to(outside)
+
+    failure = backend._realize_one_generated_artifact(
+        artifact, tmp_path, _EMPTY_REALIZATION
+    )
+
+    assert failure is not None
+    assert failure.success is False
+    assert "unsafe generated environment file (symlink)" in str(failure.error)
+    assert outside.read_text(encoding="utf-8") == "keep\n"
+
+
+# Generated values Compose's env_file reader keeps byte for byte (#966). The
+# writer single-quotes each value, so interpolation markers, comment marks,
+# double quotes, backslashes, padding and line breaks all arrive as written. A
+# value may end in backslashes only in pairs; an odd run is refused.
+_COMPOSE_EXACT_VALUES = {
+    "TOKEN_VALUE": "Zx-_09azAZ",
+    "INNER_TEXT": "in ner\ttab=eq{}!*?&;|()[]<>^~%@,.:/+",
+    "UNICODE_VALUE": "pässwörd-✓",
+    "MARKUP_VALUE": 'p$ss ${HOME} #hash "dq" \\back',
+    "PADDED_VALUE": "  padded  ",
+    "MULTILINE_VALUE": "first\nsecond\r",
+    "TRAILING_BACKSLASHES": "ends\\\\",
+}
+
+
+def _compose_ready() -> bool:
+    if shutil.which("docker") is None:
+        return False
+    probe = subprocess.run(
+        ["docker", "compose", "version"], capture_output=True, check=False
+    )
+    return probe.returncode == 0
+
+
+@pytest.mark.integration
+def test_compose_reads_the_generated_env_file_back_exactly(tmp_path: Path) -> None:
+    """Value readback through Compose's own env_file reader (#966).
+
+    ``docker compose config`` resolves a service's environment without a
+    daemon, so the check needs only the Compose CLI and leaves nothing behind.
+    """
+
+    if not _compose_ready():
+        pytest.skip("requires the Docker Compose CLI")
+    artifact = _cortex_credentials_spec().generated_artifacts[0]
+    bindings = []
+    for variable, value in _COMPOSE_EXACT_VALUES.items():
+        source = tmp_path / f"{variable}.out"
+        source.write_text(f"{value}\n", encoding="utf-8")
+        bindings.append((variable, source))
+    write_artifact_environment_files(artifact, tmp_path, {"thehive": bindings})
+    env_file = artifact_environment_file_path(tmp_path, artifact, "thehive")
+    compose_file = tmp_path / "compose.yml"
+    compose_file.write_text(
+        yaml.safe_dump(
+            {
+                "services": {
+                    "thehive": {"image": "lilrae-env:none", "env_file": [str(env_file)]}
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    resolved = subprocess.run(
+        ["docker", "compose", "-p", "lilrae-env-readback", "-f", str(compose_file)]
+        + ["config", "--format", "json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    services = json.loads(resolved.stdout)["services"]
+    # `config` prints a literal "$" as "$$" so its output is not re-interpolated.
+    environment = {
+        name: value.replace("$$", "$")
+        for name, value in services["thehive"]["environment"].items()
+    }
+    assert environment == _COMPOSE_EXACT_VALUES
 
 
 def _certificate_outputs() -> tuple[DeploymentGeneratedArtifactOutput, ...]:
@@ -957,7 +1268,7 @@ def test_effective_compose_model_rejects_undeclared_certificate_mount(
     assert "undeclared certificate material" in result.error
 
 
-def test_effective_model_ignores_image_free_certificate_delivery(
+def test_effective_model_ignores_base_container_certificate_delivery(
     tmp_path: Path,
 ) -> None:
     """Compose validation does not re-demand a mount delivered as a file."""
@@ -965,10 +1276,10 @@ def test_effective_model_ignores_image_free_certificate_delivery(
     from raes.runtime_configuration import RuntimeConfiguration
 
     spec = _spec()
-    image_free_node = replace(spec.nodes[0], runtime=RuntimeConfiguration())
+    base_container_node = replace(spec.nodes[0], runtime=RuntimeConfiguration())
     realization = replace(
         spec,
-        nodes=(image_free_node,),
+        nodes=(base_container_node,),
         images=(),
         persistent_volumes=(),
     )
@@ -1690,7 +2001,7 @@ def test_authenticated_readiness_accepts_an_applied_manager_config(
     assert backend.authenticated_readiness == {"wazuh.manager": True}
 
 
-# -- ssh_key_bundle dispatch and image-free delivery (issue #875) -------------
+# -- ssh_key_bundle dispatch and base-container delivery (issue #875) -------------
 
 
 #: A realization with no nodes: these tests exercise generator dispatch and
@@ -1832,7 +2143,7 @@ def test_an_unsupported_generator_kind_is_refused(tmp_path: Path) -> None:
     assert "unsupported" in result.error
 
 
-def _image_free_consumer(node: str, *, selected: tuple[str, ...]):
+def _base_container_consumer(node: str, *, selected: tuple[str, ...]):
     return DeploymentStatefulConsumer(
         target_address=f"provision.node.{node}",
         node_name=node,
@@ -1843,10 +2154,10 @@ def _image_free_consumer(node: str, *, selected: tuple[str, ...]):
     )
 
 
-def test_image_free_consumers_receive_their_selected_outputs_as_placed_files(
+def test_base_container_consumers_receive_their_selected_outputs_as_placed_files(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """An image-free node has no Compose service to mount into (issue #875).
+    """A base-container-materialized node has no Compose service to mount into (issue #875).
 
     Its consumer's selected outputs are placed into the container as files
     instead, at the same destination the mount model would have bound them to,
@@ -1857,7 +2168,7 @@ def test_image_free_consumers_receive_their_selected_outputs_as_placed_files(
 
     backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
     _stub_ssh_generator(monkeypatch)
-    consumer = _image_free_consumer(
+    consumer = _base_container_consumer(
         "workstation",
         selected=(
             "workstation-dev-private-key",
@@ -1872,7 +2183,7 @@ def test_image_free_consumers_receive_their_selected_outputs_as_placed_files(
         generated_artifacts=(_ssh_artifact((consumer,)),),
     )
 
-    failure, ops = backend._image_free_generated_artifact_ops(
+    failure, ops = backend._base_container_generated_artifact_ops(
         realization, frozenset({"provision.node.workstation"}), tmp_path
     )
 
@@ -1886,14 +2197,14 @@ def test_image_free_consumers_receive_their_selected_outputs_as_placed_files(
     assert placed[0].content == "material for workstation-dev-private-key\n"
 
 
-def test_an_artifact_with_no_image_free_consumer_is_not_generated_here(
+def test_an_artifact_with_no_base_container_consumer_is_not_generated_here(
     tmp_path: Path, monkeypatch
 ) -> None:
     """Compose consumers get bind mounts; this path must not duplicate that work."""
 
     backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
     staged = _stub_ssh_generator(monkeypatch)
-    consumer = _image_free_consumer("kali", selected=("target-authorized-keys",))
+    consumer = _base_container_consumer("kali", selected=("target-authorized-keys",))
     realization = DeploymentRealizationSpec(
         profiles=(),
         nodes=(),
@@ -1901,7 +2212,7 @@ def test_an_artifact_with_no_image_free_consumer_is_not_generated_here(
         generated_artifacts=(_ssh_artifact((consumer,)),),
     )
 
-    failure, ops = backend._image_free_generated_artifact_ops(
+    failure, ops = backend._base_container_generated_artifact_ops(
         realization, frozenset({"provision.node.workstation"}), tmp_path
     )
 
@@ -1909,17 +2220,17 @@ def test_an_artifact_with_no_image_free_consumer_is_not_generated_here(
     assert staged == []
 
 
-def test_a_generator_failure_stops_image_free_placement(
+def test_a_generator_failure_stops_base_container_placement(
     tmp_path: Path, monkeypatch
 ) -> None:
     """Nothing is placed from an artifact that failed to generate."""
 
     backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
-    backend._image_free_generated_environment = {
+    backend._base_container_generated_environment = {
         "provision.node.workstation": {"STALE_SECRET": "must-not-survive"}
     }
     _stub_ssh_generator(monkeypatch, error="no entropy source")
-    consumer = _image_free_consumer("workstation", selected=("target-authorized-keys",))
+    consumer = _base_container_consumer("workstation", selected=("target-authorized-keys",))
     realization = DeploymentRealizationSpec(
         profiles=(),
         nodes=(),
@@ -1927,17 +2238,17 @@ def test_a_generator_failure_stops_image_free_placement(
         generated_artifacts=(_ssh_artifact((consumer,)),),
     )
 
-    failure, ops = backend._image_free_generated_artifact_ops(
+    failure, ops = backend._base_container_generated_artifact_ops(
         realization, frozenset({"provision.node.workstation"}), tmp_path
     )
 
     assert failure is not None
     assert failure.success is False
     assert ops == {}
-    assert backend._image_free_generated_environment == {}
+    assert backend._base_container_generated_environment == {}
 
 
-def test_a_declared_output_that_never_materialized_stops_image_free_placement(
+def test_a_declared_output_that_never_materialized_stops_base_container_placement(
     tmp_path: Path, monkeypatch
 ) -> None:
     """An absent output would otherwise be placed as an empty file in the node."""
@@ -1949,7 +2260,7 @@ def test_a_declared_output_that_never_materialized_stops_image_free_placement(
             None
         ),  # reports success, writes nothing
     )
-    consumer = _image_free_consumer("workstation", selected=("target-authorized-keys",))
+    consumer = _base_container_consumer("workstation", selected=("target-authorized-keys",))
     realization = DeploymentRealizationSpec(
         profiles=(),
         nodes=(),
@@ -1957,13 +2268,13 @@ def test_a_declared_output_that_never_materialized_stops_image_free_placement(
         generated_artifacts=(_ssh_artifact((consumer,)),),
     )
 
-    failure, ops = backend._image_free_generated_artifact_ops(
+    failure, ops = backend._base_container_generated_artifact_ops(
         realization, frozenset({"provision.node.workstation"}), tmp_path
     )
 
     assert failure is not None
     assert failure.success is False
-    assert "missing for image-free consumer" in failure.error
+    assert "missing for base-container consumer" in failure.error
     assert "labadmin/.ssh/authorized_keys" in failure.error
     assert ops == {}
 
@@ -2258,7 +2569,7 @@ def test_no_image_node_content_means_no_override_file(tmp_path: Path) -> None:
 
 
 def _seedable_spec(tmp_path: Path):
-    """One image node and one image-free node, each declaring content."""
+    """One image node and one base-container-materialized node, each declaring content."""
 
     from aptl.core.deployment.realization import DeploymentContentRealization
 

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Protocol
 
 from aptl.appliance.seat.errors import SeatLauncherError
+from aptl.appliance.seat.private_vm import _start_private_vm
 from aptl.core.appliance_boundary_inventory import BoundaryEndpoint
 
 # Intentional RFC 1918 guest-only network.
@@ -50,24 +51,19 @@ class VmLaunchSpec:
     management_socket: Path | None = None
     readiness_socket: Path | None = None
     access_socket: Path | None = None
+    include_access_channel: bool = False
+    privilege_socket: Path | None = None
+    include_privilege_channel: bool = False
     guest_adapter_address: str = DEFAULT_QEMU_GUEST_ADDRESS
     mappings: tuple[BoundaryEndpoint, ...] = field(
         default_factory=lambda: (
             BoundaryEndpoint(
                 audience="participant",
                 address="127.0.0.1",
-                port=443,
+                port=8080,
                 protocol="tcp",
                 guest_address="127.0.0.1",
-                guest_port=443,
-            ),
-            BoundaryEndpoint(
-                audience="recovery",
-                address="127.0.0.1",
-                port=9443,
-                protocol="tcp",
-                guest_address="127.0.0.1",
-                guest_port=9443,
+                guest_port=8080,
             ),
         )
     )
@@ -100,10 +96,11 @@ class SubprocessVm:
     """Subprocess-backed VM handle."""
 
     process: subprocess.Popen[bytes]
+    guest_pid: int | None = None
 
     @property
     def pid(self) -> int:
-        return self.process.pid
+        return self.guest_pid or self.process.pid
 
     def poll(self) -> int | None:
         return self.process.poll()
@@ -127,6 +124,36 @@ class VmProcessIdentity:
     executable: str
 
 
+def _optional_serial_ports(
+    spec: VmLaunchSpec, access_socket: Path, privilege_socket: Path,
+) -> tuple[tuple[str, Path, str], ...]:
+    """Return only the private channels admitted by this launch."""
+
+    ports: list[tuple[str, Path, str]] = []
+    if spec.include_access_channel:
+        ports.append(("access", access_socket, "org.aptl.access"))
+    if spec.include_privilege_channel:
+        ports.append(("privileges", privilege_socket, "org.aptl.privileges"))
+    return tuple(ports)
+
+
+def _optional_serial_argv(
+    ports: tuple[tuple[str, Path, str], ...],
+) -> tuple[str, ...]:
+    """Build QEMU arguments for explicitly selected private serial ports."""
+
+    return tuple(
+        part
+        for identifier, path, name in ports
+        for part in (
+            "-chardev",
+            f"socket,id=aptl-{identifier},path={path},server=on,wait=off",
+            "-device",
+            f"virtserialport,chardev=aptl-{identifier},name={name}",
+        )
+    )
+
+
 def build_qemu_argv(spec: VmLaunchSpec) -> tuple[str, ...]:
     """Return hardened fixed argv for one local-KVM seat."""
 
@@ -135,12 +162,14 @@ def build_qemu_argv(spec: VmLaunchSpec) -> tuple[str, ...]:
         ".readiness.sock"
     )
     access_socket = spec.access_socket or spec.overlay_path.with_suffix(".access.sock")
+    privilege_socket = spec.privilege_socket or spec.overlay_path.with_suffix(".privilege.sock")
+    optional_ports = _optional_serial_ports(spec, access_socket, privilege_socket)
     for path in (
         spec.overlay_path,
         spec.launch_mount,
         management_socket,
         readiness_socket,
-        access_socket,
+        *(path for _, path, _ in optional_ports),
     ):
         if any(character in str(path) for character in (",", "\n", "\x00")):
             raise ValueError("path contains a QEMU option separator")
@@ -186,16 +215,13 @@ def build_qemu_argv(spec: VmLaunchSpec) -> tuple[str, ...]:
         f"socket,id=aptl-readiness,path={readiness_socket},server=on,wait=off",
         "-device",
         "virtserialport,chardev=aptl-readiness,name=org.aptl.readiness",
-        "-chardev",
-        f"socket,id=aptl-access,path={access_socket},server=on,wait=off",
-        "-device",
-        "virtserialport,chardev=aptl-access,name=org.aptl.access",
+        *_optional_serial_argv(optional_ports),
         "-device",
         "virtio-rng-pci",
         "-qmp",
         f"unix:{management_socket},server=on,wait=off",
         "-netdev",
-        f"user,id=participant,restrict=on,net={QEMU_SLIRP_SUBNET},dhcpstart={spec.guest_adapter_address},{forwards}",
+        f"user,id=participant,net={QEMU_SLIRP_SUBNET},dhcpstart={spec.guest_adapter_address},{forwards}",
         "-device",
         "virtio-net-pci,netdev=participant",
         "-serial",
@@ -204,34 +230,66 @@ def build_qemu_argv(spec: VmLaunchSpec) -> tuple[str, ...]:
     )
 
 
-def start_vm(
-    spec: VmLaunchSpec,
-    *,
-    runner: VmRunner = None,
-) -> SubprocessVm:
-    """Start one VM process from a hardened argv list."""
-
-    argv = list(build_qemu_argv(spec))
+def _prepare_vm_sockets(spec: VmLaunchSpec) -> None:
+    """Remove only stale sockets for this disposable VM overlay."""
     management_socket = spec.management_socket or spec.overlay_path.with_suffix(".qmp")
     readiness_socket = spec.readiness_socket or spec.overlay_path.with_suffix(
         ".readiness.sock"
     )
     access_socket = spec.access_socket or spec.overlay_path.with_suffix(".access.sock")
-    for socket_path in (management_socket, readiness_socket, access_socket):
+    privilege_socket = spec.privilege_socket or spec.overlay_path.with_suffix(".privilege.sock")
+    socket_paths = [management_socket, readiness_socket]
+    if spec.include_access_channel:
+        socket_paths.append(access_socket)
+    if spec.include_privilege_channel:
+        socket_paths.append(privilege_socket)
+    for socket_path in socket_paths:
         socket_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         socket_path.unlink(missing_ok=True)
-    process = subprocess.Popen(
-        argv,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        close_fds=True,
-        start_new_session=True,
-    )
+
+
+def _require_private_network_host() -> None:
+    """Fail before launch when rootless network tools are unavailable."""
+    if any(
+        shutil.which(tool) is None for tool in ("bwrap", "nsenter", "slirp4netns")
+    ):
+        raise SeatLauncherError(
+            "missing-private-network-tool",
+            "desktop seats require bubblewrap, nsenter and slirp4netns on the host",
+        )
+    if not os.access("/dev/net/tun", os.R_OK | os.W_OK):
+        raise SeatLauncherError(
+            "missing-private-network-tool", "desktop seats require /dev/net/tun",
+        )
+
+
+def start_vm(
+    spec: VmLaunchSpec,
+    *,
+    runner: VmRunner = None,
+    private_network: bool = False,
+) -> SubprocessVm:
+    """Start one VM process from a hardened argv list."""
+
+    argv = list(build_qemu_argv(spec))
+    _prepare_vm_sockets(spec)
+    if private_network:
+        _require_private_network_host()
+        process, guest_pid = _start_private_vm(argv, spec.overlay_path)
+    else:
+        process = subprocess.Popen(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            start_new_session=True,
+        )
+        guest_pid = None
     if process.poll() is not None:
         raise SeatLauncherError("failed-launch", "VM exited during launch")
     if runner is None:
-        return SubprocessVm(process=process)
+        return SubprocessVm(process=process, guest_pid=guest_pid)
     return runner(process=process)
 
 

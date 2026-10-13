@@ -30,10 +30,15 @@ from aptl.utils._pathsafe_core import (
 
 
 def _open_dir_traverse_nofollow(component: str, parent_fd: int) -> int:
-    """Open an intermediate directory without requiring listing permission."""
+    """Open an intermediate directory without requiring listing permission.
+
+    Linux has ``O_PATH`` and macOS has ``O_SEARCH``. Each opens a directory
+    that grants only search (execute) permission. ``O_RDONLY`` needs read
+    permission, so it is the last choice.
+    """
 
     flags = (
-        getattr(os, "O_PATH", os.O_RDONLY)
+        getattr(os, "O_PATH", getattr(os, "O_SEARCH", os.O_RDONLY))
         | os.O_DIRECTORY
         | os.O_NOFOLLOW
         | os.O_CLOEXEC

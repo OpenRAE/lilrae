@@ -45,8 +45,7 @@ class TestKaliSourceIps:
         ips = kali_source_ips(whitelist_path=WHITELIST_PATH)
 
         # Documented IPs from config/wazuh_cluster/etc/lists/
-        # active-response-whitelist (also kali's three lab interfaces in
-        # docker-compose.yml).
+        # active-response-whitelist.
         assert "172.20.4.30" in ips
         assert "172.20.1.30" in ips
         assert "172.20.2.35" in ips
@@ -948,21 +947,7 @@ class TestAuditAndRevert:
 
 
 class TestDefaultTargets:
-    """``default_targets`` must match real services in docker-compose.yml."""
-
-    def test_targets_are_real_compose_services(self) -> None:
-        from aptl.core.continuity import default_targets
-
-        compose = PROJECT_ROOT / "docker-compose.yml"
-        text = compose.read_text()
-        # docker-compose service names don't always match container
-        # names; the canonical handle is the explicit
-        # ``container_name:`` declaration.
-        for target in default_targets():
-            needle = f"container_name: {target}"
-            assert (
-                needle in text
-            ), f"docker-compose.yml has no '{needle}' declaration"
+    """``default_targets`` is the pinned continuity audit surface."""
 
     def test_default_targets_count_pins_audit_surface(self) -> None:
         # The audit surface remains the in-process-agent set. The audit does

@@ -1,14 +1,51 @@
 # APTL backend substrate for nodes that require Node.js 22 and systemd-managed
 # services.  The product/runtime state remains materialized from the admitted
 # scenario; this image supplies only the selected language + init/SSH substrate.
-FROM node:25-trixie@sha256:b6cf8d20ee78aa10f0a6b98242e26d547869801abd6bc3f7094b0a54301dee02
-RUN apt-get update \
+# The backend selects it for a node declaring `nodejs` version 22, so the Node
+# major is part of its contract: Dependabot refreshes the digest but never the
+# major (issue #1193). The slim variant omits the full buildpack toolchain
+# (desktop, media, and kernel-header packages) this substrate never uses.
+FROM node:25-trixie-slim@sha256:aabbe39553d15ede8a97cc60c9e1a97034ff772afcf696ea42b94e7f5f2ec71b
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        systemd systemd-sysv dbus gnupg openssh-server \
+        systemd systemd-sysv dbus gnupg openssh-server ca-certificates \
         iputils-ping nmap python3 python3-pip curl wget dnsutils netcat-openbsd \
         smbclient ldap-utils sqlmap hydra python3-impacket \
+    && rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
     && apt-get clean \
     && find /var/lib/apt/lists -mindepth 1 -delete
+# Node 22 ships npm 10, whose bundled dependencies carry fixed advisories.
+# Replace it with npm 11 (which supports Node >=22.9) from the registry
+# tarball, verified against its published sha512 integrity (issue #1193).
+# Also drop the unused yarn and corepack tooling (this substrate uses npm only)
+# so their bundled dependencies cannot fail the image vulnerability scan.
+ARG NPM_VERSION=11.21.0
+ARG NPM_SHA512=668bfc2a16a63677a22dd10bb63e5800bb4d9895b82f87c22d3ce37e9cd71b6c3a3121dc7f453181d94ae6e9680ae92c593fbb986514ef08bbf5c3ba46a8af3e
+RUN set -eu; \
+    curl -fsSL "https://registry.npmjs.org/npm/-/npm-${NPM_VERSION}.tgz" -o /tmp/npm.tgz; \
+    echo "${NPM_SHA512}  /tmp/npm.tgz" | sha512sum -c -; \
+    rm -rf /usr/local/lib/node_modules/npm; \
+    mkdir /usr/local/lib/node_modules/npm; \
+    tar -xzf /tmp/npm.tgz -C /usr/local/lib/node_modules/npm --strip-components=1; \
+    rm /tmp/npm.tgz; \
+    rm -rf /opt/yarn-* /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+        /usr/local/lib/node_modules/corepack /usr/local/bin/corepack; \
+    test "$(npm --version)" = "${NPM_VERSION}"
+# npm (through 12.x) bundles postcss-selector-parser 7.1.4, which carries a
+# fixed advisory (CVE-2026-104844, fixed in 7.1.6) that no npm release has
+# adopted. npm's ci path requires the module, so upgrade the bundled copy in
+# place to 7.1.6 (identical runtime deps cssesc/util-deprecate, already present)
+# and verify its published sha512 integrity.
+ARG PCSS_VERSION=7.1.6
+ARG PCSS_SHA512=eea0123f384a17697628b6e8459bb1f0209344c746895d3cbd69b22b33f3db6a99ed98d004e798eeb37336808b49489fb49ec752ad061111e6c70fedd1d09d33
+RUN set -eu; \
+    curl -fsSL "https://registry.npmjs.org/postcss-selector-parser/-/postcss-selector-parser-${PCSS_VERSION}.tgz" -o /tmp/pcss.tgz; \
+    echo "${PCSS_SHA512}  /tmp/pcss.tgz" | sha512sum -c -; \
+    pcss=/usr/local/lib/node_modules/npm/node_modules/postcss-selector-parser; \
+    rm -rf "$pcss"; mkdir -p "$pcss"; \
+    tar -xzf /tmp/pcss.tgz -C "$pcss" --strip-components=1; \
+    rm /tmp/pcss.tgz; \
+    test "$(node -p "require('$pcss/package.json').version")" = "${PCSS_VERSION}"
 # This image's offline cache is an APTL-owned build integration. Resolve the
 # exact compatible pack through the normal acquisition/artifact validators;
 # retain dependency cache + identity evidence, never a second runtime source.
@@ -28,5 +65,9 @@ RUN set -eu; \
             --include=dev --ignore-scripts --no-audit --no-fund; \
     done; \
     rm -rf /opt/aptl/npm-source /tmp/aptl-cache-src /tmp/aptl-cache-deps /opt/aptl/npm-cache-pack
+# Ship no private keys; each container generates its own at boot (issue #1193).
+COPY containers/_host-identity /tmp/aptl-host-identity
+RUN sh /tmp/aptl-host-identity/install.sh && rm -rf /tmp/aptl-host-identity
+
 STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]

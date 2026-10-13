@@ -149,6 +149,18 @@ class TestExperimentSettings:
             "claude-sonnet-4-5-20250929"
         )
         assert settings.participant_models.model_for("codex") == "gpt-5-nano-2025-08-07"
+        assert (
+            ExperimentSettings(
+                participant_models={"claude": "claude-haiku-4-5@20251001"}
+            ).participant_models.model_for("claude")
+            == "claude-haiku-4-5@20251001"
+        )
+        assert (
+            ExperimentSettings(
+                participant_models={"claude": "claude-sonnet-5"}
+            ).participant_models.model_for("claude")
+            == "claude-sonnet-5"
+        )
         default_models = ExperimentSettings().participant_models
         with pytest.raises(ValueError, match="not configured"):
             default_models.model_for("codex")
@@ -165,6 +177,7 @@ class TestExperimentSettings:
             "auto",
             "sonnet",
             "claude-sonnet-4-5",
+            "claude-haiku-4-5@latest",
             "gpt-4o",
             "gpt-5.2-codex",
             "bad model",
@@ -205,6 +218,20 @@ class TestExperimentSettings:
 
         with pytest.raises(ValidationError):
             ExperimentSettings(participant_models={provider: model})
+
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "claude-haiku-4-5@latest",
+            "claude-haiku-4-5@2025100",
+            "claude-haiku-4-5@20251001/other",
+        ],
+    )
+    def test_rejects_nonimmutable_vertex_model_ids(self, model):
+        from aptl.core.config import ExperimentSettings
+
+        with pytest.raises(ValidationError):
+            ExperimentSettings(participant_models={"claude": model})
 
     def test_participant_credential_sources_are_explicit_and_provider_closed(self):
         from aptl.core.config import ExperimentSettings

@@ -2,10 +2,12 @@
 
 ## Status
 
-accepted
+superseded in part by ADR-060 and ADR-061
 
 Implemented by issue #868. Software integration verification is distinct
 from signed appliance qualification and offline VM boot evidence.
+The VM-seat browser and host-MCP access decisions below are superseded by
+ADR-061 for future seat images; this record describes the earlier contract.
 This partially supersedes ADR-049's guest-agent-only access
 policy and developer-only restriction on ordinary local use. ADR-000 keeps
 the accepted historical record immutable. All other ADR-049 containment,
@@ -19,8 +21,8 @@ capture, signing, and qualification requirements remain binding.
 
 Issue #868 makes the packaged full TechVault deployment the shared input to
 normal local use, the participant workbench, and optional appliance delivery.
-It must merge before #1022 builds and qualifies real seats. There is no Ground
-Control requirement; the issue is the acceptance contract.
+It must merge before #1022 builds and qualifies real seats. There is no formal
+requirement; the issue is the acceptance contract.
 
 Before this change, the contracts could not satisfy this by changing a scenario name:
 

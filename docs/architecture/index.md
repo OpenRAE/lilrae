@@ -5,7 +5,7 @@
 ```mermaid
 flowchart TD
     subgraph "Host System"
-        H[Host Ports<br/>443, 2027, 8443, 9000, 9001, 9200, 55000, ...]
+        H[Host Ports<br/>443, 2023, 2024, 8443, 9000, 9001, 9200, 55000, ...]
     end
 
     subgraph "Security Network 172.20.0.0/24"
@@ -100,17 +100,29 @@ flowchart TD
 |------|-----------|---------|
 | 443 | aptl-wazuh-dashboard:5601 | Wazuh web UI |
 | 514/udp, 1514, 1515 | aptl-wazuh-manager | Syslog + agent enrollment |
-| 2027 | aptl-reverse:22 | Reverse engineering SSH |
+| 2023 | aptl-operator-ssh-kali, relaying to kali:22 | Operator SSH to Kali |
+| 2024 | aptl-operator-ssh-soc-workstation, relaying to soc-workstation:22 | Operator SSH to the SOC workstation |
 | 3443, 3001 | aptl-shuffle-frontend | Shuffle SOAR UI |
-| 8080 | aptl-webapp:8080 | TechVault web app |
 | 8443 | aptl-misp:443 | MISP UI |
 | 9000 | aptl-thehive:9000 | TheHive UI |
 | 9001 | aptl-cortex:9001 | Cortex UI |
 | 9200 | aptl-wazuh-indexer:9200 | OpenSearch API |
 | 55000 | aptl-wazuh-manager:55000 | Wazuh API |
 
-The victim and kali containers publish no host ports; use
-`aptl container shell aptl-victim` / `aptl container shell aptl-kali`.
+These are the host publications of the realized TechVault pack plus the two
+operator-access relays, which LilRAE adds for the pack's declared interactive
+access. Every one binds `127.0.0.1`. When a default port is in use,
+`aptl lab start` publishes on a free port and prints it; the matching `APTL_HP_*`
+variable pins a port. The web app publishes no host port. A project-tree
+scenario that starts the root `docker-compose.yml` with the `reverse` or
+`mail` profile also publishes the reverse-engineering workstation's SSH on
+2027 and the mail server on 25, 143, 587 and 993, on loopback as well.
+
+The victim and kali nodes publish no host ports. Use
+`aptl container shell aptl-victim` for a shell on the victim. Reach Kali
+through the red-team MCP server or the operator-access relay. While session
+capture runs, `aptl container shell aptl-kali` is refused (see
+[Kali Red Team Container](../components/kali-redteam.md#host-access)).
 
 ## Data Flow
 
@@ -156,6 +168,9 @@ The victim and kali containers publish no host ports; use
 
 ## Preflights
 
+- [Issue #955 Generic Systemd Substrate Privilege](issue-955-systemd-substrate-privilege-preflight.md)
+- [Issue #958 Execution Boundary](issue-958-execution-boundary-preflight.md)
+- [Issue #601 Participant Demonstration](issue-601-participant-demonstration-preflight.md)
 - [Issue #851 First-Time User Documentation](issue-851-first-time-user-docs-preflight.md)
 - [Issue #880 TechVault Env-Pack Consumption](issue-880-techvault-env-pack-consumption-preflight.md)
 - [Issue #980 Pack Adapter Install Seam](issue-980-pack-adapter-install-seam-preflight.md)

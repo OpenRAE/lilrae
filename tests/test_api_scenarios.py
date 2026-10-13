@@ -30,12 +30,12 @@ def test_list_reports_validated_acquired_pack_identity(api_client, tmp_path):
 
     assert response.status_code == 200
     body = response.json()
-    assert [item["id"] for item in body] == ["techvault"]
-    assert body[0]["name"] == "TechVault"
+    assert [item["id"] for item in body] == ["techvault-participant-study"]
+    assert body[0]["name"] == "TechVault Participant Study"
     assert body[0]["pack"] == {
-        "id": "techvault",
-        "version": "0.1.0",
-        "set_digest": "sha256:db98a9daa62a092a0c6b001217027d7f4ad489889e95d01050e77f148e8ef29b",
+        "id": "techvault-participant-study",
+        "version": "0.1.1",
+        "set_digest": "sha256:03baae367b452527be4affd7f29369bf5aa32a2a3c1c82f73bfbc759d642af14",
         "maturity": "built",
     }
     assert body[0]["validation"]["valid"] is True
@@ -46,13 +46,13 @@ def test_list_reports_validated_acquired_pack_identity(api_client, tmp_path):
 
 
 def test_detail_projects_same_validated_identity(api_client, tmp_path):
-    response = api_client.get("/api/scenarios/techvault")
+    response = api_client.get("/api/scenarios/techvault-participant-study")
 
     assert response.status_code == 200
     body = response.json()
-    assert body["id"] == "techvault"
-    assert body["pack"]["id"] == "techvault"
-    assert body["pack"]["version"] == "0.1.0"
+    assert body["id"] == "techvault-participant-study"
+    assert body["pack"]["id"] == "techvault-participant-study"
+    assert body["pack"]["version"] == "0.1.1"
     assert body["pack"]["maturity"] == "built"
     assert body["blocks"][0]["type"] == "narrative"
     assert ".aptl/staged-packs" not in response.text

@@ -16,69 +16,22 @@ release can break it.
 
 from __future__ import annotations
 
-import importlib.resources as ir
 import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
+from tests.techvault_pack import realize_techvault_pack
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_TECHVAULT_FLAG_PARAMETERS = {
-    f"flag_{host}_{level}": f"{host}-{level}"
-    for host in ("victim", "workstation", "webapp", "fileshare", "ad")
-    for level in ("user", "root")
-}
-
-
-def _pack_root() -> Path:
-    return Path(str(ir.files("raes_env_packs") / "resources" / "packs" / "techvault"))
-
-
-def _realize_pack(tmp_path):
-    from aptl.backends.raes import (
-        RuntimeManager,
-        create_aptl_runtime_target,
-        parse_sdl_file,
-    )
-    from aptl.backends.raes_realization import interpret_provisioning_plan
-    from aptl.core.config import AptlConfig
-    from aptl.core.scenario_bundle import env_pack_bundle
-
-    bundle = env_pack_bundle(tmp_path, identity="techvault", source_pack=_pack_root())
-    config = AptlConfig(
-        lab={"name": "tv"},
-        containers={
-            "wazuh": True,
-            "soc": True,
-            "enterprise": True,
-            "victim": True,
-            "kali": True,
-            "fileshare": True,
-            "dns": True,
-        },
-    )
-    target = create_aptl_runtime_target(
-        project_dir=PROJECT_ROOT, config=config, backend=MagicMock(), bundle=bundle
-    )
-    scenario = parse_sdl_file(bundle.sdl_path)
-    plan = RuntimeManager(target).plan(
-        scenario,
-        parameters=_TECHVAULT_FLAG_PARAMETERS,
-    )
-    return interpret_provisioning_plan(
-        plan=plan.provisioning,
-        config=config,
-        bundle=bundle,
-        component_root=PROJECT_ROOT,
-    )
 
 
 @pytest.fixture(scope="module")
 def techvault_realization(tmp_path_factory):
     """Run the released pack's filesystem-backed planner once per module."""
 
-    return _realize_pack(tmp_path_factory.mktemp("techvault-realization"))
+    return realize_techvault_pack(tmp_path_factory.mktemp("techvault-realization"))
 
 
 @pytest.mark.integration
@@ -218,7 +171,7 @@ def test_generated_compose_covers_image_nodes_networks_and_ordering(
         "published-ports",
         "runtime-environment",
     }
-    # ...image-free base-OS nodes are realized by the generic materializer, not here.
+    # ...base-container-materialized nodes are realized by the generic materializer, not here.
     assert "webapp" not in services
     assert "workstation" not in services
     ad = next(node for node in realization.nodes if node.name == "ad")
@@ -529,10 +482,10 @@ def test_network_namespace_share_renders_network_mode_and_suppresses_networks():
     assert "hostname" not in service
 
 
-def test_image_free_consumers_are_excluded_from_the_compose_stateful_override():
-    """Image-free nodes get artifacts via the materializer, not Compose mounts.
+def test_base_container_consumers_are_excluded_from_the_compose_stateful_override():
+    """Base-container-materialized nodes get artifacts via the materializer, not Compose mounts.
 
-    A generated-artifact consumer on an image-free node has no Compose service to
+    A generated-artifact consumer on a base-container-materialized node has no Compose service to
     bind into, so including it in the stateful override makes the effective-model
     check flag a declared mount no service can carry. It must be excluded (#875).
     """
@@ -605,7 +558,7 @@ def test_image_free_consumers_are_excluded_from_the_compose_stateful_override():
 
     services = stateful_override_payload(Path("/tmp"), "proj", spec)["services"]
     assert "imagenode" in services  # image node keeps its Compose mount
-    assert "freenode" not in services  # image-free node does not
+    assert "freenode" not in services  # base-container-materialized node does not
 
 
 def test_image_node_content_is_delivered_as_a_bind_mount_under_realization_root(
@@ -613,7 +566,7 @@ def test_image_node_content_is_delivered_as_a_bind_mount_under_realization_root(
 ):
     """Config content for an image node is bound in, resolved under the engine root.
 
-    Image-free nodes get content via the generic materializer; an image node is a
+    Base-container-materialized nodes get content via the generic materializer; an image node is a
     Compose service, so its declared content is delivered as a read-only bind
     mount of the resolved file, written under realization_root, never the pack
     (issue #875).
@@ -864,7 +817,7 @@ def test_operational_config_is_empty_for_a_bare_node():
 
 
 @pytest.mark.integration
-def test_base_os_nodes_use_the_released_image_free_materialization(
+def test_base_os_nodes_use_the_released_base_container_materialization(
     techvault_realization,
 ):
     """The 6.0 pack declares these nodes as state, not APTL component builds."""
@@ -1298,8 +1251,8 @@ def test_content_with_no_resolvable_bytes_produces_no_mount(tmp_path):
     assert override == {"services": {}}
 
 
-def test_content_targeting_an_image_free_node_is_left_to_the_materializer(tmp_path):
-    """Only image nodes get Compose bind mounts; image-free nodes get files.
+def test_content_targeting_a_base_container_node_is_left_to_the_materializer(tmp_path):
+    """Only image nodes get Compose bind mounts; base-container-materialized nodes get files.
 
     Emitting a mount for a node with no Compose service would declare a mount no
     service can carry, which the effective-model check then flags.

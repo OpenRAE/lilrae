@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import zipfile
@@ -64,15 +63,14 @@ class Operations:
 def _build_wheel(output: Path) -> Path:
     """Build the distribution with the repository's locked build toolchain."""
 
-    if shutil.which("uv") is None:
-        pytest.skip("uv is required for the repository's locked build proof")
     completed = subprocess.run(
         [
-            "uv",
+            sys.executable,
+            "-m",
             "build",
             "--wheel",
-            "--no-build-isolation",
-            "--out-dir",
+            "--no-isolation",
+            "--outdir",
             str(output),
             str(REPO_ROOT),
         ],

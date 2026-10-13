@@ -9,15 +9,11 @@
 # ~/.bashrc). This script rebuilds a clean lab from those baked images so every
 # clone is deterministic and free of any lab state captured into the AMI.
 #
-# It is idempotent and safe to re-run. `aptl lab start` internally runs the
-# realization (with the certs.py root-owned-cert-dir self-heal) and then
-# scripts/seed-prime.sh, which seeds SOAR content and applies the remaining
-# MISP/Redis, Suricata, and Kali capture-wrapper fixups.
-# The released env-pack owns Shuffle's runtime contract. Kali readiness may report
-# "degraded" DURING lab start because the kali wrapper is relaxed by seed-prime
-# which runs just after the readiness probe; kali is fully reachable once this
-# script finishes. That degraded line is cosmetic -- verification below is the
-# source of truth.
+# It is idempotent and safe to re-run. `aptl lab start` runs the realization
+# (with the certs.py self-heal for a root-owned cert directory) and then
+# scripts/seed-prime.sh, which seeds the SOC content: MISP, Shuffle, and the
+# TheHive and Cortex API keys. The released env-pack owns Shuffle's runtime
+# contract. The verification below is the source of truth.
 # =============================================================================
 set -uo pipefail
 
@@ -26,7 +22,7 @@ LOG=/tmp/provision-range.log
 exec > >(tee -a "$LOG") 2>&1
 echo "=== provision-range starting $(date -u) ==="
 
-cd "$PROJECT_DIR"
+cd "$PROJECT_DIR" || exit 1
 
 # Elasticsearch/OpenSearch mmap requirement (persisted for reboots).
 echo 'vm.max_map_count=262144' | sudo tee /etc/sysctl.d/99-aptl.conf >/dev/null
@@ -60,11 +56,9 @@ echo "--- set RDP password ---"
 echo "${APTL_RDP_USER:-ubuntu}:${RANGE_PASS}" | sudo chpasswd || true
 sudo passwd -u "${APTL_RDP_USER:-ubuntu}" >/dev/null 2>&1 || true
 
-# 0. Free UDP :5353 for the aptl `dns` node. The RDP desktop pulls in
-#    avahi-daemon (mDNS on 5353); on a fresh boot it wins the port before the
-#    lab starts, so the dns container cannot bind and the whole realization
-#    fails (BaseSubstrateOp on node dns). avahi is not needed here -- mask it.
-echo "--- free :5353 (mask avahi) ---"
+# 0. The RDP desktop pulls in avahi-daemon (mDNS). The range host does not
+#    need it -- mask it.
+echo "--- mask avahi ---"
 sudo systemctl disable --now avahi-daemon.service avahi-daemon.socket 2>/dev/null || true
 sudo systemctl mask avahi-daemon.service avahi-daemon.socket 2>/dev/null || true
 
@@ -72,7 +66,7 @@ sudo systemctl mask avahi-daemon.service avahi-daemon.socket 2>/dev/null || true
 echo "--- clean-slate baked lab state ---"
 pkill -f 'aptl lab start' 2>/dev/null || true
 sleep 2
-docker rm -f $(docker ps -aq --filter name=aptl-) 2>/dev/null || true
+docker ps -aq --filter name=aptl- | xargs -r docker rm -f 2>/dev/null || true
 docker network ls --format '{{.Name}}' | grep -E '^aptl' | xargs -r docker network rm 2>/dev/null || true
 docker volume ls --format '{{.Name}}' \
     | grep -Ei 'aptl|misp|shuffle|thehive|wazuh|cortex|tempo|grafana|kali|suricata|opensearch' \
@@ -90,13 +84,13 @@ echo "--- ensure SOC certs ---"
 python -c "from pathlib import Path; from aptl.core.soc_ca import ensure_soc_certs; r=ensure_soc_certs(Path('$PROJECT_DIR')); print('soc_certs:', 'generated' if r.generated else 'present', r.certs_dir)"
 
 # 3. Build the lab. This realizes the stack (certs self-heal included) and runs
-#    seed-prime.sh (SOAR seeding plus the remaining fixups).
+#    seed-prime.sh (SOC seeding).
 echo "--- aptl lab start ---"
-aptl lab start || echo "WARN: aptl lab start returned non-zero (kali readiness 'degraded' is expected pre-seed; verifying below)"
+aptl lab start || echo "WARN: aptl lab start returned non-zero; verifying below"
 
-# 4. Ensure seeding and the remaining fixups completed (seed-prime runs inside
-#    lab start, but re-run idempotently if lab start aborted before reaching it).
-echo "--- re-assert env-pack fixups (idempotent) ---"
+# 4. Ensure seeding completed (seed-prime runs inside lab start, but re-run it
+#    idempotently if lab start aborted before reaching it).
+echo "--- re-run SOC seeding (idempotent) ---"
 bash scripts/seed-prime.sh || echo "WARN: seed-prime reported issues"
 
 # 4b. Per-range identity + agent desktop. Re-assert the passphrase resolved
@@ -143,9 +137,17 @@ fi
 echo "--- verify ---"
 UP=$(docker ps -q --filter name=aptl- | wc -l)
 echo "containers up: $UP"
-KALI=$(docker exec -u root aptl-kali bash -c 'unset APTL_CAPTURE_CAPABILITY; export SSH_ORIGINAL_COMMAND="echo KALI_OK"; bash /usr/local/bin/aptl-wrap-shell.sh' 2>/dev/null | tail -1)
+# The backend names each lab container per workspace (aptl-w<12 hex>-<name>).
+lab_container() {
+    docker ps --format '{{.Names}}' | grep -E "^aptl-(w[0-9a-f]{12}-)?$1\$" | head -1
+}
+KALI_CTR=$(lab_container kali)
+SURI_CTR=$(lab_container suricata)
+KALI=""
+[ -n "$KALI_CTR" ] && KALI=$(docker exec "$KALI_CTR" sh -c 'echo KALI_OK' 2>/dev/null | tail -1)
 echo "kali shell: ${KALI:-UNREACHABLE}"
-SURI=$(docker logs aptl-suricata 2>&1 | grep -a 'rules successfully loaded' | tail -1)
+SURI=""
+[ -n "$SURI_CTR" ] && SURI=$(docker logs "$SURI_CTR" 2>&1 | grep -a 'rules successfully loaded' | tail -1)
 echo "suricata: ${SURI:-no-rule-load-line}"
 BADCTRS=$(docker ps -a --filter name=aptl- --format '{{.Names}} {{.Status}}' | grep -iE 'unhealthy|Exited|Restarting' || true)
 [ -n "$BADCTRS" ] && echo "UNHEALTHY/EXITED:" && echo "$BADCTRS"

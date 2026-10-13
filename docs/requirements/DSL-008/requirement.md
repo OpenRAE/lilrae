@@ -6,7 +6,7 @@ type: FUNCTIONAL
 priority: MUST
 wave: 1
 created_at: 2026-03-24T02:44:23.438740Z
-updated_at: 2026-09-04T00:00:00.000000Z
+updated_at: 2026-10-09T00:00:00.000000Z
 ---
 
 # DSL-008: APTL Realization of ACES Infrastructure Topology
@@ -19,8 +19,15 @@ The APTL backend shall consume ACES parser/compiler output and declared topology
 
 After ADR-035 and SCN-010, ACES SDL owns scenario authoring and topology declaration. APTL's Wave 1 responsibility is the backend realization contract: map ACES runtime/provisioning content to the local Docker lab without reviving aptl.core.sdl or a TechVault preset shortcut.
 
+NOT DEPRECATED 2026-10-09: ADR-035 deprecates DSL-002 to DSL-009 as requirements on the retired in-tree DSL. This record stays ACTIVE because its statement now covers how the backend realizes RAES-declared topology, not a LilRAE scenario DSL. #422 (PR #549) closed its last clause, declared node health, and made it ACTIVE on 2026-06-25. See GitHub issue #422.
+
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `src/aptl/core/deployment/_compose_network_realization.py` (Shared declared-network reconciliation and fresh endpoint readback across startup routes)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/deployment/_compose_realization_networks.py` (Typed attachment resolution and required address/alias observation)
+- TESTS → TEST `tests/test_compose_network_readback.py` (Endpoint drift, both startup routes and real default/bounded/curated SDL lowering)
+- TESTS → TEST `scripts/ci/assert_boot_realization.py` (Independent installed-wheel declared-network endpoint observation)
+- TESTS → TEST `tests/test_boot_realization_gate.py` (Missing endpoint, IPv4 and alias rejection in the installed-wheel gate)
 - DOCUMENTS → GITHUB_ISSUE `#422` (DSL-008: Infrastructure Topology Declaration in Scenario DSL)
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/techvault_live_gate.py` (Live conformance gate: validate the running lab satisfies ACES declarations)
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/_live_gate_readiness.py` (Node-readiness / declared-health conformance comparison against the running range)
@@ -50,7 +57,7 @@ After ADR-035 and SCN-010, ACES SDL owns scenario authoring and topology declara
 - IMPLEMENTS → CODE_FILE `src/aptl/core/deployment/_compose_model_realization.py` (Validated startup overlay in the generated Compose file set)
 - IMPLEMENTS → CODE_FILE `src/aptl_techvault/startup.py` (TechVault-specific health probes through the adapter seam)
 - TESTS → TEST `tests/test_techvault_startup_adapter.py` (Content-qualified startup policy and undeclared-edge rejection)
-- TESTS → TEST `tests/test_imagefree_admission_integration.py` (Product-neutral real-Docker materialization envelope)
+- TESTS → TEST `tests/test_base_container_admission_integration.py` (Product-neutral real-Docker materialization envelope)
 - IMPLEMENTS → CODE_FILE `src/aptl/backends/_raes_backend_implementation_catalog.py` (Redis runtime config staged outside a publicly writable directory)
 - IMPLEMENTS → CODE_FILE `src/aptl_techvault/log_sources.py` (Native log configuration staged under a root-owned guest path)
 - TESTS → TEST `tests/test_misp_redis_realization_contract.py` (Credential-free argv and protected Redis staging path)

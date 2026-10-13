@@ -14,6 +14,7 @@ from aptl.appliance.seat.lifecycle import (
     _establish_host_access,
     _ensure_overlay,
     _fail_closed_start,
+    _require_guest_publication,
     _seat_paths,
     image_requires_host_access,
     reconcile_seat_after_reboot,
@@ -146,7 +147,7 @@ def test_host_access_waits_a_bounded_time_for_the_guest(tmp_path: Path) -> None:
     assert 0 < timeout <= options.readiness_timeout_seconds
 
 
-def _resolved_image(tmp_path: Path, policy=None):
+def _resolved_image(tmp_path: Path, policy=None, *, desktop_modes: bool = False):
     """Build a resolved seat image with a real disk file on disk."""
 
     from aptl.appliance.seat.image import SeatImageReference
@@ -163,7 +164,9 @@ def _resolved_image(tmp_path: Path, policy=None):
     disk.write_bytes(b"qcow2")
     config = SeatImageConfig.model_validate(
         {
-            "schema_version": "aptl.seat-image/v1",
+            "schema_version": "aptl.seat-image/v2" if desktop_modes else "aptl.seat-image/v1",
+            **({"desktop_privilege_contract": "aptl.desktop-privileges/v1"}
+               if desktop_modes else {}),
             "resources": {
                 "architecture": "x86_64",
                 "vcpus": 8,
@@ -371,6 +374,47 @@ def test_stage_persists_seat_record(tmp_path: Path) -> None:
     # The launcher materializes the exact policy bytes the gate binds to.
     assert (seat_root / "launch" / "boundary-policy.json").exists()
     assert load_seat_record(seat_root) == record
+
+
+def test_new_image_requires_mode_before_persisting_any_seat_state(tmp_path: Path) -> None:
+    seat_root = tmp_path / "seat"
+    image = _resolved_image(tmp_path, desktop_modes=True)
+    with patch("aptl.appliance.seat.lifecycle._load_seat_image", return_value=image):
+        with pytest.raises(SeatLauncherError) as exc:
+            stage_seat(
+                seat_root, seat_id="seat-01",
+                image_reference="ghcr.io/owner/seat:latest",
+                image_cache_dir=tmp_path / "image-cache",
+            )
+    assert exc.value.code == "invalid-desktop-mode"
+    assert not (seat_root / "seat-state.json").exists()
+    assert not (seat_root / "launch/appliance-launch.json").exists()
+
+
+def test_event_mode_is_bound_to_immutable_launch_descriptor(tmp_path: Path) -> None:
+    from aptl.appliance.seat.launch_descriptor import SeatLaunchDescriptor
+    from aptl.utils.strict_json import model_validate_json_strict
+
+    seat_root = tmp_path / "seat"
+    image = _resolved_image(tmp_path, desktop_modes=True)
+    with (
+        patch("aptl.appliance.seat.lifecycle._load_seat_image", return_value=image),
+        patch("aptl.appliance.seat.lifecycle.require_host_prerequisites"),
+        patch("aptl.appliance.seat.lifecycle.retain_image"),
+    ):
+        record = stage_seat(
+            seat_root, seat_id="seat-01",
+            image_reference="ghcr.io/owner/seat:latest",
+            image_cache_dir=tmp_path / "image-cache",
+            desktop_mode="event",
+        )
+    descriptor = model_validate_json_strict(
+        SeatLaunchDescriptor, (seat_root / "launch/appliance-launch.json").read_bytes()
+    )
+    assert descriptor.schema_version == "aptl.appliance-launch/v3"
+    assert descriptor.desktop_mode == "event"
+    assert record.launch_descriptor_digest.startswith("sha256:")
+    assert status_seat(seat_root).desktop_mode == "event"
 
 
 def test_stage_persists_explicit_outer_mapping(tmp_path: Path) -> None:
@@ -793,6 +837,69 @@ def test_status_reports_vm_not_running_for_ready_seat(tmp_path: Path) -> None:
         projection = status_seat(seat_root)
 
     assert projection.diagnostics == ("vm-not-running",)
+
+
+def test_status_reports_gateway_failure_even_when_vm_pid_is_live(tmp_path: Path) -> None:
+    seat_root = tmp_path / "seat"
+    record = SeatRecord(
+        schema_version="aptl.seat-record/v2",
+        seat_id="seat-01", instance_id="a" * 32, generation=1,
+        image_reference="ghcr.io/owner/seat:latest",
+        image_digest="sha256:" + "c" * 64,
+        launch_descriptor_digest="sha256:" + "a" * 64,
+        overlay_path="instances/seat-01.qcow2",
+        host_observation_id="sha256:" + "b" * 64,
+        lifecycle_state="ready", taint_state="clean", host_boot_id="boot-1",
+        mappings=(BoundaryEndpoint(
+            audience="participant", address="127.0.0.1", port=8080,
+            protocol="tcp", guest_address="127.0.0.1", guest_port=8080,
+        ),),
+    )
+    persist_seat_record(seat_root, record)
+
+    with (
+        patch("aptl.appliance.seat.lifecycle.read_vm_pid", return_value=123),
+        patch("aptl.appliance.seat.lifecycle.probe_desktop_publication", return_value=False),
+    ):
+        projection = status_seat(seat_root)
+
+    assert projection.diagnostics == ("desktop-unavailable",)
+
+
+def test_existing_web_image_keeps_its_browser_readiness_path(tmp_path: Path) -> None:
+    seat_root = tmp_path / "seat"
+    token = seat_root / "access/generation-1/web-launch-token"
+    token.parent.mkdir(parents=True)
+    token.write_text("legacy-token")
+    record = SeatRecord(
+        schema_version="aptl.seat-record/v2",
+        seat_id="seat-01", instance_id="a" * 32, generation=1,
+        image_reference="ghcr.io/owner/seat:old",
+        image_digest="sha256:" + "c" * 64,
+        launch_descriptor_digest="sha256:" + "a" * 64,
+        overlay_path="instances/seat-01.qcow2",
+        host_observation_id="sha256:" + "b" * 64,
+        lifecycle_state="starting", taint_state="clean", host_boot_id="boot-1",
+        mappings=(
+            BoundaryEndpoint(
+                audience="participant", address="127.0.0.1", port=13000,
+                protocol="tcp", guest_address="127.0.0.1", guest_port=3000,
+            ),
+            BoundaryEndpoint(
+                audience="recovery", address="127.0.0.1", port=18400,
+                protocol="tcp", guest_address="127.0.0.1", guest_port=8400,
+            ),
+        ),
+    )
+    with (
+        patch("aptl.appliance.seat.lifecycle.read_vm_pid", return_value=123),
+        patch("aptl.appliance.seat.lifecycle.wait_for_web_publications") as web,
+        patch("aptl.appliance.seat.lifecycle.wait_for_desktop_publication") as desktop,
+    ):
+        _require_guest_publication(seat_root, record, StartSeatOptions(), 123)
+
+    web.assert_called_once()
+    desktop.assert_not_called()
 
 
 def test_stop_seat_requires_existing_record(tmp_path: Path) -> None:

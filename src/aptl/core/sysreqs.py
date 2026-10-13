@@ -36,7 +36,26 @@ class ToolReqResult:
     install_hint: str = ""
 
 
-def check_max_map_count(minimum: int = _DEFAULT_MIN_MAP_COUNT) -> SysReqResult:
+def docker_mode_for_containment(host_containment: str | None) -> str:
+    """Map an observed execution boundary to the sysctl owner it implies.
+
+    Only a native Linux engine on this host reads this host's
+    ``vm.max_map_count``; a Docker VM manages its own, and anything else is
+    unknown.
+    """
+
+    if host_containment == "native-docker":
+        return hostenv.DOCKER_LINUX_NATIVE
+    if host_containment == "docker-vm-unverified":
+        return hostenv.DOCKER_VM
+    return hostenv.DOCKER_UNKNOWN
+
+
+def check_max_map_count(
+    minimum: int = _DEFAULT_MIN_MAP_COUNT,
+    *,
+    selected_mode: str | None = None,
+) -> SysReqResult:
     """Check that vm.max_map_count meets the required minimum.
 
     OpenSearch (used by Wazuh Indexer) requires vm.max_map_count >= 262144.
@@ -49,9 +68,16 @@ def check_max_map_count(minimum: int = _DEFAULT_MIN_MAP_COUNT) -> SysReqResult:
         SysReqResult indicating whether the check passed, plus current
         and required values.
     """
-    mode = hostenv.docker_mode()
+    # Lab startup supplies the selected backend's observed mode. Standalone
+    # callers retain the historical ambient probe for compatibility.
+    mode = selected_mode if selected_mode is not None else hostenv.docker_mode()
     if mode == hostenv.DOCKER_LINUX_NATIVE:
         result = _check_linux_native_max_map_count(minimum)
+    elif mode == hostenv.DOCKER_UNKNOWN:
+        result = _not_applicable_result(
+            minimum,
+            "Selected Docker daemon's sysctl ownership is unknown",
+        )
     else:
         result = _not_applicable_result(
             minimum,

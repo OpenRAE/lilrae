@@ -1,9 +1,9 @@
-site_name: APTL - Advanced Purple Team Lab
+site_name: LilRAE (formerly APTL)
 site_description: A local Docker-based purple team lab infrastructure with Wazuh SIEM, containerized victim machines, and AI-powered red team operations
-site_author: APTL Team
-site_url: https://brad-edwards.github.io/aptl/
-repo_url: https://github.com/Brad-Edwards/aptl
-repo_name: Brad-Edwards/aptl
+site_author: LilRAE maintainers
+site_url: https://openrae.github.io/lilrae/
+repo_url: https://github.com/OpenRAE/lilrae
+repo_name: OpenRAE/lilrae
 
 theme:
   name: material
@@ -73,7 +73,8 @@ nav:
   - Lab Guide:
     - Overview: getting-started/index.md
     - Prerequisites: getting-started/prerequisites.md
-    - Install APTL: getting-started/installation.md
+    - Install LilRAE: getting-started/installation.md
+    - Install a Scenario Pack: getting-started/installing-packs.md
     - Run Your First Lab: getting-started/quick-start.md
   - Interfaces:
     - CLI: reference/cli.md
@@ -85,6 +86,8 @@ nav:
   - Workshop:
     - Playbook: workshop/playbook.md
     - Lab Walkthrough: workshop/walkthrough.md
+  - Development:
+    - Coding Standards: CODING_STANDARDS.md
   - Architecture:
     - Overview: architecture/index.md
     - Networking: architecture/networking.md
@@ -93,11 +96,13 @@ nav:
     - RNG-001 Ephemeral Environments Preflight: architecture/rng-001-ephemeral-environments-preflight.md
     - DEP-003 Ephemeral Lifecycle Policy Preflight: architecture/dep-003-ephemeral-lifecycle-preflight.md
     - GRC Boundary Surface Vocabulary Preflight: architecture/grc-boundary-surface-vocabulary-preflight.md
+    - "Issue #958 Execution Boundary Preflight": architecture/issue-958-execution-boundary-preflight.md
     - "Issue #851 First-Time User Documentation Preflight": architecture/issue-851-first-time-user-docs-preflight.md
     - "Issue #557 Participant Implementation Binding Preflight": architecture/issue-557-participant-implementation-binding-preflight.md
     - "Issue #821 In-Appliance Participant Workbench Preflight": architecture/issue-821-participant-workbench-preflight.md
     - "Issue #823 Versioned Disposable Lab Appliance Preflight": architecture/issue-823-versioned-disposable-appliance-preflight.md
     - "Issue #1022 Appliance Seat Delivery Preflight": architecture/issue-1022-appliance-seat-delivery-preflight.md
+    - "Issue #1186 Seat Privilege Preflight": architecture/issue-1186-seat-privilege-preflight.md
     - "Issue #845 RAES Hard-Rename Preflight": architecture/issue-845-raes-hard-rename-preflight.md
     - "Issue #934 APTL-To-LilRAE Rename Boundary Preflight": architecture/issue-934-rename-boundary-preflight.md
     - "Issue #592 Scenario-Pack Terminology Preflight": architecture/issue-592-scenario-pack-terminology-preflight.md
@@ -137,6 +142,7 @@ nav:
     - MCP Smoke-Test Protocol: components/mcp-smoke-test-protocol.md
     - Participant Workbench: components/participant-workbench.md
     - Appliance Network Boundary: components/appliance-boundary.md
+    - Node Realization Routes: components/node-realization.md
   - Scenarios:
     - Authoring Boundary: sdl/index.md
     - Curated RAES Variants: sdl/techvault-curated-variants.md
@@ -148,7 +154,6 @@ nav:
     - TechVault Live Validation Gate: raes/techvault-live-validation-gate.md
     - TechVault Curated Live Validation Preflight: raes/techvault-curated-live-validation-preflight.md
     - TechVault Curated Live Validation Gate: raes/techvault-curated-live-validation-gate.md
-    - Bounded Participant Agency Readiness: raes/bounded-participant-agency-readiness.md
   - Testing:
     - Platform Pull-Request Gates: testing/platform-pr-gates.md
     - Boot Realization Coverage: testing/boot-realization-coverage.md
@@ -212,7 +217,7 @@ nav:
     - ADR-037 Docker Compose Backend Cohesion: adrs/adr-037-docker-compose-backend-cohesion.md
     - ADR-038 Docs Style Lint and Published Site: adrs/adr-038-docs-style-lint-and-published-site.md
     - ADR-039 Web Control Plane Authentication: adrs/adr-039-web-control-plane-authentication.md
-    - ADR-040 Terminal SSH Host-Key Verification: adrs/adr-040-terminal-ssh-host-key-verification.md
+    - ADR-040 Terminal SSH Host-Key Verification Boundary: adrs/adr-040-terminal-ssh-host-key-verification-boundary.md
     - ADR-041 Kali Capture Sidecar Ownership Boundary: adrs/adr-041-kali-capture-sidecar-ownership-boundary.md
     - ADR-042 Sidecar-Owned PTY Master: adrs/adr-042-sidecar-owned-pty-master.md
     - ADR-043 Suricata Runtime Config Ownership Boundary: adrs/adr-043-suricata-runtime-config-ownership-boundary.md
@@ -220,7 +225,7 @@ nav:
     - ADR-045 Ephemeral Lifecycle Policy Enforcement: adrs/adr-045-ephemeral-lifecycle-policy-enforcement.md
     - ADR-046 Dynamic RAES Scenario Realization: adrs/adr-046-dynamic-raes-scenario-realization.md
     - ADR-047 RAES Experiment Admission and Trial-Plan Boundary: adrs/adr-047-raes-experiment-admission-and-trial-plan-boundary.md
-    - ADR-048 APTL Image-Free, Placement-Based Realization Envelope: adrs/adr-048-image-free-placement-realization.md
+    - ADR-048 APTL Image-Free (historical term), Placement-Based Realization Envelope: adrs/adr-048-image-free-placement-realization.md
     - ADR-049 Sealed Disposable Lab Appliance: adrs/adr-049-sealed-disposable-lab-appliance.md
     - ADR-051 Component-Level RAES Realization: adrs/adr-051-component-level-raes-realization.md
     - ADR-052 Configured Participant Credential Sourcing: adrs/adr-052-configured-participant-credential-sourcing.md
@@ -231,8 +236,11 @@ nav:
     - ADR-057 Agent Execution Compartments: adrs/adr-057-agent-execution-compartments.md
     - ADR-058 Adoption and Security Release Gates: adrs/adr-058-adoption-and-security-release-gates.md
     - ADR-059 Canonical TechVault Delivery and Host MCP Access: adrs/adr-059-canonical-techvault-delivery-and-host-mcp-access.md
+    - ADR-060 VM-Only Seat Containment: adrs/adr-060-vm-only-seat-containment.md
+    - ADR-061 Browser Desktop for VM Seats: adrs/adr-061-gateless-vm-seat-access.md
+    - ADR-062 LilRAE Name and Naming Convention: adrs/adr-062-lilrae-name-and-naming-convention.md
 
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/Brad-Edwards/aptl
+      link: https://github.com/OpenRAE/lilrae

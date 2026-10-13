@@ -99,6 +99,34 @@ The destructive stop asks for confirmation. It removes project volumes but
 does not prune the Docker daemon. Do not use `docker system prune` as APTL
 recovery: it can remove resources belonging to other projects.
 
+### `aptl lab stop -v` reports pending host cleanup
+
+After it removes the volumes, the destructive stop also clears host-side state
+that described them, such as the recorded Wazuh agent enrollment baseline. Each
+lab start records that work under `.aptl/lifecycle/`, and the installed APTL
+release finishes it, including records written by earlier releases. The
+stop reports the two failure classes separately:
+
+- `[lifecycle-docker-teardown-failed]` means Docker teardown failed. Host
+  cleanup was not attempted, because the host state still describes the
+  retained volumes. Resolve the Docker error first.
+- `[lifecycle-host-cleanup-pending]` means Docker teardown completed and the
+  volumes are gone, but the listed cleanup actions did not finish. Each entry
+  names the action, the admitted pack, the record, and a reason code.
+
+Retry with `aptl lab stop -v --yes` after resolving the cause. A repeat stop is
+safe when the Docker resources are already gone: completed actions are not
+repeated, and pending ones run again. Do not delete or edit the files under
+`.aptl/lifecycle/` to clear the error; the records are the audit trail.
+
+| Reason | Meaning and action |
+| --- | --- |
+| `provider-reset-authority-unavailable` | No installed adapter declares support for that pack's cleanup. Install an adapter release that supports the recorded pack version and digest. |
+| `provider-reset-authority-ambiguous` | More than one installed adapter claims the cleanup. Uninstall the duplicate. |
+| `provider-hook-failed` | The pack's cleanup handler failed. Check the log, then retry. |
+| `host-state-unsafe` | A symlink or non-file sits at the cleanup path. APTL refuses to follow it. Inspect and remove it manually. |
+| `cleanup-record-malformed`, `cleanup-action-unsupported` | The record cannot be read or was written by a newer APTL release. Upgrade APTL, or report the record name. |
+
 Do not replace recovery with raw `docker compose up`. `aptl lab start` owns
 scenario realization, generated configuration, credentials, port selection,
 readiness, MCP setup, and run recording. `aptl kill` is reserved for emergency
@@ -193,13 +221,23 @@ Read the phase first:
   container is listening yet. Docker accepts the connection on the host and
   then closes it. When this state lasts for the whole budget, the API never
   started. Inspect the container logs, and check that the container is not
-  restarting or running out of memory.
+  restarting or running out of memory. If the manager container and other
+  Wazuh daemons are running but `wazuh-apid` is absent, TechVault's single
+  backend retry starts the missing API daemon in that same container. On an
+  older running seat, use `docker exec` to run
+  `/var/ossec/bin/wazuh-control status` in the existing manager container,
+  then run `wazuh-control start` there if the API is absent. This preserves the
+  container and retained volumes. The normal authenticated readiness check
+  still decides whether the lab is ready. Establish the cause of an API exit
+  from its logs; certificate generation alone does not prove it.
 - **`authentication`**: the API answered but did not issue a session.
   `credentials_rejected` (HTTP 401 or 403) means the API rejected the
   `INDEXER_USERNAME`/`INDEXER_PASSWORD` or `API_USERNAME`/`API_PASSWORD`
   values from `.env`. For the indexer, a retained `wazuh-indexer-data` volume
-  can still hold an earlier admin password: run `aptl lab stop -v`, then
-  `aptl lab start`, or restore the original `INDEXER_PASSWORD`.
+  can still hold an earlier admin password. Restore the original
+  `INDEXER_PASSWORD` if the data must be kept. `aptl lab stop -v` removes
+  retained lab volumes and is a destructive reset, so use it only after an
+  intentional backup and reset decision.
 - **`manager_status`**: the manager API authenticated but reported no running
   manager daemons. See the silent-daemon failure mode in the previous section.
 
@@ -233,6 +271,93 @@ local/SSH Docker connection and run stop again. Do not use a daemon-wide prune:
 APTL cleanup is deliberately bounded by the validated project labels.
 
 Tracked in [#722](https://github.com/Brad-Edwards/aptl/issues/722).
+
+### `aptl lab start` reports an unowned search index
+
+A scenario can declare a search-index schema as initial service state. APTL
+creates that index in the target search service and marks it with the scenario
+content that owns it. When the service already holds an index of the same name
+without that content's marker, for example in a data volume kept from an
+earlier lab, APTL can't prove that the index holds disposable data. It never
+adopts, deletes, or overwrites such an index. Startup stops before the workload
+starts, and the error names the index and its container.
+
+The Cortex job-index schema is the only schema that APTL maps to a native index
+name (`cortex_6`). For example, with the search service in container
+`aptl-thehive-es`, the error reads:
+
+```
+Lab start failed.
+  error: Lab start failed: RAES runtime handoff failed:
+  aptl.provisioner.backend-start-failed at runtime.apply.provisioning: service
+  materialization failed for provision.content.cortex-job-index-schema
+  (reason=unowned-collision): search index cortex_6 in container
+  aptl-thehive-es lacks this content's ownership marker, ...
+```
+
+Recover in this order, with the index and container names from your error:
+
+1.  Inspect the index without changing it. A failed start leaves its
+    containers running, so open a shell in the container that the error names:
+
+    ```shell
+    aptl container shell <container>
+    ```
+
+    Then query the index read-only from that shell:
+
+    ```shell
+    curl -s 'http://localhost:9200/<index>/_count'
+    curl -s 'http://localhost:9200/<index>/_mapping'
+    ```
+
+2.  Back up any data that you need before you reset anything. Use
+    [Elasticsearch snapshots](https://www.elastic.co/guide/en/elasticsearch/reference/7.17/snapshot-restore.html#warnings).
+    A copy or tar archive of the service's data directory is not a supported
+    backup, even when the service is stopped.
+
+    APTL does not configure a snapshot repository. Use an existing registered
+    repository or follow Elasticsearch's
+    [repository setup](https://www.elastic.co/guide/en/elasticsearch/reference/7.17/snapshots-register-repository.html#snapshots-filesystem-repository).
+    For local filesystem storage, mount a separate backup directory into the
+    search container, set `path.repo`, and restart the service before
+    registering it. Keep the repository outside every lab volume that
+    `aptl lab stop --volumes` deletes.
+    On a remote Docker host, that directory belongs on the remote host.
+    Until backup is available, keep the existing volumes; `aptl lab stop`
+    without `--volumes` preserves them.
+
+    With the search service running and a repository registered, run these
+    commands from its container shell. Replace `<repository>` with that
+    repository's name and `<snapshot>` with a new snapshot name:
+
+    ```shell
+    curl -fsS -X POST 'http://localhost:9200/_snapshot/<repository>/_verify'
+    curl -fsS -X PUT 'http://localhost:9200/_snapshot/<repository>/<snapshot>?wait_for_completion=true'
+    curl -fsS 'http://localhost:9200/_snapshot/<repository>/<snapshot>'
+    ```
+
+    The snapshot includes all open indices by default. Before any reset,
+    check that its `state` is `SUCCESS`, `shards.failed` is `0`, and `indices`
+    includes the conflicting index and every other index you need. Then
+    [test restoration](https://www.elastic.co/guide/en/elasticsearch/reference/7.17/snapshots-restore-snapshot.html#restore-different-cluster)
+    in a separate compatible cluster with the repository registered read-only.
+    Verify the restored data before deleting the original volumes. Preserve
+    any required data in other lab services with their own backup procedures;
+    an Elasticsearch snapshot does not cover those services.
+
+3.  Reset only when all lab data is disposable or its required backups have
+    passed restoration checks:
+
+    ```shell
+    aptl lab stop --volumes
+    ```
+
+    This is a destructive reset. It permanently deletes all of this project's
+    lab volumes, not only the conflicting index. The command asks for
+    confirmation first. Then start the lab again with the same `--scenario` or
+    `--scenario-path` option. Restore required data separately; restoring the
+    conflicting index unchanged also restores its unowned state.
 
 ### macOS: Docker Desktop uninstall leftovers
 

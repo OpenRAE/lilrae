@@ -40,7 +40,10 @@ if TYPE_CHECKING:
 
 
 TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST = (
-    "sha256:db98a9daa62a092a0c6b001217027d7f4ad489889e95d01050e77f148e8ef29b"
+    "sha256:1229f94f31bd35d3997d47ef8316ffebb3d2d2919c995838e458420b70456fcf"
+)
+TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST = (
+    "sha256:03baae367b452527be4affd7f29369bf5aa32a2a3c1c82f73bfbc759d642af14"
 )
 
 # These are configuration descriptions whose realized implementation is bound
@@ -81,7 +84,7 @@ _RUNTIME_FIELD_BY_KIND = {
     "runtime-software-components": "software_components",
 }
 
-# Canonical projections from raes-env-packs 6.1.0's content-identified
+# Canonical projections from raes-env-packs 6.2.1's content-identified
 # TechVault semantic parent.  Each key is independently pinned so changing one
 # SDL claim cannot borrow the pack-level identity and pass as the old contract.
 _TECHVAULT_PROJECTION_DIGESTS: Mapping[tuple[str, str], str] = {
@@ -221,9 +224,19 @@ def _identified_release(identity: PackIdentity | None) -> bool:
 
     return bool(
         identity is not None
-        and identity.pack_id == "techvault"
-        and identity.pack_version == "0.1.0"
-        and identity.set_digest == TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST
+        and (
+            identity.pack_id,
+            identity.pack_version,
+            identity.set_digest,
+        )
+        in {
+            ("techvault", "0.1.1", TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST),
+            (
+                "techvault-participant-study",
+                "0.1.1",
+                TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST,
+            ),
+        }
     )
 
 

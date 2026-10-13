@@ -14,7 +14,7 @@ workflow config in a single call.
 Key facts encoded there today:
 
 - Ground Control project: `aptl`
-- GitHub repo: `Brad-Edwards/aptl`
+- GitHub repo: `OpenRAE/lilrae`
 - Local test command: `bash tools/run-targeted-tests.sh` (changed test files
   only, or pass explicit test paths)
 - Local hygiene command: `pre-commit run` after staging the intended changes
@@ -120,6 +120,11 @@ end-to-end loop. Summary for agents working in this repo:
 
 ## Workflow Notes
 
+- One issue = one PR. The issue's delivery PR must address all acceptance
+  criteria, including code, documentation, and tests. Update an existing PR
+  instead of splitting the issue across multiple PRs. If an issue is too large,
+  create smaller linked issues with explicit acceptance criteria and one
+  complete PR per smaller issue. See [coding standards](docs/CODING_STANDARDS.md).
 - Pass full requirement UIDs exactly as they exist in Ground Control.
   Do not synthesize or rewrite requirement prefixes.
 - Keep repo-native checks, docs, and Ground Control policy in sync.

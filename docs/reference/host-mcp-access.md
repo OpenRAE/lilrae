@@ -1,4 +1,8 @@
-# Host CLI access to a TechVault seat
+# Host CLI access to an acquired full lab
+
+**Legacy seat path:** New desktop seat images from issue #1178 run agents in
+the guest and do not enroll this host MCP transport. This reference remains
+for older signed seat images and the separate local integration workflow.
 
 Host Claude Code and Codex use OpenSSH to carry MCP stdio to a fixed guest
 `aptl mcp-access dispatch` command. The user's provider login stays in the host
@@ -10,6 +14,9 @@ capture, artifact access and Docker authority remain in guest management.
 
 Start the canonical packaged full lab with normal `aptl lab start`. An operator
 then runs `aptl mcp-access prepare-guest --request REQUEST.json --output-dir DIR`.
+The selected environment pack is recorded by exact identity and digest; a later
+pack switch invalidates the grant. The TechVault participant-study copy uses
+the same enrollment path as TechVault.
 `DIR` must be new and absolute. The typed request contains:
 
 - `owner_id`, `seat_id`, `instance_id`, positive `generation`;

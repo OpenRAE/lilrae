@@ -147,7 +147,7 @@ def _observe_stable_guest(binding: GuestDispatchBinding) -> dict[str, Any]:
     if (
         config.deployment.provider != "docker-compose"
         or config.scenario.source != "env-pack"
-        or config.scenario.identity != "techvault"
+        or config.scenario.identity != binding.access.scenario_pack.pack_id
     ):
         raise WorkbenchConfigurationError("guest deployment mismatch")
     backend = DockerComposeBackend(
@@ -398,11 +398,19 @@ class GuestAdmission:
         if endpoint is not None:
             env["DOCKER_HOST"] = "unix://" + str(endpoint)
         if self.server.server_id == "aptl-red":
-            from aptl.core.mcp_ingress import native_kali_ingress
+            from aptl.core.mcp_ingress import (
+                kali_capture_container,
+                native_kali_ingress,
+            )
 
             expected = self.binding.access.container_ids.get("aptl-kali", "")
             env.update(
                 native_kali_ingress(backend.container_inspect("aptl-kali"), expected)
+            )
+            env.update(
+                kali_capture_container(
+                    backend.project_dir, backend.logical_project_name
+                )
             )
         self.authorize()
         return (str(node), str(artifact)), project, env

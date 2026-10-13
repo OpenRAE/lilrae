@@ -1,5 +1,15 @@
 # Victim Container
 
+> Historical record: the configuration below describes the in-tree
+> `containers/victim/` image that #812 removed on 2026-07-24. TechVault's
+> `victim` node now comes from the pinned TechVault pack. LilRAE starts
+> it on its Rocky Linux 9 systemd base with the Wazuh agent,
+> `aptl/generic-systemd-wazuh-agent-base`, at 172.20.2.20 on `internal-net`.
+> The pack declares the `labadmin` user, `sshd`, `rsyslog` and a Wazuh agent
+> that forwards `/var/log/secure` and `/var/log/messages` to the manager. The
+> node publishes no host port, so the `-p 2022` command below does not reach
+> it. From the host, use `aptl container shell aptl-victim`.
+
 The victim container serves as a target system for red team activities and security testing. It provides a Rocky Linux 9 environment with SSH access, Wazuh agent integration, and Falco runtime security monitoring.
 
 ## Container Configuration
@@ -9,7 +19,7 @@ The victim container serves as a target system for red team activities and secur
 - **SSH**: Key-based authentication only (port 22, lab-internal; no host port is published; use `aptl container shell aptl-victim` from the host)
 - **IP Address**: 172.20.2.20 (aptl-internal network)
 
-See [containers/victim/Dockerfile](https://github.com/Brad-Edwards/aptl/blob/main/containers/victim/Dockerfile) for complete build configuration.
+See [containers/victim/Dockerfile](https://github.com/OpenRAE/lilrae/blob/main/containers/victim/Dockerfile) for complete build configuration.
 
 ## Security Monitoring
 
@@ -22,10 +32,10 @@ The container runs dual security monitoring:
 3. **rsyslog**: Forwards system logs to 172.20.2.30:514
 
 **Installation Scripts:**
-- [install-all.sh](https://github.com/Brad-Edwards/aptl/blob/main/containers/victim/install-all.sh) - Main installer
-- [install-wazuh.sh](https://github.com/Brad-Edwards/aptl/blob/main/containers/victim/install-wazuh.sh) - Wazuh agent setup
-- [install-falco.sh](https://github.com/Brad-Edwards/aptl/blob/main/containers/victim/install-falco.sh) - Falco setup
-- [ossec.conf.template](https://github.com/Brad-Edwards/aptl/blob/main/containers/base/scripts/ossec.conf.template) - Wazuh config template
+- [install-all.sh](https://github.com/OpenRAE/lilrae/blob/main/containers/victim/install-all.sh) - Main installer
+- [install-wazuh.sh](https://github.com/OpenRAE/lilrae/blob/main/containers/victim/install-wazuh.sh) - Wazuh agent setup
+- [install-falco.sh](https://github.com/OpenRAE/lilrae/blob/main/containers/victim/install-falco.sh) - Falco setup
+- [ossec.conf.template](https://github.com/OpenRAE/lilrae/blob/main/containers/base/scripts/ossec.conf.template) - Wazuh config template
 
 ### Monitored Data
 

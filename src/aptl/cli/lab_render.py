@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
 
+from aptl.cli._start_residue import emit_start_residue, stop_recovery_routes
 from aptl.core.host_ports import PortSpec, ResolvedPort, published_port_specs
+from aptl.core.execution_boundary import (
+    ExecutionBoundaryObservation,
+    observe_execution_boundary,
+)
 from aptl.core.lab import LabResult
 from aptl.core.lab_types import StartupDiagnostic, StartupOutcome
 
@@ -28,8 +34,8 @@ _REVERSE_DEFAULT = 2027
 # hardcodes the host port on localhost. If one of these is remapped, the MCP
 # server config still points at the default port, so flag it for the operator.
 _MCP_BACKED_SERVICES = {
-    "wazuh.indexer",
-    "wazuh.manager",
+    "wazuh-indexer",
+    "wazuh-manager",
     "thehive",
     "misp",
     "shuffle-frontend",
@@ -52,11 +58,17 @@ _OUTCOME_HEADLINES: dict[StartupOutcome, str] = {
 }
 
 
-def render_start_result(result: LabResult) -> None:
-    """Print a structured summary of a lab-start result."""
+def render_start_result(result: LabResult, project_dir: Path | None = None) -> None:
+    """Print a structured summary of a lab-start result.
+
+    ``project_dir`` is the start's ``--project-dir``. Recovery commands name it
+    when the current directory resolves to another project (#952).
+    """
     typer.echo(_OUTCOME_HEADLINES[result.outcome])
     if result.outcome is StartupOutcome.FAILED and result.error:
         typer.echo(f"  error: {result.error}")
+    emit_execution_boundary_summary(result.execution_boundary)
+    _emit_start_notes(result, project_dir)
     if not result.diagnostics:
         return
     typer.echo(f"  diagnostics ({len(result.diagnostics)}):")
@@ -73,6 +85,43 @@ def render_start_result(result: LabResult) -> None:
             )
             if diag.operator_action:
                 typer.echo(f"      action: {diag.operator_action}")
+
+
+def _emit_start_notes(result: LabResult, project_dir: Path | None) -> None:
+    """Print the admission time (#953) and any failed-start residue (#952)."""
+
+    if result.admission_seconds is not None:
+        typer.echo(f"Scenario admission: {result.admission_seconds:.1f}s")
+    if result.residue is not None:
+        emit_start_residue(result.residue, stop_recovery_routes(project_dir))
+
+
+def emit_execution_boundary_summary(
+    boundary: ExecutionBoundaryObservation | None,
+) -> None:
+    """Render observed facts without treating a Docker or VM label as proof."""
+
+    if boundary is None:
+        typer.echo("Execution boundary: unknown (status=unknown)")
+        return
+    typer.echo(
+        f"Execution boundary: {boundary.host_containment} "
+        f"(status={boundary.observation_status}, transport={boundary.transport}, "
+        f"override={boundary.override_source})"
+    )
+    if boundary.docker_version:
+        typer.echo(f"  selected Docker Engine: {boundary.docker_version}")
+    if boundary.host_containment != "native-docker":
+        typer.echo("  host containment: unverified for this selected profile")
+
+
+def fresh_execution_boundary(
+    project_dir: Path,
+) -> ExecutionBoundaryObservation | None:
+    """Re-read the configured backend for info; prior start state may be stale."""
+
+    backend = _cli_backend(project_dir)
+    return observe_execution_boundary(backend) if backend is not None else None
 
 
 def _resolved_port(
@@ -243,6 +292,20 @@ def live_resolved_ports(project_dir: Path) -> list[ResolvedPort]:
     return _coalesce_resolved_ports(resolved)
 
 
+def published_access_ports(
+    project_dir: Path, planned: list[ResolvedPort] | None
+) -> tuple[list[ResolvedPort], bool]:
+    """Return the ports to report and whether Docker observed them (#1218).
+
+    The access summary and `lab start --json` share this. Live bindings win; the
+    start-time plan can name ports a scenario never published (TechVault's
+    Grafana), so it stands in only for an empty, failed query. Dots become hyphens.
+    """
+    live = live_resolved_ports(project_dir)
+    ports = live or planned or []
+    return [replace(p, service=p.service.replace(".", "-")) for p in ports], bool(live)
+
+
 def live_services(project_dir: Path) -> set[str]:
     """Return the Compose service names that are currently running.
 
@@ -272,7 +335,7 @@ def _emit_host_port_remaps(resolved_ports: list[ResolvedPort]) -> None:
         return
     typer.echo("")
     typer.echo(
-        "Host port remaps (a default was already in use on this host, so the "
+        "Host port remaps (a default was already in use on the selected Docker host, so the "
         "service is published on a free port instead):"
     )
     mcp_affected = []
@@ -294,29 +357,73 @@ def _emit_host_port_remaps(resolved_ports: list[ResolvedPort]) -> None:
         )
 
 
+def _emit_dashboard_access(
+    port: int | None,
+    remote: bool,
+    caller_reported_no_ports: bool,
+    observed: bool,
+    active_services: set[str],
+) -> None:
+    """Print the dashboard address only when a published port is supported."""
+
+    if _published_access_port(port, caller_reported_no_ports, observed, active_services):
+        if remote:
+            typer.echo(f"  Wazuh Dashboard: remote Docker host port {port} (HTTPS)")
+        else:
+            typer.echo(f"  Wazuh Dashboard: https://localhost:{port}")
+        typer.echo("    scenario credentials (not an APTL control-plane login):")
+        typer.echo("    username: see INDEXER_USERNAME in .env")
+        typer.echo("    password: see INDEXER_PASSWORD in .env")
+
+
+def _emit_grafana_access(
+    port: int | None,
+    remote: bool,
+    caller_reported_no_ports: bool,
+    observed: bool,
+    active_services: set[str],
+) -> None:
+    """Print Grafana access only when the selected host publishes its port."""
+
+    if _published_access_port(port, caller_reported_no_ports, observed, active_services):
+        if remote:
+            typer.echo(f"  Grafana: remote Docker host port {port} (HTTP)")
+        else:
+            typer.echo(f"  Grafana: http://localhost:{port}")
+        typer.echo("    username: admin")
+        typer.echo("    password: see GRAFANA_ADMIN_PASSWORD in .env")
+
+
+def _emit_reverse_access(port: int | None, remote: bool, active_services: set[str]) -> None:
+    """Print the reverse-engineering SSH endpoint when the service is live."""
+
+    if _REVERSE_SVC in active_services and port is not None:
+        typer.echo("  Reverse engineering SSH:")
+        if remote:
+            typer.echo(f"    remote Docker host port {port} (SSH)")
+        else:
+            typer.echo(f"    ssh -i ~/.ssh/aptl_lab_key labadmin@localhost -p {port}")
+
+
 def emit_lab_access_summary(
     project_dir: Path,
     resolved_ports: list[ResolvedPort] | None = None,
     active_services: set[str] | None = None,
+    execution_boundary: ExecutionBoundaryObservation | None = None,
 ) -> None:
     """Print the credential locations and common lab entry points.
 
-    ``resolved_ports`` (host_ports.ResolvedPort list from a lab-start run) makes
-    the printed URLs reflect the real published ports — important on hosts where
-    a default port was in use and the service was remapped to a free one.
+    ``resolved_ports`` is the caller's list (a start's plan or a live query);
+    :func:`published_access_ports` prefers live bindings, so remaps show real ports.
     """
-    # Live Docker state is ground truth once the range is up. The list a
-    # `lab start` hands over comes from resolving the checked-in Compose
-    # stack's convenience ports, so it can carry a default for a service the
-    # realized scenario never published -- TechVault does exactly that with
-    # Grafana. Prefer what is actually bound; fall back to the caller's list
-    # only when the query returns nothing, which means it failed rather than
-    # that the range published nothing.
     caller_reported_no_ports = resolved_ports == []
-    live_ports = live_resolved_ports(project_dir)
-    resolved_ports = live_ports or resolved_ports or []
+    resolved_ports, observed = published_access_ports(project_dir, resolved_ports)
     if active_services is None:
         active_services = live_services(project_dir)
+    remote = (
+        execution_boundary is not None
+        and execution_boundary.transport in {"remote-ssh", "remote-tcp"}
+    )
     env_path = project_dir / ".env"
     dashboard_port = _resolved_port(
         resolved_ports, _WAZUH_DASHBOARD_SVC, _WAZUH_DASHBOARD_DEFAULT
@@ -331,35 +438,29 @@ def emit_lab_access_summary(
     )
     typer.echo("")
     typer.echo("Access:")
-    if _published_access_port(
-        dashboard_port, caller_reported_no_ports, live_ports, active_services
-    ):
-        typer.echo(f"  Wazuh Dashboard: https://localhost:{dashboard_port}")
-        typer.echo("    scenario credentials (not an APTL control-plane login):")
-        typer.echo("    username: see INDEXER_USERNAME in .env")
-        typer.echo("    password: see INDEXER_PASSWORD in .env")
-    if _published_access_port(
-        grafana_port, caller_reported_no_ports, live_ports, active_services
-    ):
-        typer.echo(f"  Grafana: http://localhost:{grafana_port}")
-        typer.echo("    username: admin")
-        typer.echo("    password: see GRAFANA_ADMIN_PASSWORD in .env")
-    if _REVERSE_SVC in active_services and reverse_port is not None:
-        typer.echo("  Reverse engineering SSH:")
+    if not observed and (resolved_ports or active_services):
         typer.echo(
-            f"    ssh -i ~/.ssh/aptl_lab_key labadmin@localhost -p {reverse_port}"
+            "  Published host ports are unverified; access locations below "
+            "may be planned or default guesses."
         )
+    _emit_dashboard_access(
+        dashboard_port, remote, caller_reported_no_ports, observed, active_services
+    )
+    _emit_grafana_access(
+        grafana_port, remote, caller_reported_no_ports, observed, active_services
+    )
+    _emit_reverse_access(reverse_port, remote, active_services)
     _emit_host_port_remaps(resolved_ports)
 
 
 def _published_access_port(
     port: int | None,
     caller_reported_no_ports: bool,
-    live_ports: list[ResolvedPort],
+    observed: bool,
     active_services: set[str],
 ) -> bool:
     """Never advertise a planned default when neither source observed a port."""
 
     return port is not None and not (
-        caller_reported_no_ports and not live_ports and not active_services
+        caller_reported_no_ports and not observed and not active_services
     )

@@ -38,6 +38,13 @@ Use `aptl web serve --help` for the exact options in the installed release.
 `--api-only` is for the split Compose delivery behind its static UI proxy; it
 does not provide a browser interface by itself.
 
+The split delivery's API container never runs as root. Set
+`APTL_WEB_API_USER` to the project owner's `uid:gid` and
+`APTL_DOCKER_SOCKET_GID` to the Docker socket's group in the project's `.env`.
+`.env.example` shows the commands. The container then reads the owner-only lab
+state under `.aptl/` and reaches the daemon with no other privilege. It refuses
+to start while either value is unset.
+
 ## Operator Surfaces
 
 | Browser route | Supported behavior |
@@ -65,7 +72,7 @@ the same-origin gate.
 | `GET /api/auth/login` | One-time launch-token exchange and browser-session bootstrap. |
 | `GET /api/lab/status` | Current running, error, and container state. |
 | `POST /api/lab/start` | Start the selected project scenario. |
-| `POST /api/lab/stop` | Stop the project, with an explicit volume-removal choice. |
+| `POST /api/lab/stop` | Stop the project and keep its volumes. The route takes no parameters; `aptl lab stop -v` removes volumes. |
 | `GET /api/lab/events` | Server-sent lifecycle updates. |
 | `POST /api/lab/kill` | Emergency project process or container termination. |
 | `GET /api/config` | Redacted non-secret configuration projection. |
@@ -81,10 +88,34 @@ are developing or testing the web client against the typed API contracts.
 
 Loopback is the default and recommended operator boundary. For access from
 another device, keep the APTL server on loopback and place a same-host TLS proxy
-in front of it. Set the browser-facing public origin and allowed host exactly as
-described by `aptl web serve --help`. Do not expose the control plane through a
-plain non-loopback bind, rely on CORS as authorization, disable TLS validation,
-or put API tokens in URLs.
+in front of it. Two settings then apply:
+
+- `--public-origin` (or `APTL_WEB_PUBLIC_ORIGIN`) sets the browser-facing origin
+  of the printed one-time login URL. `aptl web serve --help` documents it.
+- `APTL_ALLOWED_HOSTS` sets the allowed host. It is an environment variable
+  only, with no `aptl web serve` option. It takes a comma-separated list of
+  hostnames, without ports, that the API accepts in the `Host` header in
+  addition to `127.0.0.1`, `localhost`, and `::1`.
+
+Behind a proxy that forwards the browser's `Host` header, every HTTP request
+under `/api/` fails with `403` and `{"detail": "Host not allowed"}` until that
+hostname is in `APTL_ALLOWED_HOSTS`. The `/config` page lists the effective
+allowed hosts.
+
+The browser's start, stop, and kill requests must also come from the server's
+own origin, which the server builds from the `Host` it receives. A proxy that
+rewrites `Host` to the loopback address therefore gets `403` and
+`{"detail": "Cross-origin API request rejected"}` for them.
+
+For example, behind `tailscale serve` on the same host:
+
+```shell
+APTL_ALLOWED_HOSTS=<machine>.<tailnet>.ts.net aptl web serve \
+  --public-origin https://<machine>.<tailnet>.ts.net
+```
+
+Do not expose the control plane through a plain non-loopback bind, rely on CORS
+as authorization, disable TLS validation, or put API tokens in URLs.
 
 For design rationale and contributor contracts, see the
 [web GUI specification](../specs/web-gui-design.md) and

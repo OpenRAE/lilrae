@@ -24,7 +24,7 @@ RESOURCES = {
     "architecture": "x86_64",
     "vcpus": 8,
     "memory_bytes": 32 * 1024**3,
-    "disk_bytes": 250 * 1024**3,
+    "disk_bytes": 128 * 1024**3,
     "hardware_virtualization": True,
     "local_adapter": "qemu-kvm",
     "supported_hypervisors": ["qemu-kvm"],
@@ -71,7 +71,8 @@ def main() -> int:
         raise SystemExit("seat disk has no usable virtual size")
 
     config = {
-        "schema_version": "aptl.seat-image/v1",
+        "schema_version": "aptl.seat-image/v2",
+        "desktop_privilege_contract": "aptl.desktop-privileges/v1",
         "resources": {**RESOURCES, "disk_bytes": virtual_size},
         "boundary": full_techvault_boundary_policy().model_dump(mode="json"),
         "binding": {

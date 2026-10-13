@@ -2,15 +2,27 @@
 
 A seat is one disposable VM per user running the ordinary full TechVault lab,
 using [VM-only containment](../adrs/adr-060-vm-only-seat-containment.md).
-Authenticated access and physical-host/cross-seat isolation remain required.
+New images open an XFCE desktop in the browser through Guacamole. The desktop
+has a browser and red/blue Claude terminals; APTL adds no participant login or
+host MCP grant. Scenario services keep their own authentication.
+On new images, the operator selects the guest `aptl` account's privilege mode
+at seat load time. This does not change the host Unix account that launched
+the seat.
 Additional isolation and controlled egress between workloads inside a guest are
-not promised; that work is tracked in #1127. The V2 boundary policy the image
+not promised; that work is tracked in #1127. The signed boundary policy the image
 carries identifies this contract explicitly.
 
-The launcher uses restricted QEMU user networking: the guest cannot initiate
-connections to the physical host, another seat, or the external network. Only
-the declared host-to-guest port forwards remain available. That restriction
-does not separate workloads inside the VM.
+**Seats have no default outbound network controls.** The guest uses user-mode
+NAT and can initiate ordinary internet and LAN connections, including HTTP,
+HTTPS, SSH, and other TCP/UDP traffic. The launcher adds no destination or port
+allow-list and no outbound proxy. The host network, selected scenario, or an
+operator's event-specific network controls may still affect connectivity.
+Optional controls for future events are tracked in
+[issue #1182](https://github.com/OpenRAE/lilrae/issues/1182).
+Only the declared host-to-guest Guacamole port is published, inside the seat
+user's private network namespace. The VM does not share the host filesystem or
+Docker socket. Network services exposed by the physical host may be reachable
+from the guest. This does not separate workloads inside the VM.
 
 ## Security boundary
 
@@ -19,10 +31,18 @@ multiple users share a physical host. Direct `aptl lab start` places the
 intentionally vulnerable workloads, MCP tooling, and Docker-authorized control
 components on the selected host Docker engine. A seat instead places that
 rootful Docker daemon and the entire range inside a dedicated disposable VM;
-only loopback port mappings and the restricted authenticated MCP transport
-cross the VM boundary. Compromise of an ordinary lab container is therefore
+only one Guacamole port in the seat user's private network namespace crosses the VM boundary. Compromise of an ordinary lab container is therefore
 contained by an additional KVM/QEMU boundary before it reaches the physical
 host or another seat.
+
+The launcher starts QEMU in a rootless network namespace owned by the seat's
+Unix account. `slirp4netns` gives that namespace outbound connectivity without
+publishing its Guacamole listener on the ordinary host network. Other local
+accounts cannot enter the namespace. `aptl seat open-kiosk` launches
+the browser in that namespace without adding an APTL login. Processes under
+the same Unix account share access to that account's seat. Guacamole, guacd,
+PostgreSQL, and xrdp have no separate host port mappings. The gateway's xrdp
+and database credentials are generated inside the disposable overlay.
 
 That boundary is risk reduction, not a claim that VM escape is impossible. An
 advanced model with tool access can research, adapt, and attempt exploit chains
@@ -38,12 +58,23 @@ may affect other containers, credentials, or evidence in that same VM. Reset
 destroys the overlay and revokes the previous generation; it does not turn a
 known-compromised physical host back into a trusted one.
 
+The [one-host KVM acceptance record](../reviews/1162-seat-acceptance.md) is
+evidence for the exact signed image and operations it exercised. It does not
+record a complete host OS/kernel/QEMU version profile or satisfy the independent
+machine qualification for every supported seat. `aptl lab start` inside the
+guest can report its selected Docker endpoint, but only the launcher can
+observe the outer host and qualify that seat generation. A signed image, a VM
+label, or passing unit tests do not replace fresh host and guest observations.
+See [tested profiles and limits](../getting-started/prerequisites.md#tested-execution-profiles-and-limits).
+
 ## Prerequisites
 
 The physical host must satisfy the resources the seat image declares:
 
 - Linux with hardware virtualization (`/dev/kvm`)
 - `qemu-img`, `qemu-system-x86_64`, and read-only OVMF UEFI firmware
+- `bwrap` (Bubblewrap), `nsenter`, `slirp4netns`, and `/dev/net/tun` for the
+  per-user desktop network namespace and its outbound route
 - available CPU/RAM at or above the image's minimums, and free disk at or
   above its declared runtime reservation
 - [Cosign](https://docs.sigstore.dev/cosign/system_config/installation/) for first acquisition and updates
@@ -56,17 +87,77 @@ bounded error instead of stopping after the first missing resource or tool.
 On Debian/Ubuntu hosts, install the complete host dependency set once with:
 
 ```bash
-sudo apt-get install qemu-system-x86 qemu-utils ovmf
+sudo apt-get install qemu-system-x86 qemu-utils ovmf bubblewrap util-linux slirp4netns
 ```
 
 No shared `seat-state` directory is required. Each user's seat state is
 created privately below that user's own `$XDG_STATE_HOME` or home directory.
 
-## Start a seat
+## Choose desktop privileges and start a seat
 
 ```bash
+aptl seat start --desktop-mode event
+```
+
+New signed seat images require an explicit mode. In `event` mode, the guest
+`aptl` desktop account has no sudo authorization and is not in the guest Docker
+group. The root-owned first-boot service still starts the lab and desktop; its
+Docker access is not given to the participant. The physical host account is
+unchanged. An operator with host administration rights can stop the seat and
+maintain or reset its disposable overlay without giving the participant sudo.
+
+For guest-root diagnosis without resetting the overlay, stop the seat as its
+host owner, then run the rescue command as a host administrator with
+`virt-rescue` installed:
+
+```bash
+aptl seat stop --seat-root /home/seat-user/.local/state/aptl/seat
+sudo aptl seat rescue --seat-root /home/seat-user/.local/state/aptl/seat
+```
+
+The command holds the seat lifecycle lock, refuses a running VM, and opens the
+overlay through `virt-rescue` as the seat's host owner. The operator can inspect
+or repair files in the guest filesystem; exit the rescue shell before starting
+the seat again. The participant's guest account receives no administrative
+grant from this route.
+
+For an administrative seat, select the mode at first start. The CLI asks for
+the guest `aptl` sudo password without echoing it. An intentionally empty
+answer installs a passwordless sudo rule while retaining a nonempty generated
+xrdp password for the browser desktop. A nonempty answer becomes the guest
+account password used by sudo and xrdp. The image never contains that choice or
+password; first boot receives it on a private VM channel before xrdp starts.
+Administrative users run Docker through sudo; they are not in the Docker group.
+
+```bash
+aptl seat start --desktop-mode administrative
+```
+
+Automation can supply a private file owned by the launching host user, with no
+group or world permissions. A zero-byte file deliberately selects passwordless
+sudo. The option is accepted only for an administrative first start; the
+password is never placed in a command argument, environment variable, launch
+descriptor, or host seat record.
+
+```bash
+aptl seat start --desktop-mode administrative --sudo-password-file /private/path/password
+```
+
+The mode is bound to the seat's launch generation. `aptl seat stop` and a warm
+`aptl seat start` retain it without asking for the password again. To change
+the mode or password, reset the seat, which destroys its overlay, then start
+it again with the desired mode and a fresh password choice:
+
+```bash
+aptl seat stop
+aptl seat reset --desktop-mode event
 aptl seat start
 ```
+
+Older selected image digests keep their existing privilege behavior and do
+not accept a desktop mode. An explicit image update and reset is required to
+use the new mode contract. The default image reference is sticky, so
+publication alone never changes an existing seat.
 
 The first run asks before any registry lookup or download. Declining, pressing
 Enter, or providing no stdin leaves the image and seat untouched. `--yes` (or
@@ -91,12 +182,11 @@ Selection precedence is `--image` / `APTL_SEAT_IMAGE`, `seat.image` in
 falls back to the default. Public keys are scoped to the selected repository;
 credentials or keys embedded inside downloaded images do not establish trust.
 
-`seat start` selects distinct outer ports automatically. When the image's
-boundary policy requires host MCP access, it creates an owner-only Ed25519
-transport identity, enrols the current user for that seat generation, and
-safely updates the Claude and Codex project configurations in the current
-directory. Provider authentication remains entirely user-owned and is neither
-read nor copied.
+`seat start` selects distinct outer ports automatically. New desktop images
+have one participant port and do not create a host MCP key, expiring grant, or
+Claude/Codex configuration on the physical host. Claude runs in the guest;
+provider sign-in belongs to its user and is never copied into the image.
+Older selected image digests retain their own signed access contract.
 
 State defaults to the current user's private roots: `$XDG_STATE_HOME/aptl/seat`
 for the seat and `$XDG_CACHE_HOME/aptl/appliance` for the image cache, or the
@@ -112,7 +202,7 @@ never changes what a running fleet boots.
 Warm starts use the verified selected image without contacting the registry.
 A missing or corrupt selection reports an error; it does not silently download
 another image. Explicit updates ask for permission to download, reset the
-stopped seat and revoke its access, and remove the superseded cached image:
+stopped seat and remove the superseded cached image:
 
 ```bash
 aptl seat stop
@@ -149,8 +239,7 @@ publishes:
 ```bash
 aptl seat stage \
   --seat-id seat-01 \
-  --mapping participant,tcp,127.0.0.1,10443,127.0.0.1,443 \
-  --mapping recovery,tcp,127.0.0.1,11443,127.0.0.1,9443
+  --mapping participant,tcp,127.0.0.1,18080,127.0.0.1,8080
 ```
 
 The six mapping fields are audience, protocol, outer address, outer port,
@@ -173,13 +262,28 @@ Readiness is not inferred from a live PID or listener: the tracked QEMU
 instance, real forbidden-reachability probe, guest boot/daemon observation, and
 complete appliance boundary gate must all agree for the current generation.
 
-Open the participant kiosk browser. Login uses an owner-private bootstrap file;
-the token is absent from browser process arguments and printed plans. The file
-is replaced on the next launch and removed on reset:
+Open the browser desktop. A new image needs no APTL login token or bootstrap
+file. Guacamole supplies its internal session identity automatically and opens
+the one xrdp connection created in this VM's overlay:
 
 ```bash
 aptl seat open-kiosk
 ```
+
+The command opens `http://127.0.0.1:<selected-port>/` inside the seat user's
+network namespace; pasting that URL into an ordinary host browser cannot
+reach it. `aptl seat start` reports the selected mapping without a credential.
+The participant signs in
+to Claude inside the guest if that provider requires it. Wazuh and other
+scenario applications continue to show their own sign-in where applicable.
+Inside the desktop, `aptl lab info` reports the live scenario ports and
+credential-file locations. The customer portal is
+`http://172.20.1.20:8080/login`; MISP uses its authored browser origin
+`https://misp.techvault.local/`. The seat resolves that origin to the live
+scenario container and trusts the generated scenario certificate authorities.
+Wazuh uses `https://wazuh.dashboard:<port-from-lab-info>` so its certificate
+hostname remains valid. These are scenario surfaces, with no additional APTL
+sign-in.
 
 Inspect coarse health (no credentials):
 
@@ -221,7 +325,6 @@ When reconciliation reports `host-reboot-detected` or `vm-not-running`, run
     appliance-launch.json    # create-once launch projection
     boundary-policy.json     # the exact policy bytes the gate is bound to
   image/                     # this generation's retained disk/config/trust
-  runtime/kiosk/login.html   # owner-private browser bootstrap; removed on reset
   instances/
     seat-01.qcow2            # disposable overlay
     seat-01.base.qcow2       # retained immutable backing file
@@ -236,26 +339,33 @@ When reconciliation reports `host-reboot-detected` or `vm-not-running`, run
 
 Image cuts are local operations, independent of Release Please and PyPI. Use a
 clean checkout of the intended source commit. The build needs KVM,
-`libguestfs-tools`, QEMU, Docker, Node 22, Python 3.14, and enough disk for the
+`libguestfs-tools`, QEMU, Docker, Node 22, Python 3.14, `uv`, an installed
+project environment at `.venv/bin/python`, and enough disk for the
 source, image archive, expanded guest and compressed output together.
 The build refuses to proceed without read/write access to `/dev/kvm`; join the
 `kvm` group and start a new login session if necessary.
+On hosts with root-only kernel files in `/boot`, set
+`APTL_SEAT_LIBGUESTFS_SUDO=1` for the bake and qualification commands; this
+uses sudo only for libguestfs image operations.
 Capacity admission uses the disk's declared virtual size, not its compressed
-size. The default is 250 GiB; `APTL_SEAT_DISK_GIB` selects another capacity.
+size. The default is 128 GiB; `APTL_SEAT_DISK_GIB` selects another capacity.
 
 ```bash
 APTL_SEAT_BUILD_ROOT="$PWD/build/seat-cut" scripts/appliance/build-seat-image.sh
 scripts/appliance/qualify-seat-image.sh build/seat-cut/out/seat-disk.qcow2
 ```
 
-The build downloads a digest-pinned Ubuntu base, builds project containers and
-MCP/web assets, stages the complete TechVault closure, installs the hash-locked
-runtime offline, sanitizes and scans the guest, and writes its launch config.
+The build downloads a digest-pinned Ubuntu base, builds project and Guacamole
+containers, builds the MCP assets, stages the complete TechVault closure, and
+installs the hash-locked desktop and Claude runtime offline. It sanitizes and
+scans the guest and writes its launch config.
 `scripts/appliance/seat-base-image.env` holds the base pin. Every participant
 boot loads local image bytes and starts the normal admitted lab without pulling
 containers. The qualification script exercises real Docker, range and semantic
 MCP operations in a disposable VM; also exercise the actual `aptl seat` path,
-participant web, cleanup, clean-range startup, stop and reset before publishing.
+scenario web services, cleanup, clean-range startup, stop and reset before
+publishing. Check the Guacamole-to-xrdp desktop and browser reopening on the
+published immutable reference before promoting its public tag.
 Record source, disk and config hashes with the observed results. The build
 writes `seat-build.json` binding those bytes to the source commit. Dirty builds
 are diagnostic artifacts and cannot be published; changed output bytes also
@@ -276,8 +386,20 @@ The script pushes the disk/config by content key, checks anonymous access, signs
 the immutable manifest and verifies its signature. Its output is the immutable
 reference. `APTL_SEAT_IMAGE_TAG` optionally adds an immutable human-readable tag.
 Test the immutable reference with a fresh CLI and empty private cache before
-promoting: rerun with `APTL_SEAT_PUBLISH_LATEST=1`. The script reuses existing
-content. Anonymous checks try at most three times and stop immediately on HTTP
+promoting. The privilege qualifier starts real seats in event mode and both
+administrative password modes, checks guest sudo/PAM and Docker group access
+on each stopped overlay, and verifies a warm restart without a new password:
+
+```bash
+scripts/appliance/qualify-seat-privileges.sh ghcr.io/owner/seat@sha256:<published-digest>
+```
+
+For a non-default publisher, pass its public key as the second argument. This
+gate requires KVM and `libguestfs-tools`. Its automated checks do not replace
+a browser login through Guacamole and xrdp; record that observation separately.
+After qualification, rerun the publisher with
+`APTL_SEAT_PUBLISH_LATEST=1`. The script reuses existing content. Anonymous
+checks try at most three times and stop immediately on HTTP
 401/403. A registry failure requires diagnosis; repeatedly rebuilding an image
 cannot repair package permissions or a broken tag.
 
@@ -299,4 +421,4 @@ never returned.
 
 - [VM-only seat containment](../adrs/adr-060-vm-only-seat-containment.md)
 - [Appliance network boundary](../components/appliance-boundary.md)
-- [Host MCP access](host-mcp-access.md)
+- [Desktop seat decision](../adrs/adr-061-gateless-vm-seat-access.md)

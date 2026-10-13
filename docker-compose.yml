@@ -690,16 +690,6 @@ services:
       aptl-internal:
         ipv4_address: 172.20.2.25
 
-  # Host publication for webapp, same reason as kali-ssh-proxy below: webapp's
-  # own networks (aptl-dmz, aptl-internal) are both internal: true (SAF-002),
-  # which Docker never routes host traffic through, published port or not.
-  # webapp is a deliberate attack-surface target (test_docker_compose_port_
-  # bindings.py TARGET_SURFACES), so unlike kali-ssh-proxy this proxy's own
-  # publish stays on all interfaces, not loopback (issue #581). Targets the
-  # container name, not webapp's declared static IP: webapp is realized
-  # generically (ADR-048), and an image-free node's declared docker-
-  # compose.yml ipv4_address is reference data only, never actually applied
-  # to the running container's network attachment.
   mailserver:
     profiles: ["mail"]
     image: ghcr.io/docker-mailserver/docker-mailserver:latest
@@ -753,9 +743,6 @@ services:
     profiles: ["dns"]
     image: debian:13-slim
     container_name: aptl-dns
-    ports:
-      - "${APTL_DNS_HOST_PORT:-5353}:53/tcp"
-      - "${APTL_DNS_HOST_PORT:-5353}:53/udp"
     networks:
       aptl-dmz:
         ipv4_address: 172.20.1.22
@@ -872,7 +859,16 @@ services:
     container_name: aptl-reverse
     hostname: reverse-host
     restart: unless-stopped
-    cgroup: host
+    # issue #955: the same cgroup v2 posture the generic substrate uses. systemd
+    # needs a WRITABLE cgroup filesystem, not a privileged one, so
+    # `writable-cgroups=true` (Docker Engine 28.0+) makes this container's OWN
+    # namespace-scoped cgroup2 mount writable. That replaces the retired recipe
+    # here too -- a host cgroup namespace, a read-write bind of the host's
+    # /sys/fs/cgroup, an unconfined seccomp profile, and three added
+    # capabilities. This service sits behind the `reverse` profile rather than
+    # the default range, but leaving the old flags would mean claiming the range
+    # is hardened while a shipped compatibility model still emits them.
+    cgroup: private
     networks:
       aptl-security:
         ipv4_address: 172.20.0.27
@@ -882,11 +878,21 @@ services:
       - SIEM_IP=172.20.0.10  # wazuh.manager
       - LABADMIN_SSH_KEY_FILE=/keys/aptl_lab_key.pub
     cap_add:
-      - SYS_NICE        # For process scheduling
-      - SYS_ADMIN       # Required for systemd in container
-      - SYS_RESOURCE    # For setting limits and OOM score
+      # issue #955, kept on measured necessity, not inheritance. Bisected on a
+      # real boot: this container's first-boot `reverse-tools-install.service`
+      # installs falco, whose dpkg post-install runs `falcoctl driver install`
+      # (driver type kmod). Without CAP_SYS_ADMIN that postinst exits 1, dpkg
+      # aborts, and the whole tools install fails ~40s in, leaving the RE lab
+      # without its tooling.
+      #
+      # The bisect isolated the cause rather than assuming it: with the default
+      # seccomp profile and CAP_SYS_ADMIN the unit reaches `active`; with
+      # `seccomp:unconfined` and NO capability it still fails. So the
+      # requirement is the capability, and the unconfined seccomp profile,
+      # SYS_NICE, SYS_RESOURCE, the host cgroup namespace, and the host
+      # /sys/fs/cgroup bind that used to accompany it were all unnecessary.
+      - SYS_ADMIN
     volumes:
-      - /sys/fs/cgroup:/sys/fs/cgroup:rw
       # SEC #417: targets receive only PUBLIC keys, never a private key. The
       # control-plane pubkey authorizes operator/MCP host access; the kali
       # pivot pubkey authorizes kali's in-scenario pivot into this target.
@@ -898,7 +904,7 @@ services:
       - /run/lock # Ubuntu systemd mounts a nested /run/lock tmpfs itself; AppArmor docker-default denies that mount, so pre-create it
       - /tmp
     security_opt:
-      - seccomp:unconfined
+      - writable-cgroups=true
     healthcheck:
       test: ["CMD-SHELL", "ss -tlnp | grep ':22' || exit 1"]
       interval: 15s
@@ -938,6 +944,14 @@ services:
       # API bind address. Print the one-time login URL for that origin so the
       # session header token is stored for the origin the SPA actually runs on.
       - APTL_WEB_PUBLIC_ORIGIN=http://127.0.0.1:3000
+    # Never root (issue #1193). Run as the uid:gid that owns the project, so
+    # the API can read the owner-only lab state `aptl` writes under it, and
+    # join only the bind-mounted socket's owning group. Set both in `.env`
+    # (see .env.example). Unset, the placeholder names stop container creation
+    # instead of falling back to root or to an identity that cannot read state.
+    user: "${APTL_WEB_API_USER:-aptl-web-api-user-unset}"
+    group_add:
+      - "${APTL_DOCKER_SOCKET_GID:-aptl-docker-socket-gid-unset}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - .:/project:ro

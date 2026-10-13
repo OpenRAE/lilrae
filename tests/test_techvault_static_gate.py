@@ -345,8 +345,8 @@ def test_no_start_backend_reads_back_simulated_content_kind():
     assert backend.container_exists("unrealized") is False
 
 
-def test_no_start_backend_reads_back_image_free_content_kind_via_container_exec():
-    """Image-free content (empty volume_suffix) is read back via container_exec.
+def test_no_start_backend_reads_back_literal_content_kind_via_container_exec():
+    """Literal-destination content (empty volume_suffix) is read back via container_exec.
 
     The generic materializer places content directly into a node's
     filesystem, so ``observed_content_type`` skips ``observe_content_type``
@@ -354,7 +354,7 @@ def test_no_start_backend_reads_back_image_free_content_kind_via_container_exec(
     calls ``backend.container_exec`` instead. ``_NoStartBackend`` must answer
     that probe from its simulated shapes rather than starting Docker; a
     missing ``container_exec`` method previously crashed the static gate
-    with an AttributeError the moment a scenario used image-free content
+    with an AttributeError the moment a scenario used literal-destination content
     (caught only by a real live-gate boot, not by any prior unit test).
     """
     from aptl.backends._raes_observation_helpers import observed_content_type
@@ -743,7 +743,12 @@ def test_check_provisioning_realization_handles_raise(monkeypatch):
 def test_check_provisioning_realization_rejects_planner_errors(monkeypatch, tmp_path):
     """The static gate must not interpret a plan RAES already rejected."""
 
-    scenario = SimpleNamespace(variables={})
+    scenario = SimpleNamespace(
+        variables={},
+        behavior_specifications={
+            "study": SimpleNamespace(participant_inject_deliveries={"turn": object()})
+        },
+    )
     availability = object()
     target = object()
     plan_error = SimpleNamespace(
@@ -765,7 +770,13 @@ def test_check_provisioning_realization_rejects_planner_errors(monkeypatch, tmp_
         lambda selected_scenario, backend, **kwargs: availability,
         raising=False,
     )
-    monkeypatch.setattr(gc, "create_aptl_runtime_target", lambda **_kwargs: target)
+    target_options = {}
+
+    def _create_target(**kwargs):
+        target_options.update(kwargs)
+        return target
+
+    monkeypatch.setattr(gc, "create_aptl_runtime_target", _create_target)
 
     def _plan_aptl_scenario(**kwargs):
         assert kwargs.pop("target") is target
@@ -792,6 +803,7 @@ def test_check_provisioning_realization_rejects_planner_errors(monkeypatch, tmp_
     assert details is None
     assert not check.passed
     assert not interpreted
+    assert target_options["options"].participant_inject_delivery is True
     assert planned["options"].artifact_availability is availability
     assert any(plan_error.code in diagnostic for diagnostic in check.diagnostics)
 
@@ -830,6 +842,7 @@ def test_backend_conformance_uses_hermetic_probe_scenario(monkeypatch, tmp_path)
 
     assert check.passed
     assert "name: aptl-conformance" in observed_options["reference_scenario"]
+    assert "owner: blue" in observed_options["reference_scenario"]
 
 
 def test_check_provisioning_realization_fails_on_profile_mismatch(tmp_path):

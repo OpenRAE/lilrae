@@ -34,6 +34,26 @@ Native evidence is an older built-in adapter under
 `aptl.core.evidence.adapters`, with registrations still declared in APTL core;
 this is not yet complete package-level scenario isolation.
 
+## Customer database
+
+The pack declares the customer database's listener, database, tables and login
+role, and places its exact schema and seed SQL. Startup realizes those facts
+from the declaration and runs the SQL once, in one transaction, as the declared
+role. A marker on the database records that initialization, so a later startup
+of the same run leaves participant changes alone. Startup refuses to reseed a
+database it did not initialize.
+
+The pack does not declare how clients authenticate to that database
+(OpenRAE/env-packs#411), so the adapter chooses a posture that keeps the
+authored attack paths meaningful. The declared role requires a SCRAM-SHA-256
+password that matches the credential the portal presents and the workstation's
+leaked `.pgpass` carries. The rule applies only to the network the database
+and portal share. Startup checks that this rule is the first applicable entry
+in PostgreSQL's effective rules. It then authenticates through the portal's
+own client settings. The provider declares this choice in `runtime_selections`.
+Each run's reproducibility record reports it under
+`backend_evidence.scenario_runtime_selections`, separately from authored state.
+
 ## Startup verification traffic
 
 The adapter verifier no longer runs the old `nmap` and failed-SSH checks; their
@@ -59,7 +79,7 @@ whole:
 | Dimension | This release |
 | --- | --- |
 | Extension API | `2` |
-| Scenario | `techvault`, source `env-pack`, pack version `0.1.0`, content digest `sha256:c532775575…` |
+| Scenario | `techvault`, source `env-pack`, pack version `0.1.1`, content digest `sha256:df00ea2a26…` |
 | Backend | RAES target `aptl` `0.1.0`, profile `full-remote-control-plane` |
 | Transport | `docker-compose` and `ssh-compose` |
 

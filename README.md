@@ -1,11 +1,54 @@
 [![Quality gate](https://sonarcloud.io/api/project_badges/quality_gate?project=Brad-Edwards_aptl&token=4dd88be3421d6d030a4615b86ac8ab0e3c9eb4d3)](https://sonarcloud.io/summary/new_code?id=Brad-Edwards_aptl)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Brad-Edwards/aptl/badge)](https://scorecard.dev/viewer/?uri=github.com/Brad-Edwards/aptl)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/OpenRAE/lilrae/badge)](https://scorecard.dev/viewer/?uri=github.com/OpenRAE/lilrae)
 
 🎤 **Accepted to [Black Hat USA Arsenal 2026](https://blackhat.com/us-26/arsenal/schedule/#aptl-advanced-purple-team-labs-52322), [SecTor Arsenal 2026](https://blackhat.com/sector/arsenal/schedule/index.html#aptl-advanced-purple-team-labs-54785), and SecTor 2026 Briefings.**
 
-# APTL—Advanced Purple Team Lab
+# LilRAE (formerly APTL)
 
-APTL is a local purple-team lab where human operators and AI agents exercise
+> **APTL is now LilRAE, and `aptl-labs` 7.0.0 is planned as the last
+> `aptl-labs` release.** The Advanced Purple Team Lab (APTL) repository moved to
+> [github.com/OpenRAE/lilrae](https://github.com/OpenRAE/lilrae) and was
+> renamed. It is the same project, with the same source, history, features,
+> and issue tracker. Later releases will publish to PyPI as
+> [`lilrae`](https://pypi.org/project/lilrae/), starting at version 8.0.0. The
+> import package is still `aptl`, the command is still `aptl`, and existing
+> configuration, state directories, and runtime identifiers keep their `aptl`
+> names. Where current pages still say APTL, they mean LilRAE. See
+> [ADR-062](https://github.com/OpenRAE/lilrae/blob/main/docs/adrs/adr-062-lilrae-name-and-naming-convention.md).
+>
+> Do not change packages until `lilrae` 8.0.0 or later shows on its PyPI page.
+> Until then, keep `aptl-labs`. The two distributions install the same `aptl`
+> package and commands. Do not install `lilrae` over `aptl-labs`, because one
+> installation overwrites the files of the other. Remove `aptl-labs` first, then install `lilrae` with the
+> same extras.
+>
+> With pipx:
+>
+> ```shell
+> pipx uninstall aptl-labs
+> pipx install lilrae
+> aptl --version
+> ```
+>
+> With pip in a virtual environment, for example with the `[s3]` extra:
+>
+> ```shell
+> python -m pip uninstall aptl-labs
+> python -m pip install "lilrae[s3]"
+> ```
+>
+> To roll back after a migration, remove `lilrae`, then install the last legacy
+> release:
+>
+> ```shell
+> pipx uninstall lilrae
+> pipx install "aptl-labs==7.0.0"
+> ```
+>
+> The [installation guide](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/installation.md#move-to-the-lilrae-package)
+> has the full procedure. All earlier `aptl-labs` releases stay on PyPI.
+
+LilRAE is a local purple-team lab where human operators and AI agents exercise
 red- and blue-team workflows against an intentionally vulnerable enterprise
 range. Scenario documents select and realize the target, attacker, and SOC
 topology; the CLI owns validation, startup, readiness, access discovery,
@@ -16,15 +59,29 @@ and AI threat-actor assessment.
 
 ## Status And Safety
 
-**Active development. Not for production. Not hardened.** APTL gives AI agents
+**Active development. Not for production. Not hardened.** LilRAE gives AI agents
 penetration-testing tools and starts intentionally vulnerable services. Use a
 dedicated, rebuildable host, keep unrelated credentials and workloads
 elsewhere, control the surrounding network, and operate only on systems you are
 authorized to test.
 
+Ordinary `aptl lab start` uses the selected Docker daemon. On native Linux that
+can give the lab and its control components authority over the physical host's
+Docker engine; Docker Desktop or another Docker VM changes that placement but
+is not, by its name alone, a qualified containment boundary. `aptl lab start`
+and `aptl lab info` report the observed transport and boundary, or `unknown`
+when they cannot establish one. See [tested profiles, host exposure and
+limits](docs/getting-started/prerequisites.md#tested-execution-profiles-and-limits).
+
 For stronger host and cross-seat isolation on Linux/KVM, use a disposable
 [`aptl seat`](docs/reference/appliance-seat-launcher.md). A VM boundary reduces
-risk but does not eliminate it; keep the host kernel and hypervisor current.
+risk but does not eliminate it; keep the host kernel and hypervisor current. A
+seat needs KVM, QEMU, OVMF, adequate per-seat resources and a verified image;
+it does not make the workloads inside its guest mutually isolated.
+**Seats have no default outbound network controls.** The guest can initiate
+ordinary internet and LAN connections through user-mode NAT, subject to the
+host network and any rules defined by the selected scenario. Event-specific
+outbound restrictions are the operator's responsibility.
 
 ## Quick Start
 
@@ -40,7 +97,8 @@ aptl lab start --scenario techvault
 
 Startup validates the selected scenario, creates private project state,
 realizes the topology, waits for required readiness checks, and reports a
-structured outcome. Inspect the runtime-derived state and access information:
+structured outcome with the observed execution boundary. Inspect the fresh
+runtime-derived state, boundary and access information:
 
 ```shell
 aptl lab status
@@ -64,8 +122,9 @@ selection, safe activity, result inspection, troubleshooting, and teardown.
 
 ## Requirements
 
-- Python 3.11 or newer and [pipx](https://pipx.pypa.io/)
-- Docker Engine or Docker Desktop with Compose and Buildx
+- Python 3.12 or newer and [pipx](https://pipx.pypa.io/)
+- Docker Engine 28.0 or newer (native, or inside Docker Desktop or Colima)
+  with Compose and Buildx, on a cgroup v2 host
 - OpenSSH client with `ssh-keygen` on `PATH`
 - Node.js 20 or newer and npm for MCP artifact builds
 - 20GB or more of free disk space
@@ -99,7 +158,7 @@ selected scenario in the local lab.
 
 The published site is the canonical user manual:
 
-- [Documentation home](https://brad-edwards.github.io/aptl/)
+- [Documentation home](https://openrae.github.io/lilrae/)
 - [Installation](docs/getting-started/installation.md)
 - [Run your first lab](docs/getting-started/quick-start.md)
 - [Troubleshooting](docs/troubleshooting/index.md)
@@ -111,9 +170,9 @@ manual.
 
 ## Project Links
 
-- [Get support](https://github.com/Brad-Edwards/aptl/blob/dev/SUPPORT.md)
-- [Contribute](https://github.com/Brad-Edwards/aptl/blob/dev/CONTRIBUTING.md)
-- [Report a vulnerability privately](https://github.com/Brad-Edwards/aptl/security/advisories/new)
+- [Get support](https://github.com/OpenRAE/lilrae/blob/dev/SUPPORT.md)
+- [Contribute](https://github.com/OpenRAE/lilrae/blob/dev/CONTRIBUTING.md)
+- [Report a vulnerability privately](https://github.com/OpenRAE/lilrae/security/advisories/new)
 - [Review the OpenSSF Best Practices assessment](docs/security/openssf-best-practices.md)
 
 Do not report suspected vulnerabilities through a public issue. The

@@ -66,7 +66,7 @@ def _bundle(tmp_path: Path, *, pack_id: str = "techvault") -> ScenarioBundle:
         source_kind=ScenarioSourceKind.ENV_PACK,
         pack_identity=PackIdentity(
             pack_id=pack_id,
-            pack_version="0.1.0",
+            pack_version="0.1.1",
             set_digest=TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST,
         ),
     )
@@ -335,7 +335,7 @@ def test_techvault_shim_keeps_backend_defaults_only_for_image_nodes(
     source_backed = SimpleNamespace(
         nodes={"vm": SimpleNamespace(source=object())}, explicitness={}
     )
-    image_free = SimpleNamespace(
+    sourceless = SimpleNamespace(
         nodes={"vm": SimpleNamespace(source=None)}, explicitness={}
     )
 
@@ -347,7 +347,7 @@ def test_techvault_shim_keeps_backend_defaults_only_for_image_nodes(
     omitted = apply_techvault_observation_strength_compatibility(
         model,
         _bundle(tmp_path),
-        scenario=image_free,
+        scenario=sourceless,
     )
 
     assert len(kept.realization_requirements) == 2

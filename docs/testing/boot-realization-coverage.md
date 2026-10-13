@@ -32,12 +32,12 @@ checks observe an effect in the running lab rather than a declaration.
 | --- | --- |
 | `compute-substrate` | Boot gate (the node's container runs). Focused: `tests/test_compose_base_substrate.py`, `tests/test_raes_base_substrate.py` |
 | `operating-system` | Boot gate (the substrate is selected by declared family). Focused: `tests/test_raes_observation.py` |
-| `topology`, `network` | Boot gate (the scenario's isolated network). Focused: `tests/test_compose_boundary_realization.py`, `tests/test_network_boundary_helper.py` |
+| `topology`, `network` | Boot gate reads back the node's declared isolated-network endpoint, allocated IPv4 address and DNS alias; a container only on Docker's default bridge fails. Focused: `tests/test_compose_network_readback.py`, `tests/test_compose_boundary_realization.py`, `tests/test_network_boundary_helper.py` |
 | `content-placement` | Boot gate, live and causal (exact placed bytes, read inside the container). Focused: `tests/test_content_realization_source_policy.py`, `tests/test_raes_materializer.py`, `tests/test_raes_materializer_engine.py` |
 | `account-placement` | Boot gate observes the declared local user and group. Focused: `tests/test_deployment_backend.py`, `tests/test_account_provider.py`. Directory and domain account features stay outside the boot |
 | `service` | Boot gate, live (`UnitFileState`, `ActiveState`, `Result` read from the service manager) on the apt/Debian systemd substrate. Focused: `tests/test_raes_materializer.py` pins substrate selection per package family, `tests/test_raes_runtime_observation.py` the observation cases |
 | `resource-allocation` | Focused only: `tests/test_raes_runtime_environment.py`, `tests/test_compose_resource_ownership.py`. The boot gate makes no claim |
-| `image` | Focused only: `tests/test_docker_image_identity.py`, `tests/test_raes_docker_materializer.py`. The boot scenario is image-free, so the boot gate makes no claim |
+| `image` | Focused only: `tests/test_docker_image_identity.py`, `tests/test_raes_docker_materializer.py`. Every boot scenario node is [base-container-materialized](../components/node-realization.md) and has no node image, so the boot gate makes no claim |
 | `architecture` | Focused only: `tests/test_raes_observation.py`. The boot gate makes no claim |
 | `acl` | Focused only: `tests/test_raes_acl_realization.py`. The boot gate makes no claim |
 | `feature-binding` | Disclosed `unsupported`. There is no positive claim to cover |
@@ -98,7 +98,7 @@ participants, `runtime.orchestration_authorities` (a host-root-equivalent
 Docker authority surface governed by ADR-055), remote Docker endpoints, or
 non-Linux hosts. Focused unit and integration suites remain authoritative for
 those, and full-range qualification is tracked in APTL #870 and #685 and in
-OpenRAE/lilrae #4, #9, and #10.
+OpenRAE/lilrae #1214, #1219, and #1220.
 
 Adding the next regression should add one field to the shared scenario and one
 effect assertion to the verifier, not a second boot job and not a second

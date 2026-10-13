@@ -47,7 +47,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [023](adr-023-container-interaction-in-deployment-backend.md) | Container interaction (list/logs/shell/exec/inspect) on the DeploymentBackend Protocol | accepted | 2026-05-03 |
 | [024](adr-024-orchestrator-side-purple-continuity-carve-out.md) | Orchestrator-side purple-team continuity carve-out | accepted | 2026-05-03 |
 | [025](adr-025-strict-first-party-config-schema.md) | Strict first-party config schema | accepted | 2026-05-05 |
-| [026](adr-026-advisory-ci-vulnerability-scanning.md) | Advisory CI Vulnerability Scanning | accepted | 2026-05-09 |
+| [026](adr-026-advisory-ci-vulnerability-scanning.md) | Advisory CI Vulnerability Scanning (scanners made blocking by the #1193 amendment) | accepted (amended) | 2026-05-09 |
 | [027](adr-027-red-team-structured-logging.md) | Red Team Structured Logging Boundary (SIEM-transport superseded by ADR-033) | accepted (amended) | 2026-05-09 |
 | [028](adr-028-runtime-rendered-service-config.md) | Runtime-Rendered Service Config | accepted | 2026-05-10 |
 | [029](adr-029-control-plane-secret-handling.md) | Control-Plane Secret Handling in Run Data and Local State | accepted | 2026-05-10 |
@@ -61,7 +61,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [037](adr-037-docker-compose-backend-cohesion.md) | Docker Compose Backend Cohesion | accepted | 2026-05-18 |
 | [038](adr-038-docs-style-lint-and-published-site.md) | Documentation Style Lint and Published Docs Site | accepted | 2026-06-11 |
 | [039](adr-039-web-control-plane-authentication.md) | Web Control Plane Authentication and Loopback Exposure | accepted | 2026-06-14 |
-| [040](adr-040-terminal-ssh-host-key-verification.md) | Terminal SSH Host-Key Verification Boundary | accepted | 2026-06-13 |
+| [040](adr-040-terminal-ssh-host-key-verification-boundary.md) | Terminal SSH Host-Key Verification Boundary | accepted | 2026-06-13 |
 | [041](adr-041-kali-capture-sidecar-ownership-boundary.md) | Kali Capture Sidecar Ownership Boundary (PTY-typescript residual superseded by ADR-042) | accepted (amended) | 2026-06-20 |
 | [042](adr-042-sidecar-owned-pty-master.md) | Sidecar-Owned PTY Master for Kali Transcript Authenticity | accepted | 2026-06-20 |
 | [043](adr-043-suricata-runtime-config-ownership-boundary.md) | Suricata Runtime Config Ownership Boundary | accepted | 2026-06-20 |
@@ -69,7 +69,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [045](adr-045-ephemeral-lifecycle-policy-enforcement.md) | Ephemeral Lifecycle Policy Enforcement | accepted | 2026-06-28 |
 | [046](adr-046-dynamic-raes-scenario-realization.md) | Dynamic RAES Scenario Realization (Image Realization Addendum superseded by ADR-048) | accepted (amended) | 2026-06-29 |
 | [047](adr-047-raes-experiment-admission-and-trial-plan-boundary.md) | RAES Experiment Admission and Trial-Plan Boundary | accepted | 2026-07-19 |
-| [048](adr-048-image-free-placement-realization.md) | APTL Image-Free, Placement-Based Realization Envelope | superseded in part by ADR-051 | 2026-07-20 |
+| [048](adr-048-image-free-placement-realization.md) | APTL Image-Free, Placement-Based Realization Envelope (historical term; see [Node Realization Routes](../components/node-realization.md)) | superseded in part by ADR-051 | 2026-07-20 |
 | [049](adr-049-sealed-disposable-lab-appliance.md) | Sealed, Disposable Lab Appliance Delivery Boundary | superseded in part by ADR-060 | 2026-07-25 |
 | [050](adr-050-terminal-attempt-archival-and-atomic-seal.md) | Terminal Attempt Archival And Atomic Seal Boundary | accepted | 2026-07-28 |
 | [051](adr-051-component-level-raes-realization.md) | Component-Level RAES Realization | accepted | 2026-07-28 |
@@ -80,5 +80,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [056](adr-056-scenario-led-capability-qualification.md) | Scenario-Led Capability Qualification | proposed | 2026-09-05 |
 | [057](adr-057-agent-execution-compartments.md) | Agent Execution Compartments | proposed | 2026-09-05 |
 | [058](adr-058-adoption-and-security-release-gates.md) | Adoption and Security Release Gates | proposed | 2026-09-05 |
-| [059](adr-059-canonical-techvault-delivery-and-host-mcp-access.md) | Canonical TechVault Delivery and Host MCP Access | superseded in part by ADR-060 | 2026-09-17 |
-| [060](adr-060-vm-only-seat-containment.md) | VM-Only Seat Containment | accepted | 2026-09-20 |
+| [059](adr-059-canonical-techvault-delivery-and-host-mcp-access.md) | Canonical TechVault Delivery and Host MCP Access | superseded in part by ADR-060 and ADR-061 | 2026-09-17 |
+| [060](adr-060-vm-only-seat-containment.md) | VM-Only Seat Containment | superseded in part by ADR-061 | 2026-09-20 |
+| [061](adr-061-gateless-vm-seat-access.md) | Browser Desktop for VM Seats | accepted | 2026-09-30 |
+| [062](adr-062-lilrae-name-and-naming-convention.md) | LilRAE Name and Naming Convention for New Code | accepted | 2026-10-05 |

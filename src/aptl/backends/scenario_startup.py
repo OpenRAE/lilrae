@@ -68,6 +68,7 @@ class StartupHookContext:
     operation: Callable[[], object] | None = field(
         default=None, repr=False, compare=False
     )
+    project_dir: Path | None = None
 
     def run_operation(self) -> object:
         """Run the single core operation delegated for this fixed phase."""
@@ -450,6 +451,10 @@ from aptl.backends._scenario_startup_runtime import (
     run_scenario_runtime,
     selected_runtime_provider,
 )
+from aptl.backends.scenario_runtime_selection import (
+    ScenarioRuntimeSelection,
+    scenario_runtime_selection_details,
+)
 
 
 def seed_script_path(project_dir: Path, plan: ScenarioStartupPlan) -> Path:
@@ -470,6 +475,7 @@ __all__ = [
     "EnvironmentAlias",
     "ScenarioEnvironmentFixture",
     "McpServerCredentials",
+    "ScenarioRuntimeSelection",
     "ScenarioStartupPlan",
     "ScenarioStartupSelection",
     "StartupProviderProvenance",
@@ -481,6 +487,7 @@ __all__ = [
     "resolve_scenario_startup",
     "select_scenario_startup",
     "run_scenario_runtime",
+    "scenario_runtime_selection_details",
     "selected_runtime_provider",
     "run_persisted_startup_reset",
     "observe_scenario_runtime_concerns",
