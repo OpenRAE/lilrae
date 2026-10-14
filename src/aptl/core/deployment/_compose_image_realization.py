@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 
 from aptl.core.deployment._compose_node_generation import base_compose_file
+from aptl.core.deployment._compose_runtime_config import compose_literal
 from aptl.core.deployment._compose_spawn_image_realization import (
     _daemon_platform,
     prepare_spawn_images,
@@ -69,11 +70,9 @@ class ComposeRealizationImageMixin:
     ) -> tuple[LabResult | None, tuple[Path, ...] | None]:
         """Run typed pull/build image operations and write a compose override.
 
-        A static in-tree ``docker-compose.yml`` is read from ``scenario_root``;
-        the generated base and image override are written under
+        The generated base and image override are written under
         ``realization_root`` (the writable engine checkout), never the pristine
-        pack (issue #875). ``realization_root`` defaults to ``scenario_root`` so
-        an in-tree scenario, where the two coincide, is unchanged.
+        pack (issue #875). A root Compose file cannot select another model.
         """
 
         realization_root = realization_root or scenario_root
@@ -431,7 +430,8 @@ class ComposeRealizationImageMixin:
         """Write a contained Compose override for scenario-resolved images.
 
         The override is a scenario-local generated artifact, written under
-        ``scenario_root`` (the bundle root).
+        ``scenario_root`` (the bundle root). An image reference holds pack
+        text, so it is written as a Compose literal (issue #965).
         """
 
         override_path = scenario_root / _IMAGE_OVERRIDE_RELATIVE_PATH
@@ -442,7 +442,7 @@ class ComposeRealizationImageMixin:
         }
         override_path.write_text(
             yaml.dump(
-                {"services": services},
+                compose_literal({"services": services}),
                 Dumper=_ImageOverrideDumper,
                 sort_keys=True,
             ),

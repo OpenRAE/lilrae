@@ -972,6 +972,7 @@ src/aptl/cli/runs.py	core-candidate	Migrate only after public-import, history an
 src/aptl/cli/seat.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/cli/web.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/__init__.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/core/_credential_sources.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/_doctor_common.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/_doctor_runtime.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/_pack_staging.py	core-candidate	Retain bounded no-follow pack acquisition with generic loading
@@ -1028,6 +1029,7 @@ src/aptl/core/deployment/_compose_capture_config.py	backend-substrate	Post-basel
 src/aptl/core/deployment/_compose_content_mounts.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/deployment/_compose_content_realization.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/deployment/_compose_direct_network.py	backend-substrate	Post-baseline direct network ownership mechanism; retain with deployment authority
+src/aptl/core/deployment/_compose_environment.py	backend-substrate	Post-baseline runtime credential delivery; retain with deployment authority
 src/aptl/core/deployment/_compose_generic_base_images.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/deployment/_compose_image_fetch.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/deployment/_compose_base_container_realization.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
@@ -1084,6 +1086,7 @@ src/aptl/core/deployment/_cortex_service_credentials.py	backend-substrate	Post-b
 src/aptl/core/deployment/_declared_listener_readiness.py	backend-substrate	Retain declared-listener readiness gating before realization observation
 src/aptl/core/deployment/_docker_endpoint_binding.py	backend-substrate	Post-baseline Docker endpoint binding; retain with ownership and exposure checks
 src/aptl/core/deployment/_docker_image_identity.py	backend-substrate	Post-baseline Docker image identity helper; retain with digest evidence
+src/aptl/core/deployment/_environment_bindings.py	backend-substrate	Post-baseline runtime credential delivery; retain with deployment authority
 src/aptl/core/deployment/_flag_signing_keys.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/deployment/_forwarding_agent_realization.py	backend-observability	Retain semantic forwarding-agent realization and native readback
 src/aptl/core/deployment/_misp_cache_credential.py	backend-substrate	Post-baseline runtime credential delivery; retain with deployment authority
@@ -1405,6 +1408,7 @@ tests/test_collectors.py	tests-follow-owner	Retain meaningful boundary and parit
 tests/test_compose_autoremove.py	tests-follow-owner	Retain exact autoremove lifecycle and fail-closed receipt coverage
 tests/test_compose_base_substrate.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_compose_boundary_realization.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_compose_environment_bindings.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_compose_platform_boundary.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_compose_port_realization.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_compose_resource_ownership.py	tests-follow-owner	Retain backend ownership and cross-workspace isolation tests with deployment authority
@@ -1868,6 +1872,7 @@ docs/reviews/1178-seat-desktop-diagnostic.md	architecture-history	Preserve VM se
 docs/specs/1178-vm-seat-access-preflight.md	docs-follow-owner	Keep VM seat implementation guidance with the appliance owner
 src/aptl/appliance/seat/namespace.py	optional-delivery	Keep VM seat delivery with the appliance owner
 tests/test_appliance_seat_namespace.py	tests-follow-owner	Retain VM seat regression coverage with the appliance owner
+tests/test_appliance_versioning.py	tests-follow-owner	Retain appliance wheel-name parsing tests with migrated owner
 tests/test_seat_desktop.py	tests-follow-owner	Retain VM seat regression coverage with the appliance owner
 tests/test_seat_launch_descriptor.py	tests-follow-owner	Retain VM seat regression coverage with the appliance owner
 src/aptl/appliance/seat/private_vm.py	optional-delivery	Keep rootless VM network startup with the appliance owner
@@ -1902,6 +1907,7 @@ containers/_host-identity/install.sh	split-pack-delivery	Inventory exact content
 docs/adrs/adr-062-lilrae-name-and-naming-convention.md	architecture-history	Preserve LilRAE name change and new-code naming decision
 docs/architecture/issue-1232-lilrae-naming-preflight.md	architecture-history	Preserve LilRAE public naming boundary and compatibility guardrails
 docs/architecture/issue-1234-pypi-transition-preflight.md	architecture-history	Preserve PyPI distribution transition and shared-file migration guardrails
+docs/architecture/issue-1367-distribution-cutover-preflight.md	architecture-history	Preserve lilrae distribution cutover and consumer-boundary guardrails
 changelog.d/+install-scenario-packs-doc.added.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 changelog.d/+proxy-addr-cve-2026-90711.fixed.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 changelog.d/+techvault-env-packs-621-compat.fixed.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied

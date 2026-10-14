@@ -5,16 +5,15 @@
     The Advanced Purple Team Lab (APTL) repository moved to
     [OpenRAE/lilrae](https://github.com/OpenRAE/lilrae) and was renamed. It is
     the same project, with the same source, history, features, and issue
-    tracker. You still install the `aptl-labs` package and run the `aptl`
-    command, and existing configuration, state directories, and runtime
+    tracker. You install the `lilrae` package and run the `aptl` command,
+    and existing configuration, state directories, and runtime
     identifiers keep their `aptl` names. Where current pages still say APTL,
     they mean LilRAE. See
     [ADR-062](adrs/adr-062-lilrae-name-and-naming-convention.md).
 
-    `aptl-labs` 7.0.0 is planned as the last `aptl-labs` release. Later
-    releases will publish to PyPI as `lilrae`, starting at version 8.0.0. When
-    `lilrae` 8.0.0 shows on PyPI, follow
-    [Move to the lilrae package](getting-started/installation.md#move-to-the-lilrae-package).
+    `aptl-labs` 7.0.0 was the last `aptl-labs` release. Releases publish to
+    PyPI as `lilrae` from version 8.0.0. To change packages, follow
+    [Move from aptl-labs to lilrae](getting-started/installation.md#move-from-aptl-labs-to-lilrae).
 
 LilRAE is a local purple-team lab where human operators and AI agents exercise
 red- and blue-team workflows against an intentionally vulnerable enterprise
@@ -57,7 +56,7 @@ require a source checkout or an architecture record.
 The shortest installation and start sequence is:
 
 ```shell
-pipx install aptl-labs
+pipx install lilrae
 aptl lab init my-lab
 cd my-lab
 aptl lab start --scenario techvault

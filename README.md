@@ -5,21 +5,21 @@
 
 # LilRAE (formerly APTL)
 
-> **APTL is now LilRAE, and `aptl-labs` 7.0.0 is planned as the last
-> `aptl-labs` release.** The Advanced Purple Team Lab (APTL) repository moved to
+> **APTL is now LilRAE, and the package is now `lilrae`.** The Advanced Purple
+> Team Lab (APTL) repository moved to
 > [github.com/OpenRAE/lilrae](https://github.com/OpenRAE/lilrae) and was
 > renamed. It is the same project, with the same source, history, features,
-> and issue tracker. Later releases will publish to PyPI as
-> [`lilrae`](https://pypi.org/project/lilrae/), starting at version 8.0.0. The
-> import package is still `aptl`, the command is still `aptl`, and existing
-> configuration, state directories, and runtime identifiers keep their `aptl`
-> names. Where current pages still say APTL, they mean LilRAE. See
+> and issue tracker. Releases publish to PyPI as
+> [`lilrae`](https://pypi.org/project/lilrae/) from version 8.0.0.
+> `aptl-labs` 7.0.0 was the last `aptl-labs` release. The import package is
+> still `aptl`, the command is still `aptl`, and existing configuration, state
+> directories, and runtime identifiers keep their `aptl` names. Where current
+> pages still say APTL, they mean LilRAE. See
 > [ADR-062](https://github.com/OpenRAE/lilrae/blob/main/docs/adrs/adr-062-lilrae-name-and-naming-convention.md).
 >
-> Do not change packages until `lilrae` 8.0.0 or later shows on its PyPI page.
-> Until then, keep `aptl-labs`. The two distributions install the same `aptl`
-> package and commands. Do not install `lilrae` over `aptl-labs`, because one
-> installation overwrites the files of the other. Remove `aptl-labs` first, then install `lilrae` with the
+> The two distributions install the same `aptl` package and commands. Do not
+> install `lilrae` over `aptl-labs`, because one installation overwrites the
+> files of the other. Remove `aptl-labs` first, then install `lilrae` with the
 > same extras.
 >
 > With pipx:
@@ -37,15 +37,14 @@
 > python -m pip install "lilrae[s3]"
 > ```
 >
-> To roll back after a migration, remove `lilrae`, then install the last legacy
-> release:
+> To roll back, remove `lilrae`, then install the last legacy release:
 >
 > ```shell
 > pipx uninstall lilrae
 > pipx install "aptl-labs==7.0.0"
 > ```
 >
-> The [installation guide](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/installation.md#move-to-the-lilrae-package)
+> The [installation guide](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/installation.md#move-from-aptl-labs-to-lilrae)
 > has the full procedure. All earlier `aptl-labs` releases stay on PyPI.
 
 LilRAE is a local purple-team lab where human operators and AI agents exercise
@@ -89,7 +88,7 @@ Install the released CLI and materialize its bundled lab assets. No source
 checkout is required:
 
 ```shell
-pipx install aptl-labs
+pipx install lilrae
 aptl lab init my-lab
 cd my-lab
 aptl lab start --scenario techvault

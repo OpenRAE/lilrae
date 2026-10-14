@@ -2461,24 +2461,16 @@ def _step_generate_soc_certs(ctx: _LabStartContext) -> LabResult | None:
 def _step_check_bind_mounts(ctx: _LabStartContext) -> LabResult | None:
     """Validate the bind-mount sources of the model this run actually applies.
 
-    The Compose model is a scenario-declared input, so it is read from the
-    admitted bundle root, never the engine checkout. A project-tree bundle ships
-    a static ``docker-compose.yml`` there and this stays its compatibility
-    guard; an env-pack ships none, the backend generates the base model from the
-    realization, and ``_check_bind_mounts`` finds no file to inspect. Scanning
-    the project's unrelated static file instead is what failed every fresh
-    install (issue #951).
+    Admitted scenarios always use a generated Compose model. The backend
+    validates their declared content and effective mounts during realization;
+    a root Compose file is not applied and must not block their startup.
+    Calls without an admitted scenario retain the project-file check.
 
-    Services are filtered by the profiles the *admitted realization* selected —
-    the surface ``docker compose --profile`` receives — not by
-    ``containers.enabled_profiles()``, which is the operator's capability
-    ceiling. A reduced catalog scenario must not be judged against SOC services
-    it never starts (issue #550's rule, applied here).
     """
     log.info("Step 6b: Checking bind-mount sources...")
     surface = ctx.admitted_surface
-    project_root = surface.bundle_root if surface is not None else ctx.project_dir
-    enabled = list(surface.selected_profiles) if surface is not None else None
+    if surface is not None:
+        return None
     stateful_owned = frozenset(
         (service_name, mount_destination, source_relpath)
         for _address, _generator, service_name, mount_destination, source_relpath in (
@@ -2486,8 +2478,7 @@ def _step_check_bind_mounts(ctx: _LabStartContext) -> LabResult | None:
         )
     )
     mount_errors = _check_bind_mounts(
-        project_root,
-        enabled_profiles=enabled,
+        ctx.project_dir,
         stateful_owned_mounts=stateful_owned,
     )
     if not mount_errors:
@@ -4178,7 +4169,7 @@ _LAB_START_STEPS = (
 )
 
 # The project-tree path remains a qualified compatibility route until an
-# acquired-pack replacement has release and parity evidence (#880). An admitted
+# acquired-pack replacement has release and parity evidence (#1322). An admitted
 # env-pack without a startup adapter has no authority to run the legacy
 # Wazuh/SOC/MCP preparation. Keep the common apply, observation and run-history
 # stages on both paths.
