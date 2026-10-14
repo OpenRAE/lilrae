@@ -118,7 +118,8 @@ jobs:
         # release-please committed the version bump + CHANGELOG.md to main, so
         # main is now ahead of dev. Auto-open a back-merge PR so dev stays
         # current. It's opened by GITHUB_TOKEN, so dev's required checks won't
-        # run on it — admin-merge it (one click).
+        # run on it — admin-merge it with a merge commit, never a squash: a
+        # squash leaves the release commit out of dev's history (#1375).
         #
         # TAG goes through the environment, so no workflow expression is parsed
         # as shell. Only "dev already contains main" ends without a PR; any
@@ -139,4 +140,4 @@ jobs:
           fi
           gh pr create --base dev --head main \
             --title "chore: back-merge ${TAG} into dev" \
-            --body "Automated back-merge of the release commit (version bump + CHANGELOG.md) from \`main\` into \`dev\` so dev stays current after the release. Admin-merge it — dev's required checks don't run on a bot-opened PR."
+            --body "Automated back-merge of the release commit (version bump + CHANGELOG.md) from \`main\` into \`dev\` so dev stays current after the release. Admin-merge it with \"Create a merge commit\" — dev's required checks don't run on a bot-opened PR. Do not squash: a squash leaves the release commit out of dev's history, and the next promotion can conflict (#1375)."
