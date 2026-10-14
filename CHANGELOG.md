@@ -9,6 +9,20 @@ This file is maintained by [release-please](https://github.com/googleapis/releas
 from Conventional Commit messages; release sections are generated on release,
 not hand-edited in PRs.
 
+## [8.0.0](https://github.com/OpenRAE/lilrae/compare/v7.0.0...v8.0.0) (2026-10-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* a base-container variable that used to be filled from an exported shell variable or a same-named .env key now needs an environment grant in aptl.json, and a value-less plain or unknown variable is delivered empty instead of being omitted.
+
+### Bug Fixes
+
+* bind operational secrets explicitly ([#1269](https://github.com/OpenRAE/lilrae/issues/1269)) ([9af7448](https://github.com/OpenRAE/lilrae/commit/9af7448a3198efab63c96cb7e23cafa248246ecc))
+* join main's release history into dev so promotions merge cleanly ([#1376](https://github.com/OpenRAE/lilrae/issues/1376)) ([78a1864](https://github.com/OpenRAE/lilrae/commit/78a1864eef7fd1bbca991a8c0181832e432d088b))
+* merge main's release history into dev ([#1377](https://github.com/OpenRAE/lilrae/issues/1377)) ([9cab8c0](https://github.com/OpenRAE/lilrae/commit/9cab8c0cd14d34ad67e610a1504cf99a3dc01bb1))
+* merge main's release history into dev ([#1378](https://github.com/OpenRAE/lilrae/issues/1378)) ([7ab7629](https://github.com/OpenRAE/lilrae/commit/7ab76295c5b1db149535844af2c7aa886e23c34e))
+
 ## [7.0.0](https://github.com/OpenRAE/lilrae/compare/v6.0.0...v7.0.0) (2026-10-13)
 
 
