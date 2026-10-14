@@ -55,7 +55,7 @@ class ComposeOwnedStartMixin:
         ownership_failure = self._initialize_start_ownership()
         if ownership_failure is not None:
             return ownership_failure
-        preflight_failure = self._start_preflight(profiles, root)
+        preflight_failure = self._start_preflight(profiles)
         if preflight_failure is not None:
             return preflight_failure
         build = build and not self._offline_staged
@@ -324,12 +324,11 @@ class ComposeOwnedStartMixin:
         # whole rollback.
         self._remove_owned_attempt_containers(scope.attempt_id)
 
-    def _start_preflight(self, profiles: list[str], root: Path) -> LabResult | None:
+    def _start_preflight(self, profiles: list[str]) -> LabResult | None:
         """Run observability configuration and ownership checks before start."""
 
         failure = self._observability_preflight(
             DeploymentRealizationSpec(profiles=tuple(profiles), nodes=(), networks=()),
-            root,
         )
         if failure is None and "otel" in profiles:
             failure = self._observability_ownership_check()

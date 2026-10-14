@@ -226,6 +226,10 @@ class TestRunRaisesBackendTimeoutError:
         (["docker", "private-token"], "docker command"),
         (["docker", "exec", "private-token"], "docker exec"),
         (["docker", "compose", "-f", "private-token", "down"], "docker compose down"),
+        (["docker", "compose", "-f", "private-token"], "docker compose command"),
+        (["docker", "volume", "rm", "private-token"], "docker volume rm"),
+        (["docker", "kill", "private-token"], "docker kill"),
+        (["docker", "private-token", "up"], "docker command"),
     ],
 )
 def test_docker_timeout_operation_never_discloses_arguments(command, expected):
@@ -388,6 +392,26 @@ class TestDockerComposeBackend:
         backend._record_compose_volume_receipts = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
         return backend
 
+    def _make_network_backend(self, tmp_path: Path) -> DockerComposeBackend:
+        """Network tests supply an already-started native inventory.
+
+        Isolate the successful startup stage instead of depending on an
+        unrelated root Compose service. Image, binding and ownership tests
+        exercise the real startup stage separately.
+        """
+
+        backend = self._make_backend(tmp_path)
+
+        def started(profiles, *, compose_files, scenario_root=None, **_kwargs):
+            command = backend._build_command(
+                "up", profiles, compose_files=compose_files, scenario_root=scenario_root
+            )
+            result = backend._run([*command, "-d"])
+            return LabResult(success=result.returncode == 0, error=result.stderr)
+
+        backend._start_with_compose_files = MagicMock(side_effect=started)
+        return backend
+
     def test_rejects_unsafe_direct_project_name(self, tmp_path):
         with pytest.raises(ValueError, match="project_name"):
             DockerComposeBackend(project_dir=tmp_path, project_name="../other")
@@ -531,7 +555,7 @@ services:
         assert "raw daemon details" not in presence.error
 
     def test_realize_reconciles_project_networks_after_start(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -652,7 +676,7 @@ services:
             "aptl.core.deployment._compose_port_realization.port_available",
             lambda *_args, **_kwargs: True,
         )
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -723,7 +747,7 @@ services:
         attaches its declared network(s) directly at container creation), so
         reconciliation must not try to disconnect a network the container
         was never on."""
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -779,7 +803,7 @@ services:
         )
 
     def test_realize_creates_declared_networks_and_connects_static_ip(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("enterprise",),
             nodes=(
@@ -940,7 +964,7 @@ services:
     def test_realize_reconnects_network_when_ip_or_dns_aliases_drift(
         self, tmp_path, observed_ip
     ):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("enterprise",),
             nodes=(
@@ -1107,7 +1131,7 @@ services:
         )
 
     def test_realize_skips_nodes_without_declared_networks(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -1150,7 +1174,7 @@ services:
         )
 
     def test_realize_returns_start_failure_without_reconciliation(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(profiles=("kali",), nodes=(), networks=())
 
         def fake_run(cmd, **_kwargs):
@@ -1169,7 +1193,7 @@ services:
         )
 
     def test_realize_reports_missing_managed_networks(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -1201,7 +1225,7 @@ services:
         assert "managed networks were not visible" in result.error
 
     def test_realize_reports_unmatched_and_uninspectable_nodes(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -1247,7 +1271,7 @@ services:
         assert "aptl-kali" in result.error
 
     def test_realize_reports_network_reconciliation_command_failures(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -1476,7 +1500,8 @@ services:
             for index, token in enumerate(compose_up)
             if token == "-f"
         ]
-        assert str(tmp_path / "docker-compose.yml") in override_paths
+        assert str(tmp_path / ".aptl/realization/compose-base.yml") in override_paths
+        assert str(tmp_path / "docker-compose.yml") not in override_paths
         override_path = tmp_path / ".aptl" / "realization" / "compose-images.yml"
         assert str(override_path) in override_paths
         override = override_path.read_text()
@@ -2597,6 +2622,23 @@ class TestDockerComposeBackendContainerInteraction:
         assert row["health"] == "healthy"
         assert row["labels"] == {"service": "victim"}
         assert row["ports"] == ["0.0.0.0:2022->22/tcp"]
+
+    def test_inventory_never_discloses_compose_environment_fingerprints(self, tmp_path):
+        backend = self._make_backend(tmp_path)
+        fingerprint = "d" * 64
+        line = docker_ps_inventory_row(
+            "aptl-db",
+            labels=(f"com.docker.compose.config-hash={fingerprint},"
+                    "com.docker.compose.service=db,com.docker.compose.project=test"),
+        )
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=line, stderr="")
+            rows = backend.host_list_lab_containers()
+            status = backend.status()
+        assert rows[0]["labels"]["com.docker.compose.service"] == "db"
+        assert "com.docker.compose.config-hash" not in rows[0]["labels"]
+        assert fingerprint not in str(rows)
+        assert fingerprint not in str(status.containers)
 
     def test_inventory_survives_image_labels_containing_newlines(self, tmp_path):
         """Image labels are arbitrary text and some contain newlines.

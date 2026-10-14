@@ -6,7 +6,8 @@ Normal local use and seat delivery share the installed TechVault environment
 pack. `scripts/appliance/build-seat-image.sh` assembles
 `participant-profiles/techvault-full-v1/profile.json` in a clean project tree
 from that pack identity, the built MCP artifacts, and the image IDs actually
-saved in the guest's Docker archive. It selects `red` and `blue`, all seven
+saved in the guest's Docker archive. This profile path is generated output
+under the assembled project, not a source file in the repository. It selects `red` and `blue`, all seven
 participant MCP servers, and the six registered browser surfaces.
 
 The scenario reference uses `source: env-pack`, the full `PackIdentity`, and

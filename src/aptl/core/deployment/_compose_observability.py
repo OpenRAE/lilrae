@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import yaml
 
+from aptl.core.deployment._compose_node_generation import render_realization_compose
+from aptl.core.deployment._compose_runtime_config import compose_literal
 from aptl.core.deployment.realization import DeploymentRealizationSpec
 from aptl.core.deployment.errors import BackendTimeoutError
 from aptl.core.env import load_dotenv, validate_required_env
@@ -105,7 +106,7 @@ def observability_compose_file(project_dir: Path) -> Path:
                 or not mount.get("read_only")
             ):
                 raise ValueError("invalid backend observability config mount")
-            mount["source"] = str(source)
+            mount["source"] = compose_literal(str(source))
     target = root / ".aptl" / "realization" / OBSERVABILITY_COMPOSE_FILE
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(yaml.safe_dump(model, sort_keys=True), encoding="utf-8")
@@ -116,34 +117,30 @@ class ComposeObservabilityMixin:
     """Apparatus admission and file-set integration for every realization path."""
 
     def _observability_preflight(
-        self, realization: DeploymentRealizationSpec, scenario_root: Path
+        self, realization: DeploymentRealizationSpec
     ) -> LabResult | None:
         """Validate ownership, credentials, and trusted config before mutation."""
 
         if "otel" not in realization.profiles:
             return None
         try:
-            error = self._observability_preflight_error(realization, scenario_root)
+            error = self._observability_preflight_error(realization)
         except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError):
             error = "aptl.observability-config-unavailable"
         return LabResult(success=False, error=error) if error is not None else None
 
     def _observability_preflight_error(
-        self, realization: DeploymentRealizationSpec, scenario_root: Path
+        self, realization: DeploymentRealizationSpec
     ) -> str | None:
         """Return the first observability-specific preflight error."""
 
-        source = scenario_root / "docker-compose.yml"
-        model = (
-            yaml.safe_load(source.read_text(encoding="utf-8"))
-            if source.exists()
-            else {}
-        )
+        model = render_realization_compose(realization)
         if _spec_collides(realization) or _model_collides(model):
             return _OWNERSHIP_CONFLICT
+        # The Compose process no longer inherits APTL's environment, so its
+        # interpolation reads this credential from the bound .env only (#965).
         env_file = self._project_dir / ".env"
         environment = load_dotenv(env_file) if env_file.exists() else {}
-        environment.update(os.environ)
         password = environment.get("GRAFANA_ADMIN_PASSWORD", "")
         unavailable = validate_required_env(
             environment, ["GRAFANA_ADMIN_PASSWORD"]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import replace
 
 from raes_contracts.planning import (
     ChangeAction,
@@ -10,6 +11,9 @@ from raes_contracts.planning import (
     ProvisioningPlan,
     ProvisionOp,
     RuntimeDomain,
+    RealizationAuthorityMode,
+    RealizationResolutionSource,
+    ResolvedRealizationAuthority,
 )
 
 from aptl.backends.raes_manifest import create_aptl_manifest
@@ -94,6 +98,26 @@ def test_manifest_advertises_released_stateful_contract() -> None:
         for mode in manifest.provisioner.supported_generated_artifact_delivery_modes
     } == {"mount", "environment"}
     assert manifest.provisioner.supports_persistent_volumes is True
+
+
+def test_resolved_environment_authority_reaches_binding_admission(tmp_path: Path) -> None:
+    """Deployment must retain RAES authority rather than infer it from values."""
+
+    _write_compose(tmp_path)
+    node = _node("wazuh-indexer")
+    authority = ResolvedRealizationAuthority(
+        address=node.address,
+        field_path="nodes.wazuh-indexer.runtime.environment",
+        domain="runtime-realization",
+        requirement_kind="runtime-environment",
+        payload_pointer="/spec/node/runtime/environment",
+        mode=RealizationAuthorityMode.CLOSED,
+        source=RealizationResolutionSource.AUTHORED_SCOPE,
+    )
+    plan = replace(_plan(node), realization_authority=(authority,))
+    realization = interpret_provisioning_plan(plan=plan, config=_config(), bundle=_bundle(tmp_path))
+    assert realization.realization_authority == (authority,)
+    assert realization.deployment_spec([]).realization_authority == (authority,)
 
 
 def test_interpreter_lowers_stateful_resources_into_deployment_spec(
