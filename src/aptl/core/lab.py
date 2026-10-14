@@ -547,14 +547,10 @@ def _stop_lab_owned(
 ) -> LabResult:
     """Run teardown while the caller owns the project lifecycle lock."""
 
-    config, profiles, failure = _stop_recovery_configuration(search_dir, backend)
+    _, backend, profiles, failure = _stop_recovery_configuration(search_dir, backend)
     if failure is not None:
         return failure
     assert profiles is not None
-    if backend is None:
-        backend, failure = _configured_backend(search_dir, config, command="stop")
-        if failure is not None:
-            return failure
     assert backend is not None
     return _tear_down_owned(
         search_dir, backend, profiles, remove_volumes=remove_volumes
@@ -629,7 +625,7 @@ def _reset_lab_owned(
 ) -> LabResetResult:
     """Count the project, then reset it while the caller holds the lock."""
 
-    config, profiles, failure = _stop_recovery_configuration(
+    config, selected, profiles, failure = _stop_recovery_configuration(
         project_root, backend, command="reset"
     )
     if failure is not None:
@@ -640,11 +636,6 @@ def _reset_lab_owned(
         return LabResetResult(
             LabResult(success=False, error=_RESET_WORKSPACE_STATE_UNREADABLE)
         )
-    selected = backend
-    if selected is None:
-        selected, failure = _configured_backend(project_root, config, command="reset")
-        if failure is not None:
-            return LabResetResult(failure)
     assert selected is not None
     counts = _reset_counts(selected) if recorded else (0, 0)
     result = _tear_down_owned(
@@ -702,10 +693,17 @@ def _stop_recovery_configuration(
     backend: Optional["DeploymentBackend"],
     *,
     command: str = "stop",
-) -> tuple[AptlConfig | None, list[str] | None, LabResult | None]:
-    """Resolve safe teardown profiles and any blocking recovery failure.
+) -> tuple[
+    AptlConfig | None,
+    Optional["DeploymentBackend"],
+    list[str] | None,
+    LabResult | None,
+]:
+    """Resolve the backend, safe teardown profiles and any recovery failure.
 
     ``command`` names the blocked ``aptl lab`` command in the failure text.
+    Validate deployment settings before reading platform-specific recovery
+    state, so an unusable config is reported even where those reads cannot run.
     """
 
     configured_profiles: list[str] = []
@@ -727,6 +725,8 @@ def _stop_recovery_configuration(
                         "project identity. Repair aptl.json and retry."
                     ),
                 )
+    if failure is None and backend is None:
+        backend, failure = _configured_backend(search_dir, config, command=command)
     profiles: list[str] | None = None
     if failure is None:
         try:
@@ -747,7 +747,7 @@ def _stop_recovery_configuration(
             )
             if "otel" not in profiles:
                 profiles = [*profiles, "otel"]
-    return config, profiles, failure
+    return config, backend, profiles, failure
 
 
 def _run_pending_host_cleanup(
@@ -1617,6 +1617,14 @@ def _select_start_source(ctx: _LabStartContext) -> StartStageResult:
         )
     try:
         config = load_config(config_path)
+        ctx.backend, failure = _configured_backend(
+            ctx.project_dir,
+            config,
+            command="start",
+            offline_staged=ctx.offline_staged,
+        )
+        if failure is not None:
+            return StartStageResult(error=failure.error)
         bundle = resolve_scenario_bundle(ctx.project_dir, ctx.scenario_path, config)
         provider_selection = select_scenario_startup(bundle)
     except (OSError, ValueError, EnvPackError, ScenarioStartupProviderError) as exc:
@@ -1714,14 +1722,15 @@ def _step_load_config(ctx: _LabStartContext) -> LabResult | None:
 def _bind_start_backend(ctx: _LabStartContext) -> LabResult | None:
     """Create the configured backend and bind the start's execution boundary."""
 
-    ctx.backend, result = _configured_backend(
-        ctx.project_dir,
-        ctx.config,
-        command="start",
-        offline_staged=ctx.offline_staged,
-    )
-    if result is not None:
-        return result
+    if ctx.backend is None:
+        ctx.backend, result = _configured_backend(
+            ctx.project_dir,
+            ctx.config,
+            command="start",
+            offline_staged=ctx.offline_staged,
+        )
+        if result is not None:
+            return result
     result = _configure_verified_appliance_launch(ctx)
     ctx.execution_boundary = (
         bind_execution_boundary(

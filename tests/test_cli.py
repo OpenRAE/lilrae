@@ -6,7 +6,6 @@ We test our CLI wiring, not typer internals.
 """
 
 import json
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import ANY, MagicMock
@@ -2725,6 +2724,7 @@ _BACKEND_CLI_COMMANDS = [
     pytest.param(["container", "logs", "kali"], id="container-logs"),
     pytest.param(["container", "shell", "kali"], id="container-shell"),
     pytest.param(["lab", "status", "--json"], id="lab-status-json"),
+    pytest.param(["lab", "status", "--output"], id="lab-status-output"),
     pytest.param(["lab", "continuity-audit"], id="lab-continuity-audit"),
     pytest.param(["config", "validate"], id="config-validate"),
 ]
@@ -2782,6 +2782,9 @@ class TestUnusableConfigIsReported:
         from aptl.cli.main import app
 
         project = self._deployment(tmp_path, deployment)
+        snapshot_path = tmp_path / "snapshot.json"
+        if "--output" in command:
+            command = [*command, str(snapshot_path)]
 
         result = runner.invoke(app, [*command, "--project-dir", project])
 
@@ -2790,34 +2793,45 @@ class TestUnusableConfigIsReported:
             f"invalid deployment settings in aptl.json: {reason}"
         )
         assert result.stdout == ""
+        assert not snapshot_path.exists()
 
-    @pytest.mark.skipif(
-        sys.platform == "win32",
-        reason="the lab lifecycle lock opens directories with os.O_DIRECTORY, "
-        "which Windows does not provide",
-    )
+    @pytest.mark.parametrize("output_json", [True, False], ids=["json", "text"])
     @pytest.mark.parametrize(("command", "blocked"), _LIFECYCLE_COMMANDS)
     @pytest.mark.parametrize(("deployment", "reason"), _REJECTED_DEPLOYMENTS)
     def test_lifecycle_commands_refuse_rejected_deployment_settings(
-        self, runner, tmp_path, mocker, command, blocked, deployment, reason
+        self, runner, tmp_path, mocker, command, blocked, deployment, reason, output_json
     ):
         from aptl.cli.main import app
 
+        from aptl.backends import _raes_scenario_resolution
         from aptl.core import lab as core_lab
+        from aptl.core import operator_group_state
 
         project = self._deployment(tmp_path, deployment)
         teardown = mocker.spy(core_lab, "_tear_down_owned")
+        recovery = mocker.spy(operator_group_state, "load_admitted_operator_groups")
+        workspace = mocker.spy(core_lab, "_workspace_scope_recorded")
+        scenario = mocker.spy(_raes_scenario_resolution, "resolve_scenario_bundle")
 
+        if not output_json:
+            command = [arg for arg in command if arg != "--json"]
         result = runner.invoke(app, [*command, "--project-dir", project])
 
         self._assert_reported_exit(result)
-        payload = json.loads(result.stdout)
-        assert payload["ok"] is False
+        if output_json:
+            payload = json.loads(result.stdout)
+            assert payload["ok"] is False
+            error = payload["error"]
+        else:
+            error = result.stdout
         assert (
             f"[lifecycle-invalid-configuration] Lab {blocked} blocked: invalid "
             f"deployment settings in aptl.json: {reason}"
-        ) in payload["error"]
+        ) in error
         teardown.assert_not_called()
+        recovery.assert_not_called()
+        workspace.assert_not_called()
+        scenario.assert_not_called()
 
     def test_config_validate_still_accepts_a_complete_ssh_compose_block(
         self, runner, tmp_path
