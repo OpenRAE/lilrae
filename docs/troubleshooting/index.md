@@ -280,7 +280,8 @@ content that owns it. When the service already holds an index of the same name
 without that content's marker, for example in a data volume kept from an
 earlier lab, APTL can't prove that the index holds disposable data. It never
 adopts, deletes, or overwrites such an index. Startup stops before the workload
-starts, and the error names the index and its container.
+starts, without the backend retry, because a retry would meet the same index.
+The error names the index and its container.
 
 The Cortex job-index schema is the only schema that APTL maps to a native index
 name (`cortex_6`). For example, with the search service in container
@@ -289,7 +290,7 @@ name (`cortex_6`). For example, with the search service in container
 ```
 Lab start failed.
   error: Lab start failed: RAES runtime handoff failed:
-  aptl.provisioner.backend-start-failed at runtime.apply.provisioning: service
+  aptl.provisioner.backend-start-refused at runtime.apply.provisioning: service
   materialization failed for provision.content.cortex-job-index-schema
   (reason=unowned-collision): search index cortex_6 in container
   aptl-thehive-es lacks this content's ownership marker, ...

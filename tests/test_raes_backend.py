@@ -2089,6 +2089,97 @@ def test_start_raes_scenario_retries_soc_apply_without_replanning(mocker, tmp_pa
     before_retry.assert_called_once_with()
 
 
+_UNOWNED_INDEX_ERROR = (
+    "service materialization failed for provision.content.cortex-job-index-schema "
+    "(reason=unowned-collision): search index cortex_6 in container aptl-thehive-es "
+    "lacks this content's ownership marker, so APTL cannot prove it owns the index, "
+    "and it did not adopt, delete or overwrite it."
+)
+
+
+@pytest.mark.parametrize(
+    ("realize_results", "code", "applies", "retries"),
+    [
+        pytest.param(
+            [LabResult(success=False, error=_UNOWNED_INDEX_ERROR, unretryable=True)],
+            "aptl.provisioner.backend-start-refused",
+            1,
+            0,
+            id="unowned-index-refused",
+        ),
+        pytest.param(
+            [
+                LabResult(success=False, error="backend still starting"),
+                LabResult(success=True, message="ok"),
+            ],
+            None,
+            2,
+            1,
+            id="transient-start-retried",
+        ),
+    ],
+)
+def test_start_raes_scenario_retries_only_a_failure_a_retry_can_clear(
+    mocker, tmp_path, realize_results, code, applies, retries
+):
+    """An unowned index ends the start without the 60 s wait and the retry (#1325).
+
+    The retry callback is lab start's own, built for an adapter that admits
+    ``BEFORE_BACKEND_RETRY``, so the test pins the wait as well as the retry.
+    """
+    from aptl.backends import raes
+    from aptl.backends.scenario_startup import ScenarioStartupPlan, StartupHook
+    from aptl.core.lab import _backend_retry_callback, _LabStartContext
+
+    _write_compose(tmp_path, {"aptl-soc": ["soc"]})
+    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=object())
+
+    class FakeRuntimeManager(_FakeRuntimeManager):
+        def plan(self, parsed_scenario, *, parameters=None, artifact_availability=None):
+            return _FakeExecutionPlan(_plan_for_nodes("aptl-soc"))
+
+    mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
+    sleep = mocker.patch("time.sleep")
+    hook = mocker.patch("aptl.backends.scenario_startup.run_startup_hook")
+    backend = MagicMock()
+    backend.realize.side_effect = realize_results
+    ctx = _LabStartContext(project_dir=tmp_path, skip_seed=False)
+    ctx.backend = backend
+    ctx.scenario_startup = ScenarioStartupPlan(
+        seed_script="scripts/seed.sh",
+        required_profiles=("soc",),
+        activation_profiles=("soc",),
+        startup_hooks=frozenset({StartupHook.BEFORE_BACKEND_RETRY}),
+    )
+    config = AptlConfig(
+        lab={"name": "test"},
+        containers={"soc": True},
+        scenario=ScenarioSourceConfig(
+            source="project-tree", identity="techvault-operational"
+        ),
+    )
+
+    result = raes.start_raes_scenario(
+        tmp_path,
+        config,
+        backend,
+        admitted=raes.admit_raes_scenario(
+            tmp_path, config, backend, parameters={"victim_os": "linux"}
+        ),
+        before_backend_retry=_backend_retry_callback(ctx),
+    )
+
+    assert backend.realize.call_count == applies
+    assert sleep.call_args_list.count(mocker.call(60)) == retries
+    assert hook.call_count == retries
+    assert result.retryable is False
+    assert result.lab_result.success is (code is None)
+    if code is not None:
+        assert code in result.lab_result.error
+        assert _UNOWNED_INDEX_ERROR in result.lab_result.error
+        assert "aptl.provisioner.backend-start-failed" not in result.lab_result.error
+
+
 def _raes_started_outcome():
     """Build the successful apply outcome the handoff returns."""
     from aptl.backends.raes_start_model import AcesStartOutcome
