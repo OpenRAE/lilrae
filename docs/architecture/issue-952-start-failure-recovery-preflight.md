@@ -1,6 +1,6 @@
 # Issue #952: failed-start recovery preflight
 
-The supplied issue is the delivery contract; no Ground Control requirement is
+The supplied issue is the delivery contract; no GRC workflow requirement is
 attached. This checkout already has `--teardown-on-failure`, `StartResidue`,
 recovery rendering, and focused tests. Extend those incumbents rather than
 creating a second recovery workflow. This note fixes boundaries and acceptance
