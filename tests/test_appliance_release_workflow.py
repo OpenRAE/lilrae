@@ -43,6 +43,10 @@ def test_backmerge_binds_values_and_fails_closed() -> None:
     assert "|| true" not in run
     assert "compare/dev...main" in run
     assert '--title "chore: back-merge ${TAG} into dev"' in run
+    # A squashed back-merge leaves main's release commit out of dev's history,
+    # so the next promotion replays the version bump and can conflict (#1375).
+    assert 'Admin-merge it with \\"Create a merge commit\\"' in run
+    assert "Do not squash" in run
 
 
 _GH_STUB = """#!/bin/sh

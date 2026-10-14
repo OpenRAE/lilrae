@@ -77,8 +77,11 @@ README badge do not update until a promotion lands.
    rebuilding them.
 5. A `main`→`dev` **back-merge PR** is then opened automatically (main now has
    the version bump + `CHANGELOG.md`), titled `chore: back-merge <tag> into dev`.
-   **Admin-merge it** (one click) to keep `dev` current—like the release PR it
-   is bot-opened, so its required checks should not be relied on to run.
+   **Admin-merge it with "Create a merge commit"** to keep `dev` current—like
+   the release PR it is bot-opened, so its required checks should not be relied
+   on to run. Do not squash it. A squash copies the release changes but leaves
+   the release commit out of the `dev` history. The next promotion then replays
+   the version bump against `dev` and can conflict, as it did in #1375.
 
 ## Baseline
 
