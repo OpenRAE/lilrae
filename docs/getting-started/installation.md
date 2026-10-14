@@ -7,20 +7,20 @@ pipx environment. Check the [prerequisites](prerequisites.md) first.
 
 Install pipx through your operating system or the
 [official pipx instructions](https://pipx.pypa.io/stable/installation/), then
-install LilRAE. LilRAE was formerly named APTL; it is still published as the
-`aptl-labs` package and provides the `aptl` command
+install LilRAE. LilRAE was formerly named APTL. It is published as the
+`lilrae` package and provides the `aptl` command
 ([ADR-062](../adrs/adr-062-lilrae-name-and-naming-convention.md)):
 
 ```shell
-pipx install aptl-labs
+pipx install lilrae
 aptl --version
 ```
 
-`aptl-labs` requires Python 3.12 or newer. On macOS, if pipx is bound to the
+`lilrae` requires Python 3.12 or newer. On macOS, if pipx is bound to the
 Command Line Tools Python 3.9, ask pipx to fetch a supported interpreter:
 
 ```shell
-pipx install --python 3.12 --fetch-missing-python aptl-labs
+pipx install --python 3.12 --fetch-missing-python lilrae
 ```
 
 pipx keeps the CLI outside the system Python environment, avoiding the PEP 668
@@ -52,20 +52,19 @@ Upgrade the isolated installation, then initialize a new project when you want
 the complete asset set from the new release:
 
 ```shell
-pipx upgrade aptl-labs
+pipx upgrade lilrae
 aptl lab init my-new-lab
 ```
 
 Do not copy generated credentials or state between project directories.
 
-## Move To The lilrae Package
+## Move From aptl-labs To lilrae
 
-`aptl-labs` 7.0.0 is planned as the last `aptl-labs` release. Later releases
-will publish to PyPI as [`lilrae`](https://pypi.org/project/lilrae/), starting
-at version 8.0.0. Do not start a migration until `lilrae` 8.0.0 or later shows
-on its PyPI page. Until then, keep `aptl-labs` and upgrade it as usual. The import package, the `aptl` and `aptl-misp-suricata-sync` commands,
-the configuration, and the project state do not change. `pipx upgrade
-aptl-labs` does not move you to `lilrae`.
+`aptl-labs` 7.0.0 was the last `aptl-labs` release. Releases publish to PyPI
+as [`lilrae`](https://pypi.org/project/lilrae/) from version 8.0.0. The import
+package, the `aptl` and `aptl-misp-suricata-sync` commands, the configuration,
+and the project state do not change. `pipx upgrade aptl-labs` does not move
+you to `lilrae`.
 
 Both distributions install the same `aptl` package and the same commands. If
 you install one over the other, the second installation overwrites the files of
@@ -130,8 +129,8 @@ installation finds it.
 
 ### Roll Back
 
-To return to the legacy package after a migration, remove `lilrae` first, then
-install the last legacy release:
+To return to the legacy package, remove `lilrae` first, then install the last
+legacy release:
 
 ```shell
 pipx uninstall lilrae

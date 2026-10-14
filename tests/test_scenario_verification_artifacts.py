@@ -11,7 +11,7 @@ bundled ``_labdata/src`` copy, since ``ASSET_ROOTS`` ships ``src`` twice over.
 Second, the install: one install of one distribution is enough for semantic
 verification to reach a verdict. That is the point of the adapter shipping with
 the backend, and it is what an operator on the packaged path (DEP-008,
-``pipx install aptl-labs``, no git clone) actually gets.
+``pipx install lilrae``, no git clone) actually gets.
 
 Every compatibility context is derived from the pack ``env_pack_bundle()``
 admits (#879). A digest copied into this file would let the test agree with a
@@ -251,7 +251,7 @@ report = verify_scenario(
 )
 assert report.status is VerificationStatus.PASSED, report.diagnostics
 assert report.plugin_id == "techvault"
-assert report.distribution == "aptl-labs"
+assert report.distribution == "lilrae"
 assert report.distribution_version, "the version comes from installed metadata"
 assert report.entry_point == "techvault.aptl"
 """,

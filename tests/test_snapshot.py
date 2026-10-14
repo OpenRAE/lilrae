@@ -267,6 +267,38 @@ class TestGetSoftwareVersions:
         assert sv.python_version  # still set
 
 
+    def test_reads_the_installed_lilrae_version(self, monkeypatch):
+        import importlib.metadata as metadata
+
+        installed = {"lilrae": "8.0.0", "raes": "6.0.1"}
+
+        def _version(name):
+            if name not in installed:
+                raise metadata.PackageNotFoundError(name)
+            return installed[name]
+
+        monkeypatch.setattr(metadata, "version", _version)
+        backend = MagicMock()
+        backend.host_versions.return_value = {}
+        sv = _get_software_versions(backend, active_services=set())
+        assert sv.aptl_version == "8.0.0"
+        assert sv.raes_version == "6.0.1"
+
+    def test_reports_dev_only_when_lilrae_is_not_installed(self, monkeypatch):
+        import importlib.metadata as metadata
+
+        def _version(name):
+            if name == "aptl-labs":
+                return "7.0.0"
+            raise metadata.PackageNotFoundError(name)
+
+        monkeypatch.setattr(metadata, "version", _version)
+        backend = MagicMock()
+        backend.host_versions.return_value = {}
+        sv = _get_software_versions(backend, active_services=set())
+        assert sv.aptl_version == "dev"
+
+
 class TestGetContainerSnapshots:
     """Tests for ``_get_container_snapshots`` driven by typed backend methods."""
 
