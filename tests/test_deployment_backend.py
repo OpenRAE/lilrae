@@ -510,7 +510,7 @@ services:
             result = backend.start(["wazuh"])
 
         assert result.success is False
-        assert "compose up failed" in result.error
+        assert result.error == "Compose start failed."
 
     def test_project_presence_counts_all_container_states_and_networks(self, tmp_path):
         backend = self._make_backend(tmp_path)
@@ -1731,7 +1731,7 @@ services:
                 events.append(cmd[-1])
                 return MagicMock(returncode=1, stdout="", stderr="raw compose error")
 
-            def remove_generic_materializer_containers(self):
+            def remove_generic_materializer_containers(self, *, remove_volumes=True):
                 events.append("generic")
                 return []
 
@@ -1739,7 +1739,7 @@ services:
                 events.append("helpers")
                 return []
 
-            def remove_project_containers(self):
+            def remove_project_containers(self, *, remove_volumes=True):
                 events.append("containers")
                 return []
 
@@ -1781,13 +1781,13 @@ services:
                 del cmd, timeout
                 return MagicMock(returncode=0, stdout="", stderr="")
 
-            def remove_generic_materializer_containers(self):
+            def remove_generic_materializer_containers(self, *, remove_volumes=True):
                 return []
 
             def remove_stranded_helpers(self):
                 return []
 
-            def remove_project_containers(self):
+            def remove_project_containers(self, *, remove_volumes=True):
                 return []
 
             def remove_project_networks(self):

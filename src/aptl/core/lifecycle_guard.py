@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import errno
 import os
+import shlex
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -53,6 +54,21 @@ _WIN_FILE_ATTRIBUTE_TAG_INFO = 9
 
 class LifecycleLockUnavailableError(RuntimeError):
     """Raised when the owner lock cannot be established safely."""
+
+
+def stop_recovery_routes(project_dir: Path | None) -> tuple[tuple[str, str], ...]:
+    """Aim the shared recovery commands at the lifecycle operation's project."""
+    from aptl.core.lab_types import STOP_RECOVERY_ROUTES
+
+    if project_dir is None:
+        return STOP_RECOVERY_ROUTES
+    root = canonical_lifecycle_project_root(project_dir)
+    if root == canonical_lifecycle_project_root(Path(".")):
+        return STOP_RECOVERY_ROUTES
+    target = f" --project-dir {shlex.quote(str(root))}"
+    return tuple(
+        (f"{command}{target}", effect) for command, effect in STOP_RECOVERY_ROUTES
+    )
 
 
 @dataclass

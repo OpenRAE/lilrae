@@ -6,32 +6,10 @@ own module so that one stays within the 500-line file limit.
 
 from __future__ import annotations
 
-import shlex
-from pathlib import Path
-
 import typer
 
 from aptl.core.lab_types import STOP_RECOVERY_ROUTES, StartResidue
-from aptl.core.lifecycle_guard import canonical_lifecycle_project_root
-
-
-def stop_recovery_routes(project_dir: Path | None) -> tuple[tuple[str, str], ...]:
-    """Return the stop routes, aimed at ``project_dir`` when it is elsewhere.
-
-    ``aptl lab stop`` acts on the project the current directory resolves to.
-    After ``aptl lab start -d DIR`` from outside that project, both routes
-    name its root with ``--project-dir``.
-    """
-
-    if project_dir is None:
-        return STOP_RECOVERY_ROUTES
-    root = canonical_lifecycle_project_root(project_dir)
-    if root == canonical_lifecycle_project_root(Path(".")):
-        return STOP_RECOVERY_ROUTES
-    target = f" --project-dir {shlex.quote(str(root))}"
-    return tuple(
-        (f"{command}{target}", effect) for command, effect in STOP_RECOVERY_ROUTES
-    )
+from aptl.core.lifecycle_guard import stop_recovery_routes as stop_recovery_routes
 
 
 def emit_start_residue(
