@@ -113,6 +113,12 @@ Docker Desktop/nested-virtualization environment needed to prove full lab boot
 on macOS or Windows, so `aptl lab start` remains a manual platform-validation
 gate.
 
+CI lanes select tests by marker (`-m`), never by keyword (`-k`). Every test
+marked `integration` runs in a `checks.yml` job that names its file. A test
+that needs a live lab instead of a hosted runner goes in `LIVE_LAB_ONLY` in
+`tests/test_integration_lane_coverage.py` with its reason. That test fails when
+a new integration test has neither.
+
 When changing `docker-compose.yml`, container Dockerfiles, or files under
 `config/`, run only focused contract tests locally. CI/CD owns the clean lab
 stop/start validation so local verification does not expand into a full system

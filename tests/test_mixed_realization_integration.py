@@ -59,19 +59,13 @@ def _materialized_project(tmp_path):
     return tmp_path
 
 
-_COMPOSE = """\
-services:
-  image-box:
-    image: postgres:16-alpine
-    container_name: aptl-image-box
-    environment:
-      POSTGRES_PASSWORD: test
-      POSTGRES_HOST_AUTH_METHOD: trust
-  free-box:
-    image: alpine:3.19
-    container_name: aptl-free-box
-    command: ["sleep", "infinity"]
-"""
+# The image node's source must serve with no environment: a root
+# `docker-compose.yml` is never a scenario realization input (#1269), so an
+# image that needs a password from one exits before it gets an address. It must
+# also declare no `VOLUME`, because removing the container leaves an anonymous
+# volume behind (#1321).
+_IMAGE_SOURCE = ("nginx", "1.27-alpine")
+_IMAGE_REF = ":".join(_IMAGE_SOURCE)
 
 
 def _docker_available() -> bool:
@@ -85,7 +79,6 @@ def _docker_available() -> bool:
 
 @pytest.mark.skipif(not _docker_available(), reason="docker daemon not available")
 def test_realize_materializes_runtime_node_and_starts_image_node_together(tmp_path):
-    (tmp_path / "docker-compose.yml").write_text(_COMPOSE)
     free_container = "aptl-free-box"
     image_container = "aptl-image-box"
 
@@ -136,9 +129,9 @@ def test_realize_materializes_runtime_node_and_starts_image_node_together(tmp_pa
             DeploymentImageRealization(
                 address="provision.node.image-box",
                 service_name="image-box",
-                source_name="postgres",
-                source_version="16-alpine",
-                image_ref="postgres:16-alpine",
+                source_name=_IMAGE_SOURCE[0],
+                source_version=_IMAGE_SOURCE[1],
+                image_ref=_IMAGE_REF,
                 mode="pull",
                 policy_rule="allowed-source",
             ),
@@ -194,15 +187,18 @@ def test_realize_materializes_runtime_node_and_starts_image_node_together(tmp_pa
             ).stdout
         )
 
-        # The source: node was started via Compose as usual.
-        pg_ready = None
+        # The source: node was started via Compose as usual and serves.
+        served = None
         for _ in range(20):
-            pg_ready = backend.container_exec(realized_image, ["pg_isready"])
-            if pg_ready.returncode == 0:
+            served = backend.container_exec(
+                realized_image, ["wget", "-qO-", "http://127.0.0.1/"]
+            )
+            if served.returncode == 0:
                 break
             time.sleep(1)
-        assert pg_ready is not None, pg_ready.stdout
-        assert pg_ready.returncode == 0, pg_ready.stdout
+        assert served is not None
+        assert served.returncode == 0, served.stdout
+        assert "nginx" in served.stdout
 
         # The generic materializer's directly-run container is connected to
         # the declared scenario network with its declared static IP, exactly

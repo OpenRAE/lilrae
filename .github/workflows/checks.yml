@@ -65,14 +65,19 @@ jobs:
       - run: |
           pip install --require-hashes -r requirements/dev.txt
           pip install -e . --no-deps --no-build-isolation
+      # Lanes select by marker, never by `-k`: `-k "not integration"` also
+      # dropped unmarked tests whose file name contains "integration" (#1321).
+      # A command-line `-m` replaces the `addopts` one, so `not fuzz` is spelled
+      # out. tests/test_integration_lane_coverage.py fails if an
+      # integration-marked test is selected by no lane in this file.
       - run: |
-          coverage run -m pytest tests/ -q -k "not integration"
+          coverage run -m pytest tests/ -q -m "not integration and not fuzz"
           coverage xml -o coverage.xml
-      # Property-based tests carry the `fuzz` marker, which `addopts` excludes
-      # from the default run above. Without this step no gate ran them, and two
-      # went stale behind contract changes (#1141, #1152) unnoticed (#1193).
+      # Property-based tests carry the `fuzz` marker, which the run above
+      # excludes. Without this step no gate ran them, and two went stale
+      # behind contract changes (#1141, #1152) unnoticed (#1193).
       - name: Property-based (fuzz) tests
-        run: python -m pytest tests/ -q -m fuzz -k "not integration"
+        run: python -m pytest tests/ -q -m "fuzz and not integration"
       # The env-file writers must deliver each value exactly (#966). Only the
       # real Docker and Compose readers can prove that. The readback tests are
       # integration-marked, so the run above deselects them. The runner has
@@ -128,6 +133,52 @@ jobs:
           python -m pytest tests/test_env_pack_bundle.py
           tests/test_plugin_pack_compatibility.py -q -m integration
 
+  python-integration:
+    name: Python integration tests on the runner's Docker
+    runs-on: ubuntu-latest
+    # Issue #1321: these integration-marked tests ran in no lane, and two of
+    # them had gone stale unnoticed. They need the runner's Docker, Compose or a
+    # wheel build, not a lab. They run in their own job so the required
+    # python-tests job, which SonarCloud waits on, does not grow. The probes
+    # stop the step if Docker, Compose or cgroup v2 is missing, so the tests
+    # cannot pass by a skip; -rs lists any skip in the log. A new
+    # integration-marked test needs a lane here or an entry in the live-lab
+    # list in tests/test_integration_lane_coverage.py.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: |
+          pip install --require-hashes -r requirements/dev.txt
+          pip install -e . --no-deps --no-build-isolation
+      - name: Integration tests on Docker, Compose and wheel builds
+        run: |
+          docker info > /dev/null
+          docker compose version
+          test "$(docker info --format '{{.CgroupVersion}}')" = 2
+          python -m pytest -q -rs -m integration \
+            tests/test_appliance_boundary_integration.py \
+            tests/test_base_container_admission_integration.py \
+            tests/test_compose_capability_necessity.py \
+            tests/test_env_pack_realization.py \
+            tests/test_hatch_build_hook.py \
+            tests/test_kali_capture_compose.py \
+            tests/test_listener_observation_integration.py \
+            tests/test_materializer_integration.py \
+            tests/test_misp_redis_realization_contract.py \
+            tests/test_mixed_realization_integration.py \
+            tests/test_node_materialization_integration.py \
+            tests/test_out_of_tree_bundle_integration.py \
+            tests/test_pack_adapter_install_artifact.py \
+            tests/test_participant_workbench_adapter.py \
+            tests/test_ssh_key_bundle.py \
+            tests/test_stage_hosted_seat_payload.py \
+            tests/test_substrate_posture_real_docker.py \
+            tests/test_techvault_dns_integration.py
+
   python-cross-platform:
     name: Python cross-platform smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -136,9 +187,9 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            pytest_args: tests/ -q -k "not integration"
+            pytest_args: tests/ -q -m "not integration and not fuzz"
           - os: macos-latest
-            pytest_args: tests/ -q -k "not integration"
+            pytest_args: tests/ -q -m "not integration and not fuzz"
           - os: windows-latest
             pytest_args: >-
               tests/test_cli.py
