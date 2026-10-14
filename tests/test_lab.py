@@ -2684,6 +2684,29 @@ class TestOrchestrateLabStart:
         assert project.volumes == 4
         assert any(d.step == "failed_start_cleanup" for d in result.diagnostics)
 
+    def test_cleanup_failure_after_runtime_removal_recommends_non_destructive_retry(
+        self, mocker, tmp_path
+    ):
+        from aptl.core.lab import orchestrate_lab_start
+        from aptl.core.lab_types import LabResult
+
+        project = self._failing_range(mocker, tmp_path)
+
+        def stop(*args):
+            project.stop([])
+            return LabResult(success=False, error="Transcript finalization failed.")
+
+        mocker.patch("aptl.core.lab._stop_lab_owned", side_effect=stop)
+        result = orchestrate_lab_start(tmp_path, teardown_on_failure=True)
+
+        assert "backend-contract-invalid" in result.error
+        assert result.residue.torn_down
+        assert project.volumes == 4
+        [diagnostic] = [d for d in result.diagnostics if d.step == "failed_start_cleanup"]
+        assert "aptl lab stop --project-dir" in diagnostic.operator_action
+        assert "stop -v" not in diagnostic.operator_action
+        assert "without removing volumes" in diagnostic.operator_action
+
     @pytest.mark.parametrize("teardown", [False, True])
     def test_readiness_failure_is_accounted_under_start_lock(
         self, mocker, tmp_path, teardown

@@ -4495,6 +4495,7 @@ def _tear_down_failed_start(
         stop = LabResult(success=False, error="Failed-start cleanup did not complete.")
     if not stop.success:
         log.error("Teardown after the failed start reported a failure")
+        retry_command = stop_recovery_routes(ctx.project_dir)[0][0]
         diagnostics.append(
             StartupDiagnostic(
                 step="failed_start_cleanup",
@@ -4502,7 +4503,7 @@ def _tear_down_failed_start(
                 impact=DiagnosticImpact.READINESS,
                 severity=DiagnosticSeverity.ERROR,
                 message="Failed-start cleanup reported a failure.",
-                operator_action="Inspect the project and retry the printed recovery command.",
+                operator_action=f"Run `{retry_command}` to retry cleanup without removing volumes.",
             )
         )
     remaining = _observed_start_residue(ctx.backend)
