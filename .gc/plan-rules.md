@@ -2,6 +2,11 @@
 
 Mandatory constraints the `/implement` skill applies during plan phase.
 
+- One issue = one PR. A delivery PR MUST address every acceptance criterion
+  of its issue, including code, documentation, and tests. Extend the existing
+  PR; do not distribute one issue across multiple PRs. If an issue is too large,
+  create smaller linked issues with explicit acceptance criteria and one
+  complete PR per smaller issue. The parent tracks their delivery.
 - Plans that add or change Python code MUST include corresponding pytest
   tests in `tests/`. Use `pytest -m fuzz` for property-based tests
   (the default test run skips them per `pyproject.toml`).

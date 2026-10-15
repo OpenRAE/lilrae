@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -422,10 +420,9 @@ def test_runtime_qualification_precedes_ownership_and_mixed_materialization(
     assert "backend=shared-docker" in result.error
 
 
-def test_static_effective_model_is_compared_before_ownership(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_a_root_model_does_not_override_runtime_qualification(tmp_path, monkeypatch):
+    """Only the generated scenario model is qualified before mutation."""
+
     (tmp_path / "docker-compose.yml").write_text(
         "services:\n  workload:\n    image: example/workload\n",
         encoding="utf-8",
@@ -434,78 +431,24 @@ def test_static_effective_model_is_compared_before_ownership(
         {"container": {"read_only_rootfs": True}}
     )
     backend = DockerComposeBackend(tmp_path)
-    ownership_calls: list[str] = []
     monkeypatch.setattr(
-        backend,
-        "_ensure_resource_ownership",
-        lambda *args, **kwargs: ownership_calls.append("ownership"),
+        backend, "_run", lambda *_args, **_kwargs: pytest.fail("read unused root model")
     )
-    monkeypatch.setattr(
-        backend,
-        "_run",
-        lambda argv, **kwargs: subprocess.CompletedProcess(
-            argv,
-            0,
-            json.dumps({"services": {"workload": {"image": "example/workload"}}}),
-            "",
-        ),
-    )
-
-    result = backend.realize(_spec(runtime), scenario_root=tmp_path)
-
-    assert result.success is False
-    assert ownership_calls == []
-    assert "field=runtime.container.read_only_rootfs" in result.error
-    assert "effective Compose model" in result.error
+    result = backend.qualify_runtime_materialization(_spec(runtime), scenario_root=tmp_path)
+    assert result.success
 
 
-def test_static_undeclared_host_bind_is_rejected_before_ownership(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_a_root_model_cannot_add_undeclared_host_authority(tmp_path, monkeypatch):
     (tmp_path / "docker-compose.yml").write_text(
-        "services:\n  workload:\n    image: example/workload\n",
+        "services:\n  workload:\n    image: example/workload\n"
+        "    volumes: [/:/host]\n",
         encoding="utf-8",
     )
     backend = DockerComposeBackend(tmp_path)
-    ownership_calls: list[str] = []
     monkeypatch.setattr(
-        backend,
-        "_ensure_resource_ownership",
-        lambda *args, **kwargs: ownership_calls.append("ownership"),
+        backend, "_run", lambda *_args, **_kwargs: pytest.fail("read unused root model")
     )
-    monkeypatch.setattr(
-        backend,
-        "_run",
-        lambda argv, **kwargs: subprocess.CompletedProcess(
-            argv,
-            0,
-            json.dumps(
-                {
-                    "services": {
-                        "workload": {
-                            "image": "example/workload",
-                            "volumes": [
-                                {
-                                    "type": "bind",
-                                    "source": "/",
-                                    "target": "/host",
-                                }
-                            ],
-                        }
-                    }
-                }
-            ),
-            "",
-        ),
+    result = backend.qualify_runtime_materialization(
+        _spec(RuntimeConfiguration.model_validate({})), scenario_root=tmp_path
     )
-
-    result = backend.realize(
-        _spec(RuntimeConfiguration.model_validate({})),
-        scenario_root=tmp_path,
-    )
-
-    assert result.success is False
-    assert ownership_calls == []
-    assert "field=runtime.mounts" in result.error
-    assert "undeclared runtime authority" in result.error
+    assert result.success

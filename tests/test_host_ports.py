@@ -125,6 +125,17 @@ def test_port_available_false_when_in_use():
         holder.close()
 
 
+@pytest.mark.parametrize("host_ip", [None, "::1"])
+def test_port_available_never_binds_a_wildcard_address(mocker, host_ip):
+    bound: list[str] = []
+    fake = mocker.MagicMock()
+    fake.bind.side_effect = lambda address: bound.append(address[0])
+    mocker.patch("aptl.core.host_ports.socket.socket", return_value=fake)
+
+    assert host_ports.port_available(20000, "tcp", host_ip) is True
+    assert bound == ["127.0.0.1", "::1"]
+
+
 def test_port_available_true_on_eacces(mocker):
     """A privileged-port EACCES must read as available, not occupied.
 

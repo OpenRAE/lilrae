@@ -490,14 +490,18 @@ class TestCorrelationProjection:
 # Fuzz (property-based)
 # ---------------------------------------------------------------------------
 
+import string  # noqa: E402
+
 from hypothesis import given, settings  # noqa: E402
 from hypothesis import strategies as st  # noqa: E402
 
+# The run-store id contract is ASCII-only (`re.ASCII`), the same as the
+# capture broker, the capture writer and the MCP ID_RE.
 _ID_ALPHABET = st.text(
-    alphabet=st.characters(whitelist_categories=("Ll", "Lu", "Nd"), whitelist_characters="-_"),
+    alphabet=st.sampled_from(string.ascii_letters + string.digits + "-_"),
     min_size=1,
     max_size=20,
-).filter(lambda s: s[0].isalnum() or s[0] in "_")
+).filter(lambda s: s[0] != "-")
 
 
 @pytest.mark.fuzz

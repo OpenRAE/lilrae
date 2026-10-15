@@ -14,13 +14,14 @@ from aptl.core.appliance_boundary import (
     ApplianceBoundaryBinding,
     ApplianceBoundaryPolicy,
 )
-from aptl.core.config import validate_compose_project_name
+from aptl.core.config import EnvironmentGrant, validate_compose_project_name
 from aptl.core.deployment._operator_access import ComposeOperatorAccessMixin
 from aptl.core.deployment._compose_autoremove import ComposeAutoremoveMixin
 from aptl.core.deployment._compose_base_substrate import ComposeBaseSubstrateMixin
 from aptl.core.deployment._compose_boundary import DEFAULT_BOUNDARY_HELPER_IMAGE
 from aptl.core.deployment._compose_owned_start import ComposeOwnedStartMixin
 from aptl.core.deployment._compose_direct_network import ComposeDirectNetworkMixin
+from aptl.core.deployment._compose_environment import ComposeEnvironmentBindingMixin
 from aptl.core.deployment._compose_receipt_capture import ComposeReceiptCaptureMixin
 from aptl.core.deployment._compose_resource_resolution import (
     ComposeResourceResolutionMixin,
@@ -68,26 +69,36 @@ _DOCKER_COMMAND_ACTIONS = frozenset(
         "version",
     }
 )
+_DOCKER_DIRECT_VERBS = frozenset(
+    {"exec", "inspect", "ps", "run", "start", "stop", "kill"}
+)
+# Timeout diagnostics take their text from this table. A command argument only
+# selects an entry, so no argument text can reach a log or an error message.
+_DOCKER_OPERATION_LABELS: dict[tuple[str, str | None], str] = {
+    **{(group, None): f"docker {group} command" for group in _DOCKER_COMMAND_GROUPS},
+    **{
+        (group, action): f"docker {group} {action}"
+        for group in _DOCKER_COMMAND_GROUPS
+        for action in _DOCKER_COMMAND_ACTIONS
+    },
+    **{(verb, None): f"docker {verb}" for verb in _DOCKER_DIRECT_VERBS},
+}
 
 
 def _safe_command_operation(cmd: list[str]) -> str:
     """Classify a Docker timeout without logging command arguments or secrets."""
 
-    operation = "backend command"
     if not cmd or cmd[0] != "docker":
-        return operation
-    operation = "docker command"
-    if len(cmd) >= 2:
-        verb = cmd[1]
-        if verb in _DOCKER_COMMAND_GROUPS:
-            action = next(
-                (part for part in cmd[2:] if part in _DOCKER_COMMAND_ACTIONS),
-                "command",
-            )
-            operation = f"docker {verb} {action}"
-        elif verb in {"exec", "inspect", "ps", "run", "start", "stop", "kill"}:
-            operation = f"docker {verb}"
-    return operation
+        return "backend command"
+    if len(cmd) < 2:
+        return "docker command"
+    verb = cmd[1]
+    action = None
+    if verb in _DOCKER_COMMAND_GROUPS:
+        action = next(
+            (part for part in cmd[2:] if part in _DOCKER_COMMAND_ACTIONS), None
+        )
+    return _DOCKER_OPERATION_LABELS.get((verb, action), "docker command")
 
 
 def _timed_out_operation(cmd: list[str], timeout: int | None) -> BackendTimeoutError:
@@ -115,6 +126,7 @@ class DockerComposeBackend(
     ComposeOperatorAccessMixin,
     ComposeProjectCleanupMixin,
     ComposeImageFetchMixin,
+    ComposeEnvironmentBindingMixin,
 ):
     """Docker Compose deployment backend.
 
@@ -131,6 +143,7 @@ class DockerComposeBackend(
         *,
         offline_staged: bool = False,
         docker_socket_path: Path | None = None,
+        environment_grants: Sequence[EnvironmentGrant] = (),
     ) -> None:
         if docker_socket_path is not None and not docker_socket_path.is_absolute():
             raise ValueError("managed Docker socket must be absolute")
@@ -144,6 +157,8 @@ class DockerComposeBackend(
         # its creation and receipt publication within this backend instance.
         self._project_volume_lock = threading.Lock()
         self._offline_staged = offline_staged
+        # Operator grants from aptl.json: locators only, read at preflight.
+        self.use_environment_grants(environment_grants)
         self._appliance_boundary: (
             tuple[
                 ApplianceBoundaryPolicy,
@@ -277,6 +292,23 @@ class DockerComposeBackend(
             kwargs["env"] = env
         return kwargs
 
+    def _command_kwargs(
+        self, cmd: Sequence[str], *, streaming: bool, timeout: int | None
+    ) -> dict[str, Any]:
+        """Return ``subprocess.run`` kwargs for one command.
+
+        A ``docker compose`` command reads interpolation and pass-through values
+        from its own process environment before the bound project ``.env``, so
+        it never inherits APTL's whole environment (issue #965).
+        """
+
+        kwargs = self._subprocess_kwargs(streaming=streaming, timeout=timeout)
+        if list(cmd[:2]) == ["docker", "compose"]:
+            kwargs["env"] = self._compose_command_environment(
+                kwargs.get("env", os.environ)
+            )
+        return kwargs
+
     def docker_transport_environment(self) -> dict[str, str]:
         """Project this backend's effective subprocess Docker coordinates."""
 
@@ -299,7 +331,7 @@ class DockerComposeBackend(
         callers don't depend on ``subprocess`` as an implementation
         detail.
         """
-        kwargs = self._subprocess_kwargs(streaming=False, timeout=timeout)
+        kwargs = self._command_kwargs(cmd, streaming=False, timeout=timeout)
         try:
             return subprocess.run(cmd, **kwargs)
         except subprocess.TimeoutExpired as exc:
@@ -317,7 +349,7 @@ class DockerComposeBackend(
         streams (``container_logs``). The parent terminal is connected
         directly to the child process — no capturing.
         """
-        kwargs = self._subprocess_kwargs(streaming=True, timeout=timeout)
+        kwargs = self._command_kwargs(cmd, streaming=True, timeout=timeout)
         try:
             return subprocess.run(cmd, **kwargs).returncode
         except subprocess.TimeoutExpired as exc:
@@ -332,7 +364,7 @@ class DockerComposeBackend(
     ) -> subprocess.CompletedProcess:
         """Run one fixed command with a payload supplied only over stdin."""
 
-        kwargs = self._subprocess_kwargs(streaming=False, timeout=timeout)
+        kwargs = self._command_kwargs(cmd, streaming=False, timeout=timeout)
         kwargs["input"] = payload
         try:
             return subprocess.run(cmd, **kwargs)
