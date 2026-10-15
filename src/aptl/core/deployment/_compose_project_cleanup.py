@@ -21,7 +21,9 @@ class _CleanupBackend(Protocol):
 
     _project_name: str
 
-    def _remove_owned_containers(self, managed_by: str) -> list[str]:
+    def _remove_owned_containers(
+        self, managed_by: str, *, remove_volumes: bool = True
+    ) -> list[str]:
         """Remove only freshly verified receipt-owned native container IDs."""
 
         ...
@@ -36,15 +38,17 @@ class _CleanupBackend(Protocol):
 class ComposeProjectCleanupMixin(object):
     """Remove project-owned containers that Compose may leave behind."""
 
-    def remove_generic_materializer_containers(self) -> list[str]:
+    def remove_generic_materializer_containers(
+        self, *, remove_volumes: bool = True
+    ) -> list[str]:
         """Force-remove containers realized directly by the generic materializer."""
 
-        return self._remove_owned_containers("direct")
+        return self._remove_owned_containers("direct", remove_volumes=remove_volumes)
 
-    def remove_project_containers(self) -> list[str]:
+    def remove_project_containers(self, *, remove_volumes: bool = True) -> list[str]:
         """Force-remove residual containers carrying the Compose project identity."""
 
-        return self._remove_owned_containers("compose")
+        return self._remove_owned_containers("compose", remove_volumes=remove_volumes)
 
     def _ephemeral_project(self) -> str | None:
         """Return this workspace's project if it already exists, creating nothing.

@@ -31,6 +31,7 @@ from aptl.core.scenario_bundle import PackIdentity
 
 if TYPE_CHECKING:
     from aptl.backends.scenario_startup import ScenarioStartupSelection
+    from raes_contracts.planning import ResolvedRealizationAuthority
 
 
 @dataclass(frozen=True)
@@ -239,6 +240,7 @@ class AptlRealization(object):
     # which is embedded in portable RAES realization state.
     pack_identity: PackIdentity | None = None
     pack_interaction: ResolvedPackBackendInteraction | None = None
+    realization_authority: tuple[ResolvedRealizationAuthority, ...] = ()
 
     def deployment_spec(
         self,
@@ -258,6 +260,7 @@ class AptlRealization(object):
         return DeploymentRealizationSpec(
             profiles=tuple(profiles),
             nodes=nodes,
+            realization_authority=self.realization_authority,
             networks=tuple(
                 DeploymentNetworkRealization(
                     name=network.name,

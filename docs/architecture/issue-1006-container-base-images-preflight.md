@@ -1,5 +1,10 @@
 # Issue #1006 Container Base-Image Migration Preflight
 
+> **Dated preflight record.** Written on 2026-09-17 and kept as written. Since
+> then, #1100 (7a3382eb, 2026-09-17) removed `containers/ad/Dockerfile`,
+> `containers/wazuh-sidecar/Dockerfile` and
+> `containers/kali-ssh-proxy/Dockerfile`, which it lists as current images.
+
 This note fixes the architectural boundaries for issue #1006. It is guidance,
 not an implementation plan. The migration changes supply chain inputs and the
 OS/runtime substrate; it must not weaken the existing realization, security, or

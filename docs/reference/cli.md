@@ -121,13 +121,25 @@ reset, or a substitute for investigating a failed readiness result.
 A failed `aptl lab start` leaves the containers and networks it created in
 place so you can diagnose the failure. The failure summary counts them and
 names the two recovery commands: `aptl lab stop` keeps the volumes, and
-`aptl lab stop -v` destroys all lab data. If you ran the start from outside
-its project directory, both commands include `--project-dir`. Add
+`aptl lab stop -v` removes managed volumes and destroys their lab data. If you
+ran the start from outside its project directory, both commands include `--project-dir`. Add
 `--teardown-on-failure` to the start command to stop those containers and
 networks automatically instead. It keeps the volumes. An appliance seat's
-guest readiness publication runs after the lab is up, so if it fails, the
-summary doesn't count the containers and networks and `--teardown-on-failure`
-doesn't stop them.
+guest readiness publication also runs under the start lock, so its failure
+reports residue and honors the option. Long-lived appliance access supervision
+runs after that lock is released; its later failures require explicit recovery.
+Removing containers loses their writable layers and container-local logs;
+retaining volumes preserves volume-backed data, including anonymous node
+volumes. Disposable helpers still discard their temporary storage.
+
+Anonymous volumes retained after their containers are removed are not
+automatically reattached or removed by a later `stop -v`; inspect and recover
+or remove that data explicitly. Project cleanup never prunes unowned volumes.
+
+The backend compensates for partial Compose startup and ownership-capture
+failure even without the option. It removes attempted runtime while keeping
+volumes. If ownership capture failed, retained volumes may need ownership
+repair before another start or cleanup; the backend refuses uncertain ownership.
 
 ## Configuration And Secrets
 

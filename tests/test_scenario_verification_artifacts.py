@@ -11,7 +11,7 @@ bundled ``_labdata/src`` copy, since ``ASSET_ROOTS`` ships ``src`` twice over.
 Second, the install: one install of one distribution is enough for semantic
 verification to reach a verdict. That is the point of the adapter shipping with
 the backend, and it is what an operator on the packaged path (DEP-008,
-``pipx install aptl-labs``, no git clone) actually gets.
+``pipx install lilrae``, no git clone) actually gets.
 
 Every compatibility context is derived from the pack ``env_pack_bundle()``
 admits (#879). A digest copied into this file would let the test agree with a
@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import zipfile
@@ -64,15 +63,14 @@ class Operations:
 def _build_wheel(output: Path) -> Path:
     """Build the distribution with the repository's locked build toolchain."""
 
-    if shutil.which("uv") is None:
-        pytest.skip("uv is required for the repository's locked build proof")
     completed = subprocess.run(
         [
-            "uv",
+            sys.executable,
+            "-m",
             "build",
             "--wheel",
-            "--no-build-isolation",
-            "--out-dir",
+            "--no-isolation",
+            "--outdir",
             str(output),
             str(REPO_ROOT),
         ],
@@ -253,7 +251,7 @@ report = verify_scenario(
 )
 assert report.status is VerificationStatus.PASSED, report.diagnostics
 assert report.plugin_id == "techvault"
-assert report.distribution == "aptl-labs"
+assert report.distribution == "lilrae"
 assert report.distribution_version, "the version comes from installed metadata"
 assert report.entry_point == "techvault.aptl"
 """,
