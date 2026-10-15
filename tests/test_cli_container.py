@@ -9,7 +9,10 @@ import pytest
 from typer.testing import CliRunner
 
 from aptl.cli.main import app
-from aptl.core.deployment._compose_resource_ownership import ResourceReceipt
+from aptl.core.deployment._compose_resource_ownership import (
+    ResourceReceipt,
+    WorkspaceOwnership,
+)
 from aptl.core.deployment.docker_compose import DockerComposeBackend
 
 
@@ -333,6 +336,10 @@ def owned_lab(project_dir, mocker):
             payload = json.dumps([inspected[argv[2]]])
             return subprocess.CompletedProcess(argv, 0, stdout=payload, stderr="")
         calls.append(argv)
+        if argv == ["docker", "info", "--format", "{{.ID}}"]:
+            return subprocess.CompletedProcess(
+                argv, 0, stdout="daemon-a\n", stderr=""
+            )
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
     mocker.patch("subprocess.run", side_effect=docker)
@@ -407,3 +414,53 @@ class TestContainerShellKaliCaptureRefusal:
 
         assert result.exit_code == 0
         assert calls == [["docker", "exec", "-it", _VICTIM_ID, "/bin/bash"]]
+
+
+# ---------------------------------------------------------------------------
+# Names the lab holds no live receipt for
+# ---------------------------------------------------------------------------
+
+_GONE_ID = "c" * 64
+
+
+class TestContainerCommandsRejectUnrecordedNames:
+    """``logs`` and ``shell`` print the lab guidance, not a traceback, for a
+    name with no receipt or whose recorded container is gone."""
+
+    @staticmethod
+    def _record_gone_container(project_dir: Path) -> None:
+        # The fake daemon answers no inspect for this native ID.
+        ownership = WorkspaceOwnership.load(project_dir, "aptl")
+        ownership.record(
+            ResourceReceipt(
+                kind="container",
+                native_id=_GONE_ID,
+                external_name=ownership.container_name("aptl-gone"),
+                semantic_name="aptl-gone",
+                node_address="provision.node.aptl-gone",
+                workspace_id=ownership.workspace_id,
+                project_name=ownership.project_name,
+                daemon_id="daemon-a",
+                attempt_id="run-a",
+            )
+        )
+
+    @pytest.mark.parametrize("command", ["logs", "shell"])
+    @pytest.mark.parametrize("name", ["evil-other-project", "aptl-gone"])
+    def test_name_without_a_live_receipt_is_not_part_of_this_lab(
+        self, runner, project_dir, owned_lab, mocker, command, name
+    ):
+        _selectors, calls = owned_lab
+        self._record_gone_container(project_dir)
+        mocker.patch("aptl.core.deployment._compose_resource_resolution.time.sleep")
+
+        result = runner.invoke(
+            app, ["container", command, name, "--project-dir", str(project_dir)]
+        )
+
+        assert result.exit_code == 1
+        assert "not part of this lab" in result.stderr.lower()
+        assert all(
+            argv[:2] in (["docker", "inspect"], ["docker", "info"])
+            for argv in calls
+        )

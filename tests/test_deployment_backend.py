@@ -1261,6 +1261,8 @@ services:
                 )
             if cmd[:2] == ["docker", "inspect"]:
                 return MagicMock(returncode=1, stdout="", stderr="missing")
+            if cmd == ["docker", "info", "--format", "{{.ID}}"]:
+                return MagicMock(returncode=0, stdout="test-daemon\n", stderr="")
             return MagicMock(returncode=0, stdout="", stderr="")
 
         with patch("subprocess.run", side_effect=fake_run):
@@ -2254,6 +2256,7 @@ class TestDockerComposeBackendContainerInteraction:
     def _make_backend(self, tmp_path: Path) -> DockerComposeBackend:
         backend = DockerComposeBackend(project_dir=tmp_path, project_name="test")
         backend._resolve_owned_container_id = lambda selector: selector  # type: ignore[method-assign]
+        backend._find_owned_container_id = lambda selector: selector  # type: ignore[method-assign]
         return backend
 
     # container_list -------------------------------------------------------
