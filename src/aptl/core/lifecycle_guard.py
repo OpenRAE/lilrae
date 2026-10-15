@@ -56,18 +56,23 @@ class LifecycleLockUnavailableError(RuntimeError):
     """Raised when the owner lock cannot be established safely."""
 
 
-def stop_recovery_routes(project_dir: Path | None) -> tuple[tuple[str, str], ...]:
-    """Aim the shared recovery commands at the lifecycle operation's project."""
-    from aptl.core.lab_types import STOP_RECOVERY_ROUTES
-
+def lifecycle_recovery_command(command: str, project_dir: Path | None) -> str:
+    """Aim a recovery command at the lifecycle operation's canonical project."""
     if project_dir is None:
-        return STOP_RECOVERY_ROUTES
+        return command
     root = canonical_lifecycle_project_root(project_dir)
     if root == canonical_lifecycle_project_root(Path(".")):
-        return STOP_RECOVERY_ROUTES
-    target = f" --project-dir {shlex.quote(str(root))}"
+        return command
+    return f"{command} --project-dir {shlex.quote(str(root))}"
+
+
+def stop_recovery_routes(project_dir: Path | None) -> tuple[tuple[str, str], ...]:
+    """Aim the shared stop commands at the lifecycle operation's project."""
+    from aptl.core.lab_types import STOP_RECOVERY_ROUTES
+
     return tuple(
-        (f"{command}{target}", effect) for command, effect in STOP_RECOVERY_ROUTES
+        (lifecycle_recovery_command(command, project_dir), effect)
+        for command, effect in STOP_RECOVERY_ROUTES
     )
 
 

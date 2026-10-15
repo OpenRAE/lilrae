@@ -593,6 +593,7 @@ class TestPreexistingRangeAdmission:
         target = shlex.quote(str(project))
         assert f"aptl lab stop --project-dir {target}`" in result.error
         assert f"aptl lab stop -v --project-dir {target}`" in result.error
+        assert f"aptl lab start --clean --project-dir {target}`" in result.error
 
     def test_running_created_or_exited_container_blocks_start(
         self, tmp_path, monkeypatch
@@ -2649,9 +2650,9 @@ class TestOrchestrateLabStart:
         assert "private-backend-payload" not in result.error
         assert result.residue is not None
         assert result.residue.torn_down is teardown
-        assert (project.containers, project.networks, project.volumes) == (
-            (0, 0, 4) if teardown else (3, 2, 4)
-        )
+        expected_resources = (0, 0, 4) if teardown else (3, 2, 4)
+        actual_resources = (project.containers, project.networks, project.volumes)
+        assert actual_resources == expected_resources
 
     def test_observation_exception_is_unknown_residue(self, mocker, tmp_path):
         from aptl.core.lab import orchestrate_lab_start

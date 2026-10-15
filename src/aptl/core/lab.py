@@ -63,6 +63,7 @@ from aptl.core.lab_types import (
 )
 from aptl.core.lifecycle_guard import (
     LifecycleLockUnavailableError,
+    lifecycle_recovery_command,
     lifecycle_mutation_lock,
     stop_recovery_routes,
 )
@@ -1807,12 +1808,13 @@ def _step_reject_preexisting_range(ctx: _LabStartContext) -> LabResult | None:
         f"`{command}` {effect}"
         for command, effect in stop_recovery_routes(ctx.project_dir)
     )
+    clean_command = lifecycle_recovery_command("aptl lab start --clean", ctx.project_dir)
     return LabResult(
         success=False,
         error=(
             "[lifecycle-range-present] An APTL range already exists for this "
             f"deployment project: {present}. {routes}. Run one and retry, or use "
-            "`aptl lab start --clean` for an explicit volume-reset boot."
+            f"`{clean_command}` for an explicit volume-reset boot."
         ),
     )
 
@@ -4730,13 +4732,12 @@ def _publish_appliance_guest_readiness(
             ctx.appliance_access_device,
             ctx.appliance_access_output_dir,
         )
-        if any(access_values):
-            if (
-                not all(access_values)
-                or ctx.appliance_launch_descriptor is None
-                or ctx.run_id is None
-            ):
-                raise ValueError("appliance access channel is incomplete")
+        if any(access_values) and (
+            not all(access_values)
+            or ctx.appliance_launch_descriptor is None
+            or ctx.run_id is None
+        ):
+            raise ValueError("appliance access channel is incomplete")
     except Exception:
         log.error("Appliance guest readiness publication failed")
         return LabResult(

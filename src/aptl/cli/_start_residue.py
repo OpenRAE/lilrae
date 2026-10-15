@@ -9,7 +9,6 @@ from __future__ import annotations
 import typer
 
 from aptl.core.lab_types import STOP_RECOVERY_ROUTES, StartResidue
-from aptl.core.lifecycle_guard import stop_recovery_routes as stop_recovery_routes
 
 
 def emit_start_residue(
