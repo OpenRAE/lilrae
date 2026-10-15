@@ -13,6 +13,7 @@ from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 from aptl.backends._raes_apply_reporting import (
     bounded_apply_details as _bounded_apply_details,
     with_artifact_satisfactions,
+    source_image_evidence,
 )
 
 from aptl.backends.raes_diagnostics import (
@@ -98,11 +99,13 @@ class AptlProvisioner(ProvisionerStartMixin):
         default=None, init=False, repr=False
     )
     _attempt_id: str | None = field(default=None, init=False, repr=False)
+    last_source_image_evidence: dict[str, object] = field(default_factory=dict, init=False, repr=False)
 
     def bind_attempt_id(self, attempt_id: str | None) -> None:
         """Bind the one already-resolved lab-start attempt to deployment."""
 
         self._attempt_id = attempt_id
+        self.last_source_image_evidence = {}
 
     def validate(self, plan: object) -> list[Diagnostic]:
         """Validate that the RAES provisioning plan is APTL-realizable."""
@@ -171,6 +174,7 @@ class AptlProvisioner(ProvisionerStartMixin):
         self.last_failure_diagnostics = (
             () if result.success else tuple(result.diagnostics)
         )
+        self.last_source_image_evidence = source_image_evidence(result.details)
         return result
 
     @staticmethod

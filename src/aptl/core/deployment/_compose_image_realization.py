@@ -15,6 +15,7 @@ from aptl.core.deployment._compose_spawn_image_realization import (
 from aptl.core.deployment._docker_image_identity import (
     LOCAL_IMAGE_PRESENT,
     DockerPlatform,
+    selected_container_image_digest,
     is_exact_image_reference,
     local_image_state,
 )
@@ -183,7 +184,10 @@ class ComposeRealizationImageMixin:
         digest = inspect.stdout.strip()
         return digest if digest.startswith(_SHA256_PREFIX) else None
 
-    def container_image_digest(self, container_name: str) -> str | None:
+    def container_image_digest(
+        self, container_name: str, *, expected_ref: str | None = None,
+        expected_config_id: str | None = None,
+    ) -> str | None:
         """Return the manifest digest of the image backing one container.
 
         This is the read-after-write half of artifact realization: it reports
@@ -210,6 +214,12 @@ class ComposeRealizationImageMixin:
         image_id = container.stdout.strip()
         if not image_id:
             return None
+        if expected_config_id is not None and image_id != expected_config_id:
+            return None
+        if expected_ref is not None:
+            return selected_container_image_digest(
+                self._run, image_id, expected_ref, timeout=_IMAGE_REALIZATION_TIMEOUT
+            )
         return self._image_manifest_digest(image_id)
 
     def substrate_image_identity(self, image_ref: str) -> tuple[str, str] | None:

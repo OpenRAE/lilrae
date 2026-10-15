@@ -24,6 +24,8 @@ from aptl.backends._raes_apply_reporting import (
     bounded_apply_details as _bounded_apply_details,
     capture_apparatus_observations,
 )
+from aptl.backends._lilrae_catalog_image_observation import catalog_images_unverified
+from aptl.backends._raes_image_policy import _policy_diagnostic
 from aptl.backends._raes_provisioning_helpers import (
     retryable_readback_gaps as _retryable_readback_gaps,
 )
@@ -209,6 +211,20 @@ class ProvisionerStartMixin(object):
                 observation_context=observation_context,
                 startup_selection=self.startup_selection,
             )
+            unverified_images = catalog_images_unverified(observations)
+            if unverified_images:
+                diagnostics.extend(
+                    _policy_diagnostic(address, "catalog-image-unverified")
+                    for address in unverified_images
+                )
+                return ApplyResult(
+                    success=False, snapshot=snapshot, diagnostics=diagnostics,
+                    details=_bounded_apply_details({
+                        "profiles": selected_profiles,
+                        "realization": realization.details(),
+                        "observation_evidence": observation_evidence(observations),
+                    }, realization),
+                )
             realized_snapshot = self._with_artifact_satisfactions(
                 plan,
                 snapshot_after_apply(plan, snapshot, observations),
