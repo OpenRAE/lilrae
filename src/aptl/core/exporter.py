@@ -14,11 +14,13 @@ directory with mode 0700 and the archive with mode 0600, whatever the umask.
 refuses a parent with group or other permission bits (issue #1282).
 """
 
+import errno
 import hashlib
 import io
 import json
 import os
 import tarfile
+import tempfile
 from pathlib import Path
 
 from aptl.core.archival.legacy_manifest import summarize_manifest
@@ -34,8 +36,6 @@ except ImportError:
 #: Owner-only modes for the output directory export creates and for the archive.
 _EXPORT_DIR_MODE = 0o700
 _EXPORT_FILE_MODE = 0o600
-#: Windows has no ``O_NOFOLLOW``; there the archive open follows links as before.
-_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
 
 def _ensure_output_dir(output_dir: Path) -> None:
@@ -51,19 +51,10 @@ def _ensure_output_dir(output_dir: Path) -> None:
     output_dir.chmod(_EXPORT_DIR_MODE)
 
 
-def _create_owner_only(path: str, flags: int) -> int:
-    """``open()`` opener that creates the archive with mode 0600.
-
-    ``O_NOFOLLOW`` refuses a symlink at the archive path, so neither the
-    truncation nor the export bytes reach a file the link points to.
-    """
-    return os.open(path, flags | _O_NOFOLLOW, _EXPORT_FILE_MODE)
-
-
 def _restrict_open_archive(fd: int) -> None:
-    """Set mode 0600 on the open archive, whatever mode an older file had.
+    """Set mode 0600 on the temporary archive, independent of the umask.
 
-    Truncating an archive that an earlier export left keeps that file's mode.
+    ``mkstemp`` creates an owner-only file but still applies the process umask.
     Python 3.12 on Windows has no ``os.fchmod``, and Windows has no group or
     other permission bits to drop.
     """
@@ -116,8 +107,9 @@ def export_local(
 ) -> Path:
     """Export a run as a tar.gz archive with SHA-256 checksums.
 
-    The archive is written with mode 0600. A missing ``output_dir`` is created
-    with mode 0700; an existing one keeps its mode.
+    The archive is written with mode 0600 and atomically replaces any previous
+    archive. A missing ``output_dir`` is created with mode 0700; an existing one
+    keeps its mode.
 
     Args:
         store: The run store containing the run data.
@@ -129,7 +121,7 @@ def export_local(
 
     Raises:
         FileNotFoundError: If the run directory does not exist.
-        OSError: If a symlink sits at the archive path (POSIX), or the archive
+        OSError: If a symlink sits at the archive path, or the archive
             cannot be written.
     """
     from aptl.core.runstore import LocalRunStore
@@ -157,19 +149,35 @@ def export_local(
     archive_name = f"{run_id}.tar.gz"
     archive_path = output_dir / archive_name
 
-    with open(archive_path, "wb", opener=_create_owner_only) as raw:
-        # Set the mode before any run bytes are written.
-        _restrict_open_archive(raw.fileno())
-        with tarfile.open(fileobj=raw, mode="w:gz") as tar:
-            if members is None:
-                tar.add(run_path, arcname=run_id)
-            else:
-                for member in members:
-                    tar.add(run_path / member, arcname=f"{run_id}/{member}")
-            info = tarfile.TarInfo(name=f"{run_id}/checksums.sha256")
-            info.size = len(checksums_bytes)
-            info.mode = 0o600
-            tar.addfile(info, io.BytesIO(checksums_bytes))
+    if archive_path.is_symlink():
+        raise OSError(
+            errno.ELOOP, "export archive must not be a symlink", str(archive_path)
+        )
+
+    # Never write new evidence into an older archive's inode: readers that
+    # opened a legacy 0644 file retain access even after its mode is tightened.
+    fd, candidate_name = tempfile.mkstemp(
+        prefix=f".{archive_name}.", suffix=".tmp", dir=output_dir
+    )
+    candidate = Path(candidate_name)
+    try:
+        with os.fdopen(fd, "wb") as raw:
+            _restrict_open_archive(raw.fileno())
+            with tarfile.open(fileobj=raw, mode="w:gz") as tar:
+                if members is None:
+                    tar.add(run_path, arcname=run_id)
+                else:
+                    for member in members:
+                        tar.add(run_path / member, arcname=f"{run_id}/{member}")
+                info = tarfile.TarInfo(name=f"{run_id}/checksums.sha256")
+                info.size = len(checksums_bytes)
+                info.mode = 0o600
+                tar.addfile(info, io.BytesIO(checksums_bytes))
+        # A destination symlink introduced after the check is replaced, never
+        # followed. Close the candidate first so replacement works on Windows.
+        os.replace(candidate, archive_path)
+    finally:
+        candidate.unlink(missing_ok=True)
 
     log.info("Exported run %s to %s (%d files)", run_id, archive_path, len(checksums))
     return archive_path
@@ -204,7 +212,7 @@ def export_s3(
     if boto3 is None:
         raise ImportError(
             "boto3 is required for S3 export. "
-            "Install it with: pipx inject aptl-labs boto3 "
+            "Install it with: pipx inject lilrae boto3 "
             '(source checkout: pip install -e ".[s3]")'
         )
 

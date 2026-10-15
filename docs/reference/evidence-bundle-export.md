@@ -26,7 +26,7 @@ Options:
 
 - `--projection / -p` selects a derived projection: `jsonl`, `parquet`, or
   `ocsf`. Repeat the flag for more than one. Parquet requires the optional
-  `pyarrow` dependency of the `parquet` extra (`pipx inject aptl-labs pyarrow`
+  `pyarrow` dependency of the `parquet` extra (`pipx inject lilrae pyarrow`
   for a pipx install, or `pip install -e ".[parquet]"` in a source checkout);
   without it, the bundle records a `projection-unavailable` limitation instead
   of failing.
@@ -42,6 +42,10 @@ Options:
   `aptl runs export` created, run `chmod 700` on it first.
 - `--verify / --no-verify` controls the local self-verification pass that runs
   after the archive is written (on by default).
+
+Plain `aptl runs export` archives have mode 0600. Exporting again replaces
+the archive atomically; readers of an older archive keep access only to the
+older bytes.
 
 The command reports the bundle path, the reproducible root identity, the member
 count, the seal state, and any disclosed limitations.

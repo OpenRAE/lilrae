@@ -158,18 +158,40 @@ class TestExportLocal:
         self, tmp_path
     ):
         # An existing directory keeps the mode its owner chose; an archive an
-        # earlier export left with the umask's mode is rewritten owner-only.
+        # earlier export left with the umask's mode is replaced owner-only.
         store = self._make_run(tmp_path)
         output_dir = tmp_path / "shared"
         output_dir.mkdir(mode=0o755)
         (output_dir / "test-run.tar.gz").write_bytes(b"older export")
 
-        archive = export_local(store, "test-run", output_dir)
+        with (output_dir / "test-run.tar.gz").open("rb") as old_reader:
+            archive = export_local(store, "test-run", output_dir)
+            assert old_reader.read() == b"older export"
 
         assert stat.S_IMODE(output_dir.stat().st_mode) == 0o755
         assert stat.S_IMODE(archive.stat().st_mode) == 0o600
         with tarfile.open(archive, "r:gz") as tar:
             assert "test-run/manifest.json" in tar.getnames()
+
+    @pytest.mark.parametrize(
+        "failure_target",
+        ["aptl.core.exporter.tarfile.TarFile.add", "aptl.core.exporter.os.replace"],
+    )
+    def test_failed_export_preserves_old_archive_and_cleans_candidate(
+        self, tmp_path, failure_target
+    ):
+        store = self._make_run(tmp_path)
+        output_dir = tmp_path / "exports"
+        output_dir.mkdir()
+        archive = output_dir / "test-run.tar.gz"
+        archive.write_bytes(b"older export")
+
+        with patch(failure_target, side_effect=OSError("simulated export failure")):
+            with pytest.raises(OSError, match="simulated export failure"):
+                export_local(store, "test-run", output_dir)
+
+        assert archive.read_bytes() == b"older export"
+        assert list(output_dir.iterdir()) == [archive]
 
     @posix_modes
     @pytest.mark.usefixtures("common_umask")
@@ -288,7 +310,7 @@ class TestExportS3:
         original = exporter_mod.boto3
         exporter_mod.boto3 = None
         try:
-            with pytest.raises(ImportError, match="pipx inject aptl-labs boto3"):
+            with pytest.raises(ImportError, match="pipx inject lilrae boto3"):
                 export_s3(store, "test-run", "bucket", "prefix", tmp_path / "export")
         finally:
             exporter_mod.boto3 = original
