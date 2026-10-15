@@ -299,6 +299,7 @@ docs/architecture/issue-913-shuffle-post-realization-mutation-preflight.md	docs-
 docs/architecture/issue-934-rename-boundary-preflight.md	architecture-history	Binding #934 rename-boundary inventory and retirement guardrails
 docs/architecture/issue-949-orborus-control-authority-preflight.md	architecture-history	Post-baseline architecture guidance; retain with its owning issue
 docs/architecture/issue-951-fresh-env-pack-start-preflight.md	docs-follow-owner	Separate current user guidance from historical evidence and scenario-pack-specific docs
+docs/architecture/issue-952-start-failure-recovery-preflight.md	architecture-history	Preserve issue 952 failed-start recovery ownership, lock and volume-retention guardrails
 docs/architecture/issue-954-runtime-docs-and-test-authority-preflight.md	core	Runtime documentation and test authority guidance for issue 954
 docs/architecture/issue-955-systemd-substrate-privilege-preflight.md	architecture-history	Preserve issue 955 substrate posture decisions and daemon-gate guardrails
 docs/architecture/issue-956-sdl-runtime-authority-materialization-preflight.md	architecture-history	Preserve runtime-authority materialization decisions and implementation guardrails
