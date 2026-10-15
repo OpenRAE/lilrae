@@ -23,6 +23,7 @@ from aptl.core.deployment._compose_resource_ownership import (
     write_compose_ownership_override,
 )
 from aptl.core.deployment.docker_compose import DockerComposeBackend
+from aptl.core.deployment.errors import BackendTimeoutError
 from aptl.core.deployment.observation import DeploymentObservationContext
 from aptl.core.deployment.realization import DeploymentNetworkRealization
 from aptl.core.lab_types import LabResult
@@ -810,6 +811,76 @@ def test_container_membership_never_creates_the_workspace_scope(
 
     assert backend.container_exists("aptl-victim") is False
     assert WorkspaceOwnership.load(tmp_path, "aptl") is None
+
+
+@pytest.mark.parametrize("successful_inspects", [0, 1])
+@pytest.mark.parametrize(
+    ("daemon_state", "match"),
+    [
+        ("unreachable", "daemon identity is unavailable"),
+        ("timeout", "daemon identity is unavailable"),
+        ("changed", "daemon identity changed"),
+    ],
+)
+def test_container_membership_does_not_hide_a_daemon_failure(
+    tmp_path: Path,
+    successful_inspects: int,
+    daemon_state: str,
+    match: str,
+) -> None:
+    """A lost daemon is not absence, including after the receipt verified."""
+
+    backend, current = _backend_recording_worker(tmp_path)
+    inspect_count = 0
+
+    def docker(argv, **_kwargs):
+        nonlocal inspect_count
+        if argv == ["docker", "inspect", _ID_A]:
+            inspect_count += 1
+            if inspect_count <= successful_inspects:
+                return subprocess.CompletedProcess(
+                    argv, 0, stdout=json.dumps([current]), stderr=""
+                )
+            return subprocess.CompletedProcess(
+                argv, 1, stdout="", stderr="Cannot connect to the Docker daemon"
+            )
+        assert argv == ["docker", "info", "--format", "{{.ID}}"]
+        if daemon_state == "timeout":
+            raise BackendTimeoutError("daemon probe timed out")
+        return subprocess.CompletedProcess(
+            argv,
+            0 if daemon_state == "changed" else 1,
+            stdout="daemon-b\n" if daemon_state == "changed" else "",
+            stderr="",
+        )
+
+    backend._run = MagicMock(side_effect=docker)
+
+    with pytest.raises(OwnershipConflictError, match=match):
+        backend.container_exists("worker")
+    assert inspect_count == successful_inspects + 1
+
+
+def test_container_membership_confirms_absence_on_the_recorded_daemon(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    backend, _current = _backend_recording_worker(tmp_path)
+    monkeypatch.setattr(
+        "aptl.core.deployment._compose_resource_resolution.time.sleep",
+        lambda _seconds: None,
+    )
+
+    def docker(argv, **_kwargs):
+        if argv == ["docker", "inspect", _ID_A]:
+            return subprocess.CompletedProcess(
+                argv, 1, stdout="", stderr=f"Error: No such object: {_ID_A}"
+            )
+        assert argv == ["docker", "info", "--format", "{{.ID}}"]
+        return subprocess.CompletedProcess(argv, 0, stdout="daemon-a\n", stderr="")
+
+    backend._run = MagicMock(side_effect=docker)
+
+    assert backend.container_exists("worker") is False
 
 
 @pytest.mark.parametrize("selector", ["unrecorded", "worker"])
