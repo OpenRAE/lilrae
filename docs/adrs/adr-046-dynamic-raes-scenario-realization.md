@@ -416,8 +416,9 @@ through diagnostics, logs, API responses, or run records.
 
 Host publishing is also a security decision. Existing SOC and control-plane
 services inherit the loopback-only policy pinned by ADR-034 and
-`tests/test_docker_compose_port_bindings.py`; deliberate target surfaces remain
-separately classified. An omitted host address must not silently become
+`tests/test_docker_compose_port_bindings.py`. That test has no target-surface
+class, so every host publication must be a loopback-bound management surface.
+An omitted host address must not silently become
 all-interface exposure. A new dynamic publish that cannot be classified by the
 existing exposure policy fails closed until that policy is extended. Host-port
 conflicts reuse `src/aptl/core/host_ports.py`; an exact authored binding must be

@@ -50,7 +50,7 @@ The adapter registers entry points in these groups, keyed by the pack identity:
 | `aptl.evidence_payload` | Evidence collectors |
 | `aptl.participant_mcp_smoke_plans` | Participant MCP smoke plans |
 
-The TechVault adapter is `aptl_techvault`. It ships inside the `aptl-labs`
+The TechVault adapter is `aptl_techvault`. It ships inside the `lilrae`
 (LilRAE) distribution, so a LilRAE install already has it. You do not install it
 separately.
 

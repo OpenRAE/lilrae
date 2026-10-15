@@ -55,6 +55,7 @@ _MCP_RUNTIME_ENVIRONMENT = {
             "APTL_MCP_KALI_HOST",
             "APTL_MCP_RUN_STORE_BASE",
             "APTL_STATE_DIR",
+            "LILRAE_MCP_CAPTURE_CONTAINER",
             "OTEL_EXPORTER_OTLP_ENDPOINT",
         }
     ),
@@ -198,6 +199,7 @@ class ClaudeCodeHostParticipantAdapter:
             session_id=session_id,
             response=response,
             provider_payload=payload,
+            cleanup=result.cleanup,
         )
 
     def _argv(

@@ -77,7 +77,7 @@ PYTHONPATH="$1" python3 -m pip install --no-index --only-binary=:all: \
 # Keep the application wheel separate from the dependency closure. pip's
 # --target install does not merge an existing bin directory, so installing the
 # wheel into the dependency target would silently omit its aptl entrypoint.
-set -- "$payload_dir"/wheelhouse/aptl_labs-*.whl
+set -- "$payload_dir"/wheelhouse/lilrae-*.whl
 test "$#" -eq 1
 test -f "$1"
 PYTHONPATH="$pip_wheel" python3 -m pip install \

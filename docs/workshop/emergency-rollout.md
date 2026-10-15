@@ -5,7 +5,7 @@ students cannot reliably run the lab on their own laptops. It is not the normal
 APTL delivery model. The normal model remains:
 
 ```bash
-pipx install aptl-labs
+pipx install lilrae
 aptl lab init workshop
 cd workshop
 aptl lab start --yes
@@ -55,7 +55,7 @@ Minimum host contract:
 - supported student-like desktop access, usually RDP to an Ubuntu desktop;
 - Docker installed and usable by the student account;
 - `pipx`, Python, Node.js, and npm installed;
-- `aptl-labs` installed from the intended release channel;
+- `lilrae` installed from the intended release channel;
 - the workshop lab initialized and started;
 - Claude Code or the selected agent installed and authenticated;
 - MCP servers built and registered from the workshop directory.
