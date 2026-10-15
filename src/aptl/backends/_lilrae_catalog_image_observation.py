@@ -36,6 +36,10 @@ def observe_catalog_images(
             if config is None and observation_context is not None
             else None
         )
+        # An unreadable image ID does not prove absence. A reappearing live
+        # container must not inherit a completed container's identity receipt.
+        if completed and backend.container_inspect(container):
+            completed = None
         config = completed[0] if completed else config
         config = (
             config if isinstance(config, str) and _IMAGE_ID.fullmatch(config) else None

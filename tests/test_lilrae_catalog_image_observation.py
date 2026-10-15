@@ -239,11 +239,14 @@ def test_catalog_completion_receipt_verifies_pin_before_container_removal(
     assert observed.evidence["source_image"]["observed_config_digest"] == CONFIG
     assert observed.evidence["source_image"]["verified_manifest_digest"] == PIN
     # A reappearing container must be verified live, never hidden by a receipt.
-    monkeypatch.setattr(backend, "container_image_config_id", lambda name: OTHER)
-    replaced = observation.observe_realization(
-        backend, realization, plan, tmp_path, observation_context=context
-    )[node.address]
-    assert not replaced.realized
+    monkeypatch.setattr(backend, "container_inspect", lambda name: _completed_inspect())
+    for live_config in (OTHER, None):
+        monkeypatch.setattr(backend, "container_image_config_id", lambda name: live_config)
+        replaced = observation.observe_realization(
+            backend, realization, plan, tmp_path, observation_context=context
+        )[node.address]
+        assert not replaced.realized
+    monkeypatch.setattr(backend, "container_inspect", lambda name: {})
     monkeypatch.setattr(backend, "container_image_config_id", lambda name: None)
     # A receipt proves only the pin selected and inspected before removal.
     changed = replace(

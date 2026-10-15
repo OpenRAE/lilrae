@@ -70,8 +70,8 @@ readback fails apply and retains its baseline snapshot.
 For successful one-shot jobs, the existing completion receipt captures the
 correlated configuration and selected repository digest before container
 removal. Observation accepts that receipt only for the exact selected reference
-and only when live image identity is absent. A replacement container must pass
-its own live readback.
+and after inspection confirms that the container is absent. A replacement
+container must pass its own live readback, even if its image ID is unreadable.
 
 Successful snapshot entries retain this observation in
 `payload.backend_evidence.source_image`. Full apply details retain it in
