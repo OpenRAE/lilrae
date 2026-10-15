@@ -55,7 +55,7 @@
       "asset_id": "mcp-red-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-red/package-lock.json",
-      "sha256": "e4af6f231c67a36aea96bd88c57a9a93e4a1d063f641bd2dd1b2b3ba268ee3eb"
+      "sha256": "4970ce4e063dac581993e832aa75db8a55bf3d785bccd4b6bdca4f1ba466f01f"
     },
     {
       "asset_id": "mcp-red-config",
@@ -73,7 +73,7 @@
       "asset_id": "mcp-indexer-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-indexer/package-lock.json",
-      "sha256": "dafd67f28512df4f6983caaabe7c79474dcadd1d1c24132b6cc42ce4452b7ec3"
+      "sha256": "bdc7307d7d9b12dc4e5b6af4e880b5ab5952a4cafc682661f8cbd082e9f1b66b"
     },
     {
       "asset_id": "mcp-indexer-config",
@@ -91,7 +91,7 @@
       "asset_id": "mcp-wazuh-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-wazuh/package-lock.json",
-      "sha256": "3b09f3019e4f914e391776def2d98fa3a43aea4526d577dcf3043d97f89bfc0d"
+      "sha256": "e51b571263ac7dd2a3bb339fcb5f6e72f17d51aa5e0ccb3d8aa78c1d5c5ff64b"
     },
     {
       "asset_id": "mcp-wazuh-config",
