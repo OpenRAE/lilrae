@@ -24,8 +24,8 @@ backends are private, so they never could. A scenario declares the capability
 profile it needs and a backend declares conformance to it; the adapter answers
 the separate question of whether the scenario's expectations actually held.
 
-It ships inside the `aptl-labs` distribution and releases with it, so `pipx
-install aptl-labs` gives an operator every extension surface TechVault owns with
+It ships inside the `lilrae` distribution and releases with it, so `pipx
+install lilrae` gives an operator every extension surface TechVault owns with
 nothing further to install. The materialization boundary is in the code, not
 the packaging: generic materialization consumes the admitted RAES model
 without branching on TechVault names, while runtime parameters, startup

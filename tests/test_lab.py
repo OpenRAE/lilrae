@@ -384,7 +384,7 @@ class TestLabStart:
         assert "victim" in cmd_args
         assert "kali" not in cmd_args
 
-    def test_start_returns_failure_on_nonzero_exit(self, mock_subprocess):
+    def test_start_returns_failure_on_nonzero_exit(self, mock_subprocess, caplog):
         """If docker compose fails, start_lab should return failure result."""
         from aptl.core.config import AptlConfig
         from aptl.core.lab import start_lab
@@ -398,7 +398,8 @@ class TestLabStart:
         result = start_lab(config)
 
         assert result.success is False
-        assert "something went wrong" in result.error
+        assert result.error == "Compose start failed."
+        assert "something went wrong" not in caplog.text
 
     def test_start_uses_project_dir(self, mock_subprocess):
         """start_lab should pass cwd to subprocess when project_dir is given."""
@@ -571,9 +572,36 @@ class TestLabStop:
 
 
 class TestPreexistingRangeAdmission:
-    def test_running_created_or_exited_container_blocks_start(self, tmp_path):
+    def test_refusal_recovery_targets_an_external_project(self, tmp_path, monkeypatch):
+        import shlex
         from aptl.core.deployment.backend_host_inventory import ProjectRuntimePresence
         from aptl.core.lab import _LabStartContext, _step_reject_preexisting_range
+
+        project = tmp_path / "lab dir"
+        project.mkdir()
+        (project / "aptl.json").write_text("{}")
+        monkeypatch.chdir(tmp_path)
+        backend = MagicMock()
+        backend.observe_project_runtime.return_value = ProjectRuntimePresence(
+            network_count=1
+        )
+
+        result = _step_reject_preexisting_range(
+            _LabStartContext(project_dir=project, skip_seed=False, backend=backend)
+        )
+
+        target = shlex.quote(str(project))
+        assert f"aptl lab stop --project-dir {target}`" in result.error
+        assert f"aptl lab stop -v --project-dir {target}`" in result.error
+        assert f"aptl lab start --clean --project-dir {target}`" in result.error
+
+    def test_running_created_or_exited_container_blocks_start(
+        self, tmp_path, monkeypatch
+    ):
+        from aptl.core.deployment.backend_host_inventory import ProjectRuntimePresence
+        from aptl.core.lab import _LabStartContext, _step_reject_preexisting_range
+
+        monkeypatch.chdir(tmp_path)
 
         backend = MagicMock()
         backend.observe_project_runtime.return_value = ProjectRuntimePresence(
@@ -592,8 +620,8 @@ class TestPreexistingRangeAdmission:
         assert "1 container and 0 networks" in result.error
         assert "`aptl lab stop` removes" in result.error
         assert "keeps its volumes" in result.error
-        assert "`aptl lab stop -v` also removes the volumes" in result.error
-        assert "destroys all lab data" in result.error
+        assert "`aptl lab stop -v` also removes managed volumes" in result.error
+        assert "destroys their lab data" in result.error
         assert "aptl lab start --clean" in result.error
         assert ctx.range_was_absent is False
 
@@ -743,8 +771,9 @@ class TestCleanBootLab:
         monkeypatch.setattr(
             lab,
             "orchestrate_lab_start",
-            lambda _project_dir, **kwargs: started.append(kwargs)
-            or LabResult(success=True),
+            lambda _project_dir, **kwargs: (
+                started.append(kwargs) or LabResult(success=True)
+            ),
         )
 
         clean_boot_lab(tmp_path, teardown_on_failure=teardown_on_failure)
@@ -1382,8 +1411,8 @@ class TestCheckBindMounts:
         assert "soc" in ctx.config.containers.enabled_profiles()
         assert _step_check_bind_mounts(ctx) is None
 
-    def test_step_still_fails_an_admitted_service_with_a_missing_source(self, tmp_path):
-        """The compatibility guard still protects the project-tree model."""
+    def test_step_ignores_unused_static_mounts_for_an_admitted_scenario(self, tmp_path):
+        """The backend checks the generated model; root Compose is never applied."""
         from aptl.core.lab import _LabStartContext, _step_check_bind_mounts
 
         (tmp_path / "docker-compose.yml").write_text(
@@ -1401,9 +1430,7 @@ class TestCheckBindMounts:
 
         result = _step_check_bind_mounts(ctx)
 
-        assert result is not None
-        assert result.success is False
-        assert "soc_certs" in result.error
+        assert result is None
 
 
 class TestStartupClassificationTypes:
@@ -2602,6 +2629,240 @@ class TestOrchestrateLabStart:
         assert result.residue == StartResidue(
             container_count=1, network_count=0, teardown_requested=True
         )
+
+    @pytest.mark.parametrize("teardown", [False, True])
+    def test_operational_start_exception_accounts_for_residue(
+        self, mocker, tmp_path, teardown
+    ):
+        from aptl.core.lab import orchestrate_lab_start
+
+        project = self._failing_range(mocker, tmp_path)
+
+        def fail(*args, **kwargs):
+            project.start()
+            raise OSError("private-backend-payload")
+
+        mocker.patch("aptl.core.lab.start_raes_scenario", side_effect=fail)
+
+        result = orchestrate_lab_start(tmp_path, teardown_on_failure=teardown)
+
+        assert not result.success
+        assert "private-backend-payload" not in result.error
+        assert result.residue is not None
+        assert result.residue.torn_down is teardown
+        expected_resources = (0, 0, 4) if teardown else (3, 2, 4)
+        actual_resources = (project.containers, project.networks, project.volumes)
+        assert actual_resources == expected_resources
+
+    def test_observation_exception_is_unknown_residue(self, mocker, tmp_path):
+        from aptl.core.lab import orchestrate_lab_start
+
+        self._failing_range(mocker, tmp_path)
+        mocker.patch(
+            "aptl.core.deployment.docker_compose.DockerComposeBackend.observe_project_runtime",
+            side_effect=[
+                _FailingRange(tmp_path).observe(),
+                OSError("private-observation"),
+            ],
+        )
+        result = orchestrate_lab_start(tmp_path)
+        assert "backend-contract-invalid" in result.error
+        assert result.residue.container_count is None
+        assert result.residue.network_count is None
+
+    def test_cleanup_exception_preserves_primary_failure(self, mocker, tmp_path):
+        from aptl.core.lab import orchestrate_lab_start
+
+        project = self._failing_range(mocker, tmp_path)
+        mocker.patch(
+            "aptl.core.lab._stop_lab_owned", side_effect=OSError("private-cleanup")
+        )
+        result = orchestrate_lab_start(tmp_path, teardown_on_failure=True)
+        assert "backend-contract-invalid" in result.error
+        assert result.residue.teardown_requested
+        assert not result.residue.torn_down
+        assert (result.residue.container_count, result.residue.network_count) == (3, 2)
+        assert project.volumes == 4
+        assert any(d.step == "failed_start_cleanup" for d in result.diagnostics)
+
+    def test_cleanup_failure_after_runtime_removal_recommends_non_destructive_retry(
+        self, mocker, tmp_path
+    ):
+        from aptl.core.lab import orchestrate_lab_start
+        from aptl.core.lab_types import LabResult
+
+        project = self._failing_range(mocker, tmp_path)
+
+        def stop(*args):
+            project.stop([])
+            return LabResult(success=False, error="Transcript finalization failed.")
+
+        mocker.patch("aptl.core.lab._stop_lab_owned", side_effect=stop)
+        result = orchestrate_lab_start(tmp_path, teardown_on_failure=True)
+
+        assert "backend-contract-invalid" in result.error
+        assert result.residue.torn_down
+        assert project.volumes == 4
+        [diagnostic] = [d for d in result.diagnostics if d.step == "failed_start_cleanup"]
+        assert "aptl lab stop --project-dir" in diagnostic.operator_action
+        assert "stop -v" not in diagnostic.operator_action
+        assert "without removing volumes" in diagnostic.operator_action
+
+    @pytest.mark.parametrize("teardown", [False, True])
+    def test_readiness_failure_is_accounted_under_start_lock(
+        self, mocker, tmp_path, teardown
+    ):
+        from aptl.core.lab import orchestrate_lab_start
+        from aptl.core.lab_types import LabResult
+
+        project = self._failing_range(mocker, tmp_path)
+        mocker.patch("aptl.core.lab.start_raes_scenario", side_effect=project.start)
+
+        def fail(ctx):
+            assert _lifecycle_lock_held_elsewhere(tmp_path)
+            return LabResult(success=False, error="Appliance readiness failed.")
+
+        mocker.patch(
+            "aptl.core.lab._publish_appliance_guest_readiness", side_effect=fail
+        )
+
+        result = orchestrate_lab_start(tmp_path, teardown_on_failure=teardown)
+
+        assert result.error == "Appliance readiness failed."
+        assert result.residue.torn_down is teardown
+        assert project.stops == ([False] if teardown else [])
+        assert not _lifecycle_lock_held_elsewhere(tmp_path)
+
+    def test_post_teardown_verification_retains_start_lock(self, mocker, tmp_path):
+        from aptl.core.lab import orchestrate_lab_start
+
+        project = self._failing_range(mocker, tmp_path)
+        held = []
+
+        def observe():
+            held.append(_lifecycle_lock_held_elsewhere(tmp_path))
+            return project.observe()
+
+        mocker.patch(
+            "aptl.core.deployment.docker_compose.DockerComposeBackend.observe_project_runtime",
+            side_effect=observe,
+        )
+        assert orchestrate_lab_start(
+            tmp_path, teardown_on_failure=True
+        ).residue.torn_down
+        assert held == [True, True, True]
+
+    @pytest.mark.parametrize("teardown", [False, True])
+    def test_network_only_failed_start_residue(self, mocker, tmp_path, teardown):
+        from aptl.core.lab import orchestrate_lab_start
+
+        project = self._failing_range(mocker, tmp_path)
+
+        def fail(*args, **kwargs):
+            project.networks = 1
+            return _raes_outcome(success=False, error="network-only failure")
+
+        mocker.patch("aptl.core.lab.start_raes_scenario", side_effect=fail)
+        result = orchestrate_lab_start(tmp_path, teardown_on_failure=teardown)
+        assert "network-only failure" in result.error
+        assert result.residue.container_count == 0
+        assert result.residue.network_count == 1
+        assert result.residue.torn_down is teardown
+
+    @pytest.mark.parametrize("clean", [False, True])
+    def test_access_supervision_releases_start_owner(self, mocker, tmp_path, clean):
+        from aptl.core.lab import (
+            orchestrate_lab_start,
+            clean_boot_lab,
+            ApplianceStartOptions,
+        )
+        from aptl.core.lab_types import LabResult
+
+        self._patch_all_steps(mocker, tmp_path)
+        mocker.patch(
+            "aptl.core.lab._publish_appliance_guest_readiness", return_value=None
+        )
+        held = []
+        mocker.patch(
+            "aptl.core.lab._serve_appliance_guest_access",
+            side_effect=lambda ctx: held.append(
+                _lifecycle_lock_held_elsewhere(tmp_path)
+            ),
+        )
+        mocker.patch(
+            "aptl.core.lab._stop_lab_owned", return_value=LabResult(success=True)
+        )
+        mocker.patch(
+            "aptl.core.lab._preflight_clean_appliance_boundary",
+            return_value=(None, None),
+        )
+        mocker.patch("aptl.core.lab._clean_boot_rootless_refusal", return_value=None)
+        start = clean_boot_lab if clean else orchestrate_lab_start
+        result = start(
+            tmp_path,
+            appliance=ApplianceStartOptions(access_request=tmp_path / "request"),
+        )
+        assert result.success
+        assert held == [False]
+
+    @pytest.mark.parametrize("clean", [False, True])
+    def test_guest_channels_publish_then_supervise_outside_owner(
+        self, mocker, tmp_path, clean
+    ):
+        from aptl.core.lab import (
+            ApplianceStartOptions,
+            clean_boot_lab,
+            orchestrate_lab_start,
+        )
+        from aptl.core.lab_types import LabResult
+
+        mocks = self._patch_all_steps(mocker, tmp_path)
+        mocks["admit"].return_value[0].realization = MagicMock()
+
+        def configure(ctx):
+            ctx.run_id = "fixture-run"
+            return None
+
+        mocker.patch(
+            "aptl.core.lab._configure_verified_appliance_launch", side_effect=configure
+        )
+        mocker.patch(
+            "aptl.core.deployment.docker_compose.DockerComposeBackend.observe_appliance_boundary",
+            return_value=object(),
+        )
+        held = []
+        mocker.patch(
+            "aptl.appliance.seat.readiness.publish_guest_readiness",
+            side_effect=lambda *args: held.append(
+                ("readiness", _lifecycle_lock_held_elsewhere(tmp_path))
+            ),
+        )
+        mocker.patch(
+            "aptl.appliance.access_service.serve_appliance_access",
+            side_effect=lambda **kwargs: held.append(
+                ("access", _lifecycle_lock_held_elsewhere(tmp_path))
+            ),
+        )
+        mocker.patch(
+            "aptl.core.lab._stop_lab_owned", return_value=LabResult(success=True)
+        )
+        mocker.patch(
+            "aptl.core.lab._preflight_clean_appliance_boundary",
+            return_value=(None, None),
+        )
+        mocker.patch("aptl.core.lab._clean_boot_rootless_refusal", return_value=None)
+        appliance = ApplianceStartOptions(
+            launch_descriptor=tmp_path / "descriptor",
+            readiness_challenge=tmp_path / "challenge",
+            readiness_device=tmp_path / "readiness",
+            access_request=tmp_path / "request",
+            access_device=tmp_path / "access",
+            access_output_dir=tmp_path / "output",
+        )
+        start = clean_boot_lab if clean else orchestrate_lab_start
+        result = start(tmp_path, appliance=appliance)
+        assert result.success
+        assert held == [("readiness", True), ("access", False)]
 
     def test_unobservable_residue_is_reported_as_unknown(self, mocker, tmp_path):
         """A failed observation is not an empty project (#952)."""

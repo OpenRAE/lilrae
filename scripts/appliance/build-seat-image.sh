@@ -116,17 +116,22 @@ python3 - "$source_root/pyproject.toml" "$payload/wheelhouse" \
   "$payload/aptl-wheel-requirements.txt" <<'PYTHON'
 import hashlib
 import pathlib
+import re
 import sys
 import tomllib
 
 project = tomllib.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+name = project["project"]["name"]
 version = project["project"]["version"]
-wheels = list(pathlib.Path(sys.argv[2]).glob(f"aptl_labs-{version}-*.whl"))
+# Wheel filenames use the normalized name (PEP 427); the requirement keeps the
+# metadata name.
+wheel_prefix = re.sub(r"[-_.]+", "_", name).lower()
+wheels = list(pathlib.Path(sys.argv[2]).glob(f"{wheel_prefix}-{version}-*.whl"))
 if len(wheels) != 1:
-    raise SystemExit("bake must produce exactly one APTL application wheel")
+    raise SystemExit("bake must produce exactly one application wheel")
 digest = hashlib.sha256(wheels[0].read_bytes()).hexdigest()
 pathlib.Path(sys.argv[3]).write_text(
-    f"aptl-labs=={version} --hash=sha256:{digest}\n", encoding="utf-8"
+    f"{name}=={version} --hash=sha256:{digest}\n", encoding="utf-8"
 )
 PYTHON
 

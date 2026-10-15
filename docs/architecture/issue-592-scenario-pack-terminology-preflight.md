@@ -41,6 +41,7 @@ prose must not accidentally rename them.
 
 | Surface | Files | Disposition |
 | --- | --- | --- |
+| PyPI distribution transition | `docs/architecture/issue-1234-pypi-transition-preflight.md` | Preserve environment-pack and installed-provider ownership while changing only the product distribution and release wiring. |
 | LilRAE public naming boundary | `docs/architecture/issue-1232-lilrae-naming-preflight.md` | Preserve pack, RAES, and backend ownership while explaining the project's public name and retained compatibility identifiers. |
 | Shipped seat network investigation | `docs/architecture/issue-1194-shipped-seat-network-preflight.md` | Keep authored environment-pack topology distinct from APTL runtime attachment verification and shipped seat delivery evidence. |
 | Base-container terminology | `docs/architecture/issue-1193-base-container-terminology-preflight.md` | Keep env-pack artifact resolution and authored content sources distinct from the base-container node route and its base image. |

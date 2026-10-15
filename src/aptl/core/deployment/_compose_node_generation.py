@@ -22,7 +22,10 @@ from pathlib import Path
 
 import yaml
 
-from aptl.core.deployment._compose_runtime_config import _operational_config
+from aptl.core.deployment._compose_runtime_config import (
+    _operational_config,
+    compose_literal,
+)
 from aptl.core.deployment._compose_runtime_orchestration import (
     docker_authority_admissions_by_address,
     docker_socket_volume,
@@ -194,12 +197,17 @@ _DEFAULT_IMAGE_NODE_ULIMITS = {
 def write_realization_compose(
     spec: DeploymentRealizationSpec, scenario_root: Path
 ) -> Path:
-    """Render and write the generated base Compose file under ``scenario_root``."""
+    """Render and write the generated base Compose file under ``scenario_root``.
+
+    Every string is written as a Compose literal, so Compose interpolates
+    nothing the scenario authors, such as a command (issue #965).
+    """
 
     path = scenario_root / GENERATED_COMPOSE_RELPATH
     path.parent.mkdir(parents=True, exist_ok=True)
+    document = compose_literal(render_realization_compose(spec))
     path.write_text(
-        yaml.safe_dump(render_realization_compose(spec), sort_keys=True),
+        yaml.safe_dump(document, sort_keys=True),
         encoding="utf-8",
         newline="\n",
     )
@@ -211,18 +219,11 @@ def base_compose_file(
     content_root: Path,
     realization_root: Path | None = None,
 ) -> Path:
-    """Return the base Compose file for a realization.
+    """Generate the base Compose file from the admitted scenario.
 
-    An in-tree scenario ships a hand-authored ``docker-compose.yml`` at its
-    ``content_root`` and it is used as-is. An env-pack ships none, so the base is
-    generated from the realization (issue #875) and written under
-    ``realization_root`` — the writable engine checkout — never under the
-    pristine pack, whose digest-validated inventory must not gain generated
-    files. ``realization_root`` defaults to ``content_root`` so in-tree
-    (where the two coincide) is behaviour-neutral.
+    A root ``docker-compose.yml`` is never a scenario realization input: using
+    it unchanged would bypass environment bindings and literal rendering.
+    Output belongs under the writable realization root, never a pristine pack.
     """
 
-    static = content_root / STATIC_COMPOSE_FILENAME
-    if static.exists():
-        return static
     return write_realization_compose(spec, realization_root or content_root)

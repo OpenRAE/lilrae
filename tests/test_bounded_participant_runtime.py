@@ -1216,24 +1216,44 @@ def test_consumed_solicitation_cannot_invoke_provider_again(
     assert provider.calls == 2
 
 
-class _BoundedFailureProvider:
-    """Fail the way the managed provider fails when its bounded runner does."""
-
-    implementation_name = "bounded-failure-provider"
-    implementation_version = "1.0.0"
+class _BoundedFailureAdapter(_ManagedResponseAdapter):
+    """A managed adapter whose bounded runner stops the agent request."""
 
     def __init__(self, reason: str, residual: tuple[str, ...]) -> None:
+        super().__init__("")
         self._reason = reason
         self._residual = residual
 
-    def select(self, solicitation: ParticipantDecisionSolicitation) -> str:
-        del solicitation
+    def respond(
+        self,
+        _handle: object,
+        message: str,
+        *,
+        response_schema: Mapping[str, object] | None = None,
+    ) -> str:
+        del message, response_schema
         raise BoundedProcessError(
             self._reason,
             cleanup=ProcessCleanup(4242, 1.25, self._residual),
             stdout_bytes=7,
             stderr_bytes=0,
         )
+
+
+def _bounded_failure_provider(
+    reason: str,
+    residual: tuple[str, ...],
+) -> ManagedAgentSelectionProvider:
+    """The real managed provider, driving an adapter whose runner fails."""
+
+    return ManagedAgentSelectionProvider(
+        adapter=_BoundedFailureAdapter(reason, residual),
+        handle=object(),
+        provider_name="codex",
+        model="gpt-5-nano-2025-08-07",
+        implementation_name="bounded-failure-provider",
+        implementation_version="1.0.0",
+    )
 
 
 @pytest.mark.parametrize(
@@ -1250,13 +1270,13 @@ class _BoundedFailureProvider:
             id="out-of-set",
         ),
         pytest.param(
-            _BoundedFailureProvider(REASON_TIMEOUT, ()),
+            _bounded_failure_provider(REASON_TIMEOUT, ()),
             "participant selection provider failed: agent request exceeded the "
             "configured timeout; cleanup residual: none observed",
             id="timeout",
         ),
         pytest.param(
-            _BoundedFailureProvider(REASON_RESIDUE, ("output-streams-held",)),
+            _bounded_failure_provider(REASON_RESIDUE, ("output-streams-held",)),
             "participant selection provider failed: agent process cleanup left "
             "residual processes; cleanup residual: output-streams-held",
             id="residue",

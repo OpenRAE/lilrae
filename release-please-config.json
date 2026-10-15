@@ -10,7 +10,7 @@
         {
           "type": "toml",
           "path": "uv.lock",
-          "jsonpath": "$.package[?(@.name.value=='aptl-labs')].version"
+          "jsonpath": "$.package[?(@.name.value=='lilrae')].version"
         }
       ]
     }

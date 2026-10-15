@@ -1,4 +1,13 @@
-"""Provider-observed disclosure of declared runtime environment variables."""
+"""Provider-observed disclosure of declared runtime environment variables.
+
+A value-less ``secret_fixture`` takes its value from an operator grant or the
+admitted pack's startup adapter (issue #965), not from the scenario. RAES would
+disclose that value as an unsalted SHA-256 commitment, against which a guess
+can be checked offline, so the readback never reads it and leaves the variable
+out of the disclosed environment; the start's binding log names its source. A
+value-less ``operator_secret`` or ``redacted`` variable is disclosed by
+presence only, and a value that the scenario authors keeps its commitment.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +17,10 @@ from typing import Any
 from raes.runtime_configuration import RuntimeConfiguration
 
 from aptl.backends._runtime_concern_disclosure import _PROTECTED, _disclose
+from aptl.core.deployment._environment_bindings import (
+    _classification,
+    declared_environment,
+)
 
 
 def observe_environment(
@@ -20,12 +33,25 @@ def observe_environment(
     if not declared:
         return None
     realized = _container_environment(info)
+    withheld = _out_of_band_commitments(runtime)
     records = [
         record
         for variable in declared
-        if (record := _realized_environment_record(variable, realized)) is not None
+        if getattr(variable, "name", "") not in withheld
+        and (record := _realized_environment_record(variable, realized)) is not None
     ]
     return _disclose("runtime-environment", records) if records else None
+
+
+def _out_of_band_commitments(runtime: RuntimeConfiguration) -> frozenset[str]:
+    """Name the variables whose grant or adapter value RAES would commit."""
+
+    sourced = declared_environment(runtime).sourced
+    return frozenset(
+        variable.name
+        for variable in runtime.environment
+        if variable.name in sourced and _classification(variable) not in _PROTECTED
+    )
 
 
 def _realized_environment_record(
