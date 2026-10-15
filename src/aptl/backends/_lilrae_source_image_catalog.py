@@ -44,6 +44,8 @@ _SOURCE_ORIGINS = {
 def _source(
     name: str, version: str, repository: str, tag: str, digest: str
 ) -> BackendImplementationProfile:
+    """Build a source-only pin with its reviewed registry lookup provenance."""
+
     origin = _SOURCE_ORIGINS.get(name)
     return BackendImplementationProfile(
         profile_id=f"{name}-{version}",

@@ -68,26 +68,41 @@ def _observed_image_identity(
 
     config = backend.container_image_config_id(container) if container else None
     completed = (
-        observation_context.completed_selected_image_identity(container, image_ref)
-        if config is None and observation_context is not None
+        _completed_image_identity(backend, container, image_ref, observation_context)
+        if config is None
         else None
     )
+    if completed:
+        return completed
+    if not isinstance(config, str) or not _IMAGE_ID.fullmatch(config):
+        return None, None
+    return config, backend.container_image_digest(
+        container, expected_ref=image_ref, expected_config_id=config
+    )
+
+
+def _completed_image_identity(
+    backend: DeploymentBackend,
+    container: str,
+    image_ref: str,
+    observation_context: DeploymentObservationContext | None,
+) -> tuple[str, str] | None:
+    """Accept valid completion proof only while the container remains absent."""
+
+    if observation_context is None:
+        return None
+    identity = observation_context.completed_selected_image_identity(
+        container, image_ref
+    )
+    if (
+        identity is None
+        or not isinstance(identity[0], str)
+        or not _IMAGE_ID.fullmatch(identity[0])
+    ):
+        return None
     # An unreadable image ID does not prove absence. A reappearing live
     # container must not inherit a completed container's identity receipt.
-    if completed and backend.container_inspect(container):
-        completed = None
-    config = completed[0] if completed else config
-    config = config if isinstance(config, str) and _IMAGE_ID.fullmatch(config) else None
-    if completed:
-        return config, completed[1]
-    digest = (
-        backend.container_image_digest(
-            container, expected_ref=image_ref, expected_config_id=config
-        )
-        if container and config is not None
-        else None
-    )
-    return config, digest
+    return identity if not backend.container_inspect(container) else None
 
 
 def catalog_images_unverified(

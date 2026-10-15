@@ -141,12 +141,53 @@ def test_container_change_between_identity_reads_cannot_mix_digest_domains():
     backend = Backend(["postgres@" + PIN], config=OTHER, image_config=OTHER)
     # The initial read preceded an external container replacement. The later
     # image inspection must not attribute that pin to the earlier config ID.
-    backend.container_image_config_id = lambda container: CONFIG
+    run = backend._run
+    first_read = True
+
+    def changing_container(argv, **kwargs):
+        nonlocal first_read
+        if first_read and argv[:2] == ["docker", "inspect"]:
+            first_read = False
+            return CompletedProcess(argv, 0, CONFIG, "")
+        return run(argv, **kwargs)
+
+    backend._run = changing_container
     realization = _catalog_realization()
     address = realization.nodes[0].address
     observations = {address: ObservedResource(realized=True)}
     observe_catalog_images(backend, realization, observations)
     assert not observations[address].realized
+
+
+def test_malformed_completed_config_cannot_verify_a_catalog_image():
+    from aptl.backends._lilrae_catalog_image_observation import observe_catalog_images
+    from aptl.backends._raes_observation_helpers import ObservedResource
+    from aptl.core.deployment.observation import (
+        CompletedContainerReceipt,
+        DeploymentObservationContext,
+    )
+
+    backend = MagicMock()
+    backend.container_image_config_id.return_value = None
+    backend.container_inspect.return_value = {}
+    context = DeploymentObservationContext()
+    context.record_completed_autoremove(
+        "owned-container",
+        CompletedContainerReceipt(
+            inspect={},
+            image_digest=PIN,
+            image_config_id="not-a-config-digest",
+            selected_image_ref=REF,
+        ),
+    )
+    realization = _catalog_realization()
+    address = realization.nodes[0].address
+    observations = {address: ObservedResource(realized=True)}
+    observe_catalog_images(backend, realization, observations, context)
+    assert not observations[address].realized
+    assert (
+        observations[address].evidence["source_image"]["observed_config_digest"] is None
+    )
 
 
 @pytest.mark.parametrize("matching_pin", [True, False])
@@ -241,7 +282,9 @@ def test_catalog_completion_receipt_verifies_pin_before_container_removal(
     # A reappearing container must be verified live, never hidden by a receipt.
     monkeypatch.setattr(backend, "container_inspect", lambda name: _completed_inspect())
     for live_config in (OTHER, None):
-        monkeypatch.setattr(backend, "container_image_config_id", lambda name: live_config)
+        monkeypatch.setattr(
+            backend, "container_image_config_id", lambda name: live_config
+        )
         replaced = observation.observe_realization(
             backend, realization, plan, tmp_path, observation_context=context
         )[node.address]

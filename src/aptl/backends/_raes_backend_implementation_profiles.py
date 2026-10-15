@@ -219,13 +219,10 @@ def matching_source_implementation_profile(
         )
         and profile.image_mode == "pull"
     ]
-    if not matches:
-        return None, "unknown-source"
     compatible = [p for p in matches if _source_runtime_compatible(p, runtime, os, os_version)]
-    if not compatible:
-        return None, "incompatible-source"
-    if len(compatible) != 1:
-        return None, "ambiguous-source"
+    reason = _source_match_rejection(matches, compatible)
+    if reason is not None:
+        return None, reason
     profile = compatible[0]
     # Catalog policy is executable input, even though it is checked in. Admit
     # only bounded registry references, never credentials or option operands.
@@ -236,6 +233,19 @@ def matching_source_implementation_profile(
     ) or not profile.provenance_refs:
         return None, "invalid-catalog-entry"
     return profile, None
+
+
+def _source_match_rejection(
+    matches: list[BackendImplementationProfile],
+    compatible: list[BackendImplementationProfile],
+) -> str | None:
+    """Distinguish an absent binding from incompatible or ambiguous policy."""
+
+    if not matches:
+        return "unknown-source"
+    if not compatible:
+        return "incompatible-source"
+    return "ambiguous-source" if len(compatible) != 1 else None
 
 
 def _source_runtime_compatible(

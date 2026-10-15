@@ -28,6 +28,7 @@ from aptl.backends._raes_image_policy import (
 )
 from aptl.core.deployment.realization import DeploymentImageRealization
 from aptl.backends._raes_backend_implementation_profiles import (
+    BackendImplementationProfile,
     matching_source_implementation_profile,
 )
 
@@ -395,19 +396,7 @@ def _pull_image(
     image_ref = _allowed_digest_pinned_ref(source.name, source.version)
     profile = None
     if image_ref is None and not _is_compose_owned_source(source.name, source.version):
-        node = resource.payload.get("spec", {}).get("node", {})
-        try:
-            runtime = RuntimeConfiguration.model_validate(node.get("runtime") or {})
-        except ValidationError:
-            diagnostics.append(_policy_diagnostic(resource.address, "incompatible-source"))
-            return None
-        profile, reason = matching_source_implementation_profile(
-            source.name, source.version, runtime,
-            os=_source_string(node.get("os")) or "",
-            os_version=_source_string(node.get("os_version")) or "",
-        )
-        if reason is not None:
-            diagnostics.append(_policy_diagnostic(resource.address, reason))
+        profile = _catalog_source_profile(resource, source, diagnostics)
         if profile is not None:
             policy_rule = "trusted-source-catalog"
             image_ref = profile.image_ref
@@ -426,6 +415,27 @@ def _pull_image(
             provenance_refs=profile.provenance_refs if profile is not None else (),
         )
     return None
+
+
+def _catalog_source_profile(
+    resource: PlannedResource, source: _NodeSource, diagnostics: list[Diagnostic]
+) -> BackendImplementationProfile | None:
+    """Validate runtime facts before selecting one source catalog profile."""
+
+    node = resource.payload.get("spec", {}).get("node", {})
+    try:
+        runtime = RuntimeConfiguration.model_validate(node.get("runtime") or {})
+    except ValidationError:
+        diagnostics.append(_policy_diagnostic(resource.address, "incompatible-source"))
+        return None
+    profile, reason = matching_source_implementation_profile(
+        source.name, source.version, runtime,
+        os=_source_string(node.get("os")) or "",
+        os_version=_source_string(node.get("os_version")) or "",
+    )
+    if reason is not None:
+        diagnostics.append(_policy_diagnostic(resource.address, reason))
+    return profile
 
 
 def _project_dockerfile_candidate(build: Mapping[str, Any]) -> str | None:

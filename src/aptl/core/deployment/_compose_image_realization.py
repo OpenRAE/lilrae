@@ -197,30 +197,16 @@ class ComposeRealizationImageMixin:
         disclosure rather than an assumed match.
         """
 
-        resolver = getattr(self, "_resolve_owned_container_id", None)
-        native_id = resolver(container_name) if callable(resolver) else container_name
-        container = self._run(
-            [
-                "docker",
-                "inspect",
-                "--format",
-                "{{.Image}}",
-                native_id,
-            ],
-            timeout=_IMAGE_REALIZATION_TIMEOUT,
-        )
-        if container.returncode != 0:
-            return None
-        image_id = container.stdout.strip()
-        if not image_id:
-            return None
-        if expected_config_id is not None and image_id != expected_config_id:
-            return None
-        if expected_ref is not None:
-            return selected_container_image_digest(
-                self._run, image_id, expected_ref, timeout=_IMAGE_REALIZATION_TIMEOUT
+        image_id = self.container_image_config_id(container_name)
+        digest = None
+        if image_id and (expected_config_id is None or image_id == expected_config_id):
+            digest = (
+                self._image_manifest_digest(image_id) if expected_ref is None
+                else selected_container_image_digest(
+                    self._run, image_id, expected_ref, timeout=_IMAGE_REALIZATION_TIMEOUT
+                )
             )
-        return self._image_manifest_digest(image_id)
+        return digest
 
     def substrate_image_identity(self, image_ref: str) -> tuple[str, str] | None:
         """Return the ``(config-id digest, media_type)`` of a locally present ref.
