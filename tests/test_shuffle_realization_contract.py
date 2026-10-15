@@ -10,7 +10,7 @@ import pytest
 from raes.parser import parse_sdl_file
 
 from tests.helpers import techvault_scenario_path
-from tests.test_env_pack_realization import _realize_pack
+from tests.techvault_pack import realize_techvault_pack
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -85,7 +85,7 @@ def test_generated_compose_uses_only_the_admitted_shuffle_runtime(
 ) -> None:
     from aptl.core.deployment._compose_node_generation import render_realization_compose
 
-    realization = _realize_pack(tmp_path)
+    realization = realize_techvault_pack(tmp_path)
     # The pinned pack now admits the Orborus authority alongside Shuffle.
     spec = realization.deployment_spec(sorted(realization.profiles))
     document = render_realization_compose(spec)

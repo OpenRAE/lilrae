@@ -90,7 +90,7 @@ blake3==1.0.9 \
     --hash=sha256:f5c9d57f0dcb92243b6ae575c3065793edc9df9008d0ebd98d8245cdeb7c3f84 \
     --hash=sha256:f65d77eb05331495485048f6804f53885b192b998acb7e6fe1487d941bf08435
     # via
-    #   aptl-labs
+    #   lilrae
     #   raes
 certifi==2026.7.22 \
     --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775 \
@@ -296,8 +296,8 @@ cryptography==50.0.2 \
     --hash=sha256:fa8f5efb344d6908a1ce62f4a24e2e5780f825d6f53f5f50ec5ffacac72936cb \
     --hash=sha256:fdd28f912fccfec1846a94e2e1e8f9b0012f557f0c46fe4f3eb0d7a87afcf90b
     # via
-    #   aptl-labs
     #   asyncssh
+    #   lilrae
     #   pyjwt
     #   raes
 defusedxml==0.7.1 \
@@ -370,7 +370,7 @@ httpx2-jsfetch==1.0 ; sys_platform == 'emscripten' \
 icontract==2.7.3 \
     --hash=sha256:8fb0f93f71211416f214f37c01b8017fdc8c079d70159f49f0ddcc10918c14d0 \
     --hash=sha256:df37a43d86d532407bc6b84dea29dd9f7ece794b73211769fa8a33a76b8ed145
-    # via aptl-labs
+    # via lilrae
 idna==3.20 \
     --hash=sha256:a7db850025b95ded1eae8a46181a1a6c56c92c96f0e2b005d9ff8dc0210cab44 \
     --hash=sha256:ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c
@@ -399,7 +399,7 @@ mcp==2.2.0 \
     --hash=sha256:2dc37ecb1974becdcebdbf7561e7c15a07dbbf20ba21ba16c3593b3038b3afbd \
     --hash=sha256:bde982589473a060ae145e3406e9a5333fe538c97229ba841f5a7f92be004f81
     # via
-    #   aptl-labs
+    #   lilrae
     #   raes
     #   raes-env-packs
 mcp-types==2.2.0 \
@@ -414,7 +414,7 @@ opentelemetry-api==1.44.0 \
     --hash=sha256:67647e5e9566edcf421166fdf022b3537f818635daa852b289e34604dc6fb33a \
     --hash=sha256:94b98c893a91b88657eaac1e3ba89618cdb85be6918196705354f34728b2cdef
     # via
-    #   aptl-labs
+    #   lilrae
     #   mcp
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-sdk
@@ -426,7 +426,7 @@ opentelemetry-exporter-otlp-proto-common==1.44.0 \
 opentelemetry-exporter-otlp-proto-http==1.44.0 \
     --hash=sha256:838592fce774c1c8bb7b9a0a7facbfa82e17be5a8a4e94cef10cb84ae026bae3 \
     --hash=sha256:c633d7270ad6b57cd4cfbe8b0007a9e2e7c0cb50bd6c50fe2a7b245f721a09d8
-    # via aptl-labs
+    # via lilrae
 opentelemetry-proto==1.44.0 \
     --hash=sha256:898b155a0e1557afd867478fb6158e8122a46329ca0bb8dc53cc55e98f017f56 \
     --hash=sha256:c547a79c2f8c0c515d31509154682e5921c7cfd5ca67b70e1f9266e2c3e103f3
@@ -437,20 +437,20 @@ opentelemetry-sdk==1.44.0 \
     --hash=sha256:cebe7f65dc12f26ead75c6064de12fd2a9052e5060c0272d402cfa203aae123b \
     --hash=sha256:df081c4c6bcfdb1211e3e86140376792643128a25f8d72d1d27675936e7e96ad
     # via
-    #   aptl-labs
+    #   lilrae
     #   opentelemetry-exporter-otlp-proto-http
 opentelemetry-semantic-conventions==0.65b0 \
     --hash=sha256:1cacde7b0ad306f84c5ef08c3dbe1bbaf20165bba6f8bff43b670e555a086bcb \
     --hash=sha256:f9b2b81e9d5b64f11bc952075e7e9c7fb0aab075c7fd1c46d597f1b919852d60
     # via
-    #   aptl-labs
+    #   lilrae
     #   opentelemetry-sdk
 packaging==26.3 \
     --hash=sha256:94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79 \
     --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
     # via
-    #   aptl-labs
     #   hatchling
+    #   lilrae
     #   raes
     #   univers
 pathspec==1.1.1 \
@@ -484,8 +484,8 @@ pydantic==2.13.4 \
     --hash=sha256:45a282cde31d808236fd7ea9d919b128653c8b38b393d1c4ab335c62924d9aba \
     --hash=sha256:c40756b57adaa8b1efeeced5c196f3f3b7c435f90e84ea7f443901bec8099ef6
     # via
-    #   aptl-labs
     #   fastapi
+    #   lilrae
     #   mcp
     #   mcp-types
     #   raes
@@ -627,7 +627,7 @@ pyyaml==6.0.3 \
     --hash=sha256:f7057c9a337546edc7973c0d3ba84ddcdf0daa14533c2065749c9075001090e6 \
     --hash=sha256:fc09d0aa354569bc501d4e787133afc08552722d3ab34836a80547331bb5d4a0
     # via
-    #   aptl-labs
+    #   lilrae
     #   raes
     #   raes-env-packs
     #   uvicorn
@@ -635,12 +635,12 @@ raes==6.0.1 \
     --hash=sha256:3e97f42d42564acc1740757157ffd35a8c6373487845e987a314da54388a06c0 \
     --hash=sha256:8ab156fb1b9c1f0b467c08d98c0695403224ad3c6f2b7835e30b570f8741e67f
     # via
-    #   aptl-labs
+    #   lilrae
     #   raes-env-packs
 raes-env-packs==6.2.1 \
     --hash=sha256:2144f4460cbcd8a2579820b6962fd59fb714c437b980a11ef4041017b22661b2 \
     --hash=sha256:6a235e6c75697cb8a1afcb011b70b77e6bdc6fa302911aaa607f25856689b657
-    # via aptl-labs
+    # via lilrae
 referencing==0.37.0 \
     --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231 \
     --hash=sha256:44aefc3142c5b842538163acb373e24cce6632bd54bdb01b21ad5863489f50d8
@@ -656,13 +656,13 @@ rfc8785==0.1.4 \
     --hash=sha256:520d690b448ecf0703691c76e1a34a24ddcd4fc5bc41d589cb7c58ec651bcd48 \
     --hash=sha256:e545841329fe0eee4f6a3b44e7034343100c12b4ec566dc06ca9735681deb4da
     # via
-    #   aptl-labs
+    #   lilrae
     #   raes
 rich==15.0.0 \
     --hash=sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb \
     --hash=sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36
     # via
-    #   aptl-labs
+    #   lilrae
     #   raes
     #   typer
 rpds-py==2026.6.3 \
@@ -801,7 +801,7 @@ typer==0.27.0 \
     --hash=sha256:629bd12ea5d13a17148125d9a264f949eb171fb3f120f9b04d85873cab054fa5 \
     --hash=sha256:6f4b27631e47f077871b7dc30e933ec0131c1390fbe0e387ea5574b5bac9ccf1
     # via
-    #   aptl-labs
+    #   lilrae
     #   raes
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \

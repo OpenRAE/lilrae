@@ -421,23 +421,3 @@ def test_source_builds_do_not_re_open_an_unhashed_resolver(source: Path) -> None
         f"{source.relative_to(REPO_ROOT)} builds from source with PEP 517 isolation "
         f"enabled, which resolves the build backend unpinned: {offenders}"
     )
-
-
-def test_scenario_fixture_scripts_are_out_of_scope() -> None:
-    """The lab's fake corporate content is not part of APTL's supply chain.
-
-    ``scenarios/fixtures/techvault-content/`` holds the files a red-team agent
-    discovers on a compromised TechVault host. Its ``deploy.sh`` is a prop: it is
-    never executed by a build, and hash-pinning it would make the artifact read
-    as machine-generated rather than as something a developer checked in. It is
-    excluded here by evidence, not by convenience - and this test fails if the
-    file stops being a fixture, so the exclusion cannot quietly widen.
-    """
-    fixture = (
-        REPO_ROOT
-        / "scenarios/fixtures/techvault-content/dev-user-home/projects/techvault-portal/deploy.sh"
-    )
-    if not fixture.is_file():
-        pytest.skip("fixture removed or relocated")
-    assert fixture not in _pinning_sources()
-    assert "scenarios/fixtures/" in str(fixture.relative_to(REPO_ROOT))

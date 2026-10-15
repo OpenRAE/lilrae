@@ -7,8 +7,16 @@ from pathlib import Path
 import yaml
 
 from aptl.core.deployment._compose_node_generation import base_compose_file
+from aptl.core.deployment._compose_runtime_config import compose_literal
 from aptl.core.deployment._compose_spawn_image_realization import (
+    _daemon_platform,
     prepare_spawn_images,
+)
+from aptl.core.deployment._docker_image_identity import (
+    LOCAL_IMAGE_PRESENT,
+    DockerPlatform,
+    is_exact_image_reference,
+    local_image_state,
 )
 from aptl.core.deployment.realization import (
     DeploymentImageRealization,
@@ -62,24 +70,27 @@ class ComposeRealizationImageMixin:
     ) -> tuple[LabResult | None, tuple[Path, ...] | None]:
         """Run typed pull/build image operations and write a compose override.
 
-        A static in-tree ``docker-compose.yml`` is read from ``scenario_root``;
-        the generated base and image override are written under
+        The generated base and image override are written under
         ``realization_root`` (the writable engine checkout), never the pristine
-        pack (issue #875). ``realization_root`` defaults to ``scenario_root`` so
-        an in-tree scenario, where the two coincide, is unchanged.
+        pack (issue #875). A root Compose file cannot select another model.
         """
 
         realization_root = realization_root or scenario_root
         if not realization.images:
             return None, None
+        exact = any(is_exact_image_reference(i.image_ref) for i in realization.images)
+        # A cached pin must also run on the daemon's platform, as a child must.
+        platform, failure = _daemon_platform(self) if exact else (None, None)
         for image in realization.images:
-            result = (
-                self._verify_staged_image(image)
+            if failure is not None:
+                break
+            failure = (
+                self._verify_staged_image(image, platform)
                 if self._offline_staged
-                else self._realize_image(image)
+                else self._realize_image(image, platform)
             )
-            if result is not None:
-                return result, None
+        if failure is not None:
+            return failure, None
         override_path = self._write_image_override(realization.images, realization_root)
         base = base_compose_file(realization, scenario_root, realization_root)
         return None, (base, override_path)
@@ -289,31 +300,40 @@ class ComposeRealizationImageMixin:
             return None
         return references if isinstance(references, list) else None
 
+    def _node_image_state(self, image_ref: str, platform: DockerPlatform | None) -> str:
+        """Read a node image by digest and, for an exact pin, daemon platform."""
+
+        return local_image_state(
+            self._run, image_ref, timeout=_IMAGE_REALIZATION_TIMEOUT, platform=platform
+        )
+
     def _verify_staged_image(
         self,
         image: DeploymentImageRealization,
+        platform: DockerPlatform | None = None,
     ) -> LabResult | None:
-        """Fail closed when an offline appliance did not stage an exact image."""
+        """Fail closed, naming the reference, when a staged image is unproven."""
 
-        result = self._run(
-            ["docker", "image", "inspect", image.image_ref],
-            timeout=_IMAGE_REALIZATION_TIMEOUT,
-        )
-        if result.returncode == 0:
+        state = self._node_image_state(image.image_ref, platform)
+        if state == LOCAL_IMAGE_PRESENT:
             return None
         return LabResult(
             success=False,
-            error=f"Staged image missing for RAES node {image.address}.",
+            error=(
+                f"Staged image {state} for RAES node {image.address}: "
+                f"{image.image_ref}"
+            ),
         )
 
     def _realize_image(
         self,
         image: DeploymentImageRealization,
+        platform: DockerPlatform | None,
     ) -> LabResult | None:
         """Run one image operation through this backend's Docker runner."""
 
         if image.mode == "pull":
-            return self._pull_realization_image(image)
+            return self._pull_realization_image(image, platform)
         if image.mode == "build":
             return self._realize_build_image(image)
         return LabResult(
@@ -340,9 +360,18 @@ class ComposeRealizationImageMixin:
     def _pull_realization_image(
         self,
         image: DeploymentImageRealization,
+        platform: DockerPlatform | None,
     ) -> LabResult | None:
-        """Pull one scenario-resolved image reference."""
+        """Use a proven local copy of an exact image, or pull the reference.
 
+        A tag is mutable, so it is not identity evidence and is still pulled,
+        as is an exact image the daemon cannot prove on its platform (#953).
+        """
+
+        if is_exact_image_reference(image.image_ref) and (
+            self._node_image_state(image.image_ref, platform) == LOCAL_IMAGE_PRESENT
+        ):
+            return None
         result = self._run(
             ["docker", "pull", image.image_ref],
             timeout=_IMAGE_REALIZATION_TIMEOUT,
@@ -401,7 +430,8 @@ class ComposeRealizationImageMixin:
         """Write a contained Compose override for scenario-resolved images.
 
         The override is a scenario-local generated artifact, written under
-        ``scenario_root`` (the bundle root).
+        ``scenario_root`` (the bundle root). An image reference holds pack
+        text, so it is written as a Compose literal (issue #965).
         """
 
         override_path = scenario_root / _IMAGE_OVERRIDE_RELATIVE_PATH
@@ -412,7 +442,7 @@ class ComposeRealizationImageMixin:
         }
         override_path.write_text(
             yaml.dump(
-                {"services": services},
+                compose_literal({"services": services}),
                 Dumper=_ImageOverrideDumper,
                 sort_keys=True,
             ),

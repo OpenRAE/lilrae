@@ -3,8 +3,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "aptl-labs"
-version = "6.0.0"
+name = "lilrae"
+version = "8.0.0"
 description = "Advanced Purple Team Lab CLI"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -78,6 +78,10 @@ dev = [
     # requirements/dev.txt, so the projection's mapping/schema-evolution tests
     # run there rather than silently skipping.
     "pyarrow>=17.0.0",
+    # The installed-artifact tests build real wheels with the release job's
+    # toolchain (`python -m build --no-isolation`). CI installs
+    # requirements/dev.txt, so those tests run there rather than skip.
+    "build>=1.2.0",
 ]
 docs = [
     "mkdocs-material>=9.5.0",
@@ -156,7 +160,7 @@ packages = ["src/aptl", "src/aptl_techvault"]
 
 # Bundle the git-tracked lab-asset tree (docker-compose.yml, config/,
 # containers/, web/, scripts/, and the source that container images
-# build from) into the wheel under aptl/_labdata/ so `pipx install aptl-labs`
+# build from) into the wheel under aptl/_labdata/ so `pipx install lilrae`
 # + `aptl lab init` runs a lab without a git clone (issue #659 / DEP-008).
 # The hook ships only git-tracked files, which keeps generated secrets and
 # local state out of the distribution. See hatch_build.py.

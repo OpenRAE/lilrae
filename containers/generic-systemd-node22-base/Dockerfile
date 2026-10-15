@@ -5,7 +5,7 @@
 # major is part of its contract: Dependabot refreshes the digest but never the
 # major (issue #1193). The slim variant omits the full buildpack toolchain
 # (desktop, media, and kernel-header packages) this substrate never uses.
-FROM node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4
+FROM node:25-trixie-slim@sha256:aabbe39553d15ede8a97cc60c9e1a97034ff772afcf696ea42b94e7f5f2ec71b
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         systemd systemd-sysv dbus gnupg openssh-server ca-certificates \

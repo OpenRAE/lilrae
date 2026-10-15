@@ -73,7 +73,19 @@ jobs:
       # went stale behind contract changes (#1141, #1152) unnoticed (#1193).
       - name: Property-based (fuzz) tests
         run: python -m pytest tests/ -q -m fuzz -k "not integration"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      # The env-file writers must deliver each value exactly (#966). Only the
+      # real Docker and Compose readers can prove that. The readback tests are
+      # integration-marked, so the run above deselects them. The runner has
+      # Docker and Compose. The probes stop the step if either is missing, so
+      # the tests cannot pass by a skip.
+      - name: Env-file readback through Docker and Compose
+        run: |
+          docker info > /dev/null
+          docker compose version
+          python -m pytest -q -m integration \
+            tests/test_raes_runtime_environment.py::test_docker_reads_the_env_file_back_exactly \
+            tests/test_deployment_stateful_realization.py::test_compose_reads_the_generated_env_file_back_exactly
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-coverage
           path: coverage.xml
@@ -343,7 +355,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: '22'
       - name: aptl-mcp-common — install, build, test
@@ -415,17 +427,17 @@ jobs:
           pip install -e . --no-deps --no-build-isolation
           coverage run --data-file=.coverage.transport -m pytest tests/test_mcp_transport_processes.py tests/test_mcp_payload_processes.py -q -m integration
           coverage xml --data-file=.coverage.transport -o coverage/transport.xml
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-transport-coverage
           path: coverage/transport.xml
           retention-days: 7
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mcp-coverage
           path: mcp/aptl-mcp-common/coverage/
           retention-days: 7
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mcp-red-coverage
           path: mcp/mcp-red/coverage/
@@ -438,7 +450,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: '22'
       - run: |
@@ -447,7 +459,7 @@ jobs:
           npx svelte-kit sync
           npx vitest run --coverage
           sed -i 's|^SF:|SF:web/|' coverage/lcov.info
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: web-coverage
           path: web/coverage/
@@ -463,7 +475,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: '22'
       - name: pip-audit (Python dependencies) — blocking
@@ -525,7 +537,7 @@ jobs:
           limit-severities-for-sarif: 'true'
       - name: Upload SARIF artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: trivy-fs-sarif
           path: trivy-fs.sarif
@@ -577,7 +589,7 @@ jobs:
           trivyignores: .trivyignore.yaml
       - name: Upload SARIF artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: trivy-iac-sarif
           path: trivy-iac.sarif
@@ -736,7 +748,7 @@ jobs:
           limit-severities-for-sarif: 'true'
       - name: Upload SARIF artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: trivy-image-${{ matrix.name }}-sarif
           path: trivy-image-${{ matrix.name }}.sarif
@@ -812,7 +824,7 @@ jobs:
         run: osv-scanner scan -L uv.lock --format sarif --output-file osv-scanner.sarif
       - name: Upload SARIF
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: osv-scanner-sarif
           path: osv-scanner.sarif
@@ -836,7 +848,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: '22'
       - name: Generate svelte-kit tsconfig (sonar reads web/tsconfig.json which extends it)
@@ -844,23 +856,23 @@ jobs:
           cd web
           npm ci --no-audit --no-fund --silent
           npx svelte-kit sync
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: python-coverage
           path: .
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: python-transport-coverage
           path: coverage/
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: mcp-coverage
           path: mcp/aptl-mcp-common/coverage/
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: mcp-red-coverage
           path: mcp/mcp-red/coverage/
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: web-coverage
           path: web/coverage/

@@ -16,6 +16,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
+from time import monotonic
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Optional, cast
 from uuid import uuid4
@@ -25,7 +26,7 @@ import yaml
 
 from aptl.core.certs import ensure_ssl_certs
 from aptl.core.soc_ca import ensure_soc_certs
-from aptl.core.config import AptlConfig, find_config, load_config
+from aptl.core.config import AptlConfig, DeploymentConfig, find_config, load_config
 from aptl.core.contracts import (
     backend_is_initialized,
     config_is_loaded,
@@ -50,12 +51,16 @@ from aptl.core.env import (
 # Re-export the lifecycle DTO types from the leaf module (#266 + ADR-030).
 # The leaf has no back-edges, so this is a normal top-level import.
 from aptl.core.lab_types import (
+    STOP_RECOVERY_ROUTES,
     DiagnosticImpact as DiagnosticImpact,
     DiagnosticSeverity as DiagnosticSeverity,
+    LabResetResult as LabResetResult,
     LabResult as LabResult,
     LabStatus as LabStatus,
+    StartResidue,
     StartupDiagnostic as StartupDiagnostic,
     StartupOutcome as StartupOutcome,
+    describe_project_runtime,
 )
 from aptl.core.lifecycle_guard import (
     LifecycleLockUnavailableError,
@@ -93,7 +98,11 @@ from aptl.core.ssh import (
     ensure_victim_authorized_keys,
     ensure_workstation_pivot_key,
 )
-from aptl.core.sysreqs import check_docker_buildx, check_max_map_count
+from aptl.core.sysreqs import (
+    check_docker_buildx,
+    check_max_map_count,
+    docker_mode_for_containment,
+)
 from aptl.utils.logging import get_logger
 from aptl.utils.redaction import redact
 
@@ -160,6 +169,14 @@ class StartSelection:
 _STALE_NETWORK_RECOVERY_HINT = (
     "Run `aptl lab stop` and retry, or `aptl lab stop -v` if you need a clean lab."
 )
+# The deployment backend names the refused index and its container (#990).
+_UNOWNED_SEARCH_INDEX_RECOVERY_HINT = (
+    "Back up the index first; `aptl lab stop` keeps every lab volume. Only if "
+    "its data is disposable, run `aptl lab stop --volumes`, a destructive reset "
+    "that permanently deletes every lab volume. Recovery steps: "
+    "https://openrae.github.io/lilrae/troubleshooting/"
+    "#aptl-lab-start-reports-an-unowned-search-index"
+)
 _WAZUH_MANAGER_SERVICE = "wazuh.manager"
 _WAZUH_MANAGER_CONTAINER = "aptl-wazuh-manager"
 _WAZUH_INDEXER_SERVICE = "wazuh.indexer"
@@ -182,12 +199,23 @@ def _looks_like_stale_realization_network_error(error: str) -> bool:
     )
 
 
+def _looks_like_unowned_search_index_error(error: str) -> bool:
+    """Return True when service materialization refused an unowned index."""
+
+    return (
+        "service materialization failed for " in error
+        and "(reason=unowned-collision)" in error
+    )
+
+
 def _lab_start_failure_error(error: str) -> str:
     """Build the CLI-visible lab-start failure message with recovery hints."""
 
     message = f"Lab start failed: {error}"
     if _looks_like_stale_realization_network_error(error):
         return f"{message}\n{_STALE_NETWORK_RECOVERY_HINT}"
+    if _looks_like_unowned_search_index_error(error):
+        return f"{message}\n{_UNOWNED_SEARCH_INDEX_RECOVERY_HINT}"
     return message
 
 
@@ -398,6 +426,34 @@ def _get_backend(
     )
 
 
+def _configured_backend(
+    project_dir: Path,
+    config: AptlConfig | None,
+    *,
+    command: str,
+    offline_staged: bool = False,
+) -> tuple[Optional["DeploymentBackend"], LabResult | None]:
+    """Create the configured backend, or the refusal that names its bad settings.
+
+    ``aptl.json`` can load and still hold deployment settings that only the
+    backend constructor checks, such as an ssh-compose block without
+    ``ssh_host``. ``command`` names the blocked ``aptl lab`` command.
+    """
+
+    try:
+        return _get_backend(project_dir, config, offline_staged=offline_staged), None
+    except ValueError as exc:
+        # The refusal carries the reason to the caller, which reports it.
+        return None, LabResult(
+            success=False,
+            error=(
+                f"[lifecycle-invalid-configuration] Lab {command} blocked: "
+                f"invalid deployment settings in aptl.json: {exc}. "
+                "Repair aptl.json and retry."
+            ),
+        )
+
+
 def build_compose_command(
     action: str,
     profiles: list[str],
@@ -491,18 +547,37 @@ def _stop_lab_owned(
 ) -> LabResult:
     """Run teardown while the caller owns the project lifecycle lock."""
 
-    config, profiles, failure = _stop_recovery_configuration(search_dir, backend)
+    _, backend, profiles, failure = _stop_recovery_configuration(search_dir, backend)
     if failure is not None:
         return failure
     assert profiles is not None
-    if backend is None:
-        backend = _get_backend(search_dir, config)
+    assert backend is not None
+    return _tear_down_owned(
+        search_dir, backend, profiles, remove_volumes=remove_volumes
+    )
+
+
+def _tear_down_owned(
+    search_dir: Path,
+    backend: "DeploymentBackend",
+    profiles: list[str],
+    *,
+    remove_volumes: bool,
+    retry_command: str | None = None,
+) -> LabResult:
+    """Stop the project and, when its volumes go, finish pending host cleanup.
+
+    ``retry_command`` is the command a cleanup failure names for the retry.
+    ``None`` names ``aptl lab stop -v --yes``.
+    """
 
     capture_failure = _finalize_required_transcript_capture(search_dir, backend)
     stop_result = backend.stop(profiles, remove_volumes=remove_volumes)
     result = stop_result
     if remove_volumes:
-        cleanup_failure = _run_pending_host_cleanup(search_dir, backend, stop_result)
+        cleanup_failure = _run_pending_host_cleanup(
+            search_dir, backend, stop_result, retry_command
+        )
         if cleanup_failure is not None:
             result = cleanup_failure
     if result is stop_result and capture_failure is not None:
@@ -510,10 +585,126 @@ def _stop_lab_owned(
     return result
 
 
+#: The command a failed reset names for the retry (#1218).
+_RESET_RETRY_COMMAND = "aptl lab reset --yes"
+
+#: Why a reset refuses when the recorded workspace scope can't be read (#1218).
+_RESET_WORKSPACE_STATE_UNREADABLE = (
+    "[lifecycle-state-invalid] Lab reset blocked: unreadable workspace "
+    "ownership state; refusing to guess which project to remove. Repair or "
+    "restore .aptl/lifecycle/workspace-ownership-v1.json and retry."
+)
+
+
+def reset_lab(
+    project_dir: Path,
+    backend: Optional["DeploymentBackend"] = None,
+) -> LabResetResult:
+    """Return the lab to a clean, stopped state (#1218).
+
+    Inside the lifecycle lock it counts the project, then runs the same
+    project-scoped teardown as ``aptl lab stop -v``: the project's containers,
+    networks and volumes go, and every pending host-side cleanup record runs
+    (``aptl.core.lifecycle_cleanup``). Other host files, such as ``aptl.json``,
+    ``.env``, SSH keys, certificates and run records, stay. Repeating it is
+    safe: a reset project has nothing left to remove, and a cleanup record that
+    failed is retried.
+    """
+
+    try:
+        with lifecycle_mutation_lock(project_dir) as project_root:
+            return _reset_lab_owned(project_root, backend)
+    except LifecycleBusyError:
+        return LabResetResult(_lifecycle_busy_result("reset"))
+    except LifecycleLockUnavailableError:
+        return LabResetResult(_lifecycle_lock_unavailable_result())
+
+
+def _reset_lab_owned(
+    project_root: Path, backend: Optional["DeploymentBackend"]
+) -> LabResetResult:
+    """Count the project, then reset it while the caller holds the lock."""
+
+    config, selected, profiles, failure = _stop_recovery_configuration(
+        project_root, backend, command="reset"
+    )
+    if failure is not None:
+        return LabResetResult(failure)
+    assert profiles is not None
+    recorded = _workspace_scope_recorded(project_root, config)
+    if recorded is None:
+        return LabResetResult(
+            LabResult(success=False, error=_RESET_WORKSPACE_STATE_UNREADABLE)
+        )
+    assert selected is not None
+    counts = _reset_counts(selected) if recorded else (0, 0)
+    result = _tear_down_owned(
+        project_root,
+        selected,
+        profiles,
+        remove_volumes=True,
+        retry_command=_RESET_RETRY_COMMAND,
+    )
+    return LabResetResult(result, *counts)
+
+
+def _workspace_scope_recorded(
+    project_root: Path, config: AptlConfig | None
+) -> bool | None:
+    """Whether a start recorded the workspace scope that a reset removes.
+
+    Every start since #1054 labels its containers and networks with the
+    workspace-scoped project name recorded under ``.aptl/lifecycle``, and the
+    teardown removes only that project. Without the record, the teardown
+    creates a new, empty scope, so nothing there exists to count, even when an
+    unscoped project from before #1054 runs on the same daemon. ``None`` means
+    the record exists but can't be read.
+    """
+
+    from aptl.core.deployment._compose_resource_ownership import (
+        OwnershipConflictError,
+        WorkspaceOwnership,
+    )
+
+    deployment = DeploymentConfig() if config is None else config.deployment
+    try:
+        scope = WorkspaceOwnership.load(project_root, deployment.project_name)
+    except OwnershipConflictError:
+        return None
+    return scope is not None
+
+
+def _reset_counts(backend: "DeploymentBackend") -> tuple[int | None, int | None]:
+    """Count the workspace-scoped project's containers and networks.
+
+    ``observe_project_runtime`` binds the recorded workspace scope before it
+    counts, so this is the project the teardown removes. Both counts are
+    ``None`` when the backend could not observe them.
+    """
+
+    presence = backend.observe_project_runtime()
+    if presence.error:
+        return None, None
+    return presence.container_count, presence.network_count
+
+
 def _stop_recovery_configuration(
-    search_dir: Path, backend: Optional["DeploymentBackend"]
-) -> tuple[AptlConfig | None, list[str] | None, LabResult | None]:
-    """Resolve safe teardown profiles and any blocking recovery failure."""
+    search_dir: Path,
+    backend: Optional["DeploymentBackend"],
+    *,
+    command: str = "stop",
+) -> tuple[
+    AptlConfig | None,
+    Optional["DeploymentBackend"],
+    list[str] | None,
+    LabResult | None,
+]:
+    """Resolve the backend, safe teardown profiles and any recovery failure.
+
+    ``command`` names the blocked ``aptl lab`` command in the failure text.
+    Validate deployment settings before reading platform-specific recovery
+    state, so an unusable config is reported even where those reads cannot run.
+    """
 
     configured_profiles: list[str] = []
     config_path = find_config(search_dir)
@@ -529,11 +720,13 @@ def _stop_recovery_configuration(
                 failure = LabResult(
                     success=False,
                     error=(
-                        "[lifecycle-invalid-configuration] Lab stop blocked: "
+                        f"[lifecycle-invalid-configuration] Lab {command} blocked: "
                         "invalid configuration; refusing to guess the deployment "
                         "project identity. Repair aptl.json and retry."
                     ),
                 )
+    if failure is None and backend is None:
+        backend, failure = _configured_backend(search_dir, config, command=command)
     profiles: list[str] | None = None
     if failure is None:
         try:
@@ -543,7 +736,10 @@ def _stop_recovery_configuration(
         except (OSError, ValueError):
             failure = LabResult(
                 success=False,
-                error="[lifecycle-state-invalid] Lab stop blocked: invalid operator-group recovery state.",
+                error=(
+                    f"[lifecycle-state-invalid] Lab {command} blocked: invalid "
+                    "operator-group recovery state."
+                ),
             )
         else:
             profiles = (
@@ -551,37 +747,45 @@ def _stop_recovery_configuration(
             )
             if "otel" not in profiles:
                 profiles = [*profiles, "otel"]
-    return config, profiles, failure
+    return config, backend, profiles, failure
 
 
 def _run_pending_host_cleanup(
     project_dir: Path,
     backend: object,
     stop_result: LabResult,
+    retry_command: str | None = None,
 ) -> LabResult | None:
     """Finish pending host cleanup once Docker volume removal is verified.
 
     A Docker failure leaves host state untouched, because it still describes
     retained volumes, and says what remains pending. After verified teardown
     every pending action runs, including on a repeat reset whose Docker
-    resources were already gone.
+    resources were already gone. A failure names ``retry_command``, or
+    ``aptl lab stop -v --yes`` when it is ``None``.
     """
 
     from aptl.core.lifecycle_cleanup import (
+        RETRY_COMMAND,
         docker_teardown_failed_message,
         pending_cleanup_message,
         run_pending_cleanup,
     )
 
+    retry = retry_command or RETRY_COMMAND
     if not stop_result.success:
         return LabResult(
             success=False,
-            error=docker_teardown_failed_message(project_dir, stop_result.error),
+            error=docker_teardown_failed_message(
+                project_dir, stop_result.error, retry_command=retry
+            ),
         )
     report = run_pending_cleanup(project_dir, backend)
     if report.ok:
         return None
-    return LabResult(success=False, error=pending_cleanup_message(report))
+    return LabResult(
+        success=False, error=pending_cleanup_message(report, retry_command=retry)
+    )
 
 
 def _finalize_required_transcript_capture(
@@ -668,7 +872,7 @@ def _lifecycle_lock_unavailable_result() -> LabResult:
 
 
 def clean_boot_lab(
-    project_dir: Path,
+    project_dir: Path,  # NOSONAR - one keyword per start option it forwards (#952).
     *,
     remove_volumes: bool = True,
     skip_seed: bool = False,
@@ -676,6 +880,7 @@ def clean_boot_lab(
     backend: Optional["DeploymentBackend"] = None,
     progress: ProgressCallback | None = None,
     appliance: ApplianceStartOptions | None = None,
+    teardown_on_failure: bool = False,
 ) -> LabResult:
     """Boot the lab into a guaranteed clean state (RNG-001).
 
@@ -708,6 +913,7 @@ def clean_boot_lab(
             teardown so callers that already resolved one avoid a re-create.
         progress: Optional callback for participant-facing startup updates.
         offline_staged: Require already-staged images and MCP artifacts.
+        teardown_on_failure: Forwarded to the start path (#952).
 
     Returns:
         LabResult — the boot outcome on success, or a fatal ``FAILED``
@@ -723,6 +929,7 @@ def clean_boot_lab(
                 backend=backend,
                 progress=progress,
                 appliance=appliance,
+                teardown_on_failure=teardown_on_failure,
             )
     except LifecycleBusyError:
         result = _lifecycle_busy_result("start --clean")
@@ -732,7 +939,7 @@ def clean_boot_lab(
 
 
 def _clean_boot_lab_owned(
-    project_root: Path,
+    project_root: Path,  # NOSONAR - mirrors clean_boot_lab's keywords (#952).
     *,
     remove_volumes: bool,
     skip_seed: bool,
@@ -740,6 +947,7 @@ def _clean_boot_lab_owned(
     backend: Optional["DeploymentBackend"],
     progress: ProgressCallback | None,
     appliance: ApplianceStartOptions | None,
+    teardown_on_failure: bool = False,
 ) -> LabResult:
     """Clean and restart the lab while the caller owns lifecycle mutation."""
 
@@ -779,6 +987,7 @@ def _clean_boot_lab_owned(
         skip_seed=skip_seed,
         scenario_path=scenario_path,
         progress=progress,
+        teardown_on_failure=teardown_on_failure,
         **appliance_kwargs,
     )
 
@@ -842,17 +1051,18 @@ def _clean_boot_rootless_refusal(
     Asks the daemon the teardown would use: the caller's backend or the
     verified appliance backend when there is one, otherwise the backend
     :func:`stop_lab` builds from ``aptl.json``, or from the defaults when there
-    is no ``aptl.json``. An ``aptl.json`` that does not load is left to
-    :func:`stop_lab`, which refuses it before any teardown.
+    is no ``aptl.json``. An ``aptl.json`` that does not load, or whose
+    deployment settings the backend rejects, is left to :func:`stop_lab`,
+    which refuses it before any teardown.
     """
 
     if backend is None:
         config_path = find_config(project_root)
         try:
             config = load_config(config_path) if config_path is not None else None
+            backend = _get_backend(project_root, config)
         except (FileNotFoundError, ValueError):
             return None
-        backend = _get_backend(project_root, config)
     return _rootless_daemon_refusal(backend)
 
 
@@ -1133,6 +1343,14 @@ class _LabStartContext(object):
     # second time.
     admitted_start: AdmittedScenarioStart | None = None
     admitted_surface: "AdmittedStartSurface | None" = None
+    # Wall-clock seconds the one admission took, reported in the start
+    # summary so a slow (registry-bound) admission is visible (#953).
+    admission_seconds: float | None = None
+    # #952: the operator's opt-in to stop what a failed start left (volumes
+    # kept), and whether this start found the project empty, which is what
+    # makes any later project runtime this start's own residue.
+    teardown_on_failure: bool = False
+    range_was_absent: bool = False
     # Optional content-identified startup enrichment selected through the
     # installed scenario adapter. Core treats the validated plan generically.
     scenario_startup: ScenarioStartupPlan | None = None
@@ -1399,6 +1617,14 @@ def _select_start_source(ctx: _LabStartContext) -> StartStageResult:
         )
     try:
         config = load_config(config_path)
+        ctx.backend, failure = _configured_backend(
+            ctx.project_dir,
+            config,
+            command="start",
+            offline_staged=ctx.offline_staged,
+        )
+        if failure is not None:
+            return StartStageResult(error=failure.error)
         bundle = resolve_scenario_bundle(ctx.project_dir, ctx.scenario_path, config)
         provider_selection = select_scenario_startup(bundle)
     except (OSError, ValueError, EnvPackError, ScenarioStartupProviderError) as exc:
@@ -1423,7 +1649,7 @@ def _step_resolve_host_ports(ctx: _LabStartContext) -> LabResult | None:
 
     Docker Compose aborts the whole ``up`` if it cannot bind a requested host
     port, and on Windows/macOS other software routinely holds ports the lab
-    wants (mDNS on 5353, an editor's port-forwarding, etc.). This probes each
+    wants (an editor's port-forwarding, another app, etc.). This probes each
     published port and, for any that are taken, exports a free alternate through
     the ``${VAR:-default}`` indirection Compose reads from the environment — so
     startup succeeds and the access summary can report the real port. Ports the
@@ -1487,22 +1713,33 @@ def _step_load_config(ctx: _LabStartContext) -> LabResult | None:
             log.exception("Failed to load config")
             result = LabResult(success=False, error=f"Failed to load config: {exc}")
         if result is None:
-            ctx.backend = _get_backend(
-                ctx.project_dir,
-                ctx.config,
-                offline_staged=ctx.offline_staged,
-            )
-            result = _configure_verified_appliance_launch(ctx)
-            ctx.execution_boundary = (
-                bind_execution_boundary(
-                    ctx.backend,
-                    seat_guest=ctx.appliance_launch_descriptor is not None,
-                )
-                if result is None
-                else observe_execution_boundary(ctx.backend)
-            )
+            result = _bind_start_backend(ctx)
         if result is None:
             result = _load_admitted_start_surface(ctx)
+    return result
+
+
+def _bind_start_backend(ctx: _LabStartContext) -> LabResult | None:
+    """Create the configured backend and bind the start's execution boundary."""
+
+    if ctx.backend is None:
+        ctx.backend, result = _configured_backend(
+            ctx.project_dir,
+            ctx.config,
+            command="start",
+            offline_staged=ctx.offline_staged,
+        )
+        if result is not None:
+            return result
+    result = _configure_verified_appliance_launch(ctx)
+    ctx.execution_boundary = (
+        bind_execution_boundary(
+            ctx.backend,
+            seat_guest=ctx.appliance_launch_descriptor is not None,
+        )
+        if result is None
+        else observe_execution_boundary(ctx.backend)
+    )
     return result
 
 
@@ -1527,17 +1764,23 @@ def _step_reject_preexisting_range(ctx: _LabStartContext) -> LabResult | None:
             ),
         )
     if not presence.present:
+        ctx.range_was_absent = True
         return None
     log.warning(
         "Lab start blocked by project runtime residue (containers=%d networks=%d)",
         presence.container_count,
         presence.network_count,
     )
+    # Name the residue and the same recovery routes a failed start prints (#952).
+    present = describe_project_runtime(presence.container_count, presence.network_count)
+    routes = "; ".join(
+        f"`{command}` {effect}" for command, effect in STOP_RECOVERY_ROUTES
+    )
     return LabResult(
         success=False,
         error=(
             "[lifecycle-range-present] An APTL range already exists for this "
-            "deployment project. Run `aptl lab stop` and retry, or use "
+            f"deployment project: {present}. {routes}. Run one and retry, or use "
             "`aptl lab start --clean` for an explicit volume-reset boot."
         ),
     )
@@ -1734,6 +1977,7 @@ def _load_admitted_start_surface(
     admitted = None
     surface = None
     failure = None
+    admission_started = monotonic()
     try:
         admission_kwargs = (
             {
@@ -1767,6 +2011,7 @@ def _load_admitted_start_surface(
                 f"{redact(str(exc))}"
             ),
         )
+    ctx.admission_seconds = monotonic() - admission_started
     if failure is None and admitted is not None:
         failure = admitted.runtime_materialization_failure
     if failure is None:
@@ -1948,11 +2193,9 @@ def _step_check_sysreqs(ctx: _LabStartContext) -> LabResult | None:
     """Validate host requirements before Compose starts building images."""
     log.info("Step 4: Checking system requirements...")
     boundary = ctx.execution_boundary
-    selected_mode = hostenv.DOCKER_UNKNOWN
-    if boundary is not None and boundary.host_containment == "native-docker":
-        selected_mode = hostenv.DOCKER_LINUX_NATIVE
-    elif boundary is not None and boundary.host_containment == "docker-vm-unverified":
-        selected_mode = hostenv.DOCKER_VM
+    selected_mode = docker_mode_for_containment(
+        boundary.host_containment if boundary is not None else None
+    )
     sysreq_result = check_max_map_count(selected_mode=selected_mode)
     if not sysreq_result.passed:
         log.error(
@@ -2146,7 +2389,10 @@ def _seed_suricata_volumes_local(ctx: _LabStartContext) -> LabResult | None:
     if ctx.offline_staged and pull_warnings:
         result = LabResult(
             success=False,
-            error="Offline staged Suricata image verification failed.",
+            error=(
+                "Offline staged Suricata image verification failed: "
+                f"{'; '.join(pull_warnings)}"
+            ),
         )
     if result is None:
         ownership = ensure_suricata_config_source_ownership(
@@ -2271,24 +2517,16 @@ def _step_generate_soc_certs(ctx: _LabStartContext) -> LabResult | None:
 def _step_check_bind_mounts(ctx: _LabStartContext) -> LabResult | None:
     """Validate the bind-mount sources of the model this run actually applies.
 
-    The Compose model is a scenario-declared input, so it is read from the
-    admitted bundle root, never the engine checkout. A project-tree bundle ships
-    a static ``docker-compose.yml`` there and this stays its compatibility
-    guard; an env-pack ships none, the backend generates the base model from the
-    realization, and ``_check_bind_mounts`` finds no file to inspect. Scanning
-    the project's unrelated static file instead is what failed every fresh
-    install (issue #951).
+    Admitted scenarios always use a generated Compose model. The backend
+    validates their declared content and effective mounts during realization;
+    a root Compose file is not applied and must not block their startup.
+    Calls without an admitted scenario retain the project-file check.
 
-    Services are filtered by the profiles the *admitted realization* selected —
-    the surface ``docker compose --profile`` receives — not by
-    ``containers.enabled_profiles()``, which is the operator's capability
-    ceiling. A reduced catalog scenario must not be judged against SOC services
-    it never starts (issue #550's rule, applied here).
     """
     log.info("Step 6b: Checking bind-mount sources...")
     surface = ctx.admitted_surface
-    project_root = surface.bundle_root if surface is not None else ctx.project_dir
-    enabled = list(surface.selected_profiles) if surface is not None else None
+    if surface is not None:
+        return None
     stateful_owned = frozenset(
         (service_name, mount_destination, source_relpath)
         for _address, _generator, service_name, mount_destination, source_relpath in (
@@ -2296,8 +2534,7 @@ def _step_check_bind_mounts(ctx: _LabStartContext) -> LabResult | None:
         )
     )
     mount_errors = _check_bind_mounts(
-        project_root,
-        enabled_profiles=enabled,
+        ctx.project_dir,
         stateful_owned_mounts=stateful_owned,
     )
     if not mount_errors:
@@ -2334,9 +2571,12 @@ def _step_pull_images(ctx: _LabStartContext) -> LabResult | None:
         log.warning(warning)
     if warnings:
         if ctx.offline_staged:
+            # Offline warnings name only the exact reference, never stderr.
             return LabResult(
                 success=False,
-                error="Offline staged image verification failed.",
+                error=(
+                    f"Offline staged image verification failed: {'; '.join(warnings)}"
+                ),
             )
         # Pre-pull is a latency optimization — Compose pulls on demand
         # when containers start. Surface as a cosmetic info diagnostic
@@ -3985,7 +4225,7 @@ _LAB_START_STEPS = (
 )
 
 # The project-tree path remains a qualified compatibility route until an
-# acquired-pack replacement has release and parity evidence (#880). An admitted
+# acquired-pack replacement has release and parity evidence (#1322). An admitted
 # env-pack without a startup adapter has no authority to run the legacy
 # Wazuh/SOC/MCP preparation. Keep the common apply, observation and run-history
 # stages on both paths.
@@ -4162,14 +4402,92 @@ def _run_start_stage(
     )
 
 
+def _account_for_failed_start(
+    ctx: _LabStartContext, result: LabResult
+) -> LabResult:
+    """Name what a failed start left in the project, removing it on request.
+
+    Only a start that found the project empty can have created what remains,
+    so a refused pre-existing range is never counted or removed here (#952).
+    With ``--teardown-on-failure`` the project-scoped stop runs without volume
+    removal while this start still holds its lifecycle lock, and the backend
+    is observed again to confirm that no containers or networks remain.
+    """
+
+    if not ctx.range_was_absent or ctx.backend is None:
+        return result
+    residue = _observed_start_residue(ctx.backend)
+    if residue is not None and ctx.teardown_on_failure:
+        residue = _tear_down_failed_start(ctx, residue)
+    result.residue = residue
+    return result
+
+
+def _observed_start_residue(backend: "DeploymentBackend") -> StartResidue | None:
+    """Return the project runtime now present, or ``None`` when there is none.
+
+    An unanswered observation is reported as unknown residue rather than as an
+    empty project, because the operator still has to check and recover.
+    """
+
+    presence = backend.observe_project_runtime()
+    if presence.error:
+        return StartResidue(container_count=None, network_count=None)
+    if not presence.present:
+        return None
+    return StartResidue(
+        container_count=presence.container_count,
+        network_count=presence.network_count,
+    )
+
+
+def _tear_down_failed_start(
+    ctx: _LabStartContext, residue: StartResidue
+) -> StartResidue:
+    """Run the project-scoped stop, keeping volumes, and observe what remains.
+
+    The backend's observation, not the stop's own verdict, decides whether
+    containers and networks remain. A complete teardown keeps the counts the
+    failure left, which is what was removed; otherwise the counts are what is
+    still present.
+    """
+
+    assert ctx.backend is not None
+    log.warning("Lab start failed; stopping the project for --teardown-on-failure")
+    stop = _stop_lab_owned(False, ctx.project_dir, ctx.backend)
+    if not stop.success:
+        log.error(
+            "Teardown after the failed start reported a failure: %s", redact(stop.error)
+        )
+    remaining = _observed_start_residue(ctx.backend)
+    if remaining is None:
+        return StartResidue(
+            container_count=residue.container_count,
+            network_count=residue.network_count,
+            teardown_requested=True,
+            torn_down=True,
+        )
+    return StartResidue(
+        container_count=remaining.container_count,
+        network_count=remaining.network_count,
+        teardown_requested=True,
+    )
+
+
 def orchestrate_lab_start(
     project_dir: Path,
     skip_seed: bool = False,
     scenario_path: Path | None = None,
     progress: ProgressCallback | None = None,
     appliance: ApplianceStartOptions | None = None,
+    teardown_on_failure: bool = False,
 ) -> LabResult:
-    """Own and orchestrate the complete lab startup process."""
+    """Own and orchestrate the complete lab startup process.
+
+    A failed start leaves what it created in place for diagnosis and names it
+    in ``LabResult.residue``. ``teardown_on_failure`` instead stops it, without
+    removing volumes, inside this same lifecycle lock (#952).
+    """
 
     after_start: list[Callable[[], LabResult | None]] = []
     try:
@@ -4181,6 +4499,7 @@ def orchestrate_lab_start(
                 progress=progress,
                 appliance=appliance,
                 after_start=after_start,
+                teardown_on_failure=teardown_on_failure,
             )
     except LifecycleBusyError:
         return _lifecycle_busy_result("start")
@@ -4190,6 +4509,7 @@ def orchestrate_lab_start(
         for supervise in after_start:
             failure = supervise()
             if failure is not None:
+                failure.admission_seconds = result.admission_seconds
                 return failure
     return result
 
@@ -4201,6 +4521,7 @@ def _orchestrate_lab_start_owned(
     progress: ProgressCallback | None = None,
     appliance: ApplianceStartOptions | None = None,
     after_start: list[Callable[[], LabResult | None]] | None = None,
+    teardown_on_failure: bool = False,
 ) -> LabResult:
     """Orchestrate the complete lab startup process.
 
@@ -4236,6 +4557,7 @@ def _orchestrate_lab_start_owned(
         appliance_candidate_trust=appliance.candidate_trust,
         scenario_path=scenario_path,
         progress=progress,
+        teardown_on_failure=teardown_on_failure,
     )
 
     for step in _LAB_START_STEPS:
@@ -4258,27 +4580,35 @@ def _orchestrate_lab_start_owned(
             # We therefore log only the step name and emit a narrow
             # fatal `LabResult` at the CLI/API edge.
             log.error("Contract violation in step %s", step.__name__)
-            return LabResult(
-                success=False,
-                error=(
-                    f"Lab orchestration contract violated at step '{step.__name__}'"
+            return _account_for_failed_start(
+                ctx,
+                LabResult(
+                    success=False,
+                    error=(
+                        f"Lab orchestration contract violated at step '{step.__name__}'"
+                    ),
+                    outcome=StartupOutcome.FAILED,
+                    diagnostics=list(ctx.diagnostics),
+                    execution_boundary=ctx.execution_boundary,
+                    admission_seconds=ctx.admission_seconds,
                 ),
-                outcome=StartupOutcome.FAILED,
-                diagnostics=list(ctx.diagnostics),
-                execution_boundary=ctx.execution_boundary,
             )
         ctx.diagnostics.extend(stage.diagnostics)
         if stage.error is not None:
             # Fatal short-circuit. Carry any partial-readiness diagnostics
             # the earlier steps recorded so operators can see what state
             # the lab reached before the failure (ADR-030).
-            return LabResult(
-                success=False,
-                message=stage.message,
-                error=stage.error,
-                outcome=StartupOutcome.FAILED,
-                diagnostics=list(ctx.diagnostics),
-                execution_boundary=ctx.execution_boundary,
+            return _account_for_failed_start(
+                ctx,
+                LabResult(
+                    success=False,
+                    message=stage.message,
+                    error=stage.error,
+                    outcome=StartupOutcome.FAILED,
+                    diagnostics=list(ctx.diagnostics),
+                    execution_boundary=ctx.execution_boundary,
+                    admission_seconds=ctx.admission_seconds,
+                ),
             )
 
     if after_start is not None:
@@ -4289,6 +4619,7 @@ def _orchestrate_lab_start_owned(
     else:
         readiness_failure = _publish_appliance_guest_readiness(ctx)
     if readiness_failure is not None:
+        readiness_failure.admission_seconds = ctx.admission_seconds
         return readiness_failure
     outcome = derive_startup_outcome(ctx.diagnostics, fatal=False)
     if outcome is StartupOutcome.READY:
@@ -4304,6 +4635,7 @@ def _orchestrate_lab_start_owned(
         diagnostics=list(ctx.diagnostics),
         resolved_ports=list(ctx.resolved_ports),
         execution_boundary=ctx.execution_boundary,
+        admission_seconds=ctx.admission_seconds,
     )
 
 
@@ -4521,10 +4853,14 @@ def _inject_mcp_server_ports(
 def _sync_native_mcp_ingress(
     project_dir: Path, backend: object, run_id: str | None
 ) -> None:
-    """Connect native Kali clients to captured ingress in the same host/guest."""
+    """Connect native Kali clients to captured ingress in the same host/guest.
+
+    The red server also learns the workspace-scoped capture sidecar name, so
+    its capture harvest copies from the container this workspace owns.
+    """
     import json
 
-    from aptl.core.mcp_ingress import native_kali_ingress
+    from aptl.core.mcp_ingress import kali_capture_container, native_kali_ingress
     from aptl.workbench.profiles import profile_for
 
     path = project_dir / ".mcp.json"
@@ -4537,8 +4873,10 @@ def _sync_native_mcp_ingress(
     if not run_id:
         raise ValueError("native MCP run identity is unavailable")
     observed = backend.container_inspect("aptl-kali")
-    server.setdefault("env", {}).update(
-        native_kali_ingress(observed, observed.get("Id", ""))
+    red_env = server.setdefault("env", {})
+    red_env.update(native_kali_ingress(observed, observed.get("Id", "")))
+    red_env.update(
+        kali_capture_container(backend.project_dir, backend.logical_project_name)
     )
     run_store_base = str(_expected_transcript_store(project_dir).resolve())
     for role in ("red", "blue"):

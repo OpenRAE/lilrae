@@ -71,6 +71,26 @@ A future change to any of these needs its own compatibility and migration
 decision. No alias package, compatibility shim, second import root, duplicate
 configuration schema, or name toggle is introduced.
 
+### Successor decision: distribution from 8.0.0 (#1367)
+
+Issue #1367 supersedes only the retained `aptl-labs` distribution clause and
+current distribution-related install, upgrade, and recovery wording above.
+`aptl-labs` 7.0.0 is the final legacy release; the successor distribution is
+`lilrae` from 8.0.0. This decision authorizes the cutover; it does not assert
+that 8.0.0 has published. Release-please continues to own version selection.
+
+The successor ships the same import packages, commands, entry points, extras,
+and bundled asset contract. All other executable, configuration, runtime,
+schema, and persisted identities remain unchanged. Installed-provider
+provenance records the actual distribution; historical evidence, fixtures,
+and the closed legacy startup-reset receipt classifier retain their names.
+Migration removes the old distribution before installing the successor;
+rollback removes the successor before restoring pinned `aptl-labs==7.0.0`.
+No alias package or dual installation is supported. The
+[#1367 preflight](../architecture/issue-1367-distribution-cutover-preflight.md)
+records the release and consumer boundaries; #1234 owns post-release checks
+and legacy archival.
+
 ### Naming convention for new code
 
 Use `lilrae` as the naming convention for new code going forward. A new

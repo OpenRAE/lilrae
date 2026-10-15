@@ -15,6 +15,21 @@ import {
 } from '../src/redaction.js';
 
 describe('redact - sensitive scalars', () => {
+  it('treats Compose service fingerprints as secret material', () => {
+    const label = 'com.docker.compose.config-hash';
+    const fingerprint = 'a'.repeat(64);
+    const payload = {
+      labels: { [label]: fingerprint, 'com.docker.compose.service': 'db' },
+      image_digest: `sha256:${'b'.repeat(64)}`,
+    };
+    expect(redact(payload)).toEqual({
+      labels: { [label]: REDACTED, 'com.docker.compose.service': 'db' },
+      image_digest: payload.image_digest,
+    });
+    expect(redact(JSON.stringify(payload))).not.toContain(fingerprint);
+    expect(redact(`${label}=${fingerprint},service=db`)).toBe(`${label}=${REDACTED},service=db`);
+  });
+
   it('replaces password value', () => {
     expect(redact({ password: 'hunter2' })).toEqual({ password: REDACTED });
   });
