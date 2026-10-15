@@ -2,11 +2,13 @@
 
 Proves the happy path, that the verifier imports no APTL internals, and that it
 rejects tampered digests, inventory/archive disagreement, unsafe member paths,
-link members, and a member-count blow-up.
+link members, and a member-count blow-up. Input it cannot open or read fails
+with a report instead of an exception.
 """
 
 from __future__ import annotations
 
+import errno
 import io
 import sys
 import tarfile
@@ -244,3 +246,52 @@ class TestSharedBlobExport:
         report = verify_bundle(out)
         assert report.ok, report.issues
         assert result.archive.member_count >= 1
+
+
+def _missing_path(tmp_path: Path) -> Path:
+    return tmp_path / "missing.tar"
+
+
+def _directory(tmp_path: Path) -> Path:
+    return tmp_path
+
+
+def _truncated_bundle(tmp_path: Path) -> Path:
+    """Keep a valid bundle only up to the middle of its first member's data."""
+    out, _ = _build(tmp_path)
+    with tarfile.open(out, "r:") as tar:
+        member = next(m for m in tar.getmembers() if m.size > 1)
+    truncated = tmp_path / "truncated.tar"
+    truncated.write_bytes(out.read_bytes()[: member.offset_data + member.size // 2])
+    return truncated
+
+
+def _not_a_tar(tmp_path: Path) -> Path:
+    bogus = tmp_path / "bogus.tar"
+    bogus.write_bytes(b"not a tar archive")
+    return bogus
+
+
+class TestUnreadableInput:
+    """A path or archive the verifier cannot read fails as a non-tar file does."""
+
+    @pytest.mark.parametrize(
+        ("make_input", "reason"),
+        [
+            (_missing_path, f"cannot read bundle: [Errno {errno.ENOENT}] "),
+            (_directory, f"cannot read bundle: [Errno {errno.EISDIR}] "),
+            (_truncated_bundle, "archive is truncated or corrupt: unexpected end of data"),
+            (_not_a_tar, "not an uncompressed USTAR bundle: truncated header"),
+        ],
+        ids=["missing-path", "directory", "truncated", "not-a-tar"],
+    )
+    def test_fails_with_one_issue_instead_of_raising(
+        self, tmp_path: Path, make_input, reason: str
+    ) -> None:
+        report = verify_bundle(make_input(tmp_path))
+        assert not report.ok
+        assert report.root_identity is None
+        assert report.member_count == 0
+        assert report.seal_scope is None
+        assert len(report.issues) == 1
+        assert report.issues[0].startswith(reason)
