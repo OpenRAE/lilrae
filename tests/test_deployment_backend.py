@@ -1261,6 +1261,8 @@ services:
                 )
             if cmd[:2] == ["docker", "inspect"]:
                 return MagicMock(returncode=1, stdout="", stderr="missing")
+            if cmd == ["docker", "info", "--format", "{{.ID}}"]:
+                return MagicMock(returncode=0, stdout="test-daemon\n", stderr="")
             return MagicMock(returncode=0, stdout="", stderr="")
 
         with patch("subprocess.run", side_effect=fake_run):
