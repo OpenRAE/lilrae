@@ -1913,3 +1913,10 @@ changelog.d/+install-scenario-packs-doc.added.md	repository-metadata	Inspect ide
 changelog.d/+proxy-addr-cve-2026-90711.fixed.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 changelog.d/+techvault-env-packs-621-compat.fixed.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 docs/getting-started/installing-packs.md	docs-follow-owner	Separate current user guidance from historical evidence and scenario-pack-specific docs
+docs/architecture/issue-1097-trusted-source-image-preflight.md	docs-follow-owner	Retain backend-owned source catalog authority and observation design evidence
+docs/source-image-catalog.md	docs-follow-owner	Keep source binding, runtime authority, and observed image identity guidance with the backend
+src/aptl/backends/_lilrae_catalog_image_observation.py	backend-owned-runtime	Retain independent catalog image readback and completion receipt verification
+src/aptl/backends/_lilrae_source_image_catalog.py	backend-owned-runtime	Retain immutable backend source bindings selected only under open authority
+tests/fixtures/lilrae_source_image_inventory_v6_3_1.json	tests-follow-owner	Retain released source and runtime facts as a backend catalog coverage fixture
+tests/test_lilrae_catalog_image_observation.py	tests-follow-owner	Retain independent image identity, lifecycle, and evidence regression tests
+tests/test_lilrae_source_image_catalog.py	tests-follow-owner	Retain source admission and released Linux kit selector coverage

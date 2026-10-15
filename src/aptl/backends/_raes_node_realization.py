@@ -17,8 +17,10 @@ from aptl.backends._raes_conformance_probe import (
 )
 from aptl.backends.raes_backend_implementation import (
     BackendNodeImplementation,
+    _compute_substrate_is_open,
     select_backend_node_implementation,
 )
+from aptl.backends._raes_image_policy import _policy_diagnostic
 from aptl.backends.raes_base_substrate import base_container_spec
 from aptl.backends.raes_image_realization import (
     node_source_is_dynamic_composition,
@@ -78,8 +80,19 @@ def _realize_node(
         service_name=service_name,
         diagnostics=diagnostics,
     )
+    if (
+        authored_image is not None
+        and authored_image.catalog_record is not None
+        and not _compute_substrate_is_open(plan, resource.address)
+    ):
+        diagnostics.append(_policy_diagnostic(resource.address, "source-not-authorized"))
+        authored_image = None
+    source_rejected = any(
+        item.address == resource.address and item.code == "aptl.provisioner.image-policy-rejected"
+        for item in diagnostics
+    )
     implementation = None
-    if authored_image is None and not dynamic:
+    if authored_image is None and not dynamic and not source_rejected:
         implementation = select_backend_node_implementation(
             plan=plan,
             resource=resource,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from aptl.backends._raes_backend_implementation_catalog import (
     BACKEND_IMPLEMENTATION_PROFILES,
 )
@@ -205,10 +207,83 @@ def backend_profile_selected_concerns(runtime: object) -> frozenset[str]:
     return frozenset(concerns)
 
 
-def _selector_matches(runtime: object, selector: SemanticRuntimeSelector) -> bool:
+def matching_source_implementation_profile(
+    name: str, version: str, runtime: object, *, os: str = "", os_version: str = ""
+) -> tuple[BackendImplementationProfile | None, str | None]:
+    """Select exactly one reviewed source binding; no tag or cache fallback."""
+
+    matches = [
+        profile for profile in BACKEND_IMPLEMENTATION_PROFILES
+        if (name, version) in (
+            (profile.source_name, profile.source_version), *profile.source_aliases
+        )
+        and profile.image_mode == "pull"
+    ]
+    compatible = [p for p in matches if _source_runtime_compatible(p, runtime, os, os_version)]
+    reason = _source_match_rejection(matches, compatible)
+    if reason is not None:
+        return None, reason
+    profile = compatible[0]
+    # Catalog policy is executable input, even though it is checked in. Admit
+    # only bounded registry references, never credentials or option operands.
+    if not re.fullmatch(
+        r"[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?"
+        r"(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*@sha256:[0-9a-f]{64}",
+        profile.image_ref,
+    ) or not profile.provenance_refs:
+        return None, "invalid-catalog-entry"
+    return profile, None
+
+
+def _source_match_rejection(
+    matches: list[BackendImplementationProfile],
+    compatible: list[BackendImplementationProfile],
+) -> str | None:
+    """Distinguish an absent binding from incompatible or ambiguous policy."""
+
+    if not matches:
+        return "unknown-source"
+    if not compatible:
+        return "incompatible-source"
+    return "ambiguous-source" if len(compatible) != 1 else None
+
+
+def _source_runtime_compatible(
+    profile: BackendImplementationProfile, runtime: object, os: str, os_version: str
+) -> bool:
+    """Runtime facts may exclude a binding; they cannot change its image pin."""
+
+    if os and (os, os_version) not in profile.supported_os:
+        return False
+    selector = profile.source_runtime_selector or profile.selector
+    # A matching record cannot authorize contradictory records, including facts
+    # in another typed product collection. Source-only bindings have no policy
+    # attesting to such products. Runtime-only profile matching stays separate.
+    collections = {
+        "database_services",
+        "datastore_services",
+        "platform_applications",
+        "software_components",
+        *(p.selector.collection for p in BACKEND_IMPLEMENTATION_PROFILES if p.selector),
+        *(
+            p.source_runtime_selector.collection
+            for p in BACKEND_IMPLEMENTATION_PROFILES
+            if p.source_runtime_selector
+        ),
+    }
+    return all(
+        selector is not None
+        and collection == selector.collection
+        and _record_matches(record, selector)
+        for collection in collections
+        for record in getattr(runtime, collection, ())
+    )
+
+
+def _selector_matches(runtime: object, selector: SemanticRuntimeSelector | None) -> bool:
     """Return whether one portable runtime record matches a profile selector."""
 
-    return any(
+    return selector is not None and any(
         _record_matches(record, selector)
         for record in getattr(runtime, selector.collection, ())
     )

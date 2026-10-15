@@ -241,10 +241,16 @@ class DeploymentBackend(HostInventoryBackend, ContainerOpsBackend, Protocol):
         """
         ...
 
-    def container_image_digest(self, container_name: str) -> str | None:
+    def container_image_digest(
+        self, container_name: str, *, expected_ref: str | None = None,
+        expected_config_id: str | None = None,
+    ) -> str | None:
         """Return the manifest digest of the image backing one container.
 
         Read-after-write for exact artifact realization: the satisfaction
+        With expected_ref, prove that repository/digest belongs to the observed
+        container image ID; do not choose an arbitrary RepoDigests alias. The
+        optional expected_config_id correlates a preceding configuration read.
         disclosure is built from this observed value, never from the planned
         one. Return None when the digest cannot be determined, so the caller
         refuses the disclosure instead of assuming a match.

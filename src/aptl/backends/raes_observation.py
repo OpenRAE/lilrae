@@ -26,6 +26,8 @@ drift from the set of concerns the gate actually enforces.
 
 from __future__ import annotations
 
+from aptl.backends._lilrae_catalog_image_observation import observe_catalog_images
+
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -127,6 +129,7 @@ def observe_realization(
         )
         for address, resource in plan.resources.items()
     }
+    observe_catalog_images(backend, realization, observations, observation_context)
     _add_techvault_runtime_attestations(
         backend,
         realization,
@@ -262,12 +265,12 @@ def _node_content_verification(
 def observation_evidence(
     observations: Mapping[str, ObservedResource],
 ) -> dict[str, dict[str, object]]:
-    """Return only non-secret evidence for successfully observed resources."""
+    """Return non-secret readback evidence, including failed identity checks."""
 
     return {
         address: dict(observed.evidence)
         for address, observed in observations.items()
-        if observed.realized and observed.evidence
+        if observed.evidence
     }
 
 

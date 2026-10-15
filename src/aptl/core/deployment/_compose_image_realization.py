@@ -15,6 +15,7 @@ from aptl.core.deployment._compose_spawn_image_realization import (
 from aptl.core.deployment._docker_image_identity import (
     LOCAL_IMAGE_PRESENT,
     DockerPlatform,
+    selected_container_image_digest,
     is_exact_image_reference,
     local_image_state,
 )
@@ -183,7 +184,10 @@ class ComposeRealizationImageMixin:
         digest = inspect.stdout.strip()
         return digest if digest.startswith(_SHA256_PREFIX) else None
 
-    def container_image_digest(self, container_name: str) -> str | None:
+    def container_image_digest(
+        self, container_name: str, *, expected_ref: str | None = None,
+        expected_config_id: str | None = None,
+    ) -> str | None:
         """Return the manifest digest of the image backing one container.
 
         This is the read-after-write half of artifact realization: it reports
@@ -193,24 +197,16 @@ class ComposeRealizationImageMixin:
         disclosure rather than an assumed match.
         """
 
-        resolver = getattr(self, "_resolve_owned_container_id", None)
-        native_id = resolver(container_name) if callable(resolver) else container_name
-        container = self._run(
-            [
-                "docker",
-                "inspect",
-                "--format",
-                "{{.Image}}",
-                native_id,
-            ],
-            timeout=_IMAGE_REALIZATION_TIMEOUT,
-        )
-        if container.returncode != 0:
-            return None
-        image_id = container.stdout.strip()
-        if not image_id:
-            return None
-        return self._image_manifest_digest(image_id)
+        image_id = self.container_image_config_id(container_name)
+        digest = None
+        if image_id and (expected_config_id is None or image_id == expected_config_id):
+            digest = (
+                self._image_manifest_digest(image_id) if expected_ref is None
+                else selected_container_image_digest(
+                    self._run, image_id, expected_ref, timeout=_IMAGE_REALIZATION_TIMEOUT
+                )
+            )
+        return digest
 
     def substrate_image_identity(self, image_ref: str) -> tuple[str, str] | None:
         """Return the ``(config-id digest, media_type)`` of a locally present ref.

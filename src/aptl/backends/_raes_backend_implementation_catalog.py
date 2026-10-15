@@ -8,6 +8,10 @@ before using it.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
+from aptl.backends._lilrae_source_image_catalog import SOURCE_IMAGE_PROFILES
+
 from aptl.backends._raes_shuffle_implementation_catalog import (
     SHUFFLE_APPLICATION_PROFILES,
 )
@@ -440,6 +444,28 @@ BACKEND_IMPLEMENTATION_PROFILES = (
         },
     ),
 )
+
+# Existing reviewed pins retain the immutable revision that supplied them.
+_CATALOG_BASELINE = (
+    "https://github.com/OpenRAE/lilrae/blob/"
+    "7e689d098cc93fe8e21dcf7afdcc8e54b3d27956"
+    "/src/aptl/backends/_raes_backend_implementation_catalog.py"
+)
+_SOURCE_ALIASES = {
+    "wazuh-manager-4.12": (("wazuh-manager", "4"),),
+    "wazuh-indexer-4.12": (("wazuh-indexer", "4"),),
+    "wazuh-dashboard-4.12": (("wazuh-dashboard", "4"),),
+    "thehive-5.4": (("thehive", "5"),),
+    "shuffle-opensearch-2.14": (("opensearch", "2"),),
+}
+BACKEND_IMPLEMENTATION_PROFILES = tuple(
+    replace(
+        profile,
+        provenance_refs=profile.provenance_refs or (_CATALOG_BASELINE + "#" + profile.profile_id,),
+        source_aliases=profile.source_aliases + _SOURCE_ALIASES.get(profile.profile_id, ()),
+    )
+    for profile in BACKEND_IMPLEMENTATION_PROFILES
+) + SOURCE_IMAGE_PROFILES
 
 __all__ = (
     "BACKEND_IMPLEMENTATION_PROFILES",
