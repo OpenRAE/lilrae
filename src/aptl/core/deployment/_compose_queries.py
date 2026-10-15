@@ -448,14 +448,7 @@ class ComposeQueryMixin(object):
             # A failed inspect alone cannot prove absence: Docker may have
             # become unreachable since receipt resolution cached its identity.
             # Check the same daemon before treating a recorded ID as gone.
-            if self._docker_daemon_id is not None:
-                daemon_id = self._current_docker_daemon_id()
-                if daemon_id is None:
-                    raise OwnershipConflictError(
-                        "backend daemon identity is unavailable"
-                    )
-                if daemon_id != self._docker_daemon_id:
-                    raise OwnershipConflictError("backend daemon identity changed")
+            self._verify_cached_docker_daemon()
             log.debug(
                 "container_inspect failed for native id %s: %s",
                 name[:12],
