@@ -234,7 +234,9 @@ class ComposeResourceResolutionMixin:
             raise OwnershipConflictError("volume ownership is uninspectable")
         return info
 
-    def _remove_owned_containers(self, managed_by: str) -> list[str]:
+    def _remove_owned_containers(
+        self, managed_by: str, *, remove_volumes: bool = True
+    ) -> list[str]:
         """Remove recorded containers by verified native ID."""
 
         try:
@@ -249,7 +251,10 @@ class ComposeResourceResolutionMixin:
                 if not self._raw_container_inspect(receipt.native_id):
                     continue
                 native_id = self._resolve_owned_container_id(receipt.native_id)
-                if self._run(remove_container_command(native_id), timeout=60).returncode:
+                command = remove_container_command(
+                    native_id, remove_volumes=remove_volumes
+                )
+                if self._run(command, timeout=60).returncode:
                     failures.append("failed to remove receipt-owned container")
             return failures
         except (OwnershipConflictError, OSError):
@@ -484,7 +489,9 @@ class ComposeResourceResolutionMixin:
                 )
             )
 
-    def _remove_owned_attempt_containers(self, attempt_id: str) -> None:
+    def _remove_owned_attempt_containers(
+        self, attempt_id: str, *, remove_volumes: bool = False
+    ) -> None:
         """Best-effort rollback of IDs recorded for one failed attempt."""
 
         ownership = self._ensure_resource_ownership()
@@ -493,6 +500,9 @@ class ComposeResourceResolutionMixin:
                 continue
             try:
                 native_id = self._resolve_owned_container_id(receipt.native_id)
-                self._run(remove_container_command(native_id), timeout=60)
+                self._run(
+                    remove_container_command(native_id, remove_volumes=remove_volumes),
+                    timeout=60,
+                )
             except (OwnershipConflictError, OSError):
                 continue

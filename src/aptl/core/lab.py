@@ -51,7 +51,6 @@ from aptl.core.env import (
 # Re-export the lifecycle DTO types from the leaf module (#266 + ADR-030).
 # The leaf has no back-edges, so this is a normal top-level import.
 from aptl.core.lab_types import (
-    STOP_RECOVERY_ROUTES,
     DiagnosticImpact as DiagnosticImpact,
     DiagnosticSeverity as DiagnosticSeverity,
     LabResetResult as LabResetResult,
@@ -64,8 +63,16 @@ from aptl.core.lab_types import (
 )
 from aptl.core.lifecycle_guard import (
     LifecycleLockUnavailableError,
+    lifecycle_recovery_command,
     lifecycle_mutation_lock,
+    stop_recovery_routes,
 )
+from aptl.core.deployment.errors import (
+    BackendObservationError,
+    BackendSeedError,
+    BackendTimeoutError,
+)
+
 from aptl.core.lifecycle_policy import LifecycleBusyError
 from aptl.core.services import (
     test_ssh_connection,
@@ -126,6 +133,14 @@ if TYPE_CHECKING:
     from aptl.core.snapshot import RangeSnapshot
 
 log = get_logger("lab")
+
+_START_OPERATION_ERRORS = (
+    OSError,
+    ValueError,
+    BackendObservationError,
+    BackendSeedError,
+    BackendTimeoutError,
+)
 
 ProgressCallback = Callable[[str], None]
 
@@ -919,6 +934,7 @@ def clean_boot_lab(
         LabResult — the boot outcome on success, or a fatal ``FAILED``
         result carrying the redacted cleanup error when teardown fails.
     """
+    after_start: list[Callable[[], LabResult | None]] = []
     try:
         with lifecycle_mutation_lock(project_dir) as project_root:
             result = _clean_boot_lab_owned(
@@ -930,12 +946,13 @@ def clean_boot_lab(
                 progress=progress,
                 appliance=appliance,
                 teardown_on_failure=teardown_on_failure,
+                after_start=after_start,
             )
     except LifecycleBusyError:
         result = _lifecycle_busy_result("start --clean")
     except LifecycleLockUnavailableError:
         result = _lifecycle_lock_unavailable_result()
-    return result
+    return _supervise_started_lab(result, after_start)
 
 
 def _clean_boot_lab_owned(
@@ -948,6 +965,7 @@ def _clean_boot_lab_owned(
     progress: ProgressCallback | None,
     appliance: ApplianceStartOptions | None,
     teardown_on_failure: bool = False,
+    after_start: list[Callable[[], LabResult | None]] | None = None,
 ) -> LabResult:
     """Clean and restart the lab while the caller owns lifecycle mutation."""
 
@@ -961,9 +979,7 @@ def _clean_boot_lab_owned(
         # LilRAE does not support rootless Docker (#1053), so --clean asks the
         # daemon its teardown would use before it removes any container or
         # volume, not only once the start path runs.
-        preflight_failure = _clean_boot_rootless_refusal(
-            project_root, selected_backend
-        )
+        preflight_failure = _clean_boot_rootless_refusal(project_root, selected_backend)
     if preflight_failure is not None:
         return preflight_failure
     if progress is not None:
@@ -982,6 +998,21 @@ def _clean_boot_lab_owned(
             outcome=StartupOutcome.FAILED,
         )
     appliance_kwargs = {"appliance": appliance} if appliance is not None else {}
+    if (
+        after_start is not None
+        and appliance is not None
+        and appliance.access_request is not None
+    ):
+        # The outer clean-boot owner must also be released before supervision.
+        return _orchestrate_lab_start_owned(
+            project_root,
+            skip_seed=skip_seed,
+            scenario_path=scenario_path,
+            progress=progress,
+            teardown_on_failure=teardown_on_failure,
+            after_start=after_start,
+            **appliance_kwargs,
+        )
     return orchestrate_lab_start(
         project_root,
         skip_seed=skip_seed,
@@ -1774,14 +1805,16 @@ def _step_reject_preexisting_range(ctx: _LabStartContext) -> LabResult | None:
     # Name the residue and the same recovery routes a failed start prints (#952).
     present = describe_project_runtime(presence.container_count, presence.network_count)
     routes = "; ".join(
-        f"`{command}` {effect}" for command, effect in STOP_RECOVERY_ROUTES
+        f"`{command}` {effect}"
+        for command, effect in stop_recovery_routes(ctx.project_dir)
     )
+    clean_command = lifecycle_recovery_command("aptl lab start --clean", ctx.project_dir)
     return LabResult(
         success=False,
         error=(
             "[lifecycle-range-present] An APTL range already exists for this "
             f"deployment project: {present}. {routes}. Run one and retry, or use "
-            "`aptl lab start --clean` for an explicit volume-reset boot."
+            f"`{clean_command}` for an explicit volume-reset boot."
         ),
     )
 
@@ -4418,7 +4451,7 @@ def _account_for_failed_start(
         return result
     residue = _observed_start_residue(ctx.backend)
     if residue is not None and ctx.teardown_on_failure:
-        residue = _tear_down_failed_start(ctx, residue)
+        residue = _tear_down_failed_start(ctx, residue, result.diagnostics)
     result.residue = residue
     return result
 
@@ -4430,7 +4463,11 @@ def _observed_start_residue(backend: "DeploymentBackend") -> StartResidue | None
     empty project, because the operator still has to check and recover.
     """
 
-    presence = backend.observe_project_runtime()
+    try:
+        presence = backend.observe_project_runtime()
+    except _START_OPERATION_ERRORS:
+        log.error("Failed-start runtime observation is unavailable")
+        return StartResidue(container_count=None, network_count=None)
     if presence.error:
         return StartResidue(container_count=None, network_count=None)
     if not presence.present:
@@ -4442,7 +4479,7 @@ def _observed_start_residue(backend: "DeploymentBackend") -> StartResidue | None
 
 
 def _tear_down_failed_start(
-    ctx: _LabStartContext, residue: StartResidue
+    ctx: _LabStartContext, residue: StartResidue, diagnostics: list[StartupDiagnostic]
 ) -> StartResidue:
     """Run the project-scoped stop, keeping volumes, and observe what remains.
 
@@ -4454,10 +4491,22 @@ def _tear_down_failed_start(
 
     assert ctx.backend is not None
     log.warning("Lab start failed; stopping the project for --teardown-on-failure")
-    stop = _stop_lab_owned(False, ctx.project_dir, ctx.backend)
+    try:
+        stop = _stop_lab_owned(False, ctx.project_dir, ctx.backend)
+    except _START_OPERATION_ERRORS:
+        stop = LabResult(success=False, error="Failed-start cleanup did not complete.")
     if not stop.success:
-        log.error(
-            "Teardown after the failed start reported a failure: %s", redact(stop.error)
+        log.error("Teardown after the failed start reported a failure")
+        retry_command = stop_recovery_routes(ctx.project_dir)[0][0]
+        diagnostics.append(
+            StartupDiagnostic(
+                step="failed_start_cleanup",
+                component="lab",
+                impact=DiagnosticImpact.READINESS,
+                severity=DiagnosticSeverity.ERROR,
+                message="Failed-start cleanup reported a failure.",
+                operator_action=f"Run `{retry_command}` to retry cleanup without removing volumes.",
+            )
         )
     remaining = _observed_start_residue(ctx.backend)
     if remaining is None:
@@ -4505,11 +4554,20 @@ def orchestrate_lab_start(
         return _lifecycle_busy_result("start")
     except LifecycleLockUnavailableError:
         return _lifecycle_lock_unavailable_result()
+    return _supervise_started_lab(result, after_start)
+
+
+def _supervise_started_lab(
+    result: LabResult, after_start: list[Callable[[], LabResult | None]]
+) -> LabResult:
+    """Enter long-lived supervision only after the outer startup owner exits."""
     if result.success:
         for supervise in after_start:
             failure = supervise()
             if failure is not None:
                 failure.admission_seconds = result.admission_seconds
+                failure.execution_boundary = result.execution_boundary
+                failure.diagnostics = [*result.diagnostics, *failure.diagnostics]
                 return failure
     return result
 
@@ -4570,6 +4628,11 @@ def _orchestrate_lab_start_owned(
             _emit_progress(ctx, progress_message)
         try:
             stage = _run_start_stage(ctx, step)
+        except _START_OPERATION_ERRORS:
+            log.error("Operational failure in startup step %s", step.__name__)
+            stage = StartStageResult(
+                error=f"Lab startup operation failed at step '{step.__name__}'."
+            )
         except icontract.ViolationError:
             # ADR-031 § Decision: a contract breach inside a step is a
             # fatal state bug. The raw `icontract.ViolationError` string
@@ -4611,16 +4674,15 @@ def _orchestrate_lab_start_owned(
                 ),
             )
 
-    if after_start is not None:
-        # The long-lived access supervisor must not own startup's mutation
-        # lock: its dispatcher observes the lab under the shared lock.
-        after_start.append(lambda: _publish_appliance_guest_readiness(ctx))
-        readiness_failure = None
-    else:
-        readiness_failure = _publish_appliance_guest_readiness(ctx)
+    readiness_failure = _publish_appliance_guest_readiness(ctx)
     if readiness_failure is not None:
         readiness_failure.admission_seconds = ctx.admission_seconds
-        return readiness_failure
+        readiness_failure.execution_boundary = ctx.execution_boundary
+        readiness_failure.diagnostics = [*ctx.diagnostics, *readiness_failure.diagnostics]
+        return _account_for_failed_start(ctx, readiness_failure)
+    if after_start is not None and ctx.appliance_access_request is not None:
+        # Access supervision is long-lived and uses shared observation locks.
+        after_start.append(lambda: _serve_appliance_guest_access(ctx))
     outcome = derive_startup_outcome(ctx.diagnostics, fatal=False)
     if outcome is StartupOutcome.READY:
         log.info("APTL lab started successfully!")
@@ -4670,30 +4732,42 @@ def _publish_appliance_guest_readiness(
             ctx.appliance_access_device,
             ctx.appliance_access_output_dir,
         )
-        if any(access_values):
-            if (
-                not all(access_values)
-                or ctx.appliance_launch_descriptor is None
-                or ctx.run_id is None
-            ):
-                raise ValueError("appliance access channel is incomplete")
-            from aptl.appliance.access_service import serve_appliance_access
-
-            serve_appliance_access(
-                request_path=cast(Path, ctx.appliance_access_request),
-                descriptor_path=ctx.appliance_launch_descriptor,
-                device_path=cast(Path, ctx.appliance_access_device),
-                output_dir=cast(Path, ctx.appliance_access_output_dir),
-                run_id=ctx.run_id,
-                project_dir=ctx.project_dir,
-                observe_boundary=lambda: observe(deployment),
-            )
+        if any(access_values) and (
+            not all(access_values)
+            or ctx.appliance_launch_descriptor is None
+            or ctx.run_id is None
+        ):
+            raise ValueError("appliance access channel is incomplete")
     except Exception:
-        log.exception("Appliance guest readiness publication failed")
+        log.error("Appliance guest readiness publication failed")
         return LabResult(
             success=False,
             error="Appliance guest readiness publication failed.",
         )
+    return None
+
+
+def _serve_appliance_guest_access(ctx: _LabStartContext) -> LabResult | None:
+    """Supervise an already-ready seat outside startup's mutation ownership."""
+    from aptl.appliance.access_service import serve_appliance_access
+
+    assert ctx.backend is not None and ctx.admitted_start is not None
+    try:
+        deployment = ctx.admitted_start.realization.deployment_spec(
+            sorted(ctx.selected_profiles)
+        )
+        serve_appliance_access(
+            request_path=cast(Path, ctx.appliance_access_request),
+            descriptor_path=cast(Path, ctx.appliance_launch_descriptor),
+            device_path=cast(Path, ctx.appliance_access_device),
+            output_dir=cast(Path, ctx.appliance_access_output_dir),
+            run_id=cast(str, ctx.run_id),
+            project_dir=ctx.project_dir,
+            observe_boundary=lambda: ctx.backend.observe_appliance_boundary(deployment),
+        )
+    except Exception:
+        log.error("Appliance access supervision failed")
+        return LabResult(success=False, error="Appliance access supervision failed.")
     return None
 
 

@@ -982,11 +982,12 @@ class TestLabStartCommand:
                     "  To recover, run one of:",
                     (
                         "    aptl lab stop     removes the project's containers and "
-                        "networks and keeps its volumes, so lab data survives"
+                        "networks and keeps its volumes, so volume-backed lab data "
+                        "survives; container-local data is removed"
                     ),
                     (
-                        "    aptl lab stop -v  also removes the volumes and destroys "
-                        "all lab data"
+                        "    aptl lab stop -v  also removes managed volumes and destroys "
+                        "their lab data"
                     ),
                 ],
                 ["--teardown-on-failure did not remove them."],
@@ -1005,8 +1006,8 @@ class TestLabStartCommand:
                         "2 networks; volumes were kept."
                     ),
                     (
-                        "  `aptl lab stop -v` also removes the volumes and destroys "
-                        "all lab data."
+                        "  `aptl lab stop -v` also removes managed volumes and destroys "
+                        "their lab data."
                     ),
                 ],
                 ["  To recover, run one of:"],
