@@ -182,7 +182,9 @@ def export_local(
     try:
         with os.fdopen(fd, "wb") as raw:
             _restrict_open_archive(raw.fileno())
-            with tarfile.open(fileobj=raw, mode="w:gz") as tar:
+            # Naming the candidate preserves tarfile's self-exclusion when a
+            # legacy run is exported into a directory under its own run tree.
+            with tarfile.open(name=candidate, fileobj=raw, mode="w:gz") as tar:
                 _add_archive_members(tar, run_path, run_id, members, checksums_bytes)
         # A destination symlink introduced after the check is replaced, never
         # followed. Close the candidate first so replacement works on Windows.

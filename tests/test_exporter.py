@@ -103,6 +103,20 @@ class TestExportLocal:
         with pytest.raises(FileNotFoundError):
             export_local(store, "nonexistent", tmp_path / "export")
 
+    def test_export_into_run_tree_excludes_inflight_archive(self, tmp_path):
+        store = self._make_run(tmp_path)
+        output_dir = store.get_run_path("test-run") / "exports"
+
+        archive = export_local(store, "test-run", output_dir)
+
+        with tarfile.open(archive, "r:gz") as tar:
+            assert {member.name for member in tar.getmembers() if member.isfile()} == {
+                "test-run/manifest.json",
+                "test-run/data.txt",
+                "test-run/wazuh/alerts.json",
+                "test-run/checksums.sha256",
+            }
+
     def test_sealed_run_exports_exactly_the_verified_inventory(self, tmp_path):
         # A sealed run is packaged as exactly its verified seal inventory; a
         # non-inventory file left in the run dir does not travel.
