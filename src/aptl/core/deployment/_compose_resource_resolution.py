@@ -81,11 +81,22 @@ class ComposeResourceResolutionMixin:
         )
         if not candidates:
             raise OwnershipConflictError("container ownership is unrecorded")
+        native_id = self._verified_container_id(ownership, candidates)
+        if native_id is None:
+            raise OwnershipConflictError("container ownership is absent or ambiguous")
+        return native_id
+
+    def _verified_container_id(
+        self, ownership: WorkspaceOwnership, candidates: tuple[ResourceReceipt, ...]
+    ) -> str | None:
+        """Return the one recorded container that still verifies, or ``None``."""
+
         # Docker can briefly return an empty/failed inspect during a busy
         # first boot even though the immutable receipt and container still
         # exist. Repeat only that inconclusive read of the same native IDs.
         # A changed identity, label or semantic binding raises immediately;
         # retries never grant authority from a mutable name or missing receipt.
+        verified: tuple[str, ...] = ()
         for attempt, delay in enumerate((0, *_CONTAINER_INSPECT_RETRY_DELAYS)):
             if delay:
                 time.sleep(delay)
@@ -99,11 +110,11 @@ class ComposeResourceResolutionMixin:
                 if attempt == len(_CONTAINER_INSPECT_RETRY_DELAYS):
                     raise
                 continue
-            if len(verified) == 1:
-                return verified[0]
-            if len(verified) > 1:
+            if verified:
                 break
-        raise OwnershipConflictError("container ownership is absent or ambiguous")
+        if len(verified) > 1:
+            raise OwnershipConflictError("container ownership is absent or ambiguous")
+        return verified[0] if verified else None
 
     def _container_receipt_is_current(
         self, ownership: WorkspaceOwnership, receipt: ResourceReceipt

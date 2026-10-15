@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import stat
 
+from aptl.core.deployment._compose_resource_ownership import OwnershipConflictError
 from aptl.core.deployment.errors import BackendTimeoutError
 from aptl.core.lab_types import LabResult
 
@@ -184,6 +185,17 @@ class DockerEndpointBindingMixin:
                     error=_DOCKER_ENDPOINT_CHANGED,
                 )
         return failure or LabResult(success=True)
+
+    def _verify_cached_docker_daemon(self) -> None:
+        """Reject failed resource reads when the recorded daemon cannot verify."""
+
+        if self._docker_daemon_id is None:
+            return
+        daemon_id = self._current_docker_daemon_id()
+        if daemon_id is None:
+            raise OwnershipConflictError("backend daemon identity is unavailable")
+        if daemon_id != self._docker_daemon_id:
+            raise OwnershipConflictError("backend daemon identity changed")
 
     def _current_docker_daemon_id(self) -> str | None:
         """Return the selected daemon identity within the fixed command timeout."""
