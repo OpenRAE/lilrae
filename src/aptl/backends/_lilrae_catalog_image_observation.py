@@ -28,32 +28,8 @@ def observe_catalog_images(
         if image is None or image.catalog_record is None or observed is None:
             continue
         container = node.container_name or ""
-        config = backend.container_image_config_id(container) if container else None
-        completed = (
-            observation_context.completed_selected_image_identity(
-                container, image.image_ref
-            )
-            if config is None and observation_context is not None
-            else None
-        )
-        # An unreadable image ID does not prove absence. A reappearing live
-        # container must not inherit a completed container's identity receipt.
-        if completed and backend.container_inspect(container):
-            completed = None
-        config = completed[0] if completed else config
-        config = (
-            config if isinstance(config, str) and _IMAGE_ID.fullmatch(config) else None
-        )
-        digest = (
-            completed[1]
-            if completed
-            else (
-                backend.container_image_digest(
-                    container, expected_ref=image.image_ref, expected_config_id=config
-                )
-                if container and config is not None
-                else None
-            )
+        config, digest = _observed_image_identity(
+            backend, container, image.image_ref, observation_context
         )
         expected = image.image_ref.rsplit("@", 1)[-1]
         verified = observed.realized and config is not None and digest == expected
@@ -80,6 +56,38 @@ def observe_catalog_images(
             realized=observed.realized and verified,
             evidence={**observed.evidence, "source_image": evidence},
         )
+
+
+def _observed_image_identity(
+    backend: DeploymentBackend,
+    container: str,
+    image_ref: str,
+    observation_context: DeploymentObservationContext | None,
+) -> tuple[str | None, str | None]:
+    """Read live identity or correlated proof for a verified absent container."""
+
+    config = backend.container_image_config_id(container) if container else None
+    completed = (
+        observation_context.completed_selected_image_identity(container, image_ref)
+        if config is None and observation_context is not None
+        else None
+    )
+    # An unreadable image ID does not prove absence. A reappearing live
+    # container must not inherit a completed container's identity receipt.
+    if completed and backend.container_inspect(container):
+        completed = None
+    config = completed[0] if completed else config
+    config = config if isinstance(config, str) and _IMAGE_ID.fullmatch(config) else None
+    if completed:
+        return config, completed[1]
+    digest = (
+        backend.container_image_digest(
+            container, expected_ref=image_ref, expected_config_id=config
+        )
+        if container and config is not None
+        else None
+    )
+    return config, digest
 
 
 def catalog_images_unverified(

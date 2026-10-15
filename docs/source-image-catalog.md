@@ -9,6 +9,8 @@ For example, `bind9` / `9`, `postgresql` / `17`, and `nginx` / `stable` select
 explicit catalog entries. The planner never turns an unknown selector into a
 registry tag, looks up the newest image, or tries a list of fallback images.
 An alias such as `stable` changes only through a reviewed catalog edit.
+The in-tree paper scenario's `postgres` / `16` source also has an explicit pin;
+the catalog preserves its declared major version separately from PostgreSQL 17.
 
 ## Authority and compatibility
 

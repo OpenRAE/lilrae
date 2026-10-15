@@ -10,6 +10,9 @@ from aptl.backends._raes_backend_implementation_types import (
 )
 
 _RUNTIME_SELECTORS = {
+    "postgres": SemanticRuntimeSelector(
+        "database_services", "engine", "postgresql", "16"
+    ),
     "postgresql": SemanticRuntimeSelector(
         "database_services", "engine", "postgresql", "17"
     ),
@@ -58,6 +61,14 @@ def _source(
 
 
 SOURCE_IMAGE_PROFILES = (
+    # Preserve the in-tree paper scenario's declared PostgreSQL major version.
+    _source(
+        "postgres",
+        "16",
+        "postgres",
+        "16",
+        "ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d",
+    ),
     _source(
         "application-service",
         "stable",

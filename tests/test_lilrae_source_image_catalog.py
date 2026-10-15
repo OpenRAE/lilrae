@@ -48,6 +48,7 @@ def test_catalog_selects_existing_immutable_image_with_provenance(tmp_path):
     [
         ("bind9", "9"),
         ("postgresql", "17"),
+        ("postgres", "16"),
         ("nginx", "stable"),
         ("wazuh-manager", "4"),
         ("wazuh-indexer", "4"),
