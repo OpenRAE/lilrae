@@ -18,6 +18,7 @@ from aptl.core.deployment._proc_net_listeners import (
     ContainerListeners,
     read_container_listeners,
 )
+from aptl.core.deployment._compose_capture_config import KALI_CONTAINER
 from aptl.core.deployment._compose_resource_ownership import OwnershipConflictError
 from aptl.utils.logging import get_logger
 
@@ -296,12 +297,17 @@ class ComposeQueryMixin(object):
         return self._run(cmd, timeout=timeout)
 
     def container_shell(self, name: str, *, shell: str | None = None) -> int:
-        if name == "aptl-kali" and _kali_capture_active(self._project_dir):
+        native_id = self._resolve_owned_container_id(name)
+        # Compare resolved native IDs, not selectors: Kali's semantic name,
+        # workspace-scoped name and native ID resolve to the same container.
+        # An unverifiable Kali identity raises, so the shell fails closed.
+        if _kali_capture_active(self._project_dir) and (
+            native_id == self._resolve_owned_container_id(KALI_CONTAINER)
+        ):
             log.error(
                 "Direct Kali container TTY refused while admitted session capture is active"
             )
             return 1
-        native_id = self._resolve_owned_container_id(name)
         chosen = shell
         if chosen is None:
             # Probe non-interactively for bash before launching the TTY,
