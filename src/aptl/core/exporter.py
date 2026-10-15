@@ -100,6 +100,25 @@ def _member_checksums(run_path: Path, members: list[str] | None) -> dict[str, st
     return {member: _sha256_file(run_path / member) for member in members}
 
 
+def _add_archive_members(
+    tar: tarfile.TarFile,
+    run_path: Path,
+    run_id: str,
+    members: list[str] | None,
+    checksums_bytes: bytes,
+) -> None:
+    """Add run evidence and its synthetic checksum manifest to the archive."""
+    if members is None:
+        tar.add(run_path, arcname=run_id)
+    else:
+        for member in members:
+            tar.add(run_path / member, arcname=f"{run_id}/{member}")
+    info = tarfile.TarInfo(name=f"{run_id}/checksums.sha256")
+    info.size = len(checksums_bytes)
+    info.mode = 0o600
+    tar.addfile(info, io.BytesIO(checksums_bytes))
+
+
 def export_local(
     store: "LocalRunStore",
     run_id: str,
@@ -164,15 +183,7 @@ def export_local(
         with os.fdopen(fd, "wb") as raw:
             _restrict_open_archive(raw.fileno())
             with tarfile.open(fileobj=raw, mode="w:gz") as tar:
-                if members is None:
-                    tar.add(run_path, arcname=run_id)
-                else:
-                    for member in members:
-                        tar.add(run_path / member, arcname=f"{run_id}/{member}")
-                info = tarfile.TarInfo(name=f"{run_id}/checksums.sha256")
-                info.size = len(checksums_bytes)
-                info.mode = 0o600
-                tar.addfile(info, io.BytesIO(checksums_bytes))
+                _add_archive_members(tar, run_path, run_id, members, checksums_bytes)
         # A destination symlink introduced after the check is replaced, never
         # followed. Close the candidate first so replacement works on Windows.
         os.replace(candidate, archive_path)
