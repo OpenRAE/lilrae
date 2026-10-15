@@ -192,6 +192,15 @@ _UNOWNED_SEARCH_INDEX_RECOVERY_HINT = (
     "https://openrae.github.io/lilrae/troubleshooting/"
     "#aptl-lab-start-reports-an-unowned-search-index"
 )
+# The backend also names an adopted index whose mapping drifted (#1280).
+_DRIFTED_SEARCH_INDEX_RECOVERY_HINT = (
+    "Back up the index first; `aptl lab stop` keeps every lab volume, and a "
+    "later start finds the same index. Only if its data is disposable, run "
+    "`aptl lab stop --volumes`, a destructive reset that permanently deletes "
+    "every lab volume; the next start then creates the index. Recovery steps: "
+    "https://openrae.github.io/lilrae/troubleshooting/"
+    "#aptl-lab-start-reports-a-search-index-whose-mapping-drifted"
+)
 _WAZUH_MANAGER_SERVICE = "wazuh.manager"
 _WAZUH_MANAGER_CONTAINER = "aptl-wazuh-manager"
 _WAZUH_INDEXER_SERVICE = "wazuh.indexer"
@@ -223,6 +232,15 @@ def _looks_like_unowned_search_index_error(error: str) -> bool:
     )
 
 
+def _looks_like_drifted_search_index_error(error: str) -> bool:
+    """Return True when service materialization named an adopted drifted index."""
+
+    return (
+        "service materialization failed for " in error
+        and "(reason=native-product-contract-mismatch): search index " in error
+    )
+
+
 def _lab_start_failure_error(error: str) -> str:
     """Build the CLI-visible lab-start failure message with recovery hints."""
 
@@ -231,6 +249,8 @@ def _lab_start_failure_error(error: str) -> str:
         return f"{message}\n{_STALE_NETWORK_RECOVERY_HINT}"
     if _looks_like_unowned_search_index_error(error):
         return f"{message}\n{_UNOWNED_SEARCH_INDEX_RECOVERY_HINT}"
+    if _looks_like_drifted_search_index_error(error):
+        return f"{message}\n{_DRIFTED_SEARCH_INDEX_RECOVERY_HINT}"
     return message
 
 

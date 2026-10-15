@@ -12,11 +12,13 @@ consumer such as Cortex never races the initial state it needs.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from aptl.core.deployment._compose_service_health import wait_for_realized_health
 from aptl.core.deployment._service_index_materialization import (
     MATERIALIZATION_TIMEOUT,
+    NATIVE_PRODUCT_CONTRACT_MISMATCH,
     UNOWNED_COLLISION,
     ServiceIndexMaterializationResult,
     materialize_search_index_schema,
@@ -25,15 +27,30 @@ from aptl.core.deployment._service_index_materialization import (
 from aptl.core.deployment.realization import DeploymentRealizationSpec
 from aptl.core.lab_types import LabResult
 
+# Why APTL refused an existing index, keyed by (reason, adopted). An index that
+# this lab start created and that fails its own readback keeps the plain message.
+_REFUSED_INDEX_DETAILS: dict[tuple[str | None, bool], str] = {
+    (UNOWNED_COLLISION, False): (
+        "lacks this content's ownership marker, so APTL cannot prove it owns "
+        "the index, and it did not adopt, delete or overwrite it."
+    ),
+    (NATIVE_PRODUCT_CONTRACT_MISMATCH, True): (
+        "carries this content's ownership marker, but its mapping differs from "
+        "the one that this release creates, so APTL cannot use the index, and "
+        "it did not change or delete it."
+    ),
+}
+
 
 def _materialization_error(
     address: str, container: str, result: ServiceIndexMaterializationResult
 ) -> str:
     """Describe one failed schema without any native response content.
 
-    An unowned collision also names the index and its container and says why
-    APTL refused it. Materialization validated the adapter-bound index name
-    before it queried the service, and ``container`` is the realized target, so
+    An unowned collision, or an adopted index whose mapping fails its product's
+    contract, also names the index and its container and says why APTL refused
+    it. Materialization validated the adapter-bound index name before it
+    queried the service, and ``container`` is the realized target, so
     neither carries content read from the existing index. What the operator
     runs next is added at the lab-start edge (``_lab_start_failure_error``).
     Within the 512-character RAES diagnostic message limit, the provisioner's
@@ -44,18 +61,11 @@ def _materialization_error(
     """
 
     error = f"service materialization failed for {address} (reason={result.reason})"
-    index = (
-        native_index_name(result.content_name)
-        if result.reason == UNOWNED_COLLISION
-        else None
-    )
+    detail = _REFUSED_INDEX_DETAILS.get((result.reason, result.adopted))
+    index = native_index_name(result.content_name) if detail else None
     if index is None:
         return error
-    return (
-        f"{error}: search index {index} in container {container} lacks this "
-        "content's ownership marker, so APTL cannot prove it owns the index, "
-        "and it did not adopt, delete or overwrite it."
-    )
+    return f"{error}: search index {index} in container {container} {detail}"
 
 
 def _validate_service_index_targets(
@@ -186,6 +196,7 @@ class ComposeRealizationServiceIndexMixin(object):
         """Materialize + prove each declared schema; stash evidence; fail closed on the first bad readback."""
 
         evidence: dict[str, dict[str, object]] = {}
+        created = self._service_indexes_created_this_start()
         for schema in schemas:
             container = target_containers[schema.address]
 
@@ -197,6 +208,13 @@ class ComposeRealizationServiceIndexMixin(object):
                 )
 
             result = materialize_search_index_schema(_run_script, schema)
+            key = (container, schema.address)
+            if result.created:
+                created.add(key)
+            elif result.adopted and key in created:
+                # A retried apply finds the index that an earlier attempt of
+                # this start created: it is not a retained index (#1280).
+                result = replace(result, adopted=False)
             if not result.ok:
                 return LabResult(
                     success=False,
@@ -208,3 +226,16 @@ class ComposeRealizationServiceIndexMixin(object):
         # never the raw native response.
         self._service_index_materialization_evidence = evidence
         return None
+
+    def _service_indexes_created_this_start(self) -> set[tuple[str, str]]:
+        """Return the ``(container, address)`` indexes this lab start created.
+
+        One backend serves one ``aptl lab start``, and a retried apply
+        (``BEFORE_BACKEND_RETRY``) runs this step again on the same backend.
+        """
+
+        created = getattr(self, "_service_indexes_created", None)
+        if created is None:
+            created = set()
+            self._service_indexes_created = created
+        return created
