@@ -737,7 +737,12 @@ def test_container_namespace_discovery_uses_full_receipted_native_ids(
     assert "--no-trunc" in container_list
 
 
-def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "outcome", ["removed", "foreign-label", "remove-failed", "still-present"]
+)
+def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(
+    tmp_path: Path, outcome: str
+) -> None:
     backend = DockerComposeBackend(tmp_path, project_name="aptl")
     ownership = backend._ensure_resource_ownership(attempt_id="run-a")
     backend._docker_daemon_id = "daemon-a"
@@ -759,7 +764,11 @@ def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(tmp_path: Path) 
         [
             {
                 "Name": volume,
-                "Labels": {"com.docker.compose.project": ownership.project_name},
+                "Labels": {
+                    "com.docker.compose.project": (
+                        "foreign" if outcome == "foreign-label" else ownership.project_name
+                    )
+                },
             }
         ]
     )
@@ -769,7 +778,9 @@ def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(tmp_path: Path) 
     def fake_run(argv, **_kwargs):
         nonlocal present
         if argv[:3] == ["docker", "volume", "rm"]:
-            present = False
+            if outcome == "remove-failed":
+                return subprocess.CompletedProcess(argv, 1, stdout="", stderr="")
+            present = outcome == "still-present"
         inspect_cmd = argv[:3] == ["docker", "volume", "inspect"]
         stdout = inspected if inspect_cmd and present else ""
         return subprocess.CompletedProcess(
@@ -778,11 +789,18 @@ def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(tmp_path: Path) 
 
     backend._run = MagicMock(side_effect=fake_run)
 
-    assert backend._remove_owned_volumes() == []
+    failures = backend._remove_owned_volumes()
+    expected_failures = {
+        "removed": [],
+        "foreign-label": ["failed to establish volume cleanup authority"],
+        "remove-failed": ["failed to remove receipt-owned volume"],
+        "still-present": ["failed to verify receipt-owned volume removal"],
+    }
+    assert failures == expected_failures[outcome]
     commands = [call.args[0] for call in backend._run.call_args_list]
-    assert ["docker", "volume", "rm", volume] in commands
+    assert (["docker", "volume", "rm", volume] in commands) == (outcome != "foreign-label")
     assert all("ls" not in command for command in commands)
-    assert ownership.receipts("volume") == ()
+    assert bool(ownership.receipts("volume")) == (outcome != "removed")
 
 
 def test_clean_volume_cleanup_retires_already_absent_receipt(tmp_path: Path) -> None:
