@@ -9,6 +9,40 @@ This file is maintained by [release-please](https://github.com/googleapis/releas
 from Conventional Commit messages; release sections are generated on release,
 not hand-edited in PRs.
 
+## [8.1.0](https://github.com/OpenRAE/lilrae/compare/v8.0.0...v8.1.0) (2026-10-17)
+
+
+### Features
+
+* resolve declared node sources to trusted images ([7e0f3c7](https://github.com/OpenRAE/lilrae/commit/7e0f3c70a49e190bacd7e90a1e47db895210f28d))
+* resolve declared node sources to trusted images ([4780f34](https://github.com/OpenRAE/lilrae/commit/4780f3442a0af6e95413d5497e3704bf020eb8b5))
+
+
+### Bug Fixes
+
+* **cli:** reject invalid deployment settings before lifecycle state reads ([f2ec060](https://github.com/OpenRAE/lilrae/commit/f2ec0601a32066fa6f47e34e9b3bcde03f8d1a60))
+* **cli:** report an invalid aptl.json instead of a traceback ([aaeaa13](https://github.com/OpenRAE/lilrae/commit/aaeaa13059d153fa32ba1a0b970caebbba70eeea))
+* **deployment:** explain how to recover from a retained index whose mapping drifted ([d80e0c2](https://github.com/OpenRAE/lilrae/commit/d80e0c2e7e64044ce52b41f2c4896d8ab0c43034))
+* **deployment:** preserve daemon errors during container membership checks ([ec64ebe](https://github.com/OpenRAE/lilrae/commit/ec64ebe3067cc655fc0f60afc6f724f30d16d47d))
+* **deployment:** refuse a Kali shell during capture whichever name or ID selects it ([096d32d](https://github.com/OpenRAE/lilrae/commit/096d32d13f98c63583703cb488b8c85dbe22bc9c))
+* **deployment:** report unrecorded container names as not part of this lab ([18218c3](https://github.com/OpenRAE/lilrae/commit/18218c396e48d9f1deb73312fed8d50dff1e6dd7))
+* keep failed cleanup retry guidance non-destructive ([2a97f5e](https://github.com/OpenRAE/lilrae/commit/2a97f5efc1b2594db0e06d7e67a24fb629fcbf91))
+* **mcp:** validate tool arguments against each tool's schema before dispatch ([7e689d0](https://github.com/OpenRAE/lilrae/commit/7e689d098cc93fe8e21dcf7afdcc8e54b3d27956))
+* preserve legacy PostgreSQL source and reconcile inventories ([4d2ac68](https://github.com/OpenRAE/lilrae/commit/4d2ac684b6e142ee82d9e8b9577ef487409347db))
+* preserve volumes and complete failed-start recovery ([fc26779](https://github.com/OpenRAE/lilrae/commit/fc2677975ff370f174d928ff5dae87043bad86b6))
+* preserve volumes and complete failed-start recovery ([322735d](https://github.com/OpenRAE/lilrae/commit/322735d9b0066ed98a0f1fa047ebf5261ab99a4f))
+* require container absence before using completion image proof ([e2353a6](https://github.com/OpenRAE/lilrae/commit/e2353a637942bbc6ae238c3c545ef7879776243e))
+* resolve quality findings and qualify clean-start recovery ([e5e8cc7](https://github.com/OpenRAE/lilrae/commit/e5e8cc7e52eda284d84a976bca464d5566c34fcd))
+* **runs:** exclude in-flight archives from recursive exports ([561a862](https://github.com/OpenRAE/lilrae/commit/561a8628bde30d9f10e05898ed45b3db1303fb6c))
+* **runs:** replace exports atomically and update dependency hints ([6f15bb0](https://github.com/OpenRAE/lilrae/commit/6f15bb05af91c5fdd6cd782dd46c1d9e2b79d763))
+* **runs:** write local exports owner-only so export-bundle accepts the default directory ([95060f6](https://github.com/OpenRAE/lilrae/commit/95060f6621388ea923573f033bd8965b94bd1fb4))
+
+
+### Documentation
+
+* register failed-start recovery architecture guidance ([4eddcd9](https://github.com/OpenRAE/lilrae/commit/4eddcd9bbadc0e054bb74b78c9bcd72f7f79cd6b))
+* use neutral workflow terminology in recovery guidance ([4285e8e](https://github.com/OpenRAE/lilrae/commit/4285e8ea1c6f2c731ccef05eb3e7e1afb9862459))
+
 ## [8.0.0](https://github.com/OpenRAE/lilrae/compare/v7.0.0...v8.0.0) (2026-10-14)
 
 
