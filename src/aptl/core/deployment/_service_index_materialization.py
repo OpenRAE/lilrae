@@ -23,7 +23,9 @@ Contract points enforced here (RAES ADR-088 / OpenRAE/rae#1011, APTL preflight):
 - **Proof is fresh native readback.** Success requires a new ``_mapping`` query
   after any mutation, projected to the declared portable semantics, whose
   canonical digest equals the declared digest. A create/PUT response, the stored
-  marker, or container health is never accepted as proof.
+  marker, or container health is never accepted as proof. An adopted index
+  that fails its product's native mapping is not changed or deleted either,
+  and the realization error names it the same way.
 
 The native index name is an adapter/configuration concern (ADR-088 keeps native
 ids out of the portable SDL): ``cortex_6`` is the Cortex 3.1.8 product job-index
@@ -67,6 +69,8 @@ _ES_BASE = "http://localhost:9200"
 
 # Failure reason for a same-name index without this content's ownership marker.
 UNOWNED_COLLISION = "unowned-collision"
+# Failure reason for a readback that lacks the product's checked-in mapping.
+NATIVE_PRODUCT_CONTRACT_MISMATCH = "native-product-contract-mismatch"
 
 # Bounded timeout for one native materialization/readback exec; the backend step
 # binds this into its ``run_script`` closure.
@@ -108,6 +112,10 @@ class ServiceIndexMaterializationResult:
 
     On success carries only safe portable evidence (the projected field map, the
     digest, and the readback strength) — never the raw native response.
+    ``adopted`` is true when the index already existed with this content's
+    ownership marker, so this attempt read it back instead of creating it.
+    ``created`` is true when this attempt found no index, so it created the
+    index or tried to.
     """
 
     ok: bool
@@ -117,6 +125,8 @@ class ServiceIndexMaterializationResult:
     projection: dict[str, str] = field(default_factory=dict)
     field_schema_digest: str = ""
     readback_strength: str = "daemon-observed"
+    adopted: bool = False
+    created: bool = False
 
     def evidence(self) -> dict[str, object]:
         return {
@@ -319,15 +329,19 @@ def _ensure_index_exists(
     fields: Mapping[str, str],
     digest: str,
     probe: _ExecResult,
-) -> None:
-    """Ensure ``index`` exists and is owned by ``address``, creating it if absent."""
+) -> bool:
+    """Ensure ``index`` exists and is owned by ``address``, creating it if absent.
+
+    Returns True when an existing owned index was adopted, False when created.
+    """
 
     if probe.http_code == 200:
         _check_ownership(probe.body, index, address)
-    elif probe.http_code == 404:
+        return True
+    if probe.http_code == 404:
         _create_index(run_script, index, content_name, address, fields, digest)
-    else:
-        raise _MaterializationFailure("native-unexpected-status")
+        return False
+    raise _MaterializationFailure("native-unexpected-status")
 
 
 def _parse_readback_properties(result: _ExecResult, index: str) -> Mapping[str, Any]:
@@ -359,7 +373,7 @@ def _verify_native_product_contract(
         properties.get(name) != expected
         for name, expected in expected_properties.items()
     ):
-        raise _MaterializationFailure("native-product-contract-mismatch")
+        raise _MaterializationFailure(NATIVE_PRODUCT_CONTRACT_MISMATCH)
 
 
 def _read_and_verify_schema(
@@ -422,6 +436,7 @@ def materialize_search_index_schema(
             ok=False, address=address, content_name=content_name, reason=reason
         )
 
+    adopted = created = False
     try:
         probe = _wait_for_native_api(
             run_script,
@@ -433,7 +448,8 @@ def materialize_search_index_schema(
         )
         # 1. Existence + ownership check (reject-unowned-collision), then 2. a
         # fresh native readback (proof) — always after any mutation.
-        _ensure_index_exists(
+        created = probe.http_code == 404
+        adopted = _ensure_index_exists(
             run_script, index, content_name, address, fields, digest, probe
         )
         projection = _read_and_verify_schema(
@@ -441,7 +457,12 @@ def materialize_search_index_schema(
         )
     except _MaterializationFailure as failure:
         return ServiceIndexMaterializationResult(
-            ok=False, address=address, content_name=content_name, reason=failure.reason
+            ok=False,
+            address=address,
+            content_name=content_name,
+            reason=failure.reason,
+            adopted=adopted,
+            created=created,
         )
 
     return ServiceIndexMaterializationResult(
@@ -450,4 +471,6 @@ def materialize_search_index_schema(
         content_name=content_name,
         projection=projection,
         field_schema_digest=digest,
+        adopted=adopted,
+        created=created,
     )

@@ -423,6 +423,10 @@ def _run_execution_plan(
         run_store=run_store,
         run_id=run_id,
     )
+    if isinstance(target.provisioner, AptlProvisioner):
+        evidence = target.provisioner.last_source_image_evidence
+        if evidence:
+            realization_details["source_image_evidence"] = dict(evidence)
     started = LabResult(
         success=True,
         message=f"Lab started through RAES runtime target '{APTL_RAES_TARGET_NAME}'",

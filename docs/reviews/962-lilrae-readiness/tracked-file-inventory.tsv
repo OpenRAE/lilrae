@@ -299,6 +299,7 @@ docs/architecture/issue-913-shuffle-post-realization-mutation-preflight.md	docs-
 docs/architecture/issue-934-rename-boundary-preflight.md	architecture-history	Binding #934 rename-boundary inventory and retirement guardrails
 docs/architecture/issue-949-orborus-control-authority-preflight.md	architecture-history	Post-baseline architecture guidance; retain with its owning issue
 docs/architecture/issue-951-fresh-env-pack-start-preflight.md	docs-follow-owner	Separate current user guidance from historical evidence and scenario-pack-specific docs
+docs/architecture/issue-952-start-failure-recovery-preflight.md	architecture-history	Preserve issue 952 failed-start recovery ownership, lock and volume-retention guardrails
 docs/architecture/issue-954-runtime-docs-and-test-authority-preflight.md	core	Runtime documentation and test authority guidance for issue 954
 docs/architecture/issue-955-systemd-substrate-privilege-preflight.md	architecture-history	Preserve issue 955 substrate posture decisions and daemon-gate guardrails
 docs/architecture/issue-956-sdl-runtime-authority-materialization-preflight.md	architecture-history	Preserve runtime-authority materialization decisions and implementation guardrails
@@ -1912,3 +1913,10 @@ changelog.d/+install-scenario-packs-doc.added.md	repository-metadata	Inspect ide
 changelog.d/+proxy-addr-cve-2026-90711.fixed.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 changelog.d/+techvault-env-packs-621-compat.fixed.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 docs/getting-started/installing-packs.md	docs-follow-owner	Separate current user guidance from historical evidence and scenario-pack-specific docs
+docs/architecture/issue-1097-trusted-source-image-preflight.md	docs-follow-owner	Retain backend-owned source catalog authority and observation design evidence
+docs/source-image-catalog.md	docs-follow-owner	Keep source binding, runtime authority, and observed image identity guidance with the backend
+src/aptl/backends/_lilrae_catalog_image_observation.py	backend-owned-runtime	Retain independent catalog image readback and completion receipt verification
+src/aptl/backends/_lilrae_source_image_catalog.py	backend-owned-runtime	Retain immutable backend source bindings selected only under open authority
+tests/fixtures/lilrae_source_image_inventory_v6_3_1.json	tests-follow-owner	Retain released source and runtime facts as a backend catalog coverage fixture
+tests/test_lilrae_catalog_image_observation.py	tests-follow-owner	Retain independent image identity, lifecycle, and evidence regression tests
+tests/test_lilrae_source_image_catalog.py	tests-follow-owner	Retain source admission and released Linux kit selector coverage

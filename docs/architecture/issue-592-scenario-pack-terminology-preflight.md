@@ -41,6 +41,7 @@ prose must not accidentally rename them.
 
 | Surface | Files | Disposition |
 | --- | --- | --- |
+| Trusted source image bindings | `docs/architecture/issue-1097-trusted-source-image-preflight.md`, `docs/source-image-catalog.md` | Keep released environment-pack source declarations distinct from the backend-owned immutable image catalog, runtime authority, and independent image evidence. |
 | PyPI distribution transition | `docs/architecture/issue-1234-pypi-transition-preflight.md` | Preserve environment-pack and installed-provider ownership while changing only the product distribution and release wiring. |
 | LilRAE public naming boundary | `docs/architecture/issue-1232-lilrae-naming-preflight.md` | Preserve pack, RAES, and backend ownership while explaining the project's public name and retained compatibility identifiers. |
 | Shipped seat network investigation | `docs/architecture/issue-1194-shipped-seat-network-preflight.md` | Keep authored environment-pack topology distinct from APTL runtime attachment verification and shipped seat delivery evidence. |
