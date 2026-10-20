@@ -11,6 +11,7 @@ import typer
 
 from aptl.cli import lab_init, lifecycle
 from aptl.cli._common import (
+    PROJECT_DIR_HELP,
     EXIT_FAILED,
     emit_json_result,
     exit_status,
@@ -118,7 +119,7 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the LilRAE project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     skip_seed: bool = typer.Option(
         False,
@@ -395,7 +396,7 @@ def info(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the LilRAE project directory.",
+        help=PROJECT_DIR_HELP,
     ),
 ) -> None:
     """Show lab access URLs and credential locations."""
@@ -423,7 +424,7 @@ def scenarios(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the LilRAE project directory.",
+        help=PROJECT_DIR_HELP,
     ),
 ) -> None:
     """List validated acquired-pack identities."""
@@ -461,7 +462,7 @@ def stop(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the LilRAE project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     output_json: bool = typer.Option(
         False,
@@ -507,7 +508,7 @@ def reset(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the LilRAE project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     output_json: bool = typer.Option(
         False,
@@ -620,7 +621,7 @@ def status(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the LilRAE project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     output_json: bool = typer.Option(
         False,
@@ -665,7 +666,7 @@ def validate_live(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the LilRAE project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     scenario: Optional[Path] = typer.Option(
         None,

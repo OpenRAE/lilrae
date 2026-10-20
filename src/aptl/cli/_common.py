@@ -23,6 +23,8 @@ from aptl.utils.redaction import redact
 
 
 _NO_CONFIG_TEMPLATE = "no aptl.json found in {project_dir}"
+# Help text for every ``--project-dir`` option.
+PROJECT_DIR_HELP = "Path to the LilRAE project directory."
 
 # The exit status `lilrae doctor` and the lab lifecycle commands share (#1218):
 # 0 when the command did what it reports, 1 when it could not, 2 for invalid

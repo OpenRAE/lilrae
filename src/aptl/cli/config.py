@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.table import Table
 
 from aptl.cli._common import (
+    PROJECT_DIR_HELP,
     exit_on_invalid_deployment_settings,
     resolve_config_for_cli,
 )
@@ -29,7 +30,7 @@ _PROJECT_DIR_OPTION = typer.Option(
     Path("."),
     "--project-dir",
     "-d",
-    help="Path to the LilRAE project directory.",
+    help=PROJECT_DIR_HELP,
 )
 
 

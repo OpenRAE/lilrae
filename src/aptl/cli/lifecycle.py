@@ -13,13 +13,14 @@ from typing import Optional
 
 import typer
 
+from aptl.cli._common import PROJECT_DIR_HELP
 from aptl.core.lab_types import LabResult
 
 _PROJECT_DIR_OPTION = typer.Option(
     Path("."),
     "--project-dir",
     "-d",
-    help="Path to the LilRAE project directory.",
+    help=PROJECT_DIR_HELP,
 )
 
 policy_app = typer.Typer(help="Inspect the ephemeral lifecycle policy (DEP-003).")

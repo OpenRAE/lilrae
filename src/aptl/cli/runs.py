@@ -7,7 +7,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from aptl.cli._common import resolve_run_store
+from aptl.cli._common import PROJECT_DIR_HELP, resolve_run_store
 from aptl.core.archival.legacy_manifest import summarize_manifest
 from aptl.core.runstore import LocalRunStore
 from aptl.utils.logging import get_logger
@@ -71,7 +71,7 @@ def list_runs(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the LilRAE project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     limit: int = typer.Option(
         20,
@@ -106,7 +106,7 @@ def show_run(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the LilRAE project directory.",
+        help=PROJECT_DIR_HELP,
     ),
 ) -> None:
     """Show details of a specific run."""
@@ -146,7 +146,7 @@ def run_path(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the LilRAE project directory.",
+        help=PROJECT_DIR_HELP,
     ),
 ) -> None:
     """Print the filesystem path to a run directory."""
@@ -205,7 +205,7 @@ def export_run(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the LilRAE project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     output_dir: Path = typer.Option(
         Path("./exports"),
@@ -249,7 +249,7 @@ def export_bundle(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the LilRAE project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     output_dir: Path = typer.Option(
         Path("./exports"),

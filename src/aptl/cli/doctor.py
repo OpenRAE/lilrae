@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import typer
 
-from aptl.cli._common import emit_json_result, exit_status, redact_text
+from aptl.cli._common import PROJECT_DIR_HELP, emit_json_result, exit_status, redact_text
 
 if TYPE_CHECKING:
     from aptl.core.doctor import DoctorReport
@@ -22,7 +22,7 @@ def doctor(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the LilRAE project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     output_json: bool = typer.Option(
         False,

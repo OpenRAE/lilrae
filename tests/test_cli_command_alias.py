@@ -6,7 +6,9 @@ Issue #1402 and the ADR-062 successor clause make ``lilrae`` and
 writes one notice to stderr and leaves stdout and the exit status unchanged.
 
 The subprocess tests run the console scripts that the installed package puts
-next to the interpreter, so they exercise the real entry-point metadata.
+next to the interpreter, so they exercise the real entry-point metadata. They
+carry the ``integration`` mark; the in-process tests below run in the fast
+coverage suite.
 """
 
 from __future__ import annotations
@@ -19,8 +21,6 @@ import tomllib
 from pathlib import Path
 
 import pytest
-
-pytestmark = pytest.mark.integration
 
 _REPO = Path(__file__).resolve().parents[1]
 _BIN = Path(sys.executable).parent
@@ -84,6 +84,7 @@ def test_pyproject_declares_primary_commands_and_aliases():
     )
 
 
+@pytest.mark.integration
 def test_primary_command_reports_lilrae_version_without_notice():
     import aptl
 
@@ -93,6 +94,7 @@ def test_primary_command_reports_lilrae_version_without_notice():
     assert result.stderr == ""
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "args",
     [
@@ -112,6 +114,7 @@ def test_alias_matches_primary_stdout_and_exit_and_warns_once(args):
     assert legacy.stderr[len(_CLI_NOTICE) + 1 :] == primary.stderr
 
 
+@pytest.mark.integration
 def test_alias_leaves_json_stdout_unchanged(tmp_path):
     (tmp_path / "aptl.json").write_text("{}\n")
     args = ("config", "show", "--json", "--project-dir", str(tmp_path))
@@ -123,6 +126,7 @@ def test_alias_leaves_json_stdout_unchanged(tmp_path):
     assert legacy.stderr == _CLI_NOTICE + "\n"
 
 
+@pytest.mark.integration
 def test_suppression_hides_only_the_notice():
     result = _run("aptl", "--version", **{_SUPPRESS: "1"})
     assert result.returncode == 0
@@ -130,12 +134,14 @@ def test_suppression_hides_only_the_notice():
     assert result.stderr == ""
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize("value", ["0", "true", "yes", ""])
 def test_other_suppression_values_keep_the_notice(value):
     result = _run("aptl", "--version", **{_SUPPRESS: value})
     assert result.stderr == _CLI_NOTICE + "\n"
 
 
+@pytest.mark.integration
 def test_sync_alias_warns_once_and_keeps_the_exit_status():
     # No MISP settings: both names fail configuration before any daemon work.
     primary = _run("lilrae-misp-suricata-sync")
@@ -147,6 +153,7 @@ def test_sync_alias_warns_once_and_keeps_the_exit_status():
     assert legacy.stdout == primary.stdout == ""
 
 
+@pytest.mark.integration
 def test_sync_alias_suppression():
     result = _run("aptl-misp-suricata-sync", **{_SUPPRESS: "1"})
     assert result.returncode == 2
@@ -191,3 +198,29 @@ def test_pack_content_probe_keeps_the_pack_supplied_sync_name():
 
     source = Path(realization.__file__).read_text()
     assert 'command -v aptl-misp-suricata-sync' in source
+
+
+def test_notice_names_the_replacement_and_the_removal_release(monkeypatch, capsys):
+    from aptl.cli._command_alias import warn_deprecated_command
+
+    monkeypatch.delenv(_SUPPRESS, raising=False)
+    warn_deprecated_command("aptl", "lilrae")
+    assert capsys.readouterr() == ("", _CLI_NOTICE + "\n")
+
+
+@pytest.mark.parametrize(("value", "notice"), [("1", False), ("true", True), ("", True)])
+def test_only_the_value_one_suppresses_the_notice(monkeypatch, capsys, value, notice):
+    from aptl.cli._command_alias import warn_deprecated_command
+
+    monkeypatch.setenv(_SUPPRESS, value)
+    warn_deprecated_command("aptl", "lilrae")
+    assert capsys.readouterr().err == (_CLI_NOTICE + "\n" if notice else "")
+
+
+def test_sync_legacy_launcher_warns_and_returns_the_service_status(monkeypatch, capsys):
+    from aptl.services.misp_suricata_sync import main as sync_main
+
+    monkeypatch.delenv(_SUPPRESS, raising=False)
+    monkeypatch.setattr(sync_main, "main", lambda: 7)
+    assert sync_main.legacy_main() == 7
+    assert capsys.readouterr() == ("", _SYNC_NOTICE + "\n")

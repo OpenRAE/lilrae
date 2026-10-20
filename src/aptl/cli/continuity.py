@@ -18,6 +18,7 @@ from typing import Optional
 import typer
 
 from aptl.cli._common import (
+    PROJECT_DIR_HELP,
     exit_on_invalid_deployment_settings,
     resolve_config_for_cli,
     resolve_run_store,
@@ -57,7 +58,7 @@ def continuity_audit(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the LilRAE project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     targets: Optional[list[str]] = typer.Option(
         None,
