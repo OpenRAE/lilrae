@@ -1,7 +1,7 @@
 # Issue #1402: Command Rename Preflight
 
 The supplied [issue #1402](https://github.com/OpenRAE/lilrae/issues/1402) is the
-delivery contract; no Ground Control requirement is attached. This note records
+delivery contract; no GRC requirement is attached. This note records
 design guardrails, not an implementation plan or evidence of working releases.
 The [distribution preflight](issue-1367-distribution-cutover-preflight.md)
 continues to govern packaging and release security.
@@ -39,7 +39,9 @@ This is a proposed release policy for the delivery ADR, not a claim that a
 removal issue exists or that a release has shipped. Before #1402 is complete,
 its ADR must reference a real, separate removal issue with this target (or an
 explicitly selected replacement target). No removal issue was supplied to this
-preflight; do not fabricate its number or silently substitute "next major".
+preflight. Do not fabricate its number, and do not silently substitute the
+next major release. The delivery filed
+[#1403](https://github.com/OpenRAE/lilrae/issues/1403) with the 10.0.0 target.
 Removal must include generated-artifact migration, not just script deletion.
 
 ADR-062 needs a narrowly scoped command successor clause, as #1367 added for

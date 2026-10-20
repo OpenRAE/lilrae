@@ -123,7 +123,8 @@ LILRAE_SUPPRESS_APTL_DEPRECATION=1 aptl lab status
 
 LilRAE 10.0.0 does not install `aptl` or `aptl-misp-suricata-sync`
 ([#1403](https://github.com/OpenRAE/lilrae/issues/1403)). After you upgrade to
-that release, a script that still runs `aptl` fails with "command not found".
+that release, a script that still runs `aptl` fails because the shell cannot
+find the command.
 Seat images and guest access policy that LilRAE generates already use
 `lilrae`. Replace older seat images before you upgrade to 10.0.0.
 
