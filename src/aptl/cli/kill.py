@@ -24,7 +24,7 @@ def kill_command(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help="Path to the LilRAE project directory.",
     ),
 ) -> None:
     """Immediately terminate all MCP server processes and agent activity.

@@ -9,7 +9,7 @@
 # once per overlay, so a participant's seat resolves nothing and pulls nothing.
 #
 # The output is a standalone read-only qcow2 plus the config blob describing
-# it; `aptl seat start` pulls both from a registry and overlays the disk.
+# it; `lilrae seat start` pulls both from a registry and overlays the disk.
 set -euo pipefail
 
 # Refuse an accidental multi-hour software-emulated bake.

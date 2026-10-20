@@ -71,7 +71,7 @@ def list_runs(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help="Path to the LilRAE project directory.",
     ),
     limit: int = typer.Option(
         20,
@@ -106,7 +106,7 @@ def show_run(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help="Path to the LilRAE project directory.",
     ),
 ) -> None:
     """Show details of a specific run."""
@@ -146,7 +146,7 @@ def run_path(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help="Path to the LilRAE project directory.",
     ),
 ) -> None:
     """Print the filesystem path to a run directory."""
@@ -205,7 +205,7 @@ def export_run(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help="Path to the LilRAE project directory.",
     ),
     output_dir: Path = typer.Option(
         Path("./exports"),
@@ -249,7 +249,7 @@ def export_bundle(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help="Path to the LilRAE project directory.",
     ),
     output_dir: Path = typer.Option(
         Path("./exports"),
@@ -274,7 +274,7 @@ def export_bundle(
     Packages the run's verified artifact closure with a machine-readable
     inventory/data-dictionary, the published RAES schemas, and any requested
     loss-accounted projections, into a deterministic archive a third party can
-    verify without importing APTL internals.
+    verify without importing LilRAE internals.
     """
     from aptl.core.evidence_bundle import (
         BundleError,

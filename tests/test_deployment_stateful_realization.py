@@ -1764,7 +1764,7 @@ def test_persistent_manager_tls_failure_fails_closed_with_its_phase(
     assert result.error == (
         "Authenticated Wazuh readiness validation failed after 10s: "
         "wazuh.manager at https://localhost:55001 transport phase failed: "
-        "tls_handshake (curl exit 35). Inspect `aptl container logs "
+        "tls_handshake (curl exit 35). Inspect `lilrae container logs "
         "aptl-wazuh-manager`."
     )
     # Bounded: the deadline read after the second round ends the loop.
@@ -1836,8 +1836,8 @@ def test_persistent_credential_rejection_names_both_services_without_secrets(
         "wazuh.indexer at https://localhost:19200 authentication phase failed: "
         "credentials_rejected (HTTP 401); "
         "wazuh.manager at https://localhost:55001 authentication phase failed: "
-        "credentials_rejected (HTTP 401). Inspect `aptl container logs "
-        "aptl-wazuh-indexer` and `aptl container logs aptl-wazuh-manager`."
+        "credentials_rejected (HTTP 401). Inspect `lilrae container logs "
+        "aptl-wazuh-indexer` and `lilrae container logs aptl-wazuh-manager`."
     )
     for secret in ("indexer-password", "api-password", "indexer-user", "api-user"):
         assert secret not in result.error
@@ -1903,8 +1903,8 @@ def test_unpublished_api_port_is_reported_without_probing(
         "Authenticated Wazuh readiness validation failed after 0s: "
         "wazuh.indexer has no published host port for 9200/tcp; "
         "wazuh.manager has no published host port for 55000/tcp. "
-        "Inspect `aptl container logs aptl-wazuh-indexer` and "
-        "`aptl container logs aptl-wazuh-manager`."
+        "Inspect `lilrae container logs aptl-wazuh-indexer` and "
+        "`lilrae container logs aptl-wazuh-manager`."
     )
 
 

@@ -1,7 +1,7 @@
 """CLI commands for container operations.
 
-Implements ``aptl container list``, ``aptl container shell``, and
-``aptl container logs`` (CLI-004). Each command resolves the project's
+Implements ``lilrae container list``, ``lilrae container shell``, and
+``lilrae container logs`` (CLI-004). Each command resolves the project's
 ``aptl.json``, instantiates the configured deployment backend, and
 delegates to the backend's container_* methods so local Docker Compose
 and SSH-remote deployments behave identically.
@@ -31,7 +31,7 @@ _PROJECT_DIR_OPTION = typer.Option(
     Path("."),
     "--project-dir",
     "-d",
-    help="Path to the APTL project directory.",
+    help="Path to the LilRAE project directory.",
 )
 
 
@@ -51,7 +51,7 @@ def _ensure_project_container(backend: DeploymentBackend, name: str) -> None:
     """Reject container names that aren't part of this lab's compose project.
 
     Defense-in-depth against typos and against shared-daemon scenarios
-    where the docker host has containers from other projects: ``aptl
+    where the docker host has containers from other projects: ``lilrae
     container shell`` / ``logs`` should never `exec`/`logs` into a
     non-APTL container even if the user types its name. Uses the
     backend's typed ``container_exists`` check (one ``docker inspect``
@@ -60,7 +60,7 @@ def _ensure_project_container(backend: DeploymentBackend, name: str) -> None:
     if not backend.container_exists(name):
         typer.echo(
             f"container {name!r} is not part of this lab's compose project. "
-            f"Run `aptl container list` to see valid names.",
+            f"Run `lilrae container list` to see valid names.",
             err=True,
         )
         raise typer.Exit(code=1)

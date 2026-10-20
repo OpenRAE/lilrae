@@ -52,7 +52,7 @@ class TestMainApp:
 
 
 class TestDoctorCommand:
-    """`aptl doctor` prints every check and exits by its verdict (#1218)."""
+    """`lilrae doctor` prints every check and exits by its verdict (#1218)."""
 
     @pytest.mark.parametrize(
         ("status", "exit_code", "closing"),
@@ -103,45 +103,45 @@ class TestDoctorCommand:
 
 
 class TestLabCommands:
-    """Tests for aptl lab subcommands."""
+    """Tests for lilrae lab subcommands."""
 
     def test_lab_start_exists(self, runner):
-        """aptl lab start should be a valid command."""
+        """lilrae lab start should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["lab", "start", "--help"])
         assert result.exit_code == 0
 
     def test_lab_stop_exists(self, runner):
-        """aptl lab stop should be a valid command."""
+        """lilrae lab stop should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["lab", "stop", "--help"])
         assert result.exit_code == 0
 
     def test_lab_status_exists(self, runner):
-        """aptl lab status should be a valid command."""
+        """lilrae lab status should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["lab", "status", "--help"])
         assert result.exit_code == 0
 
     def test_lab_info_exists(self, runner):
-        """aptl lab info should be a valid command."""
+        """lilrae lab info should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["lab", "info", "--help"])
         assert result.exit_code == 0
 
     def test_lab_continuity_audit_exists(self, runner):
-        """aptl lab continuity-audit should be a valid command."""
+        """lilrae lab continuity-audit should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["lab", "continuity-audit", "--help"])
         assert result.exit_code == 0
 
     def test_lab_scenarios_exists(self, runner):
-        """aptl lab scenarios should list curated startup scenarios."""
+        """lilrae lab scenarios should list curated startup scenarios."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["lab", "scenarios", "--help"])
@@ -149,17 +149,17 @@ class TestLabCommands:
 
 
 class TestConfigCommands:
-    """Tests for aptl config subcommands."""
+    """Tests for lilrae config subcommands."""
 
     def test_config_show_exists(self, runner):
-        """aptl config show should be a valid command."""
+        """lilrae config show should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["config", "show", "--help"])
         assert result.exit_code == 0
 
     def test_config_validate_exists(self, runner):
-        """aptl config validate should be a valid command."""
+        """lilrae config validate should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["config", "validate", "--help"])
@@ -167,17 +167,17 @@ class TestConfigCommands:
 
 
 class TestContainerCommands:
-    """Tests for aptl container subcommands."""
+    """Tests for lilrae container subcommands."""
 
     def test_container_list_exists(self, runner):
-        """aptl container list should be a valid command."""
+        """lilrae container list should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["container", "list", "--help"])
         assert result.exit_code == 0
 
     def test_container_logs_exists(self, runner):
-        """aptl container logs should be a valid command."""
+        """lilrae container logs should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["container", "logs", "--help"])
@@ -185,7 +185,7 @@ class TestContainerCommands:
 
 
 class TestLabStartCommand:
-    """Tests for the aptl lab start CLI command."""
+    """Tests for the lilrae lab start CLI command."""
 
     def test_start_calls_orchestrate_lab_start(self, runner, mocker):
         """start command should call orchestrate_lab_start."""
@@ -281,7 +281,7 @@ class TestLabStartCommand:
 
         assert result.exit_code == 1
         assert "Execution boundary: unknown" in result.stdout
-        assert "run `aptl lab start` first" in result.stderr
+        assert "run `lilrae lab start` first" in result.stderr
 
     def test_lab_start_reports_the_attempt_boundary(self, runner, mocker):
         """The start summary carries the selected attempt's observed facts."""
@@ -578,7 +578,7 @@ class TestLabStartCommand:
         self, runner, tmp_path, mocker
     ):
         """When docker has published Grafana on a remapped host port
-        (default 3100 was already in use), `aptl lab info` must print the
+        (default 3100 was already in use), `lilrae lab info` must print the
         remapped port so students don't paste a URL that goes to whatever
         is on 3100 (#737)."""
         from aptl.cli.main import app
@@ -981,12 +981,12 @@ class TestLabStartCommand:
                     "The failed start left 3 containers and 2 networks in the project.",
                     "  To recover, run one of:",
                     (
-                        "    aptl lab stop     removes the project's containers and "
+                        "    lilrae lab stop     removes the project's containers and "
                         "networks and keeps its volumes, so volume-backed lab data "
                         "survives; container-local data is removed"
                     ),
                     (
-                        "    aptl lab stop -v  also removes managed volumes and destroys "
+                        "    lilrae lab stop -v  also removes managed volumes and destroys "
                         "their lab data"
                     ),
                 ],
@@ -1006,7 +1006,7 @@ class TestLabStartCommand:
                         "2 networks; volumes were kept."
                     ),
                     (
-                        "  `aptl lab stop -v` also removes managed volumes and destroys "
+                        "  `lilrae lab stop -v` also removes managed volumes and destroys "
                         "their lab data."
                     ),
                 ],
@@ -1125,11 +1125,11 @@ class TestLabStartCommand:
         routes = [
             line[4:].split("  ", 1)[0]
             for line in result.stdout.splitlines()
-            if line.startswith("    aptl lab stop")
+            if line.startswith("    lilrae lab stop")
         ]
         assert routes == [
-            f"aptl lab stop{target}",
-            f"aptl lab stop -v{target}",
+            f"lilrae lab stop{target}",
+            f"lilrae lab stop -v{target}",
         ], result.stdout
 
     def test_start_clean_aborts_without_confirmation(self, runner, mocker, tmp_path):
@@ -1712,7 +1712,7 @@ class TestJsonOutputAndExitStatus:
         [
             (["lab", "start", "--clean", "--json"], "--clean", "clean_boot_lab"),
             (["lab", "stop", "--volumes", "--json"], "--volumes", "stop_lab"),
-            (["lab", "reset", "--json"], "aptl lab reset", "reset_lab"),
+            (["lab", "reset", "--json"], "lilrae lab reset", "reset_lab"),
         ],
         ids=["start-clean", "stop-volumes", "reset"],
     )
@@ -1813,7 +1813,7 @@ class TestJsonOutputAndExitStatus:
 
 
 class TestLabResetCommand:
-    """`aptl lab reset` is explicit, reports what it reset, and repeats (#1218)."""
+    """`lilrae lab reset` is explicit, reports what it reset, and repeats (#1218)."""
 
     @staticmethod
     def _outcome(success=True, containers=3, networks=2, error=""):
@@ -1935,7 +1935,7 @@ class TestLabResetCommand:
 
 
 class TestLabStopCommand:
-    """Tests for the aptl lab stop CLI command."""
+    """Tests for the lilrae lab stop CLI command."""
 
     def test_stop_calls_stop_lab(self, runner, mocker):
         """stop command should call stop_lab."""
@@ -2013,7 +2013,7 @@ class TestLabStopCommand:
 
 
 class TestLabStatusCommand:
-    """Tests for the aptl lab status CLI command."""
+    """Tests for the lilrae lab status CLI command."""
 
     def test_status_calls_lab_status(self, runner, mocker):
         """status command should call lab_status."""
@@ -2146,7 +2146,7 @@ def _continuity_result(events):
 
 
 class TestLabContinuityAuditCommand:
-    """Tests for the aptl lab continuity-audit CLI command (issue #252)."""
+    """Tests for the lilrae lab continuity-audit CLI command (issue #252)."""
 
     def _stub_cli_plumbing(self, mocker, project_dir: Path):
         """Stub the CLI helpers so the command runs without a real lab.
@@ -2514,7 +2514,7 @@ class TestLabContinuityAuditCommand:
 
     def test_run_id_must_exist_in_store(self, runner, mocker, tmp_path):
         # A typo in --run-id would otherwise create an orphan archive
-        # directory that ``aptl runs list/show`` cannot discover. Fail
+        # directory that ``lilrae runs list/show`` cannot discover. Fail
         # loudly when the referenced run has no manifest.
         from aptl.cli.main import app
 

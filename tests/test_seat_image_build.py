@@ -299,3 +299,30 @@ def test_bake_pins_exactly_one_application_wheel_by_metadata_name(
     assert completed.returncode == 0, completed.stderr
     digest = hashlib.sha256(b"py3-none-any").hexdigest()
     assert output.read_text() == f"lilrae==8.0.0 --hash=sha256:{digest}\n"
+
+
+def test_seat_image_runs_lilrae_and_keeps_the_deprecated_alias_launchers() -> None:
+    """New images call ``lilrae``; ``aptl`` launchers stay until 10.0.0 (#1402)."""
+
+    provision = PROVISION.read_text()
+    for name in ("lilrae", "lilrae-misp-suricata-sync", "aptl", "aptl-misp-suricata-sync"):
+        assert f"cat > /usr/local/bin/{name} <<'EOF'" in provision
+        # Each launcher runs its own console script, so the alias keeps its
+        # deprecation notice instead of silently becoming ``lilrae``.
+        assert f'/opt/aptl/app/bin/{name} "$@"' in provision
+        assert f"/usr/local/bin/{name}" in provision.split("chmod 0755", 1)[1]
+    guest = ROOT / "appliance/guest"
+    first_boot = (guest / "aptl-appliance-first-boot").read_text()
+    smoke = (guest / "seat-qualification-smoke.sh").read_text()
+    scan = (guest / "scan-golden.sh").read_text()
+    for text in (first_boot, smoke):
+        assert "/usr/local/bin/aptl " not in text
+    assert "/usr/local/bin/lilrae kill --containers" in first_boot
+    assert "/usr/local/bin/lilrae lab start" in first_boot
+    assert "/usr/local/bin/lilrae lab start" in smoke
+    assert "test -x /opt/aptl/app/bin/lilrae\n" in scan
+    assert "test -x /usr/local/bin/aptl\n" in scan
+    assert "/usr/local/bin/aptl --version" not in scan
+    assert scan.count("/usr/local/bin/lilrae --version >/dev/null") == 2
+    qualify = (ROOT / "scripts/appliance/qualify-seat-privileges.sh").read_text()
+    assert "${APTL_SEAT_CLI:-$source_root/.venv/bin/lilrae}" in qualify

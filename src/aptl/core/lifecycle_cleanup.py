@@ -1,6 +1,6 @@
 """Run pending host-side cleanup after an explicit lab volume reset.
 
-``aptl lab stop -v`` removes the project's Docker volumes first; host state
+``lilrae lab stop -v`` removes the project's Docker volumes first; host state
 that described those volumes must then be cleared too. Each pending record
 names a stable action. APTL-owned actions run here, in core, with whatever
 APTL version is installed now. Pack-owned actions dispatch to the one
@@ -10,8 +10,8 @@ Every action is idempotent and treats already-absent state as done, so a crash
 between an effect and its completion marker is safe: the next reset repeats
 the effect and records the completion exactly once. A failed, unauthorized,
 unsupported, or unreadable record is never retired or removed; it is reported
-with a bounded reason and retried by the next ``aptl lab stop -v`` or
-``aptl lab reset``.
+with a bounded reason and retried by the next ``lilrae lab stop -v`` or
+``lilrae lab reset``.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ REASON_HOST_STATE_UNAVAILABLE = "host-state-unavailable"
 REASON_COMPLETION_FAILED = "completion-record-failed"
 REASON_STATE_UNAVAILABLE = "cleanup-state-unavailable"
 
-RETRY_COMMAND = "aptl lab stop -v --yes"
+RETRY_COMMAND = "lilrae lab stop -v --yes"
 
 
 class CleanupActionError(RuntimeError):

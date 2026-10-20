@@ -24,7 +24,7 @@ from aptl.utils.redaction import redact
 
 _NO_CONFIG_TEMPLATE = "no aptl.json found in {project_dir}"
 
-# The exit status `aptl doctor` and the lab lifecycle commands share (#1218):
+# The exit status `lilrae doctor` and the lab lifecycle commands share (#1218):
 # 0 when the command did what it reports, 1 when it could not, 2 for invalid
 # usage. Click already exits with 2 for an unknown option or a bad value.
 EXIT_OK = 0
@@ -136,7 +136,7 @@ def resolve_run_store(
     """Build a :class:`LocalRunStore` rooted at the project's runs path.
 
     Single shared helper for every CLI command that needs the run
-    archive (``aptl runs *``, ``aptl lab continuity-audit``). When
+    archive (``lilrae runs *``, ``lilrae lab continuity-audit``). When
     ``config`` is provided the caller has already loaded it; otherwise
     we discover it via :func:`find_config` (defaulting to an
     ``AptlConfig()`` if no aptl.json is present, so help-only paths

@@ -21,7 +21,7 @@ Mandatory constraints the `/implement` skill applies during plan phase.
   considered complete.
 - Plans that change any Compose asset (`docker-compose*.yml`), container
   Dockerfiles, or `config/` files MUST include focused local contract tests.
-  CI/CD owns the clean `aptl lab stop -v && aptl lab start` validation on a
+  CI/CD owns the clean `lilrae lab stop -v && lilrae lab start` validation on a
   fresh machine — the lab is the primary product, not the codebase.
 - Local verification MUST remain change-scoped: targeted pytest or Vitest
   paths plus `pre-commit run` on staged files. Bare/full suites,
@@ -37,8 +37,12 @@ Mandatory constraints the `/implement` skill applies during plan phase.
   environment variable (`LILRAE_`), resource name, or configuration file is
   named for LilRAE, not APTL. Code that extends an existing interface MUST keep
   that interface's current identifiers (for example the `aptl` import root,
-  `aptl` CLI, `aptl.*` entry-point groups, existing config fields, `APTL_*`
-  variables, and runtime resource names); add no alias, shim, or parallel
-  `lilrae` spelling. Renaming an existing identifier needs its own
-  compatibility decision. See
+  `aptl.*` entry-point groups, existing config fields, `APTL_*` variables, and
+  runtime resource names); add no alias, shim, or parallel `lilrae` spelling.
+  Renaming an existing identifier needs its own compatibility decision. See
   [ADR-062](../docs/adrs/adr-062-lilrae-name-and-naming-convention.md).
+- The CLI command is `lilrae` (ADR-062 successor clause for #1402). New code,
+  scripts, messages, and docs MUST call `lilrae` and
+  `lilrae-misp-suricata-sync`. The `aptl` and `aptl-misp-suricata-sync`
+  aliases exist only for existing users until 10.0.0 (#1403); do not add new
+  callers of them.

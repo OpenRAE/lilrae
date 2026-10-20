@@ -1,7 +1,7 @@
 """CLI commands for ephemeral lifecycle policy (DEP-003).
 
-Registered onto the ``aptl lab`` Typer app by :func:`register`, so the commands
-stay at ``aptl lab enforce`` / ``aptl lab monitor`` / ``aptl lab policy show``.
+Registered onto the ``lilrae lab`` Typer app by :func:`register`, so the commands
+stay at ``lilrae lab enforce`` / ``lilrae lab monitor`` / ``lilrae lab policy show``.
 Policy authoring lives in ``aptl.json`` (strict first-party config, ADR-025);
 this surface is read-only inspection plus the enforcement entrypoints.
 """
@@ -19,7 +19,7 @@ _PROJECT_DIR_OPTION = typer.Option(
     Path("."),
     "--project-dir",
     "-d",
-    help="Path to the APTL project directory.",
+    help="Path to the LilRAE project directory.",
 )
 
 policy_app = typer.Typer(help="Inspect the ephemeral lifecycle policy (DEP-003).")
@@ -81,7 +81,7 @@ def monitor(
 ) -> None:
     """Run lifecycle enforcement in a single-owner loop (DEP-003).
 
-    A thin convenience wrapper over ``aptl lab enforce`` for hosts without a
+    A thin convenience wrapper over ``lilrae lab enforce`` for hosts without a
     systemd timer / cron. Holds the project lifecycle lock for its whole run,
     so a second monitor (or a one-shot ``enforce``) cannot act concurrently.
     """
@@ -149,7 +149,7 @@ def policy_show(
 
 
 def register(lab_app: typer.Typer) -> None:
-    """Register the lifecycle commands onto the ``aptl lab`` Typer app."""
+    """Register the lifecycle commands onto the ``lilrae lab`` Typer app."""
     lab_app.command("enforce")(enforce)
     lab_app.command("monitor")(monitor)
     lab_app.add_typer(policy_app, name="policy")

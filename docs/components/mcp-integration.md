@@ -21,7 +21,7 @@ flowchart LR
     Servers --> Targets
 ```
 
-`aptl lab start` realizes the scenario before it updates `.mcp.json`. This
+`lilrae lab start` realizes the scenario before it updates `.mcp.json`. This
 ordering lets APTL include only supported servers, inject generated credentials,
 and use runtime-resolved ports. A server artifact in the project tree does not
 prove that its target exists in the current scenario.
@@ -61,5 +61,5 @@ Contributors can rebuild every server with:
 
 Changes under `mcp/aptl-mcp-common` affect every dependent server and require a
 complete dependent rebuild and test sweep. Operator workflows should use
-`aptl lab start`, which owns build, realization, credentials, and generated
+`lilrae lab start`, which owns build, realization, credentials, and generated
 client configuration together.

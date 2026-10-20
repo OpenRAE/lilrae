@@ -74,8 +74,8 @@ class ContainerSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     # Defaults match the full TechVault env-pack scenario that
-    # `aptl lab start` provisions when no scenario is given, so a plain
-    # `aptl lab init` + `aptl lab start` brings up the complete lab the
+    # `lilrae lab start` provisions when no scenario is given, so a plain
+    # `lilrae lab init` + `lilrae lab start` brings up the complete lab the
     # walkthrough documents. With soc/enterprise/dns/fileshare off, Compose only
     # created the wazuh/victim/kali subset while the RAES handoff still tried to
     # wire the scenario's ad/dns/cortex/db nodes, so start failed with
@@ -115,7 +115,7 @@ class ScenarioSourceConfig(BaseModel):
     """Which scenario APTL realizes, and where its bytes come from.
 
     A backend is handed a scenario; it does not own one. Selecting it is an
-    operator decision made before ``aptl lab start`` rather than something the
+    operator decision made before ``lilrae lab start`` rather than something the
     backend decides or switches at runtime, so it lives here.
 
     ``root`` applies only to an explicitly selected project-tree development
@@ -269,7 +269,7 @@ class LifecycleScheduleEntry(BaseModel):
 class LabLifecyclePolicyConfig(BaseModel):
     """Ephemeral lifecycle policy for the range (DEP-003).
 
-    Declarative policy consumed by ``aptl lab enforce`` / ``monitor`` to
+    Declarative policy consumed by ``lilrae lab enforce`` / ``monitor`` to
     auto-teardown an idle or expired range and to provision on a
     schedule. Enforcement is a separate single-owner control-plane tick;
     this model is just the strict, first-party policy shape (ADR-025).

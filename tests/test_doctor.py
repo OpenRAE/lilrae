@@ -1,4 +1,4 @@
-"""`aptl doctor` checks prerequisites without changing anything (#1218).
+"""`lilrae doctor` checks prerequisites without changing anything (#1218).
 
 The checks are driven through the real `run_doctor` against a fake selected
 daemon: a list-form runner answering the same read-only Docker queries a real
@@ -235,13 +235,13 @@ def test_doctor_changes_nothing_and_only_queries(tmp_path, host):
         pytest.param(
             {"config": None},
             (),
-            ("project-config", CheckStatus.FAILED, "No aptl.json", "aptl lab init"),
+            ("project-config", CheckStatus.FAILED, "No aptl.json", "lilrae lab init"),
             id="no-config",
         ),
         pytest.param(
             {"config": "{not json"},
             (),
-            ("project-config", CheckStatus.FAILED, "not valid", "aptl config validate"),
+            ("project-config", CheckStatus.FAILED, "not valid", "lilrae config validate"),
             id="invalid-config",
         ),
         pytest.param(

@@ -25,11 +25,11 @@ from aptl.utils.logging import get_logger
 log = get_logger("deployment.docker_compose")
 
 # Bound for snapshot / host-inventory probes. A stalled docker daemon
-# (especially the SSH transport) must not hang `aptl lab status --json`
+# (especially the SSH transport) must not hang `lilrae lab status --json`
 # or the lab-start snapshot step indefinitely.
 # A single `docker inspect` / host-inventory read is normally sub-second, but the
 # realization-observation pass runs it against every container right after a
-# clean `aptl lab start` — when the docker daemon is at its busiest pulling
+# clean `lilrae lab start` — when the docker daemon is at its busiest pulling
 # base images, building components, and starting ~30 containers with their JVMs.
 # Under that first-boot load `docker inspect` can take tens of seconds, and a
 # 15s cap made observation raise BackendTimeoutError and fail the SEM-218 gate

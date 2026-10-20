@@ -51,14 +51,16 @@ done
 test -x /usr/local/bin/claude
 docker buildx version >/dev/null
 docker compose version >/dev/null
-test -x /opt/aptl/app/bin/aptl
+test -x /opt/aptl/app/bin/lilrae
+# Deprecated alias launcher, kept until 10.0.0 (#1403).
+test -x /usr/local/bin/aptl
 /usr/local/bin/claude --version >/dev/null
-/usr/local/bin/aptl --version >/dev/null
+/usr/local/bin/lilrae --version >/dev/null
 # Exercise the immutable runtime through the identity that the enrolled SSH
 # transport actually uses. A root-only scan cannot detect missing traversal or
 # read bits introduced by the provisioner's private umask.
 su -s /bin/sh -c '
-    /usr/local/bin/aptl --version >/dev/null &&
+    /usr/local/bin/lilrae --version >/dev/null &&
     test -r /opt/aptl/project/mcp/mcp-red/build/index.js
 ' aptl
 case "$(node --version)" in

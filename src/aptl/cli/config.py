@@ -1,8 +1,8 @@
 """CLI commands for configuration management.
 
 Implements:
-- ``aptl config validate`` (CLI-002)
-- ``aptl config show`` (CLI-007)
+- ``lilrae config validate`` (CLI-002)
+- ``lilrae config show`` (CLI-007)
 """
 
 import json as _json
@@ -29,7 +29,7 @@ _PROJECT_DIR_OPTION = typer.Option(
     Path("."),
     "--project-dir",
     "-d",
-    help="Path to the APTL project directory.",
+    help="Path to the LilRAE project directory.",
 )
 
 
@@ -51,7 +51,7 @@ def show(
         help="Emit the resolved configuration as machine-readable JSON.",
     ),
 ) -> None:
-    """Display the resolved APTL configuration.
+    """Display the resolved LilRAE configuration.
 
     Loads ``aptl.json`` via the same discovery rules as the rest of the
     CLI, validates it, and renders the resulting Pydantic model — defaults
@@ -83,13 +83,13 @@ def show(
 def validate(
     project_dir: Path = _PROJECT_DIR_OPTION,
 ) -> None:
-    """Validate the APTL configuration file.
+    """Validate the LilRAE configuration file.
 
     Loads ``aptl.json`` through the same path used by deployment
     operations and reports any JSON, type, or constraint errors. It also
     builds the configured deployment backend, without contacting it, so
     settings only the backend checks (an ssh-compose block without
-    ``ssh_host``, for example) fail here as they would in ``aptl lab start``.
+    ``ssh_host``, for example) fail here as they would in ``lilrae lab start``.
     """
     config, project_root = resolve_config_for_cli(project_dir)
     with exit_on_invalid_deployment_settings():

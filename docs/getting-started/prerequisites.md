@@ -10,28 +10,28 @@
   `docker info --format '{{.CgroupVersion}}'` (must print `2`). Nodes that run
   service units boot systemd inside their container, which needs a writable
   cgroup filesystem; APTL obtains one with `--security-opt
-  writable-cgroups=true`, added in Engine 28.0. `aptl lab start` checks the
+  writable-cgroups=true`, added in Engine 28.0. `lilrae lab start` checks the
   daemon before creating anything and stops with a clear message on an older
   engine or a cgroup v1 host rather than falling back to a privileged container
   recipe
 - A rootful Docker daemon without user-namespace remapping (`userns-remap`).
-  `aptl lab start` refuses a rootless daemon for every scenario. Docker refuses
-  the writable-cgroups option under `userns-remap`, so `aptl lab start` also
+  `lilrae lab start` refuses a rootless daemon for every scenario. Docker refuses
+  the writable-cgroups option under `userns-remap`, so `lilrae lab start` also
   refuses that daemon for a scenario with systemd nodes. `docker info --format
   '{{json .SecurityOptions}}'` must list neither `name=rootless` nor
   `name=userns`
 - Docker Compose 2.0+ (`docker compose version`). The `techvault` scenario
-  needs 2.24.4 or newer, and `aptl lab start` refuses an older Compose for it
+  needs 2.24.4 or newer, and `lilrae lab start` refuses an older Compose for it
 - Docker Buildx (`docker buildx version`)
 - Python 3.12+ (for the CLI)
-- OpenSSH client. `ssh-keygen` must be on `PATH`. `aptl lab start` generates the
+- OpenSSH client. `ssh-keygen` must be on `PATH`. `lilrae lab start` generates the
   lab SSH keys (the control-plane key and, for pack-backed scenarios, the
   scenario's `ssh_key_bundle` keypairs) with it, and hardens them per-platform
   (POSIX mode on Linux/macOS, NTFS ACLs via `icacls` on Windows). Preinstalled on
   Linux and macOS; on Windows enable the built-in **OpenSSH Client** optional
   feature (Settings → Apps → Optional features), or use Git for Windows / WSL2.
 - Node.js 20+ and npm (for the MCP servers, the AI-agent control plane that
-  `aptl lab start` builds via `mcp/build-all-mcps.sh`; without them the lab
+  `lilrae lab start` builds via `mcp/build-all-mcps.sh`; without them the lab
   still boots but reports `degraded` with MCP servers unavailable)
 - Git (only for the from-source dev install; `pipx install lilrae` needs no clone)
 
@@ -80,14 +80,14 @@ context to `colima`; verify with `docker context ls`.
 
 **Windows:** Install Docker Desktop with the WSL2 backend enabled. Run APTL from
 PowerShell, Windows Terminal, Git Bash, or a WSL2 shell; keep Docker Desktop
-running before `aptl lab start`.
+running before `lilrae lab start`.
 
 **Linux Docker Desktop:** Install Docker Desktop and use the Desktop-managed
 engine. It behaves like the macOS/Windows Docker VM for host sysctls.
 
 ## System Config
 
-`aptl lab start` enforces `vm.max_map_count` only when Docker is a native Linux
+`lilrae lab start` enforces `vm.max_map_count` only when Docker is a native Linux
 engine. Docker Desktop on macOS, Windows, or WSL2 manages the setting inside its
 Linux VM, so there is no host `sysctl` step for those platforms.
 
@@ -98,9 +98,9 @@ sudo sysctl -w vm.max_map_count=262144
 echo 'vm.max_map_count=262144' | sudo tee -a /etc/sysctl.conf
 ```
 
-You do not need to reserve a fixed list of ports. `aptl lab start` probes each
+You do not need to reserve a fixed list of ports. `lilrae lab start` probes each
 host port requested by the realized scenario and remaps a service when its
-default is occupied. Read the start summary or run `aptl lab info` for the
+default is occupied. Read the start summary or run `lilrae lab info` for the
 actual URLs and ports. Pin a port only through the matching documented
 `APTL_HP_*` runtime setting.
 
@@ -156,7 +156,7 @@ py -3.12 -m venv .venv
 
 `.venv` is gitignored. Re-run `source .venv/bin/activate` in each new shell
 on Linux/macOS or `.\.venv\Scripts\Activate.ps1` in each new PowerShell before
-using `aptl`.
+using `lilrae`.
 
 ## Verify
 
@@ -196,7 +196,7 @@ identity and operation, not freedom from VM escape.
 Unsupported or unverified combinations cannot satisfy a *required* seat
 containment profile: an unreadable/overridden Docker endpoint, missing or
 unverified signed launch, unavailable KVM, or missing outer-host observation
-must fail the applicable seat gate. A direct `aptl lab start` does not create a
+must fail the applicable seat gate. A direct `lilrae lab start` does not create a
 seat. A scenario requiring its own VM node is also separate from the outer
 seat VM and must be admitted and realized by the backend as a scenario
 requirement. Internal guest zone isolation and default-deny guest egress are

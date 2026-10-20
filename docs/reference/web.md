@@ -3,14 +3,14 @@
 The APTL web interface is the local operator control plane for one lab project.
 It is separate from the intentionally vulnerable target web application and
 from third-party SOC interfaces such as the Wazuh Dashboard. Discover every
-realized URL with `aptl lab info`.
+realized URL with `lilrae lab info`.
 
 ## Supported Delivery
 
 The supported direct command is:
 
 ```shell
-aptl web serve
+lilrae web serve
 ```
 
 It serves the built single-page application and FastAPI control plane from one
@@ -34,7 +34,7 @@ development setup.
 | Browser login | one-time URL | Exchanges a terminal-visible launch token for a two-part session. |
 | Workers | `1` | Keeps the in-process session and terminal-ticket stores consistent. |
 
-Use `aptl web serve --help` for the exact options in the installed release.
+Use `lilrae web serve --help` for the exact options in the installed release.
 `--api-only` is for the split Compose delivery behind its static UI proxy; it
 does not provide a browser interface by itself.
 
@@ -72,7 +72,7 @@ the same-origin gate.
 | `GET /api/auth/login` | One-time launch-token exchange and browser-session bootstrap. |
 | `GET /api/lab/status` | Current running, error, and container state. |
 | `POST /api/lab/start` | Start the selected project scenario. |
-| `POST /api/lab/stop` | Stop the project and keep its volumes. The route takes no parameters; `aptl lab stop -v` removes volumes. |
+| `POST /api/lab/stop` | Stop the project and keep its volumes. The route takes no parameters; `lilrae lab stop -v` removes volumes. |
 | `GET /api/lab/events` | Server-sent lifecycle updates. |
 | `POST /api/lab/kill` | Emergency project process or container termination. |
 | `GET /api/config` | Redacted non-secret configuration projection. |
@@ -91,9 +91,9 @@ another device, keep the APTL server on loopback and place a same-host TLS proxy
 in front of it. Two settings then apply:
 
 - `--public-origin` (or `APTL_WEB_PUBLIC_ORIGIN`) sets the browser-facing origin
-  of the printed one-time login URL. `aptl web serve --help` documents it.
+  of the printed one-time login URL. `lilrae web serve --help` documents it.
 - `APTL_ALLOWED_HOSTS` sets the allowed host. It is an environment variable
-  only, with no `aptl web serve` option. It takes a comma-separated list of
+  only, with no `lilrae web serve` option. It takes a comma-separated list of
   hostnames, without ports, that the API accepts in the `Host` header in
   addition to `127.0.0.1`, `localhost`, and `::1`.
 
@@ -110,7 +110,7 @@ rewrites `Host` to the loopback address therefore gets `403` and
 For example, behind `tailscale serve` on the same host:
 
 ```shell
-APTL_ALLOWED_HOSTS=<machine>.<tailnet>.ts.net aptl web serve \
+APTL_ALLOWED_HOSTS=<machine>.<tailnet>.ts.net lilrae web serve \
   --public-origin https://<machine>.<tailnet>.ts.net
 ```
 

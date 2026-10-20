@@ -6,20 +6,20 @@ backend, realized scenario, runtime port mapping, and redaction boundaries.
 ## Quick Checks
 
 ```shell
-aptl lab status
-aptl lab info
-aptl container list
-aptl config validate
+lilrae lab status
+lilrae lab info
+lilrae container list
+lilrae config validate
 ```
 
-Read the final `aptl lab start` result before investigating an individual
+Read the final `lilrae lab start` result before investigating an individual
 container. It distinguishes ready, usable degradation, unusable degradation,
 and failure, and names the component and safe operator action when available.
 
-Inspect logs only for a container returned by `aptl container list`:
+Inspect logs only for a container returned by `lilrae container list`:
 
 ```shell
-aptl container logs <container-name>
+lilrae container logs <container-name>
 ```
 
 Do not attach `.env`, `.mcp.json`, private keys, authentication headers, or
@@ -29,14 +29,14 @@ unredacted generated configuration to a support report.
 
 ### A service URL does not open
 
-Run `aptl lab info` again and use the reported URL. Host ports can be remapped
+Run `lilrae lab info` again and use the reported URL. Host ports can be remapped
 when a default is already occupied, and the selected scenario can omit a
-service entirely. If the service exists, compare `aptl lab status` with its
+service entirely. If the service exists, compare `lilrae lab status` with its
 bounded logs:
 
 ```shell
-aptl lab status
-aptl container logs <container-name>
+lilrae lab status
+lilrae container logs <container-name>
 ```
 
 Use the generated trust root and service hostname reported for the project. Do
@@ -47,7 +47,7 @@ verification, or substitute a fixed port from an older document.
 
 The acquired TechVault stack can require more than 20GB of RAM, while smaller
 curated scenarios use less. Increase the Docker engine's memory allocation or
-choose another identity from `aptl lab scenarios`.
+choose another identity from `lilrae lab scenarios`.
 
 On a native Linux Docker Engine, startup also checks the OpenSearch
 `vm.max_map_count` requirement. Apply the exact remediation printed by the
@@ -59,13 +59,13 @@ VM and do not use the host setting.
 Container names depend on scenario realization. Confirm the target first:
 
 ```shell
-aptl container list
-aptl container shell <container-name>
+lilrae container list
+lilrae container shell <container-name>
 ```
 
 Use `--shell /bin/sh` only when the image does not provide the default shell.
 Host SSH is available only for a service that the scenario realizes and that
-`aptl lab info` reports.
+`lilrae lab info` reports.
 
 ### MCP servers are unavailable
 
@@ -76,7 +76,7 @@ list. A built server is not necessarily enabled for the selected scenario.
 
 Contributors can rebuild all tracked artifacts with
 `./mcp/build-all-mcps.sh`; released-package operators should let
-`aptl lab start` own the build and configuration. See the
+`lilrae lab start` own the build and configuration. See the
 [MCP reference](../reference/mcp.md).
 
 ## Project-Scoped Recovery
@@ -84,22 +84,22 @@ Contributors can rebuild all tracked artifacts with
 Retry a normal lifecycle through the control plane:
 
 ```shell
-aptl lab stop
-aptl lab start --scenario <id>
+lilrae lab stop
+lilrae lab start --scenario <id>
 ```
 
 For a confirmed full reset of this project's volume-backed data:
 
 ```shell
-aptl lab stop -v
-aptl lab start --scenario <id>
+lilrae lab stop -v
+lilrae lab start --scenario <id>
 ```
 
 The destructive stop asks for confirmation. It removes project volumes but
 does not prune the Docker daemon. Do not use `docker system prune` as APTL
 recovery: it can remove resources belonging to other projects.
 
-### `aptl lab stop -v` reports pending host cleanup
+### `lilrae lab stop -v` reports pending host cleanup
 
 After it removes the volumes, the destructive stop also clears host-side state
 that described them, such as the recorded Wazuh agent enrollment baseline. Each
@@ -114,7 +114,7 @@ stop reports the two failure classes separately:
   volumes are gone, but the listed cleanup actions did not finish. Each entry
   names the action, the admitted pack, the record, and a reason code.
 
-Retry with `aptl lab stop -v --yes` after resolving the cause. A repeat stop is
+Retry with `lilrae lab stop -v --yes` after resolving the cause. A repeat stop is
 safe when the Docker resources are already gone: completed actions are not
 repeated, and pending ones run again. Do not delete or edit the files under
 `.aptl/lifecycle/` to clear the error; the records are the audit trail.
@@ -127,9 +127,9 @@ repeated, and pending ones run again. Do not delete or edit the files under
 | `host-state-unsafe` | A symlink or non-file sits at the cleanup path. APTL refuses to follow it. Inspect and remove it manually. |
 | `cleanup-record-malformed`, `cleanup-action-unsupported` | The record cannot be read or was written by a newer APTL release. Upgrade APTL, or report the record name. |
 
-Do not replace recovery with raw `docker compose up`. `aptl lab start` owns
+Do not replace recovery with raw `docker compose up`. `lilrae lab start` owns
 scenario realization, generated configuration, credentials, port selection,
-readiness, MCP setup, and run recording. `aptl kill` is reserved for emergency
+readiness, MCP setup, and run recording. `lilrae kill` is reserved for emergency
 process or container termination; it is not normal teardown.
 
 ## Platform Issues
@@ -145,12 +145,12 @@ sudo usermod -aG docker $USER
 
 Docker Desktop owns the Linux VM and its kernel settings. If another macOS
 service occupies a requested host port, let APTL remap it and use the URL from
-`aptl lab info`. Change or disable the other service only when you explicitly
+`lilrae lab info`. Change or disable the other service only when you explicitly
 need to pin that port.
 
-### A container is `Up` but reports `unhealthy`, blocking `aptl lab start`
+### A container is `Up` but reports `unhealthy`, blocking `lilrae lab start`
 
-When `aptl lab start` fails with `dependency <name> failed to start:
+When `lilrae lab start` fails with `dependency <name> failed to start:
 container aptl-<name> is unhealthy` and `docker ps` shows the container
 as `Up (unhealthy)`, there are two very different failure modes worth
 distinguishing before assuming the tool is broken:
@@ -189,10 +189,10 @@ own log directory (for example, `/var/ossec/logs/ossec.log` for Wazuh) for the
 crash cause. Wazuh-manager silent-crash after startup is tracked in
 [#725](https://github.com/Brad-Edwards/aptl/issues/725).
 
-### `aptl lab start` fails because a Wazuh service did not become ready
+### `lilrae lab start` fails because a Wazuh service did not become ready
 
 A scenario that starts Wazuh needs it working, so Wazuh readiness is fatal.
-After the containers start, `aptl lab start` authenticates to the Wazuh
+After the containers start, `lilrae lab start` authenticates to the Wazuh
 indexer and manager APIs. It retries quietly while the APIs warm up. A clean
 boot normally spends a few seconds in that state, because the manager API
 starts listening after its container is already running. If a service is
@@ -202,7 +202,7 @@ phase and reason for that service:
 ```
 Authenticated Wazuh readiness validation failed after 300s:
   wazuh.manager at https://localhost:55000 transport phase failed:
-  tls_handshake (curl exit 35). Inspect `aptl container logs aptl-wazuh-manager`.
+  tls_handshake (curl exit 35). Inspect `lilrae container logs aptl-wazuh-manager`.
 ```
 
 Scenarios that don't declare Wazuh certificate or configuration artifacts
@@ -211,7 +211,7 @@ report the same reason in a slightly different form:
 ```
 Wazuh Manager API did not become ready within 120s:
   wazuh.manager at https://localhost:55000 transport phase failed:
-  tls_handshake (curl exit 35). Inspect `aptl container logs aptl-wazuh-manager`.
+  tls_handshake (curl exit 35). Inspect `lilrae container logs aptl-wazuh-manager`.
 ```
 
 Read the phase first:
@@ -235,7 +235,7 @@ Read the phase first:
   `INDEXER_USERNAME`/`INDEXER_PASSWORD` or `API_USERNAME`/`API_PASSWORD`
   values from `.env`. For the indexer, a retained `wazuh-indexer-data` volume
   can still hold an earlier admin password. Restore the original
-  `INDEXER_PASSWORD` if the data must be kept. `aptl lab stop -v` removes
+  `INDEXER_PASSWORD` if the data must be kept. `lilrae lab stop -v` removes
   retained lab volumes and is a destructive reset, so use it only after an
   intentional backup and reset decision.
 - **`manager_status`**: the manager API authenticated but reported no running
@@ -243,7 +243,7 @@ Read the phase first:
 
 The message never includes credentials, tokens, or response bodies.
 
-### `aptl lab start` fails with "Existing network aptl_aptl-... does not match realized network"
+### `lilrae lab start` fails with "Existing network aptl_aptl-... does not match realized network"
 
 Symptom on a machine that has run an older aptl-labs release before the
 `org.aptl.realization.network=true` label was introduced:
@@ -260,8 +260,8 @@ validated Compose project label, including older networks without the newer
 realization label. Use the project-scoped reset and retry:
 
 ```bash
-aptl lab stop
-aptl lab start
+lilrae lab stop
+lilrae lab start
 ```
 
 If stop reports `lifecycle-owner-busy`, another start/stop/clean/kill or policy
@@ -272,7 +272,7 @@ APTL cleanup is deliberately bounded by the validated project labels.
 
 Tracked in [#722](https://github.com/Brad-Edwards/aptl/issues/722).
 
-### `aptl lab start` reports an unowned search index
+### `lilrae lab start` reports an unowned search index
 
 A scenario can declare a search-index schema as initial service state. APTL
 creates that index in the target search service and marks it with the scenario
@@ -301,7 +301,7 @@ Recover in this order, with the index and container names from your error:
     containers running, so open a shell in the container that the error names:
 
     ```shell
-    aptl container shell <container>
+    lilrae container shell <container>
     ```
 
     Then query the index read-only from that shell:
@@ -322,9 +322,9 @@ Recover in this order, with the index and container names from your error:
     For local filesystem storage, mount a separate backup directory into the
     search container, set `path.repo`, and restart the service before
     registering it. Keep the repository outside every lab volume that
-    `aptl lab stop --volumes` deletes.
+    `lilrae lab stop --volumes` deletes.
     On a remote Docker host, that directory belongs on the remote host.
-    Until backup is available, keep the existing volumes; `aptl lab stop`
+    Until backup is available, keep the existing volumes; `lilrae lab stop`
     without `--volumes` preserves them.
 
     With the search service running and a repository registered, run these
@@ -350,7 +350,7 @@ Recover in this order, with the index and container names from your error:
     passed restoration checks:
 
     ```shell
-    aptl lab stop --volumes
+    lilrae lab stop --volumes
     ```
 
     This is a destructive reset. It permanently deletes all of this project's
@@ -359,7 +359,7 @@ Recover in this order, with the index and container names from your error:
     `--scenario-path` option. Restore required data separately; restoring the
     conflicting index unchanged also restores its unowned state.
 
-### `aptl lab start` reports a search index whose mapping drifted
+### `lilrae lab start` reports a search index whose mapping drifted
 
 The search service already holds an index with the scenario content's
 ownership marker, but its mapping differs from the mapping that this release
@@ -378,13 +378,13 @@ Lab start failed.
   container aptl-thehive-es carries this content's ownership marker, ...
 ```
 
-`aptl lab stop` keeps the volume, so a later start finds the same index and
+`lilrae lab stop` keeps the volume, so a later start finds the same index and
 fails the same way. Recover in this order, with the index and container names
 from your error:
 
 1.  Inspect the index read-only, then take an Elasticsearch snapshot of the
     data that you need and test its restoration, as steps 1 and 2 of
-    [the unowned index section](#aptl-lab-start-reports-an-unowned-search-index)
+    [the unowned index section](#lilrae-lab-start-reports-an-unowned-search-index)
     describe. Keep the snapshot repository outside every lab volume, and
     back up required data in other lab services with their own procedures.
 
@@ -392,7 +392,7 @@ from your error:
     passed restoration checks:
 
     ```shell
-    aptl lab stop --volumes
+    lilrae lab stop --volumes
     ```
 
     This is a destructive reset. It permanently deletes all of this project's
@@ -406,7 +406,7 @@ from your error:
 ### macOS: Docker Desktop uninstall leftovers
 
 If you uninstalled Docker Desktop and switched to Colima (or brew-installed
-Docker), two leftover pieces silently break `aptl lab start`:
+Docker), two leftover pieces silently break `lilrae lab start`:
 
 **Dead CLI plugin symlinks** in `~/.docker/cli-plugins/*` still point at
 `/Applications/Docker.app/Contents/Resources/cli-plugins/...`. `docker

@@ -1,4 +1,4 @@
-"""CLI command ``aptl doctor``: check prerequisites before a lab start (#1218)."""
+"""CLI command ``lilrae doctor``: check prerequisites before a lab start (#1218)."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def doctor(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help="Path to the LilRAE project directory.",
     ),
     output_json: bool = typer.Option(
         False,
@@ -80,7 +80,7 @@ def render_doctor_report(report: DoctorReport) -> None:
             f"{report.count(CheckStatus.SKIPPED)} skipped",
         )
     )
-    typer.echo(f"aptl doctor: {len(report.checks)} checks ({counts}).")
+    typer.echo(f"lilrae doctor: {len(report.checks)} checks ({counts}).")
     width = max((len(check.check_id) for check in report.checks), default=0)
     for check in report.checks:
         label = _STATUS_LABELS[check.status.value]

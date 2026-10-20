@@ -1,7 +1,7 @@
 # Participant workbench
 
 The optional workbench uses the same packaged **full TechVault** deployment as
-normal local `aptl lab start`. It requires neither a VM nor appliance metadata
+normal local `lilrae lab start`. It requires neither a VM nor appliance metadata
 for local use. [ADR-059](../adrs/adr-059-canonical-techvault-delivery-and-host-mcp-access.md)
 extends ADR-049 with authenticated host CLI access; appliance delivery retains
 its signed boundary and qualification gates.

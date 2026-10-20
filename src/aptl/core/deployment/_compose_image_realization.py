@@ -30,7 +30,7 @@ from aptl.core.lab_types import LabResult
 # single component build step (the AD image's package install) alone measured
 # ~745s, so the whole cold build exceeds ~800s — and a modest local dev machine
 # (the lab's primary target) can be markedly slower still. The prior 600s cap
-# failed a clean `aptl lab start` on a fresh machine (BackendTimeoutError mid
+# failed a clean `lilrae lab start` on a fresh machine (BackendTimeoutError mid
 # `docker build`). This is set generously so a legitimately slow cold build or a
 # large base-image pull never trips it; a docker op that genuinely exceeds this
 # is a broken environment, not a too-tight timeout. Inspect/tag ops finish in

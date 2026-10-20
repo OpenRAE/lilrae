@@ -2,7 +2,7 @@
 
 The experiment run system captures data from each scenario execution for reproducibility and post-run analysis.
 
-For a portable, third-party-verifiable evidence archive built from a run's verified artifact closure, see [Portable Evidence Bundle Export](evidence-bundle-export.md) (`aptl runs export-bundle`).
+For a portable, third-party-verifiable evidence archive built from a run's verified artifact closure, see [Portable Evidence Bundle Export](evidence-bundle-export.md) (`lilrae runs export-bundle`).
 
 ## Clean State Between Runs
 
@@ -12,24 +12,24 @@ The clean-boot lifecycle mode guarantees a fresh environment. It tears down the 
 
 ```bash
 # Ephemeral clean boot: destroy lab state, then start fresh.
-aptl lab start --clean
+lilrae lab start --clean
 
 # Skip the confirmation prompt (for scripted batch runs).
-aptl lab start --clean --yes
+lilrae lab start --clean --yes
 ```
 
 A clean boot removes only Docker Compose state for the configured project. It does not delete `.env`, the `keys/` directory, `.mcp.json`, checked-in configuration, or archived run directories. A failed cleanup is fatal: the lab does not start, because a contaminated environment must never be reused as clean.
 
-The same capability backs `aptl lab validate-live`, which clean-boots the lab before snapshotting it (pass `--skip-clean-boot` to validate the running lab without destroying it).
+The same capability backs `lilrae lab validate-live`, which clean-boots the lab before snapshotting it (pass `--skip-clean-boot` to validate the running lab without destroying it).
 
 ## Run Directory Structure
 
 Runs live in the run store, which `run_storage.local_path` in `aptl.json` sets
 (default `./runs`, relative to the project directory). Each run is one
-directory, `<run store>/<run_id>/`. `aptl lab start` creates one run per start
+directory, `<run store>/<run_id>/`. `lilrae lab start` creates one run per start
 and names it `run_<UTC timestamp>`, for example `run_20261011T135200Z`. The
-`aptl runs` commands list only run directories that contain a `manifest.json`,
-which `aptl lab start` writes as its last step.
+`lilrae runs` commands list only run directories that contain a `manifest.json`,
+which `lilrae lab start` writes as its last step.
 
 A run holds only what its writers produced. The tree shows the layout that the
 shipped code writes; most paths appear only when the scenario, command, or
@@ -73,34 +73,34 @@ capture that writes them ran.
 
 | Path | Writer | Written when |
 |------|--------|--------------|
-| `manifest.json` (lab start) | `_write_run_record` in `src/aptl/core/lab.py`, built by `src/aptl/backends/raes_repro.py` | The last step of a successful `aptl lab start`: the REP-001 reproducibility record (`aptl.run-record/v2`), which embeds the [range snapshot](#range-snapshot) |
+| `manifest.json` (lab start) | `_write_run_record` in `src/aptl/core/lab.py`, built by `src/aptl/backends/raes_repro.py` | The last step of a successful `lilrae lab start`: the REP-001 reproducibility record (`aptl.run-record/v2`), which embeds the [range snapshot](#range-snapshot) |
 | `manifest.json`, `seal.json` (terminal attempt) | `src/aptl/core/archival/coordinator.py` | A terminal attempt is sealed: the RAES `experiment-run/v1` record and its seal marker, both create-once |
 | `attempt-intent.json` | `src/aptl/core/execution/executor.py` | A terminal attempt starts |
 | `lifecycle/` | `src/aptl/core/execution/assembly.py` | A terminal attempt ends: its lifecycle attestation, with an evidence record in `evidence/records/` |
-| `provenance/startup-provenance.json` | `src/aptl/core/provenance/record.py`, called by `aptl lab start` | After the lab-start run record |
+| `provenance/startup-provenance.json` | `src/aptl/core/provenance/record.py`, called by `lilrae lab start` | After the lab-start run record |
 | `provenance/run-provenance.json` | `publish_provenance_record` in `src/aptl/core/provenance/record.py` | A caller that holds the admitted and executed run context publishes it; no `aptl` command does |
 | `correlation.json` | `src/aptl/core/correlation/persistence.py` | After the lab-start run record, built from `manifest.json` and `orchestration/` |
-| `orchestration/<workflow>/` | `src/aptl/backends/raes_orchestrator.py` | `aptl lab start` runs a scenario workflow |
-| `evidence/capture-plans/` | `src/aptl/backends/_raes_native_evidence_acquisition.py` | `aptl lab start` acquires native captures or activates a full-run transcript capture |
-| `evidence/blobs/`, `evidence/records/` | `src/aptl/core/evidence/` | `aptl lab start` acquires the scenario's native captures, `aptl lab stop` finalizes a full-run transcript capture, or a terminal attempt acquires its declared captures |
-| `participant/`, `evaluator/` | `src/aptl/backends/_raes_participant_execution.py`, `src/aptl/backends/raes_participant_evidence_publication.py`, `src/aptl/backends/raes_participant_control_evidence.py` | `aptl lab start` delivers participant injects or realizes participant actions |
-| `continuity-events.jsonl` | `src/aptl/core/continuity.py` | `aptl lab continuity-audit --run-id <run-id>` records at least one event |
-| `participant-profile/qualification.json` | `src/aptl/validation/participant_qualification.py` | `aptl lab qualify-profile --run-id <run-id>` accepts a report |
-| `live-gate/manifest.json` | `src/aptl/validation/_live_gate_checks.py` | `aptl lab validate-live` records its check outcomes |
+| `orchestration/<workflow>/` | `src/aptl/backends/raes_orchestrator.py` | `lilrae lab start` runs a scenario workflow |
+| `evidence/capture-plans/` | `src/aptl/backends/_raes_native_evidence_acquisition.py` | `lilrae lab start` acquires native captures or activates a full-run transcript capture |
+| `evidence/blobs/`, `evidence/records/` | `src/aptl/core/evidence/` | `lilrae lab start` acquires the scenario's native captures, `lilrae lab stop` finalizes a full-run transcript capture, or a terminal attempt acquires its declared captures |
+| `participant/`, `evaluator/` | `src/aptl/backends/_raes_participant_execution.py`, `src/aptl/backends/raes_participant_evidence_publication.py`, `src/aptl/backends/raes_participant_control_evidence.py` | `lilrae lab start` delivers participant injects or realizes participant actions |
+| `continuity-events.jsonl` | `src/aptl/core/continuity.py` | `lilrae lab continuity-audit --run-id <run-id>` records at least one event |
+| `participant-profile/qualification.json` | `src/aptl/validation/participant_qualification.py` | `lilrae lab qualify-profile --run-id <run-id>` accepts a report |
+| `live-gate/manifest.json` | `src/aptl/validation/_live_gate_checks.py` | `lilrae lab validate-live` records its check outcomes |
 | `mcp-side/tool-calls.jsonl`, `mcp-side/ocsf.jsonl` | `mcp/mcp-red/src/capture.ts`, `mcp/mcp-red/src/logger.ts` | Each red MCP tool call, plus an OCSF record for each command it runs |
 | `mcp-side/sessions/` | `createPtyTeeWriter` in `mcp/aptl-mcp-common/src/runs.ts` | Each SSH session or one-shot command an MCP server runs, appended as output arrives |
-| `kali-side/<session_id>/` | `harvestSession` in `mcp/aptl-mcp-common/src/captures.ts` | An MCP server whose lab config names a container (the shipped red and reverse configs do) finishes a `<prefix>_run_command` call, or closes a session through `<prefix>_close_session` or `<prefix>_close_all_sessions`. The harvest copies `<run_id>/sessions/<session_id>/` under `/var/log/aptl/captures` from the server's capture container, or from its workload container when it has none. For the red server, `aptl lab start` names this workspace's capture sidecar in `LILRAE_MCP_CAPTURE_CONTAINER`. The sidecar's capture broker writes `frames.jsonl` and `metadata.json` there. When the copy fails, the directory holds `capture-harvest-failure.json` instead, which names the failure (see [Kali Red Team](../components/kali-redteam.md#mcp-integration)). Only the capture sidecar writes under that path, so the reverse server, which names only its workload container, gets the failure record |
+| `kali-side/<session_id>/` | `harvestSession` in `mcp/aptl-mcp-common/src/captures.ts` | An MCP server whose lab config names a container (the shipped red and reverse configs do) finishes a `<prefix>_run_command` call, or closes a session through `<prefix>_close_session` or `<prefix>_close_all_sessions`. The harvest copies `<run_id>/sessions/<session_id>/` under `/var/log/aptl/captures` from the server's capture container, or from its workload container when it has none. For the red server, `lilrae lab start` names this workspace's capture sidecar in `LILRAE_MCP_CAPTURE_CONTAINER`. The sidecar's capture broker writes `frames.jsonl` and `metadata.json` there. When the copy fails, the directory holds `capture-harvest-failure.json` instead, which names the failure (see [Kali Red Team](../components/kali-redteam.md#mcp-integration)). Only the capture sidecar writes under that path, so the reverse server, which names only its workload container, gets the failure record |
 
 Only the execution controller (`src/aptl/core/execution/`) produces terminal
-attempts. A run that `aptl lab start` created never holds `seal.json`, so it
+attempts. A run that `lilrae lab start` created never holds `seal.json`, so it
 stays unsealed.
 
 MCP servers write `mcp-side/` and `kali-side/` into the run that
-`APTL_MCP_ADMITTED_RUN_ID` names in their environment. `aptl lab start` sets it
+`APTL_MCP_ADMITTED_RUN_ID` names in their environment. `lilrae lab start` sets it
 in `.mcp.json` for the red and blue servers when it connects them to the lab's
 Kali ingress; a server started without it writes under an `_unbound` run
 instead. The capture broker's own record of the Kali sessions reaches the run
-under `evidence/` when `aptl lab stop` finalizes a full-run transcript capture.
+under `evidence/` when `lilrae lab stop` finalizes a full-run transcript capture.
 
 The participant workbench (`src/aptl/workbench/runtime.py`) keeps its own run
 store under its state directory and appends session events to
@@ -143,7 +143,7 @@ Each source is collected by a code-owned provider under declared byte, entry,
 and time limits. A source that is unavailable, denied, unsupported, truncated,
 timed out, or failed appears in `limitations[]` with a stable reason code. Such
 a source is never silently omitted and never given a fabricated digest. A plain
-`aptl lab start` has no admitted experiment plan and no installed participants,
+`lilrae lab start` has no admitted experiment plan and no installed participants,
 so its provisional record reports those two sources `unavailable` rather than
 leaving them out.
 
@@ -172,7 +172,7 @@ so the run record's mandatory evidence, traceability, and result fields are
 satisfied even when a trial ends before any authored capture starts.
 
 - `manifest.json` is the canonical serialized RAES run record for a terminal
-  attempt. In a run that `aptl lab start` created, `manifest.json` is the
+  attempt. In a run that `lilrae lab start` created, `manifest.json` is the
   `aptl.run-record/v2` reproducibility record instead. One version-dispatching
   adapter reads every shape, including older `aptl.run-record/v1` archives.
 - `seal.json` is the atomic seal marker. A run is discoverable as sealed only
@@ -212,10 +212,10 @@ loss never changes the portable record or the seal.
 ## Range Snapshot
 
 The range snapshot records the realized lab for reproducibility. No separate
-snapshot file exists: `aptl lab start` captures the snapshot in the step before
+snapshot file exists: `lilrae lab start` captures the snapshot in the step before
 its run record and embeds it in `manifest.json` at
-`backend_evidence.range_snapshot`. `aptl lab status --json` prints a fresh
-snapshot, and `aptl lab status --output <file>` writes one to a file with mode
+`backend_evidence.range_snapshot`. `lilrae lab status --json` prints a fresh
+snapshot, and `lilrae lab status --output <file>` writes one to a file with mode
 `0600`. Capture and serialization live in `src/aptl/core/snapshot.py` and
 `src/aptl/core/snapshot_models.py`. Contains:
 
@@ -250,25 +250,25 @@ controls as the primary protection.
 
 ```bash
 # List recent runs
-aptl runs list
+lilrae runs list
 
 # Show run details
-aptl runs show <run-id>
+lilrae runs show <run-id>
 
 # Print run directory path
-aptl runs path <run-id>
+lilrae runs path <run-id>
 
 # Export run as tar.gz archive
-aptl runs export <run-id>
+lilrae runs export <run-id>
 
 # Export to S3 (requires pip install lilrae[s3])
-aptl runs export <run-id> --s3-bucket my-bucket --s3-prefix runs/
+lilrae runs export <run-id> --s3-bucket my-bucket --s3-prefix runs/
 
 # Build a portable evidence bundle (written to ./exports by default)
-aptl runs export-bundle <run-id>
+lilrae runs export-bundle <run-id>
 
 # Verify an evidence bundle
-aptl runs verify-bundle ./exports/<run-id>.evidence-bundle.tar
+lilrae runs verify-bundle ./exports/<run-id>.evidence-bundle.tar
 ```
 
 [Portable Evidence Bundle Export](evidence-bundle-export.md) describes the
@@ -279,8 +279,8 @@ bundle options, layout, and verification.
 - `src/aptl/core/runstore.py`: Storage backend protocol and local filesystem implementation, seal-marker commit, and sealed-state immutability
 - `src/aptl/core/archival/`: Terminal-attempt archival, covering RAES run-record composition, terminal-cause status mapping, atomic seal marker, discovery index, and the legacy-manifest read adapter
 - `src/aptl/core/execution/`: The execution controller that drives admitted trials to sealed terminal records, plus the owner-native RAES sub-model bridges (clock, apparatus context, parameters, stochastic controls, evidence artifacts, result summaries)
-- `src/aptl/core/lab.py`: The `aptl lab start` steps that capture the range snapshot and write the run record, provisional provenance, and correlation projection
+- `src/aptl/core/lab.py`: The `lilrae lab start` steps that capture the range snapshot and write the run record, provisional provenance, and correlation projection
 - `src/aptl/core/snapshot.py`, `src/aptl/core/snapshot_models.py`: Range snapshot capture logic and dataclasses
 - `src/aptl/core/exporter.py`: Local tar.gz and S3 export
 - `src/aptl/core/evidence_bundle/`: Portable evidence bundle build and verification
-- `src/aptl/cli/runs.py`: CLI commands (`aptl runs list|show|path|export|export-bundle|verify-bundle`)
+- `src/aptl/cli/runs.py`: CLI commands (`lilrae runs list|show|path|export|export-bundle|verify-bundle`)

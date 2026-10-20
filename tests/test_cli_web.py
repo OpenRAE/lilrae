@@ -32,7 +32,7 @@ class TestWebServe:
 
         These tests exercise serve-start behaviour (worker clamp, reload
         passthrough, project dir, uvicorn kwargs) — not GUI-asset resolution.
-        Without this, ``aptl web serve`` now fails hard (exit 1) when no build
+        Without this, ``lilrae web serve`` now fails hard (exit 1) when no build
         is present, so the suite would pass locally only when an untracked
         ``web/build`` happens to exist and fail in CI. Pinning a fake root makes
         these tests deterministic regardless of the ambient build state; the
@@ -55,7 +55,7 @@ class TestWebServe:
         result = runner.invoke(app, ["--host", "0.0.0.0", "--port", "9000"])
 
         assert result.exit_code == 0
-        assert "Starting APTL web API on 0.0.0.0:9000" in result.output
+        assert "Starting LilRAE web API on 0.0.0.0:9000" in result.output
         mock_run.assert_called_once_with(
             "aptl.api.main:app",
             host="0.0.0.0",

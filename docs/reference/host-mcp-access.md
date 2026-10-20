@@ -5,15 +5,15 @@ the guest and do not enroll this host MCP transport. This reference remains
 for older signed seat images and the separate local integration workflow.
 
 Host Claude Code and Codex use OpenSSH to carry MCP stdio to a fixed guest
-`aptl mcp-access dispatch` command. The user's provider login stays in the host
+`lilrae mcp-access dispatch` command. The user's provider login stays in the host
 client account. The transport enrolls a separate Ed25519 public key; it does
 not copy provider authentication to the guest. MCP execution, service keys,
 capture, artifact access and Docker authority remain in guest management.
 
 ## Guest enrollment
 
-Start the canonical packaged full lab with normal `aptl lab start`. An operator
-then runs `aptl mcp-access prepare-guest --request REQUEST.json --output-dir DIR`.
+Start the canonical packaged full lab with normal `lilrae lab start`. An operator
+then runs `lilrae mcp-access prepare-guest --request REQUEST.json --output-dir DIR`.
 The selected environment pack is recorded by exact identity and digest; a later
 pack switch invalidates the grant. The TechVault participant-study copy uses
 the same enrollment path as TechVault.
@@ -55,7 +55,7 @@ through the authenticated seat-management channel. Verify the host-key SHA256
 fingerprint independently. Then, from a private project directory:
 
 ```bash
-aptl mcp-access configure \
+lilrae mcp-access configure \
   --access-record /absolute/access.json --grant /absolute/caller.grant.json \
   --host-public-key /absolute/ssh_host_ed25519_key.pub \
   --expected-host-key 'SHA256:VERIFIED_FINGERPRINT' \
@@ -89,8 +89,8 @@ caller identity, expiry/revocation, role, unchanged runtime identity and require
 capture. Appliance delivery additionally checks the signed host-MCP contract and
 boundary evidence at most five seconds old. A changed endpoint or reset needs a
 new generation, regenerated enrollment and refreshed host configuration.
-`aptl mcp-access refresh --binding PATH --output PATH` refreshes discovery only;
-`aptl mcp-access revoke --binding PATH --grant-id ID` revokes active and future
+`lilrae mcp-access refresh --binding PATH --output PATH` refreshes discovery only;
+`lilrae mcp-access revoke --binding PATH --grant-id ID` revokes active and future
 connections. Refresh cannot extend a grant.
 
 Concurrent MCP servers share the guest lifecycle observation lock. These reads
@@ -147,7 +147,7 @@ client/transport interoperability, not command execution in a booted guest.
 
 ## Appliance-seat integration
 
-`aptl seat start` now carries this contract through the real VM management
+`lilrae seat start` now carries this contract through the real VM management
 channel. The launcher publishes a nonce-bound enrollment request in the
 read-only launch share, accepts the guest response only on the private
 generation-specific socket, persists the owner-only access bundle, and writes

@@ -64,7 +64,7 @@ container (`aptl-operator-ssh-kali`, shown with the workspace prefix in
 `docker ps`, for example `aptl-w<id>-operator-ssh-kali`) that publishes
 `127.0.0.1:2023` and forwards it to port 22 on `kali`. The relay carries no
 credentials and binds loopback only. `APTL_HP_KALI_SSH_PROXY_2023` pins the
-port. Otherwise, when 2023 is in use, `aptl lab start` remaps it like every
+port. Otherwise, when 2023 is in use, `lilrae lab start` remaps it like every
 other published port and prints the new one:
 
 ```text
@@ -81,7 +81,7 @@ broker. The sidecar's sshd accepts `~/.ssh/aptl_lab_key`. The broker then
 refuses any session that lacks the custody environment the red-team MCP
 server sends: `APTL_SESSION_ID`, plus `APTL_RUN_ID` and `APTL_TRACE_ID` both
 set to the active run's ID. A plain SSH login through the relay therefore
-opens no shell, and `aptl container shell aptl-kali` is refused too.
+opens no shell, and `lilrae container shell aptl-kali` is refused too.
 
 These commands open a shell only on a range where no capture sidecar runs:
 
@@ -90,7 +90,7 @@ These commands open a shell only on a range where no capture sidecar runs:
 ssh -i ~/.ssh/aptl_lab_key -p 2023 kali@localhost
 
 # Interactive shell without SSH
-aptl container shell aptl-kali
+lilrae container shell aptl-kali
 ```
 
 ## Session Capture
@@ -111,12 +111,12 @@ demands that transcript. Without the demand, no sidecar runs.
 - The broker records each session's terminal input and output under
   `/var/log/aptl/captures/<run_id>/sessions/<session_id>/frames.jsonl` in the
   `kali_captures` volume. The `kali` node does not mount that volume.
-- While capture is active, `aptl container shell aptl-kali` is refused.
+- While capture is active, `lilrae container shell aptl-kali` is refused.
 
 ## MCP Integration
 
 The red-team MCP server is [mcp/mcp-red](https://github.com/OpenRAE/lilrae/tree/main/mcp/mcp-red).
-`aptl lab start` builds it. On a project with no `.mcp.json`, it creates one
+`lilrae lab start` builds it. On a project with no `.mcp.json`, it creates one
 from `.mcp.json.example`, whose `aptl-red` entry runs the server; later starts
 refresh keys and ports in the existing file. The shared SSH layer in
 [mcp/aptl-mcp-common/src/ssh.ts](https://github.com/OpenRAE/lilrae/blob/main/mcp/aptl-mcp-common/src/ssh.ts)

@@ -46,8 +46,12 @@ Repository = "https://github.com/OpenRAE/lilrae"
 Issues = "https://github.com/OpenRAE/lilrae/issues"
 
 [project.scripts]
-aptl = "aptl.cli.main:app"
-aptl-misp-suricata-sync = "aptl.services.misp_suricata_sync.main:main"
+lilrae = "aptl.cli.main:app"
+lilrae-misp-suricata-sync = "aptl.services.misp_suricata_sync.main:main"
+# Deprecated aliases: they print a notice to stderr and are removed in 10.0.0
+# (ADR-062 successor clause for #1402; removal tracked by #1403).
+aptl = "aptl.cli.main:legacy_main"
+aptl-misp-suricata-sync = "aptl.services.misp_suricata_sync.main:legacy_main"
 
 [project.optional-dependencies]
 s3 = [
@@ -161,7 +165,7 @@ packages = ["src/aptl", "src/aptl_techvault"]
 # Bundle the git-tracked lab-asset tree (docker-compose.yml, config/,
 # containers/, web/, scripts/, and the source that container images
 # build from) into the wheel under aptl/_labdata/ so `pipx install lilrae`
-# + `aptl lab init` runs a lab without a git clone (issue #659 / DEP-008).
+# + `lilrae lab init` runs a lab without a git clone (issue #659 / DEP-008).
 # The hook ships only git-tracked files, which keeps generated secrets and
 # local state out of the distribution. See hatch_build.py.
 [tool.hatch.build.targets.wheel.hooks.custom]

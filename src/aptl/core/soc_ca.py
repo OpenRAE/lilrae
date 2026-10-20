@@ -97,7 +97,7 @@ class ServiceCert:  # NOSONAR python:S5663 - Python 3 dataclass; no need for exp
 # certificate set from the declared certificate-bundle *outputs* (see
 # ``derive_soc_service_certs``) so APTL never decides which services exist or
 # what identities they carry — that is authored in the SDL. This table is kept
-# solely for the in-tree ``aptl lab start`` path that has no realization spec to
+# solely for the in-tree ``lilrae lab start`` path that has no realization spec to
 # derive from; it is never the primary decision source (issue #875, SDL-authority
 # class remediation).
 SOC_SERVICE_REGISTRY: tuple[ServiceCert, ...] = (
@@ -246,7 +246,7 @@ def ensure_soc_certs(
 
     ``services`` is the set of per-service certificate requests to issue. An
     env-pack realization passes the set derived from the SDL's declared bundle
-    outputs (:func:`derive_soc_service_certs`); the in-tree ``aptl lab start``
+    outputs (:func:`derive_soc_service_certs`); the in-tree ``lilrae lab start``
     path, which has no realization spec, falls back to
     :data:`SOC_SERVICE_REGISTRY` (issue #875).
 

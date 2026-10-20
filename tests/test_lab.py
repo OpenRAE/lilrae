@@ -591,9 +591,9 @@ class TestPreexistingRangeAdmission:
         )
 
         target = shlex.quote(str(project))
-        assert f"aptl lab stop --project-dir {target}`" in result.error
-        assert f"aptl lab stop -v --project-dir {target}`" in result.error
-        assert f"aptl lab start --clean --project-dir {target}`" in result.error
+        assert f"lilrae lab stop --project-dir {target}`" in result.error
+        assert f"lilrae lab stop -v --project-dir {target}`" in result.error
+        assert f"lilrae lab start --clean --project-dir {target}`" in result.error
 
     def test_running_created_or_exited_container_blocks_start(
         self, tmp_path, monkeypatch
@@ -618,11 +618,11 @@ class TestPreexistingRangeAdmission:
         # The refusal names the residue and the same recovery routes, with their
         # data consequences, as a failed start's summary (#952).
         assert "1 container and 0 networks" in result.error
-        assert "`aptl lab stop` removes" in result.error
+        assert "`lilrae lab stop` removes" in result.error
         assert "keeps its volumes" in result.error
-        assert "`aptl lab stop -v` also removes managed volumes" in result.error
+        assert "`lilrae lab stop -v` also removes managed volumes" in result.error
         assert "destroys their lab data" in result.error
-        assert "aptl lab start --clean" in result.error
+        assert "lilrae lab start --clean" in result.error
         assert ctx.range_was_absent is False
 
     def test_network_only_residue_blocks_start(self, tmp_path):
@@ -2704,7 +2704,7 @@ class TestOrchestrateLabStart:
         assert result.residue.torn_down
         assert project.volumes == 4
         [diagnostic] = [d for d in result.diagnostics if d.step == "failed_start_cleanup"]
-        assert "aptl lab stop --project-dir" in diagnostic.operator_action
+        assert "lilrae lab stop --project-dir" in diagnostic.operator_action
         assert "stop -v" not in diagnostic.operator_action
         assert "without removing volumes" in diagnostic.operator_action
 
@@ -4688,7 +4688,7 @@ class TestStartupClassificationWiring:
         assert run_id in store.list_runs()
 
     def test_resolve_run_target_uses_configured_run_storage(self, tmp_path):
-        """Startup records must be discoverable through ``aptl runs``."""
+        """Startup records must be discoverable through ``lilrae runs``."""
         from aptl.cli._common import resolve_run_store
         from aptl.core.config import AptlConfig
         from aptl.core.lab import _LabStartContext, _resolve_run_target
@@ -5806,8 +5806,8 @@ class TestLabOrchestrationContracts:
         assert result is not None
         assert result.success is False
         assert "Lab start failed:" in result.error
-        assert "Run `aptl lab stop` and retry" in result.error
-        assert "`aptl lab stop -v`" in result.error
+        assert "Run `lilrae lab stop` and retry" in result.error
+        assert "`lilrae lab stop -v`" in result.error
 
     def test_start_containers_hints_for_an_unowned_search_index(
         self, mocker, tmp_path
@@ -5838,7 +5838,7 @@ class TestLabOrchestrationContracts:
         headline, _, hint = result.error.partition("\n")
         assert headline == f"Lab start failed: {unowned_error}"
         assert hint.endswith(
-            "/troubleshooting/#aptl-lab-start-reports-an-unowned-search-index"
+            "/troubleshooting/#lilrae-lab-start-reports-an-unowned-search-index"
         )
 
     # -- ssh_key_is_ready --------------------------------------------
@@ -6286,7 +6286,7 @@ class TestGenerateSocCertsStep:
 
     def test_ssh_remote_backend_refuses_with_adr_028_message(self, tmp_path, mocker):
         """ADR-028: generated artifacts materialize on the host running
-        `aptl lab start`. With an SSH-remote backend the daemon is on
+        `lilrae lab start`. With an SSH-remote backend the daemon is on
         another host, so the bind mounts would not see them — refuse
         with the same shape as `_step_sync_credentials`."""
         from aptl.core.deployment import SSHComposeBackend

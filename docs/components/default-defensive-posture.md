@@ -95,7 +95,7 @@ blue graduates IOCs).
 - `misp/misp-iocs.rules` ships **empty** (header `ioc_count=0`).
   Hash-list sidecars `misp-md5.list`, `misp-sha1.list`,
   `misp-sha256.list` ship empty too. These checked-in files are baseline
-  seeds; `aptl lab start` seeds them into the `aptl_suricata_misp_rules` named
+  seeds; `lilrae lab start` seeds them into the `aptl_suricata_misp_rules` named
   volume (ADR-043, mounted at `/var/lib/suricata/rules/misp`), and the sync
   service writes generated runtime state there.
 
@@ -269,7 +269,7 @@ kali's own IPs and wedging the purple loop.
 - Author additional blocks pointing at custom rule IDs (for example, new
   rule IDs in `zzz_purple_loop.xml`).
 - Update the kali whitelist if red ever moves out of the seeded IPs;
-  re-running `aptl lab stop -v && aptl lab start` re-renders agent
+  re-running `lilrae lab stop -v && lilrae lab start` re-renders agent
   carve-outs.
 
 **Source of truth**
@@ -293,14 +293,14 @@ research scenario seed exists out-of-band—see below.
 **Default state**
 
 - The MISP container starts with upstream image defaults. **At first
-  `aptl lab start`, no APTL-side IOCs are loaded**: there are no
+  `lilrae lab start`, no APTL-side IOCs are loaded**: there are no
   pre-existing events, no `aptl:enforce`-tagged attributes, no
   graduated indicators.
 - An optional seed script
   ([`scripts/seed-misp.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-misp.sh)) creates an
   "APTL Lab - Known Threat Actors" event with kali-IP indicators and
   injection-pattern signatures. It is **not run automatically by
-  `aptl lab start`**—it must be invoked explicitly (or via
+  `lilrae lab start`**—it must be invoked explicitly (or via
   [`scripts/seed-prime.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh), which is
   the prime-scenario master seed). The seed script is idempotent.
   IOCs created by `seed-misp.sh` are **not tagged `aptl:enforce`** at
@@ -382,7 +382,7 @@ has zero graduated indicators on purpose.
      `/var/ossec/etc/shuffle_webhook_url`. **This step is what
      activates the Wazuh→Shuffle forwarder.**
   Both scripts are idempotent.
-- **Neither script is run by `aptl lab start`.** Until an operator
+- **Neither script is run by `lilrae lab start`.** Until an operator
   runs `seed-prime.sh` (or runs `seed-shuffle.sh` followed by the
   manual `docker exec` to copy the URL into the manager), the
   Wazuh→Shuffle forwarder no-ops.
@@ -716,7 +716,7 @@ ADR-021's in-band `aptl-firewall-drop` whitelist. See
 [ADR-024](../adrs/adr-024-orchestrator-side-purple-continuity-carve-out.md)
 for the full design.
 
-The audit is invoked manually today via `aptl lab continuity-audit`. The
+The audit is invoked manually today via `lilrae lab continuity-audit`. The
 behavioral contract:
 
 - runs **unconditionally** today—APTL is the purple-team lab and every
