@@ -1,4 +1,4 @@
-"""Docker engine checks for ``aptl doctor`` (#1218).
+"""Docker engine checks for ``lilrae doctor`` (#1218).
 
 Every daemon probe goes through the configured deployment backend's runner, so
 an explicit ``DOCKER_HOST``, context or SSH backend is the engine that
@@ -82,7 +82,7 @@ def _configured_backend_checks(
     try:
         backend = get_backend(config, project_root)
     except ValueError:
-        # aptl.json loaded, so `aptl config validate` would report it OK; the
+        # aptl.json loaded, so `lilrae config validate` would report it OK; the
         # settings only the backend constructor checks are named instead.
         unavailable = DoctorCheck(
             "docker-daemon",

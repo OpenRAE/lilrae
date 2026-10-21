@@ -88,20 +88,31 @@ PYTHONPATH="$pip_wheel" python3 -m pip install \
 # The Ubuntu base marks its system Python as externally managed and does not
 # ship ensurepip. Keep the authenticated application closure isolated under
 # /opt and expose only fixed launchers through the system PATH.
-cat > /usr/local/bin/aptl <<'EOF'
+cat > /usr/local/bin/lilrae <<'EOF'
 #!/bin/sh
-PYTHONPATH=/opt/aptl/app:/opt/aptl/python exec /usr/bin/python3 /opt/aptl/app/bin/aptl "$@"
+PYTHONPATH=/opt/aptl/app:/opt/aptl/python exec /usr/bin/python3 /opt/aptl/app/bin/lilrae "$@"
 EOF
 cat > /usr/local/bin/raes <<'EOF'
 #!/bin/sh
 PYTHONPATH=/opt/aptl/app:/opt/aptl/python exec /usr/bin/python3 /opt/aptl/python/bin/raes "$@"
 EOF
+cat > /usr/local/bin/lilrae-misp-suricata-sync <<'EOF'
+#!/bin/sh
+PYTHONPATH=/opt/aptl/app:/opt/aptl/python exec /usr/bin/python3 /opt/aptl/app/bin/lilrae-misp-suricata-sync "$@"
+EOF
+# Deprecated aliases until 10.0.0 (ADR-062 successor clause, #1402 and #1403).
+# Each one runs its own console script, so it keeps the deprecation notice.
+cat > /usr/local/bin/aptl <<'EOF'
+#!/bin/sh
+PYTHONPATH=/opt/aptl/app:/opt/aptl/python exec /usr/bin/python3 /opt/aptl/app/bin/aptl "$@"
+EOF
 cat > /usr/local/bin/aptl-misp-suricata-sync <<'EOF'
 #!/bin/sh
 PYTHONPATH=/opt/aptl/app:/opt/aptl/python exec /usr/bin/python3 /opt/aptl/app/bin/aptl-misp-suricata-sync "$@"
 EOF
-chmod 0755 /usr/local/bin/aptl /usr/local/bin/raes \
-    /usr/local/bin/aptl-misp-suricata-sync
+chmod 0755 /usr/local/bin/lilrae /usr/local/bin/raes \
+    /usr/local/bin/lilrae-misp-suricata-sync \
+    /usr/local/bin/aptl /usr/local/bin/aptl-misp-suricata-sync
 
 # Install the content-locked guest runtime without granting the build guest
 # network access. Suppress maintainer-script service starts until first boot.

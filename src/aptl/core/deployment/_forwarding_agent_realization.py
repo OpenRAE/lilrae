@@ -182,6 +182,9 @@ def _agent_configured(
             _RSYSLOG_CONFIG,
             _rsyslog_config,
         ),
+        # The TechVault pack installs its own frozen copy of the sync service,
+        # whose metadata names only ``aptl-misp-suricata-sync``. This probe
+        # checks that pack content, so it keeps the pack-supplied name (#1402).
         "misp_suricata_sync": (
             ["sh", "-c", 'test -x "$(command -v aptl-misp-suricata-sync)"'],
             _MISP_SYNC_CONFIG,

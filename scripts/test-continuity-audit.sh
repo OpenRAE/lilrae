@@ -3,14 +3,14 @@
 # continuity carve-out (issue #252, ADR-024).
 #
 # Manual-runnable counterpart to tests/test_continuity.py's LIVE_LAB
-# suite. Demonstrates that `aptl lab continuity-audit`:
+# suite. Demonstrates that `lilrae lab continuity-audit`:
 #   1. Reverts a blanket kali source-IP DROP rule.
 #   2. Preserves a port-qualified kali rule (granular tradecraft).
 #   3. Is idempotent on a clean tree.
 #
 # Procedure:
 #   - Inject `iptables -I INPUT -s <kali_ip> -j DROP` on a target.
-#   - Run `aptl lab continuity-audit`.
+#   - Run `lilrae lab continuity-audit`.
 #   - Verify the rule is gone and `iptables -S INPUT` no longer
 #     contains the kali source.
 #   - Inject a port-qualified equivalent.
@@ -37,7 +37,7 @@ if ! command -v aptl >/dev/null 2>&1; then
     fail "aptl CLI not on PATH; install with 'pip install -e .' under $REPO_ROOT"
 fi
 if ! docker exec "$TARGET" true >/dev/null 2>&1; then
-    fail "$TARGET is not running; start the lab first (aptl lab start)"
+    fail "$TARGET is not running; start the lab first (lilrae lab start)"
 fi
 
 # --- cleanup helper (run on entry + exit) ----------------------------------
@@ -66,7 +66,7 @@ clear_kali_rules
 log "Step 1: inject blanket kali DROP and run audit"
 docker exec "$TARGET" iptables -I INPUT -s "$KALI_SRC_IP" -j DROP
 
-(cd "$REPO_ROOT" && aptl lab continuity-audit) || \
+(cd "$REPO_ROOT" && lilrae lab continuity-audit) || \
     fail "continuity-audit exited non-zero with a blanket rule present"
 
 if docker exec "$TARGET" iptables -S INPUT | grep -E "^-A INPUT -s ${KALI_SRC_IP}(/32)? -j (DROP|REJECT)$" >/dev/null; then
@@ -78,7 +78,7 @@ log "  ok: blanket rule was reverted"
 log "Step 2: inject port-qualified kali drop and run audit"
 docker exec "$TARGET" iptables -I INPUT -s "$KALI_SRC_IP" -p tcp -m tcp --dport 22 -j DROP
 
-(cd "$REPO_ROOT" && aptl lab continuity-audit) || \
+(cd "$REPO_ROOT" && lilrae lab continuity-audit) || \
     fail "continuity-audit exited non-zero with only granular rules present"
 
 if ! docker exec "$TARGET" iptables -S INPUT | grep -E "${KALI_SRC_IP}.*--dport 22" >/dev/null; then
@@ -90,7 +90,7 @@ log "  ok: granular rule was preserved"
 log "Step 3: clean tree, audit again, expect no findings"
 clear_kali_rules
 
-if ! (cd "$REPO_ROOT" && aptl lab continuity-audit | grep -E "no blanket kali" >/dev/null); then
+if ! (cd "$REPO_ROOT" && lilrae lab continuity-audit | grep -E "no blanket kali" >/dev/null); then
     fail "audit on clean tree did not report 'no blanket kali source-IP rules'"
 fi
 log "  ok: idempotent on clean tree"

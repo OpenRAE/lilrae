@@ -123,7 +123,7 @@ hardware fixture, derived and actual runtime matrices, exact workbench/MCP/
 browser surfaces, readiness results, denied-egress counters, measurements,
 run record, and snapshot.
 
-`aptl lab qualify-profile --report <path> --public-key <path> --run-id <id>`
+`lilrae lab qualify-profile --report <path> --public-key <path> --run-id <id>`
 verifies the report's Ed25519 attestation against the qualification pipeline's
 trusted public key, verifies the content digests and correlation of its run
 record and range snapshot, re-derives the expected surface, evaluates every

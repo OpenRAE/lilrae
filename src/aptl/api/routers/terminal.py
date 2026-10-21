@@ -166,7 +166,7 @@ def _ws_origin_allowed(websocket: WebSocket) -> bool:
     """Return True when the WebSocket upgrade is strictly same-origin.
 
     The upgrade is trusted only when its ``Origin`` host matches the request's
-    own ``Host`` — the shipped ``aptl web serve`` single-origin model, and the
+    own ``Host`` — the shipped ``lilrae web serve`` single-origin model, and the
     dev/preview profile too because the proxy preserves the browser's Host
     (Caddy ``header_up Host {host}``). There is no allow-list bypass: matching a
     configured origin by name would let a malicious local process on a trusted

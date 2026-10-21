@@ -9,7 +9,7 @@
 # ~/.bashrc). This script rebuilds a clean lab from those baked images so every
 # clone is deterministic and free of any lab state captured into the AMI.
 #
-# It is idempotent and safe to re-run. `aptl lab start` runs the realization
+# It is idempotent and safe to re-run. `lilrae lab start` runs the realization
 # (with the certs.py self-heal for a root-owned cert directory) and then
 # scripts/seed-prime.sh, which seeds the SOC content: MISP, Shuffle, and the
 # TheHive and Cortex API keys. The released env-pack owns Shuffle's runtime
@@ -64,7 +64,7 @@ sudo systemctl mask avahi-daemon.service avahi-daemon.socket 2>/dev/null || true
 
 # 1. Clean any lab state captured into the AMI so we build fresh from images.
 echo "--- clean-slate baked lab state ---"
-pkill -f 'aptl lab start' 2>/dev/null || true
+pkill -f '(aptl|lilrae) lab start' 2>/dev/null || true
 sleep 2
 docker ps -aq --filter name=aptl- | xargs -r docker rm -f 2>/dev/null || true
 docker network ls --format '{{.Name}}' | grep -E '^aptl' | xargs -r docker network rm 2>/dev/null || true
@@ -77,7 +77,7 @@ docker volume ls --format '{{.Name}}' \
 sudo rm -rf config/wazuh_indexer_ssl_certs .aptl 2>/dev/null || true
 
 # 2. Ensure the SOC CA + service certs exist at the project dir. The bind-mount
-#    pre-flight in `aptl lab start` requires config/soc_certs/ to pre-exist;
+#    pre-flight in `lilrae lab start` requires config/soc_certs/ to pre-exist;
 #    generate it deterministically here (proven code path) rather than rely on
 #    lab-start's own generation resolving the project root on a fresh clone.
 echo "--- ensure SOC certs ---"
@@ -85,8 +85,8 @@ python -c "from pathlib import Path; from aptl.core.soc_ca import ensure_soc_cer
 
 # 3. Build the lab. This realizes the stack (certs self-heal included) and runs
 #    seed-prime.sh (SOC seeding).
-echo "--- aptl lab start ---"
-aptl lab start || echo "WARN: aptl lab start returned non-zero; verifying below"
+echo "--- lilrae lab start ---"
+lilrae lab start || echo "WARN: lilrae lab start returned non-zero; verifying below"
 
 # 4. Ensure seeding completed (seed-prime runs inside lab start, but re-run it
 #    idempotently if lab start aborted before reaching it).

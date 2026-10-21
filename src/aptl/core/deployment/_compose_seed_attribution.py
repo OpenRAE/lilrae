@@ -108,7 +108,7 @@ class ComposeSeedAttributionMixin:
         log.error(
             "Named volume %s exists without Compose project attribution. "
             "Remove it with `docker volume rm %s` (seeded content is "
-            "recreated from checked-in sources) and rerun `aptl lab start`.",
+            "recreated from checked-in sources) and rerun `lilrae lab start`.",
             volume,
             volume,
         )

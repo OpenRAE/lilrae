@@ -1920,3 +1920,6 @@ src/aptl/backends/_lilrae_source_image_catalog.py	backend-owned-runtime	Retain i
 tests/fixtures/lilrae_source_image_inventory_v6_3_1.json	tests-follow-owner	Retain released source and runtime facts as a backend catalog coverage fixture
 tests/test_lilrae_catalog_image_observation.py	tests-follow-owner	Retain independent image identity, lifecycle, and evidence regression tests
 tests/test_lilrae_source_image_catalog.py	tests-follow-owner	Retain source admission and released Linux kit selector coverage
+docs/architecture/issue-1402-command-rename-preflight.md	architecture-history	Preserve lilrae command rename, alias deprecation, and identity-boundary guardrails
+src/aptl/cli/_command_alias.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+tests/test_cli_command_alias.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner

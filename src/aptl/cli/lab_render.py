@@ -264,7 +264,7 @@ def live_resolved_ports(project_dir: Path) -> list[ResolvedPort]:
 
     `_emit_lab_access_summary` needs a ResolvedPort list to print live URLs;
     `lab start` passes the one it computed at port-resolution time. Later
-    commands (`aptl lab info`) run against a running lab and have to ask
+    commands (`lilrae lab info`) run against a running lab and have to ask
     docker what actually got published — otherwise the URLs default to the
     compile-time constants, and any host with a taken default port (Cursor's
     tunnels, k8s port-forward, AirPlay on 3100, etc.) sees a URL that goes to
@@ -372,7 +372,7 @@ def _emit_dashboard_access(
             typer.echo(f"  Wazuh Dashboard: remote Docker host port {port} (HTTPS)")
         else:
             typer.echo(f"  Wazuh Dashboard: https://localhost:{port}")
-        typer.echo("    scenario credentials (not an APTL control-plane login):")
+        typer.echo("    scenario credentials (not a LilRAE control-plane login):")
         typer.echo("    username: see INDEXER_USERNAME in .env")
         typer.echo("    password: see INDEXER_PASSWORD in .env")
 

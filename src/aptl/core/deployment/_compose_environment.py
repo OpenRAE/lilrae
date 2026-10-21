@@ -89,7 +89,7 @@ COMPOSE_CLIENT_VARIABLES = frozenset(
     ).split()
 )
 #: Prefixes kept as well: APTL's own settings, such as the ``APTL_HP_*``
-#: host-port pins and the remaps ``aptl lab start`` exports, and build tuning.
+#: host-port pins and the remaps ``lilrae lab start`` exports, and build tuning.
 _COMPOSE_CLIENT_PREFIXES = ("APTL_", "BUILDKIT_", "BUILDX_")
 
 

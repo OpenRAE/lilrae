@@ -122,7 +122,7 @@ trap on_exit EXIT
 
 for c in "${MANAGER}" "${TARGET}" "${KALI}"; do
     if ! docker ps --format '{{.Names}}' | grep -q "^${c}$"; then
-        fail "${c} not running. Run: aptl lab start"
+        fail "${c} not running. Run: lilrae lab start"
     fi
 done
 

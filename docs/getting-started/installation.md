@@ -8,12 +8,12 @@ pipx environment. Check the [prerequisites](prerequisites.md) first.
 Install pipx through your operating system or the
 [official pipx instructions](https://pipx.pypa.io/stable/installation/), then
 install LilRAE. LilRAE was formerly named APTL. It is published as the
-`lilrae` package and provides the `aptl` command
+`lilrae` package and provides the `lilrae` command
 ([ADR-062](../adrs/adr-062-lilrae-name-and-naming-convention.md)):
 
 ```shell
 pipx install lilrae
-aptl --version
+lilrae --version
 ```
 
 `lilrae` requires Python 3.12 or newer. On macOS, if pipx is bound to the
@@ -31,7 +31,7 @@ system-`pip` restriction on current Debian, Ubuntu, and WSL2 hosts.
 Materialize the released lab assets into a new project directory:
 
 ```shell
-aptl lab init my-lab
+lilrae lab init my-lab
 cd my-lab
 ```
 
@@ -40,7 +40,7 @@ build contexts, MCP sources, and web sources. The installed environment-pack
 distribution supplies released scenarios. You do not need to clone the source
 repository.
 
-`aptl lab init` creates the durable project files. The first `aptl lab start`
+`lilrae lab init` creates the durable project files. The first `lilrae lab start`
 creates private runtime state such as `.env`, `.mcp.json`, keys, and `.aptl/`
 artifacts. Do not publish or attach those files to support reports.
 
@@ -53,20 +53,91 @@ the complete asset set from the new release:
 
 ```shell
 pipx upgrade lilrae
-aptl lab init my-new-lab
+lilrae lab init my-new-lab
 ```
 
 Do not copy generated credentials or state between project directories.
+
+## Move From The aptl Command
+
+The command is `lilrae` from the release that follows 8.1.0. The
+`aptl` command stays as a deprecated alias until LilRAE 10.0.0
+([ADR-062](../adrs/adr-062-lilrae-name-and-naming-convention.md)).
+
+| Old command | New command |
+| --- | --- |
+| `aptl` | `lilrae` |
+| `aptl-misp-suricata-sync` | `lilrae-misp-suricata-sync` |
+
+The alias runs the same commands with the same options. Its stdout, its
+`--json` output, and its exit status are the same as for `lilrae`. Each time
+you run the alias, it writes one notice to stderr:
+
+```text
+warning: the 'aptl' command is deprecated and will be removed in LilRAE 10.0.0. Use 'lilrae' instead. Set LILRAE_SUPPRESS_APTL_DEPRECATION=1 to hide this notice.
+```
+
+The name change does not change the `aptl` import package, `aptl.json`,
+`APTL_*` environment variables, the `.aptl` state directory, or container and
+Compose names.
+
+### Update Your Scripts
+
+1. Upgrade the package:
+
+    ```shell
+    pipx upgrade lilrae
+    ```
+
+2. Make sure that the new command is on your `PATH`:
+
+    ```shell
+    lilrae --version
+    ```
+
+    If the shell cannot find `lilrae`, run `pipx ensurepath`, then open a new
+    shell. If you use a virtual environment, activate it again.
+
+3. In your scripts, CI jobs, and shell aliases, replace each `aptl` command
+   with `lilrae`. For example, change `aptl lab start` to `lilrae lab start`.
+   Do not change `aptl.json`, `.aptl/`, or `APTL_*` names.
+
+4. If you installed shell completion for `aptl`, install it again for the new
+   command:
+
+    ```shell
+    lilrae --install-completion
+    ```
+
+### Hide The Notice
+
+If a script cannot change yet, set `LILRAE_SUPPRESS_APTL_DEPRECATION=1` in its
+environment. Only the value `1` hides the notice. The variable has no other
+effect.
+
+```shell
+LILRAE_SUPPRESS_APTL_DEPRECATION=1 aptl lab status
+```
+
+### When The Alias Is Removed
+
+LilRAE 10.0.0 does not install `aptl` or `aptl-misp-suricata-sync`
+([#1403](https://github.com/OpenRAE/lilrae/issues/1403)). After you upgrade to
+that release, a script that still runs `aptl` fails because the shell cannot
+find the command.
+Seat images and guest access policy that LilRAE generates already use
+`lilrae`. Replace older seat images before you upgrade to 10.0.0.
 
 ## Move From aptl-labs To lilrae
 
 `aptl-labs` 7.0.0 was the last `aptl-labs` release. Releases publish to PyPI
 as [`lilrae`](https://pypi.org/project/lilrae/) from version 8.0.0. The import
-package, the `aptl` and `aptl-misp-suricata-sync` commands, the configuration,
-and the project state do not change. `pipx upgrade aptl-labs` does not move
-you to `lilrae`.
+package, the configuration, and the project state do not change. `aptl-labs`
+provides only the `aptl` command; current `lilrae` releases provide `lilrae`
+and the deprecated `aptl` alias. `pipx upgrade aptl-labs` does not move you to
+`lilrae`.
 
-Both distributions install the same `aptl` package and the same commands. If
+Both distributions install the same `aptl` package. If
 you install one over the other, the second installation overwrites the files of
 the first. If you then remove either one, you can remove shared files. Always
 remove the installed distribution before you install the other one.
@@ -92,7 +163,7 @@ remove the installed distribution before you install the other one.
 3. Make sure that the command comes from the new installation:
 
     ```shell
-    aptl --version
+    lilrae --version
     pipx list --short
     ```
 
@@ -124,7 +195,7 @@ remove the installed distribution before you install the other one.
 
 Your lab project directories, `aptl.json`, the `.aptl/` state, keys, run
 records, and Docker volumes stay where they are. Do not delete them during the
-migration. Run `aptl lab status` in an existing project to confirm that the new
+migration. Run `lilrae lab status` in an existing project to confirm that the new
 installation finds it.
 
 ### Roll Back
@@ -140,6 +211,9 @@ pipx install "aptl-labs==7.0.0"
 In a pip virtual environment, use `python -m pip uninstall lilrae`, then
 `python -m pip install "aptl-labs==7.0.0"`. All earlier `aptl-labs` releases
 stay available on PyPI.
+
+`aptl-labs` 7.0.0 provides only the `aptl` command. After you roll back, use
+`aptl` in place of `lilrae`.
 
 ## Source Install For Contributors
 

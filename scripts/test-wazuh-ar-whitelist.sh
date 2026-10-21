@@ -43,7 +43,7 @@ pass() { log "PASS: $*"; }
 
 # --- preflight --------------------------------------------------------------
 if ! docker ps --format '{{.Names}}' | grep -q "^${TARGET}$"; then
-    fail "${TARGET} not running. Run: aptl lab start"
+    fail "${TARGET} not running. Run: lilrae lab start"
 fi
 if ! docker exec "${TARGET}" test -x "${WRAPPER}"; then
     fail "${WRAPPER} missing/not-executable inside ${TARGET}. Image rebuild needed?"

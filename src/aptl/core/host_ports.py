@@ -7,7 +7,7 @@ On Windows a held IPv6 ``::1:PORT`` even blocks Docker's IPv4
 ``127.0.0.1:PORT`` publish, so the clash is easy to hit and fails the whole
 start.
 
-To keep ``aptl lab start`` robust, the published host ports in
+To keep ``lilrae lab start`` robust, the published host ports in
 ``docker-compose.yml`` are written through a ``${VAR:-default}`` indirection.
 Before Compose runs, :func:`resolve_host_ports` parses those ports, probes each
 one, and for any that are already in use picks a free port and exports the

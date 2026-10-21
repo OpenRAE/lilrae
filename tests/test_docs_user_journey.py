@@ -123,7 +123,7 @@ def test_quick_start_follows_the_operator_workflow_in_order() -> None:
 
 def test_cli_reference_tracks_every_registered_command_group() -> None:
     rows = _table("docs/reference/cli.md", "Command Groups")
-    documented = {row["Command"].removeprefix("aptl ") for row in rows}
+    documented = {row["Command"].removeprefix("lilrae ") for row in rows}
     registered = set(get_command(cli_app).commands)
 
     assert documented == registered

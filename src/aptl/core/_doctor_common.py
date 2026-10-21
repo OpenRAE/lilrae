@@ -1,4 +1,4 @@
-"""The check record ``aptl doctor`` reports, and the helpers its checks share.
+"""The check record ``lilrae doctor`` reports, and the helpers its checks share.
 
 :mod:`aptl.core.doctor` runs the workspace and host-tool checks, and
 :mod:`aptl.core._doctor_runtime` runs the Docker engine checks (#1218). Both

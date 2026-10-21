@@ -29,7 +29,7 @@ Current operator-facing startup selection uses one acquired-pack path:
 - `raes.parse_sdl_file` for SDL validation
 - `aptl.backends.raes.start_raes_scenario()` for runtime handoff through RAES
 
-`aptl lab scenarios` therefore reports pack identity (id, version, set digest,
+`lilrae lab scenarios` therefore reports pack identity (id, version, set digest,
 and maturity), not an APTL-relative path. An explicit `--scenario-path` is a
 project-contained development override; it is not a fallback for a missing or
 invalid acquired pack.
