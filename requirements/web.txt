@@ -17,6 +17,7 @@ anyio==4.14.2 \
     #   httpx
     #   httpx2
     #   mcp
+    #   raes
     #   raes-env-packs
     #   sse-starlette
     #   starlette
@@ -649,15 +650,15 @@ pyyaml==6.0.3 \
     #   raes
     #   raes-env-packs
     #   uvicorn
-raes==6.0.1 \
-    --hash=sha256:3e97f42d42564acc1740757157ffd35a8c6373487845e987a314da54388a06c0 \
-    --hash=sha256:8ab156fb1b9c1f0b467c08d98c0695403224ad3c6f2b7835e30b570f8741e67f
+raes==7.0.0 \
+    --hash=sha256:3248f494ae635cd890a7697d14d31101c5525ffb92e729f4fe3f28377cc450aa \
+    --hash=sha256:e92685889f7a73ee806802692504a2d435d2c5e7ab2385800db6a8f134240371
     # via
     #   lilrae
     #   raes-env-packs
-raes-env-packs==6.2.1 \
-    --hash=sha256:2144f4460cbcd8a2579820b6962fd59fb714c437b980a11ef4041017b22661b2 \
-    --hash=sha256:6a235e6c75697cb8a1afcb011b70b77e6bdc6fa302911aaa607f25856689b657
+raes-env-packs==6.3.3 \
+    --hash=sha256:5ddbfc36f140453125648416ce4a165265a8d1c8358fe87598ada59b4a19c65f \
+    --hash=sha256:acdfadd2cf408e4069ed97b92f112c9e9d3be87083487ad3a761b10b544de239
     # via lilrae
 referencing==0.37.0 \
     --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231 \

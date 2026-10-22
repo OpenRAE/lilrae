@@ -96,7 +96,7 @@ def test_study_copy_uses_same_projection_only_at_its_exact_digest(tmp_path: Path
     backend = _Backend(node.image.image_ref.rsplit("@", 1)[1])
     study = PackIdentity(
         "techvault-participant-study",
-        "0.1.1",
+        "0.1.2",
         TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST,
     )
 
@@ -196,3 +196,33 @@ def test_non_wazuh_datastore_does_not_require_wazuh_attestation(tmp_path: Path):
     )
 
     assert CONCERN_PAYLOAD_PATH["runtime-datastore-services"] in concerns
+
+
+def test_every_pinned_projection_matches_the_released_pack(tmp_path: Path):
+    """A pack release that changes an attested claim fails here, not live (#1273).
+
+    Each pinned digest is the canonical projection of the released TechVault
+    SDL claim. A stale pin leaves that concern uncorroborated, and lab start
+    then fails its realization readback after every service is up.
+    """
+
+    from raes_processor.semantics.realization import project_realization_concern
+
+    from aptl.backends import raes_runtime_attestation as attestation
+    from tests.techvault_pack import realize_techvault_pack
+
+    nodes = {node.name: node for node in realize_techvault_pack(tmp_path).nodes}
+    stale = [
+        key
+        for key, pinned in attestation._TECHVAULT_PROJECTION_DIGESTS.items()
+        if attestation.canonical_json_digest(
+            project_realization_concern(
+                key[1],
+                getattr(nodes[key[0]].runtime, attestation._RUNTIME_FIELD_BY_KIND[key[1]]),
+                observed=False,
+            )
+        )
+        != pinned
+    ]
+
+    assert stale == []

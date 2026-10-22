@@ -26,6 +26,25 @@ from aptl.core.deployment.realization import (
 )
 
 CONTENT_MOUNT_ROOT_RELPATH = Path(".aptl") / "realization" / "content"
+#: Where owner-declared content is staged inside an image node (#1273). A bind
+#: mount keeps the host owner, so a file the node's SDL inventory declares with
+#: an owner is mounted here instead and installed at its destination with the
+#: declared owner and mode before the image's own entrypoint runs.
+OWNED_CONTENT_ROOT = PurePosixPath("/run/aptl/owned-content")
+OWNED_CONTENT_MANIFEST = OWNED_CONTENT_ROOT / "manifest"
+#: The installer an implementation profile prefixes to its image entrypoint to
+#: support owner-declared content. Only paths, modes and account names, all
+#: validated when the manifest is written, enter it; content bytes never do.
+OWNED_CONTENT_INSTALLER = (
+    f'if [ -f "{OWNED_CONTENT_MANIFEST}" ]; then '
+    "while read -r mode owner group name dest; do "
+    'install -D -m "$mode" -o "$owner" -g "$group" '
+    f'"{OWNED_CONTENT_ROOT}/$name" "$dest"; '
+    f'done < "{OWNED_CONTENT_MANIFEST}"; fi'
+)
+_ACCOUNT_NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
+_MODE_RE = re.compile(r"^0?[0-7]{3}$")
+_DESTINATION_RE = re.compile(r"^/[A-Za-z0-9._/-]+$")
 _SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _EXECUTABLE_SCRIPT_MEDIA_TYPES = frozenset({"text/x-python", "text/x-shellscript"})
 
@@ -46,25 +65,73 @@ def image_node_content_override(
     # does not exist, and would create the target as an empty directory (#875).
     realization_root = realization_root.resolve()
     imaged = {image.address for image in realization.images}
-    service_by_address = {
-        node.address: node.service_name
-        for node in realization.nodes
-        if node.service_name
+    node_by_address = {
+        node.address: node for node in realization.nodes if node.service_name
     }
     services: dict[str, dict[str, object]] = {}
+    manifests: dict[str, list[str]] = {}
     for item in realization.content:
-        if item.target_address not in imaged:
-            continue
-        service_name = service_by_address.get(item.target_address)
-        if not service_name:
+        node = node_by_address.get(item.target_address)
+        if item.target_address not in imaged or node is None:
             continue
         source = _place_content(item, scenario_root, realization_root)
         if source is None:
             continue
-        services.setdefault(service_name, {}).setdefault("volumes", []).extend(
-            _content_mounts(item, source)
-        )
+        owned = _declared_ownership(node, item, source)
+        volumes = services.setdefault(node.service_name, {}).setdefault("volumes", [])
+        if owned is None:
+            volumes.extend(_content_mounts(item, source))
+            continue
+        name = f"{len(manifests.get(node.service_name, ())):03d}"
+        volumes.append(_bind(source, OWNED_CONTENT_ROOT / name))
+        manifests.setdefault(node.service_name, []).append(f"{owned} {name} /{item.dest_relpath.lstrip('/')}")
+    for service_name, lines in manifests.items():
+        manifest = _content_output_root(realization_root, f"{service_name}-owned-content")
+        path = manifest / "manifest"
+        _remove_previous_output(path)
+        path.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
+        path.chmod(0o644)
+        services[service_name]["volumes"].append(_bind(path, OWNED_CONTENT_MANIFEST))
     return {"services": services} if services else {"services": {}}
+
+
+def _bind(source: Path, target: PurePosixPath) -> dict[str, object]:
+    """Return one read-only bind mount."""
+
+    return {"type": "bind", "source": str(source), "target": str(target), "read_only": True}
+
+
+def _declared_ownership(node: object, item: DeploymentContentRealization, source: Path) -> str | None:
+    """Return ``"mode owner group"`` for content the node must own, or ``None``.
+
+    It applies only when the node's SDL inventory declares an owner for the
+    file at this destination and the node's selected entrypoint runs
+    :data:`OWNED_CONTENT_INSTALLER`. Any other content keeps its bind mount.
+    """
+
+    runtime = getattr(node, "runtime", None)
+    entrypoint = " ".join(getattr(getattr(runtime, "container", None), "entrypoint", None) or ())
+    if OWNED_CONTENT_INSTALLER not in entrypoint or not source.is_file():
+        return None
+    destination = "/" + item.dest_relpath.lstrip("/")
+    for entry in getattr(runtime, "filesystem_inventory", None) or ():
+        if str(getattr(entry, "path", "")) != destination:
+            continue
+        owner = str(getattr(entry, "owner_user", "") or "")
+        if not owner:
+            return None
+        group = str(getattr(entry, "owner_group", "") or owner)
+        mode = str(getattr(entry, "mode", "") or "")
+        valid = (
+            _ACCOUNT_NAME_RE.fullmatch(owner)
+            and _ACCOUNT_NAME_RE.fullmatch(group)
+            and _MODE_RE.fullmatch(mode)
+            and _DESTINATION_RE.fullmatch(destination)
+        )
+        if not valid:
+            raise ValueError(f"owner-declared content at {destination} is invalid")
+        return f"{mode} {owner} {group}"
+    return None
 
 
 def _content_mounts(

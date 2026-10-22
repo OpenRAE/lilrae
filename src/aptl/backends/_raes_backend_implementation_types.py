@@ -59,6 +59,10 @@ class BackendImplementationProfile:
             "runtime_selector": asdict(selector) if selector is not None else None,
             "provenance_refs": list(self.provenance_refs),
         })
+    #: The account provider that realizes and verifies SDL accounts placed on a
+    #: node this profile runs. It is an image fact, so the binding never depends
+    #: on a scenario's node name. Empty means the image has no account provider.
+    account_provider: str = ""
 
 
 @dataclass(frozen=True)
@@ -70,6 +74,7 @@ class BackendBaseSelection:
     run_capabilities: tuple[str, ...] = ()
     provider_kind: str = ""
     provider_parameters: tuple[tuple[str, str], ...] = ()
+    account_provider: str = ""
 
 
 def environment(*variables: dict[str, str]) -> list[dict[str, str]]:

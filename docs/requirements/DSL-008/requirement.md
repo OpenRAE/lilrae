@@ -6,7 +6,7 @@ type: FUNCTIONAL
 priority: MUST
 wave: 1
 created_at: 2026-03-24T02:44:23.438740Z
-updated_at: 2026-10-09T00:00:00.000000Z
+updated_at: 2026-10-21T00:00:00.000000Z
 ---
 
 # DSL-008: APTL Realization of ACES Infrastructure Topology
@@ -67,3 +67,22 @@ NOT DEPRECATED 2026-10-09: ADR-035 deprecates DSL-002 to DSL-009 as requirements
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/_gate_raes_cli.py` (Resolve the installed RAES CLI from the active Python environment for source and wheel validation)
 - TESTS → TEST `tests/test_techvault_static_gate.py` (RAES CLI resolution with and without virtual-environment PATH activation)
 - IMPLEMENTS → DOCUMENTATION `docs/testing/smoke-test-plan.md` (Capture the user-facing startup inventory and validate both installation paths)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/deployment/_account_provider.py` (Account providers bound to the realizing implementation, not to a scenario node name)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/raes_account_realization.py` (Authored secret_fixture credential bindings lowered or refused)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/deployment/_compose_application_accounts.py` (Declared SOC console accounts realized and proven by authentication)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/raes_declared_credentials.py` (Account credential references resolved from the admitted SDL only)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/participant_desktop.py` (Participant desktop resolved from the admitted SDL and the realized lab)
+- IMPLEMENTS → CODE_FILE `tools/check_pack_boundary.py` (Pack-owned facts refused in generic files, derived from the owning pack's SDL)
+- TESTS → TEST `tests/test_declared_account_credentials.py` (Credential binding lowering and refusal)
+- TESTS → TEST `tests/test_account_provider.py` (Conflicting duplicate identities or credentials refuse the entire batch before mutation)
+- TESTS → TEST `tests/test_seat_desktop.py` (Desktop delivery waits for both private files and successful management-owned hostname publication)
+- TESTS → TEST `tests/test_application_accounts.py` (Application account providers, stdin-only secrets, and fail-closed proofs)
+- TESTS → TEST `tests/test_participant_desktop.py` (Desktop resolution from the owned fixture pack and private publication)
+- TESTS → TEST `tests/test_pack_boundary_policy.py` (Boundary check over the repository and planted facts)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/participant_desktop.py` (Exact pack-qualified desktop reference admission)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/participant_hosts.py` (Validated hostname projection applied through management-owned publication)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/_participant_desktop_files.py` (Participant-only inactive credential and guide files)
+- TESTS → TEST `tests/test_participant_desktop_lifecycle.py` (Start, failed-start, stop and reset withdraw stale desktop state)
+- TESTS → TEST `tests/test_participant_hosts.py` (Hostname conflicts, unsafe paths and metadata-preserving removal)
+- TESTS → TEST `tests/test_owned_content_install.py` (Declared content ownership reaches the realized node)
+- IMPLEMENTS → GITHUB_ISSUE `1273` (Move participant desktop and rule-file scenario facts behind the TechVault adapter)

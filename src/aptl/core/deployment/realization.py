@@ -111,6 +111,7 @@ class DeploymentNodeRealization(object):
     backend_run_capabilities: tuple[str, ...] = ()
     backend_provider_kind: str = ""
     backend_provider_parameters: tuple[tuple[str, str], ...] = ()
+    backend_account_provider: str = ""
     # The pack/backend seam resolves serving membership once; renderers reuse
     # the DTO rather than infer it from component names.
     profiles: tuple[str, ...] = ()
@@ -218,14 +219,30 @@ class DeploymentServiceSearchIndexSchemaRealization(object):
 
 
 @dataclass(frozen=True)
+class DeclaredAccountCredential(object):
+    """One authored ``secret_fixture`` credential an SDL account declares.
+
+    The value is scenario content the SDL already carries, so the backend may
+    hold it while it realizes the account (ADR-046 Declared Fixture Credential
+    Addendum). It is excluded from ``repr``, equality and every ``details()``
+    projection, so evidence, run records and logs name only ``credential_id``.
+    """
+
+    credential_id: str
+    value: str = field(repr=False, compare=False)
+
+
+@dataclass(frozen=True)
 class DeploymentAccountRealization(object):
     """One account-placement identity lowered from a RAES account resource.
 
-    Carries non-secret identity only (ADR-046 addendum): no password material
-    crosses this record. The concrete credential is generated inside the target
-    provider boundary; this record is realization evidence proving the declared
-    account maps to a node whose backend provider actually creates and
-    reconciles it.
+    Its evidence projection is non-secret identity only (ADR-046 addendum).
+    A credential the backend mints is generated inside the target provider
+    boundary and never crosses this record. A credential the scenario authors
+    as ``secret_fixture`` is scenario content: ``credential`` carries it to the
+    provider, outside ``repr`` and ``details()``. This record is realization
+    evidence proving the declared account maps to a node whose backend
+    provider actually creates and reconciles it.
 
     ``password_strength`` is the authored credential class (RAES
     ``PasswordStrength``), carried because it is a declared fact about the
@@ -250,6 +267,8 @@ class DeploymentAccountRealization(object):
     mail: str = ""
     disabled: bool | None = None
     password_strength: str = ""
+    auth_method: str = "password"
+    credential: DeclaredAccountCredential | None = None
 
     def details(self) -> dict[str, object]:
         return {
@@ -261,6 +280,10 @@ class DeploymentAccountRealization(object):
             "mail": self.mail,
             "disabled": self.disabled,
             "password_strength": self.password_strength,
+            "auth_method": self.auth_method,
+            "credential_id": (
+                self.credential.credential_id if self.credential is not None else None
+            ),
         }
 
 

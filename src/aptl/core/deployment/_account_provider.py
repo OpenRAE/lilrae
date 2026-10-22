@@ -31,6 +31,19 @@ from aptl.core.deployment.realization import (
 )
 
 SAMBA_AD = "samba-ad"
+#: Application account providers. Each one realizes the ``secret_fixture``
+#: credential an SDL account declares for one product image, then proves it by
+#: an authenticated read-after-write. The implementation profile that runs the
+#: image names its provider; nothing here reads a scenario node name.
+OPENSEARCH_SECURITY = "opensearch-security"
+WAZUH_API = "wazuh-api"
+MISP = "misp"
+THEHIVE = "thehive"
+CORTEX = "cortex"
+SHUFFLE = "shuffle"
+APPLICATION_ACCOUNT_PROVIDERS = frozenset(
+    {OPENSEARCH_SECURITY, WAZUH_API, MISP, THEHIVE, CORTEX, SHUFFLE}
+)
 
 # Provider-native identity grammars. These reject the list separator (`,`) that
 # ``samba-tool group addmembers`` would otherwise expand into several principals,
@@ -43,11 +56,15 @@ _GROUP_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]*$")
 _MAIL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._%+-]*@[A-Za-z0-9][A-Za-z0-9.-]*$")
 _SPN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:-]*$")
 
-# Code-owned binding: backend service name -> account provider kind. Adding a
-# new account-capable service is one entry here (ADR-046 §Extensibility), never
-# a scenario-name branch. This is the single source of truth the interpret-time
-# gate (``raes_account_realization``) and the realize-time materializer share.
-_PROVIDER_BINDINGS: Mapping[str, str] = {"ad": SAMBA_AD}
+#: Providers that can realize an ``auth_method: key`` credential.
+KEY_AUTH_PROVIDERS = frozenset({MISP})
+#: Providers that cannot mint a credential, so the SDL must declare one.
+REQUIRES_DECLARED_CREDENTIAL = APPLICATION_ACCOUNT_PROVIDERS
+_KNOWN_PROVIDERS = frozenset({SAMBA_AD, *APPLICATION_ACCOUNT_PROVIDERS})
+
+# Application principals are often mail-shaped (``admin@example.test``) and
+# carry no group, SPN or mail attribute, so they use one bounded token grammar.
+_APPLICATION_USERNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@+-]*$")
 
 # Bound on a single identity token. Usernames, group names, mail, and SPNs are
 # RAES-owned and short; this is a defensive cap against an unbounded value
@@ -55,18 +72,29 @@ _PROVIDER_BINDINGS: Mapping[str, str] = {"ad": SAMBA_AD}
 _MAX_IDENTIFIER_LEN = 256
 
 
-def resolve_account_provider(service_name: str | None) -> str | None:
-    """Return the account provider kind bound to a backend service, or None."""
+#: Account providers of services in APTL's own Compose model, used by the
+#: project-tree route where a node binds to that model instead of a selected
+#: implementation profile. The keys are backend service names APTL ships, not
+#: scenario node names; a node with no Compose binding never matches.
+_COMPOSE_SERVICE_PROVIDERS: Mapping[str, str] = {"ad": SAMBA_AD}
 
-    if service_name is None:
-        return None
-    return _PROVIDER_BINDINGS.get(service_name)
+
+def compose_service_account_provider(service_name: str | None) -> str:
+    """Return the account provider of one APTL Compose service, or ``""``."""
+
+    return _COMPOSE_SERVICE_PROVIDERS.get(service_name or "", "")
 
 
-def account_provider_services() -> frozenset[str]:
-    """Return the set of backend services with a registered account provider."""
+def known_account_provider(provider: str | None) -> bool:
+    """Return whether ``provider`` names an account provider this backend has.
 
-    return frozenset(_PROVIDER_BINDINGS)
+    The provider comes from the backend implementation selected for the target
+    node (ADR-046 §Extensibility): adding an account-capable image is one
+    implementation-profile field and one provider here, never a scenario-name
+    branch.
+    """
+
+    return provider in _KNOWN_PROVIDERS
 
 
 @dataclass(frozen=True)
@@ -108,7 +136,7 @@ def plan_account_targets(
             errors.append(resolved)
             continue
         container_name, provider = resolved
-        field_error = _validate_account_fields(account)
+        field_error = _validate_account_fields(account, provider)
         if field_error is not None:
             errors.append(field_error)
             continue
@@ -157,8 +185,11 @@ def _resolve_target(
     """Resolve one account to ``(container_name, provider)`` or a plan error."""
 
     node = by_address.get(account.target_address, _MISSING_NODE)
-    provider = resolve_account_provider(
-        node.service_name if isinstance(node, DeploymentNodeRealization) else None
+    provider = (
+        node.backend_account_provider
+        if isinstance(node, DeploymentNodeRealization)
+        and known_account_provider(node.backend_account_provider)
+        else None
     )
     reason = _target_reason(node, provider)
     if reason is not None:
@@ -179,17 +210,21 @@ def _target_reason(
             "target-node-has-no-container",
             isinstance(node, DeploymentNodeRealization) and node.container_name is None,
         ),
-        ("no-account-provider-for-service", provider is None),
+        ("no-account-provider-for-node", provider is None),
     )
     return next((reason for reason, failed in checks if failed), None)
 
 
 def _validate_account_fields(
     account: DeploymentAccountRealization,
+    provider: str,
 ) -> AccountPlanError | None:
     """Reject provider-unsafe identity values before any mutation."""
 
-    reason = _field_error_reason(account)
+    if provider in APPLICATION_ACCOUNT_PROVIDERS:
+        reason = _application_field_error_reason(account)
+    else:
+        reason = _field_error_reason(account)
     return AccountPlanError(account.address, reason) if reason is not None else None
 
 
@@ -201,6 +236,31 @@ def _field_error_reason(account: DeploymentAccountRealization) -> str | None:
         ("invalid-group", all(_matches(_GROUP_RE, g) for g in account.groups)),
         ("invalid-mail", not account.mail or _matches(_MAIL_RE, account.mail)),
         ("invalid-spn", not account.spn or _matches(_SPN_RE, account.spn)),
+    )
+    return next((reason for reason, ok in checks if not ok), None)
+
+
+def _application_field_error_reason(
+    account: DeploymentAccountRealization,
+) -> str | None:
+    """Refuse an application account the provider cannot apply faithfully.
+
+    An application provider realizes one enabled principal and its declared
+    credential. It has no directory groups, SPNs or mail attribute to set and
+    cannot disable a principal, so a declaration of one is refused rather than
+    silently dropped. RAES's default ``disabled: false`` is the enabled state.
+    """
+
+    checks = (
+        (
+            "invalid-username",
+            _matches(_APPLICATION_USERNAME_RE, account.username),
+        ),
+        (
+            "account-attribute-unsupported",
+            not (account.groups or account.spn or account.mail)
+            and account.disabled is not True,
+        ),
     )
     return next((reason for reason, ok in checks if not ok), None)
 
@@ -249,12 +309,32 @@ def _same_declaration(
 ) -> bool:
     """Whether two same-principal declarations request identical non-name state."""
 
-    return (a.groups, a.spn, a.mail, a.disabled) == (
+    return (
+        a.groups,
+        a.spn,
+        a.mail,
+        a.disabled,
+        a.password_strength,
+        a.auth_method,
+        _credential_declaration(a),
+    ) == (
         b.groups,
         b.spn,
         b.mail,
         b.disabled,
+        b.password_strength,
+        b.auth_method,
+        _credential_declaration(b),
     )
+
+
+def _credential_declaration(
+    account: DeploymentAccountRealization,
+) -> tuple[str, str] | None:
+    """Compare source and value explicitly; credential equality omits secrets."""
+
+    credential = account.credential
+    return (credential.credential_id, credential.value) if credential else None
 
 
 def dedupe_groups(

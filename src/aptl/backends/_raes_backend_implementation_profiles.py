@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from aptl.core.deployment._account_provider import SAMBA_AD
 from aptl.backends._raes_backend_implementation_catalog import (
     BACKEND_IMPLEMENTATION_PROFILES,
 )
@@ -96,6 +97,7 @@ def _active_directory_base(runtime: object) -> BackendBaseSelection | None:
         # issue #976 evaluates an ACL store that would make it unnecessary.
         run_capabilities=("SYS_ADMIN",),
         provider_kind="samba-active-directory",
+        account_provider=SAMBA_AD,
         provider_parameters=(("domain", realm.partition(".")[0]), ("realm", realm)),
     )
 

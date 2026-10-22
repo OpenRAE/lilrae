@@ -218,6 +218,8 @@ def _realize_placement_resource(
             resource=resource,
             payload=payload,
             target_address=target_address,
-            target_service=target_service,
+            target_account_provider=(
+                target_node.backend_account_provider if target_node else None
+            ),
         )
     return content, dataset, account, service_index_schema, diagnostics

@@ -31,8 +31,14 @@ from aptl.utils.redaction import redact
 from aptl_techvault.log_sources import realize_log_sources
 from aptl_techvault.database import realize_database
 from aptl_techvault.redis_acl_observation import observe_redis_app_authorizations
-from aptl_techvault.runtime_parameters import TECHVAULT_PACK_SET_DIGEST
-from aptl_techvault.wazuh_credentials import techvault_wazuh_environment
+from aptl_techvault.runtime_parameters import (
+    TECHVAULT_PACK_SET_DIGEST,
+    TECHVAULT_PACK_VERSION,
+)
+from aptl_techvault.account_environment import (
+    SEED_ADMINISTRATOR_KEYS,
+    techvault_account_environment,
+)
 
 log = get_logger("techvault-startup")
 _API_LOG_PATH = "/var/ossec/logs/api.log"
@@ -200,7 +206,7 @@ class TechVaultStartupProvider:
 
     extension_api_version = EXTENSION_API_VERSION
     supported_pack_id = "techvault"
-    supported_pack_versions = ("0.1.1",)
+    supported_pack_versions = (TECHVAULT_PACK_VERSION,)
     supported_pack_set_digests = (TECHVAULT_PACK_SET_DIGEST,)
     # The pack leaves customer-database client authentication open; this is the
     # posture realize_database() applies and verifies (see that module).
@@ -239,7 +245,7 @@ class TechVaultStartupProvider:
             environment_aliases=(
                 EnvironmentAlias(target="ADMIN_KEY", source="MISP_API_KEY"),
             ),
-            environment_fixtures=techvault_wazuh_environment(bundle),
+            environment_fixtures=techvault_account_environment(),
             container_environment=(
                 ContainerEnvironmentBinding("CORTEX_CONTAINER", "aptl-cortex"),
                 ContainerEnvironmentBinding("THEHIVE_CONTAINER", "aptl-thehive"),
@@ -258,6 +264,7 @@ class TechVaultStartupProvider:
                     StartupCapability.HOST_TOOLS,
                     StartupCapability.MCP,
                     StartupCapability.NATIVE_EVIDENCE,
+                    StartupCapability.PARTICIPANT_DESKTOP,
                 }
             ),
             startup_hooks=frozenset(
@@ -278,6 +285,7 @@ class TechVaultStartupProvider:
                 "SHUFFLE_URL",
                 "CORTEX_API_KEY",
                 "THEHIVE_API_KEY",
+                *SEED_ADMINISTRATOR_KEYS,
             ),
             mcp_build_script="mcp/build-all-mcps.sh",
             mcp_server_keys=(

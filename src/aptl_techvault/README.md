@@ -10,6 +10,16 @@ package, behind the entry points APTL discovers it through.
 | `aptl.scenario_startup` | `techvault` | content-qualified startup and native log-producer realization |
 | `aptl.scenario_verifiers` | `techvault.aptl` | the semantic answer key: is the declared defensive stack realized, does the attacker reach its peers |
 | `aptl.participant_mcp_smoke_plans` | `guided-purple.techvault-attacker-target` | the exact MCP operations that qualify a participant |
+| `aptl.participant_desktop` | `techvault` | the consoles, logins, guide and hostnames the participant desktop shows, as SDL references |
+
+## Declared SOC logins
+
+The pack declares every SOC console login as an SDL account with an authored
+`secret_fixture` credential. `account_environment.py` maps each backend
+variable, such as `INDEXER_PASSWORD`, to the account credential it carries.
+`participant_desktop.py` names the consoles and logins the desktop shows. Neither
+module holds a value: core reads each username and secret from the admitted SDL,
+so a pack change to a login reaches the lab without an adapter edit.
 
 ## Why it lives here
 
@@ -79,7 +89,7 @@ whole:
 | Dimension | This release |
 | --- | --- |
 | Extension API | `2` |
-| Scenario | `techvault`, source `env-pack`, pack version `0.1.1`, content digest `sha256:df00ea2a26…` |
+| Scenario | `techvault`, source `env-pack`, pack version `0.1.2`, content digest `sha256:b23696c91f…` |
 | Backend | RAES target `aptl` `0.1.0`, profile `full-remote-control-plane` |
 | Transport | `docker-compose` and `ssh-compose` |
 

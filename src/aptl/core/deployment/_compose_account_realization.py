@@ -26,6 +26,9 @@ from collections.abc import Sequence
 
 from aptl.core.deployment import _account_credentials as credentials
 from aptl.core.deployment import _account_provider as provider
+from aptl.core.deployment._compose_application_accounts import (
+    ComposeApplicationAccountMixin,
+)
 from aptl.core.deployment._compose_account_verification import (
     ComposeAccountVerificationMixin,
     _failure,
@@ -52,7 +55,9 @@ _READINESS_INTERVAL = 5
 _ACCOUNT_CMD_TIMEOUT = 60
 
 
-class ComposeRealizationAccountMixin(ComposeAccountVerificationMixin):
+class ComposeRealizationAccountMixin(
+    ComposeApplicationAccountMixin, ComposeAccountVerificationMixin
+):
     """Realize typed RAES account placements through Docker Compose."""
 
     def realize_accounts(
@@ -75,18 +80,26 @@ class ComposeRealizationAccountMixin(ComposeAccountVerificationMixin):
         targets, errors = provider.plan_account_targets(accounts, nodes)
         if errors:
             return _rejected(errors[0])
-        return self._realize_targets(targets, timeout=timeout or _ACCOUNT_CMD_TIMEOUT)
+        return self._realize_targets(
+            targets, nodes, timeout=timeout or _ACCOUNT_CMD_TIMEOUT
+        )
 
     def _realize_targets(
         self,
         targets: Sequence[provider.AccountTarget],
+        nodes: Sequence[DeploymentNodeRealization],
         *,
         timeout: int,
     ) -> LabResult | None:
         """Realize each validated target batch; stop at the first failure."""
 
         for target in targets:
-            result = self._realize_account_target(target, timeout=timeout)
+            if target.provider in provider.APPLICATION_ACCOUNT_PROVIDERS:
+                result = self._realize_application_target(
+                    target, nodes, timeout=timeout
+                )
+            else:
+                result = self._realize_account_target(target, timeout=timeout)
             if result is not None:
                 return result
         return None
@@ -173,11 +186,16 @@ class ComposeRealizationAccountMixin(ComposeAccountVerificationMixin):
         Samba's default policy can refuse the credentials a scenario declares as
         its guessing surface, so without this the declared weak class cannot be
         made true. It is applied once per target and only for a declared `weak`
-        account: medium credentials already satisfy the default policy, so a
-        medium or strong batch never weakens the domain (issue #1006).
+        account or an authored fixture value, which the default policy may
+        refuse: minted medium credentials already satisfy it, so a minted medium
+        or strong batch never weakens the domain (issue #1006).
         """
 
-        if not any(account.password_strength == credentials.WEAK for account in accounts):
+        if not any(
+            account.password_strength == credentials.WEAK
+            or account.credential is not None
+            for account in accounts
+        ):
             return None
         applied = self.container_exec(
             container, provider.samba_domain_relax_password_policy(), timeout=timeout
@@ -296,6 +314,8 @@ class ComposeRealizationAccountMixin(ComposeAccountVerificationMixin):
         it and reported success over a credential nobody held (issue #1105).
         """
 
+        if account.credential is not None:
+            return self._apply_declared_password(container, account, timeout=timeout)
         strength = account.password_strength
         if self._credential_already_realized(
             container, account, strength, created=created, timeout=timeout
@@ -308,6 +328,31 @@ class ComposeRealizationAccountMixin(ComposeAccountVerificationMixin):
         if unproven is not None:
             return unproven
         return self._disclose_password(account, password, strength)
+
+    def _apply_declared_password(
+        self,
+        container: str,
+        account: DeploymentAccountRealization,
+        *,
+        timeout: int,
+    ) -> str | None:
+        """Make the authored ``secret_fixture`` true of the account, then prove it.
+
+        The scenario wrote the value down, so there is nothing to mint or
+        disclose: the declared value either already authenticates or is set and
+        then proven, all on stdin.
+        """
+
+        value = account.credential.value  # type: ignore[union-attr]
+        current = self.container_exec_with_input(
+            container,
+            provider.samba_user_authenticate(),
+            provider.samba_authenticate_input(account.username, value),
+            timeout=timeout,
+        )
+        if current.returncode == 0:
+            return None
+        return self._set_and_prove_password(container, account, value, timeout=timeout)
 
     def _credential_already_realized(
         self,

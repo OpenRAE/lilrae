@@ -1,6 +1,7 @@
 import { HTTPClient } from '../http.js';
 import { LabConfig } from '../config.js';
 import { assertPathOnlyEndpoint } from '../endpoint-url.js';
+import Ajv2020, { type ValidateFunction } from 'ajv/dist/2020.js';
 
 export interface APIToolContext {
   httpClient: HTTPClient;
@@ -21,13 +22,19 @@ interface APIInfoArgs {}
 
 interface PredefinedQueryArgs {
   params?: Record<string, unknown>;
-  body?: Record<string, unknown>;
+  body?: unknown;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP SDK provides untyped args; validated by JSON Schema before reaching handlers
 export type APIToolHandler = (args: any, context: APIToolContext) => Promise<{ content: { type: string; text: string }[] }>;
 
 type QueryConfig = NonNullable<LabConfig['queries']>[string];
+
+class QueryArgumentError extends Error {}
+
+function argumentMapping(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
 
 // Resolve the effective request body for a predefined query. A string passes
 // through as a raw payload (e.g. XML for Wazuh rule uploads); undefined/null
@@ -44,15 +51,28 @@ function resolveQueryBody(body: unknown, queryConfig: QueryConfig): any {
   return queryConfig.body ? { ...queryConfig.body, ...(body as Record<string, unknown>) } : body;
 }
 
+// A path segment is a string or a finite number. Stringifying any other shape
+// would let an array such as ["rules.xml"] pass a pattern as "rules.xml".
+function pathSegmentValue(key: string, value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  throw new QueryArgumentError(`path parameter ${key} must be a string`);
+}
+
 // Reject a path parameter value that would change the request path. Encoding
 // removes separators, but an empty, `.` or `..` segment still moves the path.
 function assertSafePathParam(queryConfig: QueryConfig, key: string, value: string): void {
   if (value === '' || value === '.' || value === '..') {
-    throw new Error(`path parameter ${key} must be a single non-empty path segment`);
+    throw new QueryArgumentError(`path parameter ${key} must be a single non-empty path segment`);
   }
   const pattern = queryConfig.path_param_patterns?.[key];
-  if (pattern !== undefined && !new RegExp(`^(?:${pattern})$`).test(value)) {
-    throw new Error(`path parameter ${key} does not match ${pattern}`);
+  const match = pattern === undefined ? undefined : new RegExp(`^(?:${pattern})$`).exec(value);
+  if (pattern !== undefined && (!match || match[0].length !== value.length)) {
+    throw new QueryArgumentError(`path parameter ${key} does not match the required format`);
   }
 }
 
@@ -67,15 +87,16 @@ function buildQueryUrl(
   for (const [key, value] of Object.entries(finalParams)) {
     const placeholder = `{${key}}`;
     if (url.includes(placeholder)) {
-      assertSafePathParam(queryConfig, key, String(value));
-      url = url.replace(placeholder, encodeURIComponent(String(value)));
+      const segment = pathSegmentValue(key, value);
+      assertSafePathParam(queryConfig, key, segment);
+      url = url.replace(placeholder, encodeURIComponent(segment));
     } else {
       queryParams[key] = value;
     }
   }
   const missing = /\{(\w+)\}/.exec(url);
   if (missing) {
-    throw new Error(`path parameter ${missing[1]} is required`);
+    throw new QueryArgumentError(`path parameter ${missing[1]} is required`);
   }
   return { url, queryParams };
 }
@@ -192,14 +213,16 @@ const baseAPIHandlers = {
     };
   },
 
-  predefined_query: async (args: PredefinedQueryArgs, context: APIToolContext, queryConfig: NonNullable<LabConfig['queries']>[string]) => {
-    const { params = {}, body } = args as any;
-
-    // Merge provided params with template
-    const finalParams = { ...queryConfig.params, ...params };
-    const finalBody = resolveQueryBody(body, queryConfig);
-
+  predefined_query: async (args: PredefinedQueryArgs, context: APIToolContext, queryConfig: QueryConfig, validateParams?: ValidateFunction) => {
     try {
+      if (!argumentMapping(args) || (args.params !== undefined && !argumentMapping(args.params))) {
+        throw new QueryArgumentError('query arguments and params must be objects');
+      }
+      const finalParams = { ...queryConfig.params, ...args.params };
+      if (validateParams && !validateParams(finalParams)) {
+        throw new QueryArgumentError('query parameters do not match the required schema');
+      }
+      const finalBody = resolveQueryBody(args.body, queryConfig);
       const { url, queryParams } = buildQueryUrl(queryConfig, finalParams);
       const result = await runPredefinedQuery(queryConfig, context, url, queryParams, finalBody);
 
@@ -227,7 +250,7 @@ const baseAPIHandlers = {
               success: false,
               query: queryConfig.description,
               endpoint: queryConfig.url,
-              error: error instanceof Error ? error.message : 'Unknown error',
+              error: error instanceof QueryArgumentError ? error.message : 'API query failed',
             }, null, 2),
           },
         ],
@@ -255,8 +278,11 @@ export function generateAPIToolHandlers(
   // Add predefined query handlers
   if (queries) {
     Object.entries(queries).forEach(([queryName, queryConfig]) => {
+      const validateParams = queryConfig.params_schema
+        ? new Ajv2020().compile(queryConfig.params_schema)
+        : undefined;
       handlers[`${serverConfig.toolPrefix}_${queryName}`] = async (args: any, context: APIToolContext) => {
-        return baseAPIHandlers.predefined_query(args, context, queryConfig);
+        return baseAPIHandlers.predefined_query(args, context, queryConfig, validateParams);
       };
     });
   }
