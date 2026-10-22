@@ -331,16 +331,15 @@ def test_startup_values_are_the_pack_declared_account_credentials() -> None:
         binding = accounts[account].credential_bindings[0]
         return accounts[account].username, binding.material.value
 
-    assert (values["INDEXER_USERNAME"], values["INDEXER_PASSWORD"]) == declared(
-        "wazuh-indexer-admin"
-    )
-    assert (values["API_USERNAME"], values["API_PASSWORD"]) == declared(
-        "wazuh-manager-api"
-    )
-    assert (
-        values["SHUFFLE_DEFAULT_USERNAME"],
-        values["SHUFFLE_DEFAULT_PASSWORD"],
-    ) == declared("shuffle-administrator")
+    expected = declared("wazuh-indexer-admin")
+    assert values["INDEXER_USERNAME"] == expected[0]
+    assert values["INDEXER_PASSWORD"] == expected[1]
+    expected = declared("wazuh-manager-api")
+    assert values["API_USERNAME"] == expected[0]
+    assert values["API_PASSWORD"] == expected[1]
+    expected = declared("shuffle-administrator")
+    assert values["SHUFFLE_DEFAULT_USERNAME"] == expected[0]
+    assert values["SHUFFLE_DEFAULT_PASSWORD"] == expected[1]
     source = Path(__file__).resolve().parents[1] / "src" / "aptl_techvault"
     adapter = (source / "account_environment.py").read_text(encoding="utf-8")
     assert values["INDEXER_PASSWORD"] not in adapter

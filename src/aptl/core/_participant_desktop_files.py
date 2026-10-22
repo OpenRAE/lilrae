@@ -13,6 +13,9 @@ from __future__ import annotations
 import base64
 import html
 import json
+import os
+import pwd
+import subprocess
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -97,6 +100,26 @@ def encoded_request(home: Path, files: Mapping[str, bytes]) -> str:
             },
         }
     )
+
+
+def write_as_account(entry: pwd.struct_passwd, request: str) -> bool:
+    """Send private file bytes on stdin to a child with no supplementary groups."""
+
+    environment = {"PYTHONPATH": os.pathsep.join(path for path in sys.path if path)}
+    completed = subprocess.run(
+        [sys.executable, "-m", "aptl.core._participant_desktop_files"],
+        input=request,
+        text=True,
+        user=entry.pw_uid,
+        group=entry.pw_gid,
+        extra_groups=[],
+        env=environment,
+        cwd=entry.pw_dir,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    return completed.returncode == 0
 
 
 def main() -> int:

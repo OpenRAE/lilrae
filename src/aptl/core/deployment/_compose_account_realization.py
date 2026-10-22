@@ -1,24 +1,9 @@
-"""Docker Compose account-placement realization (issue #577, ADR-046 addendum).
+"""Realize declared Compose accounts and prove their resulting state.
 
-Consumes ``DeploymentRealizationSpec.accounts`` and makes the declared
-identity true on the resolved target through ``container_exec``: it ensures
-declared groups, creates or reconciles each user, applies supported non-secret
-attributes, reconciles group memberships, and then verifies the resulting
-non-secret state by read-after-write. A zero exit code alone is not success.
-
-Security posture (ADR-029 + ADR-046 addendum):
-
-* the whole batch is validated before the first mutation (fail closed);
-* a ``strong`` account's credential is generated inside the target boundary
-  (``--random-password``) and never read back or logged, and an already-existing
-  account is never re-created, so its provisioner-owned password is preserved;
-* a ``weak`` or ``medium`` account gets a backend-minted credential of the
-  declared class, proved by authenticating as that account and disclosed only to
-  the operator's range-private directory — the scenario declares that credential
-  as the surface an attacker is meant to find (issue #1006);
-* failures return a bounded :class:`LabResult` naming the placement address and
-  a stable reason, never raw provider stdout/stderr.
-"""
+Validate the whole batch before mutation. Generated strong credentials stay in
+the target; declared fixtures are set exactly, and minted weak/medium values
+are authenticated and disclosed only in the operator's private directory.
+Failures carry stable placement diagnostics, never raw output (ADR-046)."""
 
 from __future__ import annotations
 
@@ -142,15 +127,7 @@ class ComposeRealizationAccountMixin(
         return None
 
     def _account_provider_ready(self, container: str, *, timeout: int) -> bool:
-        """Wait until the AD provider is up AND its baseline provisioner is done.
-
-        Two conditions, both required: the directory answers ``domain info`` (the
-        service is serving) and the provisioning-complete marker exists (the
-        service-owned baseline provisioner has finished). The second closes the
-        clean-start race where the backend could otherwise create an account the
-        provisioner is still installing, discarding the designed fixture
-        credential this reconcile path promises to preserve.
-        """
+        """Wait for the directory listener and image provisioning before mutation."""
 
         def probe() -> bool:
             """True only when the directory serves AND baseline provisioning is done."""
@@ -181,15 +158,7 @@ class ComposeRealizationAccountMixin(
         *,
         timeout: int,
     ) -> str | None:
-        """Relax the domain policy only when the batch declares a weak credential.
-
-        Samba's default policy can refuse the credentials a scenario declares as
-        its guessing surface, so without this the declared weak class cannot be
-        made true. It is applied once per target and only for a declared `weak`
-        account or an authored fixture value, which the default policy may
-        refuse: minted medium credentials already satisfy it, so a minted medium
-        or strong batch never weakens the domain (issue #1006).
-        """
+        """Relax native password policy only for authored weak or fixture values."""
 
         if not any(
             account.password_strength == credentials.WEAK
@@ -264,14 +233,9 @@ class ComposeRealizationAccountMixin(
         *,
         timeout: int,
     ) -> tuple[bool, str | None]:
-        """Create the user only when absent — never clobber an existing secret.
+        """Create only absent users and read back existence before memberships.
 
-        Returns ``(created, reason)``: ``created`` is True when this call created
-        the user (so ``mail`` was set atomically at create). ``reason`` is a
-        stable failure key when the user does not exist after the create attempt
-        — the caller must then stop before any membership mutation, so a failed
-        or expanded create can never leave unauthorized state behind.
-        """
+        Return whether this call created the user, plus a stable failure reason."""
 
         exists = self.container_exec(
             container, provider.samba_user_show(account.username), timeout=timeout
@@ -298,21 +262,10 @@ class ComposeRealizationAccountMixin(
         created: bool,
         timeout: int,
     ) -> str | None:
-        """Make the account's declared credential class true, or fail closed.
+        """Realize the declared fixture or credential class, then prove it.
 
-        A ``strong`` account keeps the target-generated secret from create. A
-        ``weak`` or ``medium`` account is the scenario's declared credential
-        surface, so the backend mints a password of that class, sets it, and
-        proves it by authenticating as the account.
-
-        An existing account is left alone only when the backend can still prove
-        the declared class is true of it — the disclosed credential says that
-        class and still authenticates. Skipping on existence alone accepted an
-        unknown, strong, or unusable secret as the declared attack surface, and
-        made a partial failure permanent: if the set succeeded but the proof or
-        the disclosure did not, the account existed, so every later run skipped
-        it and reported success over a credential nobody held (issue #1105).
-        """
+        Existing weak/medium accounts must still authenticate with the disclosed
+        credential; existence alone cannot prove the authored class (issue #1105)."""
 
         if account.credential is not None:
             return self._apply_declared_password(container, account, timeout=timeout)
@@ -321,6 +274,17 @@ class ComposeRealizationAccountMixin(
             container, account, strength, created=created, timeout=timeout
         ):
             return None
+        return self._mint_and_disclose_password(container, account, strength, timeout)
+
+    def _mint_and_disclose_password(
+        self,
+        container: str,
+        account: DeploymentAccountRealization,
+        strength: str,
+        timeout: int,
+    ) -> str | None:
+        """Mint, authenticate and disclose one declared credential class."""
+
         password = credentials.password_for_strength(strength)
         unproven = self._set_and_prove_password(
             container, account, password, timeout=timeout
@@ -379,14 +343,7 @@ class ComposeRealizationAccountMixin(
         *,
         timeout: int,
     ) -> bool:
-        """Whether the disclosed credential still proves the declared class.
-
-        Evidence, not assumption: the disclosed record has to name the declared
-        class and the secret has to still authenticate as the account. Anything
-        else — no record, a record of another class, a secret the directory now
-        refuses — means the declared class is not established, so the caller
-        realizes it rather than inheriting whatever is there.
-        """
+        """Accept retained credentials only when their class and authentication match."""
 
         retained = credentials.read_disclosed_credential(
             self.realization_root,

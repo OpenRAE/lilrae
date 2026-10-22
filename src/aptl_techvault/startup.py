@@ -394,13 +394,7 @@ class TechVaultStartupProvider:
 
     @staticmethod
     def compose_startup_policy() -> ScenarioComposeStartupPolicy:
-        """Wait for TechVault's stateful backends before dependent JVM services.
-
-        The pack declares these dependency edges, but its generated Compose
-        base otherwise starts dependents as soon as their containers exist.
-        Cassandra can still be initializing then, causing TheHive to exit on
-        the first user-visible boot. These probes strengthen only those edges.
-        """
+        """Wait for declared stateful dependencies before starting JVM services."""
 
         return ScenarioComposeStartupPolicy(
             probes=(

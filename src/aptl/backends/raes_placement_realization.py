@@ -182,34 +182,14 @@ def _realize_placement_resource(
     service_index_schema: DeploymentServiceSearchIndexSchemaRealization | None = None
     diagnostics: list[Diagnostic] = []
     if resource.resource_type == "content-placement":
-        spec = payload.get("spec")
-        is_dataset = isinstance(spec, Mapping) and spec.get("type") == "dataset"
-        if (
-            not is_dataset
-            and target_node is not None
-            and target_node.os
-            and (target_node.runtime is not None or target_node.image is not None)
-        ):
-            # Any realized node — a base-container-materialized node the materializer places
-            # content into, or an image (compose) node whose content is bound in
-            # (issue #875) — takes its content at the authored literal
-            # destination. Only the legacy named-volume path below still needs a
-            # registered backing mount; an image node that declares content but
-            # no other runtime must not fall through to it and be rejected.
-            resolved_content, diagnostics = resolve_literal_content_placement(
-                resource, payload, target_address
-            )
-        else:
-            resolved_content, diagnostics = resolve_content_placement(
-                resource=resource,
-                payload=payload,
-                target_address=target_address,
-                target_service=target_service,
-                project_dir=project_dir,
-            )
+        resolved_content, diagnostics = _placed_content(
+            resource, payload, target_address, target_node, target_service, project_dir
+        )
         if isinstance(resolved_content, ParticipantDatasetRealization):
             dataset = resolved_content
-        elif isinstance(resolved_content, DeploymentServiceSearchIndexSchemaRealization):
+        elif isinstance(
+            resolved_content, DeploymentServiceSearchIndexSchemaRealization
+        ):
             service_index_schema = resolved_content
         else:
             content = resolved_content
@@ -223,3 +203,37 @@ def _realize_placement_resource(
             ),
         )
     return content, dataset, account, service_index_schema, diagnostics
+
+
+def _placed_content(
+    resource: PlannedResource,
+    payload: Mapping[str, Any],
+    target_address: str,
+    target_node: NodeRealization | None,
+    target_service: str | None,
+    project_dir: Path,
+) -> tuple[
+    DeploymentContentRealization
+    | ParticipantDatasetRealization
+    | DeploymentServiceSearchIndexSchemaRealization
+    | None,
+    list[Diagnostic],
+]:
+    """Select literal placement for realized nodes and legacy mounts otherwise."""
+
+    spec = payload.get("spec")
+    is_dataset = isinstance(spec, Mapping) and spec.get("type") == "dataset"
+    literal_target = (
+        target_node is not None
+        and target_node.os
+        and (target_node.runtime is not None or target_node.image is not None)
+    )
+    if not is_dataset and literal_target:
+        return resolve_literal_content_placement(resource, payload, target_address)
+    return resolve_content_placement(
+        resource=resource,
+        payload=payload,
+        target_address=target_address,
+        target_service=target_service,
+        project_dir=project_dir,
+    )

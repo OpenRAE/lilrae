@@ -1,10 +1,6 @@
-"""Immutable semantic implementation profile catalog for APTL's backend.
+"""Immutable backend implementation choices, matched to portable semantics.
 
-These are backend choices, not scenario declarations.  A profile is eligible
-only when the planned node carries the matching portable runtime semantics;
-the realization adapter separately checks that every selected concern is open
-before using it.
-"""
+The realization adapter checks that selected concerns are open before use."""
 
 from __future__ import annotations
 
@@ -37,6 +33,7 @@ from aptl.backends._raes_backend_implementation_types import (
     variable as _variable,
 )
 
+_BIN_SH = "/bin/sh"
 _HALF_GIB_JVM_OPTIONS = "-Xms512m -Xmx512m"
 
 
@@ -59,7 +56,7 @@ BACKEND_IMPLEMENTATION_PROFILES = (
             # keeps the host owner, so the declared files are installed with
             # their declared owner and mode before the image's own `/init`.
             "runtime-container-entrypoint": [
-                "/bin/sh",
+                _BIN_SH,
                 "-ec",
                 f'{OWNED_CONTENT_INSTALLER}; exec /init "$@"',
                 "--",
@@ -182,7 +179,7 @@ BACKEND_IMPLEMENTATION_PROFILES = (
         context_relpath=".",
         runtime_selections={
             "runtime-container-entrypoint": [
-                "/bin/sh",
+                _BIN_SH,
                 "-c",
                 "exec suricata -c /etc/suricata/suricata.yaml --pcap=any",
             ],
@@ -324,7 +321,7 @@ BACKEND_IMPLEMENTATION_PROFILES = (
             # a root-owned /run directory before the stock entrypoint drops
             # privileges. Only paths, never the credential, enter argv.
             "runtime-container-entrypoint": [
-                "/bin/sh",
+                _BIN_SH,
                 "-ec",
                 f"install -d -m 0755 -o root -g root {MISP_CACHE_RUNTIME_CONFIG_DIR} && "
                 "install -m 0400 -o redis -g redis /etc/redis/redis.conf "

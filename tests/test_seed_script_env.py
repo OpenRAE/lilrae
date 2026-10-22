@@ -328,7 +328,8 @@ raise SystemExit(1)
     records = [json.loads(line) for line in log.read_text().splitlines()]
     assert all(password not in json.dumps(record["argv"]) for record in records)
     login = [r for r in records if '/api/login"' in r["config"]]
-    assert login and password in login[0]["config"]
+    assert login
+    assert password in login[0]["config"]
     creates = [
         r
         for r in records

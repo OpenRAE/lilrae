@@ -28,6 +28,7 @@ import stat
 import sys
 import pwd
 from contextlib import contextmanager
+from collections.abc import Iterator
 from pathlib import Path
 
 SCHEMA = "lilrae.participant-hosts/v1"
@@ -51,6 +52,7 @@ _RESERVED = frozenset(
     }
 )
 _MAX_ENTRIES = 64
+_HOSTS_FILE = Path("/etc/hosts")
 
 
 class HostsPublicationError(ValueError):
@@ -67,30 +69,41 @@ def validated_entries(document: object) -> list[tuple[str, str]]:
         raise HostsPublicationError("participant hosts entries are invalid")
     pairs: dict[str, str] = {}
     for entry in entries:
-        address = entry.get("address") if isinstance(entry, dict) else None
-        hostname = entry.get("hostname") if isinstance(entry, dict) else None
-        if not isinstance(address, str) or not isinstance(hostname, str):
-            raise HostsPublicationError("participant hosts entry is invalid")
-        try:
-            parsed_address = ipaddress.ip_address(address)
-            if parsed_address.is_unspecified or parsed_address.is_multicast:
-                raise ValueError
-            parsed = str(parsed_address)
-        except ValueError:
-            raise HostsPublicationError(
-                "participant hosts address is invalid"
-            ) from None
-        name = hostname.lower()
-        if (
-            not _HOSTNAME.fullmatch(name)
-            or name in _RESERVED
-            or name.endswith(".localhost")
-        ):
-            raise HostsPublicationError("participant hostname is invalid")
+        parsed, name = _validated_entry(entry)
         if pairs.get(name, parsed) != parsed:
             raise HostsPublicationError("participant hostname maps to two addresses")
         pairs[name] = parsed
     return sorted((address, name) for name, address in pairs.items())
+
+
+def _validated_entry(entry: object) -> tuple[str, str]:
+    """Validate the types, address and hostname of one mapping."""
+
+    address = entry.get("address") if isinstance(entry, dict) else None
+    hostname = entry.get("hostname") if isinstance(entry, dict) else None
+    if not isinstance(address, str) or not isinstance(hostname, str):
+        raise HostsPublicationError("participant hosts entry is invalid")
+    parsed = _validated_address(address)
+    name = hostname.lower()
+    if (
+        not _HOSTNAME.fullmatch(name)
+        or name in _RESERVED
+        or name.endswith(".localhost")
+    ):
+        raise HostsPublicationError("participant hostname is invalid")
+    return parsed, name
+
+
+def _validated_address(address: str) -> str:
+    """Refuse malformed, multicast or unspecified destinations."""
+
+    try:
+        parsed = ipaddress.ip_address(address)
+        if parsed.is_unspecified or parsed.is_multicast:
+            raise ValueError
+    except ValueError:
+        raise HostsPublicationError("participant hosts address is invalid") from None
+    return str(parsed)
 
 
 def rendered_hosts(existing: str, pairs: list[tuple[str, str]]) -> str:
@@ -116,7 +129,7 @@ def rendered_hosts(existing: str, pairs: list[tuple[str, str]]) -> str:
 
 def publish(
     hosts_json: Path,
-    hosts_file: Path = Path("/etc/hosts"),
+    hosts_file: Path = _HOSTS_FILE,
     *,
     document_owner: int | None = None,
 ) -> None:
@@ -129,14 +142,14 @@ def publish(
     _replace_hosts(hosts_file, validated_entries(json.loads(document)))
 
 
-def clear(hosts_file: Path = Path("/etc/hosts")) -> None:
+def clear(hosts_file: Path = _HOSTS_FILE) -> None:
     """Remove owned mappings without requiring a previous run's document."""
 
     _replace_hosts(hosts_file, [])
 
 
 @contextmanager
-def _parent(path: Path):
+def _parent(path: Path) -> Iterator[tuple[int, str]]:
     """Walk every parent without following links; pin the resulting directory."""
 
     absolute = Path(os.path.abspath(path))
@@ -153,7 +166,9 @@ def _parent(path: Path):
         os.close(descriptor)
 
 
-def _read_regular(directory: int, name: str, *, limit: int, owner: int | None = None):
+def _read_regular(
+    directory: int, name: str, *, limit: int, owner: int | None = None
+) -> tuple[str, os.stat_result]:
     """Read a bounded caller-owned file through its pinned parent."""
 
     # A FIFO must reach fstat without waiting for a writer at open().
@@ -227,24 +242,33 @@ def _replace_file(
             pass
 
 
-def main(argv: list[str]) -> int:
-    """Publish one ``hosts.json``; print only a bounded reason on failure."""
+def _document_owner(argv: list[str]) -> tuple[list[str], int | None]:
+    """Resolve the management-owned unit's explicit document owner."""
 
     owner = None
     if len(argv) >= 3 and argv[1] == "--document-owner":
         try:
             owner = pwd.getpwnam(argv[2]).pw_uid
         except KeyError:
-            print("participant hosts document owner is unavailable", file=sys.stderr)
-            return 1
+            raise HostsPublicationError(
+                "participant hosts document owner is unavailable"
+            ) from None
         argv = [argv[0], *argv[3:]]
-    if len(argv) not in (2, 3):
-        print(
-            "usage: participant_hosts.py <hosts.json> [<hosts file>]", file=sys.stderr
-        )
-        return 2
-    target = Path(argv[2]) if len(argv) == 3 else Path("/etc/hosts")
+    return argv, owner
+
+
+def main(argv: list[str]) -> int:
+    """Publish one ``hosts.json``; print only a bounded reason on failure."""
+
     try:
+        argv, owner = _document_owner(argv)
+        if len(argv) not in (2, 3):
+            print(
+                "usage: participant_hosts.py <hosts.json> [<hosts file>]",
+                file=sys.stderr,
+            )
+            return 2
+        target = Path(argv[2]) if len(argv) == 3 else _HOSTS_FILE
         if argv[1] == "--clear":
             clear(target)
         else:

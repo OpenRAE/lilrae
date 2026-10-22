@@ -20,6 +20,7 @@ import re
 from dataclasses import dataclass
 from importlib import metadata
 from pathlib import PurePosixPath
+from typing import TypeVar
 
 from aptl.core.scenario_bundle import ScenarioBundle
 from aptl.utils.logging import get_logger
@@ -32,6 +33,7 @@ EXTENSION_API_VERSION = "1"
 _SDL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 _LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._()/-]{0,63}")
 _MAX_ITEMS = 32
+_Item = TypeVar("_Item")
 
 
 class ParticipantDesktopProviderError(RuntimeError):
@@ -113,7 +115,7 @@ def _compatible(provider: object, bundle: ScenarioBundle) -> bool:
     return identity.pack_version in versions and identity.set_digest in digests
 
 
-def _bounded(items: object, kind: type) -> tuple:
+def _bounded(items: object, kind: type[_Item]) -> tuple[_Item, ...]:
     """Return a bounded tuple whose every item is ``kind``, or refuse."""
 
     if not isinstance(items, tuple) or len(items) > _MAX_ITEMS:
@@ -151,12 +153,9 @@ def validated_spec(value: object) -> ParticipantDesktopSpec:
         *hostnames,
     ]
     if (
-        not all(isinstance(label, str) and _LABEL.fullmatch(label) for label in labels)
-        or len({item.label for item in consoles}) != len(consoles)
-        or len({item.label for item in credentials}) != len(credentials)
-        or not all(
-            isinstance(part, str) and _SDL_ID.fullmatch(part) for part in identifiers
-        )
+        not _valid_references(labels, identifiers)
+        or not _unique_labels(consoles)
+        or not _unique_labels(credentials)
         or len(set(hostnames)) != len(hostnames)
         or (value.guide is not None and not _valid_guide(value.guide))
     ):
@@ -172,6 +171,20 @@ def validated_spec(value: object) -> ParticipantDesktopSpec:
         guide=value.guide,
         hostnames=tuple(hostnames),
     )
+
+
+def _unique_labels(items: tuple[DesktopConsole | DesktopCredential, ...]) -> bool:
+    """Require each reference category to name unique display labels."""
+
+    return len({item.label for item in items}) == len(items)
+
+
+def _valid_references(labels: list[object], identifiers: list[object]) -> bool:
+    """Validate display text and SDL identifier grammars separately."""
+
+    return all(
+        isinstance(label, str) and _LABEL.fullmatch(label) for label in labels
+    ) and all(isinstance(part, str) and _SDL_ID.fullmatch(part) for part in identifiers)
 
 
 def select_participant_desktop(

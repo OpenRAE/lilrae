@@ -1,23 +1,8 @@
-"""Provider-agnostic account realization logic (issue #577, ADR-046 addendum).
+"""Resolve account providers, validate batches, and build Samba commands.
 
-Pure functions — no I/O. Three responsibilities:
-
-* resolve the account-materializer binding for a resolved backend service;
-* validate a whole account batch *before* any mutation (fail closed); and
-* build the ``samba-tool`` argv lists the Compose account mixin runs through
-  ``container_exec``.
-
-User creation uses ``samba-tool user create <name> --random-password`` so the
-secret is generated inside the target boundary. The one exception is
-``samba_user_setpassword``: a scenario that declares a ``weak`` or ``medium``
-account is declaring a credential an attacker is meant to obtain, so the
-backend mints one of that class and sets it explicitly (issue #1006). It
-travels as a discrete argv token inside the target, never through a shell. Identity values (username,
-group, mail, SPN) travel as discrete argv tokens, never interpolated into a
-shell string; the validation below additionally rejects control characters and
-leading dashes so an untrusted value cannot become an option or shell syntax
-(ADR-046 addendum §"Provider validation is defense in depth").
-"""
+The entire batch is validated before mutation. Bounded identity tokens travel
+as discrete arguments; credentials travel on stdin. Providers are selected by
+the resolved backend implementation, never by a scenario name (ADR-046)."""
 
 from __future__ import annotations
 
@@ -368,13 +353,7 @@ def samba_domain_info() -> list[str]:
 
 
 def samba_provisioning_complete_probe() -> list[str]:
-    """Probe the marker proving the AD baseline provisioner has finished.
-
-    Gating account realization on this (in addition to ``domain info``) makes the
-    provisioner-complete ordering explicit: the backend must not observe an
-    account as absent and create it while the service-owned provisioner is still
-    installing that same account with its designed fixture credential.
-    """
+    """Require image provisioning to finish before reconciling declared accounts."""
 
     return ["test", "-f", _SAMBA_PROVISIONED_MARKER]
 
@@ -419,15 +398,7 @@ def samba_user_create(user: str, *, mail: str = "") -> list[str]:
 
 
 def samba_domain_relax_password_policy() -> list[str]:
-    """Argv to let the domain hold the weak credentials the scenario declares.
-
-    Samba's default domain policy (complexity on, minimum length 7) refuses the
-    weak passwords a scenario declares as its credential-guessing surface, so
-    `samba-tool user setpassword` fails and the declared account is realized
-    with something stronger than declared. Relaxing the policy is backend
-    apparatus that exists to make the authored environment true; it is scoped to
-    the range's own throwaway domain (issue #1006).
-    """
+    """Allow declared weak credentials in the throwaway domain (issue #1006)."""
 
     return [
         "samba-tool",
@@ -442,16 +413,7 @@ def samba_domain_relax_password_policy() -> list[str]:
 
 
 def samba_user_setpassword(user: str) -> list[str]:
-    """Argv to set one account's password, with the secret read from stdin.
-
-    `samba-tool user setpassword` prompts for the password when
-    `--newpassword` is absent, so the value travels on stdin and never reaches
-    a command line. It used to be a `--newpassword=<secret>` token: a discrete
-    argv element, which keeps it out of shell syntax but not out of
-    `/proc/<pid>/cmdline` — world-readable on the host through
-    `docker exec ...` and readable by any process inside the container. That
-    defeated the mode-0600 disclosure this same path writes (issue #1105).
-    """
+    """Set a password through the native stdin prompt, never argv or /proc."""
 
     return ["samba-tool", "user", "setpassword", user]
 
@@ -463,17 +425,10 @@ def samba_setpassword_input(password: str) -> str:
 
 
 def samba_user_authenticate(realm: str = "") -> list[str]:
-    """Argv proving the realized credential authenticates, secret on stdin.
+    """Prove authentication through smbclient's stdin credential file.
 
-    A zero exit from `setpassword` says the directory accepted the write, not
-    that the account is usable with that credential. This is the
-    read-after-write for a credential: list shares as the user itself.
-
-    The identity and its secret arrive through smbclient's authentication
-    file, which `/dev/stdin` makes a pipe, so neither the `user%password`
-    principal nor any other form of the secret enters a command line
-    (issue #1105).
-    """
+    The password never enters argv; a successful password write alone is not proof
+    that the account can authenticate (issue #1105)."""
 
     cmd = ["smbclient", "-L", "localhost", "-A", "/dev/stdin"]
     if realm:

@@ -117,7 +117,7 @@ def _resolve(spec=None, accounts=None, lab=None):
         else {"intel-admin": _account("admin@example.test")},
         nodes=nodes,
         inspect=inspect,
-        served_names=served,
+        served_names=lambda _node, port: served(port),
     )
 
 
@@ -138,21 +138,6 @@ def test_every_field_is_resolved_from_the_sdl_and_the_realized_lab():
     ]
     assert resolved.guide == b"guide at docs/guide.md"
     assert _SECRET not in repr(resolved)
-
-
-def test_certificate_probe_requires_tls_12_before_connecting(mocker):
-    from aptl.core import participant_desktop as desktop
-    import ssl
-
-    context = mocker.MagicMock()
-    context.minimum_version = ssl.TLSVersion.MINIMUM_SUPPORTED
-    tls = context.wrap_socket.return_value.__enter__.return_value
-    tls.getpeercert.return_value = None
-    mocker.patch.object(desktop.ssl, "create_default_context", return_value=context)
-    mocker.patch.object(desktop.socket, "create_connection")
-
-    assert desktop.served_certificate_names(443) == frozenset()
-    assert context.minimum_version == ssl.TLSVersion.TLSv1_2
 
 
 def test_a_certificate_that_covers_localhost_needs_no_hostname():
@@ -220,8 +205,9 @@ def test_an_ambiguous_node_address_is_refused():
 
 
 def test_a_served_name_that_could_inject_a_hosts_line_is_refused():
+    lab = _lab(served=frozenset({"evil.lab\n10.0.0.1 bank.test"}))
     with pytest.raises(desktop.ParticipantDesktopError) as caught:
-        _resolve(lab=_lab(served=frozenset({"evil.lab\n10.0.0.1 bank.test"})))
+        _resolve(lab=lab)
 
     assert caught.value.code == "hostname-invalid"
 
@@ -261,9 +247,10 @@ def test_a_non_root_start_cannot_publish_for_another_account(tmp_path, monkeypat
     other = SimpleNamespace(pw_uid=os.geteuid() + 1, pw_gid=0, pw_dir=str(tmp_path))
     monkeypatch.setattr(desktop.pwd, "getpwnam", lambda _name: other)
     monkeypatch.setattr(desktop, "_effective_uid", lambda: os.geteuid())
+    resolved = _resolve()
 
     with pytest.raises(desktop.ParticipantDesktopError) as caught:
-        desktop.publish_participant_desktop(tmp_path, _resolve(), "participant")
+        desktop.publish_participant_desktop(tmp_path, resolved, "participant")
 
     assert caught.value.code == "desktop-account-not-writable"
 
@@ -305,7 +292,7 @@ def test_a_symlinked_desktop_directory_is_refused(tmp_path):
     (home / ".config" / "aptl").mkdir(parents=True)
     (home / files.DESKTOP_DIR).symlink_to(tmp_path)
 
-    with pytest.raises(Exception):
+    with pytest.raises(desktop.PathContainmentError, match="rejected path component"):
         files.write_desktop_files(home, {files.CONSOLES_FILE: b"https://x/\n"})
     assert not (tmp_path / files.CONSOLES_FILE).exists()
 
@@ -550,7 +537,7 @@ def _fixture_desktop(tmp_path, **authored):
         accounts=scenario_accounts(bundle.sdl_path),
         nodes=[node],
         inspect=_inspect_for([node], {}),
-        served_names=lambda _port: frozenset(),
+        served_names=lambda _node, _port: frozenset(),
     )
 
 
@@ -601,7 +588,7 @@ def test_a_failed_desktop_withdraws_the_previous_hostnames(tmp_path, monkeypatch
         lambda _bundle, **_kwargs: _spec(consoles=(), hostnames=("absent",)),
     )
     admitted = SimpleNamespace(
-        bundle=SimpleNamespace(read_asset=lambda _p: b"guide"),
+        bundle=SimpleNamespace(root=tmp_path, read_asset=lambda _p: b"guide"),
         realization=SimpleNamespace(nodes=()),
         scenario=SimpleNamespace(accounts={}),
     )
@@ -763,7 +750,8 @@ def test_guide_publication_is_passive_escaped_text(tmp_path, monkeypatch):
     desktop.publish_participant_desktop(tmp_path, resolved, "participant")
 
     published = (home / files.DESKTOP_DIR / files.GUIDE_FILE).read_text()
-    assert "<script>" not in published and "<img " not in published
+    assert "<script>" not in published
+    assert "<img " not in published
     assert "&lt;script&gt;" in published
     assert "Content-Security-Policy" in published
 
@@ -777,8 +765,9 @@ def test_guide_publication_is_passive_escaped_text(tmp_path, monkeypatch):
     ],
 )
 def test_canonical_console_urls_cannot_carry_credentials(canonical):
+    lab = _lab(canonical=canonical)
     with pytest.raises(desktop.ParticipantDesktopError):
-        _resolve(lab=_lab(canonical=canonical))
+        _resolve(lab=lab)
 
 
 def test_the_canonical_console_preserves_its_authored_path():
@@ -836,7 +825,7 @@ def test_root_writer_drops_supplementary_groups_and_keeps_payload_on_stdin(
         calls.append((argv, kwargs))
         return SimpleNamespace(returncode=0)
 
-    monkeypatch.setattr(desktop.subprocess, "run", run)
+    monkeypatch.setattr(files.subprocess, "run", run)
 
     desktop._write_as_account(entry, "private-fixture-payload")
 
@@ -845,3 +834,18 @@ def test_root_writer_drops_supplementary_groups_and_keeps_payload_on_stdin(
     assert options.get("extra_groups") == []
     assert options["input"] == "private-fixture-payload"
     assert "private-fixture-payload" not in repr(argv)
+
+
+def test_withdrawal_reports_a_private_path_refusal(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    (home / ".config/aptl").mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    marker = outside / files.CREDENTIALS_FILE
+    marker.write_text("untouched")
+    (home / files.DESKTOP_DIR).symlink_to(outside, target_is_directory=True)
+    entry = SimpleNamespace(pw_uid=os.geteuid(), pw_gid=os.getegid(), pw_dir=str(home))
+    monkeypatch.setattr(desktop.pwd, "getpwnam", lambda _name: entry)
+
+    assert desktop.withdraw_participant_desktop(tmp_path, "participant") is False
+    assert marker.read_text() == "untouched"

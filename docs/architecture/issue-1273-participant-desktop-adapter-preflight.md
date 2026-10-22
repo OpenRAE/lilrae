@@ -256,3 +256,17 @@ the browser opens once, after both are ready.
 The hostname reader opens files nonblocking before checking their type, so a
 FIFO cannot stall the privileged publisher before regular-file validation.
 Subprocess regressions cover a FIFO at either the document or hosts path.
+
+## Verified desktop certificate discovery
+
+The desktop resolves TLS identity from the public certificate outputs selected
+for the node's declared certificate-bundle consumer. It reuses the backend's
+artifact source and output-selection rules. For a native SOC keystore delivery,
+the producer's existing service-certificate contract supplies its public PEM
+companion. Discovery never reads private keys or keystore passwords.
+
+The probe uses TLS 1.2 or later, verifies the issuer chain and selected hostname,
+and requires the served leaf to match the issued leaf exactly. No unverified
+peer identity can create a browser URL or privileged hostname mapping. Live TLS
+tests cover wrong issuers, hostnames and leaves, contained public-file reads,
+and the released pack's PEM and keystore bindings. The SDL remains unchanged.

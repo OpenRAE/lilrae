@@ -71,7 +71,7 @@ function assertSafePathParam(queryConfig: QueryConfig, key: string, value: strin
   }
   const pattern = queryConfig.path_param_patterns?.[key];
   const match = pattern === undefined ? undefined : new RegExp(`^(?:${pattern})$`).exec(value);
-  if (pattern !== undefined && (!match || match[0].length !== value.length)) {
+  if (pattern !== undefined && match?.[0].length !== value.length) {
     throw new QueryArgumentError(`path parameter ${key} does not match the required format`);
   }
 }

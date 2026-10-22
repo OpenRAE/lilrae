@@ -1942,3 +1942,7 @@ tests/test_owned_content_install.py	tests-follow-owner	Retain meaningful boundar
 mcp/mcp-wazuh/tests/rule-files.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_participant_desktop_lifecycle.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_participant_hosts.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+src/aptl/backends/_scenario_startup_hooks.py	core-candidate	Retain fixed lifecycle capability and hook contracts with core
+src/aptl/core/_participant_desktop_endpoints.py	core-candidate	Retain generic declared endpoint and hostname resolution
+src/aptl/core/_participant_desktop_tls.py	core-candidate	Retain verified transport over backend-issued public certificates
+tests/test_participant_desktop_tls.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner

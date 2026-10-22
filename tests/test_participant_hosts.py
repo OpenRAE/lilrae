@@ -61,9 +61,10 @@ def test_publisher_refuses_a_conflicting_unowned_mapping(tmp_path):
     original = "127.0.0.1 localhost\n10.0.0.1 console.example.test # operator\n"
     target.write_text(original)
     target.chmod(0o644)
+    document = _document(tmp_path / "input.json")
 
     with pytest.raises(hosts.HostsPublicationError):
-        hosts.publish(_document(tmp_path / "input.json"), target)
+        hosts.publish(document, target)
 
     assert target.read_text() == original
 

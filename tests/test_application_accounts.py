@@ -237,7 +237,8 @@ def test_a_credential_that_never_authenticates_fails_the_start():
     node = _node("wazuh-indexer", "aptl-wazuh-indexer", listeners=(("search", 9200),))
     result = _run(provider.OPENSEARCH_SECURITY, _Product(), node, _account("admin"))
 
-    assert result is not None and result.success is False
+    assert result is not None
+    assert result.success is False
     assert "account-credential-not-authenticable" in (result.error or "")
     assert _SECRET not in (result.error or "")
 
@@ -322,7 +323,8 @@ def test_thehive_refuses_start_when_bootstrap_closure_is_not_proven(options):
 
     result = _run(provider.THEHIVE, product, node, _account("admin@example.test"))
 
-    assert result is not None and not result.success
+    assert result is not None
+    assert not result.success
     assert "account-bootstrap-retirement-unproven" in (result.error or "")
     assert _SECRET not in repr(result)
     for _, generated in product.rotations:
@@ -366,7 +368,8 @@ def test_thehive_does_not_rotate_without_a_working_declared_administrator():
 
     result = _run(provider.THEHIVE, product, node, _account("admin@example.test"))
 
-    assert result is not None and not result.success
+    assert result is not None
+    assert not result.success
     assert product.rotations == []
 
 
@@ -389,7 +392,8 @@ def test_thehive_refuses_failed_exec_as_proof_of_bootstrap_retirement():
 
     result = _run(provider.THEHIVE, product, node, _account("admin@example.test"))
 
-    assert result is not None and not result.success
+    assert result is not None
+    assert not result.success
     assert "account-bootstrap-retirement-unproven" in (result.error or "")
 
 
@@ -419,7 +423,8 @@ def test_thehive_requires_password_replacement_even_if_the_default_login_is_lock
             != requests.THEHIVE_BOOTSTRAP_PASSWORD
         )
     else:
-        assert result is not None and not result.success
+        assert result is not None
+        assert not result.success
 
 
 def test_cortex_migrates_then_uses_the_first_run_window_for_the_administrator():

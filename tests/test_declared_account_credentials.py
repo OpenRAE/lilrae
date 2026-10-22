@@ -79,7 +79,8 @@ def test_a_key_credential_is_realized_only_by_a_key_capable_provider():
 
     account, diagnostics = _resolve(spec, provider.MISP)
     assert diagnostics == []
-    assert account is not None and account.auth_method == "key"
+    assert account is not None
+    assert account.auth_method == "key"
 
     refused, diagnostics = _resolve(spec, provider.THEHIVE)
     assert refused is None
@@ -111,7 +112,11 @@ def test_a_key_credential_is_realized_only_by_a_key_capable_provider():
 )
 def test_an_unrealizable_binding_is_refused_not_substituted(bindings, reason):
     account, diagnostics = _resolve(
-        {"username": "admin@example.test", "node": "console", "credential_bindings": bindings}
+        {
+            "username": "admin@example.test",
+            "node": "console",
+            "credential_bindings": bindings,
+        }
     )
 
     assert account is None
@@ -119,7 +124,9 @@ def test_an_unrealizable_binding_is_refused_not_substituted(bindings, reason):
 
 
 def test_an_application_provider_needs_a_declared_credential():
-    account, diagnostics = _resolve({"username": "admin@example.test", "node": "console"})
+    account, diagnostics = _resolve(
+        {"username": "admin@example.test", "node": "console"}
+    )
 
     assert account is None
     assert "account-credential-required" in _reason(diagnostics)
@@ -132,7 +139,8 @@ def test_a_directory_account_without_a_binding_keeps_the_minted_path():
     )
 
     assert diagnostics == []
-    assert account is not None and account.credential is None
+    assert account is not None
+    assert account.credential is None
 
 
 def test_a_target_without_an_account_provider_is_refused():

@@ -84,9 +84,13 @@ def image_node_content_override(
             continue
         name = f"{len(manifests.get(node.service_name, ())):03d}"
         volumes.append(_bind(source, OWNED_CONTENT_ROOT / name))
-        manifests.setdefault(node.service_name, []).append(f"{owned} {name} /{item.dest_relpath.lstrip('/')}")
+        manifests.setdefault(node.service_name, []).append(
+            f"{owned} {name} /{item.dest_relpath.lstrip('/')}"
+        )
     for service_name, lines in manifests.items():
-        manifest = _content_output_root(realization_root, f"{service_name}-owned-content")
+        manifest = _content_output_root(
+            realization_root, f"{service_name}-owned-content"
+        )
         path = manifest / "manifest"
         _remove_previous_output(path)
         path.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
@@ -98,10 +102,17 @@ def image_node_content_override(
 def _bind(source: Path, target: PurePosixPath) -> dict[str, object]:
     """Return one read-only bind mount."""
 
-    return {"type": "bind", "source": str(source), "target": str(target), "read_only": True}
+    return {
+        "type": "bind",
+        "source": str(source),
+        "target": str(target),
+        "read_only": True,
+    }
 
 
-def _declared_ownership(node: object, item: DeploymentContentRealization, source: Path) -> str | None:
+def _declared_ownership(
+    node: object, item: DeploymentContentRealization, source: Path
+) -> str | None:
     """Return ``"mode owner group"`` for content the node must own, or ``None``.
 
     It applies only when the node's SDL inventory declares an owner for the
@@ -110,28 +121,40 @@ def _declared_ownership(node: object, item: DeploymentContentRealization, source
     """
 
     runtime = getattr(node, "runtime", None)
-    entrypoint = " ".join(getattr(getattr(runtime, "container", None), "entrypoint", None) or ())
+    entrypoint = " ".join(
+        getattr(getattr(runtime, "container", None), "entrypoint", None) or ()
+    )
     if OWNED_CONTENT_INSTALLER not in entrypoint or not source.is_file():
         return None
     destination = "/" + item.dest_relpath.lstrip("/")
-    for entry in getattr(runtime, "filesystem_inventory", None) or ():
-        if str(getattr(entry, "path", "")) != destination:
-            continue
-        owner = str(getattr(entry, "owner_user", "") or "")
-        if not owner:
-            return None
-        group = str(getattr(entry, "owner_group", "") or owner)
-        mode = str(getattr(entry, "mode", "") or "")
-        valid = (
-            _ACCOUNT_NAME_RE.fullmatch(owner)
-            and _ACCOUNT_NAME_RE.fullmatch(group)
-            and _MODE_RE.fullmatch(mode)
-            and _DESTINATION_RE.fullmatch(destination)
-        )
-        if not valid:
-            raise ValueError(f"owner-declared content at {destination} is invalid")
-        return f"{mode} {owner} {group}"
-    return None
+    entry = next(
+        (
+            entry
+            for entry in getattr(runtime, "filesystem_inventory", None) or ()
+            if str(getattr(entry, "path", "")) == destination
+        ),
+        None,
+    )
+    return _ownership_spec(entry, destination) if entry is not None else None
+
+
+def _ownership_spec(entry: object, destination: str) -> str | None:
+    """Validate the selected inventory entry's owner, group and mode."""
+
+    owner = str(getattr(entry, "owner_user", "") or "")
+    if not owner:
+        return None
+    group = str(getattr(entry, "owner_group", "") or owner)
+    mode = str(getattr(entry, "mode", "") or "")
+    valid = (
+        _ACCOUNT_NAME_RE.fullmatch(owner)
+        and _ACCOUNT_NAME_RE.fullmatch(group)
+        and _MODE_RE.fullmatch(mode)
+        and _DESTINATION_RE.fullmatch(destination)
+    )
+    if not valid:
+        raise ValueError(f"owner-declared content at {destination} is invalid")
+    return f"{mode} {owner} {group}"
 
 
 def _content_mounts(

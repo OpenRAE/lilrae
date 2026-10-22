@@ -165,10 +165,37 @@ def _declared_credential(
         return None, None
     if not isinstance(bindings, list) or len(bindings) != 1:
         return None, "account-credential-bindings-unsupported"
-    binding = bindings[0]
+    return _credential_binding(bindings[0], auth_method)
+
+
+def _credential_binding(
+    binding: object, auth_method: str
+) -> tuple[DeclaredAccountCredential | None, str | None]:
+    """Validate one primary fixture independently of batch cardinality."""
+
     material = binding.get("material") if isinstance(binding, Mapping) else None
     if not isinstance(material, Mapping):
         return None, "account-credential-binding-invalid"
+    reason = _binding_rejection(binding, material, auth_method)
+    value = material.get("value")
+    credential_id = binding.get("credential_id")
+    if reason is None and not (
+        isinstance(value, str) and value and isinstance(credential_id, str)
+    ):
+        reason = "account-credential-binding-invalid"
+    result = (
+        None
+        if reason
+        else DeclaredAccountCredential(credential_id=credential_id, value=value)
+    )
+    return result, reason
+
+
+def _binding_rejection(
+    binding: Mapping[str, Any], material: Mapping[str, Any], auth_method: str
+) -> str | None:
+    """Require the declared classification, purpose and authentication method."""
+
     reason = None
     if material.get("classification") != _SECRET_FIXTURE:
         reason = "account-credential-not-secret-fixture"
@@ -176,15 +203,7 @@ def _declared_credential(
         reason = "account-credential-purpose-unsupported"
     elif str(binding.get("auth_method") or _PASSWORD).lower() != auth_method:
         reason = "account-credential-auth-method-mismatch"
-    value = material.get("value")
-    credential_id = binding.get("credential_id")
-    if reason is None and not (
-        isinstance(value, str) and value and isinstance(credential_id, str)
-    ):
-        reason = "account-credential-binding-invalid"
-    if reason is not None:
-        return None, reason
-    return DeclaredAccountCredential(credential_id=credential_id, value=value), None
+    return reason
 
 
 def _provider_credential_rejection(

@@ -6,7 +6,7 @@ type: FUNCTIONAL
 priority: MUST
 wave: 1
 created_at: 2026-03-24T02:44:23.438740Z
-updated_at: 2026-10-21T00:00:00.000000Z
+updated_at: 2026-10-22T00:00:00.000000Z
 ---
 
 # DSL-008: APTL Realization of ACES Infrastructure Topology
@@ -82,6 +82,9 @@ NOT DEPRECATED 2026-10-09: ADR-035 deprecates DSL-002 to DSL-009 as requirements
 - IMPLEMENTS → CODE_FILE `src/aptl/backends/participant_desktop.py` (Exact pack-qualified desktop reference admission)
 - IMPLEMENTS → CODE_FILE `src/aptl/core/participant_hosts.py` (Validated hostname projection applied through management-owned publication)
 - IMPLEMENTS → CODE_FILE `src/aptl/core/_participant_desktop_files.py` (Participant-only inactive credential and guide files)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/_participant_desktop_endpoints.py` (Declared endpoint resolution and bounded hostname mappings)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/_participant_desktop_tls.py` (Verify the served chain, hostname and exact backend-issued leaf)
+- TESTS → TEST `tests/test_participant_desktop_tls.py` (Live TLS refusal, private-material isolation and released certificate bindings)
 - TESTS → TEST `tests/test_participant_desktop_lifecycle.py` (Start, failed-start, stop and reset withdraw stale desktop state)
 - TESTS → TEST `tests/test_participant_hosts.py` (Hostname conflicts, unsafe paths and metadata-preserving removal)
 - TESTS → TEST `tests/test_owned_content_install.py` (Declared content ownership reaches the realized node)

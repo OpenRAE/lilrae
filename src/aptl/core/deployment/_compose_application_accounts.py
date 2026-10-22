@@ -146,7 +146,16 @@ class ComposeApplicationAccountMixin(object):
             )
         if target.provider == provider.THEHIVE:
             reason = self._realize_thehive_accounts(ingress, target.accounts, timeout)
-            return _failure(target.container_name, reason) if reason else None
+            result = _failure(target.container_name, reason) if reason else None
+        else:
+            result = self._realize_product_accounts(target, ingress, timeout)
+        return result
+
+    def _realize_product_accounts(
+        self, target: provider.AccountTarget, ingress: _Ingress, timeout: int
+    ) -> LabResult | None:
+        """Realize non-TheHive accounts in password-before-key order."""
+
         ordered = sorted(target.accounts, key=lambda item: item.auth_method == _KEY)
         for account in ordered:
             reason = self._realize_application_account(
@@ -198,8 +207,7 @@ class ComposeApplicationAccountMixin(object):
         declared credentials, without a second stored administrator secret.
         """
 
-        if not accounts:
-            return None
+        reason = None
         administrator = next(
             (
                 (account.username, account.credential.value)
@@ -223,15 +231,15 @@ class ComposeApplicationAccountMixin(object):
                 timeout,
             )
             if reason is not None:
-                return reason
+                break
             administrator = (account.username, secret)
-        if any(
+        declared_bootstrap = any(
             account.username.casefold() == requests.THEHIVE_BOOTSTRAP_USER.casefold()
             for account in accounts
-        ):
-            # An explicitly authored principal remains governed by its SDL.
-            return None
-        return self._retire_thehive_bootstrap(ingress, administrator, timeout)
+        )
+        if reason is None and administrator is not None and not declared_bootstrap:
+            reason = self._retire_thehive_bootstrap(ingress, administrator, timeout)
+        return reason
 
     def _retire_thehive_bootstrap(
         self, ingress: _Ingress, administrator: tuple[str, str], timeout: int
@@ -248,21 +256,18 @@ class ComposeApplicationAccountMixin(object):
         rotation = requests.thehive_set_password(
             administrator, requests.THEHIVE_BOOTSTRAP_USER, replacement
         )
-        if self._run_curl(ingress, rotation, timeout) != (204,):
-            return failure
-        if self._run_curl(
-            ingress,
-            requests.thehive_login(requests.THEHIVE_BOOTSTRAP_USER, replacement),
-            timeout,
-        ) != (200,):
-            return failure
-        if self._run_curl(ingress, bootstrap, timeout) != (401,):
-            return failure
-        if not self._curl_proves(
-            ingress, requests.thehive_login(*administrator), timeout
-        ):
-            return failure
-        return None
+        replacement_login = requests.thehive_login(
+            requests.THEHIVE_BOOTSTRAP_USER, replacement
+        )
+        verified = (
+            self._run_curl(ingress, rotation, timeout) == (204,)
+            and self._run_curl(ingress, replacement_login, timeout) == (200,)
+            and self._run_curl(ingress, bootstrap, timeout) == (401,)
+            and self._curl_proves(
+                ingress, requests.thehive_login(*administrator), timeout
+            )
+        )
+        return None if verified else failure
 
     def _prove_or_converge(
         self,
@@ -298,7 +303,19 @@ class ComposeApplicationAccountMixin(object):
         owners = [item for item in target.accounts if item.auth_method != _KEY]
         if len(owners) != 1:
             return "account-key-owner-ambiguous"
-        payload = requests.misp_key_input(owners[0].username, account.username, secret)
+        return self._realize_misp_key(ingress, owners[0], account, timeout)
+
+    def _realize_misp_key(
+        self,
+        ingress: _Ingress,
+        owner: DeploymentAccountRealization,
+        account: DeploymentAccountRealization,
+        timeout: int,
+    ) -> str | None:
+        """Apply one declared API key and prove its read-only access."""
+
+        secret = account.credential.value  # type: ignore[union-attr]
+        payload = requests.misp_key_input(owner.username, account.username, secret)
         reason = _misp_reason(
             self._run_php(ingress, requests.MISP_KEY_PROGRAM, payload, timeout)
         )

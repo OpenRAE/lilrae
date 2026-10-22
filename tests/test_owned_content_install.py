@@ -66,7 +66,15 @@ def _spec(entrypoint, inventory, dest="/etc/app/app.yml"):
 
 
 def _entry(**values):
-    return SimpleNamespace(**{"path": "/etc/app/app.yml", "owner_user": "root", "owner_group": "root", "mode": "0600", **values})
+    return SimpleNamespace(
+        **{
+            "path": "/etc/app/app.yml",
+            "owner_user": "root",
+            "owner_group": "root",
+            "mode": "0600",
+            **values,
+        }
+    )
 
 
 _INSTALLER = ["/bin/sh", "-ec", f"{mounts.OWNED_CONTENT_INSTALLER}; exec /init"]
@@ -77,7 +85,10 @@ def test_owner_declared_content_is_staged_and_listed_for_install(tmp_path):
         _spec(_INSTALLER, [_entry()]), tmp_path / "pack", tmp_path / "engine"
     )
 
-    targets = {item["target"]: item["source"] for item in override["services"]["app"]["volumes"]}
+    targets = {
+        item["target"]: item["source"]
+        for item in override["services"]["app"]["volumes"]
+    }
     assert "/etc/app/app.yml" not in targets
     assert targets[str(mounts.OWNED_CONTENT_ROOT / "000")].endswith("app.yml")
     manifest = Path(targets[str(mounts.OWNED_CONTENT_MANIFEST)]).read_text()
@@ -95,7 +106,10 @@ def test_a_node_without_the_installer_keeps_the_bind_mount(tmp_path):
 
 @pytest.mark.parametrize(
     "inventory",
-    [[_entry(path="/etc/other.yml")], [_entry(owner_user=None, owner_group=None, mode=None)]],
+    [
+        [_entry(path="/etc/other.yml")],
+        [_entry(owner_user=None, owner_group=None, mode=None)],
+    ],
 )
 def test_content_without_a_declared_owner_keeps_the_bind_mount(tmp_path, inventory):
     override = mounts.image_node_content_override(
@@ -110,13 +124,17 @@ def test_content_without_a_declared_owner_keeps_the_bind_mount(tmp_path, invento
 
 @pytest.mark.parametrize(
     "entry",
-    [_entry(owner_user="root; rm -rf /"), _entry(mode="u+rw"), _entry(owner_group="a b")],
+    [
+        _entry(owner_user="root; rm -rf /"),
+        _entry(mode="u+rw"),
+        _entry(owner_group="a b"),
+    ],
 )
 def test_an_unsafe_declared_owner_or_mode_is_refused(tmp_path, entry):
+    spec = _spec(_INSTALLER, [entry])
+    pack, engine = tmp_path / "pack", tmp_path / "engine"
     with pytest.raises(ValueError):
-        mounts.image_node_content_override(
-            _spec(_INSTALLER, [entry]), tmp_path / "pack", tmp_path / "engine"
-        )
+        mounts.image_node_content_override(spec, pack, engine)
 
 
 def test_the_released_pack_installs_filebeat_config_as_root(tmp_path):
@@ -127,7 +145,9 @@ def test_the_released_pack_installs_filebeat_config_as_root(tmp_path):
     realization = realize_techvault_pack(tmp_path / "plan")
     spec = realization.deployment_spec(sorted(realization.profiles))
     bundle = env_pack_bundle(tmp_path / "staged", "techvault", source_pack=_pack_root())
-    override = mounts.image_node_content_override(spec, bundle.root, tmp_path / "engine")
+    override = mounts.image_node_content_override(
+        spec, bundle.root, tmp_path / "engine"
+    )
 
     volumes = override["services"]["wazuh-manager"]["volumes"]
     targets = {item["target"]: item["source"] for item in volumes}
