@@ -56,7 +56,7 @@ def _connection_name(names: frozenset[str]) -> str:
             return preferred
     if not names:
         raise ValueError("console-certificate-unnamed")
-    return sorted(names)[0]
+    return min(names)
 
 
 def _certificate_names(certificate: x509.Certificate) -> frozenset[str]:
