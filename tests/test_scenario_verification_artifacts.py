@@ -22,9 +22,11 @@ passing suite.
 from __future__ import annotations
 
 import json
+from importlib import metadata
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 import zipfile
 
 import pytest
@@ -229,6 +231,19 @@ def test_the_wheel_keeps_scenario_knowledge_out_of_the_framework_package(
     from tests.test_pack_boundary_policy import _check
 
     check = _check()
+    # The artifact job installs dependencies without installing the checkout.
+    # Discover the owners from the wheel under test, rather than whichever
+    # project distribution happens to be installed in the runner environment.
+    installed = tmp_path / "wheel-metadata"
+    for name, content in members.items():
+        if ".dist-info/" in name:
+            destination = installed / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content)
+    check.metadata = SimpleNamespace(
+        distributions=lambda: metadata.distributions(path=[str(installed)])
+    )
+    assert {"techvault", "techvault-participant-study"} <= check.owner_packs()
     facts = {}
     for pack_id in sorted(check.owner_packs()):
         facts.update(check.pack_facts(pack_id))

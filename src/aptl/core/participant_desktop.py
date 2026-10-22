@@ -100,6 +100,7 @@ def served_certificate_names(port: int) -> frozenset[str]:
     from cryptography import x509
 
     context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
     with socket.create_connection((_LOOPBACK, port), timeout=_TLS_TIMEOUT) as raw:

@@ -140,6 +140,21 @@ def test_every_field_is_resolved_from_the_sdl_and_the_realized_lab():
     assert _SECRET not in repr(resolved)
 
 
+def test_certificate_probe_requires_tls_12_before_connecting(mocker):
+    from aptl.core import participant_desktop as desktop
+    import ssl
+
+    context = mocker.MagicMock()
+    context.minimum_version = ssl.TLSVersion.MINIMUM_SUPPORTED
+    tls = context.wrap_socket.return_value.__enter__.return_value
+    tls.getpeercert.return_value = None
+    mocker.patch.object(desktop.ssl, "create_default_context", return_value=context)
+    mocker.patch.object(desktop.socket, "create_connection")
+
+    assert desktop.served_certificate_names(443) == frozenset()
+    assert context.minimum_version == ssl.TLSVersion.TLSv1_2
+
+
 def test_a_certificate_that_covers_localhost_needs_no_hostname():
     resolved = _resolve(lab=_lab(served=frozenset({"localhost", "dash.lab"})))
 

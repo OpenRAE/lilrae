@@ -81,6 +81,10 @@ class _Container:
 
     def container_exec_with_input(self, _name, cmd, payload, *, timeout=None):
         self.argv.append(list(cmd))
+        if cmd[0] == "cmp":
+            assert cmd == ["cmp", "-s", "--", agents._MISP_SYNC_KEY, "-"]
+            matches = self.files.get(cmd[3], (None, ""))[0] == payload
+            return subprocess.CompletedProcess(cmd, 0 if matches else 1, "", "")
         script = cmd[-1]
         assert script.startswith("umask 077 && cat > ")
         self.files[script.rsplit("> ", 1)[1]] = (payload, "")
@@ -97,9 +101,25 @@ def test_the_key_file_is_written_apart_from_the_observed_configuration():
     assert reason is None
     assert container.files[agents._MISP_SYNC_KEY][0] == f"{_KEY}\n"
     assert all(_KEY not in token for argv in container.argv for token in argv)
+    assert ["cmp", "-s", "--", agents._MISP_SYNC_KEY, "-"] in container.argv
+    assert not any(argv[0] == "sha256sum" for argv in container.argv)
     config = agents._misp_sync_config(_agent())
     assert _KEY not in config
     assert f"MISP_API_KEY_FILE={agents._MISP_SYNC_KEY}\n" in config
+
+
+def test_key_verification_refuses_changed_content_without_emitting_a_digest():
+    class ChangedKey(_Container):
+        def container_exec_with_input(self, name, cmd, payload, *, timeout=None):
+            if cmd[0] == "cmp":
+                self.files[agents._MISP_SYNC_KEY] = ("different\n", "")
+            return super().container_exec_with_input(name, cmd, payload, timeout=timeout)
+
+    container = ChangedKey()
+    assert agents._write_declared_key(
+        container, "aptl-sync", _agent(), {"misp.example.test": _KEY}
+    ) == "MISP sync key did not verify"
+    assert not any(argv[0] == "sha256sum" for argv in container.argv)
 
 
 def test_no_key_file_is_written_when_the_scenario_declares_none():

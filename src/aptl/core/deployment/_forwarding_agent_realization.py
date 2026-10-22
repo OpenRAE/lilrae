@@ -229,9 +229,20 @@ def _write_declared_key(
     payload = f"{api_key}\n"
     if not _write_file(
         backend, container, _MISP_SYNC_KEY, payload, "0600"
-    ) or not _file_digest_matches(backend, container, _MISP_SYNC_KEY, payload):
+    ) or not _key_file_matches(backend, container, payload):
         return "MISP sync key did not verify"
     return None
+
+
+def _key_file_matches(
+    backend: ForwardingAgentBackend, container: str, payload: str
+) -> bool:
+    """Verify the credential inside its boundary, returning only an exit code."""
+
+    result = backend.container_exec_with_input(
+        container, ["cmp", "-s", "--", _MISP_SYNC_KEY, "-"], payload, timeout=30
+    )
+    return getattr(result, "returncode", 1) == 0
 
 
 def _agent_configured(
