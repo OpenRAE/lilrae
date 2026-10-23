@@ -4,6 +4,8 @@ The fixed ``.aptl/lifecycle/.lock`` file is only a rendezvous point. Ownership
 comes from the operating system lock held on its descriptor, never from file
 existence or persisted PID metadata. Acquisitions are non-blocking so callers
 can return an actionable busy result instead of hanging behind a long startup.
+The separate ``.monitor.lock`` admits one lifecycle monitor per project; no
+mutation takes it.
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ except ModuleNotFoundError:
 
 _LIFECYCLE_DIR = ".aptl/lifecycle"
 _LOCK_FILE = ".lock"
+_MONITOR_LOCK_FILE = ".monitor.lock"
 _WIN_DIRECTORY_ACCESS = 0x00100187
 _WIN_FILE_ACCESS = 0x00100183
 _WIN_SHARE_ALL = 0x00000007
@@ -141,6 +144,28 @@ def lifecycle_observation_lock(project_dir: Path) -> Iterator[Path]:
         os.close(fd)
 
 
+@contextmanager
+def lifecycle_monitor_lock(project_dir: Path) -> Iterator[Path]:
+    """Admit one lifecycle monitor per project for the monitor's whole run.
+
+    This lock guards no mutation, so start, stop and kill can still take the
+    mutation lock between monitor ticks. A second monitor in any thread or
+    process receives :class:`LifecycleBusyError` immediately.
+    """
+    root = canonical_lifecycle_project_root(project_dir)
+    try:
+        fd = _acquire_lock_fd(root, lock_file=_MONITOR_LOCK_FILE)
+    except LifecycleBusyError as exc:
+        raise LifecycleBusyError(
+            "another lifecycle monitor is active for this project"
+        ) from exc
+    try:
+        yield root
+    finally:
+        _unlock(fd)
+        os.close(fd)
+
+
 def _increment_reentrant_lock(key: tuple[str, int]) -> bool:
     """Increment and report an existing same-thread ownership record."""
 
@@ -151,12 +176,14 @@ def _increment_reentrant_lock(key: tuple[str, int]) -> bool:
     return held is not None
 
 
-def _acquire_lock_fd(root: Path, *, shared: bool = False) -> int:
+def _acquire_lock_fd(
+    root: Path, *, shared: bool = False, lock_file: str = _LOCK_FILE
+) -> int:
     """Open and acquire a new OS lock, closing the descriptor on failure."""
 
     fd: int | None = None
     try:
-        fd = _open_lock_fd(root)
+        fd = _open_lock_fd(root, lock_file)
         _try_lock(fd, shared=shared)
     except LifecycleBusyError:
         _close_if_open(fd)
@@ -192,16 +219,16 @@ def _release_lock(key: tuple[str, int]) -> None:
             del _HELD_LOCKS[key]
 
 
-def _open_lock_fd(project_dir: Path) -> int:
-    """Open the fixed owner-only lock without following a POSIX symlink."""
+def _open_lock_fd(project_dir: Path, lock_file: str = _LOCK_FILE) -> int:
+    """Open a fixed owner-only lock without following a POSIX symlink."""
 
     if os.name == "nt":
-        return _open_windows_lock_fd(project_dir)
+        return _open_windows_lock_fd(project_dir, lock_file)
 
     lifecycle_fd = open_dir_contained_nofollow(project_dir, _LIFECYCLE_DIR, create=True)
     try:
         fd = os.open(
-            _LOCK_FILE,
+            lock_file,
             os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC,
             0o600,
             dir_fd=lifecycle_fd,
@@ -212,7 +239,7 @@ def _open_lock_fd(project_dir: Path) -> int:
     return fd
 
 
-def _open_windows_lock_fd(project_dir: Path) -> int:
+def _open_windows_lock_fd(project_dir: Path, lock_file: str = _LOCK_FILE) -> int:
     """Open the Windows lock component-by-component without following reparses."""
 
     open_handles: list[int] = []
@@ -232,7 +259,7 @@ def _open_windows_lock_fd(project_dir: Path) -> int:
             parent_handle = child_handle
 
         lock_handle = _windows_open_relative_handle(
-            parent_handle, _LOCK_FILE, directory=False
+            parent_handle, lock_file, directory=False
         )
         _windows_reject_reparse_point(lock_handle)
         fd = _windows_handle_to_fd(lock_handle)

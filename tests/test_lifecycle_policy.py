@@ -10,10 +10,12 @@ the lab functions monkeypatched, so the whole module runs in the fast
 
 import json
 import os
+import threading
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from aptl.core import kill, lab
 from aptl.core import lifecycle_enforce as le
 from aptl.core import lifecycle_policy as lp
 from aptl.core.config import (
@@ -468,6 +470,15 @@ class TestLatestActivity:
         assert abs((latest - _now(hour=12)).total_seconds()) < 2
 
 
+def _from_another_thread(action):
+    """Return ``action()`` run in another thread, which owns no lifecycle lock."""
+    outcome = []
+    worker = threading.Thread(target=lambda: outcome.append(action()))
+    worker.start()
+    worker.join(timeout=10)
+    return outcome[0]
+
+
 class TestRunMonitor:
     def test_runs_bounded_ticks_without_sleeping_after_last(
         self, tmp_path, monkeypatch
@@ -495,3 +506,102 @@ class TestRunMonitor:
         results = le.run_monitor(tmp_path, interval_seconds=1, max_ticks=3)
         assert len(results) == 1
         assert results[0].success is False
+
+    @pytest.mark.parametrize(
+        ("edited_policy", "outcomes"),
+        [({"ttl_minutes": 0}, [True, False]), (None, [True])],
+        ids=["policy-turns-invalid", "policy-removed"],
+    )
+    def test_on_result_receives_each_result_before_the_next_tick(
+        self, tmp_path, monkeypatch, edited_policy, outcomes
+    ):
+        _write_policy_config(tmp_path, {"ttl_minutes": 60})
+        monkeypatch.setattr(le, "lab_status", lambda **k: LabStatus(running=False))
+        reported, reported_before_sleep = [], []
+
+        def edit_config(_seconds):
+            reported_before_sleep.append(len(reported))
+            if edited_policy is None:
+                (tmp_path / "aptl.json").write_text(json.dumps({"lab": {"name": "x"}}))
+            else:
+                _write_policy_config(tmp_path, edited_policy)
+
+        results = le.run_monitor(
+            tmp_path,
+            interval_seconds=5,
+            max_ticks=3,
+            sleep=edit_config,
+            on_result=reported.append,
+        )
+        assert reported_before_sleep == [1]
+        assert reported == results
+        assert [result.success for result in results] == outcomes
+
+    def test_kill_stop_and_start_succeed_between_ticks(self, tmp_path, monkeypatch):
+        _write_policy_config(tmp_path, {"ttl_minutes": 60})
+        monkeypatch.setattr(le, "lab_status", lambda **k: LabStatus(running=False))
+        # Only the work done under the lock is replaced; the lock path is real.
+        killed, done = kill.KillResult(success=True), LabResult(success=True)
+        monkeypatch.setattr(kill, "_execute_kill_owned", lambda *a: killed)
+        monkeypatch.setattr(lab, "_stop_lab_owned", lambda *a: done)
+        monkeypatch.setattr(lab, "_orchestrate_lab_start_owned", lambda *a, **k: done)
+        mutations = (
+            lambda: kill.execute_kill(project_dir=tmp_path),
+            lambda: lab.stop_lab(project_dir=tmp_path),
+            lambda: lab.orchestrate_lab_start(tmp_path),
+        )
+        between_ticks = []
+        le.run_monitor(
+            tmp_path,
+            interval_seconds=5,
+            max_ticks=2,
+            sleep=lambda s: between_ticks.extend(
+                _from_another_thread(mutate) for mutate in mutations
+            ),
+        )
+        assert [outcome.success for outcome in between_ticks] == [True, True, True]
+
+    def test_a_second_monitor_is_refused_until_the_first_ends(
+        self, tmp_path, monkeypatch
+    ):
+        _write_policy_config(tmp_path, {"ttl_minutes": 60})
+        monkeypatch.setattr(le, "lab_status", lambda **k: LabStatus(running=False))
+
+        def second_monitor():
+            try:
+                return le.run_monitor(tmp_path, interval_seconds=5, max_ticks=1)
+            except lp.LifecycleBusyError as exc:
+                return str(exc)
+
+        between_ticks = []
+        le.run_monitor(
+            tmp_path,
+            interval_seconds=5,
+            max_ticks=2,
+            sleep=lambda s: between_ticks.append(_from_another_thread(second_monitor)),
+        )
+        assert between_ticks == ["another lifecycle monitor is active for this project"]
+        assert len(_from_another_thread(second_monitor)) == 1
+
+    @pytest.mark.skipif(fcntl is None, reason="POSIX flock is unavailable")
+    def test_a_busy_tick_is_skipped_and_the_next_tick_runs(self, tmp_path, monkeypatch):
+        _write_policy_config(tmp_path, {"ttl_minutes": 60})
+        monkeypatch.setattr(le, "lab_status", lambda **k: LabStatus(running=False))
+        lock_path = lp.state_path(tmp_path).parent / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        # A kill, stop or start in another process holds the shared lock.
+        with open(lock_path, "w") as holder:
+            fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            results = le.run_monitor(
+                tmp_path,
+                interval_seconds=5,
+                max_ticks=2,
+                sleep=lambda s: fcntl.flock(holder, fcntl.LOCK_UN),
+            )
+        assert [(result.success, result.message) for result in results] == [
+            (
+                True,
+                "lifecycle: tick skipped (another lab lifecycle operation is active)",
+            ),
+            (True, "lifecycle: no action (stopped_no_schedule)"),
+        ]
