@@ -89,7 +89,9 @@ def _registry_base_refs(dockerfile: Path) -> list[str]:
     }
     required_args = {
         match.group("name")
-        for match in _REQUIRED_ARG.finditer(text[: first_from.start() if first_from else 0])
+        for match in _REQUIRED_ARG.finditer(
+            text[: first_from.start() if first_from else 0]
+        )
     }
     stages = {
         m.group(1).lower()
@@ -193,13 +195,15 @@ def test_actions_are_sha_pinned(workflow: Path) -> None:
 
 # --------------------------------------------------------------- npm and pip
 
-# Shell files that drive builds or provision a shipped artifact. Scenario
-# fixtures are excluded deliberately - see
-# test_scenario_fixture_scripts_are_out_of_scope below.
+# Shell files that drive builds or provision a shipped artifact. The npm, pip
+# and source-build tests below read no other shell file;
+# test_every_listed_build_script_is_a_pinning_source fails if an entry here
+# stops pointing at a file.
 _BUILD_SHELL = [
     "mcp/build-all-mcps.sh",
     "tools/vale-lint-all.sh",
     "appliance/guest/provision-offline.sh",
+    "scripts/appliance/build-seat-image.sh",
 ]
 
 _NPM_INSTALL = re.compile(r"\bnpm\s+install\b")
@@ -420,4 +424,21 @@ def test_source_builds_do_not_re_open_an_unhashed_resolver(source: Path) -> None
     assert not offenders, (
         f"{source.relative_to(REPO_ROOT)} builds from source with PEP 517 isolation "
         f"enabled, which resolves the build backend unpinned: {offenders}"
+    )
+
+
+def test_every_listed_build_script_is_a_pinning_source() -> None:
+    """A renamed or deleted build script fails here instead of going unchecked.
+
+    ``_pinning_sources()`` keeps only the ``_BUILD_SHELL`` entries that exist.
+    Without this test, a listed script that moved would drop out of the npm,
+    pip and source-build tests above while every one of them still passed, and
+    the set of shell files those tests never read would grow unnoticed.
+    """
+    sources = set(_pinning_sources())
+    unread = [rel for rel in _BUILD_SHELL if REPO_ROOT / rel not in sources]
+    assert not unread, (
+        f"_BUILD_SHELL lists {unread}, but _pinning_sources() does not return "
+        "them, so no pinning test reads them. Point each entry at the script's "
+        "current path, or remove it if the script is gone."
     )
