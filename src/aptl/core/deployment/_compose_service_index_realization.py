@@ -100,6 +100,12 @@ def _validate_service_index_targets(
     return target_containers, target_services, None
 
 
+# Refusals that a retry of the same admitted plan cannot clear (#1325). APTL
+# never adopts, deletes or overwrites an unowned index, and no startup hook
+# touches it, so a second apply meets the same index.
+_UNRETRYABLE_REASONS = frozenset({UNOWNED_COLLISION})
+
+
 class ComposeRealizationServiceIndexMixin(object):
     """Materialize and prove ADR-088 search-index schemas before the workload."""
 
@@ -219,6 +225,7 @@ class ComposeRealizationServiceIndexMixin(object):
                 return LabResult(
                     success=False,
                     error=_materialization_error(schema.address, container, result),
+                    unretryable=result.reason in _UNRETRYABLE_REASONS,
                 )
             evidence[schema.address] = result.evidence()
 

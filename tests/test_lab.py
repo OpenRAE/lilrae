@@ -5816,7 +5816,7 @@ class TestLabOrchestrationContracts:
         from aptl.core.lab import _step_start_containers
 
         unowned_error = (
-            "RAES runtime handoff failed: aptl.provisioner.backend-start-failed "
+            "RAES runtime handoff failed: aptl.provisioner.backend-start-refused "
             "at runtime.apply.provisioning: service materialization failed for "
             "provision.content.cortex-job-index-schema (reason=unowned-collision): "
             "search index cortex_6 in container aptl-thehive-es lacks this "

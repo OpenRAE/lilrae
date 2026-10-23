@@ -434,3 +434,58 @@ def test_evidence_carries_only_safe_portable_fields() -> None:
     assert evidence["readback_strength"] == "daemon-observed"
     # No native index name, endpoint, or raw response in the evidence.
     assert _INDEX not in json.dumps(evidence)
+
+
+def _unreachable_api(payload: str) -> SimpleNamespace:
+    """A search service whose HTTP API never answers (curl exits non-zero)."""
+
+    return SimpleNamespace(returncode=7, stdout="")
+
+
+@pytest.mark.parametrize(
+    ("search_service", "unretryable"),
+    [
+        pytest.param(lambda: _FakeES(initial={"properties": {}}), True, id="unowned"),
+        pytest.param(
+            lambda: _FakeES(
+                initial=sis.desired_native_mapping(
+                    _FIELDS, owner_address=_ADDRESS, field_schema_digest=_DIGEST
+                )["mappings"]
+            ),
+            False,
+            id="owned-product-contract-mismatch",
+        ),
+        pytest.param(lambda: _unreachable_api, False, id="native-api-not-ready"),
+    ],
+)
+def test_only_an_unowned_index_is_marked_unretryable(
+    monkeypatch: pytest.MonkeyPatch, search_service, unretryable: bool
+) -> None:
+    """A retry replays the same plan, so only a refusal it cannot clear skips it (#1325)."""
+
+    from functools import partial
+
+    from aptl.core.deployment import _compose_service_index_realization as compose
+
+    # Give up on an unreachable API after one probe instead of the full budget.
+    monkeypatch.setattr(
+        compose,
+        "materialize_search_index_schema",
+        partial(m.materialize_search_index_schema, readiness_timeout=0.0),
+    )
+
+    failure = _Backend(search_service())._materialize_and_verify_schemas(
+        (_realization(),), {_ADDRESS: _CONTAINER}
+    )
+
+    assert failure is not None
+    assert failure.success is False
+    assert failure.unretryable is unretryable
+    if unretryable:
+        # The #1264 message is unchanged; only the handoff's code differs.
+        assert failure.error == (
+            f"service materialization failed for {_ADDRESS} "
+            f"(reason=unowned-collision): search index {_INDEX} in container "
+            f"{_CONTAINER} lacks this content's ownership marker, so APTL cannot "
+            "prove it owns the index, and it did not adopt, delete or overwrite it."
+        )

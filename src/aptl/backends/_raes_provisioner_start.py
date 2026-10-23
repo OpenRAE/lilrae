@@ -63,6 +63,10 @@ log = get_logger("raes-provisioner")
 # bounded native readback without admitting an absent or partial value.
 _REALIZATION_READBACK_TIMEOUT_SECONDS = 300.0
 _REALIZATION_READBACK_INTERVAL_SECONDS = 2.0
+# The RAES handoff retries the first code once (``_RETRYABLE_APPLY_DIAGNOSTIC_CODES``
+# in ``raes.py``); the second reports a refusal that a retry cannot clear.
+_BACKEND_START_FAILED = "aptl.provisioner.backend-start-failed"
+_BACKEND_START_REFUSED = "aptl.provisioner.backend-start-refused"
 
 
 def execution_boundary_disclosure(
@@ -108,8 +112,15 @@ class ProvisionerStartMixin(object):
         self,
         deployment_spec: DeploymentRealizationSpec,
         observation_context: DeploymentObservationContext,
-    ) -> str | None:
-        """Start the backend and return an actionable failure reason, if any."""
+    ) -> tuple[str, str] | None:
+        """Start the backend and return a failure ``(code, reason)``, if any.
+
+        A failure the backend marks unretryable, which a retry of the same
+        admitted plan cannot clear, gets ``backend-start-refused``. That code is
+        outside the RAES handoff's retryable set, so startup ends without the
+        backend retry (#1325). Every other failure keeps the retryable
+        ``backend-start-failed``.
+        """
 
         try:
             start_result = self.deployment_backend.realize(
@@ -123,10 +134,15 @@ class ProvisionerStartMixin(object):
         # lowering uses those exception types for invalid realized service
         # models, so preserve the actionable, redacted reason here.
         except (TypeError, ValueError) as exc:
-            return str(exc)
-        if not start_result.success:
-            return start_result.error or "APTL deployment backend failed."
-        return None
+            return _BACKEND_START_FAILED, str(exc)
+        if start_result.success:
+            return None
+        code = (
+            _BACKEND_START_REFUSED
+            if start_result.unretryable
+            else _BACKEND_START_FAILED
+        )
+        return code, start_result.error or "APTL deployment backend failed."
 
     def _start_and_observe_apparatus(
         self,
@@ -153,15 +169,10 @@ class ProvisionerStartMixin(object):
             return self._failed_apply(
                 snapshot, diagnostics, selected_profiles, realization
             )
-        start_error = self._realize_backend(deployment_spec, observation_context)
-        if start_error is not None:
-            diagnostics.append(
-                diagnostic(
-                    "aptl.provisioner.backend-start-failed",
-                    PROVISIONING_ADDRESS,
-                    start_error,
-                )
-            )
+        start_failure = self._realize_backend(deployment_spec, observation_context)
+        if start_failure is not None:
+            code, reason = start_failure
+            diagnostics.append(diagnostic(code, PROVISIONING_ADDRESS, reason))
             result = self._failed_apply(
                 snapshot, diagnostics, selected_profiles, realization
             )
