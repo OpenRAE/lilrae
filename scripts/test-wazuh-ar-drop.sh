@@ -92,13 +92,21 @@ restore_iptables() {
     " 2>/dev/null || true
 }
 
+# Print the HTTP status of one kali -> webapp request, or TIMEOUT when the
+# request fails (timeout, refused, reset). curl prints 000 for %{http_code}
+# before it exits non-zero, so decide on its exit status: appending
+# `|| echo TIMEOUT` to its output would yield 000TIMEOUT, which no check matches.
 curl_from_kali() {
-    docker exec "${KALI}" curl \
+    local code
+    if code=$(docker exec "${KALI}" curl \
         -m 5 --connect-timeout 3 \
         -s -o /dev/null \
         -w "%{http_code}" \
-        "http://${WEBAPP_HOST}:${WEBAPP_PORT}${1}" 2>/dev/null \
-        || echo "TIMEOUT"
+        "http://${WEBAPP_HOST}:${WEBAPP_PORT}${1}" 2>/dev/null); then
+        echo "${code}"
+    else
+        echo "TIMEOUT"
+    fi
 }
 
 # --- preflight --------------------------------------------------------------
@@ -126,7 +134,11 @@ for c in "${MANAGER}" "${TARGET}" "${KALI}"; do
     fi
 done
 
-cleanup_rule  # in case a prior run left state behind
+# In case a prior run left state behind. That includes a kali drop from a
+# run killed before its EXIT trap ran: it would fail the baseline and satisfy
+# step 3's iptables check whether or not this run's AR fires.
+cleanup_rule
+restore_iptables
 
 # --- step 1: sanity (kali can reach webapp before AR fires) ----------------
 log "sanity: kali -> webapp baseline"
