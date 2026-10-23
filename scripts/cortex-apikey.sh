@@ -64,6 +64,41 @@ _curl_admin() {
     _cortex_curl -sf -H "Authorization: Bearer ${CORTEX_ADMIN_KEY}" "$@"
 }
 
+# The declared Cortex administrator is an SDL account. When the backend has
+# realized it, it holds Cortex's first-run window, so the organization and the
+# initializer are created in its session. Its credential arrives in the
+# environment and travels on curl's stdin, never in argv.
+SESSION_COOKIE=""
+SESSION_XSRF=""
+
+_open_administrator_session() {
+    local payload
+    SESSION_COOKIE=$(docker exec "$CORTEX_CONTAINER" mktemp /tmp/aptl-cortex-session.XXXXXXXX)
+    trap 'docker exec "$CORTEX_CONTAINER" rm -f "$SESSION_COOKIE" 2>/dev/null || true' EXIT
+    payload=$(python3 -c 'import json, os; print(json.dumps({"user": os.environ["CORTEX_SUPERADMIN_USER"], "password": os.environ["CORTEX_SUPERADMIN_PASSWORD"]}))')
+    _cortex_curl -sf -c "$SESSION_COOKIE" -H "Content-Type: application/json" \
+        -X POST "${CORTEX_URL}/api/login" -d "$payload" >/dev/null || return 1
+    _cortex_curl -sf -b "$SESSION_COOKIE" -c "$SESSION_COOKIE" \
+        "${CORTEX_URL}/api/user/current" >/dev/null || return 1
+    SESSION_XSRF=$(docker exec "$CORTEX_CONTAINER" cat "$SESSION_COOKIE" | python3 -c '
+import sys
+for line in sys.stdin:
+    fields = line.rstrip("\n").split("\t")
+    if len(fields) == 7 and fields[5] == "CORTEX-XSRF-TOKEN":
+        print(fields[6])
+')
+    [ -n "$SESSION_XSRF" ]
+}
+
+_curl_first_run() {
+    if [ -n "$SESSION_COOKIE" ]; then
+        _cortex_curl -sf -b "$SESSION_COOKIE" -H "X-CORTEX-XSRF-TOKEN: ${SESSION_XSRF}" \
+            -H "Content-Type: application/json" "$@"
+    else
+        _curl_json "$@"
+    fi
+}
+
 _ensure_database_migrated() {
     # Cortex owns its native Elasticsearch schema. Its supported first-run
     # migration endpoint must initialize that schema before any organization or
@@ -228,8 +263,16 @@ fi
 # 3. First-run bootstrap path. Cortex owns its native index mapping, and allows
 # unauthenticated migration/init actions only while the user index is empty.
 # Migration must precede the first write so Elasticsearch cannot auto-create a
-# dynamically mapped index. Creating any user closes the init window.
+# dynamically mapped index. Creating any user closes the init window, so when
+# the backend has already created the declared administrator there, the
+# organization and initializer are created in that administrator's session.
 _ensure_database_migrated || exit 1
+if [ -n "${CORTEX_SUPERADMIN_USER:-}" ]; then
+    _open_administrator_session || {
+        echo "ERROR: The declared Cortex administrator could not sign in" >&2
+        exit 1
+    }
+fi
 
 ORG_PAYLOAD=$(python3 - <<'PY'
 import json
@@ -242,7 +285,7 @@ print(json.dumps({
 PY
 )
 
-_curl_json -X POST "${CORTEX_URL}/api/organization" -d "$ORG_PAYLOAD" >/dev/null || true
+_curl_first_run -X POST "${CORTEX_URL}/api/organization" -d "$ORG_PAYLOAD" >/dev/null || true
 
 ADMIN_PAYLOAD=$(python3 - <<'PY'
 import json
@@ -258,7 +301,7 @@ print(json.dumps({
 PY
 )
 
-_curl_json -X POST "${CORTEX_URL}/api/user" -d "$ADMIN_PAYLOAD" >/dev/null || {
+_curl_first_run -X POST "${CORTEX_URL}/api/user" -d "$ADMIN_PAYLOAD" >/dev/null || {
     echo "ERROR: Failed to create Cortex initializer identity" >&2
     exit 1
 }

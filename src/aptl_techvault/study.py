@@ -14,14 +14,16 @@ from aptl_techvault.study_capture_registrations import (
 from aptl_techvault.planning_compatibility import TechVaultPlanningCompatibilityProvider
 from aptl_techvault.runtime_parameters import (
     STUDY_PACK_SET_DIGEST,
+    TECHVAULT_PACK_VERSION,
     TechVaultRuntimeParameterProvider,
 )
+from aptl_techvault.participant_desktop import TechVaultParticipantDesktop
 from aptl_techvault.serving import TechVaultPackInteraction
 from aptl_techvault.startup import TechVaultStartupProvider
 from aptl_techvault.verification import TechVaultVerifier, _qualified_backend
 
 PACK_ID = "techvault-participant-study"
-PACK_VERSION = "0.1.1"
+PACK_VERSION = TECHVAULT_PACK_VERSION
 
 
 class StudyRuntimeParameters(TechVaultRuntimeParameterProvider):
@@ -33,6 +35,13 @@ class StudyRuntimeParameters(TechVaultRuntimeParameterProvider):
 
 class StudyStartup(TechVaultStartupProvider):
     """Bind the study pack to the proven TechVault startup adapter."""
+
+    supported_pack_id = PACK_ID
+    supported_pack_set_digests = (STUDY_PACK_SET_DIGEST,)
+
+
+class StudyParticipantDesktop(TechVaultParticipantDesktop):
+    """Bind the study pack to the TechVault participant desktop."""
 
     supported_pack_id = PACK_ID
     supported_pack_set_digests = (STUDY_PACK_SET_DIGEST,)
@@ -99,6 +108,7 @@ class StudyVerifier(TechVaultVerifier):
 
 runtime_parameters = StudyRuntimeParameters()
 startup = StudyStartup()
+participant_desktop = StudyParticipantDesktop()
 serving = StudyServing()
 planning_compatibility = StudyPlanningCompatibility()
 capture = StudyCapture()

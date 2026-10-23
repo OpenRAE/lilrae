@@ -1330,7 +1330,6 @@ src/aptl_techvault/redis_acl_observation.py	core-runtime	TechVault cache authori
 src/aptl_techvault/runtime_parameters.py	core-runtime	Retain in APTL core runtime; no migration
 src/aptl_techvault/serving.py	core-runtime	Retain in APTL core runtime; no migration
 src/aptl_techvault/startup.py	core-runtime	TechVault-specific startup binding stays outside generic core
-src/aptl_techvault/wazuh_credentials.py	core-runtime	Keep exact-release Wazuh fixture compatibility knowledge in the TechVault adapter
 src/aptl_techvault/verification.py	core-runtime	Retain in APTL core runtime; no migration
 tests/__init__.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/_bundle_fixtures.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
@@ -1920,3 +1919,30 @@ src/aptl/backends/_lilrae_source_image_catalog.py	backend-owned-runtime	Retain i
 tests/fixtures/lilrae_source_image_inventory_v6_3_1.json	tests-follow-owner	Retain released source and runtime facts as a backend catalog coverage fixture
 tests/test_lilrae_catalog_image_observation.py	tests-follow-owner	Retain independent image identity, lifecycle, and evidence regression tests
 tests/test_lilrae_source_image_catalog.py	tests-follow-owner	Retain source admission and released Linux kit selector coverage
+appliance/guest/participant-desktop-open.sh	optional-delivery	Keep VM seat delivery with the appliance owner
+docs/architecture/issue-1273-participant-desktop-adapter-preflight.md	architecture-history	Preserve participant desktop adapter and rule-file boundary guardrails
+mcp/mcp-indexer/tests/rule-files.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+src/aptl/backends/participant_desktop.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/backends/raes_declared_credentials.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/core/_participant_desktop_files.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/core/deployment/_application_account_requests.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/core/deployment/_compose_application_accounts.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/core/participant_desktop.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/core/participant_hosts.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl_techvault/account_environment.py	core-runtime	TechVault account credential references stay in the TechVault adapter
+src/aptl_techvault/pack_identity.py	core-runtime	TechVault pack identity stays in the TechVault adapter
+src/aptl_techvault/participant_desktop.py	core-runtime	TechVault participant desktop references stay in the TechVault adapter
+tests/test_application_accounts.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_declared_account_credentials.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_misp_sync_declared_key.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_pack_boundary_policy.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_participant_desktop.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tools/check_pack_boundary.py	build-governance	Migrate policy by surface; remove bundle-of-entire-repository from generic artifact
+tests/test_owned_content_install.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+mcp/mcp-wazuh/tests/rule-files.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_participant_desktop_lifecycle.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_participant_hosts.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+src/aptl/backends/_scenario_startup_hooks.py	core-candidate	Retain fixed lifecycle capability and hook contracts with core
+src/aptl/core/_participant_desktop_endpoints.py	core-candidate	Retain generic declared endpoint and hostname resolution
+src/aptl/core/_participant_desktop_tls.py	core-candidate	Retain verified transport over backend-issued public certificates
+tests/test_participant_desktop_tls.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner

@@ -41,6 +41,7 @@ from aptl.backends.raes_realization_values import (
     static_addresses as _static_addresses,
 )
 from aptl.core.config import AptlConfig
+from aptl.core.deployment._account_provider import compose_service_account_provider
 from aptl.core.deployment.realization import DeploymentImageRealization
 
 
@@ -52,6 +53,9 @@ class _NodeBinding:
     backend_services: frozenset[str]
     profiles: frozenset[str]
     node_name: str
+    # True when the services come from APTL's own Compose model, so their names
+    # are backend facts rather than the scenario's node name.
+    compose_bound: bool = False
 
 
 def _realize_node(
@@ -130,7 +134,7 @@ def _realize_node(
         os_version=node_os_version,
         runtime=node_runtime,
         dynamic_composition=dynamic,
-        **_backend_details(implementation),
+        **_backend_details(implementation, binding),
     )
 
 
@@ -156,6 +160,7 @@ def _node_binding(
         backend_services=services or frozenset({node_name}),
         profiles=frozenset(profiles),
         node_name=node_name,
+        compose_bound=bool(services),
     )
 
 
@@ -181,10 +186,16 @@ def _selected_image(
 
 def _backend_details(
     implementation: BackendNodeImplementation | None,
+    binding: _NodeBinding | None = None,
 ) -> dict[str, object]:
     """Return backend-added node fields, including all selected concerns."""
 
     if implementation is None:
+        compose_service = (
+            _single_or_none(tuple(sorted(binding.backend_services)))
+            if binding is not None and binding.compose_bound
+            else None
+        )
         return {
             "backend_selected_concerns": (),
             "backend_base_image_ref": None,
@@ -192,6 +203,9 @@ def _backend_details(
             "backend_run_capabilities": (),
             "backend_provider_kind": "",
             "backend_provider_parameters": (),
+            "backend_account_provider": compose_service_account_provider(
+                compose_service
+            ),
             "backend_generated_artifacts": (),
         }
     return {
@@ -201,6 +215,7 @@ def _backend_details(
         "backend_run_capabilities": implementation.base_run_capabilities,
         "backend_provider_kind": implementation.provider_kind,
         "backend_provider_parameters": implementation.provider_parameters,
+        "backend_account_provider": implementation.account_provider,
         "backend_generated_artifacts": implementation.generated_artifacts,
     }
 

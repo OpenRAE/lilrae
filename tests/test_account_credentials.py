@@ -31,7 +31,7 @@ def _resolve(spec: dict):
         resource=resource,
         payload={"spec": spec},
         target_address="scenario.node.ad",
-        target_service="ad",
+        target_account_provider="samba-ad",
     )
 
 

@@ -93,36 +93,44 @@ def test_desktop_handoff_delivers_live_red_and_blue_mcp_inputs(tmp_path: Path) -
     assert (home / ".config" / "aptl" / "run-ready").is_file()
 
 
-def test_desktop_browser_hosts_are_live_and_idempotent(tmp_path: Path) -> None:
+def test_desktop_hostnames_go_through_the_shared_publisher(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The handoff discovers no address; it applies lab start's document (#1273)."""
+
     handoff = _handoff_module()
-    hosts = tmp_path / "hosts"
-    hosts.write_text("127.0.0.1 localhost\n")
+    project = tmp_path / "project"
+    document = project / ".aptl" / "participant-desktop" / "hosts.json"
+    document.parent.mkdir(parents=True)
+    document.write_text('{"schema":"lilrae.participant-hosts/v1","entries":[]}')
+    calls = []
+    monkeypatch.setattr(
+        handoff.subprocess, "run", lambda argv, **_kwargs: calls.append(argv)
+    )
 
-    handoff._browser_hosts(hosts, "172.20.0.16")
-    handoff._browser_hosts(hosts, "172.20.0.17")
+    handoff._publish_hostnames(project)
 
-    assert hosts.read_text().count("misp.techvault.local") == 1
-    assert "172.20.0.17 misp.techvault.local" in hosts.read_text()
-    assert "127.0.0.1 wazuh.dashboard" in hosts.read_text()
-    assert "172.20.0.16" not in hosts.read_text()
+    assert calls == [
+        ["/usr/bin/python3", "/opt/aptl/desktop/participant-hosts.py", str(document)]
+    ]
 
 
-def test_desktop_browser_uses_misp_security_address(monkeypatch) -> None:
+def test_a_lab_without_a_desktop_publishes_no_hostnames(
+    tmp_path: Path, monkeypatch
+) -> None:
     handoff = _handoff_module()
+    monkeypatch.setattr(
+        handoff.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("ran")
+    )
 
-    def run(argv, **_kwargs):
-        if argv[:2] == ["docker", "ps"]:
-            return SimpleNamespace(stdout="aptl-w123-misp\naptl-w123-misp-db\n")
-        return SimpleNamespace(
-            stdout=json.dumps(
-                {
-                    "aptl-w123_aptl-security": {"IPAddress": "172.20.0.16"},
-                }
-            )
-        )
+    handoff._publish_hostnames(tmp_path)
 
-    monkeypatch.setattr(handoff.subprocess, "run", run)
-    assert handoff._misp_security_ip() == "172.20.0.16"
+
+def test_the_handoff_holds_no_scenario_hostname_or_address() -> None:
+    text = (ROOT / "appliance/guest/desktop-handoff.py").read_text()
+
+    for literal in ("techvault", "wazuh.dashboard", '"docker", "ps"', "172.20."):
+        assert literal not in text
 
 
 def test_desktop_handoff_refuses_missing_mcp_before_ready(tmp_path: Path) -> None:
@@ -224,3 +232,152 @@ def test_desktop_prepare_refuses_symlinked_credentials(
     with pytest.raises(RuntimeError, match="credentials path"):
         desktop.prepare()
     assert target.read_text() == "untouched"
+
+
+def _stub_bin(tmp_path: Path) -> tuple[Path, Path]:
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    log = tmp_path / "epiphany.args"
+    for name in ("tmux", "xfce4-terminal", "gsettings"):
+        (stubs / name).write_text("#!/bin/sh\nexit 0\n")
+    (stubs / "epiphany").write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > {log}\n')
+    for stub in stubs.iterdir():
+        stub.chmod(0o755)
+    return stubs, log
+
+
+def test_the_opener_shows_logins_guide_then_consoles_in_order(tmp_path: Path) -> None:
+    """The one opener both participant desktops run (#1273)."""
+
+    import subprocess
+
+    desktop_dir = tmp_path / "desktop"
+    desktop_dir.mkdir()
+    (desktop_dir / "credentials.html").write_text("<html></html>")
+    (desktop_dir / "guide.html").write_text("<pre>Guide</pre>\n")
+    (desktop_dir / "consoles.txt").write_text("https://a.lab:1/\nhttp://localhost:2/\n")
+    stubs, log = _stub_bin(tmp_path)
+
+    subprocess.run(
+        ["sh", str(ROOT / "appliance/guest/participant-desktop-open.sh"), str(desktop_dir)],
+        env={"PATH": f"{stubs}:/usr/bin:/bin"},
+        timeout=30,
+        check=True,
+    )
+
+    assert log.read_text().splitlines() == [
+        f"file://{desktop_dir}/credentials.html",
+        f"file://{desktop_dir}/guide.html",
+        "https://a.lab:1/",
+        "http://localhost:2/",
+    ]
+
+
+def test_the_opener_falls_back_to_a_blank_page_without_a_desktop(tmp_path: Path) -> None:
+    import subprocess
+
+    stubs, log = _stub_bin(tmp_path)
+
+    subprocess.run(
+        ["sh", str(ROOT / "appliance/guest/participant-desktop-open.sh"), str(tmp_path / "none")],
+        env={"PATH": f"{stubs}:/usr/bin:/bin"},
+        timeout=30,
+        check=True,
+    )
+
+    assert log.read_text().splitlines() == ["about:blank"]
+
+
+@pytest.mark.parametrize("hosts_ready_first", [True, False])
+def test_range_opener_waits_for_published_hosts_and_desktop(
+    tmp_path: Path, hosts_ready_first: bool
+) -> None:
+    import subprocess
+
+    desktop_dir = tmp_path / "desktop"
+    desktop_dir.mkdir()
+    stubs, log = _stub_bin(tmp_path)
+    checks = tmp_path / "checks"
+    (stubs / "systemctl").write_text(
+        '#!/bin/sh\nset -eu\n'
+        'test "$*" = "is-active --quiet lilrae-participant-hosts.service"\n'
+        f'test ! -e "{log}"\n'
+        f'count=$(cat "{checks}" 2>/dev/null || echo 0)\n'
+        f'count=$((count + 1)); echo "$count" > "{checks}"\n'
+        + ('exit 0\n' if hosts_ready_first else 'test "$count" -ge 3\n')
+    )
+    # Exercise either publication order without a browser opening in between.
+    wait_for_files = (
+        f'test "$(cat "{checks}")" -ge 2 || exit 0\n' if hosts_ready_first else ""
+    )
+    (stubs / "sleep").write_text(
+        '#!/bin/sh\nset -eu\n'
+        f'test ! -e "{log}"\n'
+        + wait_for_files
+        + (
+        f'echo logins > "{desktop_dir}/credentials.html"\n'
+        f'echo guide > "{desktop_dir}/guide.html"\n'
+        f'echo https://console.example.test/ > "{desktop_dir}/consoles.txt"\n'
+        )
+    )
+    (stubs / "epiphany").write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" >> "{log}"\n')
+    for stub in stubs.iterdir():
+        stub.chmod(0o755)
+
+    subprocess.run(
+        [
+            "sh", str(ROOT / "appliance/guest/participant-desktop-open.sh"),
+            "--wait-for-range", str(desktop_dir),
+        ],
+        env={"PATH": f"{stubs}:/usr/bin:/bin"},
+        timeout=30,
+        check=True,
+    )
+
+    assert checks.read_text().strip() == "3"
+    assert log.read_text().splitlines() == [
+        f"file://{desktop_dir}/credentials.html",
+        f"file://{desktop_dir}/guide.html",
+        "https://console.example.test/",
+    ]
+
+
+def test_rdp_opener_waits_for_the_ordered_management_service() -> None:
+    setup = (ROOT / "scripts/setup-rdp.sh").read_text()
+    assert "lilrae-participant-desktop-open --wait-for-range " in setup
+    assert "PartOf=aptl-range.service" in setup
+    assert "After=aptl-range.service" in setup
+    assert "RemainAfterExit=yes" in setup
+    assert "ExecStop=/usr/bin/python3 /usr/local/libexec/lilrae-participant-hosts --clear" in setup
+
+
+def test_the_session_opens_the_desktop_only_after_run_ready(tmp_path: Path) -> None:
+    import subprocess
+
+    home = tmp_path / "home"
+    (home / ".config" / "aptl").mkdir(parents=True)
+    (home / ".config" / "aptl" / "run-ready").write_text("ready\n")
+    project = tmp_path / "project"
+    project.mkdir()
+    stubs, log = _stub_bin(tmp_path)
+    opener = stubs / "opener"
+    opener.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > {log}\n')
+    opener.chmod(0o755)
+    script = (ROOT / "appliance/guest/desktop-session.sh").read_text()
+    script = (
+        script.replace("/usr/local/bin/aptl-participant-desktop-open", str(opener))
+        .replace("/home/aptl", str(home))
+        .replace("/opt/aptl/project", str(project))
+    )
+    session = tmp_path / "session.sh"
+    session.write_text(script)
+
+    subprocess.run(
+        ["sh", str(session)],
+        env={"PATH": f"{stubs}:/usr/bin:/bin"},
+        timeout=30,
+        check=False,
+        capture_output=True,
+    )
+
+    assert log.read_text().splitlines() == [f"{home}/.config/aptl/desktop"]

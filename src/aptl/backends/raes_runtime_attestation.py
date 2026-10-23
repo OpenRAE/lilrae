@@ -40,10 +40,10 @@ if TYPE_CHECKING:
 
 
 TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST = (
-    "sha256:1229f94f31bd35d3997d47ef8316ffebb3d2d2919c995838e458420b70456fcf"
+    "sha256:b23696c91f6313aad7bbc5c0000da26f719d9456e01bd7b81d740de34bcd681e"
 )
 TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST = (
-    "sha256:03baae367b452527be4affd7f29369bf5aa32a2a3c1c82f73bfbc759d642af14"
+    "sha256:9220614453bf5b71836571fa0e59dd007dd95c959f68bd2b29270fd8b9b1094c"
 )
 
 # These are configuration descriptions whose realized implementation is bound
@@ -84,7 +84,7 @@ _RUNTIME_FIELD_BY_KIND = {
     "runtime-software-components": "software_components",
 }
 
-# Canonical projections from raes-env-packs 6.2.1's content-identified
+# Canonical projections from raes-env-packs 6.3.3's content-identified
 # TechVault semantic parent.  Each key is independently pinned so changing one
 # SDL claim cannot borrow the pack-level identity and pass as the old contract.
 _TECHVAULT_PROJECTION_DIGESTS: Mapping[tuple[str, str], str] = {
@@ -123,7 +123,7 @@ _TECHVAULT_PROJECTION_DIGESTS: Mapping[tuple[str, str], str] = {
     (
         "misp",
         "runtime-app-authorizations",
-    ): "sha256:8ac233f5a5fa7d0db293530e3e358a2087c86b56249e8bb52cb4ac5c4bf1b373",
+    ): "sha256:fb5966ff444088db1d2de1d020f8d0bd87982af59b0d98e109e28da373e7259f",
     (
         "misp-db",
         "runtime-database-services",
@@ -135,7 +135,7 @@ _TECHVAULT_PROJECTION_DIGESTS: Mapping[tuple[str, str], str] = {
     (
         "thehive",
         "runtime-applications",
-    ): "sha256:25d79a15dd2ff14252df9865a15815b9de75f163d27490dc77eb68921867dfdb",
+    ): "sha256:caa9cc43023ac404efbd77e614cb0d110cc47d4ac755cc268d823dbf0dfb3c61",
     (
         "thehive",
         "runtime-platform-applications",
@@ -230,10 +230,10 @@ def _identified_release(identity: PackIdentity | None) -> bool:
             identity.set_digest,
         )
         in {
-            ("techvault", "0.1.1", TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST),
+            ("techvault", "0.1.2", TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST),
             (
                 "techvault-participant-study",
-                "0.1.1",
+                "0.1.2",
                 TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST,
             ),
         }
