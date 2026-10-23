@@ -147,6 +147,24 @@ verifier never extracts to disk. Secret-shaped values in generated bundle
 metadata are redacted with the shared ADR-029 redactor; canonical bytes are
 never rewritten.
 
+## Run store permissions
+
+The local run store that a bundle reads from (`.aptl/runs/`, or the configured
+`run_storage.local_path`) creates every directory with mode `0700` and every
+file with mode `0600`, whatever the umask, so its directories and files grant no
+group or other permissions. Missing parent directories that the store creates
+get mode `0700` too. Copying an artifact into a run keeps its bytes and
+timestamps but not the source file's mode.
+
+On each write, the run directory, the namespace directory or the `locks`
+directory being written to, and the written file lose their group and other
+permissions if the current user owns them. An existing store root and other
+existing entries keep their modes. To tighten an older store at once, run
+`chmod -R go-rwx .aptl/runs` (or the configured path).
+
+These are POSIX modes and do not apply on Windows. They add defense in depth
+and do not replace the ADR-029 redaction of secrets before bytes reach disk.
+
 ## Seal state and partial runs
 
 The bundle consumes a verified seal produced by the run-finalization boundary
