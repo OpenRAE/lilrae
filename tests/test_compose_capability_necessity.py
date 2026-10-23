@@ -26,9 +26,11 @@ SYS_RESOURCE are not.
 Issue #976 evaluates replacing both product choices so neither grant is needed.
 
 The behavioural test is marked `integration` (per-test, not module-level, so the
-default `-k "not integration"` run does not zero this module's coverage) because
-it needs a real Docker daemon and the built Samba provider image. The contract
-tests run everywhere and fail if a grant or its rationale is quietly dropped.
+default `-m "not integration and not fuzz"` run does not zero this module's
+coverage) because it needs a real Docker daemon. It builds the Samba provider
+image through the backend's own `ensure_generic_base_image` (#1006) rather than
+skipping when the tag is absent (#1321). The contract tests run everywhere and
+fail if a grant or its rationale is quietly dropped.
 """
 
 from __future__ import annotations
@@ -165,12 +167,9 @@ def test_security_xattr_write_requires_sys_admin_in_the_samba_provider_image():
     failure mode this test exists to prevent.
     """
 
-    if subprocess.run(
-        ["docker", "image", "inspect", SAMBA_AD_BASE_IMAGE],
-        capture_output=True,
-        check=False,
-    ).returncode != 0:
-        pytest.skip(f"{SAMBA_AD_BASE_IMAGE} is not built on this host")
+    builder = DockerComposeBackend(project_dir=PROJECT_ROOT, project_name="aptl955")
+    failures = builder.ensure_generic_base_image(SAMBA_AD_BASE_IMAGE)
+    assert failures == [], failures
 
     without = _write_security_xattr()
     assert without.returncode != 0

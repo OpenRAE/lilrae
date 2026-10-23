@@ -1491,6 +1491,7 @@ tests/test_hostenv.py	tests-follow-owner	Retain meaningful boundary and parity t
 tests/test_base_container_admission_integration.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_realization_declaration_gate_contract.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_in_process_agents.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_integration_lane_coverage.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_kali_capture_broker.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_kali_capture_compose.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_kill.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
