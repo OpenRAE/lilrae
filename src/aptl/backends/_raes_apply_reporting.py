@@ -26,6 +26,22 @@ if TYPE_CHECKING:
 _MAX_APPLY_DETAILS_BYTES = 65_536
 
 
+def source_image_evidence(details: dict[str, object]) -> dict[str, object]:
+    """Extract the small backend projection from full or compact apply details."""
+
+    compact = details.get("source_image_evidence")
+    if isinstance(compact, dict):
+        return dict(compact)
+    observations = details.get("observation_evidence")
+    if not isinstance(observations, dict):
+        return {}
+    return {
+        address: record["source_image"]
+        for address, record in observations.items()
+        if isinstance(record, dict) and "source_image" in record
+    }
+
+
 def _compact_realization_details(realization: AptlRealization) -> dict[str, object]:
     """Return identities/counts; complete realized state lives in the snapshot."""
 
@@ -79,6 +95,7 @@ def bounded_apply_details(
     compact = {**details, "realization": _compact_realization_details(realization)}
     evidence = compact.get("observation_evidence")
     if isinstance(evidence, dict):
+        compact["source_image_evidence"] = source_image_evidence(details)
         compact["observation_evidence"] = {
             "projection": "runtime-snapshot",
             "record_count": len(evidence),

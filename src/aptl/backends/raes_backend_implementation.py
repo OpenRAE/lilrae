@@ -55,6 +55,7 @@ class BackendNodeImplementation:
     runtime: RuntimeConfiguration
     selected_concerns: tuple[str, ...]
     generated_artifacts: tuple[DeploymentGeneratedArtifactRealization, ...] = ()
+    account_provider: str = ""
 
 
 def select_backend_node_implementation(
@@ -236,6 +237,10 @@ def _implementation_result(
         base_run_capabilities=tuple(getattr(base, "run_capabilities", ())),
         provider_kind=str(getattr(base, "provider_kind", "")),
         provider_parameters=tuple(getattr(base, "provider_parameters", ())),
+        account_provider=str(
+            getattr(profile, "account_provider", "")
+            or getattr(base, "account_provider", "")
+        ),
         runtime=selected_runtime,
         selected_concerns=("compute-substrate", *sorted(additions)),
         generated_artifacts=_selected_generated_artifacts(

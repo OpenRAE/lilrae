@@ -18,6 +18,7 @@ from aptl.core.deployment._proc_net_listeners import (
     ContainerListeners,
     read_container_listeners,
 )
+from aptl.core.deployment._compose_capture_config import KALI_CONTAINER
 from aptl.core.deployment._compose_resource_ownership import OwnershipConflictError
 from aptl.utils.logging import get_logger
 
@@ -296,12 +297,17 @@ class ComposeQueryMixin(object):
         return self._run(cmd, timeout=timeout)
 
     def container_shell(self, name: str, *, shell: str | None = None) -> int:
-        if name == "aptl-kali" and _kali_capture_active(self._project_dir):
+        native_id = self._resolve_owned_container_id(name)
+        # Compare resolved native IDs, not selectors: Kali's semantic name,
+        # workspace-scoped name and native ID resolve to the same container.
+        # An unverifiable Kali identity raises, so the shell fails closed.
+        if _kali_capture_active(self._project_dir) and (
+            native_id == self._resolve_owned_container_id(KALI_CONTAINER)
+        ):
             log.error(
                 "Direct Kali container TTY refused while admitted session capture is active"
             )
             return 1
-        native_id = self._resolve_owned_container_id(name)
         chosen = shell
         if chosen is None:
             # Probe non-interactively for bash before launching the TTY,
@@ -397,7 +403,8 @@ class ComposeQueryMixin(object):
             )
 
     def container_exists(self, name: str) -> bool:
-        info = self.container_inspect(name)
+        native_id = self._find_owned_container_id(name)
+        info = self._raw_container_inspect(native_id) if native_id else {}
         if not info:
             return False
         labels = info.get("Config", {}).get("Labels") or {}
@@ -407,6 +414,25 @@ class ComposeQueryMixin(object):
         # com.docker.compose.project label. On a shared daemon this
         # rejects names that exist but belong to a different project.
         return labels.get("com.docker.compose.project") == self._project_name
+
+    def _find_owned_container_id(self, name: str) -> str | None:
+        """Return the verified native ID of a recorded container, or ``None``.
+
+        A read-only membership lookup: like ``container_list`` it loads, never
+        creates, the workspace scope. A name with no receipt, or whose recorded
+        container is gone, has no ID; a changed identity, label, semantic
+        binding or daemon still raises.
+        """
+
+        ownership = self._load_resource_ownership()
+        if ownership is None:
+            return None
+        candidates = ownership.candidates(
+            name, kind="container", daemon_id=self._ownership_daemon_id()
+        )
+        if not candidates:
+            return None
+        return self._verified_container_id(ownership, candidates)
 
     def container_inspect(self, name: str) -> dict[str, Any]:
         return self._raw_container_inspect(self._resolve_owned_container_id(name))
@@ -419,6 +445,10 @@ class ComposeQueryMixin(object):
             timeout=_HOST_INVENTORY_TIMEOUT,
         )
         if result.returncode != 0:
+            # A failed inspect alone cannot prove absence: Docker may have
+            # become unreachable since receipt resolution cached its identity.
+            # Check the same daemon before treating a recorded ID as gone.
+            self._verify_cached_docker_daemon()
             log.debug(
                 "container_inspect failed for native id %s: %s",
                 name[:12],

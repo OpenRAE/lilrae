@@ -11,10 +11,11 @@ from aptl.backends.raes_runtime_attestation import (
 )
 from aptl.core.scenario_bundle import ScenarioBundle
 
-TECHVAULT_PACK_SET_DIGEST = (
-    "sha256:1229f94f31bd35d3997d47ef8316ffebb3d2d2919c995838e458420b70456fcf"
+from aptl_techvault.pack_identity import (
+    TECHVAULT_PACK_SET_DIGEST,
+    TECHVAULT_PACK_VERSION,
 )
-_TECHVAULT_PACK_VERSION = "0.1.1"
+
 STUDY_PACK_SET_DIGEST = TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST
 _FLAG_HOSTS = ("victim", "workstation", "webapp", "fileshare", "ad")
 
@@ -42,8 +43,8 @@ def runtime_parameters_for_bundle(
         identity.pack_version,
         identity.set_digest,
     ) not in (
-        ("techvault", _TECHVAULT_PACK_VERSION, TECHVAULT_PACK_SET_DIGEST),
-        ("techvault-participant-study", _TECHVAULT_PACK_VERSION, STUDY_PACK_SET_DIGEST),
+        ("techvault", TECHVAULT_PACK_VERSION, TECHVAULT_PACK_SET_DIGEST),
+        ("techvault-participant-study", TECHVAULT_PACK_VERSION, STUDY_PACK_SET_DIGEST),
     ):
         return None
     return {
@@ -58,7 +59,7 @@ class TechVaultRuntimeParameterProvider:
 
     extension_api_version = EXTENSION_API_VERSION
     supported_pack_id = "techvault"
-    supported_pack_versions = (_TECHVAULT_PACK_VERSION,)
+    supported_pack_versions = (TECHVAULT_PACK_VERSION,)
     supported_pack_set_digests = (TECHVAULT_PACK_SET_DIGEST,)
 
     @staticmethod
@@ -71,6 +72,7 @@ provider = TechVaultRuntimeParameterProvider()
 
 __all__ = [
     "TECHVAULT_PACK_SET_DIGEST",
+    "TECHVAULT_PACK_VERSION",
     "TechVaultRuntimeParameterProvider",
     "provider",
     "runtime_parameters_for_bundle",

@@ -95,9 +95,9 @@ STOP_RECOVERY_ROUTES: tuple[tuple[str, str], ...] = (
     (
         "aptl lab stop",
         "removes the project's containers and networks and keeps its volumes, "
-        "so lab data survives",
+        "so volume-backed lab data survives; container-local data is removed",
     ),
-    ("aptl lab stop -v", "also removes the volumes and destroys all lab data"),
+    ("aptl lab stop -v", "also removes managed volumes and destroys their lab data"),
 )
 
 

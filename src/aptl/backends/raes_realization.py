@@ -168,6 +168,7 @@ def interpret_provisioning_plan(
         ),
         pack_identity=bundle.pack_identity,
         pack_interaction=pack_interaction,
+        realization_authority=plan.realization_authority,
     )
 
 

@@ -20,10 +20,13 @@ import yaml
 
 from aptl.core.deployment._compose_content_realization import CONTENT_SEEDER_IMAGE
 from aptl.core.deployment._compose_node_generation import (
-    STATIC_COMPOSE_FILENAME,
     base_compose_file,
 )
 from aptl.core.deployment._compose_port_realization import write_port_override
+from aptl.core.deployment._compose_runtime_config import (
+    compose_literal,
+    compose_readback,
+)
 from aptl.core.deployment._compose_stateful_realization import (
     effective_stateful_model_errors,
     stateful_override_payload,
@@ -52,8 +55,7 @@ class ComposeRealizationModelMixin:
     ) -> tuple[Path, ...] | None:
         """Add generated realization overrides to the Compose file set.
 
-        A static in-tree ``docker-compose.yml`` is read from ``scenario_root``;
-        the generated base and overrides are written under ``realization_root``
+        The generated base and overrides are written under ``realization_root``
         (the writable engine checkout), never the pristine pack (issue #875).
         ``realization_root`` defaults to ``scenario_root`` so in-tree, where the
         two coincide, is unchanged.
@@ -67,27 +69,27 @@ class ComposeRealizationModelMixin:
         content_override = self._write_image_node_content_override(
             realization, scenario_root, realization_root
         )
-        startup_override = None
-        service_override = None
-        if not (scenario_root / STATIC_COMPOSE_FILENAME).exists():
-            # The adapter registry imports deployment DTOs; resolve it only
-            # after the deployment package has completed import initialization.
-            from aptl.backends.scenario_startup_policy import (
-                write_scenario_startup_override,
-            )
+        # The adapter registry imports deployment DTOs; resolve it only
+        # after the deployment package has completed import initialization.
+        from aptl.backends.scenario_startup_policy import (
+            write_scenario_startup_override,
+        )
+        from aptl.backends.scenario_service_policy import (
+            write_scenario_service_override,
+        )
 
-            startup_override = write_scenario_startup_override(
-                realization, realization_root
-            )
-            from aptl.backends.scenario_service_policy import (
-                write_scenario_service_override,
-            )
-
-            service_override = write_scenario_service_override(
-                realization,
-                realization_root,
-                container_name_for_semantic=self._ensure_resource_ownership().container_name,
-            )
+        startup_override = write_scenario_startup_override(
+            realization, realization_root
+        )
+        service_override = write_scenario_service_override(
+            realization,
+            realization_root,
+            container_name_for_semantic=self._ensure_resource_ownership().container_name,
+        )
+        # Each service's out-of-band values, bound by the preflight (#965).
+        sourced_override = self._write_sourced_environment_override(
+            realization, realization_root
+        )
         overrides = tuple(
             path
             for path in (
@@ -96,15 +98,12 @@ class ComposeRealizationModelMixin:
                 content_override,
                 startup_override,
                 service_override,
+                sourced_override,
             )
             if path is not None
         )
-        if (
-            not overrides
-            and "otel" not in realization.profiles
-            and not realization.capture_apparatus
-        ):
-            return compose_files
+        # Always select a generated base, even for an empty scenario. An unset
+        # file list would let Compose discover the root model on its own.
         base_files = compose_files or (
             base_compose_file(realization, scenario_root, realization_root),
         )
@@ -123,19 +122,15 @@ class ComposeRealizationModelMixin:
 
         Content bytes are resolved from the pack (``scenario_root``) and written
         under ``realization_root``; base-container-materialized node content is delivered by the
-        generic materializer, not here (issue #875).
+        generic materializer, not here (issue #875). Each bind keeps the
+        authored destination and a pack directory's file names, so the
+        override is written as a Compose literal (issue #965).
         """
 
         from aptl.core.deployment._compose_content_mounts import (
             image_node_content_override,
         )
 
-        # In-tree, a static docker-compose.yml already bind-mounts image-node
-        # config and seed volumes deliver the rest, so no generated override is
-        # needed; only a generated (env-pack) base needs image-node content bound
-        # in (issue #875).
-        if (scenario_root / STATIC_COMPOSE_FILENAME).exists():
-            return None
         payload = image_node_content_override(
             realization, scenario_root, realization_root
         )
@@ -144,7 +139,9 @@ class ComposeRealizationModelMixin:
         override_path = realization_root / _CONTENT_OVERRIDE_RELATIVE_PATH
         override_path.parent.mkdir(parents=True, exist_ok=True)
         override_path.write_text(
-            yaml.safe_dump(payload, sort_keys=True), encoding="utf-8", newline="\n"
+            yaml.safe_dump(compose_literal(payload), sort_keys=True),
+            encoding="utf-8",
+            newline="\n",
         )
         return override_path
 
@@ -161,15 +158,12 @@ class ComposeRealizationModelMixin:
         """
 
         content = realization.content
-        # For a generated (env-pack) base, image-node content is delivered as
-        # Compose bind mounts, not seeded volumes, so it must not also be seeded
-        # here (which would re-resolve and stage bytes into the pristine pack).
-        # In-tree keeps the original seed path for every content item (issue #875).
-        if not (scenario_root / STATIC_COMPOSE_FILENAME).exists():
-            imaged = {image.address for image in realization.images}
-            content = tuple(
-                item for item in content if item.target_address not in imaged
-            )
+        # Image-node content is always delivered as Compose bind mounts. Only
+        # base-container content goes through the seeder, on either source path.
+        imaged = {image.address for image in realization.images}
+        content = tuple(
+            item for item in content if item.target_address not in imaged
+        )
         if not content:
             return None
         try:
@@ -245,7 +239,9 @@ class ComposeRealizationModelMixin:
 
         ``realization_root`` is where generated artifacts and their mount sources
         live; the expected-mount set is computed against it so it matches the
-        override that was actually written (issue #875).
+        override that was actually written (issue #875). The generated files
+        write each ``$`` as ``$$``, so the uninterpolated model is read back as
+        the values Compose delivers before it is compared (issue #965).
         """
 
         command.extend(["--no-interpolate", "--format", "json"])
@@ -253,7 +249,7 @@ class ComposeRealizationModelMixin:
         if result.returncode != 0:
             return _COMPOSE_MODEL_VALIDATION_ERROR
         try:
-            payload = json.loads(result.stdout)
+            payload = compose_readback(json.loads(result.stdout))
         except (TypeError, ValueError):
             return _COMPOSE_MODEL_VALIDATION_ERROR
         errors = effective_stateful_model_errors(

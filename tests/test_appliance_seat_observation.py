@@ -174,7 +174,13 @@ def test_collect_loopback_listeners_rejects_unrelated_listener_owner() -> None:
     )
     completed = type("Completed", (), {"returncode": 0, "stdout": ss_output})()
 
+    # pid 42 is a fixture value. Where it is a real process in another network
+    # namespace (a root kernel thread on some Linux hosts), the collector would
+    # try to enter that namespace, be refused, and report no listeners.
     with patch(
+        "aptl.appliance.seat.observation.in_private_network",
+        return_value=False,
+    ), patch(
         "aptl.appliance.seat.observation.subprocess.run",
         return_value=completed,
     ) as run:
