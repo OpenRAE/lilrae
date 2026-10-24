@@ -1,7 +1,8 @@
 """Tests for terminal WebSocket API endpoint."""
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+import logging
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -99,6 +100,73 @@ def _pin_known_hosts(tmp_path):
         "AAAAC3NzaC1lZDI1NTE5AAAAIMTUqAKGaTTU6ZQIX0CtZty7aChRO5ArrLlzkucPQrBh\n"
     )
     return kh
+
+
+# The debug line the relay writes for every frame it drops.
+_DROPPED_FRAME_LOG = "Dropped a malformed terminal WebSocket frame"
+
+# Frames the relay must drop without ending the session: not JSON, JSON that
+# is not an object, a field of the wrong type, an integer literal too long to
+# parse, nesting deep enough to exhaust the decoder, and a binary frame.
+_MALFORMED_FRAMES = [
+    pytest.param("not-valid-json", id="not-json"),
+    pytest.param("[1]", id="json-array"),
+    pytest.param('"stdin"', id="json-string"),
+    pytest.param(
+        json.dumps({"type": "stdin", "data": 123}), id="stdin-data-not-string"
+    ),
+    pytest.param(
+        json.dumps({"type": "resize", "cols": "wide", "rows": 40}),
+        id="resize-cols-string",
+    ),
+    pytest.param(
+        json.dumps({"type": "resize", "cols": 120, "rows": 40.5}),
+        id="resize-rows-float",
+    ),
+    pytest.param(
+        json.dumps({"type": "resize", "cols": True, "rows": 40}),
+        id="resize-cols-bool",
+    ),
+    pytest.param(
+        '{"type": "resize", "cols": 1' + "0" * 5000 + ', "rows": 40}',
+        id="resize-cols-over-long-integer",
+    ),
+    pytest.param("[" * 10000, id="deeply-nested"),
+    pytest.param(b"\x00\x01", id="binary-frame"),
+]
+
+
+def _start_relay_session(mock_status, mock_endpoints, mock_asyncssh, tmp_path):
+    """Wire the mocks so a victim terminal session reaches both relay tasks."""
+    mock_status.return_value = _make_lab_status(running=True)
+    mock_endpoints.return_value = {"victim": _VICTIM_ENDPOINT}
+    _pin_known_hosts(tmp_path)
+
+    process = _make_mock_process()
+    process.stdout.read = AsyncMock(side_effect=["__ready__", ""])
+    mock_asyncssh.connect = AsyncMock(return_value=_make_mock_conn(process))
+    mock_asyncssh.Error = Exception
+    return process
+
+
+def _send_frames(api_client, frames):
+    """Open the victim terminal, wait until it relays, then send *frames*.
+
+    Closing the socket queues the disconnect behind the frames, so the relay
+    has handled every frame by the time this returns.
+    """
+    with api_client.websocket_connect(
+        "/api/terminal/ws/victim",
+        subprotocols=_VALID_WS_SUBPROTOCOLS,
+        headers={**_VALID_ORIGIN},
+    ) as ws:
+        # Sync on the first relayed message so both relay tasks are live.
+        ws.receive_json()
+        for frame in frames:
+            if isinstance(frame, bytes):
+                ws.send_bytes(frame)
+            else:
+                ws.send_text(frame)
 
 
 class TestTerminalWebSocket:
@@ -401,33 +469,56 @@ class TestTerminalWebSocket:
             assert msg["type"] == "error"
             assert msg["message"] == "SSH connection failed"
 
+    @pytest.mark.parametrize("frame", _MALFORMED_FRAMES)
     @patch("aptl.api.routers.terminal.asyncssh")
     @patch("aptl.api.routers.terminal.lab_terminal_ssh_endpoints")
     @patch("aptl.api.routers.terminal.lab_status")
-    def test_malformed_json_message_is_ignored(
-        self, mock_status, mock_endpoints, mock_asyncssh, api_client, tmp_path
+    def test_malformed_frame_is_dropped_and_relay_continues(
+        self, mock_status, mock_endpoints, mock_asyncssh, frame, api_client, tmp_path
     ):
-        """Malformed JSON from the WebSocket is swallowed at the JSONDecodeError handler."""
-        mock_status.return_value = _make_lab_status(running=True)
-        mock_endpoints.return_value = {"victim": _VICTIM_ENDPOINT}
-        _pin_known_hosts(tmp_path)
+        """A malformed frame is dropped and later input still reaches SSH."""
+        process = _start_relay_session(
+            mock_status, mock_endpoints, mock_asyncssh, tmp_path
+        )
 
-        process = _make_mock_process()
-        conn = _make_mock_conn(process)
-        mock_asyncssh.connect = AsyncMock(return_value=conn)
-        mock_asyncssh.Error = Exception
-        process.stdout.read = AsyncMock(side_effect=["__ready__", ""])
+        _send_frames(
+            api_client,
+            [
+                frame,
+                json.dumps({"type": "stdin", "data": "ls\n"}),
+                json.dumps({"type": "resize", "cols": 120, "rows": 40}),
+            ],
+        )
 
-        with api_client.websocket_connect(
-            "/api/terminal/ws/victim",
-            subprotocols=_VALID_WS_SUBPROTOCOLS,
-            headers={**_VALID_ORIGIN},
-        ) as ws:
-            # Sync on the first relayed message before sending malformed input.
-            ws.receive_json()
-            ws.send_text("not-valid-json")
+        assert process.stdin.write.call_args_list == [call("ls\n")]
+        process.change_terminal_size.assert_called_once_with(120, 40)
 
-        # No exception: JSONDecodeError is caught and ignored.
+    @patch("aptl.api.routers.terminal.asyncssh")
+    @patch("aptl.api.routers.terminal.lab_terminal_ssh_endpoints")
+    @patch("aptl.api.routers.terminal.lab_status")
+    def test_dropped_frame_contents_are_not_logged(
+        self, mock_status, mock_endpoints, mock_asyncssh, api_client, tmp_path, caplog
+    ):
+        """Each dropped frame is logged without its contents (keystrokes)."""
+        caplog.set_level(logging.DEBUG, logger="aptl.api.terminal")
+        process = _start_relay_session(
+            mock_status, mock_endpoints, mock_asyncssh, tmp_path
+        )
+        typed = "typed-keystrokes-marker"
+
+        _send_frames(
+            api_client,
+            [
+                f"{typed} is not json",
+                json.dumps({"type": "stdin", "data": [typed]}),
+                json.dumps({"type": "resize", "cols": typed, "rows": 40}),
+            ],
+        )
+
+        assert typed not in caplog.text
+        assert caplog.text.count(_DROPPED_FRAME_LOG) == 3
+        process.stdin.write.assert_not_called()
+        process.change_terminal_size.assert_not_called()
 
     @patch("aptl.api.routers.terminal.asyncssh")
     @patch("aptl.api.routers.terminal.lab_terminal_ssh_endpoints")
