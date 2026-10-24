@@ -25,20 +25,22 @@ except (OSError, ValueError):
 
 
 def _credential(name: str, fallback: str = "") -> str:
-    """Prefer the process environment, then the generated project .env."""
+    """Prefer the process environment, then the generated project .env.
+
+    Live-lab credentials come from the lab's own environment, which the
+    admitted pack declares. There is no built-in default to fall back to.
+    """
     return os.getenv(name, PROJECT_ENV.get(name, fallback))
 
 INDEXER_URL = os.getenv("APTL_INDEXER_URL", "https://localhost:9200")
-INDEXER_USER = _credential("INDEXER_USERNAME", "admin")
-INDEXER_PASS = _credential("INDEXER_PASSWORD", "SecretPassword")
-API_USER = _credential("API_USERNAME", "wazuh-wui")
-API_PASS = _credential("API_PASSWORD", "WazuhPass123!")
+INDEXER_USER = _credential("INDEXER_USERNAME")
+INDEXER_PASS = _credential("INDEXER_PASSWORD")
+API_USER = _credential("API_USERNAME")
+API_PASS = _credential("API_PASSWORD")
 SSH_KEY = os.path.expanduser(os.getenv("APTL_SSH_KEY", "~/.ssh/aptl_lab_key"))
 
 MISP_URL = os.getenv("MISP_URL", "https://localhost:8443")
-MISP_API_KEY = _credential(
-    "MISP_API_KEY", "JHxBbGPnAtyut0FTwkeuhVFnbMksGRCRwsE0V9Xw",
-)
+MISP_API_KEY = _credential("MISP_API_KEY")
 # SEC-006 / ADR-034: TheHive and Shuffle's host-facing surfaces moved
 # to HTTPS with lab-CA-signed certs. Tests default to the verified
 # endpoints and to the lab CA bundle materialized by `aptl lab start`.

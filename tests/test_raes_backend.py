@@ -661,7 +661,7 @@ def test_manifest_provisioner_declares_only_realized_capabilities():
         {"dataset", "directory", "file"}
     )
     assert provisioner.supported_account_features == frozenset(
-        {"disabled", "groups", "mail", "spn"}
+        {"auth_method", "credential_bindings", "disabled", "groups", "mail", "spn"}
     )
     assert provisioner.supports_accounts is True
     assert provisioner.supports_acls is True
@@ -3079,15 +3079,16 @@ def test_realization_resolves_digest_pinned_source_image(tmp_path):
     assert image.source_version == f"postgres@{digest}"
 
 
-def test_realization_uses_allowed_source_when_upstream_build_path_is_note(tmp_path):
+def test_realization_uses_catalog_when_upstream_build_path_is_note(tmp_path):
+    from dataclasses import replace
+    from raes_contracts.planning import PlannedRealizationConstraint
     from aptl.backends.raes_realization import interpret_provisioning_plan
 
     _write_compose(tmp_path, {"wazuh-manager": ["wazuh"]})
     node = _node_resource("wazuh-manager")
     node.payload["spec"]["node"]["source"] = {
-        # Full image name + pinned tag: the backend no longer substitutes a
-        # concrete image for a vague version, so the allow-check resolves the
-        # SDL-declared image verbatim when the build path is unavailable (#875).
+        # Build notes grant no executable authority. The open substrate allows
+        # backend policy to bind this selector to a reviewed digest (#1097).
         "name": "wazuh/wazuh-manager",
         "version": "4.12.0",
         "build": {
@@ -3099,7 +3100,13 @@ def test_realization_uses_allowed_source_when_upstream_build_path_is_note(tmp_pa
     }
 
     realization = interpret_provisioning_plan(
-        plan=_plan_for_resources(node),
+        plan=replace(_plan_for_resources(node), realization_constraints=(
+            PlannedRealizationConstraint(
+                address=node.address, field_path="nodes.wazuh-manager.realization.compute_substrate",
+                concern="compute-substrate", posture="open", value_domain=None,
+                governing_scope="#/realization", provenance="author-declared",
+            ),
+        )),
         bundle=_bundle(tmp_path),
         config=AptlConfig(lab={"name": "test"}, containers={"wazuh": True}),
     )
@@ -3109,8 +3116,8 @@ def test_realization_uses_allowed_source_when_upstream_build_path_is_note(tmp_pa
     assert len(spec.images) == 1
     image = spec.images[0]
     assert image.mode == "pull"
-    assert image.policy_rule == "allowed-source"
-    assert image.image_ref == "wazuh/wazuh-manager:4.12.0"
+    assert image.policy_rule == "trusted-source-catalog"
+    assert image.image_ref.startswith("wazuh/wazuh-manager@sha256:")
 
 
 def test_realization_resolves_project_build_provenance(tmp_path):
@@ -3842,6 +3849,9 @@ def test_provisioner_records_supported_placement_realizations(tmp_path):
         # The authored credential class is reported back with the placement, so
         # the runtime sees which class the backend realized (issue #1006).
         "password_strength": "weak",
+        # A declared credential is reported by id only, never by value (#1273).
+        "auth_method": "password",
+        "credential_id": None,
     }
 
     # Real lowering, not counting: the typed backend spec actually passed
@@ -3872,7 +3882,7 @@ def test_account_lowering_preserves_disabled_explicitness():
             resource=resource,
             payload={"spec": spec},
             target_address="scenario.node.ad",
-            target_service="ad",
+            target_account_provider="samba-ad",
         )
         return account
 
@@ -3887,13 +3897,16 @@ def test_account_lowering_preserves_disabled_explicitness():
 def test_manifest_account_features_match_realized_dto_fields():
     """Manifest honesty (#577, ADR-046 addendum): advertise only the account
     features the backend actually materializes AND verifies — the non-secret
-    fields the typed ``DeploymentAccountRealization`` carries. ``auth_method`` /
+    fields the typed ``DeploymentAccountRealization`` carries, plus one authored
+    ``secret_fixture`` credential binding and its auth method (#1273).
     ``home`` / ``shell`` are neither carried nor realized, so they are not
     claimed."""
     from aptl.backends.raes_manifest import create_aptl_manifest
 
     manifest = create_aptl_manifest()
     assert set(manifest.provisioner.supported_account_features) == {
+        "auth_method",
+        "credential_bindings",
         "disabled",
         "groups",
         "mail",

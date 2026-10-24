@@ -281,6 +281,9 @@ def _observed_payload(
             _set_path(payload, path, observed.concerns[path])
         else:
             _pop_path(payload, path)
+    source_image = observed.evidence.get("source_image")
+    if isinstance(source_image, dict):
+        payload["backend_evidence"] = {"source_image": deepcopy(source_image)}
     return payload
 
 

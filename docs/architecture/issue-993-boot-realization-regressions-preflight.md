@@ -1,5 +1,12 @@
 # Issue #993 Boot Realization Regressions Preflight
 
+> **Dated preflight record.** Written on 2026-09-20 and kept as written. Since
+> then, #1146 (90aade5b, 2026-09-21) replaced
+> `tests/fixtures/materialization-envelope.sdl.yaml` with the fixture pack
+> `tests/fixtures/packs/materialization-envelope`, and #1203 (37776971,
+> 2026-10-04) renamed `tests/test_imagefree_admission_integration.py` to
+> `tests/test_base_container_admission_integration.py`.
+
 This note fixes the boundary for extending the existing installed-wheel boot
 gate. It is architecture guidance, not an implementation plan. Issue #969 still
 owns the job, fixture identity, installed-artifact boundary, and cleanup proof.

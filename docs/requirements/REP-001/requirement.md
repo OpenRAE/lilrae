@@ -33,3 +33,7 @@ The TechVault cutover moved scenario and experiment meaning to ACES. Reproducibi
 - IMPLEMENTS → ADR `docs/adrs/adr-044-raes-aligned-run-reproducibility-record.md`
 - TESTS → TEST `tests/test_raes_repro.py`
 - TESTS → TEST `tests/test_raes_backend.py`
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/_lilrae_source_image_catalog.py` (Digest-pinned source bindings and origin provenance)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/_lilrae_catalog_image_observation.py` (Selected and independently observed image identities)
+- TESTS → TEST `tests/test_lilrae_source_image_catalog.py` (Source policy and released-kit coverage)
+- TESTS → TEST `tests/test_lilrae_catalog_image_observation.py` (Image readback and durable run evidence)

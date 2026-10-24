@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 
 from aptl.core.deployment.realization import valid_environment_variable_name
@@ -26,6 +26,66 @@ class ScenarioEnvironmentFixture:
 
     name: str
     value: str = field(repr=False, compare=False)
+
+
+@dataclass(frozen=True, order=True)
+class AccountCredentialFixture:
+    """A startup variable whose value is one part of an SDL account credential.
+
+    The adapter names the account and credential; core reads the username or
+    the authored ``secret_fixture`` value from the admitted SDL. The adapter
+    never holds the value, so a pack change to the credential reaches the
+    environment without an adapter edit.
+    """
+
+    name: str
+    account: str
+    credential_id: str
+    part: str
+
+
+def resolved_environment_fixtures(
+    value: object,
+    accounts: Mapping[str, object] | None,
+) -> object:
+    """Replace each account reference with the authored value it names.
+
+    ``accounts`` is the admitted SDL's account table, or ``None`` when no
+    fixture references an account. A reference to anything but one authored
+    ``secret_fixture`` refuses the plan.
+    """
+
+    from aptl.backends.raes_declared_credentials import (
+        AccountCredentialReference,
+        DeclaredCredentialError,
+        resolve_declared_credential,
+    )
+
+    if not isinstance(value, tuple):
+        return value
+    resolved: list[object] = []
+    for item in value:
+        if not isinstance(item, AccountCredentialFixture):
+            resolved.append(item)
+            continue
+        if accounts is None or item.part not in {"username", "secret"}:
+            raise ScenarioStartupProviderError("provider-result-invalid")
+        try:
+            credential = resolve_declared_credential(
+                accounts, AccountCredentialReference(item.account, item.credential_id)
+            )
+        except DeclaredCredentialError:
+            raise ScenarioStartupProviderError("fixture-credential-unresolved") from None
+        resolved.append(ScenarioEnvironmentFixture(item.name, credential.part(item.part)))
+    return tuple(resolved)
+
+
+def references_accounts(value: object) -> bool:
+    """Return whether any startup fixture names an SDL account credential."""
+
+    return isinstance(value, tuple) and any(
+        isinstance(item, AccountCredentialFixture) for item in value
+    )
 
 
 def validated_aliases(value: object) -> tuple[EnvironmentAlias, ...]:
@@ -70,9 +130,12 @@ def validated_environment_fixtures(
 
 
 __all__ = [
+    "AccountCredentialFixture",
     "EnvironmentAlias",
     "ScenarioEnvironmentFixture",
     "ScenarioStartupProviderError",
+    "references_accounts",
+    "resolved_environment_fixtures",
     "validated_aliases",
     "validated_environment_fixtures",
 ]

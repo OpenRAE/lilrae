@@ -14,7 +14,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from aptl.cli._common import resolve_config_for_cli
+from aptl.cli._common import (
+    exit_on_invalid_deployment_settings,
+    resolve_config_for_cli,
+)
 from aptl.core.deployment import DeploymentBackend, get_backend
 from aptl.utils.logging import get_logger
 
@@ -39,7 +42,9 @@ def _resolve_backend(project_dir: Path) -> DeploymentBackend:
     compose runs in the directory that actually owns ``aptl.json``.
     """
     config, project_root = resolve_config_for_cli(project_dir)
-    return get_backend(config, project_root)
+    with exit_on_invalid_deployment_settings():
+        backend = get_backend(config, project_root)
+    return backend
 
 
 def _ensure_project_container(backend: DeploymentBackend, name: str) -> None:

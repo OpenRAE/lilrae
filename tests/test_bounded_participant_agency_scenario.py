@@ -30,7 +30,7 @@ from aptl.core.scenario_bundle import ScenarioBundle, project_tree_bundle
 PROJECT_ROOT = Path(__file__).parents[1]
 SCENARIO = PROJECT_ROOT / "scenarios/bounded-participant-agency-techvault.sdl.yaml"
 SOURCE_SHA256 = "cdd16c1bb18c0e281030137719bf88f7a8df9c7f0b6288de28e4355501942252"
-COMPILED_SHA256 = "23307ff404c85e7a60396a0c601a808628e2c882ed42e647c84c6923063113d1"
+COMPILED_SHA256 = "507af439891f2df808809326146f808ddb8c1c7e3ba0e66d81ef4ae0d695747e"
 
 
 def _bundle() -> ScenarioBundle:

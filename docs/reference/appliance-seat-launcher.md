@@ -188,6 +188,27 @@ Claude/Codex configuration on the physical host. Claude runs in the guest;
 provider sign-in belongs to its user and is never copied into the image.
 Older selected image digests retain their own signed access contract.
 
+### Participant desktop
+
+The admitted scenario pack decides what the desktop shows. Its adapter names
+the consoles, the logins, the guide and the hostnames the browser must resolve,
+as references to the pack's SDL (`aptl.participant_desktop`). Lab start resolves
+each reference against the admitted SDL and the running lab:
+
+- A console URL is the authored canonical URL, or the realized published port
+  under the name that the console's certificate covers.
+- A login is only an authored `secret_fixture` credential from the SDL.
+- A hostname maps to the address of the node's own container.
+
+The guest sets `LILRAE_PARTICIPANT_DESKTOP_ACCOUNT=aptl`. Lab start writes the
+logins, the guide and the console list into that account's
+`~/.config/aptl/desktop` directory. The directory is `0700` and each file is
+`0600`. Lab start keeps only the hostname list, which has no secret, in
+`.aptl/participant-desktop/hosts.json`. The desktop handoff applies the list to
+`/etc/hosts` with the shared publisher, and the session browser opens the
+logins, the guide and the consoles after the lab is ready. A lab without that
+variable publishes no desktop.
+
 State defaults to the current user's private roots: `$XDG_STATE_HOME/aptl/seat`
 for the seat and `$XDG_CACHE_HOME/aptl/appliance` for the image cache, or the
 `~/.local/state` and `~/.cache` equivalents. `--seat-root` and `--image-cache`

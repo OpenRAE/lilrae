@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import Enum
 from importlib import metadata
 from pathlib import Path, PurePosixPath
 import re
@@ -13,11 +11,21 @@ from aptl.core.deployment.realization import valid_environment_variable_name
 from aptl.core.scenario_bundle import PackIdentity, ScenarioBundle
 from aptl.utils.logging import get_logger
 from aptl.backends._scenario_environment import (
+    AccountCredentialFixture,
     EnvironmentAlias,
     ScenarioEnvironmentFixture,
     ScenarioStartupProviderError,
+    references_accounts,
+    resolved_environment_fixtures,
     validated_aliases as _validated_aliases,
     validated_environment_fixtures,
+)
+
+from aptl.backends._scenario_startup_hooks import (
+    StartupCapability,
+    StartupHook,
+    StartupHookContext,
+    StartupPreparationPhase,
 )
 
 log = get_logger("scenario-startup")
@@ -27,55 +35,6 @@ EXTENSION_API_VERSION = "1"
 DOCKER_TRANSPORT_KEYS = frozenset(
     ("DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DOCKER_SSH_IDENTITY")
 )
-
-
-class StartupCapability(str, Enum):
-    """Fixed optional lab mechanics an exact scenario adapter may request."""
-
-    SSH = "ssh"
-    HOST_TOOLS = "host_tools"
-    MCP = "mcp"
-    NATIVE_EVIDENCE = "native_evidence"
-
-
-class StartupHook(str, Enum):
-    """Fixed lifecycle hook slots an admitted adapter may implement."""
-
-    STACK_ENVIRONMENT = "stack_environment"
-    BEFORE_BACKEND_RETRY = "before_backend_retry"
-    RESET = "reset"
-
-
-class StartupPreparationPhase(str, Enum):
-    """Core-owned ordered preparation slots available to an adapter."""
-
-    ENVIRONMENT = "environment"
-    PRE_START_CONFIGURATION = "pre_start_configuration"
-    PRE_START_STORAGE = "pre_start_storage"
-    PRE_START_TRUST = "pre_start_trust"
-    PRE_START_SERVICE_TRUST = "pre_start_service_trust"
-    PRE_START_ARTIFACTS = "pre_start_artifacts"
-    POST_START_READINESS = "post_start_readiness"
-    POST_START_CONFIGURATION = "post_start_configuration"
-
-
-@dataclass(frozen=True)
-class StartupHookContext:
-    """Narrow runtime authority passed to a selected startup hook."""
-
-    backend: object | None
-    preparation_phase: StartupPreparationPhase | None = None
-    operation: Callable[[], object] | None = field(
-        default=None, repr=False, compare=False
-    )
-    project_dir: Path | None = None
-
-    def run_operation(self) -> object:
-        """Run the single core operation delegated for this fixed phase."""
-
-        if self.operation is None:
-            raise ScenarioStartupProviderError("provider-hook-operation-unavailable")
-        return self.operation()
 
 
 @dataclass(frozen=True, order=True)
@@ -102,7 +61,11 @@ class ScenarioStartupPlan:
     required_profiles: tuple[str, ...]
     activation_profiles: tuple[str, ...]
     environment_aliases: tuple[EnvironmentAlias, ...] = ()
-    environment_fixtures: tuple[ScenarioEnvironmentFixture, ...] = ()
+    # An adapter may name an SDL account credential instead of a value; core
+    # resolves it against the admitted SDL, so a validated plan holds values.
+    environment_fixtures: tuple[
+        ScenarioEnvironmentFixture | AccountCredentialFixture, ...
+    ] = ()
     container_environment: tuple[ContainerEnvironmentBinding, ...] = ()
     lifecycle_capabilities: frozenset[StartupCapability] = frozenset()
     startup_hooks: frozenset[StartupHook] = frozenset()
@@ -213,6 +176,18 @@ def _safe_relative_script(value: object) -> str:
     return str(path)
 
 
+def _account_resolved_fixtures(value: object, bundle: ScenarioBundle | None) -> object:
+    """Resolve account-referenced fixtures against the admitted SDL once."""
+
+    if not references_accounts(value):
+        return value
+    if bundle is None:
+        raise ScenarioStartupProviderError("provider-result-invalid")
+    from aptl.backends.raes_declared_credentials import scenario_accounts
+
+    return resolved_environment_fixtures(value, scenario_accounts(bundle.sdl_path))
+
+
 def _validated_environment_fixtures(
     value: object,
 ) -> tuple[ScenarioEnvironmentFixture, ...]:
@@ -305,7 +280,9 @@ def _validated_mcp_keys(value: object) -> tuple[McpServerCredentials, ...]:
     return value
 
 
-def _validated_plan(value: object) -> ScenarioStartupPlan:
+def _validated_plan(
+    value: object, bundle: ScenarioBundle | None = None
+) -> ScenarioStartupPlan:
     """Normalize one adapter plan and reject malformed profile sets."""
 
     if not isinstance(value, ScenarioStartupPlan):
@@ -334,7 +311,7 @@ def _validated_plan(value: object) -> ScenarioStartupPlan:
         activation_profiles=tuple(activation),
         environment_aliases=_validated_aliases(value.environment_aliases),
         environment_fixtures=_validated_environment_fixtures(
-            value.environment_fixtures
+            _account_resolved_fixtures(value.environment_fixtures, bundle)
         ),
         container_environment=_validated_container_environment(
             value.container_environment
@@ -374,7 +351,7 @@ def select_scenario_startup(bundle: ScenarioBundle) -> ScenarioStartupSelection:
         return ScenarioStartupSelection(identity, None, None)
     try:
         entry_point, provider = compatible[0]
-        plan = _validated_plan(provider.resolve(bundle))
+        plan = _validated_plan(provider.resolve(bundle), bundle)
         _validate_hook_methods(provider, plan)
         return ScenarioStartupSelection(
             identity,
@@ -472,6 +449,7 @@ __all__ = [
     "ENTRY_POINT_GROUP",
     "EXTENSION_API_VERSION",
     "ContainerEnvironmentBinding",
+    "AccountCredentialFixture",
     "EnvironmentAlias",
     "ScenarioEnvironmentFixture",
     "McpServerCredentials",
