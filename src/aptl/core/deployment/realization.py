@@ -8,6 +8,10 @@ from typing import TYPE_CHECKING, Literal
 from aptl.runtime_authority import DeploymentDockerAuthorityAdmission
 from aptl.core.scenario_bundle import PackIdentity
 from aptl.core.deployment._realization_primitives import (
+    AclAction as _AclAction,
+    AclDirection as _AclDirection,
+    AclProtocol as _AclProtocol,
+    DeploymentAclRealization,
     DeploymentImageRealization,
     DeploymentNetworkAttachment,
     DeploymentNetworkRealization,
@@ -19,7 +23,11 @@ from aptl.core.deployment._realization_primitives import (
 if TYPE_CHECKING:
     from aptl.backends.scenario_startup import ScenarioStartupSelection
     from raes.runtime_configuration import RuntimeConfiguration
+    from raes_contracts.planning import ResolvedRealizationAuthority
 
+AclAction = _AclAction
+AclDirection = _AclDirection
+AclProtocol = _AclProtocol
 ImageRealizationMode = _ImageRealizationMode
 valid_environment_variable_name = _valid_environment_variable_name
 
@@ -33,41 +41,6 @@ GeneratedArtifactOutputDisposition = Literal["consumer_selected", "producer_priv
 ResourceSensitivity = Literal["public", "restricted", "secret"]
 VolumeLifecycle = Literal["retain", "ephemeral"]
 VolumeAccessMode = Literal["read_write_once", "read_write_many", "read_only_many"]
-AclDirection = Literal["in", "out", "inout"]
-AclAction = Literal["allow", "deny"]
-AclProtocol = Literal["any", "tcp", "udp", "icmp"]
-
-
-@dataclass(frozen=True)
-class DeploymentAclRealization(object):
-    """One admitted RAES infrastructure ACL lowered for backend enforcement."""
-
-    owner_address: str
-    owner_resource_type: Literal["node", "network"]
-    owner_name: str
-    name: str
-    order: int
-    direction: AclDirection
-    from_network: str | None
-    to_network: str | None
-    protocol: AclProtocol
-    ports: tuple[int, ...]
-    action: AclAction
-
-    def details(self) -> dict[str, object]:
-        return {
-            "owner_address": self.owner_address,
-            "owner_resource_type": self.owner_resource_type,
-            "owner_name": self.owner_name,
-            "name": self.name,
-            "order": self.order,
-            "direction": self.direction,
-            "from_network": self.from_network,
-            "to_network": self.to_network,
-            "protocol": self.protocol,
-            "ports": list(self.ports),
-            "action": self.action,
-        }
 
 
 @dataclass(frozen=True)
@@ -138,6 +111,7 @@ class DeploymentNodeRealization(object):
     backend_run_capabilities: tuple[str, ...] = ()
     backend_provider_kind: str = ""
     backend_provider_parameters: tuple[tuple[str, str], ...] = ()
+    backend_account_provider: str = ""
     # The pack/backend seam resolves serving membership once; renderers reuse
     # the DTO rather than infer it from component names.
     profiles: tuple[str, ...] = ()
@@ -245,14 +219,30 @@ class DeploymentServiceSearchIndexSchemaRealization(object):
 
 
 @dataclass(frozen=True)
+class DeclaredAccountCredential(object):
+    """One authored ``secret_fixture`` credential an SDL account declares.
+
+    The value is scenario content the SDL already carries, so the backend may
+    hold it while it realizes the account (ADR-046 Declared Fixture Credential
+    Addendum). It is excluded from ``repr``, equality and every ``details()``
+    projection, so evidence, run records and logs name only ``credential_id``.
+    """
+
+    credential_id: str
+    value: str = field(repr=False, compare=False)
+
+
+@dataclass(frozen=True)
 class DeploymentAccountRealization(object):
     """One account-placement identity lowered from a RAES account resource.
 
-    Carries non-secret identity only (ADR-046 addendum): no password material
-    crosses this record. The concrete credential is generated inside the target
-    provider boundary; this record is realization evidence proving the declared
-    account maps to a node whose backend provider actually creates and
-    reconciles it.
+    Its evidence projection is non-secret identity only (ADR-046 addendum).
+    A credential the backend mints is generated inside the target provider
+    boundary and never crosses this record. A credential the scenario authors
+    as ``secret_fixture`` is scenario content: ``credential`` carries it to the
+    provider, outside ``repr`` and ``details()``. This record is realization
+    evidence proving the declared account maps to a node whose backend
+    provider actually creates and reconciles it.
 
     ``password_strength`` is the authored credential class (RAES
     ``PasswordStrength``), carried because it is a declared fact about the
@@ -277,6 +267,8 @@ class DeploymentAccountRealization(object):
     mail: str = ""
     disabled: bool | None = None
     password_strength: str = ""
+    auth_method: str = "password"
+    credential: DeclaredAccountCredential | None = None
 
     def details(self) -> dict[str, object]:
         return {
@@ -288,6 +280,10 @@ class DeploymentAccountRealization(object):
             "mail": self.mail,
             "disabled": self.disabled,
             "password_strength": self.password_strength,
+            "auth_method": self.auth_method,
+            "credential_id": (
+                self.credential.credential_id if self.credential is not None else None
+            ),
         }
 
 
@@ -495,3 +491,5 @@ class DeploymentRealizationSpec(object):
     startup_selection: ScenarioStartupSelection | None = field(
         default=None, repr=False, compare=False
     )
+    # Preserve RAES's resolved authority for pre-mutation binding admission.
+    realization_authority: tuple[ResolvedRealizationAuthority, ...] = ()

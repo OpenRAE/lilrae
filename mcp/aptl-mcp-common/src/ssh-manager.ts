@@ -398,13 +398,21 @@ export class SSHConnectionManager {
   }
 
   /**
-   * Get buffered output from a background session
+   * Get buffered output from a background session, with the number of the
+   * oldest chunks the buffer limit dropped since the buffer was last cleared
+   * (#967).
    */
-  public getSessionOutput(sessionId: string, lines?: number, clear?: boolean): string[] {
+  public getSessionOutput(
+    sessionId: string,
+    lines?: number,
+    clear?: boolean,
+  ): { chunks: string[]; droppedChunks: number } {
     const session = this.sessions.get(sessionId);
     require_(session !== undefined, `Session '${sessionId}' not found`);
 
-    return session.getBufferedOutput(lines, clear);
+    // Read the count first: a clearing read resets it.
+    const droppedChunks = session.getDroppedChunkCount();
+    return { chunks: session.getBufferedOutput(lines, clear), droppedChunks };
   }
 
   /**

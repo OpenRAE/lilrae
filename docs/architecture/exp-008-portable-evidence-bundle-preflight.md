@@ -1,5 +1,9 @@
 # EXP-008 Portable Research Evidence Bundle Preflight
 
+> **Dated preflight record.** Written on 2026-07-28 and kept as written. Since
+> then, #1163 (0ae24994, 2026-09-23) removed `src/aptl/appliance/offline.py`,
+> which it cites.
+
 This note is the architecture preflight for EXP-008 / issue #472. It is
 guidance, not an implementation plan. No new ADR is needed: ADR-029 owns
 secret handling, ADR-044 owns the distinction between RAES contracts and APTL

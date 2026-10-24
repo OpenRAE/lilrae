@@ -231,12 +231,17 @@ _PROVISIONER = ProvisionerCapabilities(
     operating_systems=APTL_OPERATING_SYSTEMS,
     supported_content_types=frozenset({"dataset", "directory", "file"}),
     # Manifest honesty (#577, ADR-046 addendum): advertise only the account
-    # features the backend materializes AND verifies by read-after-write — the
-    # non-secret fields the typed DeploymentAccountRealization carries. auth_method
-    # / home / shell are neither carried nor realized, so they are not claimed;
-    # an account placement that exercises one is a blocking RAES diagnostic, not
-    # a silently dropped field. No scenario declares those terms today.
-    supported_account_features=frozenset({"disabled", "groups", "mail", "spn"}),
+    # features the backend materializes AND verifies by read-after-write.
+    # `credential_bindings` is realized for one authored `secret_fixture`
+    # primary credential and proven by an authenticated read-after-write;
+    # `auth_method` is realized where the selected provider supports it (a MISP
+    # `key`). The account gate refuses every other binding shape. home / shell
+    # are neither carried nor realized, so they are not claimed; an account
+    # placement that exercises one is a blocking RAES diagnostic, not a
+    # silently dropped field.
+    supported_account_features=frozenset(
+        {"auth_method", "credential_bindings", "disabled", "groups", "mail", "spn"}
+    ),
     # The Samba AD provider realizes and read-verifies the operational
     # scenario's domain-bound accounts and SPNs (#577). RAES 0.23 makes that
     # domain profile an explicit admission capability rather than inferring it

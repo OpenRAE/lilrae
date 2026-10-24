@@ -6,14 +6,14 @@ type: FUNCTIONAL
 priority: SHOULD
 wave: 2
 created_at: 2026-07-06T08:00:25.969813Z
-updated_at: 2026-09-04T00:00:00.000000Z
+updated_at: 2026-10-13T00:00:00.000000Z
 ---
 
 # DEP-008: Self-Contained Distribution of Lab Assets from Installed Package
 
 ## Statement
 
-The platform shall bundle all lab assets required to run a lab, comprising the Docker Compose definition (docker-compose.yml), scenario definitions (scenarios/), configuration files (config/: Wazuh/Suricata configs, cert templates, active-response lists), and container build contexts (all Dockerfiles and build contexts under containers/), as installed package data shipped in the aptl-labs wheel, and shall provide a materialization entry point (for example, `aptl lab init <dir>`) that copies those assets out of the installed package into a working directory. All src/aptl code that currently reads lab assets via current-working-directory-relative paths (including but not limited to core/certs.py, suricata_seed.py, credentials.py, env.py, continuity.py, docker_compose.py, snapshot.py, _soc_ca_io.py) shall instead resolve those assets against the materialized working directory or installed package data rather than assuming the current working directory is a repository checkout. As a result, `pipx install aptl-labs` followed by `aptl lab init` and `aptl lab start` shall produce a working lab without a git clone of the repository.
+The platform shall bundle all lab assets required to run a lab, comprising the Docker Compose definition (docker-compose.yml), scenario definitions (scenarios/), configuration files (config/: Wazuh/Suricata configs, cert templates, active-response lists), and container build contexts (all Dockerfiles and build contexts under containers/), as installed package data shipped in the lilrae wheel, and shall provide a materialization entry point (for example, `aptl lab init <dir>`) that copies those assets out of the installed package into a working directory. All src/aptl code that currently reads lab assets via current-working-directory-relative paths (including but not limited to core/certs.py, suricata_seed.py, credentials.py, env.py, continuity.py, docker_compose.py, snapshot.py, _soc_ca_io.py) shall instead resolve those assets against the materialized working directory or installed package data rather than assuming the current working directory is a repository checkout. As a result, `pipx install aptl-labs` followed by `aptl lab init` and `aptl lab start` shall produce a working lab without a git clone of the repository.
 
 ## Rationale
 

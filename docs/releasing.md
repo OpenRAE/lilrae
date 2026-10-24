@@ -7,9 +7,15 @@ Nobody runs a script, hand-edits the version, or edits `CHANGELOG.md`.
 
 - **Squash-merge** PRs so the PR title becomes the commit on the branch.
 - The PR title must be a **Conventional Commit** (`<type>: <lowercase subject>`).
-  Bump rules: `feat:` → minor, `fix:` / `perf:` → patch, `feat!:` or a
-  `BREAKING CHANGE:` footer → major (demoted to minor while `0.x`). Other types
-  (`docs`, `chore`, `refactor`, `test`, `ci`, `build`) → no release.
+  Release rules: `feat:`, `fix:`, `perf:`, `feat!:`, and a `BREAKING CHANGE:`
+  footer each cause a release. Other types (`docs`, `chore`, `refactor`, `test`,
+  `ci`, `build`) do not cause a release.
+- Each release bumps the **minor** version. Breaking changes and fix-only
+  releases also bump the minor version. The configuration sets
+  `"versioning": "always-bump-minor"` in `release-please-config.json`.
+- A major version bump occurs only when the maintainer decides it. To make one,
+  put a `Release-As: X.0.0` footer in the body of a commit that goes to `main`.
+  Do not add this footer unless the maintainer asks for it.
 - Use one Conventional Commit type and scope only; compound titles such as
   `fix(...) + docs:` are not parseable by release-please.
 - **Do not** edit `CHANGELOG.md` or the version; release-please owns both.
@@ -71,14 +77,17 @@ README badge do not update until a promotion lands.
 4. Merging tags `vX.Y.Z` and cuts the GitHub Release; the `publish` job then
    builds the sdist + wheel, generates an SBOM, and publishes to PyPI via OIDC.
    Because the current workflow rebuilds at publish time, a later
-   `pip install aptl-labs==X.Y.Z` check is corroboration, not the pre-cut
+   `pip install lilrae==X.Y.Z` check is corroboration, not the pre-cut
    release gate or proof that the bytes are identical. If byte-for-byte
    promotion becomes required, publish the tested artifacts instead of
    rebuilding them.
 5. A `main`→`dev` **back-merge PR** is then opened automatically (main now has
    the version bump + `CHANGELOG.md`), titled `chore: back-merge <tag> into dev`.
-   **Admin-merge it** (one click) to keep `dev` current—like the release PR it
-   is bot-opened, so its required checks should not be relied on to run.
+   **Admin-merge it with "Create a merge commit"** to keep `dev` current—like
+   the release PR it is bot-opened, so its required checks should not be relied
+   on to run. Do not squash it. A squash copies the release changes but leaves
+   the release commit out of the `dev` history. The next promotion then replays
+   the version bump against `dev` and can conflict, as it did in #1375.
 
 ## Baseline
 
@@ -90,10 +99,16 @@ hand-edited.
 
 ## PyPI trusted publisher (one-time)
 
-pypi.org → Account → Publishing → add pending publisher: project `aptl-labs`, owner
-`Brad-Edwards`, repo `aptl`, workflow `release-please.yml`, environment `pypi`.
-`raes` must be on PyPI first (aptl depends on it). The distribution is named
-`aptl-labs` because `aptl` is reserved on PyPI; the import package and CLI stay `aptl`.
+On pypi.org, open the `lilrae` project → Settings → Publishing. The trusted
+publisher must have owner `OpenRAE`, repository `lilrae`, workflow
+`release-please.yml`, and environment `pypi`. PyPI matches these names in the
+OIDC token, so a publisher with other names rejects the upload. Before the
+first release of a new project, add the same values as a pending publisher
+under Account → Publishing. The first upload then creates the project.
+`raes` must be on PyPI first (the project depends on it). The distribution is
+named `lilrae` because `aptl` is reserved on PyPI; the import package and CLI
+stay `aptl`. Releases up to 7.0.0 published as `aptl-labs`
+([ADR-062](adrs/adr-062-lilrae-name-and-naming-convention.md)).
 
 ## Seat image cuts
 

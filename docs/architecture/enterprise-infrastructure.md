@@ -63,7 +63,7 @@ graph TB
     end
 
     subgraph redteam [Red Team - 172.20.4.0/24]
-        Kali["Kali Linux<br/>existing"]
+        Kali["Kali red-team workstation<br/>existing"]
     end
 
     Kali --> dmz
@@ -237,9 +237,9 @@ Security (172.20.0.0/24): Wazuh stack, MISP, TheHive, Shuffle -- management netw
 
 
 
-Red Team (172.20.4.0/24): Kali -- initially can only reach DMZ (forces realistic attack progression)
+Red Team (172.20.4.0/24): Kali, also attached to the DMZ and internal networks
 
-Docker networks with controlled inter-network routing. The Kali container starts with access only to the DMZ. Reaching internal requires compromising a DMZ host first (or finding a route). This is what forces realistic multi-step attacks.
+Docker networks with controlled inter-network routing. The original design gave Kali access only to the DMZ, so that reaching the internal network required compromising a DMZ host first. The realized TechVault `kali` node is attached to `redteam-net`, `dmz-net` and `internal-net`, so it reaches the internal targets directly (see [Kali Red Team Container](../components/kali-redteam.md#network-access)).
 
 
 

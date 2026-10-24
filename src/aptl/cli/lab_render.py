@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING
 
 import typer
 
-from aptl.cli._start_residue import emit_start_residue, stop_recovery_routes
+from aptl.cli._start_residue import emit_start_residue
+from aptl.core.lifecycle_guard import stop_recovery_routes
 from aptl.core.host_ports import PortSpec, ResolvedPort, published_port_specs
 from aptl.core.execution_boundary import (
     ExecutionBoundaryObservation,

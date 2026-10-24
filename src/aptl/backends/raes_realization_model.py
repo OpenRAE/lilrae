@@ -31,6 +31,7 @@ from aptl.core.scenario_bundle import PackIdentity
 
 if TYPE_CHECKING:
     from aptl.backends.scenario_startup import ScenarioStartupSelection
+    from raes_contracts.planning import ResolvedRealizationAuthority
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,7 @@ class NodeRealization(object):
     backend_run_capabilities: tuple[str, ...] = ()
     backend_provider_kind: str = ""
     backend_provider_parameters: tuple[tuple[str, str], ...] = ()
+    backend_account_provider: str = ""
     # Generated prerequisites selected under the same OPEN authority as this
     # node's backend runtime additions. They are promoted into the realization's
     # top-level artifact collection so deployment and reporting see them.
@@ -239,6 +241,7 @@ class AptlRealization(object):
     # which is embedded in portable RAES realization state.
     pack_identity: PackIdentity | None = None
     pack_interaction: ResolvedPackBackendInteraction | None = None
+    realization_authority: tuple[ResolvedRealizationAuthority, ...] = ()
 
     def deployment_spec(
         self,
@@ -258,6 +261,7 @@ class AptlRealization(object):
         return DeploymentRealizationSpec(
             profiles=tuple(profiles),
             nodes=nodes,
+            realization_authority=self.realization_authority,
             networks=tuple(
                 DeploymentNetworkRealization(
                     name=network.name,
@@ -387,5 +391,6 @@ def _deployment_node_realization(
         backend_run_capabilities=node.backend_run_capabilities,
         backend_provider_kind=node.backend_provider_kind,
         backend_provider_parameters=node.backend_provider_parameters,
+        backend_account_provider=node.backend_account_provider,
         profiles=node.profiles,
     )

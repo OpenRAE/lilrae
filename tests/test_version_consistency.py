@@ -60,3 +60,12 @@ def test_release_please_bumps_uv_lock() -> None:
         "path": "uv.lock",
         "jsonpath": f"$.package[?(@.name.value=='{name}')].version",
     } in config["packages"]["."]["extra-files"]
+
+
+def test_release_please_never_bumps_major_automatically() -> None:
+    # Breaking changes bump the minor version. A major bump happens only when
+    # the maintainer adds a `Release-As: X.0.0` commit footer (docs/releasing.md).
+    config = json.loads(
+        (REPO_ROOT / "release-please-config.json").read_text(encoding="utf-8")
+    )
+    assert config["packages"]["."]["versioning"] == "always-bump-minor"

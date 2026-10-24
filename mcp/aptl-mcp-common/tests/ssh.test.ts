@@ -6,6 +6,7 @@ vi.mock('ssh2', () => ({
 
 import { CommandTimeoutError, PersistentSession, SSHConnectionManager, SSHError } from '../src/ssh.js';
 import { ShellType } from '../src/shells.js';
+import { generateToolHandlers } from '../src/tools/handlers.js';
 import { EventEmitter } from 'events';
 
 // Test our business logic, not the ssh2 library
@@ -149,6 +150,52 @@ describe('Buffer Management Logic', () => {
     // The earliest entries are gone — proof that overflow trimming ran.
     expect(buffer).not.toContain('line 0');
     expect(buffer).not.toContain('line 5000');
+  });
+
+  it('get_session_output names the chunks the buffer limit dropped (#967)', async () => {
+    // Real chain: session buffer -> manager -> tool handler, with no mocks
+    // between them. MAX_SIZE=10000 and TRIM_TO=5000, so each trim drops 5001.
+    const manager = new SSHConnectionManager();
+    const session = new PersistentSession('bg-overflow', 'host', 'user', 'background', {} as any, { port: 22 });
+    (manager as any).sessions.set('bg-overflow', session);
+    const handlers = generateToolHandlers({ toolPrefix: 'test', targetName: 'Test', configKey: 'test' });
+    const push = (from: number, to: number) => {
+      for (let i = from; i < to; i++) {
+        (session as any).handleShellOutput(`line ${i}\n`);
+      }
+    };
+    const read = async (args: Record<string, unknown>) => {
+      const result = await handlers.test_get_session_output(
+        { session_id: 'bg-overflow', ...args },
+        { sshManager: manager, labConfig: {} as any },
+      );
+      return JSON.parse(result.content[0].text);
+    };
+
+    // Under the limit nothing is dropped and the envelope is unchanged.
+    push(0, 9000);
+    const intact = await read({});
+    expect(intact).toMatchObject({ success: true, lines_returned: 9000 });
+    expect(intact).not.toHaveProperty('truncated');
+    expect(intact).not.toHaveProperty('dropped_chunks');
+
+    // Two trims, at chunk 10001 and chunk 15002, drop 10002 chunks in total.
+    // A tail read still says older output is gone.
+    push(9000, 16000);
+    expect(await read({ lines: 10 })).toMatchObject({
+      success: true, lines_returned: 10, truncated: true, dropped_chunks: 10002,
+    });
+
+    // A clearing read reports the drop, then resets it with the buffer.
+    const cleared = await read({ clear: true });
+    expect(cleared).toMatchObject({
+      success: true, lines_returned: 5998, buffer_cleared: true, truncated: true, dropped_chunks: 10002,
+    });
+    expect(cleared.output.startsWith('line 10002\n')).toBe(true);
+    const after = await read({});
+    expect(after).toMatchObject({ success: true, lines_returned: 0 });
+    expect(after).not.toHaveProperty('truncated');
+    expect(after).not.toHaveProperty('dropped_chunks');
   });
 });
 

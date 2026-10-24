@@ -526,7 +526,7 @@ const baseHandlers: Record<string, ToolHandler> = {
       // bypassed. The handler's catch block converts the thrown SSHError
       // into the standard error envelope, matching session_command and
       // close_session.
-      const output = sshManager.getSessionOutput(session_id, lines, clear);
+      const { chunks, droppedChunks } = sshManager.getSessionOutput(session_id, lines, clear);
 
       return {
         content: [
@@ -535,9 +535,13 @@ const baseHandlers: Record<string, ToolHandler> = {
             text: JSON.stringify({
               success: true,
               session_id,
-              output: output.join(''),
-              lines_returned: output.length,
-              buffer_cleared: clear
+              output: chunks.join(''),
+              lines_returned: chunks.length,
+              buffer_cleared: clear,
+              // #967: the buffer keeps only the newest output. Name the
+              // oldest chunks it dropped instead of returning a silently
+              // shortened buffer.
+              ...(droppedChunks > 0 ? { truncated: true, dropped_chunks: droppedChunks } : {}),
             }, null, 2),
           },
         ],
