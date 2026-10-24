@@ -76,6 +76,7 @@ export function generateAPIToolDefinitions(
             params: {
               type: 'object',
               description: 'Override or add query parameters',
+              ...queryConfig.params_schema,
             },
             body: {
               anyOf: [{ type: 'object' }, { type: 'string' }],

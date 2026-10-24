@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.planning import ProvisioningPlan
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
+from raes_runtime.backend_account_credentials import plan_has_account_credentials
 
 from aptl.backends._raes_apply_reporting import (
     bounded_apply_details as _bounded_apply_details,
     with_artifact_satisfactions,
+    source_image_evidence,
 )
 
 from aptl.backends.raes_diagnostics import (
@@ -60,6 +62,21 @@ _REALIZATION_READBACK_TIMEOUT_SECONDS = 300.0
 _REALIZATION_READBACK_INTERVAL_SECONDS = 2.0
 
 
+def closed_credential_result(plan: ProvisioningPlan, result: ApplyResult) -> ApplyResult:
+    """Return no free-form details for a plan that carries account credentials.
+
+    RAES refuses any backend details from a credential-bearing apply, because
+    details are an open carrier a credential could leave through. Realized
+    evidence still travels in the snapshot entries and realization
+    observations, and APTL keeps the source-image evidence it read from the
+    details before they are closed.
+    """
+
+    if not plan_has_account_credentials(plan):
+        return result
+    return replace(result, details={})
+
+
 @dataclass
 class AptlProvisioner(ProvisionerStartMixin):
     """Provisioning component of APTL's ``full-remote-control-plane`` target."""
@@ -98,11 +115,13 @@ class AptlProvisioner(ProvisionerStartMixin):
         default=None, init=False, repr=False
     )
     _attempt_id: str | None = field(default=None, init=False, repr=False)
+    last_source_image_evidence: dict[str, object] = field(default_factory=dict, init=False, repr=False)
 
     def bind_attempt_id(self, attempt_id: str | None) -> None:
         """Bind the one already-resolved lab-start attempt to deployment."""
 
         self._attempt_id = attempt_id
+        self.last_source_image_evidence = {}
 
     def validate(self, plan: object) -> list[Diagnostic]:
         """Validate that the RAES provisioning plan is APTL-realizable."""
@@ -171,6 +190,9 @@ class AptlProvisioner(ProvisionerStartMixin):
         self.last_failure_diagnostics = (
             () if result.success else tuple(result.diagnostics)
         )
+        self.last_source_image_evidence = source_image_evidence(result.details)
+        if isinstance(plan, ProvisioningPlan):
+            result = closed_credential_result(plan, result)
         return result
 
     @staticmethod

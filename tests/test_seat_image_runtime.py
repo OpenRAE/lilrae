@@ -141,7 +141,7 @@ def test_readiness_calls_the_current_guest_access_contract(
 ) -> None:
     from aptl.appliance import access_service
     from aptl.appliance.seat import readiness
-    from aptl.core.lab import _publish_appliance_guest_readiness
+    from aptl.core.lab import _publish_appliance_guest_readiness, _serve_appliance_guest_access
 
     observed: list[object] = []
     backend = SimpleNamespace(observe_appliance_boundary=lambda deployment: deployment)
@@ -170,6 +170,8 @@ def test_readiness_calls_the_current_guest_access_contract(
 
     monkeypatch.setattr(access_service, "serve_appliance_access", access)
     assert _publish_appliance_guest_readiness(context) is None
+    assert observed == []
+    assert _serve_appliance_guest_access(context) is None
     assert observed == [[]]
 
 

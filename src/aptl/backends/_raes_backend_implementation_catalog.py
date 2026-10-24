@@ -1,16 +1,24 @@
-"""Immutable semantic implementation profile catalog for APTL's backend.
+"""Immutable backend implementation choices, matched to portable semantics.
 
-These are backend choices, not scenario declarations.  A profile is eligible
-only when the planned node carries the matching portable runtime semantics;
-the realization adapter separately checks that every selected concern is open
-before using it.
-"""
+The realization adapter checks that selected concerns are open before use."""
 
 from __future__ import annotations
+
+from dataclasses import replace
+
+from aptl.backends._lilrae_source_image_catalog import SOURCE_IMAGE_PROFILES
 
 from aptl.backends._raes_shuffle_implementation_catalog import (
     SHUFFLE_APPLICATION_PROFILES,
 )
+from aptl.core.deployment._account_provider import (
+    CORTEX,
+    MISP,
+    OPENSEARCH_SECURITY,
+    THEHIVE,
+    WAZUH_API,
+)
+from aptl.core.deployment._compose_content_mounts import OWNED_CONTENT_INSTALLER
 from aptl.core.deployment._misp_cache_credential import (
     MISP_CACHE_PASSWORD_OUTPUT,
     MISP_CACHE_RUNTIME_CONFIG_DIR,
@@ -25,12 +33,14 @@ from aptl.backends._raes_backend_implementation_types import (
     variable as _variable,
 )
 
+_BIN_SH = "/bin/sh"
 _HALF_GIB_JVM_OPTIONS = "-Xms512m -Xmx512m"
 
 
 BACKEND_IMPLEMENTATION_PROFILES = (
     BackendImplementationProfile(
         profile_id="wazuh-manager-4.12",
+        account_provider=WAZUH_API,
         selector=SemanticRuntimeSelector(
             "security_monitoring_managers", "implementation", "wazuh", "4.12.0"
         ),
@@ -41,6 +51,16 @@ BACKEND_IMPLEMENTATION_PROFILES = (
             "dea2fa1e6d5062147b6a85b241f5f501c5f1ba4b817d12bda06f7870a89ad561"
         ),
         runtime_selections={
+            # The pack authors root-owned 0600 files, such as Filebeat's
+            # config, which Filebeat refuses unless root owns it. A bind mount
+            # keeps the host owner, so the declared files are installed with
+            # their declared owner and mode before the image's own `/init`.
+            "runtime-container-entrypoint": [
+                _BIN_SH,
+                "-ec",
+                f'{OWNED_CONTENT_INSTALLER}; exec /init "$@"',
+                "--",
+            ],
             "runtime-environment": _environment(
                 _variable("INDEXER_URL", "https://wazuh.indexer:9200"),
                 _variable(
@@ -81,6 +101,7 @@ BACKEND_IMPLEMENTATION_PROFILES = (
     ),
     BackendImplementationProfile(
         profile_id="wazuh-indexer-4.12",
+        account_provider=OPENSEARCH_SECURITY,
         selector=SemanticRuntimeSelector(
             "datastore_services", "engine", "opensearch", "4.12.0"
         ),
@@ -158,7 +179,7 @@ BACKEND_IMPLEMENTATION_PROFILES = (
         context_relpath=".",
         runtime_selections={
             "runtime-container-entrypoint": [
-                "/bin/sh",
+                _BIN_SH,
                 "-c",
                 "exec suricata -c /etc/suricata/suricata.yaml --pcap=any",
             ],
@@ -169,6 +190,7 @@ BACKEND_IMPLEMENTATION_PROFILES = (
     ),
     BackendImplementationProfile(
         profile_id="misp-2.5.44",
+        account_provider=MISP,
         selector=SemanticRuntimeSelector(
             "platform_applications", "product", "MISP", "2.5.44"
         ),
@@ -216,8 +238,10 @@ BACKEND_IMPLEMENTATION_PROFILES = (
                     "value_classification": "plain",
                     "provenance": "compose",
                 },
-                _variable("ADMIN_EMAIL", "admin@admin.test"),
-                _variable("ADMIN_PASSWORD", "admin", classification="secret_fixture"),
+                # No administrator identity or password is chosen here. The
+                # image keeps its own bootstrap administrator; the MISP account
+                # provider sets the SDL account's declared password on it after
+                # start and refuses a declared principal the image lacks.
                 _variable(
                     "ADMIN_KEY",
                     classification="operator_secret",
@@ -297,7 +321,7 @@ BACKEND_IMPLEMENTATION_PROFILES = (
             # a root-owned /run directory before the stock entrypoint drops
             # privileges. Only paths, never the credential, enter argv.
             "runtime-container-entrypoint": [
-                "/bin/sh",
+                _BIN_SH,
                 "-ec",
                 f"install -d -m 0755 -o root -g root {MISP_CACHE_RUNTIME_CONFIG_DIR} && "
                 "install -m 0400 -o redis -g redis /etc/redis/redis.conf "
@@ -312,6 +336,7 @@ BACKEND_IMPLEMENTATION_PROFILES = (
     ),
     BackendImplementationProfile(
         profile_id="thehive-5.4",
+        account_provider=THEHIVE,
         selector=SemanticRuntimeSelector(
             "platform_applications", "product", "TheHive", "5.4"
         ),
@@ -398,6 +423,7 @@ BACKEND_IMPLEMENTATION_PROFILES = (
     ),
     BackendImplementationProfile(
         profile_id="cortex-3.1.8",
+        account_provider=CORTEX,
         selector=SemanticRuntimeSelector(
             "platform_applications", "product", "Cortex", "3.1.8"
         ),
@@ -440,6 +466,28 @@ BACKEND_IMPLEMENTATION_PROFILES = (
         },
     ),
 )
+
+# Existing reviewed pins retain the immutable revision that supplied them.
+_CATALOG_BASELINE = (
+    "https://github.com/OpenRAE/lilrae/blob/"
+    "7e689d098cc93fe8e21dcf7afdcc8e54b3d27956"
+    "/src/aptl/backends/_raes_backend_implementation_catalog.py"
+)
+_SOURCE_ALIASES = {
+    "wazuh-manager-4.12": (("wazuh-manager", "4"),),
+    "wazuh-indexer-4.12": (("wazuh-indexer", "4"),),
+    "wazuh-dashboard-4.12": (("wazuh-dashboard", "4"),),
+    "thehive-5.4": (("thehive", "5"),),
+    "shuffle-opensearch-2.14": (("opensearch", "2"),),
+}
+BACKEND_IMPLEMENTATION_PROFILES = tuple(
+    replace(
+        profile,
+        provenance_refs=profile.provenance_refs or (_CATALOG_BASELINE + "#" + profile.profile_id,),
+        source_aliases=profile.source_aliases + _SOURCE_ALIASES.get(profile.profile_id, ()),
+    )
+    for profile in BACKEND_IMPLEMENTATION_PROFILES
+) + SOURCE_IMAGE_PROFILES
 
 __all__ = (
     "BACKEND_IMPLEMENTATION_PROFILES",

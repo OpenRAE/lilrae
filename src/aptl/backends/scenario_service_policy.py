@@ -16,6 +16,7 @@ import re
 
 import yaml
 
+from aptl.core.deployment._compose_runtime_config import compose_literal
 from aptl.utils.pathsafe import PathContainmentError, open_contained_nofollow
 
 from aptl.backends.scenario_startup import (
@@ -295,7 +296,7 @@ def write_scenario_service_override(
     path = realization_root / _OVERRIDE_RELPATH
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        yaml.safe_dump({"services": services}, sort_keys=True),
+        yaml.safe_dump(compose_literal({"services": services}), sort_keys=True),
         encoding="utf-8",
         newline="\n",
     )

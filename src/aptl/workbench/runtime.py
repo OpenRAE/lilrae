@@ -12,6 +12,7 @@ from typing import Protocol
 
 from aptl.core.runstore import RunStorageBackend
 from aptl.core.session import ScenarioSession
+from aptl.workbench.process import BoundedProcessError
 from aptl.workbench.profiles import (
     ProfileId,
     profile_for,
@@ -21,7 +22,11 @@ from aptl.workbench.profiles import (
 
 
 class WorkbenchStateError(RuntimeError):
-    """A profile transition would violate the workbench lifecycle contract."""
+    """A profile transition would violate the workbench lifecycle contract.
+
+    The message reaches the participant in the API's 409 answer, so it names
+    only fixed lifecycle facts and the runner's secret-free failure summary.
+    """
 
 
 @dataclass(frozen=True)
@@ -236,12 +241,17 @@ class WorkbenchRuntime:
         try:
             response = self._adapter.respond(active.handle, message)
         except Exception as exc:
-            self._record(
-                "agent_turn_failed",
-                active.launch,
-                {"request_sha256": _sha256_text(message)},
-            )
-            raise WorkbenchStateError("participant agent request failed") from exc
+            details: dict[str, object] = {"request_sha256": _sha256_text(message)}
+            cause = ""
+            if isinstance(exc, BoundedProcessError):
+                # Timeout, overflow or cleanup residue: keep the runner's safe
+                # facts, including the separately timed cleanup, in the record.
+                details["process"] = exc.record()
+                cause = f": {exc}"
+            self._record("agent_turn_failed", active.launch, details)
+            raise WorkbenchStateError(
+                f"participant agent request failed{cause}"
+            ) from exc
         self._record(
             "agent_turn",
             active.launch,

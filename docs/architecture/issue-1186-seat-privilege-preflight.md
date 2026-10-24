@@ -1,5 +1,10 @@
 # Issue #1186: Desktop Seat Privilege Preflight
 
+> Historical source references (scope notice added 2026-10-12): the host
+> tailnet relay files and tests named for removal below have been removed.
+> Those cleanup instructions are retained as the dated design record. See the
+> current [seat launcher](../reference/appliance-seat-launcher.md) for operation.
+
 The supplied [issue #1186](https://github.com/Brad-Edwards/aptl/issues/1186)
 is the delivery contract; no formal requirement is attached.
 Inspection used repository commit `980f4076`. This guidance defines boundaries
