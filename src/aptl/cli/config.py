@@ -12,7 +12,11 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from aptl.cli._common import resolve_config_for_cli
+from aptl.cli._common import (
+    exit_on_invalid_deployment_settings,
+    resolve_config_for_cli,
+)
+from aptl.core.deployment import get_backend
 from aptl.utils.logging import get_logger
 
 log = get_logger("cli.config")
@@ -82,7 +86,12 @@ def validate(
     """Validate the APTL configuration file.
 
     Loads ``aptl.json`` through the same path used by deployment
-    operations and reports any JSON, type, or constraint errors.
+    operations and reports any JSON, type, or constraint errors. It also
+    builds the configured deployment backend, without contacting it, so
+    settings only the backend checks (an ssh-compose block without
+    ``ssh_host``, for example) fail here as they would in ``aptl lab start``.
     """
-    _, project_root = resolve_config_for_cli(project_dir)
+    config, project_root = resolve_config_for_cli(project_dir)
+    with exit_on_invalid_deployment_settings():
+        get_backend(config, project_root)
     typer.echo(f"{project_root / 'aptl.json'}: OK")

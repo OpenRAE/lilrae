@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import ipaddress
 import shutil
 import stat
 import subprocess
@@ -28,8 +27,8 @@ ROLES = {
     ),
 }
 
-_SECURITY_NETWORK = ipaddress.ip_network("172.20.0.0/24")
-_HOSTS_MARKER = "# aptl-seat-browser"
+_HOSTS_PUBLISHER = Path("/opt/aptl/desktop/participant-hosts.py")
+_HOSTS_DOCUMENT = Path(".aptl/participant-desktop/hosts.json")
 
 
 def _regular(path: Path) -> Path:
@@ -155,81 +154,27 @@ def _grant_lifecycle_read(project: Path, gid: int) -> None:
     root.chmod(stat.S_IMODE(root.stat().st_mode) | 0o050)
 
 
-def _misp_security_ip() -> str:
-    """Read the live scenario address, not a guessed Compose allocation."""
+def _publish_hostnames(project: Path) -> None:
+    """Apply the hostnames lab start resolved from the SDL and the realized lab.
 
-    names = subprocess.run(
-        ["docker", "ps", "--format", "{{.Names}}"],
+    The one shared publisher owns ``/etc/hosts`` changes. A lab whose pack has
+    no participant desktop writes no document, and nothing is published.
+    """
+
+    document = project / _HOSTS_DOCUMENT
+    if not document.exists():
+        return
+    _regular(document)
+    subprocess.run(
+        ["/usr/bin/python3", str(_HOSTS_PUBLISHER), str(document)],
         check=True,
         capture_output=True,
-        text=True,
-        timeout=15,
-    ).stdout.splitlines()
-    misp = [name for name in names if name.endswith("-misp")]
-    if len(misp) != 1:
-        raise ValueError("seat MISP browser target is unavailable")
-    networks = json.loads(
-        subprocess.run(
-            [
-                "docker",
-                "inspect",
-                "--format",
-                "{{json .NetworkSettings.Networks}}",
-                misp[0],
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        ).stdout
+        timeout=30,
     )
-    addresses = [
-        value.get("IPAddress")
-        for name, value in networks.items()
-        if name.endswith("_aptl-security") and isinstance(value, dict)
-    ]
-    if len(addresses) != 1:
-        raise ValueError("seat MISP security address is unavailable")
-    try:
-        address = ipaddress.ip_address(addresses[0])
-    except ValueError as exc:
-        raise ValueError("seat MISP security address is invalid") from exc
-    if address not in _SECURITY_NETWORK:
-        raise ValueError("seat MISP security address is out of range")
-    return str(address)
-
-
-def _browser_hosts(path: Path, misp_ip: str) -> None:
-    """Publish only the two browser names whose certificates require them."""
-
-    if path.is_symlink() or not path.is_file():
-        raise ValueError("seat browser hosts file is unsafe")
-    existing = [
-        line for line in path.read_text().splitlines() if _HOSTS_MARKER not in line
-    ]
-    payload = (
-        "\n".join(
-            (
-                *existing,
-                f"127.0.0.1 wazuh.dashboard {_HOSTS_MARKER}",
-                f"{misp_ip} misp.techvault.local {_HOSTS_MARKER}",
-            )
-        )
-        + "\n"
-    )
-    descriptor, temporary_name = tempfile.mkstemp(prefix=".hosts-", dir=path.parent)
-    temporary = Path(temporary_name)
-    try:
-        with os.fdopen(descriptor, "w") as output:
-            output.write(payload)
-        temporary.chmod(stat.S_IMODE(path.stat().st_mode))
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
 
 
 def _configure_browser_access(project: Path) -> None:
-    """Trust public scenario CAs and resolve the authored browser origins."""
+    """Trust public scenario CAs and publish the resolved browser hostnames."""
 
     trust = Path("/usr/local/share/ca-certificates")
     for source, name in (
@@ -248,7 +193,7 @@ def _configure_browser_access(project: Path) -> None:
         capture_output=True,
         timeout=30,
     )
-    _browser_hosts(Path("/etc/hosts"), _misp_security_ip())
+    _publish_hostnames(project)
 
 
 def handoff(

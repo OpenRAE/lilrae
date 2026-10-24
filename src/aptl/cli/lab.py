@@ -564,7 +564,10 @@ def _emit_snapshot_json(project_dir: Path, output_file: Optional[Path]) -> None:
 
     Writes to ``output_file`` (mode 0600) when given, otherwise prints it.
     """
-    from aptl.cli._common import resolve_config_for_cli
+    from aptl.cli._common import (
+        exit_on_invalid_deployment_settings,
+        resolve_config_for_cli,
+    )
     from aptl.core.deployment import get_backend
     from aptl.core.deployment.errors import BackendObservationError
     from aptl.core.snapshot import capture_snapshot
@@ -574,7 +577,8 @@ def _emit_snapshot_json(project_dir: Path, output_file: Optional[Path]) -> None:
     # or invalid, so a misconfigured SSH lab doesn't get snapshotted
     # against the local daemon.
     config, project_root = resolve_config_for_cli(project_dir)
-    backend = get_backend(config, project_root)
+    with exit_on_invalid_deployment_settings():
+        backend = get_backend(config, project_root)
 
     try:
         snapshot = capture_snapshot(config_dir=project_root, backend=backend)

@@ -294,9 +294,11 @@ def _attach_commands(
             with access.guard:
                 access.require_owner(principal)
                 response = runtime.respond(message.message)
-        except WorkbenchStateError:
+        except WorkbenchStateError as exc:
+            # The cause is safe to show (see WorkbenchStateError) and tells the
+            # participant whether the request timed out or left residue.
             raise HTTPException(
-                status_code=409, detail="Agent request unavailable"
+                status_code=409, detail=f"Agent request unavailable: {exc}"
             ) from None
         return {"response": response}
 

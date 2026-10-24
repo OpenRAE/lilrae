@@ -71,11 +71,8 @@ echo "Launching $COUNT range(s) from $AMI ..."
   echo "  Accept the browser certificate warning (self-signed lab TLS)."
   echo "  Allow ~8-12 minutes after launch before a seat is fully ready."
   echo
-  echo "SOC tool logins (same on every seat, also on each desktop as SOC_ACCESS.md):"
-  echo "  Wazuh    https://localhost/         scenario fixture; see the admitted pack"
-  echo "  TheHive  https://localhost:9000/    aptl-svc@thehive.local / AptlService2024!"
-  echo "  MISP     https://localhost:8443/    admin@admin.test / admin"
-  echo "  Shuffle  https://localhost:3443/    admin / ShuffleAdmin2024!"
+  echo "SOC tool logins: each seat's desktop opens them, with the console tabs,"
+  echo "from the participant-only file the admitted scenario pack declares."
   echo
   echo "SEATS:"
 } > "$CREDS"

@@ -135,7 +135,7 @@ The gate's framework holds no scenario knowledge: which node is the attacker and
 which nodes make up the defensive stack is knowledge about one scenario on one
 backend. That lives in a per-scenario adapter package, discovered through the
 `aptl.scenario_verifiers` entry-point group. For TechVault it is `aptl_techvault`,
-which ships inside `aptl-labs`, so there is nothing extra to install.
+which ships inside `lilrae`, so there is nothing extra to install.
 
 A scenario with no adapter of its own reports terminal `blocked` and the gate
 reaches no verdict. That is deliberate, and it is not a pass, a skip, or a

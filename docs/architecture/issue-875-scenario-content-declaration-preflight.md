@@ -1,5 +1,10 @@
 # Issue #875 Scenario Content Declaration Preflight
 
+> **Dated preflight record.** Written on 2026-08-03 and kept as written. Since
+> then, #908 (4dcf07bd, 2026-08-03), which implemented it, removed
+> `scenarios/techvault-operational.sdl.yaml`. The TechVault scenario now comes
+> from the acquired environment pack.
+
 This note fixes the repository-wide boundary for removing engine-checkout paths
 from the TechVault SDL. It is architecture guidance, not an implementation
 plan. [ADR-046](../adrs/adr-046-dynamic-raes-scenario-realization.md) remains

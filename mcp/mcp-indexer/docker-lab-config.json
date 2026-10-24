@@ -40,14 +40,22 @@
         "index": "wazuh-alerts-4.x-*"
       },
       "body": {
-        "query": { "match_all": {} },
+        "query": {
+          "match_all": {}
+        },
         "size": 100,
-        "sort": [{ "@timestamp": { "order": "desc" } }]
+        "sort": [
+          {
+            "@timestamp": {
+              "order": "desc"
+            }
+          }
+        ]
       },
       "description": "Run raw Elasticsearch DSL queries against the Wazuh Indexer. Supports any valid ES query DSL. Override the index pattern via params.index. Examples: {\"body\": {\"query\": {\"bool\": {\"must\": [{\"match\": {\"rule.id\": \"302010\"}}]}}, \"size\": 5}}"
     },
     "create_rule": {
-      "url": "https://localhost:${APTL_HP_WAZUH_MANAGER_55000}/rules/files/zzz_purple_loop.xml",
+      "url": "https://localhost:${APTL_HP_WAZUH_MANAGER_55000}/rules/files/{filename}",
       "method": "PUT",
       "auth": {
         "type": "wazuh-jwt",
@@ -56,8 +64,28 @@
         "auth_url": "https://localhost:${APTL_HP_WAZUH_MANAGER_55000}/security/user/authenticate"
       },
       "verify_ssl": false,
-      "params": { "overwrite": "true" },
-      "description": "Create or update custom Wazuh detection rules by writing to aptl_purple_loop.xml via the Manager API (overwrite=true). This file is included AFTER webapp_rules.xml so child rules can reference 302xxx via <if_sid>. Body should be raw XML rule content."
+      "path_param_patterns": {
+        "filename": "[A-Za-z0-9][A-Za-z0-9_.-]{0,250}\\.xml"
+      },
+      "description": "Write a custom Wazuh rules file through the Manager API. Put the file name in params.filename and the complete rules XML in body as a raw string. The file name must end in .xml and contain only letters, digits, '_', '.' or '-'. The manager loads rules files in name order, so a file that names an earlier file's rule in <if_sid> must sort after it. The upload replaces the whole file and refuses an existing one unless params.overwrite is true. Example: {\"params\": {\"filename\": \"custom_rules.xml\", \"overwrite\": true}, \"body\": \"<group name=\\\"custom,\\\">...</group>\"}",
+      "params_schema": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 255
+          },
+          "overwrite": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "filename"
+        ],
+        "additionalProperties": false
+      }
     },
     "restart_manager": {
       "url": "https://localhost:${APTL_HP_WAZUH_MANAGER_55000}/manager/restart",
@@ -82,7 +110,24 @@
       },
       "verify_ssl": false,
       "response_type": "text",
-      "description": "Fetch the raw XML content of a Wazuh rule file. Example: {\"params\": {\"filename\": \"local_rules.xml\"}}"
+      "path_param_patterns": {
+        "filename": "[A-Za-z0-9][A-Za-z0-9_.-]{0,250}\\.xml"
+      },
+      "description": "Fetch the raw XML content of a Wazuh rule file. The file name must end in .xml and contain only letters, digits, '_', '.' or '-'. Example: {\"params\": {\"filename\": \"local_rules.xml\"}}",
+      "params_schema": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "filename"
+        ],
+        "additionalProperties": false
+      }
     }
   }
 }

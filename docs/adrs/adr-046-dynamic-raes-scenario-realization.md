@@ -2,7 +2,7 @@
 
 ## Status
 
-accepted (amended 2026-07-31)
+accepted (amended 2026-10-14)
 
 ## Date
 
@@ -10,7 +10,7 @@ accepted (amended 2026-07-31)
 
 ## Last Updated
 
-2026-07-31
+2026-10-14
 
 ## Context
 
@@ -706,6 +706,36 @@ SEM-218 lowering, target/provider binding, and typed backend input. The clean
 live gate proves users, groups, memberships, and declared attributes by querying
 the target through `DeploymentBackend` after `aptl lab stop -v && aptl lab
 start`.
+
+## Declared Fixture Credential Addendum
+
+Issue #1273 adopts raes-env-packs 6.3.1. That release declares each SOC console
+login as an SDL account with one authored `secret_fixture` credential binding.
+An authored fixture is scenario content: the SDL already carries the value, and
+the participant or attacker meets exactly that value. It is not a credential
+the backend generates, so the account addendum's no-plaintext rule applies to
+it as follows.
+
+- The account gate lowers one primary `secret_fixture` binding into
+  `DeploymentAccountRealization.credential`. The value is excluded from `repr`,
+  equality and `details()`, so evidence, snapshots, run records and logs name
+  only the `credential_id`. An `operator_secret` binding, several bindings, or a
+  mismatched auth method is refused, never substituted.
+- The account provider comes from the backend implementation that realizes the
+  node (`account_provider` on the implementation profile or base), not from the
+  node or service name. Samba AD sets a declared fixture through its stdin
+  `setpassword` path. Each application provider (OpenSearch security, Wazuh
+  API, MISP, TheHive, Cortex, Shuffle) sets or verifies the value inside the
+  serving container with every value on stdin, then proves it by
+  authenticating with it.
+- When the product's image accepts its bootstrap principal only through its
+  environment, the value reaches that environment through the startup adapter's
+  account reference (`AccountCredentialFixture`). Core resolves the reference
+  against the admitted SDL; the adapter holds no value.
+- Lab state persists no rendered credential. The participant desktop receives
+  the declared logins only in the participant account's private `0600` files.
+
+The manifest therefore advertises `credential_bindings` and `auth_method`.
 
 ## TechVault Operational Standup Addendum
 
