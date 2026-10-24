@@ -46,9 +46,9 @@ def test_realized_techvault_image_inventory_includes_helpers_and_children(
     assert {
         "scenario." + service for service in matrix.expected_services
     } <= references.keys()
-    assert references["scenario.ad"].startswith("aptl/")
-    assert references["child.shuffle-worker"].startswith("ghcr.io/")
-    assert references["helper.certs"].startswith("wazuh/")
+    assert references["scenario.ad"].split("/", 1)[0] == "aptl"
+    assert references["child.shuffle-worker"].split("/", 1)[0] == "ghcr.io"
+    assert references["helper.certs"].split("/", 1)[0] == "wazuh"
     assert "@sha256:" in references["scenario.misp"]
 
 
@@ -178,7 +178,8 @@ def test_bake_uses_the_proven_offline_guest_provisioning() -> None:
     assert "system-packages.sha256" in provision
     assert "policy-rc.d" in provision
     assert "systemctl enable docker.service" in provision
-    assert "aptl_labs-*.whl" in provision
+    assert "lilrae-*.whl" in provision
+    assert "aptl_labs" not in provision
     assert "aptl-wheel-requirements.txt" in bake
     assert "aptl-wheel-requirements.txt" in provision
     assert "--require-hashes --find-links" in provision
@@ -256,3 +257,45 @@ def test_bake_uses_checkout_config_writer_and_configured_disk_scan() -> None:
     scan = (ROOT / "appliance/guest/scan-golden.sh").read_text()
     assert 'expected_disk_gib=${APTL_SEAT_DISK_GIB:-128}' in scan
     assert 'expected_disk_gib * 1024 * 1024 * 1024 * 19 / 20' in scan
+
+
+def _wheel_requirement_writer() -> str:
+    """Return the bake's embedded application-wheel requirement writer."""
+
+    bake = BAKE.read_text()
+    start = bake.index("<<'PYTHON'\n") + len("<<'PYTHON'\n")
+    return bake[start : bake.index("\nPYTHON\n", start)]
+
+
+@pytest.mark.parametrize("wheel_count", [0, 1, 2])
+def test_bake_pins_exactly_one_application_wheel_by_metadata_name(
+    tmp_path: Path, wheel_count: int
+) -> None:
+    import hashlib
+    import subprocess
+
+    project = tmp_path / "pyproject.toml"
+    project.write_text('[project]\nname = "lilrae"\nversion = "8.0.0"\n')
+    wheelhouse = tmp_path / "wheelhouse"
+    wheelhouse.mkdir()
+    # A legacy-named wheel in the wheelhouse is never the application wheel.
+    (wheelhouse / "aptl_labs-8.0.0-py3-none-any.whl").write_bytes(b"legacy")
+    for tag in ["py3-none-any", "py312-none-any"][:wheel_count]:
+        (wheelhouse / f"lilrae-8.0.0-{tag}.whl").write_bytes(tag.encode())
+    output = tmp_path / "aptl-wheel-requirements.txt"
+
+    completed = subprocess.run(
+        [sys.executable, "-", str(project), str(wheelhouse), str(output)],
+        input=_wheel_requirement_writer(),
+        capture_output=True,
+        text=True,
+    )
+
+    if wheel_count != 1:
+        assert completed.returncode != 0
+        assert "exactly one application wheel" in completed.stderr
+        assert not output.exists()
+        return
+    assert completed.returncode == 0, completed.stderr
+    digest = hashlib.sha256(b"py3-none-any").hexdigest()
+    assert output.read_text() == f"lilrae==8.0.0 --hash=sha256:{digest}\n"

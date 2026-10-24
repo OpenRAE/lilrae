@@ -1,9 +1,10 @@
 
 
-import { SSHConnectionManager, SessionMetadata, SSHError } from '../ssh.js';
+import { SSHConnectionManager, SessionMetadata, SSHError, CommandTimeoutError } from '../ssh.js';
 import { LabConfig, getTargetCredentials } from '../config.js';
 import { ShellType } from '../shells.js';
 import { harvestSession } from '../captures.js';
+import { harvestOnceClosed } from './timeout-harvest.js';
 
 /** Fallback message when a caught value is not an Error (SonarCloud S1192 —
  * the literal otherwise repeats in every handler's catch block). */
@@ -242,6 +243,9 @@ const baseHandlers: Record<string, ToolHandler> = {
         ],
       };
     } catch (error) {
+      if (error instanceof CommandTimeoutError) {
+        await harvestOnceClosed(error, (sessionId, runId) => maybeHarvest(labConfig, sessionId, runId));
+      }
       return {
         content: [
           {
@@ -522,7 +526,7 @@ const baseHandlers: Record<string, ToolHandler> = {
       // bypassed. The handler's catch block converts the thrown SSHError
       // into the standard error envelope, matching session_command and
       // close_session.
-      const output = sshManager.getSessionOutput(session_id, lines, clear);
+      const { chunks, droppedChunks } = sshManager.getSessionOutput(session_id, lines, clear);
 
       return {
         content: [
@@ -531,9 +535,13 @@ const baseHandlers: Record<string, ToolHandler> = {
             text: JSON.stringify({
               success: true,
               session_id,
-              output: output.join(''),
-              lines_returned: output.length,
-              buffer_cleared: clear
+              output: chunks.join(''),
+              lines_returned: chunks.length,
+              buffer_cleared: clear,
+              // #967: the buffer keeps only the newest output. Name the
+              // oldest chunks it dropped instead of returning a silently
+              // shortened buffer.
+              ...(droppedChunks > 0 ? { truncated: true, dropped_chunks: droppedChunks } : {}),
             }, null, 2),
           },
         ],

@@ -16,69 +16,22 @@ release can break it.
 
 from __future__ import annotations
 
-import importlib.resources as ir
 import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
+from tests.techvault_pack import realize_techvault_pack
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_TECHVAULT_FLAG_PARAMETERS = {
-    f"flag_{host}_{level}": f"{host}-{level}"
-    for host in ("victim", "workstation", "webapp", "fileshare", "ad")
-    for level in ("user", "root")
-}
-
-
-def _pack_root() -> Path:
-    return Path(str(ir.files("raes_env_packs") / "resources" / "packs" / "techvault"))
-
-
-def _realize_pack(tmp_path):
-    from aptl.backends.raes import (
-        RuntimeManager,
-        create_aptl_runtime_target,
-        parse_sdl_file,
-    )
-    from aptl.backends.raes_realization import interpret_provisioning_plan
-    from aptl.core.config import AptlConfig
-    from aptl.core.scenario_bundle import env_pack_bundle
-
-    bundle = env_pack_bundle(tmp_path, identity="techvault", source_pack=_pack_root())
-    config = AptlConfig(
-        lab={"name": "tv"},
-        containers={
-            "wazuh": True,
-            "soc": True,
-            "enterprise": True,
-            "victim": True,
-            "kali": True,
-            "fileshare": True,
-            "dns": True,
-        },
-    )
-    target = create_aptl_runtime_target(
-        project_dir=PROJECT_ROOT, config=config, backend=MagicMock(), bundle=bundle
-    )
-    scenario = parse_sdl_file(bundle.sdl_path)
-    plan = RuntimeManager(target).plan(
-        scenario,
-        parameters=_TECHVAULT_FLAG_PARAMETERS,
-    )
-    return interpret_provisioning_plan(
-        plan=plan.provisioning,
-        config=config,
-        bundle=bundle,
-        component_root=PROJECT_ROOT,
-    )
 
 
 @pytest.fixture(scope="module")
 def techvault_realization(tmp_path_factory):
     """Run the released pack's filesystem-backed planner once per module."""
 
-    return _realize_pack(tmp_path_factory.mktemp("techvault-realization"))
+    return realize_techvault_pack(tmp_path_factory.mktemp("techvault-realization"))
 
 
 @pytest.mark.integration
@@ -99,7 +52,7 @@ def test_techvault_pack_realizes_without_provisioner_diagnostics(
     # The adapter ships inside the one distribution, so host-observed
     # provenance names it. What the seam still proves is that the provenance
     # comes from installed metadata rather than the provider's own claim.
-    assert evidence["provider"]["distribution"] == "aptl-labs"
+    assert evidence["provider"]["distribution"] == "lilrae"
     assert evidence["provider"]["entry_point"] == "techvault.aptl"
     assert evidence["provider"]["mapping_digest"].startswith("sha256:")
 
@@ -402,10 +355,13 @@ def test_generated_base_compose_is_written_under_realization_root_not_the_pack(
     validate_pack_content_manifest(str(content_root))
 
 
-def test_in_tree_base_compose_uses_the_static_file(tmp_path):
-    """When a docker-compose.yml is present (in-tree), it is used as-is."""
+def test_in_tree_base_compose_is_generated_even_with_a_static_file(tmp_path):
+    """A root Compose file cannot bypass scenario environment admission."""
 
-    from aptl.core.deployment._compose_node_generation import base_compose_file
+    from aptl.core.deployment._compose_node_generation import (
+        GENERATED_COMPOSE_RELPATH,
+        base_compose_file,
+    )
     from aptl.core.deployment.realization import DeploymentRealizationSpec
 
     root = tmp_path / "engine"
@@ -413,7 +369,10 @@ def test_in_tree_base_compose_uses_the_static_file(tmp_path):
     (root / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
     spec = DeploymentRealizationSpec(profiles=(), nodes=(), networks=())
 
-    assert base_compose_file(spec, root, root) == root / "docker-compose.yml"
+    path = base_compose_file(spec, root, root)
+    assert path == root / GENERATED_COMPOSE_RELPATH
+    assert path.is_file()
+    assert (root / "docker-compose.yml").read_text() == "services: {}\n"
 
 
 def test_operational_config_translates_declared_runtime_fields():
@@ -771,13 +730,15 @@ def test_pinned_address_in_the_dynamic_half_fails_loudly():
         _dynamic_ip_range("172.20.0.0/24", "172.20.0.1", {"172.20.0.200"})
 
 
-def test_operator_secret_env_is_emitted_as_a_compose_interpolation_reference():
-    """An operator_secret env var becomes NAME=${NAME}, not its empty SDL value.
+def test_operator_secret_env_is_left_to_its_bound_env_file():
+    """An operator_secret env var is not inlined, and is no ``${NAME}`` reference.
 
-    A real deployment credential is authored empty and supplied by the operator
-    .env; the image-node path must emit a Compose interpolation reference so
-    Docker resolves it at up time, while planted secret_fixture credentials keep
-    their authored value as content (issue #875).
+    A real deployment credential is authored empty. The backend binds it from an
+    explicit grant or the pack's startup adapter and delivers it through the
+    service's own env file (issue #965), so the generated environment map
+    carries no interpolation hole that Compose could fill from its own
+    environment. A planted secret_fixture credential keeps its authored value as
+    content (issue #875).
     """
 
     from raes.runtime_configuration import RuntimeConfiguration
@@ -805,8 +766,8 @@ def test_operator_secret_env_is_emitted_as_a_compose_interpolation_reference():
     env = _operational_config(runtime)["environment"]
 
     assert env["INDEXER_URL"] == "https://wazuh.indexer:9200"
-    # operator secret -> interpolation reference, resolved from the operator .env
-    assert env["INDEXER_PASSWORD"] == "${INDEXER_PASSWORD}"
+    # operator secret -> delivered by the service's bound env file, not inline
+    assert "INDEXER_PASSWORD" not in env
     # planted range credential -> authored value carried as content
     assert env["DB_PASSWORD"] == "changeme123"
 

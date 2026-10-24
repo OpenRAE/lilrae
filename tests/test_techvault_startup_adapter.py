@@ -64,7 +64,7 @@ def _bundle(*, digest: str = TECHVAULT_PACK_SET_DIGEST) -> ScenarioBundle:
         root=pack_root,
         sdl_path=pack_root / "sdl/techvault.sdl.yaml",
         source_kind=ScenarioSourceKind.ENV_PACK,
-        pack_identity=PackIdentity("techvault", "0.1.1", digest),
+        pack_identity=PackIdentity("techvault", "0.1.2", digest),
     )
 
 
@@ -108,7 +108,7 @@ def _startup_spec(
         nodes=nodes,
         networks=(),
         images=images,
-        pack_identity=PackIdentity("techvault", "0.1.1", digest),
+        pack_identity=PackIdentity("techvault", "0.1.2", digest),
     )
 
 
@@ -317,6 +317,34 @@ def test_startup_policy_rejects_duplicate_health_probe() -> None:
         _validated_policy(policy, spec)
 
 
+def test_startup_values_are_the_pack_declared_account_credentials() -> None:
+    """Each value comes from the admitted SDL, not from the adapter (#1273)."""
+
+    from aptl.backends.raes_declared_credentials import scenario_accounts
+
+    bundle = _bundle()
+    plan = resolve_scenario_startup(bundle)
+    accounts = scenario_accounts(bundle.sdl_path)
+    values = {item.name: item.value for item in plan.environment_fixtures}
+
+    def declared(account: str) -> tuple[str, str]:
+        binding = accounts[account].credential_bindings[0]
+        return accounts[account].username, binding.material.value
+
+    expected = declared("wazuh-indexer-admin")
+    assert values["INDEXER_USERNAME"] == expected[0]
+    assert values["INDEXER_PASSWORD"] == expected[1]
+    expected = declared("wazuh-manager-api")
+    assert values["API_USERNAME"] == expected[0]
+    assert values["API_PASSWORD"] == expected[1]
+    expected = declared("shuffle-administrator")
+    assert values["SHUFFLE_DEFAULT_USERNAME"] == expected[0]
+    assert values["SHUFFLE_DEFAULT_PASSWORD"] == expected[1]
+    source = Path(__file__).resolve().parents[1] / "src" / "aptl_techvault"
+    adapter = (source / "account_environment.py").read_text(encoding="utf-8")
+    assert values["INDEXER_PASSWORD"] not in adapter
+
+
 def test_exact_release_resolves_seed_and_runtime_bindings() -> None:
     plan = resolve_scenario_startup(_bundle())
 
@@ -341,6 +369,12 @@ def test_exact_release_resolves_seed_and_runtime_bindings() -> None:
         "DASHBOARD_PASSWORD",
         "API_USERNAME",
         "API_PASSWORD",
+        "SHUFFLE_DEFAULT_USERNAME",
+        "SHUFFLE_DEFAULT_PASSWORD",
+        "THEHIVE_ADMIN_USER",
+        "THEHIVE_ADMIN_PASS",
+        "CORTEX_SUPERADMIN_USER",
+        "CORTEX_SUPERADMIN_PASSWORD",
     }
     assert {
         (item.variable, item.semantic_name) for item in plan.container_environment

@@ -1,5 +1,9 @@
 # Issue #912 MISP/Redis Post-Realization Mutation Preflight
 
+> **Dated preflight record.** Written on 2026-09-18 and kept as written. Since
+> then, #1108 (18dcc702, 2026-09-19) removed `scripts/envpack-soar-fixups.sh`,
+> the repair it plans to retire.
+
 This note fixes the boundary for retiring the temporary MISP/Redis repair. It
 is guidance, not an implementation plan. The authoritative desired state is a
 released TechVault pack that passes the normal pack validation and admission

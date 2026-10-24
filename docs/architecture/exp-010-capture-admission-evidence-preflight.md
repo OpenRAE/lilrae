@@ -1,5 +1,10 @@
 # EXP-010 Capture Admission And Evidence Acquisition Preflight
 
+> **Dated preflight record.** Written on 2026-07-20 and kept as written. Since
+> then, #1257 (1abe440b, 2026-10-11) removed
+> `containers/kali-capture/writer.py`, which it cites. The capture broker,
+> `containers/kali-capture/broker.py`, records the session transcript.
+
 This note is the architecture preflight for EXP-010 / issue #752. It is
 guidance, not an implementation plan. No new ADR is needed: ADR-047 owns RAES
 experiment admission and deterministic trial planning, OBS-002 owns correlation

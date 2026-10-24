@@ -14,6 +14,17 @@ def runner():
     return CliRunner()
 
 
+def test_missing_web_dependencies_report_current_pipx_install(runner):
+    from aptl.cli.web import app
+
+    with patch.dict("sys.modules", {"uvicorn": None}):
+        result = runner.invoke(app, [])
+
+    assert result.exit_code == 1
+    assert 'pipx inject lilrae "lilrae[web]"' in result.output
+    assert 'pip install -e ".[web]"' in result.output
+
+
 class TestWebServe:
     @pytest.fixture(autouse=True)
     def _pin_asset_root(self):
