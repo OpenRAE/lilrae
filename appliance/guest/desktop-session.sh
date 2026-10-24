@@ -12,7 +12,11 @@ for role in red blue; do
             "printf 'Starting the lab. Claude will open when services are ready.\\n'; while test ! -f /home/aptl/.config/aptl/run-ready; do sleep 2; done; cd /opt/aptl/project && /usr/local/bin/claude --mcp-config /home/aptl/$role.mcp.json --strict-mcp-config --dangerously-skip-permissions; exec sh"
     fi
 done
-epiphany about:blank &
+# Lab start publishes the participant's private desktop before run-ready.
+(
+    while test ! -f /home/aptl/.config/aptl/run-ready; do sleep 2; done
+    exec /usr/local/bin/aptl-participant-desktop-open /home/aptl/.config/aptl/desktop
+) &
 sleep 3
 xfce4-terminal --maximize \
     --title=RED --command='tmux attach -t red' \

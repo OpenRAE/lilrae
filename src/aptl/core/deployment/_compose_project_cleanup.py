@@ -1,4 +1,4 @@
-"""Project-scoped residual container cleanup for Compose backends."""
+"""Receipt-backed resource and residual helper cleanup for Compose backends."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from aptl.core.ephemeral_containers import (
     stranded_helpers_command,
 )
 
+_DOCKER_TIMEOUT = 30
 _HELPER_CLEANUP_TIMEOUT = 60
 
 
@@ -21,7 +22,9 @@ class _CleanupBackend(Protocol):
 
     _project_name: str
 
-    def _remove_owned_containers(self, managed_by: str) -> list[str]:
+    def _remove_owned_containers(
+        self, managed_by: str, *, remove_volumes: bool = True
+    ) -> list[str]:
         """Remove only freshly verified receipt-owned native container IDs."""
 
         ...
@@ -34,17 +37,102 @@ class _CleanupBackend(Protocol):
 
 
 class ComposeProjectCleanupMixin(object):
-    """Remove project-owned containers that Compose may leave behind."""
+    """Remove receipt-owned resources and workspace-scoped residual helpers."""
 
-    def remove_generic_materializer_containers(self) -> list[str]:
+    def _remove_owned_containers(
+        self, managed_by: str, *, remove_volumes: bool = True
+    ) -> list[str]:
+        """Remove recorded containers by verified native ID."""
+
+        try:
+            ownership = self._ensure_resource_ownership()
+            receipts = tuple(
+                receipt
+                for receipt in ownership.receipts("container")
+                if receipt.managed_by == managed_by
+            )
+            failures = []
+            for receipt in receipts:
+                if not self._raw_container_inspect(receipt.native_id):
+                    continue
+                native_id = self._resolve_owned_container_id(receipt.native_id)
+                command = remove_container_command(
+                    native_id, remove_volumes=remove_volumes
+                )
+                if self._run(command, timeout=60).returncode:
+                    failures.append("failed to remove receipt-owned container")
+            return failures
+        except (OwnershipConflictError, OSError):
+            return ["failed to establish container cleanup authority"]
+
+    def _remove_owned_volumes(self) -> list[str]:
+        """Remove only receipt-owned volumes that still verify on this daemon."""
+
+        try:
+            ownership = self._ensure_resource_ownership()
+            failures = []
+            for receipt in ownership.receipts("volume"):
+                if self._raw_volume_inspect(receipt.native_id):
+                    volume = self._resolve_owned_volume_name(receipt.native_id)
+                    if self._run(
+                        ["docker", "volume", "rm", volume], timeout=_DOCKER_TIMEOUT
+                    ).returncode:
+                        failures.append("failed to remove receipt-owned volume")
+                        continue
+                if self._raw_volume_inspect(receipt.native_id):
+                    failures.append("failed to verify receipt-owned volume removal")
+                    continue
+                ownership.retire_deleted_volume(receipt)
+            return failures
+        except (OwnershipConflictError, BackendTimeoutError, OSError):
+            return ["failed to establish volume cleanup authority"]
+
+    def _prepare_owned_cleanup(self) -> None:
+        """Verify cleanup authority, allowing a provably empty new namespace."""
+
+        ownership = self._ensure_resource_ownership()
+        daemon_id = self._docker_daemon_id or self._current_docker_daemon_id()
+        if daemon_id:
+            self._docker_daemon_id = daemon_id
+            self._verify_compose_namespace_is_owned(ownership, daemon_id)
+        elif any(
+            (
+                self._scoped_compose_container_ids(),
+                self._scoped_compose_network_ids(),
+                self._scoped_compose_volume_names(),
+            )
+        ):
+            raise OwnershipConflictError("backend daemon identity is unavailable")
+
+    def _remove_owned_attempt_containers(
+        self, attempt_id: str, *, remove_volumes: bool = False
+    ) -> None:
+        """Best-effort rollback of IDs recorded for one failed attempt."""
+
+        ownership = self._ensure_resource_ownership()
+        for receipt in ownership.receipts("container"):
+            if receipt.attempt_id != attempt_id:
+                continue
+            try:
+                native_id = self._resolve_owned_container_id(receipt.native_id)
+                self._run(
+                    remove_container_command(native_id, remove_volumes=remove_volumes),
+                    timeout=60,
+                )
+            except (OwnershipConflictError, OSError):
+                continue
+
+    def remove_generic_materializer_containers(
+        self, *, remove_volumes: bool = True
+    ) -> list[str]:
         """Force-remove containers realized directly by the generic materializer."""
 
-        return self._remove_owned_containers("direct")
+        return self._remove_owned_containers("direct", remove_volumes=remove_volumes)
 
-    def remove_project_containers(self) -> list[str]:
+    def remove_project_containers(self, *, remove_volumes: bool = True) -> list[str]:
         """Force-remove residual containers carrying the Compose project identity."""
 
-        return self._remove_owned_containers("compose")
+        return self._remove_owned_containers("compose", remove_volumes=remove_volumes)
 
     def _ephemeral_project(self) -> str | None:
         """Return this workspace's project if it already exists, creating nothing.

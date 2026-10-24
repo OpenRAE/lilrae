@@ -1,5 +1,10 @@
 # Issue #969 Platform Safety Gates Preflight
 
+> **Dated preflight record.** Written on 2026-09-19 and kept as written. Since
+> then, #1146 (90aade5b, 2026-09-21) replaced
+> `tests/fixtures/materialization-envelope.sdl.yaml`, which it cites, with the
+> fixture pack `tests/fixtures/packs/materialization-envelope`.
+
 This note fixes the architecture boundary for the required `dev` pull-request
 checks in issue #969. It is design guidance, not an implementation plan.
 ADR-026 still owns advisory Trivy and OSV scanning, while proposed ADR-058

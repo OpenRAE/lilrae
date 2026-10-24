@@ -24,6 +24,9 @@ from aptl.backends._raes_apply_reporting import (
     bounded_apply_details as _bounded_apply_details,
     capture_apparatus_observations,
 )
+from aptl.backends._lilrae_catalog_image_observation import catalog_images_unverified
+from aptl.backends._raes_image_policy import _policy_diagnostic
+from aptl.backends._raes_observation_helpers import ObservedResource
 from aptl.backends._raes_provisioning_helpers import (
     retryable_readback_gaps as _retryable_readback_gaps,
 )
@@ -209,6 +212,20 @@ class ProvisionerStartMixin(object):
                 observation_context=observation_context,
                 startup_selection=self.startup_selection,
             )
+            unverified_images = catalog_images_unverified(observations)
+            if unverified_images:
+                diagnostics.extend(
+                    _policy_diagnostic(address, "catalog-image-unverified")
+                    for address in unverified_images
+                )
+                return ApplyResult(
+                    success=False, snapshot=snapshot, diagnostics=diagnostics,
+                    details=_bounded_apply_details({
+                        "profiles": selected_profiles,
+                        "realization": realization.details(),
+                        "observation_evidence": observation_evidence(observations),
+                    }, realization),
+                )
             realized_snapshot = self._with_artifact_satisfactions(
                 plan,
                 snapshot_after_apply(plan, snapshot, observations),
@@ -270,27 +287,35 @@ class ProvisionerStartMixin(object):
             snapshot=realized_snapshot,
             diagnostics=diagnostics,
             changed_addresses=realized_changed_addresses(plan, realized_snapshot),
-            details=_bounded_apply_details(
-                {
-                    "profiles": selected_profiles,
-                    "realization": realization.details(),
-                    "observation_evidence": observation_evidence(observations),
-                    "observability": {
-                        "enabled": self.observability_scope.enabled,
-                        "reason": self.observability_scope.reason,
-                        "governing_scopes": list(
-                            self.observability_scope.governing_scopes
-                        ),
-                    },
-                    "capture_apparatus": list(apparatus_observations),
-                    "operator_access": operator_access_details(
-                        self.operator_access.accesses
-                    ),
-                    "aptl_execution_boundary": execution_boundary_disclosure(
-                        self.deployment_backend
-                    ),
-                },
-                realization,
+            details=self._successful_apply_details(
+                realization, observations, apparatus_observations
             ),
             operational_realization_observations=operational_observations,
+        )
+
+    def _successful_apply_details(
+        self,
+        realization: AptlRealization,
+        observations: dict[str, ObservedResource],
+        apparatus_observations: tuple[dict[str, object], ...],
+    ) -> dict[str, object]:
+        """Project verified deployment and apparatus evidence into bounded details."""
+
+        return _bounded_apply_details(
+            {
+                "profiles": self.selected_profiles(realization),
+                "realization": realization.details(),
+                "observation_evidence": observation_evidence(observations),
+                "observability": {
+                    "enabled": self.observability_scope.enabled,
+                    "reason": self.observability_scope.reason,
+                    "governing_scopes": list(self.observability_scope.governing_scopes),
+                },
+                "capture_apparatus": list(apparatus_observations),
+                "operator_access": operator_access_details(self.operator_access.accesses),
+                "aptl_execution_boundary": execution_boundary_disclosure(
+                    self.deployment_backend
+                ),
+            },
+            realization,
         )

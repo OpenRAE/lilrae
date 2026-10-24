@@ -98,9 +98,11 @@ class SealedRunError(RuntimeError):
 # could break out of the runs/ tree.
 # Allow leading `_` so the `_unbound` sentinel (used when MCP servers run
 # outside an active scenario context) survives validation. No traversal
-# vector — `_` is just a filename character. `\w` is `[A-Za-z0-9_]`
-# (SonarCloud S6353 — concise character class).
-_ID_RE = re.compile(r"^\w[\w.-]*$")
+# vector — `_` is just a filename character. With `re.ASCII`, `\w` is
+# `[A-Za-z0-9_]` (SonarCloud S6353 — concise character class). Without the
+# flag, `\w` also matches non-ASCII letters and digits, which the capture
+# broker, the capture writer and the MCP `ID_RE` all reject.
+_ID_RE = re.compile(r"^\w[\w.-]*$", re.ASCII)
 
 
 def _validate_id(value: str, kind: str) -> str:

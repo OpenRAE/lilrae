@@ -11,7 +11,7 @@ bundled ``_labdata/src`` copy, since ``ASSET_ROOTS`` ships ``src`` twice over.
 Second, the install: one install of one distribution is enough for semantic
 verification to reach a verdict. That is the point of the adapter shipping with
 the backend, and it is what an operator on the packaged path (DEP-008,
-``pipx install aptl-labs``, no git clone) actually gets.
+``pipx install lilrae``, no git clone) actually gets.
 
 Every compatibility context is derived from the pack ``env_pack_bundle()``
 admits (#879). A digest copied into this file would let the test agree with a
@@ -22,10 +22,11 @@ passing suite.
 from __future__ import annotations
 
 import json
+from importlib import metadata
 from pathlib import Path
-import shutil
 import subprocess
 import sys
+from types import SimpleNamespace
 import zipfile
 
 import pytest
@@ -64,15 +65,14 @@ class Operations:
 def _build_wheel(output: Path) -> Path:
     """Build the distribution with the repository's locked build toolchain."""
 
-    if shutil.which("uv") is None:
-        pytest.skip("uv is required for the repository's locked build proof")
     completed = subprocess.run(
         [
-            "uv",
+            sys.executable,
+            "-m",
             "build",
             "--wheel",
-            "--no-build-isolation",
-            "--out-dir",
+            "--no-isolation",
+            "--outdir",
             str(output),
             str(REPO_ROOT),
         ],
@@ -202,6 +202,7 @@ def test_the_wheel_keeps_scenario_knowledge_out_of_the_framework_package(
         b"aptl.scenario_capture",
         b"aptl.scenario_planning_compatibility",
         b"aptl.scenario_runtime_parameters",
+        b"aptl.participant_desktop",
         b"aptl.participant_mcp_smoke_plans",
     ):
         assert group in entry_points
@@ -224,6 +225,41 @@ def test_the_wheel_keeps_scenario_knowledge_out_of_the_framework_package(
     )
     offenders = [marker for marker in ANSWER_KEY_MARKERS if marker in framework]
     assert not offenders, f"scenario knowledge in the framework package: {offenders}"
+
+    # Apply the same ownership policy to importable code and bundled runtime
+    # assets, so moving a literal into a copied script cannot evade the gate.
+    from tests.test_pack_boundary_policy import _check
+
+    check = _check()
+    # The artifact job installs dependencies without installing the checkout.
+    # Discover the owners from the wheel under test, rather than whichever
+    # project distribution happens to be installed in the runner environment.
+    installed = tmp_path / "wheel-metadata"
+    for name, content in members.items():
+        if ".dist-info/" in name:
+            destination = installed / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content)
+    check.metadata = SimpleNamespace(
+        distributions=lambda: metadata.distributions(path=[str(installed)])
+    )
+    assert {"techvault", "techvault-participant-study"} <= check.owner_packs()
+    facts = {}
+    for pack_id in sorted(check.owner_packs()):
+        facts.update(check.pack_facts(pack_id))
+    assert facts
+    imported, bundled = tmp_path / "imported", tmp_path / "bundled"
+    for name, content in members.items():
+        if name.startswith("aptl/_labdata/"):
+            destination = bundled / name.removeprefix("aptl/_labdata/")
+        elif name.startswith("aptl/") and name.endswith(".py"):
+            destination = imported / "src" / name
+        else:
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(content)
+    assert check.findings(imported, facts) == []
+    assert check.findings(bundled, facts) == []
 
 
 @pytest.mark.integration
@@ -253,7 +289,7 @@ report = verify_scenario(
 )
 assert report.status is VerificationStatus.PASSED, report.diagnostics
 assert report.plugin_id == "techvault"
-assert report.distribution == "aptl-labs"
+assert report.distribution == "lilrae"
 assert report.distribution_version, "the version comes from installed metadata"
 assert report.entry_point == "techvault.aptl"
 """,

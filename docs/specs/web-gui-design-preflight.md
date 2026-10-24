@@ -1,5 +1,12 @@
 # Web GUI Design Preflight Guardrails
 
+> **Dated preflight record.** Written on 2026-06-27 and kept as written. Since
+> then, UI-008a (684105ec, 2026-06-28) replaced `web/src/hooks.server.ts` with
+> the FastAPI BFF gate in `src/aptl/api/middleware/bff.py`, and UI-008d
+> (db03cf05, 2026-07-01) removed `web/src/lib/workbench.ts`.
+> Current interfaces are documented in the [Web reference](../reference/web.md);
+> contributor verification follows the [coding standards](../CODING_STANDARDS.md).
+
 ## Scope
 
 This note is the architecture preflight for UI-007 and the binding guardrail

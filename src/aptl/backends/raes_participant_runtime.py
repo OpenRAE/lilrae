@@ -28,6 +28,7 @@ from aptl.backends.raes_participant_actions import (
 )
 from aptl.backends.raes_participant_provider import (
     ParticipantDecisionSolicitation,
+    ParticipantProviderFailure,
     ParticipantSelectionProvider,
     parse_provider_selection,
 )
@@ -93,9 +94,11 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         failure = self._selection_context_failure(request, snapshot, budget_key)
         selection = None
         if failure is None:
-            selection = self._invoke_selection_provider(request, budget_key)
+            selection, provider_failure = self._invoke_selection_provider(
+                request, budget_key
+            )
             if selection is None:
-                failure = (
+                failure = provider_failure or (
                     "participant selection provider failed or returned malformed output"
                 )
             elif selection.model_dump(mode="json") not in tuple(
@@ -192,8 +195,8 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         self,
         request: ParticipantDecisionSolicitation,
         budget_key: tuple[str, str],
-    ) -> ParticipantDecisionSurfaceSelectionV2Model | None:
-        """Reserve one proposal and invoke the bound provider fail-closed."""
+    ) -> tuple[ParticipantDecisionSurfaceSelectionV2Model | None, str | None]:
+        """Reserve one proposal; return the selection or the runner's failure."""
 
         seen = self._seen_solicitations.setdefault(budget_key, set())
         seen.add(request.solicitation_id)
@@ -202,15 +205,18 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         )
         self._in_flight_participants.add(request.participant_address)
         selection = None
+        failure = None
         try:
             provider = self._selection_provider
             if provider is not None:
                 selection = parse_provider_selection(provider.select(request))
+        except ParticipantProviderFailure as exc:
+            failure = f"participant selection provider failed: {exc}"
         except Exception:
             selection = None
         finally:
             self._in_flight_participants.discard(request.participant_address)
-        return selection
+        return selection, failure
 
     def next_solicitation_ordinal(
         self,
