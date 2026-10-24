@@ -661,7 +661,7 @@ def test_manifest_provisioner_declares_only_realized_capabilities():
         {"dataset", "directory", "file"}
     )
     assert provisioner.supported_account_features == frozenset(
-        {"disabled", "groups", "mail", "spn"}
+        {"auth_method", "credential_bindings", "disabled", "groups", "mail", "spn"}
     )
     assert provisioner.supports_accounts is True
     assert provisioner.supports_acls is True
@@ -3849,6 +3849,9 @@ def test_provisioner_records_supported_placement_realizations(tmp_path):
         # The authored credential class is reported back with the placement, so
         # the runtime sees which class the backend realized (issue #1006).
         "password_strength": "weak",
+        # A declared credential is reported by id only, never by value (#1273).
+        "auth_method": "password",
+        "credential_id": None,
     }
 
     # Real lowering, not counting: the typed backend spec actually passed
@@ -3879,7 +3882,7 @@ def test_account_lowering_preserves_disabled_explicitness():
             resource=resource,
             payload={"spec": spec},
             target_address="scenario.node.ad",
-            target_service="ad",
+            target_account_provider="samba-ad",
         )
         return account
 
@@ -3894,13 +3897,16 @@ def test_account_lowering_preserves_disabled_explicitness():
 def test_manifest_account_features_match_realized_dto_fields():
     """Manifest honesty (#577, ADR-046 addendum): advertise only the account
     features the backend actually materializes AND verifies — the non-secret
-    fields the typed ``DeploymentAccountRealization`` carries. ``auth_method`` /
+    fields the typed ``DeploymentAccountRealization`` carries, plus one authored
+    ``secret_fixture`` credential binding and its auth method (#1273).
     ``home`` / ``shell`` are neither carried nor realized, so they are not
     claimed."""
     from aptl.backends.raes_manifest import create_aptl_manifest
 
     manifest = create_aptl_manifest()
     assert set(manifest.provisioner.supported_account_features) == {
+        "auth_method",
+        "credential_bindings",
         "disabled",
         "groups",
         "mail",

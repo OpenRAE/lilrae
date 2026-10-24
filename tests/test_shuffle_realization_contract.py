@@ -20,8 +20,6 @@ EXPECTED_ENVIRONMENT = {
         "31a211c4-ea5c-4a49-b022-5e2434e758a7",
         "secret_fixture",
     ),
-    "SHUFFLE_DEFAULT_PASSWORD": ("ShuffleAdmin2024!", "secret_fixture"),
-    "SHUFFLE_DEFAULT_USERNAME": ("admin", "plain"),
     "SHUFFLE_OPENSEARCH_PASSWORD": ("StrongPassword123!", "secret_fixture"),
     "SHUFFLE_OPENSEARCH_SKIPSSL_VERIFY": ("true", "plain"),
     "SHUFFLE_OPENSEARCH_URL": ("https://shuffle-opensearch:9200", "plain"),
@@ -36,7 +34,7 @@ def _enum_value(value: object) -> object:
 def test_released_pack_supplies_shuffle_semantics_and_leaves_mechanics_open(
     tmp_path: Path,
 ) -> None:
-    assert version("raes-env-packs") == "6.2.1"
+    assert version("raes-env-packs") == "6.3.3"
     scenario = parse_sdl_file(techvault_scenario_path(tmp_path))
     backend = scenario.nodes["shuffle-backend"].runtime
     opensearch = scenario.nodes["shuffle-opensearch"].runtime

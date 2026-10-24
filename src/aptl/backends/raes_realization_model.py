@@ -73,6 +73,7 @@ class NodeRealization(object):
     backend_run_capabilities: tuple[str, ...] = ()
     backend_provider_kind: str = ""
     backend_provider_parameters: tuple[tuple[str, str], ...] = ()
+    backend_account_provider: str = ""
     # Generated prerequisites selected under the same OPEN authority as this
     # node's backend runtime additions. They are promoted into the realization's
     # top-level artifact collection so deployment and reporting see them.
@@ -390,5 +391,6 @@ def _deployment_node_realization(
         backend_run_capabilities=node.backend_run_capabilities,
         backend_provider_kind=node.backend_provider_kind,
         backend_provider_parameters=node.backend_provider_parameters,
+        backend_account_provider=node.backend_account_provider,
         profiles=node.profiles,
     )

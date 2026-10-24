@@ -58,7 +58,7 @@ test -f "$payload_dir/aptl-launch.mount"
 test -d "$payload_dir/system-packages"
 test -f "$payload_dir/system-packages.sha256"
 test -f "$payload_dir/claude-runtime.tar"
-for filename in desktop-compose.yml desktop-nginx.conf seat-desktop.py seat-privileges.py desktop-handoff.py desktop-mcp-smoke.py desktop-session.sh guac-schema.sql; do
+for filename in desktop-compose.yml desktop-nginx.conf seat-desktop.py seat-privileges.py desktop-handoff.py desktop-mcp-smoke.py desktop-session.sh guac-schema.sql participant-hosts.py participant-desktop-open.sh; do
     test -f "$payload_dir/$filename"
 done
 
@@ -200,11 +200,13 @@ usermod --append --groups ssl-cert xrdp
 chown -R aptl:aptl /home/aptl
 
 install -d -m 0755 /opt/aptl/desktop
-for filename in desktop-compose.yml desktop-nginx.conf seat-desktop.py seat-privileges.py desktop-handoff.py desktop-mcp-smoke.py guac-schema.sql; do
+for filename in desktop-compose.yml desktop-nginx.conf seat-desktop.py seat-privileges.py desktop-handoff.py desktop-mcp-smoke.py guac-schema.sql participant-hosts.py; do
     install -m 0444 "$payload_dir/$filename" "/opt/aptl/desktop/$filename"
 done
 install -m 0755 "$payload_dir/desktop-session.sh" \
     /usr/local/bin/aptl-desktop-session
+install -m 0755 "$payload_dir/participant-desktop-open.sh" \
+    /usr/local/bin/aptl-participant-desktop-open
 cat >/usr/local/bin/start-seat-desktop <<'EOF'
 #!/bin/sh
 exec /usr/bin/python3 /opt/aptl/desktop/seat-desktop.py

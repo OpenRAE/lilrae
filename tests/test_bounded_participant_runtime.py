@@ -875,6 +875,26 @@ def test_head_endpoint_probe_uses_curl_head_semantics() -> None:
     assert all(command[-1] == "http://aptl-webapp:8080/" for command in curl_calls)
 
 
+@pytest.mark.parametrize("email", ["green.user+validated@techvault.local", "analyst@fixture.test"])
+def test_profile_contact_change_uses_the_admitted_argument_without_a_domain_literal(email):
+    backend = _StatefulBackend()
+    address = "participant.action-contract.update-own-profile"
+
+    operation = execute_verified_participant_operation(
+        backend=backend,
+        container_by_node={name: f"aptl-{name}" for name in NODES},
+        action_contract_address=address,
+        arguments={"change": f"contact_email:{email}"},
+        participant_address="participant.behavior.semantic-probe",
+        episode_id="contact-change",
+        target_nodes=BPA_ACTION_REALIZATIONS[address].target_nodes,
+    )
+
+    assert operation.success
+    assert operation.post_state["db.profile.contact_email"] == email
+    assert operation.post_state["db.profile.protected_account_id"] == operation.pre_state["db.profile.protected_account_id"]
+
+
 def test_participant_pipeline_accepts_only_declared_idempotent_stutters(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -163,8 +163,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: |
-          pip install --require-hashes -r requirements/dev.txt
-          pip install -e . --no-deps --no-build-isolation
+          python -m pip install --require-hashes -r requirements/dev.txt
+          python -m pip install -e . --no-deps --no-build-isolation
       - name: Python portable suite without lab integration
         run: python -m pytest ${{ matrix.pytest_args }}
       - name: CLI import and help smoke

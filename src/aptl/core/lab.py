@@ -608,6 +608,9 @@ def _tear_down_owned(
 
     capture_failure = _finalize_required_transcript_capture(search_dir, backend)
     stop_result = backend.stop(profiles, remove_volumes=remove_volumes)
+    from aptl.core.participant_desktop import withdraw_participant_desktop
+
+    desktop_withdrawn = withdraw_participant_desktop(search_dir)
     result = stop_result
     if remove_volumes:
         cleanup_failure = _run_pending_host_cleanup(
@@ -617,6 +620,8 @@ def _tear_down_owned(
             result = cleanup_failure
     if result is stop_result and capture_failure is not None:
         result = capture_failure
+    if not desktop_withdrawn and result.success:
+        return LabResult(success=False, error="Participant desktop withdrawal failed")
     return result
 
 
@@ -1816,6 +1821,10 @@ def _step_reject_preexisting_range(ctx: _LabStartContext) -> LabResult | None:
         )
     if not presence.present:
         ctx.range_was_absent = True
+        from aptl.core.participant_desktop import withdraw_participant_desktop
+
+        if not withdraw_participant_desktop(ctx.project_dir):
+            return LabResult(success=False, error="Previous participant desktop could not be withdrawn")
         return None
     log.warning(
         "Lab start blocked by project runtime residue (containers=%d networks=%d)",
@@ -3963,6 +3972,20 @@ def _native_evaluation_failure(refresh: object) -> str:
     )
 
 
+def _step_publish_participant_desktop(ctx: _LabStartContext) -> LabResult | None:
+    """Publish the admitted pack's participant desktop surface (issue #1273)."""
+
+    from aptl.core.participant_desktop import start_participant_desktop
+
+    failure = start_participant_desktop(ctx.project_dir, ctx.admitted_start, ctx.backend)
+    if failure is None:
+        return None
+    return LabResult(
+        success=False,
+        error=f"Participant desktop could not be published: {failure}",
+    )
+
+
 def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
     """Refresh local MCP client env keys after SOC seeding."""
     # `.mcp.json` is the canonical config Claude Code, Cursor, and Cline
@@ -4270,6 +4293,7 @@ _LAB_START_STEPS = (
     _step_build_mcps,
     _step_seed_soc,
     _step_acquire_required_native_evidence,
+    _step_publish_participant_desktop,
     _step_sync_mcp_config,
     _step_execute_participant_injects,
     _step_attest_project_containers,
@@ -4368,6 +4392,7 @@ _LAB_START_PROGRESS_MESSAGES = {
     "_step_acquire_required_native_evidence": (
         "Collecting required native scenario evidence."
     ),
+    "_step_publish_participant_desktop": "Publishing the participant desktop.",
     "_step_sync_mcp_config": "Refreshing MCP client configuration.",
     "_step_execute_participant_injects": (
         "Delivering the SDL-authored participant sequence."
@@ -4467,7 +4492,12 @@ def _account_for_failed_start(
     is observed again to confirm that no containers or networks remain.
     """
 
-    if not ctx.range_was_absent or ctx.backend is None:
+    if not ctx.range_was_absent:
+        return result
+    from aptl.core.participant_desktop import withdraw_participant_desktop
+
+    withdraw_participant_desktop(ctx.project_dir)
+    if ctx.backend is None:
         return result
     residue = _observed_start_residue(ctx.backend)
     if residue is not None and ctx.teardown_on_failure:

@@ -135,26 +135,81 @@ async def _relay_ssh_to_ws(
         pass
 
 
+_MAX_TERMINAL_COLS = 500
+_MAX_TERMINAL_ROWS = 200
+
+
+def _terminal_dimension(value: object, upper: int) -> int | None:
+    """Clamp a resize dimension to ``1..upper``; ``None`` if not an integer.
+
+    ``bool`` is rejected explicitly because it is a subclass of ``int``.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return max(1, min(value, upper))
+
+
+def _decode_frame(text: object) -> dict[str, object] | None:
+    """Decode one client frame into a JSON object, or ``None`` if malformed.
+
+    A binary frame arrives with no ``text`` and is malformed too.
+    """
+    if not isinstance(text, str):
+        return None
+    try:
+        msg = json.loads(text)
+    except (ValueError, RecursionError):
+        # ValueError covers JSONDecodeError and integer literals longer than
+        # the interpreter's digit limit; RecursionError covers nesting deep
+        # enough to exhaust the decoder.
+        return None
+    return msg if isinstance(msg, dict) else None
+
+
+def _apply_frame(
+    msg: dict[str, object],
+    process: asyncssh.SSHClientProcess,
+) -> bool:
+    """Forward one decoded frame to the SSH process.
+
+    Returns ``False`` when a field has the wrong type and the frame was
+    dropped. Frames of an unknown type are ignored, as before.
+    """
+    msg_type = msg.get("type")
+    if msg_type == "stdin":
+        data = msg.get("data", "")
+        if not isinstance(data, str):
+            return False
+        process.stdin.write(data)
+    elif msg_type == "resize":
+        cols = _terminal_dimension(msg.get("cols", 80), _MAX_TERMINAL_COLS)
+        rows = _terminal_dimension(msg.get("rows", 24), _MAX_TERMINAL_ROWS)
+        if cols is None or rows is None:
+            return False
+        process.change_terminal_size(cols, rows)
+    return True
+
+
 async def _relay_ws_to_ssh(
     websocket: WebSocket,
     process: asyncssh.SSHClientProcess,
 ) -> None:
-    """Read WebSocket messages and forward to SSH stdin or handle resize."""
+    """Read WebSocket messages and forward to SSH stdin or handle resize.
+
+    A malformed frame is dropped and the relay keeps reading, so one bad
+    frame cannot end input for the session. Frames carry keystrokes, so the
+    log records that a frame was dropped and never what it contained.
+    """
     try:
         while True:
-            raw = await websocket.receive_text()
-            msg = json.loads(raw)
-            msg_type = msg.get("type")
-            if msg_type == "stdin":
-                process.stdin.write(msg.get("data", ""))
-            elif msg_type == "resize":
-                cols = max(1, min(msg.get("cols", 80), 500))
-                rows = max(1, min(msg.get("rows", 24), 200))
-                process.change_terminal_size(cols, rows)
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                break
+            msg = _decode_frame(message.get("text"))
+            if msg is None or not _apply_frame(msg, process):
+                log.debug("Dropped a malformed terminal WebSocket frame")
     except (asyncio.CancelledError, WebSocketDisconnect):
         pass
-    except json.JSONDecodeError:
-        log.debug("Malformed WebSocket message, ignoring")
 
 
 def _sanitize(value: str) -> str:

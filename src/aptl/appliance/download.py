@@ -23,6 +23,18 @@ class ApplianceDownloadError(RuntimeError):
     """A remote appliance artifact could not be staged safely."""
 
 
+class ApplianceAuthenticationRequired(ApplianceDownloadError):
+    """The server answered the requested URL with 401 and named its schemes.
+
+    ``challenges`` holds each ``WWW-Authenticate`` value as received, so a
+    caller that knows the scheme can obtain a credential and retry.
+    """
+
+    def __init__(self, challenges: tuple[str, ...]) -> None:
+        super().__init__("metadata download requires authentication")
+        self.challenges = challenges
+
+
 class DownloadResponse(Protocol):
     """Bounded response surface used by the downloader and its tests."""
 
@@ -136,12 +148,56 @@ def _admit_response(
         raise ApplianceDownloadError("artifact response length did not match")
 
 
+def _read_metadata(
+    response: DownloadResponse, *, max_bytes: int, require_length: bool
+) -> bytes:
+    """Read one admitted metadata response without exceeding ``max_bytes``."""
+
+    final_url = urllib.parse.urlparse(response.geturl())
+    length = _header(response.headers, "Content-Length")
+    if (
+        response.status != 200
+        or final_url.scheme != "https"
+        or (length is None and require_length)
+        or (
+            length is not None
+            and (not length.isdecimal() or not 0 < int(length) <= max_bytes)
+        )
+    ):
+        raise ApplianceDownloadError("metadata response is invalid")
+    payload = response.read(max_bytes + 1)
+    if not 0 < len(payload) <= max_bytes or (
+        length is not None and len(payload) != int(length)
+    ):
+        raise ApplianceDownloadError("metadata response length did not match")
+    return payload
+
+
+def _http_error(exc: urllib.error.HTTPError, url: str) -> ApplianceDownloadError:
+    """Map one HTTP error, keeping the challenges of a 401 for ``url`` itself.
+
+    A challenge from a redirect target is not the requested server's, so it
+    is reported as an ordinary failure.
+    """
+
+    try:
+        # The redirect policy raises HTTPError without headers.
+        values = exc.headers.get_all("WWW-Authenticate") if exc.headers else None
+    finally:
+        exc.close()
+    challenges = tuple(value for value in values or () if isinstance(value, str))
+    if exc.code == 401 and exc.geturl() == url and challenges:
+        return ApplianceAuthenticationRequired(challenges)
+    return ApplianceDownloadError("metadata download failed")
+
+
 def fetch_https_metadata(
     url: str,
     *,
     max_bytes: int,
     headers: Mapping[str, str] | None = None,
     open_request: OpenRequest = _open_request,
+    require_length: bool = True,
 ) -> bytes:
     """Fetch one bounded HTTPS metadata document before authenticating it.
 
@@ -149,6 +205,12 @@ def fetch_https_metadata(
     signature has been verified.  This narrow fetch therefore applies the
     same HTTPS/redirect constraints as artifact staging, requires an exact
     response length, and refuses to retain an oversized response.
+
+    ``require_length=False`` admits a response without ``Content-Length``
+    (a chunked reply, as some registry token services send); it is still
+    read only up to ``max_bytes``, and a declared length must still match.
+    A 401 for ``url`` raises :class:`ApplianceAuthenticationRequired` with
+    the server's challenges.
     """
 
     parsed = urllib.parse.urlparse(url)
@@ -164,22 +226,13 @@ def fetch_https_metadata(
     request = urllib.request.Request(url, headers=dict(headers or {}), method="GET")
     try:
         with open_request(request) as response:
-            final_url = urllib.parse.urlparse(response.geturl())
-            length = _header(response.headers, "Content-Length")
-            if (
-                response.status != 200
-                or final_url.scheme != "https"
-                or length is None
-                or not length.isdecimal()
-                or not 0 < int(length) <= max_bytes
-            ):
-                raise ApplianceDownloadError("metadata response is invalid")
-            payload = response.read(max_bytes + 1)
-            if len(payload) != int(length) or len(payload) > max_bytes:
-                raise ApplianceDownloadError("metadata response length did not match")
-            return payload
+            return _read_metadata(
+                response, max_bytes=max_bytes, require_length=require_length
+            )
     except ApplianceDownloadError:
         raise
+    except urllib.error.HTTPError as exc:
+        raise _http_error(exc, url) from exc
     except (OSError, ValueError) as exc:
         raise ApplianceDownloadError("metadata download failed") from exc
 
