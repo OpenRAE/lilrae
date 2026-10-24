@@ -24,7 +24,7 @@ private project state, and validates it with the env-packs gates before use.
 Install the distribution that carries the pack:
 
 ```shell
-pip install "raes-env-packs==6.2.0"
+pip install "raes-env-packs==6.3.3"
 ```
 
 TechVault ships in `raes-env-packs` as two packs: `techvault` (the environment)
@@ -49,8 +49,9 @@ The adapter registers entry points in these groups, keyed by the pack identity:
 | `aptl.scenario_verifiers` | Verifier |
 | `aptl.evidence_payload` | Evidence collectors |
 | `aptl.participant_mcp_smoke_plans` | Participant MCP smoke plans |
+| `aptl.participant_desktop` | Participant desktop consoles, logins, guide and hostnames, as SDL references |
 
-The TechVault adapter is `aptl_techvault`. It ships inside the `aptl-labs`
+The TechVault adapter is `aptl_techvault`. It ships inside the `lilrae`
 (LilRAE) distribution, so a LilRAE install already has it. You do not install it
 separately.
 

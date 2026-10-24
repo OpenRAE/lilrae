@@ -11,6 +11,7 @@ from pathlib import Path
 
 import yaml
 
+from aptl.core.deployment._compose_node_generation import render_realization_compose
 from aptl.core.deployment.realization import DeploymentRealizationSpec
 from aptl.core.deployment.errors import BackendTimeoutError
 from aptl.core.deployment._compose_capture_config import (
@@ -86,20 +87,20 @@ class ComposeCaptureApparatusMixin:
     """Add the exact admitted capture sidecar to a realization file set."""
 
     def _capture_apparatus_preflight(
-        self, realization: DeploymentRealizationSpec, scenario_root: Path
+        self, realization: DeploymentRealizationSpec
     ) -> LabResult | None:
         """Validate capture ownership, target ingress, and credential sources."""
 
         error = _capture_declaration_error(realization)
         if error is None and _capture_requested(realization):
             try:
-                error = self._capture_preflight_error(realization, scenario_root)
+                error = self._capture_preflight_error(realization)
             except (OSError, TypeError, KeyError, ValueError, yaml.YAMLError):
                 error = "aptl.capture-apparatus.config-unavailable"
         return LabResult(success=False, error=error) if error is not None else None
 
     def _capture_preflight_error(
-        self, realization: DeploymentRealizationSpec, scenario_root: Path
+        self, realization: DeploymentRealizationSpec
     ) -> str | None:
         """Return a stable error after validating capture-specific resources."""
 
@@ -118,12 +119,7 @@ class ComposeCaptureApparatusMixin:
             self.realization_root,
             require_files=False,
         )
-        source = scenario_root / "docker-compose.yml"
-        model = (
-            yaml.safe_load(source.read_text(encoding="utf-8"))
-            if source.exists()
-            else {}
-        )
+        model = render_realization_compose(realization)
         services = model.get("services") or {}
         volumes = model.get("volumes") or {}
         collision = KALI_CAPTURE_SERVICE in services or KALI_CAPTURE_VOLUME in volumes

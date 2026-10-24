@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 
 from aptl.core.deployment._compose_node_generation import base_compose_file
+from aptl.core.deployment._compose_runtime_config import compose_literal
 from aptl.core.deployment._compose_spawn_image_realization import (
     _daemon_platform,
     prepare_spawn_images,
@@ -14,6 +15,7 @@ from aptl.core.deployment._compose_spawn_image_realization import (
 from aptl.core.deployment._docker_image_identity import (
     LOCAL_IMAGE_PRESENT,
     DockerPlatform,
+    selected_container_image_digest,
     is_exact_image_reference,
     local_image_state,
 )
@@ -69,11 +71,9 @@ class ComposeRealizationImageMixin:
     ) -> tuple[LabResult | None, tuple[Path, ...] | None]:
         """Run typed pull/build image operations and write a compose override.
 
-        A static in-tree ``docker-compose.yml`` is read from ``scenario_root``;
-        the generated base and image override are written under
+        The generated base and image override are written under
         ``realization_root`` (the writable engine checkout), never the pristine
-        pack (issue #875). ``realization_root`` defaults to ``scenario_root`` so
-        an in-tree scenario, where the two coincide, is unchanged.
+        pack (issue #875). A root Compose file cannot select another model.
         """
 
         realization_root = realization_root or scenario_root
@@ -184,7 +184,10 @@ class ComposeRealizationImageMixin:
         digest = inspect.stdout.strip()
         return digest if digest.startswith(_SHA256_PREFIX) else None
 
-    def container_image_digest(self, container_name: str) -> str | None:
+    def container_image_digest(
+        self, container_name: str, *, expected_ref: str | None = None,
+        expected_config_id: str | None = None,
+    ) -> str | None:
         """Return the manifest digest of the image backing one container.
 
         This is the read-after-write half of artifact realization: it reports
@@ -194,24 +197,16 @@ class ComposeRealizationImageMixin:
         disclosure rather than an assumed match.
         """
 
-        resolver = getattr(self, "_resolve_owned_container_id", None)
-        native_id = resolver(container_name) if callable(resolver) else container_name
-        container = self._run(
-            [
-                "docker",
-                "inspect",
-                "--format",
-                "{{.Image}}",
-                native_id,
-            ],
-            timeout=_IMAGE_REALIZATION_TIMEOUT,
-        )
-        if container.returncode != 0:
-            return None
-        image_id = container.stdout.strip()
-        if not image_id:
-            return None
-        return self._image_manifest_digest(image_id)
+        image_id = self.container_image_config_id(container_name)
+        digest = None
+        if image_id and (expected_config_id is None or image_id == expected_config_id):
+            digest = (
+                self._image_manifest_digest(image_id) if expected_ref is None
+                else selected_container_image_digest(
+                    self._run, image_id, expected_ref, timeout=_IMAGE_REALIZATION_TIMEOUT
+                )
+            )
+        return digest
 
     def substrate_image_identity(self, image_ref: str) -> tuple[str, str] | None:
         """Return the ``(config-id digest, media_type)`` of a locally present ref.
@@ -431,7 +426,8 @@ class ComposeRealizationImageMixin:
         """Write a contained Compose override for scenario-resolved images.
 
         The override is a scenario-local generated artifact, written under
-        ``scenario_root`` (the bundle root).
+        ``scenario_root`` (the bundle root). An image reference holds pack
+        text, so it is written as a Compose literal (issue #965).
         """
 
         override_path = scenario_root / _IMAGE_OVERRIDE_RELATIVE_PATH
@@ -442,7 +438,7 @@ class ComposeRealizationImageMixin:
         }
         override_path.write_text(
             yaml.dump(
-                {"services": services},
+                compose_literal({"services": services}),
                 Dumper=_ImageOverrideDumper,
                 sort_keys=True,
             ),

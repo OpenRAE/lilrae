@@ -9,7 +9,7 @@ raw Compose commands are not an equivalent deployment path.
 Install the released package and materialize its lab assets:
 
 ```shell
-pipx install aptl-labs
+pipx install lilrae
 aptl lab init my-lab
 cd my-lab
 aptl lab start --scenario techvault
@@ -67,6 +67,135 @@ as `.env` and `.mcp.json`; they are not `aptl.json` fields and must not be
 committed. Wazuh `INDEXER_*` and `API_*` values are credentials declared by the
 admitted scenario, not APTL control-plane or operator login credentials.
 
+### Scenario Environment Grants
+
+A scenario node can declare runtime environment variables. These rules cover
+both node realization routes (see
+[Node Realization Routes](components/node-realization.md)): a base-container
+node, which declares runtime desired state and has no node image of its own, so
+APTL starts it from a base image, and an image-backed node, which runs as a
+service of the Compose model that APTL generates for the scenario. APTL
+generates that model for every environment pack. On either route, APTL
+delivers each variable from a single explicit source:
+
+- A value the scenario authors is delivered exactly as written.
+- A generated-artifact output reaches only the node that declares it with
+  `value_from`.
+- An `operator_secret`, `redacted` or `secret_fixture` variable declared
+  without a value needs an environment grant in `aptl.json` or a value that the
+  admitted pack's own startup adapter supplies.
+- Any other variable declared without a value is delivered empty, even when the
+  image sets a default for it. That is the value RAES expects such a
+  declaration to have.
+
+A value-less `secret_fixture` also needs **open `runtime-environment`
+authority**. Under exact authority RAES expects that fixture to be empty, so
+an external value cannot satisfy the contract. APTL refuses that declaration
+in the binding preflight, before realization creates or changes any network,
+volume or container. The error names the node and variable, without reading
+back or disclosing a value or commitment. Missing authority also refuses it.
+For an external operational credential under exact authority, declare an
+`operator_secret` or `redacted` variable instead; its readback proves presence
+without a commitment. Authored fixture values still work under exact authority.
+
+**This changes earlier behavior.** APTL used to fill a declared variable from
+any same-named variable in its own process environment or in `.env`, and a
+shell variable overrode an authored value. A matching name is not authority to
+read a credential, so neither happens now. If you passed a value to a scenario
+node by exporting it before `aptl lab start`, or by adding it to `.env`, add a
+grant. A value-less variable that is not `operator_secret`, `redacted` or
+`secret_fixture` takes no grant, so the scenario must author its value or give
+it one of those classifications. A missing or empty source stops
+`aptl lab start` before realization creates or changes any scenario network,
+volume or container. The error names the node and the variable, and either the
+pack, when no grant or adapter value applies, or the source that has no value.
+
+**The `docker compose` process no longer inherits APTL's whole environment.**
+It keeps the Docker client's own settings, such as `PATH`, `HOME`,
+`DOCKER_HOST`, `DOCKER_CONTEXT`, `SSL_CERT_FILE`, Compose client options like
+`COMPOSE_HTTP_TIMEOUT`, and proxy variables. It also keeps the `APTL_*`
+settings, such as the `APTL_HP_*` host-port pins, and the `BUILDKIT_*` and
+`BUILDX_*` build settings. Any other `${NAME}` in a Compose file therefore
+resolves only from the project `.env`. A shell variable no longer overrides a
+`.env` value such as `GRAFANA_ADMIN_PASSWORD` or `INDEXER_PASSWORD`, so change
+the value in `.env` instead.
+
+A Compose service receives each grant or startup-adapter value through its own
+owner-only env file under `.aptl/realization/sourced-environment/`, which a
+generated override attaches to that service alone. That file cannot carry a
+value that contains a single quote or ends in an odd number of backslashes, so
+such a value stops `aptl lab start` at the same point as a missing source. The
+value is never written as a `${NAME}` reference. Compose resolves those
+references from one environment that every service and every Compose file of
+the project share, so a reference would let a value granted to one node reach
+another service, or APTL's own Grafana.
+
+In the Compose model that APTL generates, no text that the scenario or its
+pack authors names a variable for Compose to fill. APTL writes each `$` in such
+text as `$$`, which Compose reads as one literal `$`. This covers a command, an
+environment value, a mount path, a content destination, the name of a file in
+a pack directory, an image reference and a host address. A
+`${INDEXER_PASSWORD}` in a node's command or in a content path therefore
+reaches the container as written instead of as the `.env` value, and a
+container-shell `"$@"` reaches the shell unchanged.
+
+Every scenario realization uses the Compose model generated from its admitted
+declarations, including a project-tree scenario. A root `docker-compose.yml`
+does not supply services, commands, environment values or content mounts to
+that model. This removes the compatibility path that could read `.env` values
+without a binding. A project-tree scenario has no pack identity, so neither a
+grant nor a pack startup adapter applies to it. A value-less `operator_secret`,
+`redacted` or `secret_fixture` therefore stops its start on either container
+route. Declare authored fixtures or generated-artifact consumers in the SDL,
+or use an acquired pack with explicit grants for operational credentials.
+Generated outputs still reach only their declared consumers. APTL refuses an
+environment pack that ships a `docker-compose.yml` at its root.
+
+A grant names the admitted pack's identifier, the consuming node, the variable
+that node declares, and the source. The source is either an exact variable of
+the process that runs `aptl lab start`, or an exact key of the project `.env`:
+
+```json
+{
+  "deployment": {
+    "environment_grants": [
+      {
+        "pack": "example-pack",
+        "consumer": "webapp",
+        "variable": "DB_PASSWORD",
+        "source": {"kind": "process-environment", "variable": "LAB_DB_PASSWORD"}
+      },
+      {
+        "pack": "example-pack",
+        "consumer": "worker",
+        "variable": "API_TOKEN",
+        "source": {"kind": "project-env-file", "variable": "WORKER_API_TOKEN"}
+      }
+    ]
+  }
+}
+```
+
+A grant applies only to the pack, node and variable it names. A project-tree
+scenario has no pack identity, so no grant applies to it. `aptl lab start`
+reads each grant's source once, when it checks the scenario, and logs a warning
+for a grant that matches no value-less secret. Logs and errors name each source,
+such as `grant:process-environment:LAB_DB_PASSWORD`, and never its value.
+`aptl.json` stores only these names.
+
+The run's evidence holds no grant or startup-adapter value and no digest of
+one. After the start, APTL reads back a value-less `operator_secret` or
+`redacted` variable by presence only. It leaves a value-less `secret_fixture`
+out of the realized environment that it records, because RAES would record
+that value as an unsalted SHA-256 digest, which a guessed value can be checked
+against. A value that the scenario authors is recorded as RAES's digest of
+that value, as before.
+
+Docker Compose's `com.docker.compose.config-hash` label also fingerprints the
+resolved service environment. APTL omits it from container inventory and status.
+Python and MCP serialization mask that label in older snapshots and in text,
+so archived evidence cannot use it to confirm a guess at a bound credential.
+
 ## Observe A Deployment
 
 Use APTL's runtime projections after startup:
@@ -102,6 +231,40 @@ aptl container shell <container-name>
 
 Use a name returned by `aptl container list`. A container in Docker's `running`
 state does not by itself prove that the scenario is ready.
+
+## Host Docker Socket Access
+
+A container that holds the host's Docker socket controls the Docker daemon,
+which is equivalent to root on the Docker host. `aptl lab start` mounts the
+socket only into a node that the admitted scenario declares as a Docker
+control authority:
+
+- In the acquired `techvault` pack, that node is `shuffle-orborus`, Shuffle's
+  worker manager. The pack declares `/var/run/docker.sock` as its read-write
+  control interface because Shuffle runs workflows in worker and app
+  containers. No other TechVault node gets the socket. Before startup, LilRAE
+  prepares the exact worker and app images that the pack's spawn templates
+  name, and the rendered service sets `SHUFFLE_AUTO_IMAGE_DOWNLOAD=false`.
+- Whenever a scenario starts Compose services, `aptl lab start` validates their
+  effective Compose model before startup. It refuses the model when any other
+  service binds the socket, or when the admitted service lacks exactly one
+  read-write `/var/run/docker.sock` bind or sets `DOCKER_HOST` or
+  `DOCKER_CONTEXT`.
+- LilRAE's own Kali capture sidecar and operator-access relays get no socket.
+  Containers that Orborus creates through the daemon are outside these checks,
+  because anything that holds the socket can create further containers.
+
+The root `docker-compose.yml`, which explicit project-tree scenarios start as
+written, also declares the socket for `shuffle-backend`, `shuffle-orborus` and
+`cortex` in the `soc` profile, and for `aptl-web-api` in the `web` profile. No
+in-tree scenario selects the `soc` profile, and the check above refuses those
+binds unless the scenario admits them. The web API container uses the socket
+for the browser's lifecycle controls; it runs as the project owner and joins
+only the socket's group (see [Web](reference/web.md)).
+
+The [issue #949](architecture/issue-949-orborus-control-authority-preflight.md)
+and [issue #974](architecture/issue-974-shuffle-worker-docker-images-preflight.md)
+preflights record the admission rules.
 
 ## Manage The Lifecycle
 

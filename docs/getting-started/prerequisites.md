@@ -33,7 +33,7 @@
 - Node.js 20+ and npm (for the MCP servers, the AI-agent control plane that
   `aptl lab start` builds via `mcp/build-all-mcps.sh`; without them the lab
   still boots but reports `degraded` with MCP servers unavailable)
-- Git (only for the from-source dev install; `pipx install aptl-labs` needs no clone)
+- Git (only for the from-source dev install; `pipx install lilrae` needs no clone)
 
 ## Install Docker
 
@@ -112,24 +112,24 @@ block system-wide `pip` under [PEP 668](https://peps.python.org/pep-0668/), so
 `pip install -e .` against the system Python fails with
 `error: externally-managed-environment`.
 
-For released installs on any OS, prefer `pipx install aptl-labs`.
+For released installs on any OS, prefer `pipx install lilrae`.
 
-**macOS gotcha—pipx bound to the system Python 3.9.** `aptl-labs` requires
+**macOS gotcha—pipx bound to the system Python 3.9.** `lilrae` requires
 Python 3.12+ (declared in `pyproject.toml`). If your `pipx` was installed
 against the Command Line Tools Python (`/usr/bin/python3`, which is 3.9),
-`pipx install aptl-labs` fails with:
+`pipx install lilrae` fails with:
 
 ```
-ERROR: Could not find a version that satisfies the requirement aptl-labs (from versions: none)
+ERROR: Could not find a version that satisfies the requirement lilrae (from versions: none)
 ```
 
 The real cause is the "Ignored the following versions that require a
 different python version" line further up in pip's output—every published
-`aptl-labs` release is filtered out by the Python-version gate. Recover with
+`lilrae` release is filtered out by the Python-version gate. Recover with
 a scoped standalone Python that pipx fetches just for this venv:
 
 ```bash
-pipx install --python 3.12 --fetch-missing-python aptl-labs
+pipx install --python 3.12 --fetch-missing-python lilrae
 ```
 
 Alternatively, `brew install python@3.12` and use that interpreter.
