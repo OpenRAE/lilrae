@@ -1,6 +1,7 @@
 """Shared test fixtures for APTL CLI tests."""
 
 import json
+import logging
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -41,6 +42,25 @@ def _fast_soc_ca_keys(monkeypatch):
 
     monkeypatch.setattr(_soc_ca_builders, "_CA_KEY_SIZE", 1024)
     monkeypatch.setattr(_soc_ca_builders, "_SVC_KEY_SIZE", 1024)
+
+
+@pytest.fixture(autouse=True)
+def _restore_aptl_logger():
+    """Undo the ``aptl`` logger setup a test leaves behind.
+
+    Every CLI invocation installs a stderr handler on the process-wide
+    ``aptl`` logger and sets its level (#1323). Under ``CliRunner`` that
+    handler writes to the runner's captured stream, so restore the handlers
+    and levels after each test instead of letting the next test inherit them.
+    """
+    logger = logging.getLogger("aptl")
+    level = logger.level
+    handlers = [(handler, handler.level) for handler in logger.handlers]
+    yield
+    logger.handlers[:] = [handler for handler, _ in handlers]
+    for handler, handler_level in handlers:
+        handler.setLevel(handler_level)
+    logger.setLevel(level)
 
 
 @pytest.fixture

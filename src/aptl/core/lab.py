@@ -3138,14 +3138,18 @@ def _step_activate_operator_access(ctx: _LabStartContext) -> LabResult | None:
     )
     for failure in failures:
         log.error("Operator access failed: %s", failure)
-    return (
-        LabResult(
+    if failures:
+        return LabResult(
             success=False,
             error=f"{_OPERATOR_ACCESS_UNAVAILABLE}: {'; '.join(failures)}",
         )
-        if failures
-        else None
-    )
+    # Say where each access is published as start progress too: the CLI prints
+    # progress at its default log level, which hides the INFO line (#1323).
+    from aptl.core.deployment._operator_access_proof import published_access_lines
+
+    for line in published_access_lines(accesses):
+        _emit_progress(ctx, line)
+    return None
 
 
 def _operator_public_key(ctx: _LabStartContext) -> str | None:
