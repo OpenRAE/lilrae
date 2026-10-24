@@ -951,7 +951,7 @@ services:
         assert "aptl-workshop-main_default" in result.error
         assert "172.20.0.0/16" in result.error
         assert "docker network rm aptl-workshop-main_default" in result.error
-        assert "aptl lab start" in result.error
+        assert "lilrae lab start" in result.error
         commands = [call.args[0] for call in mock_run.call_args_list]
         assert all(
             command[:3] != ["docker", "network", "create"] for command in commands
@@ -3632,7 +3632,7 @@ class TestSeedNamedVolumes:
     def test_seed_is_idempotent_across_runs(self, tmp_path):
         # Root `cp -a` overwrites prior content, so the backend issues the
         # same command on every start regardless of the volume's state —
-        # repeated `aptl lab start` is idempotent.
+        # repeated `lilrae lab start` is idempotent.
         backend = self._backend(tmp_path)
         seed = self._config_seed()
         commands = []

@@ -168,9 +168,9 @@ jobs:
       - name: Python portable suite without lab integration
         run: python -m pytest ${{ matrix.pytest_args }}
       - name: CLI import and help smoke
-        run: aptl --help
+        run: lilrae --help
       - name: Lab init smoke
-        run: aptl lab init ci-lab
+        run: lilrae lab init ci-lab
 
   raes-scenario-gate:
     name: RAES scenario validation gate
@@ -198,7 +198,7 @@ jobs:
         # gitignored keys/ and config/lab-ssh/ files lab start generates —
         # the static gate resolves and requires that source file to exist on
         # disk, so it must be generated before the gate runs, same as it
-        # would be by the time a real `aptl lab start` reaches content
+        # would be by the time a real `lilrae lab start` reaches content
         # placement.
         run: |
           python -c "
@@ -261,13 +261,31 @@ jobs:
           python -m venv "$RUNNER_TEMP/clean-venv"
           "$RUNNER_TEMP/clean-venv/bin/pip" install --require-hashes -r requirements/runtime.txt
           "$RUNNER_TEMP/clean-venv/bin/pip" install --no-deps dist/*.whl
+      - name: Verify the installed commands and the deprecated aliases
+        # Issue #1402: the wheel installs `lilrae` and keeps `aptl` as a
+        # deprecated alias until 10.0.0. The alias prints exactly one notice
+        # to stderr and leaves stdout unchanged.
+        run: |
+          bin="$RUNNER_TEMP/clean-venv/bin"
+          for command in lilrae lilrae-misp-suricata-sync aptl aptl-misp-suricata-sync; do
+            test -x "$bin/$command"
+          done
+          primary=$("$bin/lilrae" --version 2>"$RUNNER_TEMP/primary.err")
+          legacy=$("$bin/aptl" --version 2>"$RUNNER_TEMP/legacy.err")
+          test "$primary" = "$legacy"
+          grep -Eq '^lilrae [0-9]' <<<"$primary"
+          test ! -s "$RUNNER_TEMP/primary.err"
+          test "$(grep -c "the 'aptl' command is deprecated" "$RUNNER_TEMP/legacy.err")" -eq 1
+          quiet=$(LILRAE_SUPPRESS_APTL_DEPRECATION=1 "$bin/aptl" --version 2>"$RUNNER_TEMP/quiet.err")
+          test "$quiet" = "$primary"
+          test ! -s "$RUNNER_TEMP/quiet.err"
       - name: Materialize a lab project from the installed package
         # Run from an empty directory so nothing in the checkout can satisfy an
         # asset the wheel forgot to ship.
         run: |
           mkdir -p "$RUNNER_TEMP/clean-install"
           cd "$RUNNER_TEMP/clean-install"
-          "$RUNNER_TEMP/clean-venv/bin/aptl" lab init ci-lab
+          "$RUNNER_TEMP/clean-venv/bin/lilrae" lab init ci-lab
           mkdir -p ci-lab/scenarios
           cp "$GITHUB_WORKSPACE/tests/fixtures/packs/materialization-envelope/sdl/materialization-envelope.sdl.yaml" \
             ci-lab/scenarios/materialization-envelope.sdl.yaml
@@ -286,9 +304,9 @@ jobs:
       - name: Start and verify the materialization envelope
         run: |
           cd "$RUNNER_TEMP/clean-install/ci-lab"
-          "$RUNNER_TEMP/clean-venv/bin/aptl" lab start \
+          "$RUNNER_TEMP/clean-venv/bin/lilrae" lab start \
             --scenario-path scenarios/materialization-envelope.sdl.yaml
-          status_output=$("$RUNNER_TEMP/clean-venv/bin/aptl" lab status)
+          status_output=$("$RUNNER_TEMP/clean-venv/bin/lilrae" lab status)
           grep -F "Lab is running." <<<"$status_output"
           project_name=$("$RUNNER_TEMP/clean-venv/bin/python" -c '
           from pathlib import Path
@@ -339,7 +357,7 @@ jobs:
         if: always()
         run: |
           cd "$RUNNER_TEMP/clean-install/ci-lab"
-          "$RUNNER_TEMP/clean-venv/bin/aptl" lab stop --volumes --yes
+          "$RUNNER_TEMP/clean-venv/bin/lilrae" lab stop --volumes --yes
       - name: Assert no project containers, networks, or volumes remain
         if: always()
         run: |

@@ -11,13 +11,15 @@
 > renamed. It is the same project, with the same source, history, features,
 > and issue tracker. Releases publish to PyPI as
 > [`lilrae`](https://pypi.org/project/lilrae/) from version 8.0.0.
-> `aptl-labs` 7.0.0 was the last `aptl-labs` release. The import package is
-> still `aptl`, the command is still `aptl`, and existing configuration, state
-> directories, and runtime identifiers keep their `aptl` names. Where current
-> pages still say APTL, they mean LilRAE. See
-> [ADR-062](https://github.com/OpenRAE/lilrae/blob/main/docs/adrs/adr-062-lilrae-name-and-naming-convention.md).
+> `aptl-labs` 7.0.0 was the last `aptl-labs` release. The command is now
+> `lilrae`. The `aptl` command is a deprecated alias that LilRAE 10.0.0
+> removes. The import package is still `aptl`, and existing configuration,
+> state directories, and runtime identifiers keep their `aptl` names. Where
+> current pages still say APTL, they mean LilRAE. See
+> [ADR-062](https://github.com/OpenRAE/lilrae/blob/main/docs/adrs/adr-062-lilrae-name-and-naming-convention.md)
+> and [Move from the aptl command](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/installation.md#move-from-the-aptl-command).
 >
-> The two distributions install the same `aptl` package and commands. Do not
+> The two distributions install the same `aptl` package. Do not
 > install `lilrae` over `aptl-labs`, because one installation overwrites the
 > files of the other. Remove `aptl-labs` first, then install `lilrae` with the
 > same extras.
@@ -27,7 +29,7 @@
 > ```shell
 > pipx uninstall aptl-labs
 > pipx install lilrae
-> aptl --version
+> lilrae --version
 > ```
 >
 > With pip in a virtual environment, for example with the `[s3]` extra:
@@ -64,16 +66,16 @@ dedicated, rebuildable host, keep unrelated credentials and workloads
 elsewhere, control the surrounding network, and operate only on systems you are
 authorized to test.
 
-Ordinary `aptl lab start` uses the selected Docker daemon. On native Linux that
+Ordinary `lilrae lab start` uses the selected Docker daemon. On native Linux that
 can give the lab and its control components authority over the physical host's
 Docker engine; Docker Desktop or another Docker VM changes that placement but
-is not, by its name alone, a qualified containment boundary. `aptl lab start`
-and `aptl lab info` report the observed transport and boundary, or `unknown`
+is not, by its name alone, a qualified containment boundary. `lilrae lab start`
+and `lilrae lab info` report the observed transport and boundary, or `unknown`
 when they cannot establish one. See [tested profiles, host exposure and
 limits](docs/getting-started/prerequisites.md#tested-execution-profiles-and-limits).
 
 For stronger host and cross-seat isolation on Linux/KVM, use a disposable
-[`aptl seat`](docs/reference/appliance-seat-launcher.md). A VM boundary reduces
+[`lilrae seat`](docs/reference/appliance-seat-launcher.md). A VM boundary reduces
 risk but does not eliminate it; keep the host kernel and hypervisor current. A
 seat needs KVM, QEMU, OVMF, adequate per-seat resources and a verified image;
 it does not make the workloads inside its guest mutually isolated.
@@ -89,9 +91,9 @@ checkout is required:
 
 ```shell
 pipx install lilrae
-aptl lab init my-lab
+lilrae lab init my-lab
 cd my-lab
-aptl lab start --scenario techvault
+lilrae lab start --scenario techvault
 ```
 
 Startup validates the selected scenario, creates private project state,
@@ -100,20 +102,20 @@ structured outcome with the observed execution boundary. Inspect the fresh
 runtime-derived state, boundary and access information:
 
 ```shell
-aptl lab status
-aptl lab info
-aptl container list
+lilrae lab status
+lilrae lab info
+lilrae container list
 ```
 
 URLs, host ports, available containers, usernames, and credential locations
-belong to the realized project. Use `aptl lab info`; do not rely on static
+belong to the realized project. Use `lilrae lab info`; do not rely on static
 values copied from documentation.
 
 At the end of the session:
 
 ```shell
-aptl lab stop      # preserve project volumes
-aptl lab stop -v   # confirm and destroy project volume data
+lilrae lab stop      # preserve project volumes
+lilrae lab stop -v   # confirm and destroy project volume data
 ```
 
 Read the [first-lab guide](docs/getting-started/quick-start.md) for scenario

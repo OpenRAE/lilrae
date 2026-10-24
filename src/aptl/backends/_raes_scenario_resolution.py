@@ -31,7 +31,7 @@ def _resolve_scenario_path(
     An explicit project-contained path is a development override. Otherwise a
     project-tree source must be configured explicitly; there is no implicit
     in-tree scenario fallback. A backend is handed a scenario rather than
-    owning one, so the operator chooses it before ``aptl lab start``.
+    owning one, so the operator chooses it before ``lilrae lab start``.
     """
 
     if scenario_path is not None:

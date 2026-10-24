@@ -149,7 +149,7 @@ def _ensure_container_readable_certs(certs_dir: Path) -> None:
 
     The upstream generator emits owner-only PEM files. Wazuh Indexer and Wazuh
     Dashboard run as non-root uid 1000 inside the container, which may not match
-    the host uid that ran ``aptl lab start``. Keep the host-side directory
+    the host uid that ran ``lilrae lab start``. Keep the host-side directory
     private while widening the mounted files so the container processes can read
     them.
     """
@@ -277,7 +277,7 @@ def _cert_generator_command(
     :func:`ensure_ssl_certs` before this point, so ``exist_ok`` here only ever
     finds a fresh, host-owned directory. Docker Desktop needs no ``--user``
     because its file-sharing layer maps output ownership back to the host user.
-    Rootless Docker is unsupported: ``aptl lab start`` refuses it before any SSH
+    Rootless Docker is unsupported: ``lilrae lab start`` refuses it before any SSH
     key, credential render, volume, certificate, image pull or Compose change
     (#1053), as soon as ``_step_load_config`` has bound the daemon to ask.
     """

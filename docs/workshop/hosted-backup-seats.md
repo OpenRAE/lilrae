@@ -8,7 +8,7 @@
 Historical contingency from `origin/825-hosted-backup-seats` (`2db0f8ac`).
 Statements about the "current" release below describe the July 28, 2026
 trial, not today's code. This recipe uses a pinned reduced guided profile;
-it is not the August full-TechVault fleet or qualification for `aptl seat`.
+it is not the August full-TechVault fleet or qualification for `lilrae seat`.
 See the [branch audit](../architecture/issue-1022-historical-branch-audit.md)
 and [August reference archive](arsenal-2026/README.md). Do not run cloud or
 host-provisioning commands without separately authorizing that deployment.
@@ -670,7 +670,7 @@ A seat is assignable only when every item passes:
 - `id -nG seatNN` contains only `seatNN`;
 - the coding-agent version is the admitted version and the approved
   authentication path completes;
-- `aptl lab status` reports the required containers healthy;
+- `lilrae lab status` reports the required containers healthy;
 - all four semantic MCP checks pass;
 - public 80 and 443 are reachable;
 - public 8443, 3389, 8080, 9200, 9443, 9444, and 55000 are not reachable;
@@ -761,7 +761,7 @@ volumes, snapshots, AMIs, ENIs, elastic IPs, security groups, DNS records,
 temporary IAM resources, AWS key pairs, participant credentials, model
 authentication state, or operator SSH material created for the trial.
 
-For a reused host, do not terminate it. Stop the lab with `aptl lab stop -v`,
+For a reused host, do not terminate it. Stop the lab with `lilrae lab stop -v`,
 close the DCV session, remove the participant account and its home, restore
 the baseline DCV/Caddy/service/package state from the change ledger, remove
 the exact event directories, and prove the original public listeners,

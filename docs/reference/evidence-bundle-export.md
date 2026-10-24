@@ -2,7 +2,7 @@
 
 The evidence bundle exporter packages a run's research evidence into a portable,
 self-describing archive that a third party can validate without importing APTL
-internals. It is the EXP-008 counterpart to the legacy `aptl runs export`
+internals. It is the EXP-008 counterpart to the legacy `lilrae runs export`
 convenience tarball: instead of scanning the run directory, it packages a
 verified artifact closure with a machine-readable inventory, the exact published
 RAES schemas, and optional loss-accounted projections.
@@ -16,10 +16,10 @@ redaction boundary. Redaction happens upstream at the persistence boundary
 
 ```bash
 # Local, offline bundle with the JSONL and Parquet projections.
-aptl runs export-bundle <run_id> -o ./exports -p jsonl -p parquet
+lilrae runs export-bundle <run_id> -o ./exports -p jsonl -p parquet
 
 # Canonical artifacts only (no projections).
-aptl runs export-bundle <run_id> -o ./exports
+lilrae runs export-bundle <run_id> -o ./exports
 ```
 
 Options:
@@ -35,15 +35,15 @@ Options:
   bundle. Because a bundle carries restricted evidence, an existing directory
   must be a real directory, not a symlink, that the current user owns and that
   grants no group or other permissions; otherwise the command fails and writes
-  nothing. A missing directory is created with mode 0700. `aptl runs export`
+  nothing. A missing directory is created with mode 0700. `lilrae runs export`
   creates a missing output directory, including its default `./exports`, with
   mode 0700 as well, so the two commands can share it. To reuse a directory
   with wider permissions, such as one that an earlier release of
-  `aptl runs export` created, run `chmod 700` on it first.
+  `lilrae runs export` created, run `chmod 700` on it first.
 - `--verify / --no-verify` controls the local self-verification pass that runs
   after the archive is written (on by default).
 
-Plain `aptl runs export` archives have mode 0600. Exporting again replaces
+Plain `lilrae runs export` archives have mode 0600. Exporting again replaces
 the archive atomically; readers of an older archive keep access only to the
 older bytes.
 
@@ -53,7 +53,7 @@ count, the seal state, and any disclosed limitations.
 ## Verify a bundle
 
 ```bash
-aptl runs verify-bundle ./exports/<run_id>.evidence-bundle.tar
+lilrae runs verify-bundle ./exports/<run_id>.evidence-bundle.tar
 ```
 
 Verification streams the archive, enforces its own resource bounds, recomputes

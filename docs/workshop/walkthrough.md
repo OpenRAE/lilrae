@@ -59,13 +59,13 @@ explicit inputs from that checkout:
 
 ```bash
 APTL_SOURCE=/absolute/path/to/aptl-checkout
-aptl lab init workshop
+lilrae lab init workshop
 cp -R "$APTL_SOURCE/scenarios" workshop/scenarios
 mkdir -p workshop/participant-profiles
 cp -R "$APTL_SOURCE/participant-profiles/guided-purple-v1" workshop/participant-profiles/
 cp workshop/participant-profiles/guided-purple-v1/aptl.json workshop/aptl.json
 cd workshop
-aptl lab start --scenario-path scenarios/techvault-attacker-target.sdl.yaml --yes
+lilrae lab start --scenario-path scenarios/techvault-attacker-target.sdl.yaml --yes
 ```
 
 A developer start may build or pull missing assets. The participant appliance
@@ -76,7 +76,7 @@ failure.
 ## 2. Verify the range is up [2]
 
 ```bash
-aptl lab status
+lilrae lab status
 docker exec aptl-wazuh-manager /var/ossec/bin/agent_control -l | grep -c Active
 ```
 
@@ -232,7 +232,7 @@ required participant-profile operations.
 ## Developer-preview clean reset
 
 ```bash
-aptl lab stop -v
+lilrae lab stop -v
 ```
 
 This is the clean inner reset measured by the participant profile. Disposable

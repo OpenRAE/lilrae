@@ -230,7 +230,7 @@ class ComposeRealizationServiceIndexMixin(object):
     def _service_indexes_created_this_start(self) -> set[tuple[str, str]]:
         """Return the ``(container, address)`` indexes this lab start created.
 
-        One backend serves one ``aptl lab start``, and a retried apply
+        One backend serves one ``lilrae lab start``, and a retried apply
         (``BEFORE_BACKEND_RETRY``) runs this step again on the same backend.
         """
 

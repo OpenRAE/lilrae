@@ -182,24 +182,24 @@ class StartSelection:
 
 
 _STALE_NETWORK_RECOVERY_HINT = (
-    "Run `aptl lab stop` and retry, or `aptl lab stop -v` if you need a clean lab."
+    "Run `lilrae lab stop` and retry, or `lilrae lab stop -v` if you need a clean lab."
 )
 # The deployment backend names the refused index and its container (#990).
 _UNOWNED_SEARCH_INDEX_RECOVERY_HINT = (
-    "Back up the index first; `aptl lab stop` keeps every lab volume. Only if "
-    "its data is disposable, run `aptl lab stop --volumes`, a destructive reset "
+    "Back up the index first; `lilrae lab stop` keeps every lab volume. Only if "
+    "its data is disposable, run `lilrae lab stop --volumes`, a destructive reset "
     "that permanently deletes every lab volume. Recovery steps: "
     "https://openrae.github.io/lilrae/troubleshooting/"
-    "#aptl-lab-start-reports-an-unowned-search-index"
+    "#lilrae-lab-start-reports-an-unowned-search-index"
 )
 # The backend also names an adopted index whose mapping drifted (#1280).
 _DRIFTED_SEARCH_INDEX_RECOVERY_HINT = (
-    "Back up the index first; `aptl lab stop` keeps every lab volume, and a "
+    "Back up the index first; `lilrae lab stop` keeps every lab volume, and a "
     "later start finds the same index. Only if its data is disposable, run "
-    "`aptl lab stop --volumes`, a destructive reset that permanently deletes "
+    "`lilrae lab stop --volumes`, a destructive reset that permanently deletes "
     "every lab volume; the next start then creates the index. Recovery steps: "
     "https://openrae.github.io/lilrae/troubleshooting/"
-    "#aptl-lab-start-reports-a-search-index-whose-mapping-drifted"
+    "#lilrae-lab-start-reports-a-search-index-whose-mapping-drifted"
 )
 _WAZUH_MANAGER_SERVICE = "wazuh.manager"
 _WAZUH_MANAGER_CONTAINER = "aptl-wazuh-manager"
@@ -472,7 +472,7 @@ def _configured_backend(
 
     ``aptl.json`` can load and still hold deployment settings that only the
     backend constructor checks, such as an ssh-compose block without
-    ``ssh_host``. ``command`` names the blocked ``aptl lab`` command.
+    ``ssh_host``. ``command`` names the blocked ``lilrae lab`` command.
     """
 
     try:
@@ -603,7 +603,7 @@ def _tear_down_owned(
     """Stop the project and, when its volumes go, finish pending host cleanup.
 
     ``retry_command`` is the command a cleanup failure names for the retry.
-    ``None`` names ``aptl lab stop -v --yes``.
+    ``None`` names ``lilrae lab stop -v --yes``.
     """
 
     capture_failure = _finalize_required_transcript_capture(search_dir, backend)
@@ -626,7 +626,7 @@ def _tear_down_owned(
 
 
 #: The command a failed reset names for the retry (#1218).
-_RESET_RETRY_COMMAND = "aptl lab reset --yes"
+_RESET_RETRY_COMMAND = "lilrae lab reset --yes"
 
 #: Why a reset refuses when the recorded workspace scope can't be read (#1218).
 _RESET_WORKSPACE_STATE_UNREADABLE = (
@@ -643,7 +643,7 @@ def reset_lab(
     """Return the lab to a clean, stopped state (#1218).
 
     Inside the lifecycle lock it counts the project, then runs the same
-    project-scoped teardown as ``aptl lab stop -v``: the project's containers,
+    project-scoped teardown as ``lilrae lab stop -v``: the project's containers,
     networks and volumes go, and every pending host-side cleanup record runs
     (``aptl.core.lifecycle_cleanup``). Other host files, such as ``aptl.json``,
     ``.env``, SSH keys, certificates and run records, stay. Repeating it is
@@ -741,7 +741,7 @@ def _stop_recovery_configuration(
 ]:
     """Resolve the backend, safe teardown profiles and any recovery failure.
 
-    ``command`` names the blocked ``aptl lab`` command in the failure text.
+    ``command`` names the blocked ``lilrae lab`` command in the failure text.
     Validate deployment settings before reading platform-specific recovery
     state, so an unusable config is reported even where those reads cannot run.
     """
@@ -802,7 +802,7 @@ def _run_pending_host_cleanup(
     retained volumes, and says what remains pending. After verified teardown
     every pending action runs, including on a repeat reset whose Docker
     resources were already gone. A failure names ``retry_command``, or
-    ``aptl lab stop -v --yes`` when it is ``None``.
+    ``lilrae lab stop -v --yes`` when it is ``None``.
     """
 
     from aptl.core.lifecycle_cleanup import (
@@ -892,7 +892,7 @@ def _lifecycle_busy_result(action: str) -> LabResult:
         success=False,
         error=(
             "[lifecycle-owner-busy] Another lab lifecycle operation is active. "
-            f"Wait for it to finish before retrying `aptl lab {action}`."
+            f"Wait for it to finish before retrying `lilrae lab {action}`."
         ),
         outcome=StartupOutcome.FAILED,
     )
@@ -1837,7 +1837,7 @@ def _step_reject_preexisting_range(ctx: _LabStartContext) -> LabResult | None:
         f"`{command}` {effect}"
         for command, effect in stop_recovery_routes(ctx.project_dir)
     )
-    clean_command = lifecycle_recovery_command("aptl lab start --clean", ctx.project_dir)
+    clean_command = lifecycle_recovery_command("lilrae lab start --clean", ctx.project_dir)
     return LabResult(
         success=False,
         error=(
@@ -2341,7 +2341,7 @@ def _step_sync_credentials(ctx: _LabStartContext) -> LabResult | None:
     # `_check_bind_mounts` only inspects the local tree, so preflight
     # would pass and compose would then fail. Rather than silently ship a
     # broken (or placeholder-credentialled) remote lab, refuse: the
-    # render must run on the deployment host (e.g. `aptl lab start` over
+    # render must run on the deployment host (e.g. `lilrae lab start` over
     # SSH on that host). Routing generated-artifact materialization
     # through the deployment backend is the proper fix and is tracked
     # separately. See ADR-028 § Non-Goals.
@@ -2353,9 +2353,9 @@ def _step_sync_credentials(ctx: _LabStartContext) -> LabResult | None:
             success=False,
             error=(
                 "Credentialized service config is rendered to .aptl/config/ "
-                "on the host running `aptl lab start`, but the configured "
+                "on the host running `lilrae lab start`, but the configured "
                 "deployment backend targets a remote Docker daemon, so the "
-                "remote bind mounts would not see it. Run `aptl lab start` on "
+                "remote bind mounts would not see it. Run `lilrae lab start` on "
                 "the deployment host instead, or switch deployment.provider "
                 "to the local Docker Compose backend."
             ),
@@ -2410,9 +2410,9 @@ def _step_seed_suricata_volumes(
             success=False,
             error=(
                 "Suricata runtime volumes are seeded from checked-in source "
-                "on the host running `aptl lab start`, but the configured "
+                "on the host running `lilrae lab start`, but the configured "
                 "deployment backend targets a remote Docker daemon, so the "
-                "host source would not be visible to it. Run `aptl lab start` "
+                "host source would not be visible to it. Run `lilrae lab start` "
                 "on the deployment host instead, or switch deployment.provider "
                 "to the local Docker Compose backend."
             ),
@@ -2548,7 +2548,7 @@ def _step_generate_soc_certs(ctx: _LabStartContext) -> LabResult | None:
         return None
     result: LabResult | None = None
     # Generated artifacts land under config/soc_certs/ on the host running
-    # `aptl lab start`. With the SSH-remote backend the Docker daemon is
+    # `lilrae lab start`. With the SSH-remote backend the Docker daemon is
     # on another host whose bind mounts cannot see them — same shape as
     # `_step_sync_credentials` (ADR-028).
     from aptl.core.deployment import SSHComposeBackend
@@ -2558,9 +2558,9 @@ def _step_generate_soc_certs(ctx: _LabStartContext) -> LabResult | None:
             success=False,
             error=(
                 "SOC stack lab CA is generated under config/soc_certs/ on "
-                "the host running `aptl lab start`, but the configured "
+                "the host running `lilrae lab start`, but the configured "
                 "deployment backend targets a remote Docker daemon, so the "
-                "remote bind mounts would not see it. Run `aptl lab start` "
+                "remote bind mounts would not see it. Run `lilrae lab start` "
                 "on the deployment host instead, or switch "
                 "deployment.provider to the local Docker Compose backend."
             ),
@@ -3063,7 +3063,7 @@ def _step_capture_snapshot(ctx: _LabStartContext) -> LabResult | None:
             severity=DiagnosticSeverity.WARNING,
             message="Range snapshot capture failed; run inventory will be incomplete",
             operator_action=(
-                "Inspect lab logs; re-run `aptl lab status -j` to capture "
+                "Inspect lab logs; re-run `lilrae lab status -j` to capture "
                 "inventory manually once the deployment backend is reachable"
             ),
         )
@@ -3251,7 +3251,7 @@ def _resolve_run_target(ctx: _LabStartContext) -> tuple[object, str]:
     filesystem-safe ``run_<UTC timestamp>`` id under the configured run store
     base dir. The minted id is shaped to pass ``runstore._validate_id``.
     Resolved once and cached on ctx so orchestration, the run record, and the
-    public ``aptl runs`` commands all address the same archive.
+    public ``lilrae runs`` commands all address the same archive.
     """
     from datetime import datetime, timezone
 
@@ -4137,8 +4137,8 @@ _TERMINAL_CONTAINER_OBSERVATION_FAILED = (
     "Terminal project-container state could not be observed"
 )
 _TERMINAL_CONTAINER_RECOVERY_ACTION = (
-    "Inspect the deployment backend, then run `aptl lab stop` or "
-    "`aptl lab start --clean` before retrying"
+    "Inspect the deployment backend, then run `lilrae lab stop` or "
+    "`lilrae lab start --clean` before retrying"
 )
 
 
@@ -4255,8 +4255,8 @@ def _step_attest_project_containers(ctx: _LabStartContext) -> LabResult | None:
                 "project container(s)"
             ),
             operator_action=(
-                "Inspect the named container state, then run `aptl lab stop` or "
-                "`aptl lab start --clean` before retrying"
+                "Inspect the named container state, then run `lilrae lab stop` or "
+                "`lilrae lab start --clean` before retrying"
             ),
         )
         result = LabResult(

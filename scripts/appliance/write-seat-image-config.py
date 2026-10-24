@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write the self-description a baked seat image carries.
 
-`aptl seat start` reads this blob before it downloads the disk, so it states
+`lilrae seat start` reads this blob before it downloads the disk, so it states
 what the host must provide and the boundary contract the guest runs under. It
 is produced by the bake, from the same source that produced the disk, which is
 why the two cannot describe different things.

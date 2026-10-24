@@ -1,4 +1,4 @@
-"""Read-only host and container-runtime checks for ``aptl doctor`` (#1218).
+"""Read-only host and container-runtime checks for ``lilrae doctor`` (#1218).
 
 Each check observes one documented prerequisite and, when it is not met, names
 the fix. Nothing here writes to the host, the workspace or the Docker daemon:
@@ -44,7 +44,7 @@ _MIN_NODE_MAJOR = 20
 
 @dataclass(frozen=True)
 class DoctorReport:
-    """Every check from one ``aptl doctor`` run, in a stable order."""
+    """Every check from one ``lilrae doctor`` run, in a stable order."""
 
     checks: tuple[DoctorCheck, ...]
 
@@ -79,7 +79,7 @@ def _workspace_checks(
 ) -> tuple[AptlConfig, Path | None, list[DoctorCheck]]:
     """Check the project configuration and that the workspace is writable.
 
-    The project root is found the way ``aptl lab start`` and ``stop`` find it:
+    The project root is found the way ``lilrae lab start`` and ``stop`` find it:
     the nearest directory, from ``project_dir`` up, that holds aptl.json. The
     root is ``None`` when the project directory does not exist.
     """
@@ -91,7 +91,7 @@ def _workspace_checks(
             CheckStatus.FAILED,
             "The project directory does not exist or is not a directory.",
             "Pass an existing project directory with `--project-dir`, or create "
-            "one with `aptl lab init <directory>`.",
+            "one with `lilrae lab init <directory>`.",
         )
         return (
             AptlConfig(),
@@ -111,7 +111,7 @@ def _config_check(project_root: Path) -> tuple[AptlConfig, DoctorCheck]:
             "project-config",
             CheckStatus.FAILED,
             "No aptl.json was found in the project directory or its parents.",
-            "Run `aptl lab init <directory>`, then run `aptl doctor` there or "
+            "Run `lilrae lab init <directory>`, then run `lilrae doctor` there or "
             "pass `--project-dir`.",
         )
     try:
@@ -121,7 +121,7 @@ def _config_check(project_root: Path) -> tuple[AptlConfig, DoctorCheck]:
             "project-config",
             CheckStatus.FAILED,
             "aptl.json is not valid.",
-            "Run `aptl config validate` to see why, then repair aptl.json.",
+            "Run `lilrae config validate` to see why, then repair aptl.json.",
         )
     return config, DoctorCheck(
         "project-config", CheckStatus.PASSED, "aptl.json is valid."
@@ -142,7 +142,7 @@ def _writable_check(project_root: Path) -> DoctorCheck:
         CheckStatus.FAILED,
         "The project directory is not writable by this user.",
         "Run aptl as a user that can write the project directory, or create "
-        "a project you own with `aptl lab init <directory>`.",
+        "a project you own with `lilrae lab init <directory>`.",
     )
 
 

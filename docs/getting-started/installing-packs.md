@@ -81,24 +81,24 @@ The active scenario is an operator decision. It lives in `aptl.json`:
 - `identity` names the pack. The default identity is `techvault`.
 
 The backend never switches the scenario at runtime. You select it before
-`aptl lab start`.
+`lilrae lab start`.
 
 ## Verify and run
 
 List the configured pack. The catalog projects the pack named in `aptl.json`:
 
 ```shell
-aptl lab scenarios
+lilrae lab scenarios
 ```
 
 The command prints the identity, version, status, digest, and description. Start
 the lab:
 
 ```shell
-aptl lab start
+lilrae lab start
 ```
 
-`aptl lab start` uses the configured identity. The `--scenario` option selects
+`lilrae lab start` uses the configured identity. The `--scenario` option selects
 another identity, but only one that the catalog already lists. The catalog lists
 the configured pack, so `--scenario` cannot select a pack that `aptl.json` does
 not configure. To run a different pack, set `scenario.identity` in `aptl.json`.
@@ -107,7 +107,7 @@ not configure. To run a different pack, set `scenario.identity` in `aptl.json`.
 
 - **`Unknown scenario id '<x>'. Available scenarios: <y>`**. The identity is
   not the configured pack. Set `scenario.identity` to `<x>` in `aptl.json`, then
-  run `aptl lab scenarios` to confirm the catalog lists it.
+  run `lilrae lab scenarios` to confirm the catalog lists it.
 - **`env-pack source not found for '<x>'`**. The pack distribution is not
   installed, or the pack directory name does not match the identity. Install the
   distribution that carries `resources/packs/<x>/`.

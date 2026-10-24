@@ -76,5 +76,5 @@ def test_clean_install_workflow_starts_the_product_neutral_envelope():
     )
     assert fixture in job
     assert f"--scenario-path scenarios/{FIXTURE_SDL.name}" in job
-    assert 'aptl" lab status' in job
-    assert 'aptl" lab stop --volumes --yes' in job
+    assert 'lilrae" lab status' in job
+    assert 'lilrae" lab stop --volumes --yes' in job

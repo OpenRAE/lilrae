@@ -1,6 +1,6 @@
 """Durable, versioned pending-cleanup records for explicit volume resets.
 
-A lab start records every host-side cleanup action the next ``aptl lab stop
+A lab start records every host-side cleanup action the next ``lilrae lab stop
 -v`` must finish. Each record is a content-addressed, canonical JSON file
 created once and never rewritten; a separate create-once completion marker
 retires it only after its action succeeded. The ``action`` and
