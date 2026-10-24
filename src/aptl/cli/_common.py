@@ -10,7 +10,8 @@ across CLI surfaces. Subcommand-specific logic stays in the respective
 """
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import NoReturn
 
@@ -98,12 +99,34 @@ def resolve_config_for_cli(
             err=True,
         )
         raise typer.Exit(code=1)
+    return _load_config_or_exit(config_path), config_path.parent
+
+
+def _load_config_or_exit(config_path: Path) -> AptlConfig:
+    """Load ``config_path``, or exit 1 with the reason on stderr."""
+
     try:
-        config = load_config(config_path)
+        return load_config(config_path)
     except (OSError, ValueError) as exc:
         typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
-    return config, config_path.parent
+        raise typer.Exit(code=EXIT_FAILED) from exc
+
+
+@contextmanager
+def exit_on_invalid_deployment_settings() -> Iterator[None]:
+    """Turn a deployment backend's settings error into one stderr line and exit 1.
+
+    ``aptl.json`` can load and still hold deployment settings that only the
+    backend constructor checks, such as an ssh-compose block without
+    ``ssh_host``. Wrap backend creation in this so the command reports them
+    like a config that does not load, instead of printing a traceback.
+    """
+
+    try:
+        yield
+    except ValueError as exc:
+        typer.echo(f"invalid deployment settings in aptl.json: {exc}", err=True)
+        raise typer.Exit(code=EXIT_FAILED) from exc
 
 
 def resolve_run_store(
@@ -117,11 +140,12 @@ def resolve_run_store(
     ``config`` is provided the caller has already loaded it; otherwise
     we discover it via :func:`find_config` (defaulting to an
     ``AptlConfig()`` if no aptl.json is present, so help-only paths
-    don't error out).
+    don't error out). A discovered aptl.json that does not load exits 1
+    with the reason on stderr, as :func:`resolve_config_for_cli` does.
     """
     if config is None:
         config_path = find_config(project_dir)
-        config = load_config(config_path) if config_path else AptlConfig()
+        config = _load_config_or_exit(config_path) if config_path else AptlConfig()
 
     local_path = Path(config.run_storage.local_path)
     if not local_path.is_absolute():

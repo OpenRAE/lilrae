@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import Ajv2020 from 'ajv/dist/2020.js';
 import { generateToolDefinitions } from '../src/tools/definitions.js';
 
 describe('generateToolDefinitions', () => {
@@ -77,5 +78,20 @@ describe('generateToolDefinitions', () => {
       expect(tool.inputSchema).toBeDefined();
       expect(tool.inputSchema.type).toBe('object');
     });
+  });
+
+  // Node timers run only for 1 to 2^31-1 ms and fire after 1 ms otherwise, and
+  // a line count below 1 would return the whole buffer or drop its oldest lines.
+  it.each([
+    ['test_interactive_session', 'timeout_ms', [1, 2_147_483_647], [0, -1, 2_147_483_648]],
+    ['test_background_session', 'timeout_ms', [1, 2_147_483_647], [0, -1, 2_147_483_648]],
+    ['test_session_command', 'timeout', [1, 2_147_483_647], [0, -1, 2_147_483_648]],
+    ['test_get_session_output', 'lines', [1, 10_000], [0, -1]],
+  ])('bounds %s %s to what the backend honors', (toolName, field, accepted, rejected) => {
+    const tool = generateToolDefinitions(mockServerConfig).find(({ name }) => name === toolName);
+    const validate = new Ajv2020().compile(tool!.inputSchema.properties![field]);
+
+    expect(accepted.filter((value) => !validate(value))).toEqual([]);
+    expect(rejected.filter((value) => validate(value))).toEqual([]);
   });
 });

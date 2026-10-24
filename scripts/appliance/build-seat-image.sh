@@ -116,17 +116,22 @@ python3 - "$source_root/pyproject.toml" "$payload/wheelhouse" \
   "$payload/aptl-wheel-requirements.txt" <<'PYTHON'
 import hashlib
 import pathlib
+import re
 import sys
 import tomllib
 
 project = tomllib.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+name = project["project"]["name"]
 version = project["project"]["version"]
-wheels = list(pathlib.Path(sys.argv[2]).glob(f"aptl_labs-{version}-*.whl"))
+# Wheel filenames use the normalized name (PEP 427); the requirement keeps the
+# metadata name.
+wheel_prefix = re.sub(r"[-_.]+", "_", name).lower()
+wheels = list(pathlib.Path(sys.argv[2]).glob(f"{wheel_prefix}-{version}-*.whl"))
 if len(wheels) != 1:
-    raise SystemExit("bake must produce exactly one APTL application wheel")
+    raise SystemExit("bake must produce exactly one application wheel")
 digest = hashlib.sha256(wheels[0].read_bytes()).hexdigest()
 pathlib.Path(sys.argv[3]).write_text(
-    f"aptl-labs=={version} --hash=sha256:{digest}\n", encoding="utf-8"
+    f"{name}=={version} --hash=sha256:{digest}\n", encoding="utf-8"
 )
 PYTHON
 
@@ -165,9 +170,11 @@ docker run --rm aptl-seat-guacamole:1.6.0 \
   /opt/guacamole/bin/initdb.sh --postgresql |
   sed '/^-- Create default user "guacadmin"/,$d' >"$payload/guac-schema.sql"
 test -s "$payload/guac-schema.sql"
-for filename in desktop-compose.yml desktop-nginx.conf seat-desktop.py seat-privileges.py desktop-handoff.py desktop-mcp-smoke.py desktop-session.sh; do
+for filename in desktop-compose.yml desktop-nginx.conf seat-desktop.py seat-privileges.py desktop-handoff.py desktop-mcp-smoke.py desktop-session.sh participant-desktop-open.sh; do
   cp "$source_root/appliance/guest/$filename" "$payload/"
 done
+# The one hostname publisher lab start's hosts.json is applied with (#1273).
+cp "$source_root/src/aptl/core/participant_hosts.py" "$payload/participant-hosts.py"
 
 # Build a clean project tree first, then write the image-bound participant
 # profile into that tree. The checkout itself is never modified by the bake.

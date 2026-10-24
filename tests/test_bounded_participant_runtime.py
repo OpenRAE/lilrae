@@ -37,6 +37,12 @@ from aptl.backends.raes_participant_realizations import BPA_ACTION_REALIZATIONS
 from aptl.core.config import AptlConfig
 from aptl.core.lab_types import LabResult
 from aptl.core.runstore import LocalRunStore
+from aptl.workbench.process import (
+    REASON_RESIDUE,
+    REASON_TIMEOUT,
+    BoundedProcessError,
+    ProcessCleanup,
+)
 
 PROJECT_ROOT = Path(__file__).parents[1]
 SCENARIO = PROJECT_ROOT / "scenarios/bounded-participant-agency-techvault.sdl.yaml"
@@ -869,6 +875,26 @@ def test_head_endpoint_probe_uses_curl_head_semantics() -> None:
     assert all(command[-1] == "http://aptl-webapp:8080/" for command in curl_calls)
 
 
+@pytest.mark.parametrize("email", ["green.user+validated@techvault.local", "analyst@fixture.test"])
+def test_profile_contact_change_uses_the_admitted_argument_without_a_domain_literal(email):
+    backend = _StatefulBackend()
+    address = "participant.action-contract.update-own-profile"
+
+    operation = execute_verified_participant_operation(
+        backend=backend,
+        container_by_node={name: f"aptl-{name}" for name in NODES},
+        action_contract_address=address,
+        arguments={"change": f"contact_email:{email}"},
+        participant_address="participant.behavior.semantic-probe",
+        episode_id="contact-change",
+        target_nodes=BPA_ACTION_REALIZATIONS[address].target_nodes,
+    )
+
+    assert operation.success
+    assert operation.post_state["db.profile.contact_email"] == email
+    assert operation.post_state["db.profile.protected_account_id"] == operation.pre_state["db.profile.protected_account_id"]
+
+
 def test_participant_pipeline_accepts_only_declared_idempotent_stutters(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1210,40 +1236,114 @@ def test_consumed_solicitation_cannot_invoke_provider_again(
     assert provider.calls == 2
 
 
-def test_malformed_and_out_of_set_provider_outputs_fail_before_admission(
+class _BoundedFailureAdapter(_ManagedResponseAdapter):
+    """A managed adapter whose bounded runner stops the agent request."""
+
+    def __init__(self, reason: str, residual: tuple[str, ...]) -> None:
+        super().__init__("")
+        self._reason = reason
+        self._residual = residual
+
+    def respond(
+        self,
+        _handle: object,
+        message: str,
+        *,
+        response_schema: Mapping[str, object] | None = None,
+    ) -> str:
+        del message, response_schema
+        raise BoundedProcessError(
+            self._reason,
+            cleanup=ProcessCleanup(4242, 1.25, self._residual),
+            stdout_bytes=7,
+            stderr_bytes=0,
+        )
+
+
+def _bounded_failure_provider(
+    reason: str,
+    residual: tuple[str, ...],
+) -> ManagedAgentSelectionProvider:
+    """The real managed provider, driving an adapter whose runner fails."""
+
+    return ManagedAgentSelectionProvider(
+        adapter=_BoundedFailureAdapter(reason, residual),
+        handle=object(),
+        provider_name="codex",
+        model="gpt-5-nano-2025-08-07",
+        implementation_name="bounded-failure-provider",
+        implementation_version="1.0.0",
+    )
+
+
+@pytest.mark.parametrize(
+    ("provider", "diagnostic"),
+    [
+        pytest.param(
+            _MalformedProvider(),
+            "participant selection provider failed or returned malformed output",
+            id="malformed",
+        ),
+        pytest.param(
+            _OutOfSetProvider(),
+            "participant provider selected outside the delivered candidate set",
+            id="out-of-set",
+        ),
+        pytest.param(
+            _bounded_failure_provider(REASON_TIMEOUT, ()),
+            "participant selection provider failed: agent request exceeded the "
+            "configured timeout; cleanup residual: none observed",
+            id="timeout",
+        ),
+        pytest.param(
+            _bounded_failure_provider(REASON_RESIDUE, ("output-streams-held",)),
+            "participant selection provider failed: agent process cleanup left "
+            "residual processes; cleanup residual: output-streams-held",
+            id="residue",
+        ),
+    ],
+)
+def test_failed_provider_selections_fail_before_admission_with_their_cause(
     tmp_path: Path,
+    provider: object,
+    diagnostic: str,
 ) -> None:
-    for index, provider in enumerate((_MalformedProvider(), _OutOfSetProvider())):
-        control, model, backend, store = _runtime(tmp_path / str(index))
-        behavior = "participant.behavior-specification.complete-normal-session"
-        participant = _participant_for(model, behavior)
-        control.initialize_participant_episode(
-            participant, episode_id=f"rejected-{index}"
-        )
+    """Invalid output and bounded-runner failures never reach admission.
 
-        try:
-            run_participant_turn(
-                control,
-                behavior_specification_address=behavior,
-                apparatus=_apparatus(participant),
-                provider=provider,
-            )
-        except ValueError as exc:
-            assert str(exc) == "participant selection operation failed"
-        else:
-            raise AssertionError("invalid provider output reached admission")
+    Each failure is recorded with its own cause. The regression (#963): a
+    provider timeout or cleanup residue was recorded as "failed or returned
+    malformed output", which hid both.
+    """
 
-        assert control.snapshot.participant_behavior_history == {}
-        assert backend.calls == []
-        control_evidence = (
-            store.get_run_path("readiness-run")
-            / "evaluator/participant-control-evidence.jsonl"
+    control, model, backend, store = _runtime(tmp_path)
+    behavior = "participant.behavior-specification.complete-normal-session"
+    participant = _participant_for(model, behavior)
+    control.initialize_participant_episode(participant, episode_id="rejected")
+
+    try:
+        run_participant_turn(
+            control,
+            behavior_specification_address=behavior,
+            apparatus=_apparatus(participant),
+            provider=provider,
         )
-        assert control_evidence.exists()
-        record = json.loads(control_evidence.read_text())
-        assert record["solicitation_state"] == "failed"
-        assert record["admission_operation_id"] is None
-        assert record["selected_action_contract_address"] is None
+    except ValueError as exc:
+        assert str(exc) == "participant selection operation failed"
+    else:
+        raise AssertionError("invalid provider output reached admission")
+
+    assert control.snapshot.participant_behavior_history == {}
+    assert backend.calls == []
+    control_evidence = (
+        store.get_run_path("readiness-run")
+        / "evaluator/participant-control-evidence.jsonl"
+    )
+    assert control_evidence.exists()
+    record = json.loads(control_evidence.read_text())
+    assert record["solicitation_state"] == "failed"
+    assert record["solicitation_diagnostics"][0] == diagnostic
+    assert record["admission_operation_id"] is None
+    assert record["selected_action_contract_address"] is None
 
 
 def test_proposal_and_admitted_action_budgets_fail_closed(

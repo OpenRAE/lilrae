@@ -108,11 +108,12 @@ Open the Wazuh Dashboard or another realized service at the URL printed by
 
 ```shell
 aptl container shell aptl-victim
-aptl container shell aptl-kali
 ```
 
 Only use a container name that appears in `aptl container list` for the
-selected scenario.
+selected scenario. LilRAE refuses a shell on `aptl-kali` while session
+capture runs, as it does on TechVault; see
+[Kali Red Team Container](../components/kali-redteam.md#host-access).
 
 ## Generate Safe Test Activity
 

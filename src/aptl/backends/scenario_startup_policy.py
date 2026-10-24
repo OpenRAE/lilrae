@@ -12,6 +12,7 @@ from pathlib import Path
 
 import yaml
 
+from aptl.core.deployment._compose_runtime_config import compose_literal
 from aptl.backends.scenario_startup import (
     ScenarioStartupProviderError,
     selected_runtime_provider,
@@ -203,7 +204,7 @@ def write_scenario_startup_override(
     path = realization_root / _OVERRIDE_RELPATH
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        yaml.safe_dump({"services": services}, sort_keys=True),
+        yaml.safe_dump(compose_literal({"services": services}), sort_keys=True),
         encoding="utf-8",
         newline="\n",
     )
