@@ -6,7 +6,8 @@ Normal local use and seat delivery share the installed TechVault environment
 pack. `scripts/appliance/build-seat-image.sh` assembles
 `participant-profiles/techvault-full-v1/profile.json` in a clean project tree
 from that pack identity, the built MCP artifacts, and the image IDs actually
-saved in the guest's Docker archive. It selects `red` and `blue`, all seven
+saved in the guest's Docker archive. This profile path is generated output
+under the assembled project, not a source file in the repository. It selects `red` and `blue`, all seven
 participant MCP servers, and the six registered browser surfaces.
 
 The scenario reference uses `source: env-pack`, the full `PackIdentity`, and
@@ -86,6 +87,26 @@ must be absent from a guided-purple participant session.
 Each enabled MCP qualification starts the real server, checks its exact
 workbench tool inventory, invokes a bounded backend operation, and validates
 the semantic result. Process health or tool discovery alone is insufficient.
+
+## Participant desktop
+
+The installed `aptl.participant_desktop` provider selects console, credential,
+guide and hostname references for the admitted pack. Core resolves those
+references against its SDL and the owned running resources. Set
+`LILRAE_PARTICIPANT_DESKTOP_ACCOUNT` to the existing participant account to
+publish its desktop. The guest units set this account for seat delivery.
+
+The account's `~/.config/aptl/desktop/` directory is private (`0700`), and its
+files are participant-owned (`0600`). `credentials.html` contains only authored
+`secret_fixture` logins; `guide.html` shows escaped guide text without scripts
+or remote resources. `consoles.txt` holds the resolved console URLs. The
+management handoff publishes `run-ready` after startup succeeds. A new admitted
+start, failed start, stop or reset withdraws the previous surface and marker.
+
+The Wazuh and indexer rule tools require the caller's single XML filename.
+They validate its shape and length before authentication. Replacement requires
+an explicit boolean `params.overwrite`; the generic tools hold no scenario
+filename default.
 
 ## Staged asset contract
 

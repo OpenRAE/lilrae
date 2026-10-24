@@ -86,6 +86,17 @@ class TestDataclasses:
         assert d["networks"]["aptl_aptl-internal"] == "172.20.2.20"
         assert len(d["ports"]) == 1
 
+    def test_snapshot_serialization_masks_legacy_compose_fingerprints(self):
+        fingerprint = "d" * 64
+        label = "com.docker.compose.config-hash"
+        snapshot = RangeSnapshot(containers=[ContainerSnapshot(
+            name="aptl-db", labels={label: fingerprint, "com.docker.compose.service": "db"},
+        )])
+        payload = snapshot.to_dict()
+        assert payload["containers"][0]["labels"][label] == "[REDACTED]"
+        assert payload["containers"][0]["labels"]["com.docker.compose.service"] == "db"
+        assert fingerprint not in str(payload)
+
     def test_container_snapshot_defaults(self):
         cs = ContainerSnapshot()
         assert cs.labels == {}
@@ -254,6 +265,38 @@ class TestGetSoftwareVersions:
         assert sv.compose_version == ""
         assert sv.wazuh_manager_version == ""
         assert sv.python_version  # still set
+
+
+    def test_reads_the_installed_lilrae_version(self, monkeypatch):
+        import importlib.metadata as metadata
+
+        installed = {"lilrae": "8.0.0", "raes": "6.0.1"}
+
+        def _version(name):
+            if name not in installed:
+                raise metadata.PackageNotFoundError(name)
+            return installed[name]
+
+        monkeypatch.setattr(metadata, "version", _version)
+        backend = MagicMock()
+        backend.host_versions.return_value = {}
+        sv = _get_software_versions(backend, active_services=set())
+        assert sv.aptl_version == "8.0.0"
+        assert sv.raes_version == "6.0.1"
+
+    def test_reports_dev_only_when_lilrae_is_not_installed(self, monkeypatch):
+        import importlib.metadata as metadata
+
+        def _version(name):
+            if name == "aptl-labs":
+                return "7.0.0"
+            raise metadata.PackageNotFoundError(name)
+
+        monkeypatch.setattr(metadata, "version", _version)
+        backend = MagicMock()
+        backend.host_versions.return_value = {}
+        sv = _get_software_versions(backend, active_services=set())
+        assert sv.aptl_version == "dev"
 
 
 class TestGetContainerSnapshots:

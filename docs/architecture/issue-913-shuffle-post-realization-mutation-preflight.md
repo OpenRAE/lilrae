@@ -1,5 +1,9 @@
 # Issue #913 Shuffle Post-Realization Mutation Preflight
 
+> **Dated preflight record.** Written on 2026-09-03 and kept as written. Since
+> then, #1108 (18dcc702, 2026-09-19) removed `scripts/envpack-soar-fixups.sh`,
+> the repair it plans to retire.
+
 This note fixes the architecture boundary for retiring the TechVault Shuffle
 backend replacement. It is guidance, not an implementation plan. No new ADR is
 needed: ADR-046 and ADR-051 already require complete admitted desired state,

@@ -120,6 +120,11 @@ end-to-end loop. Summary for agents working in this repo:
 
 ## Workflow Notes
 
+- One issue = one PR. The issue's delivery PR must address all acceptance
+  criteria, including code, documentation, and tests. Update an existing PR
+  instead of splitting the issue across multiple PRs. If an issue is too large,
+  create smaller linked issues with explicit acceptance criteria and one
+  complete PR per smaller issue. See [coding standards](docs/CODING_STANDARDS.md).
 - Pass full requirement UIDs exactly as they exist in Ground Control.
   Do not synthesize or rewrite requirement prefixes.
 - Keep repo-native checks, docs, and Ground Control policy in sync.

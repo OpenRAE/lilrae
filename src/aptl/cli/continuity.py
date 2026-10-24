@@ -17,7 +17,11 @@ from typing import Optional
 
 import typer
 
-from aptl.cli._common import resolve_config_for_cli, resolve_run_store
+from aptl.cli._common import (
+    exit_on_invalid_deployment_settings,
+    resolve_config_for_cli,
+    resolve_run_store,
+)
 from aptl.core.config import AptlConfig
 from aptl.core.continuity import (
     ContinuityAuditResult,
@@ -99,7 +103,8 @@ def continuity_audit(
     ``scenario.mode == PURPLE``.
     """
     config, project_root = resolve_config_for_cli(project_dir)
-    backend = get_backend(config, project_root)
+    with exit_on_invalid_deployment_settings():
+        backend = get_backend(config, project_root)
 
     explicit_targets = bool(targets)
     requested = list(targets) if targets else default_targets()

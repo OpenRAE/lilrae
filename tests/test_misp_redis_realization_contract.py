@@ -31,7 +31,7 @@ from aptl.core.deployment.realization import (
 from aptl.core.soc_ca import derive_soc_service_certs
 from aptl_techvault.redis_acl_observation import _REDIS_ACL_READBACK_SCRIPT
 from tests.helpers import techvault_scenario_path
-from tests.test_env_pack_realization import _realize_pack
+from tests.techvault_pack import realize_techvault_pack
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -48,7 +48,7 @@ def _enum(value: object) -> object:
 def test_released_pack_authors_the_misp_and_cache_contract(tmp_path: Path) -> None:
     """The released pack retains OpenRAE/env-packs#280's MISP contract."""
 
-    assert version("raes-env-packs") == "6.2.1"
+    assert version("raes-env-packs") == "6.3.3"
     scenario = parse_sdl_file(techvault_scenario_path(tmp_path))
 
     application = scenario.nodes["misp"].runtime.platform_applications[0]
@@ -85,7 +85,7 @@ def test_released_pack_authors_the_misp_and_cache_contract(tmp_path: Path) -> No
 
 @pytest.fixture(scope="module")
 def realization(tmp_path_factory):
-    return _realize_pack(tmp_path_factory.mktemp("misp-realization"))
+    return realize_techvault_pack(tmp_path_factory.mktemp("misp-realization"))
 
 
 def test_the_cache_is_authenticated_without_putting_the_secret_in_argv(realization):
@@ -496,7 +496,7 @@ def test_stateful_preflight_accepts_the_delivery_dependency(tmp_path):
 
     from aptl.core.deployment._compose_stateful_graph import stateful_realization_errors
 
-    realization = _realize_pack(tmp_path)
+    realization = realize_techvault_pack(tmp_path)
     delivery = next(
         item
         for item in realization.generated_artifacts

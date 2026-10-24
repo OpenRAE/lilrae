@@ -4,13 +4,14 @@
   "packages": {
     ".": {
       "release-type": "python",
+      "versioning": "always-bump-minor",
       "package-name": "aptl",
       "extra-files": [
         "src/aptl/__init__.py",
         {
           "type": "toml",
           "path": "uv.lock",
-          "jsonpath": "$.package[?(@.name.value=='aptl-labs')].version"
+          "jsonpath": "$.package[?(@.name.value=='lilrae')].version"
         }
       ]
     }

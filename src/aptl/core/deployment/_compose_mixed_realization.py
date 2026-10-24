@@ -9,10 +9,8 @@ from typing import cast
 from aptl.core.appliance_boundary import ApplianceBoundaryPolicy
 from aptl.core.deployment._compose_base_container_realization import (
     _base_container_node_addresses,
-    _base_container_service_names,
     _strip_base_container_published_ports,
 )
-from aptl.core.deployment._compose_node_generation import STATIC_COMPOSE_FILENAME
 from aptl.core.deployment._compose_runtime_orchestration import (
     realization_has_docker_authority,
 )
@@ -68,11 +66,9 @@ class ComposeMixedRealizationMixin:
             failure = self._prepare_capture_target(realization)
         if failure is not None:
             return failure, realization, ()
-        excluded_services = (
-            _base_container_service_names(realization, addresses)
-            if (scenario_root / STATIC_COMPOSE_FILENAME).exists()
-            else ()
-        )
+        # Generated models contain only image-backed services; base containers
+        # never need legacy Compose stubs scaled to zero.
+        excluded_services: tuple[str, ...] = ()
         legacy_content = tuple(
             item for item in realization.content if item.target_address not in addresses
         )

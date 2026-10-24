@@ -25,6 +25,10 @@ remain the explicit destructive volume-reset surfaces. Persistent project
 volumes alone are valid state for a stopped range and must not block normal
 start.
 
+Failed-start recovery is narrowed by the
+[issue #952 preflight](issue-952-start-failure-recovery-preflight.md), including
+the opt-in teardown, volume-retention, and recovery-target guardrails.
+
 Acquire the single project lifecycle mutation lock before `.env` hydration or
 any other project-state or Docker mutation. Hold it through authoritative RAES
 realization, readiness, and the late finalization steps. An OS lock, not lock
@@ -75,7 +79,7 @@ cancellation, result retrieval, and API semantics and is outside this issue.
 | Results and errors | Keep `LabResult`, `StartupOutcome`, and `StartupDiagnostic` as the canonical core envelope, with existing CLI rendering and `LabActionResponse` projection. Busy, pre-existing, observation-failed, and cleanup-incomplete states need stable bounded diagnostics; they do not require a duplicate DTO or public exception hierarchy. Raw commands, Docker stderr, environment, credentials, host paths, or tracebacks must not cross the CLI/API/log envelope. |
 | Authentication and web/API | The existing `verify_token`, BFF Host/CSRF/session gates, strict response model, loopback defaults, and web single-flight UI remain authoritative. An API `asyncio.wait_for()` timeout does not cancel its worker thread; the worker retains the lifecycle owner until it actually exits, and the response must continue to describe the outcome as unknown rather than success or cleanup authority. |
 | Logging and observability | Use `get_logger()`, redaction, existing progress callbacks, and bounded structured fields. Record lifecycle stage, owner-busy versus residue-present classification, duration, resource counts, and cleanup verification. Do not log secret-bearing config, commands, raw backend output, process argv, or a PID as an authority token. No new OTel or persistence schema is needed. |
-| Workflow and verification | Python changes require focused pytest coverage, `pytest`, the Ruff complexity gate, `pre-commit run --all-files`, and CI/Sonar checks from `.ground-control.yaml`. Changes to Compose, Dockerfiles, or `config/` also require the clean-lab gate on a fresh machine; the architecture does not require those artifact changes. |
+| Workflow and verification | Python changes require focused pytest coverage via `tools/run-targeted-tests.sh` and staged `pre-commit run`, per `.ground-control.yaml` and `.gc/plan-rules.md`. Full suites, whole-tree checks, complexity, and CI/Sonar qualification belong to CI/CD. Changes to Compose, Dockerfiles, or `config/` also require CI's clean-lab gate on a fresh machine; the architecture does not require those artifact changes. |
 
 ## Security And Host-Layer Guardrails
 

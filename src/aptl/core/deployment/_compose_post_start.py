@@ -76,7 +76,11 @@ class ComposeRealizationPostStartMixin(ComposeRuntimeOrchestrationObservationMix
                 realize_application_providers(self, realization.nodes)
             ),
             lambda: self._scenario_runtime_step(realization),
-            lambda: _failure_result(realize_forwarding_agents(self, realization.nodes)),
+            lambda: _failure_result(
+                realize_forwarding_agents(
+                    self, realization.nodes, realization.accounts
+                )
+            ),
             # After providers: an application provider starts the process that
             # binds its declared listener, so waiting any earlier waits for a
             # service nothing has started yet.

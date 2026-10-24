@@ -8,6 +8,18 @@ from aptl.utils.redaction import REDACTED, is_secret_shaped_value, is_sensitive_
 
 
 class TestRedactScalars:
+    def test_compose_service_fingerprints_are_secret_material(self):
+        label = "com.docker.compose.config-hash"
+        fingerprint = "a" * 64
+        payload = {"labels": {label: fingerprint, "com.docker.compose.service": "db"},
+                   "image_digest": "sha256:" + "b" * 64}
+        safe = redact(payload)
+        assert safe["labels"][label] == REDACTED
+        assert safe["labels"]["com.docker.compose.service"] == "db"
+        assert safe["image_digest"] == payload["image_digest"]
+        assert fingerprint not in redact(json.dumps(payload))
+        assert redact(f"{label}={fingerprint},service=db") == f"{label}={REDACTED},service=db"
+
     def test_replaces_password_value(self):
         assert redact({"password": "hunter2"}) == {"password": REDACTED}
 
