@@ -8,10 +8,16 @@ uses ``--random-password`` (target-side generation), never a positional secret.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from aptl.core.deployment import _account_provider as provider
+from aptl.core.deployment._compose_account_realization import (
+    ComposeRealizationAccountMixin,
+)
 from aptl.core.deployment.realization import (
+    DeclaredAccountCredential,
     DeploymentAccountRealization,
     DeploymentNetworkAttachment,
     DeploymentNodeRealization,
@@ -24,6 +30,7 @@ def _node(
     name: str = "scenario.ad",
     service_name: str | None = "ad",
     container_name: str | None = "aptl-ad",
+    account_provider: str = provider.SAMBA_AD,
 ) -> DeploymentNodeRealization:
     return DeploymentNodeRealization(
         address=address,
@@ -32,6 +39,7 @@ def _node(
         container_name=container_name,
         networks=(),
         network_attachments=(),
+        backend_account_provider=account_provider,
     )
 
 
@@ -57,19 +65,24 @@ def _account(
 
 
 class TestProviderBinding:
-    def test_ad_service_binds_to_samba(self):
-        assert provider.resolve_account_provider("ad") == provider.SAMBA_AD
+    def test_samba_and_application_providers_are_known(self):
+        for kind in (provider.SAMBA_AD, *provider.APPLICATION_ACCOUNT_PROVIDERS):
+            assert provider.known_account_provider(kind)
 
-    def test_unknown_service_has_no_provider(self):
-        assert provider.resolve_account_provider("db") is None
+    def test_an_unknown_or_absent_provider_is_not_known(self):
+        assert not provider.known_account_provider("db")
+        assert not provider.known_account_provider("")
+        assert not provider.known_account_provider(None)
 
-    def test_none_service_has_no_provider(self):
-        assert provider.resolve_account_provider(None) is None
-
-    def test_interpret_time_service_set_matches_binding(self):
-        # The interpret-time gate and the realize-time binding must share one
-        # source of truth (ADR-046 §Extensibility): a single code-owned map.
-        assert provider.account_provider_services() == frozenset({"ad"})
+    def test_the_node_name_never_selects_a_provider(self):
+        # ADR-046 §Extensibility and DSL-008: the binding is the implementation
+        # the backend selected, so a node named "ad" with no provider has none.
+        node = _node(address="scenario.node.ad", account_provider="")
+        targets, errors = provider.plan_account_targets(
+            (_account(target_address="scenario.node.ad"),), (node,)
+        )
+        assert targets == []
+        assert [e.reason for e in errors] == ["no-account-provider-for-node"]
 
 
 class TestPlanAccountTargets:
@@ -101,14 +114,17 @@ class TestPlanAccountTargets:
         assert [e.reason for e in errors] == ["unresolved-target-node"]
         assert errors[0].address == "provision.account-placement.jessica"
 
-    def test_service_without_provider_fails_closed(self):
+    def test_node_without_provider_fails_closed(self):
         node = _node(
-            address="scenario.node.db", service_name="db", container_name="aptl-db"
+            address="scenario.node.db",
+            service_name="db",
+            container_name="aptl-db",
+            account_provider="",
         )
         accounts = (_account(target_address="scenario.node.db"),)
         targets, errors = provider.plan_account_targets(accounts, (node,))
         assert targets == []
-        assert [e.reason for e in errors] == ["no-account-provider-for-service"]
+        assert [e.reason for e in errors] == ["no-account-provider-for-node"]
 
     def test_node_without_container_fails_closed(self):
         node = _node(address="scenario.node.ad", container_name=None)
@@ -212,6 +228,56 @@ class TestPlanAccountTargets:
         node = _node(address="scenario.node.ad")
         acct = _account(username="dup", target_address="scenario.node.ad")
         targets, errors = provider.plan_account_targets((acct, acct), (node,))
+        assert errors == []
+        assert len(targets) == 1
+
+    @pytest.mark.parametrize("kind", [provider.SAMBA_AD, provider.THEHIVE])
+    @pytest.mark.parametrize(
+        "changed",
+        [
+            {"credential": DeclaredAccountCredential("fixture", "different")},
+            {"credential": DeclaredAccountCredential("other-source", "original")},
+            {"credential": None},
+            {"auth_method": "key"},
+            {"password_strength": "weak"},
+        ],
+    )
+    def test_conflicting_duplicate_credentials_block_the_whole_batch(
+        self, kind, changed, mocker
+    ):
+        node = _node(address="scenario.node.ad", account_provider=kind)
+        first = replace(
+            _account(username="dup"),
+            credential=DeclaredAccountCredential("fixture", "original"),
+        )
+        second = replace(first, address="provision.account-placement.dup2", **changed)
+
+        targets, errors = provider.plan_account_targets((first, second), (node,))
+
+        assert targets == []
+        assert [e.reason for e in errors] == ["conflicting-duplicate-account"]
+        backend = ComposeRealizationAccountMixin()
+        mutate = mocker.patch.object(backend, "_realize_targets")
+        result = backend.realize_accounts((first, second), (node,))
+        assert result is not None
+        assert result.success is False
+        mutate.assert_not_called()
+
+    @pytest.mark.parametrize("kind", [provider.SAMBA_AD, provider.THEHIVE])
+    def test_equivalent_duplicate_credentials_are_accepted(self, kind):
+        node = _node(address="scenario.node.ad", account_provider=kind)
+        first = replace(
+            _account(username="dup"),
+            credential=DeclaredAccountCredential("fixture", "original"),
+        )
+        second = replace(
+            first,
+            address="provision.account-placement.dup2",
+            credential=DeclaredAccountCredential("fixture", "original"),
+        )
+
+        targets, errors = provider.plan_account_targets((first, second), (node,))
+
         assert errors == []
         assert len(targets) == 1
 
@@ -345,3 +411,37 @@ class TestSambaCommandBuilders:
             for token in cmd:
                 assert token not in weak_passwords
                 assert "--password" not in token
+
+
+class TestApplicationAccountFields:
+    """An application provider realizes enabled principals only (#1273)."""
+
+    def _plan(self, **fields):
+        node = _node(
+            address="provision.node.console",
+            service_name="console",
+            container_name="aptl-console",
+            account_provider=provider.THEHIVE,
+        )
+        account = DeploymentAccountRealization(
+            address="provision.account.console-admin",
+            target_address="provision.node.console",
+            username="admin@example.test",
+            **fields,
+        )
+        return provider.plan_account_targets((account,), (node,))
+
+    @pytest.mark.parametrize("disabled", [None, False])
+    def test_an_enabled_or_default_principal_is_accepted(self, disabled):
+        targets, errors = self._plan(disabled=disabled)
+        assert errors == []
+        assert targets[0].provider == provider.THEHIVE
+
+    @pytest.mark.parametrize(
+        "fields",
+        [{"disabled": True}, {"groups": ("admins",)}, {"mail": "a@example.test"}, {"spn": "HTTP/x"}],
+    )
+    def test_an_attribute_the_provider_cannot_apply_is_refused(self, fields):
+        targets, errors = self._plan(**fields)
+        assert targets == []
+        assert [e.reason for e in errors] == ["account-attribute-unsupported"]

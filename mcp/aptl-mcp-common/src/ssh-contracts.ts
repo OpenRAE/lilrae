@@ -102,6 +102,26 @@ export class SSHError extends Error {
   }
 }
 
+/**
+ * The rejection of a one-shot exec whose timer fired (#1290). It names the
+ * exec's session id and the run id the exec was started under, and
+ * `channelClosed` settles once the stopped command's channel has closed, so
+ * run_command can harvest that session's Kali-side captures after the
+ * broker's final records (#1319). The close can take as long as the command:
+ * OpenSSH refuses the TERM for a forced-command session and confirms the
+ * close only once that command has exited.
+ */
+export class CommandTimeoutError extends SSHError {
+  constructor(
+    message: string,
+    public readonly sessionId: string,
+    public readonly runId: string | undefined,
+    public readonly channelClosed: Promise<void>,
+  ) {
+    super(message);
+  }
+}
+
 export type SessionType = 'interactive' | 'background';
 export type SessionMode = 'normal' | 'raw';
 

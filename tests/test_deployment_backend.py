@@ -4415,7 +4415,11 @@ class _FakeAd:
 
 
 def _ad_node(
-    address="scenario.node.ad", *, service_name="ad", container_name="aptl-ad"
+    address="scenario.node.ad",
+    *,
+    service_name="ad",
+    container_name="aptl-ad",
+    account_provider="samba-ad",
 ):
     return DeploymentNodeRealization(
         address=address,
@@ -4424,6 +4428,7 @@ def _ad_node(
         container_name=container_name,
         networks=(),
         network_attachments=(),
+        backend_account_provider=account_provider,
     )
 
 
@@ -4743,14 +4748,19 @@ class TestRealizeAccounts:
     def test_unknown_provider_fails_closed_before_mutation(self, tmp_path):
         backend = self._backend(tmp_path)
         ad = _FakeAd()
-        node = _ad_node("scenario.node.db", service_name="db", container_name="aptl-db")
+        node = _ad_node(
+            "scenario.node.db",
+            service_name="db",
+            container_name="aptl-db",
+            account_provider="",
+        )
         account = _acct("x", target="scenario.node.db")
         with patch.object(backend, "container_exec", ad):
             result = backend.realize_accounts((account,), (node,))
         assert result is not None
         assert result.success is False
         assert "provision.account-placement.x" in (result.error or "")
-        assert "no-account-provider-for-service" in (result.error or "")
+        assert "no-account-provider-for-node" in (result.error or "")
         assert ad.calls == []  # no mutation happened
 
     def test_invalid_username_fails_closed_before_mutation(self, tmp_path):

@@ -17,6 +17,7 @@ anyio==4.14.2 \
     #   httpx
     #   httpx2
     #   mcp
+    #   raes
     #   raes-env-packs
     #   sse-starlette
     #   starlette
@@ -95,9 +96,9 @@ blake3==1.0.9 \
     # via
     #   lilrae
     #   raes
-certifi==2026.7.22 \
-    --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775 \
-    --hash=sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55
+certifi==2026.10.19 \
+    --hash=sha256:035c1e85572b141bf1c3a3eff0e33a8eb74917522f2559075ff8d2fea780a1ae \
+    --hash=sha256:42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b
     # via
     #   httpcore
     #   httpx
@@ -475,9 +476,9 @@ pathspec==1.1.1 \
     --hash=sha256:17db5ecd524104a120e173814c90367a96a98d07c45b2e10c2f3919fff91bf5a \
     --hash=sha256:a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189
     # via hatchling
-pip==26.2.1 \
-    --hash=sha256:71138adf1f4ca900cdb7d289c21b7494329f2332b6d85f0e1c42108c0384ed3e \
-    --hash=sha256:f6ad667e89a1fe78046c8f13232b247200f5258d7828f3f7883d660878e0813f
+pip==26.2.2 \
+    --hash=sha256:3a8e5c800492787f33a4114ef54444546c340df428974ebba17e0fd47e11af2f \
+    --hash=sha256:fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70
 pluggy==1.6.0 \
     --hash=sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3 \
     --hash=sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746
@@ -649,15 +650,15 @@ pyyaml==6.0.3 \
     #   raes
     #   raes-env-packs
     #   uvicorn
-raes==6.0.1 \
-    --hash=sha256:3e97f42d42564acc1740757157ffd35a8c6373487845e987a314da54388a06c0 \
-    --hash=sha256:8ab156fb1b9c1f0b467c08d98c0695403224ad3c6f2b7835e30b570f8741e67f
+raes==7.0.0 \
+    --hash=sha256:3248f494ae635cd890a7697d14d31101c5525ffb92e729f4fe3f28377cc450aa \
+    --hash=sha256:e92685889f7a73ee806802692504a2d435d2c5e7ab2385800db6a8f134240371
     # via
     #   lilrae
     #   raes-env-packs
-raes-env-packs==6.2.1 \
-    --hash=sha256:2144f4460cbcd8a2579820b6962fd59fb714c437b980a11ef4041017b22661b2 \
-    --hash=sha256:6a235e6c75697cb8a1afcb011b70b77e6bdc6fa302911aaa607f25856689b657
+raes-env-packs==6.3.3 \
+    --hash=sha256:5ddbfc36f140453125648416ce4a165265a8d1c8358fe87598ada59b4a19c65f \
+    --hash=sha256:acdfadd2cf408e4069ed97b92f112c9e9d3be87083487ad3a761b10b544de239
     # via lilrae
 referencing==0.37.0 \
     --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231 \

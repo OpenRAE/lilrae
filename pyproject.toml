@@ -30,8 +30,8 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.33.0",
     "opentelemetry-semantic-conventions>=0.54b0",
     "cryptography>=50.0.0",
-    "raes==6.0.1",
-    "raes-env-packs==6.2.1",
+    "raes==7.0.0",
+    "raes-env-packs==6.3.3",
     "mcp>=2,<3",
     "rfc8785>=0.1.4,<0.2.0",
     "packaging>=24.2",
@@ -150,6 +150,10 @@ build = [
 [project.entry-points."aptl.scenario_verifiers"]
 "techvault.aptl" = "aptl_techvault.verification:verifier"
 "techvault-participant-study.aptl" = "aptl_techvault.study:verifier"
+
+[project.entry-points."aptl.participant_desktop"]
+"techvault" = "aptl_techvault.participant_desktop:provider"
+"techvault-participant-study" = "aptl_techvault.study:participant_desktop"
 
 [project.entry-points."aptl.participant_mcp_smoke_plans"]
 "techvault-full.techvault" = "aptl_techvault.participant_smoke:FULL_TECHVAULT_SMOKE_OPERATIONS"

@@ -24,8 +24,16 @@ source "$SCRIPT_DIR/aptl-env.sh"
 THEHIVE_CONTAINER="${THEHIVE_CONTAINER:-aptl-thehive}"
 THEHIVE_URL="${THEHIVE_URL:-https://localhost:9000}"
 THEHIVE_CA_CERT="${THEHIVE_CA_CERT:-/opt/techvault/soc-certs/lab-ca.pem}"
-ADMIN_USER="${THEHIVE_ADMIN_USER:-admin@thehive.local}"
-ADMIN_PASS="${THEHIVE_ADMIN_PASS:-secret}"
+# Lab start supplies these from the admitted account bindings. Manual reruns
+# use the same generated project environment; never fall back to image defaults.
+ENV_FILE="${ENV_FILE:-$SCRIPT_DIR/../.env}"
+aptl_load_env_key "$ENV_FILE" THEHIVE_ADMIN_USER
+aptl_load_env_key "$ENV_FILE" THEHIVE_ADMIN_PASS
+if [ -z "${THEHIVE_ADMIN_USER:-}" ] || [ -z "${THEHIVE_ADMIN_PASS:-}" ]; then
+    echo "ERROR: TheHive requires the declared administrator credentials" >&2
+    exit 1
+fi
+export THEHIVE_ADMIN_USER THEHIVE_ADMIN_PASS
 ORG_NAME="APTL"
 ORG_USER="aptl-svc@thehive.local"
 ORG_USER_NAME="APTL Service Account"
@@ -52,9 +60,10 @@ _curl() {
 }
 
 # 1. Login as platform admin
+LOGIN_PAYLOAD=$(python3 -c 'import json, os; print(json.dumps({"user": os.environ["THEHIVE_ADMIN_USER"], "password": os.environ["THEHIVE_ADMIN_PASS"]}))')
 _thehive_curl -sf -c "$COOKIE" -X POST "${THEHIVE_URL}/api/v1/login" \
     -H "Content-Type: application/json" \
-    -d "{\"user\":\"${ADMIN_USER}\",\"password\":\"${ADMIN_PASS}\"}" \
+    -d "$LOGIN_PAYLOAD" \
     >/dev/null 2>&1 || {
     echo "ERROR: TheHive login failed at ${THEHIVE_URL}" >&2
     exit 1

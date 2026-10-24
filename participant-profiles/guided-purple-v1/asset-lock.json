@@ -55,7 +55,7 @@
       "asset_id": "mcp-red-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-red/package-lock.json",
-      "sha256": "4970ce4e063dac581993e832aa75db8a55bf3d785bccd4b6bdca4f1ba466f01f"
+      "sha256": "d12bc1968501250cb026c36364f9a11461715ea98792829f0f7f92b16582460f"
     },
     {
       "asset_id": "mcp-red-config",
@@ -73,13 +73,13 @@
       "asset_id": "mcp-indexer-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-indexer/package-lock.json",
-      "sha256": "bdc7307d7d9b12dc4e5b6af4e880b5ab5952a4cafc682661f8cbd082e9f1b66b"
+      "sha256": "483a163240a2ea4813b55b0dee572abf788e10cff6f6de3cfacf66932e31cc9c"
     },
     {
       "asset_id": "mcp-indexer-config",
       "kind": "project-file",
       "source": "mcp/mcp-indexer/docker-lab-config.json",
-      "sha256": "27191f9b386e13048fa0121d5252d217a7bb2d1093b8cc2ae998a20f4aad7acb"
+      "sha256": "42444584ce92d43597fed4d09310632dd7d0bb1759e2f909ab6498ad2542b852"
     },
     {
       "asset_id": "mcp-wazuh-build",
@@ -91,13 +91,13 @@
       "asset_id": "mcp-wazuh-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-wazuh/package-lock.json",
-      "sha256": "e51b571263ac7dd2a3bb339fcb5f6e72f17d51aa5e0ccb3d8aa78c1d5c5ff64b"
+      "sha256": "3072f8a97893f5cf882d8ff5e381dd3079edcd2285b3e7455163944bdff5df65"
     },
     {
       "asset_id": "mcp-wazuh-config",
       "kind": "project-file",
       "source": "mcp/mcp-wazuh/docker-lab-config.json",
-      "sha256": "8b867822b8ea0b9d3e38741d8b57b3ca724c726761a0046a6426fc917b7e7091"
+      "sha256": "f049642d65e0b09cb72f33d805fd39e7221f60416e5e690a5a079c0327bc29b5"
     },
     {
       "asset_id": "image-kali",
