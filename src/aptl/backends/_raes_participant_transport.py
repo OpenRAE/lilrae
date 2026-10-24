@@ -199,6 +199,7 @@ class ClaudeCodeHostParticipantAdapter:
             session_id=session_id,
             response=response,
             provider_payload=payload,
+            cleanup=result.cleanup,
         )
 
     def _argv(

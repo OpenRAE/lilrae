@@ -1,5 +1,12 @@
 # Issue #824 Kiosk Launcher, Reset, And Recovery Preflight
 
+> **Dated preflight record.** Written on 2026-07-27 and kept as written. Since
+> then, #1163 (0ae24994, 2026-09-23) removed the appliance modules it cites
+> (`bootstrap.py`, `build.py`, `launch.py`, `manifest.py`, `models.py`,
+> `offline.py` and `payload_content.py` under `src/aptl/appliance/`),
+> `src/aptl/cli/appliance.py` with its `aptl appliance` commands, and
+> `docs/reference/appliance-release.md`.
+
 This note sets the design guardrails for the host-side appliance seat launcher.
 It is guidance, not an implementation plan. [ADR-049](../adrs/adr-049-sealed-disposable-lab-appliance.md),
 [Issue #823](issue-823-versioned-disposable-appliance-preflight.md), and the

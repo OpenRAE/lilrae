@@ -14,12 +14,13 @@ import {
   CallToolRequest,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
+import Ajv2020, { type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js';
 import { type LabConfig } from './config.js';
 import { SSHConnectionManager } from './ssh.js';
 import { HTTPClient } from './http.js';
 import { initTracing, shutdownTracing, traceToolCall } from './telemetry.js';
 import { generateToolDefinitions } from './tools/definitions.js';
-import { generateToolHandlers, type ToolHandler, type ToolContext } from './tools/handlers.js';
+import { errorMessage, generateToolHandlers, type ToolHandler, type ToolContext } from './tools/handlers.js';
 import { generateAPIToolDefinitions } from './tools/api-definitions.js';
 import { generateAPIToolHandlers, type APIToolHandler, type APIToolContext } from './tools/api-handlers.js';
 
@@ -89,6 +90,93 @@ async function runHookWithTimeout(
   }
 }
 
+/**
+ * Close a tool's top-level arguments unless its schema sets
+ * `additionalProperties` itself. Each handler reads only the arguments its
+ * schema lists, so an unlisted name is a caller mistake: a misspelt optional
+ * argument such as `timeout` for `timeout_ms` would otherwise be dropped and
+ * the call would run with the default. The closed schema is the one the
+ * server advertises, so clients see the rule the server enforces.
+ */
+function withClosedArguments(tool: Tool): Tool {
+  if (tool.inputSchema.additionalProperties !== undefined) {
+    return tool;
+  }
+  return { ...tool, inputSchema: { ...tool.inputSchema, additionalProperties: false } };
+}
+
+/**
+ * Compile one validator per advertised tool schema, as JSON Schema 2020-12
+ * (the dialect the MCP SDK documents for `inputSchema`). `allErrors` reports
+ * every violation at once. The other Ajv defaults stay on purpose: strict
+ * schema checks, no type coercion, no default insertion and no removal of
+ * unknown properties, so a call is either dispatched exactly as sent or
+ * refused. A schema Ajv cannot compile stops the server at creation instead of
+ * leaving its tool unchecked.
+ */
+function compileArgumentValidators(tools: Tool[]): Map<string, ValidateFunction> {
+  const ajv = new Ajv2020({ allErrors: true });
+  const validators = new Map<string, ValidateFunction>();
+  for (const tool of tools) {
+    try {
+      validators.set(tool.name, ajv.compile(tool.inputSchema));
+    } catch (err) {
+      throw new Error(`Cannot compile the input schema of ${tool.name}: ${errorMessage(err)}`);
+    }
+  }
+  return validators;
+}
+
+/**
+ * Look up a tool's handler and argument validator. A handler without an
+ * advertised schema is not a callable tool.
+ */
+function lookUpTool(
+  name: string,
+  handlers: Record<string, ToolHandler | APIToolHandler>,
+  validators: Map<string, ValidateFunction>,
+): { handler: ToolHandler | APIToolHandler; validateArguments: ValidateFunction } {
+  const handler = handlers[name];
+  const validateArguments = validators.get(name);
+  if (!handler || !validateArguments) {
+    throw new Error(`Unknown tool: ${name}`);
+  }
+  return { handler, validateArguments };
+}
+
+/**
+ * Describe one violation by its argument path and rule. The rejected value
+ * never appears: arguments carry commands, request bodies and credentials.
+ */
+function describeViolation({ keyword, instancePath, params, message }: ErrorObject): string {
+  const path = `arguments${instancePath}`;
+  if (keyword === 'additionalProperties') {
+    return `${path} must NOT have additional property ${JSON.stringify(params.additionalProperty)}`;
+  }
+  return `${path} ${message}`;
+}
+
+/**
+ * The tool error returned for arguments outside the tool's schema. Like the
+ * SDK's own `McpServer`, it is a tool result with `isError` rather than a
+ * protocol error, so the calling agent can read it and correct the call.
+ */
+function invalidArgumentsResult(toolName: string, errors: ErrorObject[] | null | undefined) {
+  const violations = (errors ?? []).map(describeViolation).join('; ');
+  return {
+    isError: true,
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify({
+          success: false,
+          error: `Invalid arguments for ${toolName}: ${violations}`,
+        }, null, 2),
+      },
+    ],
+  };
+}
+
 export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOptions = {}) {
   const { postToolHook } = options;
   const hookTimeoutMs = options.postToolHookTimeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS;
@@ -112,6 +200,11 @@ export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOp
     cachedTools.push(...generateAPIToolDefinitions(labConfig.server, labConfig.queries, includeGeneric));
     Object.assign(cachedHandlers, generateAPIToolHandlers(labConfig.server, labConfig.queries, includeGeneric));
   }
+
+  // The advertised schemas are the enforced ones, read from the generated
+  // definitions so every tool, including predefined queries, is covered.
+  cachedTools = cachedTools.map(withClosedArguments);
+  const argumentValidators = compileArgumentValidators(cachedTools);
 
   console.error(`[MCP] Initialized ${labConfig.server.name} with lab: ${labConfig.lab.name}`);
   console.error(`[MCP] Available capabilities: ${sshManager ? 'SSH' : ''}${sshManager && httpClient ? ' + ' : ''}${httpClient ? 'HTTP API' : ''}`);
@@ -138,10 +231,13 @@ export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOp
 
   server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
     const { name, arguments: args } = request.params;
+    const { handler, validateArguments } = lookUpTool(name, cachedHandlers, argumentValidators);
 
-    const handler = cachedHandlers[name];
-    if (!handler) {
-      throw new Error(`Unknown tool: ${name}`);
+    // Refuse arguments outside the tool's schema before the context, the
+    // trace span, the hook, any session or any backend call.
+    const safeArgs: Record<string, unknown> = args ?? {};
+    if (!validateArguments(safeArgs)) {
+      return invalidArgumentsResult(name, validateArguments.errors);
     }
 
     // Determine context type based on tool name and available clients
@@ -167,7 +263,6 @@ export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOp
       };
     }
 
-    const safeArgs: Record<string, unknown> = args ?? {};
     const t0 = Date.now();
     try {
       // Context is narrowed to the correct type above based on tool name

@@ -5,6 +5,9 @@ is design guidance, not an implementation plan. ADR-003, ADR-004, ADR-033, and
 ADR-042 remain authoritative for the common-library API, session lifecycle,
 capture correlation, and PTY ownership boundaries.
 
+Paths beginning `src/` in this note are relative to
+`mcp/aptl-mcp-common/`.
+
 ## Architecture Decisions
 
 - Keep `mcp/aptl-mcp-common/src/ssh.ts` as the compatibility facade for the

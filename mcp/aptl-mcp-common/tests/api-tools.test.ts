@@ -135,7 +135,7 @@ describe('generateAPIToolHandlers', () => {
       );
     });
 
-    it.each(['', '.', '..', '../ossec.conf', 'nested/rules.xml', '.hidden.xml', 'rules.txt'])(
+    it.each(['', '.', '..', '../ossec.conf', 'nested/rules.xml', '.hidden.xml', 'rules.txt', 'rules.xml\n'])(
       'rejects the file name %j before any request',
       async (filename) => {
         const { makeRequest, payload } = await call(ruleFileQuery, 'upload_rule_file', {
@@ -149,6 +149,20 @@ describe('generateAPIToolHandlers', () => {
       },
     );
 
+    it.each([[['custom_rules.xml']], [{ name: 'custom_rules.xml' }], [true], [null]])(
+      'rejects the non-string file name %j before any request',
+      async (filename) => {
+        const { makeRequest, payload } = await call(ruleFileQuery, 'upload_rule_file', {
+          params: { filename },
+          body: '<group/>',
+        });
+
+        expect(payload.success).toBe(false);
+        expect(payload.error).toBe('path parameter filename must be a string');
+        expect(makeRequest).not.toHaveBeenCalled();
+      },
+    );
+
     it('rejects a missing path parameter before any request', async () => {
       const { makeRequest, payload } = await call(ruleFileQuery, 'upload_rule_file', {
         body: '<group/>',
@@ -157,6 +171,57 @@ describe('generateAPIToolHandlers', () => {
       expect(payload.success).toBe(false);
       expect(payload.error).toBe('path parameter filename is required');
       expect(makeRequest).not.toHaveBeenCalled();
+    });
+
+    it.each([[null], [[]], ['invalid'], [1]])('rejects a malformed argument container %j', async (args) => {
+      const queries = { upload_rule_file: { ...ruleFileQuery.upload_rule_file, params: { filename: 'rules.xml' } } };
+      const { makeRequest, payload } = await call(queries, 'upload_rule_file', args);
+      expect(payload.success).toBe(false);
+      expect(makeRequest).not.toHaveBeenCalled();
+    });
+
+    it.each([[null], [[]], ['invalid'], [1]])('rejects a malformed params container %j', async (params) => {
+      const queries = { upload_rule_file: { ...ruleFileQuery.upload_rule_file, params: { filename: 'rules.xml' } } };
+      const { makeRequest, payload } = await call(queries, 'upload_rule_file', { params });
+      expect(payload.success).toBe(false);
+      expect(makeRequest).not.toHaveBeenCalled();
+    });
+
+    const typedQueries = { upload_rule_file: {
+      ...ruleFileQuery.upload_rule_file,
+      params_schema: { type: 'object', properties: {
+        filename: { type: 'string', maxLength: 255 }, overwrite: { type: 'boolean' },
+      }, required: ['filename'], additionalProperties: false },
+    } };
+
+    it.each([['true'], [1], [['true']], [null]])('rejects an unsupported overwrite shape %j', async (overwrite) => {
+      const { makeRequest, payload } = await call(typedQueries, 'upload_rule_file', {
+        params: { filename: 'rules.xml', overwrite },
+      });
+      expect(payload.success).toBe(false);
+      expect(makeRequest).not.toHaveBeenCalled();
+    });
+
+    it('rejects an oversized rule filename', async () => {
+      const { makeRequest, payload } = await call(typedQueries, 'upload_rule_file', {
+        params: { filename: 'x'.repeat(252) + '.xml' },
+      });
+      expect(payload.success).toBe(false);
+      expect(makeRequest).not.toHaveBeenCalled();
+    });
+
+    it('advertises the same query parameter schema it enforces', () => {
+      const tools = generateAPIToolDefinitions(mockServerConfig, typedQueries, false);
+      expect(tools[0].inputSchema.properties?.params).toMatchObject(typedQueries.upload_rule_file.params_schema);
+    });
+
+    it('keeps arbitrary transport exceptions out of query responses', async () => {
+      const { ctx, makeRequest } = context();
+      makeRequest.mockRejectedValue(new Error('private-fixture-value'));
+      const handler = generateAPIToolHandlers(mockServerConfig, ruleFileQuery).wazuh_upload_rule_file;
+      const result = await handler({ params: { filename: 'rules.xml' } }, ctx);
+      expect(JSON.parse(result.content[0].text).success).toBe(false);
+      expect(result.content[0].text).not.toContain('private-fixture-value');
     });
 
     it.each(['', '.', '..'])(

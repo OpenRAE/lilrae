@@ -9,10 +9,12 @@ from aptl.backends._raes_backend_implementation_types import (
     published_port as _port,
     variable as _variable,
 )
+from aptl.core.deployment._account_provider import SHUFFLE
 
 SHUFFLE_APPLICATION_PROFILES = (
     BackendImplementationProfile(
         profile_id="shuffle-backend",
+        account_provider=SHUFFLE,
         selector=SemanticRuntimeSelector(
             "platform_applications", "product", "Shuffle", "unversioned"
         ),
@@ -32,11 +34,17 @@ SHUFFLE_APPLICATION_PROFILES = (
                     classification="secret_fixture",
                 ),
                 _variable("SHUFFLE_OPENSEARCH_SKIPSSL_VERIFY", "true"),
-                _variable("SHUFFLE_DEFAULT_USERNAME", "admin"),
+                # The console administrator is an SDL account; its declared
+                # credential is supplied at start, never chosen here.
+                _variable(
+                    "SHUFFLE_DEFAULT_USERNAME",
+                    classification="secret_fixture",
+                    provenance="runtime",
+                ),
                 _variable(
                     "SHUFFLE_DEFAULT_PASSWORD",
-                    "ShuffleAdmin2024!",
                     classification="secret_fixture",
+                    provenance="runtime",
                 ),
                 _variable(
                     "SHUFFLE_DEFAULT_APIKEY",

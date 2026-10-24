@@ -29,7 +29,7 @@ def init(
 
     Copies the bundled lab assets (docker-compose.yml, scenarios, config,
     containers, web, scripts, and the source that container images build
-    from) and writes a default aptl.json, so a `pipx install aptl-labs`
+    from) and writes a default aptl.json, so a `pipx install lilrae`
     can run a lab without cloning the repository (DEP-008). After it
     finishes, run `aptl lab start` from the initialized directory.
     """
