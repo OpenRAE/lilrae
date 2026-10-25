@@ -2,7 +2,7 @@
 
 ## Status
 
-accepted (amended 2026-10-14)
+accepted (amended 2026-10-25)
 
 ## Date
 
@@ -10,7 +10,7 @@ accepted (amended 2026-10-14)
 
 ## Last Updated
 
-2026-10-14
+2026-10-25
 
 ## Context
 
@@ -736,6 +736,28 @@ it as follows.
   the declared logins only in the participant account's private `0600` files.
 
 The manifest therefore advertises `credential_bindings` and `auth_method`.
+
+## Owner-Declared Image Content Addendum
+
+A bind mount keeps the host owner and mode. An image node can need a declared
+file with a different owner. Issue #1273 added an installer for this case.
+Issue #1422 adds a second installer for images that run as a non-root user.
+
+- The node's selected entrypoint names the installer. The content mounts read
+  the entrypoint and stage each file that the node inventory gives an owner.
+- `OWNED_CONTENT_INSTALLER` runs as root. It installs each file with its
+  declared owner, group, and mode.
+- `OWNED_CONTENT_IMAGE_USER_INSTALLER` runs as the image user. It installs each
+  file with its declared mode. It refuses an owner or group that is not the
+  current user or group. It never runs the image as root.
+- The image-user installer reads a staged copy at mode `0644`. The copy is in
+  an owner-only `0700` host directory, which protects it from other host users.
+- When the image entrypoint rewrites a declared file after start, the profile
+  runs the image entrypoint steps itself. Declared content then writes the file
+  last. The profile pins the image digest, so these steps do not change.
+
+The [issue #1422 design](../architecture/issue-1422-wazuh-dashboard-owned-config-design.md)
+records the threats, controls, and data flows.
 
 ## TechVault Operational Standup Addendum
 

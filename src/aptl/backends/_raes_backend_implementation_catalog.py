@@ -11,6 +11,9 @@ from aptl.backends._lilrae_source_image_catalog import SOURCE_IMAGE_PROFILES
 from aptl.backends._raes_shuffle_implementation_catalog import (
     SHUFFLE_APPLICATION_PROFILES,
 )
+from aptl.backends._raes_wazuh_dashboard_implementation_catalog import (
+    WAZUH_DASHBOARD_PROFILE,
+)
 from aptl.core.deployment._account_provider import (
     CORTEX,
     MISP,
@@ -118,54 +121,7 @@ BACKEND_IMPLEMENTATION_PROFILES = (
             "published-ports": [_port(9200, 9200)],
         },
     ),
-    BackendImplementationProfile(
-        profile_id="wazuh-dashboard-4.12",
-        selector=SemanticRuntimeSelector(
-            "platform_applications", "product", "Wazuh Dashboard", "4.12.0"
-        ),
-        source_name="wazuh/wazuh-dashboard",
-        source_version="4.12.0",
-        image_ref=(
-            "wazuh/wazuh-dashboard@sha256:"
-            "8f5b50fde67a0b1c4d2321aa26b12bbc5cef21269cf4f6225746f0b946458bd7"
-        ),
-        runtime_selections={
-            "runtime-environment": _environment(
-                _variable(
-                    "INDEXER_USERNAME",
-                    classification="secret_fixture",
-                    provenance="runtime",
-                ),
-                _variable(
-                    "INDEXER_PASSWORD",
-                    classification="secret_fixture",
-                    provenance="runtime",
-                ),
-                _variable(
-                    "DASHBOARD_USERNAME",
-                    classification="secret_fixture",
-                    provenance="runtime",
-                ),
-                _variable(
-                    "DASHBOARD_PASSWORD",
-                    classification="secret_fixture",
-                    provenance="runtime",
-                ),
-                _variable(
-                    "API_USERNAME",
-                    classification="secret_fixture",
-                    provenance="runtime",
-                ),
-                _variable(
-                    "API_PASSWORD",
-                    classification="secret_fixture",
-                    provenance="runtime",
-                ),
-                _variable("WAZUH_API_URL", "https://wazuh.manager"),
-            ),
-            "published-ports": [_port(5601, 443)],
-        },
-    ),
+    WAZUH_DASHBOARD_PROFILE,
     BackendImplementationProfile(
         profile_id="suricata-7",
         selector=SemanticRuntimeSelector(
