@@ -31,6 +31,19 @@ def _pack_root() -> Path:
 def realize_techvault_pack(tmp_path):
     """Plan and interpret the installed TechVault pack, staged under ``tmp_path``."""
 
+    return plan_techvault_pack(tmp_path)[1]
+
+
+def plan_techvault_pack(tmp_path, edit_sdl=None):
+    """Return the provisioning plan and the realization of the TechVault pack.
+
+    ``edit_sdl`` may change the YAML document of the staged copy after
+    env-packs has validated it, so a test can author one more value that RAES
+    then parses like any other.
+    """
+
+    import yaml
+
     from aptl.backends.raes import (
         RuntimeManager,
         create_aptl_runtime_target,
@@ -41,6 +54,12 @@ def realize_techvault_pack(tmp_path):
     from aptl.core.scenario_bundle import env_pack_bundle
 
     bundle = env_pack_bundle(tmp_path, identity="techvault", source_pack=_pack_root())
+    if edit_sdl is not None:
+        document = yaml.safe_load(bundle.sdl_path.read_text(encoding="utf-8"))
+        edit_sdl(document)
+        bundle.sdl_path.write_text(
+            yaml.safe_dump(document, sort_keys=False), encoding="utf-8"
+        )
     config = AptlConfig(
         lab={"name": "tv"},
         containers={
@@ -61,7 +80,7 @@ def realize_techvault_pack(tmp_path):
         scenario,
         parameters=_TECHVAULT_FLAG_PARAMETERS,
     )
-    return interpret_provisioning_plan(
+    return plan.provisioning, interpret_provisioning_plan(
         plan=plan.provisioning,
         config=config,
         bundle=bundle,

@@ -1641,6 +1641,7 @@ tests/test_service_index_materialization.py	tests-follow-owner	Retain meaningful
 tests/test_services.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_session.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_shell.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_shuffle_backend_restart_policy.py	tests-follow-owner	Retain Shuffle backend restart-policy selection, lowering and readback regressions
 tests/test_shuffle_realization_contract.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_smoke.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_snapshot.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner

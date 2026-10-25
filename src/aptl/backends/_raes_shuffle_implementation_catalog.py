@@ -52,7 +52,13 @@ SHUFFLE_APPLICATION_PROFILES = (
                     classification="secret_fixture",
                 ),
                 _variable("SHUFFLE_APP_SDK_TIMEOUT", "120"),
-            )
+            ),
+            # shuffle-shared v1.2.51 InitOpensearchIndexes reads the response
+            # before its error check (db-connector.go:19364-19365), so an index
+            # request timeout panics and the backend exits 2. It runs only
+            # after OpenSearch answers, so no start order prevents it. Upstream
+            # Compose restarts the backend (`restart: unless-stopped`).
+            "runtime-restart-policy": "on_failure",
         },
     ),
     BackendImplementationProfile(

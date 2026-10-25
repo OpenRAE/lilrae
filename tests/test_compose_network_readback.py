@@ -13,6 +13,7 @@ from aptl.core.deployment import (
     DeploymentRealizationSpec,
     DockerComposeBackend,
 )
+from aptl.core.deployment import _compose_realization_networks as realization_networks
 from aptl.core.deployment._compose_network_conflicts import _network_subnet_conflicts
 from aptl.core.lab_types import LabResult
 
@@ -219,6 +220,104 @@ def test_successful_disconnect_must_remove_default_bridge(tmp_path):
 
     assert failures
     assert "default bridge" in "; ".join(failures)
+
+
+_READBACK_FAILURE = (
+    "Node webapp on test_aptl-dmz after network reconciliation: "
+    "required IPv4 address was not observed."
+)
+
+
+def _container(status):
+    """Return a Compose-attached node's inspect payload as Docker 29 reports it."""
+
+    return {
+        "State": {
+            "Status": status,
+            "Running": status != "exited",
+            "Restarting": status == "restarting",
+        },
+        "NetworkSettings": {
+            "Networks": {
+                "test_aptl-dmz": {
+                    "IPAddress": "172.20.1.20" if status == "running" else "",
+                    "Aliases": ["portal", "webapp"],
+                }
+            }
+        },
+    }
+
+
+class _Clock:
+    """A monotonic clock that advances only when the code under test sleeps."""
+
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps = []
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    fake = _Clock()
+    monkeypatch.setattr(realization_networks.time, "monotonic", fake.monotonic)
+    monkeypatch.setattr(realization_networks.time, "sleep", fake.sleep)
+    return fake
+
+
+def _reconcile(tmp_path, inspects):
+    backend = _backend(tmp_path, None)
+    backend.container_inspect = MagicMock(side_effect=inspects)
+    return backend, backend._reconcile_realization_networks(_spec())
+
+
+@pytest.mark.parametrize(
+    "inspects",
+    [
+        [_container("running"), _container("restarting"), _container("running")],
+        # An empty pinned address on the first inspect would read as IP drift.
+        [_container("restarting"), _container("running"), _container("running")],
+    ],
+    ids=["readback", "first-inspect"],
+)
+def test_restart_window_is_reinspected_until_the_container_runs(
+    tmp_path, clock, inspects
+):
+    backend, failures = _reconcile(tmp_path, inspects)
+
+    assert failures == []
+    assert backend.container_inspect.call_count == 3
+    assert len(clock.sleeps) == 1
+    assert 0 < clock.now < realization_networks._RESTART_WINDOW_BUDGET
+    backend.connect_container_network.assert_not_called()
+    backend.disconnect_container_network.assert_not_called()
+
+
+def test_container_still_restarting_after_the_budget_fails_as_before(tmp_path, clock):
+    inspects = [_container("running"), *[_container("restarting")] * 50]
+
+    backend, failures = _reconcile(tmp_path, inspects)
+
+    assert failures == [_READBACK_FAILURE]
+    assert clock.now == pytest.approx(realization_networks._RESTART_WINDOW_BUDGET)
+    assert backend.container_inspect.call_count == len(clock.sleeps) + 2
+    backend.disconnect_container_network.assert_not_called()
+
+
+def test_exited_container_fails_at_once_without_waiting(tmp_path, clock):
+    backend, failures = _reconcile(
+        tmp_path, [_container("running"), _container("exited")]
+    )
+
+    assert failures == [_READBACK_FAILURE]
+    assert clock.sleeps == []
+    assert backend.container_inspect.call_count == 2
 
 
 @pytest.mark.parametrize("route", ["base-container", "compose"])
