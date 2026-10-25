@@ -168,6 +168,7 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 
 ## Preflights
 
+- [Issue #1423 Shuffle Startup Readiness](issue-1423-shuffle-startup-readiness-preflight.md)
 - [Issue #1413 Configured Pack Source](issue-1413-configured-pack-source-preflight.md)
 - [Issue #955 Generic Systemd Substrate Privilege](issue-955-systemd-substrate-privilege-preflight.md)
 - [Issue #958 Execution Boundary](issue-958-execution-boundary-preflight.md)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from raes.runtime_configuration import RuntimeConfiguration
 from raes_contracts.planning import (
     ChangeAction,
@@ -240,6 +242,78 @@ def test_profile_refuses_partial_runtime_authority() -> None:
     assert [item.code for item in diagnostics] == [
         "aptl.provisioner.backend-implementation-not-authorized"
     ]
+
+
+@pytest.mark.parametrize(
+    ("authored_restart", "open_restart", "expected_restart"),
+    [
+        (None, True, "on_failure"),
+        (None, False, None),
+        ("no", False, "no"),
+        ("always", False, "always"),
+    ],
+)
+def test_shuffle_restart_selection_respects_authored_authority(
+    authored_restart, open_restart, expected_restart
+) -> None:
+    from aptl.backends.raes_backend_implementation import (
+        select_backend_node_implementation,
+    )
+
+    runtime = RuntimeConfiguration.model_validate(
+        {
+            "platform_applications": [
+                {
+                    "platform_application_id": "automation",
+                    "product": "Shuffle",
+                    "version": "unversioned",
+                }
+            ],
+            # An authored environment keeps this test on the restart concern.
+            "environment": [{"name": "AUTHORED", "value": "true"}],
+            **(
+                {"operational_policy": {"restart": authored_restart}}
+                if authored_restart is not None
+                else {}
+            ),
+        }
+    )
+    plan, resource = _plan(
+        runtime,
+        substrate_posture="open",
+        authorities=(
+            (
+                _authority(
+                    "runtime-restart-policy",
+                    "/spec/node/runtime/operational_policy/restart",
+                ),
+            )
+            if open_restart
+            else ()
+        ),
+    )
+    diagnostics = []
+
+    selected = select_backend_node_implementation(
+        plan=plan,
+        resource=resource,
+        runtime=runtime,
+        service_name="renamed",
+        diagnostics=diagnostics,
+    )
+
+    if expected_restart is None:
+        assert selected is None
+        assert [item.code for item in diagnostics] == [
+            "aptl.provisioner.backend-implementation-not-authorized"
+        ]
+    else:
+        assert diagnostics == []
+        assert selected is not None
+        assert selected.runtime.operational_policy.restart.value == expected_restart
+        assert ("runtime-restart-policy" in selected.selected_concerns) is (
+            authored_restart is None
+        )
 
 
 def test_thehive_open_environment_selects_its_minimum_generated_prerequisite() -> None:

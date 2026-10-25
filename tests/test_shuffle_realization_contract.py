@@ -94,6 +94,7 @@ def test_generated_compose_uses_only_the_admitted_shuffle_runtime(
         name: value for name, (value, _classification) in EXPECTED_ENVIRONMENT.items()
     }
     assert backend["depends_on"] == ["shuffle-opensearch"]
+    assert backend["restart"] == "on-failure"
     assert "/var/run/docker.sock" not in repr(backend)
 
     volumes = {volume.name: volume for volume in spec.persistent_volumes}
@@ -109,6 +110,14 @@ def test_generated_compose_uses_only_the_admitted_shuffle_runtime(
     assert volumes["shuffle_opensearch_data"].consumers[0].mount_destination == (
         "/usr/share/opensearch/data"
     )
+
+
+def test_released_pack_selects_shuffle_failure_recovery(tmp_path: Path) -> None:
+    realization = realize_techvault_pack(tmp_path)
+    backend = next(node for node in realization.nodes if node.name == "shuffle-backend")
+
+    assert _enum_value(backend.runtime.operational_policy.restart) == "on_failure"
+    assert "runtime-restart-policy" in backend.backend_selected_concerns
 
 
 def test_release_manual_has_executable_reverse_negative_harness() -> None:

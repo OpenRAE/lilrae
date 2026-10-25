@@ -189,6 +189,20 @@ own log directory (for example, `/var/ossec/logs/ossec.log` for Wazuh) for the
 crash cause. Wazuh-manager silent-crash after startup is tracked in
 [#725](https://github.com/Brad-Edwards/aptl/issues/725).
 
+### Shuffle exits during OpenSearch initialization
+
+An OpenSearch request timeout during index initialization can crash the pinned
+Shuffle backend. The Shuffle backend profile selects Docker's `on-failure`
+restart policy when the scenario leaves that concern open.
+Docker restarts the same container after an error exit and keeps its retained data.
+An authored restart policy takes precedence.
+
+Use `lilrae container logs aptl-shuffle-backend` to inspect repeated failures.
+The existing authenticated readiness checks still decide whether startup succeeds.
+Persistent OpenSearch failure can still exhaust the startup budget.
+The restart policy does not repair credentials or datastore resource shortages.
+It does not restart an orderly exit or start containers after a daemon restart.
+
 ### `lilrae lab start` fails because a Wazuh service did not become ready
 
 A scenario that starts Wazuh needs it working, so Wazuh readiness is fatal.
