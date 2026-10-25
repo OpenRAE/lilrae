@@ -18,7 +18,10 @@ from aptl.core.deployment._account_provider import (
     THEHIVE,
     WAZUH_API,
 )
-from aptl.core.deployment._compose_content_mounts import OWNED_CONTENT_INSTALLER
+from aptl.core.deployment._compose_content_mounts import (
+    OWNED_CONTENT_IMAGE_USER_INSTALLER,
+    OWNED_CONTENT_INSTALLER,
+)
 from aptl.core.deployment._misp_cache_credential import (
     MISP_CACHE_PASSWORD_OUTPUT,
     MISP_CACHE_RUNTIME_CONFIG_DIR,
@@ -35,6 +38,24 @@ from aptl.backends._raes_backend_implementation_types import (
 
 _BIN_SH = "/bin/sh"
 _HALF_GIB_JVM_OPTIONS = "-Xms512m -Xmx512m"
+_DASHBOARD_HOME = "/usr/share/wazuh-dashboard"
+_DASHBOARD_KEYSTORE = f"{_DASHBOARD_HOME}/bin/opensearch-dashboards-keystore"
+#: The pinned image's `/entrypoint.sh` steps, with the owned-content install
+#: placed after its app-config step. That step appends a default `hosts` key to
+#: a writable `wazuh.yml` that lacks the image's own host id, which makes the
+#: declared file invalid YAML, so declared content must write it last. The image
+#: entrypoint ignores the app-config status, and so does this one.
+_DASHBOARD_START = (
+    "/wazuh_app_config.sh || true; "
+    f"{OWNED_CONTENT_IMAGE_USER_INSTALLER}; "
+    f"yes | {_DASHBOARD_KEYSTORE} create --allow-root; "
+    'printf "%s\\n" "${DASHBOARD_USERNAME:-kibanaserver}" | '
+    f"{_DASHBOARD_KEYSTORE} add opensearch.username --stdin --allow-root; "
+    'printf "%s\\n" "${DASHBOARD_PASSWORD:-kibanaserver}" | '
+    f"{_DASHBOARD_KEYSTORE} add opensearch.password --stdin --allow-root; "
+    f"exec {_DASHBOARD_HOME}/bin/opensearch-dashboards "
+    f"-c {_DASHBOARD_HOME}/config/opensearch_dashboards.yml"
+)
 
 
 BACKEND_IMPLEMENTATION_PROFILES = (
@@ -130,6 +151,10 @@ BACKEND_IMPLEMENTATION_PROFILES = (
             "8f5b50fde67a0b1c4d2321aa26b12bbc5cef21269cf4f6225746f0b946458bd7"
         ),
         runtime_selections={
+            # The image runs as `wazuh-dashboard`, and the pack authors its
+            # configs as `wazuh-dashboard`-owned 0600 files. A bind mount keeps
+            # the host owner, so the image user installs them itself (#1422).
+            "runtime-container-entrypoint": [_BIN_SH, "-ec", _DASHBOARD_START],
             "runtime-environment": _environment(
                 _variable(
                     "INDEXER_USERNAME",

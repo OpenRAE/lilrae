@@ -270,6 +270,8 @@ docs/architecture/issue-1179-pending-lab-cleanup-preflight.md	architecture-histo
 docs/architecture/issue-1188-wazuh-api-cold-boot-preflight.md	architecture-history	Preserve issue 1188 Wazuh API recovery boundary and causal limits
 docs/architecture/issue-1191-wazuh-api-cold-boot-rca-preflight.md	architecture-history	Preserve issue 1191 Wazuh status-contract and bounded RCA capture guardrails
 docs/architecture/issue-1409-node-runtime-security-preflight.md	architecture-history	Preserve issue 1409 runtime security decisions and supply chain guardrails
+docs/architecture/issue-1422-wazuh-dashboard-config-readability-preflight.md	architecture-history	Preserve issue 1422 dashboard config delivery guardrails
+docs/architecture/issue-1422-wazuh-dashboard-owned-config-design.md	architecture-history	Preserve issue 1422 dashboard owner-declared config design
 docs/architecture/issue-550-soc-selected-profile-preflight.md	docs-follow-owner	Separate current user guidance from historical evidence and scenario-pack-specific docs
 docs/architecture/issue-557-participant-implementation-binding-preflight.md	docs-follow-owner	Separate current user guidance from historical evidence and scenario-pack-specific docs
 docs/architecture/issue-589-scenario-pack-capture-ownership-preflight.md	docs-follow-owner	Separate current user guidance from historical evidence and scenario-pack-specific docs
@@ -1951,6 +1953,7 @@ tests/test_pack_boundary_policy.py	tests-follow-owner	Retain meaningful boundary
 tests/test_participant_desktop.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tools/check_pack_boundary.py	build-governance	Migrate policy by surface; remove bundle-of-entire-repository from generic artifact
 tests/test_owned_content_install.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_owned_content_install_real_docker.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/mcp-wazuh/tests/rule-files.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_participant_desktop_lifecycle.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_participant_hosts.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner

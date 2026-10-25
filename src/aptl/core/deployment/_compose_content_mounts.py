@@ -42,6 +42,30 @@ OWNED_CONTENT_INSTALLER = (
     f'"{OWNED_CONTENT_ROOT}/$name" "$dest"; '
     f'done < "{OWNED_CONTENT_MANIFEST}"; fi'
 )
+#: The installer for an image whose entrypoint runs as its own non-root user
+#: (#1422). Without root it cannot give a file another owner, so it installs
+#: each file as the image user and refuses a declared owner or group that is
+#: not the current one. Its staged copies are readable by that user.
+OWNED_CONTENT_IMAGE_USER_INSTALLER = (
+    f'if [ -f "{OWNED_CONTENT_MANIFEST}" ]; then '
+    'image_user="$(id -un)"; image_group="$(id -gn)"; '
+    "while read -r mode owner group name dest; do "
+    'if [ "$owner" != "$image_user" ] || [ "$group" != "$image_group" ]; then '
+    'echo "owned content $dest needs $owner:$group, not '
+    '$image_user:$image_group" >&2; exit 1; fi; '
+    'install -D -m "$mode" '
+    f'"{OWNED_CONTENT_ROOT}/$name" "$dest"; '
+    f'done < "{OWNED_CONTENT_MANIFEST}"; fi'
+)
+_OWNED_CONTENT_INSTALLERS = (
+    OWNED_CONTENT_INSTALLER,
+    OWNED_CONTENT_IMAGE_USER_INSTALLER,
+)
+#: Host modes for a copy staged for the image-user installer. The image user
+#: reads the file across its bind mount; the owner-only directory keeps it from
+#: other host users (the ``credentials.py`` pattern).
+_IMAGE_USER_STAGING_DIR_MODE = 0o700
+_IMAGE_USER_STAGED_FILE_MODE = 0o644
 _ACCOUNT_NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 _MODE_RE = re.compile(r"^0?[0-7]{3}$")
 _DESTINATION_RE = re.compile(r"^/[A-Za-z0-9._/-]+$")
@@ -77,20 +101,23 @@ def image_node_content_override(
         source = _place_content(item, scenario_root, realization_root)
         if source is None:
             continue
-        owned = _declared_ownership(node, item, source)
+        installer = _owned_content_installer(node)
+        owned = _declared_ownership(node, item, source) if installer else None
         volumes = services.setdefault(node.service_name, {}).setdefault("volumes", [])
         if owned is None:
             volumes.extend(_content_mounts(item, source))
             continue
         name = f"{len(manifests.get(node.service_name, ())):03d}"
+        if installer == OWNED_CONTENT_IMAGE_USER_INSTALLER:
+            source = _stage_for_image_user(
+                source, _owned_content_dir(realization_root, node.service_name), name
+            )
         volumes.append(_bind(source, OWNED_CONTENT_ROOT / name))
         manifests.setdefault(node.service_name, []).append(
             f"{owned} {name} /{item.dest_relpath.lstrip('/')}"
         )
     for service_name, lines in manifests.items():
-        manifest = _content_output_root(
-            realization_root, f"{service_name}-owned-content"
-        )
+        manifest = _owned_content_dir(realization_root, service_name)
         path = manifest / "manifest"
         _remove_previous_output(path)
         path.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
@@ -110,21 +137,52 @@ def _bind(source: Path, target: PurePosixPath) -> dict[str, object]:
     }
 
 
+def _owned_content_installer(node: object) -> str | None:
+    """Return the owned-content installer the node's entrypoint runs, if any."""
+
+    container = getattr(getattr(node, "runtime", None), "container", None)
+    entrypoint = " ".join(getattr(container, "entrypoint", None) or ())
+    return next(
+        (
+            installer
+            for installer in _OWNED_CONTENT_INSTALLERS
+            if installer in entrypoint
+        ),
+        None,
+    )
+
+
+def _owned_content_dir(realization_root: Path, service_name: str) -> Path:
+    """Return the service's owner-only directory for its manifest and copies."""
+
+    directory = _content_output_root(realization_root, f"{service_name}-owned-content")
+    directory.chmod(_IMAGE_USER_STAGING_DIR_MODE)
+    return directory
+
+
+def _stage_for_image_user(source: Path, directory: Path, name: str) -> Path:
+    """Copy one owner-declared file where the non-root image user can read it."""
+
+    staged = directory / name
+    _remove_previous_output(staged)
+    shutil.copyfile(source, staged)
+    staged.chmod(_IMAGE_USER_STAGED_FILE_MODE)
+    return staged
+
+
 def _declared_ownership(
     node: object, item: DeploymentContentRealization, source: Path
 ) -> str | None:
     """Return ``"mode owner group"`` for content the node must own, or ``None``.
 
     It applies only when the node's SDL inventory declares an owner for the
-    file at this destination and the node's selected entrypoint runs
-    :data:`OWNED_CONTENT_INSTALLER`. Any other content keeps its bind mount.
+    file at this destination. The caller checks that the node's selected
+    entrypoint runs an owned-content installer. Any other content keeps its
+    bind mount.
     """
 
     runtime = getattr(node, "runtime", None)
-    entrypoint = " ".join(
-        getattr(getattr(runtime, "container", None), "entrypoint", None) or ()
-    )
-    if OWNED_CONTENT_INSTALLER not in entrypoint or not source.is_file():
+    if not source.is_file():
         return None
     destination = "/" + item.dest_relpath.lstrip("/")
     entry = next(
