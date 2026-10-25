@@ -576,6 +576,9 @@ class _FakeRuntimeManager:
             self.target, execution_plan, self._initial_snapshot
         )
 
+    def close(self):
+        """Release nothing: unlike the real manager, the double claims no component."""
+
 
 def test_create_aptl_manifest_is_canonical_backend_manifest_v2():
     from raes_backend_protocols.capabilities import BackendManifest

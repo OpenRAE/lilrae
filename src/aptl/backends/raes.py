@@ -40,6 +40,7 @@ from aptl.backends._raes_start_failure import (
     INSTANTIATION_FAILURE_MESSAGE as INSTANTIATION_FAILURE_MESSAGE,
     start_failure_outcome as _start_failure_outcome,
 )
+from aptl.backends._raes_start_retry import apply_with_single_retry
 from aptl.backends.raes_diagnostics import render_raes_diagnostics
 from aptl.backends.raes_execution_helpers import (
     evaluation_results as collect_evaluation_results,
@@ -357,23 +358,16 @@ def _apply_with_backend_retry(
 
     run_store = run_target.run_store if run_target is not None else None
     run_id = run_target.run_id if run_target is not None else None
-    outcome = _run_execution_plan(
-        target,
-        execution_plan,
-        scenario_path,
-        run_store=run_store,
-        run_id=run_id,
-    )
-    if outcome.retryable and before_backend_retry is not None:
-        before_backend_retry()
-        return _run_execution_plan(
+    return apply_with_single_retry(
+        lambda: _run_execution_plan(
             target,
             execution_plan,
             scenario_path,
             run_store=run_store,
             run_id=run_id,
-        )
-    return outcome
+        ),
+        before_backend_retry,
+    )
 
 
 def _run_execution_plan(

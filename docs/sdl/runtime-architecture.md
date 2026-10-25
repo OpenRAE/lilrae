@@ -18,10 +18,15 @@ The supported runtime handoff is now:
 5. Start the lab through `aptl.backends.raes.start_raes_scenario()`.
 
 If the deployment backend returns its existing retryable start diagnostic and
-the admitted plan selected the `soc` profile, the SOC recovery hook runs and
-APTL applies that same admitted `ExecutionPlan` one more time. It does not parse
-the SDL or invoke the planner again. The retry decision therefore follows the
-realized profile set, not the global container configuration.
+the scenario's startup adapter admits the `BEFORE_BACKEND_RETRY` hook, lab start
+waits 60 seconds, runs that hook, and APTL applies that same admitted
+`ExecutionPlan` one more time. It does not parse the SDL or invoke the planner
+again. The retry decision therefore follows the admitted adapter, not the global
+container configuration. RAES lets one runtime manager own the target at a time,
+so APTL closes the first attempt's manager before the hook runs. If that manager
+can't be closed, APTL skips the retry and reports the first attempt's error. If
+the retry also fails, its error ends with `Initial attempt:` and the first
+attempt's diagnostics.
 
 Runtime bindings are an in-process admission input, not APTL configuration or
 secrets. APTL does not source them from the environment, forward them to
