@@ -108,8 +108,10 @@ def test_failed_retry_reports_both_attempts(tmp_path):
     before_retry.assert_called_once_with()
     assert error.count(_START_FAILED) == 2
     retry_part, initial_part = error.split("\nInitial attempt: ")
-    assert _RETRY_ERROR in retry_part and _FIRST_ERROR not in retry_part
-    assert _FIRST_ERROR in initial_part and _START_FAILED in initial_part
+    assert _RETRY_ERROR in retry_part
+    assert _FIRST_ERROR not in retry_part
+    assert _FIRST_ERROR in initial_part
+    assert _START_FAILED in initial_part
 
 
 class _StuckClockDriver:
@@ -142,7 +144,8 @@ def test_unreleasable_first_owner_skips_the_retry(mocker, tmp_path):
     assert result.lab_result.success is False
     assert backend.realize.call_count == 1
     before_retry.assert_not_called()
-    assert _START_FAILED in error and _FIRST_ERROR in error
+    assert _START_FAILED in error
+    assert _FIRST_ERROR in error
     assert "Automatic retry skipped" in error
     assert "runtime manager clock driver remains active" in error
     assert "Initial attempt" not in error
@@ -231,7 +234,8 @@ def test_lab_start_json_reports_both_attempts_after_a_failed_retry(mocker, tmp_p
     assert result.exit_code == 1
     assert payload["ok"] is False
     assert error.count(_START_FAILED) == 2
-    assert _RETRY_ERROR in error and _FIRST_ERROR in error
+    assert _RETRY_ERROR in error
+    assert _FIRST_ERROR in error
     assert f"Initial attempt: RAES runtime handoff failed: {_START_FAILED}" in error
     assert backend.realize.call_count == 2
     sleep.assert_called_once_with(60)

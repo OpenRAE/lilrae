@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
+from typing import cast
 
 from aptl.backends.raes_start_model import AcesStartOutcome
 from aptl.utils.logging import get_logger
@@ -38,6 +39,16 @@ def apply_with_single_retry(
         return _with_error(
             first, f"{first.lab_result.error}\n{_RETRY_SKIPPED} ({release_failure})."
         )
+    return _retry_after_release(first, run_attempt, before_retry)
+
+
+def _retry_after_release(
+    first: AcesStartOutcome,
+    run_attempt: Callable[[], AcesStartOutcome],
+    before_retry: Callable[[], None],
+) -> AcesStartOutcome:
+    """Run the hook and the retry; a failed retry also carries the first error."""
+
     before_retry()
     retry = run_attempt()
     if retry.lab_result.success:
@@ -62,4 +73,7 @@ def _release_runtime_owner(outcome: AcesStartOutcome) -> str | None:
 
 
 def _with_error(outcome: AcesStartOutcome, error: str) -> AcesStartOutcome:
-    return replace(outcome, lab_result=replace(outcome.lab_result, error=error))
+    """Return the outcome with its lab result's error replaced."""
+
+    lab_result = replace(outcome.lab_result, error=error)
+    return cast(AcesStartOutcome, replace(outcome, lab_result=lab_result))
