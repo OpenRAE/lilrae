@@ -3,7 +3,7 @@
 The supplied GitHub issue is the delivery contract. This note fixes the
 architecture and verification boundaries before implementation; it is not an
 implementation plan. No new ADR is needed: ADR-003 owns the shared MCP HTTP
-client, ADR-026 owns supply-chain pinning and blocking image scanning, ADR-034
+client, ADR-026 owns supply chain pinning and blocking image scanning, ADR-034
 owns MCP TLS selection, and the existing appliance build/trust documentation
 owns seat-image replacement.
 
@@ -44,7 +44,7 @@ per-major minimum, initially 22.23.4, 24.22.1, and 26.12.1. A numeric
 25 and will eventually accept an end-of-life even major. Extend the existing
 version parsing/checking seam in `src/aptl/core/_doctor_common.py` and the
 `lilrae doctor` Node check rather than introducing a second product validator.
-The supply-chain tests should consume the same policy and fail closed on an
+The supply chain tests should consume the same policy and fail closed on an
 unknown major, an incomplete/unparseable version, or a version below that
 major's floor. A future supported line should require one policy entry, not
 edits to several independent comparison algorithms.
@@ -58,7 +58,7 @@ edits to several independent comparison algorithms.
 | Generic Node substrate | `containers/generic-systemd-node22-base/Dockerfile` and the Node-22 selection in `_raes_backend_implementation_profiles.py` / `_raes_backend_implementation_images.py` are one contract: a declaration of Node 22 selects a Node 22 substrate. Use an explicit patched Node 22 image tag plus the corresponding multi-architecture index digest. Do not change the semantic selector to 25/26 or create a second substrate identity for this patch. `tests/test_substrate_posture_real_docker.py` is the existing effective-image readback seam. |
 | Web builder | `web/Dockerfile` owns the Node 26 builder; its final Caddy stages, non-root user, static-SPA boundary, and absence of control-plane secrets remain unchanged. `docker-compose.yml`, `scripts/appliance/build-local-images.sh`, and the `trivy-image` matrix build it locally. Verify `node --version` in the `builder` target; do not claim the final Caddy image contains the runtime. |
 | Runtime policy and source assertions | `src/aptl/core/_doctor_common.py`, `src/aptl/core/doctor.py`, and `tests/test_doctor.py` own host prerequisite parsing and user guidance. `tests/test_supply_chain_pinning.py` owns repository-wide structural pinning. Extend those incumbents so Docker Node tags, the authenticated appliance archive, CI Node selectors, and active operator prerequisites cannot admit a vulnerable floor or an end-of-life major. Keep Trivy as the vulnerability scanner; do not build a parallel Dockerfile scanner or treat an advisory database result as the version-policy schema. |
-| CI tool runtimes | `.github/workflows/checks.yml` and `.github/workflows/ground-control-phase-e.yml` currently request Node 22 by major only. Their effective runtime must pass the same policy, and the MCP job remains the canonical place to rebuild and test every `aptl-mcp-common` consumer. Action SHA pinning remains owned by `tests/test_supply_chain_pinning.py`; do not conflate the action's own Node runtime with the `setup-node` toolchain it installs. |
+| CI tool runtimes | `.github/workflows/checks.yml` and the Phase E workflow currently request Node 22 by major only. Their effective runtime must pass the same policy, and the MCP job remains the canonical place to rebuild and test every `aptl-mcp-common` consumer. Action SHA pinning remains owned by `tests/test_supply_chain_pinning.py`; do not conflate the action's own Node runtime with the `setup-node` toolchain it installs. |
 | Active host/workshop guidance | `README.md`, `docs/getting-started/prerequisites.md`, `docs/workshop/walkthrough.md`, and `lilrae doctor` currently admit Node 20. `docs/workshop/hosted-backup-seats.md` installs the exact, end-of-life Node 20.20.2 archive on a reachable operator build path. These must not remain valid instructions after adding an end-of-life-major gate. If the active hosted-seat patch changes, preserve the digest chain in `tools/workshop/stage_hosted_seat_payload.py`, its tests, and the runbook; do not blanket-match deleted lines in the patch as effective packages. Historical evidence fixtures may remain historical only when clearly non-executable and explicitly excluded by the assertion. |
 | MCP HTTP request boundary | `mcp/aptl-mcp-common/src/config.ts` owns `LabConfig`, environment substitution, and CA-path resolution; `endpoint-url.ts` rejects caller-controlled cross-origin destinations before auth; `http.ts` owns auth headers, timeouts, response parsing, `HTTPError`, system-trust `fetch()`, custom-CA agents, and the Wazuh-only insecure agent; `api-handlers.ts` owns argument schemas and public error envelopes. Exercise malformed Brotli through a real local response and the system-trust `HTTPClient` path. Preserve origin checks, auth ordering, timeout cleanup, TLS selection, and existing response/error shapes. |
 | Security scanning and workflow | ADR-026, `.github/dependabot.yml`, `.github/workflows/checks.yml`, `.trivyignore.yaml`, `.ground-control.yaml`, and `.gc/plan-rules.md` stay authoritative. Docker bases remain digest-pinned and Dependabot-watched; Trivy continues to gate fixable platform-image findings. Local verification stays targeted, while CI rebuilds all common-MCP consumers and owns full/clean lifecycle gates. |
@@ -78,7 +78,7 @@ edits to several independent comparison algorithms.
 - **Config and validation shapes:** preserve `LabConfig`, per-query inheritance,
   JSON-schema argument validation, `verify_ssl`, and `ca_cert_path`. Preserve
   the RAES Node-22 declaration and backend selector rather than adding a patch
-  version to the scenario schema: patch selection is substrate supply-chain
+  version to the scenario schema: patch selection is substrate supply chain
   policy, not authored scenario intent.
 - **OS/process exposure:** no port, listener, capability, mount, user, systemd
   policy, Docker socket, or host binding changes. Runtime probes use fixed
