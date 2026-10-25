@@ -871,6 +871,7 @@ src/aptl/backends/_raes_scenario_queries.py	core-candidate	Migrate only after pu
 src/aptl/backends/_raes_scenario_resolution.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/_raes_service_index_placement.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/_raes_shuffle_implementation_catalog.py	backend-owned-runtime	Retain Shuffle implementation profiles selected only under open authority
+src/aptl/backends/_raes_wazuh_dashboard_implementation_catalog.py	backend-owned-runtime	Retain the Wazuh Dashboard implementation profile selected only under open authority
 src/aptl/backends/_raes_start_failure.py	core-candidate	Keep redacted scenario-start failure translation with generic RAES admission
 src/aptl/backends/_raes_stateful_observation.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/_raes_stateful_values.py	backend-owned-runtime	Retain authored value readers used by stateful realization

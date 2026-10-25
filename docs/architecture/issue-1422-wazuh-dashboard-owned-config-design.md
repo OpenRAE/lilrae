@@ -107,6 +107,7 @@ sequenceDiagram
 ## Policy and Architecture as Code
 
 - The backend implementation catalog is the architecture-as-code record. The
-  `wazuh-dashboard-4.12` entry changes.
+  `wazuh-dashboard-4.12` entry changes. It moves to
+  `_raes_wazuh_dashboard_implementation_catalog.py`, as the Shuffle entries did.
 - No policy-as-code rule covers content ownership. Runtime filesystem-inventory
   observation enforces the declared owner and mode, and it does not change.

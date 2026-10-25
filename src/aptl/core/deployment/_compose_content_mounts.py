@@ -101,28 +101,18 @@ def image_node_content_override(
         source = _place_content(item, scenario_root, realization_root)
         if source is None:
             continue
-        installer = _owned_content_installer(node)
-        owned = _declared_ownership(node, item, source) if installer else None
         volumes = services.setdefault(node.service_name, {}).setdefault("volumes", [])
+        lines = manifests.setdefault(node.service_name, [])
+        owned = _owned_content_mount(node, item, source, realization_root, lines)
         if owned is None:
             volumes.extend(_content_mounts(item, source))
-            continue
-        name = f"{len(manifests.get(node.service_name, ())):03d}"
-        if installer == OWNED_CONTENT_IMAGE_USER_INSTALLER:
-            source = _stage_for_image_user(
-                source, _owned_content_dir(realization_root, node.service_name), name
-            )
-        volumes.append(_bind(source, OWNED_CONTENT_ROOT / name))
-        manifests.setdefault(node.service_name, []).append(
-            f"{owned} {name} /{item.dest_relpath.lstrip('/')}"
-        )
+        else:
+            volumes.append(owned)
     for service_name, lines in manifests.items():
-        manifest = _owned_content_dir(realization_root, service_name)
-        path = manifest / "manifest"
-        _remove_previous_output(path)
-        path.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
-        path.chmod(0o644)
-        services[service_name]["volumes"].append(_bind(path, OWNED_CONTENT_MANIFEST))
+        if lines:
+            services[service_name]["volumes"].append(
+                _write_owned_manifest(realization_root, service_name, lines)
+            )
     return {"services": services} if services else {"services": {}}
 
 
@@ -135,6 +125,43 @@ def _bind(source: Path, target: PurePosixPath) -> dict[str, object]:
         "target": str(target),
         "read_only": True,
     }
+
+
+def _owned_content_mount(
+    node: object,
+    item: DeploymentContentRealization,
+    source: Path,
+    realization_root: Path,
+    manifest_lines: list[str],
+) -> dict[str, object] | None:
+    """Stage owner-declared content for the node's installer, or return ``None``.
+
+    The returned mount places the file under :data:`OWNED_CONTENT_ROOT`, and
+    *manifest_lines* gains its install line. Other content returns ``None``.
+    """
+
+    installer = _owned_content_installer(node)
+    owned = _declared_ownership(node, item, source) if installer else None
+    if owned is None:
+        return None
+    name = f"{len(manifest_lines):03d}"
+    if installer == OWNED_CONTENT_IMAGE_USER_INSTALLER:
+        directory = _owned_content_dir(realization_root, str(node.service_name))
+        source = _stage_for_image_user(source, directory, name)
+    manifest_lines.append(f"{owned} {name} /{item.dest_relpath.lstrip('/')}")
+    return _bind(source, OWNED_CONTENT_ROOT / name)
+
+
+def _write_owned_manifest(
+    realization_root: Path, service_name: str, lines: list[str]
+) -> dict[str, object]:
+    """Write one service's install manifest and return its mount."""
+
+    path = _owned_content_dir(realization_root, service_name) / "manifest"
+    _remove_previous_output(path)
+    path.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
+    path.chmod(0o644)
+    return _bind(path, OWNED_CONTENT_MANIFEST)
 
 
 def _owned_content_installer(node: object) -> str | None:

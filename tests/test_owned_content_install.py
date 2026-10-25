@@ -337,7 +337,9 @@ def test_the_dashboard_start_refuses_an_unset_indexer_login(unset):
     import secrets
     import subprocess
 
-    from aptl.backends._raes_backend_implementation_catalog import _DASHBOARD_START
+    from aptl.backends._raes_wazuh_dashboard_implementation_catalog import (
+        DASHBOARD_START,
+    )
 
     env = {
         "PATH": "/usr/bin:/bin",
@@ -346,7 +348,7 @@ def test_the_dashboard_start_refuses_an_unset_indexer_login(unset):
     }
     env.pop(unset)
     # The login check is the first step, before any image script runs.
-    check = _DASHBOARD_START.split("; ", 1)[0]
+    check = DASHBOARD_START.split("; ", 1)[0]
     result = subprocess.run(
         ["/bin/sh", "-ec", f"{check}; echo started"],
         capture_output=True,

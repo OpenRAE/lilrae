@@ -22,8 +22,10 @@ from types import SimpleNamespace
 import pytest
 
 from aptl.backends._raes_backend_implementation_catalog import (
-    _DASHBOARD_START,
     BACKEND_IMPLEMENTATION_PROFILES,
+)
+from aptl.backends._raes_wazuh_dashboard_implementation_catalog import (
+    DASHBOARD_START,
 )
 from aptl.core.deployment import _compose_content_mounts as mounts
 from aptl.core.deployment.realization import (
@@ -187,7 +189,7 @@ def test_the_image_user_installs_declared_config_it_can_read(tmp_path):
     volumes = _dashboard_override(tmp_path / "engine")
     _give_foreign_owner(Path(str(volumes[0]["source"])).parent)
     # The profile's own start steps, up to the keystore and server start.
-    start = _DASHBOARD_START.split("; yes |", 1)[0]
+    start = DASHBOARD_START.split("; yes |", 1)[0]
     parse = (
         "cd /usr/share/wazuh-dashboard && node/bin/node -e "
         '\'require("js-yaml").load(require("fs")'
@@ -211,7 +213,7 @@ def test_the_image_user_installs_declared_config_it_can_read(tmp_path):
 def test_a_restart_with_retained_state_reinstalls_declared_config(tmp_path):
     volumes = _dashboard_override(tmp_path / "engine")
     _give_foreign_owner(Path(str(volumes[0]["source"])).parent)
-    start = _DASHBOARD_START.split("; yes |", 1)[0]
+    start = DASHBOARD_START.split("; yes |", 1)[0]
     name = f"aptl-1422-restart-{tmp_path.name}"[:63]
     mounts_args: list[str] = []
     for volume in volumes:
