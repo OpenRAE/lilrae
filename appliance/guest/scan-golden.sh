@@ -61,12 +61,23 @@ test -x /usr/local/bin/aptl
 # read bits introduced by the provisioner's private umask.
 su -s /bin/sh -c '
     /usr/local/bin/lilrae --version >/dev/null &&
+    test "$(/usr/local/bin/node --version)" = v22.23.4 &&
+    /usr/local/bin/npm --version >/dev/null &&
     test -r /opt/aptl/project/mcp/mcp-red/build/index.js
 ' aptl
-case "$(node --version)" in
-    v22.*) ;;
-    *) exit 1 ;;
-esac
+node_version=$(node --version)
+test "$(readlink -f "$(command -v node)")" = \
+    /opt/node-v22.23.4-linux-x64/bin/node
+! dpkg-query --show nodejs >/dev/null 2>&1
+PYTHONPATH=/opt/aptl/app:/opt/aptl/python /usr/bin/python3 \
+    - "$node_version" <<'PY'
+import sys
+
+from aptl.core._doctor_common import node_version_supported
+
+if not node_version_supported(sys.argv[1], allowed_majors={22}):
+    raise SystemExit("finalized guest does not contain a supported Node 22 release")
+PY
 # Allow five percent for EFI/boot partitions and filesystem metadata.
 # Compare the root filesystem to the requested virtual size, not a fixed cut.
 expected_disk_gib=${APTL_SEAT_DISK_GIB:-128}

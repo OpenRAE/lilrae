@@ -127,7 +127,7 @@ selection, safe activity, result inspection, troubleshooting, and teardown.
 - Docker Engine 28.0 or newer (native, or inside Docker Desktop or Colima)
   with Compose and Buildx, on a cgroup v2 host
 - OpenSSH client with `ssh-keygen` on `PATH`
-- Node.js 20 or newer and npm for MCP artifact builds
+- Node.js 22.23.4+, 24.22.1+, or 26.12.1+ and npm for MCP artifact builds
 - 20GB or more of free disk space
 - Sufficient Docker memory for the selected scenario; the full acquired
   TechVault stack needs more than 20GB

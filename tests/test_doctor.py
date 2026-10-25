@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from aptl.core import hostenv
+from aptl.core._doctor_common import node_version_supported
 from aptl.core.deployment import get_backend as real_get_backend
 from aptl.core.doctor import CheckStatus, run_doctor
 from aptl.core.execution_boundary import ExecutionBoundaryObservation
@@ -59,6 +60,28 @@ _BOUNDARIES = {
     "remote-unverified": ("remote-ssh", "unknown", "partial"),
     "unknown": ("unknown", "unknown", "unknown"),
 }
+
+
+@pytest.mark.parametrize(
+    ("version", "allowed"),
+    [
+        ("v22.23.4", True),
+        ("22.24.0", True),
+        ("v24.22.1", True),
+        ("v26.12.1", True),
+        ("v22.23.3", False),
+        ("v24.22.0", False),
+        ("v26.12.0", False),
+        ("v20.20.2", False),
+        ("v25.9.0", False),
+        ("22", False),
+        ("v22.23", False),
+        ("v22.23.4-rc.1", False),
+        ("not-a-version", False),
+    ],
+)
+def test_node_runtime_policy_fails_closed(version, allowed):
+    assert node_version_supported(version) is allowed
 
 
 class _FakeDaemon:
@@ -157,7 +180,7 @@ def host(mocker):
             passed=True, current_value=262144, required_value=262144
         ),
         "buildx": ToolReqResult(passed=True, command="docker buildx version"),
-        "node": "v20.11.1\n",
+        "node": "v22.23.4\n",
     }
 
     def check_max_map_count(*, selected_mode):
@@ -241,7 +264,12 @@ def test_doctor_changes_nothing_and_only_queries(tmp_path, host):
         pytest.param(
             {"config": "{not json"},
             (),
-            ("project-config", CheckStatus.FAILED, "not valid", "lilrae config validate"),
+            (
+                "project-config",
+                CheckStatus.FAILED,
+                "not valid",
+                "lilrae config validate",
+            ),
             id="invalid-config",
         ),
         pytest.param(
@@ -259,14 +287,30 @@ def test_doctor_changes_nothing_and_only_queries(tmp_path, host):
         pytest.param(
             {},
             ("npm",),
-            ("node-npm", CheckStatus.WARNING, "degraded", "Node.js 20"),
+            ("node-npm", CheckStatus.WARNING, "degraded", "Node.js 22.23.4"),
             id="no-npm",
         ),
         pytest.param(
-            {"node": "v18.19.0\n"},
+            {"node": "v22.23.3\n"},
             (),
-            ("node-npm", CheckStatus.WARNING, "Node.js 20 or newer", "Node.js 20"),
-            id="old-node",
+            (
+                "node-npm",
+                CheckStatus.WARNING,
+                "supported Node.js release",
+                "Node.js 22.23.4",
+            ),
+            id="vulnerable-node",
+        ),
+        pytest.param(
+            {"node": "v25.9.0\n"},
+            (),
+            (
+                "node-npm",
+                CheckStatus.WARNING,
+                "supported Node.js release",
+                "Node.js 22.23.4",
+            ),
+            id="end-of-life-node",
         ),
         pytest.param(
             {"config": _SSH_WITHOUT_HOST, "real_backend": True},
