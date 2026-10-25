@@ -259,7 +259,8 @@ def test_appliance_uses_an_authenticated_official_node_release() -> None:
         r"([0-9a-f]{64})  node-v(\d+\.\d+\.\d+)-linux-x64\.tar\.xz\n?",
         lock,
     )
-    assert selected and node_version_supported(selected.group(2))
+    assert selected is not None
+    assert node_version_supported(selected.group(2))
     assert f"version={selected.group(2)}" in acquire
     assert "https://nodejs.org/dist/v${NODE_VERSION}" in acquire
     assert "SHASUMS256.txt.asc" in acquire
