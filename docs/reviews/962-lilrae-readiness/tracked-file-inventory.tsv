@@ -47,6 +47,7 @@ SUPPORT.md	repository-metadata	Inspect identity/content owner during #934; no ru
 appliance/guest/aptl-appliance-first-boot	optional-delivery	Keep sealed-seat boundary outside default install
 appliance/guest/aptl-appliance-first-boot.service	optional-delivery	Keep sealed-seat boundary outside default install
 appliance/guest/aptl-launch.mount	optional-delivery	Keep sealed-seat boundary outside default install
+appliance/guest/node-runtime.sha256	optional-delivery	Keep exact guest Node runtime with delivery owner
 appliance/guest/provision-offline.sh	optional-delivery	Keep sealed-seat boundary outside default install
 appliance/guest/scan-golden.sh	optional-delivery	Keep sealed-seat boundary outside default install
 appliance/guest/seat-qualification-smoke.service	optional-delivery	Keep live seat qualification with delivery owner
@@ -268,6 +269,7 @@ docs/architecture/issue-1022-historical-branch-audit.md	architecture-history	Pre
 docs/architecture/issue-1179-pending-lab-cleanup-preflight.md	architecture-history	Preserve issue 1179 upgrade-safe pending cleanup decisions and guardrails
 docs/architecture/issue-1188-wazuh-api-cold-boot-preflight.md	architecture-history	Preserve issue 1188 Wazuh API recovery boundary and causal limits
 docs/architecture/issue-1191-wazuh-api-cold-boot-rca-preflight.md	architecture-history	Preserve issue 1191 Wazuh status-contract and bounded RCA capture guardrails
+docs/architecture/issue-1409-node-runtime-security-preflight.md	architecture-history	Preserve issue 1409 runtime security decisions and supply chain guardrails
 docs/architecture/issue-550-soc-selected-profile-preflight.md	docs-follow-owner	Separate current user guidance from historical evidence and scenario-pack-specific docs
 docs/architecture/issue-557-participant-implementation-binding-preflight.md	docs-follow-owner	Separate current user guidance from historical evidence and scenario-pack-specific docs
 docs/architecture/issue-589-scenario-pack-capture-ownership-preflight.md	docs-follow-owner	Separate current user guidance from historical evidence and scenario-pack-specific docs
@@ -613,6 +615,7 @@ mcp/aptl-mcp-common/tests/captures.test.ts	tests-follow-owner	Retain meaningful 
 mcp/aptl-mcp-common/tests/config-env-substitution.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/config-logic.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/endpoint-url.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+mcp/aptl-mcp-common/tests/http-brotli-runtime.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/http-ca.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/http-endpoint-security.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/http-insecure.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
@@ -736,6 +739,7 @@ scenarios/paper-agent-loop.sdl.yaml	split-pack-delivery	Inventory exact content 
 scenarios/techvault-attacker-target.sdl.yaml	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 scenarios/techvault-defensive-min.sdl.yaml	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 scenarios/techvault-enterprise-web.sdl.yaml	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
+scripts/appliance/acquire-guest-node-runtime.sh	optional-delivery	Keep exact guest Node runtime acquisition with delivery owner
 scripts/appliance/acquire-guest-system-packages.sh	optional-delivery	Keep exact guest system package closure with delivery owner
 scripts/appliance/assemble-seat-inputs.py	optional-delivery	Keep realized seat image and profile assembly with delivery owner
 scripts/appliance/build-local-images.sh	optional-delivery	Keep local appliance image build path with delivery owner

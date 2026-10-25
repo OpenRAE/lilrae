@@ -97,6 +97,12 @@ done <"$APTL_LOCAL_IMAGE_LOCK_FILE"
   "$payload/system-packages"
 cp "$source_root/appliance/guest/system-packages.sha256" "$payload/"
 
+# Node.js is an authenticated upstream runtime artifact rather than an Ubuntu
+# package: Ubuntu 26.04 does not yet provide the fixed Node 22 release.
+"$source_root/scripts/appliance/acquire-guest-node-runtime.sh" \
+  "$payload/node-runtime"
+cp "$source_root/appliance/guest/node-runtime.sha256" "$payload/"
+
 # --- guest runtime -----------------------------------------------------
 target_python=$(command -v "python${APTL_GUEST_PYTHON_VERSION}" || true)
 if test -z "$target_python" && command -v uv >/dev/null 2>&1; then

@@ -30,7 +30,7 @@
   (POSIX mode on Linux/macOS, NTFS ACLs via `icacls` on Windows). Preinstalled on
   Linux and macOS; on Windows enable the built-in **OpenSSH Client** optional
   feature (Settings → Apps → Optional features), or use Git for Windows / WSL2.
-- Node.js 20+ and npm (for the MCP servers, the AI-agent control plane that
+- Node.js 22.23.4+, 24.22.1+, or 26.12.1+ and npm (for the MCP servers, the AI-agent control plane that
   `lilrae lab start` builds via `mcp/build-all-mcps.sh`; without them the lab
   still boots but reports `degraded` with MCP servers unavailable)
 - Git (only for the from-source dev install; `pipx install lilrae` needs no clone)
