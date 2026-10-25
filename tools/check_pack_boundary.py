@@ -14,11 +14,12 @@ It scans the generic paths in :data:`COVERED` and reports each match by path
 and fact kind, never by value. #1273 covers the participant desktop, the rule
 tools, and the account providers, including the generic core directory.
 
-Usage: ``python tools/check_pack_boundary.py [<repository root>]``
+Usage: ``python tools/check_pack_boundary.py [root] [--pack-directory ID=PATH]``
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 import tempfile
 from collections.abc import Iterable, Mapping
@@ -55,7 +56,12 @@ def owner_packs() -> set[str]:
     return packs
 
 
-def pack_facts(pack_id: str) -> dict[str, str]:
+def pack_facts(
+    pack_id: str,
+    *,
+    project_dir: Path | None = None,
+    pack_directory: str | None = None,
+) -> dict[str, str]:
     """Return ``{fact: kind}`` for what one admitted pack's SDL authors.
 
     A claimed pack that cannot be admitted raises, so the check fails closed
@@ -64,10 +70,25 @@ def pack_facts(pack_id: str) -> dict[str, str]:
 
     from aptl.backends.raes import parse_sdl_file
     from aptl.core.deployment._authored_service_hosts import node_service_hosts
-    from aptl.core.scenario_bundle import env_pack_bundle
+    from aptl.backends._raes_scenario_resolution import resolve_scenario_bundle
+    from aptl.core.config import AptlConfig, find_config, load_config
+
+    project_dir = project_dir if project_dir is not None else Path.cwd()
+    config_path = find_config(project_dir)
+    config = load_config(config_path) if config_path is not None else AptlConfig()
+    if (
+        pack_directory is not None
+        or config.scenario.identity != pack_id
+        or config.scenario.source != "env-pack"
+    ):
+        config = AptlConfig(
+            scenario={"identity": pack_id, "pack_directory": pack_directory}
+        )
 
     with tempfile.TemporaryDirectory() as staging:
-        bundle = env_pack_bundle(Path(staging), pack_id)
+        bundle = resolve_scenario_bundle(
+            project_dir, None, config, staging_root=Path(staging),
+        )
         scenario = parse_sdl_file(bundle.sdl_path)
     facts: dict[str, str] = {}
     for node in scenario.nodes.values():
@@ -113,14 +134,36 @@ def findings(
 def main(argv: list[str]) -> int:
     """Print each finding by path and kind; return 1 when any exists."""
 
-    root = Path(argv[1]) if len(argv) > 1 else Path(__file__).resolve().parents[1]
+    from aptl.core.config import ScenarioSourceConfig
+    from aptl.core.scenario_bundle import EnvPackError
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "root", nargs="?", type=Path, default=Path(__file__).resolve().parents[1]
+    )
+    parser.add_argument("--pack-directory", action="append", default=[], metavar="ID=PATH")
+    options = parser.parse_args(argv[1:])
+    root = options.root
     facts: dict[str, str] = {}
     packs = sorted(owner_packs())
     if not packs:
         print("no installed adapter claims a pack; nothing proves the boundary", file=sys.stderr)
         return 1
-    for pack_id in packs:
-        facts.update(pack_facts(pack_id))
+    try:
+        directories: dict[str, str] = {}
+        for selection in options.pack_directory:
+            pack_id, separator, directory = selection.partition("=")
+            if not separator or pack_id in directories or pack_id not in packs:
+                raise ValueError("invalid owner source selection")
+            ScenarioSourceConfig(identity=pack_id, pack_directory=directory)
+            directories[pack_id] = directory
+        for pack_id in packs:
+            facts.update(
+                pack_facts(pack_id, project_dir=root, pack_directory=directories.get(pack_id))
+            )
+    except (EnvPackError, OSError, ValueError, ImportError):
+        print("owner pack acquisition failed; check configured pack sources", file=sys.stderr)
+        return 1
     if not facts:
         print("the owner packs author no facts; nothing proves the boundary", file=sys.stderr)
         return 1

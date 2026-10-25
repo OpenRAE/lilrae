@@ -1929,6 +1929,8 @@ tests/fixtures/lilrae_source_image_inventory_v6_3_1.json	tests-follow-owner	Reta
 tests/test_lilrae_catalog_image_observation.py	tests-follow-owner	Retain independent image identity, lifecycle, and evidence regression tests
 tests/test_lilrae_source_image_catalog.py	tests-follow-owner	Retain source admission and released Linux kit selector coverage
 docs/architecture/issue-1402-command-rename-preflight.md	architecture-history	Preserve lilrae command rename, alias deprecation, and identity-boundary guardrails
+docs/architecture/issue-1413-configured-pack-source-preflight.md	architecture-history	Preserve configured pack-source acquisition and containment guardrails
+tests/test_lilrae_pack_source.py	tests-follow-owner	Retain configured pack-source, catalog, admission, and filesystem containment regressions
 src/aptl/cli/_command_alias.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 tests/test_cli_command_alias.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 appliance/guest/participant-desktop-open.sh	optional-delivery	Keep VM seat delivery with the appliance owner
