@@ -1964,3 +1964,4 @@ src/aptl/backends/_scenario_startup_hooks.py	core-candidate	Retain fixed lifecyc
 src/aptl/core/_participant_desktop_endpoints.py	core-candidate	Retain generic declared endpoint and hostname resolution
 src/aptl/core/_participant_desktop_tls.py	core-candidate	Retain verified transport over backend-issued public certificates
 tests/test_participant_desktop_tls.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+docs/architecture/issue-1423-shuffle-startup-readiness-preflight.md	architecture-history	Preserve Shuffle startup recovery, authority, and readiness guardrails

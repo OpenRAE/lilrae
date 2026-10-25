@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,6 +19,15 @@ pytestmark = pytest.mark.skipif(
     hostenv.host_os() != hostenv.OS_LINUX,
     reason="appliance seat launcher prerequisites are Linux-only",
 )
+
+
+@pytest.fixture(autouse=True)
+def small_host_disk(monkeypatch) -> None:
+    """Keep injected-probe tests independent of the runner's disk capacity."""
+    monkeypatch.setattr(
+        "aptl.appliance.seat.prereqs.shutil.disk_usage",
+        lambda _path: SimpleNamespace(total=80 * 1024**3, free=60 * 1024**3),
+    )
 
 
 def _requirements() -> HostPrerequisites:
@@ -38,6 +48,7 @@ def test_prereqs_pass_with_injected_probes(tmp_path: Path) -> None:
         seat_root=tmp_path,
         memory_bytes=32 * 1024**3,
         available_vcpus=16,
+        total_disk_bytes=200 * 1024**3,
         free_disk_bytes=200 * 1024**3,
         kvm_available=True,
         qemu_img_available=True,
@@ -53,6 +64,9 @@ def test_prereqs_fail_closed_on_missing_kvm(tmp_path: Path) -> None:
         _requirements(),
         seat_root=tmp_path,
         memory_bytes=32 * 1024**3,
+        available_vcpus=16,
+        total_disk_bytes=200 * 1024**3,
+        free_disk_bytes=200 * 1024**3,
         kvm_available=False,
         qemu_img_available=True,
         qemu_system_available=True,
@@ -71,6 +85,7 @@ def test_require_host_prerequisites_raises(tmp_path: Path) -> None:
             seat_root=tmp_path,
             memory_bytes=1024,
             available_vcpus=16,
+            total_disk_bytes=200 * 1024**3,
             free_disk_bytes=200 * 1024**3,
             kvm_available=True,
             qemu_img_available=True,
@@ -89,6 +104,7 @@ def test_require_host_prerequisites_reports_every_failed_check(tmp_path: Path) -
             seat_root=tmp_path,
             memory_bytes=1024,
             available_vcpus=1,
+            total_disk_bytes=1024,
             free_disk_bytes=1024,
             kvm_available=False,
             qemu_img_available=False,
@@ -101,6 +117,7 @@ def test_require_host_prerequisites_reports_every_failed_check(tmp_path: Path) -
         "no-kvm",
         "low-memory",
         "low-cpu",
+        "low-disk-capacity",
         "low-disk",
         "missing-qemu-img",
         "missing-qemu-system",
@@ -114,6 +131,8 @@ def test_prereqs_fail_on_low_disk_and_missing_tools(tmp_path: Path) -> None:
         _requirements(),
         seat_root=tmp_path,
         memory_bytes=32 * 1024**3,
+        available_vcpus=16,
+        total_disk_bytes=200 * 1024**3,
         free_disk_bytes=1024,
         kvm_available=True,
         qemu_img_available=False,
@@ -167,6 +186,7 @@ def test_prereqs_use_available_cpu_and_memory_capacity(tmp_path: Path) -> None:
         _requirements(),
         seat_root=tmp_path,
         memory_bytes=8 * 1024**3,
+        total_disk_bytes=200 * 1024**3,
         free_disk_bytes=200 * 1024**3,
         available_vcpus=4,
         kvm_available=True,
