@@ -330,3 +330,31 @@ def test_the_dashboard_profile_installs_declared_config_after_app_config():
     assert mounts.OWNED_CONTENT_INSTALLER not in script
     # The fix adds no privilege: no root user, capability, or security option.
     assert not {"linux-capabilities", "runtime-container-privileged"} & set(selections)
+
+
+@pytest.mark.parametrize("unset", ["DASHBOARD_USERNAME", "DASHBOARD_PASSWORD"])
+def test_the_dashboard_start_refuses_an_unset_indexer_login(unset):
+    import secrets
+    import subprocess
+
+    from aptl.backends._raes_backend_implementation_catalog import _DASHBOARD_START
+
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "DASHBOARD_USERNAME": "user",
+        "DASHBOARD_PASSWORD": secrets.token_hex(8),
+    }
+    env.pop(unset)
+    # The login check is the first step, before any image script runs.
+    check = _DASHBOARD_START.split("; ", 1)[0]
+    result = subprocess.run(
+        ["/bin/sh", "-ec", f"{check}; echo started"],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
+    )
+
+    assert result.returncode != 0
+    assert unset in result.stderr
+    assert "started" not in result.stdout

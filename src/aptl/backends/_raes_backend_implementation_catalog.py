@@ -44,14 +44,16 @@ _DASHBOARD_KEYSTORE = f"{_DASHBOARD_HOME}/bin/opensearch-dashboards-keystore"
 #: placed after its app-config step. That step appends a default `hosts` key to
 #: a writable `wazuh.yml` that lacks the image's own host id, which makes the
 #: declared file invalid YAML, so declared content must write it last. The image
-#: entrypoint ignores the app-config status, and so does this one.
+#: entrypoint ignores the app-config status, and so does this one. Unlike the
+#: image, it has no default indexer login: an unset login stops the start.
 _DASHBOARD_START = (
+    ': "${DASHBOARD_USERNAME:?}" "${DASHBOARD_PASSWORD:?}"; '
     "/wazuh_app_config.sh || true; "
     f"{OWNED_CONTENT_IMAGE_USER_INSTALLER}; "
     f"yes | {_DASHBOARD_KEYSTORE} create --allow-root; "
-    'printf "%s\\n" "${DASHBOARD_USERNAME:-kibanaserver}" | '
+    'printf "%s\\n" "$DASHBOARD_USERNAME" | '
     f"{_DASHBOARD_KEYSTORE} add opensearch.username --stdin --allow-root; "
-    'printf "%s\\n" "${DASHBOARD_PASSWORD:-kibanaserver}" | '
+    'printf "%s\\n" "$DASHBOARD_PASSWORD" | '
     f"{_DASHBOARD_KEYSTORE} add opensearch.password --stdin --allow-root; "
     f"exec {_DASHBOARD_HOME}/bin/opensearch-dashboards "
     f"-c {_DASHBOARD_HOME}/config/opensearch_dashboards.yml"

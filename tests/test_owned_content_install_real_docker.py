@@ -13,6 +13,7 @@ is unavailable.
 
 from __future__ import annotations
 
+import secrets
 import shutil
 import subprocess
 from pathlib import Path
@@ -50,6 +51,14 @@ _APP_TEXT = (
     "      run_as: false\n"
 )
 _FOREIGN_OWNER = "4242:4242"
+# The start steps refuse an unset indexer login. These tests never reach the
+# indexer, so a random value per run serves.
+_LOGIN_ENV = [
+    "-e",
+    f"DASHBOARD_USERNAME=user-{secrets.token_hex(4)}",
+    "-e",
+    f"DASHBOARD_PASSWORD={secrets.token_hex(16)}",
+]
 
 
 def _docker(*args: str, timeout: int = 180) -> subprocess.CompletedProcess:
@@ -149,7 +158,7 @@ def _run(volumes: list[dict[str, object]], script: str) -> subprocess.CompletedP
     for volume in volumes:
         mounts_args += ["-v", f"{volume['source']}:{volume['target']}:ro"]
     return _docker(
-        "run", "--rm", "--network", "none", *mounts_args,
+        "run", "--rm", "--network", "none", *_LOGIN_ENV, *mounts_args,
         "--entrypoint", "/bin/sh", _IMAGE, "-ec", script,
     )  # fmt: skip
 
@@ -208,7 +217,7 @@ def test_a_restart_with_retained_state_reinstalls_declared_config(tmp_path):
     for volume in volumes:
         mounts_args += ["-v", f"{volume['source']}:{volume['target']}:ro"]
     created = _docker(
-        "create", "--name", name, "--network", "none", *mounts_args,
+        "create", "--name", name, "--network", "none", *_LOGIN_ENV, *mounts_args,
         "--entrypoint", "/bin/sh", _IMAGE, "-ec",
         f"{start}; stat -c '%U:%G:%a' {_CONFIG} {_APP}; cat {_APP}",
     )  # fmt: skip

@@ -25,7 +25,7 @@ decision in its Owner-Declared Image Content Addendum.
 | Owned-content staging (`_compose_content_mounts.py`) | Finds the installer in the node entrypoint. Stages each owner-declared file. Writes the install manifest. |
 | `OWNED_CONTENT_INSTALLER` | Runs as root. Installs each file with its declared owner and mode. Unchanged. |
 | `OWNED_CONTENT_IMAGE_USER_INSTALLER` | Runs as the image user. Installs each file with its declared mode. Refuses an owner or group that is not the current user or group. |
-| `wazuh-dashboard-4.12` profile entrypoint | Runs the image app-config step, then the installer, then the keystore steps, then starts the server. |
+| `wazuh-dashboard-4.12` profile entrypoint | Checks the indexer login. Runs the image app-config step, then the installer, then the keystore steps, then starts the server. |
 
 Decisions:
 
@@ -46,6 +46,7 @@ Failure behavior:
 - An owner or group mismatch stops the installer with a non-zero status. The
   container exits, and runtime observation reports a node failure.
 - A missing manifest makes the installer do nothing.
+- An unset indexer login stops the start. The profile has no default login.
 - Content without a declared owner keeps its read-only bind mount.
 
 ## Systems Security
@@ -95,6 +96,7 @@ sequenceDiagram
     participant I as Image-user installer
     participant K as Keystore
     participant S as Dashboard server
+    C->>C: Stop if the indexer login is unset
     C->>A: Run, status ignored as in the image
     C->>I: Install manifest entries
     I-->>C: Exit non-zero on owner mismatch
