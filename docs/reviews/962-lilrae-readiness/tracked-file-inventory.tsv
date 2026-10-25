@@ -870,6 +870,7 @@ src/aptl/backends/_raes_scenario_resolution.py	core-candidate	Migrate only after
 src/aptl/backends/_raes_service_index_placement.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/_raes_shuffle_implementation_catalog.py	backend-owned-runtime	Retain Shuffle implementation profiles selected only under open authority
 src/aptl/backends/_raes_start_failure.py	core-candidate	Keep redacted scenario-start failure translation with generic RAES admission
+src/aptl/backends/_raes_start_retry.py	core-candidate	Keep the generic start-retry runtime-owner release with RAES orchestration
 src/aptl/backends/_raes_stateful_observation.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/_raes_stateful_values.py	backend-owned-runtime	Retain authored value readers used by stateful realization
 src/aptl/backends/_runtime_concern_disclosure.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
@@ -1605,6 +1606,7 @@ tests/test_raes_runtime_observation.py	tests-follow-owner	Retain meaningful boun
 tests/test_raes_runtime_orchestration.py	tests-follow-owner	Post-baseline regression coverage for the RAES orchestration boundary
 tests/test_raes_service_index_schema.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_service_index_schema_lowering.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_raes_start_retry.py	tests-follow-owner	Retain start-retry runtime-owner release and result regressions
 tests/test_raes_stateful_realization.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_range_integration.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_realization_declaration_gate.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
