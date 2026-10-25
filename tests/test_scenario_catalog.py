@@ -7,6 +7,8 @@ import sys
 
 import pytest
 
+from aptl.core.scenario_bundle import ScenarioSourceKind
+
 
 class ParserFailure(Exception):
     pass
@@ -174,7 +176,10 @@ def test_resolve_acquired_scenario_unknown_id_is_not_found(mocker, tmp_path):
         scenarios=(),
         pack_identity=PackIdentity("techvault", "0.1.0", "sha256:" + "a" * 64),
         maturity="built",
-        bundle=ScenarioBundle("techvault", root, root / "sdl/techvault.sdl.yaml"),
+        bundle=ScenarioBundle(
+            "techvault", root, root / "sdl/techvault.sdl.yaml",
+            source_kind=ScenarioSourceKind.ENV_PACK,
+        ),
     )
     mocker.patch(
         "aptl.core.scenario_catalog.load_scenario_catalog", return_value=catalog
@@ -200,7 +205,10 @@ def test_compatibility_projection_removes_its_owned_staging(mocker, tmp_path):
         scenarios=(ScenarioCatalogEntry(id="techvault", name="TechVault"),),
         pack_identity=PackIdentity("techvault", "0.1.0", "sha256:" + "a" * 64),
         maturity="built",
-        bundle=ScenarioBundle("techvault", root, sdl),
+        bundle=ScenarioBundle(
+            "techvault", root, sdl,
+            source_kind=ScenarioSourceKind.ENV_PACK,
+        ),
     )
     mocker.patch(
         "aptl.core.scenario_catalog.load_scenario_catalog", return_value=catalog

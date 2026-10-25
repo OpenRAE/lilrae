@@ -18,14 +18,20 @@ from __future__ import annotations
 
 import importlib.resources as _resources
 import os
-import shutil
 import re
+import shutil
+import stat
 import uuid
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-from aptl.utils.pathsafe import PathContainmentError, read_contained_nofollow
+from aptl.utils.pathsafe import (
+    PathContainmentError,
+    open_dir_contained_nofollow,
+    read_contained_nofollow,
+    remove_tree_contained_nofollow,
+)
 
 _ENV_PACK_PACKAGE = "raes_env_packs"
 
@@ -109,6 +115,19 @@ class ScenarioBundle:
             "sdl_name": self.sdl_path.name,
         }
 
+    def close(self) -> None:
+        """Release an owned acquired copy without following replaced ancestors."""
+        if self.source_kind is not ScenarioSourceKind.ENV_PACK:
+            return
+        parent = self.root.parent.absolute()
+        anchor = Path(parent.anchor)
+        try:
+            remove_tree_contained_nofollow(anchor, parent.relative_to(anchor))
+        except (OSError, PathContainmentError):
+            # Catalog cleanup is best effort; an unsafe/missing path is never
+            # followed to find a replacement tree to delete.
+            pass
+
 
 def project_tree_bundle(
     project_dir: Path, sdl_path: Path, *, identity: str | None = None
@@ -171,12 +190,17 @@ def env_pack_bundle(
         validate_scenario_identity(identity)
     except ValueError as exc:
         raise EnvPackError("invalid env-pack identity") from exc
-    staging_root = Path(staging_root)
-    if source_pack is not None:
-        return _stage_and_validate(Path(source_pack), staging_root, identity)
-    resource = _resources.files(package) / "resources" / "packs" / identity
-    with _resources.as_file(resource) as located:
-        return _stage_and_validate(Path(located), staging_root, identity)
+    staging_root = Path(staging_root).absolute()
+    try:
+        if source_pack is not None:
+            return _stage_and_validate(Path(source_pack), staging_root, identity)
+        resource = _resources.files(package) / "resources" / "packs" / identity
+        with _resources.as_file(resource) as located:
+            return _stage_and_validate(Path(located), staging_root, identity)
+    except (OSError, ValueError, ImportError, PathContainmentError) as exc:
+        raise EnvPackError(
+            "env-pack acquisition rejected unsafe source or exceeded its budget"
+        ) from exc
 
 
 def _stage_and_validate(
@@ -189,12 +213,16 @@ def _stage_and_validate(
     a root Compose file, or it declares no SDL document.
     """
 
+    source_pack = source_pack.absolute()
+    if source_pack.is_relative_to(staging_root) or staging_root.is_relative_to(
+        source_pack
+    ):
+        raise EnvPackError("env-pack source and staging overlap")
     if not source_pack.is_dir():
         raise EnvPackError(f"env-pack source not found for {identity!r}")
 
     # The caller deliberately selects this output root. The validated opaque
     # identity and generated token below are the only appended components.
-    staging_root.mkdir(parents=True, exist_ok=True)  # NOSONAR
     # Each invocation stages into its own fresh directory. Two concurrent
     # invocations (pytest-xdist workers exercising the gate, or two aptl runs on
     # one project) therefore never share a tree, so none rmtrees or reads a tree
@@ -213,28 +241,45 @@ def _stage_and_validate(
     # owner may remove successful staging; another acquisition never sweeps it.
     from aptl.core._pack_staging import copy_pack
 
-    staged.mkdir(parents=True, mode=0o700)
+    anchor = Path(staging_root.anchor)
+    staging_fd = open_dir_contained_nofollow(
+        anchor, staging_root.relative_to(anchor), create=True,
+    )
+    created = False
     try:
+        if os.fstat(staging_fd).st_uid != os.geteuid():
+            raise ValueError("staging must be owned by the current user")
+        os.fchmod(staging_fd, stat.S_IRWXU)
+        os.mkdir(token, mode=0o700, dir_fd=staging_fd)
+        created = True
+        token_fd = os.open(
+            token, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=staging_fd,
+        )
+        try:
+            os.mkdir(identity, mode=0o700, dir_fd=token_fd)
+        finally:
+            os.close(token_fd)
         copy_pack(source_pack, staged)
         pack_identity = _validate_staged_pack(staged, identity)
         _refuse_pack_compose_model(staged, identity)
-    except (OSError, ValueError, PathContainmentError) as exc:
-        shutil.rmtree(staged.parent)
-        raise EnvPackError(
-            "env-pack acquisition rejected unsafe source or exceeded its budget"
-        ) from exc
-    except EnvPackError:
-        shutil.rmtree(staged.parent)
-        raise
 
-    sdl_path = staged / "sdl" / f"{identity}.sdl.yaml"
-    if not sdl_path.is_file():
-        shutil.rmtree(staged.parent)
-        raise EnvPackError(f"env-pack {identity!r} declares no sdl/{identity}.sdl.yaml")
+        sdl_path = staged / "sdl" / f"{identity}.sdl.yaml"
+        if not sdl_path.is_file():
+            raise EnvPackError(
+                f"env-pack {identity!r} declares no sdl/{identity}.sdl.yaml"
+            )
+        checked_fd = open_dir_contained_nofollow(anchor, staged.relative_to(anchor))
+        os.close(checked_fd)
+    except (OSError, ValueError, PathContainmentError, EnvPackError):
+        if created:
+            shutil.rmtree(token, dir_fd=staging_fd, ignore_errors=True)
+        raise
+    finally:
+        os.close(staging_fd)
     return ScenarioBundle(
         identity=identity,
-        root=staged.resolve(),
-        sdl_path=sdl_path.resolve(),
+        root=staged,
+        sdl_path=sdl_path,
         source_kind=ScenarioSourceKind.ENV_PACK,
         pack_identity=pack_identity,
     )

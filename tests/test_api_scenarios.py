@@ -91,3 +91,23 @@ def test_detail_does_not_log_user_controlled_id(api_client, caplog):
     assert response.status_code == 404
     assert "GET /scenarios/{scenario_id}" in caplog.text
     assert "forged-entry" not in caplog.text
+
+
+def test_api_projects_configured_release_without_its_locator(api_client, tmp_path):
+    import json
+    import shutil
+    from tests.fixture_pack import FIXTURE_PACK_IDENTITY, FIXTURE_PACK_SOURCE
+
+    source = tmp_path / "releases" / FIXTURE_PACK_IDENTITY
+    shutil.copytree(FIXTURE_PACK_SOURCE, source)
+    (tmp_path / "aptl.json").write_text(json.dumps({"scenario": {
+        "identity": FIXTURE_PACK_IDENTITY,
+        "pack_directory": f"releases/{FIXTURE_PACK_IDENTITY}",
+    }}))
+    response = api_client.get("/api/scenarios")
+    assert response.status_code == 200
+    assert response.json()[0]["pack"]["id"] == FIXTURE_PACK_IDENTITY
+    assert "releases/" not in response.text
+    assert ".aptl/" not in response.text
+    assert source.is_dir()
+    assert not list((tmp_path / ".aptl").rglob("pack.yaml"))
