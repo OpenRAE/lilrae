@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from aptl.appliance.seat.prereqs import HostPrerequisites
+from aptl.appliance.seat import prereqs
 from aptl.appliance.seat.errors import SeatLauncherError
 from aptl.appliance.seat.prereqs import (
     check_host_prerequisites,
@@ -18,6 +20,21 @@ pytestmark = pytest.mark.skipif(
     hostenv.host_os() != hostenv.OS_LINUX,
     reason="appliance seat launcher prerequisites are Linux-only",
 )
+
+
+@pytest.fixture(autouse=True)
+def _small_host_disk(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the real disk probe report a disk below every requirement.
+
+    A test that does not inject its disk sizes then fails on every host, not
+    only on a CI runner with a small disk (#1439).
+    """
+
+    monkeypatch.setattr(
+        prereqs.shutil,
+        "disk_usage",
+        lambda _path: SimpleNamespace(total=1024**3, used=0, free=1024**3),
+    )
 
 
 def _requirements() -> HostPrerequisites:
@@ -39,6 +56,7 @@ def test_prereqs_pass_with_injected_probes(tmp_path: Path) -> None:
         memory_bytes=32 * 1024**3,
         available_vcpus=16,
         free_disk_bytes=200 * 1024**3,
+        total_disk_bytes=200 * 1024**3,
         kvm_available=True,
         qemu_img_available=True,
         qemu_system_available=True,
@@ -72,6 +90,7 @@ def test_require_host_prerequisites_raises(tmp_path: Path) -> None:
             memory_bytes=1024,
             available_vcpus=16,
             free_disk_bytes=200 * 1024**3,
+            total_disk_bytes=200 * 1024**3,
             kvm_available=True,
             qemu_img_available=True,
             qemu_system_available=True,
@@ -168,6 +187,7 @@ def test_prereqs_use_available_cpu_and_memory_capacity(tmp_path: Path) -> None:
         seat_root=tmp_path,
         memory_bytes=8 * 1024**3,
         free_disk_bytes=200 * 1024**3,
+        total_disk_bytes=200 * 1024**3,
         available_vcpus=4,
         kvm_available=True,
         qemu_img_available=True,
