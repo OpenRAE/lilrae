@@ -24,6 +24,7 @@ The bash script passed invalid configurations silently, causing containers to fa
 - IMPLEMENTS → ADR `docs/adrs/adr-007-python-cli-control-plane.md` (ADR-007: Python CLI Control Plane)
 - IMPLEMENTS → CODE_FILE `src/aptl/core/config.py` (Pydantic configuration models)
 - TESTS → TEST `tests/test_config.py` (Pydantic config model validation tests)
+- TESTS → TEST `tests/test_scenario_source_config.py` (Strict scenario and release-source configuration)
 - IMPLEMENTS → CODE_FILE `src/aptl/cli/config.py` (aptl config validate command)
 - IMPLEMENTS → CODE_FILE `src/aptl/cli/_common.py` (resolve_config_for_cli helper)
 - TESTS → TEST `tests/test_cli_config.py` (CLI config validate/show tests)

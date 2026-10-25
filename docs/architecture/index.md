@@ -170,6 +170,7 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 
 - [Issue #1422 Wazuh Dashboard Config Readability](issue-1422-wazuh-dashboard-config-readability-preflight.md)
 - [Issue #1422 Wazuh Dashboard Owner-Declared Config Design](issue-1422-wazuh-dashboard-owned-config-design.md)
+- [Issue #1413 Configured Pack Source](issue-1413-configured-pack-source-preflight.md)
 - [Issue #955 Generic Systemd Substrate Privilege](issue-955-systemd-substrate-privilege-preflight.md)
 - [Issue #958 Execution Boundary](issue-958-execution-boundary-preflight.md)
 - [Issue #601 Participant Demonstration](issue-601-participant-demonstration-preflight.md)
