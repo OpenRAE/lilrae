@@ -255,7 +255,9 @@ def test_cli_catalog_uses_configured_release(tmp_path, release):
 
 
 @pytest.mark.parametrize("configured", [True, False])
-def test_cli_accepts_a_parent_relative_project(tmp_path, release, monkeypatch, configured):
+def test_cli_accepts_a_parent_relative_project(
+    tmp_path, release, monkeypatch, configured
+):
     from typer.testing import CliRunner
     from aptl.cli.main import app
 
@@ -267,3 +269,38 @@ def test_cli_accepts_a_parent_relative_project(tmp_path, release, monkeypatch, c
     result = CliRunner().invoke(app, ["lab", "scenarios", "--project-dir", ".."])
     assert result.exit_code == 0, result.output
     assert (FIXTURE_PACK_IDENTITY if configured else "techvault") in result.output
+
+
+@pytest.mark.parametrize("linked_staging", [False, True])
+def test_system_temp_alias_preserves_descendant_containment(
+    tmp_path,
+    monkeypatch,
+    linked_staging,
+):
+    from aptl.core.scenario_bundle import env_pack_bundle
+
+    temporary_root = tmp_path / "system-temp"
+    temporary_root.mkdir()
+    alias = tmp_path / "temp-alias"
+    alias.symlink_to(temporary_root, target_is_directory=True)
+    monkeypatch.setattr("tempfile.gettempdir", lambda: str(alias))
+    if linked_staging:
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (temporary_root / "staging").symlink_to(outside, target_is_directory=True)
+        with pytest.raises(EnvPackError):
+            env_pack_bundle(
+                alias / "staging",
+                FIXTURE_PACK_IDENTITY,
+                source_pack=FIXTURE_PACK_SOURCE,
+            )
+        assert list(outside.iterdir()) == []
+    else:
+        bundle = env_pack_bundle(
+            alias / "staging",
+            FIXTURE_PACK_IDENTITY,
+            source_pack=FIXTURE_PACK_SOURCE,
+        )
+        assert bundle.root.is_relative_to(temporary_root)
+        bundle.close()
+        assert not list(temporary_root.rglob("pack.yaml"))

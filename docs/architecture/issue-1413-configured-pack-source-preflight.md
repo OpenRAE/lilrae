@@ -2,8 +2,8 @@
 
 This note guides [issue #1413](https://github.com/OpenRAE/lilrae/issues/1413),
 which blocks #1220. It records design boundaries, not an implementation plan or
-implemented support. The issue is the delivery contract; no Ground Control
-requirement is attached. The inspected baseline is `d7a5328e`.
+implemented support. The issue is the delivery contract; no requirement is
+attached. The inspected baseline is `d7a5328e`.
 
 ## Source selection decision
 

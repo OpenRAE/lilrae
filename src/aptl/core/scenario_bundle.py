@@ -21,6 +21,7 @@ import os
 import re
 import shutil
 import stat
+import tempfile
 import uuid
 from dataclasses import dataclass
 from enum import Enum
@@ -192,6 +193,14 @@ def env_pack_bundle(
         raise EnvPackError("invalid env-pack identity") from exc
     staging_root = Path(staging_root).absolute()
     try:
+        # macOS exposes its system temp root through /var -> /private/var.
+        # Canonicalize that trusted OS anchor only; source and staging
+        # descendants still pass through the no-follow containment walk.
+        temporary_root = Path(tempfile.gettempdir()).absolute()
+        if staging_root.is_relative_to(temporary_root):
+            staging_root = temporary_root.resolve() / staging_root.relative_to(
+                temporary_root
+            )
         if source_pack is not None:
             return _stage_and_validate(Path(source_pack), staging_root, identity)
         resource = _resources.files(package) / "resources" / "packs" / identity
