@@ -107,15 +107,17 @@ def test_staging_symlinks_cannot_redirect_writes(tmp_path, release, component):
     link = tmp_path / component
     link.parent.mkdir(parents=True, exist_ok=True)
     link.symlink_to(outside, target_is_directory=True)
+    config = load_config(tmp_path / "aptl.json")
     with pytest.raises(EnvPackError):
-        resolve_scenario_bundle(tmp_path, None, load_config(tmp_path / "aptl.json"))
+        resolve_scenario_bundle(tmp_path, None, config)
     assert list(outside.iterdir()) == []
 
 
 def test_staging_setup_failure_is_a_bounded_acquisition_error(tmp_path, release):
     (tmp_path / ".aptl").write_text("not a directory")
+    config = load_config(tmp_path / "aptl.json")
     with pytest.raises(EnvPackError) as error:
-        resolve_scenario_bundle(tmp_path, None, load_config(tmp_path / "aptl.json"))
+        resolve_scenario_bundle(tmp_path, None, config)
     assert str(tmp_path) not in str(error.value)
 
 
@@ -137,8 +139,9 @@ def test_staging_swap_cannot_redirect_copy_or_cleanup(tmp_path, release, monkeyp
         original(source, staged)
 
     monkeypatch.setattr(_pack_staging, "copy_pack", swap_and_copy)
+    config = load_config(tmp_path / "aptl.json")
     with pytest.raises(EnvPackError):
-        resolve_scenario_bundle(tmp_path, None, load_config(tmp_path / "aptl.json"))
+        resolve_scenario_bundle(tmp_path, None, config)
     assert sentinel.read_text() == "untouched"
     assert not list((tmp_path / "owned-state").rglob("pack.yaml"))
 
@@ -195,8 +198,10 @@ def test_configured_source_does_not_bypass_required_adapter_admission(
     from aptl.backends.raes import admit_raes_scenario
     from aptl.backends.scenario_capture_discovery import ScenarioCaptureProviderError
 
+    config = load_config(tmp_path / "aptl.json")
+    backend = MagicMock()
     with pytest.raises(ScenarioCaptureProviderError, match="provider-missing"):
-        admit_raes_scenario(tmp_path, load_config(tmp_path / "aptl.json"), MagicMock())
+        admit_raes_scenario(tmp_path, config, backend)
 
 
 def test_release_locator_is_absent_from_run_identity(tmp_path, release):

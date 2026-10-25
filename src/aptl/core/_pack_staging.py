@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import stat
 from pathlib import Path
+from typing import BinaryIO
 
 from aptl.utils.pathsafe import open_contained_nofollow, open_dir_contained_nofollow
 
@@ -69,19 +70,25 @@ def _copy_file(anchor: Path, source: Path, target: Path, remaining: int) -> int:
         parent_fd = open_dir_contained_nofollow(
             target_anchor, target.parent.relative_to(target_anchor), create=True,
         )
-        copied = 0
         try:
             fd = os.open(
                 target.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                 0o600, dir_fd=parent_fd,
             )
             with os.fdopen(fd, "wb") as writer:
-                while chunk := reader.read(min(1024 * 1024, remaining - copied + 1)):
-                    copied += len(chunk)
-                    if copied > remaining:
-                        raise ValueError("source byte budget exceeded")
-                    writer.write(chunk)
+                copied = _copy_bytes(reader, writer, remaining)
                 os.fchmod(writer.fileno(), stat.S_IMODE(info.st_mode) & 0o777)
         finally:
             os.close(parent_fd)
+    return copied
+
+
+def _copy_bytes(reader: BinaryIO, writer: BinaryIO, remaining: int) -> int:
+    """Stream bytes through the already checked handles within the source budget."""
+    copied = 0
+    while chunk := reader.read(min(1024 * 1024, remaining - copied + 1)):
+        copied += len(chunk)
+        if copied > remaining:
+            raise ValueError("source byte budget exceeded")
+        writer.write(chunk)
     return copied

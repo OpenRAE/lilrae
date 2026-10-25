@@ -145,8 +145,9 @@ def test_configured_release_directory_is_loaded(tmp_path):
     ".aptl/staged-packs/pack", ".aptl", "packs\\pack",
 ])
 def test_unsafe_release_locator_is_rejected(tmp_path, directory):
+    config_path = _write(tmp_path, {"scenario": {"pack_directory": directory}})
     with pytest.raises(ValueError):
-        load_config(_write(tmp_path, {"scenario": {"pack_directory": directory}}))
+        load_config(config_path)
 
 
 @pytest.mark.parametrize("selection", [
