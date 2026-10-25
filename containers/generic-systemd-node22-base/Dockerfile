@@ -5,8 +5,9 @@
 # major is part of its contract: Dependabot refreshes the digest but never the
 # major (issue #1193). The slim variant omits the full buildpack toolchain
 # (desktop, media, and kernel-header packages) this substrate never uses.
-FROM node:25-trixie-slim@sha256:aabbe39553d15ede8a97cc60c9e1a97034ff772afcf696ea42b94e7f5f2ec71b
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+FROM node:22.23.4-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
+RUN test "$(node --version)" = "v22.23.4" \
+    && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         systemd systemd-sysv dbus gnupg openssh-server ca-certificates \
         iputils-ping nmap python3 python3-pip curl wget dnsutils netcat-openbsd \

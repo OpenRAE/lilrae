@@ -375,7 +375,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
-          node-version: '22'
+          node-version: '22.23.4'
       - name: aptl-mcp-common — install, build, test
         # `npm run build` runs explicitly before mcp-red copies the build
         # output. The `prepare` script also builds, but ordering across
@@ -470,7 +470,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
-          node-version: '22'
+          node-version: '22.23.4'
       - run: |
           cd web
           npm ci
@@ -495,7 +495,7 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
-          node-version: '22'
+          node-version: '22.23.4'
       - name: pip-audit (Python dependencies) — blocking
         # Generated, hash-pinned exports are the canonical CLI, API, and build
         # closures. No editable install or build hook runs during the scan.
@@ -868,7 +868,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
-          node-version: '22'
+          node-version: '22.23.4'
       - name: Generate svelte-kit tsconfig (sonar reads web/tsconfig.json which extends it)
         run: |
           cd web

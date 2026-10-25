@@ -166,6 +166,7 @@ def test_generated_config_reserves_the_baked_disks_virtual_size(
 def test_bake_uses_the_proven_offline_guest_provisioning() -> None:
     bake = BAKE.read_text()
     provision = PROVISION.read_text()
+    scan = (ROOT / "appliance/guest/scan-golden.sh").read_text()
     first_boot = (ROOT / "appliance/guest/aptl-appliance-first-boot").read_text()
     stage_cleanup = 'rm -rf "$stage"'
 
@@ -175,8 +176,16 @@ def test_bake_uses_the_proven_offline_guest_provisioning() -> None:
     # suppressed during the offline install and enabled for first boot.
     assert "provision-offline.sh" in bake
     assert "acquire-guest-system-packages.sh" in bake
+    assert "acquire-guest-node-runtime.sh" in bake
     assert "system-packages.sha256" in provision
+    assert "node-runtime.sha256" in provision
     assert "policy-rc.d" in provision
+    assert 'test "$(node --version)" = v22.23.4' in provision
+    assert "/opt/node-v22.23.4-linux-x64" in provision
+    assert 'chown -R root:root "$node_root"' in provision
+    assert 'chmod -R a+rX "$node_root"' in provision
+    assert 'test "$(/usr/local/bin/node --version)" = v22.23.4' in scan
+    assert "/usr/local/bin/npm --version" in scan
     assert "systemctl enable docker.service" in provision
     assert "lilrae-*.whl" in provision
     assert "aptl_labs" not in provision
@@ -189,12 +198,16 @@ def test_bake_uses_the_proven_offline_guest_provisioning() -> None:
     assert "guest_services surfaces" not in first_boot
     desktop = yaml.safe_load((ROOT / "appliance/guest/desktop-compose.yml").read_text())
     assert desktop["services"]["gateway"]["ports"] == ["127.0.0.1:8080:80"]
-    assert all("ports" not in desktop["services"][name]
-               for name in ("guacamole", "guacd", "database"))
+    assert all(
+        "ports" not in desktop["services"][name]
+        for name in ("guacamole", "guacd", "database")
+    )
     assert "APTL_WEB_LAUNCH_TOKEN" not in first_boot
     assert "APTL_API_TOKEN" not in first_boot
     assert "start-seat-desktop" in first_boot
-    assert first_boot.index("seat-privileges.py") < first_boot.index("start-seat-desktop")
+    assert first_boot.index("seat-privileges.py") < first_boot.index(
+        "start-seat-desktop"
+    )
     assert "usermod --append --groups docker aptl" not in provision
     assert "gpasswd --delete aptl docker" in provision
     assert "gpasswd --delete aptl sudo" in provision
@@ -205,6 +218,7 @@ def test_bake_uses_the_proven_offline_guest_provisioning() -> None:
     from aptl.appliance.loopback_proxy import build_proxy_bindings
     from aptl.appliance.policy import full_techvault_boundary_policy
     from aptl.appliance.seat.vm import DEFAULT_QEMU_GUEST_ADDRESS
+
     bindings = build_proxy_bindings(
         full_techvault_boundary_policy(), adapter_address=DEFAULT_QEMU_GUEST_ADDRESS
     )
@@ -253,10 +267,10 @@ def test_bake_uses_checkout_config_writer_and_configured_disk_scan() -> None:
     bake = BAKE.read_text()
     assert '"$source_root/scripts/appliance/write-seat-image-config.py"' in bake
     assert '--disk "$disk"' in bake
-    assert 'APTL_SEAT_DISK_GIB=$disk_gib /tmp/scan-golden.sh' in bake
+    assert "APTL_SEAT_DISK_GIB=$disk_gib /tmp/scan-golden.sh" in bake
     scan = (ROOT / "appliance/guest/scan-golden.sh").read_text()
-    assert 'expected_disk_gib=${APTL_SEAT_DISK_GIB:-128}' in scan
-    assert 'expected_disk_gib * 1024 * 1024 * 1024 * 19 / 20' in scan
+    assert "expected_disk_gib=${APTL_SEAT_DISK_GIB:-128}" in scan
+    assert "expected_disk_gib * 1024 * 1024 * 1024 * 19 / 20" in scan
 
 
 def _wheel_requirement_writer() -> str:
@@ -305,7 +319,12 @@ def test_seat_image_runs_lilrae_and_keeps_the_deprecated_alias_launchers() -> No
     """New images call ``lilrae``; ``aptl`` launchers stay until 10.0.0 (#1402)."""
 
     provision = PROVISION.read_text()
-    for name in ("lilrae", "lilrae-misp-suricata-sync", "aptl", "aptl-misp-suricata-sync"):
+    for name in (
+        "lilrae",
+        "lilrae-misp-suricata-sync",
+        "aptl",
+        "aptl-misp-suricata-sync",
+    ):
         assert f"cat > /usr/local/bin/{name} <<'EOF'" in provision
         # Each launcher runs its own console script, so the alias keeps its
         # deprecation notice instead of silently becoming ``lilrae``.

@@ -57,6 +57,8 @@ test -f "$payload_dir/aptl-appliance-first-boot.service"
 test -f "$payload_dir/aptl-launch.mount"
 test -d "$payload_dir/system-packages"
 test -f "$payload_dir/system-packages.sha256"
+test -d "$payload_dir/node-runtime"
+test -f "$payload_dir/node-runtime.sha256"
 test -f "$payload_dir/claude-runtime.tar"
 for filename in desktop-compose.yml desktop-nginx.conf seat-desktop.py seat-privileges.py desktop-handoff.py desktop-mcp-smoke.py desktop-session.sh guac-schema.sql participant-hosts.py participant-desktop-open.sh; do
     test -f "$payload_dir/$filename"
@@ -128,6 +130,62 @@ dpkg --unpack "$payload_dir"/system-packages/*.deb
 dpkg --configure --pending
 rm -f /usr/sbin/policy-rc.d
 systemctl enable docker.service
+
+# Install the separately locked, upstream-signed Node.js runtime. Acquisition
+# verifies the Node.js release signature; the signed offline payload and this
+# byte lock preserve that identity across the network-free guest boundary.
+(cd "$payload_dir/node-runtime" && \
+    sha256sum --check --strict ../node-runtime.sha256)
+node_archive="$payload_dir/node-runtime/node-v22.23.4-linux-x64.tar.xz"
+node_root=/opt/node-v22.23.4-linux-x64
+test -f "$node_archive"
+test ! -e "$node_root"
+python3 - "$node_archive" <<'PYTHON'
+import pathlib
+import posixpath
+import sys
+import tarfile
+
+expected_root = "node-v22.23.4-linux-x64"
+with tarfile.open(sys.argv[1], "r:xz") as archive:
+    members = archive.getmembers()
+    if (
+        not members
+        or len(members) > 10_000
+        or sum(item.size for item in members) > 1024**3
+    ):
+        raise SystemExit("invalid Node.js runtime archive limits")
+    seen = set()
+    for item in members:
+        path = pathlib.PurePosixPath(item.name)
+        if (
+            path.is_absolute()
+            or not path.parts
+            or path.parts[0] != expected_root
+            or any(part in {"", ".", ".."} for part in path.parts)
+            or item.name in seen
+            or not (item.isfile() or item.isdir() or item.issym())
+        ):
+            raise SystemExit("unsafe Node.js runtime archive member")
+        seen.add(item.name)
+        if item.issym():
+            if pathlib.PurePosixPath(item.linkname).is_absolute():
+                raise SystemExit("absolute Node.js runtime symlink")
+            target = pathlib.PurePosixPath(
+                posixpath.normpath(str(path.parent / item.linkname))
+            )
+            if not target.parts or target.parts[0] != expected_root:
+                raise SystemExit("escaping Node.js runtime symlink")
+    archive.extractall(path="/opt", members=members, filter="data")
+PYTHON
+chown -R root:root "$node_root"
+chmod -R a+rX "$node_root"
+for command in node npm npx corepack; do
+    test ! -e "/usr/local/bin/$command"
+    ln -s "$node_root/bin/$command" "/usr/local/bin/$command"
+done
+test "$(node --version)" = v22.23.4
+
 install -d -m 0755 /opt/aptl/claude
 tar --extract --file "$payload_dir/claude-runtime.tar" \
     --directory /opt/aptl/claude --no-same-owner

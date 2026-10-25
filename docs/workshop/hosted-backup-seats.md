@@ -94,7 +94,7 @@ user data, a participant handout, or the seat-state directory.
 | Amazon DCV | `nice-dcv-server` and `nice-dcv-web-viewer` `2025.0.20103-1` |
 | Caddy | `2.11.4` |
 | Docker | Engine `29.6.2`, Compose plugin `5.3.1` |
-| Host Node.js | `20.20.2` |
+| Host Node.js | `22.23.4` |
 | Coding agent | Claude Code `2.1.220` |
 | Working APTL payload | commit `e9373f5bec57b2c315c4a9c5d7ab837983b19595` |
 | Wazuh certificate helper | `config/wazuh-certs-tool.sh` from commit `ec54ee2da2cd59c58eb17f1dd7737483901b1838` |
@@ -424,14 +424,14 @@ ssh -i "$KEY_DIR/operator" ubuntu@"$PUBLIC_IP" '
   set -e
   cd /tmp
   curl -fLO \
-    https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz
+    https://nodejs.org/dist/v22.23.4/node-v22.23.4-linux-x64.tar.xz
   printf "%s  %s\n" \
-    df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d \
-    node-v20.20.2-linux-x64.tar.xz | sha256sum --check
-  sudo tar -xJf node-v20.20.2-linux-x64.tar.xz -C /opt
-  sudo ln -s /opt/node-v20.20.2-linux-x64/bin/node /usr/local/bin/node
-  sudo ln -s /opt/node-v20.20.2-linux-x64/bin/npm /usr/local/bin/npm
-  sudo ln -s /opt/node-v20.20.2-linux-x64/bin/npx /usr/local/bin/npx
+    1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce \
+    node-v22.23.4-linux-x64.tar.xz | sha256sum --check
+  sudo tar -xJf node-v22.23.4-linux-x64.tar.xz -C /opt
+  sudo ln -s /opt/node-v22.23.4-linux-x64/bin/node /usr/local/bin/node
+  sudo ln -s /opt/node-v22.23.4-linux-x64/bin/npm /usr/local/bin/npm
+  sudo ln -s /opt/node-v22.23.4-linux-x64/bin/npx /usr/local/bin/npx
   node --version
   npm --version
 '
