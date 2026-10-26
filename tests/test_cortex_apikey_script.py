@@ -68,9 +68,13 @@ for line in sys.stdin.read().splitlines():
 method = config.get("request", "POST" if "data" in config else "GET")
 path = config["url"].split("://", 1)[1].split("/", 1)[1]
 path = "/" + path
-bearer = next((h.split("Bearer ", 1)[1] for h in config["header"] if h.startswith("Authorization: Bearer ")), None)
+bearer = next(
+    (h.split("Bearer ", 1)[1] for h in config["header"] if h.startswith("Authorization: Bearer ")),
+    None,
+)
 cookie = config.get("cookie")
-session = bool(cookie) and host_path(cookie).exists() and "LOGGED-IN" in host_path(cookie).read_text()
+jar = host_path(cookie) if cookie else None
+session = jar is not None and jar.exists() and "LOGGED-IN" in jar.read_text()
 anonymous_open = not state["users"]
 caller = {u: v for u, v in state["users"].items() if bearer and v.get("key") == bearer}
 identity = next(iter(caller), None)
@@ -129,7 +133,8 @@ if path == "/api/user" and method == "POST":
     save()
     reply(201, {})
 if path.startswith("/api/user/") and method == "GET":
-    reply(200 if path.endswith("thehive%40cortex.local") and "thehive@cortex.local" in state["users"] else 404, {})
+    exists = path.endswith("thehive%40cortex.local") and "thehive@cortex.local" in state["users"]
+    reply(200 if exists else 404, {})
 if path == "/api/analyzerdefinition/scan":
     reply(204)
 if path == "/api/analyzerdefinition":
@@ -141,12 +146,15 @@ if path.startswith("/api/organization/analyzer/"):
 if path == "/api/analyzer":
     if identity is None:
         reply(401)
-    reply(200, [{"analyzerDefinitionId": "TechVaultScenarioContext_1_0"}] if state.get("analyzer") else [])
+    enabled = [{"analyzerDefinitionId": "TechVaultScenarioContext_1_0"}]
+    reply(200, enabled if state.get("analyzer") else [])
 reply(404)
 '''
 
 
-def _run_seed(tmp_path: Path, *, existing_administrator: bool, secret: str | None) -> tuple[subprocess.CompletedProcess, list[str]]:
+def _run_seed(
+    tmp_path: Path, *, existing_administrator: bool, secret: str | None
+) -> tuple[subprocess.CompletedProcess, list[str]]:
     """Run the real seed script against the simulated Cortex."""
 
     fake_bin = tmp_path / "bin"
