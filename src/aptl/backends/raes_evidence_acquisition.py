@@ -206,7 +206,6 @@ def mark_transcript_finalization_failed(
     """Retain an auditable terminal marker when teardown cannot seal capture."""
 
     run_id = str(state["run_id"])
-    scope = capture_run_scope(capture_selection.context, run_id, plan_id, "teardown")
     plan_id = str(state["capture_plan_id"])
     name = f"{run_id}.json"
     active = json.loads(
@@ -359,6 +358,7 @@ def finalize_active_transcript_authority(
     transcript_id = binding.registration_id
     plan_id = binding.capture_spec_id
     run_id = str(state["run_id"])
+    scope = capture_run_scope(capture_selection.context, run_id, plan_id, "teardown")
     active_clock = clock or SystemClockProvider()
     payload, activated_at = _validated_activation_time(
         _export_transcript_payload(backend, store_base, run_id, binding),
