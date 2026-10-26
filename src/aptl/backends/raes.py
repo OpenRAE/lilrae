@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -22,7 +21,10 @@ from aptl.core.experiment.errors import AdmissionRejection
 from aptl.core.experiment.capture_plan import empty_capture_plan
 
 from aptl.backends._raes_apply_helpers import (
+    _blocked_plan_outcome,
     _drive_orchestrator_workflows,
+    _is_retryable_apply_failure,
+    _release_failed_attempt,
     _with_backend_failure_diagnostics,
 )
 from aptl.backends._raes_scenario_resolution import (
@@ -79,7 +81,6 @@ from aptl.core.scenario_bundle import (
     ScenarioBundle,
 )
 from aptl.core.lab_types import LabResult
-from aptl.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from raes_processor.models import ExecutionPlan
@@ -88,13 +89,10 @@ if TYPE_CHECKING:
     from aptl.core.deployment.backend import DeploymentBackend
     from aptl.core.runstore import RunStorageBackend
 
-log = get_logger("raes-backend")
 
 # Keep the long-standing module seam used by runtime handoff tests and callers,
 # while routing real planning through the narrow compatibility subclass.
 RuntimeManager = AptlRuntimeManager
-
-_RETRYABLE_APPLY_DIAGNOSTIC_CODES = frozenset({"aptl.provisioner.backend-start-failed"})
 
 
 def create_aptl_runtime_target(
@@ -385,36 +383,6 @@ def _apply_with_backend_retry(
     return outcome
 
 
-def _release_failed_attempt(outcome: AcesStartOutcome) -> AcesStartOutcome | None:
-    """Close the failed attempt's manager so the retry can own the target.
-
-    RAES lets one live manager own a target's components, and the retry builds
-    a new manager from the admitted base snapshot (issue #1424). A manager that
-    does not close keeps that ownership, so the start fails with the first
-    failure instead of a retry that cannot own the target.
-    """
-
-    manager = outcome.runtime_manager
-    if manager is None:
-        return None
-    try:
-        manager.close()
-    except (RuntimeError, TimeoutError) as exc:
-        log.warning("Backend retry stopped: the failed runtime manager did not close")
-        return replace(
-            outcome,
-            lab_result=LabResult(
-                success=False,
-                error=(
-                    f"{outcome.lab_result.error}\nAutomatic retry stopped: the "
-                    f"failed attempt's runtime manager did not close ({exc})."
-                ),
-            ),
-            retryable=False,
-        )
-    return None
-
-
 def _run_execution_plan(
     target: RuntimeTarget,
     execution_plan: "ExecutionPlan",
@@ -431,17 +399,9 @@ def _run_execution_plan(
     backend adapters record portable contract state and RAES runs its own SEM-218
     realization gate over the result.
     """
-    blocking = [diag for diag in execution_plan.diagnostics if diag.is_error]
-    if blocking:
-        return AcesStartOutcome(
-            lab_result=LabResult(
-                success=False, error=render_raes_diagnostics(blocking)
-            ),
-            final_snapshot=RuntimeSnapshot(),
-            realization_details={},
-            selected_profiles=[],
-            scenario_path=scenario_path,
-        )
+    blocked = _blocked_plan_outcome(execution_plan, scenario_path)
+    if blocked is not None:
+        return blocked
     (
         realization_details,
         selected_profiles,
@@ -522,10 +482,7 @@ def _apply_execution_plan(
                 error=render_raes_diagnostics(diagnostics),
             ),
             snapshot,
-            any(
-                diagnostic.code in _RETRYABLE_APPLY_DIAGNOSTIC_CODES
-                for diagnostic in diagnostics
-            ),
+            _is_retryable_apply_failure(diagnostics),
             manager,
         )
     evaluation_results = collect_evaluation_results(target, execution_plan)
