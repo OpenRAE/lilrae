@@ -168,6 +168,7 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 
 ## Preflights
 
+- [Issue #1406 Native Evidence Test Target](issue-1406-native-evidence-test-target-preflight.md)
 - [Issue #1424 Runtime Retry Ownership](issue-1424-runtime-retry-preflight.md)
 - [Issue #1424 Runtime Retry Ownership Design](issue-1424-runtime-retry-ownership-design.md)
 - [Issue #1423 Shuffle Startup Recovery](issue-1423-shuffle-startup-readiness-preflight.md)
