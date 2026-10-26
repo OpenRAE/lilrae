@@ -273,6 +273,8 @@ docs/architecture/issue-1406-native-evidence-test-target-preflight.md	architectu
 docs/architecture/issue-1409-node-runtime-security-preflight.md	architecture-history	Preserve issue 1409 runtime security decisions and supply chain guardrails
 docs/architecture/issue-1422-wazuh-dashboard-config-readability-preflight.md	architecture-history	Preserve issue 1422 dashboard config delivery guardrails
 docs/architecture/issue-1422-wazuh-dashboard-owned-config-design.md	architecture-history	Preserve issue 1422 dashboard owner-declared config design
+docs/architecture/issue-1424-runtime-retry-ownership-design.md	architecture-history	Preserve issue 1424 runtime retry ownership design
+docs/architecture/issue-1424-runtime-retry-preflight.md	architecture-history	Preserve issue 1424 runtime retry ownership guardrails
 docs/architecture/issue-550-soc-selected-profile-preflight.md	docs-follow-owner	Separate current user guidance from historical evidence and scenario-pack-specific docs
 docs/architecture/issue-557-participant-implementation-binding-preflight.md	docs-follow-owner	Separate current user guidance from historical evidence and scenario-pack-specific docs
 docs/architecture/issue-589-scenario-pack-capture-ownership-preflight.md	docs-follow-owner	Separate current user guidance from historical evidence and scenario-pack-specific docs
