@@ -11,8 +11,9 @@ An unobserved concern is still removed where the plan admits realization
 authority, so RAES's gate never compares the plan with itself (issue #578).
 Where a credential-bearing plan closes the concern or grants no authority at
 that address, RAES reads no observation and the value is the plan's, carried
-through like a name. Any other plan keeps every unobserved concern removed
-(ADR-046).
+through like a name. Source-image evidence stays out of the entries, because
+the contract admits no backend evidence there. Any other plan keeps every
+unobserved concern removed and keeps the evidence (ADR-046).
 """
 
 from __future__ import annotations
@@ -66,6 +67,7 @@ _PORTS = CONCERN_PAYLOAD_PATH["published-ports"]
 _CAPABILITIES = CONCERN_PAYLOAD_PATH["linux-capabilities"]
 _COMPONENTS = CONCERN_PAYLOAD_PATH["runtime-software-components"]
 _PAYLOAD_MISMATCH = "credential-bearing backend payload does not match the submitted plan"
+_SOURCE_IMAGE = {"verified": True, "selected_digest": "sha256:" + "0" * 64}
 
 
 def _payload() -> dict[str, object]:
@@ -86,12 +88,14 @@ def _payload() -> dict[str, object]:
     }
 
 
-def _authority(kind: str, mode: RealizationAuthorityMode) -> ResolvedRealizationAuthority:
+def _authority(
+    kind: str, mode: RealizationAuthorityMode, address: str = _NODE
+) -> ResolvedRealizationAuthority:
     path = CONCERN_PAYLOAD_PATH[kind]
     exact = mode is RealizationAuthorityMode.EXACT
     return ResolvedRealizationAuthority(
-        address=_NODE,
-        field_path="nodes.vm." + ".".join(path[2:] or path),
+        address=address,
+        field_path=f"nodes.{address.rsplit('.', 1)[-1]}." + ".".join(path[2:] or path),
         domain="runtime-realization",
         requirement_kind=kind,
         payload_pointer="/" + "/".join(path),
@@ -189,6 +193,21 @@ def test_unobserved_concern_keeps_the_plan_value_only_outside_admitted_authority
     assert concern_value(entry.payload, _PACKAGES) is MISSING_CONCERN_VALUE
 
 
+def test_a_node_without_authority_keeps_every_unobserved_plan_value():
+    """Authority elsewhere in the plan admits nothing at this address."""
+
+    other = _operation("provision.node.other", "node", _payload())
+    plan = _plan(
+        [_operation(_NODE, "node", _payload()), other, _account_operation()],
+        _authority("runtime-environment", RealizationAuthorityMode.OPEN, other.address),
+    )
+
+    entry = _entry(plan, ObservedResource(realized=True))
+
+    for path in (_DNS, _ENVIRONMENT, _PACKAGES, _TOPOLOGY):
+        assert concern_value(entry.payload, path) == concern_value(_payload(), path)
+
+
 def test_an_observed_value_is_reported_even_where_the_plan_closes_the_concern():
     observed = ObservedResource(realized=True, concerns={_DNS: [{"name": "named"}]})
 
@@ -212,6 +231,17 @@ def test_other_plans_remove_every_unobserved_concern(plan):
 
     for path in (_DNS, _ENVIRONMENT, _PACKAGES, _TOPOLOGY):
         assert concern_value(entry.payload, path) is MISSING_CONCERN_VALUE
+
+
+@pytest.mark.parametrize("credentials", [True, False])
+def test_source_image_evidence_enters_an_entry_only_without_credentials(credentials):
+    """The run outcome keeps the evidence either way (``closed_credential_result``)."""
+
+    observed = ObservedResource(realized=True, evidence={"source_image": _SOURCE_IMAGE})
+
+    entry = _entry(_closed_and_open_plan(credentials=credentials), observed)
+
+    assert ("backend_evidence" in entry.payload) is not credentials
 
 
 @pytest.mark.parametrize("status", ["applied", "unchanged"])
@@ -277,6 +307,21 @@ def test_a_result_that_observes_the_plan_passes_the_closed_contract():
     assert _closure_refusal(_credential_plan(), observations) is None
 
 
+def test_a_catalog_image_node_passes_the_closed_contract():
+    """RAES admits no ``backend_evidence`` key in a credential-bearing entry."""
+
+    observations = {
+        _NODE: ObservedResource(
+            realized=True,
+            concerns={_NODE_TYPE: "vm"},
+            evidence={"source_image": _SOURCE_IMAGE},
+        ),
+        _ACCOUNT: ObservedResource(realized=True),
+    }
+
+    assert _closure_refusal(_credential_plan(), observations) is None
+
+
 @pytest.fixture(scope="module")
 def techvault_plan(tmp_path_factory) -> ProvisioningPlan:
     """Plan the installed TechVault pack, whose SOC logins carry credentials."""
@@ -320,19 +365,22 @@ def _admitted(plan: ProvisioningPlan) -> dict[str, set[str]]:
     return admitted
 
 
-def _observed_choice(path: tuple[str, ...], planned: object) -> object:
-    """Observe the plan's value, or a capability choice where it declares none."""
+def _observed_value(path: tuple[str, ...], planned: object, *, differ: bool) -> object:
+    """Observe the plan's value, or (``differ``) a capability choice for ``null``."""
 
-    if planned is None and path == _CAPABILITIES:
+    if differ and planned is None and path == _CAPABILITIES:
         return RuntimeCapabilityPolicy(add=["CAP_NET_ADMIN"]).model_dump(mode="json")
     return deepcopy(planned)
 
 
-def _differing_observations(plan: ProvisioningPlan) -> dict[str, ObservedResource]:
-    """Observe every admitted concern; reorder one collection; choose open values.
+def _observations(
+    plan: ProvisioningPlan, *, differ: bool
+) -> dict[str, ObservedResource]:
+    """Observe every admitted concern the plan gives a value.
 
-    The choices are an OPEN capability policy where the plan has ``null`` and
-    OPEN published ports under a ``null`` network parent.
+    ``differ`` reorders one collection and makes the backend's OPEN choices: a
+    capability policy where the plan has ``null`` and published ports under a
+    ``null`` network parent. Otherwise every observation equals the plan.
     """
 
     admitted = _admitted(plan)
@@ -343,10 +391,12 @@ def _differing_observations(plan: ProvisioningPlan) -> dict[str, ObservedResourc
             path = CONCERN_PAYLOAD_PATH.get(kind)
             planned = concern_value(resource.payload, path) if path else MISSING_CONCERN_VALUE
             if planned is not MISSING_CONCERN_VALUE:
-                concerns[path] = _observed_choice(path, planned)
-            elif kind == "published-ports":
+                concerns[path] = _observed_value(path, planned, differ=differ)
+            elif differ and kind == "published-ports":
                 concerns[path] = []
         observations[address] = ObservedResource(realized=True, concerns=concerns)
+    if not differ:
+        return observations
     reordered = next(
         observed.concerns
         for observed in observations.values()
@@ -361,15 +411,15 @@ def test_differing_observations_are_admitted_once_raes_carries_rae_1640(
 ):
     """raes 7.0.0 compares the whole payload; rae#1640 admits observed concerns.
 
-    On 7.0.0 the only refusal left is that payload comparison, which shows that
-    all 132 entry statuses already pass.
+    On 7.0.0, observations equal to the plan pass, so every entry status and
+    plan-owned value does; only the differing observations are refused.
     """
 
-    observations = _differing_observations(techvault_plan)
-
-    refusal = _closure_refusal(techvault_plan, observations)
+    refusal = _closure_refusal(techvault_plan, _observations(techvault_plan, differ=True))
 
     if hasattr(raes_planner, "realization_payload_projections"):
         assert refusal is None
     else:
+        equal = _observations(techvault_plan, differ=False)
+        assert _closure_refusal(techvault_plan, equal) is None
         assert refusal == _PAYLOAD_MISMATCH

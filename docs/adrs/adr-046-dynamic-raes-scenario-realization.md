@@ -741,23 +741,48 @@ The manifest therefore advertises `credential_bindings` and `auth_method`.
 
 RAES gives a plan with account credential bindings a closed result contract
 (RAES `specs/sdl/account-credential-bindings.md`, section 6). RAES checks each
-returned entry against the submitted operation and rebuilds the accepted entry
-from the plan. The provisioner's snapshot follows that contract:
+returned entry against the submitted operation, and every returned value must
+equal the plan's. raes 7.0.0 compares the whole payload and keeps the plan's
+entry. raes 8.0.0 (OpenRAE/rae#1640) exempts an observed value at an admitted
+concern path from that comparison and keeps a safe projection of the observed
+value. The provisioner's snapshot follows that contract:
 
 - Each entry status names what the backend did with its operation: `applied`,
   or `unchanged` for an unchanged operation. The evaluator reads both, and the
   RAES default `ready`, as a realized node.
 - An unobserved concern that the plan admits at that address (an open,
   constrained or exact authority, or a planned constraint) is still omitted, as
-  the Runtime Service and SEM-218 Execution Addendum requires.
-- An unobserved concern that the plan closes, or that has no authority at that
-  address, keeps the plan's value. RAES reads no observation there: it accepts
-  a closed concern when it is absent or equal to the plan, and the closed
-  result contract requires the plan's value. This is a reconciliation
-  requirement under which snapshot assembly may keep a plan value. It does not
-  claim an observation.
+  the Runtime Service and SEM-218 Execution Addendum requires. If the plan has
+  a value at that path, even `null`, the entry then differs from the plan and
+  RAES refuses the whole result. A credential-bearing start therefore fails
+  unless the backend observes every admitted concern that has a plan value.
+- An entry carries no `backend_evidence`, because the contract admits no
+  backend evidence key in an entry. The run outcome still carries the
+  source-image evidence.
 - A plan without account credential bindings keeps every unobserved concern
-  omitted.
+  omitted and keeps source-image evidence in its entries.
+
+### Exception to the #692 rule
+
+The Runtime Service and SEM-218 Execution Addendum says that APTL must not read
+a concern back from the plan, and that an unobserved concern does not fall back
+to the plan. It allows a plan value only in a non-concern field that the RAES
+reconciliation contract requires. This addendum makes one narrow exception at
+concern paths:
+
+- It applies only to a plan with account credential bindings and realization
+  authority.
+- It covers only a concern path that the plan closes, or that has no authority
+  at that address. RAES reads no observation there. Its closed-concern check
+  gives the same result whether the value is absent or equal to the plan, and
+  the closed result contract requires the plan's value.
+- There the snapshot keeps the plan's value. That value claims no
+  observation: it gets no observation disclosure and no realization
+  provenance.
+- An observed value always replaces the plan's. A closed concern observed with
+  a different value is still refused.
+
+Every other concern path, and every other plan, keeps the #692 rule.
 
 ## Owner-Declared Image Content Addendum
 

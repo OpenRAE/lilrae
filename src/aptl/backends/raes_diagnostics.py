@@ -159,7 +159,8 @@ def snapshot_after_apply(
 
     Each entry's status names what the backend did with its operation. For a
     plan with account credentials, RAES's closed result contract also requires
-    every value outside an admitted concern to equal the plan's (ADR-046).
+    every value outside an admitted concern to equal the plan's, and admits no
+    backend evidence in an entry (ADR-046).
     """
     entries = dict(snapshot.entries)
     actions = {op.address: op.action for op in plan.operations}
@@ -167,6 +168,7 @@ def snapshot_after_apply(
         if op.action == ChangeAction.DELETE:
             entries.pop(op.address, None)
     admitted = _admitted_concern_kinds(plan)
+    evidence = not plan_has_account_credentials(plan)
     for address, resource in plan.resources.items():
         observed = observations.get(address)
         if observed is None or not observed.realized:
@@ -181,6 +183,7 @@ def snapshot_after_apply(
                 observed,
                 resource.resource_type,
                 None if admitted is None else admitted.get(address, frozenset()),
+                evidence=evidence,
             ),
             ordering_dependencies=resource.ordering_dependencies,
             refresh_dependencies=resource.refresh_dependencies,
@@ -252,15 +255,19 @@ def _admitted_concern_kinds(
 ) -> dict[str, frozenset[str]] | None:
     """Return, per address, the concern kinds whose realized value RAES reads.
 
-    Only a plan with account credentials needs this: RAES rebuilds its accepted
-    entries from the plan and requires every value outside these concerns to
-    equal the plan's. They are the plan's open, constrained and exact
-    authorities and its planned constraints. A closed concern, or one with no
-    authority at an address, is plan-owned: RAES accepts it absent or equal to
-    the plan and reads no observation from it. ``None`` keeps every unobserved
-    concern removed, for any other plan and for a plan without realization
-    authority, whose admission comes from a compiled model the backend never
-    sees.
+    Only a plan with account credentials needs this: RAES requires every
+    returned value outside these concerns to equal the plan's. They are the
+    plan's open, constrained and exact authorities and its planned constraints
+    (RAES plans constraints only for ``compute-substrate`` today, which APTL
+    does not write; a wider one must never echo the plan). A closed concern, or
+    one with no authority at an address, is plan-owned: RAES accepts it absent
+    or equal to the plan and reads no observation from it. RAES also reads
+    compiled requirements that are not in the plan; its authority completeness
+    check gives every registry concern that applies to an operation a plan
+    authority, so they admit no concern outside these. ``None`` keeps every
+    unobserved concern removed, for any other plan and for a plan without
+    realization authority, whose admission comes from a compiled model the
+    backend never sees.
     """
 
     if not (plan.realization_authority and plan_has_account_credentials(plan)):
@@ -298,6 +305,8 @@ def _observed_payload(
     observed: ObservedResource,
     resource_type: str,
     admitted_kinds: frozenset[str] | None,
+    *,
+    evidence: bool,
 ) -> dict[str, object]:
     """Return the planned payload with realization concerns replaced by reality.
 
@@ -307,7 +316,8 @@ def _observed_payload(
     an admitted concern the backend could not be seen to realize is removed
     entirely rather than left echoing the plan. An unobserved concern outside
     ``admitted_kinds`` is plan-owned like a name and keeps the plan's value;
-    ``None`` admits every concern.
+    ``None`` admits every concern. Source-image evidence is added only when
+    ``evidence`` is set; otherwise the run outcome alone carries it.
     """
 
     payload = deepcopy(dict(planned_payload))
@@ -339,7 +349,7 @@ def _observed_payload(
         elif admitted_kinds is None or kind in admitted_kinds:
             _pop_path(payload, path)
     source_image = observed.evidence.get("source_image")
-    if isinstance(source_image, dict):
+    if evidence and isinstance(source_image, dict):
         payload["backend_evidence"] = {"source_image": deepcopy(source_image)}
     return payload
 
