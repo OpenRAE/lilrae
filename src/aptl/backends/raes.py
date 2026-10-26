@@ -21,7 +21,10 @@ from aptl.core.experiment.errors import AdmissionRejection
 from aptl.core.experiment.capture_plan import empty_capture_plan
 
 from aptl.backends._raes_apply_helpers import (
+    _blocked_plan_outcome,
     _drive_orchestrator_workflows,
+    _is_retryable_apply_failure,
+    _release_failed_attempt,
     _with_backend_failure_diagnostics,
 )
 from aptl.backends._raes_scenario_resolution import (
@@ -78,7 +81,6 @@ from aptl.core.scenario_bundle import (
     ScenarioBundle,
 )
 from aptl.core.lab_types import LabResult
-from aptl.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from raes_processor.models import ExecutionPlan
@@ -87,13 +89,10 @@ if TYPE_CHECKING:
     from aptl.core.deployment.backend import DeploymentBackend
     from aptl.core.runstore import RunStorageBackend
 
-log = get_logger("raes-backend")
 
 # Keep the long-standing module seam used by runtime handoff tests and callers,
 # while routing real planning through the narrow compatibility subclass.
 RuntimeManager = AptlRuntimeManager
-
-_RETRYABLE_APPLY_DIAGNOSTIC_CODES = frozenset({"aptl.provisioner.backend-start-failed"})
 
 
 def create_aptl_runtime_target(
@@ -285,17 +284,22 @@ def admit_raes_scenario(
             ),
         ),
     )
+    # RAES lets one live manager own the target. Apply builds its own manager,
+    # so the planning manager ends its ownership here (issue #1424).
     runtime_manager = RuntimeManager(target)
-    execution_plan = plan_aptl_scenario(
-        target=target,
-        bundle=bundle,
-        scenario=scenario,
-        options=AptlPlanningOptions(
-            parameters=dict(parameters) if parameters is not None else None,
-            artifact_availability=availability,
-            runtime_manager=runtime_manager,
-        ),
-    )
+    try:
+        execution_plan = plan_aptl_scenario(
+            target=target,
+            bundle=bundle,
+            scenario=scenario,
+            options=AptlPlanningOptions(
+                parameters=dict(parameters) if parameters is not None else None,
+                artifact_availability=availability,
+                runtime_manager=runtime_manager,
+            ),
+        )
+    finally:
+        runtime_manager.close()
     provisioner = target.provisioner
     realization = (
         provisioner.realize_plan(execution_plan.provisioning)
@@ -365,6 +369,9 @@ def _apply_with_backend_retry(
         run_id=run_id,
     )
     if outcome.retryable and before_backend_retry is not None:
+        release_failure = _release_failed_attempt(outcome)
+        if release_failure is not None:
+            return release_failure
         before_backend_retry()
         return _run_execution_plan(
             target,
@@ -392,17 +399,9 @@ def _run_execution_plan(
     backend adapters record portable contract state and RAES runs its own SEM-218
     realization gate over the result.
     """
-    blocking = [diag for diag in execution_plan.diagnostics if diag.is_error]
-    if blocking:
-        return AcesStartOutcome(
-            lab_result=LabResult(
-                success=False, error=render_raes_diagnostics(blocking)
-            ),
-            final_snapshot=RuntimeSnapshot(),
-            realization_details={},
-            selected_profiles=[],
-            scenario_path=scenario_path,
-        )
+    blocked = _blocked_plan_outcome(execution_plan, scenario_path)
+    if blocked is not None:
+        return blocked
     (
         realization_details,
         selected_profiles,
@@ -483,10 +482,7 @@ def _apply_execution_plan(
                 error=render_raes_diagnostics(diagnostics),
             ),
             snapshot,
-            any(
-                diagnostic.code in _RETRYABLE_APPLY_DIAGNOSTIC_CODES
-                for diagnostic in diagnostics
-            ),
+            _is_retryable_apply_failure(diagnostics),
             manager,
         )
     evaluation_results = collect_evaluation_results(target, execution_plan)

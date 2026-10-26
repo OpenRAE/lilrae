@@ -576,6 +576,9 @@ class _FakeRuntimeManager:
             self.target, execution_plan, self._initial_snapshot
         )
 
+    def close(self):
+        """Match the real manager, which admission and retry close."""
+
 
 def test_create_aptl_manifest_is_canonical_backend_manifest_v2():
     from raes_backend_protocols.capabilities import BackendManifest
@@ -2087,6 +2090,143 @@ def test_start_raes_scenario_retries_soc_apply_without_replanning(mocker, tmp_pa
     assert calls == {"plan": 1, "apply": 2}
     assert backend.realize.call_count == 2
     before_retry.assert_called_once_with()
+
+
+def _start_with_owning_managers(mocker, realize_results, before_retry):
+    """Admit and start the conformance scenario through the real RAES manager.
+
+    Planning, construction, ``apply``, and ``close`` all stay real, so a second
+    live manager over the same target fails the way RAES fails in a live lab,
+    and the retry must pass the real apply contract (issue #1424). The spies
+    hold strong references to every manager, so garbage collection cannot
+    release a claim.
+    """
+
+    from aptl.backends import raes
+    from aptl.backends.raes_planning_compat import AptlRuntimeManager
+
+    plan_spy = mocker.spy(AptlRuntimeManager, "plan")
+    apply_spy = mocker.spy(AptlRuntimeManager, "apply")
+    backend = _RealizedBackend(
+        containers=_CONFORMANCE_SCENARIO_CONTAINERS,
+        networks=_CONFORMANCE_SCENARIO_NETWORKS,
+    )
+    backend.realize.side_effect = realize_results
+    config = AptlConfig(lab={"name": "test"})
+    admitted = raes.admit_raes_scenario(
+        PROJECT_ROOT, config, backend, scenario_path=CONFORMANCE_SCENARIO
+    )
+    result = raes.start_raes_scenario(
+        PROJECT_ROOT,
+        config,
+        backend,
+        admitted=admitted,
+        before_backend_retry=before_retry,
+    )
+    planners = [call.args[0] for call in plan_spy.call_args_list]
+    applies = [call.args for call in apply_spy.call_args_list]
+    return result, admitted, backend, planners, applies
+
+
+def test_admission_releases_its_planning_manager(mocker):
+    from aptl.backends import raes
+    from aptl.backends.raes_planning_compat import AptlRuntimeManager
+
+    plan_spy = mocker.spy(AptlRuntimeManager, "plan")
+    admitted = raes.admit_raes_scenario(
+        PROJECT_ROOT,
+        AptlConfig(lab={"name": "test"}),
+        _RealizedBackend(),
+        scenario_path=CONFORMANCE_SCENARIO,
+    )
+
+    assert plan_spy.call_count == 1
+    # The spy still references the planning manager, so only an explicit close
+    # lets apply take ownership of the admitted target.
+    AptlRuntimeManager(admitted.target).close()
+
+
+def test_backend_retry_replays_the_admitted_plan_through_a_new_owner(mocker):
+    before_retry = MagicMock()
+
+    result, admitted, backend, _planners, applies = _start_with_owning_managers(
+        mocker,
+        [
+            LabResult(success=False, error="backend still starting"),
+            LabResult(success=True, message="ok"),
+        ],
+        before_retry,
+    )
+
+    assert result.lab_result.success is True, result.lab_result.error
+    assert result.retryable is False
+    before_retry.assert_called_once_with()
+    assert backend.realize.call_count == 2
+    assert backend.realize.call_args_list[0] == backend.realize.call_args_list[1]
+    (first, first_plan), (second, second_plan) = applies
+    assert first_plan is admitted.execution_plan
+    assert second_plan is admitted.execution_plan
+    assert first is not second
+    assert result.runtime_manager is second
+    assert result.final_snapshot is second.snapshot
+    assert result.final_snapshot.entries
+    # The failed attempt is closed: its manager cannot run another call.
+    with pytest.raises(RuntimeError, match="closed"):
+        first.read_time_state()
+
+
+def test_backend_retry_failure_is_terminal_after_two_attempts(mocker):
+    before_retry = MagicMock()
+
+    result, _admitted, backend, _planners, applies = _start_with_owning_managers(
+        mocker,
+        [
+            LabResult(success=False, error="backend still starting"),
+            LabResult(success=False, error="backend still down"),
+        ],
+        before_retry,
+    )
+
+    assert result.lab_result.success is False
+    assert "backend still down" in result.lab_result.error
+    assert backend.realize.call_count == 2
+    assert len(applies) == 2
+    assert result.runtime_manager is applies[1][0]
+    before_retry.assert_called_once_with()
+
+
+def test_backend_retry_stops_cleanly_when_the_failed_manager_stays_open(mocker):
+    from aptl.backends.raes_planning_compat import AptlRuntimeManager
+
+    original_close = AptlRuntimeManager.close
+    closes: list[object] = []
+
+    def close(manager):
+        closes.append(manager)
+        if len(closes) == 2:
+            raise TimeoutError("runtime manager clock driver remains active")
+        original_close(manager)
+
+    mocker.patch.object(AptlRuntimeManager, "close", close)
+    before_retry = MagicMock()
+
+    result, _admitted, backend, planners, applies = _start_with_owning_managers(
+        mocker,
+        [
+            LabResult(success=False, error="backend still starting"),
+            LabResult(success=True, message="ok"),
+        ],
+        before_retry,
+    )
+
+    assert closes == [planners[0], applies[0][0]]
+    assert result.lab_result.success is False
+    assert "backend still starting" in result.lab_result.error
+    assert "did not close" in result.lab_result.error
+    assert result.retryable is False
+    assert backend.realize.call_count == 1
+    assert len(applies) == 1
+    before_retry.assert_not_called()
 
 
 def _raes_started_outcome():
