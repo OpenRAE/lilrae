@@ -52,7 +52,9 @@ SHUFFLE_APPLICATION_PROFILES = (
                     classification="secret_fixture",
                 ),
                 _variable("SHUFFLE_APP_SDK_TIMEOUT", "120"),
-            )
+            ),
+            # Index initialization can panic after an OpenSearch timeout.
+            "runtime-restart-policy": "on_failure",
         },
     ),
     BackendImplementationProfile(
