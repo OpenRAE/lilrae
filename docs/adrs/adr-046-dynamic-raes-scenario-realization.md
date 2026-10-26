@@ -2,7 +2,7 @@
 
 ## Status
 
-accepted (amended 2026-10-25)
+accepted (amended 2026-10-26)
 
 ## Date
 
@@ -10,7 +10,7 @@ accepted (amended 2026-10-25)
 
 ## Last Updated
 
-2026-10-25
+2026-10-26
 
 ## Context
 
@@ -736,6 +736,28 @@ it as follows.
   the declared logins only in the participant account's private `0600` files.
 
 The manifest therefore advertises `credential_bindings` and `auth_method`.
+
+## Credential-Bearing Apply Result Addendum
+
+RAES gives a plan with account credential bindings a closed result contract
+(RAES `specs/sdl/account-credential-bindings.md`, section 6). RAES checks each
+returned entry against the submitted operation and rebuilds the accepted entry
+from the plan. The provisioner's snapshot follows that contract:
+
+- Each entry status names what the backend did with its operation: `applied`,
+  or `unchanged` for an unchanged operation. The evaluator reads both, and the
+  RAES default `ready`, as a realized node.
+- An unobserved concern that the plan admits at that address (an open,
+  constrained or exact authority, or a planned constraint) is still omitted, as
+  the Runtime Service and SEM-218 Execution Addendum requires.
+- An unobserved concern that the plan closes, or that has no authority at that
+  address, keeps the plan's value. RAES reads no observation there: it accepts
+  a closed concern when it is absent or equal to the plan, and the closed
+  result contract requires the plan's value. This is a reconciliation
+  requirement under which snapshot assembly may keep a plan value. It does not
+  claim an observation.
+- A plan without account credential bindings keeps every unobserved concern
+  omitted.
 
 ## Owner-Declared Image Content Addendum
 
