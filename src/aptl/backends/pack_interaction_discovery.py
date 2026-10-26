@@ -5,6 +5,10 @@ from __future__ import annotations
 import re
 from importlib import metadata
 from time import monotonic
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aptl.backends.scenario_family import AdmittedFamilyTrial
 
 from aptl.backends.pack_interaction import (
     ENTRY_POINT_GROUP,
@@ -132,7 +136,8 @@ def _sequence_claim_matches(
     checks = (
         context.pack.pack_version in _sequence(provider, "supported_pack_versions"),
         context.pack.set_digest in _sequence(provider, "supported_pack_set_digests"),
-        context.backend.target_version in _sequence(provider, "backend_target_versions"),
+        context.backend.target_version
+        in _sequence(provider, "backend_target_versions"),
         context.backend.profile in _sequence(provider, "backend_profiles"),
     )
     transports = _sequence(provider, "backend_transports")
@@ -247,16 +252,37 @@ def _default(context: PackBackendInteractionContext) -> ResolvedPackBackendInter
 
 def resolve_pack_backend_interaction(
     context: PackBackendInteractionContext,
+    *,
+    trial: AdmittedFamilyTrial | None = None,
 ) -> ResolvedPackBackendInteraction:
     """Resolve one exact provider, or the core unprofiled default when absent."""
 
     started = monotonic()
     _validate_context(context)
+    if trial is not None:
+        from aptl.backends.scenario_family import resolve_family_contribution
+
+        try:
+            selected, memberships = resolve_family_contribution(
+                ENTRY_POINT_GROUP,
+                trial,
+                context,
+                lambda result: _validate_result(result, context),
+            )
+        except ValueError as exc:
+            raise PackBackendInteractionError(str(exc)) from None
+        return ResolvedPackBackendInteraction(
+            memberships,
+            _mapping_digest(memberships),
+            selected.provider_id,
+            EXTENSION_API_VERSION,
+            selected.distribution,
+            selected.distribution_version,
+            selected.entry_point,
+        )
     selector = _selector(context)
     matches = [
-        entry_point
-        for entry_point in _entry_points()
-        if entry_point.name == selector
+        entry_point for entry_point in _entry_points() if entry_point.name == selector
     ]
     if not matches:
         resolved = _default(context)

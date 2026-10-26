@@ -91,12 +91,15 @@ def resolve_target_planning_compatibility(
     return resolve_scenario_planning_compatibility(
         ScenarioPlanningCompatibilityContext(
             pack=identity,
-            backend=BackendIdentity(
+            backend=bundle.trial.target.backend
+            if bundle.trial
+            else BackendIdentity(
                 APTL_RAES_TARGET_NAME,
                 APTL_RAES_TARGET_VERSION,
                 APTL_RAES_TARGET_PROFILE,
                 transport=str(getattr(deployment, "provider", "") or ""),
             ),
+            trial=bundle.trial,
         )
     )
 

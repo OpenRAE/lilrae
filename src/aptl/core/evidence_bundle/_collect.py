@@ -337,6 +337,39 @@ def _validate_adapter_blob(
     limits: BundleLimits,
 ) -> bool:
     """Call one installed adapter's semantic validator on bounded retained bytes."""
+    try:
+        _, _, manifest_body = read_source(
+            run_dir, "manifest.json", max_bytes=limits.max_member_bytes
+        )
+    except SourceMissing:
+        pass  # Legacy archives did not retain family provider qualification.
+    except (SourceRejected, ValueError):
+        return False
+    else:
+        try:
+            manifest = json.loads(manifest_body)
+            family = (
+                manifest.get("backend_evidence", {})
+                .get("pack_interaction", {})
+                .get("family_trial")
+            )
+            if family is not None:
+                captures = [
+                    item
+                    for item in family["providers"]
+                    if item["group"] == "aptl.scenario_capture"
+                ]
+                if len(captures) != 1:
+                    return False
+                expected = captures[0]
+                validators = [
+                    entry
+                    for entry in validators
+                    if (entry.dist.name, entry.dist.version)
+                    == (expected["distribution"], expected["distribution_version"])
+                ]
+        except (ValueError, TypeError, KeyError, AttributeError):
+            return False
     if len(validators) != 1:
         return False
     try:

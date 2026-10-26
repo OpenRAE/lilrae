@@ -78,6 +78,44 @@ def run_persisted_startup_reset(
 
     from aptl.backends import scenario_startup as contract
 
+    if provenance.family_target:
+        from dataclasses import replace
+        from aptl.backends.scenario_family import (
+            decode_family_target,
+            select_family_provider,
+        )
+        from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+
+        try:
+            target = decode_family_target(provenance.family_target)
+            if target.pack != identity or provenance.entry_point != identity.pack_id:
+                raise ValueError
+            selected = select_family_provider(
+                contract.ENTRY_POINT_GROUP,
+                provenance.entry_point,
+                contract.EXTENSION_API_VERSION,
+                "resolve",
+                target,
+            )
+            if selected.distribution != provenance.distribution or (
+                selected.distribution_version != provenance.distribution_version
+                and not _declares_reset_action(selected.provider, action_version)
+            ):
+                raise ValueError
+            selected.provider.reset(
+                replace(
+                    context,
+                    backend=AdmittedRuntimeOperations(context.backend, ()),
+                    project_dir=None,
+                    family_target=target,
+                )
+            )
+        except Exception:
+            raise contract.ScenarioStartupProviderError(
+                "provider-reset-authority-unavailable"
+            ) from None
+        return
+
     compatible: list[object] = []
     for entry in contract._entry_points():
         if entry.name != provenance.entry_point:
@@ -130,7 +168,9 @@ def run_scenario_runtime(
         return []
     from aptl.backends.scenario_runtime_hooks import invoke_runtime_provider
 
-    return invoke_runtime_provider(provider, identity, backend, nodes)
+    return invoke_runtime_provider(
+        provider, identity, backend, nodes, trial=selection.trial if selection else None
+    )
 
 
 def observe_scenario_runtime_concerns(
@@ -149,7 +189,9 @@ def observe_scenario_runtime_concerns(
         provider = selected_runtime_provider(identity, selection)
     except contract.ScenarioStartupProviderError:
         provider = None
-    observed = invoke_runtime_observer(provider, identity, backend, node)
+    observed = invoke_runtime_observer(
+        provider, identity, backend, node, trial=selection.trial if selection else None
+    )
     kinds_by_path = {path: kind for kind, path in CONCERN_PAYLOAD_PATH.items()}
     if not isinstance(observed, dict) or any(
         not isinstance(path, tuple) or path not in kinds_by_path or value is None

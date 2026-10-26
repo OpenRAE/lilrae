@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from importlib import metadata
 from pathlib import Path, PurePosixPath
 import re
+from typing import Protocol, TYPE_CHECKING
+from aptl.backends.scenario_runtime_hooks import ScenarioRuntimeOperations
 
 from aptl.core.deployment.realization import valid_environment_variable_name
 from aptl.core.scenario_bundle import PackIdentity, ScenarioBundle
+from aptl.backends.scenario_family import AdmittedFamilyTrial
 from aptl.utils.logging import get_logger
 from aptl.backends._scenario_environment import (
     AccountCredentialFixture,
@@ -28,6 +31,11 @@ from aptl.backends._scenario_startup_hooks import (
     StartupPreparationPhase,
 )
 
+if TYPE_CHECKING:
+    from aptl.backends.scenario_startup_policy import ScenarioComposeStartupPolicy
+    from aptl.backends.scenario_service_policy import ScenarioComposeServicePolicy
+    from aptl.backends.raes_realization_model import NodeRealization
+
 log = get_logger("scenario-startup")
 
 ENTRY_POINT_GROUP = "aptl.scenario_startup"
@@ -35,6 +43,31 @@ EXTENSION_API_VERSION = "1"
 DOCKER_TRANSPORT_KEYS = frozenset(
     ("DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DOCKER_SSH_IDENTITY")
 )
+
+
+class ScenarioStartupProvider(Protocol):
+    """Public family startup, fixed hooks, realization and observation surface."""
+
+    def resolve(self, bundle: ScenarioBundle) -> ScenarioStartupPlan: ...
+    def prepare_stack_environment(self, context: StartupHookContext) -> object: ...
+    def before_backend_retry(self, context: StartupHookContext) -> object: ...
+    def reset(self, context: StartupHookContext) -> object: ...
+    def compose_startup_policy(self) -> ScenarioComposeStartupPolicy: ...
+    def compose_service_policy(self) -> ScenarioComposeServicePolicy: ...
+    def realize_runtime(
+        self,
+        operations: ScenarioRuntimeOperations,
+        nodes: tuple[NodeRealization, ...],
+        *,
+        trial: AdmittedFamilyTrial,
+    ) -> list[str]: ...
+    def observe_runtime(
+        self,
+        operations: ScenarioRuntimeOperations,
+        node: object,
+        *,
+        trial: AdmittedFamilyTrial,
+    ) -> dict[tuple[str, ...], object]: ...
 
 
 @dataclass(frozen=True, order=True)
@@ -83,6 +116,7 @@ class ScenarioStartupSelection:
     provider: object | None = field(repr=False, compare=False)
     plan: ScenarioStartupPlan | None
     provenance: StartupProviderProvenance | None = None
+    trial: AdmittedFamilyTrial | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -92,6 +126,7 @@ class StartupProviderProvenance:
     distribution: str
     distribution_version: str
     entry_point: str
+    family_target: str = ""
 
 
 def _entry_points() -> list[metadata.EntryPoint]:
@@ -185,7 +220,12 @@ def _account_resolved_fixtures(value: object, bundle: ScenarioBundle | None) -> 
         raise ScenarioStartupProviderError("provider-result-invalid")
     from aptl.backends.raes_declared_credentials import scenario_accounts
 
-    return resolved_environment_fixtures(value, scenario_accounts(bundle.sdl_path))
+    accounts = (
+        bundle.trial.scenario.accounts
+        if bundle.trial
+        else scenario_accounts(bundle.sdl_path)
+    )
+    return resolved_environment_fixtures(value, accounts)
 
 
 def _validated_environment_fixtures(
@@ -333,6 +373,34 @@ def select_scenario_startup(bundle: ScenarioBundle) -> ScenarioStartupSelection:
     """Select one exact adapter once for all stages of an admitted start."""
 
     identity = bundle.pack_identity
+    if bundle.trial is not None:
+        from aptl.backends.scenario_family import (
+            resolve_family_contribution,
+            encode_family_target,
+        )
+
+        try:
+            selected, plan = resolve_family_contribution(
+                ENTRY_POINT_GROUP,
+                bundle.trial,
+                bundle,
+                lambda value: _validated_plan(value, bundle),
+            )
+            _validate_hook_methods(selected.provider, plan)
+        except ValueError as exc:
+            raise ScenarioStartupProviderError(str(exc)) from None
+        return ScenarioStartupSelection(
+            identity,
+            selected.provider,
+            plan,
+            StartupProviderProvenance(
+                selected.distribution,
+                selected.distribution_version,
+                selected.entry_point,
+                encode_family_target(bundle.trial.target),
+            ),
+            bundle.trial,
+        )
     if identity is None:
         return ScenarioStartupSelection(identity, None, None)
     candidates = [
@@ -405,6 +473,19 @@ def run_startup_hook(
     }.get(hook)
     if method is None:
         return None
+    if selection.trial is not None:
+        from types import SimpleNamespace
+        from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+
+        nodes = tuple(
+            SimpleNamespace(name=name) for name in selection.trial.scenario.nodes
+        )
+        context = replace(
+            context,
+            backend=AdmittedRuntimeOperations(context.backend, nodes),
+            project_dir=None,
+            trial=selection.trial,
+        )
     try:
         return getattr(selection.provider, method)(context)
     except Exception as exc:
@@ -456,6 +537,7 @@ __all__ = [
     "ScenarioRuntimeSelection",
     "ScenarioStartupPlan",
     "ScenarioStartupSelection",
+    "ScenarioStartupProvider",
     "StartupProviderProvenance",
     "ScenarioStartupProviderError",
     "StartupCapability",

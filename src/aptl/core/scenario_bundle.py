@@ -23,9 +23,13 @@ import shutil
 import stat
 import tempfile
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aptl.backends.scenario_family import AdmittedFamilyTrial
 
 from aptl.utils.pathsafe import (
     PathContainmentError,
@@ -88,6 +92,7 @@ class ScenarioBundle:
     sdl_path: Path
     source_kind: ScenarioSourceKind = ScenarioSourceKind.PROJECT_TREE
     pack_identity: PackIdentity | None = None
+    trial: AdmittedFamilyTrial | None = field(default=None, repr=False)
 
     def read_asset(self, relative_path: str | Path) -> bytes:
         """Read one bundle-relative asset, refusing anything outside the bundle.
@@ -252,7 +257,9 @@ def _stage_and_validate(
 
     anchor = Path(staging_root.anchor)
     staging_fd = open_dir_contained_nofollow(
-        anchor, staging_root.relative_to(anchor), create=True,
+        anchor,
+        staging_root.relative_to(anchor),
+        create=True,
     )
     created = False
     try:
@@ -262,7 +269,9 @@ def _stage_and_validate(
         os.mkdir(token, mode=0o700, dir_fd=staging_fd)
         created = True
         token_fd = os.open(
-            token, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=staging_fd,
+            token,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            dir_fd=staging_fd,
         )
         try:
             os.mkdir(identity, mode=0o700, dir_fd=token_fd)

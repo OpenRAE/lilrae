@@ -42,12 +42,15 @@ def resolve_admission_adapters(
         capture = resolve_scenario_capture(
             ScenarioCaptureContext(
                 pack=identity,
-                backend=BackendIdentity(
+                backend=bundle.trial.target.backend
+                if bundle.trial
+                else BackendIdentity(
                     target_name=APTL_RAES_TARGET_NAME,
                     target_version=APTL_RAES_TARGET_VERSION,
                     profile=APTL_RAES_TARGET_PROFILE,
                     transport=config.deployment.provider,
                 ),
+                trial=bundle.trial,
             )
         )
     return startup, capture
@@ -62,6 +65,16 @@ def prepare_admission_scenario(
 ) -> tuple[object, Mapping[str, object] | None, CapturePlan]:
     """Parse, bind, and admit evidence for one scenario exactly once."""
 
+    if bundle.trial is not None:
+        if parameters:
+            raise ValueError("family-trial-parameter-collision")
+        scenario = bundle.trial.scenario
+        capture_plan = (
+            admit_sdl_evidence(scenario, registry=capture_selection.registry)
+            if capture_selection is not None
+            else admit_sdl_evidence(scenario)
+        )
+        return scenario, None, capture_plan
     scenario = parser(bundle.sdl_path)
     if parameters is None:
         from aptl.backends.scenario_runtime_parameters import (

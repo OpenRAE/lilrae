@@ -18,12 +18,10 @@ installed entry-point metadata, and a conformance test asserts that no entry
 point resolves into ``aptl.`` itself. Adding a second scenario adds a package;
 it never edits this file. If it did, the seam would be decorative.
 
-Those adapter packages ship in this distribution and release with it, because
-an adapter is specific to one scenario *and* one backend, and only the backend
-can write it: a scenario author cannot write an adapter for a backend they have
-never seen, and many backends are private. Owning them here is also what lets a
-single install give an operator every extension surface a scenario needs. The
-boundary that matters is the code boundary above, not a packaging boundary.
+Adapter packages can ship with LilRAE or in an independently released trusted
+Python distribution. The public family contract permits an RPT-owned adapter
+to qualify one family release and receive each admitted trial's snapshot and
+provenance. Core retains discovery, admission, reports and bounded operations.
 
 Discovery is fail-closed on purpose. No match, several matches, a version
 mismatch, or a plugin that fails to load all produce ``blocked``: no complete
@@ -42,8 +40,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Protocol
+from collections.abc import Callable
 
 from aptl.backends.identity import BackendIdentity
+from aptl.backends.scenario_family import AdmittedFamilyTrial
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -169,6 +169,37 @@ class QualifiedTarget(object):
     backend: BackendIdentity
 
 
+class ReachabilityObservation(Protocol):
+    reached: bool
+    tested: tuple[str, ...]
+    diagnostics: tuple[str, ...]
+
+
+class DetectionObservation(Protocol):
+    observed: bool
+    diagnostics: tuple[str, ...]
+
+
+class VerificationOperations(Protocol):
+    """Existing bounded live operations; no configuration or archive handle."""
+
+    def reachability_from(self, origin: str) -> ReachabilityObservation: ...
+    def shared_network_targets(self, origin: str) -> tuple[tuple[str, str], ...]: ...
+    def tcp_reachable_from(self, origin: str, address: str, port: int) -> bool: ...
+    def execute_in_node(
+        self, origin: str, argv: tuple[str, ...], *, timeout_seconds: int
+    ) -> bool: ...
+    def collect_evidence(
+        self,
+        *,
+        trigger: Callable[[], None],
+        alert_matches: Callable[[object], bool],
+        alert_reader: object,
+        deadline_monotonic: float,
+        poll_interval_seconds: float,
+    ) -> DetectionObservation: ...
+
+
 @dataclass(frozen=True)
 class VerificationContext(object):
     """Everything a plugin is given, and nothing more.
@@ -194,10 +225,11 @@ class VerificationContext(object):
     #: never timeout authority.
     deadline_monotonic: float = float("inf")
     poll_interval_seconds: float = 10.0
-    operations: object | None = None
+    operations: VerificationOperations | None = None
     #: Narrow, already-redacted facts the framework observed while booting, for
     #: a plugin to read rather than rediscover. Never credentials.
     observations: Mapping[str, object] = field(default_factory=dict)
+    trial: AdmittedFamilyTrial | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -340,4 +372,7 @@ __all__ = [
     "VerificationContext",
     "VerificationReport",
     "VerificationStatus",
+    "VerificationOperations",
+    "ReachabilityObservation",
+    "DetectionObservation",
 ]

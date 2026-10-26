@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from raes_contracts.runtime_state import RuntimeSnapshot
@@ -39,6 +40,11 @@ from aptl.backends._raes_admission_helpers import (
     resolve_admission_adapters,
 )
 from aptl.backends._raes_runtime_target_options import RuntimeTargetOptions
+from aptl.backends.scenario_family import (
+    FamilyTrialInput,
+    admit_family_trial,
+    require_family_capabilities,
+)
 from aptl.backends._raes_start_failure import (
     INSTANTIATION_FAILURE_MESSAGE as INSTANTIATION_FAILURE_MESSAGE,
     start_failure_outcome as _start_failure_outcome,
@@ -201,6 +207,12 @@ def start_raes_scenario(
                 scenario_path=scenario_path,
             )
         resolved_scenario = admitted.bundle.sdl_path
+        if admitted.bundle.trial is not None:
+            if (
+                run_target is None
+                or run_target.run_id != admitted.bundle.trial.provenance.run_id
+            ):
+                raise ValueError("family-run-identity-mismatch")
         return _apply_with_backend_retry(
             admitted.target,
             admitted.execution_plan,
@@ -229,6 +241,7 @@ def admit_raes_scenario(
     parameters: Mapping[str, object] | None = None,
     bundle: ScenarioBundle | None = None,
     startup_selection: ScenarioStartupSelection | None = None,
+    trial: FamilyTrialInput | None = None,
 ) -> AdmittedScenarioStart:
     """Admit one scenario execution: resolve, parse, plan, and interpret it once.
 
@@ -246,6 +259,36 @@ def admit_raes_scenario(
     # resolver (issue #874 / #875).
     if bundle is None:
         bundle = resolve_scenario_bundle(project_dir, scenario_path, config)
+    if trial is not None:
+        if startup_selection is not None or parameters:
+            raise ValueError("family-trial-parameter-collision")
+        from aptl.backends.identity import (
+            BackendIdentity,
+            APTL_RAES_TARGET_NAME,
+            APTL_RAES_TARGET_VERSION,
+            APTL_RAES_TARGET_PROFILE,
+        )
+
+        backend_identity = BackendIdentity(
+            APTL_RAES_TARGET_NAME,
+            APTL_RAES_TARGET_VERSION,
+            APTL_RAES_TARGET_PROFILE,
+            provider=config.deployment.provider,
+            transport=config.deployment.provider,
+        )
+        admitted_trial = admit_family_trial(bundle, backend_identity, trial)
+        selections = require_family_capabilities(admitted_trial)
+        installed = (selections[0].distribution, selections[0].distribution_version)
+        bundle = replace(
+            bundle,
+            trial=replace(
+                admitted_trial,
+                installation=installed,
+                providers=tuple(item.identity() for item in selections),
+            ),
+        )
+    elif bundle.trial is not None:
+        raise ValueError("family-trial-input-required")
     startup_selection, capture_selection = resolve_admission_adapters(
         bundle, config, startup_selection
     )
@@ -407,6 +450,13 @@ def _run_execution_plan(
         selected_profiles,
         pack_interaction_evidence,
     ) = interpret_realization(target, execution_plan)
+    if (
+        isinstance(target.provisioner, AptlProvisioner)
+        and target.provisioner.bundle.trial is not None
+    ):
+        pack_interaction_evidence["family_trial"] = (
+            target.provisioner.bundle.trial.evidence()
+        )
     participant_runtime = target.participant_runtime
     if isinstance(participant_runtime, AptlParticipantRuntime):
         authority = participant_runtime.plan_authority

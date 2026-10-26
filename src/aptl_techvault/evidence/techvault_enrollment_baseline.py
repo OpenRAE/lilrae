@@ -21,10 +21,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from aptl.core.credentials import (
-    _atomic_write_secure,
-    _canonical_generated_path,
-    _ensure_secure_dir,
+from aptl.utils.pathsafe import (
+    read_contained_nofollow,
+    replace_private_nofollow,
+    PathContainmentError,
+    REASON_NOT_FOUND,
 )
 from aptl.core.lifecycle_cleanup import WAZUH_ENROLLMENT_BASELINE_RELPATH
 
@@ -36,19 +37,17 @@ def enrollment_baseline(scenario_root: Path) -> dict[str, str] | None:
 
     result: dict[str, str] | None = None
     try:
-        path = _canonical_generated_path(scenario_root, ENROLLMENT_BASELINE_RELPATH)
-    except ValueError:
+        recorded = json.loads(
+            read_contained_nofollow(scenario_root, ENROLLMENT_BASELINE_RELPATH)
+        )
+    except PathContainmentError as exc:
+        if exc.reason == REASON_NOT_FOUND:
+            result = {}
+    except (OSError, ValueError):
         pass
     else:
-        try:
-            recorded = json.loads(path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            result = {}
-        except (OSError, ValueError):
-            pass
-        else:
-            if _valid_baseline(recorded):
-                result = dict(recorded)
+        if _valid_baseline(recorded):
+            result = dict(recorded)
     return result
 
 
@@ -80,12 +79,12 @@ def record_enrollment_baseline(scenario_root: Path, observed: dict[str, str]) ->
     merged = {**{k: v for k, v in observed.items() if k and v}}
     merged.update(recorded)
     try:
-        path = _canonical_generated_path(scenario_root, ENROLLMENT_BASELINE_RELPATH)
-        _ensure_secure_dir(path.parent)
-        _atomic_write_secure(
-            path, json.dumps(merged, sort_keys=True, separators=(",", ":")) + "\n"
+        replace_private_nofollow(
+            scenario_root,
+            ENROLLMENT_BASELINE_RELPATH,
+            (json.dumps(merged, sort_keys=True, separators=(",", ":")) + "\n").encode(),
         )
-    except (OSError, ValueError):
+    except (OSError, ValueError, PathContainmentError):
         # A baseline that cannot be written must not be treated as satisfied;
         # the caller sees no recorded identity and reports enrollment unproven.
         return False
