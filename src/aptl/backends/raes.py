@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -285,17 +286,22 @@ def admit_raes_scenario(
             ),
         ),
     )
+    # RAES lets one live manager own the target. Apply builds its own manager,
+    # so the planning manager ends its ownership here (issue #1424).
     runtime_manager = RuntimeManager(target)
-    execution_plan = plan_aptl_scenario(
-        target=target,
-        bundle=bundle,
-        scenario=scenario,
-        options=AptlPlanningOptions(
-            parameters=dict(parameters) if parameters is not None else None,
-            artifact_availability=availability,
-            runtime_manager=runtime_manager,
-        ),
-    )
+    try:
+        execution_plan = plan_aptl_scenario(
+            target=target,
+            bundle=bundle,
+            scenario=scenario,
+            options=AptlPlanningOptions(
+                parameters=dict(parameters) if parameters is not None else None,
+                artifact_availability=availability,
+                runtime_manager=runtime_manager,
+            ),
+        )
+    finally:
+        runtime_manager.close()
     provisioner = target.provisioner
     realization = (
         provisioner.realize_plan(execution_plan.provisioning)
@@ -365,6 +371,9 @@ def _apply_with_backend_retry(
         run_id=run_id,
     )
     if outcome.retryable and before_backend_retry is not None:
+        release_failure = _release_failed_attempt(outcome)
+        if release_failure is not None:
+            return release_failure
         before_backend_retry()
         return _run_execution_plan(
             target,
@@ -374,6 +383,36 @@ def _apply_with_backend_retry(
             run_id=run_id,
         )
     return outcome
+
+
+def _release_failed_attempt(outcome: AcesStartOutcome) -> AcesStartOutcome | None:
+    """Close the failed attempt's manager so the retry can own the target.
+
+    RAES lets one live manager own a target's components, and the retry builds
+    a new manager from the admitted base snapshot (issue #1424). A manager that
+    does not close keeps that ownership, so the start fails with the first
+    failure instead of a retry that cannot own the target.
+    """
+
+    manager = outcome.runtime_manager
+    if manager is None:
+        return None
+    try:
+        manager.close()
+    except (RuntimeError, TimeoutError) as exc:
+        log.warning("Backend retry stopped: the failed runtime manager did not close")
+        return replace(
+            outcome,
+            lab_result=LabResult(
+                success=False,
+                error=(
+                    f"{outcome.lab_result.error}\nAutomatic retry stopped: the "
+                    f"failed attempt's runtime manager did not close ({exc})."
+                ),
+            ),
+            retryable=False,
+        )
+    return None
 
 
 def _run_execution_plan(
