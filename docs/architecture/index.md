@@ -168,6 +168,7 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 
 ## Preflights
 
+- [Issue #1406 Native Evidence Test Target](issue-1406-native-evidence-test-target-preflight.md)
 - [Issue #1423 Shuffle Startup Recovery](issue-1423-shuffle-startup-readiness-preflight.md)
 - [Issue #1422 Wazuh Dashboard Config Readability](issue-1422-wazuh-dashboard-config-readability-preflight.md)
 - [Issue #1422 Wazuh Dashboard Owner-Declared Config Design](issue-1422-wazuh-dashboard-owned-config-design.md)
