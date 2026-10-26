@@ -25,7 +25,7 @@ from raes_contracts.planning import (
 )
 from raes_contracts.runtime_state import OperationState, RuntimeSnapshot
 from raes_processor.models import ExecutionPlan, RuntimeModel
-from raes_reference_backend import create_reference_backend_target
+from raes_backend_stubs.stubs import create_stub_target
 
 from aptl.backends._raes_proposition_truth import (
     native_evidence_truth_is_complete as _native_evidence_truth_is_complete,
@@ -262,7 +262,7 @@ def test_evaluator_projects_bound_native_evidence_into_runtime_snapshot():
 
 def test_native_evidence_refresh_is_committed_through_the_runtime_control_plane():
     evaluator = AptlEvaluator(proposition_interpreter=_INTERPRETER)
-    target = replace(create_reference_backend_target(), evaluator=evaluator)
+    target = replace(create_stub_target(), evaluator=evaluator)
     execution_plan = ExecutionPlan(
         target_name=target.name,
         manifest=target.manifest,
@@ -291,7 +291,7 @@ def test_native_evidence_refresh_is_committed_through_the_runtime_control_plane(
 def test_native_evidence_refresh_accepts_participant_delivery_target():
     evaluator = AptlEvaluator(proposition_interpreter=_INTERPRETER)
     target = replace(
-        create_reference_backend_target(),
+        create_stub_target(),
         manifest=create_aptl_manifest(participant_inject_delivery=True),
         evaluator=evaluator,
     )
@@ -322,7 +322,7 @@ def test_native_evidence_refresh_accepts_participant_delivery_target():
 
 def test_native_evidence_refresh_replays_create_plan_after_initial_evaluation():
     evaluator = AptlEvaluator(proposition_interpreter=_INTERPRETER)
-    target = replace(create_reference_backend_target(), evaluator=evaluator)
+    target = replace(create_stub_target(), evaluator=evaluator)
     evaluation = _plan()
     initially_evaluated = evaluator.start(evaluation, RuntimeSnapshot())
     assert initially_evaluated.success is True
@@ -353,7 +353,7 @@ def test_native_evidence_refresh_replays_create_plan_after_initial_evaluation():
 
 def test_native_evidence_refresh_fails_when_the_authored_predicate_does_not_match():
     evaluator = AptlEvaluator(proposition_interpreter=_INTERPRETER)
-    target = replace(create_reference_backend_target(), evaluator=evaluator)
+    target = replace(create_stub_target(), evaluator=evaluator)
     execution_plan = ExecutionPlan(
         target_name=target.name,
         manifest=target.manifest,
