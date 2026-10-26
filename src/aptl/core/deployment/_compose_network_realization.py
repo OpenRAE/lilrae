@@ -17,6 +17,7 @@ from aptl.core.deployment._compose_realization_networks import (
     _concrete_network_name,
     _container_network_ip,
     _container_networks,
+    _inspect_past_restart,
     _match_managed_network,
     _network_policy_mismatches,
     _node_network_aliases,
@@ -216,7 +217,7 @@ class ComposeRealizationNetworkMixin:
                     f"{', '.join(missing)} for node {node.name}."
                 )
                 continue
-            info = self.container_inspect(node.container_name)
+            info = _inspect_past_restart(self.container_inspect, node.container_name)
             if not info:
                 failures.append(
                     f"Container {node.container_name} was not inspectable "
@@ -251,7 +252,7 @@ class ComposeRealizationNetworkMixin:
             if not node_failures:
                 node_failures = _realized_attachment_failures(
                     node.name,
-                    self.container_inspect(node.container_name),
+                    _inspect_past_restart(self.container_inspect, node.container_name),
                     desired,
                     aliases,
                     managed_networks,
