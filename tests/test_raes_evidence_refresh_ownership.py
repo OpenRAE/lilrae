@@ -12,6 +12,7 @@ from raes_contracts.planning import OrchestrationPlan, ProvisioningPlan, Runtime
 from raes_contracts.runtime_state import OperationState, RuntimeSnapshot
 from raes_processor.models import ExecutionPlan, RuntimeModel
 
+from aptl.backends import raes_evaluator
 from aptl.backends.raes_evaluator import AptlEvaluator, refresh_evidence_truth
 from aptl.backends.raes_planning_compat import AptlRuntimeManager
 from aptl.core import lab
@@ -116,7 +117,7 @@ def test_owner_that_does_not_close_fails_the_refresh_without_running_it(monkeypa
         raise AssertionError("the refresh ran while the start still owned the target")
 
     ownership = _ownership()
-    monkeypatch.setattr(ownership, "refresh_evidence_truth", _must_not_run)
+    monkeypatch.setattr(raes_evaluator, "refresh_evidence_truth", _must_not_run)
     stuck = _StuckManager()
     outcome = SimpleNamespace(runtime_manager=stuck)
 
