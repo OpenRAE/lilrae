@@ -265,6 +265,9 @@ def _validated_plan(
         and not isinstance(value.mcp_build_script, str)
     ):
         raise ScenarioStartupProviderError("provider-result-invalid")
+    minimum = value.minimum_max_map_count
+    if minimum is not None and (type(minimum) is not int or not 1 <= minimum <= 2**31 - 1):
+        raise ScenarioStartupProviderError("provider-result-invalid")
     return ScenarioStartupPlan(
         seed_script=_safe_relative_script(value.seed_script),
         required_profiles=tuple(profiles),
@@ -286,6 +289,7 @@ def _validated_plan(
         ),
         mcp_server_keys=tuple(mcp_keys),
         native_mcp_ingress=value.native_mcp_ingress,
+        minimum_max_map_count=minimum,
     )
 
 

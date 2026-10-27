@@ -59,7 +59,7 @@ def _paper_plan():
     model = compile_runtime_model(scenario)
     config = AptlConfig(
         lab={"name": "test"},
-        containers={"enterprise": True, "kali": True, "wazuh": True},
+        containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
     )
     target = create_aptl_runtime_target(
         project_dir=PROJECT_ROOT,

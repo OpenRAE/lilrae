@@ -160,7 +160,7 @@ def project_tree_bundle(
 
 def env_pack_bundle(
     staging_root: Path,
-    identity: str = "techvault",
+    identity: str,
     *,
     source_pack: Path | None = None,
     package: str = _ENV_PACK_PACKAGE,

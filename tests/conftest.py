@@ -57,12 +57,7 @@ def valid_config_dict() -> dict:
             "name": "test-lab",
             "network_subnet": "172.20.0.0/16",
         },
-        "containers": {
-            "wazuh": True,
-            "victim": True,
-            "kali": True,
-            "reverse": False,
-        },
+        "containers": {"profiles": ["wazuh", "victim", "kali"]},
     }
 
 

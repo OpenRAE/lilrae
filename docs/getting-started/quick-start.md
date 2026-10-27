@@ -36,10 +36,12 @@ It checks the project configuration, the host tools that `lilrae lab start`
 runs, and the Docker engine the project selects. For that engine it checks that
 it answers, runs rootful without `userns-remap`, provides cgroup v2 with Docker
 Engine 28.0 or newer, and has the Compose and Buildx plugins. It warns when
-Compose is older than 2.24.4, which lab start requires for a scenario that
-consumes generated certificates or volumes. It reports the engine memory but
+Compose is older than 2.24.4, which lab start requires when the emitted model
+uses `!reset` or `!override`. It reports the engine memory but
 does not check it, because no scenario declares a memory need yet. On a native
-Linux engine it also checks `vm.max_map_count`. For a remote engine, or one
+Linux engine it also checks `vm.max_map_count` when the selected startup adapter
+declares a minimum. A scenario without that demand skips this check.
+For a remote engine, or one
 whose host it cannot identify, it warns instead and prints the setting to apply
 on the host that runs that engine. Each failed check prints its fix. The command changes nothing on the
 host, in the project, or in the Docker engine. It exits with status 0 when no

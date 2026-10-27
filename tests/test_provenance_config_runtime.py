@@ -143,7 +143,7 @@ class TestSafeConfigProjection:
             assert raw_section not in projection
         for value in projection.values():
             assert not isinstance(value, BaseModel)
-        assert all(isinstance(flag, bool) for flag in projection["containers"].values())
+        assert projection["containers"] == {"profiles": None}
 
     def test_projection_still_carries_the_fields_it_promises(self):
         """Guards the exclusion test above from passing on an empty projection."""

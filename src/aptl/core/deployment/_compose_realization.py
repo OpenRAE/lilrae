@@ -43,7 +43,9 @@ from aptl.core.deployment._compose_stateful_realization import (
 )
 from aptl.core.deployment._compose_image_realization import (
     ComposeRealizationImageMixin,
+    image_override_text,
 )
+from aptl.core.deployment._lilrae_compose_capabilities import compose_capability_refusal
 from aptl.core.deployment._compose_network_realization import (
     ComposeRealizationNetworkMixin,
 )
@@ -144,6 +146,10 @@ class ComposeRealizationMixin(
         """
 
         failure = self._runtime_materialization_preflight(realization)
+        if failure is None and _needs_compose(realization) and realization.images:
+            failure = compose_capability_refusal(
+                self._run, (), documents=(image_override_text(realization.images),),
+            )
         if failure is not None:
             return failure
 

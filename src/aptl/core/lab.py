@@ -107,7 +107,7 @@ from aptl.core.ssh import (
 )
 from aptl.core.sysreqs import (
     check_docker_buildx,
-    check_max_map_count,
+    check_scenario_max_map_count,
     docker_mode_for_containment,
 )
 from aptl.utils.logging import get_logger
@@ -2267,12 +2267,15 @@ def _step_check_sysreqs(ctx: _LabStartContext) -> LabResult | None:
     selected_mode = docker_mode_for_containment(
         boundary.host_containment if boundary is not None else None
     )
-    sysreq_result = check_max_map_count(selected_mode=selected_mode)
+    startup = ctx.start_selection.startup if ctx.start_selection is not None else None
+    minimum = startup.minimum_max_map_count if startup is not None else None
+    sysreq_result = check_scenario_max_map_count(minimum, selected_mode=selected_mode)
     if not sysreq_result.passed:
         log.error(
             "vm.max_map_count too low (%d < %d). "
-            "Run: sudo sysctl -w vm.max_map_count=262144",
+            "Run: sudo sysctl -w vm.max_map_count=%d",
             sysreq_result.current_value,
+            sysreq_result.required_value,
             sysreq_result.required_value,
         )
         return LabResult(
@@ -2280,10 +2283,15 @@ def _step_check_sysreqs(ctx: _LabStartContext) -> LabResult | None:
             error=(
                 f"vm.max_map_count too low ({sysreq_result.current_value} < "
                 f"{sysreq_result.required_value}). "
-                "Run: sudo sysctl -w vm.max_map_count=262144"
+                f"Run: sudo sysctl -w vm.max_map_count={sysreq_result.required_value}"
             ),
         )
 
+    if startup is not None:
+        from aptl.backends.scenario_startup import StartupCapability
+
+        if StartupCapability.HOST_TOOLS not in startup.lifecycle_capabilities:
+            return None
     buildx_result = check_docker_buildx()
     if buildx_result.passed:
         return None
@@ -4379,6 +4387,11 @@ def _selected_start_steps(
         for step in _LAB_START_STEPS
         if step not in _OPTIONAL_START_STEPS
         or _OPTIONAL_START_CAPABILITIES.get(step) in capabilities
+        or (
+            step is _step_check_sysreqs
+            and isinstance(plan, ScenarioStartupPlan)
+            and plan.minimum_max_map_count is not None
+        )
         or (step in _OPTIONAL_START_HOOKS and "stack_environment" in hooks)
     )
 

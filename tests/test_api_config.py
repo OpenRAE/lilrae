@@ -30,12 +30,7 @@ class TestConfigEndpoint:
     def test_returns_config(self, api_client, tmp_path):
         config = {
             "lab": {"name": "test-lab", "network_subnet": "172.20.0.0/16"},
-            "containers": {
-                "wazuh": True,
-                "victim": True,
-                "kali": True,
-                "reverse": False,
-            },
+            "containers": {"profiles": ["wazuh", "victim", "kali"]},
         }
         (tmp_path / "aptl.json").write_text(json.dumps(config))
 
@@ -64,9 +59,7 @@ class TestConfigEndpoint:
 
         assert response.status_code == 200
         data = response.json()
-        # Every field in ContainerSettings should appear in the response
-        for field_name in ContainerSettings.model_fields:
-            assert field_name in data["containers"], f"Missing container: {field_name}"
+        assert data["containers"] == {}
 
 
 class TestWebServeInfo:

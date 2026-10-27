@@ -119,6 +119,11 @@ class ComposeOwnedStartMixin:
     ) -> LabResult:
         """Preflight, run, and receipt one Compose up operation."""
 
+        from aptl.core.deployment._lilrae_compose_capabilities import compose_capability_refusal
+
+        refusal = compose_capability_refusal(self._run, compose_files)
+        if refusal is not None:
+            return refusal
         refused = self._compose_substrate_daemon_refusal(
             compose_files, profiles, exclude_services, only_services
         )

@@ -103,7 +103,8 @@ The active scenario is an operator decision. It lives in `aptl.json`:
 
 - `source: env-pack` resolves the pack from the installed distribution by
   identity. This is the default.
-- `identity` names the pack. The default identity is `techvault`.
+- `identity` names the pack. A new project has no selected identity.
+  Set it explicitly before starting a pack-backed scenario.
 
 To select the third-party release above:
 

@@ -1293,7 +1293,7 @@ def test_variation_passes_on_distinct_realizations(monkeypatch):
 def test_variation_rejects_scenario_owned_backend_otel_component(tmp_path):
     config = AptlConfig(
         lab={"name": "techvault"},
-        containers={"enterprise": True, "wazuh": False, "victim": False, "kali": False},
+        containers={'profiles': ['enterprise', 'soc', 'fileshare', 'dns']},
     )
     _write_compose(tmp_path, {"ad": ["enterprise"], "aptl-grafana-otel": ["otel"]})
     state = _variation_state(

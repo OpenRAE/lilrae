@@ -183,12 +183,13 @@ def host(mocker):
         "node": "v22.23.4\n",
     }
 
-    def check_max_map_count(*, selected_mode):
+    def check_max_map_count(minimum=262144, *, selected_mode):
         canned = state["max_map_count"]
         if selected_mode == hostenv.DOCKER_LINUX_NATIVE and canned is not None:
             return canned
-        return real_check_max_map_count(selected_mode=selected_mode)
+        return real_check_max_map_count(minimum, selected_mode=selected_mode)
 
+    mocker.patch("aptl.core._doctor_runtime._selected_kernel_demand", return_value=(262144, False))
     state["get_backend"] = mocker.patch(
         "aptl.core.deployment.get_backend",
         side_effect=lambda *_args, **_kwargs: _FakeBackend(state["daemon"]),
@@ -472,16 +473,11 @@ def test_memory_is_not_compared_to_a_threshold_no_scenario_declares(tmp_path, ho
 
 
 def _lab_start_compose_refusal(tmp_path, daemon, mocker):
-    """Ask lab start's own Compose check about a scenario with Wazuh state."""
-    from aptl.core.deployment.docker_compose import DockerComposeBackend
-
-    mocker.patch(
-        "aptl.core.deployment._compose_stateful_realization.owned_wazuh_services",
-        return_value={"wazuh-manager"},
-    )
-    backend = DockerComposeBackend(tmp_path / "start", project_name="doctor")
-    backend._run = daemon
-    return backend._validate_stateful_compose_capability(None)
+    """Ask the actual start gate about an emitted replacement feature."""
+    from aptl.core.deployment._lilrae_compose_capabilities import compose_capability_refusal
+    path = tmp_path / "feature.yml"
+    path.write_text("services:\n  example:\n    ports: !override []\n")
+    return compose_capability_refusal(daemon, (path,))
 
 
 @pytest.mark.parametrize(
@@ -511,8 +507,9 @@ def _lab_start_compose_refusal(tmp_path, daemon, mocker):
         pytest.param(
             "2.24.3",
             CheckStatus.WARNING,
-            "Docker Compose 2.24.3 is older than 2.24.4, which lab start requires "
-            "for a scenario that consumes generated certificates or volumes.",
+            "Docker Compose 2.24.3 is older than 2.24.4. Lab start requires "
+            "that floor only when the selected rendered model uses !reset "
+            "or !override merge features.",
             "Upgrade the Docker Compose plugin to 2.24.4 or newer.",
             id="below-the-compose-floor",
         ),
@@ -701,7 +698,7 @@ def test_max_map_count_is_asked_of_the_host_that_runs_the_engine(
 
     check = _by_id(run_doctor(_project(tmp_path), which=_which()))["max-map-count"]
 
-    host["check_max_map_count"].assert_called_once_with(selected_mode=mode)
+    host["check_max_map_count"].assert_called_once_with(262144, selected_mode=mode)
     assert check.status is status
     assert summary in check.summary
     assert fix in check.fix

@@ -163,7 +163,7 @@ def test_provider_can_change_only_group_fields(monkeypatch, tmp_path) -> None:
     assert first.profiles != second.profiles
 
 
-def test_pack_assigned_group_is_not_filtered_by_legacy_config(
+def test_pack_assigned_group_is_used_when_operator_selection_is_omitted(
     monkeypatch, tmp_path
 ) -> None:
     from aptl.backends.raes_provisioner import AptlProvisioner
@@ -177,7 +177,6 @@ def test_pack_assigned_group_is_not_filtered_by_legacy_config(
     backend = MagicMock()
     config = AptlConfig(
         lab={"name": "test"},
-        containers={"soc": False},
     )
     provisioner = AptlProvisioner(
         project_dir=tmp_path,
