@@ -33,7 +33,7 @@ SCENARIOS_DIR = PROJECT_ROOT / "scenarios"
 class _Variant:
     catalog_id: str
     filename: str
-    containers: dict[str, bool]
+    containers: dict[str, list[str]]
     expected_profiles: frozenset[str]
     # Compose services the selected scenario-serving profiles must activate.
     extra_services: frozenset[str]
@@ -302,7 +302,8 @@ def test_participant_action_proof_uses_control_plane_and_records_behavior(
     proof = run_participant_action_proof(
         tmp_path,
         AptlConfig(
-            lab={"name": "techvault"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}
+            lab={"name": "techvault"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
+            scenario={"identity": "techvault"},
         ),
     )
 

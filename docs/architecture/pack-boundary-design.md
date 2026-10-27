@@ -32,6 +32,7 @@ A missing kernel demand performs no kernel probe.
 Kernel demand applies independently of optional host-tool checks.
 Compose version checks derive from rendered features.
 Image preflight inspects the same rendered override before artifact and image operations.
+Backend authority and validation of remote artifacts precede feature probes.
 No product name or pack name determines a generic version check.
 
 ## Security and failure behavior

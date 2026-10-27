@@ -146,10 +146,6 @@ class ComposeRealizationMixin(
         """
 
         failure = self._runtime_materialization_preflight(realization)
-        if failure is None and _needs_compose(realization) and realization.images:
-            failure = compose_capability_refusal(
-                self._run, (), documents=(image_override_text(realization.images),),
-            )
         if failure is not None:
             return failure
 
@@ -184,6 +180,8 @@ class ComposeRealizationMixin(
 
         failure = self._environment_binding_preflight(realization)
         if failure is None:
+            failure = self._validate_stateful_realization(realization)
+        if failure is None:
             failure = self._capture_apparatus_preflight(realization)
         if failure is None:
             failure = self._traffic_mirror_preflight(realization)
@@ -193,6 +191,10 @@ class ComposeRealizationMixin(
             # Request-scoped: base start consumes the already-verified identity.
             self._realization_substrate_digests = dict(substrate_digests or {})
             failure = self._runtime_orchestration_preflight(realization)
+        if failure is None and _needs_compose(realization) and realization.images:
+            failure = compose_capability_refusal(
+                self._run, (), documents=(image_override_text(realization.images),),
+            )
         if failure is None:
             failure = self._start_backend_observability(realization.profiles)
         return failure

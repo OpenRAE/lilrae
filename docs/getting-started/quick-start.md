@@ -50,6 +50,15 @@ check failed and 1 when at least one did, so a script can run it before
 
 ## Choose A Scenario
 
+Edit `aptl.json` to select the intended pack explicitly. For the standard released lab, set:
+
+```json
+"scenario": {"source": "env-pack", "identity": "techvault"}
+```
+
+A new project has no selected pack. The `--scenario` option validates a selector
+against this configured pack; it does not choose a default for an unselected project.
+
 List the validated scenarios supplied by the installed environment pack:
 
 ```shell

@@ -19,7 +19,6 @@ misconfigurations:
       - containers/generic-systemd-node22-base/Dockerfile
       - containers/generic-systemd-wazuh-agent-base/Dockerfile
       - containers/generic-systemd-wazuh-agent-base-debian/Dockerfile
-      - containers/reverse/Dockerfile
     statement: >-
       systemd runs as PID 1 and must be uid 0 inside the container. These nodes
       run with no added capabilities, a private cgroup namespace, and the
