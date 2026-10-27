@@ -240,6 +240,15 @@ def _validated_mcp_keys(value: object) -> tuple[McpServerCredentials, ...]:
     return value
 
 
+def _validated_minimum_max_map_count(value: object) -> int | None:
+    """Accept an omitted demand or a bounded positive kernel setting."""
+    if value is None:
+        return None
+    if type(value) is not int or not 1 <= value <= 2**31 - 1:
+        raise ScenarioStartupProviderError("provider-result-invalid")
+    return value
+
+
 def _validated_plan(
     value: object, bundle: ScenarioBundle | None = None
 ) -> ScenarioStartupPlan:
@@ -265,9 +274,7 @@ def _validated_plan(
         and not isinstance(value.mcp_build_script, str)
     ):
         raise ScenarioStartupProviderError("provider-result-invalid")
-    minimum = value.minimum_max_map_count
-    if minimum is not None and (type(minimum) is not int or not 1 <= minimum <= 2**31 - 1):
-        raise ScenarioStartupProviderError("provider-result-invalid")
+    minimum = _validated_minimum_max_map_count(value.minimum_max_map_count)
     return ScenarioStartupPlan(
         seed_script=_safe_relative_script(value.seed_script),
         required_profiles=tuple(profiles),

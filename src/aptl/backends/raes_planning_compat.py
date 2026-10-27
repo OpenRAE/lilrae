@@ -48,9 +48,7 @@ from aptl.backends.scenario_planning_compatibility import (
 from aptl.backends.scenario_planning_compatibility_discovery import (
     resolve_scenario_planning_compatibility,
 )
-from aptl.backends._raes_backend_implementation_profiles import (
-    backend_profile_selected_concerns,
-)
+from aptl.backends import _raes_backend_implementation_profiles as implementation_profiles
 from aptl.backends import _raes_runtime_container_observation as container_observation
 
 _RAES_LIMIT_OVERRIDE_LOCK = RLock()
@@ -186,7 +184,7 @@ def _backend_profile_selects_concern(scenario: object, requirement: object) -> b
         None,
     )
     runtime = getattr(node, "runtime", None) if node is not None else None
-    return isinstance(kind, str) and kind in backend_profile_selected_concerns(runtime)
+    return isinstance(kind, str) and kind in implementation_profiles.backend_profile_selected_concerns(runtime)
 
 
 def _image_backed_node(scenario: object, requirement: object) -> bool:

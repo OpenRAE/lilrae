@@ -191,13 +191,21 @@ class ComposeRealizationMixin(
             # Request-scoped: base start consumes the already-verified identity.
             self._realization_substrate_digests = dict(substrate_digests or {})
             failure = self._runtime_orchestration_preflight(realization)
-        if failure is None and _needs_compose(realization) and realization.images:
-            failure = compose_capability_refusal(
-                self._run, (), documents=(image_override_text(realization.images),),
-            )
+        if failure is None:
+            failure = self._compose_feature_preflight(realization)
         if failure is None:
             failure = self._start_backend_observability(realization.profiles)
         return failure
+
+    def _compose_feature_preflight(
+        self, realization: DeploymentRealizationSpec
+    ) -> LabResult | None:
+        """Check the image override's Compose features before applying it."""
+        if not _needs_compose(realization) or not realization.images:
+            return None
+        return compose_capability_refusal(
+            self._run, (), documents=(image_override_text(realization.images),),
+        )
 
     def _realize_networks_and_boundaries(
         self,

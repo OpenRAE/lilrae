@@ -185,7 +185,7 @@ def _run_max_map_count_sysctl(
             capture_output=True,
             text=True,
         )
-    except (FileNotFoundError, OSError):
+    except OSError:
         return _not_applicable_result(minimum, "sysctl command not found or inaccessible")
 
 

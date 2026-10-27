@@ -1,15 +1,18 @@
 """Version demand follows emitted Compose merge features, not service names."""
 
-from pathlib import Path
+from collections.abc import Callable
 from itertools import chain
+from pathlib import Path
+from subprocess import CompletedProcess
+
 import yaml
 from yaml.tokens import TagToken
 
+from aptl.core.deployment._compose_stateful_constants import MIN_OVERRIDE_COMPOSE_VERSION
 from aptl.core.deployment._compose_stateful_graph import compose_version
 from aptl.core.lab_types import LabResult
 
 BASE_COMPOSE_VERSION = (2, 0, 0)
-from aptl.core.deployment._compose_stateful_constants import MIN_OVERRIDE_COMPOSE_VERSION
 
 
 def compose_feature_minimum(paths: tuple[Path, ...], *, documents: tuple[str, ...] = ()) -> tuple[int, int, int]:
@@ -21,17 +24,25 @@ def compose_feature_minimum(paths: tuple[Path, ...], *, documents: tuple[str, ..
     return BASE_COMPOSE_VERSION
 
 
-def compose_capability_refusal(run, paths: tuple[Path, ...], *, documents: tuple[str, ...] = ()) -> LabResult | None:
+def compose_capability_refusal(
+    run: Callable[..., CompletedProcess[str]],
+    paths: tuple[Path, ...],
+    *,
+    documents: tuple[str, ...] = (),
+) -> LabResult | None:
     """Refuse unsupported merge features before a Compose up mutation."""
     try:
         minimum = compose_feature_minimum(paths, documents=documents)
     except (OSError, ValueError, yaml.YAMLError):
         return LabResult(success=False, error="Compose feature requirements could not be read.")
-    if minimum == BASE_COMPOSE_VERSION:
-        return None
-    result = run(["docker", "compose", "version", "--short"], timeout=30)
-    version = compose_version(result.stdout) if result.returncode == 0 else None
-    if version is not None and version >= minimum:
-        return None
-    floor = ".".join(map(str, minimum))
-    return LabResult(success=False, error=f"Docker Compose {floor} or later is required for the selected merge features.")
+    refusal: LabResult | None = None
+    if minimum != BASE_COMPOSE_VERSION:
+        result = run(["docker", "compose", "version", "--short"], timeout=30)
+        version = compose_version(result.stdout) if result.returncode == 0 else None
+        if version is None or version < minimum:
+            floor = ".".join(map(str, minimum))
+            refusal = LabResult(
+                success=False,
+                error=f"Docker Compose {floor} or later is required for the selected merge features.",
+            )
+    return refusal

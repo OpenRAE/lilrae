@@ -23,8 +23,9 @@ def test_unselected_source_is_rejected_before_pack_acquisition(tmp_path, monkeyp
     def unexpected(*args, **kwargs):
         pytest.fail("an unselected workspace attempted pack acquisition")
     monkeypatch.setattr(resolver, "env_pack_bundle", unexpected)
+    config = AptlConfig()
     with pytest.raises(ValueError, match="explicit scenario"):
-        resolver.resolve_scenario_bundle(tmp_path, None, AptlConfig())
+        resolver.resolve_scenario_bundle(tmp_path, None, config)
     assert not (tmp_path / ".aptl").exists()
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -350,7 +350,10 @@ def _bind_backend_artifact_source(
         and targets <= {consumer.target_address for consumer in source.consumers}
     ]
     if len(sources) == 1:
-        return replace(candidate, ordering_dependencies=(sources[0].address,))
+        return cast(
+            DeploymentGeneratedArtifactRealization,
+            replace(candidate, ordering_dependencies=(sources[0].address,)),
+        )
     diagnostics.append(diagnostic(
         "aptl.provisioner.backend-artifact-source-ambiguous",
         candidate.address,

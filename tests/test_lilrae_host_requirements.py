@@ -16,14 +16,16 @@ def test_no_demand_never_probes_the_cli_hosts_kernel(monkeypatch):
         pytest.fail("an adapter-free scenario probed the host kernel")
     monkeypatch.setattr(sysreqs, "check_max_map_count", unexpected)
     result = sysreqs.check_scenario_max_map_count(None, selected_mode="native-linux")
-    assert result.passed and not result.applicable
+    assert result.passed
+    assert not result.applicable
 
 
 @pytest.mark.parametrize("minimum", [True, 0, -1, "262144", 2**40])
 def test_malformed_adapter_demand_is_rejected(minimum):
     from aptl.backends.scenario_startup import _validated_plan, ScenarioStartupProviderError
+    plan = _plan(minimum)
     with pytest.raises(ScenarioStartupProviderError):
-        _validated_plan(_plan(minimum))
+        _validated_plan(plan)
 
 
 def test_generic_demand_is_used_without_a_product_or_pack_name(monkeypatch):
@@ -97,7 +99,9 @@ def test_start_enforces_demand_without_host_tools_before_build_or_apply(tmp_path
         if failure is not None:
             break
     if kernel_sufficient:
-        assert failure is None and effects == [ctx]
+        assert failure is None
+        assert effects == [ctx]
     else:
-        assert failure is not None and not failure.success
+        assert failure is not None
+        assert not failure.success
         assert effects == []

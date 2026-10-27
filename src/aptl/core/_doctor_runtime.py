@@ -321,6 +321,13 @@ def _max_map_count_check(
 
     if minimum is None:
         return skipped("max-map-count", "the selected scenario declares no kernel demand")
+    return _required_max_map_count_check(backend, minimum)
+
+
+def _required_max_map_count_check(
+    backend: BoundaryProbeBackend, minimum: int
+) -> DoctorCheck:
+    """Check the selected engine's host for a declared kernel demand."""
     from aptl.core.execution_boundary import observe_execution_boundary
 
     containment = observe_execution_boundary(backend).host_containment

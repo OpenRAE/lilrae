@@ -43,9 +43,7 @@ def _load_config_response(project_dir: Path) -> ConfigResponse:
     return ConfigResponse(
         lab_name=config.lab.name,
         network_subnet=config.lab.network_subnet,
-        containers={
-            name: True for name in config.containers.enabled_profiles()
-        },
+        containers=dict.fromkeys(config.containers.enabled_profiles(), True),
         run_storage_backend=config.run_storage.backend,
         web=_web_serve_info(config.deployment.provider),
     )

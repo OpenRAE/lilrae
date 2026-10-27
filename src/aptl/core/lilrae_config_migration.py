@@ -5,6 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 import json
 from pathlib import Path
+from typing import Any
 
 from pydantic import TypeAdapter
 
@@ -24,7 +25,7 @@ _LEGACY_DEFAULTS = {
 }
 
 
-def migrated_config(data: object, *, scenario_identity: str | None = None) -> dict:
+def migrated_config(data: object, *, scenario_identity: str | None = None) -> dict[str, Any]:
     """Validate conversion without changing the input or choosing a pack."""
     if not isinstance(data, dict):
         raise ValueError("configuration must be an object")
@@ -38,7 +39,13 @@ def migrated_config(data: object, *, scenario_identity: str | None = None) -> di
         scenario["identity"] = scenario_identity
     if not scenario.get("identity"):
         raise ValueError("migration requires an explicit scenario identity")
-    containers = result.get("containers", {})
+    result["containers"] = _migrated_containers(result.get("containers", {}))
+    AptlConfig.model_validate(result)
+    return result
+
+
+def _migrated_containers(containers: object) -> dict[str, Any]:
+    """Convert historical flags while preserving an explicit profile selection."""
     if not isinstance(containers, dict):
         raise ValueError("invalid container configuration")
     historical = set(containers) & _LEGACY_DEFAULTS.keys()
@@ -52,11 +59,10 @@ def migrated_config(data: object, *, scenario_identity: str | None = None) -> di
         }
         if flags["mail"] or flags["reverse"]:
             raise ValueError("retired profiles require an explicit supported replacement")
-        result["containers"] = {
+        return {
             "profiles": [name for name, enabled in flags.items() if enabled]
         }
-    AptlConfig.model_validate(result)
-    return result
+    return containers
 
 
 def migrate_config(path: Path, *, scenario_identity: str | None = None) -> bool:
@@ -70,7 +76,7 @@ def _migrate_locked(path: Path, *, scenario_identity: str | None) -> bool:
     original = read_contained_nofollow(path.parent, path.name)
     try:
         data = json.loads(original)
-    except (ValueError, UnicodeError):
+    except ValueError:
         raise ValueError("invalid configuration JSON") from None
     converted = migrated_config(data, scenario_identity=scenario_identity)
     if converted == data:
