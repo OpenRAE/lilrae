@@ -28,21 +28,17 @@ This is an adapter, not portable content. It names `aptl-kali`,
 that is what an answer key for one scenario on one backend is made of. Hand it to
 another backend and it means nothing.
 
-That is also why it belongs to the backend rather than to the scenario author. An
-author cannot write the adapter for a backend they have never seen, and many
-backends are private, so they never could. A scenario declares the capability
-profile it needs and a backend declares conformance to it; the adapter answers
-the separate question of whether the scenario's expectations actually held.
+The adapter currently ships inside the `lilrae` distribution. Its bundled
+location is a delivery choice. An independently released adapter can own the
+same behavior through the [public family contract](../../docs/reference/family-adapters.md).
+RPT owns its TechVault-family implementation and qualification evidence.
+LilRAE retains generic admission, lifecycle, capture and verification machinery.
 
-It ships inside the `lilrae` distribution and releases with it, so `pipx
-install lilrae` gives an operator every extension surface TechVault owns with
-nothing further to install. The materialization boundary is in the code, not
-the packaging: generic materialization consumes the admitted RAES model
-without branching on TechVault names, while runtime parameters, startup
-behavior and verification are reached through installed entry-point metadata.
-Native evidence is an older built-in adapter under
-`aptl.core.evidence.adapters`, with registrations still declared in APTL core;
-this is not yet complete package-level scenario isolation.
+The bundled adapter keeps its existing exact-release qualification. It does
+not automatically qualify an RPT family or its admitted variations. Family
+trials select providers that explicitly declare the public family API and the
+exact family/release/backend target. Bundled legacy providers cannot satisfy
+that qualification or mask a missing family capability.
 
 ## Customer database
 

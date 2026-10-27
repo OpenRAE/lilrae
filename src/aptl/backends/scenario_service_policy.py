@@ -8,6 +8,10 @@ portable artifact location directly. No service or artifact is created here.
 
 from __future__ import annotations
 
+from aptl.core.deployment._misp_cache_credential import (
+    MISP_CACHE_RUNTIME_CONFIG_PATH as MISP_CACHE_RUNTIME_CONFIG_PATH,
+)
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -24,9 +28,34 @@ from aptl.backends.scenario_startup import (
     selected_runtime_provider,
 )
 from aptl.core.deployment.realization import (
+    DeploymentGeneratedArtifactRealization,
     DeploymentNodeRealization,
     DeploymentRealizationSpec,
 )
+
+__all__ = [
+    "MISP_CACHE_RUNTIME_CONFIG_PATH",
+    "ServiceFileMount",
+    "ServiceEnvironmentFile",
+    "ServiceContainerNameEnvironment",
+    "ScenarioComposeServicePolicy",
+    "artifact_source_path",
+    "certificate_mount_aliases",
+    "write_scenario_service_override",
+]
+
+
+def artifact_source_path(
+    scenario_root: Path, artifact: DeploymentGeneratedArtifactRealization
+) -> Path:
+    """Return the source directory for an admitted generated artifact."""
+
+    from aptl.core.deployment._compose_stateful_model import (
+        artifact_source_path as resolve,
+    )
+
+    return resolve(scenario_root, artifact)
+
 
 _OVERRIDE_RELPATH = Path(".aptl/realization/compose.service.yml")
 _INVALID = "provider-compose-service-result-invalid"

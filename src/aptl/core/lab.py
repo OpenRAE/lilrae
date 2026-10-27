@@ -1058,7 +1058,9 @@ def _preflight_clean_appliance_boundary(
     if appliance is None or appliance.launch_descriptor is None:
         return None, backend
     if not appliance.offline_staged:
-        return LabResult(success=False, error="Appliance launch requires offline staging."), backend
+        return LabResult(
+            success=False, error="Appliance launch requires offline staging."
+        ), backend
     from aptl.appliance.seat.launch_descriptor import verify_seat_launch
 
     try:
@@ -1069,9 +1071,7 @@ def _preflight_clean_appliance_boundary(
         if config_path is None:
             raise ValueError("appliance project configuration is unavailable")
         config = load_config(config_path)
-        selected = backend or _get_backend(
-            project_root, config, offline_staged=True
-        )
+        selected = backend or _get_backend(project_root, config, offline_staged=True)
         ctx = _LabStartContext(
             project_dir=project_root,
             skip_seed=False,
@@ -1094,8 +1094,15 @@ def _preflight_clean_appliance_boundary(
         endpoint = selected.revalidate_local_docker_socket()
         if not endpoint.success:
             raise ValueError("appliance guest Docker endpoint changed")
-    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError):
-        return LabResult(success=False, error="Verified appliance launch preflight failed."), backend
+    except (
+        OSError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        ValueError,
+    ):
+        return LabResult(
+            success=False, error="Verified appliance launch preflight failed."
+        ), backend
     return None, selected
 
 
@@ -1824,7 +1831,10 @@ def _step_reject_preexisting_range(ctx: _LabStartContext) -> LabResult | None:
         from aptl.core.participant_desktop import withdraw_participant_desktop
 
         if not withdraw_participant_desktop(ctx.project_dir):
-            return LabResult(success=False, error="Previous participant desktop could not be withdrawn")
+            return LabResult(
+                success=False,
+                error="Previous participant desktop could not be withdrawn",
+            )
         return None
     log.warning(
         "Lab start blocked by project runtime residue (containers=%d networks=%d)",
@@ -1837,7 +1847,9 @@ def _step_reject_preexisting_range(ctx: _LabStartContext) -> LabResult | None:
         f"`{command}` {effect}"
         for command, effect in stop_recovery_routes(ctx.project_dir)
     )
-    clean_command = lifecycle_recovery_command("lilrae lab start --clean", ctx.project_dir)
+    clean_command = lifecycle_recovery_command(
+        "lilrae lab start --clean", ctx.project_dir
+    )
     return LabResult(
         success=False,
         error=(
@@ -1915,10 +1927,7 @@ def _configure_verified_appliance_launch(
             success=False,
             error="Appliance access channel inputs are incomplete.",
         )
-    if (
-        not ctx.offline_staged
-        or ctx.backend is None
-    ):
+    if not ctx.offline_staged or ctx.backend is None:
         result = LabResult(
             success=False,
             error="Appliance launch inputs are incomplete.",
@@ -2788,6 +2797,10 @@ def _persist_cleanup_actions(ctx: _LabStartContext) -> None:
             )
     if pack_reset and "entry_point" not in provenance:
         raise ValueError("missing reset authority provenance")
+    if selection is not None and selection.trial is not None:
+        from aptl.backends.scenario_family import encode_family_target
+
+        provenance["family_target"] = encode_family_target(selection.trial.target)
     actions = [ACTION_CLEAR_WAZUH_ENROLLMENT_BASELINE]
     if pack_reset:
         actions.append(ACTION_PACK_RESET)
@@ -3977,7 +3990,9 @@ def _step_publish_participant_desktop(ctx: _LabStartContext) -> LabResult | None
 
     from aptl.core.participant_desktop import start_participant_desktop
 
-    failure = start_participant_desktop(ctx.project_dir, ctx.admitted_start, ctx.backend)
+    failure = start_participant_desktop(
+        ctx.project_dir, ctx.admitted_start, ctx.backend
+    )
     if failure is None:
         return None
     return LabResult(
@@ -4059,8 +4074,12 @@ def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
     if os.environ.get("APTL_SEAT_DESKTOP_HANDOFF") == "1":
         try:
             subprocess.run(
-                ["/usr/bin/python3", "/opt/aptl/desktop/desktop-handoff.py",
-                 str(ctx.project_dir), str(ctx.run_id or "")],
+                [
+                    "/usr/bin/python3",
+                    "/opt/aptl/desktop/desktop-handoff.py",
+                    str(ctx.project_dir),
+                    str(ctx.run_id or ""),
+                ],
                 check=True,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
@@ -4480,9 +4499,7 @@ def _run_start_stage(
     )
 
 
-def _account_for_failed_start(
-    ctx: _LabStartContext, result: LabResult
-) -> LabResult:
+def _account_for_failed_start(ctx: _LabStartContext, result: LabResult) -> LabResult:
     """Name what a failed start left in the project, removing it on request.
 
     Only a start that found the project empty can have created what remains,
@@ -4728,7 +4745,10 @@ def _orchestrate_lab_start_owned(
     if readiness_failure is not None:
         readiness_failure.admission_seconds = ctx.admission_seconds
         readiness_failure.execution_boundary = ctx.execution_boundary
-        readiness_failure.diagnostics = [*ctx.diagnostics, *readiness_failure.diagnostics]
+        readiness_failure.diagnostics = [
+            *ctx.diagnostics,
+            *readiness_failure.diagnostics,
+        ]
         return _account_for_failed_start(ctx, readiness_failure)
     if after_start is not None and ctx.appliance_access_request is not None:
         # Access supervision is long-lived and uses shared observation locks.

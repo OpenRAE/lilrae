@@ -18,7 +18,8 @@ from aptl.core.evidence.adapters.sources import (
 )
 from aptl.core.evidence.content_store import create_run_json_once
 from aptl.core.evidence.outcomes import CollectorStatus
-from aptl.core.evidence.protocol import CollectorContext, CollectorOutcome, RunScope
+from aptl.core.evidence.protocol import CollectorContext, CollectorOutcome
+from aptl.backends.scenario_capture import capture_run_scope
 from aptl.core.experiment.capture_registry import CaptureBinding
 from aptl.core.runstore import LocalRunStore
 
@@ -152,11 +153,22 @@ def acquire_native_evidence(request: NativeEvidenceRequest) -> AcquisitionResult
 
     if not isinstance(request.run_store, LocalRunStore):
         raise TypeError("native evidence requires a local run store")
+    scope = capture_run_scope(
+        request.capture_selection.context,
+        request.run_id,
+        request.plan.plan_id,
+        "provisioning",
+    )
     bindings = _native_bindings(request.plan, request.capture_selection)
     _persist_capture_plan(request.plan, request.run_store, request.run_id)
     runtime_adapter = request.capture_selection.contribution.runtime_adapter
     source_factory = getattr(runtime_adapter, "native_sources", None)
-    sources = source_factory(request) if callable(source_factory) else {}
+    if request.capture_selection.context.trial is not None:
+        from aptl.backends.scenario_capture import family_capture_sources
+
+        sources = family_capture_sources(request)
+    else:
+        sources = source_factory(request) if callable(source_factory) else {}
     collectors = {
         binding.registration_id: _OnDemandNativeCollector(
             binding.registration_id,
@@ -169,11 +181,7 @@ def acquire_native_evidence(request: NativeEvidenceRequest) -> AcquisitionResult
         bindings=bindings,
         collectors=collectors,
         run_store=request.run_store,
-        scope=RunScope(
-            run_id=request.run_id,
-            planned_trial_id=request.plan.plan_id,
-            attempt_id="provisioning",
-        ),
+        scope=scope,
         clock=request.clock or SystemClockProvider(),
     )
 

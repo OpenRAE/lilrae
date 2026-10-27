@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
-from aptl.core.deployment._compose_stateful_model import artifact_source_path
+from aptl.backends.scenario_service_policy import artifact_source_path
 
 MAX_SOURCE_BYTES = 2 * 1024 * 1024
 UTC_OFFSET = "+00:00"
