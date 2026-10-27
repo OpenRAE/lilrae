@@ -48,14 +48,16 @@ def test_raes_refuses_a_refresh_while_the_start_manager_owns_the_target():
     """The premise: RAES admits one live owner per target component."""
 
     target, execution_plan = _target_and_plan()
+    snapshot = RuntimeSnapshot()
+    records = _records()
     start_manager = AptlRuntimeManager(target)
     try:
         with pytest.raises(RuntimeError, match="runtime owner"):
             refresh_evidence_truth(
                 target=target,
                 execution_plan=execution_plan,
-                snapshot=RuntimeSnapshot(),
-                evidence_records=_records(),
+                snapshot=snapshot,
+                evidence_records=records,
             )
     finally:
         start_manager.close()
