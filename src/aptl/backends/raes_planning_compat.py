@@ -49,7 +49,6 @@ from aptl.backends.scenario_planning_compatibility_discovery import (
     resolve_scenario_planning_compatibility,
 )
 from aptl.backends import _raes_backend_implementation_profiles as implementation_profiles
-from aptl.backends import _raes_runtime_container_observation as container_observation
 
 _RAES_LIMIT_OVERRIDE_LOCK = RLock()
 
