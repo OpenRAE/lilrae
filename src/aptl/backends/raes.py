@@ -194,7 +194,10 @@ def start_raes_scenario(
     every other caller unchanged.
     """
 
-    resolved_scenario = _resolve_scenario_path(project_dir, scenario_path, config)
+    resolved_scenario = (
+        admitted.bundle.sdl_path if admitted is not None
+        else _resolve_scenario_path(project_dir, scenario_path, config)
+    )
     try:
         if admitted is None:
             admitted = admit_raes_scenario(

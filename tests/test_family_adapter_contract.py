@@ -617,9 +617,11 @@ def test_capture_generated_output_is_granted_contained_and_bounded(tmp_path, fai
         capture_source_context,
     )
     from aptl.backends.scenario_service_policy import artifact_source_path
+    from aptl.core.deployment._ssh_key_bundle import SSH_ACCESS_PROFILE_V1
 
     artifact = SimpleNamespace(
         name="keys", generator="ssh_key_bundle",
+        provenance=SSH_ACCESS_PROFILE_V1,
         outputs=(SimpleNamespace(name="private", path="id_test"),),
     )
     root = artifact_source_path(tmp_path, artifact)

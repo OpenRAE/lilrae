@@ -872,17 +872,8 @@ def test_check_provisioning_realization_fails_on_profile_mismatch(tmp_path):
     )
     config = AptlConfig(
         lab={"name": "t"},
-        containers={
-            "wazuh": False,
-            "victim": True,
-            "kali": True,
-            "reverse": False,
-            "enterprise": False,
-            "soc": False,
-            "mail": False,
-            "fileshare": False,
-            "dns": False,
-        },
+        containers={'profiles': ['victim', 'kali']},
+        scenario={"identity": "techvault"},
     )
 
     details, check = check_provisioning_realization(
@@ -964,17 +955,8 @@ def test_provisioning_realization_fails_on_unrealizable_content(tmp_path):
     )
     config = AptlConfig(
         lab={"name": "t"},
-        containers={
-            "wazuh": False,
-            "victim": False,
-            "kali": False,
-            "reverse": False,
-            "enterprise": False,
-            "soc": False,
-            "mail": False,
-            "fileshare": True,
-            "dns": False,
-        },
+        containers={'profiles': ['fileshare']},
+        scenario={"identity": "techvault"},
     )
 
     details, check = check_provisioning_realization(

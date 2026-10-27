@@ -1307,6 +1307,7 @@ def test_a_failed_compose_up_receipts_and_rolls_back_partial_runtime(
     from aptl.core.deployment._compose_owned_start import _OwnedStartScope
 
     backend = DockerComposeBackend(tmp_path, project_name="aptl")
+    (tmp_path / "docker-compose.yml").write_text("services: {}\n")
     scope = _OwnedStartScope(
         ownership=backend._ensure_resource_ownership(),
         attempt_id="attempt-under-test",

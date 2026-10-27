@@ -86,6 +86,7 @@ class ScenarioStartupPlan:
     mcp_build_script: str | None = None
     mcp_server_keys: tuple[McpServerCredentials, ...] = ()
     native_mcp_ingress: bool = False
+    minimum_max_map_count: int | None = None
 
 
 @dataclass(frozen=True)

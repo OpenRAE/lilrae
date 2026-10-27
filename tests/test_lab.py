@@ -371,7 +371,7 @@ class TestLabStart:
 
         config = AptlConfig(
             lab={"name": "test"},
-            containers={"wazuh": True, "victim": True, "kali": False, "reverse": False},
+            containers={'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
         )
         mock_subprocess.side_effect = self._observability_inventory_then()
 
@@ -488,7 +488,7 @@ class TestLabStop:
             json.dumps(
                 {
                     "lab": {"name": "test"},
-                    "containers": {"victim": True, "kali": False, "wazuh": True},
+                    "containers": {'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
                 }
             )
         )
@@ -514,7 +514,7 @@ class TestLabStop:
             json.dumps(
                 {
                     "lab": {"name": "test"},
-                    "containers": {"wazuh": True, "victim": False},
+                    "containers": {'profiles': ['wazuh', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
                 }
             )
         )
@@ -558,7 +558,7 @@ class TestLabStop:
             json.dumps(
                 {
                     "lab": {"name": "test"},
-                    "containers": {"victim": True, "kali": False, "wazuh": True},
+                    "containers": {'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
                 }
             )
         )
@@ -1402,7 +1402,7 @@ class TestCheckBindMounts:
             ":/etc/nginx/certs/cert.pem:ro\n"
         )
         ctx = _LabStartContext(
-            project_dir=tmp_path, skip_seed=False, config=AptlConfig()
+            project_dir=tmp_path, skip_seed=False, config=AptlConfig(containers={"profiles": ["soc"]})
         )
         ctx.admitted_surface = _admitted_surface(
             tmp_path, env_pack=False, selected_profiles=("otel",)
@@ -1711,6 +1711,14 @@ class TestStartupOutcomeDerivation:
         )
 
 
+def _historical_profile_selection(flags):
+    """Pin the old fixture's selection explicitly under the new schema."""
+    defaults = dict.fromkeys(("wazuh", "victim", "kali", "enterprise", "soc", "fileshare", "dns"), True)
+    defaults.update({"mail": False, "reverse": False})
+    defaults.update(flags)
+    return {"profiles": [name for name, enabled in defaults.items() if enabled]}
+
+
 class TestOrchestrateLabStart:
     """Tests for the full lab start orchestration."""
 
@@ -1737,17 +1745,7 @@ class TestOrchestrateLabStart:
             # Explicit minimal profile set: these orchestration tests assert
             # behavior for a wazuh/victim/kali lab, so pin every flag rather
             # than inheriting the (now SOC-enabled) config defaults.
-            containers={
-                "wazuh": True,
-                "victim": True,
-                "kali": True,
-                "reverse": False,
-                "enterprise": False,
-                "soc": False,
-                "mail": False,
-                "fileshare": False,
-                "dns": False,
-            },
+            containers={'profiles': ['wazuh', 'victim', 'kali']},
         )
 
     def _patch_all_steps(self, mocker, tmp_path):
@@ -1777,20 +1775,11 @@ class TestOrchestrateLabStart:
             json.dumps(
                 {
                     "lab": {"name": "test-lab"},
+                    "scenario": {"identity": "techvault"},
                     # Pin every profile: these orchestration tests assert the
                     # outcome/diagnostics of a wazuh/victim/kali lab, so the
                     # written config must not inherit the SOC-enabled defaults.
-                    "containers": {
-                        "wazuh": True,
-                        "victim": True,
-                        "kali": True,
-                        "reverse": False,
-                        "enterprise": False,
-                        "soc": False,
-                        "mail": False,
-                        "fileshare": False,
-                        "dns": False,
-                    },
+                    "containers": {'profiles': ['wazuh', 'victim', 'kali']},
                 }
             )
         )
@@ -1891,7 +1880,7 @@ class TestOrchestrateLabStart:
         from aptl.core.sysreqs import SysReqResult, ToolReqResult
 
         mocks["sysreqs"] = mocker.patch(
-            "aptl.core.lab.check_max_map_count",
+            "aptl.core.lab.check_scenario_max_map_count",
             return_value=SysReqResult(
                 passed=True, current_value=262144, required_value=262144
             ),
@@ -2227,7 +2216,7 @@ class TestOrchestrateLabStart:
         # aptl.json still needed to not hit a different error first
         import json
 
-        (tmp_path / "aptl.json").write_text(json.dumps({"lab": {"name": "test"}}))
+        (tmp_path / "aptl.json").write_text(json.dumps({"lab": {"name": "test"}, "scenario": {"identity": "techvault"}}))
 
         result = orchestrate_lab_start(tmp_path)
 
@@ -2996,12 +2985,8 @@ class TestOrchestrateLabStart:
             json.dumps(
                 {
                     "lab": {"name": "test-lab"},
-                    "containers": {
-                        "wazuh": False,
-                        "victim": False,
-                        "kali": False,
-                        "reverse": False,
-                    },
+                    "scenario": {"identity": "techvault"},
+                    "containers": {'profiles': []},
                 }
             )
         )
@@ -3656,7 +3641,7 @@ class TestResolveHostPortsStep:
             progress=progress,
             config=AptlConfig(
                 lab={"name": "test-lab"},
-                containers={"wazuh": True, "soc": True},
+                containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
             ),
             backend=MagicMock(),
         )
@@ -3942,7 +3927,7 @@ class TestStartupClassificationWiring:
             # Pin the SOC/enterprise/dns/fileshare flags off: these wiring tests
             # assert diagnostics for a wazuh/victim/kali lab, so don't inherit
             # the (now SOC-enabled) config defaults.
-            containers={
+            containers=_historical_profile_selection({
                 "wazuh": wazuh,
                 "victim": victim,
                 "kali": kali,
@@ -3952,7 +3937,8 @@ class TestStartupClassificationWiring:
                 "mail": False,
                 "fileshare": False,
                 "dns": False,
-            },
+            }),
+            scenario={"identity": "techvault"},
         )
 
     def _ctx(self, tmp_path, *, config=None, selected_profiles=None):
@@ -4715,14 +4701,7 @@ class TestStartupClassificationWiring:
             # exercises the subprocess-failure path, not the gating.
             config=AptlConfig(
                 lab={"name": "test-lab"},
-                containers={
-                    "wazuh": True,
-                    "enterprise": True,
-                    "victim": True,
-                    "kali": True,
-                    "fileshare": True,
-                    "soc": True,
-                },
+                containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
             ),
         )
         misp_key = f"misp-{uuid4().hex}"
@@ -4772,14 +4751,7 @@ class TestStartupClassificationWiring:
             tmp_path,
             config=AptlConfig(
                 lab={"name": "test-lab"},
-                containers={
-                    "wazuh": True,
-                    "enterprise": True,
-                    "victim": True,
-                    "kali": True,
-                    "fileshare": True,
-                    "soc": True,
-                },
+                containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
             ),
         )
         scripts_dir = tmp_path / "scripts"
@@ -4828,14 +4800,7 @@ class TestStartupClassificationWiring:
             tmp_path,
             config=AptlConfig(
                 lab={"name": "test-lab"},
-                containers={
-                    "wazuh": True,
-                    "enterprise": True,
-                    "victim": True,
-                    "kali": True,
-                    "fileshare": True,
-                    "soc": True,
-                },
+                containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
             ),
         )
         # No scripts/seed-prime.sh in tmp_path
@@ -4876,14 +4841,7 @@ class TestStartupClassificationWiring:
             tmp_path,
             config=AptlConfig(
                 lab={"name": "test-lab"},
-                containers={
-                    "wazuh": True,
-                    "enterprise": True,
-                    "victim": True,
-                    "kali": True,
-                    "fileshare": True,
-                    "soc": True,
-                },
+                containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
             ),
             # soc (and the rest of the prime set) is enabled in config, but
             # the scenario this run started never selected it.
@@ -5135,7 +5093,7 @@ class TestLabOrchestrationContracts:
 
         defaults = {"wazuh": True, "victim": True, "kali": True}
         defaults.update(container_overrides)
-        return AptlConfig(lab={"name": "test-lab"}, containers=defaults)
+        return AptlConfig(lab={"name": "test-lab"}, containers=_historical_profile_selection(defaults))
 
     def _outcome(self, *, success, selected_profiles, error="", message="ok"):
         """Build a real `AcesStartOutcome` — the shape `start_raes_scenario`
@@ -6080,7 +6038,7 @@ class TestSeedSocPrimeProfileDiagnostic:
 
         containers = {"wazuh": True, "victim": True, "kali": True, "soc": soc}
         containers.update(extra)
-        cfg = AptlConfig(lab={"name": "t"}, containers=containers)
+        cfg = AptlConfig(lab={"name": "t"}, containers=_historical_profile_selection(containers))
         # Default: the scenario selects exactly what config enables (the
         # common case where config and selection coincide). Tests proving
         # the selected-surface distinction pass an explicit subset.
@@ -6231,7 +6189,7 @@ class TestGenerateSocCertsStep:
             # (#875), so this suite selects the in-tree source explicitly.
             config=AptlConfig(
                 lab={"name": "t"},
-                containers=containers,
+                containers=_historical_profile_selection(containers),
                 scenario=ScenarioSourceConfig(source="project-tree"),
             ),
             backend=backend or MagicMock(),

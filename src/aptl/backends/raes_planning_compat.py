@@ -41,42 +41,21 @@ from aptl.backends.identity import (
 )
 from aptl.backends.scenario_planning_compatibility import (
     PlanningCompatibilityDecision,
+    PERMITTED_DAEMON_READBACK_CONCERNS,
     ResolvedPlanningCompatibility,
     ScenarioPlanningCompatibilityContext,
 )
 from aptl.backends.scenario_planning_compatibility_discovery import (
     resolve_scenario_planning_compatibility,
 )
-from aptl.backends._raes_backend_implementation_profiles import (
-    backend_profile_selected_concerns,
-)
-from aptl.backends.raes_runtime_attestation import (
-    ARTIFACT_ATTESTED_RUNTIME_CONCERNS,
-)
-from aptl.backends import _raes_runtime_container_observation as container_observation
+from aptl.backends import _raes_backend_implementation_profiles as implementation_profiles
 
 _RAES_LIMIT_OVERRIDE_LOCK = RLock()
 
 # Backend-manifest realization claims remain a core capability declaration.
 # An adapter decision chooses which of these claims one pack release needs
 # rewritten during planning; it cannot add a capability the manifest lacks.
-DAEMON_READBACK_RUNTIME_CONCERNS = frozenset(
-    {
-        *ARTIFACT_ATTESTED_RUNTIME_CONCERNS,
-        "linux-capabilities",
-        "published-ports",
-        *container_observation.RUNTIME_CONTAINER_DAEMON_CONCERNS,
-        "runtime-container-autoremove",
-        "runtime-container-command",
-        "runtime-container-entrypoint",
-        "runtime-environment",
-        "runtime-local-control-interfaces",
-        "runtime-mounts",
-        "runtime-node-memory-limit",
-        "runtime-restart-policy",
-        "service-listeners",
-    }
-)
+DAEMON_READBACK_RUNTIME_CONCERNS = PERMITTED_DAEMON_READBACK_CONCERNS
 
 
 def resolve_target_planning_compatibility(
@@ -204,7 +183,7 @@ def _backend_profile_selects_concern(scenario: object, requirement: object) -> b
         None,
     )
     runtime = getattr(node, "runtime", None) if node is not None else None
-    return isinstance(kind, str) and kind in backend_profile_selected_concerns(runtime)
+    return isinstance(kind, str) and kind in implementation_profiles.backend_profile_selected_concerns(runtime)
 
 
 def _image_backed_node(scenario: object, requirement: object) -> bool:

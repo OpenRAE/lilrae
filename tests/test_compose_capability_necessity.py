@@ -1,9 +1,9 @@
-"""Why two substrates keep CAP_SYS_ADMIN when the systemd substrate gave it up (#955).
+"""Why the Samba substrate keeps CAP_SYS_ADMIN (#955).
 
 Issue #955 removed `CAP_SYS_ADMIN` from every node on the generic systemd
-substrate. Two realizations keep their own grant, and this module holds the
+substrate. The Samba realization keeps its own grant, and this module holds the
 measurements that justify them, so each is a documented, tested necessity
-rather than an assumption nobody rechecked. Both were judged on their own
+rather than an assumption nobody rechecked. It was judged on its own
 evidence: the substrate's own three capabilities looked equally load-bearing
 right up until they were measured and turned out not to be.
 
@@ -15,15 +15,8 @@ gates writes to the whole `security.*` xattr namespace behind CAP_SYS_ADMIN.
 Without it, provisioning fails at `setsysvolacl` -> `smbd.set_nt_acl` with
 NT_STATUS_ACCESS_DENIED before the domain exists.
 
-`reverse` runs systemd, and moves to the new cgroup v2 posture, but keeps one
-capability. Its first-boot `reverse-tools-install.service` installs falco, whose
-dpkg post-install runs `falcoctl driver install` (driver type kmod). A bisect on
-a real boot isolated the cause instead of assuming it: default seccomp plus
-CAP_SYS_ADMIN reaches `active`; `seccomp:unconfined` with no capability still
-fails. So the capability is required and the unconfined profile, SYS_NICE, and
-SYS_RESOURCE are not.
-
-Issue #976 evaluates replacing both product choices so neither grant is needed.
+The reverse workstation and its grant were retired by issue #1121.
+Issue #976 evaluates replacing the remaining Samba product choice.
 
 The behavioural test is marked `integration` (per-test, not module-level, so the
 default `-k "not integration"` run does not zero this module's coverage) because
@@ -180,43 +173,8 @@ def test_security_xattr_write_requires_sys_admin_in_the_samba_provider_image():
     assert with_sys_admin.returncode == 0, with_sys_admin.stderr
 
 
-def _reverse_service() -> dict:
+
+def test_retired_reverse_workstation_has_no_shipped_capability_grant():
     compose = yaml.safe_load((PROJECT_ROOT / "docker-compose.yml").read_text())
-    return compose["services"]["reverse"]
-
-
-def test_reverse_moved_off_the_retired_systemd_recipe():
-    """issue #955: the `reverse` profile's service uses the new cgroup v2 posture.
-
-    It is not in the default range, but a shipped compatibility model still
-    emitting the retired flags would make "the range is hardened" untrue.
-    """
-
-    service = _reverse_service()
-
-    assert service.get("cgroup") == "private"
-    assert "writable-cgroups=true" in (service.get("security_opt") or [])
-    assert "seccomp:unconfined" not in (service.get("security_opt") or [])
-    assert not any(
-        str(volume).startswith("/sys/fs/cgroup")
-        for volume in (service.get("volumes") or [])
-    )
-
-
-def test_reverse_keeps_only_the_capability_the_bisect_justified():
-    """SYS_NICE and SYS_RESOURCE were unnecessary; SYS_ADMIN was not.
-
-    Measured by bisect on a real boot: with the default seccomp profile and
-    CAP_SYS_ADMIN, `reverse-tools-install.service` reaches active; with
-    `seccomp:unconfined` and no capability it fails on falco's
-    `falcoctl driver install` postinst. So exactly one capability survives, and
-    the two that were carried alongside it do not.
-    """
-
-    assert set(_reverse_service().get("cap_add") or []) == {"SYS_ADMIN"}
-
-
-def test_the_reverse_capability_rationale_is_recorded_beside_the_grant():
-    compose_text = (PROJECT_ROOT / "docker-compose.yml").read_text()
-
-    assert "falcoctl driver install" in compose_text
+    assert "reverse" not in compose["services"]
+    assert not (PROJECT_ROOT / "containers/reverse/Dockerfile").exists()

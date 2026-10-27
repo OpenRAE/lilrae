@@ -7,6 +7,11 @@ verification, and participant-smoke providers through entry points. Capture,
 several product-specific lifecycle choices, operator-group vocabulary, and a
 release compatibility shim still bypass that boundary.
 
+The [issue #1121 preflight](issue-1121-pack-boundary-preflight.md) closes this
+note's deferred pack-default, ownership-ledger and repository-policy decisions,
+including selected-pack host requirements and separate ownership of the
+retained LilRAE adapter and RPT experiment adapter.
+
 For pending reset receipts after upgrades, the [issue #1179 preflight](issue-1179-pending-lab-cleanup-preflight.md)
 supersedes this note's assignment of the generated Wazuh enrollment baseline
 to the TechVault adapter. That baseline is APTL-owned host state; truly

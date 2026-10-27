@@ -5,7 +5,8 @@ environment rather than the checkout.
 
 First, the code boundary: the wheel registers the entry points a scenario owns,
 they resolve into the scenario's own top-level package, and the *framework*
-package carries no scenario knowledge — in either the importable copy or the
+package carries no unreviewed scenario knowledge. Exact compatibility exceptions
+use the source revision's ownership ledger in both the importable copy and the
 bundled ``_labdata/src`` copy, since ``ASSET_ROOTS`` ships ``src`` twice over.
 
 Second, the install: one install of one distribution is enough for semantic
@@ -184,7 +185,7 @@ def context(scenario=ADMITTED, operations=None, containers=()):
 
 
 @pytest.mark.integration
-def test_the_wheel_keeps_scenario_knowledge_out_of_the_framework_package(
+def test_the_wheel_has_only_reviewed_compatibility_exceptions_in_the_framework(
     tmp_path: Path,
 ) -> None:
     """The adapter ships in the wheel; the framework package stays scenario-free."""
@@ -258,6 +259,13 @@ def test_the_wheel_keeps_scenario_knowledge_out_of_the_framework_package(
             continue
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(content)
+    # The source-revision ledger governs these exact wheel bytes as it governs
+    # source. It is review evidence, not runtime configuration to ship to labs.
+    ledger = (REPO_ROOT / ".gc/pack-ownership.json").read_bytes()
+    for root in (imported, bundled):
+        policy = root / ".gc/pack-ownership.json"
+        policy.parent.mkdir(parents=True, exist_ok=True)
+        policy.write_bytes(ledger)
     assert check.findings(imported, facts) == []
     assert check.findings(bundled, facts) == []
 

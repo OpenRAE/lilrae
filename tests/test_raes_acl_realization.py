@@ -103,7 +103,7 @@ def test_acl_lowering_preserves_raes_identity_order_and_semantics(tmp_path) -> N
 
     realization = interpret_provisioning_plan(
         plan=_plan(orchard, quartz, sentinel),
-        config=AptlConfig(lab={"name": "synthetic"}, containers={"victim": True}),
+        config=AptlConfig(lab={"name": "synthetic"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
         bundle=_bundle(tmp_path),
     )
 
@@ -168,7 +168,7 @@ def test_acl_lowering_rejects_unsupported_semantics_before_backend(tmp_path) -> 
 
     realization = interpret_provisioning_plan(
         plan=_plan(orchard, sentinel),
-        config=AptlConfig(lab={"name": "synthetic"}, containers={"victim": True}),
+        config=AptlConfig(lab={"name": "synthetic"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
         bundle=_bundle(tmp_path),
     )
 
@@ -210,7 +210,7 @@ def test_acl_lowering_rejects_out_of_range_ports(tmp_path) -> None:
 
     realization = interpret_provisioning_plan(
         plan=_plan(orchard, sentinel),
-        config=AptlConfig(lab={"name": "synthetic"}, containers={"victim": True}),
+        config=AptlConfig(lab={"name": "synthetic"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
         bundle=_bundle(tmp_path),
     )
 
@@ -264,7 +264,7 @@ def test_acl_lowering_rejects_unenforceable_endpoint_forms(
 
     realization = interpret_provisioning_plan(
         plan=_plan(orchard, sentinel),
-        config=AptlConfig(lab={"name": "synthetic"}, containers={"victim": True}),
+        config=AptlConfig(lab={"name": "synthetic"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
         bundle=_bundle(tmp_path),
     )
 
@@ -300,7 +300,7 @@ def test_acl_lowering_preserves_an_authored_wildcard_endpoint(tmp_path) -> None:
 
     realization = interpret_provisioning_plan(
         plan=_plan(orchard, sentinel),
-        config=AptlConfig(lab={"name": "synthetic"}, containers={"victim": True}),
+        config=AptlConfig(lab={"name": "synthetic"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
         bundle=_bundle(tmp_path),
     )
 
@@ -336,7 +336,7 @@ def test_network_owned_acl_is_preserved_as_network_policy(tmp_path) -> None:
 
     realization = interpret_provisioning_plan(
         plan=_plan(orchard, quartz),
-        config=AptlConfig(lab={"name": "synthetic"}, containers={"victim": True}),
+        config=AptlConfig(lab={"name": "synthetic"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
         bundle=_bundle(tmp_path),
     )
 

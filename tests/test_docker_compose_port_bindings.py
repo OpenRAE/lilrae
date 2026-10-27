@@ -66,15 +66,10 @@ MANAGEMENT_SURFACES = [
     # exposed host becomes an open, known-cred relay (issue #668). The in-range
     # phishing path (kali -> victims) uses the docker networks, not these host
     # publishes, so loopback binding does not reduce attack realism.
-    ("mailserver", 25),
-    ("mailserver", 143),
-    ("mailserver", 587),
-    ("mailserver", 993),
     # The web API and UI are the operator's own control plane (ADR-039).
     ("aptl-web-api", 8400),
     ("aptl-web-ui", 3000),
     # The reverse-engineering workstation is defender tooling, not a target.
-    ("reverse", 2027),
 ]
 
 # The same boundary on the pinned TechVault pack's rendered publications. Its

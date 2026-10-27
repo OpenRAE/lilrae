@@ -168,3 +168,23 @@ It exercises two snapshots under one target with two independently versioned ada
 It rejects unsupported family API versions.
 Other tests cover atomic release matching, malformed providers, missing capabilities, detached inputs, binding collisions, bounded authority, and restart drift.
 This evidence qualifies the generic contract; the RPT owner supplies qualification evidence for its released family and adapter.
+
+## Optional host requirements and supporting imports
+
+`ScenarioStartupPlan.minimum_max_map_count` declares a bounded positive integer minimum or `None`.
+It defaults to `None` and does not change callable API `1`.
+The startup resolver must return declarations without invoking lifecycle effects.
+Startup uses its admitted selection; doctor reads the same declaration without running hooks.
+Kernel demand does not require the separate `HOST_TOOLS` lifecycle capability.
+Core owns the kernel probe and selects the engine host boundary.
+A missing demand performs no kernel probe.
+
+`aptl.core.deployment.backend.DeploymentBackend` and `aptl.core.deployment.errors.BackendTimeoutError` retain their public protocol and error roles.
+`aptl.backends.identity` and the existing `raes_manifest` target constants identify the backend contract independently of distribution releases.
+`aptl.core.lifecycle_cleanup.WAZUH_ENROLLMENT_BASELINE_RELPATH` names reserved core-owned historical state.
+It grants no new filesystem authority; family capture still uses its scoped output grants.
+The baseline cleanup and receipt readers remain core-owned across adapter upgrades.
+
+LilRAE retains the original `aptl_techvault` package and its registrations.
+RPT maintains `rpt_techvault` independently for its distinct PurpleTeam selectors.
+The RPT copy and PR do not qualify future capture specifications or scenario variations.

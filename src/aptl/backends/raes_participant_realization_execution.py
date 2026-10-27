@@ -15,9 +15,6 @@ from raes_contracts.participant_binding import (
 from raes_contracts.planning import RuntimeDomain
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 
-from aptl.backends.raes_participant_fixture import (
-    VerifiedParticipantOperation,
-)
 from aptl.backends.raes_participant_execution_support import (
     evidence_token,
     mapping_digest,
@@ -26,6 +23,7 @@ from aptl.backends.raes_participant_execution_support import (
 )
 
 if TYPE_CHECKING:
+    from aptl.backends.raes_participant_fixture import VerifiedParticipantOperation
     from aptl.backends.raes_participant_driver import ParticipantPlanAuthority
     from aptl.backends.raes_participant_realizations import (
         ParticipantActionRealization,
@@ -143,6 +141,7 @@ def _resolve_execution_context(
 
 def _execute_observation(context: _ExecutionContext) -> VerifiedParticipantOperation:
     """Execute the native operation and enforce its declared mutation class."""
+    from aptl.backends.raes_participant_fixture import VerifiedParticipantOperation
 
     from aptl.backends.raes_participant_realizations import (
         execute_verified_participant_operation,
@@ -180,6 +179,7 @@ def _enforce_mutation_claim(
     observation: VerifiedParticipantOperation,
 ) -> VerifiedParticipantOperation:
     """Reject semantic readback that contradicts the action mutation claim."""
+    from aptl.backends.raes_participant_fixture import VerifiedParticipantOperation
 
     contradiction: tuple[str, str] | None = None
     if (
