@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from raes_contracts.runtime_state import RuntimeSnapshot
@@ -36,14 +35,14 @@ from aptl.backends._raes_runtime_materialization_admission import (
     qualify_admitted_runtime,
 )
 from aptl.backends._raes_admission_helpers import (
+    bind_admission_trial,
+    bind_admitted_participant_runtime,
     prepare_admission_scenario,
     resolve_admission_adapters,
 )
 from aptl.backends._raes_runtime_target_options import RuntimeTargetOptions
 from aptl.backends.scenario_family import (
     FamilyTrialInput,
-    admit_family_trial,
-    require_family_capabilities,
 )
 from aptl.backends._raes_start_failure import (
     INSTANTIATION_FAILURE_MESSAGE as INSTANTIATION_FAILURE_MESSAGE,
@@ -70,9 +69,7 @@ from aptl.backends.raes_evaluator import AptlEvaluator
 from aptl.backends.raes_orchestrator import AptlOrchestrator
 from aptl.backends.raes_participant_actions import (
     DEFAULT_PARTICIPANT_ACTIONS,
-    participant_action_specs_from_runtime_model,
 )
-from aptl.backends.raes_participant_driver import ParticipantPlanAuthority
 from aptl.backends import raes_participant_delivery as participant_delivery
 from aptl.backends.raes_participant_runtime import AptlParticipantRuntime
 from aptl.backends.raes_provisioner import AptlProvisioner
@@ -80,6 +77,7 @@ from aptl.backends.raes_start_model import (
     AcesRunTarget,
     AcesStartOutcome,
     AdmittedScenarioStart,
+    ScenarioAdmissionSource,
 )
 from aptl.core.config import AptlConfig
 from aptl.core.scenario_bundle import (
@@ -91,7 +89,6 @@ from aptl.core.lab_types import LabResult
 if TYPE_CHECKING:
     from raes_processor.models import ExecutionPlan
 
-    from aptl.backends.scenario_startup import ScenarioStartupSelection
     from aptl.core.deployment.backend import DeploymentBackend
     from aptl.core.runstore import RunStorageBackend
 
@@ -207,12 +204,11 @@ def start_raes_scenario(
                 scenario_path=scenario_path,
             )
         resolved_scenario = admitted.bundle.sdl_path
-        if admitted.bundle.trial is not None:
-            if (
-                run_target is None
-                or run_target.run_id != admitted.bundle.trial.provenance.run_id
-            ):
-                raise ValueError("family-run-identity-mismatch")
+        if admitted.bundle.trial is not None and (
+            run_target is None
+            or run_target.run_id != admitted.bundle.trial.provenance.run_id
+        ):
+            raise ValueError("family-run-identity-mismatch")
         return _apply_with_backend_retry(
             admitted.target,
             admitted.execution_plan,
@@ -239,8 +235,7 @@ def admit_raes_scenario(
     *,
     scenario_path: Path | None = None,
     parameters: Mapping[str, object] | None = None,
-    bundle: ScenarioBundle | None = None,
-    startup_selection: ScenarioStartupSelection | None = None,
+    source: ScenarioAdmissionSource | None = None,
     trial: FamilyTrialInput | None = None,
 ) -> AdmittedScenarioStart:
     """Admit one scenario execution: resolve, parse, plan, and interpret it once.
@@ -257,38 +252,11 @@ def admit_raes_scenario(
     # env-pack yields a staged, validated pack. Everything downstream anchors to
     # this rather than the engine's checkout, so rehoming changes only the
     # resolver (issue #874 / #875).
+    selected = source or ScenarioAdmissionSource()
+    bundle, startup_selection = selected.bundle, selected.startup_selection
     if bundle is None:
         bundle = resolve_scenario_bundle(project_dir, scenario_path, config)
-    if trial is not None:
-        if startup_selection is not None or parameters:
-            raise ValueError("family-trial-parameter-collision")
-        from aptl.backends.identity import (
-            BackendIdentity,
-            APTL_RAES_TARGET_NAME,
-            APTL_RAES_TARGET_VERSION,
-            APTL_RAES_TARGET_PROFILE,
-        )
-
-        backend_identity = BackendIdentity(
-            APTL_RAES_TARGET_NAME,
-            APTL_RAES_TARGET_VERSION,
-            APTL_RAES_TARGET_PROFILE,
-            provider=config.deployment.provider,
-            transport=config.deployment.provider,
-        )
-        admitted_trial = admit_family_trial(bundle, backend_identity, trial)
-        selections = require_family_capabilities(admitted_trial)
-        installed = (selections[0].distribution, selections[0].distribution_version)
-        bundle = replace(
-            bundle,
-            trial=replace(
-                admitted_trial,
-                installation=installed,
-                providers=tuple(item.identity() for item in selections),
-            ),
-        )
-    elif bundle.trial is not None:
-        raise ValueError("family-trial-input-required")
+    bundle = bind_admission_trial(bundle, config, trial, parameters, startup_selection)
     startup_selection, capture_selection = resolve_admission_adapters(
         bundle, config, startup_selection
     )
@@ -358,26 +326,8 @@ def admit_raes_scenario(
         execution_plan=execution_plan,
         availability=availability,
     )
-    participant_action_specs = participant_action_specs_from_runtime_model(
-        execution_plan.model,
-        provisioning_plan=execution_plan.provisioning,
-        bundle=bundle,
-        config=config,
-        realization=realization,
-    )
-    participant_runtime = target.participant_runtime
-    if isinstance(participant_runtime, AptlParticipantRuntime):
-        participant_runtime.action_specs.update(participant_action_specs)
-        participant_runtime.plan_authority = ParticipantPlanAuthority(
-            execution_plan,
-            bundle.sdl_path,
-        )
-    participant_delivery_plan = participant_delivery.bind_participant_delivery_capture(
-        participant_delivery.build_participant_delivery_plan(
-            scenario,
-            execution_plan.model,
-        ),
-        capture_plan,
+    participant_delivery_plan = bind_admitted_participant_runtime(
+        target, execution_plan, bundle, config, realization, scenario, capture_plan
     )
     return AdmittedScenarioStart(
         bundle=bundle,

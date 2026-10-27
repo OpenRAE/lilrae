@@ -93,6 +93,8 @@ Installed Python retains process authority; this contract does not provide a san
 
 Existing dataclasses, protocols, entry-point groups, and result validators define the executable architecture.
 Family matching extends those owners without another plugin registry or executor.
+`ScenarioAdmissionSource` groups a preselected bundle and startup adapter.
+Trial admission validates this source before provider selection or backend preparation.
 Targeted compatibility tests enforce the family boundary.
 No deployment policy or infrastructure declaration changes.
 ADR-047, ADR-053, and ADR-054 supply the existing ownership decisions.

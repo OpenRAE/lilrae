@@ -330,6 +330,40 @@ def _hash_referenced_blob(
     return result
 
 
+def _archive_validators(
+    validators: list[metadata.EntryPoint], run_dir: Path, limits: BundleLimits
+) -> list[metadata.EntryPoint]:
+    """Select validators from the capture installation retained in the manifest."""
+
+    try:
+        _, _, manifest_body = read_source(
+            run_dir, "manifest.json", max_bytes=limits.max_member_bytes
+        )
+    except SourceMissing:
+        # Legacy archives did not retain family provider qualification.
+        return validators
+    manifest = json.loads(manifest_body)
+    family = (
+        manifest.get("backend_evidence", {})
+        .get("pack_interaction", {})
+        .get("family_trial")
+    )
+    if family is None:
+        return validators
+    captures = [
+        item for item in family["providers"] if item["group"] == "aptl.scenario_capture"
+    ]
+    if len(captures) != 1:
+        raise ValueError("archive capture qualification is ambiguous")
+    expected = captures[0]
+    return [
+        entry
+        for entry in validators
+        if (entry.dist.name, entry.dist.version)
+        == (expected["distribution"], expected["distribution_version"])
+    ]
+
+
 def _validate_adapter_blob(
     validators: list[metadata.EntryPoint],
     run_dir: Path,
@@ -338,41 +372,9 @@ def _validate_adapter_blob(
 ) -> bool:
     """Call one installed adapter's semantic validator on bounded retained bytes."""
     try:
-        _, _, manifest_body = read_source(
-            run_dir, "manifest.json", max_bytes=limits.max_member_bytes
-        )
-    except SourceMissing:
-        pass  # Legacy archives did not retain family provider qualification.
-    except (SourceRejected, ValueError):
-        return False
-    else:
-        try:
-            manifest = json.loads(manifest_body)
-            family = (
-                manifest.get("backend_evidence", {})
-                .get("pack_interaction", {})
-                .get("family_trial")
-            )
-            if family is not None:
-                captures = [
-                    item
-                    for item in family["providers"]
-                    if item["group"] == "aptl.scenario_capture"
-                ]
-                if len(captures) != 1:
-                    return False
-                expected = captures[0]
-                validators = [
-                    entry
-                    for entry in validators
-                    if (entry.dist.name, entry.dist.version)
-                    == (expected["distribution"], expected["distribution_version"])
-                ]
-        except (ValueError, TypeError, KeyError, AttributeError):
-            return False
-    if len(validators) != 1:
-        return False
-    try:
+        validators = _archive_validators(validators, run_dir, limits)
+        if len(validators) != 1:
+            raise ValueError("archive validator is not unique")
         validator = validators[0].load()
         if not callable(validator):
             raise TypeError("adapter validator is not callable")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence, Mapping
 from subprocess import CompletedProcess
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from aptl.core.scenario_bundle import PackIdentity
 from aptl.utils.logging import get_logger
@@ -12,16 +12,32 @@ from aptl.core.lab_types import LabResult
 
 log = get_logger("scenario-runtime-hooks")
 
+if TYPE_CHECKING:
+    from aptl.backends.scenario_family import AdmittedFamilyTrial
+
+
+def _valid_command(cmd: list[str]) -> bool:
+    """Check the argument count and each bounded command argument."""
+
+    return (
+        isinstance(cmd, list)
+        and 1 <= len(cmd) <= 64
+        and all(
+            isinstance(item, str) and bool(item) and len(item) <= 4096 and "\0" not in item
+            for item in cmd
+        )
+    )
+
 
 class ScenarioRuntimeOperations(Protocol):
     """Container-only operations delegated for admitted scenario nodes."""
 
     def container_exec(
         self, name: str, cmd: list[str], *, timeout: int
-    ) -> CompletedProcess: ...
+    ) -> CompletedProcess[str]: ...
     def container_exec_with_input(
         self, name: str, cmd: list[str], payload: str, *, timeout: int
-    ) -> CompletedProcess: ...
+    ) -> CompletedProcess[str]: ...
     def container_image_digest(self, name: str) -> str | None: ...
     def container_inspect(self, name: str) -> Mapping[str, object]: ...
     def container_restart(self, name: str) -> LabResult: ...
@@ -47,15 +63,7 @@ class AdmittedRuntimeOperations:
         if not isinstance(name, str) or name not in self.__names:
             raise ValueError("runtime-node-not-admitted")
         if (
-            not isinstance(cmd, list)
-            or not 1 <= len(cmd) <= 64
-            or any(
-                not isinstance(item, str)
-                or not item
-                or len(item) > 4096
-                or "\0" in item
-                for item in cmd
-            )
+            not _valid_command(cmd)
             or isinstance(timeout, bool)
             or not isinstance(timeout, int)
             or not 1 <= timeout <= 300
@@ -64,7 +72,7 @@ class AdmittedRuntimeOperations:
 
     def container_exec(
         self, name: str, cmd: list[str], *, timeout: int = 30
-    ) -> CompletedProcess:
+    ) -> CompletedProcess[str]:
         self._validate(name, cmd, timeout)
         try:
             return self.__backend.container_exec(name, list(cmd), timeout=timeout)
@@ -73,7 +81,7 @@ class AdmittedRuntimeOperations:
 
     def container_exec_with_input(
         self, name: str, cmd: list[str], payload: str, *, timeout: int = 30
-    ) -> CompletedProcess:
+    ) -> CompletedProcess[str]:
         self._validate(name, cmd, timeout)
         if not isinstance(payload, str) or len(payload.encode()) > 2 * 1024 * 1024:
             raise ValueError("runtime-operation-invalid")
@@ -148,51 +156,51 @@ def disclose_runtime_concern(
     return _disclose(concern_kind, observed_value)
 
 
+def _runtime_failures(failures: object, *, family: bool) -> list[str]:
+    """Validate adapter failures and bound family diagnostics to a stable code."""
+
+    if not isinstance(failures, list) or any(
+        not isinstance(item, str) or not item for item in failures
+    ):
+        return ["scenario runtime provider returned an invalid result"]
+    return ["family-runtime-failed"] if family and failures else failures
+
+
 def invoke_runtime_provider(
     provider: object,
     identity: PackIdentity | None,
     backend: object,
     nodes: tuple[object, ...],
     *,
-    trial=None,
+    trial: AdmittedFamilyTrial | None = None,
 ) -> list[str]:
     """Invoke post-start work and normalize its bounded failure list."""
 
-    result: list[str] = []
     runner = getattr(provider, "realize_runtime", None)
-    if runner is not None:
-        if not callable(runner):
-            result = ["scenario runtime provider is malformed"]
-        else:
-            try:
-                if trial is not None:
-                    from copy import deepcopy
+    if runner is None:
+        return []
+    if not callable(runner):
+        return ["scenario runtime provider is malformed"]
+    try:
+        if trial is not None:
+            from copy import deepcopy
 
-                    failures = runner(
-                        AdmittedRuntimeOperations(backend, nodes),
-                        deepcopy(nodes),
-                        trial=trial,
-                    )
-                else:
-                    failures = runner(backend, nodes)
-            except Exception as exc:
-                log.warning(
-                    "scenario runtime provider failed: selector=%s exception=%s",
-                    getattr(identity, "pack_id", ""),
-                    type(exc).__name__,
-                )
-                result = ["scenario runtime provider failed"]
-            else:
-                if not isinstance(failures, list) or any(
-                    not isinstance(item, str) or not item for item in failures
-                ):
-                    result = ["scenario runtime provider returned an invalid result"]
-                else:
-                    result = (
-                        ["family-runtime-failed"]
-                        if trial is not None and failures
-                        else failures
-                    )
+            failures = runner(
+                AdmittedRuntimeOperations(backend, nodes),
+                deepcopy(nodes),
+                trial=trial,
+            )
+        else:
+            failures = runner(backend, nodes)
+    except Exception as exc:
+        log.warning(
+            "scenario runtime provider failed: selector=%s exception=%s",
+            getattr(identity, "pack_id", ""),
+            type(exc).__name__,
+        )
+        result = ["scenario runtime provider failed"]
+    else:
+        result = _runtime_failures(failures, family=trial is not None)
     return result
 
 
@@ -202,7 +210,7 @@ def invoke_runtime_observer(
     backend: object,
     node: object,
     *,
-    trial=None,
+    trial: AdmittedFamilyTrial | None = None,
 ) -> object | None:
     """Read one qualified adapter result, leaving projection to the caller."""
 
@@ -215,14 +223,16 @@ def invoke_runtime_observer(
         if trial is not None:
             from copy import deepcopy
 
-            return observer(
+            result = observer(
                 AdmittedRuntimeOperations(backend, (node,)), deepcopy(node), trial=trial
             )
-        return observer(backend, node)
+        else:
+            result = observer(backend, node)
     except Exception as exc:
         log.warning(
             "scenario runtime observation failed: selector=%s exception=%s",
             getattr(identity, "pack_id", ""),
             type(exc).__name__,
         )
-        return None
+        result = None
+    return result

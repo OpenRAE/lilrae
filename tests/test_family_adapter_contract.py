@@ -210,8 +210,9 @@ def test_family_native_capture_uses_trial_entry_identity(
     scope = acquire_native_evidence(request)
     assert scope.planned_trial_id == trial.provenance.plan_entry_id
     assert scope.planned_trial_id != request.plan.plan_id
+    wrong_run = replace(request, run_id="wrong-run")
     with pytest.raises(ValueError, match="^family-run-identity-mismatch$"):
-        acquire_native_evidence(replace(request, run_id="wrong-run"))
+        acquire_native_evidence(wrong_run)
     assert not request.run_store.get_run_path("wrong-run").exists()
 
 
@@ -266,8 +267,9 @@ def test_provider_metadata_exception_does_not_escape():
         def family_api_version(self):
             raise RuntimeError("credential-canary")
 
+    provider = Broken()
     with pytest.raises(ValueError, match="^family-provider-metadata-invalid$") as error:
-        family_provider_matches(Broken(), TARGET)
+        family_provider_matches(provider, TARGET)
     assert "credential-canary" not in str(error.value)
 
 
@@ -297,13 +299,13 @@ def test_trial_rejects_substituted_source_and_broken_seal(family_input):
     bundle, family, plan = family_input()
     altered = plan.model_copy(deep=True)
     altered.entries["entry-a"].selections[0].outcome.__dict__["value"] = "/opt/b"
+    altered_request = FamilyTrialInput(altered, "entry-a", family)
     with pytest.raises(ValueError, match="^family-trial-invalid$"):
-        admit_family_trial(
-            bundle, BACKEND, FamilyTrialInput(altered, "entry-a", family)
-        )
+        admit_family_trial(bundle, BACKEND, altered_request)
     bundle.sdl_path.write_text(bundle.sdl_path.read_text().replace("/opt/b", "/opt/c"))
+    request = FamilyTrialInput(plan, "entry-a", family)
     with pytest.raises(ValueError, match="^family-trial-invalid$"):
-        admit_family_trial(bundle, BACKEND, FamilyTrialInput(plan, "entry-a", family))
+        admit_family_trial(bundle, BACKEND, request)
 
 
 def test_family_discovery_requires_all_seams_from_one_distribution(
@@ -457,6 +459,7 @@ def test_family_admission_rejects_missing_capability_before_backend(
 ):
     from aptl.backends import scenario_family as contract
     from aptl.backends.raes import admit_raes_scenario
+    from aptl.backends.raes_start_model import ScenarioAdmissionSource
     from aptl.core.config import AptlConfig
 
     bundle, family, plan = family_input()
@@ -465,13 +468,16 @@ def test_family_admission_rejects_missing_capability_before_backend(
         "aptl.backends.raes.prepare_runtime_orchestration_for_scenario",
         lambda *a: pytest.fail("backend authority must not be prepared"),
     )
+    config, backend = AptlConfig(), object()
+    source = ScenarioAdmissionSource(bundle)
+    request = contract.FamilyTrialInput(plan, "entry-a", family)
     with pytest.raises(ValueError, match="^family-provider-missing$"):
         admit_raes_scenario(
             bundle.root,
-            AptlConfig(),
-            object(),
-            bundle=bundle,
-            trial=contract.FamilyTrialInput(plan, "entry-a", family),
+            config,
+            backend,
+            source=source,
+            trial=request,
         )
 
 
@@ -602,6 +608,169 @@ def test_capture_source_context_hides_store_and_ungranted_credentials():
         context.operations.container_exec("outside", ["true"], timeout=1)
     with pytest.raises(TypeError):
         context.environment["OTHER_KEY"] = "value"
+
+
+@pytest.mark.parametrize("failure", [None, "symlink", "oversized", "missing"])
+def test_capture_generated_output_is_granted_contained_and_bounded(tmp_path, failure):
+    from aptl.backends.scenario_capture import (
+        GeneratedOutputReference,
+        capture_source_context,
+    )
+    from aptl.backends.scenario_service_policy import artifact_source_path
+
+    artifact = SimpleNamespace(
+        name="keys", generator="ssh_key_bundle",
+        outputs=(SimpleNamespace(name="private", path="id_test"),),
+    )
+    root = artifact_source_path(tmp_path, artifact)
+    root.mkdir(parents=True)
+    output = root / "id_test"
+    if failure == "symlink":
+        outside = tmp_path / "private-canary"
+        outside.write_bytes(b"credential-canary")
+        output.symlink_to(outside)
+    elif failure != "missing":
+        output.write_bytes(b"x" * (2 * 1024 * 1024 + 1) if failure else b"admitted")
+    request = SimpleNamespace(
+        backend=object(), project_dir=tmp_path, environment={},
+        realization=SimpleNamespace(nodes=(), generated_artifacts=(artifact,)),
+        capture_selection=SimpleNamespace(
+            context=SimpleNamespace(trial=None),
+            contribution=SimpleNamespace(
+                runtime_environment_keys=(),
+                generated_output_refs=(GeneratedOutputReference("keys", "private"),),
+            ),
+        ),
+    )
+    context = capture_source_context(request)
+    if failure:
+        with pytest.raises(ValueError, match="^capture-output-unavailable$"):
+            context.read_generated_output("keys", "private")
+    else:
+        assert context.read_generated_output("keys", "private") == b"admitted"
+    with pytest.raises(ValueError, match="^capture-output-not-granted$"):
+        context.read_generated_output("keys", "other")
+    request.realization.generated_artifacts = ()
+    context = capture_source_context(request)
+    with pytest.raises(ValueError, match="^capture-output-not-admitted$"):
+        context.read_generated_output("keys", "private")
+
+
+def test_scoped_runtime_commands_delegate_only_valid_bounded_requests():
+    from unittest.mock import Mock
+    from subprocess import CompletedProcess
+    from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+
+    backend = Mock()
+    backend.container_exec.return_value = CompletedProcess(["id"], 0, "user", "")
+    backend.container_exec_with_input.return_value = CompletedProcess(["read"], 0, "ok", "")
+    backend.container_image_digest.return_value = "sha256:" + "a" * 64
+    operations = AdmittedRuntimeOperations(backend, (SimpleNamespace(name="node"),))
+    assert operations.container_exec("node", ["id"], timeout=10).stdout == "user"
+    backend.container_exec.assert_called_once_with("node", ["id"], timeout=10)
+    assert operations.container_exec_with_input("node", ["read"], "input").stdout == "ok"
+    backend.container_exec_with_input.assert_called_once_with(
+        "node", ["read"], "input", timeout=30
+    )
+    assert operations.container_image_digest("node") == "sha256:" + "a" * 64
+    for command, timeout in (([], 1), (["id\0"], 1), (["id"], True), (["id"], 301)):
+        with pytest.raises(ValueError, match="^runtime-operation-invalid$"):
+            operations.container_exec("node", command, timeout=timeout)
+    payload = "x" * (2 * 1024 * 1024 + 1)
+    with pytest.raises(ValueError, match="^runtime-operation-invalid$"):
+        operations.container_exec_with_input("node", ["read"], payload)
+    assert backend.container_exec.call_count == 1
+    assert backend.container_exec_with_input.call_count == 1
+
+
+@pytest.mark.parametrize("operation", [
+    "container_exec", "container_exec_with_input", "container_image_digest",
+    "container_inspect", "container_restart",
+])
+def test_scoped_runtime_backend_errors_are_bounded(operation):
+    from unittest.mock import Mock
+    from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+
+    backend = Mock()
+    getattr(backend, operation).side_effect = RuntimeError("credential-canary")
+    operations = AdmittedRuntimeOperations(backend, (SimpleNamespace(name="node"),))
+    args = ["node"]
+    if operation.startswith("container_exec"):
+        args.append(["id"])
+    if operation == "container_exec_with_input":
+        args.append("input")
+    invoke = getattr(operations, operation)
+    with pytest.raises(ValueError, match="^runtime-operation-failed$"):
+        invoke(*args)
+
+
+@pytest.mark.parametrize("installed_version,supported,allowed", [
+    ("1.0", (), True), ("2.0", (), False), ("2.0", ("1",), True),
+])
+def test_family_reset_requires_recorded_installation_or_explicit_upgrade(
+    monkeypatch, tmp_path, installed_version, supported, allowed
+):
+    from aptl.backends import scenario_family as contract
+    from aptl.backends.scenario_startup import (
+        ScenarioStartupProviderError, StartupProviderProvenance,
+        StartupHookContext, run_persisted_startup_reset,
+    )
+
+    observed = []
+    provider = _provider(TARGET)
+    provider.extension_api_version = "1"
+    provider.provider_id = "example-provider"
+    provider.resolve = lambda bundle: None
+    provider.reset = observed.append
+    provider.supported_reset_action_versions = supported
+    entry = SimpleNamespace(
+        name=PACK.pack_id, load=lambda: provider,
+        dist=SimpleNamespace(name="example-adapter", version=installed_version),
+    )
+    monkeypatch.setattr(contract.metadata, "entry_points", lambda **kw: [entry])
+    provenance = StartupProviderProvenance(
+        "example-adapter", "1.0", PACK.pack_id, contract.encode_family_target(TARGET)
+    )
+    context = StartupHookContext(object(), project_dir=tmp_path)
+    if allowed:
+        run_persisted_startup_reset(PACK, provenance, context)
+        assert len(observed) == 1
+        assert observed[0].project_dir is None
+        assert observed[0].family_target == TARGET
+        assert not hasattr(observed[0].backend, "stop")
+    else:
+        with pytest.raises(ScenarioStartupProviderError, match="^provider-reset-authority-unavailable$"):
+            run_persisted_startup_reset(PACK, provenance, context)
+        assert not observed
+
+
+def test_family_runtime_parameters_are_copied_before_sealing(monkeypatch, family_input):
+    from aptl.backends import scenario_family as contract
+    from aptl.backends.scenario_runtime_parameters import (
+        resolve_family_runtime_parameters, RuntimeParameterProviderError,
+    )
+
+    bundle, family, plan = family_input()
+    trial = contract.admit_family_trial(
+        bundle, BACKEND, contract.FamilyTrialInput(plan, "entry-a", family)
+    )
+    bindings = {"payload_path": "/opt/a"}
+    provider = _provider(trial.target)
+    provider.extension_api_version = "1"
+    provider.provider_id = "example-provider"
+    provider.resolve = lambda bundle: bindings
+    entry = SimpleNamespace(
+        name=PACK.pack_id, load=lambda: provider,
+        dist=SimpleNamespace(name="example-adapter", version="1.0"),
+    )
+    monkeypatch.setattr(contract.metadata, "entry_points", lambda **kw: [entry])
+    values = resolve_family_runtime_parameters(bundle, trial.target)
+    assert values == bindings
+    values["payload_path"] = "/opt/b"
+    assert bindings == {"payload_path": "/opt/a"}
+    sealed_bundle = replace(bundle, trial=trial)
+    with pytest.raises(RuntimeParameterProviderError, match="^family-runtime-parameters-invalid$"):
+        resolve_family_runtime_parameters(sealed_bundle, trial.target)
 
 
 def test_family_runtime_receives_trial_and_scoped_operations(family_input):
@@ -759,8 +928,9 @@ def test_family_reset_receipt_preserves_target_and_rejects_wrong_pack(tmp_path):
     pending, rejected = load_pending_cleanup(tmp_path)
     assert not rejected
     assert pending[0].action.family_target == encoded
+    wrong_pack = replace(action, pack_version="2.0.0")
     with pytest.raises(ValueError, match="invalid cleanup action"):
-        persist_cleanup_action(tmp_path, replace(action, pack_version="2.0.0"))
+        persist_cleanup_action(tmp_path, wrong_pack)
 
 
 def test_resume_context_rejects_extra_or_mismatched_trial_identity(family_input):
@@ -955,7 +1125,6 @@ def test_independent_wheels_use_only_public_contract(
     tmp_path, family_input, adapter_version
 ):
     import json
-    import os
     from pathlib import Path
     import shutil
     import subprocess

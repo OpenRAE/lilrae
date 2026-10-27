@@ -15,6 +15,8 @@ that judges it.
 
 from __future__ import annotations
 
+from aptl.backends.scenario_family import AdmittedFamilyTrial
+
 from importlib import metadata
 from time import monotonic
 from typing import TYPE_CHECKING
@@ -263,11 +265,39 @@ def _nearest_mismatch(
     return f"plugin {discovered.plugin_id!r} {nearest[0]}"
 
 
+def _select_family_verifier(
+    scenario: ScenarioIdentity,
+    backend: BackendIdentity,
+    trial: AdmittedFamilyTrial,
+) -> tuple[DiscoveredVerifier | None, str]:
+    """Match the sealed family context and its exact installed verifier."""
+
+    from aptl.backends.scenario_family import resolve_family_provider
+
+    try:
+        if (
+            scenario.identity != trial.target.family_id
+            or scenario.content_digest != trial.target.family_digest
+            or backend != trial.target.backend
+        ):
+            raise ValueError("family-context-mismatch")
+        selected = resolve_family_provider(ENTRY_POINT_GROUP, trial)
+        return DiscoveredVerifier(
+            selected.provider,
+            selected.provider_id,
+            selected.distribution,
+            selected.distribution_version,
+            selected.entry_point,
+        ), ""
+    except ValueError as exc:
+        return None, str(exc)
+
+
 def select_verifier(
     scenario: ScenarioIdentity,
     backend: BackendIdentity,
     *,
-    trial=None,
+    trial: AdmittedFamilyTrial | None = None,
 ) -> tuple[DiscoveredVerifier | None, str]:
     """Return the single compatible verifier, or None plus why not.
 
@@ -276,25 +306,7 @@ def select_verifier(
     """
 
     if trial is not None:
-        from aptl.backends.scenario_family import resolve_family_provider
-
-        try:
-            if (
-                scenario.identity != trial.target.family_id
-                or scenario.content_digest != trial.target.family_digest
-                or backend != trial.target.backend
-            ):
-                raise ValueError("family-context-mismatch")
-            selected = resolve_family_provider(ENTRY_POINT_GROUP, trial)
-            return DiscoveredVerifier(
-                selected.provider,
-                selected.provider_id,
-                selected.distribution,
-                selected.distribution_version,
-                selected.entry_point,
-            ), ""
-        except ValueError as exc:
-            return None, str(exc)
+        return _select_family_verifier(scenario, backend, trial)
     selector = _selector(scenario, backend)
     candidates: list[DiscoveredVerifier] = []
     incompatibilities: list[str] = []

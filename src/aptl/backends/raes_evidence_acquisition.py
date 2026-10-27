@@ -28,7 +28,10 @@ from aptl.backends.scenario_capture import (
     ScenarioCaptureContext,
     capture_run_scope,
 )
-from aptl.backends.scenario_capture_discovery import resolve_scenario_capture
+from aptl.backends.scenario_capture_discovery import (
+    _resolve_family_capture_receipt,
+    resolve_scenario_capture,
+)
 
 if TYPE_CHECKING:
     from aptl.core.experiment.capture_plan import CapturePlan
@@ -418,39 +421,7 @@ def _capture_selection_from_state(
         raise ValueError("active authority has no capture adapter identity")
     family = adapter.get("family")
     if family is not None:
-        from aptl.backends.scenario_family import QualifiedFamilyTarget
-        from aptl.backends.scenario_capture import ScenarioCaptureResumeContext
-        from aptl.backends.scenario_capture_discovery import (
-            resolve_family_capture_resume,
-        )
-
-        try:
-            if not isinstance(family, Mapping) or family.get("api_version") != "1":
-                raise ValueError
-            target = QualifiedFamilyTarget(
-                PackIdentity(
-                    adapter["pack_id"],
-                    adapter["pack_version"],
-                    adapter["pack_set_digest"],
-                ),
-                family["family_id"],
-                family["family_digest"],
-                BackendIdentity(
-                    adapter["backend_target_name"],
-                    adapter["backend_target_version"],
-                    adapter["backend_profile"],
-                    provider=family["backend_provider"],
-                    transport=adapter["backend_transport"],
-                ),
-            )
-            return resolve_family_capture_resume(
-                ScenarioCaptureResumeContext(target, family["trial_identity"]),
-                adapter["distribution"],
-                adapter["distribution_version"],
-                adapter["provider_id"],
-            )
-        except (KeyError, TypeError, ValueError):
-            raise ValueError("active authority family adapter invalid") from None
+        return _resolve_family_capture_receipt(adapter, family)
     try:
         context = ScenarioCaptureContext(
             pack=PackIdentity(

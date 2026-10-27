@@ -280,6 +280,14 @@ def resolve_pack_backend_interaction(
             selected.distribution_version,
             selected.entry_point,
         )
+    return _resolve_installed_interaction(context, started)
+
+
+def _resolve_installed_interaction(
+    context: PackBackendInteractionContext, started: float
+) -> ResolvedPackBackendInteraction:
+    """Resolve the legacy installed provider or the unprofiled default."""
+
     selector = _selector(context)
     matches = [
         entry_point for entry_point in _entry_points() if entry_point.name == selector

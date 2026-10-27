@@ -1975,3 +1975,5 @@ src/aptl/backends/scenario_family.py	core-candidate	Generic family qualification
 tests/fixtures/family_adapter/family_adapter/__init__.py	tests-follow-owner	Public family adapter compatibility and independently installed wheel evidence
 tests/fixtures/family_adapter/pyproject.toml	tests-follow-owner	Public family adapter compatibility and independently installed wheel evidence
 tests/test_family_adapter_contract.py	tests-follow-owner	Public family adapter compatibility and independently installed wheel evidence
+src/aptl/backends/_scenario_startup_model.py	core-candidate	Keep startup data contracts behind the public scenario startup owner
+src/aptl/backends/_raes_planning_entry.py	backend-owned-runtime	Keep planning inputs and entry behind the existing RAES planning compatibility owner

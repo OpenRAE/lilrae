@@ -97,6 +97,8 @@ def capture_source_context(request: object) -> CaptureSourceContext:
     )
 
     def read_output(artifact_name: str, output_name: str) -> bytes:
+        """Read one bounded generated output explicitly granted by the adapter."""
+
         allowed = request.capture_selection.contribution.generated_output_refs
         if GeneratedOutputReference(artifact_name, output_name) not in allowed:
             raise ValueError("capture-output-not-granted")
@@ -216,15 +218,11 @@ def capture_run_scope(
     """Keep admitted trial identity separate from the capture-plan identity."""
 
     trial = getattr(context, "trial", None)
-    lineage = (
-        trial.identity()
-        if trial is not None
-        else (
-            context.trial_identity
-            if isinstance(context, ScenarioCaptureResumeContext)
-            else None
-        )
-    )
+    lineage = None
+    if trial is not None:
+        lineage = trial.identity()
+    elif isinstance(context, ScenarioCaptureResumeContext):
+        lineage = context.trial_identity
     if lineage is not None:
         if run_id != lineage["run_id"]:
             raise ValueError("family-run-identity-mismatch")

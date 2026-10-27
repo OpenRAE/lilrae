@@ -170,12 +170,16 @@ class QualifiedTarget(object):
 
 
 class ReachabilityObservation(Protocol):
+    """Bounded reachability facts returned by live verification operations."""
+
     reached: bool
     tested: tuple[str, ...]
     diagnostics: tuple[str, ...]
 
 
 class DetectionObservation(Protocol):
+    """Detection result and safe diagnostics returned by live operations."""
+
     observed: bool
     diagnostics: tuple[str, ...]
 

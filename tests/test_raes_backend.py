@@ -1915,7 +1915,7 @@ def test_start_raes_scenario_threads_resolved_run_target(mocker, tmp_path):
 
     mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
     mocker.patch(
-        "aptl.backends.raes.participant_action_specs_from_runtime_model",
+        "aptl.backends._raes_admission_helpers.participant_action_specs_from_runtime_model",
         return_value={},
     )
     outcome = AcesStartOutcome(
@@ -1958,10 +1958,8 @@ def test_start_raes_scenario_uses_planned_runtime_model_for_participant_actions(
             return _FakeExecutionPlan(_plan_for_nodes("victim"), model=planned_model)
 
     mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
-    planned_specs = mocker.patch.object(
-        raes,
-        "participant_action_specs_from_runtime_model",
-        create=True,
+    planned_specs = mocker.patch(
+        "aptl.backends._raes_admission_helpers.participant_action_specs_from_runtime_model",
         return_value={},
     )
     backend = MagicMock()
@@ -4477,7 +4475,6 @@ def _apply_content_disclosure_scenario(tmp_path, observed_content_type):
 
 def test_apply_provisioning_populates_realization_and_profiles(tmp_path):
     """A scenario that realizes nodes reports non-empty realization details."""
-    from unittest.mock import MagicMock as _MagicMock
 
     from aptl.backends.raes_provisioner import AptlProvisioner
     from aptl.core.config import AptlConfig

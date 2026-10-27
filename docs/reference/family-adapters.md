@@ -53,6 +53,9 @@ Supply `trial=FamilyTrialInput(plan, plan_entry_id, family)` to `admit_raes_scen
 The `plan` is a sealed RAES admitted trial plan.
 The `family` is its semantically validated RAES `ExpandedScenario`.
 The bundle must name the same validated pack release and authored source.
+Use `source=ScenarioAdmissionSource(bundle, startup_selection)` to reuse a preselected source.
+Import `ScenarioAdmissionSource` from `aptl.backends.raes_start_model`.
+Omit the startup selection for a family trial; core selects and pins its providers.
 
 Core compares the bundle source with the supplied family.
 It calls the public RAES `instantiate_admitted_trial_entry` function.
@@ -92,6 +95,7 @@ RAES types remain available through their own published packages.
 
 | Owner | Supported contract |
 | --- | --- |
+| `aptl.backends.raes` and `aptl.backends.raes_start_model` | `admit_raes_scenario` and the optional `ScenarioAdmissionSource` for a preselected bundle and startup adapter. |
 | `aptl.backends.pack_interaction` | Context, provider protocol, membership, result, and resolved-result types. `resolve(context)` returns a total mapping of admitted component addresses. |
 | `aptl.backends.scenario_runtime_parameters` | `ScenarioRuntimeParameterProvider`, bounded provider error, and family runtime-parameter resolver. `resolve(bundle)` returns declared bindings or `None` before sealing. |
 | `aptl.backends.scenario_startup` | `ScenarioStartupProvider`, plan, selection, provenance, fixed hook/capability/phase enums, hook context, environment and account-reference DTOs. |

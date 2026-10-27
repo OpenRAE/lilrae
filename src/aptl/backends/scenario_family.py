@@ -170,11 +170,21 @@ def admit_family_trial(
 
 
 def _valid_target(target: object) -> bool:
+    """Check the atomic target shape before validating its identity fields."""
+
     if not isinstance(target, QualifiedFamilyTarget):
         return False
     pack, backend = target.pack, target.backend
     if not isinstance(pack, PackIdentity) or not isinstance(backend, BackendIdentity):
         return False
+    return _valid_target_fields(target, pack, backend)
+
+
+def _valid_target_fields(
+    target: QualifiedFamilyTarget, pack: PackIdentity, backend: BackendIdentity
+) -> bool:
+    """Validate bounded release, family and backend identity values."""
+
     identifiers = (pack.pack_id, target.family_id, backend.target_name, backend.profile)
     versions = (pack.pack_version, backend.target_version)
     digests = (pack.set_digest, target.family_digest)
@@ -270,6 +280,56 @@ def family_capabilities(
     )
 
 
+def _family_entry_selection(
+    entry: metadata.EntryPoint,
+    group: str,
+    selector: str,
+    api_version: str,
+    method: str,
+    target: QualifiedFamilyTarget,
+) -> FamilyProviderSelection | None:
+    """Load one candidate and contain its executable metadata failures."""
+
+    try:
+        provider = entry.load()
+        if isinstance(provider, type):
+            provider = provider()
+    except Exception:
+        raise ValueError("family-provider-load-failed") from None
+    try:
+        if getattr(provider, "family_api_version", None) is None:
+            return None
+        if not family_provider_matches(provider, target):
+            return None
+        identifier = _family_entry_identity(entry, provider, api_version, method)
+        return FamilyProviderSelection(
+            group, selector, entry.dist.name, entry.dist.version, identifier, provider
+        )
+    except Exception:
+        raise ValueError("family-provider-metadata-invalid") from None
+
+
+def _family_entry_identity(
+    entry: metadata.EntryPoint, provider: object, api_version: str, method: str
+) -> str:
+    """Check the callable contract and host-observed installation identity."""
+
+    identifier = getattr(
+        provider, "plugin_id" if method == "run" else "provider_id", None
+    )
+    if (
+        getattr(provider, "extension_api_version", None) != api_version
+        or not callable(getattr(provider, method, None))
+        or not isinstance(identifier, str)
+        or _IDENTIFIER.fullmatch(identifier) is None
+        or _IDENTIFIER.fullmatch(entry.dist.name) is None
+        or not isinstance(entry.dist.version, str)
+        or not 1 <= len(entry.dist.version) <= 256
+    ):
+        raise ValueError("family-provider-metadata-invalid")
+    return identifier
+
+
 def select_family_provider(
     group: str,
     selector: str,
@@ -291,43 +351,11 @@ def select_family_provider(
         raise ValueError("family-provider-discovery-failed") from None
     compatible = []
     for entry in entries:
-        try:
-            provider = entry.load()
-            if isinstance(provider, type):
-                provider = provider()
-        except Exception:
-            raise ValueError("family-provider-load-failed") from None
-        try:
-            # Old adapters can coexist but cannot serve sealed family trials.
-            if getattr(provider, "family_api_version", None) is None:
-                continue
-            if not family_provider_matches(provider, target):
-                continue
-            identifier = getattr(
-                provider, "plugin_id" if method == "run" else "provider_id", None
-            )
-            if (
-                getattr(provider, "extension_api_version", None) != api_version
-                or not callable(getattr(provider, method, None))
-                or not isinstance(identifier, str)
-                or _IDENTIFIER.fullmatch(identifier) is None
-                or _IDENTIFIER.fullmatch(entry.dist.name) is None
-                or not isinstance(entry.dist.version, str)
-                or not 1 <= len(entry.dist.version) <= 256
-            ):
-                raise ValueError
-            compatible.append(
-                FamilyProviderSelection(
-                    group,
-                    selector,
-                    entry.dist.name,
-                    entry.dist.version,
-                    identifier,
-                    provider,
-                )
-            )
-        except Exception:
-            raise ValueError("family-provider-metadata-invalid") from None
+        selected = _family_entry_selection(
+            entry, group, selector, api_version, method, target
+        )
+        if selected is not None:
+            compatible.append(selected)
     if len(compatible) != 1:
         code = "ambiguous" if compatible else "missing"
         raise ValueError(f"family-provider-{code}")
