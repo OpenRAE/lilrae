@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tests.techvault_pack import realize_techvault_pack
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -33,9 +32,9 @@ def techvault_sdl(tmp_path_factory) -> Path:
 
 
 @pytest.fixture(scope="module")
-def rendered_techvault(tmp_path_factory):
-    """The pinned TechVault pack, realized once per module without Docker."""
-    return realize_techvault_pack(tmp_path_factory.mktemp("rendered-techvault"))
+def rendered_techvault(released_techvault_realization):
+    """The pinned TechVault pack, realized once per test session without Docker."""
+    return released_techvault_realization
 
 
 @pytest.fixture(scope="module")

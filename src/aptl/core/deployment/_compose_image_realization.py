@@ -60,6 +60,19 @@ _ImageOverrideDumper.add_representer(
 )
 
 
+def image_override_text(images: tuple[DeploymentImageRealization, ...]) -> str:
+    """Render the same merge features for preflight and the persisted model."""
+    services = {
+        image.service_name: {"image": image.image_ref, "build": _ResetValue()}
+        for image in images
+    }
+    return yaml.dump(
+        compose_literal({"services": services}),
+        Dumper=_ImageOverrideDumper,
+        sort_keys=True,
+    )
+
+
 class ComposeRealizationImageMixin:
     """Realize typed scenario image operations through Docker Compose."""
 
@@ -432,16 +445,8 @@ class ComposeRealizationImageMixin:
 
         override_path = scenario_root / _IMAGE_OVERRIDE_RELATIVE_PATH
         override_path.parent.mkdir(parents=True, exist_ok=True)
-        services = {
-            image.service_name: {"image": image.image_ref, "build": _ResetValue()}
-            for image in images
-        }
         override_path.write_text(
-            yaml.dump(
-                compose_literal({"services": services}),
-                Dumper=_ImageOverrideDumper,
-                sort_keys=True,
-            ),
+            image_override_text(images),
             encoding="utf-8",
             newline="\n",
         )

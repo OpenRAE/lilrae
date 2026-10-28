@@ -86,7 +86,7 @@ def _write_compose(project_dir: Path) -> None:
 
 
 def _config() -> AptlConfig:
-    return AptlConfig(lab={"name": "test"}, containers={"wazuh": True})
+    return AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']})
 
 
 def test_manifest_advertises_released_stateful_contract() -> None:

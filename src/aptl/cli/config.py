@@ -96,3 +96,40 @@ def validate(
     with exit_on_invalid_deployment_settings():
         get_backend(config, project_root)
     typer.echo(f"{project_root / 'aptl.json'}: OK")
+
+
+@app.command()
+def migrate(
+    project_dir: Path = _PROJECT_DIR_OPTION,
+    scenario: str | None = typer.Option(
+        None, "--scenario", help="Explicit scenario identity when the old file omitted it."
+    ),
+) -> None:
+    """Convert historical topology settings and keep aptl.json.bak."""
+    from aptl.core.config import find_config
+    from aptl.core.lifecycle_guard import canonical_lifecycle_project_root
+    from aptl.core.lilrae_config_migration import migrate_config
+    from aptl.utils.pathsafe import PathContainmentError
+    from aptl.core.lifecycle_guard import LifecycleLockUnavailableError
+    from aptl.core.lifecycle_policy import LifecycleBusyError
+
+    root = canonical_lifecycle_project_root(project_dir)
+    path = find_config(root)
+    if path is None:
+        typer.echo("No aptl.json was found in the project.", err=True)
+        raise typer.Exit(code=1)
+    try:
+        changed = migrate_config(path, scenario_identity=scenario)
+    except (
+        OSError, ValueError, PathContainmentError,
+        LifecycleBusyError, LifecycleLockUnavailableError,
+    ):
+        typer.echo(
+            "Configuration migration failed. Check the explicit scenario, "
+            "legacy settings, retired profiles, backup file, and project lock.", err=True,
+        )
+        raise typer.Exit(code=1) from None
+    typer.echo(
+        "Migrated aptl.json; original saved as aptl.json.bak."
+        if changed else "Configuration is already current."
+    )

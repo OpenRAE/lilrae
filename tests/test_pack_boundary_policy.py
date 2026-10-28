@@ -158,3 +158,58 @@ def test_project_tree_selection_keeps_installed_owner_packs_checkable(check, tmp
         "source": "project-tree", "identity": "techvault",
     }}))
     assert "misp.techvault.local" in check.pack_facts("techvault", project_dir=tmp_path)
+
+
+def test_owner_identity_is_a_fact_even_without_authored_hosts(check, monkeypatch):
+    from types import SimpleNamespace
+    from pathlib import Path
+    import tempfile
+    bundle = SimpleNamespace(sdl_path=Path('unused'))
+    monkeypatch.setattr('aptl.backends._raes_scenario_resolution.resolve_scenario_bundle', lambda *args, **kwargs: bundle)
+    monkeypatch.setattr('aptl.backends.raes.parse_sdl_file', lambda *args: SimpleNamespace(nodes={}, accounts={}))
+    assert check.pack_facts('different-owner')['different-owner'] == 'pack identifier'
+
+
+def test_reviewed_exception_does_not_allow_a_new_identifier_line(check, tmp_path):
+    import hashlib
+    import json
+    path = tmp_path / 'src/aptl/compatibility.py'
+    path.parent.mkdir(parents=True)
+    original = 'LEGACY = "another-owner:old-contract/v1"\n'
+    path.write_text(original)
+    policy = tmp_path / '.gc/pack-ownership.json'
+    policy.parent.mkdir()
+    policy.write_text(json.dumps({'schema': 'lilrae-pack-ownership/v1', 'exceptions': [{
+        'path': 'src/aptl/compatibility.py', 'owner': 'external_adapter',
+        'symbol': 'LEGACY', 'kind': 'pack identifier', 'count': 1,
+        'line_digest': 'sha256:' + hashlib.sha256(original.rstrip('\n').encode()).hexdigest(),
+        'purpose': 'Preserve one old serialized contract.',
+        'allowed_use': 'Only that retained compatibility constant.',
+        'retirement': 'Remove with the old contract reader.',
+    }]}))
+    facts = {'another-owner': 'pack identifier'}
+    assert check.findings(tmp_path, facts) == []
+    path.write_text(original + 'DEFAULT = "another-owner"\n')
+    assert check.findings(tmp_path, facts) == [('src/aptl/compatibility.py', 'pack identifier')]
+    path.write_text(original + original)
+    assert check.findings(tmp_path, facts) == [('src/aptl/compatibility.py', 'pack identifier')]
+
+
+def test_owner_path_detects_a_dependency_without_a_pack_literal(check, tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+    module = tmp_path / 'src/aptl/backends/fixture_policy.py'
+    module.parent.mkdir(parents=True)
+    module.write_text('def read_policy():\n    return ()\n')
+    (tmp_path / '.gc').mkdir()
+    (tmp_path / '.gc/pack-ownership.json').write_text(json.dumps({
+        'schema': 'lilrae-pack-ownership/v1', 'exceptions': [],
+        'owned_paths': [{'path': 'src/aptl/backends/fixture_policy.py', 'owner_path': 'src/independent_adapter'}],
+    }))
+    monkeypatch.setattr(check, 'owner_declarations', lambda: {'independent-pack': {'independent_adapter'}})
+    monkeypatch.setattr('aptl.backends._raes_scenario_resolution.resolve_scenario_bundle', lambda *args, **kwargs: SimpleNamespace(sdl_path=tmp_path / 'unused'))
+    monkeypatch.setattr('aptl.backends.raes.parse_sdl_file', lambda *args: SimpleNamespace(nodes={}, accounts={}))
+    facts = check.pack_facts('independent-pack', project_dir=tmp_path)
+    caller = tmp_path / 'src/aptl/backends/another.py'
+    caller.write_text('from aptl.backends.fixture_policy import read_policy\n')
+    assert check.findings(tmp_path, facts) == [('src/aptl/backends/another.py', 'pack identifier')]

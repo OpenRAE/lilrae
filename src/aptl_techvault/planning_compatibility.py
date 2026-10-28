@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from aptl.backends._raes_runtime_container_observation import (
+from aptl.backends.scenario_planning_compatibility import (
     RUNTIME_CONTAINER_DAEMON_CONCERNS,
 )
 from aptl.backends.raes_runtime_attestation import ARTIFACT_ATTESTED_RUNTIME_CONCERNS

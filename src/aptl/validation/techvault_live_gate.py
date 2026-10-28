@@ -301,6 +301,7 @@ def _semantic_checks(
             deadline_monotonic=deadline_monotonic,
         ),
         observations={"containers": containers},
+        trial=ctx.bundle.trial,
     )
     report = verify_scenario(context)
     # Keep the validated report itself. Its checks drive the gate's taxonomy
@@ -428,6 +429,17 @@ def _verification_identities(
 
     import hashlib
 
+    if bundle.trial is not None:
+        target = bundle.trial.target
+        return (
+            ScenarioIdentity(
+                target.family_id,
+                target.family_digest,
+                bundle.source_kind.value,
+                target.pack.pack_version,
+            ),
+            target.backend,
+        )
     pack = bundle.pack_identity
     content = (
         scenario_path.read_bytes()

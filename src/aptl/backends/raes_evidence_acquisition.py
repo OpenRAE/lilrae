@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 from aptl.core.correlation.clock import ClockProvider, SystemClockProvider
 from aptl.core.evidence.coordinator import AcquisitionResult, acquire_evidence
 from aptl.core.evidence.outcomes import AcquisitionDisposition
-from aptl.core.evidence.protocol import RunScope
 from aptl.core.experiment.capture_registry import CaptureBinding
 from aptl.core.runstore import LocalRunStore
 from aptl.utils.pathsafe import (
@@ -27,8 +26,12 @@ from aptl.backends.identity import BackendIdentity
 from aptl.backends.scenario_capture import (
     ResolvedScenarioCapture,
     ScenarioCaptureContext,
+    capture_run_scope,
 )
-from aptl.backends.scenario_capture_discovery import resolve_scenario_capture
+from aptl.backends.scenario_capture_discovery import (
+    _resolve_family_capture_receipt,
+    resolve_scenario_capture,
+)
 
 if TYPE_CHECKING:
     from aptl.core.experiment.capture_plan import CapturePlan
@@ -53,6 +56,7 @@ def persist_active_transcript_authority(
 
     if not isinstance(run_store, LocalRunStore):
         raise TypeError("transcript capture requires a local run store")
+    capture_run_scope(capture_selection.context, run_id, plan.plan_id, "activation")
     transcript_id = capture_selection.contribution.transcript_registration_id
     if transcript_id is None or binding.registration_id != transcript_id:
         raise ValueError("unsupported transcript binding")
@@ -77,6 +81,15 @@ def persist_active_transcript_authority(
             "entry_point": capture_selection.entry_point,
         },
     }
+    trial = capture_selection.context.trial
+    if trial is not None:
+        payload["capture_adapter"]["family"] = {
+            "api_version": "1",
+            "family_id": trial.target.family_id,
+            "family_digest": trial.target.family_digest,
+            "backend_provider": trial.target.backend.provider,
+            "trial_identity": trial.identity(),
+        }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     relative = f"{_ACTIVE_AUTHORITY_DIR}/{run_id}.json"
     try:
@@ -348,6 +361,7 @@ def finalize_active_transcript_authority(
     transcript_id = binding.registration_id
     plan_id = binding.capture_spec_id
     run_id = str(state["run_id"])
+    scope = capture_run_scope(capture_selection.context, run_id, plan_id, "teardown")
     active_clock = clock or SystemClockProvider()
     payload, activated_at = _validated_activation_time(
         _export_transcript_payload(backend, store_base, run_id, binding),
@@ -361,11 +375,7 @@ def finalize_active_transcript_authority(
         bindings=(binding,),
         collectors={binding.registration_id: collector},
         run_store=LocalRunStore(store_base),
-        scope=RunScope(
-            run_id=run_id,
-            planned_trial_id=plan_id,
-            attempt_id="teardown",
-        ),
+        scope=scope,
         clock=active_clock,
     )
     if result.disposition is AcquisitionDisposition.SEALED_READY:
@@ -409,6 +419,9 @@ def _capture_selection_from_state(
     adapter = state.get("capture_adapter")
     if not isinstance(adapter, Mapping):
         raise ValueError("active authority has no capture adapter identity")
+    family = adapter.get("family")
+    if family is not None:
+        return _resolve_family_capture_receipt(adapter, family)
     try:
         context = ScenarioCaptureContext(
             pack=PackIdentity(

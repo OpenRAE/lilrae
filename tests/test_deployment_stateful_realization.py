@@ -953,6 +953,7 @@ def test_old_compose_is_rejected_before_artifact_mutation(
         ),
     )
 
+    # Image overrides actually emit !reset; product identity alone has no floor.
     result = backend.realize(_spec(), scenario_root=tmp_path)
 
     assert result.success is False

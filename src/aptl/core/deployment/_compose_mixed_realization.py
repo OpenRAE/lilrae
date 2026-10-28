@@ -135,8 +135,6 @@ class ComposeMixedRealizationMixin:
         compose_files: tuple[Path, ...] | None = None
         failure = self._validate_stateful_realization(realization)
         if failure is None:
-            failure = self._validate_stateful_compose_capability(realization)
-        if failure is None:
             failure = self._realize_stateful_prerequisites(
                 realization,
                 realization_root,

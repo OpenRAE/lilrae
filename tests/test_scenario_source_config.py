@@ -23,12 +23,12 @@ def _write(tmp_path, payload):
     return path
 
 
-def test_default_selects_the_techvault_env_pack():
-    """The default is the TechVault env-pack, resolved by identity + digest (#875)."""
+def test_default_requires_an_explicit_scenario():
+    """Initialization does not choose a scenario for the operator."""
 
     config = AptlConfig()
 
-    assert config.scenario.identity == "techvault"
+    assert config.scenario.identity is None
     assert config.scenario.source == "env-pack"
     assert config.scenario.root is None
 
