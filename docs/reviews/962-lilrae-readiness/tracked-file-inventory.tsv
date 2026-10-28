@@ -1581,6 +1581,7 @@ tests/test_raes_backend.py	tests-follow-owner	Retain meaningful boundary and par
 tests/test_raes_backend_implementation.py	tests-follow-owner	Retain open and closed realization-authority regression coverage with the backend owner
 tests/test_raes_base_substrate.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_content_satisfaction.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_raes_credential_result_contract.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_diagnostics.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_docker_materializer.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_dynamic_composition.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
