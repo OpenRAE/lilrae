@@ -64,23 +64,35 @@ def test_unselected_catalog_does_not_choose_or_acquire_a_pack(tmp_path, monkeypa
     assert not (tmp_path / ".aptl").exists()
 
 
-def test_a_scenario_id_without_any_project_config_names_the_search(tmp_path):
+@pytest.mark.parametrize("relative", [False, True], ids=["absolute", "default-dot"])
+def test_a_scenario_id_without_any_project_config_names_the_search(
+    tmp_path, monkeypatch, relative
+):
     """No aptl.json is a missing project, not an unknown scenario."""
 
     from aptl.core.scenario_catalog import resolve_scenario_selection
 
+    monkeypatch.chdir(tmp_path)
+    project_dir = Path(".") if relative else tmp_path
     with pytest.raises(ValueError, match="No aptl.json was found in") as raised:
-        resolve_scenario_selection(tmp_path, scenario_id="techvault")
-    assert f"{tmp_path} or its parents" in str(raised.value)
+        resolve_scenario_selection(project_dir, scenario_id="techvault")
+    assert f"{tmp_path.resolve()} or its parents" in str(raised.value)
     assert "--project-dir" in str(raised.value)
 
 
-def test_a_catalog_without_project_config_names_the_directory(tmp_path):
+@pytest.mark.parametrize("relative", [False, True], ids=["absolute", "default-dot"])
+def test_a_catalog_without_project_config_names_the_directory(
+    tmp_path, monkeypatch, relative
+):
     from aptl.core.scenario_catalog import load_scenario_catalog
 
+    monkeypatch.chdir(tmp_path)
+    project_dir = Path(".") if relative else tmp_path
     with pytest.raises(ValueError, match="No aptl.json was found in") as raised:
-        load_scenario_catalog(tmp_path)
-    assert str(raised.value).startswith(f"No aptl.json was found in {tmp_path}. ")
+        load_scenario_catalog(project_dir)
+    assert str(raised.value).startswith(
+        f"No aptl.json was found in {tmp_path.resolve()}. "
+    )
 
 
 def test_a_scenario_id_reads_the_config_the_start_uses_above_the_directory(

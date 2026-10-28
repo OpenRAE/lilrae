@@ -124,7 +124,7 @@ def _config(project_dir: Path) -> AptlConfig:  # NOSONAR
 
     config_path = find_config(project_dir)
     if config_path is None:
-        raise ValueError(_NO_PROJECT_CONFIG.format(searched=project_dir))
+        raise ValueError(_NO_PROJECT_CONFIG.format(searched=project_dir.resolve()))
     return load_config(config_path)
 
 
@@ -137,9 +137,8 @@ def _start_config(project_dir: Path) -> AptlConfig:
 
     root = canonical_lifecycle_project_root(project_dir)
     if find_config(root) is None:
-        raise ValueError(
-            _NO_PROJECT_CONFIG.format(searched=f"{project_dir} or its parents")
-        )
+        # Without a config, the root is the resolved ``project_dir`` itself.
+        raise ValueError(_NO_PROJECT_CONFIG.format(searched=f"{root} or its parents"))
     return _config(root)
 
 
@@ -160,11 +159,9 @@ def _entry_from_projection(raw: dict[str, object]) -> ScenarioCatalogEntry:  # N
     )
 
 
-def load_scenario_catalog(
-    project_dir: Path, *, config: AptlConfig | None = None
-) -> ScenarioCatalog:
+def load_scenario_catalog(project_dir: Path) -> ScenarioCatalog:
     """Stage the configured pack once and project env-packs' catalog read model."""
-    selected = config or _config(project_dir)
+    selected = _config(project_dir)
     if selected.scenario.source != "env-pack":
         raise ValueError("scenario catalog requires an acquired env-pack source")
     if selected.scenario.identity is None:
