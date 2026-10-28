@@ -18,15 +18,15 @@ Docs and image routing remain independent.
 Linux runs the retained ordinary Python suite once with line coverage.
 Coverage.py uses its Python 3.12 monitoring core.
 The measured serial run exceeded the budget after pruning and shared setup.
-Split the retained cases into two complementary pytest-split groups.
+Split the retained cases into three complementary pytest-split groups.
 Each group uses four pytest-xdist workers and pytest-cov's supported worker combination.
 Keep each file on one worker to preserve module fixtures and avoid shared module state.
 Workers keep separate process environments and pytest temporary directories.
 Read-only pack fixtures share declarations and realization results within each process.
 Mutation tests copy their declaration fields; backends, stores, and runtime ownership stay separate.
-The existing required Python check combines both groups' data before exporting coverage.
-Both groups and the concurrent fuzz/smoke qualification job must succeed.
-The combiner checks that both expected data files exist and uses a read-only token.
+The existing required Python check combines all groups' data before exporting coverage.
+All groups and the concurrent fuzz/smoke qualification job must succeed.
+The combiner checks that all expected data files exist and uses a read-only token.
 The coverage comparison also checks the planner's measured lines with two workers.
 macOS and Windows run portability checks instead of repeating Linux planning tests.
 The installed-wheel boot retains its independent realization and teardown observations.

@@ -113,7 +113,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     needs: [changes]
     if: always() && (needs.changes.result != 'success' || needs.changes.outputs.python == 'true')
     concurrency:
@@ -138,7 +138,7 @@ jobs:
       - name: Ordinary tests and worker coverage
         run: >-
           python -m pytest tests/ -q -n 4 --dist loadfile
-          --splits 2 --group ${{ matrix.shard }} --splitting-algorithm least_duration
+          --splits ${{ strategy.job-total }} --group ${{ matrix.shard }} --splitting-algorithm least_duration
           -m "not integration and not fuzz and not live_lab" --durations=30
           --junitxml=python-results.xml --cov --cov-report=
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -259,12 +259,12 @@ jobs:
       - name: Combine complete worker coverage
         run: |
           set -euo pipefail
-          for shard in 1 2; do
+          for shard in 1 2 3; do
             data="coverage-data/python-coverage-data-$shard/.coverage"
             test -s "$data"
             coverage json --data-file="$data" -o "$RUNNER_TEMP/coverage-shard-$shard.json"
           done
-          coverage combine coverage-data/python-coverage-data-1/.coverage coverage-data/python-coverage-data-2/.coverage
+          coverage combine coverage-data/python-coverage-data-1/.coverage coverage-data/python-coverage-data-2/.coverage coverage-data/python-coverage-data-3/.coverage
           coverage xml -o coverage.xml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

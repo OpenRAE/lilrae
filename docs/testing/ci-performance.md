@@ -77,9 +77,9 @@ The next revision removes their repeated setup and repairs the stale helper chec
 selected 7,250 ordinary cases: 7,246 passed and four skipped.
 Ordinary tests and coverage took 457 seconds; core/worker coverage comparisons also passed.
 The five-minute target was not met.
-The next trial uses two complementary groups, with four workers in each.
+The next trial uses three complementary groups, with four workers in each.
 Fuzz, coverage comparisons, Docker readback, and CLI smoke run concurrently.
-The required Python check waits for all three jobs and combines both groups' coverage.
+The required Python check waits for all groups and qualification before combining coverage.
 Record their summed runner time; the groups do not repeat the whole suite.
 
 Three successful hosted comparisons are required before claiming the budgets are met.
@@ -98,3 +98,8 @@ Weekly scans also reassess unchanged images and dependency locks against current
 These qualification costs are reported separately from ordinary PR feedback.
 
 See [CI verification](../architecture/ci-verification.md) for routing and security boundaries.
+
+The two-group trial passed the same 7,250-case set with no omissions or overlap.
+Core tests and final line reporting took 261 seconds.
+Python verification, including setup and reporting, took 314 seconds without routing or queue delay.
+The third complementary group provides margin below five minutes.
