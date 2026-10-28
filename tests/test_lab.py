@@ -1905,6 +1905,13 @@ class TestOrchestrateLabStart:
         # no-op on that path.
         pack_root = tmp_path / ".aptl" / "staged-packs" / "fixture"
         pack_root.mkdir(parents=True)
+        # Source selection happens before admission. Keep both boundaries on
+        # this test's small bundle so each orchestration case avoids acquiring
+        # the released pack before reaching the admission stub.
+        mocks["resolve_bundle"] = mocker.patch(
+            "aptl.backends._raes_scenario_resolution.resolve_scenario_bundle",
+            return_value=_admitted_start_fixture(pack_root).bundle,
+        )
         mocks["admitted_surface"] = _admitted_surface(
             pack_root,
             env_pack=False,
@@ -2107,12 +2114,15 @@ class TestOrchestrateLabStart:
         mocks["start"].assert_called_once()
         assert mocks["start"].call_args.kwargs["scenario_path"] == selected
 
-    def test_orchestrate_hydrates_missing_env(self, mocker, tmp_path):
+    def test_orchestrate_hydrates_missing_env(
+        self, mocker, tmp_path, released_techvault_bundle
+    ):
         """A fresh checkout can start without a hand-created .env."""
         from aptl.core.env import find_placeholder_env_values, load_dotenv
         from aptl.core.lab import orchestrate_lab_start
 
         mocks = self._patch_all_steps(mocker, tmp_path)
+        mocks["resolve_bundle"].return_value = released_techvault_bundle
         (tmp_path / ".env").unlink()
 
         result = orchestrate_lab_start(tmp_path)

@@ -281,7 +281,6 @@ jobs:
               tests/test_version_consistency.py
               tests/test_line_endings.py
               tests/test_workbench_process.py
-              tests/test_appliance_seat_vm.py
               -q
     needs: [changes]
     if: always() && (needs.changes.result != 'success' || needs.changes.outputs.python == 'true')

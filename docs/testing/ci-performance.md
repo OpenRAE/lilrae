@@ -17,13 +17,13 @@ Those jobs ran in parallel; their durations are not additive elapsed time.
 
 ## Removed and consolidated work
 
-The pruning removes 123 test functions:
+The pruning removes 124 test functions:
 
 | Category | Removed functions | Reason and retained evidence |
 | --- | ---: | --- |
 | Legacy smoke and full-range modules | 78 | Fixed container identities duplicate scenario-owned live verification. Use `lilrae lab validate-live` and distinct native active-response/continuity probes. |
 | Constructor/default/type assertions | 32 | Assignments repeat model declarations. Keep serialization, validation, lifecycle, scoring, and correlation behavior. |
-| Duplicate and workflow-text assertions | 5 | Remove repeated manifest assertions, an exact timeout value, retired workflow details, and a distinct-profile check already proved by exact expected sets. Keep actual audit failure and cleanup checks. |
+| Duplicate and workflow-text assertions | 6 | Remove repeated manifest assertions, an exact timeout value, retired workflow details, a historical file-inventory equality check, and a distinct-profile check already proved by exact expected sets. Keep actual audit failure and cleanup checks. |
 | Repeated complete-scenario account checks | 8 | Keep the composed released gate. Six small rejection cases replace six full-pack cases. |
 
 The removed attack-model file contained two of the constructor checks.
@@ -33,7 +33,12 @@ The paper checks share one parsed plan.
 Curated variants share each realization and one acquired catalog with explicit cleanup.
 That focused local module fell from 87.11 seconds to 38.34 seconds.
 It retains 16 cases; the removed case repeated the exact-profile assertions.
-Six modules share one read-only released realization per test session.
+Released-pack readers share one read-only parsed scenario and realization per test process.
+Cases that change runtime declarations copy those fields first.
+Database cases parse their unchanged declarations once and keep separate backend doubles.
+Startup unit cases stub source acquisition before their existing admission stub.
+The credential-hydration case retains the real released source.
+Content-owner checks materialize their two relevant services once.
 Wheel verification shares the build but keeps separate clean install environments.
 No runtime manager or live lab is shared between tests.
 
@@ -56,6 +61,15 @@ The next trial uses four workers after pruning and shared setup.
 Files stay on one worker; pytest-cov combines worker measurements.
 The toolchain check compares the planner's executed lines against a two-worker run.
 This trial must report worker count and runner minutes alongside elapsed time.
+
+[The first four-worker trial](https://github.com/OpenRAE/lilrae/actions/runs/40627971905)
+took 699.86 seconds for ordinary tests and coverage.
+It selected 7,247 cases: 7,239 passed, four failed, and four skipped.
+The target was not met; this failed run is diagnostic evidence only.
+Its startup class consumed 457.70 summed case seconds across 51 cases.
+Database cases consumed 218.52 seconds; two content-owner checks consumed 164.49 seconds.
+These case durations overlap across workers and are not pipeline elapsed time.
+The next revision removes their repeated setup and repairs the stale helper checks.
 
 Three successful hosted comparisons are required before claiming the budgets are met.
 The issue and delivery PR hold those run links and results.

@@ -21,6 +21,8 @@ The measured serial run exceeded the budget after pruning and shared setup.
 Trial four pytest-xdist workers with pytest-cov's supported coverage combination.
 Keep each file on one worker to preserve module fixtures and avoid shared module state.
 Workers keep separate process environments and pytest temporary directories.
+Read-only pack fixtures share declarations and realization results within each process.
+Mutation tests copy their declaration fields; backends, stores, and runtime ownership stay separate.
 The coverage comparison also checks the planner's measured lines with two workers.
 macOS and Windows run portability checks instead of repeating Linux planning tests.
 The installed-wheel boot retains its independent realization and teardown observations.

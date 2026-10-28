@@ -54,6 +54,9 @@ complementary [identity-disposition ledger](identity-disposition.tsv) records
 independently versioned identity surfaces without treating every occurrence as
 a product boundary.
 
+The path ledger records that review's baseline and delivery inventory.
+It is a historical record, not a file list each later change must reproduce.
+
 This is a repository-wide architecture and risk review with targeted code
 inspection and probes. It is not a claim that every line was manually audited,
 nor a penetration test or exhaustive dependency-vulnerability assessment.
