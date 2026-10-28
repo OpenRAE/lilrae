@@ -17,6 +17,11 @@ Source changes select all coverage producers for the existing project-wide Sonar
 Docs and image routing remain independent.
 Linux runs the retained ordinary Python suite once with line coverage.
 Coverage.py uses its Python 3.12 monitoring core.
+The measured serial run exceeded the budget after pruning and shared setup.
+Trial four pytest-xdist workers with pytest-cov's supported coverage combination.
+Keep each file on one worker to preserve module fixtures and avoid shared module state.
+Workers keep separate process environments and pytest temporary directories.
+The coverage comparison also checks the planner's measured lines with two workers.
 macOS and Windows run portability checks instead of repeating Linux planning tests.
 The installed-wheel boot retains its independent realization and teardown observations.
 Periodic qualification runs retained integration checks and scans unchanged dependencies and images.

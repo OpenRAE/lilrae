@@ -17,19 +17,22 @@ Those jobs ran in parallel; their durations are not additive elapsed time.
 
 ## Removed and consolidated work
 
-The first pruning pass removes 122 test functions:
+The pruning removes 123 test functions:
 
 | Category | Removed functions | Reason and retained evidence |
 | --- | ---: | --- |
 | Legacy smoke and full-range modules | 78 | Fixed container identities duplicate scenario-owned live verification. Use `lilrae lab validate-live` and distinct native active-response/continuity probes. |
 | Constructor/default/type assertions | 32 | Assignments repeat model declarations. Keep serialization, validation, lifecycle, scoring, and correlation behavior. |
-| Duplicate and workflow-text assertions | 4 | Remove repeated manifest assertions, an exact timeout value, and retired workflow details. Keep actual audit failure and cleanup checks. |
+| Duplicate and workflow-text assertions | 5 | Remove repeated manifest assertions, an exact timeout value, retired workflow details, and a distinct-profile check already proved by exact expected sets. Keep actual audit failure and cleanup checks. |
 | Repeated complete-scenario account checks | 8 | Keep the composed released gate. Six small rejection cases replace six full-pack cases. |
 
 The removed attack-model file contained two of the constructor checks.
 The counts describe deleted functions, not a net execution-count reduction.
 New regressions and parametrized replacements are counted separately by pytest.
 The paper checks share one parsed plan.
+Curated variants share each realization and one acquired catalog with explicit cleanup.
+That focused local module fell from 87.11 seconds to 38.34 seconds.
+It retains 16 cases; the removed case repeated the exact-profile assertions.
 Six modules share one read-only released realization per test session.
 Wheel verification shares the build but keeps separate clean install environments.
 No runtime manager or live lab is shared between tests.
@@ -48,8 +51,11 @@ Record the coverage core, worker count, cache state, selected counts, and slowes
 Keep elapsed required-check time separate from summed runner minutes and queue delay.
 Python and periodic integration jobs retain JUnit results and print durations.
 The toolchain-change check compares executed lines under `sysmon` and `ctrace`.
-The current configuration has no parallel Python workers.
-First remove repeated setup and measure before adding worker isolation and coverage machinery.
+The first hosted serial trial exceeded the ordinary budget.
+The next trial uses four workers after pruning and shared setup.
+Files stay on one worker; pytest-cov combines worker measurements.
+The toolchain check compares the planner's executed lines against a two-worker run.
+This trial must report worker count and runner minutes alongside elapsed time.
 
 Three successful hosted comparisons are required before claiming the budgets are met.
 The issue and delivery PR hold those run links and results.

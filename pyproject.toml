@@ -86,6 +86,7 @@ dev = [
     # toolchain (`python -m build --no-isolation`). CI installs
     # requirements/dev.txt, so those tests run there rather than skip.
     "build>=1.2.0",
+    "pytest-cov>=7.1.0",
 ]
 docs = [
     "mkdocs-material>=9.5.0",

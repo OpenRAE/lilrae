@@ -132,8 +132,7 @@ jobs:
           pip install --require-hashes -r requirements/dev.txt
           pip install -e . --no-deps --no-build-isolation
       - run: |
-          coverage run -m pytest tests/ -q -m "not integration and not fuzz and not live_lab" --durations=30 --junitxml=python-results.xml
-          coverage xml -o coverage.xml
+          python -m pytest tests/ -q -n 4 --dist loadfile -m "not integration and not fuzz and not live_lab" --durations=30 --junitxml=python-results.xml --cov --cov-report=xml:coverage.xml
       - name: Compare measurement cores when the toolchain changes
         if: needs.changes.outputs.python == 'true' && needs.changes.outputs.dependencies == 'true'
         run: |
@@ -141,6 +140,7 @@ jobs:
             COVERAGE_CORE=$core coverage run --data-file="$RUNNER_TEMP/coverage-$core" -m pytest tests/test_raes_planning_compat.py -q
             coverage json --data-file="$RUNNER_TEMP/coverage-$core" -o "$RUNNER_TEMP/coverage-$core.json"
           done
+          COVERAGE_FILE="$RUNNER_TEMP/coverage-workers" python -m pytest tests/test_raes_planning_compat.py -q -n 2 --cov --cov-report="json:$RUNNER_TEMP/coverage-workers.json"
           python - <<'PYTHON'
           import json
           import os
@@ -151,6 +151,10 @@ jobs:
               report = json.loads((root / f"coverage-{core}.json").read_text())
               reports.append({name: data["executed_lines"] for name, data in report["files"].items()})
           assert reports[0] == reports[1], "coverage cores disagree on executed lines"
+          worker_report = json.loads((root / "coverage-workers.json").read_text())
+          planner = "src/aptl/backends/raes_planning_compat.py"
+          assert reports[0][planner], "serial planner coverage is empty"
+          assert worker_report["files"][planner]["executed_lines"] == reports[0][planner], "worker coverage differs from serial planner coverage"
           print("Coverage cores agree on measured files and executed lines")
           PYTHON
       # Property-based tests carry the `fuzz` marker, which `addopts` excludes
@@ -286,6 +290,7 @@ jobs:
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
       - name: Validate check selection
+        shell: bash
         env:
           ROUTING_RESULT: ${{ needs.changes.result }}
         run: test "$ROUTING_RESULT" = success
