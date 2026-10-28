@@ -17,6 +17,10 @@ security protections from upstream commit
 - Populate general JWS unprotected headers before sanitizing them.
 - Preserve the underlying JWE header error.
 
+In `json/decode.go`, the four hexadecimal digits of a Unicode escape are
+parsed with an explicit 16-bit bound before conversion to a rune. This makes
+the existing input bound visible to CodeQL without changing accepted input.
+
 This fixes [CVE-2026-116587 / GHSA-mgcc-cww5-fp2q](https://github.com/go-jose/go-jose/security/advisories/GHSA-mgcc-cww5-fp2q).
 Upstream released these protections in v4.1.6 but has no patched v3 release.
 Caddy's Smallstep dependencies still need the v3 API. The parent module uses
