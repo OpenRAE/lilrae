@@ -60,6 +60,28 @@ _RUNTIME_READBACK_CONCERNS = (
     | _GUEST_READBACK_RUNTIME_CONCERNS
     | {"forwarding-agents"}
 )
+# The realization concerns snapshot assembly reports for each resource type.
+_CONCERN_KINDS: dict[str, tuple[str, ...]] = {
+    "node": (
+        "node-type",
+        "os-family",
+        "domain-topology",
+        # raes 3.1.0 per-node runtime realization concerns (#876): observed
+        # off the realized container and written at their nested payload
+        # paths, or removed so an unrealized EXACT declaration is rejected.
+        *sorted(_RUNTIME_READBACK_CONCERNS),
+    ),
+    # ADR-088 (#889): a content-placement carrying a service materialization
+    # exposes the service-search-index-schema-materialization concern, which
+    # the gate replaces with the corroborated observation (or removes when
+    # unproven, so planned state is never accepted).
+    "content-placement": (
+        "content-type",
+        "service-search-index-schema-materialization",
+    ),
+    "generated-artifact": ("generated-artifact",),
+    "persistent-volume": ("persistent-volume",),
+}
 _APPLIED_ENTRY_STATUS = "applied"
 _UNCHANGED_ENTRY_STATUS = "unchanged"
 
@@ -282,6 +304,32 @@ def _admitted_concern_kinds(
     return {address: frozenset(kinds) for address, kinds in admitted.items()}
 
 
+def unobserved_admitted_concerns(
+    plan: ProvisioningPlan,
+    observations: Mapping[str, ObservedResource],
+) -> tuple[tuple[str, str], ...]:
+    """Return ``(address, kind)`` for each admitted concern readback missed.
+
+    Only a credential-bearing plan has any. Snapshot assembly removes an
+    admitted concern it did not observe, and where the plan holds a value
+    there, even an empty or null one, RAES's closed result contract refuses the
+    whole result with a message that names neither address nor concern.
+    """
+
+    admitted = _admitted_concern_kinds(plan)
+    if admitted is None:
+        return ()
+    return tuple(
+        (address, kind)
+        for address, resource in plan.resources.items()
+        if (observed := observations.get(address)) is not None and observed.realized
+        for kind in _CONCERN_KINDS.get(resource.resource_type, ())
+        if kind in admitted.get(address, frozenset())
+        and CONCERN_PAYLOAD_PATH[kind] not in observed.concerns
+        and _has_path(resource.payload, CONCERN_PAYLOAD_PATH[kind])
+    )
+
+
 def realized_changed_addresses(
     plan: ProvisioningPlan,
     snapshot: RuntimeSnapshot,
@@ -321,28 +369,7 @@ def _observed_payload(
     """
 
     payload = deepcopy(dict(planned_payload))
-    concern_kinds = {
-        "node": (
-            "node-type",
-            "os-family",
-            "domain-topology",
-            # raes 3.1.0 per-node runtime realization concerns (#876): observed
-            # off the realized container and written at their nested payload
-            # paths, or removed so an unrealized EXACT declaration is rejected.
-            *sorted(_RUNTIME_READBACK_CONCERNS),
-        ),
-        # ADR-088 (#889): a content-placement carrying a service materialization
-        # exposes the service-search-index-schema-materialization concern, which
-        # the gate replaces with the corroborated observation (or removes when
-        # unproven, so planned state is never accepted).
-        "content-placement": (
-            "content-type",
-            "service-search-index-schema-materialization",
-        ),
-        "generated-artifact": ("generated-artifact",),
-        "persistent-volume": ("persistent-volume",),
-    }.get(resource_type, ())
-    for kind in concern_kinds:
+    for kind in _CONCERN_KINDS.get(resource_type, ()):
         path = CONCERN_PAYLOAD_PATH[kind]
         if path in observed.concerns:
             _set_path(payload, path, observed.concerns[path])
@@ -365,6 +392,17 @@ def _set_path(payload: dict[str, object], path: tuple[str, ...], value: object) 
             current[key] = nested
         current = nested
     current[path[-1]] = value
+
+
+def _has_path(payload: Mapping[str, object], path: tuple[str, ...]) -> bool:
+    """Return whether the payload holds a value, possibly null, at ``path``."""
+
+    current: object = payload
+    for key in path:
+        if not isinstance(current, Mapping) or key not in current:
+            return False
+        current = current[key]
+    return True
 
 
 def _pop_path(payload: dict[str, object], path: tuple[str, ...]) -> None:

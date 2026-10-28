@@ -35,6 +35,7 @@ from aptl.backends.raes_diagnostics import (
     diagnostic,
     realized_changed_addresses,
     snapshot_after_apply,
+    unobserved_admitted_concerns,
 )
 from aptl.backends.raes_manifest import (
     create_aptl_manifest,
@@ -101,6 +102,50 @@ def _boundary_admission_failed(backend: BoundaryProbeBackend) -> bool:
     )
 
 
+def _boundary_failure_diagnostics(backend: BoundaryProbeBackend) -> list[Diagnostic]:
+    """Return the boundary mismatch diagnostic when admission no longer holds."""
+
+    if not _boundary_admission_failed(backend):
+        return []
+    return [
+        diagnostic(
+            "aptl.provisioner.execution-boundary-mismatch",
+            PROVISIONING_ADDRESS,
+            "Selected Docker endpoint or daemon changed or required seat identity is unavailable.",
+        )
+    ]
+
+
+def _unsettled_readback(
+    plan: ProvisioningPlan,
+    snapshot: RuntimeSnapshot,
+    readback_diagnostics: list[Diagnostic],
+    observations: dict[str, ObservedResource],
+) -> tuple[bool, tuple[tuple[str, str], ...]]:
+    """Return whether readback may still settle, and the concerns it missed.
+
+    RAES names every gap its authority check finds. Only when it finds none can
+    a missed admitted concern reach RAES's credential check, whose refusal names
+    nothing, so readback waits for that concern too.
+    """
+
+    if readback_diagnostics:
+        return _retryable_readback_gaps(plan, snapshot, readback_diagnostics), ()
+    unobserved = unobserved_admitted_concerns(plan, observations)
+    return bool(unobserved), unobserved
+
+
+def _unobserved_concern_diagnostic(address: str, kind: str) -> Diagnostic:
+    """Name one admitted concern that readback never observed."""
+
+    return diagnostic(
+        "aptl.provisioner.admitted-concern-unobserved",
+        address,
+        f"Realization readback did not observe the admitted '{kind}' concern "
+        "before its deadline; a credential-bearing result must report it.",
+    )
+
+
 class ProvisionerStartMixin(object):
     """Start the lowered deployment, then report the world it realized."""
 
@@ -142,14 +187,9 @@ class ProvisionerStartMixin(object):
 
         observation_context = DeploymentObservationContext(attempt_id=self._attempt_id)
         result: ApplyResult | None = None
-        if _boundary_admission_failed(self.deployment_backend):
-            diagnostics.append(
-                diagnostic(
-                    "aptl.provisioner.execution-boundary-mismatch",
-                    PROVISIONING_ADDRESS,
-                    "Selected Docker endpoint or daemon changed or required seat identity is unavailable.",
-                )
-            )
+        boundary_failures = _boundary_failure_diagnostics(self.deployment_backend)
+        if boundary_failures:
+            diagnostics.extend(boundary_failures)
             return self._failed_apply(
                 snapshot, diagnostics, selected_profiles, realization
             )
@@ -254,31 +294,31 @@ class ProvisionerStartMixin(object):
                 validation_snapshot,
                 manifest=create_aptl_manifest(),
             )
-            if not readback_diagnostics or not _retryable_readback_gaps(
-                plan, validation_snapshot, readback_diagnostics
-            ):
+            settling, unobserved = _unsettled_readback(
+                plan, validation_snapshot, readback_diagnostics, observations
+            )
+            if not settling:
                 break
+            unsettled = len(readback_diagnostics) or len(unobserved)
             now = time.monotonic()
             if now >= deadline:
                 log.warning(
                     "Realization readback deadline expired with %d unsettled native evidence records",
-                    len(readback_diagnostics),
+                    unsettled,
                 )
                 break
             if attempts == 1:
                 log.info(
                     "Waiting for %d native realization evidence records to settle",
-                    len(readback_diagnostics),
+                    unsettled,
                 )
             time.sleep(min(_REALIZATION_READBACK_INTERVAL_SECONDS, deadline - now))
-        if _boundary_admission_failed(self.deployment_backend):
-            diagnostics.append(
-                diagnostic(
-                    "aptl.provisioner.execution-boundary-mismatch",
-                    PROVISIONING_ADDRESS,
-                    "Selected Docker endpoint or daemon changed or required seat identity is unavailable.",
-                )
-            )
+        failures = [
+            *(_unobserved_concern_diagnostic(*gap) for gap in unobserved),
+            *_boundary_failure_diagnostics(self.deployment_backend),
+        ]
+        if failures:
+            diagnostics.extend(failures)
             return self._failed_apply(
                 snapshot, diagnostics, selected_profiles, realization
             )
