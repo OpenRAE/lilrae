@@ -514,16 +514,16 @@ class _Start(provisioner_start.ProvisionerStartMixin):
     bundle = MagicMock()
     startup_selection = None
 
-    def selected_profiles(self, realization):
+    def selected_profiles(self, *_):
         return []
 
-    def _with_artifact_satisfactions(self, plan, snapshot, realization, context):
+    def _with_artifact_satisfactions(self, _plan, snapshot, *_):
         return snapshot
 
-    def _failed_apply(self, snapshot, diagnostics, profiles, realization):
+    def _failed_apply(self, snapshot, diagnostics, *_):
         return ApplyResult(success=False, snapshot=snapshot, diagnostics=diagnostics)
 
-    def _successful_apply_details(self, *args):
+    def _successful_apply_details(self, *_):
         return {}
 
 
