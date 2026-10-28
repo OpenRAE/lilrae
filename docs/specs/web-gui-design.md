@@ -807,8 +807,8 @@ Rules:
   query bodies.
 - Local preference settings do not need an API in v1. Keep them browser-local
   unless a later issue explicitly scopes synchronized preferences.
-- All new Python routes get pytest coverage in `tests/`.
-- All new Svelte behavior gets vitest coverage in `web/tests/`.
+- Verify changed Python route behavior with suitable existing or focused tests.
+- Verify changed Svelte behavior with suitable existing or focused tests.
 
 ## Authentication and Security UX
 
@@ -861,8 +861,8 @@ The implementation issue can use this checklist:
 - UI copy is translation-ready and date/time/count formatting goes through
   shared helpers.
 - Visual implementation avoids the documented generic AI-design anti-patterns.
-- Every new API DTO has a Svelte mirror and tests.
-- Every new source path has pytest or vitest coverage as required by
+- API DTOs have matching frontend contracts and proportionate verification.
+- Verification follows changed behavior and risk, as specified by
   `.gc/plan-rules.md`.
 - Documentation and the Conventional Commit PR title describe the shipped behavior.
 

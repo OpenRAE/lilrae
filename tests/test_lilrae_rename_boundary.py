@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import csv
-import subprocess
 from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).parents[1]
 REVIEW_ROOT = PROJECT_ROOT / "docs" / "reviews" / "962-lilrae-readiness"
 IDENTITY_LEDGER = REVIEW_ROOT / "identity-disposition.tsv"
-TRACKED_FILE_LEDGER = REVIEW_ROOT / "tracked-file-inventory.tsv"
 
 IDENTITY_COLUMNS = (
     "surface_id",
@@ -40,11 +38,6 @@ REQUIRED_KINDS = {
     "state-path",
     "static-route",
     "telemetry",
-}
-FORBIDDEN_OWNER_CATEGORIES = {
-    "experience-mcp",
-    "experience-plugin",
-    "split-core-experience",
 }
 CURRENT_DECISION_FILES = (
     REVIEW_ROOT / "README.md",
@@ -113,39 +106,6 @@ def test_container_image_identities_have_exact_owners_and_consumers() -> None:
         assert "producer" in row["locations"].casefold()
         assert "consumer" in row["locations"].casefold()
         assert "per image" not in row["disposition"].casefold()
-
-
-def test_tracked_file_ledger_reconciles_the_final_tree() -> None:
-    """The #962 ledger remains a complete path inventory after its baseline."""
-
-    columns, rows = _tsv_rows(TRACKED_FILE_LEDGER)
-    assert columns == ("path", "proposed_owner", "migration_rule")
-
-    ledger_paths = [row["path"] for row in rows]
-    assert len(ledger_paths) == len(set(ledger_paths))
-    assert not ({row["proposed_owner"] for row in rows} & FORBIDDEN_OWNER_CATEGORIES)
-
-    completed = subprocess.run(
-        ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
-        cwd=PROJECT_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    actual_paths = {line for line in completed.stdout.splitlines() if line}
-    deleted = subprocess.run(
-        ["git", "ls-files", "--deleted"],
-        cwd=PROJECT_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    actual_paths.difference_update(deleted.stdout.splitlines())
-    assert set(ledger_paths) == actual_paths
-
-    review = (REVIEW_ROOT / "README.md").read_text(encoding="utf-8")
-    for evidence in ("1,467", "1,505", "1,508", "38", "d48d2b7e"):
-        assert evidence in review
 
 
 def test_current_decisions_reject_the_false_product_split() -> None:

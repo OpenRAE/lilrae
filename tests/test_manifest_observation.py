@@ -98,8 +98,3 @@ class TestPopulatedProjection:
         manifest = create_aptl_manifest()
 
         assert observation_capability_contract_gaps(manifest) == ()
-
-    def test_the_default_manifest_also_has_no_observation_contract_gaps(self):
-        # With observation None the gap check is vacuously clean — the honest
-        # default must never trip the invariant either.
-        assert observation_capability_contract_gaps(create_aptl_manifest()) == ()

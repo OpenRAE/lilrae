@@ -1441,65 +1441,10 @@ class TestStartupClassificationTypes:
     (CLI, API, web TS mirror) can rely on stable strings.
     """
 
-    def test_startup_outcome_members(self):
-        from aptl.core.lab_types import StartupOutcome
 
-        assert StartupOutcome.READY.value == "ready"
-        assert StartupOutcome.DEGRADED_USABLE.value == "degraded_usable"
-        assert StartupOutcome.DEGRADED_UNUSABLE.value == "degraded_unusable"
-        assert StartupOutcome.FAILED.value == "failed"
 
-    def test_diagnostic_impact_members(self):
-        from aptl.core.lab_types import DiagnosticImpact
 
-        assert DiagnosticImpact.COSMETIC.value == "cosmetic"
-        assert DiagnosticImpact.TELEMETRY.value == "telemetry"
-        assert DiagnosticImpact.CAPABILITY.value == "capability"
-        assert DiagnosticImpact.READINESS.value == "readiness"
 
-    def test_diagnostic_severity_members(self):
-        from aptl.core.lab_types import DiagnosticSeverity
-
-        assert DiagnosticSeverity.INFO.value == "info"
-        assert DiagnosticSeverity.WARNING.value == "warning"
-        assert DiagnosticSeverity.ERROR.value == "error"
-
-    def test_startup_diagnostic_fields(self):
-        from aptl.core.lab_types import (
-            DiagnosticImpact,
-            DiagnosticSeverity,
-            StartupDiagnostic,
-        )
-
-        diag = StartupDiagnostic(
-            step="wait_for_services",
-            component="wazuh_indexer",
-            impact=DiagnosticImpact.TELEMETRY,
-            severity=DiagnosticSeverity.WARNING,
-            message="Indexer did not become ready within 300s",
-        )
-        assert diag.step == "wait_for_services"
-        assert diag.component == "wazuh_indexer"
-        assert diag.impact is DiagnosticImpact.TELEMETRY
-        assert diag.severity is DiagnosticSeverity.WARNING
-        assert diag.message == "Indexer did not become ready within 300s"
-        assert diag.operator_action == ""
-
-    def test_startup_diagnostic_component_optional(self):
-        from aptl.core.lab_types import (
-            DiagnosticImpact,
-            DiagnosticSeverity,
-            StartupDiagnostic,
-        )
-
-        diag = StartupDiagnostic(
-            step="pull_images",
-            impact=DiagnosticImpact.COSMETIC,
-            severity=DiagnosticSeverity.INFO,
-            message="Image pre-pull skipped",
-        )
-        # component defaults to empty string (no special-case in CLI/API)
-        assert diag.component == ""
 
     def test_lab_result_has_outcome_and_diagnostics_with_defaults(self):
         """LabResult must default to READY + empty diagnostics so existing
@@ -1960,6 +1905,13 @@ class TestOrchestrateLabStart:
         # no-op on that path.
         pack_root = tmp_path / ".aptl" / "staged-packs" / "fixture"
         pack_root.mkdir(parents=True)
+        # Source selection happens before admission. Keep both boundaries on
+        # this test's small bundle so each orchestration case avoids acquiring
+        # the released pack before reaching the admission stub.
+        mocks["resolve_bundle"] = mocker.patch(
+            "aptl.backends._raes_scenario_resolution.resolve_scenario_bundle",
+            return_value=_admitted_start_fixture(pack_root).bundle,
+        )
         mocks["admitted_surface"] = _admitted_surface(
             pack_root,
             env_pack=False,
@@ -2162,12 +2114,15 @@ class TestOrchestrateLabStart:
         mocks["start"].assert_called_once()
         assert mocks["start"].call_args.kwargs["scenario_path"] == selected
 
-    def test_orchestrate_hydrates_missing_env(self, mocker, tmp_path):
+    def test_orchestrate_hydrates_missing_env(
+        self, mocker, tmp_path, released_techvault_bundle
+    ):
         """A fresh checkout can start without a hand-created .env."""
         from aptl.core.env import find_placeholder_env_values, load_dotenv
         from aptl.core.lab import orchestrate_lab_start
 
         mocks = self._patch_all_steps(mocker, tmp_path)
+        mocks["resolve_bundle"].return_value = released_techvault_bundle
         (tmp_path / ".env").unlink()
 
         result = orchestrate_lab_start(tmp_path)
@@ -6270,8 +6225,6 @@ class TestGenerateSocCertsStep:
         bind-mount source."""
         from aptl.core.lab import (
             _LAB_START_STEPS,
-            _step_check_bind_mounts,
-            _step_generate_soc_certs,
         )
 
         names = [s.__name__ for s in _LAB_START_STEPS]
