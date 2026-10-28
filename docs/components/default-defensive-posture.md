@@ -288,22 +288,24 @@ kali's own IPs and wedging the purple loop.
 ## MISP IOCs
 
 **Tag:** `STARTING POSTURE` for the `aptl:enforce` graduation lane.
-The MISP store itself ships **empty at first lab boot**, but a prime
-research scenario seed exists out-of-band—see below.
+The MISP image ships empty. With the bundled TechVault adapter,
+`lilrae lab start` seeds one curated event, but none of its indicators
+is graduated to enforcement (see below).
 
 **Default state**
 
-- The MISP container starts with upstream image defaults. **At first
-  `lilrae lab start`, no APTL-side IOCs are loaded**: there are no
-  pre-existing events, no `aptl:enforce`-tagged attributes, no
-  graduated indicators.
-- An optional seed script
-  ([`scripts/seed-misp.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-misp.sh)) creates an
-  "APTL Lab - Known Threat Actors" event with kali-IP indicators and
-  injection-pattern signatures. It is **not run automatically by
-  `lilrae lab start`**—it must be invoked explicitly (or via
-  [`scripts/seed-prime.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh), which is
-  the prime-scenario master seed). The seed script is idempotent.
+- The MISP container starts with upstream image defaults. The
+  scenario seed below adds one event; there are no
+  `aptl:enforce`-tagged attributes and no graduated indicators.
+- [`scripts/seed-misp.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-misp.sh)
+  creates an "APTL Lab - Known Threat Actors" event with kali-IP
+  indicators and injection-pattern signatures. **`lilrae lab start`
+  runs it** in its SOC seeding step: the bundled TechVault adapter
+  selects
+  [`scripts/seed-prime.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh),
+  the prime-scenario master seed, which runs `seed-misp.sh`. Start
+  with `--skip-seed` to leave MISP empty; either script can also be
+  run by hand. The seed script is idempotent.
   IOCs created by `seed-misp.sh` are **not tagged `aptl:enforce`** at
   seed time—graduation to enforcement is still blue's per-iteration
   decision.
@@ -328,8 +330,8 @@ does not by itself trigger enforcement. Blue must add the
 `aptl:enforce` tag to graduate it. This separates
 "intelligence-curation" (which seed scripts can prime) from
 "enforcement" (which the default posture leaves empty). At first
-boot, and even after the optional seed runs, the enforcement lane
-has zero graduated indicators on purpose.
+boot, and after the seed runs, the enforcement lane has zero
+graduated indicators on purpose.
 
 **What blue would do to raise it**
 
@@ -370,38 +372,40 @@ has zero graduated indicators on purpose.
   Until that file is written, Wazuh's `<integration>` block is wired
   but inert.
 - The seed flow runs in two scripts:
-  1. [`scripts/seed-shuffle.sh:265-266`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-shuffle.sh)
+  1. [`scripts/seed-shuffle.sh:260-265`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-shuffle.sh)
      creates the `APTL Alert to Case` workflow inside the running
      Shuffle instance via Shuffle's REST API and writes its webhook
      URL to a **host-side staging file** at
      `/tmp/aptl_shuffle_webhook_url`. **This step alone is not enough
      — the Wazuh `custom-shuffle` forwarder reads from inside the
      manager container, not the host.**
-  2. [`scripts/seed-prime.sh:165-169`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh)
+  2. [`scripts/seed-prime.sh:249-266`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh)
      reads the host staging file and `docker exec`s the URL into the
      Wazuh manager container at
      `/var/ossec/etc/shuffle_webhook_url`. **This step is what
      activates the Wazuh→Shuffle forwarder.**
   Both scripts are idempotent.
-- **Neither script is run by `lilrae lab start`.** Until an operator
-  runs `seed-prime.sh` (or runs `seed-shuffle.sh` followed by the
-  manual `docker exec` to copy the URL into the manager), the
-  Wazuh→Shuffle forwarder no-ops.
+- **`lilrae lab start` runs both** in its SOC seeding step: the
+  bundled TechVault adapter selects `seed-prime.sh`, which runs
+  `seed-shuffle.sh` and then copies the URL. After a start with
+  `--skip-seed`, the Wazuh→Shuffle forwarder no-ops until an operator
+  runs `seed-prime.sh` (or `seed-shuffle.sh` followed by the manual
+  `docker exec` that copies the URL into the manager).
 
 **Why it ships this way**
 
 The integration boundary (Wazuh's `<integration>` block, the
 `custom-shuffle` forwarder, the webhook-file gate) is in source
-control. The workflow *content* is created by an explicit seed step
-so iteration runbooks can choose whether to prime the prime-scenario
-defaults or start fresh. The `custom-shuffle` script's silent-exit
+control. The workflow *content* is created by a separate seed step,
+so iteration runbooks can prime the prime-scenario defaults or start
+fresh with `--skip-seed`. The `custom-shuffle` script's silent-exit
 behaviour means a freshly started lab has no half-wired forwarder
 firing into a missing webhook.
 
 **What blue would do to raise it**
 
-- Run `scripts/seed-prime.sh` for the full prime-scenario seed
-  (recommended—handles both the Shuffle-side workflow creation and
+- After a `--skip-seed` start, run `scripts/seed-prime.sh` for the
+  full prime-scenario seed (recommended—handles both the Shuffle-side workflow creation and
   the Wazuh-side webhook-URL copy in one shot). Running
   `seed-shuffle.sh` alone leaves the Wazuh forwarder still inert.
 - Author additional Shuffle workflows that consume Wazuh alerts,
