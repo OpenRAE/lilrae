@@ -1759,6 +1759,10 @@ services:
                 events.append("verify")
                 return ProjectRuntimePresence()
 
+            def retire_removed_runtime_receipts(self):
+                events.append("retire")
+                return []
+
         result = stop_compose_lab(
             Backend(), ["wazuh"], remove_volumes=False, timeout=30
         )
@@ -1771,6 +1775,7 @@ services:
             "containers",
             "networks",
             "verify",
+            "retire",
         ]
 
     def test_stop_fails_when_project_runtime_remains_after_cleanup(self, tmp_path):

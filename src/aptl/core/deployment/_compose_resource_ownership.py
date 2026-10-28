@@ -3,6 +3,7 @@
 Names and Docker labels are discovery hints.  Authority comes from an
 owner-only, append-only receipt for the daemon-issued native identifier, bound
 to one workspace, effective project namespace, daemon, and start attempt.
+Teardown retires a receipt only after it has proven the native object absent.
 """
 
 from __future__ import annotations
@@ -205,7 +206,31 @@ class WorkspaceOwnership:
             or receipt.project_name != self.project_name
         ):
             raise OwnershipConflictError("volume receipt scope mismatch")
-        relative = self._receipt_path("volume", receipt.native_id)
+        self._unlink_receipt(receipt, "volume receipt retirement failed")
+
+    def retire_removed_resource(self, receipt: ResourceReceipt) -> None:
+        """Retire a container or network receipt after teardown proved it absent.
+
+        Docker never reissues a container or network ID, so the receipt of a
+        removed object authorizes nothing. Keeping it would cost every later
+        resolution of the same name one more inspect, start after start.
+        The caller must first prove native absence on the receipt's daemon;
+        this method rechecks the exact receipt bytes and removes only its
+        contained file.
+        """
+
+        if (
+            receipt.kind not in {"container", "network"}
+            or receipt.workspace_id != self.workspace_id
+            or receipt.project_name != self.project_name
+        ):
+            raise OwnershipConflictError("removed resource receipt scope mismatch")
+        self._unlink_receipt(receipt, "resource receipt retirement failed")
+
+    def _unlink_receipt(self, receipt: ResourceReceipt, failure: str) -> None:
+        """Remove one exact receipt file after rechecking its durable bytes."""
+
+        relative = self._receipt_path(receipt.kind, receipt.native_id)
         try:
             if read_contained_nofollow(self.root, relative) != _receipt_bytes(receipt):
                 raise OwnershipConflictError("immutable ownership receipt conflicts")
@@ -216,7 +241,7 @@ class WorkspaceOwnership:
             finally:
                 os.close(directory_fd)
         except (OSError, PathContainmentError) as exc:
-            raise OwnershipConflictError("volume receipt retirement failed") from exc
+            raise OwnershipConflictError(failure) from exc
 
     def receipts(self, kind: str) -> tuple[ResourceReceipt, ...]:
         """Load all strict receipts for one native resource kind."""

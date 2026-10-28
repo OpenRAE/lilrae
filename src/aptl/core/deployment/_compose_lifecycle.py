@@ -49,6 +49,9 @@ class _ComposeLifecycleBackend(Protocol):
     def observe_project_runtime(self) -> ProjectRuntimePresence:
         """Return checked residual project container/network presence."""
 
+    def retire_removed_runtime_receipts(self) -> list[str]:
+        """Retire container and network receipts after proven absence."""
+
 
 def kill_compose_lab(
     backend: _ComposeLifecycleBackend,
@@ -164,7 +167,11 @@ def _kill_error(
 def _kill_verification_failures(
     backend: _ComposeLifecycleBackend,
 ) -> list[str]:
-    """Require checked proof that emergency cleanup removed project runtime."""
+    """Require checked proof that emergency cleanup removed project runtime.
+
+    Proven absence also retires the removed containers' and networks'
+    receipts, as a normal stop does.
+    """
 
     presence = backend.observe_project_runtime()
     if presence.error:
@@ -174,4 +181,4 @@ def _kill_verification_failures(
             "project runtime artifacts remain after emergency cleanup "
             f"(containers={presence.container_count}, networks={presence.network_count})"
         ]
-    return []
+    return backend.retire_removed_runtime_receipts()

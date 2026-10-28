@@ -6,6 +6,10 @@ import subprocess
 from typing import Protocol
 
 from aptl.core.deployment._compose_ownership_override import OwnershipConflictError
+from aptl.core.deployment._compose_resource_ownership import (
+    ResourceReceipt,
+    WorkspaceOwnership,
+)
 from aptl.core.deployment.errors import BackendTimeoutError
 from aptl.core.ephemeral_containers import (
     EphemeralContainer,
@@ -15,6 +19,19 @@ from aptl.core.ephemeral_containers import (
 
 _DOCKER_TIMEOUT = 30
 _HELPER_CLEANUP_TIMEOUT = 60
+
+
+def _removed_runtime_receipts(
+    ownership: WorkspaceOwnership, daemon_id: str
+) -> tuple[ResourceReceipt, ...]:
+    """Snapshot this daemon's direct and Compose container and network receipts."""
+
+    return tuple(
+        receipt
+        for kind in ("container", "network")
+        for receipt in ownership.receipts(kind)
+        if receipt.managed_by != "child" and receipt.daemon_id == daemon_id
+    )
 
 
 class _CleanupBackend(Protocol):
@@ -86,6 +103,27 @@ class ComposeProjectCleanupMixin(object):
             return failures
         except (OwnershipConflictError, BackendTimeoutError, OSError):
             return ["failed to establish volume cleanup authority"]
+
+    def retire_removed_runtime_receipts(self) -> list[str]:
+        """Retire container and network receipts once teardown proved them gone.
+
+        Call only after a checked runtime observation found no project
+        container or network on the bound daemon. A receipt-owned container
+        or network verifies only while it carries this workspace's project
+        labels, which that observation lists, so every recorded object is
+        absent. Volume receipts keep their own retirement. Child receipts stay:
+        an attempt-isolated child carries no project label.
+        """
+
+        daemon_id = self._docker_daemon_id
+        try:
+            ownership = self._load_resource_ownership()
+            if ownership is not None and daemon_id is not None:
+                for receipt in _removed_runtime_receipts(ownership, daemon_id):
+                    ownership.retire_removed_resource(receipt)
+        except (OwnershipConflictError, OSError):
+            return ["failed to retire receipts of removed resources"]
+        return []
 
     def _prepare_owned_cleanup(self) -> None:
         """Verify cleanup authority, allowing a provably empty new namespace."""
