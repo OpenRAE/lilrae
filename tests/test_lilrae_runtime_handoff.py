@@ -137,6 +137,45 @@ def test_control_plane_failure_closes_both_owners():
         AptlRuntimeManager(target).close()
 
 
+def test_closed_manager_cannot_start_another_handoff():
+    target = create_stub_target()
+    manager = AptlRuntimeManager(target)
+    manager.close()
+
+    with pytest.raises(RuntimeError, match="runtime manager is closed"):
+        with manager.control_plane():
+            pytest.fail("a closed manager admitted another phase")
+
+    AptlRuntimeManager(target).close()
+
+
+def test_failed_control_plane_construction_leaves_no_owner():
+    target = create_stub_target()
+    with AptlRuntimeManager(target) as manager:
+        with pytest.raises(ValueError, match="initial_snapshot cannot be combined"):
+            from raes_runtime.control_plane_store_memory import InMemoryControlPlaneStore
+
+            with manager.control_plane(store=InMemoryControlPlaneStore()):
+                pytest.fail("an invalid control-plane composition was admitted")
+
+        with pytest.raises(RuntimeError, match="closed"):
+            manager.read_time_state()
+        AptlRuntimeManager(target).close()
+
+
+def test_clock_restart_failure_keeps_the_manager_closed(monkeypatch):
+    target = create_stub_target()
+    with AptlRuntimeManager(target) as manager:
+        monkeypatch.setattr(manager, "_start_participant_clock_driver", lambda: False)
+        with pytest.raises(RuntimeError, match="clock driver could not resume"):
+            with manager.control_plane():
+                pass
+
+        with pytest.raises(RuntimeError, match="closed"):
+            manager.read_time_state()
+        AptlRuntimeManager(target).close()
+
+
 def test_control_plane_close_failure_never_resumes_the_manager(monkeypatch):
     target = create_stub_target()
     with AptlRuntimeManager(target) as manager:

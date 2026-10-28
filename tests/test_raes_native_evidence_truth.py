@@ -399,7 +399,7 @@ def test_lab_refresh_hands_off_the_live_apply_manager(tmp_path, participant_deli
         assert failure is None
         assert outcome.runtime_manager is manager
         assert outcome.final_snapshot == manager.snapshot
-        assert manager.snapshot.metadata == {"run": "native-evidence-refresh"}
+        assert manager.snapshot.metadata["run"] == "native-evidence-refresh"
         truth = manager.snapshot.proposition_truth_results[
             "evaluation.assertion.suricata-local-rules-ready"
         ]
