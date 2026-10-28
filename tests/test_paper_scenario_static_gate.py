@@ -20,6 +20,8 @@ brief) rather than enshrining the prior six fail-closed rejections.
 """
 
 from pathlib import Path
+
+import pytest
 from unittest.mock import MagicMock
 
 from raes_processor.compiler import compile_runtime_model
@@ -54,7 +56,8 @@ def _bundle():
     return project_tree_bundle(PROJECT_ROOT, PAPER_SCENARIO)
 
 
-def _paper_plan():
+@pytest.fixture(scope="module")
+def paper_plan():
     scenario = parse_sdl_file(PAPER_SCENARIO)
     model = compile_runtime_model(scenario)
     config = AptlConfig(
@@ -91,8 +94,8 @@ def _assert_paper_capture_rejected_and_truth_unresolved(plan) -> None:
     assert project_proposition_truth_results(plan.evaluation, RuntimeSnapshot()) == {}
 
 
-def test_paper_scenario_compiles_with_participant_runtime_artifacts():
-    scenario, model, plan, _config = _paper_plan()
+def test_paper_scenario_compiles_with_participant_runtime_artifacts(paper_plan):
+    scenario, model, plan, _config = paper_plan
 
     assert model.diagnostics == []
 
@@ -135,8 +138,8 @@ def test_paper_scenario_compiles_with_participant_runtime_artifacts():
     ).exists()
 
 
-def test_paper_scenario_content_surface_realizes_with_no_rejection():
-    _scenario, _model, plan, config = _paper_plan()
+def test_paper_scenario_content_surface_realizes_with_no_rejection(paper_plan):
+    _scenario, _model, plan, config = paper_plan
     _assert_paper_capture_rejected_and_truth_unresolved(plan)
 
     realization = interpret_provisioning_plan(
@@ -195,8 +198,8 @@ def test_paper_scenario_content_surface_realizes_with_no_rejection():
     }
 
 
-def test_paper_evidence_requirements_declare_authored_capture_intent():
-    scenario, _model, _plan, _config = _paper_plan()
+def test_paper_evidence_requirements_declare_authored_capture_intent(paper_plan):
+    scenario, _model, _plan, _config = paper_plan
 
     wazuh = scenario.evidence_requirements["wazuh-evidence"]
     assert wazuh.source_class.value == "scenario_native_observability"
@@ -209,8 +212,8 @@ def test_paper_evidence_requirements_declare_authored_capture_intent():
     assert boundary.boundary_ref == "observation_boundaries.paper-agent-view"
 
 
-def test_paper_observation_boundary_hides_evaluator_and_negative_surfaces():
-    _scenario, model, plan, config = _paper_plan()
+def test_paper_observation_boundary_hides_evaluator_and_negative_surfaces(paper_plan):
+    _scenario, model, plan, config = paper_plan
 
     specs = participant_action_specs_from_runtime_model(
         model,

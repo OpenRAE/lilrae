@@ -1,6 +1,7 @@
 """Shared test fixtures for APTL CLI tests."""
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -212,3 +213,30 @@ def sample_scenario_with_steps_dict() -> dict:
             },
         ],
     }
+
+
+@pytest.fixture(autouse=True)
+def _live_lab_credentials(request, monkeypatch):
+    """Keep lab credential access behind test execution and explicit opt-in."""
+    marker = request.node.get_closest_marker("live_lab")
+    if marker is None:
+        return
+    opt_in = marker.kwargs.get("opt_in", "APTL_SMOKE")
+    if os.getenv(opt_in) != "1":
+        pytest.skip(f"Live tests require explicit {opt_in}=1 authorization")
+    if opt_in != "APTL_SMOKE":
+        return  # The composed gate owns its own admitted credential sources.
+    from tests import helpers
+
+    for name, value in helpers.live_credentials().items():
+        monkeypatch.setattr(helpers, name, value)
+        if hasattr(request.module, name):
+            monkeypatch.setattr(request.module, name, value)
+
+
+@pytest.fixture(scope="session")
+def released_techvault_realization(tmp_path_factory):
+    """Share the read-only released realization, never a live manager/backend."""
+    from tests.techvault_pack import realize_techvault_pack
+
+    return realize_techvault_pack(tmp_path_factory.mktemp("released-techvault"))

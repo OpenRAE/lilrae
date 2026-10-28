@@ -203,10 +203,11 @@ max-complexity = 15
 testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
+    "live_lab: operator-authorized checks against an existing lab (APTL_SMOKE=1)",
     "fuzz: property-based fuzz tests (run with: pytest -m fuzz)",
     "integration: tests that spawn subprocesses or read/write the filesystem; runnable by default but selectable via `pytest -m integration` or `pytest -m 'not integration'`",
 ]
-addopts = "-m 'not fuzz'"
+addopts = "-m 'not fuzz and not live_lab'"
 
 [tool.coverage.run]
 # Both top-level packages the wheel ships. `aptl_techvault` is a scenario

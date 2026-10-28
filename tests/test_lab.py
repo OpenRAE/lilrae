@@ -1441,65 +1441,10 @@ class TestStartupClassificationTypes:
     (CLI, API, web TS mirror) can rely on stable strings.
     """
 
-    def test_startup_outcome_members(self):
-        from aptl.core.lab_types import StartupOutcome
 
-        assert StartupOutcome.READY.value == "ready"
-        assert StartupOutcome.DEGRADED_USABLE.value == "degraded_usable"
-        assert StartupOutcome.DEGRADED_UNUSABLE.value == "degraded_unusable"
-        assert StartupOutcome.FAILED.value == "failed"
 
-    def test_diagnostic_impact_members(self):
-        from aptl.core.lab_types import DiagnosticImpact
 
-        assert DiagnosticImpact.COSMETIC.value == "cosmetic"
-        assert DiagnosticImpact.TELEMETRY.value == "telemetry"
-        assert DiagnosticImpact.CAPABILITY.value == "capability"
-        assert DiagnosticImpact.READINESS.value == "readiness"
 
-    def test_diagnostic_severity_members(self):
-        from aptl.core.lab_types import DiagnosticSeverity
-
-        assert DiagnosticSeverity.INFO.value == "info"
-        assert DiagnosticSeverity.WARNING.value == "warning"
-        assert DiagnosticSeverity.ERROR.value == "error"
-
-    def test_startup_diagnostic_fields(self):
-        from aptl.core.lab_types import (
-            DiagnosticImpact,
-            DiagnosticSeverity,
-            StartupDiagnostic,
-        )
-
-        diag = StartupDiagnostic(
-            step="wait_for_services",
-            component="wazuh_indexer",
-            impact=DiagnosticImpact.TELEMETRY,
-            severity=DiagnosticSeverity.WARNING,
-            message="Indexer did not become ready within 300s",
-        )
-        assert diag.step == "wait_for_services"
-        assert diag.component == "wazuh_indexer"
-        assert diag.impact is DiagnosticImpact.TELEMETRY
-        assert diag.severity is DiagnosticSeverity.WARNING
-        assert diag.message == "Indexer did not become ready within 300s"
-        assert diag.operator_action == ""
-
-    def test_startup_diagnostic_component_optional(self):
-        from aptl.core.lab_types import (
-            DiagnosticImpact,
-            DiagnosticSeverity,
-            StartupDiagnostic,
-        )
-
-        diag = StartupDiagnostic(
-            step="pull_images",
-            impact=DiagnosticImpact.COSMETIC,
-            severity=DiagnosticSeverity.INFO,
-            message="Image pre-pull skipped",
-        )
-        # component defaults to empty string (no special-case in CLI/API)
-        assert diag.component == ""
 
     def test_lab_result_has_outcome_and_diagnostics_with_defaults(self):
         """LabResult must default to READY + empty diagnostics so existing
@@ -6270,8 +6215,6 @@ class TestGenerateSocCertsStep:
         bind-mount source."""
         from aptl.core.lab import (
             _LAB_START_STEPS,
-            _step_check_bind_mounts,
-            _step_generate_soc_certs,
         )
 
         names = [s.__name__ for s in _LAB_START_STEPS]

@@ -7,14 +7,12 @@ Mandatory constraints the `/implement` skill applies during plan phase.
   PR; do not distribute one issue across multiple PRs. If an issue is too large,
   create smaller linked issues with explicit acceptance criteria and one
   complete PR per smaller issue. The parent tracks their delivery.
-- Plans that add or change Python code MUST include corresponding pytest
-  tests in `tests/`. Use `pytest -m fuzz` for property-based tests
-  (the default test run skips them per `pyproject.toml`).
-- Plans that add or change MCP TypeScript servers (anything under `mcp/`)
-  MUST include corresponding vitest tests in that server's `tests/`
-  directory.
-- Plans that add or change web frontend code MUST include corresponding
-  vitest tests in `web/tests/`.
+- Verification follows changed behavior and risk. Existing tests can provide
+  sufficient evidence; an edit does not require a new test. Add focused pytest
+  or Vitest cases only for behavior or important failure paths not covered.
+  Delete redundant, obsolete, and implementation-mirroring tests rather than
+  preserving test counts or coverage percentages. Use `pytest -m fuzz` for
+  property-based tests.
 - Plans that touch `mcp/aptl-mcp-common` MUST account for the fact that
   every MCP server consumes it. Run only targeted common and consumer tests
   locally; CI/CD rebuilds and tests every dependent MCP before the change is
