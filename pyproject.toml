@@ -38,6 +38,9 @@ dependencies = [
     # Imported directly by aptl.core.experiment.resolver; previously satisfied
     # only transitively through the upstream SDL distribution.
     "blake3>=1.0.8,<2",
+    # Imported by aptl.core.host_keys, which every lilrae command loads;
+    # previously satisfied only transitively through raes 7.0.0.
+    "asyncssh>=2.17.0",
 ]
 
 [project.urls]
@@ -68,7 +71,6 @@ web = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
     "sse-starlette>=2.0.0",
-    "asyncssh>=2.17.0",
 ]
 dev = [
     "pytest>=8.0.0",

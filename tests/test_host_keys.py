@@ -11,20 +11,17 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+import asyncssh
 import pytest
 
-pytest.importorskip("asyncssh", reason="asyncssh not installed")
-
-import asyncssh  # noqa: E402
-
-from aptl.core.host_keys import (  # noqa: E402
+from aptl.core.host_keys import (
     KNOWN_HOSTS_RELPATH,
     HostKeyPinResult,
     format_known_hosts_line,
     known_hosts_path,
     pin_terminal_host_keys,
 )
-from aptl.core.snapshot import SSHEndpoint  # noqa: E402
+from aptl.core.snapshot import SSHEndpoint
 
 
 def _pubkey() -> "asyncssh.SSHKey":

@@ -1069,6 +1069,7 @@ name = "lilrae"
 version = "8.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "asyncssh" },
     { name = "blake3" },
     { name = "cryptography" },
     { name = "icontract" },
@@ -1112,7 +1113,6 @@ s3 = [
     { name = "boto3" },
 ]
 web = [
-    { name = "asyncssh" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "sse-starlette" },
@@ -1135,7 +1135,7 @@ ci = [
 
 [package.metadata]
 requires-dist = [
-    { name = "asyncssh", marker = "extra == 'web'", specifier = ">=2.17.0" },
+    { name = "asyncssh", specifier = ">=2.17.0" },
     { name = "blake3", specifier = ">=1.0.8,<2" },
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.28.0" },
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.2.0" },
