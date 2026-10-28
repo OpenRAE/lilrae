@@ -380,6 +380,7 @@ class ComposeCaptureApparatusMixin:
             else set()
         )
         expected_add = {
+            "CAP_AUDIT_WRITE",
             "CAP_CHOWN",
             "CAP_DAC_OVERRIDE",
             "CAP_NET_BIND_SERVICE",

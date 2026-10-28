@@ -177,6 +177,7 @@ def test_dormant_capture_apparatus_is_verified_without_open_ingress(tmp_path):
                     "ReadonlyRootfs": True,
                     "CapDrop": ["ALL"],
                     "CapAdd": [
+                        "CAP_AUDIT_WRITE",
                         "CAP_CHOWN",
                         "CAP_DAC_OVERRIDE",
                         "CAP_NET_BIND_SERVICE",
@@ -208,6 +209,7 @@ def test_dormant_capture_apparatus_is_verified_without_open_ingress(tmp_path):
     assert observed is not None
     assert observed[0]["participant_ingress_state"] == ("dormant-awaiting-run-binding")
     assert observed[0]["linux_capabilities"] == [
+        "CAP_AUDIT_WRITE",
         "CAP_CHOWN",
         "CAP_DAC_OVERRIDE",
         "CAP_NET_BIND_SERVICE",

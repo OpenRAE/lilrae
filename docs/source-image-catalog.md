@@ -76,9 +76,11 @@ and after inspection confirms that the container is absent. A replacement
 container must pass its own live readback, even if its image ID is unreadable.
 
 Successful snapshot entries retain this observation in
-`payload.backend_evidence.source_image`. Full apply details retain it in
-`observation_evidence`; compact reports preserve `source_image_evidence`.
-The run outcome carries the same bounded projection for successful and failed
+`payload.backend_evidence.source_image`, except for a plan with account
+credential bindings: RAES's closed result contract admits no backend evidence
+in its entries (ADR-046), so only the run outcome carries it there. Full apply
+details retain it in `observation_evidence`; compact reports preserve
+`source_image_evidence`. The run outcome carries the same bounded projection for successful and failed
 applies, so it can reach the existing reproducibility archive.
 
 ## Release coverage and selected distributions
