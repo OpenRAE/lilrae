@@ -87,9 +87,13 @@ class TestWebServeInfo:
         ):
             data = api_client.get("/api/config").json()
 
-        assert "box.example.ts.net" in data["web"]["allowed_hosts"]
-        # Loopback defaults are still present alongside the extra host.
-        assert "127.0.0.1" in data["web"]["allowed_hosts"]
+        assert set(data["web"]["allowed_hosts"]) == {
+            "testserver",
+            "box.example.ts.net",
+            "127.0.0.1",
+            "localhost",
+            "::1",
+        }
 
     def test_public_origin_from_env_trims_trailing_slash(self, api_client):
         with patch.dict(
