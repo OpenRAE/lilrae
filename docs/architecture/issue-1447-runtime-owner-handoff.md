@@ -18,8 +18,9 @@ control plane exclusive ownership through a scoped handoff:
 4. Construct the control plane with that snapshot and the existing information
    state resolver. Its normal constructor acquires the component claim.
 5. Run the phase and retain its authoritative snapshot. Close the control plane.
-6. Acquire a new manager claim through RAES's `RuntimeResourceClaim` constructor.
-   Adopt the snapshot and restart the existing participant clock driver.
+6. Adopt the closed phase's snapshot before acquiring a new manager claim
+   through RAES's `RuntimeResourceClaim` constructor. Restart the existing clock
+   driver only after reacquisition succeeds.
 
 No two owners act at once. The new claim constructor still refuses an active or
 unresolved owner. A failed drain never starts another owner. A construction,
@@ -69,3 +70,21 @@ governing decision. This extends the explicit ownership lifecycle used by
 
 CI verifies the changed branch. The original Cortex live result used a custom
 RAES build and does not prove this ownership repair against a live lab.
+
+## Security Gate Repairs
+
+CI also reported CVE-2026-116587 in Caddy's Go JOSE v4 dependency. The build now
+uses the upstream fixed release, v4.1.6, with regenerated Go module checksums.
+The upstream advisory is
+[GHSA-mgcc-cww5-fp2q](https://github.com/go-jose/go-jose/security/advisories/GHSA-mgcc-cww5-fp2q).
+
+The Debian image scans reported CVE-2026-114613 in pip's bundled msgpack 1.1.2.
+The hash-verified pip 26.2.2 wheel contains only the Python fallback. The affected
+C extension is absent. The
+[upstream advisory](https://github.com/msgpack/msgpack-python/security/advisories/GHSA-j586-36cw-2gc2)
+states that this fallback does not exhibit the flaw.
+
+The existing Trivy exception mechanism records this false positive for that
+exact package version. The regression test checks the installed copy's version,
+the absence of the C extension, and the fallback implementation. The normal
+scan still records the finding in SARIF; the exception applies only to the gate.

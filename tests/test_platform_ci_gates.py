@@ -355,3 +355,20 @@ def test_trivy_waivers_are_scoped_and_justified() -> None:
         assert waiver["purls"]
         for purl in waiver["purls"]:
             assert re.fullmatch(r"pkg:[a-z]+/[^@\s]+@[^@\s]+", purl), purl
+
+
+def test_msgpack_c_extension_exception_requires_pips_pure_python_copy() -> None:
+    """The msgpack exception must not outlive its checked implementation."""
+    from importlib.util import find_spec
+
+    from pip._vendor import msgpack
+
+    waivers = yaml.safe_load((ROOT / ".trivyignore.yaml").read_text(encoding="utf-8"))
+    exception = next(
+        item for item in waivers["vulnerabilities"]
+        if item["id"] == "CVE-2026-114613"
+    )
+    assert exception["purls"] == [f"pkg:pypi/msgpack@{msgpack.__version__}"]
+    assert find_spec("pip._vendor.msgpack._cmsgpack") is None
+    assert msgpack.unpackb.__module__ == "pip._vendor.msgpack.fallback"
+    assert msgpack.Unpacker.__module__ == "pip._vendor.msgpack.fallback"

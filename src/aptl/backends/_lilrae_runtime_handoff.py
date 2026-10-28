@@ -52,8 +52,8 @@ class LilraeRuntimeHandoffMixin:
 
             # Do not clear or reuse a closed claim. The canonical constructor
             # refuses reacquisition if shutdown retained an unresolved owner.
-            self._resource_claim = RuntimeResourceClaim(self, self._target)
             self._snapshot = snapshot
+            self._resource_claim = RuntimeResourceClaim(self, self._target)
             if not self._start_participant_clock_driver():
                 self.close()
                 raise RuntimeError("runtime manager clock driver could not resume")

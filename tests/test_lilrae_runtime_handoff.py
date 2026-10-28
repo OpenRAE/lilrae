@@ -1,5 +1,7 @@
 """Exclusive RAES ownership across temporary control-plane phases."""
 
+from dataclasses import replace
+
 import pytest
 from raes_backend_stubs.stubs import create_stub_target
 from raes_contracts.planning import (
@@ -106,6 +108,29 @@ def test_handoff_excludes_another_owner_and_resumes_the_same_snapshot():
         # The call passes the ownership guard and reaches time validation.
         with pytest.raises(ValueError, match="no initialized shared-time model"):
             manager.read_time_state()
+
+
+def test_handoff_adopts_the_phase_snapshot_before_reacquiring_ownership(monkeypatch):
+    from aptl.backends import _lilrae_runtime_handoff as handoff
+
+    target = create_stub_target()
+    snapshot = RuntimeSnapshot(metadata={"phase": "governed"})
+    original_claim = handoff.RuntimeResourceClaim
+
+    def acquire(manager, claimed_target):
+        # The next admitted manager call must see the governed phase's cut.
+        assert manager.snapshot == snapshot
+        return original_claim(manager, claimed_target)
+
+    monkeypatch.setattr(handoff, "RuntimeResourceClaim", acquire)
+    with AptlRuntimeManager(target) as manager:
+        with manager.control_plane(
+            snapshot_transform=lambda previous: replace(
+                previous, metadata=snapshot.metadata
+            )
+        ):
+            pass
+        assert manager.snapshot == snapshot
 
 
 def test_failed_manager_drain_does_not_open_a_control_plane(monkeypatch):
