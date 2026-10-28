@@ -60,7 +60,7 @@ update_env_var() {
     chmod 600 "$ENV_FILE"
 }
 
-# Manual reruns start in a fresh shell, unlike `aptl lab start`, which passes
+# Manual reruns start in a fresh shell, unlike `lilrae lab start`, which passes
 # the hydrated lab environment explicitly. Reuse the running lab's credentials
 # so recovery cannot replace a randomized service key with a baked-in default.
 source "$SCRIPT_DIR/aptl-env.sh"
@@ -266,7 +266,7 @@ else
 fi
 
 # Workstation -> victim SSH trust (Prime scenario lateral movement) is
-# provisioned declaratively at `aptl lab start` time now (the workstation
+# provisioned declaratively at `lilrae lab start` time now (the workstation
 # pivot keypair placed by src/aptl/core/ssh.py + the SDL's
 # workstation-pivot-key/victim-authorized-keys content), not seeded here
 # (issue #581 — this used to plant the legacy workstation entrypoint's

@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import sys
 import zipfile
+
+import pytest
 from pathlib import Path
 
 
@@ -15,6 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.integration
 def test_core_only_wheel_prepares_tiny_start_without_optional_experience(
     tmp_path: Path,
 ) -> None:

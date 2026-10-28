@@ -13,6 +13,8 @@ set -uo pipefail
 
 RDP_USER="${APTL_RDP_USER:-ubuntu}"
 RDP_PASS="${APTL_RDP_PASS:-AptlArsenal!2026}"
+REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PROJECT_DIR="${APTL_PROJECT_DIR:-/home/$RDP_USER/aptl3}"
 
 echo "=== setup-rdp starting $(date -u) ==="
 export DEBIAN_FRONTEND=noninteractive
@@ -63,6 +65,44 @@ Terminal=false
 DESK
 sudo chmod +x "/home/$RDP_USER/Desktop/Start-Claude-Agent.desktop" 2>/dev/null || true
 sudo chown -R "$RDP_USER:$RDP_USER" "/home/$RDP_USER/Desktop"
+
+# Participant desktop (issue #1273). Lab start runs as the RDP user with
+# LILRAE_PARTICIPANT_DESKTOP_ACCOUNT set (scripts/aptl-range.service), so it
+# writes that user's private desktop files and a non-secret hosts.json. The
+# shared publisher, installed root-owned, applies the hostnames after the range
+# service; the opener shows the logins, guide, and consoles at session start.
+sudo install -D -m 0755 -o root -g root "$REPO_DIR/src/aptl/core/participant_hosts.py" \
+    /usr/local/libexec/lilrae-participant-hosts
+sudo install -D -m 0755 -o root -g root "$REPO_DIR/appliance/guest/participant-desktop-open.sh" \
+    /usr/local/bin/lilrae-participant-desktop-open
+RANGE_OWNER="$(stat -c %U "$PROJECT_DIR")"
+sudo tee /etc/systemd/system/lilrae-participant-hosts.service >/dev/null <<UNIT
+[Unit]
+Description=Publish the participant desktop hostnames that lab start resolved
+After=aptl-range.service
+Requires=aptl-range.service
+PartOf=aptl-range.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# The range service runs as this administrator; the root-owned unit explicitly
+# selects whose management document it trusts, independently of the ready marker.
+ExecStart=/usr/bin/python3 /usr/local/libexec/lilrae-participant-hosts --document-owner $RANGE_OWNER $PROJECT_DIR/.aptl/participant-desktop/hosts.json
+ExecStop=/usr/bin/python3 /usr/local/libexec/lilrae-participant-hosts --clear
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo systemctl enable lilrae-participant-hosts.service >/dev/null 2>&1
+sudo -u "$RDP_USER" mkdir -p "/home/$RDP_USER/.config/autostart"
+sudo -u "$RDP_USER" tee "/home/$RDP_USER/.config/autostart/lilrae-participant-desktop.desktop" >/dev/null <<DESK
+[Desktop Entry]
+Type=Application
+Name=Lab consoles
+Exec=/usr/local/bin/lilrae-participant-desktop-open --wait-for-range /home/$RDP_USER/.config/aptl/desktop
+Terminal=false
+DESK
 
 # Responsiveness over internet RDP: 32bpp at 1080p with the xfce compositor is
 # heavy and reads as "the box is slow" even when it is idle. Cap to 16bpp and

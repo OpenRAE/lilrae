@@ -599,9 +599,11 @@ def test_public_plan_binds_authority_before_artifact_availability(
     tmp_path, monkeypatch
 ) -> None:
     from aptl.backends import raes
+    from aptl.core.scenario_bundle import ScenarioBundle
 
     calls: list[str] = []
-    bundle = SimpleNamespace(
+    bundle = ScenarioBundle(
+        identity="scenario",
         sdl_path=tmp_path / "scenario.yaml",
         root=tmp_path,
         pack_identity=None,

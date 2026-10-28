@@ -26,7 +26,9 @@ UNSUPPORTED_SCORING_RESOURCE_TYPES = frozenset(
     {"evaluation", "goal", "metric", "tlo"}
 )
 _FAILED_ENTRY_STATUSES = frozenset({"error", "failed", "unhealthy"})
-_READY_ENTRY_STATUS = "ready"
+# RAES's default status, and the statuses an APTL apply writes for an entry it
+# realized (or found unchanged) and observed: an unrealized node has no entry.
+_READY_ENTRY_STATUSES = frozenset({"ready", "applied", "unchanged"})
 
 
 @dataclass(frozen=True)
@@ -250,7 +252,7 @@ def _condition_outcome(
         outcome = _running("condition has no compiled node address")
     elif node_entry is None:
         outcome = _running(f"waiting for observed node state: {node_address}")
-    elif status == _READY_ENTRY_STATUS:
+    elif status in _READY_ENTRY_STATUSES:
         outcome = _ready_passed(True, f"observed ready node state: {node_address}")
     elif status in _FAILED_ENTRY_STATUSES:
         outcome = _ready_passed(False, f"observed failed node state: {node_address}")

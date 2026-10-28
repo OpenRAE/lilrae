@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-import shutil
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -95,7 +94,7 @@ class ScenarioCatalog:
 
     def close(self) -> None:
         """Remove this read-only view's private acquired-pack staging."""
-        shutil.rmtree(self.bundle.root.parent, ignore_errors=True)
+        self.bundle.close()
 
     def __exit__(self, *_exc) -> None:
         # Read-only views own this freshly acquired copy. Runtime bundles are
@@ -142,6 +141,8 @@ def load_scenario_catalog(
     selected = config or _config(project_dir)
     if selected.scenario.source != "env-pack":
         raise ValueError("scenario catalog requires an acquired env-pack source")
+    if selected.scenario.identity is None:
+        raise ValueError("No scenario is selected. Set scenario.identity in aptl.json.")
     bundle = None
     try:
         bundle = resolve_scenario_bundle(project_dir, None, selected)
@@ -172,7 +173,7 @@ def load_scenario_catalog(
         )
     except (EnvPackError, ImportError, OSError, TypeError, ValueError) as exc:
         if bundle is not None:
-            shutil.rmtree(bundle.root.parent)
+            bundle.close()
         raise ValueError("Acquired scenario catalog unavailable") from exc
 
 
@@ -190,7 +191,7 @@ def resolve_scenario_selection(
     if scenario_id:
         validate_scenario_identity(scenario_id)
         selected = _config(project_dir).scenario
-        available = selected.identity if selected.source == "env-pack" else "none"
+        available = (selected.identity or "none") if selected.source == "env-pack" else "none"
         if scenario_id != available:
             raise ValueError(
                 f"Unknown scenario id '{scenario_id}'. Available scenarios: {available}"

@@ -444,3 +444,18 @@ def test_access_supervisor_publishes_then_revokes_stopped_listener(
     assert published.seat_id == request.seat_id
     assert published.runtime_evidence == bundle.runtime_evidence
     assert call_order == ["qualify", "prepare"]
+
+
+def test_guest_forced_command_uses_the_lilrae_executable() -> None:
+    """New guest policy names ``lilrae`` (#1402); ``aptl`` is only an alias."""
+    with patch(
+        "aptl.appliance.access_service.shutil.which",
+        side_effect=lambda name: f"/opt/bin/{name}",
+    ) as which:
+        assert access_service._cli_executable() == Path("/opt/bin/lilrae")
+    which.assert_called_once_with("lilrae")
+
+
+def test_guest_forced_command_falls_back_to_the_managed_lilrae_launcher() -> None:
+    with patch("aptl.appliance.access_service.shutil.which", return_value=None):
+        assert access_service._cli_executable() == Path("/usr/local/bin/lilrae")

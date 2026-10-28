@@ -1,7 +1,7 @@
 """Typed named-volume seed specification (ADR-043).
 
 A small, dependency-free description of how a Compose project-scoped
-named volume is materialized from checked-in host source at ``aptl lab
+named volume is materialized from checked-in host source at ``lilrae lab
 start``. Both the path/containment layer in :mod:`aptl.core.credentials`
 (which builds canonical, contained specs) and the deployment backend
 (which runs the seed container) depend on this leaf module, so it

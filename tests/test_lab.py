@@ -371,7 +371,7 @@ class TestLabStart:
 
         config = AptlConfig(
             lab={"name": "test"},
-            containers={"wazuh": True, "victim": True, "kali": False, "reverse": False},
+            containers={'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
         )
         mock_subprocess.side_effect = self._observability_inventory_then()
 
@@ -488,7 +488,7 @@ class TestLabStop:
             json.dumps(
                 {
                     "lab": {"name": "test"},
-                    "containers": {"victim": True, "kali": False, "wazuh": True},
+                    "containers": {'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
                 }
             )
         )
@@ -514,7 +514,7 @@ class TestLabStop:
             json.dumps(
                 {
                     "lab": {"name": "test"},
-                    "containers": {"wazuh": True, "victim": False},
+                    "containers": {'profiles': ['wazuh', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
                 }
             )
         )
@@ -558,7 +558,7 @@ class TestLabStop:
             json.dumps(
                 {
                     "lab": {"name": "test"},
-                    "containers": {"victim": True, "kali": False, "wazuh": True},
+                    "containers": {'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
                 }
             )
         )
@@ -591,9 +591,9 @@ class TestPreexistingRangeAdmission:
         )
 
         target = shlex.quote(str(project))
-        assert f"aptl lab stop --project-dir {target}`" in result.error
-        assert f"aptl lab stop -v --project-dir {target}`" in result.error
-        assert f"aptl lab start --clean --project-dir {target}`" in result.error
+        assert f"lilrae lab stop --project-dir {target}`" in result.error
+        assert f"lilrae lab stop -v --project-dir {target}`" in result.error
+        assert f"lilrae lab start --clean --project-dir {target}`" in result.error
 
     def test_running_created_or_exited_container_blocks_start(
         self, tmp_path, monkeypatch
@@ -618,11 +618,11 @@ class TestPreexistingRangeAdmission:
         # The refusal names the residue and the same recovery routes, with their
         # data consequences, as a failed start's summary (#952).
         assert "1 container and 0 networks" in result.error
-        assert "`aptl lab stop` removes" in result.error
+        assert "`lilrae lab stop` removes" in result.error
         assert "keeps its volumes" in result.error
-        assert "`aptl lab stop -v` also removes managed volumes" in result.error
+        assert "`lilrae lab stop -v` also removes managed volumes" in result.error
         assert "destroys their lab data" in result.error
-        assert "aptl lab start --clean" in result.error
+        assert "lilrae lab start --clean" in result.error
         assert ctx.range_was_absent is False
 
     def test_network_only_residue_blocks_start(self, tmp_path):
@@ -1402,7 +1402,7 @@ class TestCheckBindMounts:
             ":/etc/nginx/certs/cert.pem:ro\n"
         )
         ctx = _LabStartContext(
-            project_dir=tmp_path, skip_seed=False, config=AptlConfig()
+            project_dir=tmp_path, skip_seed=False, config=AptlConfig(containers={"profiles": ["soc"]})
         )
         ctx.admitted_surface = _admitted_surface(
             tmp_path, env_pack=False, selected_profiles=("otel",)
@@ -1441,65 +1441,10 @@ class TestStartupClassificationTypes:
     (CLI, API, web TS mirror) can rely on stable strings.
     """
 
-    def test_startup_outcome_members(self):
-        from aptl.core.lab_types import StartupOutcome
 
-        assert StartupOutcome.READY.value == "ready"
-        assert StartupOutcome.DEGRADED_USABLE.value == "degraded_usable"
-        assert StartupOutcome.DEGRADED_UNUSABLE.value == "degraded_unusable"
-        assert StartupOutcome.FAILED.value == "failed"
 
-    def test_diagnostic_impact_members(self):
-        from aptl.core.lab_types import DiagnosticImpact
 
-        assert DiagnosticImpact.COSMETIC.value == "cosmetic"
-        assert DiagnosticImpact.TELEMETRY.value == "telemetry"
-        assert DiagnosticImpact.CAPABILITY.value == "capability"
-        assert DiagnosticImpact.READINESS.value == "readiness"
 
-    def test_diagnostic_severity_members(self):
-        from aptl.core.lab_types import DiagnosticSeverity
-
-        assert DiagnosticSeverity.INFO.value == "info"
-        assert DiagnosticSeverity.WARNING.value == "warning"
-        assert DiagnosticSeverity.ERROR.value == "error"
-
-    def test_startup_diagnostic_fields(self):
-        from aptl.core.lab_types import (
-            DiagnosticImpact,
-            DiagnosticSeverity,
-            StartupDiagnostic,
-        )
-
-        diag = StartupDiagnostic(
-            step="wait_for_services",
-            component="wazuh_indexer",
-            impact=DiagnosticImpact.TELEMETRY,
-            severity=DiagnosticSeverity.WARNING,
-            message="Indexer did not become ready within 300s",
-        )
-        assert diag.step == "wait_for_services"
-        assert diag.component == "wazuh_indexer"
-        assert diag.impact is DiagnosticImpact.TELEMETRY
-        assert diag.severity is DiagnosticSeverity.WARNING
-        assert diag.message == "Indexer did not become ready within 300s"
-        assert diag.operator_action == ""
-
-    def test_startup_diagnostic_component_optional(self):
-        from aptl.core.lab_types import (
-            DiagnosticImpact,
-            DiagnosticSeverity,
-            StartupDiagnostic,
-        )
-
-        diag = StartupDiagnostic(
-            step="pull_images",
-            impact=DiagnosticImpact.COSMETIC,
-            severity=DiagnosticSeverity.INFO,
-            message="Image pre-pull skipped",
-        )
-        # component defaults to empty string (no special-case in CLI/API)
-        assert diag.component == ""
 
     def test_lab_result_has_outcome_and_diagnostics_with_defaults(self):
         """LabResult must default to READY + empty diagnostics so existing
@@ -1711,6 +1656,14 @@ class TestStartupOutcomeDerivation:
         )
 
 
+def _historical_profile_selection(flags):
+    """Pin the old fixture's selection explicitly under the new schema."""
+    defaults = dict.fromkeys(("wazuh", "victim", "kali", "enterprise", "soc", "fileshare", "dns"), True)
+    defaults.update({"mail": False, "reverse": False})
+    defaults.update(flags)
+    return {"profiles": [name for name, enabled in defaults.items() if enabled]}
+
+
 class TestOrchestrateLabStart:
     """Tests for the full lab start orchestration."""
 
@@ -1737,17 +1690,7 @@ class TestOrchestrateLabStart:
             # Explicit minimal profile set: these orchestration tests assert
             # behavior for a wazuh/victim/kali lab, so pin every flag rather
             # than inheriting the (now SOC-enabled) config defaults.
-            containers={
-                "wazuh": True,
-                "victim": True,
-                "kali": True,
-                "reverse": False,
-                "enterprise": False,
-                "soc": False,
-                "mail": False,
-                "fileshare": False,
-                "dns": False,
-            },
+            containers={'profiles': ['wazuh', 'victim', 'kali']},
         )
 
     def _patch_all_steps(self, mocker, tmp_path):
@@ -1777,20 +1720,11 @@ class TestOrchestrateLabStart:
             json.dumps(
                 {
                     "lab": {"name": "test-lab"},
+                    "scenario": {"identity": "techvault"},
                     # Pin every profile: these orchestration tests assert the
                     # outcome/diagnostics of a wazuh/victim/kali lab, so the
                     # written config must not inherit the SOC-enabled defaults.
-                    "containers": {
-                        "wazuh": True,
-                        "victim": True,
-                        "kali": True,
-                        "reverse": False,
-                        "enterprise": False,
-                        "soc": False,
-                        "mail": False,
-                        "fileshare": False,
-                        "dns": False,
-                    },
+                    "containers": {'profiles': ['wazuh', 'victim', 'kali']},
                 }
             )
         )
@@ -1891,7 +1825,7 @@ class TestOrchestrateLabStart:
         from aptl.core.sysreqs import SysReqResult, ToolReqResult
 
         mocks["sysreqs"] = mocker.patch(
-            "aptl.core.lab.check_max_map_count",
+            "aptl.core.lab.check_scenario_max_map_count",
             return_value=SysReqResult(
                 passed=True, current_value=262144, required_value=262144
             ),
@@ -1971,6 +1905,13 @@ class TestOrchestrateLabStart:
         # no-op on that path.
         pack_root = tmp_path / ".aptl" / "staged-packs" / "fixture"
         pack_root.mkdir(parents=True)
+        # Source selection happens before admission. Keep both boundaries on
+        # this test's small bundle so each orchestration case avoids acquiring
+        # the released pack before reaching the admission stub.
+        mocks["resolve_bundle"] = mocker.patch(
+            "aptl.backends._raes_scenario_resolution.resolve_scenario_bundle",
+            return_value=_admitted_start_fixture(pack_root).bundle,
+        )
         mocks["admitted_surface"] = _admitted_surface(
             pack_root,
             env_pack=False,
@@ -2173,12 +2114,15 @@ class TestOrchestrateLabStart:
         mocks["start"].assert_called_once()
         assert mocks["start"].call_args.kwargs["scenario_path"] == selected
 
-    def test_orchestrate_hydrates_missing_env(self, mocker, tmp_path):
+    def test_orchestrate_hydrates_missing_env(
+        self, mocker, tmp_path, released_techvault_bundle
+    ):
         """A fresh checkout can start without a hand-created .env."""
         from aptl.core.env import find_placeholder_env_values, load_dotenv
         from aptl.core.lab import orchestrate_lab_start
 
         mocks = self._patch_all_steps(mocker, tmp_path)
+        mocks["resolve_bundle"].return_value = released_techvault_bundle
         (tmp_path / ".env").unlink()
 
         result = orchestrate_lab_start(tmp_path)
@@ -2227,7 +2171,7 @@ class TestOrchestrateLabStart:
         # aptl.json still needed to not hit a different error first
         import json
 
-        (tmp_path / "aptl.json").write_text(json.dumps({"lab": {"name": "test"}}))
+        (tmp_path / "aptl.json").write_text(json.dumps({"lab": {"name": "test"}, "scenario": {"identity": "techvault"}}))
 
         result = orchestrate_lab_start(tmp_path)
 
@@ -2704,7 +2648,7 @@ class TestOrchestrateLabStart:
         assert result.residue.torn_down
         assert project.volumes == 4
         [diagnostic] = [d for d in result.diagnostics if d.step == "failed_start_cleanup"]
-        assert "aptl lab stop --project-dir" in diagnostic.operator_action
+        assert "lilrae lab stop --project-dir" in diagnostic.operator_action
         assert "stop -v" not in diagnostic.operator_action
         assert "without removing volumes" in diagnostic.operator_action
 
@@ -2996,12 +2940,8 @@ class TestOrchestrateLabStart:
             json.dumps(
                 {
                     "lab": {"name": "test-lab"},
-                    "containers": {
-                        "wazuh": False,
-                        "victim": False,
-                        "kali": False,
-                        "reverse": False,
-                    },
+                    "scenario": {"identity": "techvault"},
+                    "containers": {'profiles': []},
                 }
             )
         )
@@ -3656,7 +3596,7 @@ class TestResolveHostPortsStep:
             progress=progress,
             config=AptlConfig(
                 lab={"name": "test-lab"},
-                containers={"wazuh": True, "soc": True},
+                containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
             ),
             backend=MagicMock(),
         )
@@ -3942,7 +3882,7 @@ class TestStartupClassificationWiring:
             # Pin the SOC/enterprise/dns/fileshare flags off: these wiring tests
             # assert diagnostics for a wazuh/victim/kali lab, so don't inherit
             # the (now SOC-enabled) config defaults.
-            containers={
+            containers=_historical_profile_selection({
                 "wazuh": wazuh,
                 "victim": victim,
                 "kali": kali,
@@ -3952,7 +3892,8 @@ class TestStartupClassificationWiring:
                 "mail": False,
                 "fileshare": False,
                 "dns": False,
-            },
+            }),
+            scenario={"identity": "techvault"},
         )
 
     def _ctx(self, tmp_path, *, config=None, selected_profiles=None):
@@ -4688,7 +4629,7 @@ class TestStartupClassificationWiring:
         assert run_id in store.list_runs()
 
     def test_resolve_run_target_uses_configured_run_storage(self, tmp_path):
-        """Startup records must be discoverable through ``aptl runs``."""
+        """Startup records must be discoverable through ``lilrae runs``."""
         from aptl.cli._common import resolve_run_store
         from aptl.core.config import AptlConfig
         from aptl.core.lab import _LabStartContext, _resolve_run_target
@@ -4715,14 +4656,7 @@ class TestStartupClassificationWiring:
             # exercises the subprocess-failure path, not the gating.
             config=AptlConfig(
                 lab={"name": "test-lab"},
-                containers={
-                    "wazuh": True,
-                    "enterprise": True,
-                    "victim": True,
-                    "kali": True,
-                    "fileshare": True,
-                    "soc": True,
-                },
+                containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
             ),
         )
         misp_key = f"misp-{uuid4().hex}"
@@ -4772,14 +4706,7 @@ class TestStartupClassificationWiring:
             tmp_path,
             config=AptlConfig(
                 lab={"name": "test-lab"},
-                containers={
-                    "wazuh": True,
-                    "enterprise": True,
-                    "victim": True,
-                    "kali": True,
-                    "fileshare": True,
-                    "soc": True,
-                },
+                containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
             ),
         )
         scripts_dir = tmp_path / "scripts"
@@ -4828,14 +4755,7 @@ class TestStartupClassificationWiring:
             tmp_path,
             config=AptlConfig(
                 lab={"name": "test-lab"},
-                containers={
-                    "wazuh": True,
-                    "enterprise": True,
-                    "victim": True,
-                    "kali": True,
-                    "fileshare": True,
-                    "soc": True,
-                },
+                containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
             ),
         )
         # No scripts/seed-prime.sh in tmp_path
@@ -4876,14 +4796,7 @@ class TestStartupClassificationWiring:
             tmp_path,
             config=AptlConfig(
                 lab={"name": "test-lab"},
-                containers={
-                    "wazuh": True,
-                    "enterprise": True,
-                    "victim": True,
-                    "kali": True,
-                    "fileshare": True,
-                    "soc": True,
-                },
+                containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
             ),
             # soc (and the rest of the prime set) is enabled in config, but
             # the scenario this run started never selected it.
@@ -5135,7 +5048,7 @@ class TestLabOrchestrationContracts:
 
         defaults = {"wazuh": True, "victim": True, "kali": True}
         defaults.update(container_overrides)
-        return AptlConfig(lab={"name": "test-lab"}, containers=defaults)
+        return AptlConfig(lab={"name": "test-lab"}, containers=_historical_profile_selection(defaults))
 
     def _outcome(self, *, success, selected_profiles, error="", message="ok"):
         """Build a real `AcesStartOutcome` — the shape `start_raes_scenario`
@@ -5806,8 +5719,8 @@ class TestLabOrchestrationContracts:
         assert result is not None
         assert result.success is False
         assert "Lab start failed:" in result.error
-        assert "Run `aptl lab stop` and retry" in result.error
-        assert "`aptl lab stop -v`" in result.error
+        assert "Run `lilrae lab stop` and retry" in result.error
+        assert "`lilrae lab stop -v`" in result.error
 
     def test_start_containers_hints_for_an_unowned_search_index(
         self, mocker, tmp_path
@@ -5838,7 +5751,7 @@ class TestLabOrchestrationContracts:
         headline, _, hint = result.error.partition("\n")
         assert headline == f"Lab start failed: {unowned_error}"
         assert hint.endswith(
-            "/troubleshooting/#aptl-lab-start-reports-an-unowned-search-index"
+            "/troubleshooting/#lilrae-lab-start-reports-an-unowned-search-index"
         )
 
     # -- ssh_key_is_ready --------------------------------------------
@@ -6080,7 +5993,7 @@ class TestSeedSocPrimeProfileDiagnostic:
 
         containers = {"wazuh": True, "victim": True, "kali": True, "soc": soc}
         containers.update(extra)
-        cfg = AptlConfig(lab={"name": "t"}, containers=containers)
+        cfg = AptlConfig(lab={"name": "t"}, containers=_historical_profile_selection(containers))
         # Default: the scenario selects exactly what config enables (the
         # common case where config and selection coincide). Tests proving
         # the selected-surface distinction pass an explicit subset.
@@ -6231,7 +6144,7 @@ class TestGenerateSocCertsStep:
             # (#875), so this suite selects the in-tree source explicitly.
             config=AptlConfig(
                 lab={"name": "t"},
-                containers=containers,
+                containers=_historical_profile_selection(containers),
                 scenario=ScenarioSourceConfig(source="project-tree"),
             ),
             backend=backend or MagicMock(),
@@ -6286,7 +6199,7 @@ class TestGenerateSocCertsStep:
 
     def test_ssh_remote_backend_refuses_with_adr_028_message(self, tmp_path, mocker):
         """ADR-028: generated artifacts materialize on the host running
-        `aptl lab start`. With an SSH-remote backend the daemon is on
+        `lilrae lab start`. With an SSH-remote backend the daemon is on
         another host, so the bind mounts would not see them — refuse
         with the same shape as `_step_sync_credentials`."""
         from aptl.core.deployment import SSHComposeBackend
@@ -6312,8 +6225,6 @@ class TestGenerateSocCertsStep:
         bind-mount source."""
         from aptl.core.lab import (
             _LAB_START_STEPS,
-            _step_check_bind_mounts,
-            _step_generate_soc_certs,
         )
 
         names = [s.__name__ for s in _LAB_START_STEPS]

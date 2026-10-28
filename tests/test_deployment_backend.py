@@ -339,7 +339,7 @@ class TestAptlConfigDeployment:
         """Config JSON without deployment key uses defaults."""
         cfg = AptlConfig(
             lab={"name": "test"},
-            containers={"wazuh": True, "kali": False},
+            containers={'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
         )
         assert cfg.deployment.provider == "docker-compose"
 
@@ -479,7 +479,9 @@ services:
         backend = self._make_backend(tmp_path)
 
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            mock_run.side_effect = lambda cmd, **kwargs: MagicMock(
+                returncode=0, stdout="2.24.4" if cmd[:3] == ["docker", "compose", "version"] else "", stderr="",
+            )
             result = backend.start(["soc"])
 
         assert result.success is True
@@ -951,7 +953,7 @@ services:
         assert "aptl-workshop-main_default" in result.error
         assert "172.20.0.0/16" in result.error
         assert "docker network rm aptl-workshop-main_default" in result.error
-        assert "aptl lab start" in result.error
+        assert "lilrae lab start" in result.error
         commands = [call.args[0] for call in mock_run.call_args_list]
         assert all(
             command[:3] != ["docker", "network", "create"] for command in commands
@@ -1404,6 +1406,8 @@ services:
             del kwargs
             if failing_cmd is not None and cmd[: len(failing_cmd)] == failing_cmd:
                 return MagicMock(returncode=1, stdout="", stderr="boom")
+            if cmd[:3] == ["docker", "compose", "version"]:
+                return MagicMock(returncode=0, stdout="2.24.4", stderr="")
             return MagicMock(returncode=0, stdout="", stderr="")
 
         with patch("subprocess.run", side_effect=fake_run) as mock_run:
@@ -1469,6 +1473,8 @@ services:
 
         def fake_run(cmd, **kwargs):
             del kwargs
+            if cmd[:3] == ["docker", "compose", "version"]:
+                return MagicMock(returncode=0, stdout="2.24.4", stderr="")
             if cmd[:3] == ["docker", "network", "ls"]:
                 return MagicMock(returncode=0, stdout="test_aptl-internal\n", stderr="")
             if cmd[:2] == ["docker", "version"]:
@@ -3122,7 +3128,7 @@ class TestLabBackwardCompat:
 
         config = AptlConfig(
             lab={"name": "test"},
-            containers={"wazuh": True, "victim": True, "kali": False, "reverse": False},
+            containers={'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
         )
         mock_subprocess.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
@@ -3166,7 +3172,7 @@ class TestLabBackwardCompat:
 
         config = AptlConfig(
             lab={"name": "test"},
-            containers={"wazuh": True, "kali": False, "reverse": False},
+            containers={'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
         )
 
         mock_backend = MagicMock()
@@ -3632,7 +3638,7 @@ class TestSeedNamedVolumes:
     def test_seed_is_idempotent_across_runs(self, tmp_path):
         # Root `cp -a` overwrites prior content, so the backend issues the
         # same command on every start regardless of the volume's state —
-        # repeated `aptl lab start` is idempotent.
+        # repeated `lilrae lab start` is idempotent.
         backend = self._backend(tmp_path)
         seed = self._config_seed()
         commands = []
@@ -4415,7 +4421,11 @@ class _FakeAd:
 
 
 def _ad_node(
-    address="scenario.node.ad", *, service_name="ad", container_name="aptl-ad"
+    address="scenario.node.ad",
+    *,
+    service_name="ad",
+    container_name="aptl-ad",
+    account_provider="samba-ad",
 ):
     return DeploymentNodeRealization(
         address=address,
@@ -4424,6 +4434,7 @@ def _ad_node(
         container_name=container_name,
         networks=(),
         network_attachments=(),
+        backend_account_provider=account_provider,
     )
 
 
@@ -4743,14 +4754,19 @@ class TestRealizeAccounts:
     def test_unknown_provider_fails_closed_before_mutation(self, tmp_path):
         backend = self._backend(tmp_path)
         ad = _FakeAd()
-        node = _ad_node("scenario.node.db", service_name="db", container_name="aptl-db")
+        node = _ad_node(
+            "scenario.node.db",
+            service_name="db",
+            container_name="aptl-db",
+            account_provider="",
+        )
         account = _acct("x", target="scenario.node.db")
         with patch.object(backend, "container_exec", ad):
             result = backend.realize_accounts((account,), (node,))
         assert result is not None
         assert result.success is False
         assert "provision.account-placement.x" in (result.error or "")
-        assert "no-account-provider-for-service" in (result.error or "")
+        assert "no-account-provider-for-node" in (result.error or "")
         assert ad.calls == []  # no mutation happened
 
     def test_invalid_username_fails_closed_before_mutation(self, tmp_path):

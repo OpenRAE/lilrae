@@ -248,7 +248,7 @@ def test_unowned_index_error_names_the_index_and_its_container(
     ):
         assert fact in error
     # What the operator runs next is added at the lab-start edge.
-    assert "aptl lab" not in error
+    assert "lilrae lab" not in error
     # Nothing read from the existing index reaches the message.
     assert _FOREIGN_OWNER not in error
     assert "keyword" not in error
@@ -276,7 +276,7 @@ def test_drifted_owned_index_error_names_the_index_and_its_container() -> None:
         "did not change or delete it",
     ):
         assert fact in error
-    assert "aptl lab" not in error
+    assert "lilrae lab" not in error
 
 
 @pytest.mark.parametrize(
@@ -284,12 +284,12 @@ def test_drifted_owned_index_error_names_the_index_and_its_container() -> None:
     [
         pytest.param(
             {"properties": {}},
-            "aptl-lab-start-reports-an-unowned-search-index",
+            "lilrae-lab-start-reports-an-unowned-search-index",
             id="unowned",
         ),
         pytest.param(
             _earlier_release_mapping(),
-            "aptl-lab-start-reports-a-search-index-whose-mapping-drifted",
+            "lilrae-lab-start-reports-a-search-index-whose-mapping-drifted",
             id="drifted",
         ),
     ],
@@ -304,8 +304,8 @@ def test_lab_start_adds_backup_then_reset_and_the_section_for_a_refused_index(
 
     assert headline == f"Lab start failed: {handoff}"
     assert "Back up the index" in hint
-    assert "`aptl lab stop` keeps every lab volume" in hint
-    assert hint.index("Back up the index") < hint.index("`aptl lab stop --volumes`")
+    assert "`lilrae lab stop` keeps every lab volume" in hint
+    assert hint.index("Back up the index") < hint.index("`lilrae lab stop --volumes`")
     assert "permanently deletes every lab volume" in hint
     # The hint ends with this error's section of the published troubleshooting page.
     mkdocs = (_ROOT / "mkdocs.yml").read_text(encoding="utf-8")

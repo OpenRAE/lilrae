@@ -25,7 +25,7 @@ from raes_contracts.planning import (
 )
 from raes_contracts.runtime_state import OperationState, RuntimeSnapshot
 from raes_processor.models import ExecutionPlan, RuntimeModel
-from raes_reference_backend import create_reference_backend_target
+from raes_backend_stubs.stubs import create_stub_target
 
 from aptl.backends._raes_proposition_truth import (
     native_evidence_truth_is_complete as _native_evidence_truth_is_complete,
@@ -33,6 +33,7 @@ from aptl.backends._raes_proposition_truth import (
 )
 from aptl.backends.raes_evaluator import AptlEvaluator, refresh_evidence_truth
 from aptl.backends.raes_manifest import create_aptl_manifest
+from aptl.backends.raes_planning_compat import AptlRuntimeManager
 from aptl_techvault.capture import TechVaultPropositionInterpreter
 
 _INTERPRETER = TechVaultPropositionInterpreter()
@@ -262,7 +263,7 @@ def test_evaluator_projects_bound_native_evidence_into_runtime_snapshot():
 
 def test_native_evidence_refresh_is_committed_through_the_runtime_control_plane():
     evaluator = AptlEvaluator(proposition_interpreter=_INTERPRETER)
-    target = replace(create_reference_backend_target(), evaluator=evaluator)
+    target = replace(create_stub_target(), evaluator=evaluator)
     execution_plan = ExecutionPlan(
         target_name=target.name,
         manifest=target.manifest,
@@ -291,7 +292,7 @@ def test_native_evidence_refresh_is_committed_through_the_runtime_control_plane(
 def test_native_evidence_refresh_accepts_participant_delivery_target():
     evaluator = AptlEvaluator(proposition_interpreter=_INTERPRETER)
     target = replace(
-        create_reference_backend_target(),
+        create_stub_target(),
         manifest=create_aptl_manifest(participant_inject_delivery=True),
         evaluator=evaluator,
     )
@@ -322,7 +323,7 @@ def test_native_evidence_refresh_accepts_participant_delivery_target():
 
 def test_native_evidence_refresh_replays_create_plan_after_initial_evaluation():
     evaluator = AptlEvaluator(proposition_interpreter=_INTERPRETER)
-    target = replace(create_reference_backend_target(), evaluator=evaluator)
+    target = replace(create_stub_target(), evaluator=evaluator)
     evaluation = _plan()
     initially_evaluated = evaluator.start(evaluation, RuntimeSnapshot())
     assert initially_evaluated.success is True
@@ -351,9 +352,68 @@ def test_native_evidence_refresh_replays_create_plan_after_initial_evaluation():
     ]
 
 
+@pytest.mark.parametrize("participant_delivery", [False, True])
+def test_lab_refresh_hands_off_the_live_apply_manager(tmp_path, participant_delivery):
+    """The real apply owner remains referenced while native evidence is evaluated."""
+    from types import SimpleNamespace
+
+    from aptl.backends.raes import _run_execution_plan
+    from aptl.core.lab import _LabStartContext, _refresh_required_native_evidence
+
+    target = replace(
+        create_stub_target(),
+        evaluator=AptlEvaluator(proposition_interpreter=_INTERPRETER),
+    )
+    if participant_delivery:
+        target = replace(
+            target, manifest=create_aptl_manifest(participant_inject_delivery=True)
+        )
+    execution_plan = ExecutionPlan(
+        target_name=target.name,
+        manifest=target.manifest,
+        base_snapshot=RuntimeSnapshot(metadata={"run": "native-evidence-refresh"}),
+        scenario_name="native-evidence-refresh",
+        model=RuntimeModel(scenario_name="native-evidence-refresh"),
+        provisioning=ProvisioningPlan(),
+        orchestration=OrchestrationPlan(),
+        evaluation=_plan(),
+        observation_owner=RuntimeDomain.PROVISIONING,
+    )
+    outcome = _run_execution_plan(target, execution_plan)
+    manager = outcome.runtime_manager
+    assert outcome.lab_result.success, outcome.lab_result.error
+    assert isinstance(manager, AptlRuntimeManager)
+    context = _LabStartContext(
+        project_dir=tmp_path,
+        skip_seed=False,
+        admitted_start=SimpleNamespace(target=target, execution_plan=execution_plan),
+        raes_outcome=outcome,
+    )
+    try:
+        failure = _refresh_required_native_evidence(
+            context,
+            context.admitted_start,
+            (_record("suricata-local-rule-readiness"),),
+        )
+
+        assert failure is None
+        assert outcome.runtime_manager is manager
+        assert outcome.final_snapshot == manager.snapshot
+        assert manager.snapshot.metadata["run"] == "native-evidence-refresh"
+        truth = manager.snapshot.proposition_truth_results[
+            "evaluation.assertion.suricata-local-rules-ready"
+        ]
+        assert truth["assertion_outcome"] == "true"
+        # Successful handoff must restore exclusive ownership to this manager.
+        with pytest.raises(RuntimeError, match="already has a runtime owner"):
+            AptlRuntimeManager(target)
+    finally:
+        manager.close()
+
+
 def test_native_evidence_refresh_fails_when_the_authored_predicate_does_not_match():
     evaluator = AptlEvaluator(proposition_interpreter=_INTERPRETER)
-    target = replace(create_reference_backend_target(), evaluator=evaluator)
+    target = replace(create_stub_target(), evaluator=evaluator)
     execution_plan = ExecutionPlan(
         target_name=target.name,
         manifest=target.manifest,

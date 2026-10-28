@@ -8,7 +8,7 @@
 Historical contingency from `origin/825-hosted-backup-seats` (`2db0f8ac`).
 Statements about the "current" release below describe the July 28, 2026
 trial, not today's code. This recipe uses a pinned reduced guided profile;
-it is not the August full-TechVault fleet or qualification for `aptl seat`.
+it is not the August full-TechVault fleet or qualification for `lilrae seat`.
 See the [branch audit](../architecture/issue-1022-historical-branch-audit.md)
 and [August reference archive](arsenal-2026/README.md). Do not run cloud or
 host-provisioning commands without separately authorizing that deployment.
@@ -94,7 +94,7 @@ user data, a participant handout, or the seat-state directory.
 | Amazon DCV | `nice-dcv-server` and `nice-dcv-web-viewer` `2025.0.20103-1` |
 | Caddy | `2.11.4` |
 | Docker | Engine `29.6.2`, Compose plugin `5.3.1` |
-| Host Node.js | `20.20.2` |
+| Host Node.js | `22.23.4` |
 | Coding agent | Claude Code `2.1.220` |
 | Working APTL payload | commit `e9373f5bec57b2c315c4a9c5d7ab837983b19595` |
 | Wazuh certificate helper | `config/wazuh-certs-tool.sh` from commit `ec54ee2da2cd59c58eb17f1dd7737483901b1838` |
@@ -424,14 +424,14 @@ ssh -i "$KEY_DIR/operator" ubuntu@"$PUBLIC_IP" '
   set -e
   cd /tmp
   curl -fLO \
-    https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz
+    https://nodejs.org/dist/v22.23.4/node-v22.23.4-linux-x64.tar.xz
   printf "%s  %s\n" \
-    df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d \
-    node-v20.20.2-linux-x64.tar.xz | sha256sum --check
-  sudo tar -xJf node-v20.20.2-linux-x64.tar.xz -C /opt
-  sudo ln -s /opt/node-v20.20.2-linux-x64/bin/node /usr/local/bin/node
-  sudo ln -s /opt/node-v20.20.2-linux-x64/bin/npm /usr/local/bin/npm
-  sudo ln -s /opt/node-v20.20.2-linux-x64/bin/npx /usr/local/bin/npx
+    1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce \
+    node-v22.23.4-linux-x64.tar.xz | sha256sum --check
+  sudo tar -xJf node-v22.23.4-linux-x64.tar.xz -C /opt
+  sudo ln -s /opt/node-v22.23.4-linux-x64/bin/node /usr/local/bin/node
+  sudo ln -s /opt/node-v22.23.4-linux-x64/bin/npm /usr/local/bin/npm
+  sudo ln -s /opt/node-v22.23.4-linux-x64/bin/npx /usr/local/bin/npx
   node --version
   npm --version
 '
@@ -670,7 +670,7 @@ A seat is assignable only when every item passes:
 - `id -nG seatNN` contains only `seatNN`;
 - the coding-agent version is the admitted version and the approved
   authentication path completes;
-- `aptl lab status` reports the required containers healthy;
+- `lilrae lab status` reports the required containers healthy;
 - all four semantic MCP checks pass;
 - public 80 and 443 are reachable;
 - public 8443, 3389, 8080, 9200, 9443, 9444, and 55000 are not reachable;
@@ -761,7 +761,7 @@ volumes, snapshots, AMIs, ENIs, elastic IPs, security groups, DNS records,
 temporary IAM resources, AWS key pairs, participant credentials, model
 authentication state, or operator SSH material created for the trial.
 
-For a reused host, do not terminate it. Stop the lab with `aptl lab stop -v`,
+For a reused host, do not terminate it. Stop the lab with `lilrae lab stop -v`,
 close the DCV session, remove the participant account and its home, restore
 the baseline DCV/Caddy/service/package state from the change ledger, remove
 the exact event directories, and prove the original public listeners,

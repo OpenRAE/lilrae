@@ -29,7 +29,7 @@ def _make_env() -> EnvVars:
 
 
 def _make_config(**container_overrides) -> AptlConfig:
-    containers = ContainerSettings(**container_overrides)
+    containers = ContainerSettings(profiles=[name for name, enabled in container_overrides.items() if enabled])
     return AptlConfig(containers=containers)
 
 

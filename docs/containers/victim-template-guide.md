@@ -178,7 +178,7 @@ docker compose -p aptl ps
 
 ### Lab Integration
 
-- [ ] `aptl lab status --json` outputs range snapshot after start
+- [ ] `lilrae lab status --json` outputs range snapshot after start
 - [ ] Document scenario-specific environment variables
 
 ## Key Principles

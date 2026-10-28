@@ -458,7 +458,7 @@ def test_stop_reports_pending_host_cleanup_after_verified_volume_removal(
     assert "1 host-side cleanup action remains pending" in result.error
     assert "pack.reset for otherpack 1.0.0" in result.error
     assert "provider-reset-authority-unavailable" in result.error
-    assert "aptl lab stop -v --yes" in result.error
+    assert "lilrae lab stop -v --yes" in result.error
     # Independent APTL-owned work still completed.
     assert not baseline.exists()
 
@@ -483,7 +483,7 @@ def test_stop_distinguishes_docker_failure_from_pending_host_cleanup(
     assert "volume still in use" in result.error
     assert "Host-side cleanup was not attempted" in result.error
     assert "1 action remains pending" in result.error
-    assert "aptl lab stop -v --yes" in result.error
+    assert "lilrae lab stop -v --yes" in result.error
     assert baseline.exists()
     assert not (tmp_path / LEGACY_DONE_DIR).exists()
 
@@ -547,7 +547,7 @@ def _started(root: Path) -> str:
 def _kept_host_files(root: Path) -> dict[Path, bytes]:
     """Write the host files a reset must keep, and return their bytes.
 
-    Each goes where `aptl lab init` or `aptl lab start` writes it: the public
+    Each goes where `lilrae lab init` or `lilrae lab start` writes it: the public
     half of the lab SSH key under ``keys/``, the Wazuh and SOC certificates
     under ``config/``, and the run record in the run store that ``aptl.json``
     configures, ``./runs`` by default.
@@ -574,7 +574,7 @@ def _kept_host_files(root: Path) -> dict[Path, bytes]:
 def test_reset_removes_the_project_and_finishes_pending_cleanup(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """`aptl lab reset` is the project-scoped `stop -v` with its records (#1218)."""
+    """`lilrae lab reset` is the project-scoped `stop -v` with its records (#1218)."""
     from aptl.core.lab import reset_lab
     from aptl.core.startup_reset_state import load_pending_cleanup
 
@@ -680,7 +680,7 @@ def test_reset_reports_cleanup_it_could_not_finish(tmp_path: Path, monkeypatch) 
         "pending: pack.reset for otherpack 1.0.0 "
         f"({LEGACY_DIR.name}/{record.name[:12]}): "
         "provider-reset-authority-unavailable. The pending records were kept. "
-        "Resolve the cause, then retry with `aptl lab reset --yes`."
+        "Resolve the cause, then retry with `lilrae lab reset --yes`."
     )
     assert (outcome.containers_found, outcome.networks_found) == (3, 2)
 
@@ -729,7 +729,7 @@ def test_reset_refuses_while_another_lifecycle_owner_holds_the_lock(
 
     assert outcome.result.success is False
     assert outcome.result.error.startswith("[lifecycle-owner-busy]")
-    assert "`aptl lab reset`" in outcome.result.error
+    assert "`lilrae lab reset`" in outcome.result.error
     assert project.calls == []
 
 
@@ -792,7 +792,7 @@ def test_reset_counts_the_project_that_start_labelled(
 ) -> None:
     """A newly built Compose backend counts the workspace-scoped project.
 
-    `aptl lab start` binds the workspace-scoped name (`aptl-w<id>`) and labels
+    `lilrae lab start` binds the workspace-scoped name (`aptl-w<id>`) and labels
     every container and network with it. A backend built as `reset_lab` builds
     one holds the logical name `aptl` until the workspace scope loads, so the
     count must not run before that (#1218). An unscoped project from before

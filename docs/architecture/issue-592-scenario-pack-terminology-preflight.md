@@ -41,9 +41,14 @@ prose must not accidentally rename them.
 
 | Surface | Files | Disposition |
 | --- | --- | --- |
+| Pack boundary enforcement | `docs/architecture/issue-1121-pack-boundary-preflight.md` | Preserve original and independent RPT adapter ownership, exact compatibility exceptions, and selected host requirements. |
+| Configured pack source | `docs/architecture/issue-1413-configured-pack-source-preflight.md` | Keep release-directory acquisition distinct from portable pack semantics, content identity, installed adapters, and backend realization. |
 | Trusted source image bindings | `docs/architecture/issue-1097-trusted-source-image-preflight.md`, `docs/source-image-catalog.md` | Keep released environment-pack source declarations distinct from the backend-owned immutable image catalog, runtime authority, and independent image evidence. |
 | PyPI distribution transition | `docs/architecture/issue-1234-pypi-transition-preflight.md` | Preserve environment-pack and installed-provider ownership while changing only the product distribution and release wiring. |
+| Participant desktop adapter boundary | `docs/architecture/issue-1273-participant-desktop-adapter-preflight.md`, `docs/reference/appliance-seat-launcher.md` | Keep authored pack references distinct from generic desktop resolution, publication, and rule-tool validation. |
+| Dashboard owner-declared config | `docs/architecture/issue-1422-wazuh-dashboard-config-readability-preflight.md`, `docs/architecture/issue-1422-wazuh-dashboard-owned-config-design.md` | Keep pack-declared file owners and modes distinct from generic content placement and the backend profile start steps. |
 | LilRAE public naming boundary | `docs/architecture/issue-1232-lilrae-naming-preflight.md` | Preserve pack, RAES, and backend ownership while explaining the project's public name and retained compatibility identifiers. |
+| LilRAE name and command decisions | `docs/adrs/adr-062-lilrae-name-and-naming-convention.md` | The command successor clause (#1402) renames only the CLI command. The TechVault environment pack keeps its own frozen sync-service command name; a pack change, not the backend, can rename it. |
 | Shipped seat network investigation | `docs/architecture/issue-1194-shipped-seat-network-preflight.md` | Keep authored environment-pack topology distinct from APTL runtime attachment verification and shipped seat delivery evidence. |
 | Base-container terminology | `docs/architecture/issue-1193-base-container-terminology-preflight.md` | Keep env-pack artifact resolution and authored content sources distinct from the base-container node route and its base image. |
 | Historical seat implementation audit | `docs/architecture/issue-1022-historical-branch-audit.md` | Distinguish historical pack inputs from current APTL guest realization and delivery policy. |

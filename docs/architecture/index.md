@@ -166,8 +166,22 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 - Kali: Attack tools, MCP integration
 - Reverse Engineering: Binary analysis tools, MCP integration
 
+## CI verification
+
+[Verification architecture](ci-verification.md) describes changed-input selection.
+[Performance evidence](../testing/ci-performance.md) records pruning and measurement rules.
+
 ## Preflights
 
+- [Issue #1468 CI Feedback and Test Suite](issue-1468-ci-feedback-preflight.md)
+- [Issue #1406 Native Evidence Test Target](issue-1406-native-evidence-test-target-preflight.md)
+- [Issue #1424 Runtime Retry Ownership](issue-1424-runtime-retry-preflight.md)
+- [Issue #1424 Runtime Retry Ownership Design](issue-1424-runtime-retry-ownership-design.md)
+- [Issue #1447 Runtime Ownership During Evidence Refresh](issue-1447-runtime-owner-handoff.md)
+- [Issue #1423 Shuffle Startup Recovery](issue-1423-shuffle-startup-readiness-preflight.md)
+- [Issue #1422 Wazuh Dashboard Config Readability](issue-1422-wazuh-dashboard-config-readability-preflight.md)
+- [Issue #1422 Wazuh Dashboard Owner-Declared Config Design](issue-1422-wazuh-dashboard-owned-config-design.md)
+- [Issue #1413 Configured Pack Source](issue-1413-configured-pack-source-preflight.md)
 - [Issue #955 Generic Systemd Substrate Privilege](issue-955-systemd-substrate-privilege-preflight.md)
 - [Issue #958 Execution Boundary](issue-958-execution-boundary-preflight.md)
 - [Issue #601 Participant Demonstration](issue-601-participant-demonstration-preflight.md)

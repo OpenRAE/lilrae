@@ -27,7 +27,7 @@ detection → manager rule → <active-response> block → agent's wazuh-execd
                                   log result to /var/ossec/logs/active-responses.log
 ```
 
-The script deploys to every Wazuh agent in the lab (4 in-process + 2 sidecars = 6). It is a **standalone implementation** (not a wrapper around upstream `firewall-drop`) because Wazuh's stateful AR protocol can hold the agent→script stdin channel open after the initial JSON, and a forwarding wrapper that buffers stdin would deadlock or break the protocol. See [ADR-021](../adrs/adr-021-active-response-whitelist-via-wrapper.md) for the full rationale. The whitelist file is identical on each agent, COPYed at image build time from `config/wazuh_cluster/etc/lists/active-response-whitelist`. To update either, edit in the repo and run `aptl lab stop -v && aptl lab start`.
+The script deploys to every Wazuh agent in the lab (4 in-process + 2 sidecars = 6). It is a **standalone implementation** (not a wrapper around upstream `firewall-drop`) because Wazuh's stateful AR protocol can hold the agent→script stdin channel open after the initial JSON, and a forwarding wrapper that buffers stdin would deadlock or break the protocol. See [ADR-021](../adrs/adr-021-active-response-whitelist-via-wrapper.md) for the full rationale. The whitelist file is identical on each agent, COPYed at image build time from `config/wazuh_cluster/etc/lists/active-response-whitelist`. To update either, edit in the repo and run `lilrae lab stop -v && lilrae lab start`.
 
 ## Available commands
 
