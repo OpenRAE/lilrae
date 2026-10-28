@@ -38,3 +38,21 @@ class BackendSeedError(Exception):
     step can surface it through the existing redacted ``LabResult``
     envelope.
     """
+
+
+class CaptureReconciliationError(ValueError):
+    """The broker's accepted sessions differ from the MCP session census.
+
+    Raised by ``export_capture_apparatus`` instead of a bare ``None`` so the
+    finalizer can report the mismatch. It carries only set sizes, never
+    session identities or transcript content.
+    """
+
+    def __init__(
+        self, *, census: int, accepted: int, census_only: int, broker_only: int
+    ):
+        super().__init__("broker custody does not match the session census")
+        self.census = census
+        self.accepted = accepted
+        self.census_only = census_only
+        self.broker_only = broker_only

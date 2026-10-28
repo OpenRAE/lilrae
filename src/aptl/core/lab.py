@@ -863,7 +863,11 @@ def _finalize_required_transcript_capture(
     )
     if failed and state is not None:
         try:
-            mark_transcript_finalization_failed(project_dir=project_dir, state=state)
+            mark_transcript_finalization_failed(
+                project_dir=project_dir,
+                state=state,
+                result=None if result is False else result,
+            )
         except Exception:
             log.error("Required transcript finalization failure could not be recorded")
     return (

@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 from aptl.core.deployment.docker_compose import DockerComposeBackend
+from aptl.core.deployment.errors import CaptureReconciliationError
 from aptl.core.deployment.realization import (
     DeploymentCaptureApparatus,
     DeploymentGeneratedArtifactOutput,
@@ -356,4 +357,13 @@ def test_capture_finalization_rejects_broker_inventory_mismatch(tmp_path):
     )
 
     assert backend.quiesce_capture_apparatus() is True
-    assert backend.export_capture_apparatus(expected_session_ids=("session-1",)) is None
+    with pytest.raises(CaptureReconciliationError) as raised:
+        backend.export_capture_apparatus(expected_session_ids=("session-1",))
+    counts = (
+        raised.value.census,
+        raised.value.accepted,
+        raised.value.census_only,
+        raised.value.broker_only,
+    )
+    assert counts == (1, 1, 1, 1)
+    assert "session-1" not in str(raised.value)
