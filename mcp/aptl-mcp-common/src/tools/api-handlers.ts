@@ -1,4 +1,4 @@
-import { HTTPClient } from '../http.js';
+import { HTTPClient, HTTPTimeoutError, type HTTPError } from '../http.js';
 import { LabConfig } from '../config.js';
 import { assertPathOnlyEndpoint } from '../endpoint-url.js';
 import Ajv2020, { type ValidateFunction } from 'ajv/dist/2020.js';
@@ -31,6 +31,22 @@ export type APIToolHandler = (args: any, context: APIToolContext) => Promise<{ c
 type QueryConfig = NonNullable<LabConfig['queries']>[string];
 
 class QueryArgumentError extends Error {}
+
+interface FailureDetail {
+  status?: number;
+  failure?: 'timeout';
+}
+
+// Classify a failed call by the HTTP status of the exchange that failed, or as
+// a timeout. Only these fixed values are added, never the exception text or
+// the response body: those can echo supplied values.
+function failureDetail(error: unknown): FailureDetail {
+  const status = error instanceof Error ? (error as HTTPError).statusCode : undefined;
+  if (typeof status === 'number') {
+    return { status };
+  }
+  return error instanceof HTTPTimeoutError ? { failure: 'timeout' } : {};
+}
 
 function argumentMapping(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -188,6 +204,7 @@ const baseAPIHandlers = {
               method,
               endpoint,
               error: error instanceof Error ? error.message : 'Unknown error',
+              ...failureDetail(error),
             }, null, 2),
           },
         ],
@@ -251,6 +268,7 @@ const baseAPIHandlers = {
               query: queryConfig.description,
               endpoint: queryConfig.url,
               error: error instanceof QueryArgumentError ? error.message : 'API query failed',
+              ...failureDetail(error),
             }, null, 2),
           },
         ],

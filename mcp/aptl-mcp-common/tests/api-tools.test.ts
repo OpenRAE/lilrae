@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { generateAPIToolDefinitions } from '../src/tools/api-definitions.js';
 import { generateAPIToolHandlers } from '../src/tools/api-handlers.js';
+import { HTTPTimeoutError } from '../src/http.js';
 
 describe('generateAPIToolDefinitions', () => {
   const mockServerConfig = {
@@ -220,8 +221,38 @@ describe('generateAPIToolHandlers', () => {
       makeRequest.mockRejectedValue(new Error('private-fixture-value'));
       const handler = generateAPIToolHandlers(mockServerConfig, ruleFileQuery).wazuh_upload_rule_file;
       const result = await handler({ params: { filename: 'rules.xml' } }, ctx);
-      expect(JSON.parse(result.content[0].text).success).toBe(false);
+      const payload = JSON.parse(result.content[0].text);
+      expect(payload.success).toBe(false);
       expect(result.content[0].text).not.toContain('private-fixture-value');
+      expect(payload).not.toHaveProperty('status');
+      expect(payload).not.toHaveProperty('failure');
+    });
+
+    async function failedQuery(error: Error) {
+      const { ctx, makeRequest } = context();
+      makeRequest.mockRejectedValue(error);
+      const handler = generateAPIToolHandlers(mockServerConfig, ruleFileQuery).wazuh_upload_rule_file;
+      const result = await handler({ params: { filename: 'rules.xml' } }, ctx);
+      return { text: result.content[0].text, payload: JSON.parse(result.content[0].text) };
+    }
+
+    it('reports the HTTP status of a failed query, not its message or body', async () => {
+      const refused = Object.assign(new Error('HTTP 403: private-status-text'), {
+        statusCode: 403,
+        response: { error: 'private-fixture-value' },
+      });
+
+      const { text, payload } = await failedQuery(refused);
+
+      expect(payload).toMatchObject({ success: false, error: 'API query failed', status: 403 });
+      expect(text).not.toMatch(/private-(status-text|fixture-value)/);
+    });
+
+    it('classifies a timed-out query without a status', async () => {
+      const { payload } = await failedQuery(new HTTPTimeoutError('Request timeout after 30000ms'));
+
+      expect(payload).toMatchObject({ success: false, error: 'API query failed', failure: 'timeout' });
+      expect(payload).not.toHaveProperty('status');
     });
 
     it.each(['', '.', '..'])(
@@ -246,6 +277,24 @@ describe('generateAPIToolHandlers', () => {
       expect(makeRequest.mock.calls[0][0]).toBe(
         'https://indexer.example:9200/wazuh-alerts-*/_search',
       );
+    });
+  });
+
+  it('reports the HTTP status of a failed generic API call', async () => {
+    const makeRequest = vi.fn().mockRejectedValue(
+      Object.assign(new Error('HTTP 404: Not Found'), { statusCode: 404 }),
+    );
+    const handler = generateAPIToolHandlers(mockServerConfig).wazuh_api_call;
+
+    const result = await handler(
+      { endpoint: '/api/missing' },
+      { httpClient: { makeRequest }, labConfig: {} } as any,
+    );
+
+    expect(JSON.parse(result.content[0].text)).toMatchObject({
+      success: false,
+      error: 'HTTP 404: Not Found',
+      status: 404,
     });
   });
 
