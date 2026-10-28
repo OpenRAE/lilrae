@@ -26,6 +26,7 @@ COPY requirements/runtime.txt /tmp/aptl-runtime-requirements.txt
 RUN python3 -m venv /opt/aptl/venv \
     && /opt/aptl/venv/bin/pip install --require-hashes \
         -r /tmp/aptl-runtime-requirements.txt \
+    && /opt/aptl/venv/bin/python -c "import pip._vendor.msgpack as m; assert m.Unpacker.__module__ == 'pip._vendor.msgpack.fallback'" \
     && rm /tmp/aptl-runtime-requirements.txt
 ENV PATH="/opt/aptl/venv/bin:${PATH}"
 # Ship no private keys; each container generates its own at boot (issue #1193).

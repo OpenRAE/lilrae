@@ -39,7 +39,7 @@ def test_realized_techvault_image_inventory_includes_helpers_and_children(
     from aptl.validation.curated_live_proof import expected_bundle_matrix
     from aptl.core.config import AptlConfig
 
-    bundle = env_pack_bundle(tmp_path / "packs")
+    bundle = env_pack_bundle(tmp_path / "packs", "techvault")
     references = canonical_image_references(ROOT, bundle)
     matrix = expected_bundle_matrix(ROOT, AptlConfig(), bundle)
 

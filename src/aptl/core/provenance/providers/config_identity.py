@@ -38,7 +38,7 @@ CONFIG_PROVIDER_ID = "config-identity"
 
 #: Versioned identity of the safe projection shape. Adding or removing an
 #: allowlisted field bumps this so an archived identity is never reinterpreted.
-SAFE_CONFIG_SCHEMA_VERSION = "aptl-safe-config-identity/v2"
+SAFE_CONFIG_SCHEMA_VERSION = "aptl-safe-config-identity/v3"
 
 #: Identity domain for the configuration projection.
 _DOMAIN = "config"
@@ -49,12 +49,8 @@ def _containers_projection(config: object) -> dict[str, object]:
     containers = getattr(config, "containers", None)
     if containers is None:
         return {}
-    dumped = containers.model_dump()
-    # Every field of ContainerSettings is a first-party boolean toggle
-    # (ADR-025 strict schema), so this stays a closed, non-secret surface.
-    return {
-        key: value for key, value in sorted(dumped.items()) if isinstance(value, bool)
-    }
+    profiles = containers.profiles
+    return {"profiles": sorted(profiles) if profiles is not None else None}
 
 
 def _participant_models_projection(config: object) -> dict[str, object]:

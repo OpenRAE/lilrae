@@ -77,6 +77,7 @@ _PROPOSITION_RESOURCE_TYPES = frozenset({"proposition", "assertion"})
 if TYPE_CHECKING:
     from raes_processor.models import ExecutionPlan
     from raes_runtime.registry import RuntimeTarget
+    from aptl.backends.raes_planning_compat import AptlRuntimeManager
 
 
 @dataclass
@@ -382,6 +383,7 @@ def refresh_evidence_truth(
     execution_plan: ExecutionPlan,
     snapshot: RuntimeSnapshot,
     evidence_records: tuple[ExperimentEvidenceRecordModel, ...],
+    runtime_manager: AptlRuntimeManager | None = None,
 ) -> EvidenceTruthRefresh:
     """Reconcile acquired evidence through RAES's runtime control plane.
 
@@ -403,28 +405,33 @@ def refresh_evidence_truth(
                 ),
             ),
         )
-    evaluator.bind_evidence_records(evidence_records)
     # The planner-produced evaluation operations are immutable CREATEs. The
     # provisioning run already applied them once before native evidence was
     # available, so replaying them against that registered evaluation state is
     # an invalid create-over-existing transition in RAES 5. Rebuild only the
     # evaluation domain from the same observed provisioning snapshot; the new
     # control plane then remains the sole writer of the refreshed truth.
-    refresh_snapshot = without_evaluation_state(snapshot)
-    control_plane = RuntimeControlPlane(
-        target,
-        initial_snapshot=refresh_snapshot,
-        crossing_policy_resolver=EvidenceRefreshCrossingPolicyResolver(),
-    )
-    try:
+    if runtime_manager is not None:
+        if runtime_manager._target is not target:
+            raise ValueError("native evidence runtime manager has another target")
+        phase = runtime_manager.control_plane(
+            snapshot_transform=without_evaluation_state,
+            crossing_policy_resolver=EvidenceRefreshCrossingPolicyResolver(),
+        )
+    else:
+        phase = RuntimeControlPlane(
+            target,
+            initial_snapshot=without_evaluation_state(snapshot),
+            crossing_policy_resolver=EvidenceRefreshCrossingPolicyResolver(),
+        )
+    with phase as control_plane:
+        evaluator.bind_evidence_records(evidence_records)
         return _run_evidence_refresh(
             control_plane,
             execution_plan,
             evidence_records,
             evaluator.proposition_interpreter,
         )
-    finally:
-        control_plane.close()
 
 
 def _run_evidence_refresh(

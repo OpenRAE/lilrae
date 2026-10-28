@@ -4,6 +4,7 @@ import builtins
 import importlib
 from pathlib import Path
 import sys
+import json
 
 import pytest
 
@@ -47,12 +48,25 @@ def test_import_does_not_require_raes_sdl(monkeypatch):
 def test_catalog_id_selects_configured_acquired_pack(tmp_path):
     from aptl.core.scenario_catalog import resolve_scenario_selection
 
+    (tmp_path / "aptl.json").write_text(json.dumps({"scenario": {"identity": "techvault"}}))
     assert resolve_scenario_selection(tmp_path, scenario_id="techvault") is None
+
+
+def test_unselected_catalog_does_not_choose_or_acquire_a_pack(tmp_path, monkeypatch):
+    from aptl.core import scenario_catalog
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("an unselected catalog tried to acquire a pack")
+    monkeypatch.setattr(scenario_catalog, "resolve_scenario_bundle", unexpected)
+    with pytest.raises(ValueError, match="No scenario is selected"):
+        scenario_catalog.load_scenario_catalog(tmp_path)
+    assert not (tmp_path / ".aptl").exists()
 
 
 def test_unknown_catalog_id_lists_only_configured_pack(tmp_path):
     from aptl.core.scenario_catalog import resolve_scenario_selection
 
+    (tmp_path / "aptl.json").write_text(json.dumps({"scenario": {"identity": "techvault"}}))
     with pytest.raises(ValueError, match="Available scenarios: techvault"):
         resolve_scenario_selection(tmp_path, scenario_id="local-shadow")
 
@@ -67,11 +81,16 @@ def test_catalog_selector_rejects_path_shaped_or_noncanonical_ids(
         resolve_scenario_selection(tmp_path, scenario_id=scenario_id)
 
 
-def test_repository_catalog_projects_validated_pack_identity():
+@pytest.fixture(scope="module")
+def repository_catalog():
     from aptl.core.scenario_catalog import load_scenario_catalog
 
-    project_root = Path(__file__).resolve().parents[1]
-    catalog = load_scenario_catalog(project_root)
+    with load_scenario_catalog(Path(__file__).resolve().parents[1]) as catalog:
+        yield catalog
+
+
+def test_repository_catalog_projects_validated_pack_identity(repository_catalog):
+    catalog = repository_catalog
 
     assert [entry.id for entry in catalog.scenarios] == [
         "techvault-participant-study"
@@ -87,6 +106,7 @@ def test_rejected_pack_fails_closed_without_local_fallback(mocker, tmp_path):
     from aptl.core.scenario_bundle import EnvPackError
     from aptl.core.scenario_catalog import load_scenario_catalog
 
+    (tmp_path / "aptl.json").write_text(json.dumps({"scenario": {"identity": "techvault"}}))
     mocker.patch(
         "aptl.core.scenario_catalog.resolve_scenario_bundle",
         side_effect=EnvPackError("digest mismatch"),
@@ -148,14 +168,13 @@ def test_rejects_selecting_both_id_and_path(tmp_path):
         )
 
 
-def test_resolve_acquired_scenario_returns_same_validated_bundle():
+def test_resolve_acquired_scenario_returns_same_validated_bundle(repository_catalog):
     from aptl.core.scenario_catalog import (
-        load_scenario_catalog,
         resolve_acquired_scenario,
     )
 
     project_root = Path(__file__).resolve().parents[1]
-    catalog = load_scenario_catalog(project_root)
+    catalog = repository_catalog
     resolved = resolve_acquired_scenario(
         project_root, "techvault-participant-study", catalog=catalog
     )
@@ -224,6 +243,7 @@ def test_compatibility_projection_removes_its_owned_staging(mocker, tmp_path):
 def test_invalid_catalog_projection_removes_its_staging(mocker, tmp_path):
     from aptl.core.scenario_catalog import load_scenario_catalog
 
+    (tmp_path / "aptl.json").write_text(json.dumps({"scenario": {"identity": "techvault"}}))
     mocker.patch(
         "aptl.core.scenario_catalog._entry_from_projection",
         side_effect=ValueError("invalid projection"),

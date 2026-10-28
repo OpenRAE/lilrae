@@ -47,9 +47,14 @@ _DECLARED_TABLES = (
 )
 
 
-def _nodes(tmp_path, *, web_network="internal-net", cidr=_SCOPE):
-    scenario = parse_sdl_file(techvault_scenario_path(tmp_path))
+@pytest.fixture(scope="module")
+def scenario(tmp_path_factory):
+    return parse_sdl_file(
+        techvault_scenario_path(tmp_path_factory.mktemp("database-contract"))
+    )
 
+
+def _nodes(scenario, *, web_network="internal-net", cidr=_SCOPE):
     def node(name, network, address):
         return SimpleNamespace(
             name=name,
@@ -275,8 +280,8 @@ def _argv_text(backend):
     return "\n".join(" ".join(command) for _, command in backend.calls)
 
 
-def test_selects_declared_service_client_network_and_tables(tmp_path):
-    selected = database._declared_database(_nodes(tmp_path))
+def test_selects_declared_service_client_network_and_tables(scenario):
+    selected = database._declared_database(_nodes(scenario))
 
     assert selected is not None
     assert selected.db_container == "aptl-db"
@@ -288,9 +293,9 @@ def test_selects_declared_service_client_network_and_tables(tmp_path):
     assert selected.tables == frozenset(_DECLARED_TABLES)
 
 
-def test_selection_uses_the_admitted_network_cidr_not_a_constant(tmp_path):
+def test_selection_uses_the_admitted_network_cidr_not_a_constant(scenario):
     backend = _Postgres()
-    nodes = _nodes(tmp_path, cidr="172.20.0.0/16")
+    nodes = _nodes(scenario, cidr="172.20.0.0/16")
 
     assert realize_database(backend, nodes) == []
     assert "host techvault techvault 172.20.0.0/16 scram-sha-256" in backend.hba
@@ -308,27 +313,27 @@ def test_selection_uses_the_admitted_network_cidr_not_a_constant(tmp_path):
     ],
     ids=["missing-client", "duplicate-client", "unattached-client"],
 )
-def test_ambiguous_or_missing_declarations_mutate_nothing(tmp_path, nodes_for):
+def test_ambiguous_or_missing_declarations_mutate_nothing(scenario, nodes_for):
     backend = _Postgres()
 
-    assert realize_database(backend, nodes_for(_nodes(tmp_path))) == [
+    assert realize_database(backend, nodes_for(_nodes(scenario))) == [
         "TechVault database declaration or internal client is unavailable"
     ]
     assert backend.calls == []
 
 
-def test_client_on_a_different_network_is_rejected(tmp_path):
+def test_client_on_a_different_network_is_rejected(scenario):
     backend = _Postgres()
 
-    assert realize_database(backend, _nodes(tmp_path, web_network="dmz-net")) == [
+    assert realize_database(backend, _nodes(scenario, web_network="dmz-net")) == [
         "TechVault database declaration or internal client is unavailable"
     ]
     assert backend.calls == []
 
 
-def test_fresh_realization_requires_password_and_seeds_once(tmp_path):
+def test_fresh_realization_requires_password_and_seeds_once(scenario):
     backend = _Postgres()
-    nodes = _nodes(tmp_path)
+    nodes = _nodes(scenario)
 
     assert realize_database(backend, nodes) == []
 
@@ -342,10 +347,10 @@ def test_fresh_realization_requires_password_and_seeds_once(tmp_path):
     assert len(seeds) == 1
 
 
-def test_credential_and_verifier_never_reach_argv(tmp_path):
+def test_credential_and_verifier_never_reach_argv(scenario):
     backend = _Postgres()
 
-    assert realize_database(backend, _nodes(tmp_path)) == []
+    assert realize_database(backend, _nodes(scenario)) == []
 
     argv = _argv_text(backend)
     assert _PORTAL_PASSWORD not in argv
@@ -353,9 +358,9 @@ def test_credential_and_verifier_never_reach_argv(tmp_path):
     assert all(_PORTAL_PASSWORD not in payload for _, _, payload in backend.inputs)
 
 
-def test_restart_is_a_no_op_that_preserves_participant_data(tmp_path):
+def test_restart_is_a_no_op_that_preserves_participant_data(scenario):
     backend = _Postgres()
-    nodes = _nodes(tmp_path)
+    nodes = _nodes(scenario)
     assert realize_database(backend, nodes) == []
     verifier, restarts = backend.verifier, backend.restarts
     backend.tables = ("public.users",)  # a participant dropped tables
@@ -370,9 +375,9 @@ def test_restart_is_a_no_op_that_preserves_participant_data(tmp_path):
     assert backend.tables == ("public.users",)
 
 
-def test_previously_shipped_trust_rule_is_replaced_and_reloaded(tmp_path):
+def test_previously_shipped_trust_rule_is_replaced_and_reloaded(scenario):
     backend = _Postgres()
-    nodes = _nodes(tmp_path)
+    nodes = _nodes(scenario)
     assert realize_database(backend, nodes) == []
     backend.hba = [line for line in backend.hba if line != _RULE] + [_LEGACY]
     reloads = backend.reloads
@@ -384,142 +389,142 @@ def test_previously_shipped_trust_rule_is_replaced_and_reloaded(tmp_path):
     assert backend.reloads == reloads + 1
 
 
-def test_hostname_rule_before_the_selection_counts_as_shadowing(tmp_path):
+def test_hostname_rule_before_the_selection_counts_as_shadowing(scenario):
     backend = _Postgres()
     backend.hba.insert(0, "host all all db.techvault.local trust")
 
-    assert realize_database(backend, _nodes(tmp_path)) == [
+    assert realize_database(backend, _nodes(scenario)) == [
         "TechVault PostgreSQL client authentication could not be realized"
     ]
 
 
-def test_an_earlier_rule_that_shadows_the_selected_posture_fails(tmp_path):
+def test_an_earlier_rule_that_shadows_the_selected_posture_fails(scenario):
     backend = _Postgres()
     backend.hba.insert(0, "host all all 0.0.0.0/0 trust")
 
-    assert realize_database(backend, _nodes(tmp_path)) == [
+    assert realize_database(backend, _nodes(scenario)) == [
         "TechVault PostgreSQL client authentication could not be realized"
     ]
 
 
-def test_existing_tables_without_the_init_marker_are_not_reseeded(tmp_path):
+def test_existing_tables_without_the_init_marker_are_not_reseeded(scenario):
     backend = _Postgres()
     backend.role = backend.database = True
     backend.tables = ("public.users",)
 
-    assert realize_database(backend, _nodes(tmp_path)) == [
+    assert realize_database(backend, _nodes(scenario)) == [
         "TechVault database holds state this startup did not initialize"
     ]
     assert not any("-1" in command for _, command in backend.calls)
 
 
-def test_a_marker_from_different_pack_sql_fails_without_reseeding(tmp_path):
+def test_a_marker_from_different_pack_sql_fails_without_reseeding(scenario):
     backend = _Postgres()
     backend.role = backend.database = True
     backend.marker = f"aptl-techvault-db-init sha256:{'c' * 64} sha256:{'d' * 64}"
 
-    assert realize_database(backend, _nodes(tmp_path)) == [
+    assert realize_database(backend, _nodes(scenario)) == [
         "TechVault database holds state this startup did not initialize"
     ]
     assert not any("-1" in command for _, command in backend.calls)
 
 
-def test_existing_unmarked_empty_database_is_not_treated_as_fresh(tmp_path):
+def test_existing_unmarked_empty_database_is_not_treated_as_fresh(scenario):
     backend = _Postgres()
     backend.role = backend.database = True  # created by something else
 
-    assert realize_database(backend, _nodes(tmp_path)) == [
+    assert realize_database(backend, _nodes(scenario)) == [
         "TechVault database holds state this startup did not initialize"
     ]
     assert not any("-1" in command for _, command in backend.calls)
 
 
-def test_interrupted_bootstrap_with_pending_marker_is_recovered(tmp_path):
+def test_interrupted_bootstrap_with_pending_marker_is_recovered(scenario):
     backend = _Postgres()
     backend.role = backend.database = True
     backend.marker = _PENDING  # created here; seed never committed
 
-    assert realize_database(backend, _nodes(tmp_path)) == []
+    assert realize_database(backend, _nodes(scenario)) == []
     assert backend.marker == _COMPLETE
     assert backend.tables == _DECLARED_TABLES
 
 
-def test_pending_marker_with_tables_is_ambiguous_and_not_reseeded(tmp_path):
+def test_pending_marker_with_tables_is_ambiguous_and_not_reseeded(scenario):
     backend = _Postgres()
     backend.role = backend.database = True
     backend.marker = _PENDING
     backend.tables = ("public.users",)
 
-    assert realize_database(backend, _nodes(tmp_path)) == [
+    assert realize_database(backend, _nodes(scenario)) == [
         "TechVault database holds state this startup did not initialize"
     ]
     assert not any("-1" in command for _, command in backend.calls)
 
 
-def test_seed_timeout_after_commit_is_reconciled_by_marker(tmp_path):
+def test_seed_timeout_after_commit_is_reconciled_by_marker(scenario):
     backend = _Postgres()
     backend.seed_timeout = "after-commit"
 
-    assert realize_database(backend, _nodes(tmp_path)) == []
+    assert realize_database(backend, _nodes(scenario)) == []
     assert backend.marker == _COMPLETE
 
 
-def test_seed_timeout_before_commit_fails_and_stays_recoverable(tmp_path):
+def test_seed_timeout_before_commit_fails_and_stays_recoverable(scenario):
     backend = _Postgres()
     backend.seed_timeout = "before-commit"
 
-    assert realize_database(backend, _nodes(tmp_path)) == [
+    assert realize_database(backend, _nodes(scenario)) == [
         "TechVault PostgreSQL role, database, or pack SQL could not be realized"
     ]
     assert backend.marker == _PENDING
     backend.seed_timeout = None
-    assert realize_database(backend, _nodes(tmp_path)) == []
+    assert realize_database(backend, _nodes(scenario)) == []
     assert backend.marker == _COMPLETE
 
 
-def test_failed_seed_transaction_is_reported(tmp_path):
+def test_failed_seed_transaction_is_reported(scenario):
     backend = _Postgres()
     backend.seed_fails = True
 
-    assert realize_database(backend, _nodes(tmp_path)) == [
+    assert realize_database(backend, _nodes(scenario)) == [
         "TechVault PostgreSQL role, database, or pack SQL could not be realized"
     ]
 
 
-def test_seed_that_committed_before_failing_is_read_back(tmp_path):
+def test_seed_that_committed_before_failing_is_read_back(scenario):
     backend = _Postgres()
     backend.seed_commits_then_fails = True
 
-    assert realize_database(backend, _nodes(tmp_path)) == []
+    assert realize_database(backend, _nodes(scenario)) == []
 
 
-def test_existing_role_password_is_not_rotated_and_must_work(tmp_path):
+def test_existing_role_password_is_not_rotated_and_must_work(scenario):
     backend = _Postgres()
     backend.verifier = "SCRAM-SHA-256$4096:existing"
     backend.portal_authenticates = False
 
-    assert realize_database(backend, _nodes(tmp_path)) == [
+    assert realize_database(backend, _nodes(scenario)) == [
         "TechVault portal cannot query PostgreSQL at 172.20.2.11:5432"
     ]
     assert backend.verifier == "SCRAM-SHA-256$4096:existing"
 
 
-def test_portal_configured_for_another_identity_is_rejected(tmp_path):
+def test_portal_configured_for_another_identity_is_rejected(scenario):
     backend = _Postgres()
     backend.portal = {**backend.portal, "user": "postgres"}
 
-    assert realize_database(backend, _nodes(tmp_path)) == [
+    assert realize_database(backend, _nodes(scenario)) == [
         "TechVault portal database client does not match the declaration"
     ]
     assert backend.verifier is None
 
 
-def test_transport_exception_fails_closed(tmp_path):
+def test_transport_exception_fails_closed(scenario):
     class _Broken(_Postgres):
         def container_exec(self, name, command, *, timeout=None):
             raise TimeoutError("exec timed out")
 
-    backend, nodes = _Broken(), _nodes(tmp_path)
+    backend, nodes = _Broken(), _nodes(scenario)
 
     with pytest.raises(TimeoutError):
         realize_database(backend, nodes)

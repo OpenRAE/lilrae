@@ -76,31 +76,27 @@ class LabSettings(BaseModel):
 
 
 class ContainerSettings(BaseModel):
-    """Which containers are enabled in the lab."""
+    """Optional selection from the admitted scenario's operator groups."""
 
     model_config = ConfigDict(extra="forbid")
 
-    # Defaults match the full TechVault env-pack scenario that
-    # `lilrae lab start` provisions when no scenario is given, so a plain
-    # `lilrae lab init` + `lilrae lab start` brings up the complete lab the
-    # walkthrough documents. With soc/enterprise/dns/fileshare off, Compose only
-    # created the wazuh/victim/kali subset while the RAES handoff still tried to
-    # wire the scenario's ad/dns/cortex/db nodes, so start failed with
-    # "No such container". `reverse` and `mail` stay off — they are not part of
-    # that scenario.
-    wazuh: bool = True
-    victim: bool = True
-    kali: bool = True
-    reverse: bool = False
-    enterprise: bool = True
-    soc: bool = True
-    mail: bool = False
-    fileshare: bool = True
-    dns: bool = True
+    profiles: list[str] | None = None
+
+    @field_validator("profiles")
+    @classmethod
+    def validate_profiles(cls, value: list[str] | None) -> list[str] | None:
+        """Bound tokens before they can reach Compose argv."""
+        if value is not None and (
+            len(value) > 128
+            or len(set(value)) != len(value)
+            or any(not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}", item) for item in value)
+        ):
+            raise ValueError("invalid operator group selection")
+        return value
 
     def enabled_profiles(self) -> list[str]:
         """Return docker compose profile names for enabled containers."""
-        return [name for name in type(self).model_fields if getattr(self, name)]
+        return list(self.profiles or ())
 
 
 class RunStorageConfig(BaseModel):
@@ -135,7 +131,7 @@ class ScenarioSourceConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
-    identity: str = "techvault"
+    identity: str | None = None
     root: str | None = None
     pack_directory: str | None = None
     # ``env-pack`` (the default since #875) resolves the scenario from the
@@ -176,9 +172,11 @@ class ScenarioSourceConfig(BaseModel):
 
     @field_validator("identity")
     @classmethod
-    def validate_identity(cls, value: str) -> str:
+    def validate_identity(cls, value: str | None) -> str | None:
         """Refuse an identity that names nothing."""
 
+        if value is None:
+            return None
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("scenario identity must not be empty")

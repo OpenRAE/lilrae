@@ -22,16 +22,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tests.techvault_pack import realize_techvault_pack
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture(scope="module")
-def techvault_realization(tmp_path_factory):
-    """Run the released pack's filesystem-backed planner once per module."""
+def techvault_realization(released_techvault_realization):
+    """Run the released pack's filesystem-backed planner once per test session."""
 
-    return realize_techvault_pack(tmp_path_factory.mktemp("techvault-realization"))
+    return released_techvault_realization
 
 
 @pytest.mark.integration

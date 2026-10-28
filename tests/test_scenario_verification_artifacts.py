@@ -5,7 +5,8 @@ environment rather than the checkout.
 
 First, the code boundary: the wheel registers the entry points a scenario owns,
 they resolve into the scenario's own top-level package, and the *framework*
-package carries no scenario knowledge — in either the importable copy or the
+package carries no unreviewed scenario knowledge. Exact compatibility exceptions
+use the source revision's ownership ledger in both the importable copy and the
 bundled ``_labdata/src`` copy, since ``ASSET_ROOTS`` ships ``src`` twice over.
 
 Second, the install: one install of one distribution is enough for semantic
@@ -89,6 +90,11 @@ def _build_wheel(output: Path) -> Path:
     wheels = sorted(output.glob("*.whl"))
     assert len(wheels) == 1
     return wheels[0]
+
+
+@pytest.fixture(scope="module")
+def built_wheel(tmp_path_factory):
+    return _build_wheel(tmp_path_factory.mktemp("verifier-wheel"))
 
 
 def _members(wheel: Path) -> dict[str, bytes]:
@@ -184,12 +190,13 @@ def context(scenario=ADMITTED, operations=None, containers=()):
 
 
 @pytest.mark.integration
-def test_the_wheel_keeps_scenario_knowledge_out_of_the_framework_package(
+def test_the_wheel_has_only_reviewed_compatibility_exceptions_in_the_framework(
+    built_wheel: Path,
     tmp_path: Path,
 ) -> None:
     """The adapter ships in the wheel; the framework package stays scenario-free."""
 
-    members = _members(_build_wheel(tmp_path / "dist"))
+    members = _members(built_wheel)
 
     entry_points = b"\n".join(
         content
@@ -258,12 +265,20 @@ def test_the_wheel_keeps_scenario_knowledge_out_of_the_framework_package(
             continue
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(content)
+    # The source-revision ledger governs these exact wheel bytes as it governs
+    # source. It is review evidence, not runtime configuration to ship to labs.
+    ledger = (REPO_ROOT / ".gc/pack-ownership.json").read_bytes()
+    for root in (imported, bundled):
+        policy = root / ".gc/pack-ownership.json"
+        policy.parent.mkdir(parents=True, exist_ok=True)
+        policy.write_bytes(ledger)
     assert check.findings(imported, facts) == []
     assert check.findings(bundled, facts) == []
 
 
 @pytest.mark.integration
 def test_one_install_reaches_a_verdict_and_records_its_provenance(
+    built_wheel: Path,
     tmp_path: Path,
 ) -> None:
     """A single install of a single distribution is enough (#879).
@@ -274,7 +289,7 @@ def test_one_install_reaches_a_verdict_and_records_its_provenance(
     """
 
     header = _admitted_context(tmp_path)
-    venv = _clean_install(tmp_path, _build_wheel(tmp_path / "dist"))
+    venv = _clean_install(tmp_path, built_wheel)
 
     _run(
         venv,
@@ -324,6 +339,7 @@ assert report.status is VerificationStatus.BLOCKED
 
 @pytest.mark.integration
 def test_an_unknown_scenario_blocks_rather_than_borrowing_an_adapter(
+    built_wheel: Path,
     tmp_path: Path,
 ) -> None:
     """Shipping adapters must not hand an unrelated scenario a verdict.
@@ -334,7 +350,7 @@ def test_an_unknown_scenario_blocks_rather_than_borrowing_an_adapter(
     """
 
     header = _admitted_context(tmp_path)
-    venv = _clean_install(tmp_path, _build_wheel(tmp_path / "dist"))
+    venv = _clean_install(tmp_path, built_wheel)
 
     _run(
         venv,

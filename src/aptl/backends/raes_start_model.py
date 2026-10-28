@@ -25,6 +25,14 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
+class ScenarioAdmissionSource:
+    """Preselected bundle and startup adapter reused by one admission."""
+
+    bundle: ScenarioBundle | None = None
+    startup_selection: ScenarioStartupSelection | None = field(default=None, repr=False)
+
+
+@dataclass(frozen=True)
 class AdmittedScenarioStart:
     """One admitted scenario execution, shared by pre-mutation steps and apply.
 

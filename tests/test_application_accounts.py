@@ -521,12 +521,10 @@ def test_curl_configuration_cannot_be_broken_out_of_by_a_value():
     )
 
 
-def test_every_released_techvault_account_provider_resolves_its_ingress(tmp_path):
+def test_every_released_techvault_account_provider_resolves_its_ingress(released_techvault_realization):
     """Each SOC product the released pack declares is reachable (#1273)."""
 
-    from tests.techvault_pack import realize_techvault_pack
-
-    realization = realize_techvault_pack(tmp_path)
+    realization = released_techvault_realization
     spec = realization.deployment_spec(sorted(realization.profiles))
     resolved = {
         node.backend_account_provider: accounts.product_ingress(

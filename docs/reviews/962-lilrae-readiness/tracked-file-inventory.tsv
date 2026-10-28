@@ -1,4 +1,7 @@
 path	proposed_owner	migration_rule
+docs/architecture/issue-1447-runtime-owner-handoff.md	architecture-history	Preserve issue 1447 runtime ownership handoff design
+src/aptl/backends/_lilrae_runtime_handoff.py	core-candidate	Keep exclusive runtime ownership across temporary control-plane phases
+tests/test_lilrae_runtime_handoff.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 .claude/hooks/protect_files.sh	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 .claude/settings.json	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 .claude/skills/gh-workflow-monitor/SKILL.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
@@ -156,22 +159,12 @@ containers/kali-capture/sshd_config	backend-substrate	Post-baseline capture appa
 containers/kali/audit/aptl.rules	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/keys/aptl_lab_key.pub	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/keys/authorized_keys	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
-containers/mailserver/setup.sh	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/misp-suricata-sync/Dockerfile	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/network-boundary-helper/Dockerfile	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/network-boundary-helper/helper.py	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/network-boundary-helper/probe.py	backend-substrate	Retain runtime boundary probe used by appliance admission
 containers/operator-access-proxy/Dockerfile	backend-substrate	Retain backend relay for declared operator interactive access
 containers/operator-access-proxy/proxy.py	backend-substrate	Retain backend relay for declared operator interactive access
-containers/reverse/Dockerfile	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
-containers/reverse/README.md	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
-containers/reverse/entrypoint.sh	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
-containers/reverse/install-all.sh	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
-containers/reverse/install-falco.sh	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
-containers/reverse/install-wazuh.sh	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
-containers/reverse/rebuild_container.sh	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
-containers/reverse/reverse-tools-install.service	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
-containers/reverse/setup-reverse-tools.sh	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/suricata-wazuh-agent/Dockerfile	backend-substrate	Retain locally composed Suricata forwarding substrate selected under open authority
 containers/windows-victim/README.md	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 containers/windows-victim/enable-rdp.ps1	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
@@ -1442,6 +1435,7 @@ tests/test_correlation_clock.py	tests-follow-owner	Retain meaningful boundary an
 tests/test_correlation_identity.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_correlation_models.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_correlation_persistence.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_cortex_apikey_script.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_cortex_integration_config.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_credentials.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_credentials_fuzz.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
@@ -1588,6 +1582,7 @@ tests/test_raes_backend.py	tests-follow-owner	Retain meaningful boundary and par
 tests/test_raes_backend_implementation.py	tests-follow-owner	Retain open and closed realization-authority regression coverage with the backend owner
 tests/test_raes_base_substrate.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_content_satisfaction.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_raes_credential_result_contract.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_diagnostics.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_docker_materializer.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_dynamic_composition.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
@@ -1970,3 +1965,25 @@ src/aptl/core/_participant_desktop_endpoints.py	core-candidate	Retain generic de
 src/aptl/core/_participant_desktop_tls.py	core-candidate	Retain verified transport over backend-issued public certificates
 tests/test_participant_desktop_tls.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 docs/architecture/issue-1423-shuffle-startup-readiness-preflight.md	architecture-history	Preserve Shuffle startup recovery, authority, and readiness guardrails
+docs/architecture/family-adapter-contract.md	architecture-history	Preserve the public family adapter contract and qualification boundaries
+docs/architecture/issue-1414-rpt-family-adapter-preflight.md	architecture-history	Preserve the public family adapter contract and qualification boundaries
+docs/reference/family-adapters.md	architecture-history	Preserve the public family adapter contract and qualification boundaries
+src/aptl/backends/scenario_family.py	core-candidate	Generic family qualification and admitted trial handoff behind existing adapter contracts
+tests/fixtures/family_adapter/family_adapter/__init__.py	tests-follow-owner	Public family adapter compatibility and independently installed wheel evidence
+tests/fixtures/family_adapter/pyproject.toml	tests-follow-owner	Public family adapter compatibility and independently installed wheel evidence
+tests/test_family_adapter_contract.py	tests-follow-owner	Public family adapter compatibility and independently installed wheel evidence
+src/aptl/backends/_scenario_startup_model.py	core-candidate	Keep startup data contracts behind the public scenario startup owner
+src/aptl/backends/_raes_planning_entry.py	backend-owned-runtime	Keep planning inputs and entry behind the existing RAES planning compatibility owner
+.gc/pack-ownership.json	build-governance	Issue 1121: explicit pack boundary, retained adapter ownership, or its verification
+docs/architecture/issue-1121-pack-boundary-preflight.md	architecture-history	Issue 1121: explicit pack boundary, retained adapter ownership, or its verification
+docs/architecture/pack-boundary-design.md	architecture-history	Issue 1121: explicit pack boundary, retained adapter ownership, or its verification
+docs/reference/configuration-migration.md	repository-metadata	Issue 1121: explicit pack boundary, retained adapter ownership, or its verification
+mcp/mcp-reverse/README.md	repository-metadata	Issue 1121: explicit pack boundary, retained adapter ownership, or its verification
+mcp/mcp-reverse/tests/retired-target.test.ts	repository-metadata	Issue 1121: explicit pack boundary, retained adapter ownership, or its verification
+src/aptl/core/deployment/_lilrae_compose_capabilities.py	mixed-lifecycle-policy	Issue 1121: explicit pack boundary, retained adapter ownership, or its verification
+src/aptl/core/lilrae_config_migration.py	mixed-lifecycle-policy	Issue 1121: explicit pack boundary, retained adapter ownership, or its verification
+tests/fixtures/lilrae_core_only_cli.py	repository-metadata	Issue 1121: explicit pack boundary, retained adapter ownership, or its verification
+tests/test_lilrae_config_migration.py	repository-metadata	Issue 1121: explicit pack boundary, retained adapter ownership, or its verification
+tests/test_lilrae_core_only_cli.py	repository-metadata	Issue 1121: explicit pack boundary, retained adapter ownership, or its verification
+tests/test_lilrae_host_requirements.py	repository-metadata	Issue 1121: explicit pack boundary, retained adapter ownership, or its verification
+tests/test_lilrae_legacy_profiles.py	repository-metadata	Issue 1121: explicit pack boundary, retained adapter ownership, or its verification

@@ -15,7 +15,6 @@ from xml.etree import ElementTree
 import pytest
 
 from aptl.core.deployment._wazuh_agent_configuration import wazuh_config
-from tests.techvault_pack import realize_techvault_pack
 
 
 ENDPOINT_NODES = (
@@ -24,8 +23,8 @@ ENDPOINT_NODES = (
 
 
 @pytest.fixture(scope="module")
-def realized_nodes(tmp_path_factory):
-    realization = realize_techvault_pack(tmp_path_factory.mktemp("in-node-agents"))
+def realized_nodes(released_techvault_realization):
+    realization = released_techvault_realization
     assert not realization.diagnostics
     return {node.name: node for node in realization.nodes}
 

@@ -28,7 +28,6 @@ from aptl.core.deployment.realization import (
     DeploymentStatefulConsumer,
 )
 
-_SOC_CERTIFICATE_ARTIFACT = "generated_artifacts.techvault-soc-certificates"
 _MISP_CACHE_BINDING_ROLE = "data_source"
 
 
@@ -128,7 +127,6 @@ def _misp_server_tls_artifact(
                 ),
             ),
         ),
-        ordering_dependencies=(_SOC_CERTIFICATE_ARTIFACT,),
     )
 
 

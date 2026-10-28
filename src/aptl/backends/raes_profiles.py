@@ -148,7 +148,14 @@ def select_backend_profiles(
     """Select profiles from legacy config or an admitted pack vocabulary."""
     if admitted_operator_groups is not None:
         admitted = set(admitted_operator_groups)
+        selected = config.containers.profiles
+        if selected is not None:
+            if set(selected) - admitted:
+                raise ValueError("operator group selection is not admitted")
+            admitted.intersection_update(selected)
         return sorted(profile for profile in plan_profiles if profile in admitted)
+    if config.containers.profiles is None:
+        return sorted(plan_profiles)
     selected = [
         profile
         for profile in public_start_profiles(config)

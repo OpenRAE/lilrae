@@ -243,10 +243,10 @@ class TestLabStartCommand:
         assert "Reverse engineering SSH" not in result.stdout
         assert "aptl_lab_key" not in result.stdout
 
-    def test_lab_info_prints_reverse_access_when_service_is_running(
+    def test_lab_info_does_not_invent_access_for_retired_named_service(
         self, runner, tmp_path, mocker
     ):
-        """An explicitly realized reverse service remains discoverable."""
+        """A legacy service name is no longer an access-summary authority."""
         from aptl.cli.main import app
         from aptl.core.host_ports import ResolvedPort
 
@@ -270,8 +270,8 @@ class TestLabStartCommand:
         result = runner.invoke(app, ["lab", "info", "--project-dir", str(tmp_path)])
 
         assert result.exit_code == 0
-        assert "Reverse engineering SSH" in result.stdout
-        assert "localhost -p 20027" in result.stdout
+        assert "Reverse engineering SSH" not in result.stdout
+        assert "localhost -p 20027" not in result.stdout
 
     def test_lab_info_fails_without_env(self, runner, tmp_path):
         """lab info should tell users to start the lab before .env exists."""

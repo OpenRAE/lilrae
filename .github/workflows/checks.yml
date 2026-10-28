@@ -3,7 +3,7 @@ name: Checks
 # Single quality + security gate. APTL itself is local-first and has no
 # app deployment; the only deploy is the docs site, which lives in
 # docs-deploy.yml (GitHub Pages, main only). All checks below run in
-# parallel; SonarCloud waits for the test jobs to finish so it can
+# parallel after changed-input selection; SonarCloud waits for tests to
 # ingest their coverage.
 #
 # Required repo secrets:
@@ -11,22 +11,66 @@ name: Checks
 on:
   push:
     branches: [main, dev]
+    tags: ["v*"]
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
   pull_request:
     branches: [main, dev]
+
+env:
+  COVERAGE_CORE: sysmon
 
 permissions:
   contents: read
   pull-requests: read
 
 jobs:
+  changes:
+    name: Select changed inputs
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.select.outputs.python }}
+      mcp: ${{ steps.select.outputs.mcp }}
+      web: ${{ steps.select.outputs.web }}
+      docs: ${{ steps.select.outputs.docs }}
+      dependencies: ${{ steps.select.outputs.dependencies }}
+      lab: ${{ steps.select.outputs.lab }}
+      images: ${{ steps.select.outputs.images }}
+      iac: ${{ steps.select.outputs.iac }}
+      selected_images: ${{ steps.select.outputs.selected_images }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/ci.txt
+      - run: pip install --require-hashes -r requirements/ci.txt
+      - id: select
+        run: python tools/ci/select_checks.py
+
   pre-commit:
     name: Pre-commit hooks
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: always()
+    concurrency:
+      group: checks-pre-commit-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
       - run: pip install --require-hashes -r requirements/ci.txt
       - name: Secrets and fast hygiene
         run: pre-commit run --all-files --show-diff-on-failure
@@ -36,7 +80,16 @@ jobs:
   docs:
     name: Docs (Vale prose lint + mkdocs strict build)
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.docs == 'true')
+    concurrency:
+      group: checks-docs-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # git-revision-date-localized needs full history for page dates
@@ -44,6 +97,8 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
       - run: |
           pip install --require-hashes -r requirements/docs.txt
           pip install -e . --no-deps --no-build-isolation
@@ -52,27 +107,107 @@ jobs:
       - name: mkdocs strict build (nav and links must resolve)
         run: mkdocs build --strict
 
-  python-tests:
-    name: Python tests + coverage
+  python-test-shards:
+    name: Python suite (shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    needs: [changes]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.python == 'true')
+    concurrency:
+      group: checks-python-test-shards-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-${{ matrix.shard }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
       - run: |
           pip install --require-hashes -r requirements/dev.txt
           pip install -e . --no-deps --no-build-isolation
+      - name: Ordinary tests and worker coverage
+        run: >-
+          python -m pytest tests/ -q -n 4 --dist loadfile
+          --splits ${{ strategy.job-total }} --group ${{ matrix.shard }} --splitting-algorithm least_duration
+          -m "not integration and not fuzz and not live_lab" --durations=30
+          --junitxml=python-results.xml --cov --cov-report=
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-coverage-data-${{ matrix.shard }}
+          path: .coverage
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: python-test-results-${{ matrix.shard }}
+          path: python-results.xml
+          retention-days: 7
+
+  python-qualification:
+    name: Python fuzz, measurement and smoke checks
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.python == 'true')
+    concurrency:
+      group: checks-python-qualification-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
       - run: |
-          coverage run -m pytest tests/ -q -k "not integration"
-          coverage xml -o coverage.xml
+          pip install --require-hashes -r requirements/dev.txt
+          pip install -e . --no-deps --no-build-isolation
+      - name: Compare measurement cores when the toolchain changes
+        if: needs.changes.outputs.python == 'true' && needs.changes.outputs.dependencies == 'true'
+        run: |
+          for core in sysmon ctrace; do
+            COVERAGE_CORE=$core coverage run --data-file="$RUNNER_TEMP/coverage-$core" -m pytest tests/test_raes_planning_compat.py -q
+            coverage json --data-file="$RUNNER_TEMP/coverage-$core" -o "$RUNNER_TEMP/coverage-$core.json"
+          done
+          COVERAGE_FILE="$RUNNER_TEMP/coverage-workers" python -m pytest tests/test_raes_planning_compat.py -q -n 2 --cov --cov-report="json:$RUNNER_TEMP/coverage-workers.json"
+          python - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          reports = []
+          for core in ("sysmon", "ctrace"):
+              report = json.loads((root / f"coverage-{core}.json").read_text())
+              reports.append({name: data["executed_lines"] for name, data in report["files"].items()})
+          assert reports[0] == reports[1], "coverage cores disagree on executed lines"
+          worker_report = json.loads((root / "coverage-workers.json").read_text())
+          planner = "src/aptl/backends/raes_planning_compat.py"
+          assert reports[0][planner], "serial planner coverage is empty"
+          assert worker_report["files"][planner]["executed_lines"] == reports[0][planner], "worker coverage differs from serial planner coverage"
+          print("Coverage cores agree on measured files and executed lines")
+          PYTHON
       # Property-based tests carry the `fuzz` marker, which `addopts` excludes
       # from the default run above. Without this step no gate ran them, and two
       # went stale behind contract changes (#1141, #1152) unnoticed (#1193).
       - name: Property-based (fuzz) tests
-        run: python -m pytest tests/ -q -m fuzz -k "not integration"
+        run: python -m pytest tests/ -q -m "fuzz and not integration and not live_lab" --durations=10
       # The env-file writers must deliver each value exactly (#966). Only the
       # real Docker and Compose readers can prove that. The readback tests are
       # integration-marked, so the run above deselects them. The runner has
@@ -85,25 +220,83 @@ jobs:
           python -m pytest -q -m integration \
             tests/test_raes_runtime_environment.py::test_docker_reads_the_env_file_back_exactly \
             tests/test_deployment_stateful_realization.py::test_compose_reads_the_generated_env_file_back_exactly
+      - name: Linux CLI and init smoke
+        run: |
+          lilrae --help
+          lilrae lab init "$RUNNER_TEMP/cli-smoke"
+
+  python-tests:
+    name: Python tests + coverage
+    runs-on: ubuntu-latest
+    needs: [changes, python-test-shards, python-qualification]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.python == 'true')
+    concurrency:
+      group: checks-python-tests-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - name: Require complete Python verification
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+          SHARD_RESULT: ${{ needs.python-test-shards.result }}
+          QUALIFICATION_RESULT: ${{ needs.python-qualification.result }}
+        run: |
+          test "$ROUTING_RESULT" = success
+          test "$SHARD_RESULT" = success
+          test "$QUALIFICATION_RESULT" = success
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/ci.txt
+      - run: |
+          pip install --require-hashes -r requirements/ci.txt
+          pip install -e . --no-deps --no-build-isolation
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: python-coverage-data-*
+          path: coverage-data
+      - name: Combine complete worker coverage
+        run: |
+          set -euo pipefail
+          for shard in 1 2 3; do
+            data="coverage-data/python-coverage-data-$shard/.coverage"
+            test -s "$data"
+            coverage json --data-file="$data" -o "$RUNNER_TEMP/coverage-shard-$shard.json"
+          done
+          coverage combine coverage-data/python-coverage-data-1/.coverage coverage-data/python-coverage-data-2/.coverage coverage-data/python-coverage-data-3/.coverage
+          coverage xml -o coverage.xml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-coverage
           path: coverage.xml
+          if-no-files-found: error
           retention-days: 7
 
   scenario-verification-artifacts:
     name: Scenario verification installed-artifact boundary
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.lab == 'true')
+    concurrency:
+      group: checks-scenario-verification-artifacts-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
       - name: Install the hash-verified test and build toolchain
         run: pip install --require-hashes -r requirements/dev.txt
       - name: Prove core-only and separately installed verifier wheels
         run: >-
-          python -m pytest tests/test_scenario_verification_artifacts.py -q
+          python -m pytest tests/test_scenario_verification_artifacts.py tests/test_lab_core_only_artifact.py -q
           -m integration
 
   pack-identity-compatibility:
@@ -115,11 +308,22 @@ jobs:
     # env-packs' real validation path and fail on any drift. They are
     # integration-marked (staging and validating a pack is not fast-suite work)
     # but need no Docker, so they run here rather than nowhere.
+    needs: [changes]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.lab == 'true')
+    concurrency:
+      group: checks-pack-identity-compatibility-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
       - run: |
           pip install --require-hashes -r requirements/dev.txt
           pip install -e . --no-deps --no-build-isolation
@@ -135,19 +339,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            pytest_args: tests/ -q -k "not integration"
           - os: macos-latest
-            pytest_args: tests/ -q -k "not integration"
+            pytest_args: >-
+              tests/test_cli_config.py tests/test_cli_lifecycle.py tests/test_config.py
+              tests/test_env.py tests/test_env_hydration.py tests/test_hostenv.py
+              tests/test_lab_init_cli.py tests/test_lifecycle_policy.py
+              tests/test_session.py tests/test_sysreqs.py tests/test_line_endings.py
+              tests/test_workbench_process.py tests/test_version.py
+              -q -m "not integration and not fuzz and not live_lab"
           - os: windows-latest
             pytest_args: >-
               tests/test_cli.py
               tests/test_cli_config.py
               tests/test_cli_lifecycle.py
               tests/test_config.py
-              tests/test_config_fuzz.py
               tests/test_env.py
-              tests/test_env_fuzz.py
               tests/test_env_hydration.py
               tests/test_hostenv.py
               tests/test_lab_init_cli.py
@@ -156,12 +362,26 @@ jobs:
               tests/test_sysreqs.py
               tests/test_version.py
               tests/test_version_consistency.py
+              tests/test_line_endings.py
+              tests/test_workbench_process.py
               -q
+    needs: [changes]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.python == 'true')
+    concurrency:
+      group: checks-python-cross-platform-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-${{ matrix.os }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
+      - name: Validate check selection
+        shell: bash
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
       - run: |
           python -m pip install --require-hashes -r requirements/dev.txt
           python -m pip install -e . --no-deps --no-build-isolation
@@ -182,13 +402,24 @@ jobs:
     # passed consistently in its advisory Phase A. The gate needs only the
     # installed raes wheel (which bundles the contract corpus) and the
     # `raes` CLI — no separate corpus checkout.
+    needs: [changes]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.lab == 'true')
+    concurrency:
+      group: checks-raes-scenario-gate-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
       - run: |
           pip install --require-hashes -r requirements/dev.txt
           pip install -e . --no-deps --no-build-isolation
@@ -224,11 +455,22 @@ jobs:
     # read-only counterpart to `clean-install-lab-boot`, checked from a freshly
     # materialized project directory without booting containers. The fixture is
     # product-neutral; scenario-specific behavior belongs behind adapters.
+    needs: [changes]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.lab == 'true')
+    concurrency:
+      group: checks-fresh-start-preflight-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
       - run: |
           pip install --require-hashes -r requirements/dev.txt
           pip install -e . --no-deps --no-build-isolation
@@ -243,11 +485,19 @@ jobs:
     # editable, and developer state can hide packaging/lifecycle defects. This
     # job supplies a product-neutral SDL as an adapter would, then exercises the
     # public CLI and independently reads the realized container state.
+    needs: [changes]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.lab == 'true')
     steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
       - name: Build the wheel with the locked, no-isolation toolchain
         run: |
           pip install --require-hashes -r requirements/ci.txt
@@ -304,7 +554,8 @@ jobs:
       - name: Start and verify the materialization envelope
         run: |
           cd "$RUNNER_TEMP/clean-install/ci-lab"
-          "$RUNNER_TEMP/clean-venv/bin/lilrae" lab start \
+          "$RUNNER_TEMP/clean-venv/bin/python" \
+            "$GITHUB_WORKSPACE/tests/fixtures/lilrae_core_only_cli.py" lab start \
             --scenario-path scenarios/materialization-envelope.sdl.yaml
           status_output=$("$RUNNER_TEMP/clean-venv/bin/lilrae" lab status)
           grep -F "Lab is running." <<<"$status_output"
@@ -369,13 +620,24 @@ jobs:
   mcp-tests:
     name: MCP TypeScript tests + coverage
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.mcp == 'true')
+    concurrency:
+      group: checks-mcp-tests-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: '22.23.4'
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
       - name: aptl-mcp-common — install, build, test
         # `npm run build` runs explicitly before mcp-red copies the build
         # output. The `prepare` script also builds, but ordering across
@@ -391,7 +653,7 @@ jobs:
         # `sonar.sources`, which is anchored at the repo root).
         run: |
           cd mcp/aptl-mcp-common
-          npm ci
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run build
           npx vitest run --coverage
           sed -i 's|^SF:|SF:mcp/aptl-mcp-common/|' coverage/lcov.info
@@ -408,33 +670,28 @@ jobs:
         # reasoning).
         run: |
           cd mcp/mcp-red
-          npm ci --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
           npx vitest run --coverage
           sed -i 's|^SF:|SF:mcp/mcp-red/|' coverage/lcov.info
-      - name: dependent MCPs — rebuild against fresh common (build-only verification)
-        # Plan rules require every aptl-mcp-common consumer to rebuild
-        # and pass tests when common changes. None of these dependents
-        # currently ship vitest suites, but a build pass catches type-
-        # level breakage from common API drift. When any of these
-        # packages add tests, extend the matrix below to also run
-        # `npx vitest run`.
+      - name: dependent MCPs — build and run retained suites
+        # Install fresh common before each consumer; build exactly once.
         run: |
-          for pkg in mcp-wazuh mcp-soar mcp-network mcp-indexer mcp-reverse mcp-threatintel mcp-casemgmt; do
-            echo "=== $pkg ==="
-            cd "mcp/$pkg"
-            # npm ci clears node_modules first, so the `file:` common dependency
-            # is re-copied fresh without an explicit rm.
-            npm ci --no-audit --no-fund
-            if [ -f tsconfig.build.json ]; then
-              npx tsc -p tsconfig.build.json
-            else
-              npx tsc
-            fi
-            cd -
+          for manifest in mcp/*/package.json; do
+            pkg=${manifest%/package.json}
+            case "$pkg" in mcp/aptl-mcp-common|mcp/mcp-red) continue;; esac
+            (
+              cd "$pkg"
+              npm ci --ignore-scripts --no-audit --no-fund
+              npm run build
+              if [ -d tests ]; then npx --no-install vitest run; fi
+            )
           done
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
       - name: Restricted SSH transport against built MCP processes
         # Exercises real OpenSSH, dispatcher, relay and MCP processes. Deployment
         # observations are fixtures; this job does not boot or qualify a lab.
@@ -464,13 +721,34 @@ jobs:
   web-tests:
     name: Web frontend tests + coverage
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.web == 'true')
+    concurrency:
+      group: checks-web-tests-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: web/caddy-build/go.mod
+          cache-dependency-path: web/caddy-build/go.sum
+      - name: Verify Caddy security backport and configuration
+        working-directory: web/caddy-build
+        run: |
+          go test -v .
+          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/caddy" .
+          "$RUNNER_TEMP/caddy" validate --config ../Caddyfile --adapter caddyfile
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: '22.23.4'
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
       - run: |
           cd web
           npm ci
@@ -488,14 +766,27 @@ jobs:
     runs-on: ubuntu-latest
     # Audit the shipped platform closures and CI build tools. Intentionally
     # vulnerable lab targets remain in the separate advisory scanner jobs.
+    needs: [changes]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.dependencies == 'true')
+    concurrency:
+      group: checks-dependency-audit-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: '22.23.4'
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
       - name: pip-audit (Python dependencies) — blocking
         # Generated, hash-pinned exports are the canonical CLI, API, and build
         # closures. No editable install or build hook runs during the scan.
@@ -540,7 +831,16 @@ jobs:
     permissions:
       contents: read
       security-events: write
+    needs: [changes]
+    if: always()
+    concurrency:
+      group: checks-trivy-fs-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Record all findings (SARIF)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -554,17 +854,14 @@ jobs:
           severity: CRITICAL,HIGH,MEDIUM
           limit-severities-for-sarif: 'true'
       - name: Upload SARIF artifact
-        if: always()
+        if: (true) && (always())
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: trivy-fs-sarif
           path: trivy-fs.sarif
           retention-days: 7
       - name: Track findings in code scanning
-        if: >-
-          always() && github.actor != 'dependabot[bot]' &&
-          (github.event_name != 'pull_request' ||
-          github.event.pull_request.head.repo.full_name == github.repository)
+        if: (true) && (always() && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository))
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: trivy-fs.sarif
@@ -590,7 +887,16 @@ jobs:
     permissions:
       contents: read
       security-events: write
+    needs: [changes]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.iac == 'true')
+    concurrency:
+      group: checks-trivy-iac-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Misconfiguration waivers are permanent, reviewed design decisions, so
       # the record honors them too; only unwaived misconfigurations are tracked.
@@ -613,10 +919,7 @@ jobs:
           path: trivy-iac.sarif
           retention-days: 7
       - name: Track findings in code scanning
-        if: >-
-          always() && github.actor != 'dependabot[bot]' &&
-          (github.event_name != 'pull_request' ||
-          github.event.pull_request.head.repo.full_name == github.repository)
+        if: (needs.changes.outputs.iac == 'true') && (always() && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository))
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: trivy-iac.sarif
@@ -705,26 +1008,34 @@ jobs:
           - name: misp-suricata-sync
             dockerfile: containers/misp-suricata-sync/Dockerfile
             context: .
-          - name: reverse
-            dockerfile: containers/reverse/Dockerfile
-            context: ./containers
           - name: web
             dockerfile: web/Dockerfile
             context: web
           - name: web-api
             dockerfile: web/Dockerfile.api
             context: .
+    needs: [changes]
+    if: always()
+    concurrency:
+      group: checks-trivy-image-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-${{ matrix.name }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: contains(fromJSON(needs.changes.outputs.selected_images || '[]'), matrix.name)
         with:
           fetch-depth: 0
       # The `docker` driver builds in the daemon's own image store, so a child
       # build resolves the parent image built in the step before it.
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: contains(fromJSON(needs.changes.outputs.selected_images || '[]'), matrix.name)
         with:
           driver: docker
       - name: Build parent image
-        if: matrix.parent_dockerfile != ''
+        if: (contains(fromJSON(needs.changes.outputs.selected_images || '[]'), matrix.name)) && (matrix.parent_dockerfile != '')
         id: parent
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -734,7 +1045,7 @@ jobs:
           load: true
           push: false
       - name: Pin the parent by image ID
-        if: matrix.parent_dockerfile != ''
+        if: (contains(fromJSON(needs.changes.outputs.selected_images || '[]'), matrix.name)) && (matrix.parent_dockerfile != '')
         id: pin
         env:
           PARENT_ID: ${{ steps.parent.outputs.imageid }}
@@ -745,6 +1056,7 @@ jobs:
           docker tag "${PARENT_REPO}:ci" "$pin"
           echo "build-arg=APTL_PARENT_IMAGE=$pin" >> "$GITHUB_OUTPUT"
       - name: Build image
+        if: contains(fromJSON(needs.changes.outputs.selected_images || '[]'), matrix.name)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ matrix.context }}
@@ -754,6 +1066,7 @@ jobs:
           load: true
           push: false
       - name: Record all findings (SARIF)
+        if: contains(fromJSON(needs.changes.outputs.selected_images || '[]'), matrix.name)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
@@ -765,22 +1078,20 @@ jobs:
           severity: CRITICAL,HIGH,MEDIUM
           limit-severities-for-sarif: 'true'
       - name: Upload SARIF artifact
-        if: always()
+        if: (contains(fromJSON(needs.changes.outputs.selected_images || '[]'), matrix.name)) && (always())
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: trivy-image-${{ matrix.name }}-sarif
           path: trivy-image-${{ matrix.name }}.sarif
           retention-days: 7
       - name: Track findings in code scanning
-        if: >-
-          always() && github.actor != 'dependabot[bot]' &&
-          (github.event_name != 'pull_request' ||
-          github.event.pull_request.head.repo.full_name == github.repository)
+        if: (contains(fromJSON(needs.changes.outputs.selected_images || '[]'), matrix.name)) && (always() && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository))
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: trivy-image-${{ matrix.name }}.sarif
           category: trivy-image-${{ matrix.name }}
       - name: Gate on fixable vulnerabilities
+        if: contains(fromJSON(needs.changes.outputs.selected_images || '[]'), matrix.name)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
@@ -798,13 +1109,15 @@ jobs:
     # The single required context for the image matrix: it fails unless every
     # matrix job succeeded, so a new image cannot be added without being gated.
     if: always()
-    needs: [trivy-image]
+    needs: [changes, trivy-image]
     runs-on: ubuntu-latest
     steps:
       - name: Require every image scan to pass
         env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
           RESULT: ${{ needs.trivy-image.result }}
         run: |
+          test "$ROUTING_RESULT" = success
           test "$RESULT" = success || {
             echo "Trivy image scans did not all pass: $RESULT" >&2
             exit 1
@@ -817,7 +1130,16 @@ jobs:
     # dependency graph. Complements the `dependency-audit` job (pip-audit /
     # npm audit); ADR-026 § Risks notes OSV is not wired as a wholesale
     # replacement for the ecosystem audits.
+    needs: [changes]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.dependencies == 'true')
+    concurrency:
+      group: checks-osv-scanner-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install osv-scanner (checksum-verified)
         # Pin to a specific release and verify the binary against the
@@ -850,7 +1172,7 @@ jobs:
 
   sonarcloud:
     name: SonarCloud quality gate
-    needs: [python-tests, mcp-tests, web-tests]
+    needs: [changes, python-tests, mcp-tests, web-tests]
     # Dependabot-triggered runs are handed the Dependabot secret store, not the
     # Actions one, so `secrets.SONAR_TOKEN` is empty and the scan can only ever
     # fail with "Not authorized or project not found". Mirroring the token into
@@ -860,48 +1182,112 @@ jobs:
     # the gate to judge. A job skipped by a condition reports success, which
     # keeps this satisfiable as a required check. Human PRs and pushes to
     # main/dev still run the full gate.
-    if: github.actor != 'dependabot[bot]'
+    if: always() && github.actor != 'dependabot[bot]' && (needs.changes.result != 'success' || needs.changes.outputs.python == 'true' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.web == 'true')
     runs-on: ubuntu-latest
+    concurrency:
+      group: checks-sonarcloud-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
+      - name: Validate selected coverage producers
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+          PY_SELECTED: ${{ needs.changes.outputs.python }}
+          PY_RESULT: ${{ needs.python-tests.result }}
+          MCP_SELECTED: ${{ needs.changes.outputs.mcp }}
+          MCP_RESULT: ${{ needs.mcp-tests.result }}
+          WEB_SELECTED: ${{ needs.changes.outputs.web }}
+          WEB_RESULT: ${{ needs.web-tests.result }}
+        run: |
+          test "$ROUTING_RESULT" = success
+          if [ "$PY_SELECTED" = true ]; then test "$PY_RESULT" = success; fi
+          if [ "$MCP_SELECTED" = true ]; then test "$MCP_RESULT" = success; fi
+          if [ "$WEB_SELECTED" = true ]; then test "$WEB_RESULT" = success; fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: (needs.changes.outputs.python == 'true' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.web == 'true')
         with:
           fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        if: (needs.changes.outputs.python == 'true' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.web == 'true')
         with:
           node-version: '22.23.4'
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
       - name: Generate svelte-kit tsconfig (sonar reads web/tsconfig.json which extends it)
+        if: (needs.changes.outputs.python == 'true' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.web == 'true')
         run: |
           cd web
           npm ci --no-audit --no-fund --silent
           npx svelte-kit sync
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.changes.outputs.python == 'true'
         with:
           name: python-coverage
           path: .
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.changes.outputs.mcp == 'true'
         with:
           name: python-transport-coverage
           path: coverage/
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.changes.outputs.mcp == 'true'
         with:
           name: mcp-coverage
           path: mcp/aptl-mcp-common/coverage/
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.changes.outputs.mcp == 'true'
         with:
           name: mcp-red-coverage
           path: mcp/mcp-red/coverage/
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.changes.outputs.web == 'true'
         with:
           name: web-coverage
           path: web/coverage/
       - uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        if: (needs.changes.outputs.python == 'true' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.web == 'true')
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
             -Dsonar.qualitygate.wait=true
       - name: Fail on new SonarCloud issues
-        if: github.ref_type != 'tag'
+        if: ((needs.changes.outputs.python == 'true' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.web == 'true')) && (github.ref_type != 'tag')
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: python3 tools/sonar/assert_no_new_issues.py --project-key Brad-Edwards_aptl --organization brad-edwards
+
+  integration-qualification:
+    name: Periodic and release integration qualification
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/dev.txt
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: '22.23.4'
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+      - name: Prepare retained integration prerequisites
+        run: |
+          pip install --require-hashes -r requirements/dev.txt
+          pip install -e . --no-deps --no-build-isolation
+          docker info > /dev/null
+          docker compose version
+          sudo apt-get update
+          sudo apt-get install -y openssh-server
+          bash mcp/build-all-mcps.sh
+          python tools/ci/build_qualification_images.py
+      - name: Run retained integration tests without contacting an operator lab
+        run: python -m pytest tests/ -q -m "integration and not live_lab and not fuzz" --durations=30 --junitxml=integration-results.xml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: integration-test-results
+          path: integration-results.xml
+          retention-days: 7
