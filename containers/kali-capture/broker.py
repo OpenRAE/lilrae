@@ -27,7 +27,6 @@ from pathlib import Path
 from typing import Callable, Iterator, Mapping
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]*$")
-_TRANSCRIPT_BINDING = "aptl.collector.redteam-session-transcript"
 _RUNTIME_ROOT = Path(os.environ.get("APTL_CAPTURE_RUNTIME_ROOT", "/run/aptl-capture"))
 _CAPTURE_ROOT = Path(os.environ.get("APTL_CAPTURE_ROOT", "/var/log/aptl/captures"))
 _INNER_KEY = "/run/aptl-inner/id_ed25519"
@@ -118,8 +117,9 @@ def activate_authority(
 
     run_id = validate_id(run_id, "run id")
     plan_id = validate_id(plan_id, "plan id")
-    if binding_id != _TRANSCRIPT_BINDING:
-        raise ValueError("unsupported capture binding")
+    # The scenario adapter names the transcript binding; lilrae checks it again
+    # when the transcript is finalized.
+    binding_id = validate_id(binding_id, "binding id")
     path = runtime_root / "authority.json"
     requested = {
         "schema_version": "aptl-kali-capture-authority/v1",
@@ -148,8 +148,7 @@ def read_authority(runtime_root: Path = _RUNTIME_ROOT) -> dict[str, object]:
     )
     validate_id(activate_authority_fields[0], "run id")
     validate_id(activate_authority_fields[1], "plan id")
-    if activate_authority_fields[2] != _TRANSCRIPT_BINDING:
-        raise ValueError("unsupported capture binding")
+    validate_id(activate_authority_fields[2], "binding id")
     return authority
 
 

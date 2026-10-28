@@ -539,25 +539,49 @@ def test_lab_start_native_step_rejects_collector_exception(tmp_path, monkeypatch
     assert result.error == "aptl.scenario-evidence.required-native-capture-failed"
 
 
-def test_lab_start_activates_admitted_transcript_before_ssh(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "registration_id",
+    [
+        "aptl.collector.redteam-session-transcript",
+        "rpt.collector.redteam-session-transcript",
+    ],
+    ids=("bundled-adapter", "family-adapter"),
+)
+def test_lab_start_activates_admitted_transcript_before_ssh(
+    registration_id, tmp_path, monkeypatch
+):
+    """The broker is bound to the selected adapter's transcript registration."""
     from aptl.backends import raes_evidence_acquisition as acquisition
     from aptl.core.lab import _step_activate_capture_apparatus
 
-    binding = _binding("aptl.collector.redteam-session-transcript", "transcript")
+    binding = replace(
+        _binding("aptl.collector.redteam-session-transcript", "transcript"),
+        registration_id=registration_id,
+    )
     plan = SimpleNamespace(
         plan_id="capture-plan-test",
         canonical_bytes=b"{}",
         runtime_bindings=lambda: (binding,),
     )
     context = _lab_context(tmp_path, plan)
+    selection = context.admitted_start.capture_selection
+    context.admitted_start.capture_selection = replace(
+        selection,
+        contribution=replace(
+            selection.contribution, transcript_registration_id=registration_id
+        ),
+    )
     authority = {
         "run_id": "run-1",
         "plan_id": "capture-plan-test",
-        "binding_id": "aptl.collector.redteam-session-transcript",
+        "binding_id": registration_id,
         "activated_at": "2026-09-14T10:00:00Z",
     }
+    activations = []
     context.backend = SimpleNamespace(
-        activate_capture_apparatus=lambda **_kwargs: authority
+        activate_capture_apparatus=lambda **kwargs: (
+            activations.append(kwargs) or authority
+        )
     )
     prepared = []
     retired = []
@@ -587,6 +611,13 @@ def test_lab_start_activates_admitted_transcript_before_ssh(tmp_path, monkeypatc
     ]
     assert prepared[0]["binding"] is binding
     assert prepared[0]["run_id"] == "run-1"
+    assert activations == [
+        {
+            "plan_id": "capture-plan-test",
+            "run_id": "run-1",
+            "binding_id": registration_id,
+        }
+    ]
 
 
 def test_lab_start_rejects_unactivatable_required_transcript(tmp_path, monkeypatch):

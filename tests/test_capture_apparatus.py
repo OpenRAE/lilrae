@@ -252,6 +252,72 @@ def test_capture_activation_binds_exact_plan_and_run(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
+    ("binding_id", "authority_binding", "accepted"),
+    [
+        (
+            "rpt.collector.redteam-session-transcript",
+            "rpt.collector.redteam-session-transcript",
+            True,
+        ),
+        (
+            "rpt.collector.redteam-session-transcript",
+            "aptl.collector.redteam-session-transcript",
+            False,
+        ),
+        (None, "aptl.collector.redteam-session-transcript", True),
+    ],
+    ids=("adapter-binding", "adapter-binding-mismatch", "default-binding"),
+)
+def test_capture_activation_binds_the_adapter_transcript_registration(
+    binding_id, authority_binding, accepted, tmp_path, monkeypatch
+):
+    """The broker is activated for the scenario adapter's transcript binding."""
+
+    backend = DockerComposeBackend(tmp_path)
+    authority = {
+        "run_id": "run-1",
+        "plan_id": "capture-plan-1",
+        "binding_id": authority_binding,
+        "activated_at": "2026-09-14T10:00:00Z",
+    }
+    backend.container_exec = MagicMock(
+        side_effect=(
+            subprocess.CompletedProcess([], 0, "", ""),
+            subprocess.CompletedProcess([], 0, json.dumps(authority), ""),
+        )
+    )
+    monkeypatch.setattr(
+        "aptl.core.deployment._compose_capture_apparatus.time.sleep",
+        lambda _seconds: None,
+    )
+    kwargs = {} if binding_id is None else {"binding_id": binding_id}
+
+    observed = backend.activate_capture_apparatus(
+        plan_id="capture-plan-1", run_id="run-1", **kwargs
+    )
+
+    activation = backend.container_exec.call_args_list[0].args[1]
+    requested = activation[activation.index("--binding-id") + 1]
+    assert requested == (binding_id or "aptl.collector.redteam-session-transcript")
+    assert (observed == authority) is accepted
+    assert (observed is None) is not accepted
+
+
+@pytest.mark.parametrize("binding_id", ["", "../escape", "a/b", "a b"])
+def test_capture_activation_refuses_an_unsafe_binding(binding_id, tmp_path):
+    """An unsafe binding id is refused before the broker is called."""
+    backend = DockerComposeBackend(tmp_path)
+    backend.container_exec = MagicMock()
+
+    observed = backend.activate_capture_apparatus(
+        plan_id="capture-plan-1", run_id="run-1", binding_id=binding_id
+    )
+
+    assert observed is None
+    backend.container_exec.assert_not_called()
+
+
+@pytest.mark.parametrize(
     "responses",
     [
         (subprocess.CompletedProcess([], 1, "", ""),),
