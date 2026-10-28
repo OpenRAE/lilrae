@@ -87,6 +87,7 @@ dev = [
     # requirements/dev.txt, so those tests run there rather than skip.
     "build>=1.2.0",
     "pytest-cov>=7.1.0",
+    "pytest-split>=0.11.0",
 ]
 docs = [
     "mkdocs-material>=9.5.0",
@@ -104,6 +105,7 @@ ci = [
     "pip-audit>=2.7.0",
     "build>=1.2.0",
     "cyclonedx-bom>=6.0.0",
+    "coverage>=7.10.6",
 ]
 
 # The PEP 517 build backend, locked like everything else. `--require-hashes`

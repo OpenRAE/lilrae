@@ -790,6 +790,7 @@ pytest==9.1.1 \
     #   lilrae
     #   pytest-cov
     #   pytest-mock
+    #   pytest-split
     #   pytest-xdist
 pytest-cov==7.1.0 \
     --hash=sha256:30674f2b5f6351aa09702a9c8c364f6a01c27aae0c1366ae8016160d1efc56b2 \
@@ -798,6 +799,10 @@ pytest-cov==7.1.0 \
 pytest-mock==3.16.0 \
     --hash=sha256:007cfeb257801d88d9c0b2a7b5a15a15e73b71968dfd72e7bf8c4a2f8393aec8 \
     --hash=sha256:5a8395528b8f498205f3718f575228d0edaed7425fff638f87d1a6c3e0383636
+    # via lilrae
+pytest-split==0.11.0 \
+    --hash=sha256:899d7c0f5730da91e2daf283860eb73b503259cb416851a65599368849c7f382 \
+    --hash=sha256:8ebdb29cc72cc962e8eb1ec07db1eeb98ab25e215ed8e3216f6b9fc7ce0ec2b5
     # via lilrae
 pytest-xdist==3.8.0 \
     --hash=sha256:202ca578cfeb7370784a8c33d6d05bc6e13b4f25b5053c30a152269fd10f0b88 \

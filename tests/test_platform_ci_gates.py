@@ -67,6 +67,20 @@ def test_dev_requires_existing_platform_job_contexts() -> None:
     assert {jobs[job]["name"] for job in platform_jobs} <= contexts
 
 
+def test_combined_python_coverage_refuses_a_missing_group(tmp_path: Path) -> None:
+    script = _run_step("python-tests", "Combine complete worker coverage")
+    _stub(tmp_path, "coverage", "exit 0")
+    first = tmp_path / "coverage-data/python-coverage-data-1/.coverage"
+    first.parent.mkdir(parents=True)
+    first.write_bytes(b"measurement")
+    assert _shell(script, tmp_path, RUNNER_TEMP=str(tmp_path)).returncode != 0
+
+    second = tmp_path / "coverage-data/python-coverage-data-2/.coverage"
+    second.parent.mkdir(parents=True)
+    second.write_bytes(b"measurement")
+    assert _shell(script, tmp_path, RUNNER_TEMP=str(tmp_path)).returncode == 0
+
+
 def test_python_audit_covers_shipped_exports_and_fails_closed(tmp_path: Path) -> None:
     script = _run_step("dependency-audit", "pip-audit (Python dependencies) — blocking")
     for export in ("runtime.txt", "web.txt", "ci.txt"):

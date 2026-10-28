@@ -107,13 +107,17 @@ jobs:
       - name: mkdocs strict build (nav and links must resolve)
         run: mkdocs build --strict
 
-  python-tests:
-    name: Python tests + coverage
+  python-test-shards:
+    name: Python suite (shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     needs: [changes]
     if: always() && (needs.changes.result != 'success' || needs.changes.outputs.python == 'true')
     concurrency:
-      group: checks-python-tests-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      group: checks-python-test-shards-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-${{ matrix.shard }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
       - name: Validate check selection
@@ -131,8 +135,50 @@ jobs:
       - run: |
           pip install --require-hashes -r requirements/dev.txt
           pip install -e . --no-deps --no-build-isolation
+      - name: Ordinary tests and worker coverage
+        run: >-
+          python -m pytest tests/ -q -n 4 --dist loadfile
+          --splits 2 --group ${{ matrix.shard }} --splitting-algorithm least_duration
+          -m "not integration and not fuzz and not live_lab" --durations=30
+          --junitxml=python-results.xml --cov --cov-report=
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-coverage-data-${{ matrix.shard }}
+          path: .coverage
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: python-test-results-${{ matrix.shard }}
+          path: python-results.xml
+          retention-days: 7
+
+  python-qualification:
+    name: Python fuzz, measurement and smoke checks
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.python == 'true')
+    concurrency:
+      group: checks-python-qualification-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
       - run: |
-          python -m pytest tests/ -q -n 4 --dist loadfile -m "not integration and not fuzz and not live_lab" --durations=30 --junitxml=python-results.xml --cov --cov-report=xml:coverage.xml
+          pip install --require-hashes -r requirements/dev.txt
+          pip install -e . --no-deps --no-build-isolation
       - name: Compare measurement cores when the toolchain changes
         if: needs.changes.outputs.python == 'true' && needs.changes.outputs.dependencies == 'true'
         run: |
@@ -174,20 +220,57 @@ jobs:
           python -m pytest -q -m integration \
             tests/test_raes_runtime_environment.py::test_docker_reads_the_env_file_back_exactly \
             tests/test_deployment_stateful_realization.py::test_compose_reads_the_generated_env_file_back_exactly
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: python-coverage
-          path: coverage.xml
-          retention-days: 7
       - name: Linux CLI and init smoke
         run: |
           lilrae --help
           lilrae lab init "$RUNNER_TEMP/cli-smoke"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+
+  python-tests:
+    name: Python tests + coverage
+    runs-on: ubuntu-latest
+    needs: [changes, python-test-shards, python-qualification]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.python == 'true')
+    concurrency:
+      group: checks-python-tests-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - name: Require complete Python verification
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+          SHARD_RESULT: ${{ needs.python-test-shards.result }}
+          QUALIFICATION_RESULT: ${{ needs.python-qualification.result }}
+        run: |
+          test "$ROUTING_RESULT" = success
+          test "$SHARD_RESULT" = success
+          test "$QUALIFICATION_RESULT" = success
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          name: python-test-results
-          path: python-results.xml
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/ci.txt
+      - run: |
+          pip install --require-hashes -r requirements/ci.txt
+          pip install -e . --no-deps --no-build-isolation
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: python-coverage-data-*
+          path: coverage-data
+      - name: Combine complete worker coverage
+        run: |
+          set -euo pipefail
+          for shard in 1 2; do
+            data="coverage-data/python-coverage-data-$shard/.coverage"
+            test -s "$data"
+            coverage json --data-file="$data" -o "$RUNNER_TEMP/coverage-shard-$shard.json"
+          done
+          coverage combine coverage-data/python-coverage-data-1/.coverage coverage-data/python-coverage-data-2/.coverage
+          coverage xml -o coverage.xml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-coverage
+          path: coverage.xml
+          if-no-files-found: error
           retention-days: 7
 
   scenario-verification-artifacts:

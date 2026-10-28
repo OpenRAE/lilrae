@@ -17,13 +17,13 @@ Those jobs ran in parallel; their durations are not additive elapsed time.
 
 ## Removed and consolidated work
 
-The pruning removes 124 test functions:
+The pruning removes 125 test functions:
 
 | Category | Removed functions | Reason and retained evidence |
 | --- | ---: | --- |
 | Legacy smoke and full-range modules | 78 | Fixed container identities duplicate scenario-owned live verification. Use `lilrae lab validate-live` and distinct native active-response/continuity probes. |
 | Constructor/default/type assertions | 32 | Assignments repeat model declarations. Keep serialization, validation, lifecycle, scoring, and correlation behavior. |
-| Duplicate and workflow-text assertions | 6 | Remove repeated manifest assertions, an exact timeout value, retired workflow details, a historical file-inventory equality check, and a distinct-profile check already proved by exact expected sets. Keep actual audit failure and cleanup checks. |
+| Duplicate and workflow-text assertions | 7 | Remove repeated manifest and catalog assertions, an exact timeout value, retired workflow details, a historical file-inventory equality check, and a distinct-profile check already proved by exact expected sets. Keep actual audit failure and cleanup checks. |
 | Repeated complete-scenario account checks | 8 | Keep the composed released gate. Six small rejection cases replace six full-pack cases. |
 
 The removed attack-model file contained two of the constructor checks.
@@ -39,6 +39,8 @@ Database cases parse their unchanged declarations once and keep separate backend
 Startup unit cases stub source acquisition before their existing admission stub.
 The credential-hydration case retains the real released source.
 Content-owner checks materialize their two relevant services once.
+API rejection cases use the small admitted fixture pack; the released list/detail checks remain.
+Catalog projection and selection checks share one owned catalog with explicit cleanup.
 Wheel verification shares the build but keeps separate clean install environments.
 No runtime manager or live lab is shared between tests.
 
@@ -70,6 +72,15 @@ Its startup class consumed 457.70 summed case seconds across 51 cases.
 Database cases consumed 218.52 seconds; two content-owner checks consumed 164.49 seconds.
 These case durations overlap across workers and are not pipeline elapsed time.
 The next revision removes their repeated setup and repairs the stale helper checks.
+
+[The corrected four-worker run](https://github.com/OpenRAE/lilrae/actions/runs/40630625357)
+selected 7,250 ordinary cases: 7,246 passed and four skipped.
+Ordinary tests and coverage took 457 seconds; core/worker coverage comparisons also passed.
+The five-minute target was not met.
+The next trial uses two complementary groups, with four workers in each.
+Fuzz, coverage comparisons, Docker readback, and CLI smoke run concurrently.
+The required Python check waits for all three jobs and combines both groups' coverage.
+Record their summed runner time; the groups do not repeat the whole suite.
 
 Three successful hosted comparisons are required before claiming the budgets are met.
 The issue and delivery PR hold those run links and results.

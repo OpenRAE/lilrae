@@ -18,11 +18,15 @@ Docs and image routing remain independent.
 Linux runs the retained ordinary Python suite once with line coverage.
 Coverage.py uses its Python 3.12 monitoring core.
 The measured serial run exceeded the budget after pruning and shared setup.
-Trial four pytest-xdist workers with pytest-cov's supported coverage combination.
+Split the retained cases into two complementary pytest-split groups.
+Each group uses four pytest-xdist workers and pytest-cov's supported worker combination.
 Keep each file on one worker to preserve module fixtures and avoid shared module state.
 Workers keep separate process environments and pytest temporary directories.
 Read-only pack fixtures share declarations and realization results within each process.
 Mutation tests copy their declaration fields; backends, stores, and runtime ownership stay separate.
+The existing required Python check combines both groups' data before exporting coverage.
+Both groups and the concurrent fuzz/smoke qualification job must succeed.
+The combiner checks that both expected data files exist and uses a read-only token.
 The coverage comparison also checks the planner's measured lines with two workers.
 macOS and Windows run portability checks instead of repeating Linux planning tests.
 The installed-wheel boot retains its independent realization and teardown observations.
@@ -76,6 +80,8 @@ Released-kit qualification belongs in the periodic integration lane when it exce
 - [GitHub Actions concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency): PR cancellation groups.
 - [GitHub Actions secure use](https://docs.github.com/en/actions/reference/security/secure-use): untrusted inputs and least privilege.
 - [pytest markers](https://docs.pytest.org/en/stable/how-to/mark.html): explicit test selection.
+- [pytest-split](https://jerry-git.github.io/pytest-split/): complementary groups without repeating a full suite.
+- [Coverage.py combination](https://coverage.readthedocs.io/en/7.15.2/commands/cmd_combine.html): merge measured data before XML export.
 
 This document describes the verification architecture.
 The issue plan owns implementation tasks and measured delivery results.

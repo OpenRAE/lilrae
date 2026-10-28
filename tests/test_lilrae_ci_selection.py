@@ -15,7 +15,9 @@ def selector():
 def test_docs_changes_do_not_select_runtime_but_unknown_paths_do():
     select = selector().select_lanes
     docs = select(["docs/guide.md"])
-    assert docs["docs"] and not docs["python"] and not docs["mcp"]
+    assert docs["docs"]
+    assert not docs["python"]
+    assert not docs["mcp"]
     assert all(select(["new-component/config.ini"]).values())
     assert all(select([], full=True).values())
 
