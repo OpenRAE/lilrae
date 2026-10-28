@@ -339,7 +339,7 @@ class TestAptlConfigDeployment:
         """Config JSON without deployment key uses defaults."""
         cfg = AptlConfig(
             lab={"name": "test"},
-            containers={"wazuh": True, "kali": False},
+            containers={'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
         )
         assert cfg.deployment.provider == "docker-compose"
 
@@ -479,7 +479,9 @@ services:
         backend = self._make_backend(tmp_path)
 
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            mock_run.side_effect = lambda cmd, **kwargs: MagicMock(
+                returncode=0, stdout="2.24.4" if cmd[:3] == ["docker", "compose", "version"] else "", stderr="",
+            )
             result = backend.start(["soc"])
 
         assert result.success is True
@@ -1404,6 +1406,8 @@ services:
             del kwargs
             if failing_cmd is not None and cmd[: len(failing_cmd)] == failing_cmd:
                 return MagicMock(returncode=1, stdout="", stderr="boom")
+            if cmd[:3] == ["docker", "compose", "version"]:
+                return MagicMock(returncode=0, stdout="2.24.4", stderr="")
             return MagicMock(returncode=0, stdout="", stderr="")
 
         with patch("subprocess.run", side_effect=fake_run) as mock_run:
@@ -1469,6 +1473,8 @@ services:
 
         def fake_run(cmd, **kwargs):
             del kwargs
+            if cmd[:3] == ["docker", "compose", "version"]:
+                return MagicMock(returncode=0, stdout="2.24.4", stderr="")
             if cmd[:3] == ["docker", "network", "ls"]:
                 return MagicMock(returncode=0, stdout="test_aptl-internal\n", stderr="")
             if cmd[:2] == ["docker", "version"]:
@@ -3122,7 +3128,7 @@ class TestLabBackwardCompat:
 
         config = AptlConfig(
             lab={"name": "test"},
-            containers={"wazuh": True, "victim": True, "kali": False, "reverse": False},
+            containers={'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
         )
         mock_subprocess.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
@@ -3166,7 +3172,7 @@ class TestLabBackwardCompat:
 
         config = AptlConfig(
             lab={"name": "test"},
-            containers={"wazuh": True, "kali": False, "reverse": False},
+            containers={'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
         )
 
         mock_backend = MagicMock()

@@ -283,57 +283,64 @@ class TestRootfulDaemonForEveryScenario:
 class TestComposePathSelection:
     """A Compose-managed systemd service needs the same daemon support.
 
-    `reverse` takes the substrate's posture through Compose rather than through
+    An authored service takes the substrate's posture through Compose rather than through
     `start_base_container`, so without this selection it would reach the daemon
     ungated and an unsupported engine would surface only as Docker's opaque
     `invalid --security-opt` at create.
     """
 
-    _COMPOSE = Path(__file__).parents[1] / "docker-compose.yml"
+    @pytest.fixture
+    def declared_compose(self, tmp_path):
+        compose = tmp_path / "docker-compose.yml"
+        compose.write_text(
+            "services:\n  fixture_worker:\n    profiles: [fixture_worker]\n"
+            "    image: example\n    security_opt: [writable-cgroups=true]\n"
+        )
+        return compose
 
-    def test_the_reverse_profile_requests_writable_cgroups(self):
+    def test_the_fixture_worker_profile_requests_writable_cgroups(self, declared_compose):
         assert compose_services_requesting_writable_cgroups(
-            [self._COMPOSE], ["reverse"]
-        ) == ("reverse",)
+            [declared_compose], ["fixture_worker"]
+        ) == ("fixture_worker",)
 
-    def test_the_default_profiles_request_nothing(self):
+    def test_the_default_profiles_request_nothing(self, declared_compose):
         from aptl.core.config import ContainerSettings
 
         assert (
             compose_services_requesting_writable_cgroups(
-                [self._COMPOSE], ContainerSettings().enabled_profiles()
+                [declared_compose], ContainerSettings().enabled_profiles()
             )
             == ()
         )
 
-    def test_an_excluded_or_unselected_service_is_not_counted(self):
+    def test_an_excluded_or_unselected_service_is_not_counted(self, declared_compose):
         assert (
             compose_services_requesting_writable_cgroups(
-                [self._COMPOSE], ["reverse"], exclude_services=["reverse"]
+                [declared_compose], ["fixture_worker"], exclude_services=["fixture_worker"]
             )
             == ()
         )
         assert (
             compose_services_requesting_writable_cgroups(
-                [self._COMPOSE], ["reverse"], only_services=["kali"]
+                [declared_compose], ["fixture_worker"], only_services=["other"]
             )
             == ()
         )
 
-    def test_an_explicit_target_is_selected_without_its_profile(self):
-        # core-F2: `docker compose up reverse` starts the profiled service even
-        # when the `reverse` profile is not enabled, so it must still be gated.
+    def test_an_explicit_target_is_selected_without_its_profile(self, declared_compose):
+        # core-F2: `docker compose up fixture_worker` starts the profiled service even
+        # when the `fixture_worker` profile is not enabled, so it must still be gated.
         assert compose_services_requesting_writable_cgroups(
-            [self._COMPOSE], ["soc"], only_services=["reverse"]
-        ) == ("reverse",)
+            [declared_compose], ["soc"], only_services=["fixture_worker"]
+        ) == ("fixture_worker",)
 
-    def test_an_explicit_target_that_is_also_excluded_is_not_selected(self):
+    def test_an_explicit_target_that_is_also_excluded_is_not_selected(self, declared_compose):
         assert (
             compose_services_requesting_writable_cgroups(
-                [self._COMPOSE],
+                [declared_compose],
                 [],
-                exclude_services=["reverse"],
-                only_services=["reverse"],
+                exclude_services=["fixture_worker"],
+                only_services=["fixture_worker"],
             )
             == ()
         )
@@ -357,7 +364,7 @@ class TestComposePathSelection:
 
         assert (
             compose_services_requesting_writable_cgroups(
-                [broken, tmp_path / "missing.yml"], ["reverse"]
+                [broken, tmp_path / "missing.yml"], ["fixture_worker"]
             )
             == ()
         )

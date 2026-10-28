@@ -272,8 +272,12 @@ def test_cli_accepts_a_parent_relative_project(
     child.mkdir()
     monkeypatch.chdir(child)
     result = CliRunner().invoke(app, ["lab", "scenarios", "--project-dir", ".."])
+    if not configured:
+        assert result.exit_code == 2
+        assert "No scenario is selected" in result.output
+        return
     assert result.exit_code == 0, result.output
-    assert (FIXTURE_PACK_IDENTITY if configured else "techvault") in result.output
+    assert FIXTURE_PACK_IDENTITY in result.output
 
 
 @pytest.mark.parametrize("linked_staging", [False, True])

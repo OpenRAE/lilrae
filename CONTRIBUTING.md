@@ -60,7 +60,8 @@ npm install
 1. Fork the repository and create a branch from `dev`.
 2. Make the smallest coherent change that satisfies all of the issue's
    acceptance criteria.
-3. Add or update tests when behavior changes.
+3. Verify changed behavior and risk. Reuse adequate existing tests; add tests
+   only for uncovered behavior. Remove redundant or obsolete cases.
 4. Update scenarios, schemas, documentation, or examples when the public
    surface changes.
 5. Give the PR a [Conventional Commit](https://www.conventionalcommits.org)
@@ -105,13 +106,13 @@ When changing files under `mcp/aptl-mcp-common`, run targeted common and
 dependent-server tests while iterating. CI/CD rebuilds and tests every dependent
 MCP because they consume the local package.
 
-CI also runs the non-Docker Python suite plus `lilrae --help` and
-`lilrae lab init` on Ubuntu and macOS. Windows runs the portable Python contract
-suite plus the same CLI smoke commands, excluding POSIX-only file-mode,
-ownership, signal, and Unix-socket tests. Hosted runners do not provide the
-Docker Desktop/nested-virtualization environment needed to prove full lab boot
-on macOS or Windows, so `lilrae lab start` remains a manual platform-validation
-gate.
+CI runs the ordinary Python suite once on Linux with line coverage.
+macOS and Windows run focused portability tests and CLI smoke commands.
+Changed inputs select relevant jobs; unknown paths select all checks.
+Weekly, manual, and release-tag qualification select the full retained checks.
+Superseded PR jobs are cancelled, while an active lab boot completes teardown.
+Full lab startup on macOS and Windows remains an operator qualification.
+See [CI verification](docs/architecture/ci-verification.md) for routing and budgets.
 
 When changing `docker-compose.yml`, container Dockerfiles, or files under
 `config/`, run only focused contract tests locally. CI/CD owns the clean lab

@@ -81,6 +81,13 @@ After install, confirm the entry points resolve:
 python -c "from importlib.metadata import entry_points as e; print([ep.name for ep in e(group='aptl.scenario_startup')])"
 ```
 
+For an independently released family adapter, use the
+[public family contract](../reference/family-adapters.md).
+The adapter qualifies an exact family release and backend once.
+Each admitted trial carries its own snapshot and provenance through that contract.
+Family trials require all six primary capabilities from one compatible distribution.
+Ordinary installed legacy adapters do not satisfy that qualification.
+
 ## Select the pack
 
 The active scenario is an operator decision. It lives in `aptl.json`:
@@ -96,7 +103,8 @@ The active scenario is an operator decision. It lives in `aptl.json`:
 
 - `source: env-pack` resolves the pack from the installed distribution by
   identity. This is the default.
-- `identity` names the pack. The default identity is `techvault`.
+- `identity` names the pack. A new project has no selected identity.
+  Set it explicitly before starting a pack-backed scenario.
 
 To select the third-party release above:
 

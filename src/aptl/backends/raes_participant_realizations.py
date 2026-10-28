@@ -19,7 +19,6 @@ from raes_contracts.participant_binding import (
 )
 from raes_contracts.runtime_state import RuntimeSnapshot
 
-from aptl.backends.raes_participant_fixture import semantic_handler_addresses
 
 if TYPE_CHECKING:
     from aptl.backends.raes_participant_driver import ParticipantPlanAuthority
@@ -391,6 +390,8 @@ def _validate_semantic_handler_surface(
     compiled_addresses: tuple[str, ...],
 ) -> None:
     """Require semantic handler equality with the compiled action surface."""
+
+    from aptl.backends.raes_participant_fixture import semantic_handler_addresses
 
     semantic_handlers = semantic_handler_addresses()
     missing_handlers = tuple(

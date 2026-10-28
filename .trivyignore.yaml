@@ -19,7 +19,6 @@ misconfigurations:
       - containers/generic-systemd-node22-base/Dockerfile
       - containers/generic-systemd-wazuh-agent-base/Dockerfile
       - containers/generic-systemd-wazuh-agent-base-debian/Dockerfile
-      - containers/reverse/Dockerfile
     statement: >-
       systemd runs as PID 1 and must be uid 0 inside the container. These nodes
       run with no added capabilities, a private cgroup namespace, and the
@@ -68,6 +67,13 @@ vulnerabilities:
   - id: GHSA-6v7p-g79w-8964
     purls: [pkg:pypi/msgpack@1.1.2]
     statement: Vendored by pip 26.2.1 (pip/_vendor); no pip release vendors msgpack >= 1.2.1 yet.
+  - id: CVE-2026-114613
+    purls: [pkg:pypi/msgpack@1.1.2]
+    statement: >-
+      Not affected: pip vendors the pure-Python fallback, not the compiled
+      extension affected by GHSA-j586-36cw-2gc2. The Debian substrate build
+      asserts that Unpacker uses pip._vendor.msgpack.fallback. Platform
+      maintainers remove this entry when pip updates its vendored version.
   - id: CVE-2025-47273
     purls: [pkg:pypi/setuptools@70.3.0]
     statement: Vendored by pip 26.2.1 (pip/_vendor); no pip release vendors setuptools >= 78.1.1 yet.

@@ -15,6 +15,8 @@ that judges it.
 
 from __future__ import annotations
 
+from aptl.backends.scenario_family import AdmittedFamilyTrial
+
 from importlib import metadata
 from time import monotonic
 from typing import TYPE_CHECKING
@@ -45,6 +47,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 log = get_logger("scenario-verification")
+
 
 class DiscoveredVerifier(object):
     """One installed verifier plus the host-observed facts about where it came from.
@@ -262,8 +265,39 @@ def _nearest_mismatch(
     return f"plugin {discovered.plugin_id!r} {nearest[0]}"
 
 
+def _select_family_verifier(
+    scenario: ScenarioIdentity,
+    backend: BackendIdentity,
+    trial: AdmittedFamilyTrial,
+) -> tuple[DiscoveredVerifier | None, str]:
+    """Match the sealed family context and its exact installed verifier."""
+
+    from aptl.backends.scenario_family import resolve_family_provider
+
+    try:
+        if (
+            scenario.identity != trial.target.family_id
+            or scenario.content_digest != trial.target.family_digest
+            or backend != trial.target.backend
+        ):
+            raise ValueError("family-context-mismatch")
+        selected = resolve_family_provider(ENTRY_POINT_GROUP, trial)
+        return DiscoveredVerifier(
+            selected.provider,
+            selected.provider_id,
+            selected.distribution,
+            selected.distribution_version,
+            selected.entry_point,
+        ), ""
+    except ValueError as exc:
+        return None, str(exc)
+
+
 def select_verifier(
-    scenario: ScenarioIdentity, backend: BackendIdentity
+    scenario: ScenarioIdentity,
+    backend: BackendIdentity,
+    *,
+    trial: AdmittedFamilyTrial | None = None,
 ) -> tuple[DiscoveredVerifier | None, str]:
     """Return the single compatible verifier, or None plus why not.
 
@@ -271,6 +305,8 @@ def select_verifier(
     choice: picking one would make the verdict depend on installation order.
     """
 
+    if trial is not None:
+        return _select_family_verifier(scenario, backend, trial)
     selector = _selector(scenario, backend)
     candidates: list[DiscoveredVerifier] = []
     incompatibilities: list[str] = []
@@ -292,9 +328,7 @@ def select_verifier(
         if len(candidates) == 1:
             selection = (candidates[0], "")
         elif not candidates:
-            detail = (
-                f" ({'; '.join(incompatibilities)})" if incompatibilities else ""
-            )
+            detail = f" ({'; '.join(incompatibilities)})" if incompatibilities else ""
             selection = (
                 None,
                 f"no compatible scenario verifier is installed for selector "
@@ -327,7 +361,9 @@ def verify_scenario(context: VerificationContext) -> VerificationReport:
         if started >= context.deadline_monotonic:
             result = _blocked(context, "verification-deadline-elapsed")
         else:
-            discovered, reason = select_verifier(context.scenario, context.backend)
+            discovered, reason = select_verifier(
+                context.scenario, context.backend, trial=context.trial
+            )
             if discovered is None:
                 result = _blocked(
                     context, reason, elapsed_seconds=monotonic() - started

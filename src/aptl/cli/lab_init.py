@@ -58,6 +58,7 @@ def init(
         )
     typer.echo("\nNext steps:")
     typer.echo(f"    cd {result.target_dir}")
+    typer.echo("    Select scenario.identity and its source in aptl.json.")
     typer.echo("    lilrae lab start")
 
 

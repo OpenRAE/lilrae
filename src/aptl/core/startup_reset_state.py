@@ -34,6 +34,7 @@ from aptl.utils.pathsafe import (
 ACTION_CLEAR_WAZUH_ENROLLMENT_BASELINE = "aptl.wazuh-enrollment-baseline.clear"
 ACTION_PACK_RESET = "pack.reset"
 ACTION_VERSION = "1"
+_INVALID_CLEANUP_ACTION = "invalid cleanup action"
 SUPPORTED_ACTIONS = frozenset(
     {
         (ACTION_CLEAR_WAZUH_ENROLLMENT_BASELINE, ACTION_VERSION),
@@ -49,6 +50,7 @@ _LEGACY_COMPLETED_SCHEMA = "aptl-startup-reset-completion/v1"
 _ACTION_DIR = "cleanup-actions-v1"
 _ACTION_COMPLETED_DIR = "cleanup-actions-completed-v1"
 _ACTION_SCHEMA = "aptl-lifecycle-cleanup-action/v1"
+_FAMILY_ACTION_SCHEMA = "aptl-lifecycle-cleanup-action/v2"
 _ACTION_COMPLETED_SCHEMA = "aptl-lifecycle-cleanup-completion/v1"
 _JSON_SUFFIX = ".json"
 _RECORD_NAME = re.compile(r"[0-9a-f]{64}\.json")
@@ -90,6 +92,7 @@ class CleanupAction:
     distribution: str = ""
     distribution_version: str = ""
     entry_point: str = ""
+    family_target: str = ""
 
     @property
     def subject(self) -> str:
@@ -143,11 +146,29 @@ def _valid_pack(action: CleanupAction) -> bool:
     )
 
 
+def _validate_family_action(action: CleanupAction) -> None:
+    """Require a family reset target to name the same recorded pack release."""
+
+    from aptl.backends.scenario_family import decode_family_target
+
+    try:
+        target = decode_family_target(action.family_target)
+        if (
+            target.pack.pack_id,
+            target.pack.pack_version,
+            target.pack.set_digest,
+        ) != (action.pack_id, action.pack_version, action.pack_set_digest):
+            raise ValueError
+    except ValueError:
+        raise ValueError(_INVALID_CLEANUP_ACTION) from None
+
 def _validated(action: CleanupAction) -> CleanupAction:
     """Validate one action's shape and its owner-specific provenance."""
 
     if not isinstance(action, CleanupAction):
-        raise ValueError("invalid cleanup action")
+        raise ValueError(_INVALID_CLEANUP_ACTION)
+    if action.family_target:
+        _validate_family_action(action)
     pack_owned = action.action == ACTION_PACK_RESET
     required = (action.action, action.action_version, action.admission_id)
     optional = (action.distribution, action.distribution_version)
@@ -158,7 +179,7 @@ def _validated(action: CleanupAction) -> CleanupAction:
         or not _valid_pack(action)
         or (pack_owned and not action.pack_id)
     ):
-        raise ValueError("invalid cleanup action")
+        raise ValueError(_INVALID_CLEANUP_ACTION)
     return action
 
 
@@ -174,7 +195,11 @@ def _encode(payload: dict[str, str]) -> bytes:
 def _action_payload(action: CleanupAction) -> bytes:
     """Encode one canonical cleanup-action record."""
 
-    return _encode({"schema_version": _ACTION_SCHEMA, **asdict(_validated(action))})
+    payload = asdict(_validated(action))
+    schema = _FAMILY_ACTION_SCHEMA if action.family_target else _ACTION_SCHEMA
+    if not action.family_target:
+        payload.pop("family_target")
+    return _encode({"schema_version": schema, **payload})
 
 
 def _completion_payload(schema: str, digest: str) -> bytes:
@@ -289,11 +314,14 @@ def _legacy_action(raw: dict[str, object]) -> CleanupAction:
 def _current_action(raw: dict[str, object]) -> CleanupAction:
     """Parse one authenticated cleanup-action record."""
 
-    if set(raw) != _ACTION_KEYS or raw["schema_version"] != _ACTION_SCHEMA:
+    family = raw.get("schema_version") == _FAMILY_ACTION_SCHEMA
+    keys = _ACTION_KEYS | {"family_target"} if family else _ACTION_KEYS
+    if set(raw) != keys or raw["schema_version"] not in {
+        _ACTION_SCHEMA,
+        _FAMILY_ACTION_SCHEMA,
+    }:
         raise ValueError("unknown cleanup record shape")
-    return CleanupAction(
-        **{key: str(raw[key]) for key in _ACTION_KEYS - {"schema_version"}}
-    )
+    return CleanupAction(**{key: str(raw[key]) for key in keys - {"schema_version"}})
 
 
 def _load_directory(

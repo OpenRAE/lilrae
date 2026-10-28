@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from threading import RLock
 from typing import TYPE_CHECKING
 
@@ -41,42 +41,21 @@ from aptl.backends.identity import (
 )
 from aptl.backends.scenario_planning_compatibility import (
     PlanningCompatibilityDecision,
+    PERMITTED_DAEMON_READBACK_CONCERNS,
     ResolvedPlanningCompatibility,
     ScenarioPlanningCompatibilityContext,
 )
 from aptl.backends.scenario_planning_compatibility_discovery import (
     resolve_scenario_planning_compatibility,
 )
-from aptl.backends._raes_backend_implementation_profiles import (
-    backend_profile_selected_concerns,
-)
-from aptl.backends.raes_runtime_attestation import (
-    ARTIFACT_ATTESTED_RUNTIME_CONCERNS,
-)
-from aptl.backends import _raes_runtime_container_observation as container_observation
+from aptl.backends import _raes_backend_implementation_profiles as implementation_profiles
 
 _RAES_LIMIT_OVERRIDE_LOCK = RLock()
 
 # Backend-manifest realization claims remain a core capability declaration.
 # An adapter decision chooses which of these claims one pack release needs
 # rewritten during planning; it cannot add a capability the manifest lacks.
-DAEMON_READBACK_RUNTIME_CONCERNS = frozenset(
-    {
-        *ARTIFACT_ATTESTED_RUNTIME_CONCERNS,
-        "linux-capabilities",
-        "published-ports",
-        *container_observation.RUNTIME_CONTAINER_DAEMON_CONCERNS,
-        "runtime-container-autoremove",
-        "runtime-container-command",
-        "runtime-container-entrypoint",
-        "runtime-environment",
-        "runtime-local-control-interfaces",
-        "runtime-mounts",
-        "runtime-node-memory-limit",
-        "runtime-restart-policy",
-        "service-listeners",
-    }
-)
+DAEMON_READBACK_RUNTIME_CONCERNS = PERMITTED_DAEMON_READBACK_CONCERNS
 
 
 def resolve_target_planning_compatibility(
@@ -91,12 +70,15 @@ def resolve_target_planning_compatibility(
     return resolve_scenario_planning_compatibility(
         ScenarioPlanningCompatibilityContext(
             pack=identity,
-            backend=BackendIdentity(
+            backend=bundle.trial.target.backend
+            if bundle.trial
+            else BackendIdentity(
                 APTL_RAES_TARGET_NAME,
                 APTL_RAES_TARGET_VERSION,
                 APTL_RAES_TARGET_PROFILE,
                 transport=str(getattr(deployment, "provider", "") or ""),
             ),
+            trial=bundle.trial,
         )
     )
 
@@ -146,32 +128,31 @@ def _requirement_identity(item: object) -> tuple[object, ...]:
     )
 
 
-def _authored_concern(scenario: object, requirement: object) -> bool:
-    """Return whether the SDL explicitly contains this concern path.
-
-    RAES preserves the parser's semantic explicitness map through variable
-    instantiation, while Pydantic necessarily marks every reconstructed model
-    default as set.  The explicitness map is therefore the authority boundary:
-    an explicit empty collection has a record at its field path, while an
-    equal-looking schema default does not.
-    """
+def _authored_paths(scenario: object | None) -> frozenset[str] | None:
+    """Index exact and ancestor paths from the parser's authority map once."""
 
     explicitness = getattr(scenario, "explicitness", None)
+    if not isinstance(explicitness, Mapping):
+        return None
+    paths: set[str] = set()
+    for path in explicitness:
+        paths.add(path)
+        paths.update(path[:index] for index, char in enumerate(path) if char in ".[")
+    return frozenset(paths)
+
+
+def _authored_concern(paths: frozenset[str] | None, requirement: object) -> bool:
+    """An explicit empty field counts; an absent parser default does not."""
+
     field_path = getattr(requirement, "field_path", None)
-    if not isinstance(explicitness, Mapping) or not isinstance(field_path, str):
-        return True
-    return any(
-        path == field_path
-        or path.startswith(f"{field_path}.")
-        or path.startswith(f"{field_path}[")
-        for path in explicitness
-    )
+    return paths is None or not isinstance(field_path, str) or field_path in paths
 
 
 def _selected_open_requirement(
     scenario: object | None,
     requirement: object,
     decision: PlanningCompatibilityDecision,
+    authored_paths: frozenset[str] | None,
 ) -> bool:
     """Keep authored state and the two open defaults APTL actually selects."""
 
@@ -179,7 +160,7 @@ def _selected_open_requirement(
     return (
         scenario is None
         or getattr(requirement, "explicitness", None) is not ExplicitnessClass.OPEN
-        or _authored_concern(scenario, requirement)
+        or _authored_concern(authored_paths, requirement)
         or _backend_profile_selects_concern(scenario, requirement)
         or (
             kind in decision.open_default_concerns
@@ -201,7 +182,7 @@ def _backend_profile_selects_concern(scenario: object, requirement: object) -> b
         None,
     )
     runtime = getattr(node, "runtime", None) if node is not None else None
-    return isinstance(kind, str) and kind in backend_profile_selected_concerns(runtime)
+    return isinstance(kind, str) and kind in implementation_profiles.backend_profile_selected_concerns(runtime)
 
 
 def _image_backed_node(scenario: object, requirement: object) -> bool:
@@ -235,6 +216,7 @@ def apply_planning_compatibility(
     if decision is None:
         return model
 
+    authored_paths = _authored_paths(scenario)
     authority_identities = {
         _requirement_identity(item) for item in model.realization_authority
     }
@@ -246,6 +228,7 @@ def apply_planning_compatibility(
         requirement, adjusted, delegated, exact = _adjust_requirement(
             requirement,
             scenario=scenario,
+            authored_paths=authored_paths,
             authority_identities=authority_identities,
             decision=decision,
         )
@@ -281,6 +264,7 @@ def _adjust_requirement(
     requirement: object,
     *,
     scenario: object | None,
+    authored_paths: frozenset[str] | None,
     authority_identities: set[tuple[object, ...]],
     decision: PlanningCompatibilityDecision,
 ) -> tuple[object, bool, bool, bool]:
@@ -288,11 +272,11 @@ def _adjust_requirement(
 
     identity = _requirement_identity(requirement)
     delegated = identity in authority_identities and not _selected_open_requirement(
-        scenario, requirement, decision
+        scenario, requirement, decision, authored_paths
     )
     if delegated:
         requirement = replace(requirement, explicitness=None, delegated=True)
-    exact = _requires_exact_native_evidence(requirement, scenario, decision)
+    exact = _requires_exact_native_evidence(requirement, authored_paths, decision)
     if exact:
         requirement = replace(
             requirement,
@@ -318,12 +302,12 @@ def _adjust_requirement(
 
 def _requires_exact_native_evidence(
     requirement: object,
-    scenario: object | None,
+    authored_paths: frozenset[str] | None,
     decision: PlanningCompatibilityDecision,
 ) -> bool:
     """Return whether minimum intrusion closes an authored open concern."""
 
-    authored = scenario is None or _authored_concern(scenario, requirement)
+    authored = _authored_concern(authored_paths, requirement)
     return bool(
         not requirement.delegated
         and requirement.explicitness is ExplicitnessClass.OPEN
@@ -450,44 +434,10 @@ class AptlRuntimeManager(_RaesRuntimeManager):
         )
 
 
-@dataclass(frozen=True)
-class AptlPlanningOptions:
-    """Optional inputs to one APTL-adjusted RAES planning operation."""
-
-    snapshot: RuntimeSnapshot | None = None
-    parameters: Mapping[str, object] | None = None
-    profile: str | None = None
-    artifact_availability: ArtifactAvailabilityContext | None = None
-    profile_authority: PlanProfileAuthority | None = None
-    runtime_manager: _RaesRuntimeManager | None = None
-
-
-def plan_aptl_scenario(
-    *,
-    target: RuntimeTarget,
-    bundle: ScenarioBundle,
-    scenario: object,
-    options: AptlPlanningOptions | None = None,
-) -> ExecutionPlan:
-    """Compile and plan through APTL's temporary TechVault compatibility seam."""
-
-    selected = options or AptlPlanningOptions()
-    manager = selected.runtime_manager or AptlRuntimeManager(target, bundle=bundle)
-    plan_options: dict[str, object] = {}
-    if selected.parameters is not None:
-        plan_options["parameters"] = dict(selected.parameters)
-    if selected.profile is not None:
-        plan_options["profile"] = selected.profile
-    if selected.artifact_availability is not None:
-        plan_options["artifact_availability"] = selected.artifact_availability
-    if selected.profile_authority is not None:
-        plan_options["profile_authority"] = selected.profile_authority
-    return (
-        manager.plan(scenario, **plan_options)
-        if selected.snapshot is None
-        else manager.plan(scenario, selected.snapshot, **plan_options)
-    )
-
+from aptl.backends._raes_planning_entry import (
+    AptlPlanningOptions,
+    plan_aptl_scenario,
+)
 
 __all__ = [
     "AptlRuntimeManager",
