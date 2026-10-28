@@ -77,7 +77,6 @@ updates:
       - "/containers/misp-suricata-sync"
       - "/containers/network-boundary-helper"
       - "/containers/operator-access-proxy"
-      - "/containers/reverse"
       - "/containers/suricata-wazuh-agent"
       - "/web"
     target-branch: "dev"

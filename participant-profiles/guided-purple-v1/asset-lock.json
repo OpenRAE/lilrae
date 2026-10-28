@@ -19,7 +19,7 @@
       "asset_id": "aptl-config",
       "kind": "project-file",
       "source": "participant-profiles/guided-purple-v1/aptl.json",
-      "sha256": "eca39978d2f457b65e5779e373af706bd22b1614d63d158424a6da143349f0bc"
+      "sha256": "0a1d49c7476fe571a97c1c6da1d71786078ca0f96d3868d61fc80968693ffce9"
     },
     {
       "asset_id": "raes-scenario",
@@ -43,7 +43,7 @@
       "asset_id": "compose-model",
       "kind": "project-file",
       "source": "docker-compose.yml",
-      "sha256": "692f288ffbe25f8bc3e96e39180ed5ee69a79ca08009d29bfe1ca62c375e0aeb"
+      "sha256": "422b7102c198da622afa83fb62e884f930f5ba73398d31faa12c2ebaf04fcb6c"
     },
     {
       "asset_id": "mcp-red-build",

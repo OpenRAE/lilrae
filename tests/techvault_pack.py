@@ -43,15 +43,7 @@ def realize_techvault_pack(tmp_path):
     bundle = env_pack_bundle(tmp_path, identity="techvault", source_pack=_pack_root())
     config = AptlConfig(
         lab={"name": "tv"},
-        containers={
-            "wazuh": True,
-            "soc": True,
-            "enterprise": True,
-            "victim": True,
-            "kali": True,
-            "fileshare": True,
-            "dns": True,
-        },
+        containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
     )
     target = create_aptl_runtime_target(
         project_dir=PROJECT_ROOT, config=config, backend=MagicMock(), bundle=bundle

@@ -409,7 +409,7 @@ def test_second_installed_pack_starts_captures_plans_and_verifies(
         backend.container_exec.side_effect = container_exec
         admitted = raes.admit_raes_scenario(
             Path.cwd(), config, backend,
-            bundle=bundle, startup_selection=startup,
+            source=raes.ScenarioAdmissionSource(bundle=bundle, startup_selection=startup),
         )
         assert admitted.capture_selection is not None
         assert [binding.registration_id for binding in admitted.capture_plan.bindings] == [

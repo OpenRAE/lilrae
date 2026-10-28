@@ -7,6 +7,10 @@ from typing import Protocol
 
 from aptl.backends.identity import BackendIdentity
 from aptl.core.scenario_bundle import PackIdentity
+from aptl.backends.scenario_family import AdmittedFamilyTrial
+from aptl.backends._raes_runtime_container_observation import (
+    RUNTIME_CONTAINER_DAEMON_CONCERNS,
+)
 
 ENTRY_POINT_GROUP = "aptl.scenario_planning_compatibility"
 EXTENSION_API_VERSION = "1"
@@ -75,6 +79,7 @@ class ScenarioPlanningCompatibilityContext:
 
     pack: PackIdentity
     backend: BackendIdentity
+    trial: AdmittedFamilyTrial | None = None
 
 
 @dataclass(frozen=True)
@@ -127,4 +132,5 @@ __all__ = [
     "ResolvedPlanningCompatibility",
     "ScenarioPlanningCompatibilityContext",
     "ScenarioPlanningCompatibilityProvider",
+    "RUNTIME_CONTAINER_DAEMON_CONCERNS",
 ]

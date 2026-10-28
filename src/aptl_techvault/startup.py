@@ -232,6 +232,7 @@ class TechVaultStartupProvider:
     @staticmethod
     def resolve(bundle: ScenarioBundle) -> ScenarioStartupPlan:
         return ScenarioStartupPlan(
+            minimum_max_map_count=262144,
             seed_script="scripts/seed-prime.sh",
             required_profiles=(
                 "wazuh",

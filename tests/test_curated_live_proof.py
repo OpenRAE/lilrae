@@ -33,7 +33,7 @@ SCENARIOS_DIR = PROJECT_ROOT / "scenarios"
 class _Variant:
     catalog_id: str
     filename: str
-    containers: dict[str, bool]
+    containers: dict[str, list[str]]
     expected_profiles: frozenset[str]
     # Compose services the selected scenario-serving profiles must activate.
     extra_services: frozenset[str]
@@ -52,7 +52,7 @@ VARIANTS = (
     _Variant(
         catalog_id="techvault-defensive-min",
         filename="techvault-defensive-min.sdl.yaml",
-        containers={"wazuh": True},
+        containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
         expected_profiles=frozenset({"wazuh"}),
         extra_services=frozenset({"wazuh.manager", "wazuh.indexer", "wazuh.dashboard"}),
         expected_networks=frozenset({"aptl-security", "aptl-dmz", "aptl-internal"}),
@@ -60,7 +60,7 @@ VARIANTS = (
     _Variant(
         catalog_id="techvault-enterprise-web",
         filename="techvault-enterprise-web.sdl.yaml",
-        containers={"enterprise": True, "wazuh": True},
+        containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
         expected_profiles=frozenset({"enterprise", "wazuh"}),
         # `--profile enterprise wazuh` activates the enterprise tier plus the
         # full wazuh profile (dashboard included, though the SDL declares only
@@ -82,7 +82,7 @@ VARIANTS = (
     _Variant(
         catalog_id="techvault-attacker-target",
         filename="techvault-attacker-target.sdl.yaml",
-        containers={"kali": True, "victim": True, "wazuh": True},
+        containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
         expected_profiles=frozenset({"kali", "victim", "wazuh"}),
         extra_services=frozenset(
             {
@@ -302,7 +302,8 @@ def test_participant_action_proof_uses_control_plane_and_records_behavior(
     proof = run_participant_action_proof(
         tmp_path,
         AptlConfig(
-            lab={"name": "techvault"}, containers={"kali": True, "victim": True}
+            lab={"name": "techvault"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
+            scenario={"identity": "techvault"},
         ),
     )
 

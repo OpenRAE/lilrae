@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lilrae-family-contract-fixture"
+version = "1.0.0"
+requires-python = ">=3.12"
+dependencies = ["lilrae"]
+
+[project.entry-points."aptl.pack_backend_interactions"]
+"example-family.aptl" = "family_adapter:serving"
+
+[project.entry-points."aptl.scenario_runtime_parameters"]
+"example-family" = "family_adapter:parameters"
+
+[project.entry-points."aptl.scenario_startup"]
+"example-family" = "family_adapter:startup"
+
+[project.entry-points."aptl.scenario_capture"]
+"example-family.aptl" = "family_adapter:capture"
+
+[project.entry-points."aptl.scenario_planning_compatibility"]
+"example-family.aptl" = "family_adapter:planning"
+
+[project.entry-points."aptl.scenario_verifiers"]
+"family-a.aptl" = "family_adapter:verifier"
+
+[tool.hatch.build.targets.wheel]
+packages = ["family_adapter"]

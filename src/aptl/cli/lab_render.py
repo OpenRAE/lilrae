@@ -26,10 +26,8 @@ if TYPE_CHECKING:
 # where a service really is, even after an in-use default was remapped.
 _WAZUH_DASHBOARD_SVC = "wazuh.dashboard"
 _GRAFANA_SVC = "aptl-grafana-otel"
-_REVERSE_SVC = "reverse"
 _WAZUH_DASHBOARD_DEFAULT = 443
 _GRAFANA_DEFAULT = 3100
-_REVERSE_DEFAULT = 2027
 
 # SOC services whose MCP server config (mcp/<name>/docker-lab-config.json)
 # hardcodes the host port on localhost. If one of these is remapped, the MCP
@@ -395,17 +393,6 @@ def _emit_grafana_access(
         typer.echo("    password: see GRAFANA_ADMIN_PASSWORD in .env")
 
 
-def _emit_reverse_access(port: int | None, remote: bool, active_services: set[str]) -> None:
-    """Print the reverse-engineering SSH endpoint when the service is live."""
-
-    if _REVERSE_SVC in active_services and port is not None:
-        typer.echo("  Reverse engineering SSH:")
-        if remote:
-            typer.echo(f"    remote Docker host port {port} (SSH)")
-        else:
-            typer.echo(f"    ssh -i ~/.ssh/aptl_lab_key labadmin@localhost -p {port}")
-
-
 def emit_lab_access_summary(
     project_dir: Path,
     resolved_ports: list[ResolvedPort] | None = None,
@@ -430,7 +417,6 @@ def emit_lab_access_summary(
         resolved_ports, _WAZUH_DASHBOARD_SVC, _WAZUH_DASHBOARD_DEFAULT
     )
     grafana_port = _resolved_port(resolved_ports, _GRAFANA_SVC, _GRAFANA_DEFAULT)
-    reverse_port = _resolved_port(resolved_ports, _REVERSE_SVC, _REVERSE_DEFAULT)
     typer.echo("")
     typer.echo(f"Credentials file: {env_path}")
     typer.echo(
@@ -450,7 +436,6 @@ def emit_lab_access_summary(
     _emit_grafana_access(
         grafana_port, remote, caller_reported_no_ports, observed, active_services
     )
-    _emit_reverse_access(reverse_port, remote, active_services)
     _emit_host_port_remaps(resolved_ports)
 
 

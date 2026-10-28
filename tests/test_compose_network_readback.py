@@ -390,7 +390,7 @@ def test_authored_scenario_networks_cannot_report_success_on_default_bridge(
 
     root = Path(__file__).resolve().parents[1]
     bundle = (
-        env_pack_bundle(tmp_path / "packs")
+        env_pack_bundle(tmp_path / "packs", "techvault")
         if selection == "techvault"
         else project_tree_bundle(root, root / "scenarios" / f"{selection}.sdl.yaml")
     )

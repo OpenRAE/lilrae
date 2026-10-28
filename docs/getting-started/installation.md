@@ -198,6 +198,11 @@ records, and Docker volumes stay where they are. Do not delete them during the
 migration. Run `lilrae lab status` in an existing project to confirm that the new
 installation finds it.
 
+If the project still uses the old `containers` topology booleans, follow the
+[configuration migration](../reference/configuration-migration.md) before
+loading it. The explicit migration keeps a backup and preserves the selected
+scenario. New projects require an explicit scenario identity or SDL path.
+
 ### Roll Back
 
 To return to the legacy package, remove `lilrae` first, then install the last

@@ -359,7 +359,7 @@ def _provisioner_plan(
     )
     provisioner = AptlProvisioner(
         project_dir=tmp_path,
-        config=AptlConfig(lab={"name": "test"}, containers={"wazuh": True}),
+        config=AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
         bundle=project_tree_bundle(tmp_path, tmp_path / "demo.sdl.yaml"),
         deployment_backend=MagicMock(),
     )

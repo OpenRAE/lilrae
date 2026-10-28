@@ -21,6 +21,12 @@ LEGACY_IMPORT_ROOTS = frozenset(
         "aces_sdl",
     }
 )
+REMOVED_RAES_BACKEND_ROOTS = frozenset(
+    {
+        "raes_backend_libvirt",
+        "raes_reference_backend",
+    }
+)
 IDENTITY_LEDGER = (
     PROJECT_ROOT
     / "docs"
@@ -44,8 +50,8 @@ def test_project_depends_on_exact_raes_release() -> None:
     assert raes.__version__ == "7.0.0"
 
 
-def test_runtime_and_tests_do_not_import_removed_aces_packages() -> None:
-    """RAES 3.1 ships no compatibility aliases for the old Python packages."""
+def _source_and_test_imports_of(import_roots: frozenset[str]) -> list[str]:
+    """Return ``path:line:roots`` for every source or test import of the roots."""
 
     offenders: list[str] = []
     for root in (PROJECT_ROOT / "src", PROJECT_ROOT / "tests"):
@@ -58,14 +64,25 @@ def test_runtime_and_tests_do_not_import_removed_aces_packages() -> None:
                     imported = {node.module.split(".", 1)[0]}
                 else:
                     continue
-                legacy = sorted(imported & LEGACY_IMPORT_ROOTS)
-                if legacy:
+                matched = sorted(imported & import_roots)
+                if matched:
                     offenders.append(
                         f"{path.relative_to(PROJECT_ROOT)}:{node.lineno}:"
-                        + ",".join(legacy)
+                        + ",".join(matched)
                     )
+    return offenders
 
-    assert offenders == []
+
+def test_runtime_and_tests_do_not_import_removed_aces_packages() -> None:
+    """RAES 3.1 ships no compatibility aliases for the old Python packages."""
+
+    assert _source_and_test_imports_of(LEGACY_IMPORT_ROOTS) == []
+
+
+def test_runtime_and_tests_do_not_import_raes_concrete_backends() -> None:
+    """The release after RAES 7.0.0 removes its concrete backends (#1406)."""
+
+    assert _source_and_test_imports_of(REMOVED_RAES_BACKEND_ROOTS) == []
 
 
 def test_no_private_raes_imports_or_manifest_fallback_remain() -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from threading import RLock
 from typing import TYPE_CHECKING
 
@@ -41,42 +41,21 @@ from aptl.backends.identity import (
 )
 from aptl.backends.scenario_planning_compatibility import (
     PlanningCompatibilityDecision,
+    PERMITTED_DAEMON_READBACK_CONCERNS,
     ResolvedPlanningCompatibility,
     ScenarioPlanningCompatibilityContext,
 )
 from aptl.backends.scenario_planning_compatibility_discovery import (
     resolve_scenario_planning_compatibility,
 )
-from aptl.backends._raes_backend_implementation_profiles import (
-    backend_profile_selected_concerns,
-)
-from aptl.backends.raes_runtime_attestation import (
-    ARTIFACT_ATTESTED_RUNTIME_CONCERNS,
-)
-from aptl.backends import _raes_runtime_container_observation as container_observation
+from aptl.backends import _raes_backend_implementation_profiles as implementation_profiles
 
 _RAES_LIMIT_OVERRIDE_LOCK = RLock()
 
 # Backend-manifest realization claims remain a core capability declaration.
 # An adapter decision chooses which of these claims one pack release needs
 # rewritten during planning; it cannot add a capability the manifest lacks.
-DAEMON_READBACK_RUNTIME_CONCERNS = frozenset(
-    {
-        *ARTIFACT_ATTESTED_RUNTIME_CONCERNS,
-        "linux-capabilities",
-        "published-ports",
-        *container_observation.RUNTIME_CONTAINER_DAEMON_CONCERNS,
-        "runtime-container-autoremove",
-        "runtime-container-command",
-        "runtime-container-entrypoint",
-        "runtime-environment",
-        "runtime-local-control-interfaces",
-        "runtime-mounts",
-        "runtime-node-memory-limit",
-        "runtime-restart-policy",
-        "service-listeners",
-    }
-)
+DAEMON_READBACK_RUNTIME_CONCERNS = PERMITTED_DAEMON_READBACK_CONCERNS
 
 
 def resolve_target_planning_compatibility(
@@ -91,12 +70,15 @@ def resolve_target_planning_compatibility(
     return resolve_scenario_planning_compatibility(
         ScenarioPlanningCompatibilityContext(
             pack=identity,
-            backend=BackendIdentity(
+            backend=bundle.trial.target.backend
+            if bundle.trial
+            else BackendIdentity(
                 APTL_RAES_TARGET_NAME,
                 APTL_RAES_TARGET_VERSION,
                 APTL_RAES_TARGET_PROFILE,
                 transport=str(getattr(deployment, "provider", "") or ""),
             ),
+            trial=bundle.trial,
         )
     )
 
@@ -201,7 +183,7 @@ def _backend_profile_selects_concern(scenario: object, requirement: object) -> b
         None,
     )
     runtime = getattr(node, "runtime", None) if node is not None else None
-    return isinstance(kind, str) and kind in backend_profile_selected_concerns(runtime)
+    return isinstance(kind, str) and kind in implementation_profiles.backend_profile_selected_concerns(runtime)
 
 
 def _image_backed_node(scenario: object, requirement: object) -> bool:
@@ -450,44 +432,10 @@ class AptlRuntimeManager(_RaesRuntimeManager):
         )
 
 
-@dataclass(frozen=True)
-class AptlPlanningOptions:
-    """Optional inputs to one APTL-adjusted RAES planning operation."""
-
-    snapshot: RuntimeSnapshot | None = None
-    parameters: Mapping[str, object] | None = None
-    profile: str | None = None
-    artifact_availability: ArtifactAvailabilityContext | None = None
-    profile_authority: PlanProfileAuthority | None = None
-    runtime_manager: _RaesRuntimeManager | None = None
-
-
-def plan_aptl_scenario(
-    *,
-    target: RuntimeTarget,
-    bundle: ScenarioBundle,
-    scenario: object,
-    options: AptlPlanningOptions | None = None,
-) -> ExecutionPlan:
-    """Compile and plan through APTL's temporary TechVault compatibility seam."""
-
-    selected = options or AptlPlanningOptions()
-    manager = selected.runtime_manager or AptlRuntimeManager(target, bundle=bundle)
-    plan_options: dict[str, object] = {}
-    if selected.parameters is not None:
-        plan_options["parameters"] = dict(selected.parameters)
-    if selected.profile is not None:
-        plan_options["profile"] = selected.profile
-    if selected.artifact_availability is not None:
-        plan_options["artifact_availability"] = selected.artifact_availability
-    if selected.profile_authority is not None:
-        plan_options["profile_authority"] = selected.profile_authority
-    return (
-        manager.plan(scenario, **plan_options)
-        if selected.snapshot is None
-        else manager.plan(scenario, selected.snapshot, **plan_options)
-    )
-
+from aptl.backends._raes_planning_entry import (
+    AptlPlanningOptions,
+    plan_aptl_scenario,
+)
 
 __all__ = [
     "AptlRuntimeManager",

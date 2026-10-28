@@ -20,6 +20,9 @@ Usage: ``python tools/check_pack_boundary.py [root] [--pack-directory ID=PATH]``
 from __future__ import annotations
 
 import argparse
+from collections import Counter
+import hashlib
+import json
 import sys
 import tempfile
 from collections.abc import Iterable, Mapping
@@ -37,14 +40,14 @@ _CORE_PACKAGE = "aptl"
 _MIN_SECRET_LENGTH = 6
 
 
-def owner_packs() -> set[str]:
+def owner_declarations() -> dict[str, set[str]]:
     """Return the pack ids that installed out-of-core adapters claim.
 
     Each provider states the pack it is bound to as ``supported_pack_id``, so
     the owner comes from the adapter itself, not from an entry-point name.
     """
 
-    packs: set[str] = set()
+    packs: dict[str, set[str]] = {}
     for distribution in metadata.distributions():
         for entry_point in distribution.entry_points:
             module = entry_point.value.split(":", 1)[0].split(".", 1)[0]
@@ -52,8 +55,13 @@ def owner_packs() -> set[str]:
                 continue
             pack_id = getattr(entry_point.load(), "supported_pack_id", None)
             if isinstance(pack_id, str) and pack_id:
-                packs.add(pack_id)
+                packs.setdefault(pack_id, set()).add(module)
     return packs
+
+
+def owner_packs() -> set[str]:
+    """Return pack identities declared by installed external provider owners."""
+    return set(owner_declarations())
 
 
 def pack_facts(
@@ -90,7 +98,11 @@ def pack_facts(
             project_dir, None, config, staging_root=Path(staging),
         )
         scenario = parse_sdl_file(bundle.sdl_path)
-    facts: dict[str, str] = {}
+    declarations = owner_declarations().get(pack_id, set())
+    facts: dict[str, str] = {
+        name: "pack identifier"
+        for name in {pack_id, *declarations, *owned_module_identifiers(project_dir, declarations)}
+    }
     for node in scenario.nodes.values():
         runtime = getattr(node, "runtime", None)
         facts.update({host: "hostname" for host in node_service_hosts(runtime)})
@@ -105,6 +117,24 @@ def pack_facts(
             if isinstance(value, str) and len(value) >= _MIN_SECRET_LENGTH:
                 facts[value] = "credential"
     return facts
+
+
+def owned_module_identifiers(root: Path, packages: set[str]) -> set[str]:
+    """Derive module references from reviewed owner paths, not a denylist."""
+    path = root / ".gc/pack-ownership.json"
+    if not path.exists():
+        return set()
+    ledger = json.loads(path.read_text())
+    result: set[str] = set()
+    for item in ledger.get("owned_paths", ()):
+        source, owner = Path(item["path"]), Path(item["owner_path"])
+        if (not source.parts or source.parts[0] != "src" or source.suffix != ".py"
+                or len(owner.parts) < 2 or owner.parts[0] != "src"
+                or ".." in source.parts or ".." in owner.parts):
+            raise ValueError("invalid owner path")
+        if owner.parts[1] in packages:
+            result.add(".".join(source.with_suffix("").parts[1:]))
+    return result
 
 
 def covered_files(root: Path, patterns: Iterable[str] = COVERED) -> list[Path]:
@@ -123,12 +153,52 @@ def findings(
     """Return ``(relative path, fact kind)`` for each covered file with a fact."""
 
     lowered = {fact.lower(): kind for fact, kind in facts.items()}
+    exceptions = ownership_exceptions(root)
     results: list[tuple[str, str]] = []
     for path in covered_files(root, patterns):
-        text = path.read_text(encoding="utf-8", errors="ignore").lower()
-        kinds = sorted({kind for fact, kind in lowered.items() if fact in text})
+        relative = str(path.relative_to(root))
+        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        counts = Counter("sha256:" + hashlib.sha256(line.encode()).hexdigest() for line in lines)
+        kinds: set[str] = set()
+        for line in lines:
+            digest = "sha256:" + hashlib.sha256(line.encode()).hexdigest()
+            for fact, kind in lowered.items():
+                if kind == "pack identifier" and not relative.startswith("src/aptl/"):
+                    continue
+                if fact not in line.lower():
+                    continue
+                accepted = exceptions.get((relative, kind, digest))
+                if accepted is None or counts[digest] != accepted:
+                    kinds.add(kind)
+        kinds = sorted(kinds)
         results.extend((str(path.relative_to(root)), kind) for kind in kinds)
     return results
+
+
+def ownership_exceptions(root: Path) -> dict[tuple[str, str, str], int]:
+    """Accept only reviewed identifier occurrences, never credentials or hosts."""
+    path = root / ".gc/pack-ownership.json"
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text())
+    if payload.get("schema") != "lilrae-pack-ownership/v1":
+        raise ValueError("invalid ownership ledger")
+    result = {}
+    for item in payload["exceptions"]:
+        if (
+            item.get("kind") != "pack identifier"
+            or type(item.get("count")) is not int or item["count"] < 1
+            or not all(isinstance(item.get(key), str) and item[key] for key in
+                       ("path", "owner", "symbol", "line_digest", "purpose", "allowed_use", "retirement"))
+            or not item["path"].startswith("src/aptl/")
+            or ".." in Path(item["path"]).parts
+        ):
+            raise ValueError("invalid ownership exception")
+        key = (item["path"], item["kind"], item["line_digest"])
+        if key in result:
+            raise ValueError("duplicate ownership exception")
+        result[key] = item["count"]
+    return result
 
 
 def main(argv: list[str]) -> int:
@@ -145,7 +215,11 @@ def main(argv: list[str]) -> int:
     options = parser.parse_args(argv[1:])
     root = options.root
     facts: dict[str, str] = {}
-    packs = sorted(owner_packs())
+    try:
+        packs = sorted(owner_packs())
+    except Exception:
+        print("adapter owner discovery failed", file=sys.stderr)
+        return 1
     if not packs:
         print("no installed adapter claims a pack; nothing proves the boundary", file=sys.stderr)
         return 1
@@ -161,13 +235,17 @@ def main(argv: list[str]) -> int:
             facts.update(
                 pack_facts(pack_id, project_dir=root, pack_directory=directories.get(pack_id))
             )
-    except (EnvPackError, OSError, ValueError, ImportError):
+    except Exception:
         print("owner pack acquisition failed; check configured pack sources", file=sys.stderr)
         return 1
     if not facts:
         print("the owner packs author no facts; nothing proves the boundary", file=sys.stderr)
         return 1
-    results = findings(root, facts)
+    try:
+        results = findings(root, facts)
+    except (OSError, ValueError, KeyError, TypeError):
+        print("invalid ownership ledger", file=sys.stderr)
+        return 1
     for path, kind in results:
         print(f"{path}: carries a pack-owned {kind}", file=sys.stderr)
     return 1 if results else 0

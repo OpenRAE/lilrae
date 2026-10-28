@@ -90,6 +90,9 @@ nav:
     - Coding Standards: CODING_STANDARDS.md
   - Architecture:
     - Overview: architecture/index.md
+    - "Issue #1121 Pack Boundary Preflight": architecture/issue-1121-pack-boundary-preflight.md
+    - Pack Boundary: architecture/pack-boundary-design.md
+    - Configuration Migration: reference/configuration-migration.md
     - "Issue #1413 Configured Pack Source Preflight": architecture/issue-1413-configured-pack-source-preflight.md
     - Networking: architecture/networking.md
     - Enterprise Infrastructure: architecture/enterprise-infrastructure.md

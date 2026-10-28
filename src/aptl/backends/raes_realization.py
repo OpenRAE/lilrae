@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -53,6 +54,8 @@ from aptl.backends.raes_realization_values import (
 )
 from aptl.core.config import AptlConfig
 from aptl.core.deployment.realization import DeploymentGeneratedArtifactRealization
+from aptl.core.deployment._misp_server_tls import MISP_SERVER_TLS_PROFILE
+from aptl.core.deployment._compose_stateful_constants import SOC_CERT_PROFILE
 from aptl.core.scenario_bundle import ScenarioBundle
 from aptl.utils.redaction import redact
 
@@ -310,6 +313,9 @@ def _merge_backend_generated_artifacts(
     for candidate in (
         artifact for node in nodes for artifact in node.backend_generated_artifacts
     ):
+        candidate = _bind_backend_artifact_source(candidate, authored, diagnostics)
+        if candidate is None:
+            continue
         candidate = _canonical_ordering_dependencies(candidate, by_name)
         existing = by_name.get(candidate.name)
         if existing is None:
@@ -326,6 +332,34 @@ def _merge_backend_generated_artifacts(
             )
         )
     return merged
+
+
+def _bind_backend_artifact_source(
+    candidate: DeploymentGeneratedArtifactRealization,
+    authored: list[DeploymentGeneratedArtifactRealization],
+    diagnostics: list[Diagnostic],
+) -> DeploymentGeneratedArtifactRealization | None:
+    """Bind TLS delivery to one admitted producer covering its consumers."""
+    if candidate.provenance != MISP_SERVER_TLS_PROFILE:
+        return candidate
+    targets = {consumer.target_address for consumer in candidate.consumers}
+    sources = [
+        source for source in authored
+        if source.provenance == SOC_CERT_PROFILE
+        and targets
+        and targets <= {consumer.target_address for consumer in source.consumers}
+    ]
+    if len(sources) == 1:
+        return cast(
+            DeploymentGeneratedArtifactRealization,
+            replace(candidate, ordering_dependencies=(sources[0].address,)),
+        )
+    diagnostics.append(diagnostic(
+        "aptl.provisioner.backend-artifact-source-ambiguous",
+        candidate.address,
+        "A backend TLS delivery requires one admitted certificate producer.",
+    ))
+    return None
 
 
 def _canonical_ordering_dependencies(

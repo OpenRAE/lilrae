@@ -109,6 +109,7 @@ def _run_pack_reset(action: CleanupAction, backend: object) -> None:
                 action.distribution,
                 action.distribution_version,
                 action.entry_point,
+                action.family_target,
             ),
             StartupHookContext(backend),
             action_version=action.action_version,
