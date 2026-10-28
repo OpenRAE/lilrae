@@ -85,6 +85,7 @@ C extension is absent. The
 states that this fallback does not exhibit the flaw.
 
 The existing Trivy exception mechanism records this false positive for that
-exact package version. The regression test checks the installed copy's version,
-the absence of the C extension, and the fallback implementation. The normal
-scan still records the finding in SARIF; the exception applies only to the gate.
+exact package version. The Debian substrate build checks the fallback inside
+the built image. The regression test checks the locked copy's version, the
+absence of the C extension, and the fallback implementation. The normal scan
+still records the finding in SARIF; the exception applies only to the gate.
