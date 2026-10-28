@@ -106,6 +106,10 @@ class _ParticipantDeliveryExecutor:
             raise AgentExecutionError(
                 "participant delivery runtime manager is unavailable"
             )
+        if context.runtime_manager._target is not context.target:
+            raise AgentExecutionError(
+                "participant delivery runtime manager has another target"
+            )
         if not plan.behavior_specifications:
             raise AgentExecutionError(
                 "participant delivery behavior specifications are unavailable"
@@ -163,39 +167,31 @@ class _ParticipantDeliveryExecutor:
             )
         collector = _ParticipantDeliveryCollector(binding.registration_id)
         collector.bind_payload(turn, self.context.model)
-        control_plane = RuntimeControlPlane(
-            self.context.target,
-            initial_snapshot=self.snapshot,
+        with self.context.runtime_manager.control_plane(
             behavior_specifications=self.plan.behavior_specifications,
             crossing_policy_resolver=self.crossing_policy,
             enforce_final_sink_flow_control=False,
-        )
-        trial = _ControlledTurn(
-            control_plane=control_plane,
-            identity=_participant_control_identity(turn, self.context.target),
-            collector=collector,
-            adapter=self.adapter,
-            turn=turn,
-            model=self.context.model,
-            config_path=config_path,
-            allowed_tools=tools,
-            session_id=self._session_id(turn),
-            resume=self._has_prior_turn(turn, sequence),
-            run_id=self.context.run_id,
-        )
-        acquisition, controlled_snapshot = self._acquire(
-            sequence, binding, collector, control_plane, trial
-        )
+        ) as control_plane:
+            trial = _ControlledTurn(
+                control_plane=control_plane,
+                identity=_participant_control_identity(turn, self.context.target),
+                collector=collector,
+                adapter=self.adapter,
+                turn=turn,
+                model=self.context.model,
+                config_path=config_path,
+                allowed_tools=tools,
+                session_id=self._session_id(turn),
+                resume=self._has_prior_turn(turn, sequence),
+                run_id=self.context.run_id,
+            )
+            acquisition = self._acquire(sequence, binding, collector, trial)
         result = collector.result
         if result is None:
             raise AgentExecutionError(
                 "participant delivery evidence acquisition did not complete"
             )
-        self.snapshot = (
-            self.context.runtime_manager.adopt_participant_delivery_snapshot(
-                controlled_snapshot
-            )
-        )
+        self.snapshot = self.context.runtime_manager.snapshot
         self.context.run_store.append_jsonl(
             self.context.run_id,
             _EVIDENCE_PATH,
@@ -265,36 +261,31 @@ class _ParticipantDeliveryExecutor:
         sequence: int,
         binding: object,
         collector: _ParticipantDeliveryCollector,
-        control_plane: RuntimeControlPlane,
         trial: _ControlledTurn,
-    ) -> tuple[object, object]:
+    ) -> object:
         """Acquire evidence around one controlled participant turn."""
 
-        try:
-            acquisition = acquire_evidence(
-                bindings=(binding,),
-                collectors={binding.registration_id: collector},
-                run_store=self.context.run_store,
-                scope=RunScope(
-                    run_id=self.context.run_id,
-                    planned_trial_id=(f"{self.context.run_id}:participant-deliveries"),
-                    attempt_id=(
-                        f"{self.context.run_id}:participant-delivery:{sequence}"
-                    ),
+        acquisition = acquire_evidence(
+            bindings=(binding,),
+            collectors={binding.registration_id: collector},
+            run_store=self.context.run_store,
+            scope=RunScope(
+                run_id=self.context.run_id,
+                planned_trial_id=(f"{self.context.run_id}:participant-deliveries"),
+                attempt_id=(
+                    f"{self.context.run_id}:participant-delivery:{sequence}"
                 ),
-                clock=SystemClockProvider(),
-                trial_body=trial,
-            )
-            controlled_snapshot = control_plane.snapshot
-        finally:
-            control_plane.close()
+            ),
+            clock=SystemClockProvider(),
+            trial_body=trial,
+        )
         complete = (
             acquisition.disposition is AcquisitionDisposition.SEALED_READY
             and len(acquisition.refs) == 1
             and collector.result is not None
         )
         if complete:
-            return acquisition, controlled_snapshot
+            return acquisition
         if trial.failure is not None:
             # Only the runner's summary is carried: it names the reason, the
             # withheld output sizes and the cleanup, never argv or output.
