@@ -84,8 +84,8 @@ def test_released_pack_authors_the_misp_and_cache_contract(tmp_path: Path) -> No
 
 
 @pytest.fixture(scope="module")
-def realization(tmp_path_factory):
-    return realize_techvault_pack(tmp_path_factory.mktemp("misp-realization"))
+def realization(released_techvault_realization):
+    return released_techvault_realization
 
 
 def test_the_cache_is_authenticated_without_putting_the_secret_in_argv(realization):

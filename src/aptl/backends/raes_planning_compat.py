@@ -129,32 +129,31 @@ def _requirement_identity(item: object) -> tuple[object, ...]:
     )
 
 
-def _authored_concern(scenario: object, requirement: object) -> bool:
-    """Return whether the SDL explicitly contains this concern path.
-
-    RAES preserves the parser's semantic explicitness map through variable
-    instantiation, while Pydantic necessarily marks every reconstructed model
-    default as set.  The explicitness map is therefore the authority boundary:
-    an explicit empty collection has a record at its field path, while an
-    equal-looking schema default does not.
-    """
+def _authored_paths(scenario: object | None) -> frozenset[str] | None:
+    """Index exact and ancestor paths from the parser's authority map once."""
 
     explicitness = getattr(scenario, "explicitness", None)
+    if not isinstance(explicitness, Mapping):
+        return None
+    paths: set[str] = set()
+    for path in explicitness:
+        paths.add(path)
+        paths.update(path[:index] for index, char in enumerate(path) if char in ".[")
+    return frozenset(paths)
+
+
+def _authored_concern(paths: frozenset[str] | None, requirement: object) -> bool:
+    """An explicit empty field counts; an absent parser default does not."""
+
     field_path = getattr(requirement, "field_path", None)
-    if not isinstance(explicitness, Mapping) or not isinstance(field_path, str):
-        return True
-    return any(
-        path == field_path
-        or path.startswith(f"{field_path}.")
-        or path.startswith(f"{field_path}[")
-        for path in explicitness
-    )
+    return paths is None or not isinstance(field_path, str) or field_path in paths
 
 
 def _selected_open_requirement(
     scenario: object | None,
     requirement: object,
     decision: PlanningCompatibilityDecision,
+    authored_paths: frozenset[str] | None,
 ) -> bool:
     """Keep authored state and the two open defaults APTL actually selects."""
 
@@ -162,7 +161,7 @@ def _selected_open_requirement(
     return (
         scenario is None
         or getattr(requirement, "explicitness", None) is not ExplicitnessClass.OPEN
-        or _authored_concern(scenario, requirement)
+        or _authored_concern(authored_paths, requirement)
         or _backend_profile_selects_concern(scenario, requirement)
         or (
             kind in decision.open_default_concerns
@@ -218,6 +217,7 @@ def apply_planning_compatibility(
     if decision is None:
         return model
 
+    authored_paths = _authored_paths(scenario)
     authority_identities = {
         _requirement_identity(item) for item in model.realization_authority
     }
@@ -229,6 +229,7 @@ def apply_planning_compatibility(
         requirement, adjusted, delegated, exact = _adjust_requirement(
             requirement,
             scenario=scenario,
+            authored_paths=authored_paths,
             authority_identities=authority_identities,
             decision=decision,
         )
@@ -264,6 +265,7 @@ def _adjust_requirement(
     requirement: object,
     *,
     scenario: object | None,
+    authored_paths: frozenset[str] | None,
     authority_identities: set[tuple[object, ...]],
     decision: PlanningCompatibilityDecision,
 ) -> tuple[object, bool, bool, bool]:
@@ -271,11 +273,11 @@ def _adjust_requirement(
 
     identity = _requirement_identity(requirement)
     delegated = identity in authority_identities and not _selected_open_requirement(
-        scenario, requirement, decision
+        scenario, requirement, decision, authored_paths
     )
     if delegated:
         requirement = replace(requirement, explicitness=None, delegated=True)
-    exact = _requires_exact_native_evidence(requirement, scenario, decision)
+    exact = _requires_exact_native_evidence(requirement, authored_paths, decision)
     if exact:
         requirement = replace(
             requirement,
@@ -301,12 +303,12 @@ def _adjust_requirement(
 
 def _requires_exact_native_evidence(
     requirement: object,
-    scenario: object | None,
+    authored_paths: frozenset[str] | None,
     decision: PlanningCompatibilityDecision,
 ) -> bool:
     """Return whether minimum intrusion closes an authored open concern."""
 
-    authored = scenario is None or _authored_concern(scenario, requirement)
+    authored = _authored_concern(authored_paths, requirement)
     return bool(
         not requirement.delegated
         and requirement.explicitness is ExplicitnessClass.OPEN

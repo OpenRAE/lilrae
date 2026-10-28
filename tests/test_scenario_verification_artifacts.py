@@ -92,6 +92,11 @@ def _build_wheel(output: Path) -> Path:
     return wheels[0]
 
 
+@pytest.fixture(scope="module")
+def built_wheel(tmp_path_factory):
+    return _build_wheel(tmp_path_factory.mktemp("verifier-wheel"))
+
+
 def _members(wheel: Path) -> dict[str, bytes]:
     with zipfile.ZipFile(wheel) as archive:
         return {name: archive.read(name) for name in archive.namelist()}
@@ -186,11 +191,12 @@ def context(scenario=ADMITTED, operations=None, containers=()):
 
 @pytest.mark.integration
 def test_the_wheel_has_only_reviewed_compatibility_exceptions_in_the_framework(
+    built_wheel: Path,
     tmp_path: Path,
 ) -> None:
     """The adapter ships in the wheel; the framework package stays scenario-free."""
 
-    members = _members(_build_wheel(tmp_path / "dist"))
+    members = _members(built_wheel)
 
     entry_points = b"\n".join(
         content
@@ -272,6 +278,7 @@ def test_the_wheel_has_only_reviewed_compatibility_exceptions_in_the_framework(
 
 @pytest.mark.integration
 def test_one_install_reaches_a_verdict_and_records_its_provenance(
+    built_wheel: Path,
     tmp_path: Path,
 ) -> None:
     """A single install of a single distribution is enough (#879).
@@ -282,7 +289,7 @@ def test_one_install_reaches_a_verdict_and_records_its_provenance(
     """
 
     header = _admitted_context(tmp_path)
-    venv = _clean_install(tmp_path, _build_wheel(tmp_path / "dist"))
+    venv = _clean_install(tmp_path, built_wheel)
 
     _run(
         venv,
@@ -332,6 +339,7 @@ assert report.status is VerificationStatus.BLOCKED
 
 @pytest.mark.integration
 def test_an_unknown_scenario_blocks_rather_than_borrowing_an_adapter(
+    built_wheel: Path,
     tmp_path: Path,
 ) -> None:
     """Shipping adapters must not hand an unrelated scenario a verdict.
@@ -342,7 +350,7 @@ def test_an_unknown_scenario_blocks_rather_than_borrowing_an_adapter(
     """
 
     header = _admitted_context(tmp_path)
-    venv = _clean_install(tmp_path, _build_wheel(tmp_path / "dist"))
+    venv = _clean_install(tmp_path, built_wheel)
 
     _run(
         venv,

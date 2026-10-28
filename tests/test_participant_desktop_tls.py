@@ -198,10 +198,8 @@ def test_keystore_delivery_uses_only_its_public_companion(tmp_path, mocker):
     }
 
 
-def test_released_console_bindings_have_a_public_certificate_identity(tmp_path):
-    from tests.techvault_pack import realize_techvault_pack
-
-    result = realize_techvault_pack(tmp_path)
+def test_released_console_bindings_have_a_public_certificate_identity(released_techvault_realization):
+    result = released_techvault_realization
     realization = result.deployment_spec(sorted(result.profiles))
     expected = {
         "thehive": "thehive/server.pem",

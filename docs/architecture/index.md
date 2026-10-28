@@ -166,8 +166,14 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 - Kali: Attack tools, MCP integration
 - Reverse Engineering: Binary analysis tools, MCP integration
 
+## CI verification
+
+[Verification architecture](ci-verification.md) describes changed-input selection.
+[Performance evidence](../testing/ci-performance.md) records pruning and measurement rules.
+
 ## Preflights
 
+- [Issue #1468 CI Feedback and Test Suite](issue-1468-ci-feedback-preflight.md)
 - [Issue #1406 Native Evidence Test Target](issue-1406-native-evidence-test-target-preflight.md)
 - [Issue #1424 Runtime Retry Ownership](issue-1424-runtime-retry-preflight.md)
 - [Issue #1424 Runtime Retry Ownership Design](issue-1424-runtime-retry-ownership-design.md)

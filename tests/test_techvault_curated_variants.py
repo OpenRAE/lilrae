@@ -92,14 +92,23 @@ def _realization_details(variant: _Variant):
     return details, check
 
 
-@pytest.mark.parametrize("variant", VARIANTS, ids=lambda v: v.catalog_id)
-def test_variant_realizes_clean_with_expected_profiles(variant: _Variant):
+@pytest.fixture(scope="module", params=VARIANTS, ids=lambda v: v.catalog_id)
+def variant_details(request):
+    variant = request.param
     details, check = _realization_details(variant)
-
-    # Parses, compiles, realizes with no error-severity APTL diagnostics, and
-    # produces nodes/services/networks (all folded into check.passed).
     assert check.passed, check.diagnostics
     assert details is not None
+    return variant, details
+
+
+@pytest.fixture(scope="module")
+def acquired_catalog():
+    with load_scenario_catalog(PROJECT_ROOT) as catalog:
+        yield catalog
+
+
+def test_variant_realizes_clean_with_expected_profiles(variant_details):
+    variant, details = variant_details
 
     # Content-derived profile set is exactly the bounded slice we declared.
     assert frozenset(details.get("profiles", [])) == variant.expected_profiles
@@ -112,8 +121,7 @@ def test_variant_realizes_clean_with_expected_profiles(variant: _Variant):
     assert set(selected) == set(public_start_profiles(variant.config))
 
 
-@pytest.mark.parametrize("variant", VARIANTS, ids=lambda v: v.catalog_id)
-def test_variant_selected_profiles_form_valid_compose_project(variant: _Variant):
+def test_variant_selected_profiles_form_valid_compose_project(variant_details):
     """The profiles `aptl lab start` launches must be a valid Compose project.
 
     `docker compose --profile <selected>` activates every service in a selected
@@ -122,8 +130,7 @@ def test_variant_selected_profiles_form_valid_compose_project(variant: _Variant)
     class of defect (which node-level realization alone does not catch) for each
     variant; it is verified to match `docker compose config`'s verdict.
     """
-    details, _ = _realization_details(variant)
-    assert details is not None
+    variant, details = variant_details
     index = load_compose_profile_index(PROJECT_ROOT)
     selected = set(
         select_backend_profiles(variant.config, frozenset(details.get("profiles", [])))
@@ -150,33 +157,19 @@ def test_selected_profiles_for_scenario_matches_variant(variant: _Variant):
     assert set(selected) == variant.expected_profiles
 
 
-def test_variants_yield_distinct_realizations():
-    """Anti-collapse: different declared content must not collapse to one set."""
-    profile_sets = []
-    for variant in VARIANTS:
-        details, check = _realization_details(variant)
-        assert check.passed, check.diagnostics
-        profile_sets.append(frozenset(details.get("profiles", [])))
-    assert len(set(profile_sets)) == len(VARIANTS)
 
-
-@pytest.mark.parametrize("variant", VARIANTS, ids=lambda v: v.catalog_id)
-def test_variant_selection_is_content_driven_not_name_driven(variant: _Variant):
+def test_variant_selection_is_content_driven_not_name_driven(variant_details):
     """Renaming the scenario must not change the realized profile set."""
+    variant, original_details = variant_details
     text = variant.path.read_text(encoding="utf-8")
-    original = parse_sdl(text)
     renamed = parse_sdl(
         text.replace("name: " + _scenario_name(text), "name: renamed-x", 1)
     )
 
-    original_details, original_check = check_provisioning_realization(
-        scenario=original, project_dir=PROJECT_ROOT, config=variant.config
-    )
     renamed_details, renamed_check = check_provisioning_realization(
         scenario=renamed, project_dir=PROJECT_ROOT, config=variant.config
     )
 
-    assert original_check.passed
     assert renamed_check.passed
     assert original_details.get("profiles") == renamed_details.get("profiles")
     assert frozenset(original_details.get("profiles", [])) == variant.expected_profiles
@@ -190,20 +183,19 @@ def _scenario_name(text: str) -> str:
 
 
 @pytest.mark.parametrize("variant", VARIANTS, ids=lambda v: v.catalog_id)
-def test_variant_is_an_explicit_research_fixture(variant: _Variant):
+def test_variant_is_an_explicit_research_fixture(variant: _Variant, acquired_catalog):
     from aptl.validation.research_scenario_catalog import load_research_scenario_catalog
 
     fixtures = load_research_scenario_catalog(PROJECT_ROOT)
     assert fixtures.get(variant.catalog_id).path == str(variant.path.relative_to(PROJECT_ROOT))
-    assert load_scenario_catalog(PROJECT_ROOT).get(variant.catalog_id) is None
+    assert acquired_catalog.get(variant.catalog_id) is None
     with pytest.raises(ValueError, match="Unknown scenario id"):
         resolve_scenario_selection(PROJECT_ROOT, scenario_id=variant.catalog_id)
     assert resolve_scenario_selection(PROJECT_ROOT, scenario_path=variant.path) == variant.path
 
 
-def test_normal_catalog_selects_only_the_acquired_pack():
-    catalog = load_scenario_catalog(PROJECT_ROOT)
-    assert [entry.id for entry in catalog.scenarios] == [
+def test_normal_catalog_selects_only_the_acquired_pack(acquired_catalog):
+    assert [entry.id for entry in acquired_catalog.scenarios] == [
         "techvault-participant-study"
     ]
     assert AptlConfig().scenario.source == "env-pack"

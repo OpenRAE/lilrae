@@ -72,7 +72,13 @@ vulnerabilities:
   # tests/test_platform_ci_gates.py verifies the locked install's implementation.
   - id: CVE-2026-114613
     purls: [pkg:pypi/msgpack@1.1.2]
-    statement: Not affected in pip 26.2.2; only the Python fallback is bundled, without _cmsgpack. The upstream advisory excludes that implementation (https://github.com/msgpack/msgpack-python/security/advisories/GHSA-j586-36cw-2gc2). Remove this exception when pip updates its vendored version.
+    statement: >-
+      Not affected: pip 26.2.2 vendors the pure-Python fallback, not the compiled
+      extension affected by GHSA-j586-36cw-2gc2
+      (https://github.com/msgpack/msgpack-python/security/advisories/GHSA-j586-36cw-2gc2).
+      The Debian substrate build and regression test verify the fallback and
+      absence of the C extension. Remove this entry when pip updates its
+      vendored version.
   - id: CVE-2025-47273
     purls: [pkg:pypi/setuptools@70.3.0]
     statement: Vendored by pip 26.2.1 (pip/_vendor); no pip release vendors setuptools >= 78.1.1 yet.

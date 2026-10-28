@@ -28,7 +28,7 @@ def _pack_root() -> Path:
     return Path(str(ir.files("raes_env_packs") / "resources" / "packs" / "techvault"))
 
 
-def realize_techvault_pack(tmp_path):
+def realize_techvault_pack(tmp_path, *, bundle=None, scenario=None):
     """Plan and interpret the installed TechVault pack, staged under ``tmp_path``."""
 
     from aptl.backends.raes import (
@@ -40,7 +40,8 @@ def realize_techvault_pack(tmp_path):
     from aptl.core.config import AptlConfig
     from aptl.core.scenario_bundle import env_pack_bundle
 
-    bundle = env_pack_bundle(tmp_path, identity="techvault", source_pack=_pack_root())
+    if bundle is None:
+        bundle = env_pack_bundle(tmp_path, identity="techvault", source_pack=_pack_root())
     config = AptlConfig(
         lab={"name": "tv"},
         containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
@@ -48,7 +49,8 @@ def realize_techvault_pack(tmp_path):
     target = create_aptl_runtime_target(
         project_dir=PROJECT_ROOT, config=config, backend=MagicMock(), bundle=bundle
     )
-    scenario = parse_sdl_file(bundle.sdl_path)
+    if scenario is None:
+        scenario = parse_sdl_file(bundle.sdl_path)
     plan = RuntimeManager(target).plan(
         scenario,
         parameters=_TECHVAULT_FLAG_PARAMETERS,

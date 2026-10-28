@@ -139,17 +139,31 @@ def test_an_unsafe_declared_owner_or_mode_is_refused(tmp_path, entry):
         mounts.image_node_content_override(spec, pack, engine)
 
 
-def test_the_released_pack_installs_filebeat_config_as_root(tmp_path):
-    from tests.techvault_pack import _pack_root, realize_techvault_pack
-
-    from aptl.core.scenario_bundle import env_pack_bundle
-
-    realization = realize_techvault_pack(tmp_path / "plan")
+@pytest.fixture(scope="module")
+def released_owner_mounts(
+    tmp_path_factory, released_techvault_bundle, released_techvault_realization
+):
+    realization = released_techvault_realization
     spec = realization.deployment_spec(sorted(realization.profiles))
-    bundle = env_pack_bundle(tmp_path / "staged", "techvault", source_pack=_pack_root())
-    override = mounts.image_node_content_override(
-        spec, bundle.root, tmp_path / "engine"
+    addresses = {
+        node.address for node in spec.nodes
+        if node.service_name in {"wazuh-manager", "wazuh-dashboard"}
+    }
+    spec = replace(
+        spec,
+        nodes=tuple(node for node in spec.nodes if node.address in addresses),
+        images=tuple(image for image in spec.images if image.address in addresses),
+        content=tuple(item for item in spec.content if item.target_address in addresses),
     )
+    return mounts.image_node_content_override(
+        spec, released_techvault_bundle.root, tmp_path_factory.mktemp("owner-mounts")
+    )
+
+
+def test_the_released_pack_installs_filebeat_config_as_root(
+    released_owner_mounts,
+):
+    override = released_owner_mounts
 
     volumes = override["services"]["wazuh-manager"]["volumes"]
     targets = {item["target"]: item["source"] for item in volumes}
@@ -280,17 +294,10 @@ def test_the_image_user_installer_refuses_an_owner_it_cannot_give(
     assert not dest.exists()
 
 
-def test_the_released_pack_installs_dashboard_config_as_the_image_user(tmp_path):
-    from tests.techvault_pack import _pack_root, realize_techvault_pack
-
-    from aptl.core.scenario_bundle import env_pack_bundle
-
-    realization = realize_techvault_pack(tmp_path / "plan")
-    spec = realization.deployment_spec(sorted(realization.profiles))
-    bundle = env_pack_bundle(tmp_path / "staged", "techvault", source_pack=_pack_root())
-    override = mounts.image_node_content_override(
-        spec, bundle.root, tmp_path / "engine"
-    )
+def test_the_released_pack_installs_dashboard_config_as_the_image_user(
+    released_owner_mounts,
+):
+    override = released_owner_mounts
 
     volumes = override["services"]["wazuh-dashboard"]["volumes"]
     targets = {item["target"]: Path(item["source"]) for item in volumes}
