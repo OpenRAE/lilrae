@@ -176,7 +176,9 @@ class DeploymentBackend(HostInventoryBackend, ContainerOpsBackend, Protocol):
         Each image is inspected on the selected daemon first. An image already
         present is used as is, as Compose itself would use it, so a warm start
         needs no registry (#953). Only an absent image is pulled, and
-        offline-staged mode never pulls.
+        offline-staged mode never pulls. A ``name:tag@sha256:…`` reference
+        makes the tag resolve to that digest; offline-staged mode verifies the
+        staged tag.
 
         Args:
             images: List of image references to make available.

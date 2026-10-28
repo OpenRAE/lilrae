@@ -24,6 +24,7 @@ from aptl.core.credentials import (
     _resolve_within_project,
 )
 from aptl.core.ephemeral_containers import EphemeralContainer
+from aptl.core.helper_images import SURICATA_SEEDER_IMAGE
 from aptl.core.seed_spec import NamedVolumeSeed, SeedFile
 from aptl.utils.logging import get_logger
 
@@ -61,7 +62,7 @@ SURICATA_MISP_RULES_VOLUME = "suricata_misp_rules"
 # Ubuntu hosts), so the host operator cannot delete it. The seed step retires
 # this one canonical, contained path via a root container.
 _SURICATA_LEGACY_MISP_RELPATH = Path(".aptl/suricata/rules/misp")
-_SURICATA_SEEDER_IMAGE = "jasonish/suricata:7.0"
+_SURICATA_SEEDER_IMAGE = SURICATA_SEEDER_IMAGE
 
 
 @dataclass(frozen=True)

@@ -1181,6 +1181,7 @@ src/aptl/core/experiment/trial_plan_models.py	split-research	Move research polic
 src/aptl/core/exporter.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/flags.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/health.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/core/helper_images.py	core-candidate	Pinned digests for the third-party helper images lab start runs by tag
 src/aptl/core/host_keys.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/host_ports.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/hostenv.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
@@ -1486,6 +1487,7 @@ tests/test_guest_transport_preparation.py	backend-owned-runtime	Constrain the te
 tests/test_hashed_requirements.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_hatch_build_hook.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_health.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_helper_images.py	tests-follow-owner	Retain the helper image pin guard with its owner
 tests/test_host_keys.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_host_mcp_boundary.py	backend-owned-runtime	Constrain the temporary planning compatibility to identified TechVault open concerns with complete native readback
 tests/test_host_ports.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
