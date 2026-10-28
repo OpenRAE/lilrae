@@ -9,7 +9,7 @@ from pathlib import Path
 
 from raes_contracts.diagnostics import Diagnostic
 
-from aptl.core.deployment.errors import CaptureReconciliationError
+from aptl.core.deployment.errors import BackendTimeoutError, CaptureReconciliationError
 from aptl.core.evidence.outcomes import capture_diagnostic
 from aptl.core.experiment.capture_registry import CaptureBinding
 from aptl.utils.pathsafe import (
@@ -115,7 +115,7 @@ def export_transcript_payload(
             f"census {exc.census}, broker accepted {exc.accepted}, "
             f"census-only {exc.census_only}, broker-only {exc.broker_only}",
         )
-    except (OSError, PathContainmentError, TypeError, ValueError):
+    except (BackendTimeoutError, OSError, PathContainmentError, TypeError, ValueError):
         payload = None
     failure = None if payload is not None else TranscriptExportFailure(progress.step)
     return payload, failure

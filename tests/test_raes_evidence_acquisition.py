@@ -1149,6 +1149,64 @@ def test_the_failure_marker_records_why_finalization_failed(tmp_path, caplog):
     assert load_active_transcript_authorities(tmp_path) == ()
 
 
+@pytest.mark.parametrize("step", ["quiesce", "export"])
+def test_lab_stop_records_transcript_backend_timeouts(
+    tmp_path, monkeypatch, caplog, step
+):
+    """Backend timeouts retain the failing step through finalization and stop."""
+    import json
+
+    from aptl.backends.raes_evidence_acquisition import (
+        load_active_transcript_authorities,
+        persist_active_transcript_authority,
+    )
+    from aptl.core import lab
+    from aptl.core.deployment.docker_compose import DockerComposeBackend
+    from aptl.core.deployment.errors import BackendTimeoutError
+
+    binding = _binding("aptl.collector.redteam-session-transcript", "transcript")
+    store = LocalRunStore(tmp_path / ".aptl/runs")
+    persist_active_transcript_authority(
+        project_dir=tmp_path,
+        plan=SimpleNamespace(plan_id="capture-plan-test", canonical_bytes=b"{}"),
+        binding=binding,
+        run_store=store,
+        run_id="run-1",
+        capture_selection=_capture_selection(),
+    )
+    backend = DockerComposeBackend(tmp_path)
+    commands = []
+
+    def container_exec(_name, command, *, timeout):
+        commands.append(command[-1])
+        if command[-1] == step:
+            raise BackendTimeoutError("private-session-identity and transcript content")
+        return SimpleNamespace(returncode=0, stdout="{}")
+
+    monkeypatch.setattr(backend, "container_exec", container_exec)
+    monkeypatch.setattr(lab, "_expected_transcript_store", lambda _project: store.base_dir)
+
+    result = lab._finalize_required_transcript_capture(tmp_path, backend)
+
+    assert result.error == (
+        "aptl.scenario-evidence.required-transcript-finalization-failed"
+    )
+    marker_text = (
+        tmp_path / ".aptl/capture-finalization-failed/run-1.json"
+    ).read_text()
+    diagnostic = {
+        "code": "aptl.experiment-capture.transcript-export-failed",
+        "message": f"transcript export failed at {step}",
+    }
+    assert diagnostic in json.loads(marker_text)["diagnostics"]
+    assert diagnostic["message"] in caplog.text
+    assert "private-session-identity" not in marker_text + caplog.text
+    assert "transcript content" not in marker_text + caplog.text
+    assert commands == (["quiesce"] if step == "quiesce" else ["quiesce", "export"])
+    assert not (tmp_path / ".aptl/capture-finalized/run-1.json").exists()
+    assert load_active_transcript_authorities(tmp_path) == ()
+
+
 def _exported_session(*, session_id="session-1", frames=()):
     return {
         "session_id": session_id,
