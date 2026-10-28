@@ -50,7 +50,7 @@ class CaptureReconciliationError(ValueError):
 
     def __init__(
         self, *, census: int, accepted: int, census_only: int, broker_only: int
-    ):
+    ) -> None:
         super().__init__("broker custody does not match the session census")
         self.census = census
         self.accepted = accepted

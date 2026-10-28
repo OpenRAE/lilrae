@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -121,8 +122,8 @@ def export_transcript_payload(
 
 
 def _quiesce_and_export(
-    quiesce: object,
-    export: object,
+    quiesce: Callable[[], object],
+    export: Callable[..., object],
     store_base: Path,
     run_id: str,
     binding: CaptureBinding,
