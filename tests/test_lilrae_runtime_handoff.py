@@ -22,6 +22,13 @@ from raes_processor.models.time_model import (
 from aptl.backends.raes_planning_compat import AptlRuntimeManager
 
 
+def _run_phase(manager, body=None, **options):
+    """Exercise one complete public handoff, including its shutdown."""
+    with manager.control_plane(**options) as control_plane:
+        if body is not None:
+            body(control_plane)
+
+
 def test_handoff_preserves_initialized_time_across_repeated_phases():
     target = create_stub_target()
     time_model = CompiledTimeModel(
@@ -142,8 +149,7 @@ def test_failed_manager_drain_does_not_open_a_control_plane(monkeypatch):
 
             patch.setattr(manager, "close", fail_close)
             with pytest.raises(TimeoutError, match="clock driver remains active"):
-                with manager.control_plane():
-                    pytest.fail("handoff admitted work before the manager drained")
+                _run_phase(manager)
 
         with pytest.raises(RuntimeError, match="already has a runtime owner"):
             AptlRuntimeManager(target)
@@ -151,10 +157,14 @@ def test_failed_manager_drain_does_not_open_a_control_plane(monkeypatch):
 
 def test_control_plane_failure_closes_both_owners():
     target = create_stub_target()
+    failure = ValueError("phase failed")
+
+    def fail_body(_control_plane):
+        raise failure
+
     with AptlRuntimeManager(target) as manager:
         with pytest.raises(ValueError, match="phase failed"):
-            with manager.control_plane():
-                raise ValueError("phase failed")
+            _run_phase(manager, fail_body)
 
         with pytest.raises(RuntimeError, match="closed"):
             manager.read_time_state()
@@ -168,20 +178,19 @@ def test_closed_manager_cannot_start_another_handoff():
     manager.close()
 
     with pytest.raises(RuntimeError, match="runtime manager is closed"):
-        with manager.control_plane():
-            pytest.fail("a closed manager admitted another phase")
+        _run_phase(manager)
 
     AptlRuntimeManager(target).close()
 
 
 def test_failed_control_plane_construction_leaves_no_owner():
+    from raes_runtime.control_plane_store_memory import InMemoryControlPlaneStore
+
     target = create_stub_target()
+    store = InMemoryControlPlaneStore()
     with AptlRuntimeManager(target) as manager:
         with pytest.raises(ValueError, match="initial_snapshot cannot be combined"):
-            from raes_runtime.control_plane_store_memory import InMemoryControlPlaneStore
-
-            with manager.control_plane(store=InMemoryControlPlaneStore()):
-                pytest.fail("an invalid control-plane composition was admitted")
+            _run_phase(manager, store=store)
 
         with pytest.raises(RuntimeError, match="closed"):
             manager.read_time_state()
@@ -193,8 +202,7 @@ def test_clock_restart_failure_keeps_the_manager_closed(monkeypatch):
     with AptlRuntimeManager(target) as manager:
         monkeypatch.setattr(manager, "_start_participant_clock_driver", lambda: False)
         with pytest.raises(RuntimeError, match="clock driver could not resume"):
-            with manager.control_plane():
-                pass
+            _run_phase(manager)
 
         with pytest.raises(RuntimeError, match="closed"):
             manager.read_time_state()
@@ -205,15 +213,18 @@ def test_control_plane_close_failure_never_resumes_the_manager(monkeypatch):
     target = create_stub_target()
     with AptlRuntimeManager(target) as manager:
         original_close = None
+
+        def fail_close():
+            raise TimeoutError("runtime drain has unresolved external calls")
+
+        def inject_close_failure(control_plane):
+            nonlocal original_close
+            original_close = control_plane.close
+            monkeypatch.setattr(control_plane, "close", fail_close)
+
         try:
             with pytest.raises(TimeoutError, match="unresolved external calls"):
-                with manager.control_plane() as control_plane:
-                    original_close = control_plane.close
-
-                    def fail_close():
-                        raise TimeoutError("runtime drain has unresolved external calls")
-
-                    monkeypatch.setattr(control_plane, "close", fail_close)
+                _run_phase(manager, inject_close_failure)
 
             with pytest.raises(RuntimeError, match="closed"):
                 manager.read_time_state()
@@ -228,14 +239,19 @@ def test_unresolved_control_plane_claim_prevents_manager_reacquisition(monkeypat
     target = create_stub_target()
     with AptlRuntimeManager(target) as manager:
         control_plane = None
+
+        def retain_unresolved_claim(phase):
+            nonlocal control_plane
+            control_plane = phase
+            monkeypatch.setattr(
+                phase,
+                "_release_runtime_resources",
+                lambda: phase._resource_claim.release(unresolved=True),
+            )
+
         try:
             with pytest.raises(RuntimeError, match="already has a runtime owner"):
-                with manager.control_plane() as control_plane:
-                    monkeypatch.setattr(
-                        control_plane,
-                        "_release_runtime_resources",
-                        lambda: control_plane._resource_claim.release(unresolved=True),
-                    )
+                _run_phase(manager, retain_unresolved_claim)
 
             with pytest.raises(RuntimeError, match="closed"):
                 manager.read_time_state()
