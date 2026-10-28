@@ -226,8 +226,10 @@ export function createPtyTeeWriter(
   // Create the census entry before the SSH request is made. Its filename is
   // the control-plane-owned expected-session inventory used at finalization,
   // including sessions that produce no output. The broker independently
-  // records the sessions it accepted; finalization requires the two sets to
-  // agree instead of letting either side attest its own completeness.
+  // records the sessions it accepted, before it spawns the inner shell.
+  // Finalization fails closed when the broker accepted a session this census
+  // does not name. A census entry the broker never accepted is recorded as a
+  // failed attempt only when its tee holds no terminal output.
   let dirEnsured = false;
   try {
     mkdirSync(dirname(file), { recursive: true, mode: 0o700 });

@@ -254,17 +254,34 @@ def mark_transcript_finalization_failed(
 
 
 def _mark_transcript_finalized(
-    project_dir: Path, state: Mapping[str, object], result: AcquisitionResult
+    project_dir: Path,
+    state: Mapping[str, object],
+    result: AcquisitionResult,
+    exported: object,
 ) -> None:
-    """Seal a restart-safe marker after a transcript reaches ready state."""
+    """Seal a restart-safe marker after a transcript reaches ready state.
+
+    The marker also records the census sessions the broker never accepted,
+    as a count and hashed references.
+    """
 
     run_id = str(state["run_id"])
+    attempts = (
+        exported.get("unaccepted_attempts") if isinstance(exported, Mapping) else None
+    )
+    attempts = attempts if isinstance(attempts, Mapping) else {"count": 0, "refs": []}
+    if attempts.get("count"):
+        log.info(
+            "Required transcript excluded %s failed session attempt(s)",
+            attempts["count"],
+        )
     payload = {
         "schema_version": "aptl-finalized-transcript-authority/v1",
         "run_id": run_id,
         "capture_plan_id": state["capture_plan_id"],
         "disposition": result.disposition.value,
         "evidence_record_ids": [record.evidence_record_id for record in result.records],
+        "unaccepted_attempts": dict(attempts),
     }
     create_exclusive_nofollow(
         project_dir,
@@ -345,7 +362,7 @@ def finalize_active_transcript_authority(
             result, diagnostics=(*result.diagnostics, export_failure.diagnostic())
         )
     if result.disposition is AcquisitionDisposition.SEALED_READY:
-        _mark_transcript_finalized(project_dir, state, result)
+        _mark_transcript_finalized(project_dir, state, result, exported)
     return result
 
 

@@ -342,6 +342,25 @@ def test_capture_finalization_fails_closed(responses, tmp_path):
         assert backend.export_capture_apparatus(expected_session_ids=()) is None
 
 
+def test_capture_export_leaves_census_sessions_the_broker_never_accepted(tmp_path):
+    """Broker custody within the census exports; the finalizer judges the rest."""
+    backend = DockerComposeBackend(tmp_path)
+    payload = {
+        "authority": {"run_id": "run-1"},
+        "accepted_session_ids": ["session-1"],
+        "sessions": [],
+    }
+    backend.container_exec = MagicMock(
+        return_value=subprocess.CompletedProcess([], 0, json.dumps(payload), "")
+    )
+
+    exported = backend.export_capture_apparatus(
+        expected_session_ids=("ops", "session-1")
+    )
+
+    assert exported == {**payload, "expected_session_ids": ["ops", "session-1"]}
+
+
 def test_capture_finalization_rejects_broker_inventory_mismatch(tmp_path):
     backend = DockerComposeBackend(tmp_path)
     payload = {

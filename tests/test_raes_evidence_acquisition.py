@@ -995,6 +995,95 @@ def test_finalize_transcript_quiesces_broker_persists_evidence_and_marks_complet
     )
 
 
+@pytest.mark.parametrize("ops_output", [False, True], ids=("never-opened", "with-output"))
+def test_finalization_records_a_census_session_the_broker_never_accepted(
+    tmp_path, ops_output
+):
+    """A never-opened census session is a recorded attempt; output fails closed."""
+    import base64
+    import json
+
+    from aptl.backends._raes_transcript_export import unaccepted_attempt_ref
+    from aptl.backends.raes_evidence_acquisition import (
+        finalize_active_transcript_authority,
+        load_active_transcript_authorities,
+        persist_active_transcript_authority,
+    )
+    from aptl_techvault.evidence.techvault import (
+        TranscriptFrame,
+        transcript_chain_digest,
+    )
+
+    binding = _binding("aptl.collector.redteam-session-transcript", "transcript")
+    plan = SimpleNamespace(plan_id="capture-plan-test", canonical_bytes=b"{}")
+    store = LocalRunStore(tmp_path / "runs")
+    persist_active_transcript_authority(
+        project_dir=tmp_path,
+        plan=plan,
+        binding=binding,
+        run_store=store,
+        run_id="run-1",
+        capture_selection=_capture_selection(),
+    )
+    frames = (TranscriptFrame(1, "2026-09-14T10:00:01Z", "input", b"id"),)
+    exported = {
+        "authority": {
+            "run_id": "run-1",
+            "plan_id": "capture-plan-test",
+            "binding_id": "aptl.collector.redteam-session-transcript",
+            "activated_at": "2026-09-14T10:00:00Z",
+        },
+        "expected_session_ids": ["ops", "session-1"],
+        "accepted_session_ids": ["session-1"],
+        "sessions": [
+            {
+                **_exported_session(),
+                "final_chain_digest": transcript_chain_digest(frames),
+                "frames": [
+                    {
+                        "sequence": 1,
+                        "timestamp": frames[0].timestamp,
+                        "direction": "input",
+                        "data_b64": base64.b64encode(b"id").decode(),
+                    }
+                ],
+            }
+        ],
+    }
+    census = store.get_run_path("run-1") / "mcp-side/sessions"
+    census.mkdir(parents=True)
+    (census / "session-1.jsonl").write_text("")
+    record = {"ts": 1, "dir": "out" if ops_output else "err", "b64": "eA=="}
+    (census / "ops.jsonl").write_text(json.dumps(record) + "\n")
+
+    result = finalize_active_transcript_authority(
+        project_dir=tmp_path,
+        state=load_active_transcript_authorities(tmp_path)[0],
+        backend=SimpleNamespace(
+            quiesce_capture_apparatus=lambda: True,
+            export_capture_apparatus=lambda **_kwargs: exported,
+        ),
+        expected_run_store_base=store.base_dir,
+        clock=_SequenceClock("2026-09-14T10:00:03Z", "2026-09-14T10:00:04Z"),
+    )
+
+    if ops_output:
+        assert result.disposition is not AcquisitionDisposition.SEALED_READY
+        assert result.diagnostics[-1].message == (
+            "transcript export failed at unaccepted-output: "
+            "census-only 1, with terminal output 1"
+        )
+        return
+    assert result.disposition is AcquisitionDisposition.SEALED_READY
+    marker = json.loads((tmp_path / ".aptl/capture-finalized/run-1.json").read_text())
+    assert marker["unaccepted_attempts"] == {
+        "count": 1,
+        "refs": [unaccepted_attempt_ref("run-1", "ops")],
+    }
+    retained = store.read_run_json("run-1", result.records[0].raw_content.content_uri)
+    assert len(retained["transcript_entries"]) == 1
+
+
 def test_finalize_transcript_rejects_mismatched_broker_authority_and_uses_host_clock(
     tmp_path,
 ):
@@ -1048,8 +1137,8 @@ def test_finalize_transcript_rejects_mismatched_broker_authority_and_uses_host_c
     assert next(clock._values, None) is None
 
 
-def test_finalization_names_a_census_the_broker_never_accepted(tmp_path):
-    """A census session with no broker custody is a named loss, never a clean seal."""
+def test_finalization_names_a_broker_session_outside_the_census(tmp_path):
+    """A session the broker accepted but the census never named fails closed."""
     from aptl.backends.raes_evidence_acquisition import (
         finalize_active_transcript_authority,
         load_active_transcript_authorities,
@@ -1074,7 +1163,7 @@ def test_finalization_names_a_census_the_broker_never_accepted(tmp_path):
 
     def export_capture_apparatus(*, expected_session_ids):
         raise CaptureReconciliationError(
-            census=len(expected_session_ids), accepted=0, census_only=1, broker_only=0
+            census=len(expected_session_ids), accepted=2, census_only=0, broker_only=1
         )
 
     result = finalize_active_transcript_authority(
@@ -1094,7 +1183,7 @@ def test_finalization_names_a_census_the_broker_never_accepted(tmp_path):
     )
     assert result.diagnostics[-1].message == (
         "transcript export failed at reconciliation: "
-        "census 1, broker accepted 0, census-only 1, broker-only 0"
+        "census 1, broker accepted 2, census-only 0, broker-only 1"
     )
     assert load_active_transcript_authorities(tmp_path)
 
