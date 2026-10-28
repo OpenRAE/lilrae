@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from raes_runtime.registry import RuntimeTarget
 
 from aptl.core.scenario_bundle import ScenarioBundle
+from aptl.backends._lilrae_runtime_handoff import LilraeRuntimeHandoffMixin
 from aptl.backends import _raes_participant_snapshot as participant_snapshot
 from aptl.backends.identity import (
     APTL_RAES_TARGET_NAME,
@@ -345,7 +346,7 @@ def _adjust_authority(
     return authority
 
 
-class AptlRuntimeManager(_RaesRuntimeManager):
+class AptlRuntimeManager(LilraeRuntimeHandoffMixin, _RaesRuntimeManager):
     """RAES runtime manager with APTL's removable TechVault compile adapter."""
 
     def __init__(
@@ -366,6 +367,7 @@ class AptlRuntimeManager(_RaesRuntimeManager):
             information_state_context_resolver=information_state_context_resolver,
         )
         self._aptl_bundle = bundle or getattr(target.provisioner, "bundle", None)
+        self._control_plane_handoff_lock = RLock()
         self._aptl_planning_compatibility_selection = getattr(
             target.provisioner, "planning_compatibility", None
         )

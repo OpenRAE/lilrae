@@ -1,4 +1,7 @@
 path	proposed_owner	migration_rule
+docs/architecture/issue-1447-runtime-owner-handoff.md	architecture-history	Preserve issue 1447 runtime ownership handoff design
+src/aptl/backends/_lilrae_runtime_handoff.py	core-candidate	Keep exclusive runtime ownership across temporary control-plane phases
+tests/test_lilrae_runtime_handoff.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 .claude/hooks/protect_files.sh	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 .claude/settings.json	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 .claude/skills/gh-workflow-monitor/SKILL.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
@@ -1431,6 +1434,7 @@ tests/test_correlation_clock.py	tests-follow-owner	Retain meaningful boundary an
 tests/test_correlation_identity.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_correlation_models.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_correlation_persistence.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_cortex_apikey_script.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_cortex_integration_config.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_credentials.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_credentials_fuzz.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
