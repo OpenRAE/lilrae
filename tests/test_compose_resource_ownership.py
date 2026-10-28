@@ -1008,17 +1008,17 @@ def test_teardown_keeps_receipts_without_proven_runtime_absence(
     backend = DockerComposeBackend(tmp_path, project_name="aptl")
     daemon = _ReusedProjectDaemon(backend)
     daemon.start(1)
-    receipts = (
-        daemon.ownership.receipts("container"),
-        daemon.ownership.receipts("network"),
-    )
+
+    def runtime_receipts():
+        return daemon.ownership.receipts("container") + daemon.ownership.receipts(
+            "network"
+        )
+
+    before = runtime_receipts()
     backend.observe_project_runtime = lambda: ProjectRuntimePresence(**presence)
 
     assert not stop_compose_lab(backend, [], remove_volumes=False, timeout=30).success
-    assert (
-        daemon.ownership.receipts("container"),
-        daemon.ownership.receipts("network"),
-    ) == receipts
+    assert runtime_receipts() == before
 
 
 def test_removed_resource_retirement_refuses_unproven_or_changed_receipts(
