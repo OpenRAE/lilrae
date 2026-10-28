@@ -6,7 +6,7 @@ import base64
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from aptl.core.evidence.adapters.sources import SourceResult, _to_outcome
+from aptl.core.evidence.adapters.sources import SourceResult, source_result_to_outcome
 from aptl_techvault.evidence.techvault import (
     RedteamSessionTranscriptSource,
     TranscriptFrame,
@@ -291,7 +291,7 @@ class FinalizedTranscriptCollector:
                 lambda: expected,
                 lambda: sessions,
             ).fetch(handle.started_at, finished_at)
-        return _to_outcome(result, handle.started_at, finished_at)
+        return source_result_to_outcome(result, handle.started_at, finished_at)
 
 
 __all__ = (

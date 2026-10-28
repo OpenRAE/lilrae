@@ -304,7 +304,8 @@ jobs:
       - name: Start and verify the materialization envelope
         run: |
           cd "$RUNNER_TEMP/clean-install/ci-lab"
-          "$RUNNER_TEMP/clean-venv/bin/lilrae" lab start \
+          "$RUNNER_TEMP/clean-venv/bin/python" \
+            "$GITHUB_WORKSPACE/tests/fixtures/lilrae_core_only_cli.py" lab start \
             --scenario-path scenarios/materialization-envelope.sdl.yaml
           status_output=$("$RUNNER_TEMP/clean-venv/bin/lilrae" lab status)
           grep -F "Lab is running." <<<"$status_output"
@@ -705,9 +706,6 @@ jobs:
           - name: misp-suricata-sync
             dockerfile: containers/misp-suricata-sync/Dockerfile
             context: .
-          - name: reverse
-            dockerfile: containers/reverse/Dockerfile
-            context: ./containers
           - name: web
             dockerfile: web/Dockerfile
             context: web

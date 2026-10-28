@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from importlib import metadata
+from typing import Protocol
+from aptl.backends.scenario_family import QualifiedFamilyTarget
 
 from aptl.core.scenario_bundle import ScenarioBundle
 from aptl.utils.logging import get_logger
@@ -12,6 +14,43 @@ log = get_logger("scenario-runtime-parameters")
 
 ENTRY_POINT_GROUP = "aptl.scenario_runtime_parameters"
 EXTENSION_API_VERSION = "1"
+
+
+class ScenarioRuntimeParameterProvider(Protocol):
+    """Runtime binding generation before a family trial is sealed."""
+
+    def resolve(self, bundle: ScenarioBundle) -> Mapping[str, object] | None: ...
+
+
+def resolve_family_runtime_parameters(
+    bundle: ScenarioBundle, target: QualifiedFamilyTarget
+) -> Mapping[str, object] | None:
+    """Generate runtime bindings for the caller to include in the sealed plan."""
+
+    from aptl.backends.scenario_family import select_family_provider
+    from raes import canonical_sdl_digest, parse_sdl_file
+
+    try:
+        if bundle.trial is not None or bundle.pack_identity != target.pack:
+            raise ValueError("family-context-mismatch")
+        family = parse_sdl_file(bundle.sdl_path)
+        if (
+            family.name != target.family_id
+            or canonical_sdl_digest(family).value != target.family_digest
+        ):
+            raise ValueError("family-context-mismatch")
+        selected = select_family_provider(
+            ENTRY_POINT_GROUP,
+            target.pack.pack_id,
+            EXTENSION_API_VERSION,
+            "resolve",
+            target,
+        )
+        return _validated_parameters(selected.provider.resolve(bundle))
+    except Exception:
+        raise RuntimeParameterProviderError(
+            "family-runtime-parameters-invalid"
+        ) from None
 
 
 class RuntimeParameterProviderError(RuntimeError):
@@ -115,4 +154,6 @@ __all__ = [
     "EXTENSION_API_VERSION",
     "RuntimeParameterProviderError",
     "resolve_runtime_parameters",
+    "ScenarioRuntimeParameterProvider",
+    "resolve_family_runtime_parameters",
 ]

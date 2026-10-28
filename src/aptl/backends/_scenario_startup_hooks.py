@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from aptl.backends.scenario_family import AdmittedFamilyTrial, QualifiedFamilyTarget
 
 from aptl.backends._scenario_environment import ScenarioStartupProviderError
 
@@ -51,6 +52,8 @@ class StartupHookContext:
         default=None, repr=False, compare=False
     )
     project_dir: Path | None = None
+    trial: AdmittedFamilyTrial | None = field(default=None, repr=False)
+    family_target: QualifiedFamilyTarget | None = None
 
     def run_operation(self) -> object:
         """Run the single core operation delegated for this fixed phase."""

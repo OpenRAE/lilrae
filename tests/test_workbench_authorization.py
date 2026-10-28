@@ -107,7 +107,7 @@ def test_canonical_browser_ingress_rechecks_live_capture_and_grant(
     from aptl.workbench.guest_binding import GuestDispatchBinding
     from tests.test_mcp_access import access_record, grant
 
-    pack = env_pack_bundle(tmp_path / "pack")
+    pack = env_pack_bundle(tmp_path / "pack", "techvault")
     record = access_record(scenario_pack=pack.pack_identity)
     caller = grant()
     binding = GuestDispatchBinding(

@@ -37,23 +37,12 @@ from aptl.validation._gate_checks import check_parse, check_provisioning_realiza
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS_DIR = PROJECT_ROOT / "scenarios"
 
-_CONTAINER_FIELDS = (
-    "wazuh",
-    "victim",
-    "kali",
-    "reverse",
-    "enterprise",
-    "soc",
-    "mail",
-    "fileshare",
-    "dns",
-)
-
-
 def _config(*enabled: str) -> AptlConfig:
     """Build a config that enables exactly the named container profiles."""
-    flags = {name: (name in enabled) for name in _CONTAINER_FIELDS}
-    return AptlConfig(lab={"name": "techvault"}, containers=flags)
+    return AptlConfig(
+        lab={"name": "techvault"}, containers={"profiles": list(enabled)},
+        scenario={"identity": "techvault"},
+    )
 
 
 @dataclass(frozen=True)

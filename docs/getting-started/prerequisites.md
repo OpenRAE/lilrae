@@ -20,8 +20,9 @@
   refuses that daemon for a scenario with systemd nodes. `docker info --format
   '{{json .SecurityOptions}}'` must list neither `name=rootless` nor
   `name=userns`
-- Docker Compose 2.0+ (`docker compose version`). The `techvault` scenario
-  needs 2.24.4 or newer, and `lilrae lab start` refuses an older Compose for it
+- Docker Compose 2.0+ (`docker compose version`). A realized model that uses
+  `!reset` or `!override` needs 2.24.4 or newer. Startup checks the emitted
+  features before applying that model.
 - Docker Buildx (`docker buildx version`)
 - Python 3.12+ (for the CLI)
 - OpenSSH client. `ssh-keygen` must be on `PATH`. `lilrae lab start` generates the
@@ -87,13 +88,16 @@ engine. It behaves like the macOS/Windows Docker VM for host sysctls.
 
 ## System Config
 
-`lilrae lab start` enforces `vm.max_map_count` only when Docker is a native Linux
-engine. Docker Desktop on macOS, Windows, or WSL2 manages the setting inside its
-Linux VM, so there is no host `sysctl` step for those platforms.
+`lilrae lab start` and `lilrae doctor` apply `vm.max_map_count` only when the
+selected startup adapter declares a minimum. A scenario without that demand
+causes no kernel probe. For native Linux, the check reads the engine host.
+Docker Desktop on macOS, Windows, or WSL2 manages the setting inside its Linux
+VM, so there is no host `sysctl` step for those platforms. A remote or unknown
+engine host requires operator verification on that host.
 
 **Native Linux Docker Engine:**
 ```bash
-# Required for OpenSearch
+# Example: the original TechVault adapter declares this minimum for OpenSearch
 sudo sysctl -w vm.max_map_count=262144
 echo 'vm.max_map_count=262144' | sudo tee -a /etc/sysctl.conf
 ```

@@ -115,6 +115,14 @@ class WindowedQueryCollector:
         return _to_outcome(result, handle.started_at, finished_at)
 
 
+def source_result_to_outcome(
+    result: SourceResult, started_at: str, finished_at: str
+) -> CollectorOutcome:
+    """Convert a source result through the existing collector outcome owner."""
+
+    return _to_outcome(result, started_at, finished_at)
+
+
 def _to_outcome(
     result: SourceResult, started_at: str, finished_at: str
 ) -> CollectorOutcome:

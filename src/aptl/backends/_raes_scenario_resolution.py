@@ -45,6 +45,8 @@ def _resolve_scenario_path(
         )
     if config is not None:
         selection = config.scenario
+        if selection.identity is None:
+            raise ValueError("scenario selection requires an explicit scenario identity or path")
         relative = Path(f"{selection.identity}.sdl.yaml")
         base = Path(selection.root) if selection.root else Path("scenarios")
         return project_dir / base / relative
@@ -71,6 +73,8 @@ def resolve_scenario_bundle(
     # The operator selects this trusted anchor; only appended source/staging
     # components are untrusted locators and must retain no-follow traversal.
     project_dir = project_dir.resolve()
+    if scenario_path is None and config is not None and config.scenario.identity is None:
+        raise ValueError("scenario selection requires an explicit scenario identity or path")
     if (
         scenario_path is None
         and config is not None

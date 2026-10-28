@@ -507,3 +507,32 @@ def test_stateful_preflight_accepts_the_delivery_dependency(tmp_path):
     assert set(delivery.ordering_dependencies) <= addresses
     spec = realization.deployment_spec(sorted(realization.profiles))
     assert stateful_realization_errors(spec, local_artifacts=True) == []
+
+
+@pytest.mark.parametrize("producer_count", [0, 1, 2])
+def test_tls_delivery_dependency_uses_one_admitted_producer(producer_count):
+    from dataclasses import replace
+    from aptl.backends.raes_realization import _merge_backend_generated_artifacts
+    from aptl.core.deployment._compose_stateful_constants import SOC_CERT_PROFILE
+    from aptl.core.deployment.realization import DeploymentStatefulConsumer
+    target = DeploymentStatefulConsumer(
+        target_address='provision.node.misp', node_name='misp', service_name='misp',
+        mount_destination='/opt/certificates', access_mode='read_only',
+        selected_outputs=('misp-certificate', 'misp-private-key'),
+    )
+    source = DeploymentGeneratedArtifactRealization(
+        address='provision.generated-artifact.independent-certificates',
+        name='independent-certificates', generator='certificate_bundle',
+        lifecycle='reuse_valid', provenance=SOC_CERT_PROFILE,
+        outputs=(), consumers=(target,),
+    )
+    delivery = replace(_tls_artifact(), consumers=(target,))
+    diagnostics = []
+    producers = [replace(source, name=f"certificates-{index}", address=f"provision.generated-artifact.certificates-{index}") for index in range(producer_count)]
+    merged = _merge_backend_generated_artifacts(producers, [SimpleNamespace(backend_generated_artifacts=(delivery,))], diagnostics)
+    if producer_count == 1:
+        assert diagnostics == []
+        assert merged[-1].ordering_dependencies == (producers[0].address,)
+    else:
+        assert merged == producers
+        assert [item.code for item in diagnostics] == ["aptl.provisioner.backend-artifact-source-ambiguous"]
