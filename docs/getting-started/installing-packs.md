@@ -164,6 +164,10 @@ not configure. To run a different pack, set `scenario.identity` in `aptl.json`.
 
 ## Troubleshooting
 
+- **`No aptl.json was found in <directory>`**. The command ran outside a lab
+  project. `lilrae lab start --scenario` reads the nearest `aptl.json` at or
+  above the project directory. `lilrae lab scenarios` reads only the project
+  directory itself. Run the command in the project, or pass `--project-dir`.
 - **`Unknown scenario id '<x>'. Available scenarios: <y>`**. The identity is
   not the configured pack. Set `scenario.identity` to `<x>` in `aptl.json`, then
   run `lilrae lab scenarios` to confirm the catalog lists it.

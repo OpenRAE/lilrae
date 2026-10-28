@@ -58,9 +58,43 @@ def test_unselected_catalog_does_not_choose_or_acquire_a_pack(tmp_path, monkeypa
     def unexpected(*args, **kwargs):
         pytest.fail("an unselected catalog tried to acquire a pack")
     monkeypatch.setattr(scenario_catalog, "resolve_scenario_bundle", unexpected)
+    (tmp_path / "aptl.json").write_text("{}")
     with pytest.raises(ValueError, match="No scenario is selected"):
         scenario_catalog.load_scenario_catalog(tmp_path)
     assert not (tmp_path / ".aptl").exists()
+
+
+def test_a_scenario_id_without_any_project_config_names_the_search(tmp_path):
+    """No aptl.json is a missing project, not an unknown scenario."""
+
+    from aptl.core.scenario_catalog import resolve_scenario_selection
+
+    with pytest.raises(ValueError, match="No aptl.json was found in") as raised:
+        resolve_scenario_selection(tmp_path, scenario_id="techvault")
+    assert f"{tmp_path} or its parents" in str(raised.value)
+    assert "--project-dir" in str(raised.value)
+
+
+def test_a_catalog_without_project_config_names_the_directory(tmp_path):
+    from aptl.core.scenario_catalog import load_scenario_catalog
+
+    with pytest.raises(ValueError, match="No aptl.json was found in") as raised:
+        load_scenario_catalog(tmp_path)
+    assert str(raised.value).startswith(f"No aptl.json was found in {tmp_path}. ")
+
+
+def test_a_scenario_id_reads_the_config_the_start_uses_above_the_directory(
+    tmp_path,
+):
+    """The start resolves its project through the lifecycle root, upward."""
+
+    from aptl.core.scenario_catalog import resolve_scenario_selection
+
+    (tmp_path / "aptl.json").write_text(json.dumps({"scenario": {"identity": "techvault"}}))
+    nested = tmp_path / "scenarios" / "notes"
+    nested.mkdir(parents=True)
+
+    assert resolve_scenario_selection(nested, scenario_id="techvault") is None
 
 
 def test_unknown_catalog_id_lists_only_configured_pack(tmp_path):
