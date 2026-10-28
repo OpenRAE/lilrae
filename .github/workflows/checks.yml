@@ -220,6 +220,16 @@ jobs:
           python -m pytest -q -m integration \
             tests/test_raes_runtime_environment.py::test_docker_reads_the_env_file_back_exactly \
             tests/test_deployment_stateful_realization.py::test_compose_reads_the_generated_env_file_back_exactly
+      # The capture sidecar must open a PTY session with exactly its shipped
+      # capabilities (#1496). Only a real image and sshd can prove that. This
+      # module is integration-marked, so the run above deselects it. The probes
+      # stop the step if Docker or an SSH client tool is missing, so the tests
+      # cannot pass by a skip.
+      - name: Kali capture sidecar sessions through Docker
+        run: |
+          docker info > /dev/null
+          command -v ssh ssh-keygen
+          python -m pytest -q -m integration tests/test_kali_capture_compose.py
       - name: Linux CLI and init smoke
         run: |
           lilrae --help
