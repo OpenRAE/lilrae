@@ -343,9 +343,9 @@ def techvault_plan(tmp_path_factory) -> ProvisioningPlan:
     )
     config = AptlConfig(
         lab={"name": "tv"},
-        containers=dict.fromkeys(
-            ("wazuh", "soc", "enterprise", "victim", "kali", "fileshare", "dns"), True
-        ),
+        containers={
+            "profiles": ["wazuh", "soc", "enterprise", "victim", "kali", "fileshare", "dns"]
+        },
     )
     target = create_aptl_runtime_target(
         project_dir=PROJECT_ROOT, config=config, backend=MagicMock(), bundle=bundle
