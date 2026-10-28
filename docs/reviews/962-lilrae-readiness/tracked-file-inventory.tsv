@@ -842,7 +842,6 @@ src/aptl/backends/_raes_docker_materializer_observations.py	core-candidate	Keep 
 src/aptl/backends/_raes_docker_observation_values.py	backend-owned-runtime	Retain pure Docker materialization readback value parsing
 src/aptl/backends/_raes_evaluator_engine.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/_raes_evaluator_progress.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
-src/aptl/backends/_raes_evidence_refresh_ownership.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/_raes_guest_os_observation.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/_raes_guest_package_observation.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/_raes_guest_process_limits.py	core-candidate	Keep bounded process-limit readback with generic RAES guest observation
@@ -1589,7 +1588,6 @@ tests/test_raes_dynamic_composition.py	tests-follow-owner	Retain meaningful boun
 tests/test_raes_evaluator.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_evidence.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_evidence_acquisition.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
-tests/test_raes_evidence_refresh_ownership.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_materializer.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_materializer_engine.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_namespace_cutover.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner

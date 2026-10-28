@@ -3944,9 +3944,7 @@ def _refresh_required_native_evidence(
 
     from raes_contracts.runtime_state import OperationState, RuntimeSnapshot
 
-    from aptl.backends._raes_evidence_refresh_ownership import (
-        refresh_evidence_truth_with_start_owner,
-    )
+    from aptl.backends.raes_evaluator import refresh_evidence_truth
 
     target = getattr(admitted, "target", None)
     execution_plan = getattr(admitted, "execution_plan", None)
@@ -3960,8 +3958,7 @@ def _refresh_required_native_evidence(
         failure = LabResult(success=False, error=_NATIVE_EVALUATION_FAILED)
     else:
         try:
-            refresh = refresh_evidence_truth_with_start_owner(
-                ctx.raes_outcome,
+            refresh = refresh_evidence_truth(
                 target=target,
                 execution_plan=execution_plan,
                 snapshot=final_snapshot,

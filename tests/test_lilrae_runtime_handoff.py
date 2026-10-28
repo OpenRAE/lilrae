@@ -1,6 +1,7 @@
 """Exclusive RAES ownership across temporary control-plane phases."""
 
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 from raes_backend_stubs.stubs import create_stub_target
@@ -29,8 +30,16 @@ def _run_phase(manager, body=None, **options):
             body(control_plane)
 
 
-def test_handoff_preserves_initialized_time_across_repeated_phases():
-    target = create_stub_target()
+@pytest.mark.parametrize("native_evidence", [False, True])
+def test_handoff_preserves_initialized_time_across_repeated_phases(native_evidence):
+    from aptl.backends.raes_evaluator import AptlEvaluator
+    from aptl.core.lab import _refresh_required_native_evidence
+    from tests.test_raes_native_evidence_truth import _INTERPRETER, _plan, _record
+
+    target = replace(
+        create_stub_target(),
+        evaluator=AptlEvaluator(proposition_interpreter=_INTERPRETER),
+    )
     time_model = CompiledTimeModel(
         domains=(
             CompiledTimeDomain(
@@ -80,7 +89,7 @@ def test_handoff_preserves_initialized_time_across_repeated_phases():
         model=RuntimeModel(scenario_name="handoff", time_model=time_model),
         provisioning=ProvisioningPlan(),
         orchestration=OrchestrationPlan(),
-        evaluation=EvaluationPlan(),
+        evaluation=_plan() if native_evidence else EvaluationPlan(),
         observation_owner=RuntimeDomain.PROVISIONING,
     )
     with AptlRuntimeManager(target) as manager:
@@ -88,8 +97,24 @@ def test_handoff_preserves_initialized_time_across_repeated_phases():
         assert applied.success, applied.diagnostics
         for _ in range(2):
             before = manager.read_time_state()
-            with manager.control_plane() as control_plane:
-                assert control_plane.snapshot.time_model_state == before
+            if native_evidence:
+                outcome = SimpleNamespace(
+                    runtime_manager=manager, final_snapshot=manager.snapshot
+                )
+                failure = _refresh_required_native_evidence(
+                    SimpleNamespace(raes_outcome=outcome),
+                    SimpleNamespace(target=target, execution_plan=execution_plan),
+                    (_record("suricata-local-rule-readiness"),),
+                )
+                assert failure is None
+                assert outcome.runtime_manager is manager
+                assert outcome.final_snapshot == manager.snapshot
+                assert manager.snapshot.proposition_truth_results[
+                    "evaluation.assertion.suricata-local-rules-ready"
+                ]["assertion_outcome"] == "true"
+            else:
+                with manager.control_plane() as control_plane:
+                    assert control_plane.snapshot.time_model_state == before
             assert manager.read_time_state() == before
             advanced = manager.advance_time("time.clock.study", ticks=1)
             assert advanced.success, advanced.diagnostics
