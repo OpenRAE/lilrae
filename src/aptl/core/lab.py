@@ -3967,6 +3967,7 @@ def _refresh_required_native_evidence(
                 execution_plan=execution_plan,
                 snapshot=final_snapshot,
                 evidence_records=evidence_records,
+                runtime_manager=getattr(ctx.raes_outcome, "runtime_manager", None),
             )
         except Exception:
             log.error("Required native scenario evidence evaluation failed")
