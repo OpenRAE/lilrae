@@ -623,8 +623,8 @@ def test_runtime_profile_carries_workspace_capture_container(tmp_path: Path) -> 
 
 
 class _FakeRuntimeManager(AptlRuntimeManager):
-    def __init__(self, target) -> None:
-        super().__init__(target)
+    def __init__(self, target, **options: object) -> None:
+        super().__init__(target, **options)
         self.advances: list[tuple[str, int, int]] = []
 
     def advance_time(
@@ -664,7 +664,11 @@ def _execute_study_plan(
         create_stub_target(),
         manifest=create_aptl_manifest(participant_inject_delivery=True),
     )
-    manager = _FakeRuntimeManager(target)
+    # Production builds the run's one runtime with the plan's participant
+    # configuration before any turn (OpenRAE/rae#1660).
+    from aptl.backends._raes_participant_crossing import participant_runtime_options
+
+    manager = _FakeRuntimeManager(target, **participant_runtime_options(plan, target))
     selected_profiles: list[ProfileId] = []
 
     def render(**kwargs: object) -> tuple[Path, tuple[str, ...]]:

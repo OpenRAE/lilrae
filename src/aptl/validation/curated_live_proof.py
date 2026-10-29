@@ -183,7 +183,6 @@ def bundle_realization(
 
     execution_plan = plan_aptl_scenario(
         target=target,
-        bundle=bundle,
         scenario=scenario,
         options=AptlPlanningOptions(parameters=resolve_runtime_parameters(bundle)),
     )

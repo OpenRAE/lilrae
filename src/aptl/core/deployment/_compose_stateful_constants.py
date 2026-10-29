@@ -81,6 +81,10 @@ ENVIRONMENT_DELIVERY_PROVENANCES = frozenset(
 MISP_CACHE_CREDENTIAL_ROOT_RELPATH = Path(".aptl/realization/misp-cache-credential")
 
 # Owner-only staging root for the MISP leaf certificate under the filenames the
-# pinned misp-core image reads. The SOC certificate bundle remains the producer;
-# this root only holds the image-native delivery shape.
+# pinned misp-nginx web companion reads. The SOC certificate bundle remains the
+# producer; this root only holds the image-native delivery shape.
 MISP_SERVER_TLS_ROOT_RELPATH = Path(".aptl/realization/misp-server-tls")
+
+# Staging root for the php-fpm pool override that binds the pinned misp-core
+# image's FastCGI listener to loopback (issue #1407). It holds no secret.
+MISP_FASTCGI_LOOPBACK_ROOT_RELPATH = Path(".aptl/realization/misp-fastcgi-loopback")

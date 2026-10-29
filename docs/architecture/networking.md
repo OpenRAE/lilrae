@@ -29,6 +29,7 @@ of truth for a scenario whose compiled plan declares different segmentation.
 | aptl-wazuh-dashboard | 172.20.0.11 | Web UI |
 | aptl-wazuh-indexer | 172.20.0.12 | OpenSearch data storage |
 | aptl-misp | 172.20.0.16 | Threat intelligence |
+| aptl-misp-web | 172.20.0.16 (shares the `aptl-misp` network namespace) | MISP HTTPS web tier |
 | aptl-misp-db | 172.20.0.17 | MISP database |
 | aptl-thehive | 172.20.0.18 | Case management |
 | aptl-shuffle-backend | 172.20.0.20 | SOAR backend |

@@ -198,7 +198,7 @@ def test_workload_passes_actual_evaluator_verdict_through_final_sealing(tmp_path
     assert result.run.outcome_status == "failed"
     assert store.is_sealed(result.run.run_id)
     assert len(observed) == 1
-    assert "blue" in str(observed[0].participant_behavior_history)
+    assert "blue" in str(dict(observed[0].participant_behavior_history))
 
 
 def test_missing_evaluator_verdict_seals_as_evaluator_failure(tmp_path):

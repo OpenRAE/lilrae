@@ -17,7 +17,13 @@ import pytest
 
 _MISP_BACKEND_IMAGE = (
     "ghcr.io/misp/misp-docker/misp-core@"
-    "sha256:0eaa4e423d5cd965b7b76aa5665e81d5c05a35bc46a4ffec2ca52e0cfe627e86"
+    "sha256:ae32e751870fc7dab8bea3a6d16c41a9045f20d724e243c3125c1910e109c848"
+)
+
+
+_MISP_WEB_IMAGE = (
+    "ghcr.io/misp/misp-docker/misp-nginx@"
+    "sha256:10d8a3af27f49ade99e8f4a8f75802f5d5c565eb38635ac110da9dfb84534c7e"
 )
 
 
@@ -26,11 +32,16 @@ class _Backend:
         self,
         digest: str | None,
         declared_wazuh_attestation: dict[str, object] | None = None,
+        *,
+        companion_digest: str | None = _MISP_WEB_IMAGE.rsplit("@", 1)[1],
     ) -> None:
         self.digest = digest
+        self.companion_digest = companion_digest
         self.declared_wazuh_attestation = declared_wazuh_attestation or {}
 
-    def container_image_digest(self, _container_name: str) -> str | None:
+    def container_image_digest(self, container_name: str) -> str | None:
+        if container_name == "aptl-misp-web":
+            return self.companion_digest
         return self.digest
 
 
@@ -58,6 +69,9 @@ def _misp_node(declared_pack):
         name="misp", container_name="aptl-misp",
         runtime=deepcopy(scenario.nodes["misp"].runtime),
         image=SimpleNamespace(image_ref=_MISP_BACKEND_IMAGE),
+        backend_companions=(
+            SimpleNamespace(role="web", image=SimpleNamespace(image_ref=_MISP_WEB_IMAGE)),
+        ),
     )
 
 
@@ -66,6 +80,7 @@ def _wazuh_node(declared_pack, name: str, service_name: str):
     return bundle, SimpleNamespace(
         name=name, backend_services=(service_name,), container_name=f"aptl-{name}",
         runtime=deepcopy(scenario.nodes[name].runtime), image=None,
+        backend_companions=(),
     )
 
 
@@ -88,7 +103,7 @@ def test_study_copy_uses_same_projection_only_at_its_exact_digest(declared_pack)
     backend = _Backend(node.image.image_ref.rsplit("@", 1)[1])
     study = PackIdentity(
         "techvault-participant-study",
-        "0.1.2",
+        "0.1.3",
         TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST,
     )
 
@@ -125,6 +140,24 @@ def test_wrong_realized_image_is_not_attested(declared_pack):
 
     concerns = observe_techvault_attested_concerns(
         _Backend("sha256:" + "0" * 64),
+        node,
+        bundle.pack_identity,
+        content_verified=True,
+    )
+
+    assert concerns == {}
+
+
+def test_a_substituted_web_companion_is_not_attested(declared_pack):
+    """MISP's web tier serves the attested surface, so its image is bound too."""
+
+    bundle, node = _misp_node(declared_pack)
+
+    concerns = observe_techvault_attested_concerns(
+        _Backend(
+            node.image.image_ref.rsplit("@", 1)[1],
+            companion_digest="sha256:" + "0" * 64,
+        ),
         node,
         bundle.pack_identity,
         content_verified=True,

@@ -1,5 +1,7 @@
 # Issue #1424: runtime retry ownership preflight
 
+> **Superseded (issue #1407).** RAES 9.0.0 keeps one runtime for the whole run (OpenRAE/rae#1660). After a failed apply, its backend effects are unknown, and RAES refuses another apply. A failed apply now ends the start, and the automatic retry and its `before_backend_retry` hook are removed.
+
 The contract is a clean retry or a clean failure against the same runtime
 target. This note sets boundaries for the fix; it is not an implementation
 plan or a claim that replay is already safe.

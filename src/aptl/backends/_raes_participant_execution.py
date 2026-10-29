@@ -21,9 +21,6 @@ from raes_runtime.participant_control_intents import (
 )
 from raes_runtime.participant_crossing_mediation import ParticipantCrossingEvidence
 
-from aptl.backends._raes_participant_crossing import (
-    _ParticipantDeliveryCrossingPolicyResolver,
-)
 from aptl.backends._raes_participant_evidence import (
     _ParticipantDeliveryCollector,
     _delivery_record,
@@ -134,9 +131,6 @@ class _ParticipantDeliveryExecutor:
         self.profiles: dict[ProfileId, tuple[Path, tuple[str, ...]]] = {}
         self.current_ticks: dict[str, int] = {}
         self.snapshot = context.initial_snapshot
-        self.crossing_policy = _ParticipantDeliveryCrossingPolicyResolver(
-            plan.turns, context.target, plan.behavior_specifications
-        )
 
     def execute(self) -> object:
         """Deliver every admitted turn and remove private transient state."""
@@ -167,25 +161,22 @@ class _ParticipantDeliveryExecutor:
             )
         collector = _ParticipantDeliveryCollector(binding.registration_id)
         collector.bind_payload(turn, self.context.model)
-        with self.context.runtime_manager.control_plane(
-            behavior_specifications=self.plan.behavior_specifications,
-            crossing_policy_resolver=self.crossing_policy,
-            enforce_final_sink_flow_control=False,
-        ) as control_plane:
-            trial = _ControlledTurn(
-                control_plane=control_plane,
-                identity=_participant_control_identity(turn, self.context.target),
-                collector=collector,
-                adapter=self.adapter,
-                turn=turn,
-                model=self.context.model,
-                config_path=config_path,
-                allowed_tools=tools,
-                session_id=self._session_id(turn),
-                resume=self._has_prior_turn(turn, sequence),
-                run_id=self.context.run_id,
-            )
-            acquisition = self._acquire(sequence, binding, collector, trial)
+        # The one runtime for the run delivers the turn; it was built with
+        # this plan's participant configuration (OpenRAE/rae#1660).
+        trial = _ControlledTurn(
+            control_plane=self.context.runtime_manager,
+            identity=_participant_control_identity(turn, self.context.target),
+            collector=collector,
+            adapter=self.adapter,
+            turn=turn,
+            model=self.context.model,
+            config_path=config_path,
+            allowed_tools=tools,
+            session_id=self._session_id(turn),
+            resume=self._has_prior_turn(turn, sequence),
+            run_id=self.context.run_id,
+        )
+        acquisition = self._acquire(sequence, binding, collector, trial)
         result = collector.result
         if result is None:
             raise AgentExecutionError(

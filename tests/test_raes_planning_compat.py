@@ -101,7 +101,7 @@ def _bundle(tmp_path: Path, *, pack_id: str = "techvault") -> ScenarioBundle:
         source_kind=ScenarioSourceKind.ENV_PACK,
         pack_identity=PackIdentity(
             pack_id=pack_id,
-            pack_version="0.1.2",
+            pack_version="0.1.3",
             set_digest=TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST,
         ),
     )
@@ -436,24 +436,21 @@ def test_aptl_planning_applies_compatibility_before_raes_planner(
     target = SimpleNamespace(
         name="aptl-full-remote-control-plane",
         manifest=manifest,
-        provisioner=SimpleNamespace(domain_profile_context=None),
+        provisioner=SimpleNamespace(
+            domain_profile_context=None,
+            planning_compatibility=SimpleNamespace(
+                decision=compatibility_provider.resolve(None)  # type: ignore[arg-type]
+            ),
+        ),
         participant_runtime=None,
     )
 
-    bundle = _bundle(tmp_path)
-    manager = object.__new__(AptlRuntimeManager)
-    manager._target = target
-    manager._snapshot = RuntimeSnapshot()
-    manager._aptl_bundle = bundle
-    manager._aptl_planning_compatibility = compatibility_provider.resolve(None)  # type: ignore[arg-type]
-
+    # Planning needs no runtime owner (OpenRAE/rae#1660).
     result = plan_aptl_scenario(
         target=target,
-        bundle=bundle,
         scenario=object(),
         options=raes_planning_compat.AptlPlanningOptions(
             artifact_availability="availability",
-            runtime_manager=manager,
         ),
     )
 
@@ -544,8 +541,6 @@ def test_admitted_target_reuses_one_planning_compatibility_resolution(
 
     assert resolutions == [(bundle, config)]
     assert target.provisioner.planning_compatibility is selection
-    assert planning_manager._aptl_planning_compatibility_selection is selection
-    assert apply_manager._aptl_planning_compatibility_selection is selection
     assert planning_manager._aptl_planning_compatibility is selection.decision
     assert apply_manager._aptl_planning_compatibility is selection.decision
 
