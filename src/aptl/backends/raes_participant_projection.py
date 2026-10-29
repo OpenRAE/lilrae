@@ -35,6 +35,10 @@ from aptl.backends.raes_participant_realizations import BPA_ACTION_REALIZATIONS
 
 _PARTICIPANT_SURFACE_PROVENANCE = "provenance.aptl-participant-surface"
 _PARTICIPANT_VISIBLE_MARKING = "markings.participant-visible"
+# The view dispositions raes 9 treats as participant-visible.
+_PARTICIPANT_VISIBLE_DISPOSITIONS = frozenset(
+    {"observable", "discovered", "inferred", "disclosed", "deceptive"}
+)
 
 
 @dataclass(frozen=True)
@@ -143,13 +147,18 @@ def _resolve_turn_context(
     )
     boundary = runtime_model.observation_boundaries[boundary_address]
     initial_relation = boundary.view_relation_timeline[0]
-    initial_visible_refs = (
-        initial_relation.get("visible_refs", ())
+    view_relation = (
+        initial_relation.get("view_relation", {})
         if isinstance(initial_relation, Mapping)
-        else initial_relation.visible_refs
+        else initial_relation.view_relation
     )
+    # raes 9 maps each canonical address to its disposition, and checks the
+    # projected refs against those canonical addresses.
     visible_context_refs = tuple(
-        ref for ref in initial_visible_refs if ref.startswith("content.")
+        ref
+        for ref, disposition in view_relation.items()
+        if ref.startswith("provision.content.")
+        and disposition in _PARTICIPANT_VISIBLE_DISPOSITIONS
     )
     if not visible_context_refs:
         raise ValueError("participant behavior has no visible task context")
@@ -348,7 +357,7 @@ def _render_visible_context(
         raise ValueError("compiled model has no content placements")
     rendered: list[Mapping[str, object]] = []
     for item_ref in visible_context_refs:
-        placement = placements.get(f"provision.{item_ref}")
+        placement = placements.get(item_ref)
         spec = getattr(placement, "spec", None)
         if not isinstance(spec, Mapping):
             raise ValueError(f"visible context is not resolvable: {item_ref}")
