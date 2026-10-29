@@ -30,7 +30,7 @@ from aptl.core.lab_types import LabResult
 # single component build step (the AD image's package install) alone measured
 # ~745s, so the whole cold build exceeds ~800s — and a modest local dev machine
 # (the lab's primary target) can be markedly slower still. The prior 600s cap
-# failed a clean `aptl lab start` on a fresh machine (BackendTimeoutError mid
+# failed a clean `lilrae lab start` on a fresh machine (BackendTimeoutError mid
 # `docker build`). This is set generously so a legitimately slow cold build or a
 # large base-image pull never trips it; a docker op that genuinely exceeds this
 # is a broken environment, not a too-tight timeout. Inspect/tag ops finish in
@@ -58,6 +58,19 @@ _ImageOverrideDumper.add_representer(
     _ResetValue,
     lambda dumper, _value: dumper.represent_scalar("!reset", ""),
 )
+
+
+def image_override_text(images: tuple[DeploymentImageRealization, ...]) -> str:
+    """Render the same merge features for preflight and the persisted model."""
+    services = {
+        image.service_name: {"image": image.image_ref, "build": _ResetValue()}
+        for image in images
+    }
+    return yaml.dump(
+        compose_literal({"services": services}),
+        Dumper=_ImageOverrideDumper,
+        sort_keys=True,
+    )
 
 
 class ComposeRealizationImageMixin:
@@ -432,16 +445,8 @@ class ComposeRealizationImageMixin:
 
         override_path = scenario_root / _IMAGE_OVERRIDE_RELATIVE_PATH
         override_path.parent.mkdir(parents=True, exist_ok=True)
-        services = {
-            image.service_name: {"image": image.image_ref, "build": _ResetValue()}
-            for image in images
-        }
         override_path.write_text(
-            yaml.dump(
-                compose_literal({"services": services}),
-                Dumper=_ImageOverrideDumper,
-                sort_keys=True,
-            ),
+            image_override_text(images),
             encoding="utf-8",
             newline="\n",
         )

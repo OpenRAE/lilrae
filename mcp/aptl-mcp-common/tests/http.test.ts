@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { HTTPClient } from '../src/http.js';
+import { HTTPClient, HTTPTimeoutError } from '../src/http.js';
 
 // Mock fetch globally
 global.fetch = vi.fn();
@@ -237,6 +237,8 @@ describe('HTTPClient', () => {
 
     const client = new HTTPClient(config);
 
-    await expect(client.makeRequest('/slow')).rejects.toThrow('Request timeout after 100ms');
+    const failure = client.makeRequest('/slow');
+    await expect(failure).rejects.toThrow('Request timeout after 100ms');
+    await expect(failure).rejects.toBeInstanceOf(HTTPTimeoutError);
   });
 });

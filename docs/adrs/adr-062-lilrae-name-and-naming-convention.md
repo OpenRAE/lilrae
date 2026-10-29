@@ -91,6 +91,73 @@ No alias package or dual installation is supported. The
 records the release and consumer boundaries; #1234 owns post-release checks
 and legacy archival.
 
+### Successor decision: command name (#1402)
+
+Issue #1402 supersedes only the retained `aptl` and `aptl-misp-suricata-sync`
+command clause, the retained CLI help text clause, and the current command
+wording above. The
+[#1402 preflight](../architecture/issue-1402-command-rename-preflight.md)
+records the design guardrails.
+
+| Old command | Primary command |
+| --- | --- |
+| `aptl` | `lilrae` |
+| `aptl-misp-suricata-sync` | `lilrae-misp-suricata-sync` |
+
+The primary commands enter the existing implementations: the one Typer app in
+`aptl.cli.main` and the one sync service `main()`. CLI help text, the root
+help, and the `--version` output name LilRAE. There is no second command tree.
+
+#### Identity boundary
+
+The command name changes. These identities do not change:
+
+- the `aptl` import root and the `aptl.*` entry-point groups;
+- `aptl.json`, its fields, `APTL_*` environment variables (including
+  `APTL_SEAT_CLI`), and the `.aptl` state directory;
+- Compose project, container, image, network, volume, and label names,
+  including the `aptl-misp-suricata-sync` container name;
+- the RAES backend identity `aptl`, schema identifiers, protocol selectors,
+  run records, evidence, and the release-please component;
+- serialized and internal field names, such as `aptl_executable`, whose value
+  can now be a `lilrae` path;
+- web interface titles, API descriptions, and MCP server descriptions.
+
+The TechVault environment pack installs its own frozen copy of the sync
+service. Its package metadata names only `aptl-misp-suricata-sync`, so the
+realization probe for that pack content keeps the pack-supplied name. A pack
+change, not this decision, can rename it.
+
+#### Deprecation policy
+
+- `aptl` and `aptl-misp-suricata-sync` stay as aliases through all 8.x and 9.x
+  releases. LilRAE **10.0.0** removes them;
+  [#1403](https://github.com/OpenRAE/lilrae/issues/1403) tracks the removal.
+- Each alias invocation writes one fixed notice to stderr before argument
+  parsing. The notice names the replacement and the removal release. It also
+  prints for `--help`, `--version`, and usage errors.
+- Alias stdout, `--json` output, and exit status are identical to the primary
+  command. The notice never goes to stdout and never adds a JSON field.
+- `LILRAE_SUPPRESS_APTL_DEPRECATION=1` hides the notice. Other values leave it
+  on. It is a process-local presentation control, not a configuration field.
+
+#### Generated artifacts and migration
+
+| Artifact | Migration |
+| --- | --- |
+| Guest forced-command policy (`authorized_keys`) | New generations name the `lilrae` executable. Earlier generations name `aptl` and keep working through the alias until 10.0.0. |
+| Host MCP client configurations | They launch pinned SSH, not the CLI, so they do not change. |
+| Offline seat image launchers | New images install `/usr/local/bin/lilrae` and `lilrae-misp-suricata-sync`, and keep the alias launchers. First boot, the golden-image scan, and seat qualification call `lilrae`. Signed images keep their bytes; replace them through the normal image lifecycle before 10.0.0. |
+| Container commands | The web API image runs `lilrae web serve`. The sync image enters through `lilrae-misp-suricata-sync`. |
+| Scripts, CI, and current docs | They call `lilrae`. The clean-wheel CI job proves both names and the notice. |
+
+#### Release impact
+
+Adding the primary commands is a `feat:` change. Release-please owns
+`CHANGELOG.md`, so the delivery PR title names the 10.0.0 removal release to
+put it in the generated entry. Removing the aliases is a breaking change in
+10.0.0 under #1403.
+
 ### Naming convention for new code
 
 Use `lilrae` as the naming convention for new code going forward. A new
@@ -117,11 +184,14 @@ and talk titles accepted under the APTL name keep that name.
 ## Consequences
 
 - Users arriving at the renamed repository or documentation site see LilRAE
-  first and learn why commands still say `aptl`.
+  first. From #1402 the command is `lilrae`, and the `aptl` alias tells
+  existing users to move before 10.0.0.
 - Mixed naming remains on secondary pages and in technical identifiers. The
   rename note and this ADR explain it; a corpus-wide sweep is deliberately
   avoided.
 - New code gains a single, stated naming rule without breaking existing
   installations or interfaces.
-- Renaming the package, command, configuration, or runtime identities remains
+- Renaming the import package, configuration, or runtime identities remains
   open work that requires its own decision, release, and migration guidance.
+  The distribution (#1367) and command (#1402) successor clauses close those
+  two parts.

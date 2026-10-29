@@ -1,9 +1,9 @@
-"""CLI implementation of ``aptl lab continuity-audit`` (issue #252).
+"""CLI implementation of ``lilrae lab continuity-audit`` (issue #252).
 
 Lives in its own module so :mod:`aptl.cli.lab` stays focused on the
 lab-lifecycle commands (``start``/``stop``/``status``); the lab module
 imports :func:`continuity_audit` and registers it as a subcommand of
-``aptl lab``. See ADR-024 for the design and ADR-021 for the in-band
+``lilrae lab``. See ADR-024 for the design and ADR-021 for the in-band
 counterpart.
 """
 
@@ -18,6 +18,7 @@ from typing import Optional
 import typer
 
 from aptl.cli._common import (
+    PROJECT_DIR_HELP,
     exit_on_invalid_deployment_settings,
     resolve_config_for_cli,
     resolve_run_store,
@@ -57,7 +58,7 @@ def continuity_audit(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     targets: Optional[list[str]] = typer.Option(
         None,
@@ -98,7 +99,7 @@ def continuity_audit(
     timeout). Granular rules with any qualifier are preserved. See
     ADR-024 and ADR-021 for the design.
 
-    Runs unconditionally — APTL is purple-team-only by design. When SDL
+    Runs unconditionally — LilRAE is purple-team-only by design. When SDL
     formalizes a ``mode`` field (issue #263) the audit will gate on
     ``scenario.mode == PURPLE``.
     """
@@ -234,7 +235,7 @@ def _emit_continuity_text(
     target_list: list[str],
     run_id: str | None,
 ) -> None:
-    """Render the human-readable summary for ``aptl lab continuity-audit``."""
+    """Render the human-readable summary for ``lilrae lab continuity-audit``."""
     if not events:
         typer.echo("Continuity audit: no blanket kali source-IP rules found.")
         return
@@ -280,7 +281,7 @@ def _resolve_continuity_run_archive(
          match a safe character class and reference an existing run
          (the run directory and its ``manifest.json`` must already be
          present, so a typo creates a clear error rather than a stray
-         orphan archive that ``aptl runs list`` cannot find).
+         orphan archive that ``lilrae runs list`` cannot find).
       2. The active scenario session's ``run_id`` (when populated). A
          corrupt ``.aptl/session.json`` is non-fatal here — the audit
          should still repair iptables even if archive discovery fails.

@@ -19,7 +19,7 @@
       "asset_id": "aptl-config",
       "kind": "project-file",
       "source": "participant-profiles/guided-purple-v1/aptl.json",
-      "sha256": "eca39978d2f457b65e5779e373af706bd22b1614d63d158424a6da143349f0bc"
+      "sha256": "0a1d49c7476fe571a97c1c6da1d71786078ca0f96d3868d61fc80968693ffce9"
     },
     {
       "asset_id": "raes-scenario",
@@ -43,7 +43,7 @@
       "asset_id": "compose-model",
       "kind": "project-file",
       "source": "docker-compose.yml",
-      "sha256": "692f288ffbe25f8bc3e96e39180ed5ee69a79ca08009d29bfe1ca62c375e0aeb"
+      "sha256": "422b7102c198da622afa83fb62e884f930f5ba73398d31faa12c2ebaf04fcb6c"
     },
     {
       "asset_id": "mcp-red-build",
@@ -55,7 +55,7 @@
       "asset_id": "mcp-red-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-red/package-lock.json",
-      "sha256": "d12bc1968501250cb026c36364f9a11461715ea98792829f0f7f92b16582460f"
+      "sha256": "4d0215b7e5f7a956c9080a5b37ef9627b0524dcaabe6080a28c42b7270835a42"
     },
     {
       "asset_id": "mcp-red-config",
@@ -73,7 +73,7 @@
       "asset_id": "mcp-indexer-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-indexer/package-lock.json",
-      "sha256": "483a163240a2ea4813b55b0dee572abf788e10cff6f6de3cfacf66932e31cc9c"
+      "sha256": "7a9414e7927c71f29da19390a645b0d9dee0e67459f2f851a80ded117b75daf3"
     },
     {
       "asset_id": "mcp-indexer-config",
@@ -91,7 +91,7 @@
       "asset_id": "mcp-wazuh-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-wazuh/package-lock.json",
-      "sha256": "3072f8a97893f5cf882d8ff5e381dd3079edcd2285b3e7455163944bdff5df65"
+      "sha256": "29f88aa5b8c58fa0271eccc5a073d6dd900e70b52d4f864ba934515a9a318b1d"
     },
     {
       "asset_id": "mcp-wazuh-config",

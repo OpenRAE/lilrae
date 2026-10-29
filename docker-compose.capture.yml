@@ -29,6 +29,10 @@ services:
         read_only: true
     cap_drop: [ALL]
     cap_add:
+      # Debian's sshd writes a kernel audit login record when it allocates a
+      # PTY, and drops the connection if the write is refused. Without
+      # AUDIT_WRITE every interactive participant session fails to open.
+      - AUDIT_WRITE
       - CHOWN
       - DAC_OVERRIDE
       - NET_BIND_SERVICE

@@ -15,14 +15,11 @@ from aptl.core.credentials import (
 )
 from aptl.core.deployment._compose_stateful_constants import (
     CERTIFICATE_ROOT_RELPATH,
-    MIN_OVERRIDE_COMPOSE_VERSION,
     SOC_CERT_PROFILE,
     SOC_CERTS_ROOT_RELPATH,
     WAZUH_MANAGER_CONFIG_PROVENANCES,
 )
 from aptl.core.deployment._compose_stateful_graph import (
-    compose_version,
-    owned_wazuh_services,
     stateful_realization_errors,
 )
 from aptl.core.deployment._compose_stateful_artifact_helpers import (
@@ -105,23 +102,6 @@ class ComposeStatefulRealizationMixin(ComposeStatefulReadinessMixin):
             scenario_root,
             self.project_name,
             realization,
-        )
-
-    def _validate_stateful_compose_capability(
-        self,
-        realization: DeploymentRealizationSpec,
-    ) -> LabResult | None:
-        """Require Compose service replacement support before artifact mutation."""
-
-        if not owned_wazuh_services(realization):
-            return None
-        result = self._run(["docker", "compose", "version", "--short"], timeout=30)
-        version = compose_version(result.stdout) if result.returncode == 0 else None
-        if version is not None and version >= MIN_OVERRIDE_COMPOSE_VERSION:
-            return None
-        return LabResult(
-            success=False,
-            error="Docker Compose 2.24.4 or later is required for stateful service ownership.",
         )
 
     def _realize_stateful_prerequisites(

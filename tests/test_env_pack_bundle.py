@@ -34,8 +34,8 @@ pytestmark = pytest.mark.integration
 
 
 def test_directory_and_bundled_acquisition_preserve_the_same_identity(tmp_path):
-    bundled = env_pack_bundle(tmp_path / "bundled")
-    acquired = env_pack_bundle(tmp_path / "acquired", source_pack=bundled.root)
+    bundled = env_pack_bundle(tmp_path / "bundled", "techvault")
+    acquired = env_pack_bundle(tmp_path / "acquired", "techvault", source_pack=bundled.root)
     assert acquired.pack_identity == bundled.pack_identity
     assert acquired.sdl_path.read_bytes() == bundled.sdl_path.read_bytes()
     assert acquired.root != bundled.root
@@ -43,23 +43,23 @@ def test_directory_and_bundled_acquisition_preserve_the_same_identity(tmp_path):
 
 @pytest.mark.parametrize("linked", ["pack.yaml", "sdl"])
 def test_acquisition_rejects_source_links_before_copying(tmp_path, linked):
-    source = env_pack_bundle(tmp_path / "source").root
+    source = env_pack_bundle(tmp_path / "source", "techvault").root
     original = source / linked
     outside = tmp_path / ("outside-" + linked)
     original.rename(outside)
     original.symlink_to(outside, target_is_directory=outside.is_dir())
     with pytest.raises(EnvPackError, match="unsafe source"):
-        env_pack_bundle(tmp_path / "destination", source_pack=source)
+        env_pack_bundle(tmp_path / "destination", "techvault", source_pack=source)
 
 
 def test_new_acquisition_does_not_delete_long_running_input(tmp_path):
     import time
 
     root = tmp_path / "staged"
-    active = env_pack_bundle(root)
+    active = env_pack_bundle(root, "techvault")
     old = time.time() - 7200
     os.utime(active.root.parent, (old, old))
-    env_pack_bundle(root)
+    env_pack_bundle(root, "techvault")
     assert active.sdl_path.is_file()
     assert active.read_asset("pack.yaml")
 

@@ -45,18 +45,6 @@ def test_local_sdl_package_is_removed():
         importlib.import_module("aptl.core.sdl.parser")
 
 
-def test_startup_catalog_contains_only_acquired_pack_selectors():
-    from aptl.core.scenario_catalog import load_scenario_catalog
-
-    catalog = load_scenario_catalog(PROJECT_ROOT)
-
-    assert [entry.id for entry in catalog.scenarios] == [
-        "techvault-participant-study"
-    ]
-    assert catalog.pack_identity.pack_id == "techvault-participant-study"
-    assert not hasattr(catalog.scenarios[0], "path")
-
-
 def test_clean_install_workflow_starts_the_product_neutral_envelope():
     """CI exercises materialization independently of TechVault's adapter."""
     workflow = (PROJECT_ROOT / ".github" / "workflows" / "checks.yml").read_text()
@@ -76,5 +64,5 @@ def test_clean_install_workflow_starts_the_product_neutral_envelope():
     )
     assert fixture in job
     assert f"--scenario-path scenarios/{FIXTURE_SDL.name}" in job
-    assert 'aptl" lab status' in job
-    assert 'aptl" lab stop --volumes --yes' in job
+    assert 'lilrae" lab status' in job
+    assert 'lilrae" lab stop --volumes --yes' in job

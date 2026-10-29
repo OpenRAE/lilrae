@@ -22,6 +22,7 @@ from aptl.appliance.seat.locking import (
     serialized_image_cache,
     serialized_seat_mutation,
 )
+from aptl.backends.participant_desktop import _bounded
 from aptl.utils.strict_json import JsonValue, model_validate_json_strict
 
 _SRC = Path(__file__).resolve().parents[1] / "src"
@@ -67,6 +68,7 @@ def test_no_module_under_src_uses_legacy_type_variables_or_aliases() -> None:
         (serialized_seat_mutation, (("P", ParamSpec, None), ("R", TypeVar, None))),
         (serialized_image_cache, (("P", ParamSpec, None), ("R", TypeVar, None))),
         (model_validate_json_strict, (("ModelT", TypeVar, BaseModel),)),
+        (_bounded, (("_Item", TypeVar, None),)),
     ],
     ids=lambda value: getattr(value, "__name__", None),
 )

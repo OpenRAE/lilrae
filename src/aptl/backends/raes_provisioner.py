@@ -349,7 +349,7 @@ class AptlProvisioner(ProvisionerStartMixin):
         <selected>``, which activates every service in each selected profile,
         not just the declared RAES nodes. If an activated service depends on a
         service the selection excludes, Compose rejects the project at ``up``
-        time. Catch that here so ``aptl lab start`` fails fast with an APTL
+        time. Catch that here so ``lilrae lab start`` fails fast with an APTL
         diagnostic instead of a raw Compose "undefined service" error.
         """
         return compose_validity_diagnostics(self.bundle.root, selected_profiles)

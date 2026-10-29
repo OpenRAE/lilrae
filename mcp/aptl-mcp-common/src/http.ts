@@ -9,6 +9,9 @@ export interface HTTPError extends Error {
   response?: any;
 }
 
+/** A request, or its token exchange, that did not finish within its timeout. */
+export class HTTPTimeoutError extends Error {}
+
 export interface HTTPResponse {
   ok: boolean;
   status: number;
@@ -116,7 +119,12 @@ export class HTTPClient {
     try { parsed = JSON.parse(tokenResp.text); } catch { parsed = {}; }
     const token = parsed?.data?.token;
     if (!token) {
-      throw new Error(`wazuh-jwt: no token in auth response (status ${tokenResp.status})`);
+      const error: HTTPError = new Error(
+        `wazuh-jwt: no token in auth response (status ${tokenResp.status})`,
+      );
+      error.statusCode = tokenResp.status;
+      error.response = parsed;
+      throw error;
     }
     this.cachedJwt = token;
     return { 'Authorization': `Bearer ${token}` };
@@ -158,7 +166,7 @@ export class HTTPClient {
           text: Buffer.concat(chunks).toString(),
         }));
       });
-      req.on('timeout', () => { req.destroy(); reject(new Error(`token timeout after ${timeout}ms`)); });
+      req.on('timeout', () => { req.destroy(); reject(new HTTPTimeoutError(`token timeout after ${timeout}ms`)); });
       req.on('error', reject);
       if (body) req.write(body);
       req.end();
@@ -232,7 +240,7 @@ export class HTTPClient {
       return await this.parseResponse(response, responseType);
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error(`Request timeout after ${timeout}ms`);
+        throw new HTTPTimeoutError(`Request timeout after ${timeout}ms`);
       }
       throw error;
     } finally {
@@ -371,7 +379,7 @@ export class HTTPClient {
 
       req.on('timeout', () => {
         req.destroy();
-        reject(new Error(`Request timeout after ${timeout}ms`));
+        reject(new HTTPTimeoutError(`Request timeout after ${timeout}ms`));
       });
 
       req.on('error', (error) => {

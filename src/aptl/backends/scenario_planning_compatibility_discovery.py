@@ -141,6 +141,27 @@ def resolve_scenario_planning_compatibility(
 ) -> ResolvedPlanningCompatibility | None:
     """Return the one compatible decision; absence means no compatibility."""
 
+    if context.trial is not None:
+        from aptl.backends.scenario_family import resolve_family_contribution
+
+        try:
+            selected, decision = resolve_family_contribution(
+                ENTRY_POINT_GROUP,
+                context.trial,
+                context,
+                _validated_decision,
+            )
+        except ValueError as exc:
+            raise ScenarioPlanningCompatibilityError(str(exc)) from None
+        return ResolvedPlanningCompatibility(
+            decision,
+            selected.provider_id,
+            EXTENSION_API_VERSION,
+            selected.distribution,
+            selected.distribution_version,
+            selected.entry_point,
+        )
+
     selector = f"{context.pack.pack_id}.{context.backend.target_name}"
     compatible: list[tuple[metadata.EntryPoint, object]] = []
     for entry_point in _entry_points():

@@ -12,7 +12,6 @@ release cannot break these cases. Only the destructive TechVault qualification
 run uses the released pack.
 """
 
-import functools
 import json
 import os
 import types
@@ -30,7 +29,6 @@ from aptl.validation.scenario_verification import (
 from aptl.validation import _live_gate_checks as lgc
 from aptl.validation import techvault_live_gate as tlg
 from aptl.validation import _live_gate_probes as lgp
-from aptl.validation import _live_gate_telemetry as lgt
 from aptl.validation.techvault_live_gate import (
     CATEGORY_RAES_SPECIFICATION,
     CATEGORY_BACKEND_INSTANTIATION,
@@ -116,7 +114,7 @@ class _Backend:
 
 
 def _config():
-    return AptlConfig(lab={"name": "techvault"})
+    return AptlConfig(lab={"name": "techvault"}, scenario={"identity": "techvault"})
 
 
 def _node(name, profiles, aliases=None, declared_health=None):
@@ -1293,7 +1291,8 @@ def test_variation_passes_on_distinct_realizations(monkeypatch):
 def test_variation_rejects_scenario_owned_backend_otel_component(tmp_path):
     config = AptlConfig(
         lab={"name": "techvault"},
-        containers={"enterprise": True, "wazuh": False, "victim": False, "kali": False},
+        containers={'profiles': ['enterprise', 'soc', 'fileshare', 'dns']},
+        scenario={"identity": "techvault"},
     )
     _write_compose(tmp_path, {"ad": ["enterprise"], "aptl-grafana-otel": ["otel"]})
     state = _variation_state(
@@ -1352,6 +1351,7 @@ def test_variation_fails_on_realization_error(monkeypatch):
 
 
 @pytest.mark.integration
+@pytest.mark.live_lab(opt_in="APTL_LIVE_GATE")
 @pytest.mark.skipif(
     os.getenv("APTL_LIVE_GATE", "0") != "1",
     reason="Set APTL_LIVE_GATE=1 to run the destructive live deployment gate",

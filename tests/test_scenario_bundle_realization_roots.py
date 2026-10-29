@@ -114,6 +114,7 @@ def test_artifact_source_path_anchors_to_the_bundle_root(tmp_path):
 
     class _Artifact:
         generator = "certificate_bundle"
+        provenance = "config/certs.yml"
 
     source = artifact_source_path(elsewhere, _Artifact())
 

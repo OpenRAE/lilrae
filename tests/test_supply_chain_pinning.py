@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+from aptl.core._doctor_common import node_version_supported
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
 
@@ -89,7 +91,9 @@ def _registry_base_refs(dockerfile: Path) -> list[str]:
     }
     required_args = {
         match.group("name")
-        for match in _REQUIRED_ARG.finditer(text[: first_from.start() if first_from else 0])
+        for match in _REQUIRED_ARG.finditer(
+            text[: first_from.start() if first_from else 0]
+        )
     }
     stages = {
         m.group(1).lower()
@@ -168,6 +172,117 @@ def test_dependabot_watches_every_dockerfile_directory() -> None:
     assert needed <= watched, (
         f"no docker Dependabot entry for: {sorted(needed - watched)}"
     )
+
+
+_NODE_IMAGE = re.compile(
+    r"(?:^|/)node:(?P<version>\d+\.\d+\.\d+)(?:-[^@]+)?@sha256:[0-9a-f]{64}$"
+)
+
+
+def test_node_base_images_name_supported_patch_releases() -> None:
+    """A digest is immutable, but its reviewed Node release must also be safe."""
+
+    node_refs = [
+        ref
+        for dockerfile in _dockerfiles()
+        for ref in _registry_base_refs(dockerfile)
+        if re.search(r"(?:^|/)node:", ref)
+    ]
+    assert node_refs, "no external Node base images discovered"
+    invalid = []
+    for ref in node_refs:
+        match = _NODE_IMAGE.fullmatch(ref)
+        if match is None or not node_version_supported(match.group("version")):
+            invalid.append(ref)
+    assert not invalid, (
+        "Node base images must use an explicit supported patch release and an "
+        f"OCI index digest: {invalid}"
+    )
+
+
+def test_node_artifact_builds_assert_the_effective_version() -> None:
+    expected = {
+        "containers/generic-systemd-node22-base/Dockerfile": "v22.23.4",
+        "web/Dockerfile": "v26.12.1",
+    }
+    missing = []
+    for relative, version in expected.items():
+        text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+        if f'test "$(node --version)" = "{version}"' not in text:
+            missing.append(f"{relative}: {version}")
+    assert not missing, f"Node artifact builds lack effective-version checks: {missing}"
+
+
+def test_setup_node_uses_supported_patch_releases() -> None:
+    """Major-only setup-node selectors can silently remain below a security floor."""
+
+    import yaml
+
+    invalid = []
+    for workflow_path in _tracked(".github/workflows/*.yml"):
+        workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+        for job in workflow.get("jobs", {}).values():
+            for step in job.get("steps", []):
+                if not str(step.get("uses", "")).startswith("actions/setup-node@"):
+                    continue
+                version = str(step.get("with", {}).get("node-version", ""))
+                if not node_version_supported(version):
+                    invalid.append(f"{workflow_path.name}: {version or '<missing>'}")
+    assert not invalid, (
+        f"setup-node admits vulnerable or unsupported releases: {invalid}"
+    )
+
+
+def test_active_host_guidance_requires_a_supported_node_release() -> None:
+    active_docs = (
+        "README.md",
+        "docs/getting-started/prerequisites.md",
+        "docs/workshop/walkthrough.md",
+        "docs/workshop/hosted-backup-seats.md",
+    )
+    stale = []
+    for relative in active_docs:
+        text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+        if re.search(r"Node(?:\.js)?\s+20(?:\D|$)|node-v20\.", text, re.IGNORECASE):
+            stale.append(relative)
+    assert not stale, f"active operator guidance still admits EOL Node 20: {stale}"
+
+
+def test_appliance_uses_an_authenticated_official_node_release() -> None:
+    acquire = (
+        REPO_ROOT / "scripts/appliance/acquire-guest-node-runtime.sh"
+    ).read_text(encoding="utf-8")
+    lock = (REPO_ROOT / "appliance/guest/node-runtime.sha256").read_text(
+        encoding="utf-8"
+    )
+    selected = re.fullmatch(
+        r"([0-9a-f]{64})  node-v(\d+\.\d+\.\d+)-linux-x64\.tar\.xz\n?",
+        lock,
+    )
+    assert selected is not None
+    assert node_version_supported(selected.group(2))
+    assert f"version={selected.group(2)}" in acquire
+    assert "https://nodejs.org/dist/v${NODE_VERSION}" in acquire
+    assert "SHASUMS256.txt.asc" in acquire
+    assert "gpgv --keyring" in acquire
+    assert re.search(r"release_key_commit=[0-9a-f]{40}\b", acquire)
+    assert re.search(r"release_key_fingerprint=[0-9A-F]{40}\b", acquire)
+    assert re.search(r"release_key_sha256=[0-9a-f]{64}\b", acquire)
+    assert "sha256sum --check --strict" in acquire
+
+    system_lock = (
+        REPO_ROOT / "appliance/guest/system-packages.sha256"
+    ).read_text(encoding="utf-8")
+    assert not re.search(r"\s(?:nodejs|libnode\d+)_", system_lock)
+
+
+def test_appliance_golden_scan_enforces_the_node_security_policy() -> None:
+    scan = (REPO_ROOT / "appliance/guest/scan-golden.sh").read_text(encoding="utf-8")
+    assert "node_version_supported" in scan
+    assert "allowed_majors={22}" in scan
+    assert "/opt/node-v22.23.4-linux-x64/bin/node" in scan
+    assert "dpkg-query --show nodejs" in scan
+    assert "PYTHONPATH=/opt/aptl/app:/opt/aptl/python /usr/bin/python3" in scan
 
 
 # ------------------------------------------------------------ github actions

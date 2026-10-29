@@ -51,6 +51,16 @@ from aptl.workbench.preparation import TransportPreparation, prepare_guest_trans
 from aptl.workbench.profiles import WorkbenchConfigurationError
 
 
+def _cli_executable() -> Path:
+    """Return the CLI that new guest forced-command policy runs.
+
+    New policy names ``lilrae`` (ADR-062 successor clause, #1402). Policy that
+    an earlier generation wrote with ``aptl`` keeps working through the
+    deprecated alias until 10.0.0 (#1403).
+    """
+    return Path(shutil.which("lilrae") or "/usr/local/bin/lilrae")
+
+
 def _run_qualification_attempt(
     project_dir: Path,
 ) -> tuple[QualificationCheckEvidence, ...]:
@@ -272,7 +282,7 @@ def serve_appliance_access(
         project_dir=project_dir,
         management_home=Path(account.pw_dir),
         node_executable=Path(shutil.which("node") or "/usr/bin/node"),
-        aptl_executable=Path(shutil.which("aptl") or "/usr/local/bin/aptl"),
+        aptl_executable=_cli_executable(),
         host_key=host_key,
         host_public_key=host_key.with_suffix(host_key.suffix + ".pub"),
         username=username,

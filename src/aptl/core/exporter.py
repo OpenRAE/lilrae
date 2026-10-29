@@ -10,7 +10,7 @@ which for a sealed attempt is immutable.
 
 An archive carries restricted run evidence, so export creates a missing output
 directory with mode 0700 and the archive with mode 0600, whatever the umask.
-``aptl runs export-bundle`` shares the default ``./exports`` directory and
+``lilrae runs export-bundle`` shares the default ``./exports`` directory and
 refuses a parent with group or other permission bits (issue #1282).
 """
 

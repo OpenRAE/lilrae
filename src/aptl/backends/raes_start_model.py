@@ -12,6 +12,7 @@ from aptl.core.lab_types import LabResult
 from aptl.core.experiment.capture_plan import CapturePlan, empty_capture_plan
 
 if TYPE_CHECKING:
+    from aptl.backends.lilrae_participant_execution import LilraeParticipantBinding
     from raes_processor.models import ExecutionPlan
     from raes_runtime.registry import RuntimeTarget
     from raes_runtime.manager import RuntimeManager
@@ -22,6 +23,15 @@ if TYPE_CHECKING:
     from aptl.backends.scenario_capture import ResolvedScenarioCapture
     from aptl.core.runstore import RunStorageBackend
     from aptl.core.scenario_bundle import ScenarioBundle
+
+
+@dataclass(frozen=True)
+class ScenarioAdmissionSource:
+    """Preselected scenario, startup adapter, and native participant bindings."""
+
+    bundle: ScenarioBundle | None = None
+    startup_selection: ScenarioStartupSelection | None = field(default=None, repr=False)
+    autonomous_bindings: tuple[LilraeParticipantBinding, ...] = ()
 
 
 @dataclass(frozen=True)

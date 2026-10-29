@@ -81,7 +81,7 @@ def test_the_cli_reports_kind_and_path_only(check, facts, tmp_path, monkeypatch,
     secret = next(value for value, kind in facts.items() if kind == "credential")
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "x.sh").write_text(secret, encoding="utf-8")
-    monkeypatch.setattr(check, "pack_facts", lambda _pack: facts)
+    monkeypatch.setattr(check, "pack_facts", lambda _pack, **_kwargs: facts)
 
     assert check.main(["check", str(tmp_path)]) == 1
     err = capsys.readouterr().err
@@ -105,3 +105,111 @@ def test_staged_hook_runs_the_same_boundary_checker():
     assert hook is not None
     assert "tools/check_pack_boundary.py" in hook["entry"]
     assert hook["pass_filenames"] is False
+
+
+def test_boundary_checker_reads_the_configured_owner_release(check, tmp_path):
+    import json
+    import shutil
+    from aptl.core.scenario_bundle import EnvPackError, env_pack_bundle
+
+    bundle = env_pack_bundle(tmp_path / "acquired", "techvault")
+    destination = tmp_path / "releases" / "techvault"
+    shutil.copytree(bundle.root, destination)
+    bundle.close()
+    (tmp_path / "aptl.json").write_text(json.dumps({"scenario": {
+        "identity": "techvault", "pack_directory": "releases/techvault",
+    }}))
+    assert "misp.techvault.local" in check.pack_facts("techvault", project_dir=tmp_path)
+    (destination / "assets" / "unmanifested.txt").write_text("corruption")
+    with pytest.raises(EnvPackError):
+        check.pack_facts("techvault", project_dir=tmp_path)
+
+
+def test_boundary_check_accepts_explicit_owner_sources(check, tmp_path, monkeypatch):
+    from tests.fixture_pack import FIXTURE_PACK_IDENTITY
+
+    monkeypatch.setattr(check, "owner_packs", lambda: {FIXTURE_PACK_IDENTITY})
+    found = []
+
+    def observe(pack_id, *, project_dir, pack_directory=None):
+        found.append((pack_id, project_dir, pack_directory))
+        return {"owned.example.test": "hostname"}
+
+    monkeypatch.setattr(check, "pack_facts", observe)
+    assert check.main([
+        "check", str(tmp_path), "--pack-directory",
+        f"{FIXTURE_PACK_IDENTITY}=releases/{FIXTURE_PACK_IDENTITY}",
+    ]) == 0
+    assert found == [(FIXTURE_PACK_IDENTITY, tmp_path, f"releases/{FIXTURE_PACK_IDENTITY}")]
+
+
+def test_missing_owner_source_has_a_value_free_diagnostic(
+    check, tmp_path, monkeypatch, capsys,
+):
+    monkeypatch.setattr(check, "owner_packs", lambda: {"unavailable-owner"})
+    assert check.main(["check", str(tmp_path)]) == 1
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def test_project_tree_selection_keeps_installed_owner_packs_checkable(check, tmp_path):
+    import json
+
+    (tmp_path / "aptl.json").write_text(json.dumps({"scenario": {
+        "source": "project-tree", "identity": "techvault",
+    }}))
+    assert "misp.techvault.local" in check.pack_facts("techvault", project_dir=tmp_path)
+
+
+def test_owner_identity_is_a_fact_even_without_authored_hosts(check, monkeypatch):
+    from types import SimpleNamespace
+    from pathlib import Path
+    import tempfile
+    bundle = SimpleNamespace(sdl_path=Path('unused'))
+    monkeypatch.setattr('aptl.backends._raes_scenario_resolution.resolve_scenario_bundle', lambda *args, **kwargs: bundle)
+    monkeypatch.setattr('aptl.backends.raes.parse_sdl_file', lambda *args: SimpleNamespace(nodes={}, accounts={}))
+    assert check.pack_facts('different-owner')['different-owner'] == 'pack identifier'
+
+
+def test_reviewed_exception_does_not_allow_a_new_identifier_line(check, tmp_path):
+    import hashlib
+    import json
+    path = tmp_path / 'src/aptl/compatibility.py'
+    path.parent.mkdir(parents=True)
+    original = 'LEGACY = "another-owner:old-contract/v1"\n'
+    path.write_text(original)
+    policy = tmp_path / '.gc/pack-ownership.json'
+    policy.parent.mkdir()
+    policy.write_text(json.dumps({'schema': 'lilrae-pack-ownership/v1', 'exceptions': [{
+        'path': 'src/aptl/compatibility.py', 'owner': 'external_adapter',
+        'symbol': 'LEGACY', 'kind': 'pack identifier', 'count': 1,
+        'line_digest': 'sha256:' + hashlib.sha256(original.rstrip('\n').encode()).hexdigest(),
+        'purpose': 'Preserve one old serialized contract.',
+        'allowed_use': 'Only that retained compatibility constant.',
+        'retirement': 'Remove with the old contract reader.',
+    }]}))
+    facts = {'another-owner': 'pack identifier'}
+    assert check.findings(tmp_path, facts) == []
+    path.write_text(original + 'DEFAULT = "another-owner"\n')
+    assert check.findings(tmp_path, facts) == [('src/aptl/compatibility.py', 'pack identifier')]
+    path.write_text(original + original)
+    assert check.findings(tmp_path, facts) == [('src/aptl/compatibility.py', 'pack identifier')]
+
+
+def test_owner_path_detects_a_dependency_without_a_pack_literal(check, tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+    module = tmp_path / 'src/aptl/backends/fixture_policy.py'
+    module.parent.mkdir(parents=True)
+    module.write_text('def read_policy():\n    return ()\n')
+    (tmp_path / '.gc').mkdir()
+    (tmp_path / '.gc/pack-ownership.json').write_text(json.dumps({
+        'schema': 'lilrae-pack-ownership/v1', 'exceptions': [],
+        'owned_paths': [{'path': 'src/aptl/backends/fixture_policy.py', 'owner_path': 'src/independent_adapter'}],
+    }))
+    monkeypatch.setattr(check, 'owner_declarations', lambda: {'independent-pack': {'independent_adapter'}})
+    monkeypatch.setattr('aptl.backends._raes_scenario_resolution.resolve_scenario_bundle', lambda *args, **kwargs: SimpleNamespace(sdl_path=tmp_path / 'unused'))
+    monkeypatch.setattr('aptl.backends.raes.parse_sdl_file', lambda *args: SimpleNamespace(nodes={}, accounts={}))
+    facts = check.pack_facts('independent-pack', project_dir=tmp_path)
+    caller = tmp_path / 'src/aptl/backends/another.py'
+    caller.write_text('from aptl.backends.fixture_policy import read_policy\n')
+    assert check.findings(tmp_path, facts) == [('src/aptl/backends/another.py', 'pack identifier')]
