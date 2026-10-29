@@ -361,3 +361,45 @@ def test_broker_relays_characters_and_interrupt_bytes_and_restores_outer_termina
     finally:
         os.close(master)
         os.close(slave)
+
+
+def test_hung_up_pty_session_still_finishes_and_releases_its_registration(
+    broker, tmp_path, monkeypatch, mocker
+):
+    """Closing a PTY session sends the broker SIGHUP; teardown must still run."""
+    import os
+    import signal
+
+    runtime = _prepare_broker_session(broker, tmp_path, monkeypatch)
+    handlers = {}
+    monkeypatch.setattr(broker.signal, "signal", handlers.__setitem__)
+    child = mocker.Mock(pid=4321)
+    child.poll.return_value = None
+    monkeypatch.setattr(broker.subprocess, "Popen", lambda *_args, **_kwargs: child)
+    killed = []
+    monkeypatch.setattr(broker.os, "killpg", lambda *args: killed.append(args))
+    stdin_read, stdin_write = os.pipe()
+    monkeypatch.setattr(broker.sys, "stdin", mocker.Mock(fileno=lambda: stdin_read))
+
+    def hang_up(*_args):
+        handlers[signal.SIGHUP](signal.SIGHUP, None)
+
+    monkeypatch.setattr(broker, "_relay", hang_up)
+    try:
+        returncode = broker.run_broker()
+    finally:
+        os.close(stdin_read)
+        os.close(stdin_write)
+    metadata = json.loads(
+        (
+            tmp_path / "captures/run-1/sessions/session-1/metadata.json"
+        ).read_text()
+    )
+
+    assert returncode == 129
+    assert not (runtime / "sessions/session-1.pid").exists()
+    assert metadata["close_reason"] == "signal"
+    assert killed == [(4321, signal.SIGTERM)]
+    # A quiesce SIGTERM arriving during teardown cannot cut it short.
+    assert handlers[signal.SIGTERM] is signal.SIG_IGN
+    assert handlers[signal.SIGHUP] is signal.SIG_IGN

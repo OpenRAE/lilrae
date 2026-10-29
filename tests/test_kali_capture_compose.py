@@ -266,45 +266,84 @@ def test_capture_entrypoint_applies_key_ownership_with_declared_capabilities(
         )
 
 
-def _brokered_ssh(
-    outer_key: Path, port: str, session_id: str, command: str, *, tty: bool
-) -> subprocess.CompletedProcess[str]:
-    """Open one outer session through the capture sshd, as the MCP does."""
+def _brokered_environment(session_id: str) -> dict[str, str]:
+    """Return the MCP's correlation environment for one outer session."""
 
-    environment = {
+    return {
         **os.environ,
         "APTL_SESSION_ID": session_id,
         "APTL_RUN_ID": "run-1",
         "APTL_TRACE_ID": "run-1",
     }
+
+
+def _brokered_ssh_command(
+    outer_key: Path, port: str, command: str, *, tty: bool
+) -> list[str]:
+    """Return the ssh argv for one outer session through the capture sshd."""
+
+    return [
+        "ssh",
+        *(("-tt",) if tty else ()),
+        "-i",
+        str(outer_key),
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "IdentitiesOnly=yes",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        "LogLevel=ERROR",
+        "-o",
+        "SendEnv=APTL_SESSION_ID APTL_RUN_ID APTL_TRACE_ID",
+        "-p",
+        port,
+        "kali@127.0.0.1",
+        command,
+    ]
+
+
+def _brokered_ssh(
+    outer_key: Path, port: str, session_id: str, command: str, *, tty: bool
+) -> subprocess.CompletedProcess[str]:
+    """Run one outer session through the capture sshd, as the MCP does."""
+
     return subprocess.run(
-        [
-            "ssh",
-            *(("-tt",) if tty else ()),
-            "-i",
-            str(outer_key),
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "IdentitiesOnly=yes",
-            "-o",
-            "StrictHostKeyChecking=no",
-            "-o",
-            "UserKnownHostsFile=/dev/null",
-            "-o",
-            "LogLevel=ERROR",
-            "-o",
-            "SendEnv=APTL_SESSION_ID APTL_RUN_ID APTL_TRACE_ID",
-            "-p",
-            port,
-            "kali@127.0.0.1",
-            command,
-        ],
+        _brokered_ssh_command(outer_key, port, command, tty=tty),
         capture_output=True,
         text=True,
-        env=environment,
+        env=_brokered_environment(session_id),
         timeout=30,
     )
+
+
+def _close_pty_session_while_it_runs(
+    container_id: str, outer_key: Path, port: str, session_id: str
+) -> None:
+    """Open a long PTY session, wait for its broker, then close the client."""
+
+    client = subprocess.Popen(
+        _brokered_ssh_command(outer_key, port, "sleep 900", tty=True),
+        env=_brokered_environment(session_id),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    registration = f"/run/aptl-capture/sessions/{session_id}.pid"
+    try:
+        for _attempt in range(100):
+            probe = ["docker", "exec", container_id, "test", "-f", registration]
+            if subprocess.run(probe, capture_output=True, timeout=10).returncode == 0:
+                break
+            time.sleep(0.1)
+        else:
+            pytest.fail(f"broker never registered {session_id}")
+    finally:
+        client.terminate()
+        client.wait(timeout=30)
 
 
 @pytest.mark.integration
@@ -579,6 +618,10 @@ EOF
         )
         assert with_pty.returncode == 0, with_pty.stderr
         assert "capture-pty-ok" in with_pty.stdout
+        # Closing a PTY session hangs up the broker's terminal. The broker must
+        # still finish the session and release its registration; otherwise the
+        # quiesce below waits on it until its deadline and the seal fails.
+        _close_pty_session_while_it_runs(container_id, outer_key, port, "session-3")
         subprocess.run(
             [
                 "docker",
@@ -608,9 +651,11 @@ EOF
             timeout=30,
         )
         payload = json.loads(exported.stdout)
-        sessions = sorted(item["session_id"] for item in payload["sessions"])
-        assert sorted(payload["accepted_session_ids"]) == ["session-1", "session-2"]
-        assert sessions == ["session-1", "session-2"]
+        sessions = {item["session_id"]: item for item in payload["sessions"]}
+        expected = ["session-1", "session-2", "session-3"]
+        assert sorted(payload["accepted_session_ids"]) == expected
+        assert sorted(sessions) == expected
+        assert sessions["session-3"]["close_reason"] == "signal"
         ownership = subprocess.run(
             [
                 "docker",

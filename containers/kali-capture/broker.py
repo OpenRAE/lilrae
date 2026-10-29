@@ -21,7 +21,7 @@ import sys
 import termios
 import time
 import tty
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable, Iterator, Mapping
@@ -402,6 +402,10 @@ class _ForcedTeardown(Exception):
     pass
 
 
+class _RemoteHangup(Exception):
+    pass
+
+
 def _copy_window_size(source_fd: int, target_fd: int) -> None:
     try:
         size = fcntl.ioctl(source_fd, termios.TIOCGWINSZ, b"\0" * 8)
@@ -452,7 +456,9 @@ def _raw_terminal(fd: int) -> Iterator[None]:
         tty.setraw(fd, when=termios.TCSANOW)
         yield
     finally:
-        termios.tcsetattr(fd, termios.TCSANOW, saved)
+        # A hung-up terminal has no settings left to restore.
+        with suppress(termios.error):
+            termios.tcsetattr(fd, termios.TCSANOW, saved)
 
 
 def run_broker() -> int:
@@ -466,8 +472,15 @@ def run_broker() -> int:
     def forced_teardown(_signum: int, _frame: object) -> None:
         raise _ForcedTeardown
 
+    def remote_hangup(_signum: int, _frame: object) -> None:
+        raise _RemoteHangup
+
     try:
         signal.signal(signal.SIGTERM, forced_teardown)
+        # Closing a PTY session hangs up its terminal and the kernel sends
+        # SIGHUP. Its default action would end the broker before the cleanup
+        # below, leaving the pid registration that quiesce waits on.
+        signal.signal(signal.SIGHUP, remote_hangup)
         authority = read_authority(_RUNTIME_ROOT)
         with _admission_lock(_RUNTIME_ROOT):
             if (_RUNTIME_ROOT / "quiesce").exists():
@@ -504,7 +517,14 @@ def run_broker() -> int:
     except _ForcedTeardown:
         close_reason = "forced-teardown"
         return 143
+    except _RemoteHangup:
+        close_reason = "signal"
+        return 129
     finally:
+        # Teardown runs once. A later SIGTERM from quiesce, or a SIGHUP, must
+        # not cut it short and leave the session unfinished.
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
         try:
             if child is not None and child.poll() is None:
                 os.killpg(child.pid, signal.SIGTERM)
