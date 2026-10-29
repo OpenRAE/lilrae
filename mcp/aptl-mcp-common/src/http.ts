@@ -123,6 +123,7 @@ export class HTTPClient {
         `wazuh-jwt: no token in auth response (status ${tokenResp.status})`,
       );
       error.statusCode = tokenResp.status;
+      error.response = parsed;
       throw error;
     }
     this.cachedJwt = token;

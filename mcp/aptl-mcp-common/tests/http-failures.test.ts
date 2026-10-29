@@ -6,8 +6,8 @@ import type { AddressInfo } from 'node:net';
 import { HTTPClient, HTTPTimeoutError } from '../src/http.js';
 
 // The node:http request path (verify_ssl=false) and the wazuh-jwt token
-// exchange, against a local server: a failure keeps its HTTP status, and a
-// timeout is an HTTPTimeoutError, so tool responses can classify both.
+// exchange, against a local server: a failure keeps its HTTP status and body,
+// and a timeout is an HTTPTimeoutError, so tool responses can classify both.
 describe('HTTPClient failure classification', () => {
   let server: Server;
   let baseUrl: string;
@@ -58,9 +58,10 @@ describe('HTTPClient failure classification', () => {
     await expect(client().makeRequest('/refused')).rejects.toMatchObject({ statusCode: 403 });
   });
 
-  it('keeps the token endpoint status when the exchange returns no token', async () => {
+  it('keeps the token endpoint status and body when the exchange returns no token', async () => {
     await expect(jwtClient('/auth').makeRequest('/refused')).rejects.toMatchObject({
       statusCode: 401,
+      response: { error: 'refused' },
     });
   });
 
