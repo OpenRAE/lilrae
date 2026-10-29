@@ -1,16 +1,16 @@
 # Run Your First Lab
 
-Start in the project directory created by `aptl lab init`. If you do not have
+Start in the project directory created by `lilrae lab init`. If you do not have
 one yet, follow [Installation](installation.md).
 
 ## Choose The Execution Boundary
 
-`aptl lab start` runs intentionally vulnerable containers and agent tools on
+`lilrae lab start` runs intentionally vulnerable containers and agent tools on
 the selected Docker engine. Use it for supervised work on a dedicated,
 rebuildable machine. Do not treat an everyday workstation containing unrelated
 credentials or workloads as disposable lab infrastructure.
 
-The start summary and `aptl lab info` report the selected Docker transport and
+The start summary and `lilrae lab info` report the selected Docker transport and
 observed host boundary. `native-docker` means the selected local engine's kernel
 matched the CLI host at observation time; `docker-vm-unverified` describes a VM
 runtime without a containment qualification. Remote, changed, or unreadable
@@ -19,17 +19,50 @@ ports, devices, egress, or other host resources are contained. See the
 [tested profiles and limits](prerequisites.md#tested-execution-profiles-and-limits).
 
 For agent-driven or multi-user work on Linux/KVM, the disposable
-[`aptl seat start`](../reference/appliance-seat-launcher.md) path provides a
+[`lilrae seat start`](../reference/appliance-seat-launcher.md) path provides a
 stronger VM boundary around Docker and the lab. Neither containers nor a VM
 are an absolute sandbox. Keep the host kernel and hypervisor current and
 control the surrounding network.
 
+## Check The Host
+
+Run the read-only prerequisite check from the project directory:
+
+```shell
+lilrae doctor
+```
+
+It checks the project configuration, the host tools that `lilrae lab start`
+runs, and the Docker engine the project selects. For that engine it checks that
+it answers, runs rootful without `userns-remap`, provides cgroup v2 with Docker
+Engine 28.0 or newer, and has the Compose and Buildx plugins. It warns when
+Compose is older than 2.24.4, which lab start requires when the emitted model
+uses `!reset` or `!override`. It reports the engine memory but
+does not check it, because no scenario declares a memory need yet. On a native
+Linux engine it also checks `vm.max_map_count` when the selected startup adapter
+declares a minimum. A scenario without that demand skips this check.
+For a remote engine, or one
+whose host it cannot identify, it warns instead and prints the setting to apply
+on the host that runs that engine. Each failed check prints its fix. The command changes nothing on the
+host, in the project, or in the Docker engine. It exits with status 0 when no
+check failed and 1 when at least one did, so a script can run it before
+`lilrae lab start`.
+
 ## Choose A Scenario
+
+Edit `aptl.json` to select the intended pack explicitly. For the standard released lab, set:
+
+```json
+"scenario": {"source": "env-pack", "identity": "techvault"}
+```
+
+A new project has no selected pack. The `--scenario` option validates a selector
+against this configured pack; it does not choose a default for an unselected project.
 
 List the validated scenarios supplied by the installed environment pack:
 
 ```shell
-aptl lab scenarios
+lilrae lab scenarios
 ```
 
 For the standard released lab, select the `techvault` catalog identity. Use
@@ -44,7 +77,7 @@ file. It is not the normal released-package path.
 Start the selected scenario:
 
 ```shell
-aptl lab start --scenario techvault
+lilrae lab start --scenario techvault
 ```
 
 Startup validates the project and scenario, prepares keys and certificates,
@@ -55,8 +88,8 @@ container shown as running is not by itself proof that the scenario is ready.
 Verify the current state and print runtime-derived access information:
 
 ```shell
-aptl lab status
-aptl lab info
+lilrae lab status
+lilrae lab info
 ```
 
 If startup reports `degraded` or `failed`, follow its named diagnostic before
@@ -69,11 +102,11 @@ The realized scenario determines which services exist. Discover them at
 runtime:
 
 ```shell
-aptl container list
-aptl lab info
+lilrae container list
+lilrae lab info
 ```
 
-`aptl lab info` reports current URLs, remapped host ports, usernames, and the
+`lilrae lab info` reports current URLs, remapped host ports, usernames, and the
 project-local locations of credentials. For a remote Docker daemon it reports
 ports on the remote host rather than making a local `localhost` URL claim.
 Read the values from your own project;
@@ -82,15 +115,16 @@ do not use a password or port copied from documentation. Wazuh values such as
 control-plane logins.
 
 Open the Wazuh Dashboard or another realized service at the URL printed by
-`aptl lab info`. For a shell in a listed container, use:
+`lilrae lab info`. For a shell in a listed container, use:
 
 ```shell
-aptl container shell aptl-victim
-aptl container shell aptl-kali
+lilrae container shell aptl-victim
 ```
 
-Only use a container name that appears in `aptl container list` for the
-selected scenario.
+Only use a container name that appears in `lilrae container list` for the
+selected scenario. LilRAE refuses a shell on `aptl-kali` while session
+capture runs, as it does on TechVault; see
+[Kali Red Team Container](../components/kali-redteam.md#host-access).
 
 ## Generate Safe Test Activity
 
@@ -108,17 +142,17 @@ the realized scenario. Do not copy lab commands to systems outside the range.
 
 ## Inspect Results
 
-Use the SOC interfaces reported by `aptl lab info` to inspect alerts and
+Use the SOC interfaces reported by `lilrae lab info` to inspect alerts and
 service data. APTL also records scenario runs in the project-local run store:
 
 ```shell
-aptl runs list
-aptl runs show <run-id>
-aptl runs path <run-id>
+lilrae runs list
+lilrae runs show <run-id>
+lilrae runs path <run-id>
 ```
 
 The commands distinguish runtime health, service observations, and archived
-run evidence. Use `aptl runs export-bundle <run-id>` when you need a portable,
+run evidence. Use `lilrae runs export-bundle <run-id>` when you need a portable,
 self-describing evidence bundle; see the
 [evidence bundle reference](../reference/evidence-bundle-export.md).
 
@@ -127,20 +161,26 @@ self-describing evidence bundle; see the
 Use normal, project-scoped teardown at the end of a session:
 
 ```shell
-aptl lab stop
+lilrae lab stop
 ```
 
-This stops the realized lab while preserving its Docker volumes. To remove the
-project's volumes and all data they contain, use the explicit destructive path:
+This stops the realized lab while preserving its Docker volumes. To return the
+project to a clean state, reset it:
 
 ```shell
-aptl lab stop -v
+lilrae lab reset
 ```
 
-The command asks for confirmation and destroys lab indexes, tool data, and
-other volume-backed state. It does not remove unrelated Docker resources.
+Reset removes the project's containers, networks, and volumes, then finishes
+any pending host-side cleanup, so the next `lilrae lab start` begins clean. It
+asks for confirmation and destroys lab indexes, tool data, and other
+volume-backed state. Beyond the host state that a pending cleanup record
+names, it keeps `aptl.json`, `.env`, SSH keys, certificates, and run records,
+and it does not remove unrelated Docker resources. Running it again is safe: it
+reports what it found and retries any cleanup that failed.
+`lilrae lab stop -v` performs the same teardown.
 
-`aptl kill` is an emergency process-control command, not normal teardown or a
+`lilrae kill` is an emergency process-control command, not normal teardown or a
 credential reset. Do not use `docker system prune` for APTL cleanup; it is
 daemon-wide rather than project-scoped.
 

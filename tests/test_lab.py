@@ -6,6 +6,7 @@ calls are mocked.
 """
 
 import logging
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import ANY, MagicMock, call, patch
@@ -79,6 +80,96 @@ def _mcp_build_fails(cmd, **_kwargs):
     if cmd[0] == "docker":
         return MagicMock(returncode=0, stdout="", stderr="")
     return MagicMock(returncode=1, stdout="", stderr="npm error")
+
+
+def _lifecycle_lock_held_elsewhere(project_dir: Path) -> bool:
+    """Whether another thread is refused the project's lifecycle lock now."""
+    from aptl.core.lifecycle_guard import lifecycle_mutation_lock
+    from aptl.core.lifecycle_policy import LifecycleBusyError
+
+    refused: list[bool] = []
+
+    def probe() -> None:
+        try:
+            with lifecycle_mutation_lock(project_dir):
+                refused.append(False)
+        except LifecycleBusyError:
+            refused.append(True)
+
+    prober = threading.Thread(target=probe)
+    prober.start()
+    prober.join(timeout=10)
+    return refused == [True]
+
+
+class _FailingRange:
+    """A project whose start creates runtime and then fails (#952).
+
+    It stands in for the backend's project inventory. The RAES handoff
+    creates containers, networks and volumes, then fails (``start_then_fail``)
+    or succeeds so that a later step can fail (``start``); ``stop`` removes
+    containers and networks and keeps volumes unless asked, as
+    ``docker compose down`` does. Each stop records whether the start's
+    lifecycle lock was still held at that moment.
+    """
+
+    def __init__(self, project_dir: Path, *, containers=0, networks=0, volumes=0):
+        self.project_dir = project_dir
+        self.containers = containers
+        self.networks = networks
+        self.volumes = volumes
+        self.stops: list[bool] = []
+        self.lock_held_during_stop: list[bool] = []
+        self.containers_surviving_stop = 0
+
+    def observe(self, *_args, **_kwargs):
+        from aptl.core.deployment.backend_host_inventory import ProjectRuntimePresence
+
+        return ProjectRuntimePresence(
+            container_count=self.containers, network_count=self.networks
+        )
+
+    def start(self, *_args, **_kwargs):
+        self.containers, self.networks, self.volumes = 3, 2, 4
+        return _raes_outcome(success=True)
+
+    def start_then_fail(self, *_args, **_kwargs):
+        self.start()
+        return _raes_outcome(
+            success=False,
+            error="RAES runtime handoff failed: backend-contract-invalid",
+        )
+
+    def stop(self, _profiles, *, remove_volumes=False):
+        from aptl.core.lab_types import LabResult
+
+        self.lock_held_during_stop.append(
+            _lifecycle_lock_held_elsewhere(self.project_dir)
+        )
+        self.stops.append(remove_volumes)
+        self.containers = self.containers_surviving_stop
+        self.networks = 0
+        if remove_volumes:
+            self.volumes = 0
+        return LabResult(success=True)
+
+
+def _breach_contract_after_start(mocker) -> None:
+    """Make the step after the RAES handoff raise ``icontract.ViolationError``.
+
+    ``_LAB_START_STEPS`` is captured at import time, so the breaching step is
+    inserted into the tuple itself, as the contract-mapping test does.
+    """
+    import icontract
+
+    from aptl.core import lab
+
+    def _step_after_start(_ctx):
+        raise icontract.ViolationError("a precondition broke after the range came up")
+
+    steps = list(lab._LAB_START_STEPS)
+    steps.insert(steps.index(lab._step_start_containers) + 1, _step_after_start)
+    mocker.patch.object(lab, "_LAB_START_STEPS", tuple(steps))
 
 
 def _admitted_start_fixture(bundle_root: Path):
@@ -280,7 +371,7 @@ class TestLabStart:
 
         config = AptlConfig(
             lab={"name": "test"},
-            containers={"wazuh": True, "victim": True, "kali": False, "reverse": False},
+            containers={'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
         )
         mock_subprocess.side_effect = self._observability_inventory_then()
 
@@ -293,7 +384,7 @@ class TestLabStart:
         assert "victim" in cmd_args
         assert "kali" not in cmd_args
 
-    def test_start_returns_failure_on_nonzero_exit(self, mock_subprocess):
+    def test_start_returns_failure_on_nonzero_exit(self, mock_subprocess, caplog):
         """If docker compose fails, start_lab should return failure result."""
         from aptl.core.config import AptlConfig
         from aptl.core.lab import start_lab
@@ -307,7 +398,8 @@ class TestLabStart:
         result = start_lab(config)
 
         assert result.success is False
-        assert "something went wrong" in result.error
+        assert result.error == "Compose start failed."
+        assert "something went wrong" not in caplog.text
 
     def test_start_uses_project_dir(self, mock_subprocess):
         """start_lab should pass cwd to subprocess when project_dir is given."""
@@ -396,7 +488,7 @@ class TestLabStop:
             json.dumps(
                 {
                     "lab": {"name": "test"},
-                    "containers": {"victim": True, "kali": False, "wazuh": True},
+                    "containers": {'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
                 }
             )
         )
@@ -422,7 +514,7 @@ class TestLabStop:
             json.dumps(
                 {
                     "lab": {"name": "test"},
-                    "containers": {"wazuh": True, "victim": False},
+                    "containers": {'profiles': ['wazuh', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
                 }
             )
         )
@@ -466,7 +558,7 @@ class TestLabStop:
             json.dumps(
                 {
                     "lab": {"name": "test"},
-                    "containers": {"victim": True, "kali": False, "wazuh": True},
+                    "containers": {'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
                 }
             )
         )
@@ -480,9 +572,36 @@ class TestLabStop:
 
 
 class TestPreexistingRangeAdmission:
-    def test_running_created_or_exited_container_blocks_start(self, tmp_path):
+    def test_refusal_recovery_targets_an_external_project(self, tmp_path, monkeypatch):
+        import shlex
         from aptl.core.deployment.backend_host_inventory import ProjectRuntimePresence
         from aptl.core.lab import _LabStartContext, _step_reject_preexisting_range
+
+        project = tmp_path / "lab dir"
+        project.mkdir()
+        (project / "aptl.json").write_text("{}")
+        monkeypatch.chdir(tmp_path)
+        backend = MagicMock()
+        backend.observe_project_runtime.return_value = ProjectRuntimePresence(
+            network_count=1
+        )
+
+        result = _step_reject_preexisting_range(
+            _LabStartContext(project_dir=project, skip_seed=False, backend=backend)
+        )
+
+        target = shlex.quote(str(project))
+        assert f"lilrae lab stop --project-dir {target}`" in result.error
+        assert f"lilrae lab stop -v --project-dir {target}`" in result.error
+        assert f"lilrae lab start --clean --project-dir {target}`" in result.error
+
+    def test_running_created_or_exited_container_blocks_start(
+        self, tmp_path, monkeypatch
+    ):
+        from aptl.core.deployment.backend_host_inventory import ProjectRuntimePresence
+        from aptl.core.lab import _LabStartContext, _step_reject_preexisting_range
+
+        monkeypatch.chdir(tmp_path)
 
         backend = MagicMock()
         backend.observe_project_runtime.return_value = ProjectRuntimePresence(
@@ -496,7 +615,15 @@ class TestPreexistingRangeAdmission:
         assert result is not None
         assert result.success is False
         assert "lifecycle-range-present" in result.error
-        assert "aptl lab stop" in result.error
+        # The refusal names the residue and the same recovery routes, with their
+        # data consequences, as a failed start's summary (#952).
+        assert "1 container and 0 networks" in result.error
+        assert "`lilrae lab stop` removes" in result.error
+        assert "keeps its volumes" in result.error
+        assert "`lilrae lab stop -v` also removes managed volumes" in result.error
+        assert "destroys their lab data" in result.error
+        assert "lilrae lab start --clean" in result.error
+        assert ctx.range_was_absent is False
 
     def test_network_only_residue_blocks_start(self, tmp_path):
         from aptl.core.deployment.backend_host_inventory import ProjectRuntimePresence
@@ -540,6 +667,43 @@ class TestPreexistingRangeAdmission:
         ctx = _LabStartContext(project_dir=tmp_path, skip_seed=False, backend=backend)
 
         assert _step_reject_preexisting_range(ctx) is None
+        assert ctx.range_was_absent is True
+
+    def test_workspace_scoped_range_blocks_start(self, tmp_path, monkeypatch):
+        """The check counts the project a previous start labelled (#1173).
+
+        Start labels its containers and networks with the workspace-scoped
+        name (`aptl-w<id>`), but the backend this check runs on is newly built
+        and holds the logical name until the workspace scope loads.
+        """
+        import subprocess
+
+        from aptl.core.deployment._compose_resource_ownership import (
+            WorkspaceOwnership,
+        )
+        from aptl.core.deployment.docker_compose import DockerComposeBackend
+        from aptl.core.lab import _LabStartContext, _step_reject_preexisting_range
+
+        scoped = WorkspaceOwnership.ensure(tmp_path, "aptl").project_name
+        resources = {"ps": "c1\nc2\nc3\n", "network": "n1\nn2\n"}
+
+        def run(cmd, *, timeout):
+            del timeout
+            found = cmd[cmd.index("--filter") + 1].endswith(f"={scoped}")
+            return subprocess.CompletedProcess(
+                cmd, 0, resources[cmd[1]] if found else "", ""
+            )
+
+        backend = DockerComposeBackend(tmp_path)
+        monkeypatch.setattr(backend, "_run", run)
+        ctx = _LabStartContext(project_dir=tmp_path, skip_seed=False, backend=backend)
+
+        result = _step_reject_preexisting_range(ctx)
+
+        assert result is not None
+        assert "[lifecycle-range-present]" in result.error
+        assert "3 containers and 2 networks" in result.error
+        assert ctx.range_was_absent is False
 
 
 class TestCleanBootLab:
@@ -590,6 +754,33 @@ class TestCleanBootLab:
         assert result.success is True
         assert result.outcome is StartupOutcome.READY
         assert order == ["stop", "start"]
+
+    @pytest.mark.parametrize("teardown_on_failure", [False, True])
+    def test_clean_boot_forwards_teardown_on_failure(
+        self, monkeypatch, tmp_path, teardown_on_failure
+    ):
+        """`start --clean --teardown-on-failure` keeps the opt-in (#952)."""
+        from aptl.core import lab
+        from aptl.core.lab import clean_boot_lab
+        from aptl.core.lab_types import LabResult
+
+        started: list[dict] = []
+        monkeypatch.setattr(
+            lab, "stop_lab", lambda **_kwargs: LabResult(success=True)
+        )
+        monkeypatch.setattr(
+            lab,
+            "orchestrate_lab_start",
+            lambda _project_dir, **kwargs: (
+                started.append(kwargs) or LabResult(success=True)
+            ),
+        )
+
+        clean_boot_lab(tmp_path, teardown_on_failure=teardown_on_failure)
+
+        assert [kwargs["teardown_on_failure"] for kwargs in started] == [
+            teardown_on_failure
+        ]
 
     def test_required_seat_failure_preserves_existing_range(
         self, monkeypatch, tmp_path
@@ -752,10 +943,12 @@ class TestCleanBootLab:
             skip_seed=False,
             scenario_path=None,
             progress=None,
+            teardown_on_failure=False,
         ):
             captured["skip_seed"] = skip_seed
             captured["scenario_path"] = scenario_path
             captured["progress"] = progress
+            captured["teardown_on_failure"] = teardown_on_failure
             return LabResult(success=True, outcome=StartupOutcome.READY)
 
         monkeypatch.setattr(lab, "orchestrate_lab_start", fake_start)
@@ -767,6 +960,7 @@ class TestCleanBootLab:
             "skip_seed": True,
             "scenario_path": scenario,
             "progress": None,
+            "teardown_on_failure": False,
         }
 
     def test_clean_boot_forwards_progress_to_start(self, monkeypatch, tmp_path):
@@ -1208,7 +1402,7 @@ class TestCheckBindMounts:
             ":/etc/nginx/certs/cert.pem:ro\n"
         )
         ctx = _LabStartContext(
-            project_dir=tmp_path, skip_seed=False, config=AptlConfig()
+            project_dir=tmp_path, skip_seed=False, config=AptlConfig(containers={"profiles": ["soc"]})
         )
         ctx.admitted_surface = _admitted_surface(
             tmp_path, env_pack=False, selected_profiles=("otel",)
@@ -1217,8 +1411,8 @@ class TestCheckBindMounts:
         assert "soc" in ctx.config.containers.enabled_profiles()
         assert _step_check_bind_mounts(ctx) is None
 
-    def test_step_still_fails_an_admitted_service_with_a_missing_source(self, tmp_path):
-        """The compatibility guard still protects the project-tree model."""
+    def test_step_ignores_unused_static_mounts_for_an_admitted_scenario(self, tmp_path):
+        """The backend checks the generated model; root Compose is never applied."""
         from aptl.core.lab import _LabStartContext, _step_check_bind_mounts
 
         (tmp_path / "docker-compose.yml").write_text(
@@ -1236,9 +1430,7 @@ class TestCheckBindMounts:
 
         result = _step_check_bind_mounts(ctx)
 
-        assert result is not None
-        assert result.success is False
-        assert "soc_certs" in result.error
+        assert result is None
 
 
 class TestStartupClassificationTypes:
@@ -1249,65 +1441,10 @@ class TestStartupClassificationTypes:
     (CLI, API, web TS mirror) can rely on stable strings.
     """
 
-    def test_startup_outcome_members(self):
-        from aptl.core.lab_types import StartupOutcome
 
-        assert StartupOutcome.READY.value == "ready"
-        assert StartupOutcome.DEGRADED_USABLE.value == "degraded_usable"
-        assert StartupOutcome.DEGRADED_UNUSABLE.value == "degraded_unusable"
-        assert StartupOutcome.FAILED.value == "failed"
 
-    def test_diagnostic_impact_members(self):
-        from aptl.core.lab_types import DiagnosticImpact
 
-        assert DiagnosticImpact.COSMETIC.value == "cosmetic"
-        assert DiagnosticImpact.TELEMETRY.value == "telemetry"
-        assert DiagnosticImpact.CAPABILITY.value == "capability"
-        assert DiagnosticImpact.READINESS.value == "readiness"
 
-    def test_diagnostic_severity_members(self):
-        from aptl.core.lab_types import DiagnosticSeverity
-
-        assert DiagnosticSeverity.INFO.value == "info"
-        assert DiagnosticSeverity.WARNING.value == "warning"
-        assert DiagnosticSeverity.ERROR.value == "error"
-
-    def test_startup_diagnostic_fields(self):
-        from aptl.core.lab_types import (
-            DiagnosticImpact,
-            DiagnosticSeverity,
-            StartupDiagnostic,
-        )
-
-        diag = StartupDiagnostic(
-            step="wait_for_services",
-            component="wazuh_indexer",
-            impact=DiagnosticImpact.TELEMETRY,
-            severity=DiagnosticSeverity.WARNING,
-            message="Indexer did not become ready within 300s",
-        )
-        assert diag.step == "wait_for_services"
-        assert diag.component == "wazuh_indexer"
-        assert diag.impact is DiagnosticImpact.TELEMETRY
-        assert diag.severity is DiagnosticSeverity.WARNING
-        assert diag.message == "Indexer did not become ready within 300s"
-        assert diag.operator_action == ""
-
-    def test_startup_diagnostic_component_optional(self):
-        from aptl.core.lab_types import (
-            DiagnosticImpact,
-            DiagnosticSeverity,
-            StartupDiagnostic,
-        )
-
-        diag = StartupDiagnostic(
-            step="pull_images",
-            impact=DiagnosticImpact.COSMETIC,
-            severity=DiagnosticSeverity.INFO,
-            message="Image pre-pull skipped",
-        )
-        # component defaults to empty string (no special-case in CLI/API)
-        assert diag.component == ""
 
     def test_lab_result_has_outcome_and_diagnostics_with_defaults(self):
         """LabResult must default to READY + empty diagnostics so existing
@@ -1519,6 +1656,14 @@ class TestStartupOutcomeDerivation:
         )
 
 
+def _historical_profile_selection(flags):
+    """Pin the old fixture's selection explicitly under the new schema."""
+    defaults = dict.fromkeys(("wazuh", "victim", "kali", "enterprise", "soc", "fileshare", "dns"), True)
+    defaults.update({"mail": False, "reverse": False})
+    defaults.update(flags)
+    return {"profiles": [name for name, enabled in defaults.items() if enabled]}
+
+
 class TestOrchestrateLabStart:
     """Tests for the full lab start orchestration."""
 
@@ -1545,17 +1690,7 @@ class TestOrchestrateLabStart:
             # Explicit minimal profile set: these orchestration tests assert
             # behavior for a wazuh/victim/kali lab, so pin every flag rather
             # than inheriting the (now SOC-enabled) config defaults.
-            containers={
-                "wazuh": True,
-                "victim": True,
-                "kali": True,
-                "reverse": False,
-                "enterprise": False,
-                "soc": False,
-                "mail": False,
-                "fileshare": False,
-                "dns": False,
-            },
+            containers={'profiles': ['wazuh', 'victim', 'kali']},
         )
 
     def _patch_all_steps(self, mocker, tmp_path):
@@ -1585,20 +1720,11 @@ class TestOrchestrateLabStart:
             json.dumps(
                 {
                     "lab": {"name": "test-lab"},
+                    "scenario": {"identity": "techvault"},
                     # Pin every profile: these orchestration tests assert the
                     # outcome/diagnostics of a wazuh/victim/kali lab, so the
                     # written config must not inherit the SOC-enabled defaults.
-                    "containers": {
-                        "wazuh": True,
-                        "victim": True,
-                        "kali": True,
-                        "reverse": False,
-                        "enterprise": False,
-                        "soc": False,
-                        "mail": False,
-                        "fileshare": False,
-                        "dns": False,
-                    },
+                    "containers": {'profiles': ['wazuh', 'victim', 'kali']},
                 }
             )
         )
@@ -1699,7 +1825,7 @@ class TestOrchestrateLabStart:
         from aptl.core.sysreqs import SysReqResult, ToolReqResult
 
         mocks["sysreqs"] = mocker.patch(
-            "aptl.core.lab.check_max_map_count",
+            "aptl.core.lab.check_scenario_max_map_count",
             return_value=SysReqResult(
                 passed=True, current_value=262144, required_value=262144
             ),
@@ -1779,6 +1905,13 @@ class TestOrchestrateLabStart:
         # no-op on that path.
         pack_root = tmp_path / ".aptl" / "staged-packs" / "fixture"
         pack_root.mkdir(parents=True)
+        # Source selection happens before admission. Keep both boundaries on
+        # this test's small bundle so each orchestration case avoids acquiring
+        # the released pack before reaching the admission stub.
+        mocks["resolve_bundle"] = mocker.patch(
+            "aptl.backends._raes_scenario_resolution.resolve_scenario_bundle",
+            return_value=_admitted_start_fixture(pack_root).bundle,
+        )
         mocks["admitted_surface"] = _admitted_surface(
             pack_root,
             env_pack=False,
@@ -1981,12 +2114,15 @@ class TestOrchestrateLabStart:
         mocks["start"].assert_called_once()
         assert mocks["start"].call_args.kwargs["scenario_path"] == selected
 
-    def test_orchestrate_hydrates_missing_env(self, mocker, tmp_path):
+    def test_orchestrate_hydrates_missing_env(
+        self, mocker, tmp_path, released_techvault_bundle
+    ):
         """A fresh checkout can start without a hand-created .env."""
         from aptl.core.env import find_placeholder_env_values, load_dotenv
         from aptl.core.lab import orchestrate_lab_start
 
         mocks = self._patch_all_steps(mocker, tmp_path)
+        mocks["resolve_bundle"].return_value = released_techvault_bundle
         (tmp_path / ".env").unlink()
 
         result = orchestrate_lab_start(tmp_path)
@@ -2035,7 +2171,7 @@ class TestOrchestrateLabStart:
         # aptl.json still needed to not hit a different error first
         import json
 
-        (tmp_path / "aptl.json").write_text(json.dumps({"lab": {"name": "test"}}))
+        (tmp_path / "aptl.json").write_text(json.dumps({"lab": {"name": "test"}, "scenario": {"identity": "techvault"}}))
 
         result = orchestrate_lab_start(tmp_path)
 
@@ -2308,6 +2444,488 @@ class TestOrchestrateLabStart:
         assert ["docker", "info", "--format", "{{json .SecurityOptions}}"] in issued
         assert all(cmd[:2] in (["docker", "info"], ["docker", "context"]) for cmd in issued)
 
+    @pytest.mark.parametrize("residue", [False, True], ids=["started", "refused"])
+    def test_start_result_carries_the_admission_duration(
+        self, mocker, tmp_path, residue
+    ):
+        """The summary's admission time survives success and later refusal (#953)."""
+        from aptl.core.deployment.backend_host_inventory import ProjectRuntimePresence
+        from aptl.core.lab import orchestrate_lab_start
+
+        mocks = self._patch_all_steps(mocker, tmp_path)
+        mocks["project_presence"].return_value = ProjectRuntimePresence(
+            container_count=1 if residue else 0
+        )
+        mocker.patch("aptl.core.lab.monotonic", side_effect=[50.0, 54.25])
+
+        result = orchestrate_lab_start(tmp_path)
+
+        assert result.success is not residue
+        assert result.admission_seconds == pytest.approx(4.25)
+
+    @pytest.mark.parametrize(
+        "start",
+        ["orchestrate_lab_start", "_orchestrate_lab_start_owned"],
+        ids=["after-start", "inline"],
+    )
+    def test_readiness_failure_carries_the_admission_duration(
+        self, mocker, tmp_path, start
+    ):
+        """A failure after every start step still reports admission time (#953)."""
+        from aptl.core import lab
+        from aptl.core.lab_types import LabResult
+
+        self._patch_all_steps(mocker, tmp_path)
+        mocker.patch("aptl.core.lab.monotonic", side_effect=[50.0, 54.25])
+        mocker.patch(
+            "aptl.core.lab._publish_appliance_guest_readiness",
+            return_value=LabResult(
+                success=False, error="Appliance guest readiness publication failed."
+            ),
+        )
+
+        result = getattr(lab, start)(tmp_path)
+
+        assert result.error == "Appliance guest readiness publication failed."
+        assert result.admission_seconds == pytest.approx(4.25)
+
+    def _failing_range(self, mocker, tmp_path, failure="step-error", **inventory):
+        """Wire a range that the start creates and then fails on (#952).
+
+        ``step-error`` fails the RAES handoff after it created the range, which
+        the orchestrator returns as a step error. ``contract-violation`` lets
+        the handoff succeed and breaks a contract in the next step, which the
+        orchestrator returns from its ``icontract.ViolationError`` handler.
+        """
+
+        mocks = self._patch_all_steps(mocker, tmp_path)
+        project = _FailingRange(tmp_path, **inventory)
+        mocks["project_presence"].side_effect = project.observe
+        mocks["start"].side_effect = project.start_then_fail
+        if failure == "contract-violation":
+            mocks["start"].side_effect = project.start
+            _breach_contract_after_start(mocker)
+        mocker.patch(
+            "aptl.core.deployment.docker_compose.DockerComposeBackend.stop",
+            side_effect=project.stop,
+        )
+        return project
+
+    @pytest.mark.parametrize(
+        ("failure", "error"),
+        [
+            ("step-error", "backend-contract-invalid"),
+            ("contract-violation", "contract violated at step '_step_after_start'"),
+        ],
+        ids=["step-error", "contract-violation"],
+    )
+    def test_failed_start_names_its_residue_and_leaves_it_in_place(
+        self, mocker, tmp_path, failure, error
+    ):
+        """By default the range is left in place for diagnosis, and is counted
+        on both of the orchestrator's failure returns (#952)."""
+        from aptl.core.lab import orchestrate_lab_start
+        from aptl.core.lab_types import StartResidue
+
+        project = self._failing_range(mocker, tmp_path, failure=failure)
+
+        result = orchestrate_lab_start(tmp_path)
+
+        assert result.success is False
+        assert error in result.error
+        assert result.residue == StartResidue(container_count=3, network_count=2)
+        assert (project.containers, project.networks, project.volumes) == (3, 2, 4)
+        assert project.stops == []
+
+    def test_teardown_on_failure_stops_the_range_inside_the_start_lock(
+        self, mocker, tmp_path
+    ):
+        """Containers and networks go, volumes stay, and no other owner can
+        take the project between the failure and the teardown (#952, #933)."""
+        from aptl.core.lab import orchestrate_lab_start
+        from aptl.core.lab_types import StartResidue
+
+        project = self._failing_range(mocker, tmp_path)
+
+        result = orchestrate_lab_start(tmp_path, teardown_on_failure=True)
+
+        assert result.success is False
+        assert result.residue == StartResidue(
+            container_count=3,
+            network_count=2,
+            teardown_requested=True,
+            torn_down=True,
+        )
+        assert (project.containers, project.networks, project.volumes) == (0, 0, 4)
+        assert project.stops == [False]
+        assert project.lock_held_during_stop == [True]
+        assert _lifecycle_lock_held_elsewhere(tmp_path) is False
+
+    def test_incomplete_teardown_reports_what_remains(self, mocker, tmp_path):
+        from aptl.core.lab import orchestrate_lab_start
+        from aptl.core.lab_types import StartResidue
+
+        project = self._failing_range(mocker, tmp_path)
+        project.containers_surviving_stop = 1
+
+        result = orchestrate_lab_start(tmp_path, teardown_on_failure=True)
+
+        assert result.residue == StartResidue(
+            container_count=1, network_count=0, teardown_requested=True
+        )
+
+    @pytest.mark.parametrize("teardown", [False, True])
+    def test_operational_start_exception_accounts_for_residue(
+        self, mocker, tmp_path, teardown
+    ):
+        from aptl.core.lab import orchestrate_lab_start
+
+        project = self._failing_range(mocker, tmp_path)
+
+        def fail(*args, **kwargs):
+            project.start()
+            raise OSError("private-backend-payload")
+
+        mocker.patch("aptl.core.lab.start_raes_scenario", side_effect=fail)
+
+        result = orchestrate_lab_start(tmp_path, teardown_on_failure=teardown)
+
+        assert not result.success
+        assert "private-backend-payload" not in result.error
+        assert result.residue is not None
+        assert result.residue.torn_down is teardown
+        expected_resources = (0, 0, 4) if teardown else (3, 2, 4)
+        actual_resources = (project.containers, project.networks, project.volumes)
+        assert actual_resources == expected_resources
+
+    def test_observation_exception_is_unknown_residue(self, mocker, tmp_path):
+        from aptl.core.lab import orchestrate_lab_start
+
+        self._failing_range(mocker, tmp_path)
+        mocker.patch(
+            "aptl.core.deployment.docker_compose.DockerComposeBackend.observe_project_runtime",
+            side_effect=[
+                _FailingRange(tmp_path).observe(),
+                OSError("private-observation"),
+            ],
+        )
+        result = orchestrate_lab_start(tmp_path)
+        assert "backend-contract-invalid" in result.error
+        assert result.residue.container_count is None
+        assert result.residue.network_count is None
+
+    def test_cleanup_exception_preserves_primary_failure(self, mocker, tmp_path):
+        from aptl.core.lab import orchestrate_lab_start
+
+        project = self._failing_range(mocker, tmp_path)
+        mocker.patch(
+            "aptl.core.lab._stop_lab_owned", side_effect=OSError("private-cleanup")
+        )
+        result = orchestrate_lab_start(tmp_path, teardown_on_failure=True)
+        assert "backend-contract-invalid" in result.error
+        assert result.residue.teardown_requested
+        assert not result.residue.torn_down
+        assert (result.residue.container_count, result.residue.network_count) == (3, 2)
+        assert project.volumes == 4
+        assert any(d.step == "failed_start_cleanup" for d in result.diagnostics)
+
+    def test_cleanup_failure_after_runtime_removal_recommends_non_destructive_retry(
+        self, mocker, tmp_path
+    ):
+        from aptl.core.lab import orchestrate_lab_start
+        from aptl.core.lab_types import LabResult
+
+        project = self._failing_range(mocker, tmp_path)
+
+        def stop(*args):
+            project.stop([])
+            return LabResult(success=False, error="Transcript finalization failed.")
+
+        mocker.patch("aptl.core.lab._stop_lab_owned", side_effect=stop)
+        result = orchestrate_lab_start(tmp_path, teardown_on_failure=True)
+
+        assert "backend-contract-invalid" in result.error
+        assert result.residue.torn_down
+        assert project.volumes == 4
+        [diagnostic] = [d for d in result.diagnostics if d.step == "failed_start_cleanup"]
+        assert "lilrae lab stop --project-dir" in diagnostic.operator_action
+        assert "stop -v" not in diagnostic.operator_action
+        assert "without removing volumes" in diagnostic.operator_action
+
+    @pytest.mark.parametrize("teardown", [False, True])
+    def test_readiness_failure_is_accounted_under_start_lock(
+        self, mocker, tmp_path, teardown
+    ):
+        from aptl.core.lab import orchestrate_lab_start
+        from aptl.core.lab_types import LabResult
+
+        project = self._failing_range(mocker, tmp_path)
+        mocker.patch("aptl.core.lab.start_raes_scenario", side_effect=project.start)
+
+        def fail(ctx):
+            assert _lifecycle_lock_held_elsewhere(tmp_path)
+            return LabResult(success=False, error="Appliance readiness failed.")
+
+        mocker.patch(
+            "aptl.core.lab._publish_appliance_guest_readiness", side_effect=fail
+        )
+
+        result = orchestrate_lab_start(tmp_path, teardown_on_failure=teardown)
+
+        assert result.error == "Appliance readiness failed."
+        assert result.residue.torn_down is teardown
+        assert project.stops == ([False] if teardown else [])
+        assert not _lifecycle_lock_held_elsewhere(tmp_path)
+
+    def test_post_teardown_verification_retains_start_lock(self, mocker, tmp_path):
+        from aptl.core.lab import orchestrate_lab_start
+
+        project = self._failing_range(mocker, tmp_path)
+        held = []
+
+        def observe():
+            held.append(_lifecycle_lock_held_elsewhere(tmp_path))
+            return project.observe()
+
+        mocker.patch(
+            "aptl.core.deployment.docker_compose.DockerComposeBackend.observe_project_runtime",
+            side_effect=observe,
+        )
+        assert orchestrate_lab_start(
+            tmp_path, teardown_on_failure=True
+        ).residue.torn_down
+        assert held == [True, True, True]
+
+    @pytest.mark.parametrize("teardown", [False, True])
+    def test_network_only_failed_start_residue(self, mocker, tmp_path, teardown):
+        from aptl.core.lab import orchestrate_lab_start
+
+        project = self._failing_range(mocker, tmp_path)
+
+        def fail(*args, **kwargs):
+            project.networks = 1
+            return _raes_outcome(success=False, error="network-only failure")
+
+        mocker.patch("aptl.core.lab.start_raes_scenario", side_effect=fail)
+        result = orchestrate_lab_start(tmp_path, teardown_on_failure=teardown)
+        assert "network-only failure" in result.error
+        assert result.residue.container_count == 0
+        assert result.residue.network_count == 1
+        assert result.residue.torn_down is teardown
+
+    @pytest.mark.parametrize("clean", [False, True])
+    def test_access_supervision_releases_start_owner(self, mocker, tmp_path, clean):
+        from aptl.core.lab import (
+            orchestrate_lab_start,
+            clean_boot_lab,
+            ApplianceStartOptions,
+        )
+        from aptl.core.lab_types import LabResult
+
+        self._patch_all_steps(mocker, tmp_path)
+        mocker.patch(
+            "aptl.core.lab._publish_appliance_guest_readiness", return_value=None
+        )
+        held = []
+        mocker.patch(
+            "aptl.core.lab._serve_appliance_guest_access",
+            side_effect=lambda ctx: held.append(
+                _lifecycle_lock_held_elsewhere(tmp_path)
+            ),
+        )
+        mocker.patch(
+            "aptl.core.lab._stop_lab_owned", return_value=LabResult(success=True)
+        )
+        mocker.patch(
+            "aptl.core.lab._preflight_clean_appliance_boundary",
+            return_value=(None, None),
+        )
+        mocker.patch("aptl.core.lab._clean_boot_rootless_refusal", return_value=None)
+        start = clean_boot_lab if clean else orchestrate_lab_start
+        result = start(
+            tmp_path,
+            appliance=ApplianceStartOptions(access_request=tmp_path / "request"),
+        )
+        assert result.success
+        assert held == [False]
+
+    @pytest.mark.parametrize("clean", [False, True])
+    def test_guest_channels_publish_then_supervise_outside_owner(
+        self, mocker, tmp_path, clean
+    ):
+        from aptl.core.lab import (
+            ApplianceStartOptions,
+            clean_boot_lab,
+            orchestrate_lab_start,
+        )
+        from aptl.core.lab_types import LabResult
+
+        mocks = self._patch_all_steps(mocker, tmp_path)
+        mocks["admit"].return_value[0].realization = MagicMock()
+
+        def configure(ctx):
+            ctx.run_id = "fixture-run"
+            return None
+
+        mocker.patch(
+            "aptl.core.lab._configure_verified_appliance_launch", side_effect=configure
+        )
+        mocker.patch(
+            "aptl.core.deployment.docker_compose.DockerComposeBackend.observe_appliance_boundary",
+            return_value=object(),
+        )
+        held = []
+        mocker.patch(
+            "aptl.appliance.seat.readiness.publish_guest_readiness",
+            side_effect=lambda *args: held.append(
+                ("readiness", _lifecycle_lock_held_elsewhere(tmp_path))
+            ),
+        )
+        mocker.patch(
+            "aptl.appliance.access_service.serve_appliance_access",
+            side_effect=lambda **kwargs: held.append(
+                ("access", _lifecycle_lock_held_elsewhere(tmp_path))
+            ),
+        )
+        mocker.patch(
+            "aptl.core.lab._stop_lab_owned", return_value=LabResult(success=True)
+        )
+        mocker.patch(
+            "aptl.core.lab._preflight_clean_appliance_boundary",
+            return_value=(None, None),
+        )
+        mocker.patch("aptl.core.lab._clean_boot_rootless_refusal", return_value=None)
+        appliance = ApplianceStartOptions(
+            launch_descriptor=tmp_path / "descriptor",
+            readiness_challenge=tmp_path / "challenge",
+            readiness_device=tmp_path / "readiness",
+            access_request=tmp_path / "request",
+            access_device=tmp_path / "access",
+            access_output_dir=tmp_path / "output",
+        )
+        start = clean_boot_lab if clean else orchestrate_lab_start
+        result = start(tmp_path, appliance=appliance)
+        assert result.success
+        assert held == [("readiness", True), ("access", False)]
+
+    def test_unobservable_residue_is_reported_as_unknown(self, mocker, tmp_path):
+        """A failed observation is not an empty project (#952)."""
+        from aptl.core.deployment import DockerComposeBackend
+        from aptl.core.deployment.backend_host_inventory import ProjectRuntimePresence
+        from aptl.core.lab import orchestrate_lab_start
+        from aptl.core.lab_types import StartResidue
+
+        project = self._failing_range(mocker, tmp_path)
+        observations = iter(
+            [
+                project.observe(),
+                ProjectRuntimePresence(error="container observation failed"),
+            ]
+        )
+        mocker.patch.object(
+            DockerComposeBackend,
+            "observe_project_runtime",
+            side_effect=lambda: next(observations),
+        )
+
+        result = orchestrate_lab_start(tmp_path)
+
+        assert result.residue == StartResidue(container_count=None, network_count=None)
+        assert project.stops == []
+
+    def test_preexisting_range_is_refused_and_never_torn_down(
+        self, mocker, tmp_path
+    ):
+        """Only what this start created counts as its residue (#952)."""
+        from aptl.core.lab import orchestrate_lab_start
+
+        project = self._failing_range(
+            mocker, tmp_path, containers=2, networks=1, volumes=1
+        )
+
+        result = orchestrate_lab_start(tmp_path, teardown_on_failure=True)
+
+        assert result.success is False
+        assert "lifecycle-range-present" in result.error
+        assert "2 containers and 1 network" in result.error
+        assert result.residue is None
+        assert (project.containers, project.networks, project.volumes) == (2, 1, 1)
+        assert project.stops == []
+
+    def test_teardown_on_failure_never_stops_a_workspace_scoped_range(
+        self, mocker, tmp_path
+    ):
+        """An earlier start's range under `aptl-w<id>` is refused and kept (#1173).
+
+        The backend is built with the logical name `aptl`, the daemon answers
+        only for the label an earlier start applied, and the RAES handoff
+        loads the workspace scope before it fails, as the real one does. The
+        existing-range check has to count that range, or the failed start
+        would count it as its own residue and stop it.
+        """
+        import subprocess
+
+        from aptl.core.deployment._compose_resource_ownership import (
+            WorkspaceOwnership,
+        )
+        from aptl.core.deployment._compose_runtime_inventory import (
+            ComposeRuntimeInventoryMixin,
+        )
+        from aptl.core.deployment.docker_compose import DockerComposeBackend
+        from aptl.core.lab import orchestrate_lab_start
+
+        project = self._failing_range(
+            mocker, tmp_path, containers=5, networks=2, volumes=3
+        )
+        scoped = WorkspaceOwnership.ensure(tmp_path, "aptl").project_name
+
+        def daemon(_backend, cmd, *, timeout=None):
+            del timeout
+            listed = {"ps": project.containers, "network": project.networks}
+            scoped_query = "--filter" in cmd and cmd[
+                cmd.index("--filter") + 1
+            ].endswith(f"={scoped}")
+            count = listed.get(cmd[1], 0) if scoped_query else 0
+            stdout = "".join(f"{cmd[1]}-{index}\n" for index in range(count))
+            return subprocess.CompletedProcess(cmd, 0, stdout, "")
+
+        def scope_then_fail(_project_dir, _config, backend, *_args, **_kwargs):
+            backend._ensure_resource_ownership()
+            return _raes_outcome(success=False, error="RAES runtime handoff failed")
+
+        mocker.patch.object(
+            DockerComposeBackend,
+            "observe_project_runtime",
+            ComposeRuntimeInventoryMixin.observe_project_runtime,
+        )
+        mocker.patch.object(DockerComposeBackend, "_run", daemon)
+        mocker.patch("aptl.core.lab.start_raes_scenario", side_effect=scope_then_fail)
+
+        result = orchestrate_lab_start(tmp_path, teardown_on_failure=True)
+
+        assert "[lifecycle-range-present]" in result.error
+        assert "5 containers and 2 networks" in result.error
+        assert result.residue is None
+        assert project.stops == []
+        assert (project.containers, project.networks, project.volumes) == (5, 2, 3)
+
+    def test_failure_that_left_nothing_reports_no_residue(self, mocker, tmp_path):
+        """A start that fails before creating runtime has nothing to stop."""
+        from aptl.core.certs import CertResult
+        from aptl.core.lab import orchestrate_lab_start
+
+        project = self._failing_range(mocker, tmp_path)
+        mocker.patch(
+            "aptl.core.lab.ensure_ssl_certs",
+            return_value=CertResult(success=False, generated=False, error="boom"),
+        )
+
+        result = orchestrate_lab_start(tmp_path, teardown_on_failure=True)
+
+        assert result.error == "Certificate generation failed: boom"
+        assert result.residue is None
+        assert project.stops == []
+
     def test_handles_empty_profiles(self, mocker, tmp_path):
         """Should work when all containers are disabled (C6)."""
         from aptl.core.lab import orchestrate_lab_start
@@ -2322,12 +2940,8 @@ class TestOrchestrateLabStart:
             json.dumps(
                 {
                     "lab": {"name": "test-lab"},
-                    "containers": {
-                        "wazuh": False,
-                        "victim": False,
-                        "kali": False,
-                        "reverse": False,
-                    },
+                    "scenario": {"identity": "techvault"},
+                    "containers": {'profiles': []},
                 }
             )
         )
@@ -2350,7 +2964,7 @@ class TestOrchestrateLabStart:
         assert result.success is False
 
     def test_pre_pull_runs_before_compose_up(self, mocker, tmp_path):
-        """Should call docker pull for images before compose up."""
+        """Images the daemon lacks are pulled before compose up."""
         from aptl.core.lab import (
             _LAB_START_STEPS,
             _step_pull_images,
@@ -2359,6 +2973,12 @@ class TestOrchestrateLabStart:
         )
 
         mocks = self._patch_all_steps(mocker, tmp_path)
+
+        def daemon_without_images(cmd, **_kwargs):
+            absent = cmd[:3] == ["docker", "image", "inspect"]
+            return MagicMock(returncode=1 if absent else 0, stdout="", stderr="")
+
+        mocks["mcp_subprocess"].side_effect = daemon_without_images
 
         step_names = [step.__name__ for step in _LAB_START_STEPS]
         assert step_names.index(_step_pull_images.__name__) < step_names.index(
@@ -2437,6 +3057,29 @@ class TestAdmittedStartSurface:
         assert _load_admitted_start_surface(ctx) is None
 
         assert admit.call_args.kwargs["scenario_path"] == selected
+
+    @pytest.mark.parametrize("admitted", [True, False], ids=["admitted", "rejected"])
+    def test_admission_duration_is_recorded_for_the_start_summary(
+        self, mocker, tmp_path, admitted
+    ):
+        """How long the one admission took is kept, whatever its verdict (#953)."""
+        from aptl.core.lab import _load_admitted_start_surface
+
+        ctx = self._ctx(tmp_path)
+        mocker.patch(
+            "aptl.core.lab.admit_start_surface",
+            return_value=(
+                _admitted_start_fixture(tmp_path),
+                _admitted_surface(tmp_path, env_pack=False),
+            ),
+            side_effect=None if admitted else ValueError("fixture rejection"),
+        )
+        mocker.patch("aptl.core.lab.monotonic", side_effect=[100.0, 112.5])
+
+        result = _load_admitted_start_surface(ctx)
+
+        assert (result is None) is admitted
+        assert ctx.admission_seconds == pytest.approx(12.5)
 
     def test_admitted_facts_are_cached_for_the_later_steps(self, mocker, tmp_path):
         """Ownership, the admission itself, and the surface all land on ctx."""
@@ -2953,7 +3596,7 @@ class TestResolveHostPortsStep:
             progress=progress,
             config=AptlConfig(
                 lab={"name": "test-lab"},
-                containers={"wazuh": True, "soc": True},
+                containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
             ),
             backend=MagicMock(),
         )
@@ -3139,6 +3782,23 @@ class TestSeedSuricataVolumesStep:
         )
         assert pull_call < seed_call
 
+    def test_offline_missing_seeder_image_is_named_before_any_seed(self, tmp_path):
+        from aptl.core.lab import SURICATA_IMAGE, _step_seed_suricata_volumes
+
+        _write_suricata_seed_sources(tmp_path)
+        backend = MagicMock()
+        backend.pull_images.return_value = [
+            f"Required staged image is missing: {SURICATA_IMAGE}"
+        ]
+        ctx = self._ctx(tmp_path, backend)
+        ctx.offline_staged = True
+
+        result = _step_seed_suricata_volumes(ctx)
+
+        assert result is not None
+        assert SURICATA_IMAGE in result.error
+        backend.seed_named_volumes.assert_not_called()
+
     def test_seed_error_aborts_lab_start_step(self, tmp_path, caplog):
         from aptl.core.deployment.errors import BackendSeedError
         from aptl.core.lab import _step_seed_suricata_volumes
@@ -3222,7 +3882,7 @@ class TestStartupClassificationWiring:
             # Pin the SOC/enterprise/dns/fileshare flags off: these wiring tests
             # assert diagnostics for a wazuh/victim/kali lab, so don't inherit
             # the (now SOC-enabled) config defaults.
-            containers={
+            containers=_historical_profile_selection({
                 "wazuh": wazuh,
                 "victim": victim,
                 "kali": kali,
@@ -3232,7 +3892,8 @@ class TestStartupClassificationWiring:
                 "mail": False,
                 "fileshare": False,
                 "dns": False,
-            },
+            }),
+            scenario={"identity": "techvault"},
         )
 
     def _ctx(self, tmp_path, *, config=None, selected_profiles=None):
@@ -3470,6 +4131,27 @@ class TestStartupClassificationWiring:
         assert "connection reset" not in diag.message
         assert "rate limit" not in diag.message
         assert "2" in diag.message  # number of failed images
+
+    def test_offline_pull_images_failure_names_each_missing_image(self, tmp_path):
+        """Offline-staged start fails by naming the exact images to stage (#953)."""
+        from aptl.core.lab import WAZUH_IMAGE_VERSION, _step_pull_images
+
+        ctx = self._ctx(tmp_path)
+        ctx.offline_staged = True
+        missing = [
+            f"wazuh/wazuh-manager:{WAZUH_IMAGE_VERSION}",
+            f"wazuh/wazuh-indexer:{WAZUH_IMAGE_VERSION}",
+        ]
+        ctx.backend.pull_images.return_value = [
+            f"Required staged image is missing: {image}" for image in missing
+        ]
+
+        result = _step_pull_images(ctx)
+
+        assert result is not None
+        assert result.success is False
+        assert all(image in result.error for image in missing)
+        assert ctx.diagnostics == []
 
     # -- wait_for_services (backend-owned Wazuh attestation) -------------
 
@@ -3947,7 +4629,7 @@ class TestStartupClassificationWiring:
         assert run_id in store.list_runs()
 
     def test_resolve_run_target_uses_configured_run_storage(self, tmp_path):
-        """Startup records must be discoverable through ``aptl runs``."""
+        """Startup records must be discoverable through ``lilrae runs``."""
         from aptl.cli._common import resolve_run_store
         from aptl.core.config import AptlConfig
         from aptl.core.lab import _LabStartContext, _resolve_run_target
@@ -3974,14 +4656,7 @@ class TestStartupClassificationWiring:
             # exercises the subprocess-failure path, not the gating.
             config=AptlConfig(
                 lab={"name": "test-lab"},
-                containers={
-                    "wazuh": True,
-                    "enterprise": True,
-                    "victim": True,
-                    "kali": True,
-                    "fileshare": True,
-                    "soc": True,
-                },
+                containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
             ),
         )
         misp_key = f"misp-{uuid4().hex}"
@@ -4031,14 +4706,7 @@ class TestStartupClassificationWiring:
             tmp_path,
             config=AptlConfig(
                 lab={"name": "test-lab"},
-                containers={
-                    "wazuh": True,
-                    "enterprise": True,
-                    "victim": True,
-                    "kali": True,
-                    "fileshare": True,
-                    "soc": True,
-                },
+                containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
             ),
         )
         scripts_dir = tmp_path / "scripts"
@@ -4087,14 +4755,7 @@ class TestStartupClassificationWiring:
             tmp_path,
             config=AptlConfig(
                 lab={"name": "test-lab"},
-                containers={
-                    "wazuh": True,
-                    "enterprise": True,
-                    "victim": True,
-                    "kali": True,
-                    "fileshare": True,
-                    "soc": True,
-                },
+                containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
             ),
         )
         # No scripts/seed-prime.sh in tmp_path
@@ -4135,14 +4796,7 @@ class TestStartupClassificationWiring:
             tmp_path,
             config=AptlConfig(
                 lab={"name": "test-lab"},
-                containers={
-                    "wazuh": True,
-                    "enterprise": True,
-                    "victim": True,
-                    "kali": True,
-                    "fileshare": True,
-                    "soc": True,
-                },
+                containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
             ),
             # soc (and the rest of the prime set) is enabled in config, but
             # the scenario this run started never selected it.
@@ -4394,7 +5048,7 @@ class TestLabOrchestrationContracts:
 
         defaults = {"wazuh": True, "victim": True, "kali": True}
         defaults.update(container_overrides)
-        return AptlConfig(lab={"name": "test-lab"}, containers=defaults)
+        return AptlConfig(lab={"name": "test-lab"}, containers=_historical_profile_selection(defaults))
 
     def _outcome(self, *, success, selected_profiles, error="", message="ok"):
         """Build a real `AcesStartOutcome` — the shape `start_raes_scenario`
@@ -5065,8 +5719,40 @@ class TestLabOrchestrationContracts:
         assert result is not None
         assert result.success is False
         assert "Lab start failed:" in result.error
-        assert "Run `aptl lab stop` and retry" in result.error
-        assert "`aptl lab stop -v`" in result.error
+        assert "Run `lilrae lab stop` and retry" in result.error
+        assert "`lilrae lab stop -v`" in result.error
+
+    def test_start_containers_hints_for_an_unowned_search_index(
+        self, mocker, tmp_path
+    ):
+        """A failed apply returns a RAES outcome; the recovery hint follows it."""
+        from aptl.core.lab import _step_start_containers
+
+        unowned_error = (
+            "RAES runtime handoff failed: aptl.provisioner.backend-start-failed "
+            "at runtime.apply.provisioning: service materialization failed for "
+            "provision.content.cortex-job-index-schema (reason=unowned-collision): "
+            "search index cortex_6 in container aptl-thehive-es lacks this "
+            "content's ownership marker, so APTL cannot prove it owns the "
+            "index, and it did not adopt, delete or overwrite it."
+        )
+        ctx = self._ctx(tmp_path)
+        ctx.config = self._full_config()
+        ctx.backend = MagicMock()
+        mocker.patch(
+            "aptl.core.lab.start_raes_scenario",
+            return_value=_raes_outcome(success=False, error=unowned_error),
+        )
+
+        result = _step_start_containers(ctx)
+
+        assert result is not None
+        assert result.success is False
+        headline, _, hint = result.error.partition("\n")
+        assert headline == f"Lab start failed: {unowned_error}"
+        assert hint.endswith(
+            "/troubleshooting/#lilrae-lab-start-reports-an-unowned-search-index"
+        )
 
     # -- ssh_key_is_ready --------------------------------------------
 
@@ -5307,7 +5993,7 @@ class TestSeedSocPrimeProfileDiagnostic:
 
         containers = {"wazuh": True, "victim": True, "kali": True, "soc": soc}
         containers.update(extra)
-        cfg = AptlConfig(lab={"name": "t"}, containers=containers)
+        cfg = AptlConfig(lab={"name": "t"}, containers=_historical_profile_selection(containers))
         # Default: the scenario selects exactly what config enables (the
         # common case where config and selection coincide). Tests proving
         # the selected-surface distinction pass an explicit subset.
@@ -5458,7 +6144,7 @@ class TestGenerateSocCertsStep:
             # (#875), so this suite selects the in-tree source explicitly.
             config=AptlConfig(
                 lab={"name": "t"},
-                containers=containers,
+                containers=_historical_profile_selection(containers),
                 scenario=ScenarioSourceConfig(source="project-tree"),
             ),
             backend=backend or MagicMock(),
@@ -5513,7 +6199,7 @@ class TestGenerateSocCertsStep:
 
     def test_ssh_remote_backend_refuses_with_adr_028_message(self, tmp_path, mocker):
         """ADR-028: generated artifacts materialize on the host running
-        `aptl lab start`. With an SSH-remote backend the daemon is on
+        `lilrae lab start`. With an SSH-remote backend the daemon is on
         another host, so the bind mounts would not see them — refuse
         with the same shape as `_step_sync_credentials`."""
         from aptl.core.deployment import SSHComposeBackend
@@ -5539,8 +6225,6 @@ class TestGenerateSocCertsStep:
         bind-mount source."""
         from aptl.core.lab import (
             _LAB_START_STEPS,
-            _step_check_bind_mounts,
-            _step_generate_soc_certs,
         )
 
         names = [s.__name__ for s in _LAB_START_STEPS]

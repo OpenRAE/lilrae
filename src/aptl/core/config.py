@@ -3,14 +3,24 @@
 Uses Pydantic v2 for validation. Config is loaded from aptl.json files.
 """
 
-import hashlib
 import json
 import re
 from pathlib import Path, PurePosixPath
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
+from aptl.core._credential_sources import (
+    EnvironmentGrant,
+    ProcessEnvironmentCredentialSource,
+)
 from aptl.utils.logging import get_logger
 
 log = get_logger("config")
@@ -18,7 +28,6 @@ log = get_logger("config")
 _NAME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 _COMPOSE_PROJECT_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
 _PARTICIPANT_MODEL_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:/@-]{0,127}$")
-_CREDENTIAL_SOURCE_VARIABLE_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]{0,127}$")
 _IMMUTABLE_PARTICIPANT_MODEL_PATTERNS = {
     "claude": re.compile(
         r"^claude-(?:[a-z0-9-]+[-@]\d{8}|(?:sonnet|opus|haiku)-[1-9]\d*)$",
@@ -67,31 +76,27 @@ class LabSettings(BaseModel):
 
 
 class ContainerSettings(BaseModel):
-    """Which containers are enabled in the lab."""
+    """Optional selection from the admitted scenario's operator groups."""
 
     model_config = ConfigDict(extra="forbid")
 
-    # Defaults match the full TechVault env-pack scenario that
-    # `aptl lab start` provisions when no scenario is given, so a plain
-    # `aptl lab init` + `aptl lab start` brings up the complete lab the
-    # walkthrough documents. With soc/enterprise/dns/fileshare off, Compose only
-    # created the wazuh/victim/kali subset while the RAES handoff still tried to
-    # wire the scenario's ad/dns/cortex/db nodes, so start failed with
-    # "No such container". `reverse` and `mail` stay off — they are not part of
-    # that scenario.
-    wazuh: bool = True
-    victim: bool = True
-    kali: bool = True
-    reverse: bool = False
-    enterprise: bool = True
-    soc: bool = True
-    mail: bool = False
-    fileshare: bool = True
-    dns: bool = True
+    profiles: list[str] | None = None
+
+    @field_validator("profiles")
+    @classmethod
+    def validate_profiles(cls, value: list[str] | None) -> list[str] | None:
+        """Bound tokens before they can reach Compose argv."""
+        if value is not None and (
+            len(value) > 128
+            or len(set(value)) != len(value)
+            or any(not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}", item) for item in value)
+        ):
+            raise ValueError("invalid operator group selection")
+        return value
 
     def enabled_profiles(self) -> list[str]:
         """Return docker compose profile names for enabled containers."""
-        return [name for name in type(self).model_fields if getattr(self, name)]
+        return list(self.profiles or ())
 
 
 class RunStorageConfig(BaseModel):
@@ -113,32 +118,65 @@ class ScenarioSourceConfig(BaseModel):
     """Which scenario APTL realizes, and where its bytes come from.
 
     A backend is handed a scenario; it does not own one. Selecting it is an
-    operator decision made before ``aptl lab start`` rather than something the
+    operator decision made before ``lilrae lab start`` rather than something the
     backend decides or switches at runtime, so it lives here.
 
     ``root`` applies only to an explicitly selected project-tree development
-    scenario. Acquired packs are staged and validated beneath APTL's private
-    project state instead of being read from the checkout. A configured root is
+    scenario. ``pack_directory`` selects a released pack beneath the project;
+    when absent, installed env-packs resources supply its bytes. Acquired packs
+    are staged and validated beneath private project state. A configured root is
     operator input and is treated as untrusted: it must be a relative path that
     cannot escape the project.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
-    identity: str = "techvault"
+    identity: str | None = None
     root: str | None = None
+    pack_directory: str | None = None
     # ``env-pack`` (the default since #875) resolves the scenario from the
-    # installed ``raes-env-packs`` pack named by ``identity``, staged and validated
-    # before use, with no host paths in the document. ``project-tree`` is the
+    # configured directory or installed ``raes-env-packs`` pack named by
+    # ``identity``, staged and validated before use. ``project-tree`` is the
     # legacy path that resolves it from the APTL checkout and requires an explicit
     # scenario. The operator selects the source; the backend never switches it.
     source: Literal["project-tree", "env-pack"] = "env-pack"
 
+    @field_validator("pack_directory")
+    @classmethod
+    def validate_pack_directory(cls, value: str | None) -> str | None:
+        """Accept only an explicit project-relative, non-runtime data source."""
+        if value is None:
+            return None
+        from aptl.utils.pathsafe import PathContainmentError, validate_relative_path
+
+        try:
+            validate_relative_path(value)
+        except PathContainmentError:
+            raise ValueError("invalid pack directory locator") from None
+        if (
+            value != value.strip()
+            or any(character in value for character in ("~", "$", "\\"))
+            or value.split("/", 1)[0] == ".aptl"
+        ):
+            raise ValueError("invalid pack directory locator")
+        return value
+
+    @model_validator(mode="after")
+    def validate_pack_source(self) -> "ScenarioSourceConfig":
+        """Keep acquired pack bytes separate from project-tree development."""
+        if self.pack_directory is not None and (
+            self.source != "env-pack" or self.root is not None
+        ):
+            raise ValueError("pack_directory requires env-pack without root")
+        return self
+
     @field_validator("identity")
     @classmethod
-    def validate_identity(cls, value: str) -> str:
+    def validate_identity(cls, value: str | None) -> str | None:
         """Refuse an identity that names nothing."""
 
+        if value is None:
+            return None
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("scenario identity must not be empty")
@@ -186,6 +224,22 @@ class DeploymentConfig(BaseModel):
     ssh_key: str | None = None
     ssh_port: int = 22
     remote_dir: str | None = None
+
+    # Operator grants: the only way an operator-supplied value reaches a
+    # declared scenario variable (issue #965). Locators, never values.
+    environment_grants: list[EnvironmentGrant] = Field(default_factory=list)
+
+    @field_validator("environment_grants")
+    @classmethod
+    def validate_unique_grants(
+        cls, grants: list[EnvironmentGrant]
+    ) -> list[EnvironmentGrant]:
+        """Refuse two grants for the same pack, consumer and variable."""
+
+        keys = [grant.key for grant in grants]
+        if len(keys) != len(set(keys)):
+            raise ValueError("environment grants must be unique per variable")
+        return grants
 
     @field_validator("provider")
     @classmethod
@@ -251,7 +305,7 @@ class LifecycleScheduleEntry(BaseModel):
 class LabLifecyclePolicyConfig(BaseModel):
     """Ephemeral lifecycle policy for the range (DEP-003).
 
-    Declarative policy consumed by ``aptl lab enforce`` / ``monitor`` to
+    Declarative policy consumed by ``lilrae lab enforce`` / ``monitor`` to
     auto-teardown an idle or expired range and to provision on a
     schedule. Enforcement is a separate single-owner control-plane tick;
     this model is just the strict, first-party policy shape (ADR-025).
@@ -318,34 +372,6 @@ class InstalledParticipantModels(BaseModel):
         return model
 
 
-class ProcessEnvironmentCredentialSource(BaseModel):
-    """Select one exact parent-process variable without storing its value."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    kind: Literal["process-environment"]
-    variable: str = Field(strict=True, min_length=1, max_length=128)
-
-    @field_validator("variable")
-    @classmethod
-    def validate_variable(cls, value: str) -> str:
-        """Admit one bounded POSIX-style environment variable locator."""
-
-        if not _CREDENTIAL_SOURCE_VARIABLE_PATTERN.fullmatch(value):
-            raise ValueError("participant credential source variable is invalid")
-        return value
-
-    def descriptor_digest(self) -> str:
-        """Identify this non-secret descriptor without publishing its locator."""
-
-        payload = json.dumps(
-            self.model_dump(mode="json"),
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
-        return "sha256:" + hashlib.sha256(payload).hexdigest()
-
-
 class InstalledParticipantCredentialSources(BaseModel):
     """Closed configured credential-source selections for installed providers."""
 
@@ -404,7 +430,7 @@ class AptlConfig(BaseModel):
     errors rather than silent drift.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
     lab: LabSettings = LabSettings(name="aptl")
     containers: ContainerSettings = ContainerSettings()

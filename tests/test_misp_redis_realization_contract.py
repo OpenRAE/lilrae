@@ -10,6 +10,9 @@ import re
 import pytest
 from raes.parser import parse_sdl_file
 
+from aptl.core.deployment._compose_stateful_artifact_helpers import (
+    read_generated_output,
+)
 from aptl.core.deployment._misp_cache_credential import (
     MISP_CACHE_CONFIG_OUTPUT,
     MISP_CACHE_PASSWORD_OUTPUT,
@@ -28,7 +31,7 @@ from aptl.core.deployment.realization import (
 from aptl.core.soc_ca import derive_soc_service_certs
 from aptl_techvault.redis_acl_observation import _REDIS_ACL_READBACK_SCRIPT
 from tests.helpers import techvault_scenario_path
-from tests.test_env_pack_realization import _realize_pack
+from tests.techvault_pack import realize_techvault_pack
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -45,7 +48,7 @@ def _enum(value: object) -> object:
 def test_released_pack_authors_the_misp_and_cache_contract(tmp_path: Path) -> None:
     """The released pack retains OpenRAE/env-packs#280's MISP contract."""
 
-    assert version("raes-env-packs") == "6.2.1"
+    assert version("raes-env-packs") == "6.3.3"
     scenario = parse_sdl_file(techvault_scenario_path(tmp_path))
 
     application = scenario.nodes["misp"].runtime.platform_applications[0]
@@ -81,8 +84,8 @@ def test_released_pack_authors_the_misp_and_cache_contract(tmp_path: Path) -> No
 
 
 @pytest.fixture(scope="module")
-def realization(tmp_path_factory):
-    return _realize_pack(tmp_path_factory.mktemp("misp-realization"))
+def realization(released_techvault_realization):
+    return released_techvault_realization
 
 
 def test_the_cache_is_authenticated_without_putting_the_secret_in_argv(realization):
@@ -292,6 +295,23 @@ def test_a_drifted_cache_config_is_regenerated_rather_than_reused(tmp_path):
     assert credential_matches
 
 
+@pytest.mark.parametrize("rewrite", ["  {key}\n", "{key}\r\n"], ids=["padded", "crlf"])
+def test_a_padded_cache_password_is_regenerated_rather_than_reused(tmp_path, rewrite):
+    """MISP would receive the padding while redis.conf holds the bare token (#966)."""
+
+    assert realize_misp_cache_credential(_cache_artifact(), tmp_path) is None
+    password_file, config_file = _cache_paths(tmp_path)
+    original = password_file.read_bytes().removesuffix(b"\n").decode()
+    password_file.write_bytes(rewrite.format(key=original).encode())
+
+    assert realize_misp_cache_credential(_cache_artifact(), tmp_path) is None
+
+    delivered = read_generated_output(tmp_path, password_file)
+    credential_matches = _cache_acl_token(config_file) == delivered
+    assert credential_matches
+    assert delivered != original
+
+
 def test_a_symlinked_cache_output_is_never_reused(tmp_path):
     assert realize_misp_cache_credential(_cache_artifact(), tmp_path) is None
     password_file, _config_file = _cache_paths(tmp_path)
@@ -476,7 +496,7 @@ def test_stateful_preflight_accepts_the_delivery_dependency(tmp_path):
 
     from aptl.core.deployment._compose_stateful_graph import stateful_realization_errors
 
-    realization = _realize_pack(tmp_path)
+    realization = realize_techvault_pack(tmp_path)
     delivery = next(
         item
         for item in realization.generated_artifacts
@@ -487,3 +507,32 @@ def test_stateful_preflight_accepts_the_delivery_dependency(tmp_path):
     assert set(delivery.ordering_dependencies) <= addresses
     spec = realization.deployment_spec(sorted(realization.profiles))
     assert stateful_realization_errors(spec, local_artifacts=True) == []
+
+
+@pytest.mark.parametrize("producer_count", [0, 1, 2])
+def test_tls_delivery_dependency_uses_one_admitted_producer(producer_count):
+    from dataclasses import replace
+    from aptl.backends.raes_realization import _merge_backend_generated_artifacts
+    from aptl.core.deployment._compose_stateful_constants import SOC_CERT_PROFILE
+    from aptl.core.deployment.realization import DeploymentStatefulConsumer
+    target = DeploymentStatefulConsumer(
+        target_address='provision.node.misp', node_name='misp', service_name='misp',
+        mount_destination='/opt/certificates', access_mode='read_only',
+        selected_outputs=('misp-certificate', 'misp-private-key'),
+    )
+    source = DeploymentGeneratedArtifactRealization(
+        address='provision.generated-artifact.independent-certificates',
+        name='independent-certificates', generator='certificate_bundle',
+        lifecycle='reuse_valid', provenance=SOC_CERT_PROFILE,
+        outputs=(), consumers=(target,),
+    )
+    delivery = replace(_tls_artifact(), consumers=(target,))
+    diagnostics = []
+    producers = [replace(source, name=f"certificates-{index}", address=f"provision.generated-artifact.certificates-{index}") for index in range(producer_count)]
+    merged = _merge_backend_generated_artifacts(producers, [SimpleNamespace(backend_generated_artifacts=(delivery,))], diagnostics)
+    if producer_count == 1:
+        assert diagnostics == []
+        assert merged[-1].ordering_dependencies == (producers[0].address,)
+    else:
+        assert merged == producers
+        assert [item.code for item in diagnostics] == ["aptl.provisioner.backend-artifact-source-ambiguous"]

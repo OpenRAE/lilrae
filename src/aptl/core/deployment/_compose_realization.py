@@ -35,12 +35,17 @@ from aptl.core.deployment._compose_port_readback import (
 from aptl.core.deployment._compose_service_index_realization import (
     ComposeRealizationServiceIndexMixin,
 )
+from aptl.core.deployment._compose_stateful_artifact_helpers import (
+    base_container_environment_bindings,
+)
 from aptl.core.deployment._compose_stateful_realization import (
     ComposeStatefulRealizationMixin,
 )
 from aptl.core.deployment._compose_image_realization import (
     ComposeRealizationImageMixin,
+    image_override_text,
 )
+from aptl.core.deployment._lilrae_compose_capabilities import compose_capability_refusal
 from aptl.core.deployment._compose_network_realization import (
     ComposeRealizationNetworkMixin,
 )
@@ -140,9 +145,7 @@ class ComposeRealizationMixin(
         resolution of the mutable tag.
         """
 
-        failure = self._runtime_materialization_preflight(
-            realization, scenario_root=scenario_root
-        )
+        failure = self._runtime_materialization_preflight(realization)
         if failure is not None:
             return failure
 
@@ -153,7 +156,7 @@ class ComposeRealizationMixin(
             attempt_id=attempt_id or ownership.new_attempt_id()
         )
         failure = self._realization_preflight(
-            realization, scenario_root, substrate_digests
+            realization, substrate_digests
         )
         if failure is not None:
             result = failure
@@ -171,23 +174,38 @@ class ComposeRealizationMixin(
     def _realization_preflight(
         self,
         realization: DeploymentRealizationSpec,
-        scenario_root: Path,
         substrate_digests: Mapping[str, str] | None,
     ) -> LabResult | None:
         """Run ordered backend preflights before any scenario mutation."""
 
-        failure = self._capture_apparatus_preflight(realization, scenario_root)
+        failure = self._environment_binding_preflight(realization)
+        if failure is None:
+            failure = self._validate_stateful_realization(realization)
+        if failure is None:
+            failure = self._capture_apparatus_preflight(realization)
         if failure is None:
             failure = self._traffic_mirror_preflight(realization)
         if failure is None:
-            failure = self._observability_preflight(realization, scenario_root)
+            failure = self._observability_preflight(realization)
         if failure is None:
             # Request-scoped: base start consumes the already-verified identity.
             self._realization_substrate_digests = dict(substrate_digests or {})
             failure = self._runtime_orchestration_preflight(realization)
         if failure is None:
+            failure = self._compose_feature_preflight(realization)
+        if failure is None:
             failure = self._start_backend_observability(realization.profiles)
         return failure
+
+    def _compose_feature_preflight(
+        self, realization: DeploymentRealizationSpec
+    ) -> LabResult | None:
+        """Check the image override's Compose features before applying it."""
+        if not _needs_compose(realization) or not realization.images:
+            return None
+        return compose_capability_refusal(
+            self._run, (), documents=(image_override_text(realization.images),),
+        )
 
     def _realize_networks_and_boundaries(
         self,
@@ -285,7 +303,7 @@ class ComposeRealizationMixin(
                     ops_by_address, artifact, consumers, realization_root
                 )
             if failure is None:
-                failure = _append_base_container_environment_bindings(
+                failure = base_container_environment_bindings(
                     generated_environment,
                     artifact,
                     environment_consumers,
@@ -458,39 +476,4 @@ def _append_base_container_artifact_ops(
             ops_by_address.setdefault(consumer.target_address, []).append(
                 PlaceFileOp(path=destination, content=content, mode=mode)
             )
-    return None
-
-
-def _append_base_container_environment_bindings(
-    bindings_by_address: dict[str, dict[str, str]],
-    artifact: object,
-    consumers: list[object],
-    realization_root: Path,
-) -> LabResult | None:
-    """Resolve admitted generated outputs for generic-container env delivery."""
-
-    from aptl.core.deployment._compose_stateful_model import artifact_source_path
-    from aptl.core.deployment.realization import valid_environment_variable_name
-
-    source_root = artifact_source_path(realization_root, artifact)
-    outputs = {output.name: source_root / output.path for output in artifact.outputs}
-    try:
-        for consumer in consumers:
-            if not valid_environment_variable_name(consumer.environment_variable):
-                raise ValueError("invalid generated environment variable name")
-            output = outputs.get(consumer.output_name)
-            if output is None or not output.is_file():
-                raise ValueError("missing generated output")
-            value = output.read_text(encoding="utf-8").strip()
-            if not value or "\n" in value or "\r" in value:
-                raise ValueError("invalid generated environment value")
-            node_bindings = bindings_by_address.setdefault(consumer.target_address, {})
-            if consumer.environment_variable in node_bindings:
-                raise ValueError("duplicate generated environment target")
-            node_bindings[consumer.environment_variable] = value
-    except (OSError, ValueError):
-        return LabResult(
-            success=False,
-            error=f"Generated artifact {artifact.address} environment delivery failed.",
-        )
     return None

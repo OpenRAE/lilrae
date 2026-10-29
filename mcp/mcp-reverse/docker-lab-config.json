@@ -19,7 +19,7 @@
       "ssh_key": "~/.ssh/aptl_lab_key",
       "ssh_user": "labadmin",
       "ssh_port": "${APTL_HP_REVERSE_22}",
-      "enabled": true
+      "enabled": false
     }
   }
 }

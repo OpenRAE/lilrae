@@ -1,4 +1,4 @@
-# Local commits run secret detection and fast file hygiene only.
+# Local commits run secret detection, file hygiene and pack ownership checks.
 # Dependency freshness, complexity, prose lint and tests run in CI/CD.
 fail_fast: true
 
@@ -45,3 +45,12 @@ repos:
             mcp/aptl-mcp-common/tests/redaction\.test\.ts|
             src/aptl/utils/redaction\.py
           )$
+  - repo: local
+    hooks:
+      - id: lilrae-pack-boundary
+        name: Pack-owned scenario facts stay behind adapters
+        entry: uv run --frozen python tools/check_pack_boundary.py
+        language: python
+        additional_dependencies: [uv==0.11.8]
+        pass_filenames: false
+        files: ^(scripts/|appliance/guest/|mcp/[^/]+/docker-lab-config\.json$|src/aptl|tools/check_pack_boundary\.py$|\.gc/pack-ownership\.json$|aptl\.json$|pyproject\.toml$|uv\.lock$)

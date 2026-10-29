@@ -8,6 +8,29 @@ from unittest.mock import MagicMock
 import pytest
 
 
+@pytest.mark.parametrize(
+    ("containment", "mode"),
+    [
+        ("native-docker", "linux-native"),
+        ("docker-vm-unverified", "docker-vm"),
+        ("remote-unverified", "unknown"),
+        ("seat-guest-unverified", "unknown"),
+        (None, "unknown"),
+    ],
+)
+def test_only_a_native_engine_reads_this_hosts_sysctl(containment, mode):
+    """Lab start and `aptl doctor` share this mapping (#1218)."""
+    from aptl.core import hostenv
+    from aptl.core.sysreqs import docker_mode_for_containment
+
+    expected = {
+        "linux-native": hostenv.DOCKER_LINUX_NATIVE,
+        "docker-vm": hostenv.DOCKER_VM,
+        "unknown": hostenv.DOCKER_UNKNOWN,
+    }[mode]
+    assert docker_mode_for_containment(containment) == expected
+
+
 class TestCheckMaxMapCount:
     """Tests for vm.max_map_count checking."""
 
@@ -351,3 +374,18 @@ class TestCheckDockerBuildx:
 
         assert result.passed is False
         assert "docker" in result.error
+
+
+@pytest.mark.parametrize('stdout,stderr,returncode', [
+    ('native-output-canary', '', 0),
+    ('', 'native-output-canary', 1),
+])
+def test_kernel_probe_does_not_disclose_native_output(mocker, caplog, stdout, stderr, returncode):
+    import subprocess
+    from aptl.core import hostenv
+    from aptl.core.sysreqs import check_max_map_count
+    mocker.patch('aptl.core.sysreqs.subprocess.run', return_value=subprocess.CompletedProcess([], returncode, stdout=stdout, stderr=stderr))
+    result = check_max_map_count(selected_mode=hostenv.DOCKER_LINUX_NATIVE)
+    assert not result.passed
+    assert 'native-output-canary' not in result.error
+    assert 'native-output-canary' not in caplog.text

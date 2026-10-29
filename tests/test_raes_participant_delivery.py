@@ -46,7 +46,16 @@ from aptl.core.experiment.capture_registry import (
 )
 from aptl.core.runstore import LocalRunStore
 from aptl_techvault.study import StudyCapture
-from aptl.workbench.process import AgentExecutionError, ProcessResult
+from aptl.core.evidence.outcomes import CollectorStatus
+from aptl.workbench.process import (
+    REASON_OVERFLOW,
+    REASON_RESIDUE,
+    REASON_TIMEOUT,
+    AgentExecutionError,
+    BoundedProcessError,
+    ProcessCleanup,
+    ProcessResult,
+)
 from aptl.workbench.profiles import ProfileId
 
 
@@ -379,6 +388,7 @@ def test_delivery_collector_uses_public_coordinator_for_content_addressed_eviden
             "session_id": "session-secret",
             "usage": {"input_tokens": 3},
         },
+        cleanup=_CLEANUP,
     )
     collector = _ParticipantDeliveryCollector(
         turn.capture_binding.registration_id  # type: ignore[union-attr]
@@ -406,6 +416,11 @@ def test_delivery_collector_uses_public_coordinator_for_content_addressed_eviden
     assert payload["response"] == "participant response"
     assert payload["provider_metadata"]["session_id"] == "[REDACTED]"
     assert "result" not in payload["provider_metadata"]
+    assert payload["process_cleanup"] == {
+        "process_group": 4242,
+        "seconds": 0.004,
+        "residual": [],
+    }
 
     index_record = _delivery_record(1, turn, result, "claude-test-model", ref)
     store.append_jsonl("run-1", "participant/inject-deliveries.jsonl", [index_record])
@@ -417,6 +432,10 @@ def test_delivery_collector_uses_public_coordinator_for_content_addressed_eviden
     assert persisted_index["conversation_continuity_sha256"].startswith("sha256:")
     assert persisted_index["conversation_continuity_sha256"] != "[REDACTED]"
     assert "session_sha256" not in persisted_index
+
+
+# What the bounded runner reports after a turn that left nothing behind.
+_CLEANUP = ProcessCleanup(process_group=4242, seconds=0.004)
 
 
 class _Runner:
@@ -437,6 +456,28 @@ class _Runner:
                 }
             ).encode(),
             stderr=b"",
+            cleanup=_CLEANUP,
+        )
+
+
+class _FailingRunner(_Runner):
+    """Fail every turn the way the bounded runner fails one."""
+
+    def __init__(self, reason: str | None) -> None:
+        super().__init__()
+        self._reason = reason
+
+    def run(self, argv: tuple[str, ...], **kwargs: object) -> ProcessResult:
+        if self._reason is None:
+            super().run(argv, **kwargs)
+            return ProcessResult(returncode=1, stdout=b"", stderr=b"")
+        self.calls.append(argv)
+        residual = ("output-streams-held",) if self._reason == REASON_RESIDUE else ()
+        raise BoundedProcessError(
+            self._reason,
+            cleanup=ProcessCleanup(4242, 1.25, residual),
+            stdout_bytes=7,
+            stderr_bytes=0,
         )
 
 
@@ -480,6 +521,7 @@ def test_host_adapter_uses_authenticated_cli_and_strict_profile_tools(
     )
 
     initial, resumed = runner.calls
+    assert first.cleanup == _CLEANUP
     assert "--session-id" in initial
     assert "--resume" in resumed
     assert "--strict-mcp-config" in initial
@@ -535,42 +577,54 @@ def test_host_adapter_rejects_non_success_result_envelopes(
         )
 
 
-def test_runtime_profile_rejects_unadmitted_mcp_environment(tmp_path: Path) -> None:
+def _render_red_profile(tmp_path: Path, environment: dict[str, str]) -> Path:
     project = tmp_path / "project"
     artifact = project / "mcp/mcp-red/build/index.js"
     artifact.parent.mkdir(parents=True)
     artifact.write_text("", encoding="utf-8")
     source = project / ".mcp.json"
     source.write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    "aptl-red": {
-                        "env": {
-                            "APTL_STATE_DIR": "/state",
-                            "NODE_OPTIONS": "--require=/tmp/untrusted.js",
-                        }
-                    }
-                }
-            }
-        ),
+        json.dumps({"mcpServers": {"aptl-red": {"env": environment}}}),
         encoding="utf-8",
     )
+    path, _tools = _render_runtime_profile_config(
+        profile=ProfileId.RED,
+        project_dir=project,
+        source_config=source,
+        output_dir=tmp_path,
+        node_executable=_admitted_fixture_executable(tmp_path),
+    )
+    return path
 
-    node_executable = _admitted_fixture_executable(tmp_path)
+
+def test_runtime_profile_rejects_unadmitted_mcp_environment(tmp_path: Path) -> None:
     with pytest.raises(AgentExecutionError, match="environment is not admitted"):
-        _render_runtime_profile_config(
-            profile=ProfileId.RED,
-            project_dir=project,
-            source_config=source,
-            output_dir=tmp_path,
-            node_executable=node_executable,
+        _render_red_profile(
+            tmp_path,
+            {
+                "APTL_STATE_DIR": "/state",
+                "NODE_OPTIONS": "--require=/tmp/untrusted.js",
+            },
         )
 
 
+def test_runtime_profile_carries_workspace_capture_container(tmp_path: Path) -> None:
+    """#1242: the synced capture sidecar name survives role-scoped rendering."""
+    name = "aptl-w123456789abc-kali-capture"
+    path = _render_red_profile(
+        tmp_path, {"APTL_STATE_DIR": "/state", "LILRAE_MCP_CAPTURE_CONTAINER": name}
+    )
+
+    rendered = json.loads(path.read_text(encoding="utf-8"))
+    assert rendered["mcpServers"]["aptl-red"]["env"] == {
+        "APTL_STATE_DIR": "/state",
+        "LILRAE_MCP_CAPTURE_CONTAINER": name,
+    }
+
+
 class _FakeRuntimeManager(AptlRuntimeManager):
-    def __init__(self) -> None:
-        self._snapshot = RuntimeSnapshot()
+    def __init__(self, target) -> None:
+        super().__init__(target)
         self.advances: list[tuple[str, int, int]] = []
 
     def advance_time(
@@ -580,10 +634,13 @@ class _FakeRuntimeManager(AptlRuntimeManager):
         return SimpleNamespace(success=True, snapshot=self.snapshot)
 
 
-def test_execute_plan_coordinates_time_profiles_sessions_control_and_evidence(
+def _execute_study_plan(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    runner: _Runner,
+) -> tuple[RuntimeSnapshot, _FakeRuntimeManager, list[ProfileId], LocalRunStore]:
+    """Run the four-turn study plan through ``runner`` on stub targets."""
+
     scenario, model = _scenario_and_model()
     capture_plan = SimpleNamespace(
         runtime_bindings=lambda: tuple(
@@ -603,8 +660,11 @@ def test_execute_plan_coordinates_time_profiles_sessions_control_and_evidence(
     project.mkdir()
     (project / ".mcp.json").write_text('{"mcpServers":{}}\n', encoding="utf-8")
     store = LocalRunStore(tmp_path / "runs")
-    runner = _Runner()
-    manager = _FakeRuntimeManager()
+    target = replace(
+        create_stub_target(),
+        manifest=create_aptl_manifest(participant_inject_delivery=True),
+    )
+    manager = _FakeRuntimeManager(target)
     selected_profiles: list[ProfileId] = []
 
     def render(**kwargs: object) -> tuple[Path, tuple[str, ...]]:
@@ -632,14 +692,22 @@ def test_execute_plan_coordinates_time_profiles_sessions_control_and_evidence(
             model="claude-sonnet-5",
             run_store=store,
             run_id="run-coordinator",
-            target=replace(
-                create_stub_target(),
-                manifest=create_aptl_manifest(participant_inject_delivery=True),
-            ),
+            target=target,
             runtime_manager=manager,
             initial_snapshot=manager.snapshot,
             runner=runner,
         ),
+    )
+    return final_snapshot, manager, selected_profiles, store
+
+
+def test_execute_plan_coordinates_time_profiles_sessions_control_and_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _Runner()
+    final_snapshot, manager, selected_profiles, store = _execute_study_plan(
+        tmp_path, monkeypatch, runner
     )
 
     assert manager.advances == [
@@ -687,3 +755,101 @@ def test_execute_plan_coordinates_time_profiles_sessions_control_and_evidence(
         )
         == 4
     )
+
+
+@pytest.mark.parametrize(
+    ("reason", "status"),
+    [
+        pytest.param(REASON_TIMEOUT, CollectorStatus.TIMEOUT, id="timeout"),
+        pytest.param(REASON_OVERFLOW, CollectorStatus.TRUNCATION, id="overflow"),
+        pytest.param(
+            REASON_RESIDUE, CollectorStatus.FINALIZATION_FAILURE, id="residue"
+        ),
+        pytest.param(None, CollectorStatus.MID_RUN_LOSS, id="provider-error"),
+    ],
+)
+def test_delivery_collector_reports_why_the_provider_turn_failed(
+    tmp_path: Path,
+    reason: str | None,
+    status: CollectorStatus,
+) -> None:
+    """A failed turn's capture status names the bounded runner's reason (#963).
+
+    The regression: every failure was a mid-run loss, so a timeout, an output
+    overflow and cleanup residue looked alike in the acquisition report.
+    """
+
+    scenario, model = _scenario_and_model()
+    turn = replace(
+        build_participant_delivery_plan(scenario, model).turns[0],
+        capture_binding=_binding("red", "start"),
+    )
+    config = tmp_path / "profile.json"
+    config.write_text('{"mcpServers": {}}\n', encoding="utf-8")
+    config.chmod(0o600)
+    adapter = ClaudeCodeHostParticipantAdapter(
+        _admitted_fixture_executable(tmp_path), tmp_path, runner=_FailingRunner(reason)
+    )
+    collector = _ParticipantDeliveryCollector(
+        turn.capture_binding.registration_id  # type: ignore[union-attr]
+    )
+    collector.bind_payload(turn, "claude-test-model")
+
+    acquired = acquire_evidence(
+        bindings=(turn.capture_binding,),  # type: ignore[arg-type]
+        collectors={collector.registration_id: collector},
+        run_store=LocalRunStore(tmp_path / "runs"),
+        scope=RunScope("run-1", "trial-1", "attempt-1"),
+        clock=FixedClockProvider("2026-09-25T00:00:00Z"),
+        trial_body=lambda: collector.deliver(
+            adapter,
+            instruction=turn.instruction,
+            model="claude-test-model",
+            config_path=config,
+            allowed_tools=(),
+            session_id="00000000-0000-4000-8000-000000000001",
+            resume=False,
+        ),
+    )
+
+    assert (acquired.reports[0].status, acquired.refs) == (status, ())
+
+
+@pytest.mark.parametrize(
+    ("reason", "message"),
+    [
+        pytest.param(
+            REASON_TIMEOUT,
+            "participant delivery attempt failed: agent request exceeded the "
+            "configured timeout; withheld captured output (stdout 7 bytes, stderr "
+            "0 bytes); process group 4242 cleanup took 1.25s; residual: none observed",
+            id="timeout",
+        ),
+        pytest.param(None, "participant delivery attempt failed", id="provider-error"),
+    ],
+)
+def test_failed_delivery_names_the_runner_report_without_secrets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reason: str | None,
+    message: str,
+) -> None:
+    """The delivery error carries the runner's summary to the run log (#963).
+
+    The lab logs this error with ``log.exception``. The regression: it said
+    only "participant delivery attempt failed", so a timed-out turn, its
+    withheld output and its cleanup were invisible to the operator. Other
+    failures keep the fixed message.
+    """
+
+    runner = _FailingRunner(reason)
+
+    with pytest.raises(AgentExecutionError) as raised:
+        _execute_study_plan(tmp_path, monkeypatch, runner)
+
+    assert len(runner.calls) == 1
+    assert str(raised.value) == message
+    assert not (
+        LocalRunStore(tmp_path / "runs").get_run_path("run-coordinator")
+        / "participant/inject-deliveries.jsonl"
+    ).exists()

@@ -466,7 +466,7 @@ class LocalRunStore:
     #       ocsf.jsonl
     #       sessions/<session_id>.jsonl    # continuous PTY tee
     #     kali-side/<session_id>/
-    #       pty/, pcap/, audit/, proc-acct/
+    #       frames.jsonl, metadata.json  # or capture-harvest-failure.json
     # ------------------------------------------------------------------
 
     def mcp_side_dir(self, run_id: str) -> Path:

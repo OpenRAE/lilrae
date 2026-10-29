@@ -6,7 +6,7 @@ type: FUNCTIONAL
 priority: MUST
 wave: 2
 created_at: 2026-05-18T04:48:47.928455Z
-updated_at: 2026-05-19T18:38:04.120446Z
+updated_at: 2026-10-12T17:30:00.000000Z
 ---
 
 # SCN-010: ACES SDL as APTL's Canonical Scenario Authoring Surface
@@ -17,9 +17,12 @@ APTL shall consume the external Agentic Cyber Environment System (ACES) SDL (sib
 
 ## Rationale
 
-APTL and ACES are co-developed inside a single research agenda. ACES's core research claim is that the same authored scenario can be realized across multiple range backends; APTL is the first production-style backend that exercises the ACES contract surface end-to-end. Maintaining a parallel APTL-local SDL fragments authoring tools, drifts grammar versus ACES, and prevents cross-backend scenario comparison, collapsing the reproducibility claim the program rests on. Better-specified scenarios (typed ACES runtime model, planned reconciliation with explicit ordering and refresh dependencies, contract-validated runtime envelopes, OCI module distribution with lockfiles via `aces sdl resolve`/`verify-imports`/`publish`) directly support reproducibility of experimental runs across backends, time, and authors. Carrying two SDLs is also duplicate engineering: every DSL-002..DSL-009 feature is already on the ACES roadmap, and ACES has tooling APTL would otherwise rebuild in-tree. Adoption is structured as a two-phase migration (parallel ACES path during Phase A; single cutover PR for Phase B) so APTL is not broken during the transition. ADR-035 records the decision. The remaining work is not just to make TechVault trigger through ACES; APTL must implement a scenario-generic ACES backend interpreter/realizer for any scenario within APTL's supported expressivity class. TechVault is the comprehensive proving case. This work is tracked by GitHub issue series #317-#324; profile-upgrade follow-ons remain #311 and #312.
+UPDATED 2026-10-12: b4b9c04d (#757) removed the aptl aces-inventory command and the docs/aces/inventory/ records on 2026-07-12, so the ten TESTS entries that ran it against those records are gone. ced66dcc (#846) renamed bin/install-aces-inventory-skill.sh to bin/install-raes-inventory-skill.sh on 2026-07-26, and the installer entries name the new script and its --raes-repo option. See GitHub issue #954. --- Original rationale: APTL and ACES are co-developed inside a single research agenda. ACES's core research claim is that the same authored scenario can be realized across multiple range backends; APTL is the first production-style backend that exercises the ACES contract surface end-to-end. Maintaining a parallel APTL-local SDL fragments authoring tools, drifts grammar versus ACES, and prevents cross-backend scenario comparison, collapsing the reproducibility claim the program rests on. Better-specified scenarios (typed ACES runtime model, planned reconciliation with explicit ordering and refresh dependencies, contract-validated runtime envelopes, OCI module distribution with lockfiles via `aces sdl resolve`/`verify-imports`/`publish`) directly support reproducibility of experimental runs across backends, time, and authors. Carrying two SDLs is also duplicate engineering: every DSL-002..DSL-009 feature is already on the ACES roadmap, and ACES has tooling APTL would otherwise rebuild in-tree. Adoption is structured as a two-phase migration (parallel ACES path during Phase A; single cutover PR for Phase B) so APTL is not broken during the transition. ADR-035 records the decision. The remaining work is not just to make TechVault trigger through ACES; APTL must implement a scenario-generic ACES backend interpreter/realizer for any scenario within APTL's supported expressivity class. TechVault is the comprehensive proving case. This work is tracked by GitHub issue series #317-#324; profile-upgrade follow-ons remain #311 and #312.
 
 ## Traceability
+
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/_raes_runtime_target.py` (Scenario runtime target construction)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/_raes_manifest_realization.py` (Scenario realization capabilities)
 
 - IMPLEMENTS → GITHUB_ISSUE `330` (SCN-010 inventory: webapp container (steady-state asset spec))
 - IMPLEMENTS → PULL_REQUEST `361` (Add webapp ACES inventory)
@@ -47,15 +50,15 @@ APTL and ACES are co-developed inside a single research agenda. ACES's core rese
 - IMPLEMENTS → PULL_REQUEST `367` (feat: add ad aces inventory)
 - IMPLEMENTS → CONFIG `uv.lock` (ACES SDL dependency lock for identity-authority schema consumption)
 - TESTS → TEST `pre-commit run --all-files` (APTL repo policy validation for PR #377)
-- TESTS → TEST `bin/install-aces-inventory-skill.sh --aces-repo /home/atomik/src/aces2 --claude-dir $tmpdir/claude --codex-dir $tmpdir/codex --codex-prompts-dir $tmpdir/prompts` (Installer isolated temp-directory symlink validation)
+- TESTS → TEST `bin/install-raes-inventory-skill.sh --raes-repo <raes-checkout> --claude-dir $tmpdir/claude --codex-dir $tmpdir/codex --codex-prompts-dir $tmpdir/prompts` (Installer isolated temp-directory symlink validation)
 - IMPLEMENTS → PULL_REQUEST `381` (Add victim ACES inventory)
 - IMPLEMENTS → PULL_REQUEST `382` (Add DNS ACES inventory)
 - IMPLEMENTS → PULL_REQUEST `379` (Add fileshare ACES inventory)
 - IMPLEMENTS → PULL_REQUEST `377` (Add ACES inventory skill installer)
 - DOCUMENTS → DOCUMENTATION `AGENTS.md` (APTL agent guidance for installing ACES asset inventory capture skill)
 - IMPLEMENTS → GITHUB_ISSUE `371` (Install ACES asset inventory capture skill from APTL)
-- TESTS → TEST `bash -n bin/install-aces-inventory-skill.sh` (Installer shell syntax validation)
-- TESTS → TEST `bin/install-aces-inventory-skill.sh --aces-repo /home/atomik/src/aces2 --dry-run` (Installer dry-run validation against ACES checkout)
+- TESTS → TEST `bash -n bin/install-raes-inventory-skill.sh` (Installer shell syntax validation)
+- TESTS → TEST `bin/install-raes-inventory-skill.sh --raes-repo <raes-checkout> --dry-run` (Installer dry-run validation against a RAES checkout)
 - IMPLEMENTS → GITHUB_ISSUE `333` (SCN-010 inventory: fileshare container (steady-state asset spec))
 - IMPLEMENTS → GITHUB_ISSUE `334` (SCN-010 inventory: workstation container (steady-state asset spec))
 - IMPLEMENTS → PULL_REQUEST `378` ([codex] Add workstation ACES inventory)
@@ -67,29 +70,19 @@ APTL and ACES are co-developed inside a single research agenda. ACES's core rese
 - IMPLEMENTS → PULL_REQUEST `384` (Add Wazuh manager ACES inventory)
 - IMPLEMENTS → PULL_REQUEST `385` (Add MISP ACES inventory)
 - IMPLEMENTS → GITHUB_ISSUE `346` (SCN-010 inventory: misp container (steady-state asset spec))
-- TESTS → TEST `uv run aptl aces-inventory validate docs/aces/inventory/wazuh.manager` (Wazuh manager ACES inventory validation gate)
-- TESTS → TEST `uv run aptl aces-inventory gaps docs/aces/inventory/wazuh.manager` (Wazuh manager ACES inventory gap audit gate)
 - IMPLEMENTS → GITHUB_ISSUE `347` (SCN-010 inventory: misp-db container (steady-state asset spec))
 - IMPLEMENTS → PULL_REQUEST `390` (Implement MISP DB inventory)
-- TESTS → TEST `uv run aptl aces-inventory validate docs/aces/inventory/misp-db` (MISP DB ACES inventory validation gate)
-- TESTS → TEST `uv run aptl aces-inventory gaps docs/aces/inventory/misp-db` (MISP DB ACES inventory gap audit gate)
 - IMPLEMENTS → GITHUB_ISSUE `342` (SCN-010 inventory: wazuh.dashboard container (steady-state asset spec))
-- TESTS → TEST `uv run aptl aces-inventory validate docs/aces/inventory/wazuh.dashboard` (Wazuh dashboard ACES inventory validation gate)
-- TESTS → TEST `uv run aptl aces-inventory gaps docs/aces/inventory/wazuh.dashboard` (Wazuh dashboard ACES inventory gap audit gate)
 - IMPLEMENTS → PULL_REQUEST `394` (added: add wazuh dashboard ACES inventory)
 - IMPLEMENTS → GITHUB_ISSUE `343` (SCN-010 inventory: wazuh-sidecar-db container (steady-state asset spec))
 - IMPLEMENTS → PULL_REQUEST `396` (added: SCN-010 wazuh-sidecar-db ACES steady-state inventory (+ #388 secret-redaction reconciliation))
 - IMPLEMENTS → GITHUB_ISSUE `357` (SCN-010 inventory: cortex container (steady-state asset spec))
 - TESTS → TEST `tests/test_cortex_integration_config.py` (TheHive/Cortex integration configuration checks)
-- TESTS → TEST `uv run aptl aces-inventory validate docs/aces/inventory/cortex` (Cortex ACES inventory validation gate)
-- TESTS → TEST `uv run aptl aces-inventory gaps docs/aces/inventory/cortex` (Cortex ACES inventory gap audit gate)
 - IMPLEMENTS → PULL_REQUEST `409` ([codex] Integrate and inventory Cortex)
 - IMPLEMENTS → GITHUB_ISSUE `341` (SCN-010 inventory: wazuh.indexer container (steady-state asset spec))
 - IMPLEMENTS → PULL_REQUEST `392` (added: SCN-010 wazuh.indexer ACES steady-state inventory)
 - IMPLEMENTS → PULL_REQUEST `401` (Encode wazuh-indexer datastore surfaces unblocked by ACES #468/#469/#470)
 - IMPLEMENTS → PULL_REQUEST `411` (Audit TechVault inventory captures)
-- TESTS → TEST `uv run aptl aces-inventory validate docs/aces/inventory/wazuh.indexer` (Wazuh indexer ACES inventory validation gate)
-- TESTS → TEST `uv run aptl aces-inventory gaps docs/aces/inventory/wazuh.indexer` (Wazuh indexer ACES inventory gap audit gate)
 - IMPLEMENTS → GITHUB_ISSUE `321` (SCN-010D: route APTL public start path through ACES RuntimeManager handoff)
 - IMPLEMENTS → CODE_FILE `src/aptl/core/lab.py` (Public lab start orchestration route through ACES RuntimeManager handoff)
 - TESTS → TEST `tests/test_lab.py` (Lab start ACES handoff routing regression test)

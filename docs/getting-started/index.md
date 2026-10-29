@@ -10,7 +10,7 @@ inspectable lab and then through project-scoped teardown.
 4. Use the [troubleshooting guide](../troubleshooting/index.md) when startup or
    a service reports a problem.
 
-The lab project created by `aptl lab init` is the working directory for normal
+The lab project created by `lilrae lab init` is the working directory for normal
 commands. It contains the released Compose assets and project configuration;
 it is not a source checkout. Keep its generated `.env`, `.mcp.json`, `.aptl/`,
 keys, and run artifacts private.

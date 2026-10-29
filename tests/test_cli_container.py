@@ -336,6 +336,10 @@ def owned_lab(project_dir, mocker):
             payload = json.dumps([inspected[argv[2]]])
             return subprocess.CompletedProcess(argv, 0, stdout=payload, stderr="")
         calls.append(argv)
+        if argv == ["docker", "info", "--format", "{{.ID}}"]:
+            return subprocess.CompletedProcess(
+                argv, 0, stdout="daemon-a\n", stderr=""
+            )
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
     mocker.patch("subprocess.run", side_effect=docker)
@@ -456,4 +460,7 @@ class TestContainerCommandsRejectUnrecordedNames:
 
         assert result.exit_code == 1
         assert "not part of this lab" in result.stderr.lower()
-        assert all(argv[:2] == ["docker", "inspect"] for argv in calls)
+        assert all(
+            argv[:2] in (["docker", "inspect"], ["docker", "info"])
+            for argv in calls
+        )

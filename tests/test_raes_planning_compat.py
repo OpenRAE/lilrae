@@ -58,6 +58,41 @@ _ADDRESS = "provision.node.vm"
 _FIELD_PREFIX = "nodes.vm.runtime"
 
 
+def test_authored_fields_are_indexed_once_and_refreshed_between_operations(tmp_path):
+    class CountedMap(dict):
+        traversals = 0
+
+        def __iter__(self):
+            self.traversals += 1
+            return super().__iter__()
+
+    paths = CountedMap({"nodes.vm.runtime.applications[0].name": object()})
+    scenario = SimpleNamespace(explicitness=paths, nodes={})
+    requirements = (
+        _requirement(
+            "runtime-applications", field_path="nodes.vm.runtime.applications"
+        ),
+        _requirement("runtime-applications", field_path="nodes.vm.runtime.application"),
+        _requirement("runtime-applications", field_path="nodes.vm.runtime.absent"),
+    )
+    model = _model(*requirements)
+    first = apply_techvault_observation_strength_compatibility(
+        model, _bundle(tmp_path), scenario=scenario
+    )
+    assert first.realization_requirements[0].explicitness is ExplicitnessClass.EXACT
+    assert all(item.delegated for item in first.realization_requirements[1:])
+    assert paths.traversals == 1
+
+    paths.clear()
+    paths["nodes.vm.runtime.absent"] = object()  # An explicitly empty field counts.
+    second = apply_techvault_observation_strength_compatibility(
+        model, _bundle(tmp_path), scenario=scenario
+    )
+    assert second.realization_requirements[0].delegated
+    assert second.realization_requirements[2].explicitness is ExplicitnessClass.EXACT
+    assert paths.traversals == 2
+
+
 def _bundle(tmp_path: Path, *, pack_id: str = "techvault") -> ScenarioBundle:
     return ScenarioBundle(
         identity=pack_id,
@@ -66,7 +101,7 @@ def _bundle(tmp_path: Path, *, pack_id: str = "techvault") -> ScenarioBundle:
         source_kind=ScenarioSourceKind.ENV_PACK,
         pack_identity=PackIdentity(
             pack_id=pack_id,
-            pack_version="0.1.1",
+            pack_version="0.1.2",
             set_digest=TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST,
         ),
     )
@@ -402,6 +437,7 @@ def test_aptl_planning_applies_compatibility_before_raes_planner(
         name="aptl-full-remote-control-plane",
         manifest=manifest,
         provisioner=SimpleNamespace(domain_profile_context=None),
+        participant_runtime=None,
     )
 
     bundle = _bundle(tmp_path)
@@ -481,9 +517,11 @@ def test_admitted_target_reuses_one_planning_compatibility_resolution(
         distribution_version="1.0.0",
         entry_point="techvault.aptl",
     )
+    from aptl.backends import _raes_runtime_target
+
     resolutions = []
     monkeypatch.setattr(
-        raes,
+        _raes_runtime_target,
         "resolve_target_planning_compatibility",
         lambda bundle, config: resolutions.append((bundle, config)) or selection,
     )

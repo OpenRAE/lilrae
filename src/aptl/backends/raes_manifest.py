@@ -24,6 +24,16 @@ behavior-history contracts. It does not declare the deprecated SDL scoring chain
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+from aptl.backends._raes_manifest_realization import APTL_REALIZATION_SUPPORT
+from aptl.backends._raes_manifest_resources import (
+    APTL_PROCESS_RESOURCE_LIMITS as APTL_PROCESS_RESOURCE_LIMITS,
+)
+
+if TYPE_CHECKING:
+    from aptl.backends.lilrae_participant_execution import LilraeParticipantBinding
+
 from raes_backend_protocols.capabilities import (
     BackendManifest,
     EvaluatorCapabilities,
@@ -35,10 +45,6 @@ from raes_backend_protocols.capabilities import (
 from raes_backend_protocols.manifest import backend_manifest_v2_model
 from raes_contracts.apparatus import (
     ConceptBinding,
-    RealizationObservationCapability,
-    RealizationSupportDeclaration,
-    RealizationSupportMode,
-    RealizationVerificationScope,
 )
 from raes_contracts.contracts import (
     BackendManifestV2Model,
@@ -49,14 +55,10 @@ from raes_contracts.contracts import (
     LiteralBindingValueModel,
 )
 from raes_contracts.realization_envelope import BackendRealizationEnvelopeModel
-from aptl.backends.raes_artifact_mechanisms import aptl_artifact_mechanisms
-from aptl.backends._raes_manifest_resources import APTL_PROCESS_RESOURCE_LIMITS
 from aptl.backends.identity import APTL_RAES_TARGET_NAME, APTL_RAES_TARGET_VERSION
 from aptl.backends.raes_operating_systems import APTL_OPERATING_SYSTEMS
-from aptl.backends.raes_planning_compat import DAEMON_READBACK_RUNTIME_CONCERNS
 from aptl.backends.raes_realization_envelope import build_aptl_realization_envelope
 from raes_contracts.vocabulary import (
-    ObservationStrength,
     ParticipantFeatureSupportLevel,
     WorkflowFeature,
     WorkflowStatePredicateFeature,
@@ -75,6 +77,16 @@ from aptl.core.experiment.capture_registry import (
 )
 
 APTL_EXPERIMENT_ACTION_TIMEOUT_TARGET = "participant-runtime.action-timeout-seconds"
+
+__all__ = (
+    "APTL_EXPERIMENT_ACTION_TIMEOUT_TARGET",
+    "APTL_PROCESS_RESOURCE_LIMITS",
+    "APTL_RAES_TARGET_NAME",
+    "APTL_RAES_TARGET_VERSION",
+    "create_aptl_binding_manifest_model",
+    "create_aptl_manifest",
+    "create_aptl_realization_envelope",
+)
 
 _EXPERIMENT_CONFIGURATION_REGISTRY = ConfigurationTargetRegistryModel(
     owner=BindingOwnerModel(
@@ -231,12 +243,17 @@ _PROVISIONER = ProvisionerCapabilities(
     operating_systems=APTL_OPERATING_SYSTEMS,
     supported_content_types=frozenset({"dataset", "directory", "file"}),
     # Manifest honesty (#577, ADR-046 addendum): advertise only the account
-    # features the backend materializes AND verifies by read-after-write — the
-    # non-secret fields the typed DeploymentAccountRealization carries. auth_method
-    # / home / shell are neither carried nor realized, so they are not claimed;
-    # an account placement that exercises one is a blocking RAES diagnostic, not
-    # a silently dropped field. No scenario declares those terms today.
-    supported_account_features=frozenset({"disabled", "groups", "mail", "spn"}),
+    # features the backend materializes AND verifies by read-after-write.
+    # `credential_bindings` is realized for one authored `secret_fixture`
+    # primary credential and proven by an authenticated read-after-write;
+    # `auth_method` is realized where the selected provider supports it (a MISP
+    # `key`). The account gate refuses every other binding shape. home / shell
+    # are neither carried nor realized, so they are not claimed; an account
+    # placement that exercises one is a blocking RAES diagnostic, not a
+    # silently dropped field.
+    supported_account_features=frozenset(
+        {"auth_method", "credential_bindings", "disabled", "groups", "mail", "spn"}
+    ),
     # The Samba AD provider realizes and read-verifies the operational
     # scenario's domain-bound accounts and SPNs (#577). RAES 0.23 makes that
     # domain profile an explicit admission capability rather than inferring it
@@ -282,113 +299,6 @@ _PROVISIONER = ProvisionerCapabilities(
 # ``service-search-index-schema-materialization`` requirement.
 _REALIZATION_ENVELOPE = build_aptl_realization_envelope(_PROVISIONER)
 
-# What APTL realizes from a provisioning plan, and how. APTL matches declared
-# capabilities against its provisioner support and discloses the result through
-# the backend-manifest / operation-status / runtime-snapshot contracts. The
-# constrained-kind set is intentionally narrower than the provisioner vocabulary:
-# RAES 0.21.x publishes runtime concern paths for node type, OS family, and
-# content type, but only OS family is currently expressible by APTL's regression
-# scenario as a constrained (processor-derived) requirement. Node/content exact
-# requirements are covered by ``declared-capability-match``; account features are
-# realized through the account provider's typed read-after-write path but are not
-# yet a RAES runtime realization concern.
-#
-# ``artifact_mechanisms`` declares which RAES artifact-satisfaction routes APTL
-# can admit (ADR-050, RAES ADR-098). It is deliberately narrow: a mechanism is
-# advertised only once APTL can both materialize it and read the result back
-# (SEM-218 I4). ``support_mode`` is OPEN_REALIZATION because APTL now supports the
-# generic ``dynamic-composition`` route (issue #876): it composes a node's runtime
-# onto a pinned substrate and reads every declared runtime concern back off the
-# realized container (raes 3.1.0 lowers those concerns, OpenRAE/rae#985). The
-# mode is the most-open posture for the domain; the exact and constrained branches
-# still apply independently through the per-kind support sets below.
-#
-# ``source-artifact`` appears on the mechanism's ``supported_requirement_kinds``
-# and on ``supported_constraint_kinds``, but deliberately NOT on
-# ``supported_exact_requirement_kinds``. The two SEM-218 branches differ: the
-# exact branch keys on the single ``declared-capability-match`` kind regardless
-# of the requirement's own kind, so listing it there would claim a capability the
-# gate never consults, while the constrained branch keys on the requirement's own
-# kind and so genuinely needs it. The constrained claim is backed by the
-# per-component build mechanism and its read-after-write of the built image.
-_REALIZATION_SUPPORT = (
-    RealizationSupportDeclaration(
-        domain="runtime-realization",
-        support_mode=RealizationSupportMode.OPEN_REALIZATION,
-        supported_constraint_kinds=frozenset({"os-family", "source-artifact"}),
-        # ``service-search-index-schema-materialization`` (ADR-088, #889) is an
-        # exact requirement kind APTL genuinely realizes through the native ES
-        # materializer and reads back through the service's native interface, so
-        # it is declared on the exact branch alongside the existing
-        # node/content declared-capability-match kind.
-        supported_exact_requirement_kinds=frozenset(
-            {
-                *DAEMON_READBACK_RUNTIME_CONCERNS,
-                "declared-capability-match",
-                "forwarding-agents",
-                "runtime-dependency-manifests",
-                "runtime-filesystem-inventory",
-                "runtime-local-identity",
-                "runtime-packages",
-                "runtime-service-manager-units",
-                "service-search-index-schema-materialization",
-            }
-        ),
-        disclosure_kinds=frozenset(
-            {"backend-manifest-v2", "operation-status-v1", "runtime-snapshot-v1"}
-        ),
-        # Per-concern observation capability. APTL corroborates environment,
-        # mounts, capabilities, ports, listeners, and forwarding-agent state
-        # from host-side native readback; package, filesystem, service-manager,
-        # and operating-system identity require bounded guest readback. The
-        # runtime discloses only facts actually observed, never a planned echo.
-        observation_capabilities={
-            **{
-                kind: RealizationObservationCapability(
-                    verification_scope=RealizationVerificationScope.CONFIGURATION,
-                    observation_strength=ObservationStrength.DAEMON_OBSERVED,
-                )
-                for kind in sorted(DAEMON_READBACK_RUNTIME_CONCERNS)
-            },
-            "operating-system": RealizationObservationCapability(
-                verification_scope=RealizationVerificationScope.PRESENCE,
-                observation_strength=ObservationStrength.GUEST_OBSERVED,
-            ),
-            "forwarding-agents": RealizationObservationCapability(
-                verification_scope=RealizationVerificationScope.CONFIGURATION,
-                observation_strength=ObservationStrength.DAEMON_OBSERVED,
-            ),
-            "runtime-filesystem-inventory": RealizationObservationCapability(
-                verification_scope=RealizationVerificationScope.CONFIGURATION,
-                observation_strength=ObservationStrength.GUEST_OBSERVED,
-            ),
-            "runtime-local-identity": RealizationObservationCapability(
-                verification_scope=RealizationVerificationScope.CONFIGURATION,
-                observation_strength=ObservationStrength.GUEST_OBSERVED,
-            ),
-            "runtime-dependency-manifests": RealizationObservationCapability(
-                verification_scope=RealizationVerificationScope.CONFIGURATION,
-                observation_strength=ObservationStrength.GUEST_OBSERVED,
-            ),
-            "runtime-packages": RealizationObservationCapability(
-                verification_scope=RealizationVerificationScope.CONFIGURATION,
-                observation_strength=ObservationStrength.GUEST_OBSERVED,
-            ),
-            "runtime-service-manager-units": RealizationObservationCapability(
-                verification_scope=RealizationVerificationScope.CONFIGURATION,
-                observation_strength=ObservationStrength.GUEST_OBSERVED,
-            ),
-            "process-resource-limits": RealizationObservationCapability(
-                verification_scope=RealizationVerificationScope.CONFIGURATION,
-                observation_strength=ObservationStrength.GUEST_OBSERVED,
-            ),
-        },
-        process_resource_limits=APTL_PROCESS_RESOURCE_LIMITS,
-        artifact_mechanisms=list(aptl_artifact_mechanisms()),
-        constraints={},
-    ),
-)
-
 # Concept-authority bindings: which controlled-vocabulary family each
 # provisioner capability scope draws its terms from.
 _CONCEPT_BINDINGS = (
@@ -417,6 +327,7 @@ def create_aptl_manifest(
     registry: CollectorRegistry | None = None,
     *,
     participant_inject_delivery: bool = False,
+    autonomous_bindings: tuple[LilraeParticipantBinding, ...] = (),
 ) -> BackendManifest:
     """Return APTL's canonical full remote-control-plane backend manifest.
 
@@ -440,6 +351,18 @@ def create_aptl_manifest(
             enabled=participant_inject_delivery,
         )
     )
+    from aptl.backends._lilrae_participant_capabilities import (
+        autonomous_manifest_options,
+    )
+
+    supported_contract_versions, participant_runtime, capability_options = (
+        autonomous_manifest_options(
+            supported_contract_versions,
+            participant_runtime,
+            capability_options,
+            autonomous_bindings,
+        )
+    )
     if observation is not None:
         supported_contract_versions = (
             supported_contract_versions | OBSERVATION_EVIDENCE_CONTRACTS
@@ -450,7 +373,7 @@ def create_aptl_manifest(
         version=APTL_RAES_TARGET_VERSION,
         supported_contract_versions=supported_contract_versions,
         compatible_processors=_COMPATIBLE_PROCESSORS,
-        realization_support=_REALIZATION_SUPPORT,
+        realization_support=APTL_REALIZATION_SUPPORT,
         realization_envelope=_REALIZATION_ENVELOPE,
         concept_bindings=_CONCEPT_BINDINGS,
         provisioner=_PROVISIONER,

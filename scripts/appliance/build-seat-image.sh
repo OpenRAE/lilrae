@@ -9,7 +9,7 @@
 # once per overlay, so a participant's seat resolves nothing and pulls nothing.
 #
 # The output is a standalone read-only qcow2 plus the config blob describing
-# it; `aptl seat start` pulls both from a registry and overlays the disk.
+# it; `lilrae seat start` pulls both from a registry and overlays the disk.
 set -euo pipefail
 
 # Refuse an accidental multi-hour software-emulated bake.
@@ -97,6 +97,12 @@ done <"$APTL_LOCAL_IMAGE_LOCK_FILE"
   "$payload/system-packages"
 cp "$source_root/appliance/guest/system-packages.sha256" "$payload/"
 
+# Node.js is an authenticated upstream runtime artifact rather than an Ubuntu
+# package: Ubuntu 26.04 does not yet provide the fixed Node 22 release.
+"$source_root/scripts/appliance/acquire-guest-node-runtime.sh" \
+  "$payload/node-runtime"
+cp "$source_root/appliance/guest/node-runtime.sha256" "$payload/"
+
 # --- guest runtime -----------------------------------------------------
 target_python=$(command -v "python${APTL_GUEST_PYTHON_VERSION}" || true)
 if test -z "$target_python" && command -v uv >/dev/null 2>&1; then
@@ -116,17 +122,22 @@ python3 - "$source_root/pyproject.toml" "$payload/wheelhouse" \
   "$payload/aptl-wheel-requirements.txt" <<'PYTHON'
 import hashlib
 import pathlib
+import re
 import sys
 import tomllib
 
 project = tomllib.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+name = project["project"]["name"]
 version = project["project"]["version"]
-wheels = list(pathlib.Path(sys.argv[2]).glob(f"aptl_labs-{version}-*.whl"))
+# Wheel filenames use the normalized name (PEP 427); the requirement keeps the
+# metadata name.
+wheel_prefix = re.sub(r"[-_.]+", "_", name).lower()
+wheels = list(pathlib.Path(sys.argv[2]).glob(f"{wheel_prefix}-{version}-*.whl"))
 if len(wheels) != 1:
-    raise SystemExit("bake must produce exactly one APTL application wheel")
+    raise SystemExit("bake must produce exactly one application wheel")
 digest = hashlib.sha256(wheels[0].read_bytes()).hexdigest()
 pathlib.Path(sys.argv[3]).write_text(
-    f"aptl-labs=={version} --hash=sha256:{digest}\n", encoding="utf-8"
+    f"{name}=={version} --hash=sha256:{digest}\n", encoding="utf-8"
 )
 PYTHON
 
@@ -165,9 +176,11 @@ docker run --rm aptl-seat-guacamole:1.6.0 \
   /opt/guacamole/bin/initdb.sh --postgresql |
   sed '/^-- Create default user "guacadmin"/,$d' >"$payload/guac-schema.sql"
 test -s "$payload/guac-schema.sql"
-for filename in desktop-compose.yml desktop-nginx.conf seat-desktop.py seat-privileges.py desktop-handoff.py desktop-mcp-smoke.py desktop-session.sh; do
+for filename in desktop-compose.yml desktop-nginx.conf seat-desktop.py seat-privileges.py desktop-handoff.py desktop-mcp-smoke.py desktop-session.sh participant-desktop-open.sh; do
   cp "$source_root/appliance/guest/$filename" "$payload/"
 done
+# The one hostname publisher lab start's hosts.json is applied with (#1273).
+cp "$source_root/src/aptl/core/participant_hosts.py" "$payload/participant-hosts.py"
 
 # Build a clean project tree first, then write the image-bound participant
 # profile into that tree. The checkout itself is never modified by the bake.

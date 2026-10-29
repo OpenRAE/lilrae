@@ -1,6 +1,6 @@
 """Run pending host-side cleanup after an explicit lab volume reset.
 
-``aptl lab stop -v`` removes the project's Docker volumes first; host state
+``lilrae lab stop -v`` removes the project's Docker volumes first; host state
 that described those volumes must then be cleared too. Each pending record
 names a stable action. APTL-owned actions run here, in core, with whatever
 APTL version is installed now. Pack-owned actions dispatch to the one
@@ -10,7 +10,8 @@ Every action is idempotent and treats already-absent state as done, so a crash
 between an effect and its completion marker is safe: the next reset repeats
 the effect and records the completion exactly once. A failed, unauthorized,
 unsupported, or unreadable record is never retired or removed; it is reported
-with a bounded reason and retried by the next ``aptl lab stop -v``.
+with a bounded reason and retried by the next ``lilrae lab stop -v`` or
+``lilrae lab reset``.
 """
 
 from __future__ import annotations
@@ -43,7 +44,7 @@ REASON_HOST_STATE_UNAVAILABLE = "host-state-unavailable"
 REASON_COMPLETION_FAILED = "completion-record-failed"
 REASON_STATE_UNAVAILABLE = "cleanup-state-unavailable"
 
-RETRY_COMMAND = "aptl lab stop -v --yes"
+RETRY_COMMAND = "lilrae lab stop -v --yes"
 
 
 class CleanupActionError(RuntimeError):
@@ -108,6 +109,7 @@ def _run_pack_reset(action: CleanupAction, backend: object) -> None:
                 action.distribution,
                 action.distribution_version,
                 action.entry_point,
+                action.family_target,
             ),
             StartupHookContext(backend),
             action_version=action.action_version,
@@ -192,8 +194,13 @@ def _count(number: int, noun: str) -> str:
     return f"{number} {noun}" if number == 1 else f"{number} {noun}s"
 
 
-def pending_cleanup_message(report: CleanupReport) -> str:
-    """Explain host cleanup that remains after verified Docker teardown."""
+def pending_cleanup_message(
+    report: CleanupReport, *, retry_command: str = RETRY_COMMAND
+) -> str:
+    """Explain host cleanup that remains after verified Docker teardown.
+
+    ``retry_command`` is the command that failed, which the operator reruns.
+    """
 
     remains = "remains" if len(report.pending) == 1 else "remain"
     details = "; ".join(item.describe() for item in report.pending)
@@ -202,12 +209,17 @@ def pending_cleanup_message(report: CleanupReport) -> str:
         "project volumes were removed, but "
         f"{_count(len(report.pending), 'host-side cleanup action')} {remains} "
         f"pending: {details}. The pending records were kept. Resolve the cause, "
-        f"then retry with `{RETRY_COMMAND}`."
+        f"then retry with `{retry_command}`."
     )
 
 
-def docker_teardown_failed_message(project_dir: Path, docker_error: str) -> str:
-    """Explain a Docker teardown failure and the host cleanup it deferred."""
+def docker_teardown_failed_message(
+    project_dir: Path, docker_error: str, *, retry_command: str = RETRY_COMMAND
+) -> str:
+    """Explain a Docker teardown failure and the host cleanup it deferred.
+
+    ``retry_command`` is the command that failed, which the operator reruns.
+    """
 
     try:
         runnable, rejected = load_pending_cleanup(project_dir)
@@ -220,7 +232,7 @@ def docker_teardown_failed_message(project_dir: Path, docker_error: str) -> str:
         "[lifecycle-docker-teardown-failed] Docker teardown failed: "
         f"{docker_error.rstrip('.')}. Host-side cleanup "
         f"was not attempted; {deferred}. Resolve the Docker failure, then "
-        f"retry with `{RETRY_COMMAND}`."
+        f"retry with `{retry_command}`."
     )
 
 

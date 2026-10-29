@@ -58,7 +58,7 @@ def _generate_all(
       keystore-password blobs are ``0o600``.
     - PKCS#12 keystores are ``0o644`` because TheHive's non-root process reads
       the bind-mounted file as a container UID that may not match the host user
-      that ran ``aptl lab start``. The owner-only parent directory remains the
+      that ran ``lilrae lab start``. The owner-only parent directory remains the
       host-side access control.
 
     Symlink containment (ADR-029 § Secret at rest): each per-service

@@ -2,7 +2,7 @@
 
 ## Status
 
-accepted (amended 2026-07-31)
+accepted (amended 2026-10-26)
 
 ## Date
 
@@ -10,7 +10,7 @@ accepted (amended 2026-07-31)
 
 ## Last Updated
 
-2026-07-31
+2026-10-26
 
 ## Context
 
@@ -416,8 +416,9 @@ through diagnostics, logs, API responses, or run records.
 
 Host publishing is also a security decision. Existing SOC and control-plane
 services inherit the loopback-only policy pinned by ADR-034 and
-`tests/test_docker_compose_port_bindings.py`; deliberate target surfaces remain
-separately classified. An omitted host address must not silently become
+`tests/test_docker_compose_port_bindings.py`. That test has no target-surface
+class, so every host publication must be a loopback-bound management surface.
+An omitted host address must not silently become
 all-interface exposure. A new dynamic publish that cannot be classified by the
 existing exposure policy fails closed until that policy is extended. Host-port
 conflicts reuse `src/aptl/core/host_ports.py`; an exact authored binding must be
@@ -705,6 +706,105 @@ SEM-218 lowering, target/provider binding, and typed backend input. The clean
 live gate proves users, groups, memberships, and declared attributes by querying
 the target through `DeploymentBackend` after `aptl lab stop -v && aptl lab
 start`.
+
+## Declared Fixture Credential Addendum
+
+Issue #1273 adopts raes-env-packs 6.3.1. That release declares each SOC console
+login as an SDL account with one authored `secret_fixture` credential binding.
+An authored fixture is scenario content: the SDL already carries the value, and
+the participant or attacker meets exactly that value. It is not a credential
+the backend generates, so the account addendum's no-plaintext rule applies to
+it as follows.
+
+- The account gate lowers one primary `secret_fixture` binding into
+  `DeploymentAccountRealization.credential`. The value is excluded from `repr`,
+  equality and `details()`, so evidence, snapshots, run records and logs name
+  only the `credential_id`. An `operator_secret` binding, several bindings, or a
+  mismatched auth method is refused, never substituted.
+- The account provider comes from the backend implementation that realizes the
+  node (`account_provider` on the implementation profile or base), not from the
+  node or service name. Samba AD sets a declared fixture through its stdin
+  `setpassword` path. Each application provider (OpenSearch security, Wazuh
+  API, MISP, TheHive, Cortex, Shuffle) sets or verifies the value inside the
+  serving container with every value on stdin, then proves it by
+  authenticating with it.
+- When the product's image accepts its bootstrap principal only through its
+  environment, the value reaches that environment through the startup adapter's
+  account reference (`AccountCredentialFixture`). Core resolves the reference
+  against the admitted SDL; the adapter holds no value.
+- Lab state persists no rendered credential. The participant desktop receives
+  the declared logins only in the participant account's private `0600` files.
+
+The manifest therefore advertises `credential_bindings` and `auth_method`.
+
+## Credential-Bearing Apply Result Addendum
+
+RAES gives a plan with account credential bindings a closed result contract
+(RAES `specs/sdl/account-credential-bindings.md`, section 6). RAES checks each
+returned entry against the submitted operation, and every returned value must
+equal the plan's. raes 7.0.0 compares the whole payload and keeps the plan's
+entry. raes 8.0.0 (OpenRAE/rae#1640) exempts an observed value at an admitted
+concern path from that comparison and keeps a safe projection of the observed
+value. The provisioner's snapshot follows that contract:
+
+- Each entry status names what the backend did with its operation: `applied`,
+  or `unchanged` for an unchanged operation. The evaluator reads both, and the
+  RAES default `ready`, as a realized node.
+- An unobserved concern that the plan admits at that address (an open,
+  constrained or exact authority, or a planned constraint) is still omitted, as
+  the Runtime Service and SEM-218 Execution Addendum requires. If the plan has
+  a value at that path, even `null`, the entry then differs from the plan and
+  RAES refuses the whole result. A credential-bearing start therefore fails
+  unless the backend observes every admitted concern that has a plan value.
+- An entry carries no `backend_evidence`, because the contract admits no
+  backend evidence key in an entry. The run outcome still carries the
+  source-image evidence.
+- A plan without account credential bindings keeps every unobserved concern
+  omitted and keeps source-image evidence in its entries.
+
+### Exception to the #692 rule
+
+The Runtime Service and SEM-218 Execution Addendum says that APTL must not read
+a concern back from the plan, and that an unobserved concern does not fall back
+to the plan. It allows a plan value only in a non-concern field that the RAES
+reconciliation contract requires. This addendum makes one narrow exception at
+concern paths:
+
+- It applies only to a plan with account credential bindings and realization
+  authority.
+- It covers only a concern path that the plan closes, or that has no authority
+  at that address. RAES reads no observation there. Its closed-concern check
+  gives the same result whether the value is absent or equal to the plan, and
+  the closed result contract requires the plan's value.
+- There the snapshot keeps the plan's value. That value claims no
+  observation: it gets no observation disclosure and no realization
+  provenance.
+- An observed value always replaces the plan's. A closed concern observed with
+  a different value is still refused.
+
+Every other concern path, and every other plan, keeps the #692 rule.
+
+## Owner-Declared Image Content Addendum
+
+A bind mount keeps the host owner and mode. An image node can need a declared
+file with a different owner. Issue #1273 added an installer for this case.
+Issue #1422 adds a second installer for images that run as a non-root user.
+
+- The node's selected entrypoint names the installer. The content mounts read
+  the entrypoint and stage each file that the node inventory gives an owner.
+- `OWNED_CONTENT_INSTALLER` runs as root. It installs each file with its
+  declared owner, group, and mode.
+- `OWNED_CONTENT_IMAGE_USER_INSTALLER` runs as the image user. It installs each
+  file with its declared mode. It refuses an owner or group that is not the
+  current user or group. It never runs the image as root.
+- The image-user installer reads a staged copy at mode `0644`. The copy is in
+  an owner-only `0700` host directory, which protects it from other host users.
+- When the image entrypoint rewrites a declared file after start, the profile
+  runs the image entrypoint steps itself. Declared content then writes the file
+  last. The profile pins the image digest, so these steps do not change.
+
+The [issue #1422 design](../architecture/issue-1422-wazuh-dashboard-owned-config-design.md)
+records the threats, controls, and data flows.
 
 ## TechVault Operational Standup Addendum
 

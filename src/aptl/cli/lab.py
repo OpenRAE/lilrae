@@ -1,12 +1,23 @@
 """CLI commands for lab lifecycle management."""
 
 import json
+from collections.abc import Callable
+from dataclasses import asdict
+from functools import partial
 from pathlib import Path
 from typing import Optional
 
 import typer
 
 from aptl.cli import lab_init, lifecycle
+from aptl.cli._common import (
+    PROJECT_DIR_HELP,
+    EXIT_FAILED,
+    emit_json_result,
+    exit_status,
+    redact_text,
+    refuse_json_prompt,
+)
 from aptl.cli.participant_profile import qualify_profile
 from aptl.cli.continuity import continuity_audit
 from aptl.cli.lab_render import (
@@ -14,15 +25,22 @@ from aptl.cli.lab_render import (
     emit_execution_boundary_summary,
     fresh_execution_boundary,
     live_resolved_ports,
+    published_access_ports,
     render_start_result,
 )
 from aptl.core.lab import (
     clean_boot_lab,
     lab_status,
     orchestrate_lab_start,
+    reset_lab,
     stop_lab,
 )
-from aptl.core.lab_types import LabStatus
+from aptl.core.lab_types import (
+    LabResetResult,
+    LabResult,
+    LabStatus,
+    describe_project_runtime,
+)
 from aptl.core.scenario_catalog import (
     load_scenario_catalog,
     resolve_scenario_selection,
@@ -36,22 +54,22 @@ app = typer.Typer(help="Lab lifecycle management.")
 
 # `continuity-audit` lives in aptl.cli.continuity (issue #252) so this
 # module stays focused on lifecycle commands. Register it under `lab`
-# so the command stays at `aptl lab continuity-audit` (no UX change).
+# so the command stays at `lilrae lab continuity-audit` (no UX change).
 app.command("continuity-audit")(continuity_audit)
 
 # `init` (DEP-008) lives in aptl.cli.lab_init so this module stays the focused
-# lifecycle facade; registered here so the command remains `aptl lab init`.
+# lifecycle facade; registered here so the command remains `lilrae lab init`.
 lab_init.register(app)
 
 # Ephemeral lifecycle policy commands (DEP-003) live in aptl.cli.lifecycle so
 # this module stays focused; register them under `lab` (no UX change:
-# `aptl lab enforce` / `monitor` / `policy show`).
+# `lilrae lab enforce` / `monitor` / `policy show`).
 lifecycle.register(app)
 app.command("qualify-profile")(qualify_profile)
 
 
-# Shared destructive-data warning. Both `stop --volumes` and
-# `start --clean` remove Compose-managed volumes, so the operator sees one
+# Shared destructive-data warning. `lab stop --volumes`, `lab start --clean`
+# and `lab reset` all remove Compose-managed volumes, so the operator sees one
 # canonical statement of what gets destroyed.
 _DESTRUCTIVE_DATA_WARNING = (
     "\n  WARNING: This will destroy all lab data including:\n"
@@ -63,20 +81,31 @@ _DESTRUCTIVE_DATA_WARNING = (
 )
 
 
-def _emit_lab_start_progress(message: str) -> None:
+def _emit_lab_start_progress(message: str, *, err: bool = False) -> None:
     """Print participant-facing startup progress."""
-    typer.echo(f"[lab start] {message}")
+    typer.echo(f"[lab start] {message}", err=err)
 
 
-def _confirm_destructive(skip_prompt: bool) -> bool:
+def _start_progress(output_json: bool) -> Callable[[str], None]:
+    """Keep standard output for the JSON result; progress then goes to stderr."""
+    return partial(_emit_lab_start_progress, err=output_json)
+
+
+def _confirm_destructive(
+    skip_prompt: bool, *, output_json: bool = False, option: str = "--volumes"
+) -> bool:
     """Confirm a volume-destroying action; return False if the operator aborts.
 
-    Centralizes the destructive-action gate shared by ``stop --volumes`` and
-    ``start --clean``: print the canonical warning and require an explicit
-    ``y`` unless ``skip_prompt`` (``--yes``) was passed.
+    Centralizes the destructive-action gate shared by ``lab stop --volumes``,
+    ``lab start --clean`` and ``lab reset``: print the canonical warning and
+    require an explicit ``y`` unless ``skip_prompt`` (``--yes``) was passed.
+    JSON output cannot prompt, so it requires ``--yes`` and otherwise exits
+    with status 2.
     """
     if skip_prompt:
         return True
+    if output_json:
+        refuse_json_prompt(option)
     typer.echo(_DESTRUCTIVE_DATA_WARNING)
     if not typer.confirm("  Continue?", default=False):
         typer.echo("Aborted.")
@@ -90,7 +119,7 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     skip_seed: bool = typer.Option(
         False,
@@ -122,6 +151,15 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
         "--yes",
         "-y",
         help="Skip the confirmation prompt for --clean.",
+    ),
+    teardown_on_failure: bool = typer.Option(
+        False,
+        "--teardown-on-failure",
+        help=(
+            "If the start fails, stop the containers and networks it created "
+            "and keep the volumes. By default a failed start leaves them in "
+            "place for diagnosis."
+        ),
     ),
     offline_staged: bool = typer.Option(
         False,
@@ -168,8 +206,18 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
     appliance_candidate_trust: bool = typer.Option(
         False, "--appliance-candidate-trust", hidden=True
     ),
+    output_json: bool = typer.Option(
+        False,
+        "--json",
+        "-j",
+        help="Print the result as one JSON object; progress goes to stderr.",
+    ),
 ) -> None:
-    """Start the APTL lab environment."""
+    """Start the LilRAE lab environment.
+
+    Exit status: 0 when the lab started (read the outcome for degraded
+    states), 1 when the start failed, 2 for invalid options.
+    """
     log.info("Starting lab from %s (clean=%s)", project_dir, clean)
 
     try:
@@ -238,14 +286,15 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
             candidate_trust=appliance_candidate_trust,
         )
     if clean:
-        if not _confirm_destructive(yes):
+        if not _confirm_destructive(yes, output_json=output_json, option="--clean"):
             raise typer.Exit(code=0)
         result = clean_boot_lab(
             project_dir,
             remove_volumes=True,
             skip_seed=skip_seed,
             scenario_path=selected_scenario,
-            progress=_emit_lab_start_progress,
+            progress=_start_progress(output_json),
+            teardown_on_failure=teardown_on_failure,
             **appliance_kwargs,
         )
     else:
@@ -253,19 +302,92 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
             project_dir,
             skip_seed=skip_seed,
             scenario_path=selected_scenario,
-            progress=_emit_lab_start_progress,
+            progress=_start_progress(output_json),
+            teardown_on_failure=teardown_on_failure,
             **appliance_kwargs,
         )
+    _report_start_result(project_dir, result, output_json)
 
-    render_start_result(result)
-    if result.success:
-        emit_lab_access_summary(
-            project_dir,
-            result.resolved_ports,
-            execution_boundary=result.execution_boundary,
-        )
+
+def _start_result_fields(project_dir: Path, result: LabResult) -> dict[str, object]:
+    """Return the ``lab start --json`` fields for one start result (#1218).
+
+    They carry the same result the text summary renders: the outcome and
+    error, the execution boundary, the admission time, every diagnostic, the
+    host ports the access summary reports and any failed-start residue.
+    Free-form text is redacted before serialization (ADR-012).
+    """
+
+    boundary = result.execution_boundary
+    return {
+        "outcome": result.outcome.value,
+        "error": redact_text(result.error) or None,
+        "execution_boundary": (
+            boundary.model_dump(mode="json") if boundary is not None else None
+        ),
+        "admission_seconds": result.admission_seconds,
+        "diagnostics": [
+            {
+                "step": diag.step,
+                "component": diag.component,
+                "impact": diag.impact.value,
+                "severity": diag.severity.value,
+                "message": redact_text(diag.message),
+                "operator_action": redact_text(diag.operator_action),
+            }
+            for diag in result.diagnostics
+        ],
+        **_published_port_fields(project_dir, result),
+        "residue": asdict(result.residue) if result.residue is not None else None,
+    }
+
+
+def _published_port_fields(project_dir: Path, result: LabResult) -> dict[str, object]:
+    """Return the host ports the text access summary reports for this start.
+
+    Both read :func:`published_access_ports`: live Docker bindings first, the
+    start-time plan only when Docker reports none. A failed start prints no
+    access summary, so it reports no ports.
+    """
+
+    ports, observed = (
+        published_access_ports(project_dir, result.resolved_ports)
+        if result.success
+        else ([], False)
+    )
+    return {
+        "published_ports": [
+            {
+                "service": port.service,
+                "default_port": port.default_port,
+                "host_port": port.resolved_port,
+                "protocols": list(port.protos),
+                "host_ip": port.host_ip,
+                "remapped": port.remapped,
+            }
+            for port in ports
+        ],
+        "published_ports_observed": observed,
+    }
+
+
+def _report_start_result(
+    project_dir: Path, result: LabResult, output_json: bool
+) -> None:
+    """Print the start result as text or JSON and exit with its status."""
+    if output_json:
+        fields = _start_result_fields(project_dir, result)
+        emit_json_result("lab start", result.success, fields)
+    else:
+        render_start_result(result, project_dir)
+        if result.success:
+            emit_lab_access_summary(
+                project_dir,
+                result.resolved_ports,
+                execution_boundary=result.execution_boundary,
+            )
     if not result.success:
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=EXIT_FAILED)
 
 
 @app.command("info")
@@ -274,7 +396,7 @@ def info(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
 ) -> None:
     """Show lab access URLs and credential locations."""
@@ -283,7 +405,7 @@ def info(
     env_path = project_dir / ".env"
     if not env_path.exists():
         typer.echo(
-            f"Credentials file not found at {env_path}; run `aptl lab start` first.",
+            f"Credentials file not found at {env_path}; run `lilrae lab start` first.",
             err=True,
         )
         raise typer.Exit(code=1)
@@ -302,7 +424,7 @@ def scenarios(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
 ) -> None:
     """List validated acquired-pack identities."""
@@ -340,22 +462,102 @@ def stop(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
+    ),
+    output_json: bool = typer.Option(
+        False,
+        "--json",
+        "-j",
+        help="Print the result as one JSON object.",
     ),
 ) -> None:
-    """Stop the APTL lab environment."""
-    if volumes and not _confirm_destructive(yes):
+    """Stop the LilRAE lab environment.
+
+    Exit status: 0 when the project is stopped, also when it was not running,
+    1 when the stop failed, 2 for invalid options.
+    """
+    if volumes and not _confirm_destructive(yes, output_json=output_json):
         raise typer.Exit(code=0)
 
     log.info("Stopping lab (volumes=%s)", volumes)
 
     result = stop_lab(remove_volumes=volumes, project_dir=project_dir)
 
-    if result.success:
+    if output_json:
+        emit_json_result(
+            "lab stop",
+            result.success,
+            {"volumes": volumes, "error": redact_text(result.error) or None},
+        )
+    elif result.success:
         typer.echo("Lab stopped successfully.")
     else:
         typer.echo(f"Lab stop failed: {result.error}")
-        raise typer.Exit(code=1)
+    raise exit_status(result.success)
+
+
+@app.command()
+def reset(
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip the confirmation prompt.",
+    ),
+    project_dir: Path = typer.Option(
+        Path("."),
+        "--project-dir",
+        "-d",
+        help=PROJECT_DIR_HELP,
+    ),
+    output_json: bool = typer.Option(
+        False,
+        "--json",
+        "-j",
+        help="Print the result as one JSON object.",
+    ),
+) -> None:
+    """Reset the lab: remove its containers, networks and volumes.
+
+    It also finishes pending host-side cleanup, so the next `lilrae lab start`
+    begins clean. Configuration, .env, SSH keys, certificates and run records
+    are kept. Exit status: 0 when the project is reset, also when nothing was
+    running, 1 when the reset failed or host cleanup is still pending, 2 for
+    invalid options.
+    """
+    if not _confirm_destructive(yes, output_json=output_json, option="lilrae lab reset"):
+        raise typer.Exit(code=0)
+    log.info("Resetting lab")
+    _report_reset_result(reset_lab(project_dir), output_json)
+
+
+def _report_reset_result(outcome: LabResetResult, output_json: bool) -> None:
+    """Print the reset result as text or JSON and exit with its status."""
+    result = outcome.result
+    if output_json:
+        emit_json_result(
+            "lab reset",
+            result.success,
+            {
+                "containers_found": outcome.containers_found,
+                "networks_found": outcome.networks_found,
+                "error": redact_text(result.error) or None,
+            },
+        )
+    elif result.success:
+        found = (
+            describe_project_runtime(outcome.containers_found, outcome.networks_found)
+            if outcome.containers_found is not None
+            and outcome.networks_found is not None
+            else "the project's containers and networks"
+        )
+        typer.echo(
+            f"Lab reset: removed {found} and the project's volumes, and finished "
+            "pending host cleanup."
+        )
+    else:
+        typer.echo(f"Lab reset failed: {result.error}")
+    raise exit_status(result.success)
 
 
 def _emit_snapshot_json(project_dir: Path, output_file: Optional[Path]) -> None:
@@ -363,7 +565,10 @@ def _emit_snapshot_json(project_dir: Path, output_file: Optional[Path]) -> None:
 
     Writes to ``output_file`` (mode 0600) when given, otherwise prints it.
     """
-    from aptl.cli._common import resolve_config_for_cli
+    from aptl.cli._common import (
+        exit_on_invalid_deployment_settings,
+        resolve_config_for_cli,
+    )
     from aptl.core.deployment import get_backend
     from aptl.core.deployment.errors import BackendObservationError
     from aptl.core.snapshot import capture_snapshot
@@ -373,7 +578,8 @@ def _emit_snapshot_json(project_dir: Path, output_file: Optional[Path]) -> None:
     # or invalid, so a misconfigured SSH lab doesn't get snapshotted
     # against the local daemon.
     config, project_root = resolve_config_for_cli(project_dir)
-    backend = get_backend(config, project_root)
+    with exit_on_invalid_deployment_settings():
+        backend = get_backend(config, project_root)
 
     try:
         snapshot = capture_snapshot(config_dir=project_root, backend=backend)
@@ -415,7 +621,7 @@ def status(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     output_json: bool = typer.Option(
         False,
@@ -430,18 +636,24 @@ def status(
         help="Write JSON output to file instead of stdout.",
     ),
 ) -> None:
-    """Show the current lab status."""
+    """Show the current lab status.
+
+    Exit status: 0 when the project state was observed, whether or not the
+    lab is running, 1 when it could not be observed, 2 for invalid options.
+    """
     log.info("Checking lab status")
 
     if output_json or output_file:
         _emit_snapshot_json(project_dir, output_file)
         return
 
-    _emit_status_text(lab_status(project_dir=project_dir))
+    current = lab_status(project_dir=project_dir)
+    _emit_status_text(current)
+    raise exit_status(not current.error)
 
 
 _LIVE_GATE_WARNING = (
-    "\n  WARNING: the live validation gate runs `aptl lab stop -v` and then\n"
+    "\n  WARNING: the live validation gate runs `lilrae lab stop -v` and then\n"
     "  re-boots the lab through the RAES start path. This DESTROYS all lab\n"
     "  data (Wazuh/MISP/TheHive/Shuffle volumes). Pass --skip-clean-boot to\n"
     "  validate the already-running lab without destroying it.\n"
@@ -454,7 +666,7 @@ def validate_live(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     scenario: Optional[Path] = typer.Option(
         None,

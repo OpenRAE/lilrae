@@ -9,7 +9,7 @@
 # `writable-cgroups`. The retired recipe booted this substrate `degraded`:
 # holding CAP_SYS_ADMIN made systemd attempt host operations
 # (dev-hugepages.mount, sys-fs-fuse-connections.mount, logind) that then failed.
-FROM debian:13@sha256:9cc080028c43b27d2074d63a5f9caf7166d731494965616c1a6d2827a004585c
+FROM debian:13@sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5
 # gnupg: debian:12 ships gpgv (verify-only) but not the full gpg binary
 # apt-key needs for some bookworm InRelease signature paths — without it,
 # a materialized node's own first `apt-get update` intermittently fails
@@ -26,6 +26,7 @@ COPY requirements/runtime.txt /tmp/aptl-runtime-requirements.txt
 RUN python3 -m venv /opt/aptl/venv \
     && /opt/aptl/venv/bin/pip install --require-hashes \
         -r /tmp/aptl-runtime-requirements.txt \
+    && /opt/aptl/venv/bin/python -c "import pip._vendor.msgpack as m; assert m.Unpacker.__module__ == 'pip._vendor.msgpack.fallback'" \
     && rm /tmp/aptl-runtime-requirements.txt
 ENV PATH="/opt/aptl/venv/bin:${PATH}"
 # Ship no private keys; each container generates its own at boot (issue #1193).

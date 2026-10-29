@@ -23,7 +23,7 @@ fi
 echo "seat-qualification: docker=$docker_status compose=$compose_status load=$load_status run=$run_status"
 
 if test "$run_status" -eq 0; then
-    timeout 1800 /usr/local/bin/aptl lab start \
+    timeout 1800 /usr/local/bin/lilrae lab start \
         --project-dir /opt/aptl/project --offline-staged
     lab_status=$?
 else
@@ -89,16 +89,16 @@ cleanup_status=1
 clean_start_status=1
 clean_stop_status=1
 if test "$mcp_status" -eq 0; then
-    /usr/local/bin/aptl lab stop --volumes --yes --project-dir /opt/aptl/project
+    /usr/local/bin/lilrae lab stop --volumes --yes --project-dir /opt/aptl/project
     cleanup_status=$?
 fi
 if test "$cleanup_status" -eq 0; then
-    timeout 1800 /usr/local/bin/aptl lab start \
+    timeout 1800 /usr/local/bin/lilrae lab start \
         --project-dir /opt/aptl/project --offline-staged
     clean_start_status=$?
 fi
 if test "$clean_start_status" -eq 0; then
-    /usr/local/bin/aptl lab stop --project-dir /opt/aptl/project
+    /usr/local/bin/lilrae lab stop --project-dir /opt/aptl/project
     clean_stop_status=$?
 fi
 printf 'docker=%s compose=%s load=%s run=%s\nlab=%s\nmcp=%s\ncleanup=%s clean_start=%s clean_stop=%s\n' \

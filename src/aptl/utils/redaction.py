@@ -101,6 +101,8 @@ _SENSITIVE_TOKENS: tuple[str, ...] = (
     "apikey",
     "key",  # broad — see allowlist below
     "session",
+    # Compose's service fingerprint includes resolved environment credentials.
+    "com.docker.compose.config-hash",
 )
 
 # Field names that look sensitive (contain "key") but legitimately hold a
@@ -155,7 +157,8 @@ def is_sensitive_key(key: str) -> bool:
 # from either language match shape.
 _SENSITIVE_KEY_PATTERN = (
     r"(?:pass(?:word|wd|phrase)?|secret|token|credential|"
-    r"api[_-]?key|apikey|jwt|bearer|session(?:_id)?|cookie)"
+    r"api[_-]?key|apikey|jwt|bearer|session(?:_id)?|cookie|"
+    r"com\.docker\.compose\.config-hash)"
 )
 # `\S+` would greedily consume trailing quotes/punctuation around the
 # secret value (e.g. eat the closing `'` of a curl `-H 'Authorization: ...'`

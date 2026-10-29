@@ -5,11 +5,16 @@
     The Advanced Purple Team Lab (APTL) repository moved to
     [OpenRAE/lilrae](https://github.com/OpenRAE/lilrae) and was renamed. It is
     the same project, with the same source, history, features, and issue
-    tracker. You still install the `aptl-labs` package and run the `aptl`
-    command, and existing configuration, state directories, and runtime
-    identifiers keep their `aptl` names. Where current pages still say APTL,
-    they mean LilRAE. See
-    [ADR-062](adrs/adr-062-lilrae-name-and-naming-convention.md).
+    tracker. You install the `lilrae` package and run the `lilrae` command.
+    The `aptl` command is a deprecated alias that LilRAE 10.0.0 removes; see
+    [Move from the aptl command](getting-started/installation.md#move-from-the-aptl-command).
+    Existing configuration, state directories, and runtime identifiers keep
+    their `aptl` names. Where current pages still say APTL, they mean LilRAE.
+    See [ADR-062](adrs/adr-062-lilrae-name-and-naming-convention.md).
+
+    `aptl-labs` 7.0.0 was the last `aptl-labs` release. Releases publish to
+    PyPI as `lilrae` from version 8.0.0. To change packages, follow
+    [Move from aptl-labs to lilrae](getting-started/installation.md#move-from-aptl-labs-to-lilrae).
 
 LilRAE is a local purple-team lab where human operators and AI agents exercise
 red- and blue-team workflows against an intentionally vulnerable enterprise
@@ -52,10 +57,10 @@ require a source checkout or an architecture record.
 The shortest installation and start sequence is:
 
 ```shell
-pipx install aptl-labs
-aptl lab init my-lab
+pipx install lilrae
+lilrae lab init my-lab
 cd my-lab
-aptl lab start --scenario techvault
+lilrae lab start --scenario techvault
 ```
 
 Startup creates project-local runtime files, validates the selected scenario,
@@ -72,7 +77,7 @@ result. A running container alone does not mean the lab is ready.
   one-time login flow, and safe exposure boundary.
 
 The operator UI, intentionally vulnerable target applications, and SOC product
-interfaces are different surfaces. Use `aptl lab info` to discover the URLs
+interfaces are different surfaces. Use `lilrae lab info` to discover the URLs
 that exist for the current scenario rather than relying on fixed ports. Wazuh
 values reported from `.env` are scenario credentials, not APTL control-plane
 logins.

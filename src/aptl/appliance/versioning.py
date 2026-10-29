@@ -22,7 +22,7 @@ def is_appliance_version(value: str) -> bool:
     return bool(patch) and all(character in _VERSION_SUFFIX for character in suffix)
 
 
-def aptl_wheel_version(name: str, *, prefix: str = "aptl_labs-") -> str | None:
+def aptl_wheel_version(name: str, *, prefix: str = "lilrae-") -> str | None:
     """Extract a validated normalized APTL version from one wheel path."""
 
     filename = name.rsplit("/", 1)[-1]

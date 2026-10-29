@@ -86,8 +86,16 @@ nav:
   - Workshop:
     - Playbook: workshop/playbook.md
     - Lab Walkthrough: workshop/walkthrough.md
+  - Development:
+    - Coding Standards: CODING_STANDARDS.md
   - Architecture:
     - Overview: architecture/index.md
+    - "Issue #1372 Capture Spec Version Preflight": architecture/issue-1372-capture-spec-version-preflight.md
+    - "Issue #1372 Capture Spec Version Design": architecture/issue-1372-capture-spec-version-design.md
+    - "Issue #1121 Pack Boundary Preflight": architecture/issue-1121-pack-boundary-preflight.md
+    - Pack Boundary: architecture/pack-boundary-design.md
+    - Configuration Migration: reference/configuration-migration.md
+    - "Issue #1413 Configured Pack Source Preflight": architecture/issue-1413-configured-pack-source-preflight.md
     - Networking: architecture/networking.md
     - Enterprise Infrastructure: architecture/enterprise-infrastructure.md
     - DEP-008 Self-Contained Lab Assets Preflight: architecture/dep-008-self-contained-lab-assets-preflight.md
@@ -114,6 +122,7 @@ nav:
     - "Issue #949 Orborus Control Authority Preflight": architecture/issue-949-orborus-control-authority-preflight.md
     - "Issue #974 Shuffle Worker Docker And Image Realization Preflight": architecture/issue-974-shuffle-worker-docker-images-preflight.md
     - "Issue #951 Fresh Env-Pack Start Preflight": architecture/issue-951-fresh-env-pack-start-preflight.md
+    - "Issue #952 Failed-Start Recovery Preflight": architecture/issue-952-start-failure-recovery-preflight.md
     - "Issue #964 Backend Resource Ownership Preflight": architecture/issue-964-backend-resource-ownership-preflight.md
     - "Issue #969 Platform Safety Gates Preflight": architecture/issue-969-platform-safety-gates-preflight.md
     - "Issue #985 Owned Lab Fixture Preflight": architecture/issue-985-owned-lab-fixture-preflight.md

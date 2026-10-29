@@ -1,5 +1,13 @@
 # Default Defensive Posture
 
+> Historical baseline record (scope notice added 2026-10-12): the sections
+> below retain the earlier defensive baseline description. The Active Directory
+> and Shuffle references now identify the acquired pack and backend owners.
+> Baseline intent does not establish the state of a running lab. Use the
+> admitted scenario configuration and
+> [deployment observations](../deployment.md#observe-a-deployment) for that.
+> The current [Kali guide](kali-redteam.md) describes the red-team node.
+
 The lab ships with an **intentionally weak** starting posture. Every
 defensive surface is either off, empty, or runs in detect-only mode at
 first boot. Every target weakness is intentional and unhardened.
@@ -32,8 +40,8 @@ Every section in this document is tagged with one of three banners:
   wired but **disabled, empty, or absent**. Blue *enables, configures,
   or populates* these per iteration to raise the posture. Examples:
   Wazuh active-response blocks (all `<disabled>yes</disabled>`), MISP
-  IOC store (empty), `zzz_purple_loop.xml` (absent until blue authors
-  it).
+  IOC store (empty), and blue-authored rules files (absent until blue
+  writes one).
 - **BASELINE ENABLED**: a *defensive tool* that **is on at first
   boot** and produces output (alerts, logs, traces). Blue does **not**
   need to enable these; they fire on their own. What blue *does*
@@ -87,7 +95,7 @@ blue graduates IOCs).
 - `misp/misp-iocs.rules` ships **empty** (header `ioc_count=0`).
   Hash-list sidecars `misp-md5.list`, `misp-sha1.list`,
   `misp-sha256.list` ship empty too. These checked-in files are baseline
-  seeds; `aptl lab start` seeds them into the `aptl_suricata_misp_rules` named
+  seeds; `lilrae lab start` seeds them into the `aptl_suricata_misp_rules` named
   volume (ADR-043, mounted at `/var/lib/suricata/rules/misp`), and the sync
   service writes generated runtime state there.
 
@@ -131,8 +139,7 @@ contract*, not a misconfiguration.
 first boot—they generate alerts on matching events. What is **not**
 coupled at first boot is the *downstream response*: every
 `<active-response>` block ships `<disabled>yes</disabled>` (see next
-section), and `zzz_purple_loop.xml` (the hot file where blue authors
-custom child rules) ships absent.
+section), and no blue-authored rules file exists until blue writes one.
 
 **Default state**
 
@@ -143,7 +150,7 @@ custom child rules) ships absent.
   ([`config/wazuh_cluster/wazuh_manager.conf:345-346`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf)):
   - `ruleset/rules`: bundled Wazuh ruleset (read-only).
   - `etc/rules`: APTL custom rules **and** the hot directory where
-    blue authors `zzz_purple_loop.xml` at runtime.
+    blue writes its own rules files at runtime.
 
 | Custom file | Catches | Severity range |
 |---|---|---|
@@ -160,22 +167,26 @@ non-contamination): red activity must not be ingested by the
 defensive stack via the SIEM. Red-side captures live in the
 per-run experimental record under `.aptl/runs/<run_id>/`.
 
-- Decoders for postgresql and samba ship at
-  [`config/wazuh_cluster/{postgresql,samba}_decoders.xml`](https://github.com/OpenRAE/lilrae/tree/main/config/wazuh_cluster).
+- Decoders for postgresql and samba ship in the acquired TechVault pack as
+  [`postgresql_decoders.xml` and `samba_decoders.xml`](https://github.com/OpenRAE/env-packs/tree/main/packs/techvault/assets/content),
+  which the pack installs under `/var/ossec/etc/decoders/`.
   (`kali_decoders.xml` deleted under ADR-033.)
-- **`zzz_purple_loop.xml` ships absent from the repo by design.** It
-  only appears under `.aptl/loop/run-*/iter-NN/` (runtime artifacts
-  produced by purple-loop runs). The mechanism is: blue authors XML
-  via the `mcp-indexer` MCP server's `create_rule` tool, which PUTs
-  to `/rules/files/zzz_purple_loop.xml` on the Wazuh Manager API
-  (auth via `wazuh-jwt`, `overwrite=true`); blue then triggers the
-  matching `restart_manager` tool which hits `/manager/restart`—
-  the manager is unavailable for ~30-90 s while daemons cycle, then
-  the new rules take effect. See
-  [`mcp/mcp-indexer/docker-lab-config.json:49-72`](https://github.com/OpenRAE/lilrae/blob/main/mcp/mcp-indexer/docker-lab-config.json).
-  The filename's `zzz_` prefix guarantees it loads after
-  `webapp_rules.xml` (which provides the 302xxx parent rule IDs that
-  purple-loop children typically `<if_sid>` into).
+- **No blue-authored rules file ships.** Blue writes one at runtime
+  with the `create_rule` tool of the `mcp-indexer` MCP server, or the
+  `create_detection_rule` tool of the `mcp-wazuh` MCP server. Both tools
+  PUT to `/rules/files/{filename}` on the Wazuh Manager API (auth via
+  `wazuh-jwt`). The caller names the file in `params.filename`. The name
+  must end in `.xml` and contain only letters, digits, `_`, `.` or `-`;
+  the tools refuse any other name before they send a request. An upload
+  replaces the whole file, and the API refuses an existing file unless
+  the caller sets `params.overwrite` to `true`. Then blue calls the
+  `restart_manager` tool, which hits `/manager/restart`. The manager
+  is unavailable for ~30-90 s while daemons cycle, then the new rules
+  take effect. See
+  [`mcp/mcp-indexer/docker-lab-config.json`](https://github.com/OpenRAE/lilrae/blob/main/mcp/mcp-indexer/docker-lab-config.json).
+  The manager loads rules files in name order. A file whose child rules
+  `<if_sid>` into the 302xxx parents in `webapp_rules.xml` must have a
+  name that sorts after `webapp_rules.xml`.
 
 **Why it ships this way**
 
@@ -187,10 +198,9 @@ TheHive). Both of those are wired but disabled at first boot.
 
 **What blue would do to raise it**
 
-- Author `zzz_purple_loop.xml` via the `mcp-indexer` MCP server's
-  `create_rule` tool, then call `restart_manager` to apply. The
-  ~30-90 s manager downtime is the cost of a rule update during a
-  purple-loop iteration.
+- Write a rules file with the `mcp-indexer` MCP server's `create_rule`
+  tool, then call `restart_manager` to apply it. The ~30-90 s manager
+  downtime is the cost of a rule update during an iteration.
 - Add custom rules to `etc/rules/` (manager image rebuild + `lab
   start`) and reference them from `<active-response>` blocks (see
   next section) to couple detection to enforcement.
@@ -201,9 +211,9 @@ TheHive). Both of those are wired but disabled at first boot.
 |---|---|
 | Rule include order | [`config/wazuh_cluster/wazuh_manager.conf:356-368`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf) |
 | Hot rule directory | [`config/wazuh_cluster/wazuh_manager.conf:345-346`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf) |
-| Custom rule files | [`config/wazuh_cluster/*.xml`](https://github.com/OpenRAE/lilrae/tree/main/config/wazuh_cluster) |
-| Custom decoders | [`config/wazuh_cluster/*_decoders.xml`](https://github.com/OpenRAE/lilrae/tree/main/config/wazuh_cluster) |
-| Purple-loop hot file (runtime-only) | not shipped; written under `.aptl/loop/run-*/iter-NN/zzz_purple_loop.xml` |
+| Custom rule files | `*_rules.xml` in the acquired [`techvault` environment pack](https://github.com/OpenRAE/env-packs/tree/main/packs/techvault/assets/content) |
+| Custom decoders | `*_decoders.xml` in the acquired [`techvault` environment pack](https://github.com/OpenRAE/env-packs/tree/main/packs/techvault/assets/content) |
+| Blue-authored rules files (runtime-only) | not shipped; written by the caller through `create_rule` |
 
 ---
 
@@ -258,9 +268,9 @@ kali's own IPs and wedging the purple loop.
 - Delete the `<disabled>yes</disabled>` line on a chosen
   `<active-response>` block per iteration.
 - Author additional blocks pointing at custom rule IDs (for example, new
-  rule IDs in `zzz_purple_loop.xml`).
+  rule IDs in a blue-authored rules file).
 - Update the kali whitelist if red ever moves out of the seeded IPs;
-  re-running `aptl lab stop -v && aptl lab start` re-renders agent
+  re-running `lilrae lab stop -v && lilrae lab start` re-renders agent
   carve-outs.
 
 **Source of truth**
@@ -278,25 +288,31 @@ kali's own IPs and wedging the purple loop.
 ## MISP IOCs
 
 **Tag:** `STARTING POSTURE` for the `aptl:enforce` graduation lane.
-The MISP store itself ships **empty at first lab boot**, but a prime
-research scenario seed exists out-of-band—see below.
+The MISP image ships empty. With the bundled TechVault adapter and
+all required profiles selected, `lilrae lab start` seeds one curated
+event. The seed does not graduate its indicators to enforcement
+(see below).
 
 **Default state**
 
-- The MISP container starts with upstream image defaults. **At first
-  `aptl lab start`, no APTL-side IOCs are loaded**: there are no
-  pre-existing events, no `aptl:enforce`-tagged attributes, no
-  graduated indicators.
-- An optional seed script
-  ([`scripts/seed-misp.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-misp.sh)) creates an
-  "APTL Lab - Known Threat Actors" event with kali-IP indicators and
-  injection-pattern signatures. It is **not run automatically by
-  `aptl lab start`**—it must be invoked explicitly (or via
-  [`scripts/seed-prime.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh), which is
-  the prime-scenario master seed). The seed script is idempotent.
+- The MISP container starts with upstream image defaults. On a fresh lab, the
+  scenario seed below adds one event; there are no
+  `aptl:enforce`-tagged attributes and no graduated indicators.
+- [`scripts/seed-misp.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-misp.sh)
+  creates an "APTL Lab - Known Threat Actors" event with kali-IP
+  indicators and injection-pattern signatures. **`lilrae lab start`
+  runs it when all required profiles are selected:** `wazuh`,
+  `enterprise`, `victim`, `kali`, `fileshare`, and `soc`. The bundled
+  TechVault adapter selects
+  [`scripts/seed-prime.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh),
+  the prime-scenario master seed, which runs `seed-misp.sh`. If `soc`
+  is absent or any required profile is missing, startup skips the seed.
+  Either script can also be run by hand. The seed script is idempotent.
   IOCs created by `seed-misp.sh` are **not tagged `aptl:enforce`** at
   seed time—graduation to enforcement is still blue's per-iteration
   decision.
+- `--skip-seed` skips seeding. On a fresh, unseeded lab, this leaves
+  MISP empty. Existing events, indicators, and tags are preserved.
 - The `aptl-misp-suricata-sync` daemon
   ([`src/aptl/services/misp_suricata_sync/main.py`](https://github.com/OpenRAE/lilrae/blob/main/src/aptl/services/misp_suricata_sync/main.py))
   runs continuously and polls MISP for attributes tagged
@@ -317,9 +333,9 @@ research scenario seed exists out-of-band—see below.
 does not by itself trigger enforcement. Blue must add the
 `aptl:enforce` tag to graduate it. This separates
 "intelligence-curation" (which seed scripts can prime) from
-"enforcement" (which the default posture leaves empty). At first
-boot, and even after the optional seed runs, the enforcement lane
-has zero graduated indicators on purpose.
+"enforcement" (which the default posture leaves empty). On a fresh
+lab, the seed leaves the enforcement lane with zero graduated
+indicators on purpose.
 
 **What blue would do to raise it**
 
@@ -352,47 +368,54 @@ has zero graduated indicators on purpose.
   to Shuffle
   ([`config/wazuh_cluster/wazuh_manager.conf:316-320`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf)).
 - The integration is gated by a **runtime-written webhook URL**. The
-  custom forwarder script
-  ([`config/wazuh_cluster/custom-shuffle:3`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/custom-shuffle))
+  custom forwarder script, `custom-shuffle`, ships in the acquired
+  TechVault pack's [`wazuh-integrations.tar`](https://github.com/OpenRAE/env-packs/blob/main/packs/techvault/assets/content/wazuh-integrations.tar), which the pack
+  installs in `/var/ossec/integrations`. It
   reads the URL from `/var/ossec/etc/shuffle_webhook_url` inside the
   manager container and **silently exits if the file does not exist**.
   Until that file is written, Wazuh's `<integration>` block is wired
   but inert.
 - The seed flow runs in two scripts:
-  1. [`scripts/seed-shuffle.sh:265-266`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-shuffle.sh)
+  1. [`scripts/seed-shuffle.sh:260-265`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-shuffle.sh)
      creates the `APTL Alert to Case` workflow inside the running
      Shuffle instance via Shuffle's REST API and writes its webhook
      URL to a **host-side staging file** at
      `/tmp/aptl_shuffle_webhook_url`. **This step alone is not enough
      — the Wazuh `custom-shuffle` forwarder reads from inside the
      manager container, not the host.**
-  2. [`scripts/seed-prime.sh:165-169`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh)
+  2. [`scripts/seed-prime.sh:249-266`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh)
      reads the host staging file and `docker exec`s the URL into the
      Wazuh manager container at
      `/var/ossec/etc/shuffle_webhook_url`. **This step is what
      activates the Wazuh→Shuffle forwarder.**
   Both scripts are idempotent.
-- **Neither script is run by `aptl lab start`.** Until an operator
-  runs `seed-prime.sh` (or runs `seed-shuffle.sh` followed by the
-  manual `docker exec` to copy the URL into the manager), the
-  Wazuh→Shuffle forwarder no-ops.
+- **`lilrae lab start` runs both** in its SOC seeding step when the
+  [required TechVault profiles](#misp-iocs) are selected and
+  `--skip-seed` is absent. The bundled TechVault adapter selects
+  `seed-prime.sh`, which runs `seed-shuffle.sh` and then copies the URL.
+- `--skip-seed` preserves existing workflows and the webhook URL.
+  On a fresh, unseeded lab started with `--skip-seed`, the
+  Wazuh→Shuffle forwarder no-ops until an operator runs
+  `seed-prime.sh` (or `seed-shuffle.sh` followed by the manual
+  `docker exec` that copies the URL into the manager). On a previously
+  seeded lab, the forwarder can remain active.
 
 **Why it ships this way**
 
 The integration boundary (Wazuh's `<integration>` block, the
 `custom-shuffle` forwarder, the webhook-file gate) is in source
-control. The workflow *content* is created by an explicit seed step
-so iteration runbooks can choose whether to prime the prime-scenario
-defaults or start fresh. The `custom-shuffle` script's silent-exit
-behaviour means a freshly started lab has no half-wired forwarder
-firing into a missing webhook.
+control. The workflow *content* is created by the scenario seed step.
+Iteration runbooks can leave a fresh lab unseeded with `--skip-seed`.
+The `custom-shuffle` script's silent-exit behaviour avoids sending
+alerts to a missing webhook while the lab is unseeded.
 
 **What blue would do to raise it**
 
-- Run `scripts/seed-prime.sh` for the full prime-scenario seed
+- If automatic seeding was skipped, run `scripts/seed-prime.sh` once
+  all required services are running for the full prime-scenario seed
   (recommended—handles both the Shuffle-side workflow creation and
   the Wazuh-side webhook-URL copy in one shot). Running
-  `seed-shuffle.sh` alone leaves the Wazuh forwarder still inert.
+  `seed-shuffle.sh` alone does not copy the webhook URL into Wazuh.
 - Author additional Shuffle workflows that consume Wazuh alerts,
   query MISP for context, enrich TheHive cases, or trigger automated
   containment outside the Wazuh AR path. Workflow content lives in
@@ -406,7 +429,7 @@ firing into a missing webhook.
 | Surface | File |
 |---|---|
 | Wazuh→Shuffle forwarder (declaration) | [`config/wazuh_cluster/wazuh_manager.conf:316-320`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf) |
-| Forwarder script (gated by webhook file) | [`config/wazuh_cluster/custom-shuffle`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/custom-shuffle) |
+| Forwarder script (gated by webhook file) | `custom-shuffle` in the acquired TechVault pack's [`wazuh-integrations.tar`](https://github.com/OpenRAE/env-packs/blob/main/packs/techvault/assets/content/wazuh-integrations.tar) |
 | Workflow seed script | [`scripts/seed-shuffle.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-shuffle.sh) |
 | Prime master seed | [`scripts/seed-prime.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh) |
 
@@ -448,67 +471,69 @@ prescriptive template would steer the experiment.
 ## Identity controls (Active Directory)
 
 **Tag:** This section mixes both banners. The intentional account-side
-weaknesses are `WEAKNESS BY DESIGN`. The provisioner's account-lockout
-policy is `BASELINE ENABLED` and is documented separately below.
+weaknesses are `WEAKNESS BY DESIGN`. The account-lockout state is
+documented separately below.
 
 **Default state—account weaknesses (`WEAKNESS BY DESIGN`)**
 
-The TechVault AD provisioner
-([`containers/ad/provision-users.sh`](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh))
-seeds these intentional vulnerabilities:
+The acquired TechVault pack declares the domain's accounts in the
+`accounts` section of its SDL
+([`techvault.sdl.yaml`](https://github.com/OpenRAE/env-packs/blob/main/packs/techvault/sdl/techvault.sdl.yaml)).
+Each account has a `password_strength`, its groups and, for a service
+account, an SPN. LilRAE's Samba AD provider creates the accounts on the
+`ad` node. These declarations are the intentional vulnerabilities:
 
-| Surface | What ships | Line |
+| Surface | What ships | SDL account |
 |---|---|---|
-| Weak password—`michael.thompson` | trivial seasonal pattern (string in source) | [65](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
-| Weak password—`jessica.williams` | trivial dictionary pattern (string in source) | [82](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
-| Default-issued—`contractor.temp` | over-privileged contractor account with default password (string in source) | [122-127](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
-| Stale account—`former.employee` | unrevoked account with old password (string in source) | [130](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
-| Over-privilege—`emily.chen` | DevOps account in `Domain Admins` | [62](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
-| Over-privilege—`svc-backup` | service account in `Domain Admins` | [119](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
-| Kerberoastable—`svc-sql` | SPN set on `MSSQLSvc/db.techvault.local` | [104-105](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
-| Kerberoastable—`svc-web` | SPN set on `HTTP/webapp.techvault.local` | [112](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
+| Weak password—`Administrator` | built-in domain administrator, declared `weak` | `ad-administrator` |
+| Weak password—`michael.thompson` | seasonal password, declared `weak` | `ad-michael-thompson` |
+| Weak password—`jessica.williams` | declared `weak` | `ad-jessica-williams` |
+| Default-issued—`contractor.temp` | abandoned contractor account with a default password, declared `weak`, in `VPN-Users`, `Remote-Desktop` and `Engineering` | `ad-contractor-temp` |
+| Stale account—`former.employee` | still enabled, declared `weak` | `ad-former-employee` |
+| Over-privilege—`emily.chen` | DevOps account in `Domain Admins` | `ad-emily-chen` |
+| Over-privilege—`svc-backup` | service account in `Domain Admins` | `ad-svc-backup` |
+| Kerberoastable—`svc-sql` | SPN `MSSQLSvc/db.techvault.local:1433`, declared `weak` | `ad-svc-sql` |
+| Kerberoastable—`svc-web` | SPN `HTTP/webapp.techvault.local`, declared `weak` | `ad-svc-web` |
 
-The actual password literals are in
-[`containers/ad/provision-users.sh`](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh)—
-this document deliberately does not reproduce them. Running labs are
-intended to be isolated by `internal: true` Docker networks; if a
-deployment exposes the AD container externally, the in-source
-passwords become a credential-reuse risk against that deployment.
-Operators should rotate them post-provision when the container is not
-strictly local.
+The pack declares no password values. For each `weak` or `medium`
+account, LilRAE mints a password of the declared class, proves it by
+authenticating as that account, and writes it only to the project's
+`.aptl/realization/account-credentials/` directory: mode 0600 files under
+a 0700 directory. A `strong` account gets a password that the target
+generates with `samba-tool user create --random-password`, and nothing
+reads it back. When any declared account is `weak`, LilRAE first relaxes
+the domain password policy with `samba-tool domain passwordsettings set
+--complexity=off --min-pwd-length=1 --min-pwd-age=0 --history-length=0`,
+so that the weak passwords hold
+([`_compose_account_realization.py`](https://github.com/OpenRAE/lilrae/blob/main/src/aptl/core/deployment/_compose_account_realization.py),
+[`_account_provider.py`](https://github.com/OpenRAE/lilrae/blob/main/src/aptl/core/deployment/_account_provider.py)).
+Running labs are intended to be isolated by `internal: true` Docker
+networks. If a deployment exposes the AD container externally, the weak
+passwords become a credential-guessing risk against that deployment.
 
-**Default state—account-lockout policy (`BASELINE ENABLED`)**
+**Default state—account lockout**
 
-The provisioner enables a baseline AD account-lockout policy
-([`containers/ad/provision-users.sh:135-138`](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh)):
-
-| Setting | Value |
-|---|---|
-| `account-lockout-threshold` | 10 failed attempts |
-| `account-lockout-duration` | 30 minutes |
-| `reset-account-lockout-after` | 15 minutes |
-
-This is **on at first boot**—brute-force/spray attempts that exceed
-ten failures will trigger AD-side lockout regardless of whether Wazuh
-detection rules or `<active-response>` blocks are enabled. Researchers
-reading run results should expect baseline-rate password spraying to
-trip this lockout, which is independent of the SOC stack.
+Neither the pack nor LilRAE sets an account-lockout policy. The domain
+keeps the lockout settings that `samba-tool domain provision` writes,
+and the password-policy change above leaves them unchanged.
 
 **Samba configuration baseline**
 
-The AD DC's `smb.conf` is generated by `samba-tool domain provision`
-([`containers/ad/setup-ad.sh:21-28`](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/setup-ad.sh))
+The AD DC's `smb.conf` is generated by `samba-tool domain provision` on
+the Samba provider's first start
+([`containers/generic-samba-ad-base/provision-domain.sh:21-28`](https://github.com/OpenRAE/lilrae/blob/main/containers/generic-samba-ad-base/provision-domain.sh))
 with stock provisioning parameters (`--server-role=dc`,
-`--use-rfc2307`, `--dns-backend=SAMBA_INTERNAL`). The repo does **not**
-ship an override `smb.conf`, an `extra_smb_conf` snippet, or any
-post-provision sed/append that locks down anonymous null-session
-policy, RPC pipe access, or SMB1 fallback. Whether the running DC
-permits anonymous SMB enumeration depends on Samba's stock defaults
-for the AD DC role at the version baked into the container image
-([`containers/ad/Dockerfile`](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/Dockerfile))—and
-those defaults historically have been permissive enough that a SOC-101
-"check what an unauthenticated null-session can list" exercise
-produces meaningful output.
+`--use-rfc2307`, `--dns-backend=SAMBA_INTERNAL`). Neither the repository
+nor the pack ships an override `smb.conf` for the `ad` node, an
+`extra_smb_conf` snippet, or any post-provision sed/append that locks
+down anonymous null-session policy, RPC pipe access, or SMB1 fallback.
+Whether the running DC permits anonymous SMB enumeration depends on
+Samba's stock defaults for the AD DC role at the version in the
+provider image
+([`containers/generic-samba-ad-base/Dockerfile`](https://github.com/OpenRAE/lilrae/blob/main/containers/generic-samba-ad-base/Dockerfile),
+Ubuntu's Samba packages). Those defaults historically have been
+permissive enough that a SOC-101 "check what an unauthenticated
+null-session can list" exercise produces meaningful output.
 
 If blue rotates this from a passive baseline to a hardened one, the
 expected per-iteration action is to drop an override `smb.conf` (or
@@ -524,9 +549,8 @@ These are the *target's* deliberate flaws. Red exploits them
 accounts, anonymous SMB enumeration) and blue defends against them by
 detecting (Wazuh AD rules), responding (active-response), or
 hardening (rotating to strong passwords, removing Domain Admin
-membership, disabling null-sessions). The provisioner echoes the
-intentional weaknesses on stdout for transparency
-([`containers/ad/provision-users.sh:143-150`](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh)).
+membership, disabling null-sessions). Each account's SDL `description`
+names its intentional weakness.
 
 **What blue would do to raise it**
 
@@ -547,7 +571,9 @@ intentional weaknesses on stdout for transparency
 
 | Surface | File |
 |---|---|
-| AD provisioner with weak passwords + over-priv | [`containers/ad/provision-users.sh`](https://github.com/OpenRAE/lilrae/blob/main/containers/ad/provision-users.sh) |
+| Account declarations (weak passwords, over-privilege, SPNs) | `accounts` in the acquired pack's [`techvault.sdl.yaml`](https://github.com/OpenRAE/env-packs/blob/main/packs/techvault/sdl/techvault.sdl.yaml) |
+| Account realization and password disclosure | [`src/aptl/core/deployment/_compose_account_realization.py`](https://github.com/OpenRAE/lilrae/blob/main/src/aptl/core/deployment/_compose_account_realization.py) |
+| Domain provisioning | [`containers/generic-samba-ad-base/provision-domain.sh`](https://github.com/OpenRAE/lilrae/blob/main/containers/generic-samba-ad-base/provision-domain.sh) |
 | Wazuh AD detection rules | Acquired [`techvault` environment pack](https://github.com/OpenRAE/env-packs/tree/main/packs/techvault) |
 
 ---
@@ -685,8 +711,8 @@ When mode lands as a real SDL feature, the intended contract is:
   graduate STARTING POSTURE surfaces.
 - `purple` runs—both red and blue MCP surfaces exposed. Each
   iteration alternates: red attacks under the current posture; blue
-  raises the posture (enables AR, adds an IOC, authors a
-  `zzz_purple_loop.xml` rule); red attacks again.
+  raises the posture (enables AR, adds an IOC, writes a rules
+  file); red attacks again.
 
 **Until #263 is resolved, the per-run posture is whatever this
 document describes**—the same baseline regardless of any `mode:`
@@ -703,7 +729,7 @@ ADR-021's in-band `aptl-firewall-drop` whitelist. See
 [ADR-024](../adrs/adr-024-orchestrator-side-purple-continuity-carve-out.md)
 for the full design.
 
-The audit is invoked manually today via `aptl lab continuity-audit`. The
+The audit is invoked manually today via `lilrae lab continuity-audit`. The
 behavioral contract:
 
 - runs **unconditionally** today—APTL is the purple-team lab and every

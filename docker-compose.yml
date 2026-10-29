@@ -690,61 +690,6 @@ services:
       aptl-internal:
         ipv4_address: 172.20.2.25
 
-  # Host publication for webapp, same reason as kali-ssh-proxy below: webapp's
-  # own networks (aptl-dmz, aptl-internal) are both internal: true (SAF-002),
-  # which Docker never routes host traffic through, published port or not.
-  # webapp is a deliberate attack-surface target (test_docker_compose_port_
-  # bindings.py TARGET_SURFACES), so unlike kali-ssh-proxy this proxy's own
-  # publish stays on all interfaces, not loopback (issue #581). Targets the
-  # container name, not webapp's declared static IP: webapp is realized
-  # generically (ADR-048), and a base-container-materialized node's declared
-  # docker-compose.yml ipv4_address is reference data only, never actually applied
-  # to the running container's network attachment.
-  mailserver:
-    profiles: ["mail"]
-    image: ghcr.io/docker-mailserver/docker-mailserver:latest
-    container_name: aptl-mailserver
-    hostname: mail.techvault.local
-    domainname: techvault.local
-    restart: unless-stopped
-    ports:
-      # Loopback-only (ADR-039): the mailserver holds fixture credentials
-      # (known lab password), so its SMTP/IMAP ports must not be published on
-      # 0.0.0.0 where an exposed host would become an open, known-cred relay.
-      # In-range traffic (kali phishing -> victims) uses the docker networks
-      # below, not these host publishes; these exist only for operator access
-      # from the host itself.
-      - "127.0.0.1:${APTL_HP_MAILSERVER_25:-25}:25"
-      - "127.0.0.1:${APTL_HP_MAILSERVER_143:-143}:143"
-      - "127.0.0.1:${APTL_HP_MAILSERVER_587:-587}:587"
-      - "127.0.0.1:${APTL_HP_MAILSERVER_993:-993}:993"
-    environment:
-      - ENABLE_SPAMASSASSIN=0
-      - ENABLE_CLAMAV=0
-      - ENABLE_FAIL2BAN=0
-      - ENABLE_POSTGREY=0
-      - ENABLE_SASLAUTHD=0
-      - ONE_DIR=1
-      - DMS_DEBUG=0
-      - OVERRIDE_HOSTNAME=mail.techvault.local
-      - PERMIT_DOCKER=network
-      - SSL_TYPE=
-      - SIEM_IP=172.20.0.10
-    volumes:
-      - mailserver_data:/var/mail
-      - mailserver_state:/var/mail-state
-      - mailserver_logs:/var/log/mail
-      - ./containers/mailserver/setup.sh:/tmp/setup.sh:ro
-    deploy:
-      resources:
-        limits:
-          memory: 512m
-    networks:
-      aptl-dmz:
-        ipv4_address: 172.20.1.21
-      aptl-internal:
-        ipv4_address: 172.20.2.26
-
   # Realized generically from the acquired TechVault SDL
   # (ADR-048 / issue #581) — a `runtime:` node, never Compose-started. This
   # stub exists only so `--scale dns=0` (the mixed-realization exclusion)
@@ -753,9 +698,6 @@ services:
     profiles: ["dns"]
     image: debian:13-slim
     container_name: aptl-dns
-    ports:
-      - "${APTL_DNS_HOST_PORT:-5353}:53/tcp"
-      - "${APTL_DNS_HOST_PORT:-5353}:53/udp"
     networks:
       aptl-dmz:
         ipv4_address: 172.20.1.22
@@ -859,75 +801,6 @@ services:
         ipv4_address: 172.20.1.30
       aptl-internal:
         ipv4_address: 172.20.2.35
-
-  # Reverse-engineering analysis workstation: defender tooling, not an attack
-  # target. Its SSH publication is a management surface, so it binds loopback
-  # only (ADR-034 Host Exposure Amendment); host-run mcp-reverse reaches it on
-  # localhost. It used to publish on all interfaces (issue #1006).
-  reverse:
-    profiles: ["reverse"]
-    build:
-      context: ./containers
-      dockerfile: reverse/Dockerfile
-    container_name: aptl-reverse
-    hostname: reverse-host
-    restart: unless-stopped
-    # issue #955: the same cgroup v2 posture the generic substrate uses. systemd
-    # needs a WRITABLE cgroup filesystem, not a privileged one, so
-    # `writable-cgroups=true` (Docker Engine 28.0+) makes this container's OWN
-    # namespace-scoped cgroup2 mount writable. That replaces the retired recipe
-    # here too -- a host cgroup namespace, a read-write bind of the host's
-    # /sys/fs/cgroup, an unconfined seccomp profile, and three added
-    # capabilities. This service sits behind the `reverse` profile rather than
-    # the default range, but leaving the old flags would mean claiming the range
-    # is hardened while a shipped compatibility model still emits them.
-    cgroup: private
-    networks:
-      aptl-security:
-        ipv4_address: 172.20.0.27
-    ports:
-      - "127.0.0.1:${APTL_HP_REVERSE_22:-2027}:22"    # SSH access
-    environment:
-      - SIEM_IP=172.20.0.10  # wazuh.manager
-      - LABADMIN_SSH_KEY_FILE=/keys/aptl_lab_key.pub
-    cap_add:
-      # issue #955, kept on measured necessity, not inheritance. Bisected on a
-      # real boot: this container's first-boot `reverse-tools-install.service`
-      # installs falco, whose dpkg post-install runs `falcoctl driver install`
-      # (driver type kmod). Without CAP_SYS_ADMIN that postinst exits 1, dpkg
-      # aborts, and the whole tools install fails ~40s in, leaving the RE lab
-      # without its tooling.
-      #
-      # The bisect isolated the cause rather than assuming it: with the default
-      # seccomp profile and CAP_SYS_ADMIN the unit reaches `active`; with
-      # `seccomp:unconfined` and NO capability it still fails. So the
-      # requirement is the capability, and the unconfined seccomp profile,
-      # SYS_NICE, SYS_RESOURCE, the host cgroup namespace, and the host
-      # /sys/fs/cgroup bind that used to accompany it were all unnecessary.
-      - SYS_ADMIN
-    volumes:
-      # SEC #417: targets receive only PUBLIC keys, never a private key. The
-      # control-plane pubkey authorizes operator/MCP host access; the kali
-      # pivot pubkey authorizes kali's in-scenario pivot into this target.
-      - ./keys/aptl_lab_key.pub:/keys/aptl_lab_key.pub:ro
-      - ./config/lab-ssh/kali_pivot_key.pub:/keys/kali_pivot_key.pub:ro
-      - reverse_logs:/var/log
-    tmpfs:
-      - /run
-      - /run/lock # Ubuntu systemd mounts a nested /run/lock tmpfs itself; AppArmor docker-default denies that mount, so pre-create it
-      - /tmp
-    security_opt:
-      - writable-cgroups=true
-    healthcheck:
-      test: ["CMD-SHELL", "ss -tlnp | grep ':22' || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: 2g # first-boot tools install compiles radare2 from source (parallel make); 512m OOM-killed the build
 
   # ==========================================================================
   # WEB UI (web profile)
@@ -1107,9 +980,5 @@ volumes:
   db_data:
 
   # Mail server
-  mailserver_data:
-  mailserver_state:
-  mailserver_logs:
 
   # Application volumes
-  reverse_logs:

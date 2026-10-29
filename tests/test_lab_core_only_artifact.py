@@ -8,21 +8,21 @@ import shutil
 import subprocess
 import sys
 import zipfile
-from pathlib import Path
 
 import pytest
+from pathlib import Path
+
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.integration
 def test_core_only_wheel_prepares_tiny_start_without_optional_experience(
     tmp_path: Path,
 ) -> None:
     """A wheel containing only ``aptl`` can select an adapter-free tiny pack."""
 
-    if shutil.which("uv") is None:
-        pytest.skip("uv is required for the repository's locked build proof")
     source = tmp_path / "source"
     source.mkdir()
     for name in ("README.md", "hatch_build.py"):
@@ -47,10 +47,12 @@ def test_core_only_wheel_prepares_tiny_start_without_optional_experience(
     output = tmp_path / "wheel"
     built = subprocess.run(
         [
-            "uv",
+            sys.executable,
+            "-m",
             "build",
             "--wheel",
-            "--out-dir",
+            "--no-isolation",
+            "--outdir",
             str(output),
             str(source),
         ],

@@ -34,8 +34,8 @@ pytestmark = pytest.mark.integration
 
 
 def test_directory_and_bundled_acquisition_preserve_the_same_identity(tmp_path):
-    bundled = env_pack_bundle(tmp_path / "bundled")
-    acquired = env_pack_bundle(tmp_path / "acquired", source_pack=bundled.root)
+    bundled = env_pack_bundle(tmp_path / "bundled", "techvault")
+    acquired = env_pack_bundle(tmp_path / "acquired", "techvault", source_pack=bundled.root)
     assert acquired.pack_identity == bundled.pack_identity
     assert acquired.sdl_path.read_bytes() == bundled.sdl_path.read_bytes()
     assert acquired.root != bundled.root
@@ -43,23 +43,23 @@ def test_directory_and_bundled_acquisition_preserve_the_same_identity(tmp_path):
 
 @pytest.mark.parametrize("linked", ["pack.yaml", "sdl"])
 def test_acquisition_rejects_source_links_before_copying(tmp_path, linked):
-    source = env_pack_bundle(tmp_path / "source").root
+    source = env_pack_bundle(tmp_path / "source", "techvault").root
     original = source / linked
     outside = tmp_path / ("outside-" + linked)
     original.rename(outside)
     original.symlink_to(outside, target_is_directory=outside.is_dir())
     with pytest.raises(EnvPackError, match="unsafe source"):
-        env_pack_bundle(tmp_path / "destination", source_pack=source)
+        env_pack_bundle(tmp_path / "destination", "techvault", source_pack=source)
 
 
 def test_new_acquisition_does_not_delete_long_running_input(tmp_path):
     import time
 
     root = tmp_path / "staged"
-    active = env_pack_bundle(root)
+    active = env_pack_bundle(root, "techvault")
     old = time.time() - 7200
     os.utime(active.root.parent, (old, old))
-    env_pack_bundle(root)
+    env_pack_bundle(root, "techvault")
     assert active.sdl_path.is_file()
     assert active.read_asset("pack.yaml")
 
@@ -79,8 +79,8 @@ def test_released_pack_owns_only_scenario_and_retains_its_evidence_contracts(
     from raes import parse_sdl
     from raes_processor.capture_admission import compile_scenario_capture_demands
 
-    assert version("raes-env-packs") == "6.2.1"
-    assert version("raes") == "6.0.1"
+    assert version("raes-env-packs") == "6.3.3"
+    assert version("raes") == "7.0.0"
     bundle = env_pack_bundle(tmp_path / "released", "techvault")
     scenario = parse_sdl(bundle.sdl_path.read_text())
     assert not {"aptl-otel-collector", "aptl-tempo", "aptl-grafana-otel"}.intersection(
@@ -119,9 +119,9 @@ def test_env_pack_bundle_stages_and_validates_the_bundled_techvault_pack(
     assert bundle.identity == "techvault"
     assert bundle.pack_identity == PackIdentity(
         pack_id="techvault",
-        pack_version="0.1.1",
+        pack_version="0.1.2",
         set_digest=(
-            "sha256:1229f94f31bd35d3997d47ef8316ffebb3d2d2919c995838e458420b70456fcf"
+            "sha256:b23696c91f6313aad7bbc5c0000da26f719d9456e01bd7b81d740de34bcd681e"
         ),
     )
     # The bundle roots at the staged copy, never at the installed package.

@@ -7,10 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from raes.parser import parse_sdl_file
-
-from tests.helpers import techvault_scenario_path
-from tests.test_env_pack_realization import _realize_pack
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -20,8 +16,6 @@ EXPECTED_ENVIRONMENT = {
         "31a211c4-ea5c-4a49-b022-5e2434e758a7",
         "secret_fixture",
     ),
-    "SHUFFLE_DEFAULT_PASSWORD": ("ShuffleAdmin2024!", "secret_fixture"),
-    "SHUFFLE_DEFAULT_USERNAME": ("admin", "plain"),
     "SHUFFLE_OPENSEARCH_PASSWORD": ("StrongPassword123!", "secret_fixture"),
     "SHUFFLE_OPENSEARCH_SKIPSSL_VERIFY": ("true", "plain"),
     "SHUFFLE_OPENSEARCH_URL": ("https://shuffle-opensearch:9200", "plain"),
@@ -34,10 +28,10 @@ def _enum_value(value: object) -> object:
 
 
 def test_released_pack_supplies_shuffle_semantics_and_leaves_mechanics_open(
-    tmp_path: Path,
+    released_techvault_scenario,
 ) -> None:
-    assert version("raes-env-packs") == "6.2.1"
-    scenario = parse_sdl_file(techvault_scenario_path(tmp_path))
+    assert version("raes-env-packs") == "6.3.3"
+    scenario = released_techvault_scenario
     backend = scenario.nodes["shuffle-backend"].runtime
     opensearch = scenario.nodes["shuffle-opensearch"].runtime
 
@@ -81,11 +75,11 @@ def test_released_pack_supplies_shuffle_semantics_and_leaves_mechanics_open(
 
 
 def test_generated_compose_uses_only_the_admitted_shuffle_runtime(
-    tmp_path: Path,
+    released_techvault_realization,
 ) -> None:
     from aptl.core.deployment._compose_node_generation import render_realization_compose
 
-    realization = _realize_pack(tmp_path)
+    realization = released_techvault_realization
     # The pinned pack now admits the Orborus authority alongside Shuffle.
     spec = realization.deployment_spec(sorted(realization.profiles))
     document = render_realization_compose(spec)
@@ -96,6 +90,7 @@ def test_generated_compose_uses_only_the_admitted_shuffle_runtime(
         name: value for name, (value, _classification) in EXPECTED_ENVIRONMENT.items()
     }
     assert backend["depends_on"] == ["shuffle-opensearch"]
+    assert backend["restart"] == "on-failure"
     assert "/var/run/docker.sock" not in repr(backend)
 
     volumes = {volume.name: volume for volume in spec.persistent_volumes}
@@ -111,6 +106,14 @@ def test_generated_compose_uses_only_the_admitted_shuffle_runtime(
     assert volumes["shuffle_opensearch_data"].consumers[0].mount_destination == (
         "/usr/share/opensearch/data"
     )
+
+
+def test_released_pack_selects_shuffle_failure_recovery(released_techvault_realization) -> None:
+    realization = released_techvault_realization
+    backend = next(node for node in realization.nodes if node.name == "shuffle-backend")
+
+    assert _enum_value(backend.runtime.operational_policy.restart) == "on_failure"
+    assert "runtime-restart-policy" in backend.backend_selected_concerns
 
 
 def test_release_manual_has_executable_reverse_negative_harness() -> None:
