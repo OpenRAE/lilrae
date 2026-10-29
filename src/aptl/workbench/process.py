@@ -38,6 +38,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Event
 from typing import Protocol
 
 from aptl.workbench._pipe_exchange import POLL_SECONDS, PipeExchange
@@ -64,6 +65,7 @@ _RELEASE_SECONDS = 1.0
 
 # Why a bounded invocation failed: BoundedProcessError.reason is one of these.
 REASON_TIMEOUT = "agent request exceeded the configured timeout"
+REASON_CANCELLED = "agent request was cancelled"
 REASON_OVERFLOW = "agent output exceeded the configured limit"
 REASON_RESIDUE = "agent process cleanup left residual processes"
 _RESIDUAL_AGENT_RUNNING = "agent-process-running"
@@ -188,10 +190,13 @@ class BoundedProcessRunner:
         stdin: bytes,
         timeout_seconds: float,
         max_output_bytes: int,
+        cancel_event: Event | None = None,
     ) -> ProcessResult:
         """Execute a child with strict time and combined-output limits."""
         if timeout_seconds <= 0 or max_output_bytes <= 0:
             raise AgentExecutionError("agent process limits are invalid")
+        if cancel_event is not None and cancel_event.is_set():
+            raise AgentExecutionError(REASON_CANCELLED)
         deadline = time.monotonic() + timeout_seconds
         with selectors.DefaultSelector() as selector:
             exchange = PipeExchange(selector, stdin, max_output_bytes)
@@ -206,7 +211,7 @@ class BoundedProcessRunner:
             )
             try:
                 exchange.attach(process)
-                reason = _supervise(process, exchange, deadline)
+                reason = _supervise(process, exchange, deadline, cancel_event)
             except BaseException as interrupted:
                 # Cancellation or an unexpected error still ends the invocation.
                 cleanup = _end_invocation(process, exchange, _TERM_GRACE_SECONDS)
@@ -238,10 +243,13 @@ def _supervise(
     process: subprocess.Popen[bytes],
     exchange: PipeExchange,
     deadline: float,
+    cancel_event: Event | None = None,
 ) -> str | None:
     """Exchange input and output until the child exits or a limit is reached."""
 
     while process.poll() is None:
+        if cancel_event is not None and cancel_event.is_set():
+            return REASON_CANCELLED
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return REASON_TIMEOUT

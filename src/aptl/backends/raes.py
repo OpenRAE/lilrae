@@ -87,6 +87,7 @@ from aptl.core.scenario_bundle import (
 from aptl.core.lab_types import LabResult
 
 if TYPE_CHECKING:
+    from aptl.backends.lilrae_participant_execution import LilraeParticipantBinding
     from raes_processor.models import ExecutionPlan
 
     from aptl.core.deployment.backend import DeploymentBackend
@@ -140,6 +141,7 @@ def create_aptl_runtime_target(
         deployment_backend=backend,
         action_specs=action_specs,
         plan_authority=selected.participant_plan_authority,
+        autonomous_bindings=selected.autonomous_bindings,
     )
     capture_registry = (
         selected.capture_selection.registry
@@ -151,6 +153,7 @@ def create_aptl_runtime_target(
         manifest=create_aptl_manifest(
             capture_registry,
             participant_inject_delivery=selected.participant_inject_delivery,
+            autonomous_bindings=selected.autonomous_bindings,
         ),
         provisioner=provisioner,  # type: ignore[arg-type]
         orchestrator=orchestrator,  # type: ignore[arg-type]
@@ -163,7 +166,9 @@ def create_aptl_runtime_target(
         ),  # type: ignore[arg-type]
         participant_runtime=participant_runtime,  # type: ignore[arg-type]
         time_runtime=(
-            ReferenceTimeRuntime() if selected.participant_inject_delivery else None
+            ReferenceTimeRuntime()
+            if selected.participant_inject_delivery or selected.autonomous_bindings
+            else None
         ),
     )
 
@@ -240,6 +245,7 @@ def admit_raes_scenario(
     parameters: Mapping[str, object] | None = None,
     source: ScenarioAdmissionSource | None = None,
     trial: FamilyTrialInput | None = None,
+    autonomous_bindings: tuple[LilraeParticipantBinding, ...] = (),
 ) -> AdmittedScenarioStart:
     """Admit one scenario execution: resolve, parse, plan, and interpret it once.
 
@@ -287,6 +293,7 @@ def admit_raes_scenario(
         backend=backend,
         bundle=bundle,
         options=RuntimeTargetOptions(
+            autonomous_bindings=autonomous_bindings,
             artifact_availability=availability,
             capture_plan=capture_plan,
             observability_scope=observability_scope_decision(scenario),

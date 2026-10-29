@@ -10,6 +10,7 @@ from raes_backend_protocols.participant_runtime_base import BaseParticipantRunti
 from raes_contracts.contracts import (
     ParticipantActionResultModel,
     ParticipantDecisionSurfaceSelectionV2Model,
+    ParticipantTemporalRuntimeContextModel,
 )
 from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.participant_binding import (
@@ -34,6 +35,7 @@ from aptl.backends.raes_participant_provider import (
 )
 
 if TYPE_CHECKING:
+    from aptl.backends.lilrae_participant_execution import LilraeParticipantBinding
     from aptl.backends.raes_participant_driver import ParticipantPlanAuthority
     from aptl.core.deployment.backend import DeploymentBackend
 
@@ -53,10 +55,16 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         deployment_backend: DeploymentBackend,
         action_specs: Mapping[str, ParticipantActionSpec] | None = None,
         plan_authority: ParticipantPlanAuthority | None = None,
+        autonomous_bindings: tuple[LilraeParticipantBinding, ...] = (),
     ) -> None:
         """Initialize bounded provider mediation over the RAES base runtime."""
 
         super().__init__()
+        from aptl.backends.lilrae_participant_execution import (
+            LilraeParticipantExecution,
+        )
+
+        self.autonomous_execution = LilraeParticipantExecution(autonomous_bindings)
         self.deployment_backend = deployment_backend
         self.action_specs = dict(action_specs or DEFAULT_PARTICIPANT_ACTIONS)
         self.plan_authority = plan_authority
@@ -81,6 +89,51 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         """Bind the management-owned decision source for one governed run."""
 
         self._selection_provider = provider
+
+    def bind_autonomous_action(
+        self,
+        participant_address: str,
+        action_contract_address: str,
+        observation_boundary_address: str,
+        participant_implementation_ref: str,
+        action_instance_id: str,
+        temporal_contexts: tuple[ParticipantTemporalRuntimeContextModel, ...],
+        snapshot: RuntimeSnapshot,
+    ) -> ParticipantActionAdmissionRequest:
+        """Resolve only an installed native binding for the RAES scheduler."""
+        return self.autonomous_execution.bind(
+            participant_address,
+            action_contract_address,
+            observation_boundary_address,
+            participant_implementation_ref,
+            action_instance_id,
+            temporal_contexts,
+            snapshot,
+        )
+
+    def admit_actions_concurrently(
+        self,
+        requests: tuple[ParticipantActionAdmissionRequest, ...],
+        snapshot: RuntimeSnapshot,
+        max_workers: int,
+    ) -> tuple[ParticipantActionApplyResult, ...]:
+        """Validate every installed binding before RAES dispatches the batch."""
+        if not self.autonomous_execution.accepts_batch(requests, max_workers):
+            from raes_backend_protocols.participant_action_commit import (
+                reject_participant_action_outcome,
+            )
+
+            return tuple(
+                reject_participant_action_outcome(
+                    snapshot,
+                    ApplyResult(success=False, snapshot=snapshot),
+                    request.participant_address,
+                    "lilrae.participant-binding-refused",
+                    "Concurrent participant binding was refused.",
+                )
+                for request in requests
+            )
+        return super().admit_actions_concurrently(requests, snapshot, max_workers)
 
     def solicit_selection(
         self,
@@ -279,6 +332,10 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
     ) -> ParticipantActionApplyResult:
         """Run the RAES base admission path and retain its authoritative history."""
 
+        if request.execution_scope_ref is not None:
+            # Autonomous workers do not own settled history or publication.
+            return super().admit_action(request, snapshot)
+
         try:
             result = super().admit_action(request, snapshot)
         except Exception:
@@ -363,6 +420,9 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         episode_id: str,
     ) -> ParticipantNativeActionExecution:
         """Dispatch one already-admitted action to its closed APTL realization."""
+
+        if request.execution_scope_ref is not None:
+            return self.autonomous_execution.execute(request, snapshot, episode_id)
 
         if (
             self.plan_authority is not None

@@ -24,6 +24,11 @@ behavior-history contracts. It does not declare the deprecated SDL scoring chain
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aptl.backends.lilrae_participant_execution import LilraeParticipantBinding
+
 from raes_backend_protocols.capabilities import (
     BackendManifest,
     EvaluatorCapabilities,
@@ -290,13 +295,10 @@ _REALIZATION_ENVELOPE = build_aptl_realization_envelope(_PROVISIONER)
 # What APTL realizes from a provisioning plan, and how. APTL matches declared
 # capabilities against its provisioner support and discloses the result through
 # the backend-manifest / operation-status / runtime-snapshot contracts. The
-# constrained-kind set is intentionally narrower than the provisioner vocabulary:
-# RAES 0.21.x publishes runtime concern paths for node type, OS family, and
-# content type, but only OS family is currently expressible by APTL's regression
-# scenario as a constrained (processor-derived) requirement. Node/content exact
-# requirements are covered by ``declared-capability-match``; account features are
-# realized through the account provider's typed read-after-write path but are not
-# yet a RAES runtime realization concern.
+# constrained-kind set is intentionally narrower than the provisioner vocabulary.
+# Parameterized OS, package and local identity declarations resolve before
+# materialization and use the same independent readback as literal declarations.
+# Node/content exact requirements use ``declared-capability-match``.
 #
 # ``artifact_mechanisms`` declares which RAES artifact-satisfaction routes APTL
 # can admit (ADR-050, RAES ADR-098). It is deliberately narrow: a mechanism is
@@ -320,7 +322,14 @@ _REALIZATION_SUPPORT = (
     RealizationSupportDeclaration(
         domain="runtime-realization",
         support_mode=RealizationSupportMode.OPEN_REALIZATION,
-        supported_constraint_kinds=frozenset({"os-family", "source-artifact"}),
+        supported_constraint_kinds=frozenset(
+            {
+                "os-family",
+                "source-artifact",
+                "runtime-packages",
+                "runtime-local-identity",
+            }
+        ),
         # ``service-search-index-schema-materialization`` (ADR-088, #889) is an
         # exact requirement kind APTL genuinely realizes through the native ES
         # materializer and reads back through the service's native interface, so
@@ -422,6 +431,7 @@ def create_aptl_manifest(
     registry: CollectorRegistry | None = None,
     *,
     participant_inject_delivery: bool = False,
+    autonomous_bindings: tuple[LilraeParticipantBinding, ...] = (),
 ) -> BackendManifest:
     """Return APTL's canonical full remote-control-plane backend manifest.
 
@@ -443,6 +453,18 @@ def create_aptl_manifest(
             _SUPPORTED_CONTRACT_VERSIONS,
             _PARTICIPANT_RUNTIME,
             enabled=participant_inject_delivery,
+        )
+    )
+    from aptl.backends._lilrae_participant_capabilities import (
+        autonomous_manifest_options,
+    )
+
+    supported_contract_versions, participant_runtime, capability_options = (
+        autonomous_manifest_options(
+            supported_contract_versions,
+            participant_runtime,
+            capability_options,
+            autonomous_bindings,
         )
     )
     if observation is not None:

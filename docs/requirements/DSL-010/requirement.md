@@ -21,6 +21,11 @@ Extends DSL-008. APTL on origin/main already realizes ACES SDL onto real Docker 
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/lilrae_participant_execution.py` (Exact autonomous native bindings under RAES admission and settlement)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/_lilrae_participant_capabilities.py` (Installed autonomous capability declarations)
+- TESTS → TEST `tests/test_lilrae_concurrent_participants.py` (Concurrent admission, peer isolation and terminal outcomes)
+- TESTS → TEST `tests/test_lilrae_participant_cancellation.py` (Owned process cancellation and peer preservation)
+
 - IMPLEMENTS → CODE_FILE `src/aptl/cli/lab.py` (aptl lab CLI surface for participant runtime)
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/_live_gate_checks.py` (Live gate checks supporting participant-action conformance)
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/curated_live_proof.py` (Curated live proof driver for participant runtime)
