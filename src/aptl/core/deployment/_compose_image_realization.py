@@ -19,10 +19,10 @@ from aptl.core.deployment._docker_image_identity import (
     is_exact_image_reference,
     local_image_state,
 )
+from aptl.core.deployment._companion_realization import companion_images
 from aptl.core.deployment.realization import (
     DeploymentImageRealization,
     DeploymentRealizationSpec,
-    companion_images,
 )
 from aptl.core.lab_types import LabResult
 

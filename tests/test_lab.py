@@ -5786,7 +5786,8 @@ class TestGenerateSocCertsStep:
 
         result = _step_generate_soc_certs(self._ctx(tmp_path, soc=True))
 
-        assert result is not None and result.success is False
+        assert result is not None
+        assert result.success is False
         assert result.error == "MISP server TLS staging failed."
 
     def test_returns_failed_labresult_on_cert_generation_failure(
@@ -5969,6 +5970,7 @@ def test_a_failed_apply_still_closes_the_run_runtime(tmp_path):
     result = _interpret_start_outcome(ctx, outcome)
     _close_run_runtime(ctx)
 
-    assert result is not None and not result.success
+    assert result is not None
+    assert not result.success
     assert ctx.raes_outcome is None
     runtime.close.assert_called_once_with()

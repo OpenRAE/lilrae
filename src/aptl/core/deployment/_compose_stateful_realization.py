@@ -271,10 +271,8 @@ class ComposeStatefulRealizationMixin(ComposeStatefulReadinessMixin):
                 except (OSError, ValueError) as exc:
                     failure = LabResult(
                         success=False,
-                        error=(
-                            "Rendered config materialization failed: "
-                            f"{type(exc).__name__}."
-                        ),
+                        error="Rendered config materialization failed: "
+                        f"{type(exc).__name__}.",
                     )
         if failure is None and (output is None or not output.is_file()):
             failure = LabResult(
@@ -314,9 +312,7 @@ class ComposeStatefulRealizationMixin(ComposeStatefulReadinessMixin):
                 _write_artifact_environment_files(artifact, scenario_root, by_service)
             except (OSError, ValueError) as exc:
                 # A refusal names the variable or the unsafe target, never a value.
-                reason = (
-                    f": {exc}" if isinstance(exc, EnvironmentDeliveryRefused) else "."
-                )
+                reason = f": {exc}" if isinstance(exc, EnvironmentDeliveryRefused) else "."
                 failure = LabResult(
                     success=False,
                     error=f"Generated artifact {artifact.address} environment delivery failed{reason}",

@@ -566,9 +566,12 @@ def _patch_runtime(mocker, manager_cls):
 
     mocker.patch("aptl.backends.raes.RuntimeManager", manager_cls)
 
-    def _plan(target, scenario, snapshot=None, *, parameters=None, artifact_availability=None, **_):
+    def _plan(target, scenario, options):
+        parameters = options.parameters
         return manager_cls(target).plan(
-            scenario, parameters=parameters, artifact_availability=artifact_availability
+            scenario,
+            parameters=dict(parameters) if parameters is not None else None,
+            artifact_availability=options.artifact_availability,
         )
 
     mocker.patch("aptl.backends.raes_planning_compat.plan_for_target", _plan)

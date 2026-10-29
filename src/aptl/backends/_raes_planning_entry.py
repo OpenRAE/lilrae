@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from raes_contracts.artifact_requirements import ArtifactAvailabilityContext
 from raes_contracts.realization_profiles import PlanProfileAuthority
+from raes_contracts.planning import PlanScope
 from raes_contracts.runtime_state import RuntimeSnapshot
 
 if TYPE_CHECKING:
@@ -24,6 +25,7 @@ class AptlPlanningOptions:
     profile: str | None = None
     artifact_availability: ArtifactAvailabilityContext | None = None
     profile_authority: PlanProfileAuthority | None = None
+    run_scope: PlanScope | None = None
 
 
 def plan_aptl_scenario(
@@ -38,15 +40,4 @@ def plan_aptl_scenario(
     # for apply (OpenRAE/rae#1660).
     from aptl.backends.raes_planning_compat import plan_for_target
 
-    selected = options or AptlPlanningOptions()
-    return plan_for_target(
-        target,
-        scenario,
-        selected.snapshot,
-        parameters=(
-            dict(selected.parameters) if selected.parameters is not None else None
-        ),
-        profile=selected.profile,
-        artifact_availability=selected.artifact_availability,
-        profile_authority=selected.profile_authority,
-    )
+    return plan_for_target(target, scenario, options or AptlPlanningOptions())

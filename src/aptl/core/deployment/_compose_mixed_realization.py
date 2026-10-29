@@ -14,10 +14,8 @@ from aptl.core.deployment._compose_base_container_realization import (
 from aptl.core.deployment._compose_runtime_orchestration import (
     realization_has_docker_authority,
 )
-from aptl.core.deployment.realization import (
-    DeploymentRealizationSpec,
-    with_companion_services,
-)
+from aptl.core.deployment._companion_realization import with_companion_services
+from aptl.core.deployment.realization import DeploymentRealizationSpec
 from aptl.core.deployment.observation import DeploymentObservationContext
 from aptl.core.lab_types import LabResult
 

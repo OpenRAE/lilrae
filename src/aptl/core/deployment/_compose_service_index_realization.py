@@ -24,10 +24,8 @@ from aptl.core.deployment._service_index_materialization import (
     materialize_search_index_schema,
     native_index_name,
 )
-from aptl.core.deployment.realization import (
-    DeploymentRealizationSpec,
-    with_companion_services,
-)
+from aptl.core.deployment._companion_realization import with_companion_services
+from aptl.core.deployment.realization import DeploymentRealizationSpec
 from aptl.core.lab_types import LabResult
 
 # Why APTL refused an existing index, keyed by (reason, adopted). An index that

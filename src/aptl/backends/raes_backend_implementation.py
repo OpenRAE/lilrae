@@ -33,11 +33,13 @@ from aptl.backends._raes_backend_generated_artifacts import (
     selected_generated_artifacts as _selected_generated_artifacts,
 )
 from aptl.backends.raes_diagnostics import diagnostic
-from aptl.core.deployment.realization import (
+from aptl.core.deployment._companion_realization import (
     DeploymentCompanionRealization,
+    companion_service_name,
+)
+from aptl.core.deployment.realization import (
     DeploymentGeneratedArtifactRealization,
     DeploymentImageRealization,
-    companion_service_name,
 )
 
 if TYPE_CHECKING:

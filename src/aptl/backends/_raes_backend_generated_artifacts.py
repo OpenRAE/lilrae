@@ -28,12 +28,12 @@ from aptl.core.deployment._misp_server_tls import (
     MISP_SERVER_TLS_PROFILE,
     MISP_WEB_COMPANION_ROLE,
 )
+from aptl.core.deployment._companion_realization import companion_service_name
 from aptl.core.deployment.realization import (
     DeploymentGeneratedArtifactEnvironmentConsumer,
     DeploymentGeneratedArtifactOutput,
     DeploymentGeneratedArtifactRealization,
     DeploymentStatefulConsumer,
-    companion_service_name,
 )
 
 _MISP_CACHE_BINDING_ROLE = "data_source"

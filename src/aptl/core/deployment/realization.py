@@ -7,6 +7,11 @@ from typing import TYPE_CHECKING, Literal
 
 from aptl.runtime_authority import DeploymentDockerAuthorityAdmission
 from aptl.core.scenario_bundle import PackIdentity
+from aptl.core.deployment._companion_realization import (
+    DeploymentCompanionRealization,
+    companion_container_name,
+)
+from aptl.core.deployment._realization_access import DeploymentCaptureApparatus
 from aptl.core.deployment._realization_primitives import (
     AclAction as _AclAction,
     AclDirection as _AclDirection,
@@ -82,33 +87,6 @@ class DeploymentPublishedPort(object):
             "host_ip": self.host_ip,
             "host_port": self.host_port,
         }
-
-
-@dataclass(frozen=True)
-class DeploymentCompanionRealization(object):
-    """One backend-owned container that joins its owner node's network namespace.
-
-    The owner keeps the node's network identity, addresses, and published
-    ports; the companion only serves part of the node's declared surface. Its
-    ``image.service_name`` is the companion's Compose service.
-    """
-
-    role: str
-    image: DeploymentImageRealization
-    environment: tuple[tuple[str, str], ...] = ()
-    tmpfs: tuple[str, ...] = ()
-
-
-def companion_service_name(owner_service: str, role: str) -> str:
-    """Return the Compose service name of one owner node's companion."""
-
-    return f"{owner_service}-{role}"
-
-
-def companion_container_name(owner_container: str, role: str) -> str:
-    """Return the semantic container name of one owner node's companion."""
-
-    return f"{owner_container}-{role}"
 
 
 @dataclass(frozen=True)
@@ -459,55 +437,6 @@ class DeploymentPersistentVolumeRealization(object):
 
 
 @dataclass(frozen=True)
-class DeploymentCaptureApparatus(object):
-    """One scope-admitted backend observer that deployment must realize."""
-
-    apparatus_id: str
-    service_name: str
-    container_name: str
-    target_refs: tuple[str, ...]
-    governing_scopes: tuple[str, ...]
-    environment_visible: bool
-    observer_effects: tuple[str, ...]
-
-    def details(self) -> dict[str, object]:
-        return {
-            "apparatus_id": self.apparatus_id,
-            "service_name": self.service_name,
-            "container_name": self.container_name,
-            "target_refs": list(self.target_refs),
-            "governing_scopes": list(self.governing_scopes),
-            "environment_visible": self.environment_visible,
-            "observer_effects": list(self.observer_effects),
-        }
-
-
-@dataclass(frozen=True)
-class DeploymentOperatorAccess(object):
-    """One declared operator interactive access the backend must make reachable.
-
-    A scenario declares that a participant reaches a node interactively
-    (``agents.<agent>.interactive_access.<id>``). That is an in-world fact; how
-    an operator on the host actually reaches an internal node is the backend's
-    choice under open realization, and the backend must make it true or refuse
-    admission (issue #1006).
-    """
-
-    access_id: str
-    agent: str
-    target_node: str
-    channel: str
-
-    def details(self) -> dict[str, object]:
-        return {
-            "access_id": self.access_id,
-            "agent": self.agent,
-            "target_node": self.target_node,
-            "channel": self.channel,
-        }
-
-
-@dataclass(frozen=True)
 class DeploymentRealizationSpec(object):
     """Portable input for typed deployment backend realization."""
 
@@ -531,34 +460,3 @@ class DeploymentRealizationSpec(object):
     )
     # Preserve RAES's resolved authority for pre-mutation binding admission.
     realization_authority: tuple[ResolvedRealizationAuthority, ...] = ()
-
-
-def companion_images(
-    spec: DeploymentRealizationSpec,
-) -> tuple[DeploymentImageRealization, ...]:
-    """Return every companion image the realization must obtain and verify."""
-
-    return tuple(
-        companion.image
-        for node in spec.nodes
-        for companion in node.backend_companions
-    )
-
-
-def with_companion_services(
-    spec: DeploymentRealizationSpec, services: tuple[str, ...]
-) -> tuple[str, ...]:
-    """Return ``services`` plus the companions of every named owner service.
-
-    Compose starts the ``depends_on`` closure of a named service, never its
-    dependents, and a companion depends on its owner's network namespace. A
-    phased start that names an owner must therefore name its companions too.
-    """
-
-    added = tuple(
-        companion.image.service_name
-        for node in spec.nodes
-        if node.service_name in services
-        for companion in node.backend_companions
-    )
-    return tuple(sorted({*services, *added}))

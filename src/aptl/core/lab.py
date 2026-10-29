@@ -478,11 +478,9 @@ def _configured_backend(
         # The refusal carries the reason to the caller, which reports it.
         return None, LabResult(
             success=False,
-            error=(
-                f"[lifecycle-invalid-configuration] Lab {command} blocked: "
-                f"invalid deployment settings in aptl.json: {exc}. "
-                "Repair aptl.json and retry."
-            ),
+            error=f"[lifecycle-invalid-configuration] Lab {command} blocked: "
+            f"invalid deployment settings in aptl.json: {exc}. "
+            "Repair aptl.json and retry.",
         )
 
 
@@ -756,11 +754,9 @@ def _stop_recovery_configuration(
             if backend is None:
                 failure = LabResult(
                     success=False,
-                    error=(
-                        f"[lifecycle-invalid-configuration] Lab {command} blocked: "
-                        "invalid configuration; refusing to guess the deployment "
-                        "project identity. Repair aptl.json and retry."
-                    ),
+                    error=f"[lifecycle-invalid-configuration] Lab {command} blocked: "
+                    "invalid configuration; refusing to guess the deployment "
+                    "project identity. Repair aptl.json and retry.",
                 )
     if failure is None and backend is None:
         backend, failure = _configured_backend(search_dir, config, command=command)
@@ -773,10 +769,8 @@ def _stop_recovery_configuration(
         except (OSError, ValueError):
             failure = LabResult(
                 success=False,
-                error=(
-                    f"[lifecycle-state-invalid] Lab {command} blocked: invalid "
-                    "operator-group recovery state."
-                ),
+                error=f"[lifecycle-state-invalid] Lab {command} blocked: invalid "
+                "operator-group recovery state.",
             )
         else:
             profiles = (
@@ -1158,11 +1152,9 @@ def lab_status(
             except (OSError, ValueError):
                 return LabStatus(
                     running=False,
-                    error=(
-                        "[lifecycle-invalid-configuration] Lab status blocked: "
-                        "invalid configuration; refusing to guess the deployment "
-                        "project identity."
-                    ),
+                    error="[lifecycle-invalid-configuration] Lab status blocked: "
+                    "invalid configuration; refusing to guess the deployment "
+                    "project identity.",
                 )
 
     return backend.status()
@@ -1695,11 +1687,10 @@ def _select_start_source(ctx: _LabStartContext) -> StartStageResult:
         bundle = resolve_scenario_bundle(ctx.project_dir, ctx.scenario_path, config)
         provider_selection = select_scenario_startup(bundle)
     except (OSError, ValueError, EnvPackError, ScenarioStartupProviderError) as exc:
-        error = (
-            "Scenario startup adapter selection failed."
-            if isinstance(exc, ScenarioStartupProviderError)
-            else f"Scenario selection failed: {redact(str(exc))}"
-        )
+        if isinstance(exc, ScenarioStartupProviderError):
+            error = "Scenario startup adapter selection failed."
+        else:
+            error = f"Scenario selection failed: {redact(str(exc))}"
         return StartStageResult(error=error)
     return StartStageResult(
         value=StartSelection(
@@ -2081,10 +2072,8 @@ def _load_admitted_start_surface(
     except (EnvPackError, SDLError, OSError, TypeError, ValueError) as exc:
         failure = LabResult(
             success=False,
-            error=(
-                "RAES scenario admission failed before artifact preparation: "
-                f"{redact(str(exc))}"
-            ),
+            error="RAES scenario admission failed before artifact preparation: "
+            f"{redact(str(exc))}",
         )
     ctx.admission_seconds = monotonic() - admission_started
     if failure is None and admitted is not None:
@@ -3055,10 +3044,8 @@ def _step_capture_snapshot(ctx: _LabStartContext) -> LabResult | None:
             impact=DiagnosticImpact.TELEMETRY,
             severity=DiagnosticSeverity.WARNING,
             message="Range snapshot capture failed; run inventory will be incomplete",
-            operator_action=(
-                "Inspect lab logs; re-run `lilrae lab status -j` to capture "
-                "inventory manually once the deployment backend is reachable"
-            ),
+            operator_action="Inspect lab logs; re-run `lilrae lab status -j` to capture "
+            "inventory manually once the deployment backend is reachable",
         )
         return None
     # Store snapshot for run record step (REP-001).
@@ -3228,10 +3215,8 @@ def _step_write_run_record(ctx: _LabStartContext) -> LabResult | None:
             impact=DiagnosticImpact.TELEMETRY,
             severity=DiagnosticSeverity.WARNING,
             message="Run reproducibility record could not be written; run archive will lack REP-001 record",
-            operator_action=(
-                "Inspect lab logs; the lab is running but the run archive "
-                "will be missing its reproducibility record"
-            ),
+            operator_action="Inspect lab logs; the lab is running but the run archive "
+            "will be missing its reproducibility record",
         )
     return None
 
@@ -3551,7 +3536,7 @@ def _step_build_mcps(ctx: _LabStartContext) -> LabResult | None:
             impact=DiagnosticImpact.CAPABILITY,
             severity=DiagnosticSeverity.WARNING,
             message="MCP build could not run; see lab logs",
-            operator_action=("Inspect mcp/build-all-mcps.sh permissions and tooling"),
+            operator_action="Inspect mcp/build-all-mcps.sh permissions and tooling",
         )
     return None
 
@@ -3782,7 +3767,7 @@ def _execute_seed_soc_script(
             impact=DiagnosticImpact.CAPABILITY,
             severity=DiagnosticSeverity.WARNING,
             message="SOC seeding could not run; see lab logs",
-            operator_action=("Inspect the selected scenario seed assets and tooling"),
+            operator_action="Inspect the selected scenario seed assets and tooling",
         )
 
 
@@ -4044,13 +4029,9 @@ def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
             step="mcp_config_sync",
             impact=DiagnosticImpact.CAPABILITY,
             severity=DiagnosticSeverity.WARNING,
-            message=(
-                "MCP client config not refreshed; MCP servers may not "
-                "authenticate without manual key wiring"
-            ),
-            operator_action=(
-                "Inspect .mcp.json env blocks against .env after a fresh lab start"
-            ),
+            message="MCP client config not refreshed; MCP servers may not "
+            "authenticate without manual key wiring",
+            operator_action="Inspect .mcp.json env blocks against .env after a fresh lab start",
         )
     if os.environ.get("APTL_SEAT_DESKTOP_HANDOFF") == "1":
         try:
@@ -4728,9 +4709,7 @@ def _run_lab_start_steps(
                 ctx,
                 LabResult(
                     success=False,
-                    error=(
-                        f"Lab orchestration contract violated at step '{step.__name__}'"
-                    ),
+                    error=f"Lab orchestration contract violated at step '{step.__name__}'",
                     outcome=StartupOutcome.FAILED,
                     diagnostics=list(ctx.diagnostics),
                     execution_boundary=ctx.execution_boundary,

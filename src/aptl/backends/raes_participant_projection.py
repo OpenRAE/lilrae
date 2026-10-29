@@ -110,6 +110,27 @@ def project_participant_turn(
     )
 
 
+def _initial_visible_content_refs(boundary: object) -> tuple[str, ...]:
+    """Return the content addresses a behavior sees in its initial view.
+
+    raes 9 maps each canonical address to its disposition, and checks the
+    projected refs against those canonical addresses.
+    """
+
+    initial_relation = boundary.view_relation_timeline[0]
+    view_relation = (
+        initial_relation.get("view_relation", {})
+        if isinstance(initial_relation, Mapping)
+        else initial_relation.view_relation
+    )
+    return tuple(
+        ref
+        for ref, disposition in view_relation.items()
+        if ref.startswith("provision.content.")
+        and disposition in _PARTICIPANT_VISIBLE_DISPOSITIONS
+    )
+
+
 def _resolve_turn_context(
     runtime_model: object,
     runtime_snapshot: object,
@@ -145,20 +166,8 @@ def _resolve_turn_context(
     decision_epoch = sum(
         event.event_type.value == "observation_emitted" for event in history
     )
-    boundary = runtime_model.observation_boundaries[boundary_address]
-    initial_relation = boundary.view_relation_timeline[0]
-    view_relation = (
-        initial_relation.get("view_relation", {})
-        if isinstance(initial_relation, Mapping)
-        else initial_relation.view_relation
-    )
-    # raes 9 maps each canonical address to its disposition, and checks the
-    # projected refs against those canonical addresses.
-    visible_context_refs = tuple(
-        ref
-        for ref, disposition in view_relation.items()
-        if ref.startswith("provision.content.")
-        and disposition in _PARTICIPANT_VISIBLE_DISPOSITIONS
+    visible_context_refs = _initial_visible_content_refs(
+        runtime_model.observation_boundaries[boundary_address]
     )
     if not visible_context_refs:
         raise ValueError("participant behavior has no visible task context")

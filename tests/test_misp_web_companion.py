@@ -156,7 +156,7 @@ def test_static_compose_runs_the_same_misp_web_tier(realization):
 
 
 def test_phased_starts_and_image_pulls_include_the_companion(realization):
-    from aptl.core.deployment.realization import (
+    from aptl.core.deployment._companion_realization import (
         companion_images,
         with_companion_services,
     )

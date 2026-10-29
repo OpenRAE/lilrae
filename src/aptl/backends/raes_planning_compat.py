@@ -351,13 +351,7 @@ def target_planning_compatibility(target: RuntimeTarget) -> object | None:
 def plan_for_target(
     target: RuntimeTarget,
     scenario: object,
-    snapshot: RuntimeSnapshot | None = None,
-    *,
-    parameters: dict[str, object] | None = None,
-    profile: str | None = None,
-    artifact_availability: ArtifactAvailabilityContext | None = None,
-    profile_authority: PlanProfileAuthority | None = None,
-    run_scope: PlanScope | None = None,
+    options: AptlPlanningOptions,
 ) -> ExecutionPlan:
     """Compile once, adjust the identified pack, then invoke the RAES planner once.
 
@@ -366,11 +360,13 @@ def plan_for_target(
     created for apply.
     """
 
+    parameters = options.parameters
+    run_scope = options.run_scope
     model = compile_scenario_runtime_model(
         scenario,
-        parameters=parameters,
-        profile=profile,
-        profile_authority=profile_authority,
+        parameters=dict(parameters) if parameters is not None else None,
+        profile=options.profile,
+        profile_authority=options.profile_authority,
     )
     model = apply_planning_compatibility(
         model, target_planning_compatibility(target), scenario=scenario
@@ -385,9 +381,9 @@ def plan_for_target(
     execution_plan = plan(
         model,
         target.manifest,
-        snapshot if snapshot is not None else RuntimeSnapshot(),
+        options.snapshot if options.snapshot is not None else RuntimeSnapshot(),
         scope=scope,
-        artifact_availability=artifact_availability,
+        artifact_availability=options.artifact_availability,
         profile_context=getattr(target.provisioner, "domain_profile_context", None),
     )
     from aptl.backends.raes_participant_runtime import AptlParticipantRuntime
@@ -446,12 +442,14 @@ class AptlRuntimeManager(_RaesRuntimeManager):
         return plan_for_target(
             self._target,
             scenario,
-            snapshot if snapshot is not None else self.snapshot,
-            parameters=parameters,
-            profile=profile,
-            artifact_availability=artifact_availability,
-            profile_authority=profile_authority,
-            run_scope=run_scope,
+            AptlPlanningOptions(
+                snapshot=snapshot if snapshot is not None else self.snapshot,
+                parameters=parameters,
+                profile=profile,
+                artifact_availability=artifact_availability,
+                profile_authority=profile_authority,
+                run_scope=run_scope,
+            ),
         )
 
 
