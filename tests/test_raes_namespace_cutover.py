@@ -42,12 +42,12 @@ def test_project_depends_on_exact_raes_release() -> None:
 
     project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
 
-    assert "raes==7.0.0" in project["project"]["dependencies"]
+    assert "raes==9.1.0" in project["project"]["dependencies"]
     assert all(
         not dependency.startswith("aces-sdl")
         for dependency in project["project"]["dependencies"]
     )
-    assert raes.__version__ == "7.0.0"
+    assert raes.__version__ == "9.1.0"
 
 
 def _source_and_test_imports_of(import_roots: frozenset[str]) -> list[str]:

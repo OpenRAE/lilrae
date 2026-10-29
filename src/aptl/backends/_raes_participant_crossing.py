@@ -213,3 +213,26 @@ def _delivery_crossing_policies(
             valid_until_order=valid_until,
         )
     return policies
+
+
+def participant_runtime_options(
+    plan: object | None, target: object
+) -> dict[str, object]:
+    """Return the participant configuration of the one runtime for a run.
+
+    RAES fixes participant behavior and crossing policy when the runtime is
+    built, and the same runtime later delivers every participant turn
+    (OpenRAE/rae#1660). A run without participant deliveries needs none.
+    """
+
+    turns = tuple(getattr(plan, "turns", ()) or ())
+    behavior = getattr(plan, "behavior_specifications", None)
+    if not turns or not behavior:
+        return {}
+    return {
+        "behavior_specifications": behavior,
+        "crossing_policy_resolver": _ParticipantDeliveryCrossingPolicyResolver(
+            turns, target, behavior
+        ),
+        "enforce_final_sink_flow_control": False,
+    }

@@ -256,20 +256,6 @@ def test_coordinator_stage_result_carries_diagnostics_and_fatal_error(
     assert result.diagnostics[0].message == "bounded warning"
 
 
-def test_tiny_pack_cannot_trigger_legacy_soc_retry(tmp_path: Path) -> None:
-    from aptl.core.lab import _LabStartContext, _backend_retry_callback
-
-    ctx = _LabStartContext(project_dir=tmp_path, skip_seed=False)
-    ctx.admitted_surface = AdmittedStartSurface(
-        bundle_root=tmp_path,
-        source_kind=ScenarioSourceKind.ENV_PACK,
-        selected_profiles=("soc",),
-        stateful_artifact_ownership=frozenset(),
-    )
-
-    assert _backend_retry_callback(ctx) is None
-
-
 def test_non_wazuh_adapter_can_bind_alias_without_stack_credentials(
     tmp_path: Path,
 ) -> None:

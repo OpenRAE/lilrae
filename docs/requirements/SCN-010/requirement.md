@@ -21,6 +21,9 @@ UPDATED 2026-10-12: b4b9c04d (#757) removed the aptl aces-inventory command and 
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/_raes_runtime_target.py` (Scenario runtime target construction)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/_raes_manifest_realization.py` (Scenario realization capabilities)
+
 - IMPLEMENTS → GITHUB_ISSUE `330` (SCN-010 inventory: webapp container (steady-state asset spec))
 - IMPLEMENTS → PULL_REQUEST `361` (Add webapp ACES inventory)
 - DOCUMENTS → GITHUB_ISSUE `317` (SCN-010: ACES TechVault cutover issue series and validation gates)

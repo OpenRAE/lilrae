@@ -3507,7 +3507,12 @@ class TestSeedNamedVolumes:
             nonlocal created
             if cmd[:3] == ["docker", "volume", "inspect"]:
                 if not created:
-                    return MagicMock(returncode=1, stdout="", stderr="missing")
+                    return MagicMock(
+                        returncode=1,
+                        stdout="",
+                        stderr="Error response from daemon: get "
+                        "test_suricata_config_seed: no such volume",
+                    )
                 return MagicMock(
                     returncode=0,
                     stdout=json.dumps(

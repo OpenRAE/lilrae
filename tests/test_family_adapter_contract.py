@@ -998,7 +998,7 @@ def test_family_start_rejects_wrong_archive_run_before_apply(monkeypatch, family
     )
     monkeypatch.setattr(
         raes,
-        "_apply_with_backend_retry",
+        "_run_execution_plan",
         lambda *args: pytest.fail("must not apply with the wrong run identity"),
     )
     outcome = raes.start_raes_scenario(

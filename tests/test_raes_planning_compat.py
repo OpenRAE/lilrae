@@ -69,7 +69,9 @@ def test_authored_fields_are_indexed_once_and_refreshed_between_operations(tmp_p
     paths = CountedMap({"nodes.vm.runtime.applications[0].name": object()})
     scenario = SimpleNamespace(explicitness=paths, nodes={})
     requirements = (
-        _requirement("runtime-applications", field_path="nodes.vm.runtime.applications"),
+        _requirement(
+            "runtime-applications", field_path="nodes.vm.runtime.applications"
+        ),
         _requirement("runtime-applications", field_path="nodes.vm.runtime.application"),
         _requirement("runtime-applications", field_path="nodes.vm.runtime.absent"),
     )
@@ -99,7 +101,7 @@ def _bundle(tmp_path: Path, *, pack_id: str = "techvault") -> ScenarioBundle:
         source_kind=ScenarioSourceKind.ENV_PACK,
         pack_identity=PackIdentity(
             pack_id=pack_id,
-            pack_version="0.1.2",
+            pack_version="0.1.3",
             set_digest=TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST,
         ),
     )
@@ -434,23 +436,21 @@ def test_aptl_planning_applies_compatibility_before_raes_planner(
     target = SimpleNamespace(
         name="aptl-full-remote-control-plane",
         manifest=manifest,
-        provisioner=SimpleNamespace(domain_profile_context=None),
+        provisioner=SimpleNamespace(
+            domain_profile_context=None,
+            planning_compatibility=SimpleNamespace(
+                decision=compatibility_provider.resolve(None)  # type: ignore[arg-type]
+            ),
+        ),
+        participant_runtime=None,
     )
 
-    bundle = _bundle(tmp_path)
-    manager = object.__new__(AptlRuntimeManager)
-    manager._target = target
-    manager._snapshot = RuntimeSnapshot()
-    manager._aptl_bundle = bundle
-    manager._aptl_planning_compatibility = compatibility_provider.resolve(None)  # type: ignore[arg-type]
-
+    # Planning needs no runtime owner (OpenRAE/rae#1660).
     result = plan_aptl_scenario(
         target=target,
-        bundle=bundle,
         scenario=object(),
         options=raes_planning_compat.AptlPlanningOptions(
             artifact_availability="availability",
-            runtime_manager=manager,
         ),
     )
 
@@ -514,9 +514,11 @@ def test_admitted_target_reuses_one_planning_compatibility_resolution(
         distribution_version="1.0.0",
         entry_point="techvault.aptl",
     )
+    from aptl.backends import _raes_runtime_target
+
     resolutions = []
     monkeypatch.setattr(
-        raes,
+        _raes_runtime_target,
         "resolve_target_planning_compatibility",
         lambda bundle, config: resolutions.append((bundle, config)) or selection,
     )
@@ -539,8 +541,6 @@ def test_admitted_target_reuses_one_planning_compatibility_resolution(
 
     assert resolutions == [(bundle, config)]
     assert target.provisioner.planning_compatibility is selection
-    assert planning_manager._aptl_planning_compatibility_selection is selection
-    assert apply_manager._aptl_planning_compatibility_selection is selection
     assert planning_manager._aptl_planning_compatibility is selection.decision
     assert apply_manager._aptl_planning_compatibility is selection.decision
 

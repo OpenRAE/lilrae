@@ -27,8 +27,14 @@ from aptl.core.deployment._misp_cache_credential import (
     MISP_CACHE_RUNTIME_CONFIG_DIR,
     MISP_CACHE_RUNTIME_CONFIG_PATH,
 )
+from aptl.core.deployment._misp_fastcgi_loopback import (
+    MISP_FASTCGI_LOOPBACK_LISTEN,
+    MISP_FASTCGI_STATUS_LISTEN,
+)
+from aptl.core.deployment._misp_server_tls import MISP_WEB_COMPANION_ROLE
 from aptl.backends._raes_backend_implementation_types import (
     BackendBaseSelection,
+    BackendCompanionContainer,
     BackendImplementationProfile,
     SemanticRuntimeSelector,
     environment as _environment,
@@ -145,16 +151,52 @@ BACKEND_IMPLEMENTATION_PROFILES = (
         },
     ),
     BackendImplementationProfile(
-        profile_id="misp-2.5.44",
+        profile_id="misp-2.5.50",
         account_provider=MISP,
         selector=SemanticRuntimeSelector(
-            "platform_applications", "product", "MISP", "2.5.44"
+            "platform_applications", "product", "MISP", "2.5.50"
         ),
         source_name="ghcr.io/misp/misp-docker/misp-core",
-        source_version="2.5.44",
+        source_version="2.5.50",
+        # PHP 8.4.27 (php8.4-fpm 8.4.27-1~deb13u1) fixes CVE-2026-109618 and
+        # CVE-2026-109619 (issue #1407).
         image_ref=(
             "ghcr.io/misp/misp-docker/misp-core@sha256:"
-            "0eaa4e423d5cd965b7b76aa5665e81d5c05a35bc46a4ffec2ca52e0cfe627e86"
+            "ae32e751870fc7dab8bea3a6d16c41a9045f20d724e243c3125c1910e109c848"
+        ),
+        provenance_refs=(
+            "docker://ghcr.io/misp/misp-docker/misp-core:v2.5.50",
+            "resolved:2026-10-25",
+        ),
+        # From misp-docker v2.5.46 the core image runs php-fpm only; the web
+        # tier is this companion. It joins the node's network namespace, binds
+        # the declared 443 listener as uid 101, and reaches FastCGI on loopback.
+        companions=(
+            BackendCompanionContainer(
+                role=MISP_WEB_COMPANION_ROLE,
+                source_name="ghcr.io/misp/misp-docker/misp-nginx",
+                source_version="2.5.50",
+                image_ref=(
+                    "ghcr.io/misp/misp-docker/misp-nginx@sha256:"
+                    "10d8a3af27f49ade99e8f4a8f75802f5d5c565eb38635ac110da9dfb84534c7e"
+                ),
+                provenance_refs=(
+                    "docker://ghcr.io/misp/misp-docker/misp-nginx:v2.5.50",
+                    "resolved:2026-10-25",
+                ),
+                environment=(
+                    ("NGINX_INTERNAL_HTTPS_PORT", "443"),
+                    ("NGINX_INTERNAL_HTTP_PORT", "80"),
+                    ("FASTCGI_LISTEN", MISP_FASTCGI_LOOPBACK_LISTEN),
+                    ("FASTCGI_LISTEN_STATUS", MISP_FASTCGI_STATUS_LISTEN),
+                ),
+                inherited_environment=("BASE_URL",),
+                tmpfs=(
+                    "/etc/nginx/conf.d:mode=0755,uid=101,gid=101",
+                    "/var/cache/nginx:mode=0755,uid=101,gid=101",
+                    "/tmp:mode=1777",
+                ),
+            ),
         ),
         runtime_selections={
             "runtime-environment": _environment(

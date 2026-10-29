@@ -93,6 +93,22 @@ stopping, or reconfiguring the capture subsystems.
 > ADR names auditd or process accounting as a sidecar-owned writer, a harvest
 > source, a test expectation, or a tamper-resistant witness.
 
+> **Update (2026-10-28, #1495):** the sidecar is granted `AUDIT_WRITE` again,
+> for a reason the 2026-06-20 design did not cover; it still runs no auditd.
+> Debian's sshd writes a kernel audit login record when it allocates a PTY for
+> an outer session, and drops the connection when the write is refused. Without
+> the capability, every participant session that requested a PTY failed to
+> open, while sessions without one worked. `AUDIT_CONTROL` and `SYS_PACCT` stay
+> withdrawn, and the 2026-10-12 update still holds for the audit and accounting
+> writers.
+
+> **Update (2026-10-29, #1407):** the sidecar is granted `KILL`. At lab stop,
+> `broker.py quiesce` runs as root and sends SIGTERM to each open broker
+> session. Those sessions run as uid `kali`, so the kernel refuses the signal
+> without the capability. A participant session that stayed open until lab
+> stop then made quiesce fail, and the run lost its required transcript. The
+> capability applies only to processes in the sidecar's own PID namespace.
+
 ## RPC Contract
 
 The sidecar RPC is a small local control protocol, not a file API.

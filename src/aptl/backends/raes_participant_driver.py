@@ -53,8 +53,9 @@ BOUNDED_PARTICIPANT_AGENCY_SOURCE_SHA256 = (
     "cdd16c1bb18c0e281030137719bf88f7a8df9c7f0b6288de28e4355501942252"
 )
 BOUNDED_PARTICIPANT_AGENCY_COMPILED_SHA256 = (
-    # RAES 7 adds an empty execution_policies mapping to the unchanged freeze.
-    "507af439891f2df808809326146f808ddb8c1c7e3ba0e66d81ef4ae0d695747e"
+    # raes 9.1.0 compiles the unchanged authored freeze to a new model; the
+    # source digest above does not change.
+    "57135bd5c38467849c68561b62dfabe0b7448631a68e3adda17b98601025afdd"
 )
 MAX_PARTICIPANT_PROPOSALS = 12
 MAX_ADMITTED_PARTICIPANT_ACTIONS = 8

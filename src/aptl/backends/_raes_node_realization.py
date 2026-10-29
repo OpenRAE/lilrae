@@ -207,6 +207,7 @@ def _backend_details(
                 compose_service
             ),
             "backend_generated_artifacts": (),
+            "backend_companions": (),
         }
     return {
         "backend_selected_concerns": implementation.selected_concerns,
@@ -217,6 +218,7 @@ def _backend_details(
         "backend_provider_parameters": implementation.provider_parameters,
         "backend_account_provider": implementation.account_provider,
         "backend_generated_artifacts": implementation.generated_artifacts,
+        "backend_companions": implementation.companions,
     }
 
 

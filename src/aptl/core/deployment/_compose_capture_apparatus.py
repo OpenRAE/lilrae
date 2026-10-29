@@ -13,7 +13,7 @@ import yaml
 
 from aptl.core.deployment._compose_node_generation import render_realization_compose
 from aptl.core.deployment.realization import DeploymentRealizationSpec
-from aptl.core.deployment.errors import BackendTimeoutError
+from aptl.core.deployment.errors import BackendTimeoutError, CaptureReconciliationError
 from aptl.core.deployment._compose_capture_config import (
     KALI_CAPTURE_CONTAINER,
     KALI_CAPTURE_SERVICE,
@@ -274,7 +274,12 @@ class ComposeCaptureApparatusMixin:
         *,
         expected_session_ids: Sequence[str],
     ) -> dict[str, object] | None:
-        """Export only when broker custody matches the owner-supplied census."""
+        """Export only when broker custody matches the owner-supplied census.
+
+        Returns ``None`` for an unsafe census or an unreadable export, and
+        raises :class:`CaptureReconciliationError` when the broker accepted a
+        different set of sessions than the census names.
+        """
 
         expected = tuple(expected_session_ids)
         payload = (
@@ -283,15 +288,21 @@ class ComposeCaptureApparatusMixin:
             else None
         )
         accepted = payload.get("accepted_session_ids") if payload is not None else None
-        reconciled = bool(
+        well_formed = bool(
             isinstance(accepted, list)
             and all(isinstance(value, str) for value in accepted)
             and len(accepted) == len(set(accepted))
-            and set(accepted) == set(expected)
         )
+        if well_formed and set(accepted) != set(expected):
+            raise CaptureReconciliationError(
+                census=len(expected),
+                accepted=len(accepted),
+                census_only=len(set(expected) - set(accepted)),
+                broker_only=len(set(accepted) - set(expected)),
+            )
         return (
             {**payload, "expected_session_ids": list(expected)}
-            if payload is not None and reconciled
+            if payload is not None and well_formed
             else None
         )
 
@@ -386,8 +397,10 @@ class ComposeCaptureApparatusMixin:
             else set()
         )
         expected_add = {
+            "CAP_AUDIT_WRITE",
             "CAP_CHOWN",
             "CAP_DAC_OVERRIDE",
+            "CAP_KILL",
             "CAP_NET_BIND_SERVICE",
             "CAP_SETGID",
             "CAP_SETUID",

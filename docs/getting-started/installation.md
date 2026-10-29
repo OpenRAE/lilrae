@@ -16,11 +16,11 @@ pipx install lilrae
 lilrae --version
 ```
 
-`lilrae` requires Python 3.12 or newer. On macOS, if pipx is bound to the
+`lilrae` requires Python 3.14 or newer. On macOS, if pipx is bound to the
 Command Line Tools Python 3.9, ask pipx to fetch a supported interpreter:
 
 ```shell
-pipx install --python 3.12 --fetch-missing-python lilrae
+pipx install --python 3.14 --fetch-missing-python lilrae
 ```
 
 pipx keeps the CLI outside the system Python environment, avoiding the PEP 668
@@ -142,7 +142,7 @@ you install one over the other, the second installation overwrites the files of
 the first. If you then remove either one, you can remove shared files. Always
 remove the installed distribution before you install the other one.
 
-`lilrae` requires Python 3.12 or newer, the same as `aptl-labs`.
+`lilrae` requires Python 3.14 or newer, the same as `aptl-labs`.
 
 ### Migrate A pipx Installation
 
@@ -152,7 +152,7 @@ remove the installed distribution before you install the other one.
     pipx uninstall aptl-labs
     ```
 
-2. Install the new package. Add `--python 3.12` if pipx uses an older
+2. Install the new package. Add `--python 3.14` if pipx uses an older
    interpreter. If you installed extras, add the same extras, for example
    `pipx install "lilrae[s3]"`:
 

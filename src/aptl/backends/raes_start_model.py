@@ -12,6 +12,7 @@ from aptl.core.lab_types import LabResult
 from aptl.core.experiment.capture_plan import CapturePlan, empty_capture_plan
 
 if TYPE_CHECKING:
+    from aptl.backends.lilrae_participant_execution import LilraeParticipantBinding
     from raes_processor.models import ExecutionPlan
     from raes_runtime.registry import RuntimeTarget
     from raes_runtime.manager import RuntimeManager
@@ -26,10 +27,11 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class ScenarioAdmissionSource:
-    """Preselected bundle and startup adapter reused by one admission."""
+    """Preselected scenario, startup adapter, and native participant bindings."""
 
     bundle: ScenarioBundle | None = None
     startup_selection: ScenarioStartupSelection | None = field(default=None, repr=False)
+    autonomous_bindings: tuple[LilraeParticipantBinding, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,5 @@ class AcesStartOutcome:
     manifest_payload: dict[str, Any] = field(default_factory=dict)
     pack_interaction_evidence: dict[str, Any] = field(default_factory=dict)
     scenario_runtime_selections: list[dict[str, str]] = field(default_factory=list)
-    retryable: bool = False
     capture_plan: CapturePlan | None = None
     runtime_manager: RuntimeManager | None = None

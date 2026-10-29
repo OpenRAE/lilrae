@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 from aptl.core.deployment.docker_compose import DockerComposeBackend
+from aptl.core.deployment.errors import CaptureReconciliationError
 from aptl.core.deployment.realization import (
     DeploymentCaptureApparatus,
     DeploymentGeneratedArtifactOutput,
@@ -177,8 +178,10 @@ def test_dormant_capture_apparatus_is_verified_without_open_ingress(tmp_path):
                     "ReadonlyRootfs": True,
                     "CapDrop": ["ALL"],
                     "CapAdd": [
+                        "CAP_AUDIT_WRITE",
                         "CAP_CHOWN",
                         "CAP_DAC_OVERRIDE",
+                        "CAP_KILL",
                         "CAP_NET_BIND_SERVICE",
                         "CAP_SETGID",
                         "CAP_SETUID",
@@ -208,8 +211,10 @@ def test_dormant_capture_apparatus_is_verified_without_open_ingress(tmp_path):
     assert observed is not None
     assert observed[0]["participant_ingress_state"] == ("dormant-awaiting-run-binding")
     assert observed[0]["linux_capabilities"] == [
+        "CAP_AUDIT_WRITE",
         "CAP_CHOWN",
         "CAP_DAC_OVERRIDE",
+        "CAP_KILL",
         "CAP_NET_BIND_SERVICE",
         "CAP_SETGID",
         "CAP_SETUID",
@@ -422,4 +427,13 @@ def test_capture_finalization_rejects_broker_inventory_mismatch(tmp_path):
     )
 
     assert backend.quiesce_capture_apparatus() is True
-    assert backend.export_capture_apparatus(expected_session_ids=("session-1",)) is None
+    with pytest.raises(CaptureReconciliationError) as raised:
+        backend.export_capture_apparatus(expected_session_ids=("session-1",))
+    counts = (
+        raised.value.census,
+        raised.value.accepted,
+        raised.value.census_only,
+        raised.value.broker_only,
+    )
+    assert counts == (1, 1, 1, 1)
+    assert "session-1" not in str(raised.value)

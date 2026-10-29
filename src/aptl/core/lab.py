@@ -26,6 +26,7 @@ import yaml
 
 from aptl.core.certs import ensure_ssl_certs
 from aptl.core.soc_ca import ensure_soc_certs
+from aptl.core.deployment._misp_server_tls import stage_misp_server_tls
 from aptl.core.config import AptlConfig, DeploymentConfig, find_config, load_config
 from aptl.core.contracts import (
     backend_is_initialized,
@@ -261,7 +262,6 @@ def start_raes_scenario(
     scenario_path: Path | None = None,
     *,
     run_target: AcesRunTarget | None = None,
-    before_backend_retry: Callable[[], None] | None = None,
     admitted: "AdmittedScenarioStart | None" = None,
 ) -> AcesStartOutcome | LabResult:
     """Lazy RAES handoff import for the public lab-start path.
@@ -269,8 +269,6 @@ def start_raes_scenario(
     ``run_target`` (resolved once per lab-start run, REP-001 / GAP 4) is
     threaded into the RAES handoff so orchestration persists workflow artifacts
     under the same run directory the run record is written to.
-    ``before_backend_retry`` lets the lifecycle prepare SOC dependencies while
-    the backend retains and reapplies the already admitted execution plan.
     ``admitted`` is the execution `_step_load_config` already admitted, so the
     handoff applies it instead of planning the scenario a second time (#951).
     """
@@ -287,7 +285,6 @@ def start_raes_scenario(
         backend,
         scenario_path=scenario_path,
         run_target=run_target,
-        before_backend_retry=before_backend_retry,
         admitted=admitted,
     )
 
@@ -481,11 +478,9 @@ def _configured_backend(
         # The refusal carries the reason to the caller, which reports it.
         return None, LabResult(
             success=False,
-            error=(
-                f"[lifecycle-invalid-configuration] Lab {command} blocked: "
-                f"invalid deployment settings in aptl.json: {exc}. "
-                "Repair aptl.json and retry."
-            ),
+            error=f"[lifecycle-invalid-configuration] Lab {command} blocked: "
+            f"invalid deployment settings in aptl.json: {exc}. "
+            "Repair aptl.json and retry.",
         )
 
 
@@ -759,11 +754,9 @@ def _stop_recovery_configuration(
             if backend is None:
                 failure = LabResult(
                     success=False,
-                    error=(
-                        f"[lifecycle-invalid-configuration] Lab {command} blocked: "
-                        "invalid configuration; refusing to guess the deployment "
-                        "project identity. Repair aptl.json and retry."
-                    ),
+                    error=f"[lifecycle-invalid-configuration] Lab {command} blocked: "
+                    "invalid configuration; refusing to guess the deployment "
+                    "project identity. Repair aptl.json and retry.",
                 )
     if failure is None and backend is None:
         backend, failure = _configured_backend(search_dir, config, command=command)
@@ -776,10 +769,8 @@ def _stop_recovery_configuration(
         except (OSError, ValueError):
             failure = LabResult(
                 success=False,
-                error=(
-                    f"[lifecycle-state-invalid] Lab {command} blocked: invalid "
-                    "operator-group recovery state."
-                ),
+                error=f"[lifecycle-state-invalid] Lab {command} blocked: invalid "
+                "operator-group recovery state.",
             )
         else:
             profiles = (
@@ -863,7 +854,11 @@ def _finalize_required_transcript_capture(
     )
     if failed and state is not None:
         try:
-            mark_transcript_finalization_failed(project_dir=project_dir, state=state)
+            mark_transcript_finalization_failed(
+                project_dir=project_dir,
+                state=state,
+                result=None if result is False else result,
+            )
         except Exception:
             log.error("Required transcript finalization failure could not be recorded")
     return (
@@ -1157,11 +1152,9 @@ def lab_status(
             except (OSError, ValueError):
                 return LabStatus(
                     running=False,
-                    error=(
-                        "[lifecycle-invalid-configuration] Lab status blocked: "
-                        "invalid configuration; refusing to guess the deployment "
-                        "project identity."
-                    ),
+                    error="[lifecycle-invalid-configuration] Lab status blocked: "
+                    "invalid configuration; refusing to guess the deployment "
+                    "project identity.",
                 )
 
     return backend.status()
@@ -1389,6 +1382,9 @@ class _LabStartContext(object):
     diagnostics: list[StartupDiagnostic] = field(default_factory=list)
     # REP-001: the exact RAES apply outcome and terminal range snapshot.
     raes_outcome: AcesStartOutcome | None = None
+    # The run's one RAES runtime, kept for a failed apply too, so the start
+    # always closes it (OpenRAE/rae#1660).
+    run_runtime: object | None = None
     snapshot: RangeSnapshot | None = None
     # The checked, post-mutation project inventory used by both the terminal
     # startup decision and the persisted range snapshot.
@@ -1691,11 +1687,10 @@ def _select_start_source(ctx: _LabStartContext) -> StartStageResult:
         bundle = resolve_scenario_bundle(ctx.project_dir, ctx.scenario_path, config)
         provider_selection = select_scenario_startup(bundle)
     except (OSError, ValueError, EnvPackError, ScenarioStartupProviderError) as exc:
-        error = (
-            "Scenario startup adapter selection failed."
-            if isinstance(exc, ScenarioStartupProviderError)
-            else f"Scenario selection failed: {redact(str(exc))}"
-        )
+        if isinstance(exc, ScenarioStartupProviderError):
+            error = "Scenario startup adapter selection failed."
+        else:
+            error = f"Scenario selection failed: {redact(str(exc))}"
         return StartStageResult(error=error)
     return StartStageResult(
         value=StartSelection(
@@ -2077,10 +2072,8 @@ def _load_admitted_start_surface(
     except (EnvPackError, SDLError, OSError, TypeError, ValueError) as exc:
         failure = LabResult(
             success=False,
-            error=(
-                "RAES scenario admission failed before artifact preparation: "
-                f"{redact(str(exc))}"
-            ),
+            error="RAES scenario admission failed before artifact preparation: "
+            f"{redact(str(exc))}",
         )
     ctx.admission_seconds = monotonic() - admission_started
     if failure is None and admitted is not None:
@@ -2590,6 +2583,10 @@ def _step_generate_soc_certs(ctx: _LabStartContext) -> LabResult | None:
                 success=False,
                 error=(f"SOC certificate generation failed: {cert_result.error}"),
             )
+        elif (tls_error := stage_misp_server_tls(ctx.project_dir)) is not None:
+            # The root Compose file's misp-web runs as uid 101 and reads this
+            # staged copy; the 0600 SOC CA key stays where it is.
+            result = LabResult(success=False, error=tls_error)
     return result
 
 
@@ -2674,43 +2671,6 @@ def _step_pull_images(ctx: _LabStartContext) -> LabResult | None:
     return None
 
 
-def _prepare_raes_backend_retry(ctx: _LabStartContext) -> None:
-    """Wait once, then invoke the admitted adapter's bounded repair hook."""
-
-    log.warning(
-        "Initial backend apply failed with a retryable outcome. Waiting 60s "
-        "and retrying the admitted plan..."
-    )
-    import time
-
-    time.sleep(60)
-    from aptl.backends.scenario_startup import (
-        StartupHook,
-        StartupHookContext,
-        run_startup_hook,
-    )
-
-    assert ctx.backend is not None
-    run_startup_hook(
-        ctx.start_selection.provider_selection if ctx.start_selection else None,
-        StartupHook.BEFORE_BACKEND_RETRY,
-        StartupHookContext(ctx.backend),
-    )
-
-
-def _backend_retry_callback(ctx: _LabStartContext) -> Callable[[], None] | None:
-    """Return generic retry preparation only for an admitted adapter hook."""
-
-    from aptl.backends.scenario_startup import ScenarioStartupPlan, StartupHook
-
-    plan = ctx.scenario_startup
-    if isinstance(plan, ScenarioStartupPlan) and (
-        StartupHook.BEFORE_BACKEND_RETRY in plan.startup_hooks
-    ):
-        return partial(_prepare_raes_backend_retry, ctx)
-    return None
-
-
 @_runtime_require(
     lambda ctx: config_is_loaded(ctx.config),
     description="config_is_loaded(ctx.config)",
@@ -2737,7 +2697,6 @@ def _step_start_containers(ctx: _LabStartContext) -> LabResult | None:
         scenario_path=ctx.scenario_path,
         admitted=ctx.admitted_start,
         run_target=AcesRunTarget(run_store=ctx.run_store, run_id=ctx.run_id),
-        before_backend_retry=_backend_retry_callback(ctx),
     )
     return _interpret_start_outcome(ctx, outcome)
 
@@ -2831,6 +2790,8 @@ def _interpret_start_outcome(
             disclosed_execution_boundary(ctx.backend) or ctx.execution_boundary
         )
 
+    if isinstance(outcome, AcesStartOutcome):
+        ctx.run_runtime = outcome.runtime_manager
     result: LabResult | None
     if isinstance(outcome, AcesStartOutcome) and outcome.lab_result.success:
         # Store the RAES start outcome for the run record step (REP-001).
@@ -3083,10 +3044,8 @@ def _step_capture_snapshot(ctx: _LabStartContext) -> LabResult | None:
             impact=DiagnosticImpact.TELEMETRY,
             severity=DiagnosticSeverity.WARNING,
             message="Range snapshot capture failed; run inventory will be incomplete",
-            operator_action=(
-                "Inspect lab logs; re-run `lilrae lab status -j` to capture "
-                "inventory manually once the deployment backend is reachable"
-            ),
+            operator_action="Inspect lab logs; re-run `lilrae lab status -j` to capture "
+            "inventory manually once the deployment backend is reachable",
         )
         return None
     # Store snapshot for run record step (REP-001).
@@ -3260,10 +3219,8 @@ def _step_write_run_record(ctx: _LabStartContext) -> LabResult | None:
             impact=DiagnosticImpact.TELEMETRY,
             severity=DiagnosticSeverity.WARNING,
             message="Run reproducibility record could not be written; run archive will lack REP-001 record",
-            operator_action=(
-                "Inspect lab logs; the lab is running but the run archive "
-                "will be missing its reproducibility record"
-            ),
+            operator_action="Inspect lab logs; the lab is running but the run archive "
+            "will be missing its reproducibility record",
         )
     return None
 
@@ -3583,7 +3540,7 @@ def _step_build_mcps(ctx: _LabStartContext) -> LabResult | None:
             impact=DiagnosticImpact.CAPABILITY,
             severity=DiagnosticSeverity.WARNING,
             message="MCP build could not run; see lab logs",
-            operator_action=("Inspect mcp/build-all-mcps.sh permissions and tooling"),
+            operator_action="Inspect mcp/build-all-mcps.sh permissions and tooling",
         )
     return None
 
@@ -3814,7 +3771,7 @@ def _execute_seed_soc_script(
             impact=DiagnosticImpact.CAPABILITY,
             severity=DiagnosticSeverity.WARNING,
             message="SOC seeding could not run; see lab logs",
-            operator_action=("Inspect the selected scenario seed assets and tooling"),
+            operator_action="Inspect the selected scenario seed assets and tooling",
         )
 
 
@@ -3967,6 +3924,7 @@ def _refresh_required_native_evidence(
                 execution_plan=execution_plan,
                 snapshot=final_snapshot,
                 evidence_records=evidence_records,
+                runtime_manager=getattr(ctx.raes_outcome, "runtime_manager", None),
             )
         except Exception:
             log.error("Required native scenario evidence evaluation failed")
@@ -4075,13 +4033,9 @@ def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
             step="mcp_config_sync",
             impact=DiagnosticImpact.CAPABILITY,
             severity=DiagnosticSeverity.WARNING,
-            message=(
-                "MCP client config not refreshed; MCP servers may not "
-                "authenticate without manual key wiring"
-            ),
-            operator_action=(
-                "Inspect .mcp.json env blocks against .env after a fresh lab start"
-            ),
+            message="MCP client config not refreshed; MCP servers may not "
+            "authenticate without manual key wiring",
+            operator_action="Inspect .mcp.json env blocks against .env after a fresh lab start",
         )
     if os.environ.get("APTL_SEAT_DESKTOP_HANDOFF") == "1":
         try:
@@ -4701,6 +4655,34 @@ def _orchestrate_lab_start_owned(
         progress=progress,
         teardown_on_failure=teardown_on_failure,
     )
+    try:
+        return _run_lab_start_steps(ctx, after_start)
+    finally:
+        _close_run_runtime(ctx)
+
+
+def _close_run_runtime(ctx: _LabStartContext) -> None:
+    """Close the run's one RAES runtime once the start has finished with it.
+
+    The runtime applied the plan, delivered participant turns, and evaluated
+    later evidence (OpenRAE/rae#1660). Closing drains it and releases its
+    claim; a close failure is logged and never replaces the start result.
+    """
+
+    runtime = ctx.run_runtime
+    if runtime is None:
+        return
+    try:
+        runtime.close()
+    except (RuntimeError, TimeoutError) as exc:
+        log.warning("The run's RAES runtime did not close cleanly: %s", exc)
+
+
+def _run_lab_start_steps(
+    ctx: _LabStartContext,
+    after_start: list[Callable[[], LabResult | None]] | None,
+) -> LabResult:
+    """Run the admitted start steps in order; the first failure ends the start."""
 
     for step in _LAB_START_STEPS:
         # Admission happens at _step_load_config. Select optional stages only
@@ -4731,9 +4713,7 @@ def _orchestrate_lab_start_owned(
                 ctx,
                 LabResult(
                     success=False,
-                    error=(
-                        f"Lab orchestration contract violated at step '{step.__name__}'"
-                    ),
+                    error=f"Lab orchestration contract violated at step '{step.__name__}'",
                     outcome=StartupOutcome.FAILED,
                     diagnostics=list(ctx.diagnostics),
                     execution_boundary=ctx.execution_boundary,

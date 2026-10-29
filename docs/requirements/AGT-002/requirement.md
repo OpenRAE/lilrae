@@ -21,4 +21,4 @@ WITHDRAWN 2026-10-05: No adopted scenario needs multi-participant coordination. 
 
 ## Traceability
 
-- DOCUMENTS → GITHUB_ISSUE `#420` (AGT-002: Multi-Agent Coordination (Red + Blue Concurrent))
+- DOCUMENTS → DOCUMENTATION `docs/architecture/issue-420-concurrent-participants-preflight.md` (Distinguishes reopened issue scope from this withdrawn coordinator requirement)
