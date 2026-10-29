@@ -71,6 +71,19 @@ describe('boundToolResult', () => {
     expect(body.listing.length).toBeLessThan(8);
   });
 
+  it('cuts at a line boundary rather than return zero records', () => {
+    const record = Object.fromEntries(
+      Array.from({ length: 20 }, (_, index) => [`field${index}`, 'z'.repeat(40)]),
+    );
+    const result = textResult({ success: true, data: [{ id: 0, ...record }] });
+
+    const text = boundToolResult(result, MAX_TOKENS).result.content[0].text;
+
+    expect(text).toContain('"field0"');
+    expect(text).not.toContain('"_truncated"');
+    expect(text).toMatch(/\n\[truncated: \d+ of \d+ characters shown; refine your query\]$/);
+  });
+
   it('cuts text that is not a JSON object at a line boundary', () => {
     const lines = Array.from({ length: 80 }, (_, index) => `line ${index} ${'y'.repeat(20)}`);
     const text = lines.join('\n');

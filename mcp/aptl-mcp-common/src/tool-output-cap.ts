@@ -111,9 +111,11 @@ function trimRecords(root: Record<string, unknown> | undefined, limit: number): 
     };
     return JSON.stringify(root, null, 2);
   };
-  // The full list does not fit, so search the shorter prefixes.
+  // The full list does not fit, so search the shorter prefixes. An empty list
+  // would tell the agent nothing, so when not even one record fits, the result
+  // is cut at a line boundary instead.
   let fitting: string | undefined;
-  let low = 0;
+  let low = 1;
   let high = items.length - 1;
   while (low <= high) {
     const kept = Math.floor((low + high) / 2);
