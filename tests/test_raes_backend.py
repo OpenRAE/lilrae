@@ -662,7 +662,7 @@ def test_manifest_realization_support_matches_exercised_concerns():
 
     assert support.domain == "runtime-realization"
     assert support.supported_constraint_kinds == frozenset(
-        {"os-family", "source-artifact"}
+        {"os-family", "source-artifact", "runtime-packages", "runtime-local-identity"}
     )
     assert support.supported_exact_requirement_kinds == frozenset(
         {
