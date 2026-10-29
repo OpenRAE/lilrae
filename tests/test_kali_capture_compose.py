@@ -324,8 +324,10 @@ def _brokered_ssh(
     )
 
 
-def _wait_for_broker_session(container_id: str, session_id: str) -> None:
-    """Wait until the broker registers one session as active."""
+def _wait_for_broker_session(
+    container_id: str, session_id: str, *, finished: bool = False
+) -> None:
+    """Wait for session registration or for its cleanup after a client closes."""
 
     for _attempt in range(100):
         registered = subprocess.run(
@@ -334,6 +336,7 @@ def _wait_for_broker_session(container_id: str, session_id: str) -> None:
                 "exec",
                 container_id,
                 "test",
+                *(("!",) if finished else ()),
                 "-f",
                 f"/run/aptl-capture/sessions/{session_id}.pid",
             ],
@@ -343,7 +346,8 @@ def _wait_for_broker_session(container_id: str, session_id: str) -> None:
         if registered.returncode == 0:
             return
         time.sleep(0.1)
-    pytest.fail(f"broker did not register session {session_id}")
+    state = "finish" if finished else "register"
+    pytest.fail(f"broker did not {state} session {session_id}")
 
 
 def _close_pty_session_while_it_runs(
@@ -363,6 +367,9 @@ def _close_pty_session_while_it_runs(
     finally:
         client.terminate()
         client.wait(timeout=30)
+    # Prove hangup itself finished the session; quiesce must not rescue it or
+    # race the hangup and change its close reason to forced teardown.
+    _wait_for_broker_session(container_id, session_id, finished=True)
 
 
 @pytest.mark.integration
