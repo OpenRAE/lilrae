@@ -1,4 +1,7 @@
 path	proposed_owner	migration_rule
+docs/architecture/issue-1447-runtime-owner-handoff.md	architecture-history	Preserve issue 1447 runtime ownership handoff design
+src/aptl/backends/_lilrae_runtime_handoff.py	core-candidate	Keep exclusive runtime ownership across temporary control-plane phases
+tests/test_lilrae_runtime_handoff.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 .claude/hooks/protect_files.sh	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 .claude/settings.json	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 .claude/skills/gh-workflow-monitor/SKILL.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
@@ -1432,6 +1435,7 @@ tests/test_correlation_clock.py	tests-follow-owner	Retain meaningful boundary an
 tests/test_correlation_identity.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_correlation_models.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_correlation_persistence.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_cortex_apikey_script.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_cortex_integration_config.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_credentials.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_credentials_fuzz.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
@@ -1578,6 +1582,7 @@ tests/test_raes_backend.py	tests-follow-owner	Retain meaningful boundary and par
 tests/test_raes_backend_implementation.py	tests-follow-owner	Retain open and closed realization-authority regression coverage with the backend owner
 tests/test_raes_base_substrate.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_content_satisfaction.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_raes_credential_result_contract.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_diagnostics.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_docker_materializer.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_raes_dynamic_composition.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
@@ -1671,6 +1676,7 @@ tests/test_techvault_telemetry_spine.py	tests-follow-owner	Retain meaningful bou
 tests/test_techvault_telemetry_stimulus.py	tests-follow-owner	Retain native TechVault telemetry-stimulation contract coverage with its scenario owner
 tests/test_telemetry.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_traffic_mirror.py	tests-follow-owner	Retain admitted traffic-mirror realization and reporting coverage with the backend owner
+tests/test_transcript_export.py	tests-follow-owner	Retain the teardown transcript export step diagnostics with transcript finalization
 tests/test_version.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_version_consistency.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_wazuh_active_response.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
@@ -1902,6 +1908,7 @@ docs/components/node-realization.md	docs-follow-owner	Separate current user guid
 .trivyignore.yaml	build-governance	Migrate policy by surface; remove bundle-of-entire-repository from generic artifact
 tests/test_web_api_identity.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 docs/architecture/issue-1201-transcript-redaction-preflight.md	architecture-history	Preserve transcript redaction and retained-payload validation guardrails
+src/aptl/backends/_raes_transcript_export.py	backend-observability	Retain the teardown transcript export and its failure diagnostics with transcript finalization
 src/aptl/backends/_raes_transcript_qualification.py	backend-observability	Retain retained-transcript read-back qualification with transcript finalization
 docs/architecture/issue-1183-techvault-postgresql-startup-preflight.md	architecture-history	Preserve issue 1183 TechVault database realization, client-authentication, and initialization guardrails
 src/aptl_techvault/database_access.py	scenario-integration	Keep TechVault database client-authentication realization with the scenario adapter
