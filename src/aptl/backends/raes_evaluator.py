@@ -33,6 +33,8 @@ observed run state behind it, not synthetic in-memory progress.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -49,10 +51,6 @@ from raes_contracts.runtime_state import (
 )
 from raes_runtime.control_plane import RuntimeControlPlane
 
-from aptl.backends._raes_evidence_refresh_policy import (
-    EvidenceRefreshCrossingPolicyResolver,
-    without_evaluation_state,
-)
 from aptl.backends._raes_evaluator_engine import (
     EVALUATION_ADDRESS,
     OBSERVABLE_RESOURCE_TYPES,
@@ -385,15 +383,18 @@ def refresh_evidence_truth(
     evidence_records: tuple[ExperimentEvidenceRecordModel, ...],
     runtime_manager: AptlRuntimeManager | None = None,
 ) -> EvidenceTruthRefresh:
-    """Reconcile acquired evidence through RAES's runtime control plane.
+    """Evaluate acquired evidence through the run's one runtime.
 
-    The exact planner-produced evaluation phase is resubmitted against the
-    post-provisioning snapshot after the evaluator receives the sealed native
-    record cut. The control plane remains the sole writer of runtime truth.
+    The runtime that applied the plan evaluates it again against the sealed
+    native record cut (OpenRAE/rae#1660). It replans only the evaluation phase
+    from the original compiled context and writes the refreshed truth itself;
+    no other runtime owner is created.
     """
 
     evaluator = target.evaluator
-    if not isinstance(evaluator, AptlEvaluator):
+    if not isinstance(evaluator, AptlEvaluator) or (
+        runtime_manager is None or runtime_manager._target is not target
+    ):
         return EvidenceTruthRefresh(
             status=OperationState.FAILED,
             snapshot=snapshot,
@@ -401,49 +402,48 @@ def refresh_evidence_truth(
                 evaluation_diagnostic(
                     "aptl.evaluator.native-evidence-refresh-unavailable",
                     EVALUATION_ADDRESS,
-                    "APTL native evidence requires the APTL evaluator.",
+                    "APTL native evidence requires the APTL evaluator and the "
+                    "run's runtime.",
                 ),
             ),
         )
-    # The planner-produced evaluation operations are immutable CREATEs. The
-    # provisioning run already applied them once before native evidence was
-    # available, so replaying them against that registered evaluation state is
-    # an invalid create-over-existing transition in RAES 5. Rebuild only the
-    # evaluation domain from the same observed provisioning snapshot; the new
-    # control plane then remains the sole writer of the refreshed truth.
-    if runtime_manager is not None:
-        if runtime_manager._target is not target:
-            raise ValueError("native evidence runtime manager has another target")
-        phase = runtime_manager.control_plane(
-            snapshot_transform=without_evaluation_state,
-            crossing_policy_resolver=EvidenceRefreshCrossingPolicyResolver(),
-        )
-    else:
-        phase = RuntimeControlPlane(
-            target,
-            initial_snapshot=without_evaluation_state(snapshot),
-            crossing_policy_resolver=EvidenceRefreshCrossingPolicyResolver(),
-        )
-    with phase as control_plane:
-        evaluator.bind_evidence_records(evidence_records)
-        return _run_evidence_refresh(
-            control_plane,
-            execution_plan,
-            evidence_records,
-            evaluator.proposition_interpreter,
-        )
+    evaluator.bind_evidence_records(evidence_records)
+    receipt = runtime_manager.evaluate(
+        execution_plan, idempotency_key=_evidence_cut_key(evidence_records)
+    )
+    return _evidence_refresh_result(
+        runtime_manager,
+        receipt,
+        execution_plan,
+        evidence_records,
+        evaluator.proposition_interpreter,
+    )
 
 
-def _run_evidence_refresh(
+def _evidence_cut_key(
+    evidence_records: tuple[ExperimentEvidenceRecordModel, ...],
+) -> str:
+    """Name one evidence collection; RAES requires a new key for each one."""
+
+    digest = hashlib.sha256(
+        json.dumps(
+            [record.model_dump(mode="json") for record in evidence_records],
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    return f"aptl-native-evidence-{digest}"
+
+
+def _evidence_refresh_result(
     control_plane: RuntimeControlPlane,
+    receipt: object,
     execution_plan: ExecutionPlan,
     evidence_records: tuple[ExperimentEvidenceRecordModel, ...],
     proposition_interpreter: object | None,
 ) -> EvidenceTruthRefresh:
-    """Run one registered evaluation and return its exact terminal disposition."""
+    """Return the exact terminal disposition of one evidence evaluation."""
 
-    control_plane.register_planner_produced_plan(execution_plan)
-    receipt = control_plane.submit_evaluation(execution_plan.evaluation)
     operation = (
         control_plane.get_operation(receipt.operation_id) if receipt.accepted else None
     )

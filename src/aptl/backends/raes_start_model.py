@@ -78,6 +78,5 @@ class AcesStartOutcome:
     manifest_payload: dict[str, Any] = field(default_factory=dict)
     pack_interaction_evidence: dict[str, Any] = field(default_factory=dict)
     scenario_runtime_selections: list[dict[str, str]] = field(default_factory=list)
-    retryable: bool = False
     capture_plan: CapturePlan | None = None
     runtime_manager: RuntimeManager | None = None

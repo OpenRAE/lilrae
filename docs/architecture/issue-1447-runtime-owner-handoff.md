@@ -1,5 +1,7 @@
 # Issue #1447: Runtime Ownership During Evidence Refresh
 
+> **Superseded (issue #1407).** RAES 9.0.0 uses one runtime for the whole run (OpenRAE/rae#1660). The run's runtime delivers participant turns and evaluates later evidence with `evaluate()`, so this handoff and its module are removed.
+
 The Cortex seed fix exposes a second startup failure. Native evidence refresh
 constructs a control plane while the apply outcome retains its runtime manager.
 RAES 7 permits only one owner of the target's components. Participant delivery

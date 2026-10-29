@@ -8,6 +8,7 @@ from unittest.mock import Mock
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from raes_contracts.immutable_history import HistoryMap
 
 from raes_backend_protocols.capabilities import ParticipantExecutionBinding
 from raes_backend_protocols.manifest import backend_manifest_v2_model
@@ -140,9 +141,9 @@ def test_cancellation_drains_owned_work_and_preserves_peer(cancel_all):
         result = future.result(timeout=30)
         assert result.success, result.diagnostics
         history = manager.snapshot.participant_behavior_history
-        assert "cancelled" in str(history["participant.behavior.red"])
+        assert "cancelled" in str(list(history["participant.behavior.red"]))
         if not cancel_all:
-            assert "blue finished" in str(history["participant.behavior.blue"])
+            assert "blue finished" in str(list(history["participant.behavior.blue"]))
 
 
 def test_unsupported_binding_rejects_batch_without_native_work():
@@ -200,10 +201,10 @@ def test_failed_participant_preserves_dispatched_peer_and_is_not_retried(failure
     with manager:
         result = manager.apply(manager.plan(scenario()))
         history = manager.snapshot.participant_behavior_history
-        assert "blue retained" in str(history["participant.behavior.blue"])
+        assert "blue retained" in str(list(history["participant.behavior.blue"]))
         assert sorted(calls) == ["blue", "red"]
         if failure == "timeout":
-            assert "timeout" in str(history["participant.behavior.red"])
+            assert "timeout" in str(list(history["participant.behavior.red"]))
         else:
             assert not result.success
             assert "private provider error" not in repr(result)
@@ -221,10 +222,10 @@ def test_native_workers_receive_isolated_predecessors():
         observed.append(snapshot)
         rendezvous.wait()
         assert observed[0] is not observed[1]
-        assert (
-            observed[0].participant_behavior_history
-            is not observed[1].participant_behavior_history
-        )
+        # RAES 9 histories are immutable, so a shared history cannot carry a
+        # peer's write into this worker's predecessor.
+        assert isinstance(observed[0].participant_behavior_history, HistoryMap)
+        assert isinstance(observed[1].participant_behavior_history, HistoryMap)
         return native(request, snapshot, episode_id=episode_id)
 
     runtime._model_action = inspect_predecessor
@@ -298,8 +299,8 @@ def test_nonzero_harness_exit_preserves_peer_and_continue_policy(tmp_path, binar
         advanced = manager.advance_time("time.clock.trial", ticks=1)
         assert advanced.success, advanced.diagnostics
         history = manager.snapshot.participant_behavior_history
-        assert "backend_error" in str(history["participant.behavior.red"])
-        assert "peer retained" in str(history["participant.behavior.blue"])
+        assert "backend_error" in str(list(history["participant.behavior.red"]))
+        assert "peer retained" in str(list(history["participant.behavior.blue"]))
     assert sorted(calls) == ["blue", "blue", "red", "red"]
 
 
@@ -327,5 +328,5 @@ def test_cancellation_before_harness_launch_has_a_terminal_result(tmp_path):
         result = manager.apply(manager.plan(scenario()))
         assert result.success, result.diagnostics
         history = manager.snapshot.participant_behavior_history
-        assert "cancelled before launch" in str(history["participant.behavior.red"])
-        assert "peer retained" in str(history["participant.behavior.blue"])
+        assert "cancelled before launch" in str(list(history["participant.behavior.red"]))
+        assert "peer retained" in str(list(history["participant.behavior.blue"]))

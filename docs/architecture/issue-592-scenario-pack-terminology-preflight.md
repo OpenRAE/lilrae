@@ -42,6 +42,7 @@ prose must not accidentally rename them.
 | Surface | Files | Disposition |
 | --- | --- | --- |
 | Pack boundary enforcement | `docs/architecture/issue-1121-pack-boundary-preflight.md` | Preserve original and independent RPT adapter ownership, exact compatibility exceptions, and selected host requirements. |
+| PHP image re-pin | `docs/architecture/issue-1407-php-image-repin-preflight.md` | Keep the released environment-pack MISP and Roundcube selectors distinct from the backend-selected image digests and the MISP web companion. |
 | Configured pack source | `docs/architecture/issue-1413-configured-pack-source-preflight.md` | Keep release-directory acquisition distinct from portable pack semantics, content identity, installed adapters, and backend realization. |
 | Trusted source image bindings | `docs/architecture/issue-1097-trusted-source-image-preflight.md`, `docs/source-image-catalog.md` | Keep released environment-pack source declarations distinct from the backend-owned immutable image catalog, runtime authority, and independent image evidence. |
 | PyPI distribution transition | `docs/architecture/issue-1234-pypi-transition-preflight.md` | Preserve environment-pack and installed-provider ownership while changing only the product distribution and release wiring. |

@@ -629,7 +629,7 @@ def _condition_allocation_spec_payload_one_infeasible() -> dict:
                     },
                     "cond-infeasible": {
                         "condition_id": "cond-infeasible",
-                        "factor_levels": {"danger": "undeclared"},
+                        "factor_levels": {"danger": "low"},
                         "required_parameters": [
                             {
                                 "name": "totally-undeclared-target",
@@ -643,6 +643,14 @@ def _condition_allocation_spec_payload_one_infeasible() -> dict:
                 "blocking_factors": [],
                 "replication_policy": "independent-replications",
             },
+        },
+        # raes 9 requires every assigned factor level to be declared.
+        "factors": {
+            "danger": {
+                "name": "danger",
+                "factor_kind": "treatment",
+                "levels": ["high", "low"],
+            }
         },
     }
 

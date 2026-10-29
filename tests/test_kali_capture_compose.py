@@ -92,10 +92,12 @@ def test_capture_sidecar_owns_sink_with_only_ssh_daemon_capabilities():
     assert service["network_mode"] == "container:aptl-kali"
     assert not service.get("ports")
     # AUDIT_WRITE is for sshd's PTY login record, not for an audit daemon.
+    # KILL lets the root quiesce stop open sessions that run as uid kali.
     assert set(service["cap_add"]) == {
         "AUDIT_WRITE",
         "CHOWN",
         "DAC_OVERRIDE",
+        "KILL",
         "NET_BIND_SERVICE",
         "SETGID",
         "SETUID",
@@ -125,9 +127,11 @@ def _adr_041_decision_updates() -> list[str]:
     return [note.group(0) for note in notes]
 
 
-@pytest.mark.parametrize("capability", ["AUDIT_CONTROL", "AUDIT_WRITE", "SYS_PACCT"])
+@pytest.mark.parametrize(
+    "capability", ["AUDIT_CONTROL", "AUDIT_WRITE", "KILL", "SYS_PACCT"]
+)
 def test_adr_041_capture_capabilities_match_the_shipped_sidecar(capability):
-    # ADR-041's Decision moved these capabilities to the sidecar. The latest
+    # ADR-041's Decision records these capabilities for the sidecar. The latest
     # dated update that names one must say whether the shipped sidecar has it.
     granted = capability in _capture_service()["cap_add"]
     naming = [note for note in _adr_041_decision_updates() if f"`{capability}`" in note]
@@ -266,8 +270,8 @@ def test_capture_entrypoint_applies_key_ownership_with_declared_capabilities(
         )
 
 
-def _brokered_environment(session_id: str) -> dict[str, str]:
-    """Return the MCP's correlation environment for one outer session."""
+def _brokered_ssh_environment(session_id: str) -> dict[str, str]:
+    """Return the client environment that names one MCP session."""
 
     return {
         **os.environ,
@@ -277,10 +281,10 @@ def _brokered_environment(session_id: str) -> dict[str, str]:
     }
 
 
-def _brokered_ssh_command(
-    outer_key: Path, port: str, command: str, *, tty: bool
+def _brokered_ssh_argv(
+    outer_key: Path, port: str, command: str | None, *, tty: bool
 ) -> list[str]:
-    """Return the ssh argv for one outer session through the capture sshd."""
+    """Return the outer ssh argv that the MCP uses through the capture sshd."""
 
     return [
         "ssh",
@@ -302,45 +306,60 @@ def _brokered_ssh_command(
         "-p",
         port,
         "kali@127.0.0.1",
-        command,
+        *((command,) if command is not None else ()),
     ]
 
 
 def _brokered_ssh(
     outer_key: Path, port: str, session_id: str, command: str, *, tty: bool
 ) -> subprocess.CompletedProcess[str]:
-    """Run one outer session through the capture sshd, as the MCP does."""
+    """Open one outer session through the capture sshd, as the MCP does."""
 
     return subprocess.run(
-        _brokered_ssh_command(outer_key, port, command, tty=tty),
+        _brokered_ssh_argv(outer_key, port, command, tty=tty),
         capture_output=True,
         text=True,
-        env=_brokered_environment(session_id),
+        env=_brokered_ssh_environment(session_id),
         timeout=30,
     )
+
+
+def _wait_for_broker_session(container_id: str, session_id: str) -> None:
+    """Wait until the broker registers one session as active."""
+
+    for _attempt in range(100):
+        registered = subprocess.run(
+            [
+                "docker",
+                "exec",
+                container_id,
+                "test",
+                "-f",
+                f"/run/aptl-capture/sessions/{session_id}.pid",
+            ],
+            capture_output=True,
+            timeout=10,
+        )
+        if registered.returncode == 0:
+            return
+        time.sleep(0.1)
+    pytest.fail(f"broker did not register session {session_id}")
 
 
 def _close_pty_session_while_it_runs(
     container_id: str, outer_key: Path, port: str, session_id: str
 ) -> None:
-    """Open a long PTY session, wait for its broker, then close the client."""
+    """Close a live client before quiesce, exercising terminal hangup cleanup."""
 
     client = subprocess.Popen(
-        _brokered_ssh_command(outer_key, port, "sleep 900", tty=True),
-        env=_brokered_environment(session_id),
+        _brokered_ssh_argv(outer_key, port, "sleep 900", tty=True),
+        env=_brokered_ssh_environment(session_id),
         stdin=subprocess.PIPE,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    registration = f"/run/aptl-capture/sessions/{session_id}.pid"
     try:
-        for _attempt in range(100):
-            probe = ["docker", "exec", container_id, "test", "-f", registration]
-            if subprocess.run(probe, capture_output=True, timeout=10).returncode == 0:
-                break
-            time.sleep(0.1)
-        else:
-            pytest.fail(f"broker never registered {session_id}")
+        _wait_for_broker_session(container_id, session_id)
     finally:
         client.terminate()
         client.wait(timeout=30)
@@ -376,15 +395,11 @@ def test_capture_sidecar_accepts_a_real_kali_session_and_preserves_identity(
         "ALL",
     ]
     # Exactly the shipped capabilities, so a missing one fails here as it
-    # would in a lab. Granting the inner sshd extra capabilities in this shared
-    # container once hid that no PTY session could open without AUDIT_WRITE.
+    # would in a lab. Extra capabilities in this shared container once hid
+    # that no PTY session could open without AUDIT_WRITE (#1496), and that
+    # quiesce could not stop an open session without KILL (#1407).
     for capability in _capture_service()["cap_add"]:
         command.extend(("--cap-add", capability))
-    # The integration fixture co-locates the *inner target sshd* in this one
-    # container. Production runs that daemon in aptl-kali, whose ordinary
-    # Docker capability set includes KILL; the capture-sidecar declaration
-    # verified by the static tests above does not.
-    command.extend(("--cap-add", "KILL"))
     command.extend(
         (
             "--security-opt",
@@ -618,10 +633,18 @@ EOF
         )
         assert with_pty.returncode == 0, with_pty.stderr
         assert "capture-pty-ok" in with_pty.stdout
-        # Closing a PTY session hangs up the broker's terminal. The broker must
-        # still finish the session and release its registration; otherwise the
-        # quiesce below waits on it until its deadline and the seal fails.
-        _close_pty_session_while_it_runs(container_id, outer_key, port, "session-3")
+        # A participant can leave an interactive session open at lab stop.
+        # Quiesce must end it and finalize its record (#1407).
+        held_open = subprocess.Popen(
+            _brokered_ssh_argv(outer_key, port, None, tty=True),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=_brokered_ssh_environment("session-3"),
+        )
+        _wait_for_broker_session(container_id, "session-3")
+        # A different client closes before quiesce. Preserve its transcript too.
+        _close_pty_session_while_it_runs(container_id, outer_key, port, "session-4")
         subprocess.run(
             [
                 "docker",
@@ -650,12 +673,14 @@ EOF
             check=True,
             timeout=30,
         )
+        held_open.wait(timeout=30)
         payload = json.loads(exported.stdout)
         sessions = {item["session_id"]: item for item in payload["sessions"]}
-        expected = ["session-1", "session-2", "session-3"]
+        expected = ["session-1", "session-2", "session-3", "session-4"]
         assert sorted(payload["accepted_session_ids"]) == expected
         assert sorted(sessions) == expected
-        assert sessions["session-3"]["close_reason"] == "signal"
+        assert sessions["session-4"]["close_reason"] == "signal"
+        assert sessions["session-3"]["close_reason"] == "forced-teardown"
         ownership = subprocess.run(
             [
                 "docker",

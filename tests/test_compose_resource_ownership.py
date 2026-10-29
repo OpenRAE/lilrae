@@ -239,6 +239,93 @@ def test_shared_volume_creation_waits_for_ownership_receipt(tmp_path: Path) -> N
     assert len(ownership.receipts("volume")) == 1
 
 
+def _seed_backend_with_stale_receipt(tmp_path: Path, inspect_stderr: str):
+    """Leave a receipt from an earlier attempt whose volume no longer exists."""
+
+    backend = DockerComposeBackend(tmp_path)
+    ownership = backend._ensure_resource_ownership(attempt_id="run-old")
+    backend._docker_daemon_id = "daemon-a"
+    volume = f"{ownership.project_name}_shared"
+    ownership.record(
+        ResourceReceipt(
+            kind="volume",
+            native_id=volume,
+            external_name=volume,
+            semantic_name="shared",
+            node_address="shared",
+            workspace_id=ownership.workspace_id,
+            project_name=ownership.project_name,
+            daemon_id="daemon-a",
+            attempt_id="run-old",
+            managed_by="direct",
+        )
+    )
+    backend._resource_attempt_id = "run-new"
+    state: dict[str, object] = {}
+    creates = []
+
+    def run(command, *, timeout):
+        if command[:3] == ["docker", "volume", "inspect"]:
+            labels = state.get("labels")
+            if labels is None:
+                return subprocess.CompletedProcess(command, 1, "", inspect_stderr)
+            return subprocess.CompletedProcess(command, 0, json.dumps(labels), "")
+        assert command[:3] == ["docker", "volume", "create"]
+        creates.append(command)
+        state["labels"] = {
+            command[index + 1].split("=", 1)[0]: command[index + 1].split("=", 1)[1]
+            for index, value in enumerate(command)
+            if value == "--label"
+        }
+        return subprocess.CompletedProcess(command, 0, volume + "\n", "")
+
+    backend._run = run
+    backend._raw_volume_inspect = lambda _name: (
+        {"Name": volume, "Labels": state["labels"]} if "labels" in state else {}
+    )
+    return backend, ownership, creates
+
+
+def test_seed_volume_retires_a_receipt_whose_volume_was_removed(
+    tmp_path: Path,
+) -> None:
+    """A volume deleted outside ``stop -v`` does not block the next start (#1407).
+
+    Volume names are reused across attempts. Before this fix the new attempt
+    created the volume and then failed to record it, which left the new
+    volume orphaned and the lab unstartable.
+    """
+
+    backend, ownership, creates = _seed_backend_with_stale_receipt(
+        tmp_path, "Error response from daemon: get x: no such volume"
+    )
+
+    backend._ensure_labeled_project_volume("shared")
+
+    assert len(creates) == 1
+    (receipt,) = ownership.receipts("volume")
+    assert receipt.attempt_id == "run-new"
+
+
+def test_seed_volume_keeps_a_receipt_when_absence_is_not_proven(
+    tmp_path: Path,
+) -> None:
+    """A daemon error is not proof that the recorded volume is gone."""
+
+    from aptl.core.deployment.errors import BackendSeedError
+
+    backend, ownership, creates = _seed_backend_with_stale_receipt(
+        tmp_path, "Cannot connect to the Docker daemon"
+    )
+
+    with pytest.raises(BackendSeedError):
+        backend._ensure_labeled_project_volume("shared")
+
+    assert creates == []
+    (receipt,) = ownership.receipts("volume")
+    assert receipt.attempt_id == "run-old"
+
+
 def test_compose_preflight_ignores_retired_network_identity(tmp_path: Path) -> None:
     """A restarted network is accepted only through its one live native ID."""
 

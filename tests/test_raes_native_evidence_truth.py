@@ -32,8 +32,6 @@ from aptl.backends._raes_proposition_truth import (
     project_proposition_truth_results as _project_proposition_truth_results,
 )
 from aptl.backends.raes_evaluator import AptlEvaluator, refresh_evidence_truth
-from aptl.backends.raes_manifest import create_aptl_manifest
-from aptl.backends.raes_planning_compat import AptlRuntimeManager
 from aptl_techvault.capture import TechVaultPropositionInterpreter
 
 _INTERPRETER = TechVaultPropositionInterpreter()
@@ -261,10 +259,35 @@ def test_evaluator_projects_bound_native_evidence_into_runtime_snapshot():
     ]
 
 
-def test_native_evidence_refresh_is_committed_through_the_runtime_control_plane():
-    evaluator = AptlEvaluator(proposition_interpreter=_INTERPRETER)
-    target = replace(create_stub_target(), evaluator=evaluator)
-    execution_plan = ExecutionPlan(
+class _OneRuntime:
+    """The run's one runtime, reduced to the evaluation contract lilrae uses.
+
+    ``evaluate`` runs the real APTL evaluator, so truth comes from the bound
+    records; RAES's own evaluation replanning is RAES's to test.
+    """
+
+    def __init__(self, target, *, state=OperationState.SUCCEEDED):
+        self._target = target
+        self._state = state
+        self.snapshot = RuntimeSnapshot()
+        self.keys: list[str] = []
+
+    def evaluate(self, execution_plan, *, idempotency_key=""):
+        from types import SimpleNamespace
+
+        self.keys.append(idempotency_key)
+        result = self._target.evaluator.start(execution_plan.evaluation, self.snapshot)
+        self.snapshot = result.snapshot
+        return SimpleNamespace(accepted=True, operation_id="evaluation-1", diagnostics=())
+
+    def get_operation(self, operation_id):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(state=self._state, diagnostics=())
+
+
+def _execution_plan(target, evaluation=None):
+    return ExecutionPlan(
         target_name=target.name,
         manifest=target.manifest,
         base_snapshot=RuntimeSnapshot(),
@@ -272,165 +295,117 @@ def test_native_evidence_refresh_is_committed_through_the_runtime_control_plane(
         model=RuntimeModel(scenario_name="native-evidence-refresh"),
         provisioning=ProvisioningPlan(),
         orchestration=OrchestrationPlan(),
-        evaluation=_plan(),
+        evaluation=evaluation or _plan(),
         observation_owner=RuntimeDomain.PROVISIONING,
     )
 
-    refresh = refresh_evidence_truth(
-        target=target,
-        execution_plan=execution_plan,
-        snapshot=RuntimeSnapshot(),
-        evidence_records=(_record("suricata-local-rule-readiness"),),
-    )
 
-    assert refresh.status is OperationState.SUCCEEDED
-    assert sorted(refresh.snapshot.proposition_truth_results) == [
-        "evaluation.assertion.suricata-local-rules-ready"
-    ]
-
-
-def test_native_evidence_refresh_accepts_participant_delivery_target():
-    evaluator = AptlEvaluator(proposition_interpreter=_INTERPRETER)
-    target = replace(
-        create_stub_target(),
-        manifest=create_aptl_manifest(participant_inject_delivery=True),
-        evaluator=evaluator,
-    )
-    execution_plan = ExecutionPlan(
-        target_name=target.name,
-        manifest=target.manifest,
-        base_snapshot=RuntimeSnapshot(),
-        scenario_name="participant-native-evidence-refresh",
-        model=RuntimeModel(scenario_name="participant-native-evidence-refresh"),
-        provisioning=ProvisioningPlan(),
-        orchestration=OrchestrationPlan(),
-        evaluation=_plan(),
-        observation_owner=RuntimeDomain.PROVISIONING,
-    )
-
-    refresh = refresh_evidence_truth(
-        target=target,
-        execution_plan=execution_plan,
-        snapshot=RuntimeSnapshot(),
-        evidence_records=(_record("suricata-local-rule-readiness"),),
-    )
-
-    assert refresh.status is OperationState.SUCCEEDED
-    assert sorted(refresh.snapshot.proposition_truth_results) == [
-        "evaluation.assertion.suricata-local-rules-ready"
-    ]
-
-
-def test_native_evidence_refresh_replays_create_plan_after_initial_evaluation():
-    evaluator = AptlEvaluator(proposition_interpreter=_INTERPRETER)
-    target = replace(create_stub_target(), evaluator=evaluator)
-    evaluation = _plan()
-    initially_evaluated = evaluator.start(evaluation, RuntimeSnapshot())
-    assert initially_evaluated.success is True
-    execution_plan = ExecutionPlan(
-        target_name=target.name,
-        manifest=target.manifest,
-        base_snapshot=RuntimeSnapshot(),
-        scenario_name="native-evidence-refresh",
-        model=RuntimeModel(scenario_name="native-evidence-refresh"),
-        provisioning=ProvisioningPlan(),
-        orchestration=OrchestrationPlan(),
-        evaluation=evaluation,
-        observation_owner=RuntimeDomain.PROVISIONING,
-    )
-
-    refresh = refresh_evidence_truth(
-        target=target,
-        execution_plan=execution_plan,
-        snapshot=initially_evaluated.snapshot,
-        evidence_records=(_record("suricata-local-rule-readiness"),),
-    )
-
-    assert refresh.status is OperationState.SUCCEEDED
-    assert sorted(refresh.snapshot.proposition_truth_results) == [
-        "evaluation.assertion.suricata-local-rules-ready"
-    ]
-
-
-@pytest.mark.parametrize("participant_delivery", [False, True])
-def test_lab_refresh_hands_off_the_live_apply_manager(tmp_path, participant_delivery):
-    """The real apply owner remains referenced while native evidence is evaluated."""
-    from types import SimpleNamespace
-
-    from aptl.backends.raes import _run_execution_plan
-    from aptl.core.lab import _LabStartContext, _refresh_required_native_evidence
-
-    target = replace(
+def _evaluator_target():
+    return replace(
         create_stub_target(),
         evaluator=AptlEvaluator(proposition_interpreter=_INTERPRETER),
     )
-    if participant_delivery:
-        target = replace(
-            target, manifest=create_aptl_manifest(participant_inject_delivery=True)
-        )
-    execution_plan = ExecutionPlan(
-        target_name=target.name,
-        manifest=target.manifest,
-        base_snapshot=RuntimeSnapshot(metadata={"run": "native-evidence-refresh"}),
-        scenario_name="native-evidence-refresh",
-        model=RuntimeModel(scenario_name="native-evidence-refresh"),
-        provisioning=ProvisioningPlan(),
-        orchestration=OrchestrationPlan(),
-        evaluation=_plan(),
-        observation_owner=RuntimeDomain.PROVISIONING,
+
+
+def test_native_evidence_is_evaluated_by_the_runs_one_runtime():
+    """The runtime that applied the plan evaluates the evidence (rae#1660)."""
+
+    target = _evaluator_target()
+    runtime = _OneRuntime(target)
+
+    refresh = refresh_evidence_truth(
+        target=target,
+        execution_plan=_execution_plan(target),
+        snapshot=RuntimeSnapshot(),
+        evidence_records=(_record("suricata-local-rule-readiness"),),
+        runtime_manager=runtime,
     )
-    outcome = _run_execution_plan(target, execution_plan)
-    manager = outcome.runtime_manager
-    assert outcome.lab_result.success, outcome.lab_result.error
-    assert isinstance(manager, AptlRuntimeManager)
+
+    assert refresh.status is OperationState.SUCCEEDED
+    assert refresh.snapshot is runtime.snapshot
+    assert sorted(refresh.snapshot.proposition_truth_results) == [
+        "evaluation.assertion.suricata-local-rules-ready"
+    ]
+
+
+def test_each_evidence_collection_gets_its_own_evaluation_key():
+    """RAES treats a reused key as a retry of the same evaluation request."""
+
+    target = _evaluator_target()
+    runtime = _OneRuntime(target)
+    plan = _execution_plan(target)
+    first = (_record("suricata-local-rule-readiness"),)
+    second = (_record("suricata-local-rule-readiness", channel_ref="other-log"),)
+
+    for records in (first, first, second):
+        refresh_evidence_truth(
+            target=target,
+            execution_plan=plan,
+            snapshot=RuntimeSnapshot(),
+            evidence_records=records,
+            runtime_manager=runtime,
+        )
+
+    assert runtime.keys[0] == runtime.keys[1]
+    assert runtime.keys[0] != runtime.keys[2]
+
+
+def test_native_evidence_is_not_evaluated_without_the_runs_runtime():
+    """No second runtime owner is created when the run's runtime is absent."""
+
+    target = _evaluator_target()
+
+    refresh = refresh_evidence_truth(
+        target=target,
+        execution_plan=_execution_plan(target),
+        snapshot=RuntimeSnapshot(),
+        evidence_records=(_record("suricata-local-rule-readiness"),),
+    )
+
+    assert refresh.status is OperationState.FAILED
+    assert [diagnostic.code for diagnostic in refresh.diagnostics] == [
+        "aptl.evaluator.native-evidence-refresh-unavailable"
+    ]
+
+
+def test_lab_refresh_uses_the_apply_runtime_and_adopts_its_snapshot(tmp_path):
+    from types import SimpleNamespace
+
+    from aptl.core.lab import _LabStartContext, _refresh_required_native_evidence
+
+    target = _evaluator_target()
+    runtime = _OneRuntime(target)
+    execution_plan = _execution_plan(target)
+    outcome = SimpleNamespace(final_snapshot=RuntimeSnapshot(), runtime_manager=runtime)
     context = _LabStartContext(
         project_dir=tmp_path,
         skip_seed=False,
         admitted_start=SimpleNamespace(target=target, execution_plan=execution_plan),
         raes_outcome=outcome,
     )
-    try:
-        failure = _refresh_required_native_evidence(
-            context,
-            context.admitted_start,
-            (_record("suricata-local-rule-readiness"),),
-        )
 
-        assert failure is None
-        assert outcome.runtime_manager is manager
-        assert outcome.final_snapshot == manager.snapshot
-        assert manager.snapshot.metadata["run"] == "native-evidence-refresh"
-        truth = manager.snapshot.proposition_truth_results[
-            "evaluation.assertion.suricata-local-rules-ready"
-        ]
-        assert truth["assertion_outcome"] == "true"
-        # Successful handoff must restore exclusive ownership to this manager.
-        with pytest.raises(RuntimeError, match="already has a runtime owner"):
-            AptlRuntimeManager(target)
-    finally:
-        manager.close()
+    failure = _refresh_required_native_evidence(
+        context,
+        context.admitted_start,
+        (_record("suricata-local-rule-readiness"),),
+    )
+
+    assert failure is None
+    assert runtime.keys
+    assert outcome.final_snapshot is runtime.snapshot
 
 
 def test_native_evidence_refresh_fails_when_the_authored_predicate_does_not_match():
-    evaluator = AptlEvaluator(proposition_interpreter=_INTERPRETER)
-    target = replace(create_stub_target(), evaluator=evaluator)
-    execution_plan = ExecutionPlan(
-        target_name=target.name,
-        manifest=target.manifest,
-        base_snapshot=RuntimeSnapshot(),
-        scenario_name="native-evidence-refresh",
-        model=RuntimeModel(scenario_name="native-evidence-refresh"),
-        provisioning=ProvisioningPlan(),
-        orchestration=OrchestrationPlan(),
-        evaluation=_plan(property_name="some-other-property"),
-        observation_owner=RuntimeDomain.PROVISIONING,
-    )
+    target = _evaluator_target()
 
     refresh = refresh_evidence_truth(
         target=target,
-        execution_plan=execution_plan,
+        execution_plan=_execution_plan(
+            target, _plan(property_name="some-other-property")
+        ),
         snapshot=RuntimeSnapshot(),
         evidence_records=(_record("suricata-local-rule-readiness"),),
+        runtime_manager=_OneRuntime(target),
     )
 
     assert refresh.status is OperationState.FAILED
@@ -455,3 +430,108 @@ def test_native_evidence_truth_requires_one_bound_record_per_requirement(record_
         snapshot,
         (record,) * record_count,
     )
+
+
+
+_REFRESH_SDL = """\
+name: native-refresh
+description: One node and one native evidence proposition.
+nodes:
+  sensor:
+    type: compute
+propositions:
+  suricata-local-rules-ready:
+    description: The sensor reports its local rule source ready.
+    subjects: [nodes.sensor]
+    basis: observed_state
+    predicate:
+      kind: boolean
+      property: network-detection-rule-source-ready
+      semantic_ref: urn:raes:observable:network-detection-rule-source-ready
+      expected: true
+    evidence_requirements: [suricata-local-rule-readiness]
+assertions:
+  suricata-local-rules-ready:
+    proposition: suricata-local-rules-ready
+    role: postcondition
+evidence_requirements:
+  suricata-local-rule-readiness:
+    description: Records the sensor rule readiness result.
+    source_refs: [nodes.sensor]
+    scope_refs: [nodes.sensor]
+    scope: Sensor rule readiness.
+    boundary_kind: system_under_test
+    channel: log
+    artifact_role: network_detection_rule_readiness
+    sensitivity: plain
+    redaction: redact_sensitive
+    integrity: checksum
+    retention: run_lifetime
+    loss_disclosure: required
+"""
+
+
+def _refresh_target():
+    """Return a stub target that offers the released rule-readiness capture."""
+    from aptl.backends.raes_manifest import create_aptl_manifest
+    from tests.test_raes_evidence import _registry
+
+    stub = create_stub_target()
+    observation = create_aptl_manifest(_registry()).observation
+    offer = next(
+        item
+        for item in observation.capture_offers
+        if item.offer_id == "aptl.collector.suricata-rule-readiness"
+    )
+    # Bind the released offer to the one-node scenario's refs and scope.
+    offer = replace(
+        offer,
+        source_refs=frozenset({"nodes.sensor"}),
+        scope_refs=frozenset({"nodes.sensor"}),
+        scopes=frozenset({"Sensor rule readiness."}),
+    )
+    capabilities = replace(
+        stub.manifest.capabilities,
+        observation=replace(observation, capture_offers=(offer,)),
+    )
+    return replace(
+        stub,
+        manifest=replace(stub.manifest, capabilities=capabilities),
+        evaluator=AptlEvaluator(proposition_interpreter=_INTERPRETER),
+    )
+
+
+def test_refresh_commits_truth_through_the_run_runtime_that_applied(tmp_path):
+    """Plan, apply, then refresh native evidence on that same runtime (#1407)."""
+    from types import SimpleNamespace
+
+    from raes import parse_sdl_file
+
+    from aptl.backends.raes_planning_compat import AptlRuntimeManager
+    from aptl.core.lab import _refresh_required_native_evidence
+
+    scenario = tmp_path / "refresh.sdl.yaml"
+    scenario.write_text(_REFRESH_SDL, encoding="utf-8")
+    target = _refresh_target()
+    with AptlRuntimeManager(target) as manager:
+        execution_plan = manager.plan(parse_sdl_file(scenario))
+        assert execution_plan.is_valid, execution_plan.diagnostics
+        applied = manager.apply(execution_plan)
+        assert applied.success, applied.diagnostics
+        applied_entries = manager.snapshot.entries
+        outcome = SimpleNamespace(
+            runtime_manager=manager, final_snapshot=manager.snapshot
+        )
+
+        failure = _refresh_required_native_evidence(
+            SimpleNamespace(raes_outcome=outcome),
+            SimpleNamespace(target=target, execution_plan=execution_plan),
+            (_record("suricata-local-rule-readiness"),),
+        )
+
+        assert failure is None
+        assert outcome.final_snapshot == manager.snapshot
+        assert manager.snapshot.entries == applied_entries
+        assert manager.snapshot.proposition_truth_results[
+            "evaluation.assertion.suricata-local-rules-ready"
+        ]["assertion_outcome"] == "true"

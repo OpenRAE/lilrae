@@ -188,11 +188,17 @@ class ComposeCaptureApparatusMixin:
         return result.returncode == 0
 
     def activate_capture_apparatus(
-        self, *, plan_id: str, run_id: str
+        self, *, plan_id: str, run_id: str, binding_id: str | None = None
     ) -> dict[str, object] | None:
-        """Bind the dormant broker to one admitted run, then prove it is serving."""
+        """Bind the dormant broker to one admitted run, then prove it is serving.
 
-        if not _safe_capture_id(plan_id) or not _safe_capture_id(run_id):
+        ``binding_id`` is the scenario adapter's transcript registration, which
+        finalization checks the broker's authority against; without one,
+        ``KALI_TRANSCRIPT_REGISTRATION`` applies.
+        """
+
+        binding = binding_id if binding_id is not None else KALI_TRANSCRIPT_REGISTRATION
+        if not all(_safe_capture_id(value) for value in (plan_id, run_id, binding)):
             return None
         activate = [
             "python3",
@@ -203,13 +209,13 @@ class ComposeCaptureApparatusMixin:
             "--plan-id",
             plan_id,
             "--binding-id",
-            KALI_TRANSCRIPT_REGISTRATION,
+            binding,
         ]
         authority = self._activate_capture_authority(activate)
         expected = {
             "run_id": run_id,
             "plan_id": plan_id,
-            "binding_id": KALI_TRANSCRIPT_REGISTRATION,
+            "binding_id": binding,
         }
         return (
             authority
@@ -394,6 +400,7 @@ class ComposeCaptureApparatusMixin:
             "CAP_AUDIT_WRITE",
             "CAP_CHOWN",
             "CAP_DAC_OVERRIDE",
+            "CAP_KILL",
             "CAP_NET_BIND_SERVICE",
             "CAP_SETGID",
             "CAP_SETUID",

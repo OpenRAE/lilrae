@@ -85,6 +85,44 @@ def test_activation_rejects_unsafe_ids(broker, tmp_path, value):
         )
 
 
+def test_activation_accepts_an_adapter_transcript_binding(broker, tmp_path):
+    """The broker records the scenario adapter's own transcript registration."""
+    runtime = tmp_path / "runtime"
+    authority = broker.activate_authority(
+        runtime,
+        run_id="run-1",
+        plan_id="capture-plan-1",
+        binding_id="rpt.collector.redteam-session-transcript",
+    )
+
+    assert authority["binding_id"] == "rpt.collector.redteam-session-transcript"
+    assert broker.read_authority(runtime)["binding_id"] == authority["binding_id"]
+
+
+@pytest.mark.parametrize("value", ["", ".hidden", "../escape", "a/b", "a b"])
+def test_activation_rejects_unsafe_binding_ids(broker, tmp_path, value):
+    """A binding id must be one safe path segment, like the run and plan ids."""
+    runtime = tmp_path / "runtime"
+    with pytest.raises(ValueError):
+        broker.activate_authority(
+            runtime,
+            run_id="run-1",
+            plan_id="capture-plan-1",
+            binding_id=value,
+        )
+
+
+@pytest.mark.parametrize("value", ["", ".hidden", "../escape", "a/b", "a b"])
+def test_read_authority_rejects_an_unsafe_binding_id(broker, tmp_path, value):
+    """A stored authority with an unsafe binding id is not served."""
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    authority = {"run_id": "run-1", "plan_id": "capture-plan-1", "binding_id": value}
+    (runtime / "authority.json").write_text(json.dumps(authority), encoding="utf-8")
+    with pytest.raises(ValueError):
+        broker.read_authority(runtime)
+
+
 def test_recorder_writes_ordered_directional_frames_and_chain(broker, tmp_path):
     authority = {
         "run_id": "run-1",
