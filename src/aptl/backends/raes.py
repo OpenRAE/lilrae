@@ -93,6 +93,25 @@ if TYPE_CHECKING:
 # while routing real planning through the narrow compatibility subclass.
 RuntimeManager = AptlRuntimeManager
 
+__all__ = (
+    "APTL_RAES_TARGET_NAME",
+    "AcesRunTarget",
+    "AcesStartOutcome",
+    "AdmittedScenarioStart",
+    "AptlEvaluator",
+    "AptlOrchestrator",
+    "AptlProvisioner",
+    "INSTANTIATION_FAILURE_MESSAGE",
+    "RuntimeManager",
+    "RuntimeTargetOptions",
+    "ScenarioAdmissionSource",
+    "admit_raes_scenario",
+    "create_aptl_manifest",
+    "create_aptl_runtime_target",
+    "resolve_scenario_bundle",
+    "start_raes_scenario",
+)
+
 
 def start_raes_scenario(
     project_dir: Path,
