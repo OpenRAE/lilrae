@@ -184,6 +184,8 @@ path = "hatch_build.py"
 # Lint only the Python control-plane source. Tests, generated files, and
 # the (TypeScript) MCP / web trees are out of scope for this check.
 src = ["src"]
+# The standalone capture image uses Debian 13's Python, not the CLI interpreter.
+per-file-target-version = { "containers/kali-capture/broker.py" = "py313" }
 
 [tool.ruff.lint]
 # Intentionally narrow: this is a *complexity* gate, not a style linter —

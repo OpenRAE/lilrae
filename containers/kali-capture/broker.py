@@ -444,7 +444,7 @@ def _copy_window_size(source_fd: int, target_fd: int) -> None:
     try:
         size = fcntl.ioctl(source_fd, termios.TIOCGWINSZ, b"\0" * 8)
         fcntl.ioctl(target_fd, termios.TIOCSWINSZ, size)
-    except OSError, ValueError:
+    except (OSError, ValueError):
         pass
 
 
