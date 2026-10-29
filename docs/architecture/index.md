@@ -79,6 +79,7 @@ flowchart TD
 | aptl-wazuh-indexer | security | 172.20.0.12 | OpenSearch data storage |
 | aptl-suricata | security, dmz, internal | 172.20.0.50 | Network IDS |
 | aptl-misp | security | 172.20.0.16 | Threat intelligence |
+| aptl-misp-web | Shares the `aptl-misp` network namespace | 172.20.0.16 | MISP HTTPS web tier |
 | aptl-thehive | security | 172.20.0.18 | Case management |
 | aptl-cortex | security | 172.20.0.22 | Automated enrichment |
 | aptl-shuffle-backend | security | 172.20.0.20 | SOAR backend |

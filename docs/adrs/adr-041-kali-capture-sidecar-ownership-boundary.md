@@ -102,6 +102,13 @@ stopping, or reconfiguring the capture subsystems.
 > withdrawn, and the 2026-10-12 update still holds for the audit and accounting
 > writers.
 
+> **Update (2026-10-29, #1407):** the sidecar is granted `KILL`. At lab stop,
+> `broker.py quiesce` runs as root and sends SIGTERM to each open broker
+> session. Those sessions run as uid `kali`, so the kernel refuses the signal
+> without the capability. A participant session that stayed open until lab
+> stop then made quiesce fail, and the run lost its required transcript. The
+> capability applies only to processes in the sidecar's own PID namespace.
+
 ## RPC Contract
 
 The sidecar RPC is a small local control protocol, not a file API.

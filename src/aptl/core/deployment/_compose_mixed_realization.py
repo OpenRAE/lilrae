@@ -14,7 +14,10 @@ from aptl.core.deployment._compose_base_container_realization import (
 from aptl.core.deployment._compose_runtime_orchestration import (
     realization_has_docker_authority,
 )
-from aptl.core.deployment.realization import DeploymentRealizationSpec
+from aptl.core.deployment.realization import (
+    DeploymentRealizationSpec,
+    with_companion_services,
+)
 from aptl.core.deployment.observation import DeploymentObservationContext
 from aptl.core.lab_types import LabResult
 
@@ -239,7 +242,7 @@ class ComposeMixedRealizationMixin:
                 build=build and not self._offline_staged,
                 compose_files=compose_files,
                 exclude_services=excluded_services,
-                only_services=services,
+                only_services=with_companion_services(realization, services),
                 scenario_root=scenario_root,
             )
             result = None if started.success else started

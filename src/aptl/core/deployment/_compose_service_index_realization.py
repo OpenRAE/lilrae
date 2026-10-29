@@ -24,7 +24,10 @@ from aptl.core.deployment._service_index_materialization import (
     materialize_search_index_schema,
     native_index_name,
 )
-from aptl.core.deployment.realization import DeploymentRealizationSpec
+from aptl.core.deployment.realization import (
+    DeploymentRealizationSpec,
+    with_companion_services,
+)
 from aptl.core.lab_types import LabResult
 
 # Why APTL refused an existing index, keyed by (reason, adopted). An index that
@@ -178,7 +181,9 @@ class ComposeRealizationServiceIndexMixin(object):
             build=build,
             compose_files=compose_files,
             exclude_services=exclude_services,
-            only_services=tuple(sorted(target_services)),
+            only_services=with_companion_services(
+                realization, tuple(sorted(target_services))
+            ),
             scenario_root=scenario_root,
         )
         if not start.success:
@@ -230,8 +235,7 @@ class ComposeRealizationServiceIndexMixin(object):
     def _service_indexes_created_this_start(self) -> set[tuple[str, str]]:
         """Return the ``(container, address)`` indexes this lab start created.
 
-        One backend serves one ``lilrae lab start``, and a retried apply
-        (``BEFORE_BACKEND_RETRY``) runs this step again on the same backend.
+        One backend serves one ``lilrae lab start``.
         """
 
         created = getattr(self, "_service_indexes_created", None)

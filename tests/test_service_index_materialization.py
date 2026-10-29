@@ -348,30 +348,6 @@ def test_other_failures_keep_the_plain_message_without_reset_advice(
     assert _lab_start_failure_error(handoff) == f"Lab start failed: {handoff}"
 
 
-def test_a_retry_keeps_the_plain_message_for_the_index_this_start_created() -> None:
-    # The first attempt creates the index and its readback fails the Cortex
-    # contract. The retried apply (BEFORE_BACKEND_RETRY) runs on the same backend
-    # and finds that index with this content's marker (#1280).
-    es = _KeywordRelationsES()
-    backend = _Backend(es)
-    plain = (
-        f"service materialization failed for {_ADDRESS} "
-        "(reason=native-product-contract-mismatch)"
-    )
-
-    for attempt in ("first", "retry"):
-        failure = backend._materialize_and_verify_schemas(
-            (_realization(),), {_ADDRESS: _CONTAINER}
-        )
-        assert failure.error == plain, attempt
-    assert es.puts == 1
-    handoff = _handoff_error(plain)
-    assert _lab_start_failure_error(handoff) == f"Lab start failed: {handoff}"
-
-    # A later lab start gets a new backend, so the same index is a retained one.
-    assert "carries this content's ownership marker" in _realize_schema(es)
-
-
 def test_readback_mismatch_fails_closed() -> None:
     # Owned by us, but the native fields were weakened to a non-exact type.
     tampered = sis.desired_native_mapping(_FIELDS, owner_address=_ADDRESS, field_schema_digest=_DIGEST)["mappings"]

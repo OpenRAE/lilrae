@@ -106,7 +106,7 @@ nodes:
     description: "MISP — threat intelligence platform"
     source:
       name: ghcr.io/misp/misp-docker/misp-core
-      version: latest
+      version: "2.5.50"
     resources:
       ram: 2 GiB
       cpu: 1

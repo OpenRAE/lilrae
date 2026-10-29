@@ -7,14 +7,14 @@ name = "lilrae"
 version = "8.2.0"
 description = "Advanced Purple Team Lab CLI"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 license = { text = "MIT" }
 authors = [{ name = "Brad Edwards" }]
 keywords = ["purple-team", "security", "cyber-range", "wazuh", "kali", "mcp", "raes"]
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Security",
     "Intended Audience :: Developers",
 ]
@@ -30,14 +30,17 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.33.0",
     "opentelemetry-semantic-conventions>=0.54b0",
     "cryptography>=50.0.0",
-    "raes==7.0.0",
-    "raes-env-packs==6.3.3",
+    "raes==9.1.0",
+    "raes-env-packs==6.4.2",
     "mcp>=2,<3",
     "rfc8785>=0.1.4,<0.2.0",
     "packaging>=24.2",
     # Imported directly by aptl.core.experiment.resolver; previously satisfied
     # only transitively through the upstream SDL distribution.
     "blake3>=1.0.8,<2",
+    # Imported by aptl.core.host_keys on every CLI start; raes 7 supplied it
+    # only transitively.
+    "asyncssh>=2.17.0",
 ]
 
 [project.urls]
@@ -68,7 +71,6 @@ web = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
     "sse-starlette>=2.0.0",
-    "asyncssh>=2.17.0",
 ]
 dev = [
     "pytest>=8.0.0",

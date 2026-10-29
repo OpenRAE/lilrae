@@ -394,6 +394,7 @@ class ComposeCaptureApparatusMixin:
             "CAP_AUDIT_WRITE",
             "CAP_CHOWN",
             "CAP_DAC_OVERRIDE",
+            "CAP_KILL",
             "CAP_NET_BIND_SERVICE",
             "CAP_SETGID",
             "CAP_SETUID",

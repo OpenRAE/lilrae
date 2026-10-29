@@ -12,6 +12,9 @@ from aptl.core.deployment._ssh_key_bundle import SSH_ACCESS_PROFILE_V1
 from aptl.core.deployment._misp_cache_credential import (
     MISP_CACHE_CREDENTIAL_PROFILE,
 )
+from aptl.core.deployment._misp_fastcgi_loopback import (
+    MISP_FASTCGI_LOOPBACK_PROFILE,
+)
 from aptl.core.deployment._misp_server_tls import MISP_SERVER_TLS_PROFILE
 from aptl.core.deployment._cortex_service_credentials import (
     CORTEX_SERVICE_CREDENTIALS_PROFILE,
@@ -22,6 +25,7 @@ from aptl.core.deployment._compose_stateful_constants import (
     CERTIFICATE_PROVENANCE,
     FLAG_SIGNING_ROOT_RELPATH,
     MISP_CACHE_CREDENTIAL_ROOT_RELPATH,
+    MISP_FASTCGI_LOOPBACK_ROOT_RELPATH,
     MISP_SERVER_TLS_ROOT_RELPATH,
     SOC_CERT_PROFILE,
     SOC_CERTS_ROOT_RELPATH,
@@ -127,6 +131,8 @@ def artifact_source_path(
         relative = Path(MISP_CACHE_CREDENTIAL_ROOT_RELPATH)
     elif provenance == MISP_SERVER_TLS_PROFILE:
         relative = Path(MISP_SERVER_TLS_ROOT_RELPATH)
+    elif provenance == MISP_FASTCGI_LOOPBACK_PROFILE:
+        relative = Path(MISP_FASTCGI_LOOPBACK_ROOT_RELPATH)
     elif provenance in WAZUH_MANAGER_CONFIG_PROVENANCES:
         relative = Path(RENDERED_MANAGER_RELPATH)
     else:

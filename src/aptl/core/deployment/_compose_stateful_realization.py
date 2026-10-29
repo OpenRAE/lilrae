@@ -51,6 +51,10 @@ from aptl.core.deployment._misp_server_tls import (
     MISP_SERVER_TLS_PROFILE,
     realize_misp_server_tls,
 )
+from aptl.core.deployment._misp_fastcgi_loopback import (
+    MISP_FASTCGI_LOOPBACK_PROFILE,
+    realize_misp_fastcgi_loopback,
+)
 from aptl.core.deployment._compose_stateful_readiness import (
     ComposeStatefulReadinessMixin,
     _load_stateful_env,
@@ -212,6 +216,11 @@ class ComposeStatefulRealizationMixin(ComposeStatefulReadinessMixin):
             )
         elif artifact.provenance == MISP_SERVER_TLS_PROFILE:
             error = realize_misp_server_tls(artifact, scenario_root)
+            result = (
+                LabResult(success=False, error=error) if error is not None else None
+            )
+        elif artifact.provenance == MISP_FASTCGI_LOOPBACK_PROFILE:
+            error = realize_misp_fastcgi_loopback(artifact, scenario_root)
             result = (
                 LabResult(success=False, error=error) if error is not None else None
             )

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
 from threading import RLock
@@ -10,10 +10,6 @@ from typing import TYPE_CHECKING
 
 from raes.explicitness import ExplicitnessClass
 from raes_contracts.artifact_requirements import ArtifactAvailabilityContext
-from raes_contracts.contracts import (
-    ExperimentStochasticControlModel,
-    ParticipantInformationStateContextResolver,
-)
 from raes_contracts.planning import (
     RealizationAuthorityMode,
     RealizationResolutionSource,
@@ -32,7 +28,6 @@ if TYPE_CHECKING:
     from raes_runtime.registry import RuntimeTarget
 
 from aptl.core.scenario_bundle import ScenarioBundle
-from aptl.backends._lilrae_runtime_handoff import LilraeRuntimeHandoffMixin
 from aptl.backends import _raes_participant_snapshot as participant_snapshot
 from aptl.backends.identity import (
     APTL_RAES_TARGET_NAME,
@@ -346,35 +341,72 @@ def _adjust_authority(
     return authority
 
 
-class AptlRuntimeManager(LilraeRuntimeHandoffMixin, _RaesRuntimeManager):
+def target_planning_compatibility(target: RuntimeTarget) -> object | None:
+    """Return the compatibility decision resolved when the target was admitted."""
+
+    selection = getattr(target.provisioner, "planning_compatibility", None)
+    return selection.decision if selection is not None else None
+
+
+def plan_for_target(
+    target: RuntimeTarget,
+    scenario: object,
+    snapshot: RuntimeSnapshot | None = None,
+    *,
+    parameters: dict[str, object] | None = None,
+    profile: str | None = None,
+    artifact_availability: ArtifactAvailabilityContext | None = None,
+    profile_authority: PlanProfileAuthority | None = None,
+    run_scope: PlanScope | None = None,
+) -> ExecutionPlan:
+    """Compile once, adjust the identified pack, then invoke the RAES planner once.
+
+    Planning reads the target's manifest and profile context but acts on no
+    backend, so it needs no runtime owner. The one runtime for the run is
+    created for apply.
+    """
+
+    model = compile_scenario_runtime_model(
+        scenario,
+        parameters=parameters,
+        profile=profile,
+        profile_authority=profile_authority,
+    )
+    model = apply_planning_compatibility(
+        model, target_planning_compatibility(target), scenario=scenario
+    )
+    scope = PlanScope(
+        target_name=target.name,
+        run_id=run_scope.run_id if run_scope is not None else None,
+        instantiation_id=(
+            run_scope.instantiation_id if run_scope is not None else None
+        ),
+    )
+    return plan(
+        model,
+        target.manifest,
+        snapshot if snapshot is not None else RuntimeSnapshot(),
+        scope=scope,
+        artifact_availability=artifact_availability,
+        profile_context=getattr(target.provisioner, "domain_profile_context", None),
+    )
+
+
+class AptlRuntimeManager(_RaesRuntimeManager):
     """RAES runtime manager with APTL's removable TechVault compile adapter."""
+
+    # One instance is the run's only runtime owner (OpenRAE/rae#1660).
 
     def __init__(
         self,
         target: RuntimeTarget,
         *,
         bundle: ScenarioBundle | None = None,
-        initial_snapshot: RuntimeSnapshot | None = None,
-        stochastic_controls: Iterable[ExperimentStochasticControlModel] = (),
-        information_state_context_resolver: (
-            ParticipantInformationStateContextResolver | None
-        ) = None,
+        **options: object,
     ) -> None:
-        super().__init__(
-            target,
-            initial_snapshot=initial_snapshot,
-            stochastic_controls=stochastic_controls,
-            information_state_context_resolver=information_state_context_resolver,
-        )
+        super().__init__(target, **options)
         self._aptl_bundle = bundle or getattr(target.provisioner, "bundle", None)
-        self._control_plane_handoff_lock = RLock()
-        self._aptl_planning_compatibility_selection = getattr(
-            target.provisioner, "planning_compatibility", None
-        )
-        selection = self._aptl_planning_compatibility_selection
-        self._aptl_planning_compatibility = (
-            selection.decision if selection is not None else None
-        )
+        self._aptl_planning_compatibility = target_planning_compatibility(target)
 
     def apply(self, execution_plan: ExecutionPlan) -> ApplyResult:
         """Apply with a finite node budget for the exact released large plan."""
@@ -401,38 +433,17 @@ class AptlRuntimeManager(LilraeRuntimeHandoffMixin, _RaesRuntimeManager):
         profile_authority: PlanProfileAuthority | None = None,
         run_scope: PlanScope | None = None,
     ) -> ExecutionPlan:
-        """Compile once, adjust the identified pack, then invoke RAES once."""
+        """Plan against this runtime's committed snapshot."""
 
-        model = compile_scenario_runtime_model(
+        return plan_for_target(
+            self._target,
             scenario,
+            snapshot if snapshot is not None else self.snapshot,
             parameters=parameters,
             profile=profile,
-            profile_authority=profile_authority,
-        )
-        model = apply_planning_compatibility(
-            model,
-            getattr(self, "_aptl_planning_compatibility", None),
-            scenario=scenario,
-        )
-        effective_snapshot = snapshot if snapshot is not None else self._snapshot
-        scope = PlanScope(
-            target_name=self._target.name,
-            run_id=run_scope.run_id if run_scope is not None else None,
-            instantiation_id=(
-                run_scope.instantiation_id if run_scope is not None else None
-            ),
-        )
-        return plan(
-            model,
-            self._target.manifest,
-            effective_snapshot,
-            scope=scope,
             artifact_availability=artifact_availability,
-            profile_context=getattr(
-                self._target.provisioner,
-                "domain_profile_context",
-                None,
-            ),
+            profile_authority=profile_authority,
+            run_scope=run_scope,
         )
 
 
@@ -443,6 +454,7 @@ from aptl.backends._raes_planning_entry import (
 
 __all__ = [
     "AptlRuntimeManager",
+    "plan_for_target",
     "AptlPlanningOptions",
     "DAEMON_READBACK_RUNTIME_CONCERNS",
     "apply_planning_compatibility",
