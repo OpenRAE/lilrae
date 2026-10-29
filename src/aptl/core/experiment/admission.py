@@ -99,6 +99,7 @@ from aptl.core.experiment.policy import AdmissionPolicy
 from aptl.core.experiment.resolver import ResolvedArtifact
 from aptl.core.experiment.spec_loading import load_experiment_root, load_task, parse_scenario_bytes
 from aptl.core.experiment.trial_plan import TrialPlan, compute_source_set_digest, expand_trial_plan
+from aptl.core.experiment.trial_plan_models import CaptureSpecPin
 from aptl.core.runstore import RunStorageBackend
 from aptl.utils.pathsafe import PathContainmentError
 
@@ -156,6 +157,8 @@ class AdmissionResult:
     * ADMITTED — ``admitted is True``, ``plan``/``plan_digest``/
       ``persisted_path`` all set, ``diagnostics`` empty (``warnings`` may be
       non-empty — e.g. the ``allow_uncertified_apparatus`` debug override).
+      ``capture_spec_pins`` names every admitted capture spec at its resolved
+      version, in authored order; the run traceability pins them (#1372).
 
     ``__post_init__`` enforces this split structurally so a rejected result
     can NEVER carry a plan, even if a future caller misuses the plain
@@ -169,6 +172,7 @@ class AdmissionResult:
     persisted_path: Path | None = None
     warnings: tuple[Diagnostic, ...] = ()
     trial_ids: tuple[str, ...] = ()
+    capture_spec_pins: tuple[CaptureSpecPin, ...] = ()
 
     def __post_init__(self) -> None:
         if self.admitted:
@@ -179,6 +183,8 @@ class AdmissionResult:
         else:
             if self.plan is not None or self.plan_digest is not None or self.persisted_path is not None:
                 raise ValueError("a rejected AdmissionResult must never carry a plan")
+            if self.capture_spec_pins:
+                raise ValueError("a rejected AdmissionResult must never carry capture spec pins")
             if not self.diagnostics:
                 raise ValueError("a rejected AdmissionResult must carry at least one diagnostic")
 
@@ -195,9 +201,13 @@ class AdmissionResult:
         plan_digest: str,
         persisted_path: Path,
         trial_ids: Iterable[str],
+        capture_spec_pins: Iterable[CaptureSpecPin],
         warnings: Iterable[Diagnostic] = (),
     ) -> AdmissionResult:
-        """Build an ADMITTED result carrying the persisted plan, its digest/path, and any warnings."""
+        """Build an ADMITTED result carrying the persisted plan, its digest/path, and any warnings.
+
+        ``capture_spec_pins`` names each admitted capture spec at its resolved version.
+        """
         return cls(
             admitted=True,
             plan=plan,
@@ -205,6 +215,7 @@ class AdmissionResult:
             persisted_path=persisted_path,
             warnings=tuple(warnings),
             trial_ids=tuple(trial_ids),
+            capture_spec_pins=tuple(capture_spec_pins),
         )
 
 
@@ -351,6 +362,9 @@ def _admit_experiment_inner(
         persisted_path=persisted_path,
         warnings=warnings,
         trial_ids=tuple(trial.planned_trial_id for trial in plan.trials),
+        capture_spec_pins=tuple(
+            CaptureSpecPin(spec.capture_spec_id, spec.spec_version) for spec in capture_specs
+        ),
     )
 
 

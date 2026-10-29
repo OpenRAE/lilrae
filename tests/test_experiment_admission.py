@@ -66,6 +66,7 @@ from aptl.core.experiment.spec_loading import (
     load_experiment_root,
     load_participant_manifest,
 )
+from aptl.core.experiment.trial_plan_models import CaptureSpecPin
 from aptl.core.runstore import LocalRunStore
 
 CORPUS_ROOT = corpus_family_root(FIXTURES)
@@ -426,6 +427,19 @@ class TestAdmissionResult:
     def test_plain_constructor_rejects_an_admitted_shape_missing_a_plan(self):
         with pytest.raises(ValueError, match="must carry plan"):
             AdmissionResult(admitted=True)
+
+    def test_plain_constructor_rejects_a_rejected_shape_carrying_pins(self):
+        from raes_contracts.diagnostics import Diagnostic
+
+        d = Diagnostic(
+            code="c", domain="experiment-admission", address="a", message="m"
+        )
+        with pytest.raises(ValueError, match="never carry capture spec pins"):
+            AdmissionResult(
+                admitted=False,
+                diagnostics=(d,),
+                capture_spec_pins=(CaptureSpecPin("capture-minimal", "1.0.0"),),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -1789,14 +1803,20 @@ def _covering_registration() -> CollectorRegistration:
     )
 
 
-def _capture_bearing_bundle():
-    """Build a capability-only bundle whose spec references the corpus capture spec."""
+def _capture_bearing_bundle(
+    *, spec_version: str = "1.0.0", authored_ref_version: str | None = "1.0.0"
+):
+    """Build a capability-only bundle whose spec references the corpus capture spec.
+
+    ``authored_ref_version=None`` authors the capture-spec reference without a
+    version, so admission resolves the version from the capture spec itself.
+    """
     backend, processor = _synthetic_manifests()
     declared = sorted(backend.supported_contract_versions)[0]
     task_payload = _capability_only_task_payload(declared_capability=declared)
     capture_payload = _read_corpus_capture_spec_payload()
     capture_payload["capture_spec_id"] = "capture-minimal"
-    capture_payload["spec_version"] = "1.0.0"
+    capture_payload["spec_version"] = spec_version
     capture_payload["scope_refs"] = [
         {
             "ref_kind": "task",
@@ -1804,15 +1824,10 @@ def _capture_bearing_bundle():
             "ref_version": task_payload["task_version"],
         }
     ]
-    spec_payload = _flat_spec_payload(
-        capture_spec_refs=[
-            {
-                "ref_kind": "capture-spec",
-                "ref_id": "capture-minimal",
-                "ref_version": "1.0.0",
-            }
-        ]
-    )
+    capture_ref = {"ref_kind": "capture-spec", "ref_id": "capture-minimal"}
+    if authored_ref_version is not None:
+        capture_ref["ref_version"] = authored_ref_version
+    spec_payload = _flat_spec_payload(capture_spec_refs=[capture_ref])
     bundle = _Bundle(
         task_payload=task_payload,
         spec_payload=spec_payload,
@@ -1847,6 +1862,30 @@ class TestAdmitExperimentWithCoveringRegistry:
         assert binding.requirement_id == "network-trace"
         # The binding travelled into the persisted canonical bytes.
         assert b"aptl.collector.network-trace" in result.plan.canonical_bytes
+
+    def test_admission_pins_the_resolved_version_of_an_unversioned_ref(
+        self, tmp_path
+    ):
+        bundle, backend, processor = _capture_bearing_bundle(
+            spec_version="2.3.0", authored_ref_version=None
+        )
+
+        result = admit_experiment(
+            experiment_root=bundle.experiment_root,
+            artifact_source=bundle.artifact_source,
+            run_store=LocalRunStore(tmp_path / "store"),
+            policy=default_admission_policy(),
+            environment=AdmissionEnvironment(
+                backend_manifest=backend,
+                processor_manifest=processor,
+            ),
+            capture_registry=CollectorRegistry((_covering_registration(),)),
+        )
+
+        assert result.admitted is True, [d.code for d in result.diagnostics]
+        assert result.capture_spec_pins == (
+            CaptureSpecPin("capture-minimal", "2.3.0"),
+        )
 
     def test_the_same_registry_missing_the_capability_still_fails_closed(
         self, tmp_path
