@@ -616,6 +616,7 @@ mcp/aptl-mcp-common/tests/endpoint-url.test.ts	tests-follow-owner	Retain meaning
 mcp/aptl-mcp-common/tests/http-brotli-runtime.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/http-ca.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/http-endpoint-security.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+mcp/aptl-mcp-common/tests/http-failures.test.ts	tests-follow-owner	Retain the HTTP failure classification tests with the MCP transport
 mcp/aptl-mcp-common/tests/http-insecure.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/http.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/redaction.parity.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
