@@ -422,7 +422,7 @@ class AptlRuntimeManager(LilraeRuntimeHandoffMixin, _RaesRuntimeManager):
                 run_scope.instantiation_id if run_scope is not None else None
             ),
         )
-        return plan(
+        execution_plan = plan(
             model,
             self._target.manifest,
             effective_snapshot,
@@ -434,6 +434,14 @@ class AptlRuntimeManager(LilraeRuntimeHandoffMixin, _RaesRuntimeManager):
                 None,
             ),
         )
+        from aptl.backends.raes_participant_runtime import AptlParticipantRuntime
+
+        participant_runtime = self._target.participant_runtime
+        if isinstance(participant_runtime, AptlParticipantRuntime):
+            execution_plan.diagnostics.extend(
+                participant_runtime.autonomous_execution.planning_diagnostics(model)
+            )
+        return execution_plan
 
 
 from aptl.backends._raes_planning_entry import (
