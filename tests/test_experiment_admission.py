@@ -434,12 +434,9 @@ class TestAdmissionResult:
         d = Diagnostic(
             code="c", domain="experiment-admission", address="a", message="m"
         )
+        pins = (CaptureSpecPin("capture-minimal", "1.0.0"),)
         with pytest.raises(ValueError, match="never carry capture spec pins"):
-            AdmissionResult(
-                admitted=False,
-                diagnostics=(d,),
-                capture_spec_pins=(CaptureSpecPin("capture-minimal", "1.0.0"),),
-            )
+            AdmissionResult(admitted=False, diagnostics=(d,), capture_spec_pins=pins)
 
 
 # ---------------------------------------------------------------------------
