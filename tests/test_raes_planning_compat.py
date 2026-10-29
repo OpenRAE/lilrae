@@ -435,6 +435,7 @@ def test_aptl_planning_applies_compatibility_before_raes_planner(
         name="aptl-full-remote-control-plane",
         manifest=manifest,
         provisioner=SimpleNamespace(domain_profile_context=None),
+        participant_runtime=None,
     )
 
     bundle = _bundle(tmp_path)
