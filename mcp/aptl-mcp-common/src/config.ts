@@ -15,6 +15,11 @@ export interface LabConfig {
     toolPrefix: string;
     targetName: string;
     configKey: string;
+    /**
+     * Budget for one tool result, in estimated tokens (4 characters each).
+     * A larger result is cut at a record boundary. Default 4000.
+     */
+    maxToolResultTokens?: number;
   };
   lab: {
     name: string;
@@ -203,6 +208,11 @@ async function loadDockerLabConfig(configPath: string): Promise<LabConfig> {
   // Validate required configuration sections exist
   if (!config.server) {
     throw new Error('Server configuration is required in docker-lab-config.json');
+  }
+
+  const maxTokens = config.server.maxToolResultTokens;
+  if (maxTokens !== undefined && !(Number.isInteger(maxTokens) && maxTokens > 0)) {
+    throw new Error('server.maxToolResultTokens must be a positive integer');
   }
 
   // Validate that at least one capability is configured

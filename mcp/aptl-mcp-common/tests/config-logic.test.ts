@@ -156,3 +156,33 @@ describe('startServer config path (#1344)', () => {
     }
   });
 });
+
+describe('loadLabConfig tool result budget', () => {
+  async function loadWithServer(server: Record<string, unknown>) {
+    const root = mkdtempSync(join(tmpdir(), 'aptl-result-budget-'));
+    const configPath = join(root, 'docker-lab-config.json');
+    writeFileSync(configPath, JSON.stringify({
+      server, lab: { name: 'budget-lab' }, api: { base_url: 'https://127.0.0.1:9200' },
+    }));
+    vi.stubEnv('APTL_MCP_DISABLE_DOTENV', '1');
+    try {
+      const { loadLabConfig } = await import('../src/config.js');
+      return await loadLabConfig(configPath);
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it('accepts a positive integer budget', async () => {
+    const config = await loadWithServer({ name: 'test', maxToolResultTokens: 2000 });
+
+    expect(config.server.maxToolResultTokens).toBe(2000);
+  });
+
+  it.each([0, -1, 1.5, '4000'])('rejects %j without echoing it', async (value) => {
+    await expect(loadWithServer({ name: 'test', maxToolResultTokens: value })).rejects.toThrow(
+      /^server\.maxToolResultTokens must be a positive integer$/,
+    );
+  });
+});

@@ -601,6 +601,7 @@ mcp/aptl-mcp-common/src/ssh-session.ts	scenario-integration-mcp	TechVault-select
 mcp/aptl-mcp-common/src/ssh.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/aptl-mcp-common/src/telemetry-export.ts	core-candidate	Migrate only after public-import, history and scenario-independence verification
 mcp/aptl-mcp-common/src/telemetry.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
+mcp/aptl-mcp-common/src/tool-output-cap.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/aptl-mcp-common/src/tools/api-definitions.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/aptl-mcp-common/src/tools/api-handlers.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/aptl-mcp-common/src/tools/definitions.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
@@ -629,6 +630,7 @@ mcp/aptl-mcp-common/tests/ssh.test.ts	tests-follow-owner	Retain meaningful bound
 mcp/aptl-mcp-common/tests/telemetry-export.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/telemetry-shutdown.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/telemetry.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+mcp/aptl-mcp-common/tests/tool-output-cap.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/tools-definitions.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/tools-handlers.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tsconfig.json	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer

@@ -18,7 +18,8 @@ import Ajv2020, { type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.
 import { type LabConfig } from './config.js';
 import { SSHConnectionManager } from './ssh.js';
 import { HTTPClient } from './http.js';
-import { initTracing, shutdownTracing, traceToolCall } from './telemetry.js';
+import { initTracing, recordToolResultSize, shutdownTracing, traceToolCall } from './telemetry.js';
+import { DEFAULT_MAX_TOOL_RESULT_TOKENS, boundToolResult, type ToolResult } from './tool-output-cap.js';
 import { generateToolDefinitions } from './tools/definitions.js';
 import { errorMessage, generateToolHandlers, type ToolHandler, type ToolContext } from './tools/handlers.js';
 import { generateAPIToolDefinitions } from './tools/api-definitions.js';
@@ -180,6 +181,8 @@ function invalidArgumentsResult(toolName: string, errors: ErrorObject[] | null |
 export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOptions = {}) {
   const { postToolHook } = options;
   const hookTimeoutMs = options.postToolHookTimeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS;
+  const maxToolResultTokens =
+    labConfig.server.maxToolResultTokens ?? DEFAULT_MAX_TOOL_RESULT_TOKENS;
   // Initialize clients and OTel tracing based on config
   const sshManager = labConfig.containers ? new SSHConnectionManager() : null;
   const httpClient = labConfig.api ? new HTTPClient(labConfig.api) : null;
@@ -266,11 +269,24 @@ export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOp
     const t0 = Date.now();
     try {
       // Context is narrowed to the correct type above based on tool name
-      const result = await traceToolCall<{ content: { type: string; text: string }[] }>(
+      const result = await traceToolCall<ToolResult>(
         name,
         labConfig.server.name,
         safeArgs,
-        () => (handler as any)(safeArgs, context),
+        async () => {
+          const bounded = boundToolResult<ToolResult>(
+            await (handler as any)(safeArgs, context),
+            maxToolResultTokens,
+          );
+          recordToolResultSize(bounded);
+          if (bounded.truncated) {
+            console.error(
+              `[MCP] tool result truncated: tool=${name} ` +
+                `chars=${bounded.originalChars}->${bounded.returnedChars}`,
+            );
+          }
+          return bounded.result;
+        },
       );
       if (postToolHook) {
         // Fire-and-forget: telemetry must NEVER add latency to the tool

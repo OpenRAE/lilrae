@@ -41,6 +41,7 @@ vi.mock('../src/telemetry.js', () => ({
   initTracing: vi.fn(),
   shutdownTracing: vi.fn().mockResolvedValue(undefined),
   getTracer: vi.fn(),
+  recordToolResultSize: vi.fn(),
   traceToolCall: vi.fn(async (_n: unknown, _s: unknown, _a: unknown, fn: () => unknown) => fn())
 }));
 
