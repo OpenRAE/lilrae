@@ -21,7 +21,7 @@ import sys
 import termios
 import time
 import tty
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable, Iterator, Mapping
@@ -401,6 +401,45 @@ class _ForcedTeardown(Exception):
     pass
 
 
+class _RemoteHangup(Exception):
+    pass
+
+
+class _TeardownSignals:
+    """Defer teardown across custody updates without blocking signals in children."""
+
+    def __init__(self) -> None:
+        self._deferring = False
+        self._pending: int | None = None
+        self._ignored = False
+
+    def request(self, signum: int, _frame: object = None) -> None:
+        if self._ignored:
+            return
+        if self._deferring:
+            if self._pending is None:
+                self._pending = signum
+            return
+        if signum == signal.SIGTERM:
+            raise _ForcedTeardown
+        raise _RemoteHangup
+
+    @contextmanager
+    def defer(self) -> Iterator[None]:
+        self._deferring = True
+        try:
+            yield
+        finally:
+            self._deferring = False
+            if self._pending is not None:
+                self.request(self._pending)
+
+    def ignore(self) -> None:
+        self._ignored = True
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+
+
 def _copy_window_size(source_fd: int, target_fd: int) -> None:
     try:
         size = fcntl.ioctl(source_fd, termios.TIOCGWINSZ, b"\0" * 8)
@@ -410,7 +449,10 @@ def _copy_window_size(source_fd: int, target_fd: int) -> None:
 
 
 def _relay(
-    child: subprocess.Popen[bytes], master: int, recorder: SessionRecorder
+    child: subprocess.Popen[bytes],
+    master: int,
+    recorder: SessionRecorder,
+    teardown: _TeardownSignals,
 ) -> int:
     selector = selectors.DefaultSelector()
     selector.register(master, selectors.EVENT_READ, "output")
@@ -431,7 +473,8 @@ def _relay(
                     input_open = False
                     _write_all(master, b"\x04")
                 continue
-            recorder.append(str(key.data), data)
+            with teardown.defer():
+                recorder.append(str(key.data), data)
             if key.data == "input":
                 _write_all(master, data)
             else:
@@ -451,7 +494,9 @@ def _raw_terminal(fd: int) -> Iterator[None]:
         tty.setraw(fd, when=termios.TCSANOW)
         yield
     finally:
-        termios.tcsetattr(fd, termios.TCSANOW, saved)
+        # A hung-up terminal has no settings left to restore.
+        with suppress(termios.error):
+            termios.tcsetattr(fd, termios.TCSANOW, saved)
 
 
 def run_broker() -> int:
@@ -462,48 +507,59 @@ def run_broker() -> int:
     child: subprocess.Popen[bytes] | None = None
     close_reason = "signal"
 
-    def forced_teardown(_signum: int, _frame: object) -> None:
-        raise _ForcedTeardown
+    teardown = _TeardownSignals()
 
     try:
-        signal.signal(signal.SIGTERM, forced_teardown)
-        authority = read_authority(_RUNTIME_ROOT)
-        with _admission_lock(_RUNTIME_ROOT):
-            if (_RUNTIME_ROOT / "quiesce").exists():
-                raise ValueError("capture session admission is closed")
-            session_id = session_identity_from_environment(authority)
-            registration = _RUNTIME_ROOT / "sessions" / f"{session_id}.pid"
-            _write_exclusive(registration, f"{os.getpid()}\n".encode())
-            pid_path = registration
-            try:
-                recorder = SessionRecorder(
-                    _CAPTURE_ROOT,
-                    authority,
-                    session_id=session_id,
-                )
-            except BaseException:
-                pid_path.unlink(missing_ok=True)
-                raise
+        signal.signal(signal.SIGTERM, teardown.request)
+        # Closing a PTY session hangs up its terminal and the kernel sends
+        # SIGHUP. Its default action would end the broker before the cleanup
+        # below, leaving the pid registration that quiesce waits on.
+        signal.signal(signal.SIGHUP, teardown.request)
+        with teardown.defer():
+            authority = read_authority(_RUNTIME_ROOT)
+            with _admission_lock(_RUNTIME_ROOT):
+                if (_RUNTIME_ROOT / "quiesce").exists():
+                    raise ValueError("capture session admission is closed")
+                session_id = session_identity_from_environment(authority)
+                registration = _RUNTIME_ROOT / "sessions" / f"{session_id}.pid"
+                _write_exclusive(registration, f"{os.getpid()}\n".encode())
+                pid_path = registration
+                try:
+                    recorder = SessionRecorder(
+                        _CAPTURE_ROOT,
+                        authority,
+                        session_id=session_id,
+                    )
+                except BaseException:
+                    pid_path.unlink(missing_ok=True)
+                    raise
+            master, slave = pty.openpty()
         original = os.environ.get("SSH_ORIGINAL_COMMAND")
-        master, slave = pty.openpty()
         _copy_window_size(sys.stdin.fileno(), slave)
         with _raw_terminal(sys.stdin.fileno()):
-            child = subprocess.Popen(
-                inner_ssh_command(original),
-                stdin=slave,
-                stdout=slave,
-                stderr=slave,
-                start_new_session=True,
-            )
-            os.close(slave)
-            slave = -1
-            returncode = _relay(child, master, recorder)
+            with teardown.defer():
+                child = subprocess.Popen(
+                    inner_ssh_command(original),
+                    stdin=slave,
+                    stdout=slave,
+                    stderr=slave,
+                    start_new_session=True,
+                )
+                os.close(slave)
+                slave = -1
+            returncode = _relay(child, master, recorder, teardown)
         close_reason = "clean-exit" if returncode == 0 else "remote-eof"
         return returncode
     except _ForcedTeardown:
         close_reason = "forced-teardown"
         return 143
+    except _RemoteHangup:
+        close_reason = "signal"
+        return 129
     finally:
+        # Teardown runs once. A later SIGTERM from quiesce, or a SIGHUP, must
+        # not cut it short and leave the session unfinished.
+        teardown.ignore()
         try:
             if child is not None and child.poll() is None:
                 os.killpg(child.pid, signal.SIGTERM)

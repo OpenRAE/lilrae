@@ -324,8 +324,10 @@ def _brokered_ssh(
     )
 
 
-def _wait_for_broker_session(container_id: str, session_id: str) -> None:
-    """Wait until the broker registers one session as active."""
+def _wait_for_broker_session(
+    container_id: str, session_id: str, *, finished: bool = False
+) -> None:
+    """Wait for session registration or for its cleanup after a client closes."""
 
     for _attempt in range(100):
         registered = subprocess.run(
@@ -334,6 +336,7 @@ def _wait_for_broker_session(container_id: str, session_id: str) -> None:
                 "exec",
                 container_id,
                 "test",
+                *(("!",) if finished else ()),
                 "-f",
                 f"/run/aptl-capture/sessions/{session_id}.pid",
             ],
@@ -343,7 +346,30 @@ def _wait_for_broker_session(container_id: str, session_id: str) -> None:
         if registered.returncode == 0:
             return
         time.sleep(0.1)
-    pytest.fail(f"broker did not register session {session_id}")
+    state = "finish" if finished else "register"
+    pytest.fail(f"broker did not {state} session {session_id}")
+
+
+def _close_pty_session_while_it_runs(
+    container_id: str, outer_key: Path, port: str, session_id: str
+) -> None:
+    """Close a live client before quiesce, exercising terminal hangup cleanup."""
+
+    client = subprocess.Popen(
+        _brokered_ssh_argv(outer_key, port, "sleep 900", tty=True),
+        env=_brokered_ssh_environment(session_id),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        _wait_for_broker_session(container_id, session_id)
+    finally:
+        client.terminate()
+        client.wait(timeout=30)
+    # Prove hangup itself finished the session; quiesce must not rescue it or
+    # race the hangup and change its close reason to forced teardown.
+    _wait_for_broker_session(container_id, session_id, finished=True)
 
 
 @pytest.mark.integration
@@ -624,6 +650,8 @@ EOF
             env=_brokered_ssh_environment("session-3"),
         )
         _wait_for_broker_session(container_id, "session-3")
+        # A different client closes before quiesce. Preserve its transcript too.
+        _close_pty_session_while_it_runs(container_id, outer_key, port, "session-4")
         subprocess.run(
             [
                 "docker",
@@ -654,10 +682,12 @@ EOF
         )
         held_open.wait(timeout=30)
         payload = json.loads(exported.stdout)
-        sessions = sorted(item["session_id"] for item in payload["sessions"])
-        expected = ["session-1", "session-2", "session-3"]
+        sessions = {item["session_id"]: item for item in payload["sessions"]}
+        expected = ["session-1", "session-2", "session-3", "session-4"]
         assert sorted(payload["accepted_session_ids"]) == expected
-        assert sessions == expected
+        assert sorted(sessions) == expected
+        assert sessions["session-4"]["close_reason"] == "signal"
+        assert sessions["session-3"]["close_reason"] == "forced-teardown"
         ownership = subprocess.run(
             [
                 "docker",
