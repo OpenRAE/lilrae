@@ -280,9 +280,12 @@ describe('generateAPIToolHandlers', () => {
     });
   });
 
-  it('reports the HTTP status of a failed generic API call', async () => {
+  it('reports the HTTP status of a failed generic API call, not its body', async () => {
     const makeRequest = vi.fn().mockRejectedValue(
-      Object.assign(new Error('HTTP 404: Not Found'), { statusCode: 404 }),
+      Object.assign(new Error('HTTP 404: Not Found'), {
+        statusCode: 404,
+        response: { error: 'private-fixture-value' },
+      }),
     );
     const handler = generateAPIToolHandlers(mockServerConfig).wazuh_api_call;
 
@@ -296,6 +299,7 @@ describe('generateAPIToolHandlers', () => {
       error: 'HTTP 404: Not Found',
       status: 404,
     });
+    expect(result.content[0].text).not.toContain('private-fixture-value');
   });
 
   it('works with different server configs', () => {
