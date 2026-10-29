@@ -81,6 +81,8 @@ export interface LabConfig {
         auth_url?: string;
       };
       params?: Record<string, any>;
+      /** JSON Schema for the merged template and caller query parameters. */
+      params_schema?: Record<string, unknown>;
       /**
        * Regular expressions that each `{name}` path parameter value must
        * match in full. A value without a pattern still must not be empty,

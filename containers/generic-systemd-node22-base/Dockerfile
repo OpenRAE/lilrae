@@ -5,8 +5,9 @@
 # major is part of its contract: Dependabot refreshes the digest but never the
 # major (issue #1193). The slim variant omits the full buildpack toolchain
 # (desktop, media, and kernel-header packages) this substrate never uses.
-FROM node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+FROM node:22.23.4-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
+RUN test "$(node --version)" = "v22.23.4" \
+    && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         systemd systemd-sysv dbus gnupg openssh-server ca-certificates \
         iputils-ping nmap python3 python3-pip curl wget dnsutils netcat-openbsd \
@@ -43,9 +44,34 @@ RUN set -eu; \
     echo "${PCSS_SHA512}  /tmp/pcss.tgz" | sha512sum -c -; \
     pcss=/usr/local/lib/node_modules/npm/node_modules/postcss-selector-parser; \
     rm -rf "$pcss"; mkdir -p "$pcss"; \
-    tar -xzf /tmp/pcss.tgz -C "$pcss" --strip-components=1; \
+    tar -xmzf /tmp/pcss.tgz -C "$pcss" --strip-components=1; \
     rm /tmp/pcss.tgz; \
     test "$(node -p "require('$pcss/package.json').version")" = "${PCSS_VERSION}"
+# npm 11.21.1 still bundles ip-address 10.7.2 and undici 6.29.0, below the
+# fixes for CVE-2026-111997, CVE-2026-109869 and CVE-2026-109924. Replace
+# only these dependency-free packages with compatible, integrity-pinned fixes.
+# Use tar -m for replacements: npm archives share a fixed timestamp, and
+# BuildKit can omit a same-size replacement from the layer if its mtime is
+# unchanged. Undici's old and fixed package.json are both 6290 bytes.
+ARG IP_ADDRESS_VERSION=10.7.4
+ARG IP_ADDRESS_SHA512=0d604c2b278cdb90fbd27ac889392042d879f7f1be9da28e4dea7a86e17d8fe1a678adc3303eb466fc60e5de6a427cfedfc007828bba79a9f62c4097fa5aca0e
+ARG UNDICI_VERSION=6.29.1
+ARG UNDICI_SHA512=12f46552dfd0a8012f5dd41e44c6147f0390b1fce90f3b7292b1b6a3018413fac1381a18bfdb85dfd673b0d0e1e254c51e14ebd973998ca91882e783d7666618
+RUN set -eu; \
+    patch_bundle() { \
+        package="$1"; version="$2"; digest="$3"; \
+        curl -fsSL "https://registry.npmjs.org/${package}/-/${package}-${version}.tgz" -o /tmp/npm-dependency.tgz; \
+        echo "${digest}  /tmp/npm-dependency.tgz" | sha512sum -c -; \
+        target="/usr/local/lib/node_modules/npm/node_modules/${package}"; \
+        rm -rf "$target"; mkdir -p "$target"; \
+        tar -xmzf /tmp/npm-dependency.tgz -C "$target" --strip-components=1; \
+        rm /tmp/npm-dependency.tgz; \
+        test "$(node -p "require('$target/package.json').version")" = "$version"; \
+        node -e "require('$target')"; \
+    }; \
+    patch_bundle ip-address "${IP_ADDRESS_VERSION}" "${IP_ADDRESS_SHA512}"; \
+    patch_bundle undici "${UNDICI_VERSION}" "${UNDICI_SHA512}"; \
+    test "$(npm --version)" = "${NPM_VERSION}"
 # This image's offline cache is an APTL-owned build integration. Resolve the
 # exact compatible pack through the normal acquisition/artifact validators;
 # retain dependency cache + identity evidence, never a second runtime source.

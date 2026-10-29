@@ -93,11 +93,11 @@ class StartupDiagnostic:
 # CLI failure summary adds ``--project-dir`` when the start named another one.
 STOP_RECOVERY_ROUTES: tuple[tuple[str, str], ...] = (
     (
-        "aptl lab stop",
+        "lilrae lab stop",
         "removes the project's containers and networks and keeps its volumes, "
-        "so lab data survives",
+        "so volume-backed lab data survives; container-local data is removed",
     ),
-    ("aptl lab stop -v", "also removes the volumes and destroys all lab data"),
+    ("lilrae lab stop -v", "also removes managed volumes and destroys their lab data"),
 )
 
 
@@ -197,10 +197,10 @@ class LabResult:
 
 @dataclass(frozen=True)
 class LabResetResult:
-    """Outcome of ``aptl lab reset`` (#1218).
+    """Outcome of ``lilrae lab reset`` (#1218).
 
     ``result`` is the project-scoped teardown with volume removal and pending
-    host-side cleanup, the same work as ``aptl lab stop -v``. The counts are the
+    host-side cleanup, the same work as ``lilrae lab stop -v``. The counts are the
     containers and networks of the workspace-scoped project that teardown
     removes, observed just before it, and zero when no start recorded that
     scope. They are ``None`` when that observation failed or the reset never

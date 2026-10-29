@@ -43,7 +43,9 @@ from aptl.core.deployment._compose_stateful_realization import (
 )
 from aptl.core.deployment._compose_image_realization import (
     ComposeRealizationImageMixin,
+    image_override_text,
 )
+from aptl.core.deployment._lilrae_compose_capabilities import compose_capability_refusal
 from aptl.core.deployment._compose_network_realization import (
     ComposeRealizationNetworkMixin,
 )
@@ -143,9 +145,7 @@ class ComposeRealizationMixin(
         resolution of the mutable tag.
         """
 
-        failure = self._runtime_materialization_preflight(
-            realization, scenario_root=scenario_root
-        )
+        failure = self._runtime_materialization_preflight(realization)
         if failure is not None:
             return failure
 
@@ -156,7 +156,7 @@ class ComposeRealizationMixin(
             attempt_id=attempt_id or ownership.new_attempt_id()
         )
         failure = self._realization_preflight(
-            realization, scenario_root, substrate_digests
+            realization, substrate_digests
         )
         if failure is not None:
             result = failure
@@ -174,23 +174,38 @@ class ComposeRealizationMixin(
     def _realization_preflight(
         self,
         realization: DeploymentRealizationSpec,
-        scenario_root: Path,
         substrate_digests: Mapping[str, str] | None,
     ) -> LabResult | None:
         """Run ordered backend preflights before any scenario mutation."""
 
-        failure = self._capture_apparatus_preflight(realization, scenario_root)
+        failure = self._environment_binding_preflight(realization)
+        if failure is None:
+            failure = self._validate_stateful_realization(realization)
+        if failure is None:
+            failure = self._capture_apparatus_preflight(realization)
         if failure is None:
             failure = self._traffic_mirror_preflight(realization)
         if failure is None:
-            failure = self._observability_preflight(realization, scenario_root)
+            failure = self._observability_preflight(realization)
         if failure is None:
             # Request-scoped: base start consumes the already-verified identity.
             self._realization_substrate_digests = dict(substrate_digests or {})
             failure = self._runtime_orchestration_preflight(realization)
         if failure is None:
+            failure = self._compose_feature_preflight(realization)
+        if failure is None:
             failure = self._start_backend_observability(realization.profiles)
         return failure
+
+    def _compose_feature_preflight(
+        self, realization: DeploymentRealizationSpec
+    ) -> LabResult | None:
+        """Check the image override's Compose features before applying it."""
+        if not _needs_compose(realization) or not realization.images:
+            return None
+        return compose_capability_refusal(
+            self._run, (), documents=(image_override_text(realization.images),),
+        )
 
     def _realize_networks_and_boundaries(
         self,

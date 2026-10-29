@@ -45,7 +45,10 @@ from raes_contracts.vocabulary import ObservationStrength
 from aptl.backends.raes_diagnostics import snapshot_after_apply
 from aptl.backends import _raes_operational_observation as operational_observation
 from aptl.backends._raes_observation_helpers import ObservedResource
-from aptl.backends.raes_manifest import create_aptl_manifest
+from aptl.backends.raes_manifest import (
+    create_aptl_manifest,
+    create_aptl_realization_envelope,
+)
 from aptl.backends.raes_observation import observe_realization
 from aptl.backends.raes_planning_compat import DAEMON_READBACK_RUNTIME_CONCERNS
 from aptl.backends.raes_realization_model import AptlRealization, NodeRealization
@@ -391,6 +394,155 @@ def test_environment_operator_secret_is_presence_only():
     assert "value_commitment" not in disclosed[0]
 
 
+@pytest.mark.parametrize(
+    "explicitness, codes",
+    [(ExplicitnessClass.OPEN, []), (ExplicitnessClass.EXACT, [_GATE_REJECT])],
+)
+def test_environment_sourced_secret_fixture_leaves_no_value_or_digest(
+    explicitness, codes
+):
+    """A grant or adapter value is never read back or committed (#965).
+
+    A value-less ``secret_fixture`` takes its value from outside the scenario,
+    so RAES's unsalted commitment of it could be checked against a guess. The
+    readback leaves it out of the disclosure, the snapshot and the run record.
+    An open environment passes with what remains. An exact one is rejected, as
+    it was when the commitment contradicted the declared empty value (#1332).
+    """
+
+    from raes_processor.semantics.realization import project_realization_concern
+
+    from aptl.backends.raes_repro import runtime_snapshot_record_payload
+
+    canary = "fixture-canary-0c1d"
+    fixture = {
+        "name": "FIXTURE",
+        "value": "",
+        "value_classification": "secret_fixture",
+        "provenance": "runtime",
+        "source": "x",
+    }
+    runtime = _runtime(environment=[fixture, _env_runtime().environment[0]])
+    backend = _Backend(
+        {_CONTAINER: _inspect(env=[f"FIXTURE={canary}", "FOO=bar"])},
+        file_reads={
+            (_CONTAINER, "/etc/os-release"): b'ID=debian\nVERSION_ID="12"\n'
+        },
+    )
+
+    gate_codes, _provenance, observations = _gate(
+        runtime, backend, "runtime-environment", explicitness=explicitness
+    )
+    plan, _observations = _observe(runtime, backend)
+    record = runtime_snapshot_record_payload(
+        snapshot_after_apply(plan, RuntimeSnapshot(), observations)
+    )
+    digest = project_realization_concern(
+        "runtime-environment", [{**fixture, "value": canary}]
+    )[0]["value_commitment"]
+
+    assert gate_codes == codes
+    disclosed = observations[_ADDRESS].concerns[_ENV_PATH]
+    assert [item["name"] for item in disclosed] == ["FOO"]
+    assert canary not in str(record)
+    assert digest.rsplit(":", 1)[1] not in str(record)
+
+    # Exercise the same resolved-authority gate the provisioner calls. The
+    # binding preflight now refuses this exact case before a container exists;
+    # OPEN authority still accepts its secret-free readback.
+    from raes_processor.planner import realization_authority_disclosure
+    from raes_processor.semantics.realization_concerns import realization_concern_descriptors
+
+    authority = ResolvedRealizationAuthority(
+        address=_ADDRESS,
+        field_path="nodes.vm.runtime.environment",
+        domain=REALIZATION_DOMAIN,
+        requirement_kind="runtime-environment",
+        payload_pointer="/spec/node/runtime/environment",
+        mode=(RealizationAuthorityMode.OPEN if explicitness is ExplicitnessClass.OPEN
+              else RealizationAuthorityMode.EXACT),
+        source=RealizationResolutionSource.AUTHORED_SCOPE,
+        verification_scope=RealizationVerificationScope.CONFIGURATION,
+        required_observation_strength=ObservationStrength.DAEMON_OBSERVED,
+    )
+    envelope = create_aptl_realization_envelope()
+    # RAES requires total authority, including absent registered concerns. Use
+    # its registry, authorize the declared node type and OS, and retain CLOSED
+    # authority for absent concerns. No local inventory substitutes for it.
+    remaining = tuple(
+        ResolvedRealizationAuthority(
+            address=_ADDRESS,
+            field_path=f"nodes.vm.{descriptor.authored_suffix}",
+            domain=REALIZATION_DOMAIN,
+            requirement_kind=descriptor.concern_kind,
+            payload_pointer="/" + "/".join(descriptor.payload_path),
+            mode=(RealizationAuthorityMode.EXACT
+                  if descriptor.concern_kind in {"node-type", "os-family"}
+                  else RealizationAuthorityMode.CLOSED),
+            source=(RealizationResolutionSource.AUTHORED_SCOPE
+                        if descriptor.concern_kind in {"node-type", "os-family"}
+                    else RealizationResolutionSource.LEGACY_DEFAULT),
+            verification_scope=(
+                RealizationVerificationScope.PRESENCE
+                if descriptor.concern_kind == "os-family" else None
+            ),
+            required_observation_strength=(
+                ObservationStrength.GUEST_OBSERVED
+                if descriptor.concern_kind == "os-family" else None
+            ),
+        )
+        for descriptor in realization_concern_descriptors()
+        if descriptor.section == "nodes" and descriptor.concern_kind != "runtime-environment"
+    )
+    payload = {
+        "node_kind": "compute", "os_family": "linux",
+        "spec": {"node": {"runtime": {"environment":
+            runtime.model_dump(mode="json", by_alias=True)["environment"]}}},
+    }
+    plan = replace(
+        plan,
+        resources={_ADDRESS: replace(plan.resources[_ADDRESS], payload=payload)},
+        operations=[replace(op, payload=payload) for op in plan.operations],
+        realization_authority=(authority, *remaining),
+        realization_envelope=envelope.identity,
+        operation_id="fixture-binding-apply",
+    )
+    # Observe against the complete authority-bearing plan so OS evidence is
+    # collected from the guest, rather than reusing the earlier platform-only
+    # inventory. Native RAES compares OS identity through bound disclosures.
+    observations = observe_realization(
+        backend,
+        AptlRealization(
+            profiles=frozenset(),
+            nodes=(_node_realization(runtime),),
+            networks=(),
+            placements=(),
+            diagnostics=(),
+            realization_authority=plan.realization_authority,
+        ),
+        plan,
+        Path("."),
+    )
+    snapshot = snapshot_after_apply(plan, RuntimeSnapshot(), observations)
+    snapshot = replace(snapshot, realization_envelope=envelope.identity)
+    corroboration = operational_observation.operational_realization_observations(
+        plan=plan, observations=observations, envelope=envelope, previous=(),
+    )
+    assert {item.requirement_kind for item in corroboration} == {
+        "operating-system", "runtime-environment"
+    }
+    snapshot = replace(snapshot, realization_observations=corroboration)
+    diagnostics, _ = realization_authority_disclosure(
+        plan, snapshot, manifest=create_aptl_manifest()
+    )
+    assert [item.code for item in diagnostics] == codes, [d.message for d in diagnostics]
+    assert all(item.address == _ADDRESS and "runtime-environment" in item.message
+               for item in diagnostics)
+    native_record = runtime_snapshot_record_payload(snapshot)
+    assert canary not in str(native_record)
+    assert digest.rsplit(":", 1)[1] not in str(native_record)
+
+
 def test_environment_undeclared_operator_value_is_rejected():
     # The contract declares the variable with no value, so "realized" means
     # realized empty. A value arriving out of band -- an operator `.env` entry
@@ -427,22 +579,27 @@ def test_environment_probe_missing_config_fails_closed():
 # --------------------------------------------------------------------------- #
 
 
-def test_restart_policy_is_disclosed_from_daemon_state():
-    runtime = _runtime(operational_policy={"restart": "always"})
-    backend = _Backend({_CONTAINER: _inspect(restart="always")})
+@pytest.mark.parametrize("policy", ["always", "on-failure"])
+def test_restart_policy_is_disclosed_from_daemon_state(policy):
+    runtime = _runtime(operational_policy={"restart": policy.replace("-", "_")})
+    backend = _Backend({_CONTAINER: _inspect(restart=policy)})
 
     codes, _provenance, observations = _gate(runtime, backend, "runtime-restart-policy")
 
     assert codes == []
     assert (
         observations[_ADDRESS].concerns[CONCERN_PAYLOAD_PATH["runtime-restart-policy"]]
-        == "always"
+        == policy.replace("-", "_")
     )
 
 
-def test_restart_policy_mismatch_is_rejected():
-    runtime = _runtime(operational_policy={"restart": "always"})
-    backend = _Backend({_CONTAINER: _inspect(restart="unless-stopped")})
+@pytest.mark.parametrize(
+    ("expected", "observed"),
+    [("always", "unless-stopped"), ("on_failure", "no")],
+)
+def test_restart_policy_mismatch_is_rejected(expected, observed):
+    runtime = _runtime(operational_policy={"restart": expected})
+    backend = _Backend({_CONTAINER: _inspect(restart=observed)})
 
     codes, _provenance, _observations = _gate(
         runtime, backend, "runtime-restart-policy"
@@ -973,7 +1130,8 @@ def test_wazuh_software_component_rejects_wrong_guest_version():
     assert _SOFTWARE_PATH not in observations[_ADDRESS].concerns
 
 
-def test_declared_package_is_disclosed_only_after_guest_query_matches():
+@pytest.mark.parametrize("explicitness", [ExplicitnessClass.EXACT, ExplicitnessClass.CONSTRAINED])
+def test_declared_package_is_disclosed_only_after_guest_query_matches(explicitness):
     runtime = _runtime(packages=[{"manager": "apt", "name": "curl", "version": "*"}])
     query = (
         "dpkg-query",
@@ -985,7 +1143,7 @@ def test_declared_package_is_disclosed_only_after_guest_query_matches():
         exec_results={_CONTAINER: {query: (0, "ii \tcurl\t8.10.1-1\tamd64\t\n")}},
     )
 
-    codes, _provenance, observations = _gate(runtime, backend, "runtime-packages")
+    codes, _provenance, observations = _gate(runtime, backend, "runtime-packages", explicitness=explicitness)
 
     assert codes == []
     assert _PACKAGES_PATH in observations[_ADDRESS].concerns
@@ -1065,11 +1223,12 @@ def test_declared_package_with_no_provider_is_still_rejected():
     assert _PACKAGES_PATH not in observations[_ADDRESS].concerns
 
 
-def test_missing_declared_package_is_omitted_and_rejected():
+@pytest.mark.parametrize("explicitness", [ExplicitnessClass.EXACT, ExplicitnessClass.CONSTRAINED])
+def test_missing_declared_package_is_omitted_and_rejected(explicitness):
     runtime = _runtime(packages=[{"manager": "apt", "name": "curl", "version": "*"}])
     backend = _Backend({_CONTAINER: _inspect()})
 
-    codes, _provenance, observations = _gate(runtime, backend, "runtime-packages")
+    codes, _provenance, observations = _gate(runtime, backend, "runtime-packages", explicitness=explicitness)
 
     assert _PACKAGES_PATH not in observations[_ADDRESS].concerns
     assert _GATE_REJECT in codes
@@ -1220,7 +1379,8 @@ def test_mismatched_systemd_unit_state_is_omitted_and_rejected():
     assert _GATE_REJECT in codes
 
 
-def test_local_identity_is_disclosed_only_after_guest_account_readback():
+@pytest.mark.parametrize("explicitness", [ExplicitnessClass.EXACT, ExplicitnessClass.CONSTRAINED])
+def test_local_identity_is_disclosed_only_after_guest_account_readback(explicitness):
     runtime = _runtime(
         local_identity={
             "groups": [{"name": "analyst"}],
@@ -1248,7 +1408,7 @@ def test_local_identity_is_disclosed_only_after_guest_account_readback():
         },
     )
 
-    codes, _provenance, observations = _gate(runtime, backend, "runtime-local-identity")
+    codes, _provenance, observations = _gate(runtime, backend, "runtime-local-identity", explicitness=explicitness)
 
     assert codes == []
     assert (
@@ -1295,7 +1455,8 @@ def test_local_identity_observes_backend_selected_primary_group_and_membership()
     )
 
 
-def test_local_identity_group_mismatch_is_omitted_and_rejected():
+@pytest.mark.parametrize("explicitness", [ExplicitnessClass.EXACT, ExplicitnessClass.CONSTRAINED])
+def test_local_identity_group_mismatch_is_omitted_and_rejected(explicitness):
     runtime = _runtime(
         local_identity={
             "groups": [{"name": "analyst"}],
@@ -1323,7 +1484,7 @@ def test_local_identity_group_mismatch_is_omitted_and_rejected():
         },
     )
 
-    codes, _provenance, observations = _gate(runtime, backend, "runtime-local-identity")
+    codes, _provenance, observations = _gate(runtime, backend, "runtime-local-identity", explicitness=explicitness)
 
     assert (
         CONCERN_PAYLOAD_PATH["runtime-local-identity"]

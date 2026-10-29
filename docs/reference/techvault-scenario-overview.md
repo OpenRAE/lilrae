@@ -131,7 +131,7 @@ by the scenario's realization scopes. TechVault's native evidence paths do not
 require OTel, so its normal startup omits that optional stack.
 
 From a matching source checkout, select a research fixture with
-`aptl lab start --scenario-path scenarios/<fixture-id>.sdl.yaml`. See
+`lilrae lab start --scenario-path scenarios/<fixture-id>.sdl.yaml`. See
 [Curated RAES Variants](../sdl/techvault-curated-variants.md) for the full
 authoring and proof detail.
 

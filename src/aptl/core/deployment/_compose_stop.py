@@ -44,7 +44,9 @@ class _ComposeStopBackend(Protocol):
 
         ...
 
-    def remove_generic_materializer_containers(self) -> list[str]:
+    def remove_generic_materializer_containers(
+        self, *, remove_volumes: bool = True
+    ) -> list[str]:
         """Force-remove containers the generic materializer started directly."""
 
         ...
@@ -54,7 +56,7 @@ class _ComposeStopBackend(Protocol):
 
         ...
 
-    def remove_project_containers(self) -> list[str]:
+    def remove_project_containers(self, *, remove_volumes: bool = True) -> list[str]:
         """Force-remove residual containers scoped to the Compose project."""
 
         ...
@@ -102,7 +104,9 @@ def _run_stop(
 ) -> LabResult:
     """Run bounded project cleanup and verify the runtime is absent."""
 
-    failures = backend.remove_generic_materializer_containers()
+    failures = backend.remove_generic_materializer_containers(
+        remove_volumes=remove_volumes
+    )
     # After the direct containers, so the workspace project is resolved; before
     # networks and volumes, so no stranded helper still holds one of them.
     failures.extend(backend.remove_stranded_helpers())
@@ -158,7 +162,7 @@ def _cleanup_failures(
     removal outright with "network has active endpoints".
     """
 
-    failures = backend.remove_project_containers()
+    failures = backend.remove_project_containers(remove_volumes=remove_volumes)
     failures += backend.remove_project_networks()
     if remove_volumes:
         failures.extend(backend._remove_owned_volumes())

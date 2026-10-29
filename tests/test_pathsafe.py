@@ -609,3 +609,15 @@ class TestReplacePrivateNofollow:
         monkeypatch.undo()
         assert leaf.read_bytes() == b"OLD=1\n"
         assert list((tmp_path / "env").glob(".node.env*")) == []
+
+
+def test_private_state_requires_ownership_of_every_ancestor(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    (tmp_path / "state").mkdir(mode=0o755)
+    actual_uid = os.geteuid()
+    monkeypatch.setattr(os, "geteuid", lambda: actual_uid + 1)
+    with pytest.raises(PathContainmentError) as error:
+        pathsafe.open_private_dir_contained_nofollow(tmp_path, Path("state/packs"))
+    assert error.value.reason == pathsafe.REASON_NOT_PRIVATE
+    assert not (tmp_path / "state" / "packs").exists()

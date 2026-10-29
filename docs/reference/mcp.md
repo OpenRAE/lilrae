@@ -1,7 +1,7 @@
 # MCP Reference
 
 APTL's Model Context Protocol servers let an authorized AI client operate the
-red- and blue-team surfaces realized by a scenario. `aptl lab start` builds the
+red- and blue-team surfaces realized by a scenario. `lilrae lab start` builds the
 artifacts needed by that scenario and creates or updates the project-private
 `.mcp.json` client configuration.
 
@@ -54,8 +54,8 @@ undocumented network call.
 The normal path is automatic:
 
 ```shell
-aptl lab start --scenario <id>
-aptl lab status
+lilrae lab start --scenario <id>
+lilrae lab status
 ```
 
 After a successful or usable startup, open the client from the project root and
@@ -70,7 +70,7 @@ lab:
 ```
 
 That script is a source-project maintenance surface. Released-package users
-normally let `aptl lab start` own the build and generated configuration.
+normally let `lilrae lab start` own the build and generated configuration.
 
 ## Security Boundary
 
@@ -80,7 +80,7 @@ normally let `aptl lab start` own the build and generated configuration.
   verification or replace authenticated API tools with direct calls.
 - Run tools only against the selected APTL project and systems you are
   authorized to test.
-- Use `aptl lab info` and the generated configuration for runtime endpoints;
+- Use `lilrae lab info` and the generated configuration for runtime endpoints;
   ports and available targets can change with realization.
 
 For implementation architecture, see [MCP Integration](../components/mcp-integration.md).

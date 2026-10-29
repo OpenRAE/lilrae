@@ -6,7 +6,7 @@
 // public surface consumers already depend on through `./ssh.js` and, via
 // index.ts, the package root. Do not add logic here — extend the owning
 // module instead.
-export { SSHError } from './ssh-contracts.js';
+export { SSHError, CommandTimeoutError } from './ssh-contracts.js';
 export type {
   CommandResult,
   SessionType,

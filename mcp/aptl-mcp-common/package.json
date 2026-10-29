@@ -15,15 +15,16 @@
         "build"
     ],
     "dependencies": {
-        "@modelcontextprotocol/sdk": "^1.31.0",
+        "@modelcontextprotocol/sdk": "^1.32.1",
         "@opentelemetry/api": "^1.9.0",
         "@opentelemetry/exporter-trace-otlp-proto": "^0.221.0",
         "@opentelemetry/resources": "^2.10.0",
         "@opentelemetry/sdk-trace-node": "^2.10.0",
         "@opentelemetry/semantic-conventions": "^1.43.0",
         "@types/ssh2": "^1.15.5",
+        "ajv": "^8.20.0",
         "ssh2": "^1.16.0",
-        "zod": "^3.25.49"
+        "zod": "^4.6.6"
     },
     "devDependencies": {
         "@types/node": "^25.2.1",

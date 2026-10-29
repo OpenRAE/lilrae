@@ -8,7 +8,12 @@ from copy import deepcopy
 
 from raes_contracts.apparatus import RealizationVerificationScope
 from raes_contracts.diagnostics import Diagnostic, Severity
-from raes_contracts.planning import ChangeAction, ProvisioningPlan, RuntimeDomain
+from raes_contracts.planning import (
+    ChangeAction,
+    ProvisioningPlan,
+    RealizationAuthorityMode,
+    RuntimeDomain,
+)
 from raes_contracts.runtime_state import (
     RealizationObservationDisclosure,
     RuntimeSnapshot,
@@ -16,6 +21,7 @@ from raes_contracts.runtime_state import (
 )
 from raes_contracts.vocabulary import ObservationStrength
 from raes_processor.semantics.realization import CONCERN_PAYLOAD_PATH
+from raes_runtime.backend_account_credentials import plan_has_account_credentials
 
 from aptl.backends.raes_observation import ObservedResource
 from aptl.backends.raes_planning_compat import DAEMON_READBACK_RUNTIME_CONCERNS
@@ -54,6 +60,8 @@ _RUNTIME_READBACK_CONCERNS = (
     | _GUEST_READBACK_RUNTIME_CONCERNS
     | {"forwarding-agents"}
 )
+_APPLIED_ENTRY_STATUS = "applied"
+_UNCHANGED_ENTRY_STATUS = "unchanged"
 
 
 def diagnostic(code: str, address: str, message: str) -> Diagnostic:
@@ -148,11 +156,19 @@ def snapshot_after_apply(
     an absent EXACT concern as a silent approximation and rejects it, which is
     the point — echoing the plan back made the gate compare the plan against
     itself and pass unconditionally (issue #578).
+
+    Each entry's status names what the backend did with its operation. For a
+    plan with account credentials, RAES's closed result contract also requires
+    every value outside an admitted concern to equal the plan's, and admits no
+    backend evidence in an entry (ADR-046).
     """
     entries = dict(snapshot.entries)
+    actions = {op.address: op.action for op in plan.operations}
     for op in plan.operations:
         if op.action == ChangeAction.DELETE:
             entries.pop(op.address, None)
+    admitted = _admitted_concern_kinds(plan)
+    evidence = not plan_has_account_credentials(plan)
     for address, resource in plan.resources.items():
         observed = observations.get(address)
         if observed is None or not observed.realized:
@@ -163,11 +179,15 @@ def snapshot_after_apply(
             domain=RuntimeDomain.PROVISIONING,
             resource_type=resource.resource_type,
             payload=_observed_payload(
-                resource.payload, observed, resource.resource_type
+                resource.payload,
+                observed,
+                resource.resource_type,
+                None if admitted is None else admitted.get(address, frozenset()),
+                evidence=evidence,
             ),
             ordering_dependencies=resource.ordering_dependencies,
             refresh_dependencies=resource.refresh_dependencies,
-            status="ready",
+            status=_entry_status(actions.get(address)),
         )
     observations_disclosure = _realization_observation_disclosures(observations)
     updated = snapshot.with_entries(entries)
@@ -222,6 +242,46 @@ def _realization_observation_disclosures(
     return tuple(disclosures)
 
 
+def _entry_status(action: ChangeAction | None) -> str:
+    """Name what the backend did with one planned operation."""
+
+    if action is ChangeAction.UNCHANGED:
+        return _UNCHANGED_ENTRY_STATUS
+    return _APPLIED_ENTRY_STATUS
+
+
+def _admitted_concern_kinds(
+    plan: ProvisioningPlan,
+) -> dict[str, frozenset[str]] | None:
+    """Return, per address, the concern kinds whose realized value RAES reads.
+
+    Only a plan with account credentials needs this: RAES requires every
+    returned value outside these concerns to equal the plan's. They are the
+    plan's open, constrained and exact authorities and its planned constraints
+    (RAES plans constraints only for ``compute-substrate`` today, which APTL
+    does not write; a wider one must never echo the plan). A closed concern, or
+    one with no authority at an address, is plan-owned: RAES accepts it absent
+    or equal to the plan and reads no observation from it. RAES also reads
+    compiled requirements that are not in the plan; its authority completeness
+    check gives every registry concern that applies to an operation a plan
+    authority, so they admit no concern outside these. ``None`` keeps every
+    unobserved concern removed, for any other plan and for a plan without
+    realization authority, whose admission comes from a compiled model the
+    backend never sees.
+    """
+
+    if not (plan.realization_authority and plan_has_account_credentials(plan)):
+        return None
+    admitted: dict[str, set[str]] = {}
+    for authority in plan.realization_authority:
+        if authority.mode is not RealizationAuthorityMode.CLOSED:
+            kinds = admitted.setdefault(authority.address, set())
+            kinds.add(authority.requirement_kind)
+    for constraint in plan.realization_constraints:
+        admitted.setdefault(constraint.address, set()).add(constraint.concern)
+    return {address: frozenset(kinds) for address, kinds in admitted.items()}
+
+
 def realized_changed_addresses(
     plan: ProvisioningPlan,
     snapshot: RuntimeSnapshot,
@@ -244,14 +304,20 @@ def _observed_payload(
     planned_payload: Mapping[str, object],
     observed: ObservedResource,
     resource_type: str,
+    admitted_kinds: frozenset[str] | None,
+    *,
+    evidence: bool,
 ) -> dict[str, object]:
     """Return the planned payload with realization concerns replaced by reality.
 
     Non-concern fields (names, specs, addresses) are descriptive identity the
     backend does not realize a value for, so they are carried through. The
     concern fields the gate compares are overwritten with what was observed, and
-    a concern the backend could not be seen to realize is removed entirely
-    rather than left echoing the plan.
+    an admitted concern the backend could not be seen to realize is removed
+    entirely rather than left echoing the plan. An unobserved concern outside
+    ``admitted_kinds`` is plan-owned like a name and keeps the plan's value;
+    ``None`` admits every concern. Source-image evidence is added only when
+    ``evidence`` is set; otherwise the run outcome alone carries it.
     """
 
     payload = deepcopy(dict(planned_payload))
@@ -276,11 +342,15 @@ def _observed_payload(
         "generated-artifact": ("generated-artifact",),
         "persistent-volume": ("persistent-volume",),
     }.get(resource_type, ())
-    for path in (CONCERN_PAYLOAD_PATH[kind] for kind in concern_kinds):
+    for kind in concern_kinds:
+        path = CONCERN_PAYLOAD_PATH[kind]
         if path in observed.concerns:
             _set_path(payload, path, observed.concerns[path])
-        else:
+        elif admitted_kinds is None or kind in admitted_kinds:
             _pop_path(payload, path)
+    source_image = observed.evidence.get("source_image")
+    if evidence and isinstance(source_image, dict):
+        payload["backend_evidence"] = {"source_image": deepcopy(source_image)}
     return payload
 
 

@@ -17,7 +17,10 @@ from raes_env_packs import resolve_pack_artifact
 
 from aptl.core.scenario_bundle import PackIdentity, env_pack_bundle
 from aptl.utils.pathsafe import create_exclusive_nofollow
-from aptl_techvault.runtime_parameters import TECHVAULT_PACK_SET_DIGEST
+from aptl_techvault.runtime_parameters import (
+    TECHVAULT_PACK_SET_DIGEST,
+    TECHVAULT_PACK_VERSION,
+)
 
 _PROJECTS = (
     "aptl-mcp-common",
@@ -47,7 +50,7 @@ BUILD_CACHE_STAGING = Path("/opt/aptl/npm-cache-pack")
 def prepare_cache_inputs(destination: Path, staging: Path) -> PackIdentity:
     """Verify both source artifacts and emit only the fixed dependency inputs."""
     bundle = env_pack_bundle(staging, "techvault")
-    expected = PackIdentity("techvault", "0.1.1", TECHVAULT_PACK_SET_DIGEST)
+    expected = PackIdentity("techvault", TECHVAULT_PACK_VERSION, TECHVAULT_PACK_SET_DIGEST)
     if bundle.pack_identity != expected:
         raise ValueError("unsupported cache input pack identity")
     files = _verified_lockfiles(bundle.root)

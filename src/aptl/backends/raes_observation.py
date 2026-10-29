@@ -26,6 +26,8 @@ drift from the set of concerns the gate actually enforces.
 
 from __future__ import annotations
 
+from aptl.backends._lilrae_catalog_image_observation import observe_catalog_images
+
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -55,9 +57,6 @@ from aptl.backends._raes_observation_index import (
     RealizationObservationIndex,
     build_observation_index,
 )
-from aptl.backends._raes_observation_ordering import (
-    align_techvault_identity_collection_observations,
-)
 from aptl.backends._raes_stateful_observation import (
     _observe_generated_artifact,
     _observe_persistent_volume,
@@ -65,9 +64,6 @@ from aptl.backends._raes_stateful_observation import (
 from aptl.backends.raes_realization_model import (
     AptlRealization,
     ParticipantDatasetRealization,
-)
-from aptl.backends.raes_runtime_attestation import (
-    observe_techvault_attested_concerns,
 )
 from aptl.backends.raes_runtime_observation import observe_runtime_concerns
 from aptl.backends.scenario_startup import observe_scenario_runtime_concerns
@@ -127,12 +123,19 @@ def observe_realization(
         )
         for address, resource in plan.resources.items()
     }
+    observe_catalog_images(backend, realization, observations, observation_context)
+    # The retained compatibility bridge belongs only to an admitted adapter.
+    if startup_selection is None or startup_selection.provider is None:
+        return observations
     _add_techvault_runtime_attestations(
         backend,
         realization,
         observations,
         observation_context,
         startup_selection,
+    )
+    from aptl.backends._raes_observation_ordering import (
+        align_techvault_identity_collection_observations,
     )
     return align_techvault_identity_collection_observations(
         plan=plan,
@@ -205,6 +208,9 @@ def _add_techvault_runtime_attestations(
 ) -> None:
     """Attach only implementation-bound TechVault configuration disclosures."""
 
+    from aptl.backends.raes_runtime_attestation import (
+        observe_techvault_attested_concerns,
+    )
     for node in realization.nodes:
         observed_node = observations.get(node.address)
         if observed_node is None or not observed_node.realized:
@@ -262,12 +268,12 @@ def _node_content_verification(
 def observation_evidence(
     observations: Mapping[str, ObservedResource],
 ) -> dict[str, dict[str, object]]:
-    """Return only non-secret evidence for successfully observed resources."""
+    """Return non-secret readback evidence, including failed identity checks."""
 
     return {
         address: dict(observed.evidence)
         for address, observed in observations.items()
-        if observed.realized and observed.evidence
+        if observed.evidence
     }
 
 

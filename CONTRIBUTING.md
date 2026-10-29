@@ -7,12 +7,15 @@ authors and agent integrations.
 
 ## Before Opening a Pull Request
 
-- For small documentation fixes, typo fixes, and narrow test improvements, a
-  pull request is enough.
-- For lab topology changes, attack-path changes, detection logic changes, MCP
-  API changes, scenario runtime changes, or container configuration changes,
-  open an issue first. Those changes can affect safety boundaries,
-  reproducibility, and documented workflows.
+- Open an issue before making a pull request, including documentation and test
+  changes. Give the issue explicit acceptance criteria.
+- **One issue = one PR.** The delivery PR must address every acceptance
+  criterion of its issue. Do not split one issue across multiple PRs, including
+  separate code, documentation, and test PRs. Extend an existing delivery PR
+  instead of opening another PR for the same issue.
+- If an issue is too large, create smaller linked issues with explicit
+  acceptance criteria. Each smaller issue gets one complete PR; the parent
+  tracks their delivery and remains open until its criteria are satisfied.
 - Keep unrelated changes in separate pull requests.
 - Base pull requests on `dev`, not `main`. `main` is the stable release line;
   `dev` is the integration branch.
@@ -32,7 +35,7 @@ Set up the Python control plane:
 
 ```shell
 git clone https://github.com/OpenRAE/lilrae.git
-cd aptl
+cd lilrae
 python -m venv .venv
 . .venv/bin/activate
 pip install -e ".[dev]"
@@ -55,16 +58,19 @@ npm install
 ## Making Changes
 
 1. Fork the repository and create a branch from `dev`.
-2. Make the smallest coherent change that solves the issue.
-3. Add or update tests when behavior changes.
+2. Make the smallest coherent change that satisfies all of the issue's
+   acceptance criteria.
+3. Verify changed behavior and risk. Reuse adequate existing tests; add tests
+   only for uncovered behavior. Remove redundant or obsolete cases.
 4. Update scenarios, schemas, documentation, or examples when the public
    surface changes.
 5. Give the PR a [Conventional Commit](https://www.conventionalcommits.org)
    title (`feat:`, `fix:`, etc.); release-please derives the changelog and
    version from it. Do not edit `CHANGELOG.md`.
 6. Run the relevant checks locally.
-7. Open a pull request against `dev` with a concrete description of what
-   changed and why.
+7. Open the issue's single pull request against `dev`, or update its existing
+   PR. Describe what changed, why, and how each acceptance criterion was
+   verified. Follow the [coding standards](docs/CODING_STANDARDS.md).
 
 ## Verification
 
@@ -100,13 +106,13 @@ When changing files under `mcp/aptl-mcp-common`, run targeted common and
 dependent-server tests while iterating. CI/CD rebuilds and tests every dependent
 MCP because they consume the local package.
 
-CI also runs the non-Docker Python suite plus `aptl --help` and
-`aptl lab init` on Ubuntu and macOS. Windows runs the portable Python contract
-suite plus the same CLI smoke commands, excluding POSIX-only file-mode,
-ownership, signal, and Unix-socket tests. Hosted runners do not provide the
-Docker Desktop/nested-virtualization environment needed to prove full lab boot
-on macOS or Windows, so `aptl lab start` remains a manual platform-validation
-gate.
+CI runs the ordinary Python suite once on Linux with line coverage.
+macOS and Windows run focused portability tests and CLI smoke commands.
+Changed inputs select relevant jobs; unknown paths select all checks.
+Weekly, manual, and release-tag qualification select the full retained checks.
+Superseded PR jobs are cancelled, while an active lab boot completes teardown.
+Full lab startup on macOS and Windows remains an operator qualification.
+See [CI verification](docs/architecture/ci-verification.md) for routing and budgets.
 
 When changing `docker-compose.yml`, container Dockerfiles, or files under
 `config/`, run only focused contract tests locally. CI/CD owns the clean lab

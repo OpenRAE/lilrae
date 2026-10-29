@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import subprocess
@@ -90,7 +91,9 @@ def test_capture_sidecar_owns_sink_with_only_ssh_daemon_capabilities():
 
     assert service["network_mode"] == "container:aptl-kali"
     assert not service.get("ports")
+    # AUDIT_WRITE is for sshd's PTY login record, not for an audit daemon.
     assert set(service["cap_add"]) == {
+        "AUDIT_WRITE",
         "CHOWN",
         "DAC_OVERRIDE",
         "NET_BIND_SERVICE",
@@ -100,7 +103,6 @@ def test_capture_sidecar_owns_sink_with_only_ssh_daemon_capabilities():
     }
     assert not {
         "AUDIT_CONTROL",
-        "AUDIT_WRITE",
         "SYS_PACCT",
         "NET_RAW",
         "NET_ADMIN",
@@ -108,6 +110,39 @@ def test_capture_sidecar_owns_sink_with_only_ssh_daemon_capabilities():
     assert "pid" not in service
     assert service.get("read_only") is True
     assert "ALL" in service["cap_drop"]
+
+
+def _adr_041_decision_updates() -> list[str]:
+    """Return the dated update notes in ADR-041's Decision, in document order."""
+    adr = _ROOT / "docs/adrs/adr-041-kali-capture-sidecar-ownership-boundary.md"
+    text = adr.read_text(encoding="utf-8")
+    decision = re.search(r"(?ms)^## Decision$(.*?)^## ", text)
+    assert decision is not None, "ADR-041 must keep its Decision section"
+    notes = re.finditer(
+        r"(?m)^> \*\*Update \(\d{4}-\d{2}-\d{2}, #\d+\):\*\*(?:.*\n)(?:^>.*\n)*",
+        decision.group(1),
+    )
+    return [note.group(0) for note in notes]
+
+
+@pytest.mark.parametrize("capability", ["AUDIT_CONTROL", "AUDIT_WRITE", "SYS_PACCT"])
+def test_adr_041_capture_capabilities_match_the_shipped_sidecar(capability):
+    # ADR-041's Decision moved these capabilities to the sidecar. The latest
+    # dated update that names one must say whether the shipped sidecar has it.
+    granted = capability in _capture_service()["cap_add"]
+    naming = [note for note in _adr_041_decision_updates() if f"`{capability}`" in note]
+
+    assert naming, f"no ADR-041 update names {capability}"
+    assert (f"granted `{capability}`" in naming[-1]) is granted
+
+
+@pytest.mark.parametrize(
+    "writer", ["`_audit/audit.log`", "`_proc-acct/pacct`", "`auditd`", "`accton`"]
+)
+def test_adr_041_update_withdraws_the_audit_and_accounting_writers(writer):
+    # The shipped sidecar runs neither writer and, since #1242, the harvest
+    # copies neither root, so ADR-041 must not present them as current.
+    assert any(writer in note for note in _adr_041_decision_updates())
 
 
 def test_capture_sidecar_has_only_required_writable_filesystems():
@@ -231,6 +266,47 @@ def test_capture_entrypoint_applies_key_ownership_with_declared_capabilities(
         )
 
 
+def _brokered_ssh(
+    outer_key: Path, port: str, session_id: str, command: str, *, tty: bool
+) -> subprocess.CompletedProcess[str]:
+    """Open one outer session through the capture sshd, as the MCP does."""
+
+    environment = {
+        **os.environ,
+        "APTL_SESSION_ID": session_id,
+        "APTL_RUN_ID": "run-1",
+        "APTL_TRACE_ID": "run-1",
+    }
+    return subprocess.run(
+        [
+            "ssh",
+            *(("-tt",) if tty else ()),
+            "-i",
+            str(outer_key),
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "IdentitiesOnly=yes",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-o",
+            "LogLevel=ERROR",
+            "-o",
+            "SendEnv=APTL_SESSION_ID APTL_RUN_ID APTL_TRACE_ID",
+            "-p",
+            port,
+            "kali@127.0.0.1",
+            command,
+        ],
+        capture_output=True,
+        text=True,
+        env=environment,
+        timeout=30,
+    )
+
+
 @pytest.mark.integration
 def test_capture_sidecar_accepts_a_real_kali_session_and_preserves_identity(
     capture_image, tmp_path
@@ -260,20 +336,16 @@ def test_capture_sidecar_accepts_a_real_kali_session_and_preserves_identity(
         "--cap-drop",
         "ALL",
     ]
-    for capability in (
-        "CHOWN",
-        "DAC_OVERRIDE",
-        "NET_BIND_SERVICE",
-        "SETGID",
-        "SETUID",
-        "SYS_CHROOT",
-    ):
+    # Exactly the shipped capabilities, so a missing one fails here as it
+    # would in a lab. Granting the inner sshd extra capabilities in this shared
+    # container once hid that no PTY session could open without AUDIT_WRITE.
+    for capability in _capture_service()["cap_add"]:
         command.extend(("--cap-add", capability))
     # The integration fixture co-locates the *inner target sshd* in this one
     # container. Production runs that daemon in aptl-kali, whose ordinary
-    # Docker capability set includes these; neither capability is present in
-    # the capture-sidecar declaration verified by the static tests above.
-    command.extend(("--cap-add", "AUDIT_WRITE", "--cap-add", "KILL"))
+    # Docker capability set includes KILL; the capture-sidecar declaration
+    # verified by the static tests above does not.
+    command.extend(("--cap-add", "KILL"))
     command.extend(
         (
             "--security-opt",
@@ -469,38 +541,8 @@ EOF
             timeout=30,
         )
         port = port_result.stdout.strip().rsplit(":", 1)[-1]
-        environment = {
-            **os.environ,
-            "APTL_SESSION_ID": "session-1",
-            "APTL_RUN_ID": "run-1",
-            "APTL_TRACE_ID": "run-1",
-        }
-        connected = subprocess.run(
-            [
-                "ssh",
-                "-i",
-                str(outer_key),
-                "-o",
-                "BatchMode=yes",
-                "-o",
-                "IdentitiesOnly=yes",
-                "-o",
-                "StrictHostKeyChecking=no",
-                "-o",
-                "UserKnownHostsFile=/dev/null",
-                "-o",
-                "LogLevel=ERROR",
-                "-o",
-                "SendEnv=APTL_SESSION_ID APTL_RUN_ID APTL_TRACE_ID",
-                "-p",
-                port,
-                "kali@127.0.0.1",
-                "printf capture-ok",
-            ],
-            capture_output=True,
-            text=True,
-            env=environment,
-            timeout=30,
+        connected = _brokered_ssh(
+            outer_key, port, "session-1", "printf capture-ok", tty=False
         )
         if connected.returncode != 0:
             logs = subprocess.run(
@@ -530,6 +572,13 @@ EOF
                 f"capture_stderr={capture_state.stderr!r}"
             )
         assert "capture-ok" in connected.stdout
+        # The MCP's interactive and background sessions request a PTY. sshd
+        # writes an audit login record for it, which needs AUDIT_WRITE.
+        with_pty = _brokered_ssh(
+            outer_key, port, "session-2", "printf capture-pty-ok", tty=True
+        )
+        assert with_pty.returncode == 0, with_pty.stderr
+        assert "capture-pty-ok" in with_pty.stdout
         subprocess.run(
             [
                 "docker",
@@ -559,8 +608,9 @@ EOF
             timeout=30,
         )
         payload = json.loads(exported.stdout)
-        assert payload["accepted_session_ids"] == ["session-1"]
-        assert [item["session_id"] for item in payload["sessions"]] == ["session-1"]
+        sessions = sorted(item["session_id"] for item in payload["sessions"])
+        assert sorted(payload["accepted_session_ids"]) == ["session-1", "session-2"]
+        assert sessions == ["session-1", "session-2"]
         ownership = subprocess.run(
             [
                 "docker",

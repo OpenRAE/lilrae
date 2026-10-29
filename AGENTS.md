@@ -97,13 +97,11 @@ end-to-end loop. Summary for agents working in this repo:
 1. **Fetch the requirement.** Use `gc_get_requirement` with the full
    UID exactly as it exists in Ground Control. Do not synthesize or
    rewrite requirement prefixes.
-2. **Plan.** Apply `.gc/plan-rules.md` — in particular: Python changes
-   need pytest coverage in `tests/`; MCP TypeScript changes need
-   vitest coverage in that server's `tests/`; web frontend changes
-   need vitest coverage in `web/tests/`. Local runs stay targeted. CI/CD
-   rebuilds every MCP consumer when `mcp/aptl-mcp-common` changes and performs
-   the clean lab lifecycle gate for changes to `docker-compose.yml`, container
-   Dockerfiles, or `config/`.
+2. **Plan.** Apply `.gc/plan-rules.md`. Select evidence for changed behavior
+   and risk. Existing tests can be sufficient; new tests are not required for
+   every edit. Delete redundant or obsolete cases. Shared MCP changes select
+   their consumers; lifecycle and configuration changes select installed-lab
+   qualification. See [CI verification](docs/architecture/ci-verification.md).
 3. **Implement.** Make the code change.
 4. **Verify locally.** Run only tests targeted to the changed behavior. Use
    `bash tools/run-targeted-tests.sh` when the relevant test files changed, or
@@ -120,6 +118,11 @@ end-to-end loop. Summary for agents working in this repo:
 
 ## Workflow Notes
 
+- One issue = one PR. The issue's delivery PR must address all acceptance
+  criteria, including code, documentation, and tests. Update an existing PR
+  instead of splitting the issue across multiple PRs. If an issue is too large,
+  create smaller linked issues with explicit acceptance criteria and one
+  complete PR per smaller issue. See [coding standards](docs/CODING_STANDARDS.md).
 - Pass full requirement UIDs exactly as they exist in Ground Control.
   Do not synthesize or rewrite requirement prefixes.
 - Keep repo-native checks, docs, and Ground Control policy in sync.

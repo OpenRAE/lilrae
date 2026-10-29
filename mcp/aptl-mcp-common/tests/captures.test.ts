@@ -198,23 +198,16 @@ describe('harvestSession', () => {
     );
 
     expect(ok).toBe(true);
-    // 3 docker cp calls: 1 per-session + 2 globals (_audit, _proc-acct).
-    // Each may have retried up to 3 times via dockerCpWithRetry, but
-    // we only stub success here so each lands in one call.
-    expect(spawnControl.callCount).toBe(3);
+    // One docker cp: the broker's session directory. The capture
+    // sidecar runs no auditd or process accounting, so no container-wide
+    // `_audit` / `_proc-acct` copy follows.
+    expect(spawnControl.callCount).toBe(1);
     const [cmd, src, destArg] = spawnControl.capturedArgs[0];
     expect(cmd).toBe('cp');
     expect(src).toBe(`aptl-kali:/var/log/aptl/captures/${tid}/sessions/sess-1/.`);
     expect(destArg).toBe(dest);
-    // Globals land under <dest>/_global/audit and _global/proc-acct.
-    expect(spawnControl.capturedArgs[1][1]).toBe(
-      'aptl-kali:/var/log/aptl/captures/_audit/.',
-    );
-    expect(spawnControl.capturedArgs[1][2]).toBe(join(dest, '_global', 'audit'));
-    expect(spawnControl.capturedArgs[2][1]).toBe(
-      'aptl-kali:/var/log/aptl/captures/_proc-acct/.',
-    );
-    expect(spawnControl.capturedArgs[2][2]).toBe(join(dest, '_global', 'proc-acct'));
+    expect(existsSync(join(dest, '_global'))).toBe(false);
+    expect(existsSync(join(dest, 'capture-harvest-failure.json'))).toBe(false);
   });
 
   it('falls back to _unbound when trace-context is absent', async () => {
@@ -231,8 +224,7 @@ describe('harvestSession', () => {
     expect(spawnControl.capturedArgs[0][1]).toBe(
       'aptl-kali:/var/log/aptl/captures/_unbound/sessions/sess-1/.',
     );
-    // Globals still get harvested in the _unbound fallback path.
-    expect(spawnControl.callCount).toBe(3);
+    expect(spawnControl.callCount).toBe(1);
   });
 
   it('returns false (NOT silent success) when per-session subtree is missing — converts a tampering primitive into a visible anomaly', async () => {
@@ -254,27 +246,6 @@ describe('harvestSession', () => {
     expect(ok).toBe(false);
   });
 
-  it('still attempts global (_audit + _proc-acct) harvest even when per-session subtree is missing', async () => {
-    const tid = 'a'.repeat(32);
-    activateScenario(tid);
-    spawnControl.exitCode = 1;
-    spawnControl.stderrText = 'Error: No such file or directory';
-
-    await harvestSession(
-      { containerName: 'aptl-kali', env: { APTL_STATE_DIR: tmp } },
-      'sess-1',
-    );
-
-    // #304: retry helper removed — remote close is now awaited in
-    // PersistentSession.close before harvest runs, so the 250ms x 3
-    // backoff window is no longer needed. Exactly 3 docker cp calls:
-    // 1 per-session + 2 globals (_audit, _proc-acct), no retries.
-    expect(spawnControl.callCount).toBe(3);
-    const globalSrcs = spawnControl.capturedArgs.map((args) => args[1]);
-    expect(globalSrcs.some((s) => s.endsWith('_audit/.'))).toBe(true);
-    expect(globalSrcs.some((s) => s.endsWith('_proc-acct/.'))).toBe(true);
-  });
-
   it("#304: per-session docker cp failure invokes spawn exactly once (no retry-with-backoff)", async () => {
     const tid = 'a'.repeat(32);
     activateScenario(tid);
@@ -286,14 +257,12 @@ describe('harvestSession', () => {
       'sess-1',
     );
 
-    // First call is the per-session attempt; the next two are globals.
-    // With the retry helper removed, the per-session "no such file"
-    // failure is NOT retried — it fails fast and harvest moves on.
-    const perSessionSrc = `aptl-kali:/var/log/aptl/captures/${tid}/sessions/sess-1/.`;
-    const perSessionCalls = spawnControl.capturedArgs.filter(
-      (args) => args[1] === perSessionSrc,
-    );
-    expect(perSessionCalls.length).toBe(1);
+    // #304: retry helper removed — remote close is now awaited in
+    // PersistentSession.close before harvest runs. The per-session
+    // "no such file" failure is NOT retried — it fails fast.
+    expect(spawnControl.capturedArgs).toEqual([
+      ['cp', `aptl-kali:/var/log/aptl/captures/${tid}/sessions/sess-1/.`, join(tmp, 'runs', tid, 'kali-side', 'sess-1')],
+    ]);
   });
 
   it('returns false on real docker cp failure but does not throw', async () => {
@@ -419,6 +388,15 @@ describe('#1242: workspace-scoped capture container (recorded docker cp)', () =>
     expect(existsSync(join(sessionDir('sess-1'), 'accepted-sessions.jsonl'))).toBe(false);
   });
 
+  const recordFor = (failure: string, container: string, session: string, exitCode: number) => ({
+    failure,
+    container,
+    run_id: RUN,
+    session_id: session,
+    exit_code: exitCode,
+    recorded_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+  });
+
   it.each([
     ['workspace-scoped', SCOPED, OTHER_WORKSPACE],
     ['fixed legacy', FIXED, SCOPED],
@@ -427,23 +405,35 @@ describe('#1242: workspace-scoped capture container (recorded docker cp)', () =>
     brokerContainer(present, 'sess-1');
 
     expect(await harvest(name)).toBe(false);
-    expect(JSON.parse(readFileSync(failureRecord('sess-1'), 'utf-8'))).toEqual({
-      failure: 'aptl.capture-harvest.container-missing',
-      container: name,
-      run_id: RUN,
-      session_id: 'sess-1',
-      recorded_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
-    });
+    expect(JSON.parse(readFileSync(failureRecord('sess-1'), 'utf-8'))).toEqual(
+      recordFor('aptl.capture-harvest.container-missing', name, 'sess-1', 1),
+    );
     expect(statSync(failureRecord('sess-1')).mode & 0o777).toBe(0o600);
-    // ADR-042: the global `_audit` / `_proc-acct` harvest is still attempted.
-    expect(spawnControl.callCount).toBe(3);
+    expect(spawnControl.callCount).toBe(1);
   });
 
-  it('keeps a missing per-session subtree distinct from a missing container', async () => {
+  it('records a missing per-session subtree under its own name, not as a missing container', async () => {
     brokerContainer(SCOPED, 'sess-1');
 
     expect(await harvest(SCOPED, 'sess-gone')).toBe(false);
-    expect(existsSync(failureRecord('sess-gone'))).toBe(false);
+    expect(JSON.parse(readFileSync(failureRecord('sess-gone'), 'utf-8'))).toEqual(
+      recordFor('aptl.capture-harvest.session-missing', SCOPED, 'sess-gone', 1),
+    );
+  });
+
+  it.each([
+    ['an unreachable daemon', 1, 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?\n'],
+    ['a docker binary that cannot start', -1, 'Error: spawn /usr/bin/docker ENOENT'],
+  ])('records any other docker cp failure, such as %s, without its output', async (_kind, code, stderr) => {
+    spawnControl.exitCode = code;
+    spawnControl.stderrText = stderr;
+
+    expect(await harvest(SCOPED)).toBe(false);
+    const text = readFileSync(failureRecord('sess-1'), 'utf-8');
+    expect(JSON.parse(text)).toEqual(
+      recordFor('aptl.capture-harvest.copy-failed', SCOPED, 'sess-1', code),
+    );
+    expect(text).not.toContain(stderr.trim());
   });
 
   it('never writes through a link already at the failure record path', async () => {

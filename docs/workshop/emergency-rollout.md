@@ -5,10 +5,10 @@ students cannot reliably run the lab on their own laptops. It is not the normal
 APTL delivery model. The normal model remains:
 
 ```bash
-pipx install aptl-labs
-aptl lab init workshop
+pipx install lilrae
+lilrae lab init workshop
 cd workshop
-aptl lab start --yes
+lilrae lab start --yes
 ```
 
 Use this guide when the workshop needs a short-lived hosted fleet with APTL,
@@ -55,7 +55,7 @@ Minimum host contract:
 - supported student-like desktop access, usually RDP to an Ubuntu desktop;
 - Docker installed and usable by the student account;
 - `pipx`, Python, Node.js, and npm installed;
-- `aptl-labs` installed from the intended release channel;
+- `lilrae` installed from the intended release channel;
 - the workshop lab initialized and started;
 - Claude Code or the selected agent installed and authenticated;
 - MCP servers built and registered from the workshop directory.
@@ -88,8 +88,8 @@ Every host needs machine-checked proof, not a visual spot check. At minimum,
 validate:
 
 ```bash
-aptl --version
-aptl lab status
+lilrae --version
+lilrae lab status
 docker ps -a
 node --version
 npm --version
@@ -176,7 +176,7 @@ post-event fixes.
 
 - Validate the exact user path. A Linux canary does not prove macOS or Windows,
   and Windows Server does not prove native student Windows.
-- Cross-platform success means `aptl lab start` from the expected student shell
+- Cross-platform success means `lilrae lab start` from the expected student shell
   with Docker installed, not a hand-curated container workaround.
 - A connected MCP process is not enough. The proof must call a backend API or
   command for every MCP students will use.

@@ -76,14 +76,14 @@ def admit_start_surface(
     """
 
     from aptl.backends.raes import admit_raes_scenario
+    from aptl.backends.raes_start_model import ScenarioAdmissionSource
 
     admitted = admit_raes_scenario(
         project_dir,
         config,
         backend,
         scenario_path=scenario_path,
-        bundle=bundle,
-        startup_selection=startup_selection,
+        source=ScenarioAdmissionSource(bundle, startup_selection),
     )
     return admitted, start_surface_of(admitted, config)
 

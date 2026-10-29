@@ -14,6 +14,17 @@ def runner():
     return CliRunner()
 
 
+def test_missing_web_dependencies_report_current_pipx_install(runner):
+    from aptl.cli.web import app
+
+    with patch.dict("sys.modules", {"uvicorn": None}):
+        result = runner.invoke(app, [])
+
+    assert result.exit_code == 1
+    assert 'pipx inject lilrae "lilrae[web]"' in result.output
+    assert 'pip install -e ".[web]"' in result.output
+
+
 class TestWebServe:
     @pytest.fixture(autouse=True)
     def _pin_asset_root(self):
@@ -21,7 +32,7 @@ class TestWebServe:
 
         These tests exercise serve-start behaviour (worker clamp, reload
         passthrough, project dir, uvicorn kwargs) — not GUI-asset resolution.
-        Without this, ``aptl web serve`` now fails hard (exit 1) when no build
+        Without this, ``lilrae web serve`` now fails hard (exit 1) when no build
         is present, so the suite would pass locally only when an untracked
         ``web/build`` happens to exist and fail in CI. Pinning a fake root makes
         these tests deterministic regardless of the ambient build state; the
@@ -44,7 +55,7 @@ class TestWebServe:
         result = runner.invoke(app, ["--host", "0.0.0.0", "--port", "9000"])
 
         assert result.exit_code == 0
-        assert "Starting APTL web API on 0.0.0.0:9000" in result.output
+        assert "Starting LilRAE web API on 0.0.0.0:9000" in result.output
         mock_run.assert_called_once_with(
             "aptl.api.main:app",
             host="0.0.0.0",

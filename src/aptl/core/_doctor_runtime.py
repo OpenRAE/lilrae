@@ -1,4 +1,4 @@
-"""Docker engine checks for ``aptl doctor`` (#1218).
+"""Docker engine checks for ``lilrae doctor`` (#1218).
 
 Every daemon probe goes through the configured deployment backend's runner, so
 an explicit ``DOCKER_HOST``, context or SSH backend is the engine that
@@ -82,7 +82,7 @@ def _configured_backend_checks(
     try:
         backend = get_backend(config, project_root)
     except ValueError:
-        # aptl.json loaded, so `aptl config validate` would report it OK; the
+        # aptl.json loaded, so `lilrae config validate` would report it OK; the
         # settings only the backend constructor checks are named instead.
         unavailable = DoctorCheck(
             "docker-daemon",
@@ -96,7 +96,28 @@ def _configured_backend_checks(
             unavailable,
             "the configured deployment backend cannot be created (see docker-daemon)",
         )
-    return _backend_checks(backend, config.scenario.identity)
+    minimum, requirement_error = _selected_kernel_demand(config, project_root)
+    return _backend_checks(backend, config.scenario.identity, minimum, requirement_error)
+
+
+def _selected_kernel_demand(config: AptlConfig, project_root: Path) -> tuple[int | None, bool]:
+    """Read the selected adapter declaration without invoking lifecycle hooks."""
+    if config.scenario.identity is None:
+        return None, False
+    from tempfile import TemporaryDirectory
+    from aptl.backends.raes import resolve_scenario_bundle
+    from aptl.backends.scenario_startup import select_scenario_startup
+
+    try:
+        with TemporaryDirectory() as staging:
+            bundle = resolve_scenario_bundle(project_root, None, config, staging_root=Path(staging))
+            try:
+                selection = select_scenario_startup(bundle)
+                return (selection.plan.minimum_max_map_count if selection.plan else None), False
+            finally:
+                bundle.close()
+    except Exception:
+        return None, True
 
 
 def _without_backend(daemon: DoctorCheck, reason: str) -> list[DoctorCheck]:
@@ -115,7 +136,8 @@ def _without_backend(daemon: DoctorCheck, reason: str) -> list[DoctorCheck]:
 
 
 def _backend_checks(
-    backend: BoundaryProbeBackend, scenario: str
+    backend: BoundaryProbeBackend, scenario: str | None,
+    minimum: int | None = None, requirement_error: bool = False,
 ) -> list[DoctorCheck]:
     """Probe the selected daemon through the backend's own runner."""
 
@@ -136,7 +158,10 @@ def _backend_checks(
         *plugins,
         rootful,
         _substrate_check(backend._run, rootful),
-        _max_map_count_check(backend),
+        (DoctorCheck("max-map-count", CheckStatus.FAILED,
+                     "The selected scenario's host requirements could not be admitted.",
+                     "Check the configured pack source and installed adapter.")
+         if requirement_error else _max_map_count_check(backend, minimum)),
         _memory_check(backend._run, scenario),
     ]
 
@@ -261,9 +286,9 @@ def _compose_check(run: Runner) -> DoctorCheck:
         return DoctorCheck(
             "docker-compose",
             CheckStatus.WARNING,
-            f"Docker Compose {found} is older than {floor}, which lab start "
-            "requires for a scenario that consumes generated certificates or "
-            "volumes.",
+            f"Docker Compose {found} is older than {floor}. Lab start requires "
+            "that floor only when the selected rendered model uses !reset "
+            "or !override merge features.",
             f"Upgrade the Docker Compose plugin to {floor} or newer.",
         )
     return DoctorCheck(
@@ -289,14 +314,25 @@ def _buildx_check() -> DoctorCheck:
     )
 
 
-def _max_map_count_check(backend: BoundaryProbeBackend) -> DoctorCheck:
+def _max_map_count_check(
+    backend: BoundaryProbeBackend, minimum: int | None = None
+) -> DoctorCheck:
     """Apply lab start's vm.max_map_count check to the selected daemon's host."""
 
+    if minimum is None:
+        return skipped("max-map-count", "the selected scenario declares no kernel demand")
+    return _required_max_map_count_check(backend, minimum)
+
+
+def _required_max_map_count_check(
+    backend: BoundaryProbeBackend, minimum: int
+) -> DoctorCheck:
+    """Check the selected engine's host for a declared kernel demand."""
     from aptl.core.execution_boundary import observe_execution_boundary
 
     containment = observe_execution_boundary(backend).host_containment
     mode = sysreqs.docker_mode_for_containment(containment)
-    result = sysreqs.check_max_map_count(selected_mode=mode)
+    result = sysreqs.check_scenario_max_map_count(minimum, selected_mode=mode)
     if not result.applicable:
         return _max_map_count_not_read(mode, containment, result.required_value)
     if result.passed:

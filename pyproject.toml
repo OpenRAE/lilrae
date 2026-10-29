@@ -3,8 +3,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "aptl-labs"
-version = "6.0.0"
+name = "lilrae"
+version = "8.2.0"
 description = "Advanced Purple Team Lab CLI"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -30,8 +30,8 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.33.0",
     "opentelemetry-semantic-conventions>=0.54b0",
     "cryptography>=50.0.0",
-    "raes==6.0.1",
-    "raes-env-packs==6.2.1",
+    "raes==7.0.0",
+    "raes-env-packs==6.3.3",
     "mcp>=2,<3",
     "rfc8785>=0.1.4,<0.2.0",
     "packaging>=24.2",
@@ -46,8 +46,12 @@ Repository = "https://github.com/OpenRAE/lilrae"
 Issues = "https://github.com/OpenRAE/lilrae/issues"
 
 [project.scripts]
-aptl = "aptl.cli.main:app"
-aptl-misp-suricata-sync = "aptl.services.misp_suricata_sync.main:main"
+lilrae = "aptl.cli.main:app"
+lilrae-misp-suricata-sync = "aptl.services.misp_suricata_sync.main:main"
+# Deprecated aliases: they print a notice to stderr and are removed in 10.0.0
+# (ADR-062 successor clause for #1402; removal tracked by #1403).
+aptl = "aptl.cli.main:legacy_main"
+aptl-misp-suricata-sync = "aptl.services.misp_suricata_sync.main:legacy_main"
 
 [project.optional-dependencies]
 s3 = [
@@ -78,6 +82,12 @@ dev = [
     # requirements/dev.txt, so the projection's mapping/schema-evolution tests
     # run there rather than silently skipping.
     "pyarrow>=17.0.0",
+    # The installed-artifact tests build real wheels with the release job's
+    # toolchain (`python -m build --no-isolation`). CI installs
+    # requirements/dev.txt, so those tests run there rather than skip.
+    "build>=1.2.0",
+    "pytest-cov>=7.1.0",
+    "pytest-split>=0.11.0",
 ]
 docs = [
     "mkdocs-material>=9.5.0",
@@ -95,6 +105,7 @@ ci = [
     "pip-audit>=2.7.0",
     "build>=1.2.0",
     "cyclonedx-bom>=6.0.0",
+    "coverage>=7.10.6",
 ]
 
 # The PEP 517 build backend, locked like everything else. `--require-hashes`
@@ -147,6 +158,10 @@ build = [
 "techvault.aptl" = "aptl_techvault.verification:verifier"
 "techvault-participant-study.aptl" = "aptl_techvault.study:verifier"
 
+[project.entry-points."aptl.participant_desktop"]
+"techvault" = "aptl_techvault.participant_desktop:provider"
+"techvault-participant-study" = "aptl_techvault.study:participant_desktop"
+
 [project.entry-points."aptl.participant_mcp_smoke_plans"]
 "techvault-full.techvault" = "aptl_techvault.participant_smoke:FULL_TECHVAULT_SMOKE_OPERATIONS"
 "guided-purple.techvault-attacker-target" = "aptl_techvault.participant_smoke:PARTICIPANT_SMOKE_OPERATIONS"
@@ -156,8 +171,8 @@ packages = ["src/aptl", "src/aptl_techvault"]
 
 # Bundle the git-tracked lab-asset tree (docker-compose.yml, config/,
 # containers/, web/, scripts/, and the source that container images
-# build from) into the wheel under aptl/_labdata/ so `pipx install aptl-labs`
-# + `aptl lab init` runs a lab without a git clone (issue #659 / DEP-008).
+# build from) into the wheel under aptl/_labdata/ so `pipx install lilrae`
+# + `lilrae lab init` runs a lab without a git clone (issue #659 / DEP-008).
 # The hook ships only git-tracked files, which keeps generated secrets and
 # local state out of the distribution. See hatch_build.py.
 [tool.hatch.build.targets.wheel.hooks.custom]
@@ -191,10 +206,11 @@ max-complexity = 15
 testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
+    "live_lab: operator-authorized checks against an existing lab (APTL_SMOKE=1)",
     "fuzz: property-based fuzz tests (run with: pytest -m fuzz)",
     "integration: tests that spawn subprocesses or read/write the filesystem; runnable by default but selectable via `pytest -m integration` or `pytest -m 'not integration'`",
 ]
-addopts = "-m 'not fuzz'"
+addopts = "-m 'not fuzz and not live_lab'"
 
 [tool.coverage.run]
 # Both top-level packages the wheel ships. `aptl_techvault` is a scenario

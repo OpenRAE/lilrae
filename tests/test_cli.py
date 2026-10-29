@@ -5,6 +5,7 @@ Integration tests verify CLI commands call the correct core functions.
 We test our CLI wiring, not typer internals.
 """
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import ANY, MagicMock
@@ -51,7 +52,7 @@ class TestMainApp:
 
 
 class TestDoctorCommand:
-    """`aptl doctor` prints every check and exits by its verdict (#1218)."""
+    """`lilrae doctor` prints every check and exits by its verdict (#1218)."""
 
     @pytest.mark.parametrize(
         ("status", "exit_code", "closing"),
@@ -102,45 +103,45 @@ class TestDoctorCommand:
 
 
 class TestLabCommands:
-    """Tests for aptl lab subcommands."""
+    """Tests for lilrae lab subcommands."""
 
     def test_lab_start_exists(self, runner):
-        """aptl lab start should be a valid command."""
+        """lilrae lab start should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["lab", "start", "--help"])
         assert result.exit_code == 0
 
     def test_lab_stop_exists(self, runner):
-        """aptl lab stop should be a valid command."""
+        """lilrae lab stop should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["lab", "stop", "--help"])
         assert result.exit_code == 0
 
     def test_lab_status_exists(self, runner):
-        """aptl lab status should be a valid command."""
+        """lilrae lab status should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["lab", "status", "--help"])
         assert result.exit_code == 0
 
     def test_lab_info_exists(self, runner):
-        """aptl lab info should be a valid command."""
+        """lilrae lab info should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["lab", "info", "--help"])
         assert result.exit_code == 0
 
     def test_lab_continuity_audit_exists(self, runner):
-        """aptl lab continuity-audit should be a valid command."""
+        """lilrae lab continuity-audit should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["lab", "continuity-audit", "--help"])
         assert result.exit_code == 0
 
     def test_lab_scenarios_exists(self, runner):
-        """aptl lab scenarios should list curated startup scenarios."""
+        """lilrae lab scenarios should list curated startup scenarios."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["lab", "scenarios", "--help"])
@@ -148,17 +149,17 @@ class TestLabCommands:
 
 
 class TestConfigCommands:
-    """Tests for aptl config subcommands."""
+    """Tests for lilrae config subcommands."""
 
     def test_config_show_exists(self, runner):
-        """aptl config show should be a valid command."""
+        """lilrae config show should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["config", "show", "--help"])
         assert result.exit_code == 0
 
     def test_config_validate_exists(self, runner):
-        """aptl config validate should be a valid command."""
+        """lilrae config validate should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["config", "validate", "--help"])
@@ -166,17 +167,17 @@ class TestConfigCommands:
 
 
 class TestContainerCommands:
-    """Tests for aptl container subcommands."""
+    """Tests for lilrae container subcommands."""
 
     def test_container_list_exists(self, runner):
-        """aptl container list should be a valid command."""
+        """lilrae container list should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["container", "list", "--help"])
         assert result.exit_code == 0
 
     def test_container_logs_exists(self, runner):
-        """aptl container logs should be a valid command."""
+        """lilrae container logs should be a valid command."""
         from aptl.cli.main import app
 
         result = runner.invoke(app, ["container", "logs", "--help"])
@@ -184,7 +185,7 @@ class TestContainerCommands:
 
 
 class TestLabStartCommand:
-    """Tests for the aptl lab start CLI command."""
+    """Tests for the lilrae lab start CLI command."""
 
     def test_start_calls_orchestrate_lab_start(self, runner, mocker):
         """start command should call orchestrate_lab_start."""
@@ -242,10 +243,10 @@ class TestLabStartCommand:
         assert "Reverse engineering SSH" not in result.stdout
         assert "aptl_lab_key" not in result.stdout
 
-    def test_lab_info_prints_reverse_access_when_service_is_running(
+    def test_lab_info_does_not_invent_access_for_retired_named_service(
         self, runner, tmp_path, mocker
     ):
-        """An explicitly realized reverse service remains discoverable."""
+        """A legacy service name is no longer an access-summary authority."""
         from aptl.cli.main import app
         from aptl.core.host_ports import ResolvedPort
 
@@ -269,8 +270,8 @@ class TestLabStartCommand:
         result = runner.invoke(app, ["lab", "info", "--project-dir", str(tmp_path)])
 
         assert result.exit_code == 0
-        assert "Reverse engineering SSH" in result.stdout
-        assert "localhost -p 20027" in result.stdout
+        assert "Reverse engineering SSH" not in result.stdout
+        assert "localhost -p 20027" not in result.stdout
 
     def test_lab_info_fails_without_env(self, runner, tmp_path):
         """lab info should tell users to start the lab before .env exists."""
@@ -280,7 +281,7 @@ class TestLabStartCommand:
 
         assert result.exit_code == 1
         assert "Execution boundary: unknown" in result.stdout
-        assert "run `aptl lab start` first" in result.stderr
+        assert "run `lilrae lab start` first" in result.stderr
 
     def test_lab_start_reports_the_attempt_boundary(self, runner, mocker):
         """The start summary carries the selected attempt's observed facts."""
@@ -577,7 +578,7 @@ class TestLabStartCommand:
         self, runner, tmp_path, mocker
     ):
         """When docker has published Grafana on a remapped host port
-        (default 3100 was already in use), `aptl lab info` must print the
+        (default 3100 was already in use), `lilrae lab info` must print the
         remapped port so students don't paste a URL that goes to whatever
         is on 3100 (#737)."""
         from aptl.cli.main import app
@@ -917,6 +918,30 @@ class TestLabStartCommand:
         assert result.exit_code == 2
         assert "mutually exclusive" in result.stderr
 
+    def test_start_without_project_config_says_so_not_unknown_scenario(
+        self, runner, mocker, tmp_path
+    ):
+        """A scenario id where no aptl.json exists names the missing project."""
+        from aptl.cli.main import app
+
+        orchestrate = mocker.patch("aptl.cli.lab.orchestrate_lab_start")
+        result = runner.invoke(
+            app,
+            [
+                "lab",
+                "start",
+                "--project-dir",
+                str(tmp_path),
+                "--scenario",
+                "techvault-purpleteam",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "No aptl.json was found in" in result.stderr
+        assert "Unknown scenario id" not in result.stderr
+        orchestrate.assert_not_called()
+
     def test_start_clean_calls_clean_boot_lab(self, runner, mocker, tmp_path):
         """--clean routes through clean_boot_lab, not the plain start path."""
         from aptl.cli.main import app
@@ -980,12 +1005,13 @@ class TestLabStartCommand:
                     "The failed start left 3 containers and 2 networks in the project.",
                     "  To recover, run one of:",
                     (
-                        "    aptl lab stop     removes the project's containers and "
-                        "networks and keeps its volumes, so lab data survives"
+                        "    lilrae lab stop     removes the project's containers and "
+                        "networks and keeps its volumes, so volume-backed lab data "
+                        "survives; container-local data is removed"
                     ),
                     (
-                        "    aptl lab stop -v  also removes the volumes and destroys "
-                        "all lab data"
+                        "    lilrae lab stop -v  also removes managed volumes and destroys "
+                        "their lab data"
                     ),
                 ],
                 ["--teardown-on-failure did not remove them."],
@@ -1004,8 +1030,8 @@ class TestLabStartCommand:
                         "2 networks; volumes were kept."
                     ),
                     (
-                        "  `aptl lab stop -v` also removes the volumes and destroys "
-                        "all lab data."
+                        "  `lilrae lab stop -v` also removes managed volumes and destroys "
+                        "their lab data."
                     ),
                 ],
                 ["  To recover, run one of:"],
@@ -1123,11 +1149,11 @@ class TestLabStartCommand:
         routes = [
             line[4:].split("  ", 1)[0]
             for line in result.stdout.splitlines()
-            if line.startswith("    aptl lab stop")
+            if line.startswith("    lilrae lab stop")
         ]
         assert routes == [
-            f"aptl lab stop{target}",
-            f"aptl lab stop -v{target}",
+            f"lilrae lab stop{target}",
+            f"lilrae lab stop -v{target}",
         ], result.stdout
 
     def test_start_clean_aborts_without_confirmation(self, runner, mocker, tmp_path):
@@ -1710,7 +1736,7 @@ class TestJsonOutputAndExitStatus:
         [
             (["lab", "start", "--clean", "--json"], "--clean", "clean_boot_lab"),
             (["lab", "stop", "--volumes", "--json"], "--volumes", "stop_lab"),
-            (["lab", "reset", "--json"], "aptl lab reset", "reset_lab"),
+            (["lab", "reset", "--json"], "lilrae lab reset", "reset_lab"),
         ],
         ids=["start-clean", "stop-volumes", "reset"],
     )
@@ -1811,7 +1837,7 @@ class TestJsonOutputAndExitStatus:
 
 
 class TestLabResetCommand:
-    """`aptl lab reset` is explicit, reports what it reset, and repeats (#1218)."""
+    """`lilrae lab reset` is explicit, reports what it reset, and repeats (#1218)."""
 
     @staticmethod
     def _outcome(success=True, containers=3, networks=2, error=""):
@@ -1933,7 +1959,7 @@ class TestLabResetCommand:
 
 
 class TestLabStopCommand:
-    """Tests for the aptl lab stop CLI command."""
+    """Tests for the lilrae lab stop CLI command."""
 
     def test_stop_calls_stop_lab(self, runner, mocker):
         """stop command should call stop_lab."""
@@ -2011,7 +2037,7 @@ class TestLabStopCommand:
 
 
 class TestLabStatusCommand:
-    """Tests for the aptl lab status CLI command."""
+    """Tests for the lilrae lab status CLI command."""
 
     def test_status_calls_lab_status(self, runner, mocker):
         """status command should call lab_status."""
@@ -2144,7 +2170,7 @@ def _continuity_result(events):
 
 
 class TestLabContinuityAuditCommand:
-    """Tests for the aptl lab continuity-audit CLI command (issue #252)."""
+    """Tests for the lilrae lab continuity-audit CLI command (issue #252)."""
 
     def _stub_cli_plumbing(self, mocker, project_dir: Path):
         """Stub the CLI helpers so the command runs without a real lab.
@@ -2512,7 +2538,7 @@ class TestLabContinuityAuditCommand:
 
     def test_run_id_must_exist_in_store(self, runner, mocker, tmp_path):
         # A typo in --run-id would otherwise create an orphan archive
-        # directory that ``aptl runs list/show`` cannot discover. Fail
+        # directory that ``lilrae runs list/show`` cannot discover. Fail
         # loudly when the referenced run has no manifest.
         from aptl.cli.main import app
 
@@ -2681,3 +2707,175 @@ class TestLabContinuityAuditCommand:
         )
 
         assert result.exit_code != 0
+
+
+# Issue #1354: an aptl.json that a command cannot use is reported, not raised.
+_UNLOADABLE_CONFIGS = [
+    pytest.param('{"lab": {"name": ', "Invalid JSON in", id="malformed-json"),
+    pytest.param("[]", "Config root must be a JSON object", id="list-root"),
+    pytest.param(
+        '{"deployment": {"provider": "kubernetes"}}',
+        "Unknown deployment provider",
+        id="failed-validation",
+    ),
+]
+_RUNS_COMMANDS = [
+    pytest.param(["runs", "list"], id="runs-list"),
+    pytest.param(["runs", "show", "run-1"], id="runs-show"),
+    pytest.param(["runs", "path", "run-1"], id="runs-path"),
+    pytest.param(["runs", "export", "run-1"], id="runs-export"),
+    pytest.param(["runs", "export-bundle", "run-1"], id="runs-export-bundle"),
+]
+# Settings that load as aptl.json but that the backend constructor rejects.
+_REJECTED_DEPLOYMENTS = [
+    pytest.param(
+        {"provider": "ssh-compose"},
+        "deployment.ssh_host is required for ssh-compose provider",
+        id="ssh-without-host",
+    ),
+    pytest.param(
+        {
+            "provider": "ssh-compose",
+            "ssh_host": "lab.example.com",
+            "ssh_user": "operator",
+            "ssh_key": "keys/id_ed25519",
+        },
+        "ssh_key must be an absolute path",
+        id="ssh-relative-key",
+    ),
+]
+_BACKEND_CLI_COMMANDS = [
+    pytest.param(["container", "list"], id="container-list"),
+    pytest.param(["container", "logs", "kali"], id="container-logs"),
+    pytest.param(["container", "shell", "kali"], id="container-shell"),
+    pytest.param(["lab", "status", "--json"], id="lab-status-json"),
+    pytest.param(["lab", "status", "--output"], id="lab-status-output"),
+    pytest.param(["lab", "continuity-audit"], id="lab-continuity-audit"),
+    pytest.param(["config", "validate"], id="config-validate"),
+]
+_LIFECYCLE_COMMANDS = [
+    pytest.param(["lab", "start", "--json"], "start", id="lab-start"),
+    pytest.param(
+        ["lab", "start", "--clean", "--yes", "--json"], "stop", id="lab-start-clean"
+    ),
+    pytest.param(["lab", "stop", "--json"], "stop", id="lab-stop"),
+    pytest.param(["lab", "reset", "--yes", "--json"], "reset", id="lab-reset"),
+]
+
+
+class TestUnusableConfigIsReported:
+    """Issue #1354: commands name the aptl.json problem instead of raising it."""
+
+    @staticmethod
+    def _project(tmp_path: Path, content: str) -> str:
+        (tmp_path / "aptl.json").write_text(content)
+        return str(tmp_path)
+
+    @staticmethod
+    def _deployment(tmp_path: Path, deployment: dict) -> str:
+        return TestUnusableConfigIsReported._project(
+            tmp_path, json.dumps({"lab": {"name": "x"}, "deployment": deployment})
+        )
+
+    @staticmethod
+    def _assert_reported_exit(result) -> None:
+        # CliRunner records an escaped ValueError with exit code 1 as well, so
+        # the exception type is what tells a report from a traceback.
+        assert result.exit_code == 1
+        assert isinstance(result.exception, SystemExit), result.exception
+
+    @pytest.mark.parametrize("command", _RUNS_COMMANDS)
+    @pytest.mark.parametrize(("content", "reason"), _UNLOADABLE_CONFIGS)
+    def test_runs_commands_report_a_config_that_does_not_load(
+        self, runner, tmp_path, command, content, reason
+    ):
+        from aptl.cli.main import app
+
+        project = self._project(tmp_path, content)
+
+        result = runner.invoke(app, [*command, "--project-dir", project])
+
+        self._assert_reported_exit(result)
+        assert reason in result.stderr
+        assert result.stdout == ""
+
+    @pytest.mark.parametrize("command", _BACKEND_CLI_COMMANDS)
+    @pytest.mark.parametrize(("deployment", "reason"), _REJECTED_DEPLOYMENTS)
+    def test_cli_commands_report_rejected_deployment_settings_on_stderr(
+        self, runner, tmp_path, command, deployment, reason
+    ):
+        from aptl.cli.main import app
+
+        project = self._deployment(tmp_path, deployment)
+        snapshot_path = tmp_path / "snapshot.json"
+        if "--output" in command:
+            command = [*command, str(snapshot_path)]
+
+        result = runner.invoke(app, [*command, "--project-dir", project])
+
+        self._assert_reported_exit(result)
+        assert result.stderr.startswith(
+            f"invalid deployment settings in aptl.json: {reason}"
+        )
+        assert result.stdout == ""
+        assert not snapshot_path.exists()
+
+    @pytest.mark.parametrize("output_json", [True, False], ids=["json", "text"])
+    @pytest.mark.parametrize(("command", "blocked"), _LIFECYCLE_COMMANDS)
+    @pytest.mark.parametrize(("deployment", "reason"), _REJECTED_DEPLOYMENTS)
+    def test_lifecycle_commands_refuse_rejected_deployment_settings(
+        self, runner, tmp_path, mocker, command, blocked, deployment, reason, output_json
+    ):
+        from aptl.cli.main import app
+
+        from aptl.backends import _raes_scenario_resolution
+        from aptl.core import lab as core_lab
+        from aptl.core import operator_group_state
+
+        project = self._deployment(tmp_path, deployment)
+        teardown = mocker.spy(core_lab, "_tear_down_owned")
+        recovery = mocker.spy(operator_group_state, "load_admitted_operator_groups")
+        workspace = mocker.spy(core_lab, "_workspace_scope_recorded")
+        scenario = mocker.spy(_raes_scenario_resolution, "resolve_scenario_bundle")
+
+        if not output_json:
+            command = [arg for arg in command if arg != "--json"]
+        result = runner.invoke(app, [*command, "--project-dir", project])
+
+        self._assert_reported_exit(result)
+        if output_json:
+            payload = json.loads(result.stdout)
+            assert payload["ok"] is False
+            error = payload["error"]
+        else:
+            error = result.stdout
+        assert (
+            f"[lifecycle-invalid-configuration] Lab {blocked} blocked: invalid "
+            f"deployment settings in aptl.json: {reason}"
+        ) in error
+        teardown.assert_not_called()
+        recovery.assert_not_called()
+        workspace.assert_not_called()
+        scenario.assert_not_called()
+
+    def test_config_validate_still_accepts_a_complete_ssh_compose_block(
+        self, runner, tmp_path
+    ):
+        from aptl.cli.main import app
+
+        project = self._deployment(
+            tmp_path,
+            {
+                "provider": "ssh-compose",
+                "ssh_host": "lab.example.com",
+                "ssh_user": "operator",
+                # tmp_path is absolute on every platform; "/home/..." is not
+                # absolute on Windows, which SSHComposeBackend would reject.
+                "ssh_key": str(tmp_path / "id_ed25519"),
+            },
+        )
+
+        result = runner.invoke(app, ["config", "validate", "--project-dir", project])
+
+        assert result.exit_code == 0
+        assert result.stdout.strip().endswith("aptl.json: OK")

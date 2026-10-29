@@ -30,12 +30,7 @@ class TestConfigEndpoint:
     def test_returns_config(self, api_client, tmp_path):
         config = {
             "lab": {"name": "test-lab", "network_subnet": "172.20.0.0/16"},
-            "containers": {
-                "wazuh": True,
-                "victim": True,
-                "kali": True,
-                "reverse": False,
-            },
+            "containers": {"profiles": ["wazuh", "victim", "kali"]},
         }
         (tmp_path / "aptl.json").write_text(json.dumps(config))
 
@@ -64,9 +59,7 @@ class TestConfigEndpoint:
 
         assert response.status_code == 200
         data = response.json()
-        # Every field in ContainerSettings should appear in the response
-        for field_name in ContainerSettings.model_fields:
-            assert field_name in data["containers"], f"Missing container: {field_name}"
+        assert data["containers"] == {}
 
 
 class TestWebServeInfo:
@@ -94,9 +87,13 @@ class TestWebServeInfo:
         ):
             data = api_client.get("/api/config").json()
 
-        assert "box.example.ts.net" in data["web"]["allowed_hosts"]
-        # Loopback defaults are still present alongside the extra host.
-        assert "127.0.0.1" in data["web"]["allowed_hosts"]
+        assert set(data["web"]["allowed_hosts"]) == {
+            "testserver",
+            "box.example.ts.net",
+            "127.0.0.1",
+            "localhost",
+            "::1",
+        }
 
     def test_public_origin_from_env_trims_trailing_slash(self, api_client):
         with patch.dict(

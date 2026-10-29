@@ -8,6 +8,7 @@ from pathlib import Path, PurePosixPath
 
 from aptl.core.credentials import RENDERED_MANAGER_RELPATH
 from aptl.core.deployment._flag_signing_keys import FLAG_SIGNING_PROFILE_V2
+from aptl.core.deployment._ssh_key_bundle import SSH_ACCESS_PROFILE_V1
 from aptl.core.deployment._misp_cache_credential import (
     MISP_CACHE_CREDENTIAL_PROFILE,
 )
@@ -18,6 +19,7 @@ from aptl.core.deployment._cortex_service_credentials import (
 )
 from aptl.core.deployment._compose_stateful_constants import (
     CERTIFICATE_ROOT_RELPATH,
+    CERTIFICATE_PROVENANCE,
     FLAG_SIGNING_ROOT_RELPATH,
     MISP_CACHE_CREDENTIAL_ROOT_RELPATH,
     MISP_SERVER_TLS_ROOT_RELPATH,
@@ -25,6 +27,7 @@ from aptl.core.deployment._compose_stateful_constants import (
     SOC_CERTS_ROOT_RELPATH,
     SSH_KEY_BUNDLE_ROOT_RELPATH,
     WAZUH_MANAGER_CONFIG_PROVENANCES,
+    WAZUH_CERT_PROFILES,
 )
 from aptl.core.deployment._compose_stateful_services import (
     wazuh_service_definitions,
@@ -112,9 +115,9 @@ def artifact_source_path(
     provenance = getattr(artifact, "provenance", None)
     if provenance == SOC_CERT_PROFILE:
         relative = Path(SOC_CERTS_ROOT_RELPATH)
-    elif artifact.generator == "certificate_bundle":
+    elif artifact.generator == "certificate_bundle" and provenance in {CERTIFICATE_PROVENANCE, *WAZUH_CERT_PROFILES}:
         relative = Path(CERTIFICATE_ROOT_RELPATH)
-    elif artifact.generator == "ssh_key_bundle":
+    elif artifact.generator == "ssh_key_bundle" and provenance == SSH_ACCESS_PROFILE_V1:
         relative = Path(SSH_KEY_BUNDLE_ROOT_RELPATH) / artifact.name
     elif provenance == FLAG_SIGNING_PROFILE_V2:
         relative = Path(FLAG_SIGNING_ROOT_RELPATH) / artifact.name
@@ -124,8 +127,10 @@ def artifact_source_path(
         relative = Path(MISP_CACHE_CREDENTIAL_ROOT_RELPATH)
     elif provenance == MISP_SERVER_TLS_PROFILE:
         relative = Path(MISP_SERVER_TLS_ROOT_RELPATH)
-    else:
+    elif provenance in WAZUH_MANAGER_CONFIG_PROVENANCES:
         relative = Path(RENDERED_MANAGER_RELPATH)
+    else:
+        raise ValueError("unsupported generated artifact producer")
     return scenario_root.resolve() / relative
 
 

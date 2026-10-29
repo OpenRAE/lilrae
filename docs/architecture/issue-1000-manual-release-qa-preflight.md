@@ -1,5 +1,11 @@
 # Issue #1000 Partial Boot And Manual Release QA Preflight
 
+> Dated preflight record (scope notice added 2026-10-12): this assessment
+> records the earlier partial-boot and QA design, including retired command
+> examples and earlier port-collision assumptions. Current operator commands
+> and resolved access information are described in the
+> [CLI reference](../reference/cli.md) and [Deployment](../deployment.md).
+
 This note fixes the architecture boundary for issue #1000. It is guidance, not
 an implementation plan, and it does not perform the defect fixes or rewrite the
 QA manual. No new ADR is needed: ADR-023 and ADR-037 own deployment inventory,

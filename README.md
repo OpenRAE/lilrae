@@ -5,14 +5,49 @@
 
 # LilRAE (formerly APTL)
 
-> **APTL is now LilRAE.** The Advanced Purple Team Lab (APTL) repository moved
-> to [OpenRAE/lilrae](https://github.com/OpenRAE/lilrae) and was renamed. It is
-> the same project, with the same source, history, features, and issue tracker.
-> The rename does not change how you install or run it: the package is still
-> `aptl-labs`, the command is still `aptl`, and existing configuration, state
-> directories, and runtime identifiers keep their `aptl` names. Where current
-> pages still say APTL, they mean LilRAE. See
-> [ADR-062](docs/adrs/adr-062-lilrae-name-and-naming-convention.md).
+> **APTL is now LilRAE, and the package is now `lilrae`.** The Advanced Purple
+> Team Lab (APTL) repository moved to
+> [github.com/OpenRAE/lilrae](https://github.com/OpenRAE/lilrae) and was
+> renamed. It is the same project, with the same source, history, features,
+> and issue tracker. Releases publish to PyPI as
+> [`lilrae`](https://pypi.org/project/lilrae/) from version 8.0.0.
+> `aptl-labs` 7.0.0 was the last `aptl-labs` release. The command is now
+> `lilrae`. The `aptl` command is a deprecated alias that LilRAE 10.0.0
+> removes. The import package is still `aptl`, and existing configuration,
+> state directories, and runtime identifiers keep their `aptl` names. Where
+> current pages still say APTL, they mean LilRAE. See
+> [ADR-062](https://github.com/OpenRAE/lilrae/blob/main/docs/adrs/adr-062-lilrae-name-and-naming-convention.md)
+> and [Move from the aptl command](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/installation.md#move-from-the-aptl-command).
+>
+> The two distributions install the same `aptl` package. Do not
+> install `lilrae` over `aptl-labs`, because one installation overwrites the
+> files of the other. Remove `aptl-labs` first, then install `lilrae` with the
+> same extras.
+>
+> With pipx:
+>
+> ```shell
+> pipx uninstall aptl-labs
+> pipx install lilrae
+> lilrae --version
+> ```
+>
+> With pip in a virtual environment, for example with the `[s3]` extra:
+>
+> ```shell
+> python -m pip uninstall aptl-labs
+> python -m pip install "lilrae[s3]"
+> ```
+>
+> To roll back, remove `lilrae`, then install the last legacy release:
+>
+> ```shell
+> pipx uninstall lilrae
+> pipx install "aptl-labs==7.0.0"
+> ```
+>
+> The [installation guide](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/installation.md#move-from-aptl-labs-to-lilrae)
+> has the full procedure. All earlier `aptl-labs` releases stay on PyPI.
 
 LilRAE is a local purple-team lab where human operators and AI agents exercise
 red- and blue-team workflows against an intentionally vulnerable enterprise
@@ -31,16 +66,16 @@ dedicated, rebuildable host, keep unrelated credentials and workloads
 elsewhere, control the surrounding network, and operate only on systems you are
 authorized to test.
 
-Ordinary `aptl lab start` uses the selected Docker daemon. On native Linux that
+Ordinary `lilrae lab start` uses the selected Docker daemon. On native Linux that
 can give the lab and its control components authority over the physical host's
 Docker engine; Docker Desktop or another Docker VM changes that placement but
-is not, by its name alone, a qualified containment boundary. `aptl lab start`
-and `aptl lab info` report the observed transport and boundary, or `unknown`
+is not, by its name alone, a qualified containment boundary. `lilrae lab start`
+and `lilrae lab info` report the observed transport and boundary, or `unknown`
 when they cannot establish one. See [tested profiles, host exposure and
 limits](docs/getting-started/prerequisites.md#tested-execution-profiles-and-limits).
 
 For stronger host and cross-seat isolation on Linux/KVM, use a disposable
-[`aptl seat`](docs/reference/appliance-seat-launcher.md). A VM boundary reduces
+[`lilrae seat`](docs/reference/appliance-seat-launcher.md). A VM boundary reduces
 risk but does not eliminate it; keep the host kernel and hypervisor current. A
 seat needs KVM, QEMU, OVMF, adequate per-seat resources and a verified image;
 it does not make the workloads inside its guest mutually isolated.
@@ -55,10 +90,10 @@ Install the released CLI and materialize its bundled lab assets. No source
 checkout is required:
 
 ```shell
-pipx install aptl-labs
-aptl lab init my-lab
+pipx install lilrae
+lilrae lab init my-lab
 cd my-lab
-aptl lab start --scenario techvault
+lilrae lab start --scenario techvault
 ```
 
 Startup validates the selected scenario, creates private project state,
@@ -67,20 +102,20 @@ structured outcome with the observed execution boundary. Inspect the fresh
 runtime-derived state, boundary and access information:
 
 ```shell
-aptl lab status
-aptl lab info
-aptl container list
+lilrae lab status
+lilrae lab info
+lilrae container list
 ```
 
 URLs, host ports, available containers, usernames, and credential locations
-belong to the realized project. Use `aptl lab info`; do not rely on static
+belong to the realized project. Use `lilrae lab info`; do not rely on static
 values copied from documentation.
 
 At the end of the session:
 
 ```shell
-aptl lab stop      # preserve project volumes
-aptl lab stop -v   # confirm and destroy project volume data
+lilrae lab stop      # preserve project volumes
+lilrae lab stop -v   # confirm and destroy project volume data
 ```
 
 Read the [first-lab guide](docs/getting-started/quick-start.md) for scenario
@@ -92,7 +127,7 @@ selection, safe activity, result inspection, troubleshooting, and teardown.
 - Docker Engine 28.0 or newer (native, or inside Docker Desktop or Colima)
   with Compose and Buildx, on a cgroup v2 host
 - OpenSSH client with `ssh-keygen` on `PATH`
-- Node.js 20 or newer and npm for MCP artifact builds
+- Node.js 22.23.4+, 24.22.1+, or 26.12.1+ and npm for MCP artifact builds
 - 20GB or more of free disk space
 - Sufficient Docker memory for the selected scenario; the full acquired
   TechVault stack needs more than 20GB

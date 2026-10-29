@@ -11,6 +11,7 @@ import typer
 
 from aptl.cli import lab_init, lifecycle
 from aptl.cli._common import (
+    PROJECT_DIR_HELP,
     EXIT_FAILED,
     emit_json_result,
     exit_status,
@@ -53,16 +54,16 @@ app = typer.Typer(help="Lab lifecycle management.")
 
 # `continuity-audit` lives in aptl.cli.continuity (issue #252) so this
 # module stays focused on lifecycle commands. Register it under `lab`
-# so the command stays at `aptl lab continuity-audit` (no UX change).
+# so the command stays at `lilrae lab continuity-audit` (no UX change).
 app.command("continuity-audit")(continuity_audit)
 
 # `init` (DEP-008) lives in aptl.cli.lab_init so this module stays the focused
-# lifecycle facade; registered here so the command remains `aptl lab init`.
+# lifecycle facade; registered here so the command remains `lilrae lab init`.
 lab_init.register(app)
 
 # Ephemeral lifecycle policy commands (DEP-003) live in aptl.cli.lifecycle so
 # this module stays focused; register them under `lab` (no UX change:
-# `aptl lab enforce` / `monitor` / `policy show`).
+# `lilrae lab enforce` / `monitor` / `policy show`).
 lifecycle.register(app)
 app.command("qualify-profile")(qualify_profile)
 
@@ -118,7 +119,7 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     skip_seed: bool = typer.Option(
         False,
@@ -212,7 +213,7 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
         help="Print the result as one JSON object; progress goes to stderr.",
     ),
 ) -> None:
-    """Start the APTL lab environment.
+    """Start the LilRAE lab environment.
 
     Exit status: 0 when the lab started (read the outcome for degraded
     states), 1 when the start failed, 2 for invalid options.
@@ -395,7 +396,7 @@ def info(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
 ) -> None:
     """Show lab access URLs and credential locations."""
@@ -404,7 +405,7 @@ def info(
     env_path = project_dir / ".env"
     if not env_path.exists():
         typer.echo(
-            f"Credentials file not found at {env_path}; run `aptl lab start` first.",
+            f"Credentials file not found at {env_path}; run `lilrae lab start` first.",
             err=True,
         )
         raise typer.Exit(code=1)
@@ -423,7 +424,7 @@ def scenarios(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
 ) -> None:
     """List validated acquired-pack identities."""
@@ -461,7 +462,7 @@ def stop(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     output_json: bool = typer.Option(
         False,
@@ -470,7 +471,7 @@ def stop(
         help="Print the result as one JSON object.",
     ),
 ) -> None:
-    """Stop the APTL lab environment.
+    """Stop the LilRAE lab environment.
 
     Exit status: 0 when the project is stopped, also when it was not running,
     1 when the stop failed, 2 for invalid options.
@@ -507,7 +508,7 @@ def reset(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     output_json: bool = typer.Option(
         False,
@@ -518,13 +519,13 @@ def reset(
 ) -> None:
     """Reset the lab: remove its containers, networks and volumes.
 
-    It also finishes pending host-side cleanup, so the next `aptl lab start`
+    It also finishes pending host-side cleanup, so the next `lilrae lab start`
     begins clean. Configuration, .env, SSH keys, certificates and run records
     are kept. Exit status: 0 when the project is reset, also when nothing was
     running, 1 when the reset failed or host cleanup is still pending, 2 for
     invalid options.
     """
-    if not _confirm_destructive(yes, output_json=output_json, option="aptl lab reset"):
+    if not _confirm_destructive(yes, output_json=output_json, option="lilrae lab reset"):
         raise typer.Exit(code=0)
     log.info("Resetting lab")
     _report_reset_result(reset_lab(project_dir), output_json)
@@ -564,7 +565,10 @@ def _emit_snapshot_json(project_dir: Path, output_file: Optional[Path]) -> None:
 
     Writes to ``output_file`` (mode 0600) when given, otherwise prints it.
     """
-    from aptl.cli._common import resolve_config_for_cli
+    from aptl.cli._common import (
+        exit_on_invalid_deployment_settings,
+        resolve_config_for_cli,
+    )
     from aptl.core.deployment import get_backend
     from aptl.core.deployment.errors import BackendObservationError
     from aptl.core.snapshot import capture_snapshot
@@ -574,7 +578,8 @@ def _emit_snapshot_json(project_dir: Path, output_file: Optional[Path]) -> None:
     # or invalid, so a misconfigured SSH lab doesn't get snapshotted
     # against the local daemon.
     config, project_root = resolve_config_for_cli(project_dir)
-    backend = get_backend(config, project_root)
+    with exit_on_invalid_deployment_settings():
+        backend = get_backend(config, project_root)
 
     try:
         snapshot = capture_snapshot(config_dir=project_root, backend=backend)
@@ -616,7 +621,7 @@ def status(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     output_json: bool = typer.Option(
         False,
@@ -648,7 +653,7 @@ def status(
 
 
 _LIVE_GATE_WARNING = (
-    "\n  WARNING: the live validation gate runs `aptl lab stop -v` and then\n"
+    "\n  WARNING: the live validation gate runs `lilrae lab stop -v` and then\n"
     "  re-boots the lab through the RAES start path. This DESTROYS all lab\n"
     "  data (Wazuh/MISP/TheHive/Shuffle volumes). Pass --skip-clean-boot to\n"
     "  validate the already-running lab without destroying it.\n"
@@ -661,7 +666,7 @@ def validate_live(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     scenario: Optional[Path] = typer.Option(
         None,

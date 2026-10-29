@@ -11,13 +11,15 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from typing import Protocol
+from urllib.parse import urlparse
 
 from raes.runtime_configuration import RuntimeConfiguration
 
 from aptl.core.deployment import _wazuh_agent_realization
+from aptl.core.deployment._authored_service_hosts import node_service_hosts
 
 _WAZUH_BOOTSTRAP_DIR = _wazuh_agent_realization._WAZUH_BOOTSTRAP_DIR
 _WAZUH_CONFIG = _wazuh_agent_realization._WAZUH_CONFIG
@@ -31,6 +33,7 @@ _wazuh_config = _wazuh_agent_realization.wazuh_config
 _MAX_WORKERS = 8
 _RSYSLOG_CONFIG = "/etc/rsyslog.d/60-aptl-forwarding.conf"
 _MISP_SYNC_CONFIG = "/etc/aptl/misp-suricata-sync.env"
+_MISP_SYNC_KEY = "/etc/aptl/misp-suricata-sync.key"
 _SAFE_HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$")
 
 
@@ -51,11 +54,39 @@ class ForwardingAgentBackend(Protocol):
     ) -> object: ...
 
 
+def agent_api_keys(
+    nodes: Iterable[object], accounts: Iterable[object]
+) -> dict[str, str]:
+    """Map an authored service host to the API key its consumers present.
+
+    A content-sync agent pulls from the URL its source authors. The node that
+    authors that host as its canonical URL is the service, and the single
+    ``key`` account the scenario declares on that node, with an authored
+    ``secret_fixture`` value, is the credential a puller presents. A host with
+    no such account, or with several, maps to nothing.
+    """
+
+    keys: dict[str, list[str]] = {}
+    by_address = {getattr(node, "address", ""): node for node in nodes}
+    for account in accounts:
+        credential = getattr(account, "credential", None)
+        node = by_address.get(getattr(account, "target_address", ""))
+        if getattr(account, "auth_method", "") != "key" or credential is None:
+            continue
+        for host in node_service_hosts(getattr(node, "runtime", None)):
+            keys.setdefault(host, []).append(credential.value)
+    return {host: values[0] for host, values in keys.items() if len(values) == 1}
+
+
 def realize_forwarding_agents(
-    backend: ForwardingAgentBackend, nodes: Iterable[object]
+    backend: ForwardingAgentBackend,
+    nodes: Iterable[object],
+    accounts: Iterable[object] = (),
 ) -> list[str]:
     """Realize every declared agent concurrently and return bounded failures."""
 
+    nodes = tuple(nodes)
+    api_keys = agent_api_keys(nodes, accounts)
     work = [
         (str(getattr(node, "container_name", "") or ""), node.runtime)
         for node in nodes
@@ -68,7 +99,9 @@ def realize_forwarding_agents(
     failures: list[str] = []
     with ThreadPoolExecutor(max_workers=min(len(work), _MAX_WORKERS)) as pool:
         futures = {
-            pool.submit(_realize_node_agents, backend, container, runtime): container
+            pool.submit(
+                _realize_node_agents, backend, container, runtime, api_keys
+            ): container
             for container, runtime in work
         }
         for future, container in futures.items():
@@ -97,6 +130,7 @@ def _realize_node_agents(
     backend: ForwardingAgentBackend,
     container: str,
     runtime: RuntimeConfiguration,
+    api_keys: Mapping[str, str],
 ) -> str | None:
     """Install, configure, and verify all agents declared on one node."""
 
@@ -107,7 +141,7 @@ def _realize_node_agents(
         elif implementation == "rsyslog":
             reason = _realize_rsyslog(backend, container, agent)
         elif implementation == "misp_suricata_sync":
-            reason = _realize_misp_sync(backend, container, agent)
+            reason = _realize_misp_sync(backend, container, agent, api_keys)
         else:
             reason = "unsupported declared implementation"
         if reason is not None:
@@ -152,10 +186,21 @@ def _install_rsyslog(backend: ForwardingAgentBackend, container: str) -> str | N
 
 
 def _realize_misp_sync(
-    backend: ForwardingAgentBackend, container: str, agent: object
+    backend: ForwardingAgentBackend,
+    container: str,
+    agent: object,
+    api_keys: Mapping[str, str],
 ) -> str | None:
-    """Write and verify the declared MISP-to-Suricata sync configuration."""
+    """Write and verify the declared MISP-to-Suricata sync configuration.
 
+    The configuration names a fixed key file. When the scenario declares the
+    key the source's service accepts, it is written there ``0600`` and verified
+    by digest; the configuration itself never carries it.
+    """
+
+    reason = _write_declared_key(backend, container, agent, api_keys)
+    if reason is not None:
+        return reason
     payload = _misp_sync_config(agent)
     if payload is None or not _write_file(
         backend, container, _MISP_SYNC_CONFIG, payload, "0600"
@@ -168,8 +213,42 @@ def _realize_misp_sync(
     )
 
 
+def _write_declared_key(
+    backend: ForwardingAgentBackend,
+    container: str,
+    agent: object,
+    api_keys: Mapping[str, str],
+) -> str | None:
+    """Write the declared API key for the agent's source, when there is one."""
+
+    sources = tuple(getattr(agent, "sources", ()))
+    location = str(getattr(sources[0], "location", "")) if len(sources) == 1 else ""
+    api_key = api_keys.get(urlparse(location).hostname or "")
+    if api_key is None:
+        return None
+    payload = f"{api_key}\n"
+    if not _write_file(
+        backend, container, _MISP_SYNC_KEY, payload, "0600"
+    ) or not _key_file_matches(backend, container, payload):
+        return "MISP sync key did not verify"
+    return None
+
+
+def _key_file_matches(
+    backend: ForwardingAgentBackend, container: str, payload: str
+) -> bool:
+    """Verify the credential inside its boundary, returning only an exit code."""
+
+    result = backend.container_exec_with_input(
+        container, ["cmp", "-s", "--", _MISP_SYNC_KEY, "-"], payload, timeout=30
+    )
+    return getattr(result, "returncode", 1) == 0
+
+
 def _agent_configured(
-    backend: ForwardingAgentBackend, container: str, agent: object
+    backend: ForwardingAgentBackend,
+    container: str,
+    agent: object,
 ) -> bool:
     """Return whether one agent's executable and exact config are present."""
 
@@ -182,6 +261,9 @@ def _agent_configured(
             _RSYSLOG_CONFIG,
             _rsyslog_config,
         ),
+        # The TechVault pack installs its own frozen copy of the sync service,
+        # whose metadata names only ``aptl-misp-suricata-sync``. This probe
+        # checks that pack content, so it keeps the pack-supplied name (#1402).
         "misp_suricata_sync": (
             ["sh", "-c", 'test -x "$(command -v aptl-misp-suricata-sync)"'],
             _MISP_SYNC_CONFIG,
@@ -245,6 +327,7 @@ def _misp_sync_config(agent: object) -> str | None:
             setting, "value", ""
         ):
             values["MISP_CA_CERT_PATH"] = str(setting.value)
+    values["MISP_API_KEY_FILE"] = _MISP_SYNC_KEY
     values["RULES_OUT_PATH"] = "/var/lib/suricata/rules/misp/misp-iocs.rules"
     values["SURICATA_SOCKET_PATH"] = "/var/run/suricata/suricata-command.socket"
     return "".join(f"{key}={values[key]}\n" for key in sorted(values))
@@ -271,8 +354,10 @@ def _write_file(
     parent = path.rpartition("/")[0] or "/"
     if not _exec_ok(backend, container, ["mkdir", "-p", parent]):
         return False
+    # Create under a private umask: the final mode is applied below, and a
+    # secret-bearing file must never exist with a wider one in between.
     result = backend.container_exec_with_input(
-        container, ["sh", "-c", f"cat > {path}"], payload, timeout=30
+        container, ["sh", "-c", f"umask 077 && cat > {path}"], payload, timeout=30
     )
     return bool(
         getattr(result, "returncode", 1) == 0

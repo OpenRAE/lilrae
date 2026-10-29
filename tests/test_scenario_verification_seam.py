@@ -597,7 +597,7 @@ def test_the_techvault_adapter_is_its_own_package_in_the_one_distribution():
     core = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     entry_points = core["project"]["entry-points"]
 
-    assert core["project"]["name"] == "aptl-labs"
+    assert core["project"]["name"] == "lilrae"
     assert entry_points[ENTRY_POINT_GROUP] == {
         "techvault.aptl": "aptl_techvault.verification:verifier",
         "techvault-participant-study.aptl": "aptl_techvault.study:verifier",

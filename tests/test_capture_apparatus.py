@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 from aptl.core.deployment.docker_compose import DockerComposeBackend
+from aptl.core.deployment.errors import CaptureReconciliationError
 from aptl.core.deployment.realization import (
     DeploymentCaptureApparatus,
     DeploymentGeneratedArtifactOutput,
@@ -33,7 +34,9 @@ def _apparatus() -> DeploymentCaptureApparatus:
     )
 
 
-def _capture_spec(project: Path) -> DeploymentRealizationSpec:
+def _capture_spec(project: Path, keys: str = "kali/.ssh") -> DeploymentRealizationSpec:
+    """Return a capture request whose key outputs the pack declares in ``keys``."""
+
     artifact = DeploymentGeneratedArtifactRealization(
         address="provision.generated-artifact.techvault-ssh-keys",
         name="techvault-ssh-keys",
@@ -43,23 +46,23 @@ def _capture_spec(project: Path) -> DeploymentRealizationSpec:
         outputs=(
             DeploymentGeneratedArtifactOutput(
                 name="kali-pivot-private-key",
-                path="kali/.ssh/kali_pivot_key",
+                path=f"{keys}/kali_pivot_key",
                 sensitivity="secret",
             ),
             DeploymentGeneratedArtifactOutput(
                 name="kali-authorized-keys",
-                path="kali/.ssh/authorized_keys",
+                path=f"{keys}/authorized_keys",
                 sensitivity="restricted",
             ),
         ),
         consumers=(),
     )
     source = artifact_source_path(project, artifact)
-    private_key = source / "kali/.ssh/kali_pivot_key"
+    private_key = source / keys / "kali_pivot_key"
     private_key.parent.mkdir(parents=True, exist_ok=True)
     private_key.write_text("private-test-key")
     Path(f"{private_key}.pub").write_text("ssh-ed25519 AAAATEST aptl-kali-pivot\n")
-    (source / "kali/.ssh/authorized_keys").write_text(
+    (source / keys / "authorized_keys").write_text(
         "ssh-ed25519 AAAAOPERATOR aptl-control-plane\n"
     )
     return DeploymentRealizationSpec(
@@ -108,12 +111,14 @@ def test_generated_realization_includes_only_admitted_capture_apparatus(tmp_path
 def test_generated_realization_omits_unadmitted_capture_apparatus(tmp_path):
     scenario = tmp_path / "pack"
     scenario.mkdir()
-    backend = DockerComposeBackend(_ROOT)
+    backend = DockerComposeBackend(tmp_path)
     spec = DeploymentRealizationSpec(profiles=("kali",), nodes=(), networks=())
 
-    files = backend._realization_compose_files(None, spec, scenario, _ROOT)
+    files = backend._realization_compose_files(None, spec, scenario, tmp_path)
 
-    assert not files
+    assert files is not None
+    assert len(files) == 1
+    assert yaml.safe_load(files[0].read_text()) == {"services": {}}
 
 
 def test_capture_apparatus_asset_is_backend_owned_and_distributed():
@@ -173,6 +178,7 @@ def test_dormant_capture_apparatus_is_verified_without_open_ingress(tmp_path):
                     "ReadonlyRootfs": True,
                     "CapDrop": ["ALL"],
                     "CapAdd": [
+                        "CAP_AUDIT_WRITE",
                         "CAP_CHOWN",
                         "CAP_DAC_OVERRIDE",
                         "CAP_NET_BIND_SERVICE",
@@ -204,6 +210,7 @@ def test_dormant_capture_apparatus_is_verified_without_open_ingress(tmp_path):
     assert observed is not None
     assert observed[0]["participant_ingress_state"] == ("dormant-awaiting-run-binding")
     assert observed[0]["linux_capabilities"] == [
+        "CAP_AUDIT_WRITE",
         "CAP_CHOWN",
         "CAP_DAC_OVERRIDE",
         "CAP_NET_BIND_SERVICE",
@@ -352,4 +359,13 @@ def test_capture_finalization_rejects_broker_inventory_mismatch(tmp_path):
     )
 
     assert backend.quiesce_capture_apparatus() is True
-    assert backend.export_capture_apparatus(expected_session_ids=("session-1",)) is None
+    with pytest.raises(CaptureReconciliationError) as raised:
+        backend.export_capture_apparatus(expected_session_ids=("session-1",))
+    counts = (
+        raised.value.census,
+        raised.value.accepted,
+        raised.value.census_only,
+        raised.value.broker_only,
+    )
+    assert counts == (1, 1, 1, 1)
+    assert "session-1" not in str(raised.value)
