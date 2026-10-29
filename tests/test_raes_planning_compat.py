@@ -69,7 +69,9 @@ def test_authored_fields_are_indexed_once_and_refreshed_between_operations(tmp_p
     paths = CountedMap({"nodes.vm.runtime.applications[0].name": object()})
     scenario = SimpleNamespace(explicitness=paths, nodes={})
     requirements = (
-        _requirement("runtime-applications", field_path="nodes.vm.runtime.applications"),
+        _requirement(
+            "runtime-applications", field_path="nodes.vm.runtime.applications"
+        ),
         _requirement("runtime-applications", field_path="nodes.vm.runtime.application"),
         _requirement("runtime-applications", field_path="nodes.vm.runtime.absent"),
     )
@@ -440,6 +442,7 @@ def test_aptl_planning_applies_compatibility_before_raes_planner(
                 decision=compatibility_provider.resolve(None)  # type: ignore[arg-type]
             ),
         ),
+        participant_runtime=None,
     )
 
     # Planning needs no runtime owner (OpenRAE/rae#1660).
@@ -511,9 +514,11 @@ def test_admitted_target_reuses_one_planning_compatibility_resolution(
         distribution_version="1.0.0",
         entry_point="techvault.aptl",
     )
+    from aptl.backends import _raes_runtime_target
+
     resolutions = []
     monkeypatch.setattr(
-        raes,
+        _raes_runtime_target,
         "resolve_target_planning_compatibility",
         lambda bundle, config: resolutions.append((bundle, config)) or selection,
     )

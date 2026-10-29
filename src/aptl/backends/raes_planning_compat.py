@@ -382,7 +382,7 @@ def plan_for_target(
             run_scope.instantiation_id if run_scope is not None else None
         ),
     )
-    return plan(
+    execution_plan = plan(
         model,
         target.manifest,
         snapshot if snapshot is not None else RuntimeSnapshot(),
@@ -390,6 +390,14 @@ def plan_for_target(
         artifact_availability=artifact_availability,
         profile_context=getattr(target.provisioner, "domain_profile_context", None),
     )
+    from aptl.backends.raes_participant_runtime import AptlParticipantRuntime
+
+    participant_runtime = getattr(target, "participant_runtime", None)
+    if isinstance(participant_runtime, AptlParticipantRuntime):
+        execution_plan.diagnostics.extend(
+            participant_runtime.autonomous_execution.planning_diagnostics(model)
+        )
+    return execution_plan
 
 
 class AptlRuntimeManager(_RaesRuntimeManager):
