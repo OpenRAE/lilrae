@@ -78,6 +78,7 @@ def _evaluation_outcome(
 def _validate_trial_configuration(
     context: TrialExecutionContext, runtime: AptlParticipantRuntime
 ) -> None:
+    """Require each installed configuration to equal the admitted trial result."""
     configured = {}
     for binding in runtime.autonomous_execution.bindings:
         result = getattr(binding.executor, "configuration_result", None)
@@ -98,14 +99,18 @@ def _validate_trial_configuration(
 def _terminal_signal(
     success: bool, cancelled: bool, snapshot: RuntimeSnapshot
 ) -> TrialTerminalSignal:
+    """Distinguish interrupted, cancelled, and settled native work."""
     if not success:
         return TrialTerminalSignal.INTERRUPTED
     if cancelled:
         return TrialTerminalSignal.CANCELLED
-    if any(
+    failed = any(
         event.get("action_result", {}).get("status") == "failed"
         for history in snapshot.participant_behavior_history.values()
         for event in history
-    ):
-        return TrialTerminalSignal.SCENARIO_FAILURE
-    return TrialTerminalSignal.COMPLETED
+    )
+    return (
+        TrialTerminalSignal.SCENARIO_FAILURE
+        if failed
+        else TrialTerminalSignal.COMPLETED
+    )

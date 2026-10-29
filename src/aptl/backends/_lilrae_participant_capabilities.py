@@ -3,6 +3,7 @@
 from dataclasses import replace
 
 from raes_backend_protocols.capabilities import (
+    ParticipantRuntimeCapabilities,
     TimeCapabilities,
     TIME_CAPABILITY_REQUIRED_CONTRACTS,
 )
@@ -11,12 +12,19 @@ from raes_contracts.manifest_authority import (
 )
 
 from aptl.backends.lilrae_participant_execution import (
+    LilraeParticipantBinding,
     LilraeParticipantExecution,
     MAX_CONCURRENT_PARTICIPANTS,
 )
 
 
-def autonomous_manifest_options(contracts, participant, options, bindings):
+def autonomous_manifest_options(
+    contracts: frozenset[str],
+    participant: ParticipantRuntimeCapabilities,
+    options: dict[str, object],
+    bindings: tuple[LilraeParticipantBinding, ...],
+) -> tuple[frozenset[str], ParticipantRuntimeCapabilities, dict[str, object]]:
+    """Add bounded autonomous and shared-time claims for installed executors."""
     if not bindings:
         return contracts, participant, options
     installed = LilraeParticipantExecution(bindings).bindings

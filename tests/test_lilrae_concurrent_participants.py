@@ -1,5 +1,7 @@
 """Execute independent participants through the real RAES scheduler."""
 
+from aptl.workbench.lilrae_opencode import OpenCodeOptions
+
 import threading
 from dataclasses import replace
 from unittest.mock import Mock
@@ -263,11 +265,11 @@ def test_nonzero_harness_exit_preserves_peer_and_continue_policy(tmp_path, binar
 
     rendezvous = threading.Barrier(2, timeout=15)
     harness = LilraeOpenCodeExecutor(
-        executable=Path(binary),
-        work_root=tmp_path,
+        options=OpenCodeOptions(
+            executable=Path(binary), work_root=tmp_path, environment={}
+        ),
         model="provider/model",
         prompt="task",
-        environment={},
         timeout_seconds=15,
     )
     calls = []
@@ -306,11 +308,11 @@ def test_cancellation_before_harness_launch_has_a_terminal_result(tmp_path):
     from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor
 
     harness = LilraeOpenCodeExecutor(
-        executable=Path("/bin/false"),
-        work_root=tmp_path,
+        options=OpenCodeOptions(
+            executable=Path("/bin/false"), work_root=tmp_path, environment={}
+        ),
         model="provider/model",
         prompt="task",
-        environment={},
         timeout_seconds=15,
     )
 

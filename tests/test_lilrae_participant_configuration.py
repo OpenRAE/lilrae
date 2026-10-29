@@ -1,5 +1,7 @@
 """Configuration commits each participant's model and exact prompt bytes."""
 
+from aptl.workbench.lilrae_opencode import OpenCodeOptions
+
 import hashlib
 
 import pytest
@@ -58,30 +60,32 @@ def test_pinned_prompt_and_selected_model_reach_executor(tmp_path):
     runner = RecordingRunner()
     manifest, result = configuration()
     executor = configured_opencode_executor(
+        options=OpenCodeOptions(
+            executable=Path("/bin/true"),
+            work_root=tmp_path,
+            environment={},
+            runner=runner,
+        ),
         configuration=result,
         manifest=manifest,
         prompt="red task",
         prompt_ref="content.red-prompt@v1",
-        executable=Path("/bin/true"),
-        work_root=tmp_path,
-        environment={},
-        runner=runner,
         supported_models=frozenset({"provider/model"}),
     )
     executor("action", Event())
     assert runner.calls[0][1]["stdin"] == b"red task"
     assert runner.calls[0][1]["timeout_seconds"] == 37
     assert "provider/model" in runner.calls[0][0]
+    options = OpenCodeOptions(executable=Path("/bin/true"), work_root=tmp_path)
+    supported_models = frozenset({"provider/model"})
     with pytest.raises(ValueError, match="prompt"):
         configured_opencode_executor(
+            options=options,
             configuration=result,
             manifest=manifest,
             prompt="peer task",
             prompt_ref="content.red-prompt@v1",
-            executable=Path("/bin/true"),
-            work_root=tmp_path,
-            environment={},
-            supported_models=frozenset({"provider/model"}),
+            supported_models=supported_models,
         )
 
 

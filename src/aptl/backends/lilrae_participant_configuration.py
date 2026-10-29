@@ -13,7 +13,7 @@ from raes_contracts.contracts import (
 )
 from raes_contracts.satisfiability import canonical_contract_digest
 
-from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor
+from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor, OpenCodeOptions
 
 _TARGETS = {
     "model": "string",
@@ -97,6 +97,7 @@ def opencode_manifest(*, version: str) -> ParticipantImplementationManifestModel
 
 
 def _values(configuration: ParticipantConfigurationModel) -> dict[str, object]:
+    """Require exactly the manifest's literal configuration targets."""
     values = {
         entry.target_id: entry.value.value
         for entry in configuration.values
@@ -134,16 +135,11 @@ class OpenCodeConfigurationValidator:
         return configuration
 
 
-def configured_opencode_executor(
-    *,
+def _validate_configuration_result(
     configuration: ParticipantConfigurationResultModel,
     manifest: ParticipantImplementationManifestModel,
-    prompt: str,
-    prompt_ref: str,
-    supported_models: frozenset[str],
-    **executor_options,
-) -> LilraeOpenCodeExecutor:
-    """Verify the sealed result and artifact commitment before constructing a harness."""
+) -> None:
+    """Verify the configuration's owner, target types, and committed identity."""
     if (
         configuration.manifest_digest != canonical_contract_digest(manifest)
         or configuration.configuration.implementation_identity != manifest.identity
@@ -154,12 +150,25 @@ def configured_opencode_executor(
         or configuration.configuration.manifest_version != manifest.schema_version
     ):
         raise ValueError("participant configuration manifest or digest is inconsistent")
-    values = _values(configuration.configuration)
     for entry in configuration.configuration.values:
         declaration = manifest.configuration_registry.resolve(entry.target_id)
         if entry.value_type != declaration.value_type:
             raise ValueError("participant configuration target type is inconsistent")
         declaration.validate_value(entry.value)
+
+
+def configured_opencode_executor(
+    *,
+    configuration: ParticipantConfigurationResultModel,
+    manifest: ParticipantImplementationManifestModel,
+    prompt: str,
+    prompt_ref: str,
+    supported_models: frozenset[str],
+    options: OpenCodeOptions,
+) -> LilraeOpenCodeExecutor:
+    """Verify the sealed result and artifact commitment before constructing a harness."""
+    _validate_configuration_result(configuration, manifest)
+    values = _values(configuration.configuration)
     if (
         prompt_ref != values["prompt_ref"]
         or hashlib.sha256(prompt.encode("utf-8")).hexdigest() != values["prompt_sha256"]
@@ -173,5 +182,5 @@ def configured_opencode_executor(
         prompt=prompt,
         timeout_seconds=values["timeout_seconds"],
         configuration_result=configuration,
-        **executor_options,
+        options=options,
     )

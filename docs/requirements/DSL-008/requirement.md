@@ -23,6 +23,9 @@ NOT DEPRECATED 2026-10-09: ADR-035 deprecates DSL-002 to DSL-009 as requirements
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/_raes_runtime_target.py` (Installed components for the admitted scenario target)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/_raes_manifest_realization.py` (Realization and independent readback capabilities)
+
 - TESTS → TEST `tests/test_lilrae_composed_participants.py` (Parameterized packages and accounts reach generic node composition)
 
 - IMPLEMENTS → CODE_FILE `src/aptl/core/deployment/_compose_network_realization.py` (Shared declared-network reconciliation and fresh endpoint readback across startup routes)

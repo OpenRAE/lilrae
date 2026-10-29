@@ -22,6 +22,7 @@ from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.participant_configuration import (
     validate_participant_configuration_selection,
 )
+from raes_processor.models import RuntimeModel, ParticipantAutonomousExecutionRuntime
 
 from aptl.utils.redaction import redact
 from aptl.workbench.process import (
@@ -68,13 +69,22 @@ class LilraeParticipantBinding:
             raise ValueError("participant binding exceeds native capacity")
         if self.execution_binding.max_retries != 0:
             raise ValueError("native participant retries are not supported")
+        self._validate_executor()
+
+    def _validate_executor(self) -> None:
+        """Require the executor's configuration and deadline to match admission."""
         configuration = getattr(self.executor, "configuration_result", None)
-        if manifest.configuration_registry is not None and configuration is None:
+        if (
+            self.implementation_manifest.configuration_registry is not None
+            and configuration is None
+        ):
             raise ValueError(
                 "participant configuration result is required by its manifest"
             )
         if configuration is not None:
-            validate_participant_configuration_selection(selection, configuration)
+            validate_participant_configuration_selection(
+                self.implementation_selection, configuration
+            )
         if (
             hasattr(self.executor, "timeout_seconds")
             and self.executor.timeout_seconds > self.execution_binding.timeout_seconds
@@ -119,7 +129,7 @@ class LilraeParticipantExecution:
         self._cancelled: set[str] = set()
         self._closed = False
 
-    def planning_diagnostics(self, model) -> list[Diagnostic]:
+    def planning_diagnostics(self, model: RuntimeModel) -> list[Diagnostic]:
         """Check each participant against its installed offer before provisioning."""
         diagnostics = []
         for specification in model.behavior_specifications.values():
@@ -138,7 +148,10 @@ class LilraeParticipantExecution:
                     )
         return diagnostics
 
-    def _supports_policy(self, participant, policy) -> bool:
+    def _supports_policy(
+        self, participant: str, policy: ParticipantAutonomousExecutionRuntime
+    ) -> bool:
+        """Check the authored policy against one participant's installed offers."""
         for action in policy.execution_bindings:
             item = self._by_key.get((participant, action.action_contract_address))
             if item is None:
@@ -166,8 +179,8 @@ class LilraeParticipantExecution:
         implementation: str,
         action_id: str,
         temporal: tuple[ParticipantTemporalRuntimeContextModel, ...],
-        snapshot: RuntimeSnapshot,
     ) -> ParticipantActionAdmissionRequest:
+        """Build an admission request from the exact installed implementation."""
         item = self._by_key.get((participant, action))
         if (
             item is None
@@ -191,6 +204,7 @@ class LilraeParticipantExecution:
         snapshot: RuntimeSnapshot,
         episode_id: str,
     ) -> ParticipantNativeActionExecution:
+        """Validate, reserve, and drain one installed native invocation."""
         item = self._by_key.get(
             (request.participant_address, request.action_contract_address)
         )
@@ -203,6 +217,25 @@ class LilraeParticipantExecution:
                 "Native participant binding was refused.",
             )
         event = Event()
+        if not self._reserve(request, event):
+            return self._outcome(
+                request,
+                snapshot,
+                episode_id,
+                "authority_denied",
+                "Native participant reservation was refused.",
+            )
+        try:
+            return self._invoke(item, request, snapshot, episode_id, event)
+        finally:
+            with self._condition:
+                self._active.pop(request.action_instance_id, None)
+                self._condition.notify_all()
+
+    def _reserve(
+        self, request: ParticipantActionAdmissionRequest, event: Event
+    ) -> bool:
+        """Atomically reserve capacity without repeating or overlapping native work."""
         with self._condition:
             if (
                 self._closed
@@ -214,56 +247,73 @@ class LilraeParticipantExecution:
                     for participant, _ in self._active.values()
                 )
             ):
-                return self._outcome(
-                    request,
-                    snapshot,
-                    episode_id,
-                    "authority_denied",
-                    "Native participant reservation was refused.",
-                )
+                return False
             self._seen.add(request.action_instance_id)
             self._active[request.action_instance_id] = (
                 request.participant_address,
                 event,
             )
+            return True
+
+    def _invoke(
+        self,
+        item: LilraeParticipantBinding,
+        request: ParticipantActionAdmissionRequest,
+        snapshot: RuntimeSnapshot,
+        episode_id: str,
+        event: Event,
+    ) -> ParticipantNativeActionExecution:
+        """Convert native output or supervised failure into a portable result."""
         try:
             output = item.executor(request.action_instance_id, event)
             if event.is_set():
-                return self._outcome(
+                outcome = self._outcome(
                     request,
                     snapshot,
                     episode_id,
                     "backend_error",
                     "Participant invocation was cancelled.",
                 )
-            if not isinstance(output, str) or len(output) > 128_000:
-                raise ValueError("invalid native output")
-            return self._outcome(request, snapshot, episode_id, None, redact(output))
-        except BoundedProcessError as exc:
-            if exc.cleanup.residual:
-                return self._unknown_outcome(request, snapshot)
-            failure = "timeout" if exc.reason == REASON_TIMEOUT else "backend_error"
-            return self._outcome(
-                request, snapshot, episode_id, failure, exc.stable_summary()
-            )
-        except AgentExecutionError as exc:
-            if event.is_set() and str(exc) == REASON_CANCELLED:
-                return self._outcome(
-                    request,
-                    snapshot,
-                    episode_id,
-                    "backend_error",
-                    "Participant invocation was cancelled before launch.",
+            else:
+                if not isinstance(output, str) or len(output) > 128_000:
+                    raise ValueError("invalid native output")
+                outcome = self._outcome(
+                    request, snapshot, episode_id, None, redact(output)
                 )
-            return self._unknown_outcome(request, snapshot)
+        except AgentExecutionError as exc:
+            outcome = self._failure_outcome(request, snapshot, episode_id, exc, event)
         except Exception:
-            # Native effects may have occurred. No fabricated terminal action
-            # result: RAES retains indeterminate-work ownership and peer results.
-            return self._unknown_outcome(request, snapshot)
-        finally:
-            with self._condition:
-                self._active.pop(request.action_instance_id, None)
-                self._condition.notify_all()
+            # Native effects may have occurred. RAES retains ownership of
+            # indeterminate work and preserves the peer results.
+            outcome = self._unknown_outcome(request, snapshot)
+        return outcome
+
+    def _failure_outcome(
+        self,
+        request: ParticipantActionAdmissionRequest,
+        snapshot: RuntimeSnapshot,
+        episode_id: str,
+        error: AgentExecutionError,
+        event: Event,
+    ) -> ParticipantNativeActionExecution:
+        """Accept terminal failure only with cleanup or prelaunch cancellation proof."""
+        if isinstance(error, BoundedProcessError):
+            if not error.cleanup.residual:
+                failure = (
+                    "timeout" if error.reason == REASON_TIMEOUT else "backend_error"
+                )
+                return self._outcome(
+                    request, snapshot, episode_id, failure, error.stable_summary()
+                )
+        elif event.is_set() and str(error) == REASON_CANCELLED:
+            return self._outcome(
+                request,
+                snapshot,
+                episode_id,
+                "backend_error",
+                "Participant invocation was cancelled before launch.",
+            )
+        return self._unknown_outcome(request, snapshot)
 
     @staticmethod
     def _unknown_outcome(

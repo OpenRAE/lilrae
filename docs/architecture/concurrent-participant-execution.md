@@ -153,7 +153,8 @@ Use RAES configuration realization with `OpenCodeConfigurationValidator` and an 
 Resolve prompt artifacts through the caller's approved artifact boundary.
 `configured_opencode_executor` checks the prompt reference, exact UTF-8 digest, model, and timeout.
 Bind the resulting configuration digest in the participant implementation selection.
-Pass the bindings through `admit_raes_scenario(autonomous_bindings=...)`.
+Pass the bindings through `ScenarioAdmissionSource.autonomous_bindings` to `admit_raes_scenario`.
+`OpenCodeOptions` holds the admitted launch settings; `OpenCodeToolProfile` holds the verified MCP inputs.
 For experiments, call `run_participant_workload` from the existing workload callback with the admitted target, plan, and task evaluator.
 The caller retains the existing capture and evidence configuration.
 

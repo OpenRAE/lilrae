@@ -8,6 +8,7 @@ import math
 import os
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event
@@ -67,6 +68,57 @@ class CancellableProcessRunner(Protocol):
     ) -> ProcessResult: ...
 
 
+@dataclass(frozen=True)
+class OpenCodeToolProfile:
+    """An admitted MCP profile and the private inputs needed to verify it."""
+
+    profile: ProfileId
+    config: Path
+    credentials: Mapping[str, str] = field(default_factory=dict, repr=False)
+    inventory_probe: InventoryProbe = probe_mcp_server
+
+
+@dataclass(frozen=True)
+class OpenCodeOptions:
+    """Operator-owned launch settings, separate from participant configuration."""
+
+    executable: Path
+    work_root: Path
+    environment: Mapping[str, str] = field(default_factory=dict, repr=False)
+    max_output_bytes: int = 1_000_000
+    runner: CancellableProcessRunner | None = None
+    tools: OpenCodeToolProfile | None = None
+
+
+def _validate_provider_environment(environment: Mapping[str, str]) -> None:
+    """Permit only explicit provider credentials without ambient configuration."""
+    if set(environment) - _PROVIDER_ENVIRONMENT:
+        raise ValueError("participant provider environment is not admitted")
+    if any(
+        not isinstance(value, str) or not value or "\0" in value
+        for value in environment.values()
+    ):
+        raise ValueError("participant provider environment is invalid")
+
+
+def _validate_invocation_inputs(
+    model: str, prompt: str, timeout_seconds: float, max_output_bytes: int
+) -> None:
+    """Bound participant inputs before any process or tool probe starts."""
+    if (
+        not _MODEL.fullmatch(model)
+        or not prompt.strip()
+        or len(prompt.encode()) > 128_000
+    ):
+        raise ValueError("participant model or prompt is invalid")
+    if (
+        not math.isfinite(timeout_seconds)
+        or not 0 < timeout_seconds <= 3600
+        or not 0 < max_output_bytes <= 1_000_000
+    ):
+        raise ValueError("participant execution limits are invalid")
+
+
 class LilraeOpenCodeExecutor:
     """Run one bounded prompt with no ambient workspace, history, or tools.
 
@@ -77,84 +129,69 @@ class LilraeOpenCodeExecutor:
     def __init__(
         self,
         *,
-        executable: Path,
-        work_root: Path,
+        options: OpenCodeOptions,
         model: str,
         prompt: str,
-        environment: Mapping[str, str],
         timeout_seconds: float,
-        max_output_bytes: int = 1_000_000,
-        runner: CancellableProcessRunner | None = None,
-        profile: ProfileId | None = None,
-        profile_config: Path | None = None,
-        mcp_credentials: Mapping[str, str] | None = None,
-        inventory_probe: InventoryProbe = probe_mcp_server,
         configuration_result: ParticipantConfigurationResultModel | None = None,
     ) -> None:
-        if set(environment) - _PROVIDER_ENVIRONMENT:
-            raise ValueError("participant provider environment is not admitted")
-        if (
-            not _MODEL.fullmatch(model)
-            or not prompt.strip()
-            or len(prompt.encode()) > 128_000
-        ):
-            raise ValueError("participant model or prompt is invalid")
-        if (
-            not math.isfinite(timeout_seconds)
-            or not 0 < timeout_seconds <= 3600
-            or not 0 < max_output_bytes <= 1_000_000
-        ):
-            raise ValueError("participant execution limits are invalid")
-        if any(
-            not isinstance(value, str) or not value or "\0" in value
-            for value in environment.values()
-        ):
-            raise ValueError("participant provider environment is invalid")
-        self._executable = _admitted_executable(executable)
-        self._work_root = _prepare_work_dir(work_root)
+        """Validate participant configuration and verify tools before dispatch."""
+        _validate_provider_environment(options.environment)
+        _validate_invocation_inputs(
+            model, prompt, timeout_seconds, options.max_output_bytes
+        )
+        self._executable = _admitted_executable(options.executable)
+        self._work_root = _prepare_work_dir(options.work_root)
         self._model = model
         self._prompt = prompt.encode("utf-8")
         self._prompt_sha256 = hashlib.sha256(self._prompt).hexdigest()
-        self._environment = dict(environment)
+        self._environment = dict(options.environment)
         self._timeout_seconds = timeout_seconds
         self._configuration_result = (
             configuration_result.model_copy(deep=True)
             if configuration_result is not None
             else None
         )
-        if configuration_result is not None:
-            values = {
-                item.target_id: item.value.value
-                for item in configuration_result.configuration.values
-                if item.value.kind == "literal"
-            }
-            if (
-                values.get("model") != model
-                or values.get("prompt_sha256") != self._prompt_sha256
-                or values.get("timeout_seconds") != timeout_seconds
-            ):
-                raise ValueError("participant delivery differs from its configuration")
-        self._max_output_bytes = max_output_bytes
-        self._runner = runner or BoundedProcessRunner()
-        self._profile = profile
-        self._profile_config = profile_config
-        self._mcp_credentials = dict(mcp_credentials or {})
-        self._inventory_probe = inventory_probe
-        self._servers = {}
-        self._profile_digest = ""
-        if (profile is None) != (profile_config is None):
-            raise ValueError(
-                "participant MCP profile and configuration must be supplied together"
-            )
-        if profile_config is not None:
-            self._servers, self._profile_digest = _load_server_config(profile_config)
-            if set(self._servers) != set(profile_for(profile).server_ids):
-                raise ValueError(
-                    "participant MCP servers do not match the selected profile"
-                )
+        self._validate_delivery()
+        self._max_output_bytes = options.max_output_bytes
+        self._runner = options.runner or BoundedProcessRunner()
+        self._install_profile(options.tools)
         # Tool inventory is installation/admission work, outside native action
         # dispatch. It must not delay cancellation of an already admitted action.
         self._tool_servers, self._tool_permissions = self._tools()
+
+    def _validate_delivery(self) -> None:
+        """Verify delivered model, prompt, and deadline against the sealed result."""
+        if self._configuration_result is None:
+            return
+        values = {
+            item.target_id: item.value.value
+            for item in self._configuration_result.configuration.values
+            if item.value.kind == "literal"
+        }
+        if (
+            values.get("model") != self.model
+            or values.get("prompt_sha256") != self.prompt_sha256
+            or values.get("timeout_seconds") != self.timeout_seconds
+        ):
+            raise ValueError("participant delivery differs from its configuration")
+
+    def _install_profile(self, tools: OpenCodeToolProfile | None) -> None:
+        """Require the private server configuration to match the selected profile."""
+        self._profile = tools.profile if tools is not None else None
+        self._profile_config = tools.config if tools is not None else None
+        self._mcp_credentials = dict(tools.credentials) if tools is not None else {}
+        self._inventory_probe = (
+            tools.inventory_probe if tools is not None else probe_mcp_server
+        )
+        self._servers = {}
+        self._profile_digest = ""
+        if tools is not None:
+            self._servers, self._profile_digest = _load_server_config(tools.config)
+            if set(self._servers) != set(profile_for(tools.profile).server_ids):
+                raise ValueError(
+                    "participant MCP servers do not match the selected profile"
+                )
 
     @property
     def model(self) -> str:
@@ -214,7 +251,8 @@ class LilraeOpenCodeExecutor:
 
     def __call__(self, action_id: str, cancellation: Event) -> str:
         """Deliver the exact prompt on stdin and retain only terminal text."""
-        del action_id  # Never use an external action identity as a path.
+        # Never use an external action identity as a path.
+        del action_id
         if cancellation.is_set():
             raise AgentExecutionError(REASON_CANCELLED)
         self._verify_profile_config()

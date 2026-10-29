@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from aptl.backends._raes_participant_legacy import model_legacy_action
+
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, cast
 
 from raes_backend_protocols.participant_runtime_base import BaseParticipantRuntime
 from raes_contracts.contracts import (
-    ParticipantActionResultModel,
     ParticipantDecisionSurfaceSelectionV2Model,
     ParticipantTemporalRuntimeContextModel,
 )
@@ -18,14 +19,12 @@ from raes_contracts.participant_binding import (
     ParticipantActionApplyResult,
     ParticipantNativeActionExecution,
 )
-from raes_contracts.participant_episode import ParticipantEpisodeExecutionState
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 
 from aptl.backends.raes_participant_actions import (
     DEFAULT_PARTICIPANT_ACTIONS,
     PARTICIPANT_ACTION_ADDRESS as _PARTICIPANT_ACTION_ADDRESS,
     ParticipantActionSpec,
-    drive_participant_action,
 )
 from aptl.backends.raes_participant_provider import (
     ParticipantDecisionSolicitation,
@@ -108,7 +107,6 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
             participant_implementation_ref,
             action_instance_id,
             temporal_contexts,
-            snapshot,
         )
 
     def admit_actions_concurrently(
@@ -448,68 +446,12 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
                     execution.participant_record,
                 )
             return execution.native
-        return self._model_legacy_action(request, snapshot, episode_id=episode_id)
-
-    def _model_legacy_action(
-        self,
-        request: ParticipantActionAdmissionRequest,
-        snapshot: RuntimeSnapshot,
-        *,
-        episode_id: str,
-    ) -> ParticipantNativeActionExecution:
-        """Retain the old fixed probe only as an explicitly admitted smoke action."""
-
-        state = ParticipantEpisodeExecutionState.from_payload(
-            snapshot.participant_episode_results[request.participant_address]
-        )
-        execution = drive_participant_action(
+        return model_legacy_action(
             self.deployment_backend,
             self.action_specs,
-            request.participant_address,
-            state,
-            timestamp_factory=lambda: state.updated_at,
-        )
-        if execution is None:
-            return ParticipantNativeActionExecution(
-                apply_result=ApplyResult(success=True, snapshot=snapshot),
-                action_result=request.action_result,
-                post_state_digest=request.post_state_digest,
-            )
-        observation_details = execution.behavior_events[-1].get("details", {})
-        observations = [
-            value
-            for key in ("stdout_excerpt", "stderr_excerpt")
-            if isinstance(observation_details, Mapping)
-            and isinstance((value := observation_details.get(key)), str)
-            and value
-        ]
-        result = ParticipantActionResultModel(
-            status="succeeded" if execution.success else "failed",
-            participant_address=request.participant_address,
+            request,
+            snapshot,
             episode_id=episode_id,
-            action_instance_id=request.action_instance_id,
-            action_contract_address=request.action_contract_address,
-            observation_point=(
-                request.temporal_contexts[0].observation_point
-                if request.temporal_contexts
-                else "time.runtime.aptl@segment=0,tick=0"
-            ),
-            observations=observations or ["legacy bounded smoke action completed"],
-            evidence_refs=list(request.evidence_refs),
-            diagnostics=[diagnostic.message for diagnostic in execution.diagnostics],
-        )
-        return ParticipantNativeActionExecution(
-            apply_result=ApplyResult(
-                success=execution.success,
-                # RAES owns participant history and lifecycle projection. The
-                # native command result is evidence, not authority to realize
-                # action-contract, boundary, instance, or shared-state resources.
-                snapshot=snapshot,
-                diagnostics=execution.diagnostics,
-                changed_addresses=[],
-            ),
-            action_result=result,
-            post_state_digest=request.post_state_digest,
         )
 
 

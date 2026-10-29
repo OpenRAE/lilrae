@@ -249,14 +249,19 @@ def _supervise(
 
     while process.poll() is None:
         if cancel_event is not None and cancel_event.is_set():
-            return REASON_CANCELLED
+            failure = REASON_CANCELLED
+            break
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            return REASON_TIMEOUT
+            failure = REASON_TIMEOUT
+            break
         if not exchange.pump(min(remaining, POLL_SECONDS)):
-            return REASON_OVERFLOW
-    exchange.close_input()
-    return None if exchange.drain() else REASON_OVERFLOW
+            failure = REASON_OVERFLOW
+            break
+    else:
+        exchange.close_input()
+        failure = None if exchange.drain() else REASON_OVERFLOW
+    return failure
 
 
 def _end_invocation(
