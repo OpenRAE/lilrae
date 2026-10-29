@@ -26,11 +26,14 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
     && apt-get clean \
     && find /var/lib/apt/lists -mindepth 1 -delete
 COPY requirements/runtime.txt /tmp/aptl-runtime-requirements.txt
+# The venv carries the locked pip. The base image's own pip is unpinned and
+# unused after that, so remove it together with its vendored certifi.
 RUN /usr/local/bin/python3.14 -m venv /opt/aptl/venv \
     && /opt/aptl/venv/bin/pip install --require-hashes \
         -r /tmp/aptl-runtime-requirements.txt \
     && /opt/aptl/venv/bin/python -c "import pip._vendor.msgpack as m; assert m.Unpacker.__module__ == 'pip._vendor.msgpack.fallback'" \
-    && rm /tmp/aptl-runtime-requirements.txt
+    && rm /tmp/aptl-runtime-requirements.txt \
+    && /usr/local/bin/python3.14 -m pip uninstall --yes pip
 ENV PATH="/opt/aptl/venv/bin:${PATH}"
 # Ship no private keys; each container generates its own at boot (issue #1193).
 COPY containers/_host-identity /tmp/aptl-host-identity
