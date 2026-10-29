@@ -99,6 +99,18 @@ _curl_first_run() {
     fi
 }
 
+# Cortex answers its user index anonymously only while no user exists. Once
+# the backend has created the declared administrator, that anonymous access is
+# closed ("Use of initial user is forbidden because users exist in database"),
+# so readiness is read in the administrator's session instead.
+_user_index_ready() {
+    if [ -n "$SESSION_COOKIE" ]; then
+        _curl_first_run "${CORTEX_URL}/api/user/current" >/dev/null
+    else
+        _cortex_curl -sf "${CORTEX_URL}/api/user" >/dev/null
+    fi
+}
+
 _ensure_database_migrated() {
     # Cortex owns its native Elasticsearch schema. Its supported first-run
     # migration endpoint must initialize that schema before any organization or
@@ -110,7 +122,7 @@ _ensure_database_migrated() {
         return 1
     fi
     for _ in $(seq 1 60); do
-        if _cortex_curl -sf "${CORTEX_URL}/api/user" >/dev/null; then
+        if _user_index_ready; then
             return 0
         fi
         sleep 2
@@ -265,14 +277,15 @@ fi
 # Migration must precede the first write so Elasticsearch cannot auto-create a
 # dynamically mapped index. Creating any user closes the init window, so when
 # the backend has already created the declared administrator there, the
-# organization and initializer are created in that administrator's session.
-_ensure_database_migrated || exit 1
+# migration check, the organization and the initializer all use that
+# administrator's session, which is therefore opened first.
 if [ -n "${CORTEX_SUPERADMIN_USER:-}" ]; then
     _open_administrator_session || {
         echo "ERROR: The declared Cortex administrator could not sign in" >&2
         exit 1
     }
 fi
+_ensure_database_migrated || exit 1
 
 ORG_PAYLOAD=$(python3 - <<'PY'
 import json
