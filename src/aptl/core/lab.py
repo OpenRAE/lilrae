@@ -3176,7 +3176,11 @@ def _activate_required_transcript(
             run_id=ctx.run_id,
             capture_selection=capture_selection,
         )
-        authority = activate(plan_id=plan.plan_id, run_id=ctx.run_id)
+        authority = activate(
+            plan_id=plan.plan_id,
+            run_id=ctx.run_id,
+            binding_id=binding.registration_id,
+        )
     except Exception:
         log.error("Required transcript apparatus activation failed")
         authority = None
