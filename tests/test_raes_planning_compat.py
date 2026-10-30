@@ -564,6 +564,7 @@ def test_aptl_runtime_manager_scopes_large_plan_limits_to_exact_pack(
 
     monkeypatch.setattr(raes_planning_compat._RaesRuntimeManager, "apply", _apply)
     manager = object.__new__(AptlRuntimeManager)
+    manager.native_evidence = None
     manager._aptl_bundle = _bundle(tmp_path)
     manager._aptl_planning_compatibility = compatibility_provider.resolve(None)  # type: ignore[arg-type]
 

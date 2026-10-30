@@ -59,6 +59,8 @@ def test_public_outcome_retains_original_sdl_snapshot_and_native_bytes(
     try:
         handoff = outcome.native_evidence
         assert handoff is manager.native_evidence
+        source_images = {"provision.node.holder": {"digest": "sha256:" + "c" * 64}}
+        manager._target.provisioner.last_source_image_evidence = source_images
         receipt = manager.evaluate(plan, idempotency_key="new-evidence-cut")
         assert receipt.accepted
         index, archive = _unpack(handoff.source(_protected_binding()))
@@ -87,6 +89,8 @@ def test_public_outcome_retains_original_sdl_snapshot_and_native_bytes(
                             row["address"] == child.address
                             for row in snapshot["realization_provenance"]
                         )
+                    if artifact["role"] == "realization-source-image-evidence":
+                        assert json.loads(data) == source_images
                     if artifact["role"] == "materialized-sdl":
                         record = artifact["archive_record"]
                         assert len(data) == record["artifact"]["size_bytes"]
@@ -98,6 +102,8 @@ def test_public_outcome_retains_original_sdl_snapshot_and_native_bytes(
                 archive.read(item["path"]) == artifacts[0][1]
                 for item in index["native_artifacts"]
             )
+            assert any(item["role"] == "realization-source-image-evidence"
+                       for cut in index["cuts"] for item in cut["artifacts"])
     finally:
         manager.close()
 

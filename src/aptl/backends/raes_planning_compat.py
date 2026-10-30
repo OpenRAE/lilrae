@@ -428,7 +428,8 @@ class AptlRuntimeManager(_RaesRuntimeManager):
         archive = options.get("materialization_archive")
         if isinstance(archive, LilraeMaterializationArchive):
             self.native_evidence = LilraeRuntimeEvidence(
-                archive, getattr(target.provisioner, "deployment_backend", None)
+                archive, getattr(target.provisioner, "deployment_backend", None),
+                provisioner=target.provisioner,
             )
 
     def apply(self, execution_plan: ExecutionPlan) -> ApplyResult:

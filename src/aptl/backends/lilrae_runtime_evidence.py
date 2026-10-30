@@ -49,9 +49,10 @@ def _json_bytes(value):
 class LilraeRuntimeEvidence:
     """Retain native cuts; provide a narrow source only for protected bindings."""
 
-    def __init__(self, archive, backend):
+    def __init__(self, archive, backend, *, provisioner=None):
         self.archive = archive
         self.backend = backend
+        self.provisioner = provisioner
         self.run_id = archive.run_id
         self.failed = False
 
@@ -155,6 +156,9 @@ class LilraeRuntimeEvidence:
                 ),
             )
         )
+        images = getattr(self.provisioner, "last_source_image_evidence", {})
+        if images:
+            artifacts.append(self._blob("realization-source-image-evidence", _json_bytes(images)))
         for record in snapshot.materialization_attestations:
             original = self.archive.read(record).sdl.encode("utf-8")
             metadata = record.model_dump(mode="json")

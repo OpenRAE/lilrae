@@ -41,6 +41,7 @@ prose must not accidentally rename them.
 
 | Surface | Files | Disposition |
 | --- | --- | --- |
+| Native realization reporting and runtime dependencies | `docs/adrs/adr-007-python-cli-control-plane.md`, `docs/architecture/issue-1130-owned-descendant-reporting-design.md`, `docs/architecture/issue-1130-runtime-realization-attestation-preflight.md` | Keep the released environment-pack identity distinct from the RAES reporting contract, Python dependency boundary, native ownership and protected evidence handoff. |
 | Pack boundary enforcement | `docs/architecture/issue-1121-pack-boundary-preflight.md` | Preserve original and independent RPT adapter ownership, exact compatibility exceptions, and selected host requirements. |
 | PHP image re-pin | `docs/architecture/issue-1407-php-image-repin-preflight.md` | Keep the released environment-pack MISP and Roundcube selectors distinct from the backend-selected image digests and the MISP web companion. |
 | Configured pack source | `docs/architecture/issue-1413-configured-pack-source-preflight.md` | Keep release-directory acquisition distinct from portable pack semantics, content identity, installed adapters, and backend realization. |

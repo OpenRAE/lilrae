@@ -114,8 +114,8 @@ class ComposeRealizationModelMixin:
         )
         return self._with_capture_apparatus_files(files, realization)
 
-    @staticmethod
     def _write_image_node_content_override(
+        self,
         realization: DeploymentRealizationSpec,
         scenario_root: Path,
         realization_root: Path,
@@ -135,6 +135,14 @@ class ComposeRealizationModelMixin:
 
         payload = image_node_content_override(
             realization, scenario_root, realization_root
+        )
+        self._realized_content_mounts = (
+            realization,
+            realization_root.resolve(),
+            {
+                name: tuple(dict(mount) for mount in service.get("volumes", ()))
+                for name, service in payload["services"].items()
+            },
         )
         if not payload["services"]:
             return None
@@ -290,6 +298,13 @@ class ComposeRealizationModelMixin:
                 *validated_service_volumes.get(service_name, ()),
                 *mounts,
             )
+        content = getattr(self, "_realized_content_mounts", None)
+        if content and content[0] is realization and content[1] == realization_root.resolve():
+            for service_name, mounts in content[2].items():
+                validated_service_volumes[service_name] = (
+                    *validated_service_volumes.get(service_name, ()),
+                    *mounts,
+                )
         errors.extend(
             issue.render()
             for issue in effective_runtime_contract_issues(

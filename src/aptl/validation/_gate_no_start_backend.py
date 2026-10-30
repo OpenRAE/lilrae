@@ -52,6 +52,14 @@ class _NoStartBackend(object):
 
     project_name = "aptl"
 
+    @staticmethod
+    def runtime_descendant_inventory(attempt_id: str):
+        """The offline simulator creates no native descendants or daemon authority."""
+        from aptl.core.deployment.lilrae_recorded_inventory import RecordedInventorySnapshot
+
+        del attempt_id
+        return RecordedInventorySnapshot(())
+
     # Artifact-facing operations the deployment protocol requires (ADR-051).
     # The stub simulates realization offline, so it reports every declared
     # artifact as obtainable and materializes nothing: the static gate proves

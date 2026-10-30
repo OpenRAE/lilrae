@@ -172,7 +172,9 @@ def snapshot_after_apply(
         if op.action == ChangeAction.DELETE:
             entries.pop(op.address, None)
     admitted = _admitted_concern_kinds(plan)
-    evidence = not plan_has_account_credentials(plan)
+    # Native source proof stays in result details and the producer-owned
+    # handoff. Negotiated inventory admits only portable node payload fields.
+    evidence = not plan_has_account_credentials(plan) and plan.materialization_source is None
     for address, resource in plan.resources.items():
         observed = observations.get(address)
         if observed is None or not observed.realized:
@@ -354,7 +356,7 @@ def _observed_payload(
         if path in observed.concerns:
             _set_path(payload, path, observed.concerns[path])
         elif admitted_kinds is None or kind in admitted_kinds:
-            if not preserve_nulls or _path_value(payload, path) is not None:
+            if not preserve_nulls or _path_value(payload, path) not in (None, ""):
                 _pop_path(payload, path)
     source_image = observed.evidence.get("source_image")
     if evidence and isinstance(source_image, dict):

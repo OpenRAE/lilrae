@@ -289,6 +289,8 @@ It retains immutable initial, later inventory, and evaluation cuts in protected 
 Each cut contains the public runtime snapshot, concern provenance, archive records, and original archived SDL bytes.
 The backend supplies its original native resource receipts, creation records, and bounded readbacks.
 These bytes remain distinct from requested constraints and from portable provenance classification.
+Source-image evidence remains in the existing producer-owned result projection and protected cuts.
+It does not add backend-specific fields to the portable node payload.
 
 Native observation changes and verified cleanup observations remain immutable lifecycle evidence.
 Cleanup evidence names the exact receipt, native ID, daemon, and attempt.
@@ -336,6 +338,16 @@ The dependency pin and lock select RAES 9.2.0 and environment-packs 6.5.0.
 The application, development environment, CI, and release jobs use Python 3.14.
 Package metadata requires Python `>=3.14,<3.15`, matching both released dependencies.
 An incompatible dependency set is not replaced with a resolver override.
+The compiled bounded-participant freeze changes only for RAES 9.2's removal of 199 empty defaults.
+Its authored source, action contracts, participant policy and nonempty compiled values remain identical.
+The offline conformance simulator reports its empty native descendant scope without contacting Docker.
+Generated content binds remain bound to their exact realization and output root during effective-model validation.
+An admitted content mount does not authorize another host mount.
+
+The released TechVault full source exceeds RAES 9.2's 1 MiB materialization bound.
+Even minimal valid variable bindings produce 1,055,386 canonical bytes.
+[RAES issue #1742](https://github.com/OpenRAE/rae/issues/1742) blocks full-scenario qualification.
+The consumer does not truncate source, remove negotiated reporting or patch private limits.
 The existing manifest, deployment protocols, manager wrapper, and snapshot projection carry the new reporting path.
 The archive owner uses the existing protected local storage boundary.
 It does not modify a sealed run archive.

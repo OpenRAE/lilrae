@@ -142,6 +142,36 @@ def test_public_manager_admits_recorded_child_and_derives_provenance(tmp_path):
         assert native.reads == ["run-1"]
 
 
+def test_native_source_image_evidence_does_not_invalidate_portable_inventory(tmp_path, monkeypatch):
+    from aptl.backends._raes_observation_helpers import ObservedResource
+    from aptl.backends.raes_diagnostics import snapshot_after_apply
+    from raes_processor.semantics.realization import CONCERN_PAYLOAD_PATH
+
+    manager, provisioner, _, _, plan, _ = reporting_runtime(tmp_path)
+    image = {"digest": "sha256:" + "c" * 64}
+    original = provisioner._apply_valid_plan
+
+    def observed(request, previous, diagnostics, realization):
+        result = original(request, previous, diagnostics, realization)
+        facts = {
+            address: ObservedResource(
+                True, {CONCERN_PAYLOAD_PATH["node-type"]: "compute"},
+                evidence={"source_image": image},
+            ) for address in request.resources
+        }
+        return replace(result, snapshot=snapshot_after_apply(request, result.snapshot, facts),
+                       details={"observation_evidence": {address: {"source_image": image} for address in facts}})
+
+    monkeypatch.setattr(provisioner, "_apply_valid_plan", observed)
+    with manager:
+        result = manager.apply(plan)
+        assert result.success, [(item.code, item.message) for item in result.diagnostics]
+        assert result.snapshot.materialization_attestations
+        assert provisioner.last_source_image_evidence == {
+            address: image for address in plan.provisioning.resources
+        }
+
+
 def test_closed_collection_cannot_be_opened_by_reporting(tmp_path):
     manager, _, _, child, plan, _ = reporting_runtime(tmp_path, open_collection=False)
     with manager:
