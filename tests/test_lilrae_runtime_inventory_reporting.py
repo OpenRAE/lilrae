@@ -1,7 +1,9 @@
 """Native receipts reach the public runtime without backend ledger writes."""
 
 import json
+from copy import deepcopy
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -170,6 +172,36 @@ def test_native_source_image_evidence_does_not_invalidate_portable_inventory(tmp
         assert provisioner.last_source_image_evidence == {
             address: image for address in plan.provisioning.resources
         }
+
+
+def test_projected_native_readback_produces_resolvable_materialization_origins(tmp_path):
+    from aptl.backends._runtime_concern_disclosure import _disclose
+    from aptl.backends.lilrae_materialization_reporting import materialization_result
+    from raes_processor.planner.materialization_inventory import admit_runtime_inventory
+
+    fixture = Path(__file__).parent / "fixtures/packs/materialization-envelope/sdl/materialization-envelope.sdl.yaml"
+    manager, _, _, _, execution, archive = reporting_runtime(tmp_path, source_sdl=fixture.read_text())
+    with manager:
+        request = replace(execution.provisioning, operation_id="native-readback", inventory_attempt_id="native-readback-attempt")
+        result = StubProvisioner(execution.manifest.realization_envelope).apply(request, RuntimeSnapshot())
+        address = "provision.node.smoke-box"
+        entry = result.snapshot.entries[address]
+        payload = deepcopy(entry.payload)
+        network = payload["spec"]["node"]["runtime"]["network"]
+        # Real daemon readback passes this safe projection before reporting.
+        # The projector omits the authored non-state description.
+        network["published_ports"] = _disclose("published-ports", network["published_ports"])
+        assert "description" not in network["published_ports"][0]
+        snapshot = result.snapshot.with_entries({**result.snapshot.entries, address: replace(entry, payload=payload)})
+        reported = materialization_result(request, RuntimeSnapshot(), replace(result, snapshot=snapshot),
+                                          execution.manifest, facts=RecordedInventorySnapshot())
+        materialized = parse_sdl(reported.materialization_attestation.sdl)
+        assert materialized.materialization_provenance.origins
+        submission, admitted = admit_runtime_inventory(reported.materialization_attestation, request,
+                                                       execution.manifest, RuntimeSnapshot(), snapshot, archive)
+        assert address in admitted.entries
+        record = archive.publish(submission.sdl)
+        assert parse_sdl(archive.read(record).sdl).materialization_provenance.origins
 
 
 def test_closed_collection_cannot_be_opened_by_reporting(tmp_path):

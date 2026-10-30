@@ -242,7 +242,11 @@ def materialization_result(
         provenance["inventory"] = report.model_dump(mode="json")
     document["materialization_provenance"] = provenance
     parsed = parse_sdl(json.dumps(document))
-    provenance["origins"] = [
+    # Origins describe the typed values, including defaults introduced by
+    # safe observation projectors. Publish that same representation so every
+    # selected origin resolves to supplied materialized SDL content.
+    document = parsed.model_dump(mode="json", by_alias=True)
+    document["materialization_provenance"]["origins"] = [
         o.model_dump(mode="json") for o in materialization_differences(original, parsed)
     ]
     return replace(

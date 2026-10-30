@@ -291,6 +291,8 @@ The backend supplies its original native resource receipts, creation records, an
 These bytes remain distinct from requested constraints and from portable provenance classification.
 Source-image evidence remains in the existing producer-owned result projection and protected cuts.
 It does not add backend-specific fields to the portable node payload.
+The public typed description used for origin calculation also supplies the serialized materialized SDL.
+This keeps selected default values resolvable after native projectors omit non-state metadata.
 
 Native observation changes and verified cleanup observations remain immutable lifecycle evidence.
 Cleanup evidence names the exact receipt, native ID, daemon, and attempt.
