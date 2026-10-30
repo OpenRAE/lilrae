@@ -95,6 +95,8 @@ nav:
     - "Issue #1121 Pack Boundary Preflight": architecture/issue-1121-pack-boundary-preflight.md
     - Pack Boundary: architecture/pack-boundary-design.md
     - Configuration Migration: reference/configuration-migration.md
+    - "Issue #1130 Runtime Realization Attestation Preflight": architecture/issue-1130-runtime-realization-attestation-preflight.md
+    - "Owned Descendant Reporting Design": architecture/issue-1130-owned-descendant-reporting-design.md
     - "Issue #1413 Configured Pack Source Preflight": architecture/issue-1413-configured-pack-source-preflight.md
     - Networking: architecture/networking.md
     - Enterprise Infrastructure: architecture/enterprise-infrastructure.md

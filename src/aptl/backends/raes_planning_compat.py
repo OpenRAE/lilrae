@@ -28,7 +28,6 @@ if TYPE_CHECKING:
     from raes_runtime.registry import RuntimeTarget
 
 from aptl.core.scenario_bundle import ScenarioBundle
-from aptl.backends import _raes_participant_snapshot as participant_snapshot
 from aptl.backends.identity import (
     APTL_RAES_TARGET_NAME,
     APTL_RAES_TARGET_PROFILE,
@@ -44,7 +43,9 @@ from aptl.backends.scenario_planning_compatibility import (
 from aptl.backends.scenario_planning_compatibility_discovery import (
     resolve_scenario_planning_compatibility,
 )
-from aptl.backends import _raes_backend_implementation_profiles as implementation_profiles
+from aptl.backends import (
+    _raes_backend_implementation_profiles as implementation_profiles,
+)
 
 _RAES_LIMIT_OVERRIDE_LOCK = RLock()
 
@@ -361,7 +362,12 @@ def plan_for_target(
     """
 
     parameters = options.parameters
-    run_scope = options.run_scope
+    run_scope = planning_run_scope(
+        getattr(target.provisioner, "bundle", None),
+        options.run_scope,
+        required="backend-materialization-attestation-v1"
+        in target.manifest.supported_contract_versions,
+    )
     model = compile_scenario_runtime_model(
         scenario,
         parameters=dict(parameters) if parameters is not None else None,
@@ -406,25 +412,57 @@ class AptlRuntimeManager(_RaesRuntimeManager):
         target: RuntimeTarget,
         *,
         bundle: ScenarioBundle | None = None,
+        run_scope: str = "run:default",
         **options: object,
     ) -> None:
-        super().__init__(target, **options)
+        super().__init__(target, run_scope=run_scope, **options)
+        self._lilrae_run_id = run_scope.removeprefix("run:")
         self._aptl_bundle = bundle or getattr(target.provisioner, "bundle", None)
         self._aptl_planning_compatibility = target_planning_compatibility(target)
+        self.native_evidence = None
+        from aptl.backends.lilrae_materialization_archive import (
+            LilraeMaterializationArchive,
+        )
+        from aptl.backends.lilrae_runtime_evidence import LilraeRuntimeEvidence
+
+        archive = options.get("materialization_archive")
+        if isinstance(archive, LilraeMaterializationArchive):
+            self.native_evidence = LilraeRuntimeEvidence(
+                archive, getattr(target.provisioner, "deployment_backend", None)
+            )
 
     def apply(self, execution_plan: ExecutionPlan) -> ApplyResult:
         """Apply with a finite node budget for the exact released large plan."""
 
         with _runtime_value_limits(getattr(self, "_aptl_planning_compatibility", None)):
-            return super().apply(execution_plan)
+            result = super().apply(execution_plan)
+        if self.native_evidence is not None:
+            self.native_evidence.capture(
+                execution_plan, result.snapshot, phase="initial", success=result.success
+            )
+        return result
 
-    def adopt_participant_delivery_snapshot(
-        self,
-        snapshot: RuntimeSnapshot,
-    ) -> RuntimeSnapshot:
-        """Resume manager-owned time from a governed participant delivery cut."""
+    def refresh_inventory(self, execution_plan):
+        result = super().refresh_inventory(execution_plan)
+        if self.native_evidence is not None:
+            self.native_evidence.capture(
+                execution_plan,
+                result.snapshot,
+                phase="inventory",
+                success=result.success,
+            )
+        return result
 
-        return participant_snapshot.adopt_participant_delivery_snapshot(self, snapshot)
+    def evaluate(self, execution_plan=None, *, idempotency_key="", identity=None):
+        receipt = super().evaluate(
+            execution_plan, idempotency_key=idempotency_key, identity=identity
+        )
+        if self.native_evidence is not None and execution_plan is not None:
+            operation = self.get_operation(receipt.operation_id, identity=identity)
+            self.native_evidence.capture(
+                execution_plan, self.snapshot, phase="evaluation", operation=operation
+            )
+        return receipt
 
     def plan(
         self,
@@ -448,13 +486,14 @@ class AptlRuntimeManager(_RaesRuntimeManager):
                 profile=profile,
                 artifact_availability=artifact_availability,
                 profile_authority=profile_authority,
-                run_scope=run_scope,
+                run_scope=run_scope or PlanScope(run_id=self._lilrae_run_id),
             ),
         )
 
 
 from aptl.backends._raes_planning_entry import (
     AptlPlanningOptions,
+    planning_run_scope,
     plan_aptl_scenario,
 )
 

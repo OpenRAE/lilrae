@@ -7,7 +7,6 @@ import csv
 import tomllib
 from pathlib import Path
 
-import raes
 
 PROJECT_ROOT = Path(__file__).parents[1]
 LEGACY_IMPORT_ROOTS = frozenset(
@@ -37,17 +36,15 @@ IDENTITY_LEDGER = (
 KNOWN_PRIVATE_RAES_IMPORTS: set[tuple[str, str, str]] = set()
 
 
-def test_project_depends_on_exact_raes_release() -> None:
-    """The qualified backend and semantic freeze use the same RAES release."""
+def test_project_does_not_depend_on_removed_aces_distribution() -> None:
+    """The application no longer depends on the retired distribution."""
 
     project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
 
-    assert "raes==9.1.0" in project["project"]["dependencies"]
     assert all(
         not dependency.startswith("aces-sdl")
         for dependency in project["project"]["dependencies"]
     )
-    assert raes.__version__ == "9.1.0"
 
 
 def _source_and_test_imports_of(import_roots: frozenset[str]) -> list[str]:

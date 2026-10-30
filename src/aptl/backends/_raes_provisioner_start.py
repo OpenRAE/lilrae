@@ -219,12 +219,17 @@ class ProvisionerStartMixin(object):
                     for address in unverified_images
                 )
                 return ApplyResult(
-                    success=False, snapshot=snapshot, diagnostics=diagnostics,
-                    details=_bounded_apply_details({
-                        "profiles": selected_profiles,
-                        "realization": realization.details(),
-                        "observation_evidence": observation_evidence(observations),
-                    }, realization),
+                    success=False,
+                    snapshot=snapshot,
+                    diagnostics=diagnostics,
+                    details=_bounded_apply_details(
+                        {
+                            "profiles": selected_profiles,
+                            "realization": realization.details(),
+                            "observation_evidence": observation_evidence(observations),
+                        },
+                        realization,
+                    ),
                 )
             realized_snapshot = self._with_artifact_satisfactions(
                 plan,
@@ -282,7 +287,7 @@ class ProvisionerStartMixin(object):
             return self._failed_apply(
                 snapshot, diagnostics, selected_profiles, realization
             )
-        return ApplyResult(
+        result = ApplyResult(
             success=True,
             snapshot=realized_snapshot,
             diagnostics=diagnostics,
@@ -291,6 +296,11 @@ class ProvisionerStartMixin(object):
                 realization, observations, apparatus_observations
             ),
             operational_realization_observations=operational_observations,
+        )
+        from aptl.backends.lilrae_apparatus_reporting import append_verified_apparatus
+
+        return append_verified_apparatus(
+            result, self._lilrae_apparatus_resources, apparatus_observations
         )
 
     def _successful_apply_details(

@@ -35,9 +35,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from raes_backend_protocols.capabilities import BackendManifest
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+from contextlib import nullcontext
+from uuid import uuid4
 
 from raes_contracts.contracts import ExperimentEvidenceRecordModel
 from raes_contracts.diagnostics import Diagnostic
@@ -247,6 +250,7 @@ class AptlEvaluator(object):
     proposition_interpreter: Callable[..., object] | None = field(
         default=None, repr=False
     )
+    reporting_manifest: BackendManifest | None = field(default=None, repr=False)
     _results: dict[str, dict[str, object]] = field(default_factory=dict, init=False)
     _history: dict[str, list[dict[str, object]]] = field(
         default_factory=dict, init=False
@@ -321,7 +325,7 @@ class AptlEvaluator(object):
             evidence_records=self._evidence_records,
             proposition_interpreter=self.proposition_interpreter,
         )
-        return ApplyResult(
+        result = ApplyResult(
             success=True,
             snapshot=working_snapshot.with_entries(
                 registration.entries,
@@ -330,6 +334,17 @@ class AptlEvaluator(object):
                 proposition_truth_results=truth_results,
             ),
             changed_addresses=registration.changed,
+        )
+        from aptl.backends.lilrae_materialization_reporting import (
+            materialization_result,
+        )
+        from aptl.backends.raes_manifest import create_aptl_manifest
+
+        return materialization_result(
+            plan,
+            working_snapshot,
+            result,
+            self.reporting_manifest or create_aptl_manifest(),
         )
 
     def status(self) -> dict[str, object]:

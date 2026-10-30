@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from raes_contracts.runtime_state import RuntimeSnapshot
+from raes_contracts.run_scope import PlanScope
 from raes_runtime.operation_supervision_configuration import (
     OperationSupervisionConfiguration,
 )
@@ -152,6 +153,7 @@ def start_raes_scenario(
                 config,
                 backend,
                 scenario_path=scenario_path,
+                run_id=run_target.run_id if run_target is not None else None,
             )
         resolved_scenario = admitted.bundle.sdl_path
         if admitted.bundle.trial is not None and (
@@ -159,6 +161,14 @@ def start_raes_scenario(
             or run_target.run_id != admitted.bundle.trial.provenance.run_id
         ):
             raise ValueError("family-run-identity-mismatch")
+        source = admitted.execution_plan.provisioning.materialization_source
+        if source is not None and run_target is None:
+            from aptl.core.runstore import LocalRunStore
+
+            storage_path = Path(config.run_storage.local_path)
+            if not storage_path.is_absolute():
+                storage_path = project_dir / storage_path
+            run_target = AcesRunTarget(LocalRunStore(storage_path), source.run_id)
         return _run_execution_plan(
             admitted.target,
             admitted.execution_plan,
@@ -190,6 +200,7 @@ def admit_raes_scenario(
     parameters: Mapping[str, object] | None = None,
     source: ScenarioAdmissionSource | None = None,
     trial: FamilyTrialInput | None = None,
+    run_id: str | None = None,
 ) -> AdmittedScenarioStart:
     """Admit one scenario execution: resolve, parse, plan, and interpret it once.
 
@@ -257,6 +268,7 @@ def admit_raes_scenario(
         options=AptlPlanningOptions(
             parameters=dict(parameters) if parameters is not None else None,
             artifact_availability=availability,
+            run_scope=PlanScope(run_id=run_id) if run_id is not None else None,
         ),
     )
     provisioner = target.provisioner
@@ -359,6 +371,7 @@ def _run_execution_plan(
             runtime_selection_evidence(target) if failure is None else []
         ),
         runtime_manager=runtime_manager,
+        native_evidence=getattr(runtime_manager, "native_evidence", None),
     )
 
 
@@ -393,6 +406,21 @@ def _apply_execution_plan(
     no second apply is attempted. Returns ``(failure | None, snapshot, manager)``.
     """
 
+    from aptl.backends.lilrae_materialization_archive import (
+        LilraeMaterializationArchive,
+    )
+
+    source = execution_plan.provisioning.materialization_source
+    reporting_options = {}
+    if source is not None:
+        if run_id != source.run_id or run_store is None:
+            raise ValueError("The admitted plan and archive must identify the same run")
+        if run_store.is_sealed(run_id):
+            raise ValueError("The admitted run is sealed")
+        reporting_options = {
+            "run_scope": f"run:{run_id}",
+            "materialization_archive": LilraeMaterializationArchive(run_store, run_id),
+        }
     if isinstance(target.provisioner, AptlProvisioner):
         target.provisioner.bind_attempt_id(run_id)
     manager = RuntimeManager(
@@ -400,6 +428,7 @@ def _apply_execution_plan(
         initial_snapshot=execution_plan.base_snapshot,
         supervision=_RUN_SUPERVISION,
         **dict(runtime_options or {}),
+        **reporting_options,
     )
     apply_result = manager.apply(execution_plan)
     snapshot = apply_result.snapshot
@@ -422,4 +451,12 @@ def _apply_execution_plan(
         run_store=run_store,
         run_id=run_id,
     )
+    if failure is None and source is not None:
+        refreshed = manager.refresh_inventory(execution_plan)
+        snapshot = refreshed.snapshot
+        if not refreshed.success:
+            failure = LabResult(
+                success=False,
+                error=render_raes_diagnostics(list(refreshed.diagnostics)),
+            )
     return failure, snapshot, manager

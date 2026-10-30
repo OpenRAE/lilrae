@@ -221,7 +221,11 @@ def _record_daemon_inventory(
     _record(
         concerns,
         _LOCAL_CONTROL_INTERFACES_PATH,
-        lambda: _observe_local_control_interfaces(info, runtime),
+        lambda: _observe_local_control_interfaces(
+            info,
+            runtime,
+            recording_source=_recorded_socket_source(backend, container_name),
+        ),
     )
     _record(
         concerns,
@@ -405,8 +409,17 @@ def _observe_autoremove(
     return _disclose("runtime-container-autoremove", value) if corroborated else None
 
 
+def _recorded_socket_source(backend: object, container_name: str) -> str | None:
+    reader = getattr(backend, "recorded_docker_source", None)
+    source = reader(container_name) if callable(reader) else None
+    return source if isinstance(source, str) else None
+
+
 def _observe_local_control_interfaces(
-    info: Mapping[str, Any], runtime: RuntimeConfiguration
+    info: Mapping[str, Any],
+    runtime: RuntimeConfiguration,
+    *,
+    recording_source: str | None = None,
 ) -> object | None:
     """Corroborate the canonical Docker socket from daemon mount metadata."""
 
@@ -415,7 +428,10 @@ def _observe_local_control_interfaces(
     corroborated = bool(
         interfaces
         and isinstance(mounts, list)
-        and all(_local_control_interface_matches(item, mounts) for item in interfaces)
+        and all(
+            _local_control_interface_matches(item, mounts, recording_source)
+            for item in interfaces
+        )
     )
     value = [item.model_dump(mode="json", by_alias=True) for item in interfaces]
     return (
@@ -423,12 +439,17 @@ def _observe_local_control_interfaces(
     )
 
 
-def _local_control_interface_matches(interface: object, mounts: list[object]) -> bool:
+def _local_control_interface_matches(
+    interface: object, mounts: list[object], recording_source: str | None = None
+) -> bool:
     """Corroborate the canonical Docker socket in daemon mount metadata."""
 
     expected = _supported_local_control_interface(interface)
     return expected is not None and any(
-        _local_control_mount_matches(mount, *expected) for mount in mounts
+        _local_control_mount_matches(
+            mount, recording_source or expected[0], expected[1]
+        )
+        for mount in mounts
     )
 
 

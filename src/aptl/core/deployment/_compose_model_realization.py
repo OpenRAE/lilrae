@@ -90,6 +90,7 @@ class ComposeRealizationModelMixin:
         sourced_override = self._write_sourced_environment_override(
             realization, realization_root
         )
+        recording_override = self._write_docker_recording_override(realization)
         overrides = tuple(
             path
             for path in (
@@ -99,6 +100,7 @@ class ComposeRealizationModelMixin:
                 startup_override,
                 service_override,
                 sourced_override,
+                recording_override,
             )
             if path is not None
         )
@@ -250,7 +252,7 @@ class ComposeRealizationModelMixin:
             return _COMPOSE_MODEL_VALIDATION_ERROR
         try:
             payload = compose_readback(json.loads(result.stdout))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return _COMPOSE_MODEL_VALIDATION_ERROR
         errors = effective_stateful_model_errors(
             payload,
@@ -258,7 +260,11 @@ class ComposeRealizationModelMixin:
             self.project_name,
             realization,
         )
-        errors.extend(effective_orchestration_model_errors(payload, realization))
+        errors.extend(
+            effective_orchestration_model_errors(
+                payload, realization, recording_sockets=self._recording_sockets
+            )
+        )
         from aptl.core.deployment.runtime_materialization import (
             effective_runtime_contract_issues,
         )
@@ -277,6 +283,13 @@ class ComposeRealizationModelMixin:
             and isinstance((volumes := service.get("volumes")), Sequence)
             and not isinstance(volumes, (str, bytes))
         }
+        for service_name, mounts in self._recording_service_volumes(
+            realization
+        ).items():
+            validated_service_volumes[service_name] = (
+                *validated_service_volumes.get(service_name, ()),
+                *mounts,
+            )
         errors.extend(
             issue.render()
             for issue in effective_runtime_contract_issues(

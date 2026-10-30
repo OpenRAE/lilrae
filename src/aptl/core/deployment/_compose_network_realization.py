@@ -480,11 +480,21 @@ class ComposeRealizationNetworkMixin:
     def remove_project_networks(self) -> list[str]:
         """Remove only freshly verified receipt-owned networks."""
 
+        from aptl.core.deployment.lilrae_native_evidence import (
+            confirm_native_absence,
+            record_cleanup,
+        )
+
         failures: list[str] = []
         try:
             ownership = self._ensure_resource_ownership()
             for receipt in ownership.receipts("network"):
+                if receipt.daemon_id != self._ownership_daemon_id():
+                    raise OwnershipConflictError("cleanup daemon identity changed")
                 if not self.host_inspect_network(receipt.native_id):
+                    if not confirm_native_absence(self, receipt):
+                        raise OwnershipConflictError("network absence is unverified")
+                    record_cleanup(ownership, receipt, cause="already-absent")
                     continue
                 network_id = self._resolve_owned_network_id(receipt.native_id)
                 result = self._run(
@@ -493,6 +503,10 @@ class ComposeRealizationNetworkMixin:
                 )
                 if result.returncode != 0:
                     failures.append("Failed to remove a receipt-owned network")
-        except (BackendTimeoutError, OwnershipConflictError, OSError):
+                elif not confirm_native_absence(self, receipt):
+                    failures.append("Failed to verify receipt-owned network removal")
+                else:
+                    record_cleanup(ownership, receipt, cause="after-remove")
+        except (BackendTimeoutError, OwnershipConflictError, OSError, ValueError, BufferError):
             failures.append("Failed to establish network cleanup authority")
         return failures

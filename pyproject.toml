@@ -7,7 +7,7 @@ name = "lilrae"
 version = "8.2.0"
 description = "Advanced Purple Team Lab CLI"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.14,<3.15"
 license = { text = "MIT" }
 authors = [{ name = "Brad Edwards" }]
 keywords = ["purple-team", "security", "cyber-range", "wazuh", "kali", "mcp", "raes"]
@@ -30,11 +30,13 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.33.0",
     "opentelemetry-semantic-conventions>=0.54b0",
     "cryptography>=50.0.0",
-    "raes==9.1.0",
-    "raes-env-packs==6.4.2",
+    "raes==9.2.0",
+    "raes-env-packs==6.5.0",
     "mcp>=2,<3",
     "rfc8785>=0.1.4,<0.2.0",
     "packaging>=24.2",
+    # Framing for the cooperative native Docker creation recorder.
+    "h11>=0.16.0,<1",
     # Imported directly by aptl.core.experiment.resolver; previously satisfied
     # only transitively through the upstream SDL distribution.
     "blake3>=1.0.8,<2",

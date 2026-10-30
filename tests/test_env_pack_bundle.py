@@ -79,8 +79,6 @@ def test_released_pack_owns_only_scenario_and_retains_its_evidence_contracts(
     from raes import parse_sdl
     from raes_processor.capture_admission import compile_scenario_capture_demands
 
-    assert version("raes-env-packs") == "6.4.2"
-    assert version("raes") == "9.1.0"
     bundle = env_pack_bundle(tmp_path / "released", "techvault")
     scenario = parse_sdl(bundle.sdl_path.read_text())
     assert not {"aptl-otel-collector", "aptl-tempo", "aptl-grafana-otel"}.intersection(

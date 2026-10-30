@@ -12,6 +12,7 @@ from aptl.core.lab_types import LabResult
 from aptl.core.experiment.capture_plan import CapturePlan, empty_capture_plan
 
 if TYPE_CHECKING:
+    from aptl.backends.lilrae_runtime_evidence import LilraeRuntimeEvidence
     from aptl.backends.lilrae_participant_execution import LilraeParticipantBinding
     from raes_processor.models import ExecutionPlan
     from raes_runtime.registry import RuntimeTarget
@@ -80,3 +81,4 @@ class AcesStartOutcome:
     scenario_runtime_selections: list[dict[str, str]] = field(default_factory=list)
     capture_plan: CapturePlan | None = None
     runtime_manager: RuntimeManager | None = None
+    native_evidence: LilraeRuntimeEvidence | None = None

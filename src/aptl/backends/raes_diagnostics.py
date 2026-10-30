@@ -103,7 +103,11 @@ def render_raes_diagnostics(
     """
     if not diagnostics:
         return f"{stage_label}."
-    rendered = [_format_diagnostic(item) for item in diagnostics if item.is_error]
+    ordered = sorted(
+        diagnostics,
+        key=lambda item: item.code != "runtime.control-plane.operation-indeterminate",
+    )
+    rendered = [_format_diagnostic(item) for item in ordered if item.is_error]
     if not rendered:
         rendered = [_format_diagnostic(item) for item in diagnostics]
     shown = rendered[:_RENDERED_DIAGNOSTIC_CAP]
@@ -184,9 +188,11 @@ def snapshot_after_apply(
                 resource.resource_type,
                 None if admitted is None else admitted.get(address, frozenset()),
                 evidence=evidence,
+                preserve_nulls=plan.materialization_source is not None,
             ),
             ordering_dependencies=resource.ordering_dependencies,
             refresh_dependencies=resource.refresh_dependencies,
+            profile_bindings=resource.profile_bindings,
             status=_entry_status(actions.get(address)),
         )
     observations_disclosure = _realization_observation_disclosures(observations)
@@ -307,6 +313,7 @@ def _observed_payload(
     admitted_kinds: frozenset[str] | None,
     *,
     evidence: bool,
+    preserve_nulls: bool = False,
 ) -> dict[str, object]:
     """Return the planned payload with realization concerns replaced by reality.
 
@@ -347,11 +354,22 @@ def _observed_payload(
         if path in observed.concerns:
             _set_path(payload, path, observed.concerns[path])
         elif admitted_kinds is None or kind in admitted_kinds:
-            _pop_path(payload, path)
+            if not preserve_nulls or _path_value(payload, path) is not None:
+                _pop_path(payload, path)
     source_image = observed.evidence.get("source_image")
     if evidence and isinstance(source_image, dict):
         payload["backend_evidence"] = {"source_image": deepcopy(source_image)}
     return payload
+
+
+def _path_value(payload: Mapping[str, object], path: tuple[str, ...]) -> object:
+    """Keep the compiler's null absence distinct from an observed value."""
+    value: object = payload
+    for token in path:
+        if not isinstance(value, Mapping):
+            return None
+        value = value.get(token)
+    return value
 
 
 def _set_path(payload: dict[str, object], path: tuple[str, ...], value: object) -> None:

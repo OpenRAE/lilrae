@@ -194,6 +194,8 @@ class ComposeRealizationMixin(
         if failure is None:
             failure = self._compose_feature_preflight(realization)
         if failure is None:
+            failure = self._prepare_docker_recording(realization)
+        if failure is None:
             failure = self._start_backend_observability(realization.profiles)
         return failure
 
