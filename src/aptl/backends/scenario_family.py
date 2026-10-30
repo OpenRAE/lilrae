@@ -9,11 +9,11 @@ import re
 from typing import TYPE_CHECKING
 from collections.abc import Callable
 
+from aptl.backends._lilrae_family_release_set import require_consistent_release_set
 from aptl.backends.identity import BackendIdentity
 from aptl.core.scenario_bundle import PackIdentity
 
 if TYPE_CHECKING:
-    from packaging.requirements import Requirement
     from raes.scenario import ExpandedScenario, InstantiatedScenario
     from raes.phase_contracts import TrialInstantiationProvenance
     from raes_contracts.contracts import (
@@ -26,10 +26,6 @@ FAMILY_API_VERSION = "1"
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 MAX_QUALIFIED_FAMILIES = 64
-# One family trial runs on one consistent release set: the host and adapter
-# declarations for these distributions must match the installed versions.
-_HOST_DISTRIBUTION = "lilrae"
-_RELEASE_SET = frozenset({_HOST_DISTRIBUTION, "raes", "raes-env-packs"})
 
 
 @dataclass(frozen=True)
@@ -435,38 +431,8 @@ def require_family_capabilities(
         != 1
     ):
         raise ValueError("family-provider-installation-mismatch")
-    _require_consistent_release_set(selections[0].requires)
+    require_consistent_release_set(selections[0].requires)
     return selections
-
-
-def _require_consistent_release_set(adapter_requires: tuple[str, ...]) -> None:
-    """Refuse installed releases that the host or adapter declarations exclude."""
-
-    try:
-        # Imported here so the family seam itself needs no third-party module.
-        from packaging.requirements import Requirement
-
-        declared = (*(metadata.requires(_HOST_DISTRIBUTION) or ()), *adapter_requires)
-        if any(_excludes_installed_release(Requirement(text)) for text in declared):
-            raise ValueError
-    except Exception:
-        raise ValueError("family-package-versions-inconsistent") from None
-
-
-def _excludes_installed_release(requirement: Requirement) -> bool:
-    """Return whether an applicable release-set requirement excludes its install."""
-
-    from packaging.utils import canonicalize_name
-
-    name = canonicalize_name(requirement.name)
-    if name not in _RELEASE_SET:
-        return False
-    if requirement.marker is not None and not requirement.marker.evaluate(
-        {"extra": ""}
-    ):
-        return False
-    installed = metadata.version(name)
-    return not requirement.specifier.contains(installed, prereleases=True)
 
 
 def resolve_family_provider(

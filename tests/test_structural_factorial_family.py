@@ -145,11 +145,10 @@ def test_an_altered_sealed_configuration_is_rejected(compiled):
     value = altered.entries[entry_id].participant_configurations[0].configuration.values
     model = next(item for item in value if item.target_id == "engine.model")
     model.value.value = "substituted-model"
+    request = FamilyTrialInput(altered, entry_id, experiment.family)
 
     with pytest.raises(ValueError, match="^family-trial-invalid$"):
-        admit_family_trial(
-            bundle, BACKEND, FamilyTrialInput(altered, entry_id, experiment.family)
-        )
+        admit_family_trial(bundle, BACKEND, request)
 
 
 def test_an_unsupported_factorial_profile_is_rejected_before_compilation(tmp_path):
@@ -161,7 +160,7 @@ def test_an_unsupported_factorial_profile_is_rejected_before_compilation(tmp_pat
     write_content_manifest(root)
 
     with pytest.raises(PackExperimentError) as rejected:
-        load_pack_experiments(Path(root))
+        load_pack_experiments(root)
     assert [item.code for item in rejected.value.result.diagnostics] == [
         "experiment.spec-invalid"
     ]
