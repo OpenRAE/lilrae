@@ -49,7 +49,7 @@
       "asset_id": "mcp-red-build",
       "kind": "mcp-artifact",
       "source": "mcp/mcp-red/build/index.js",
-      "sha256": "8e2b2072d2787b6c28d73ec31a54d5da29ce6c0601ee9cbf9ba51de3c93de6e9"
+      "sha256": "b1fa53c0de6c467f3f06111663d9a20a93db3c91a587a20c971be5d3c9a6ed07"
     },
     {
       "asset_id": "mcp-red-dependencies",
@@ -79,7 +79,7 @@
       "asset_id": "mcp-indexer-config",
       "kind": "project-file",
       "source": "mcp/mcp-indexer/docker-lab-config.json",
-      "sha256": "42444584ce92d43597fed4d09310632dd7d0bb1759e2f909ab6498ad2542b852"
+      "sha256": "e388fbb0e04446c7db2635bfc7d1bdedb686f5b41497a63dd981ff24d8b61b66"
     },
     {
       "asset_id": "mcp-wazuh-build",

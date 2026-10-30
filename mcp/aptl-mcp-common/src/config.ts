@@ -15,6 +15,11 @@ export interface LabConfig {
     toolPrefix: string;
     targetName: string;
     configKey: string;
+    /**
+     * Budget for one tool result, in estimated tokens (4 characters each).
+     * A larger result is cut to fit (see tool-output-cap.ts). Default 4000.
+     */
+    maxToolResultTokens?: number;
   };
   lab: {
     name: string;
@@ -94,6 +99,12 @@ export interface LabConfig {
       response_type?: 'json' | 'text';
       verify_ssl?: boolean;
       ca_cert_path?: string;
+      /**
+       * Result budget for this tool, in estimated tokens. It replaces
+       * `server.maxToolResultTokens`. `null` returns the whole result: use it
+       * for a document that the agent writes back whole, such as a rule file.
+       */
+      max_result_tokens?: number | null;
     };
   };
 }
@@ -179,6 +190,27 @@ export function environmentForConfig(
   return processEnv;
 }
 
+function isPositiveInteger(value: unknown): boolean {
+  return Number.isInteger(value) && (value as number) > 0;
+}
+
+/**
+ * Check the tool result budgets. An error names the setting, never its value
+ * (#1273 preflight).
+ */
+function validateResultBudgets(config: LabConfig): void {
+  const serverBudget = config.server.maxToolResultTokens;
+  if (serverBudget !== undefined && !isPositiveInteger(serverBudget)) {
+    throw new Error('server.maxToolResultTokens must be a positive integer');
+  }
+  for (const [queryName, query] of Object.entries(config.queries ?? {})) {
+    const budget = query.max_result_tokens;
+    if (budget !== undefined && budget !== null && !isPositiveInteger(budget)) {
+      throw new Error(`queries.${queryName}.max_result_tokens must be a positive integer or null`);
+    }
+  }
+}
+
 /**
  * Load Docker lab configuration from JSON file
  */
@@ -204,6 +236,8 @@ async function loadDockerLabConfig(configPath: string): Promise<LabConfig> {
   if (!config.server) {
     throw new Error('Server configuration is required in docker-lab-config.json');
   }
+
+  validateResultBudgets(config);
 
   // Validate that at least one capability is configured
   if (!config.containers && !config.api) {
