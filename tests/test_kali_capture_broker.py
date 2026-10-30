@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import json
+import signal
 import stat
 import sys
 from pathlib import Path
@@ -399,3 +400,146 @@ def test_broker_relays_characters_and_interrupt_bytes_and_restores_outer_termina
     finally:
         os.close(master)
         os.close(slave)
+
+
+def test_hung_up_pty_session_still_finishes_and_releases_its_registration(
+    broker, tmp_path, monkeypatch, mocker
+):
+    """Closing a PTY session sends the broker SIGHUP; teardown must still run."""
+    import os
+    import signal
+
+    runtime = _prepare_broker_session(broker, tmp_path, monkeypatch)
+    handlers = {}
+    monkeypatch.setattr(broker.signal, "signal", handlers.__setitem__)
+    child = mocker.Mock(pid=4321)
+    child.poll.return_value = None
+    monkeypatch.setattr(broker.subprocess, "Popen", lambda *_args, **_kwargs: child)
+    killed = []
+    monkeypatch.setattr(broker.os, "killpg", lambda *args: killed.append(args))
+    stdin_read, stdin_write = os.pipe()
+    monkeypatch.setattr(broker.sys, "stdin", mocker.Mock(fileno=lambda: stdin_read))
+
+    def hang_up(*_args):
+        teardown_handler = handlers[signal.SIGTERM]
+
+        def wait_during_teardown(**_kwargs):
+            assert handlers[signal.SIGTERM] is signal.SIG_IGN
+            # Even a callback already dispatched before SIG_IGN was installed
+            # cannot interrupt cleanup once teardown has begun.
+            teardown_handler(signal.SIGTERM, None)
+            return 0
+
+        child.wait.side_effect = wait_during_teardown
+        handlers[signal.SIGHUP](signal.SIGHUP, None)
+
+    monkeypatch.setattr(broker, "_relay", hang_up)
+    try:
+        returncode = broker.run_broker()
+    finally:
+        os.close(stdin_read)
+        os.close(stdin_write)
+    metadata = json.loads(
+        (tmp_path / "captures/run-1/sessions/session-1/metadata.json").read_text()
+    )
+
+    assert returncode == 129
+    assert not (runtime / "sessions/session-1.pid").exists()
+    assert metadata["close_reason"] == "signal"
+    assert killed == [(4321, signal.SIGTERM)]
+    # A quiesce SIGTERM arriving during teardown cannot cut it short.
+    assert handlers[signal.SIGTERM] is signal.SIG_IGN
+    assert handlers[signal.SIGHUP] is signal.SIG_IGN
+
+
+@pytest.mark.parametrize(
+    "signum", [signal.SIGHUP, signal.SIGTERM], ids=["hangup", "quiesce"]
+)
+@pytest.mark.parametrize("boundary", ["registration", "ledger", "spawn", "frame"])
+def test_teardown_finishes_custody_update_before_finalizing(
+    broker, tmp_path, monkeypatch, mocker, signum, boundary
+):
+    """A signal during acceptance, spawn or recording cannot strand custody."""
+    import os
+    import signal
+    from types import SimpleNamespace
+
+    runtime = _prepare_broker_session(broker, tmp_path, monkeypatch)
+    handlers = {}
+    monkeypatch.setattr(broker.signal, "signal", handlers.__setitem__)
+    write_exclusive = broker._write_exclusive
+    append_line = broker._append_line
+
+    def interrupt():
+        handlers[signum](signum, None)
+        # A second teardown request must preserve the first close reason and
+        # must not interrupt the same custody update either.
+        other = signal.SIGTERM if signum == signal.SIGHUP else signal.SIGHUP
+        handlers[other](other, None)
+
+    def write(path, data, mode=0o600):
+        write_exclusive(path, data, mode)
+        if boundary == "registration" and path.suffix == ".pid":
+            interrupt()
+
+    def append(path, value):
+        append_line(path, value)
+        if (boundary == "ledger" and path.name == "accepted-sessions.jsonl") or (
+            boundary == "frame" and path.name == "frames.jsonl"
+        ):
+            interrupt()
+
+    monkeypatch.setattr(broker, "_write_exclusive", write)
+    monkeypatch.setattr(broker, "_append_line", append)
+    child = mocker.Mock(pid=4321)
+    child.poll.return_value = None
+
+    def spawn(*_args, **_kwargs):
+        if boundary == "spawn":
+            interrupt()
+        return child
+
+    monkeypatch.setattr(broker.subprocess, "Popen", spawn)
+    killed = []
+    monkeypatch.setattr(broker.os, "killpg", lambda *args: killed.append(args))
+    stdin_read, stdin_write = os.pipe()
+    monkeypatch.setattr(broker.sys, "stdin", mocker.Mock(fileno=lambda: stdin_read))
+    # Exercise the real relay and recorder with one output frame. The pending
+    # signal must wait until both the frame and its chain state are committed.
+    selector = mocker.Mock()
+    selector.select.return_value = [(SimpleNamespace(fd=-100, data="output"), 1)]
+    monkeypatch.setattr(broker.selectors, "DefaultSelector", lambda: selector)
+    read = broker.os.read
+    monkeypatch.setattr(
+        broker.os,
+        "read",
+        lambda fd, count: b"last output" if fd == -100 else read(fd, count),
+    )
+    try:
+        assert broker.run_broker() == (129 if signum == signal.SIGHUP else 143)
+    finally:
+        os.close(stdin_read)
+        os.close(stdin_write)
+
+    assert not (runtime / "sessions/session-1.pid").exists()
+    authority = broker.read_authority(runtime)
+    exported = broker.export_capture(tmp_path / "captures", authority)
+    assert exported["accepted_session_ids"] == ["session-1"]
+    session = exported["sessions"][0]
+    expected_reason = "signal" if signum == signal.SIGHUP else "forced-teardown"
+    assert session["close_reason"] == expected_reason
+    frames = tuple(
+        TranscriptFrame(
+            sequence=frame["sequence"],
+            timestamp=frame["timestamp"],
+            direction=frame["direction"],
+            data=base64.b64decode(frame["data_b64"], validate=True),
+        )
+        for frame in session["frames"]
+    )
+    assert session["final_chain_digest"] == transcript_chain_digest(frames)
+    assert session["frame_count"] == (1 if boundary == "frame" else 0)
+    expected_kills = [(4321, signal.SIGTERM)] if boundary in {"spawn", "frame"} else []
+    assert killed == expected_kills
+    assert handlers[signal.SIGTERM] is signal.SIG_IGN
+    assert handlers[signal.SIGHUP] is signal.SIG_IGN
