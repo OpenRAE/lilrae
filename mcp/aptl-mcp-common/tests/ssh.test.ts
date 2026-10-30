@@ -1939,3 +1939,87 @@ describe('#304: PersistentSession.close() awaits remote stream-close', () => {
     expect((manager as any).sessions.size).toBe(0);
   });
 });
+
+describe('harvest on remote close (#campaign: harvest-at-shutdown)', () => {
+  function mockStreamSession(sessionId: string, runId: string) {
+    const mockStream = Object.assign(new EventEmitter(), {
+      write: vi.fn(),
+      end: vi.fn(() => mockStream.emit('close')),
+      stderr: new EventEmitter(),
+    });
+    const mockClient = {
+      shell: vi.fn((_opts: any, callback: any) => {
+        callback(null, mockStream);
+        return mockStream;
+      }),
+    } as any;
+    const session = new PersistentSession(sessionId, 'victim', 'kali', 'background', mockClient, {
+      port: 22,
+      mode: 'normal',
+      timeoutMs: 60000,
+    });
+    // Pin the bound run id the harvest uses, as the real open path does.
+    (session as any).boundRunId = runId;
+    return { session, mockStream };
+  }
+
+  it('harvests a remotely-closed session before dropping it from the map', async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new SSHConnectionManager();
+      const listedAtHarvest: string[][] = [];
+      const hook = vi.fn(async (id: string, runId: string | undefined) => {
+        listedAtHarvest.push(manager.listSessions().map((s) => s.sessionId));
+        expect(id).toBe('hydra-victim');
+        expect(runId).toBe('run-x');
+        return true;
+      });
+      manager.setHarvestHook(hook);
+
+      const { session, mockStream } = mockStreamSession('hydra-victim', 'run-x');
+      const initP = session.initialize();
+      await vi.advanceTimersByTimeAsync(1000);
+      await initP;
+      // Adopt the session exactly as createSession does.
+      (manager as any).attachSessionLifecycle('hydra-victim', session);
+      (manager as any).sessions.set('hydra-victim', session);
+      expect(manager.listSessions().map((s) => s.sessionId)).toContain('hydra-victim');
+
+      // The remote side dies: the kernel closes the PTY stream.
+      mockStream.emit('close');
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.waitFor(() => expect(hook).toHaveBeenCalledTimes(1));
+
+      // Harvested while still listed, then removed.
+      expect(listedAtHarvest[0]).toContain('hydra-victim');
+      expect(manager.listSessions()).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('harvests a session at most once across triggers', async () => {
+    const { session } = mockStreamSession('once', 'run-z');
+    const harvest = vi.fn().mockResolvedValue(true);
+
+    const first = session.harvestOnce(harvest);
+    const second = session.harvestOnce(harvest);
+
+    expect(await first).toBe(true);
+    expect(await second).toBe(true);
+    expect(harvest).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips the manager harvest for an agent-closed session', () => {
+    const { session } = mockStreamSession('agent', 'run-a');
+    session.agentClosing = true;
+    const harvest = vi.fn().mockResolvedValue(true);
+
+    // harvestRemoteClose must not run the hook when the agent is closing.
+    const manager = new SSHConnectionManager();
+    manager.setHarvestHook(harvest);
+    void (manager as any).harvestRemoteClose(session);
+
+    expect(harvest).not.toHaveBeenCalled();
+  });
+});

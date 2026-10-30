@@ -59,6 +59,65 @@ export class SSHConnectionManager {
   // every loser of the race.
   private readonly pendingConnections: Map<string, Promise<Client>> = new Map();
 
+  // Harvest hook injected by createMCPServer. The manager cannot resolve the
+  // capture container itself (that is lab config), so the server passes a
+  // best-effort harvest it can call when a session's remote side closes on its
+  // own. Undefined when captures are not configured.
+  private harvestHook: ((sessionId: string, runId: string | undefined) => Promise<boolean>) | undefined;
+
+  /**
+   * Register the per-session capture harvest. Called once at server setup.
+   * Without it, a remote-closed session is not harvested here and relies on
+   * the shutdown sweep.
+   */
+  public setHarvestHook(
+    hook: (sessionId: string, runId: string | undefined) => Promise<boolean>,
+  ): void {
+    this.harvestHook = hook;
+  }
+
+  /**
+   * Harvest a session that closed on its own (remote death), once, before it
+   * leaves the sessions map. An agent-closed session is skipped: the
+   * close_session handler owns that harvest. Best-effort and memoized on the
+   * session, so it never double-copies.
+   */
+  private async harvestRemoteClose(session: PersistentSession): Promise<void> {
+    if (session.agentClosing || this.harvestHook === undefined) return;
+    const hook = this.harvestHook;
+    try {
+      const harvested = await session.harvestOnce(() =>
+        hook(session.getSessionId(), session.getBoundRunId()),
+      );
+      if (!harvested) {
+        console.error(
+          `[captures] harvest of remotely-closed session ${session.getSessionId()} failed`,
+        );
+      }
+    } catch (err) {
+      console.error('[captures] harvest on remote close threw:', err);
+    }
+  }
+
+  /**
+   * Wire a session's end-of-life listeners. A remote close or error harvests
+   * the session (unless the agent is closing it, which the close_session
+   * handler harvests) before dropping it from the sessions map, so a session
+   * that dies mid-game is still copied into the run store.
+   */
+  private attachSessionLifecycle(sessionId: string, session: PersistentSession): void {
+    session.on('closed', () => {
+      void this.harvestRemoteClose(session).finally(() => this.sessions.delete(sessionId));
+    });
+    session.on('error', (error) => {
+      console.error(`[SSH] Session ${sessionId} error:`, error);
+      void this.harvestRemoteClose(session).finally(() => this.sessions.delete(sessionId));
+    });
+    session.on('timeout', () => {
+      console.error(`[SSH] Session ${sessionId} timed out`);
+    });
+  }
+
   /**
    * Execute a command on a target host via SSH.
    *
@@ -302,16 +361,7 @@ export class SSHConnectionManager {
       // when cleanup detected a postcondition violation. 'timeout' is
       // informational — close() runs next from the timer callback and emits
       // 'closed' or 'error' itself. (Codex cycle 3 findings 3 + 4.)
-      session.on('closed', () => {
-        this.sessions.delete(sessionId);
-      });
-      session.on('error', (error) => {
-        console.error(`[SSH] Session ${sessionId} error:`, error);
-        this.sessions.delete(sessionId);
-      });
-      session.on('timeout', () => {
-        console.error(`[SSH] Session ${sessionId} timed out`);
-      });
+      this.attachSessionLifecycle(sessionId, session);
 
       await session.initialize();
       this.sessions.set(sessionId, session);
@@ -358,6 +408,9 @@ export class SSHConnectionManager {
     if (!session) {
       return false;
     }
+    // The agent asked to close this session, so the close_session handler owns
+    // its harvest. Mark it so the remote-close listener does not harvest it too.
+    session.agentClosing = true;
 
     // close() runs cleanup + postcondition synchronously (so in-flight /
     // queued command promises reject immediately), then awaits the remote

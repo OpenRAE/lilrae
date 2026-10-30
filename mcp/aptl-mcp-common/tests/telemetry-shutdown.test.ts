@@ -13,7 +13,7 @@ import { createServer as createNetServer, type AddressInfo, type Server as NetSe
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { trace } from '@opentelemetry/api';
 
-const ssh = vi.hoisted(() => ({ disconnectAll: vi.fn() }));
+const ssh = vi.hoisted(() => ({ disconnectAll: vi.fn(), listSessions: vi.fn(() => []), setHarvestHook: vi.fn() }));
 
 vi.mock('@modelcontextprotocol/sdk/server/index.js', () => ({
   Server: vi.fn(function () {
@@ -26,7 +26,7 @@ vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
 }));
 
 vi.mock('../src/ssh.js', () => ({
-  SSHConnectionManager: vi.fn(function () { return { disconnectAll: ssh.disconnectAll }; }),
+  SSHConnectionManager: vi.fn(function () { return { disconnectAll: ssh.disconnectAll, listSessions: ssh.listSessions, setHarvestHook: ssh.setHarvestHook }; }),
 }));
 
 vi.mock('../src/tools/definitions.js', () => ({

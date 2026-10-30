@@ -75,7 +75,7 @@ export function resolveCaptureContainer(labConfig: LabConfig): string | undefine
  * cause the harvest to look under the wrong run dir (codex
  * pre-push cycle 3 finding-6).
  */
-async function maybeHarvest(
+export async function maybeHarvest(
   labConfig: LabConfig,
   sessionId: string,
   runId?: string,
