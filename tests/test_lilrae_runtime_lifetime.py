@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 from raes_backend_stubs.stubs import create_stub_target
+from raes_contracts.errors import ConflictError, OperationalError
 from raes_contracts.planning import EvaluationPlan
 from raes_contracts.runtime_state import RuntimeSnapshot
 from raes_processor.models import RuntimeModel
@@ -141,7 +142,7 @@ def test_single_owner_preserves_clock_through_repeated_evaluation(native_evidenc
                 )
                 assert receipt.accepted, receipt.diagnostics
             assert manager.read_time_state() == before
-            with pytest.raises(RuntimeError, match="already has a runtime owner"):
+            with pytest.raises(ConflictError, match="already has a runtime owner"):
                 AptlRuntimeManager(target)
             advanced = manager.advance_time("time.clock.study", ticks=1)
             assert advanced.success, advanced.diagnostics
@@ -153,7 +154,7 @@ def test_closed_owner_rejects_later_evaluation():
     manager = AptlRuntimeManager(target)
     execution = _execution(target, evaluation=EvaluationPlan())
     manager.close()
-    with pytest.raises(RuntimeError, match="closed"):
+    with pytest.raises(OperationalError, match="closed"):
         manager.evaluate(execution)
     with AptlRuntimeManager(target) as replacement:
         assert replacement.snapshot == RuntimeSnapshot()

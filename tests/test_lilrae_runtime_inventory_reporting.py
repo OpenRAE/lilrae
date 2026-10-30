@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from raes import parse_sdl
 from raes_backend_stubs.stubs import StubProvisioner
+from raes_contracts.errors import ConflictError
 from raes_contracts.run_scope import PlanScope
 from raes_contracts.runtime_state import RuntimeSnapshot
 from raes_operations.run_artifacts import RunMaterializationArchive
@@ -579,7 +580,7 @@ def test_runtime_refuses_a_plan_from_another_run(tmp_path):
         foreign = replace(
             plan, provisioning=replace(plan.provisioning, run_id="foreign")
         )
-        with pytest.raises(ValueError, match="run scope"):
+        with pytest.raises(ConflictError, match="run scope"):
             manager.apply(foreign)
         assert not native.reads
         assert not manager.snapshot.materialization_attestations
