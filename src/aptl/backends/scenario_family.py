@@ -9,19 +9,29 @@ import re
 from typing import TYPE_CHECKING
 from collections.abc import Callable
 
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
+
 from aptl.backends.identity import BackendIdentity
 from aptl.core.scenario_bundle import PackIdentity
 
 if TYPE_CHECKING:
     from raes.scenario import ExpandedScenario, InstantiatedScenario
     from raes.phase_contracts import TrialInstantiationProvenance
-    from raes_contracts.contracts import AdmittedTrialPlanModel
+    from raes_contracts.contracts import (
+        AdmittedTrialPlanModel,
+        ParticipantConfigurationResultModel,
+    )
     from aptl.core.scenario_bundle import ScenarioBundle
 
 FAMILY_API_VERSION = "1"
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 MAX_QUALIFIED_FAMILIES = 64
+# One family trial runs on one consistent release set: the host and adapter
+# declarations for these distributions must match the installed versions.
+_HOST_DISTRIBUTION = "lilrae"
+_RELEASE_SET = frozenset({_HOST_DISTRIBUTION, "raes", "raes-env-packs"})
 
 
 @dataclass(frozen=True)
@@ -65,6 +75,7 @@ class FamilyProviderSelection:
     distribution_version: str
     provider_id: str
     provider: object = field(repr=False, compare=False)
+    requires: tuple[str, ...] = field(default=(), repr=False, compare=False)
 
     def identity(self) -> FamilyProviderIdentity:
         version = "2" if self.group == "aptl.scenario_verifiers" else "1"
@@ -87,6 +98,7 @@ class AdmittedFamilyTrial:
     snapshot: bytes = field(repr=False)
     installation: tuple[str, str] | None = None
     providers: tuple[FamilyProviderIdentity, ...] = ()
+    participant_configurations: bytes = field(default=b"[]", repr=False)
 
     @property
     def scenario(self) -> InstantiatedScenario:
@@ -98,6 +110,18 @@ class AdmittedFamilyTrial:
     @property
     def provenance(self) -> TrialInstantiationProvenance:
         return self.scenario.instantiation_provenance.trial
+
+    @property
+    def participant_configuration_results(
+        self,
+    ) -> tuple[ParticipantConfigurationResultModel, ...]:
+        """Return detached copies of the sealed entry's participant configurations."""
+
+        from pydantic import TypeAdapter
+        from raes_contracts.contracts import ParticipantConfigurationResultModel
+
+        adapter = TypeAdapter(tuple[ParticipantConfigurationResultModel, ...])
+        return adapter.validate_json(self.participant_configurations)
 
     def identity(self) -> dict[str, str]:
         """Return safe lineage identifiers without binding or selection values."""
@@ -121,6 +145,14 @@ class AdmittedFamilyTrial:
             "target": asdict(self.target),
             "trial": self.identity(),
             "providers": [asdict(item) for item in self.providers],
+            "participant_configurations": [
+                {
+                    "participant_address": item.participant_address,
+                    "manifest_digest": item.manifest_digest,
+                    "configuration_digest": item.configuration_digest,
+                }
+                for item in self.participant_configuration_results
+            ],
         }
 
 
@@ -135,6 +167,7 @@ def admit_family_trial(
 
     try:
         family = request.family.model_copy(deep=True)
+        plan = request.plan.model_copy(deep=True)
         source = parse_sdl_file(bundle.sdl_path)
         family_digest = canonical_sdl_digest(family).value
         if (
@@ -143,7 +176,7 @@ def admit_family_trial(
         ):
             raise ValueError
         scenario = instantiate_admitted_trial_entry(
-            plan=request.plan, plan_entry_id=request.plan_entry_id, family=family
+            plan=plan, plan_entry_id=request.plan_entry_id, family=family
         )
         provenance = scenario.instantiation_provenance.trial
         if provenance is None or any(
@@ -164,9 +197,31 @@ def admit_family_trial(
             ),
             canonical_instantiated_sdl_digest(scenario).value,
             snapshot,
+            participant_configurations=_sealed_participant_configurations(
+                plan, provenance
+            ),
         )
     except Exception:
         raise ValueError("family-trial-invalid") from None
+
+
+def _sealed_participant_configurations(
+    plan: AdmittedTrialPlanModel, provenance: TrialInstantiationProvenance
+) -> bytes:
+    """Return the instantiated entry's sealed configurations as canonical JSON.
+
+    RAES verified this plan copy when it instantiated the entry. The entry
+    digest binds the configurations to the trial provenance.
+    """
+
+    from raes_contracts.canonical import canonical_json_bytes
+
+    entry = plan.entries[provenance.plan_entry_id]
+    if entry.entry_digest != provenance.entry_digest:
+        raise ValueError
+    return canonical_json_bytes(
+        [item.model_dump(mode="json") for item in entry.participant_configurations]
+    )
 
 
 def _valid_target(target: object) -> bool:
@@ -303,7 +358,13 @@ def _family_entry_selection(
             return None
         identifier = _family_entry_identity(entry, provider, api_version, method)
         return FamilyProviderSelection(
-            group, selector, entry.dist.name, entry.dist.version, identifier, provider
+            group,
+            selector,
+            entry.dist.name,
+            entry.dist.version,
+            identifier,
+            provider,
+            tuple(entry.dist.requires or ()),
         )
     except Exception:
         raise ValueError("family-provider-metadata-invalid") from None
@@ -376,7 +437,33 @@ def require_family_capabilities(
         != 1
     ):
         raise ValueError("family-provider-installation-mismatch")
+    _require_consistent_release_set(selections[0].requires)
     return selections
+
+
+def _require_consistent_release_set(adapter_requires: tuple[str, ...]) -> None:
+    """Refuse installed releases that the host or adapter declarations exclude."""
+
+    try:
+        declared = (*(metadata.requires(_HOST_DISTRIBUTION) or ()), *adapter_requires)
+        if any(_excludes_installed_release(Requirement(text)) for text in declared):
+            raise ValueError
+    except Exception:
+        raise ValueError("family-package-versions-inconsistent") from None
+
+
+def _excludes_installed_release(requirement: Requirement) -> bool:
+    """Return whether an applicable release-set requirement excludes its install."""
+
+    name = canonicalize_name(requirement.name)
+    if name not in _RELEASE_SET:
+        return False
+    if requirement.marker is not None and not requirement.marker.evaluate(
+        {"extra": ""}
+    ):
+        return False
+    installed = metadata.version(name)
+    return not requirement.specifier.contains(installed, prereleases=True)
 
 
 def resolve_family_provider(

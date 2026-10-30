@@ -230,6 +230,14 @@ jobs:
           docker info > /dev/null
           command -v ssh ssh-keygen
           python -m pytest -q -m integration tests/test_kali_capture_compose.py
+      # Mixed realization starts a materialized base container and a generated
+      # Compose service together. Only a real Docker daemon can prove that. The
+      # module is integration-marked, so the runs above deselect it. The probe
+      # stops the step if Docker is missing, so the test cannot pass by a skip.
+      - name: Mixed base-container and Compose realization through Docker
+        run: |
+          docker info > /dev/null
+          python -m pytest -q -m integration tests/test_mixed_realization_integration.py
       - name: Linux CLI and init smoke
         run: |
           lilrae --help
@@ -307,6 +315,13 @@ jobs:
       - name: Prove core-only and separately installed verifier wheels
         run: >-
           python -m pytest tests/test_scenario_verification_artifacts.py tests/test_lab_core_only_artifact.py -q
+          -m integration
+      # Independent family adapter wheels run outside the source tree on the
+      # released RAES tuple (#1465). The modules are integration-marked, so the
+      # ordinary runs deselect them.
+      - name: Prove installed family adapters on the released RAES tuple
+        run: >-
+          python -m pytest tests/test_family_adapter_contract.py tests/test_structural_factorial_family.py -q
           -m integration
 
   pack-identity-compatibility:

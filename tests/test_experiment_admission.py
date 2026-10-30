@@ -656,7 +656,9 @@ def _condition_allocation_spec_payload_one_infeasible() -> dict:
 
 
 def _explicit_binding_spec_payload(
-    *, scenario_target: str = "variables.danger_level"
+    *,
+    scenario_target: str = "variables.danger_level",
+    apparatus_target: str = "participant-runtime.action-timeout-seconds",
 ) -> dict:
     return {
         "schema_version": "experiment-authoring-input/v1",
@@ -743,7 +745,7 @@ def _explicit_binding_spec_payload(
                         "component_name": "aptl",
                         "component_version": "0.1.0",
                         "manifest_version": "backend-manifest/v2",
-                        "target_id": "participant-runtime.action-timeout-seconds",
+                        "target_id": apparatus_target,
                     },
                     "value_type": "integer",
                     "value": {"kind": "literal", "value": 90},
@@ -759,11 +761,35 @@ def _explicit_binding_spec_payload(
     }
 
 
-def _explicit_binding_bundle(*, scenario_target: str = "variables.danger_level"):
-    task_payload = _condition_allocation_task_payload()
-    return _Bundle(
-        task_payload=task_payload,
-        spec_payload=_explicit_binding_spec_payload(scenario_target=scenario_target),
+def _explicit_binding_bundle(**targets: str) -> _Bundle:
+    bundle = _Bundle(
+        task_payload=_condition_allocation_task_payload(),
+        spec_payload=_explicit_binding_spec_payload(**targets),
+    )
+    bundle.scenario_bytes = _EXPLICIT_BINDING_SCENARIO_TEXT.encode("utf-8")
+    bundle.artifact_source = MappingArtifactSource(
+        artifacts={
+            "task-condition-admission": _resolved(
+                bundle.task_bytes, "task.json", "application/json"
+            ),
+            "scenario-condition-admission": _resolved(
+                bundle.scenario_bytes,
+                "scenario.sdl.yaml",
+                "application/x-yaml",
+            ),
+        }
+    )
+    return bundle
+
+
+def _admit_explicit_binding_bundle(bundle: _Bundle, run_store) -> AdmissionResult:
+    return admit_experiment(
+        experiment_root=bundle.experiment_root,
+        artifact_source=bundle.artifact_source,
+        run_store=run_store,
+        policy=dataclasses.replace(
+            default_admission_policy(), allow_uncertified_apparatus=True
+        ),
     )
 
 
@@ -816,28 +842,8 @@ class TestAdmitExperimentConditionAllocationAllOrNothing:
         assert store.calls == {}
 
     def test_explicit_bindings_are_validated_before_planning_and_pinned(self, tmp_path):
-        bundle = _explicit_binding_bundle()
-        bundle.scenario_bytes = _EXPLICIT_BINDING_SCENARIO_TEXT.encode("utf-8")
-        bundle.artifact_source = MappingArtifactSource(
-            artifacts={
-                "task-condition-admission": _resolved(
-                    bundle.task_bytes, "task.json", "application/json"
-                ),
-                "scenario-condition-admission": _resolved(
-                    bundle.scenario_bytes,
-                    "scenario.sdl.yaml",
-                    "application/x-yaml",
-                ),
-            }
-        )
-
-        result = admit_experiment(
-            experiment_root=bundle.experiment_root,
-            artifact_source=bundle.artifact_source,
-            run_store=LocalRunStore(tmp_path / "store"),
-            policy=dataclasses.replace(
-                default_admission_policy(), allow_uncertified_apparatus=True
-            ),
+        result = _admit_explicit_binding_bundle(
+            _explicit_binding_bundle(), LocalRunStore(tmp_path / "store")
         )
 
         assert result.admitted is True
@@ -851,34 +857,28 @@ class TestAdmitExperimentConditionAllocationAllOrNothing:
             "apparatus",
         }
 
-    def test_unknown_explicit_target_rejects_without_a_store_write(self, tmp_path):
-        bundle = _explicit_binding_bundle(scenario_target="variables.unknown_target")
-        bundle.scenario_bytes = _EXPLICIT_BINDING_SCENARIO_TEXT.encode("utf-8")
-        bundle.artifact_source = MappingArtifactSource(
-            artifacts={
-                "task-condition-admission": _resolved(
-                    bundle.task_bytes, "task.json", "application/json"
-                ),
-                "scenario-condition-admission": _resolved(
-                    bundle.scenario_bytes,
-                    "scenario.sdl.yaml",
-                    "application/x-yaml",
-                ),
-            }
-        )
+    @pytest.mark.parametrize(
+        "targets",
+        [
+            {"scenario_target": "variables.unknown_target"},
+            # RAES's target owner, not LilRAE, refuses this one (InvalidInputError).
+            {"apparatus_target": "participant-runtime.unknown-target"},
+        ],
+    )
+    def test_unknown_explicit_target_rejects_without_a_store_write(
+        self, tmp_path, targets
+    ):
         store = _SpyRunStore(tmp_path / "store")
 
-        result = admit_experiment(
-            experiment_root=bundle.experiment_root,
-            artifact_source=bundle.artifact_source,
-            run_store=store,
-            policy=dataclasses.replace(
-                default_admission_policy(), allow_uncertified_apparatus=True
-            ),
+        result = _admit_explicit_binding_bundle(
+            _explicit_binding_bundle(**targets), store
         )
 
         assert result.admitted is False
         assert result.plan is None
+        assert [item.code for item in result.diagnostics] == [
+            "aptl.experiment-admission.binding-invalid"
+        ]
         assert store.calls == {}
 
 

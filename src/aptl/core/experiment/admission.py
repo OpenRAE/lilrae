@@ -64,6 +64,7 @@ from pathlib import Path
 
 from raes_backend_protocols.manifest import BackendManifest
 from raes_contracts.diagnostics import Diagnostic
+from raes_contracts.errors import InvalidInputError
 from raes_contracts.satisfiability import canonical_contract_digest
 from raes_processor.capabilities import ProcessorManifest
 from raes_processor.manifest import create_reference_processor_manifest
@@ -290,7 +291,9 @@ def _admit_experiment_inner(
             base_config=environment.base_config,
         )
         planning_scenario = scenario_for_explicit_bindings(scenario, admitted_bindings)
-    except (TypeError, ValueError) as exc:
+    # RAES binding-target owners refuse with InvalidInputError; local checks and
+    # Pydantic validators raise ValueError or TypeError.
+    except (InvalidInputError, TypeError, ValueError) as exc:
         raise _reject(
             _CODE_BINDING_INVALID,
             "binding_descriptors",
