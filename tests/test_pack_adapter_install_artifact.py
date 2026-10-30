@@ -421,6 +421,8 @@ def test_second_installed_pack_starts_captures_plans_and_verifies(
         start_outcome = raes.start_raes_scenario(
             Path.cwd(), config, backend, admitted=admitted
         )
+        # Close the run's one runtime as start_lab does. An open runtime
+        # blocks interpreter exit in its finalizer.
         try:
             assert start_outcome.lab_result.success, start_outcome.lab_result.error
             assert backend.realize.called
