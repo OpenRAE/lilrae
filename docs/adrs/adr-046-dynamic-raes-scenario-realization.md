@@ -2,7 +2,7 @@
 
 ## Status
 
-accepted (amended 2026-10-26)
+accepted (amended 2026-10-28)
 
 ## Date
 
@@ -10,7 +10,7 @@ accepted (amended 2026-10-26)
 
 ## Last Updated
 
-2026-10-26
+2026-10-28
 
 ## Context
 
@@ -756,6 +756,11 @@ value. The provisioner's snapshot follows that contract:
   a value at that path, even `null`, the entry then differs from the plan and
   RAES refuses the whole result. A credential-bearing start therefore fails
   unless the backend observes every admitted concern that has a plan value.
+  RAES's authority check names some of these gaps, but not one whose plan value
+  is empty or `null`. So when that check reports nothing, realization readback
+  waits for any such concern within its deadline. A concern still unobserved
+  then fails the start with `aptl.provisioner.admitted-concern-unobserved`,
+  which names the address and concern kind.
 - An entry carries no `backend_evidence`, because the contract admits no
   backend evidence key in an entry. The run outcome still carries the
   source-image evidence.
