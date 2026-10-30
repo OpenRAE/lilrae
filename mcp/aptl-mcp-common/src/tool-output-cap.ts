@@ -280,10 +280,6 @@ function collectStrings(container: Record<string, unknown> | unknown[], slots: S
   }
 }
 
-function isHighSurrogate(code: number): boolean {
-  return code >= 0xd800 && code <= 0xdbff;
-}
-
 /**
  * Cut ``text`` to at most ``length`` characters at its last line break. A
  * break in the first half of the kept text is not used, so one long line
@@ -291,7 +287,9 @@ function isHighSurrogate(code: number): boolean {
  */
 function cutAtLine(text: string, length: number): string {
   let end = Math.max(0, Math.min(length, text.length));
-  if (end > 0 && end < text.length && isHighSurrogate(text.charCodeAt(end - 1))) {
+  // A code point above U+FFFF that starts at end - 1 is a surrogate pair
+  // that a cut at end would split.
+  if (end > 0 && end < text.length && (text.codePointAt(end - 1) ?? 0) > 0xffff) {
     end -= 1;
   }
   const head = text.slice(0, end);

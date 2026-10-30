@@ -147,6 +147,17 @@ describe('boundToolResult', () => {
     expect(value.startsWith(body.data)).toBe(true);
   });
 
+  it('never splits a surrogate pair in text that is not JSON', () => {
+    // The room before the size tail is 339 characters, inside a pair.
+    const text = '\u{1F600}'.repeat(3000);
+
+    const returned = boundToolResult({ content: [{ type: 'text', text }] }, MAX_TOKENS).result.content[0].text;
+    const kept = returned.slice(0, returned.indexOf('\n[truncated:'));
+
+    expect(kept.length).toBe(338);
+    expect(text.startsWith(kept)).toBe(true);
+  });
+
   it('cuts an object that does not fit even with empty strings at a line boundary', () => {
     const fields = Object.fromEntries(Array.from({ length: 60 }, (_, index) => [`field${index}`, index]));
 
