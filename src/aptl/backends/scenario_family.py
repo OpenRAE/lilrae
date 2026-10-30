@@ -9,13 +9,11 @@ import re
 from typing import TYPE_CHECKING
 from collections.abc import Callable
 
-from packaging.requirements import Requirement
-from packaging.utils import canonicalize_name
-
 from aptl.backends.identity import BackendIdentity
 from aptl.core.scenario_bundle import PackIdentity
 
 if TYPE_CHECKING:
+    from packaging.requirements import Requirement
     from raes.scenario import ExpandedScenario, InstantiatedScenario
     from raes.phase_contracts import TrialInstantiationProvenance
     from raes_contracts.contracts import (
@@ -445,6 +443,9 @@ def _require_consistent_release_set(adapter_requires: tuple[str, ...]) -> None:
     """Refuse installed releases that the host or adapter declarations exclude."""
 
     try:
+        # Imported here so the family seam itself needs no third-party module.
+        from packaging.requirements import Requirement
+
         declared = (*(metadata.requires(_HOST_DISTRIBUTION) or ()), *adapter_requires)
         if any(_excludes_installed_release(Requirement(text)) for text in declared):
             raise ValueError
@@ -454,6 +455,8 @@ def _require_consistent_release_set(adapter_requires: tuple[str, ...]) -> None:
 
 def _excludes_installed_release(requirement: Requirement) -> bool:
     """Return whether an applicable release-set requirement excludes its install."""
+
+    from packaging.utils import canonicalize_name
 
     name = canonicalize_name(requirement.name)
     if name not in _RELEASE_SET:
