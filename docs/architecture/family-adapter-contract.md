@@ -33,12 +33,11 @@ Serving callbacks receive only pack identity, backend identity, and admitted com
 Providers cannot change the admitted execution through these copies.
 Capture sources receive only declared credentials and generated-output grants.
 Container operations stay within the admitted node set.
-Retry can inspect selected container state and restart an admitted node.
 Inspection excludes container environment values.
 Native capture records use the sealed entry identity, separate from the capture-plan identity.
 Archive run identity must match the sealed trial before apply.
 Runtime parameters cannot overwrite a sealed trial binding.
-Retry retains the admitted snapshot and provider selections.
+A failed apply ends the start; core does not apply the plan again.
 
 ```mermaid
 flowchart LR

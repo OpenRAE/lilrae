@@ -267,3 +267,19 @@ export async function traceToolCall<T>(
     },
   );
 }
+
+/**
+ * Record a tool result's size and whether it was truncated on the active span.
+ * Only counts are recorded, never the result content.
+ */
+export function recordToolResultSize(size: {
+  originalChars: number;
+  returnedChars: number;
+  truncated: boolean;
+}): void {
+  trace.getActiveSpan()?.setAttributes({
+    'aptl.tool.response_original_chars': size.originalChars,
+    'aptl.tool.response_chars': size.returnedChars,
+    'aptl.tool.response_truncated': size.truncated,
+  });
+}

@@ -29,7 +29,7 @@ from aptl.utils.logging import get_logger
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from aptl.core.deployment.realization import DeploymentOperatorAccess
+    from aptl.core.deployment._realization_access import DeploymentOperatorAccess
 
 log = get_logger("deployment.operator_access")
 

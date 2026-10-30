@@ -90,6 +90,8 @@ nav:
     - Coding Standards: CODING_STANDARDS.md
   - Architecture:
     - Overview: architecture/index.md
+    - "Issue #1372 Capture Spec Version Preflight": architecture/issue-1372-capture-spec-version-preflight.md
+    - "Issue #1372 Capture Spec Version Design": architecture/issue-1372-capture-spec-version-design.md
     - "Issue #1121 Pack Boundary Preflight": architecture/issue-1121-pack-boundary-preflight.md
     - Pack Boundary: architecture/pack-boundary-design.md
     - Configuration Migration: reference/configuration-migration.md

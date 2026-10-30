@@ -24,7 +24,7 @@ private project state, and validates it with the env-packs gates before use.
 Install the distribution that carries the pack:
 
 ```shell
-pip install "raes-env-packs==6.3.3"
+pip install "raes-env-packs==6.4.2"
 ```
 
 TechVault ships in `raes-env-packs` as two packs: `techvault` (the environment)

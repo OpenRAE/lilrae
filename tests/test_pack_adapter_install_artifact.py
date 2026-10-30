@@ -418,71 +418,77 @@ def test_second_installed_pack_starts_captures_plans_and_verifies(
         start_outcome = raes.start_raes_scenario(
             Path.cwd(), config, backend, admitted=admitted
         )
-        assert start_outcome.lab_result.success, start_outcome.lab_result.error
-        assert backend.realize.called
-        assert run_scenario_runtime(pack, backend, (), selection=startup) == []
-        assert backend.started is True
-        assert start_outcome.selected_profiles == ["blue-team"]
-        assert startup.plan.required_profiles == ("blue-team",)
+        # Close the run's one runtime as start_lab does. An open runtime
+        # blocks interpreter exit in its finalizer.
+        try:
+            assert start_outcome.lab_result.success, start_outcome.lab_result.error
+            assert backend.realize.called
+            assert run_scenario_runtime(pack, backend, (), selection=startup) == []
+            assert backend.started is True
+            assert start_outcome.selected_profiles == ["blue-team"]
+            assert startup.plan.required_profiles == ("blue-team",)
 
-        capture = resolve_scenario_capture(ScenarioCaptureContext(pack, backend_identity))
-        assert capture.distribution == "otherpack-aptl-adapter"
-        source = SimpleNamespace(
-            fetch=lambda _start, _end: SourceResult(
-                status=CollectorStatus.OK, records=[{"second_pack": True}]
+            capture = resolve_scenario_capture(ScenarioCaptureContext(pack, backend_identity))
+            assert capture.distribution == "otherpack-aptl-adapter"
+            source = SimpleNamespace(
+                fetch=lambda _start, _end: SourceResult(
+                    status=CollectorStatus.OK, records=[{"second_pack": True}]
+                )
             )
-        )
-        collector = build_collectors(
-            {"otherpack.collector.events": source}, capture.registry
-        )["otherpack.collector.events"]
-        clock = SimpleNamespace(now=lambda: "2026-09-21T00:00:00Z")
-        handle = collector.start(CollectorContext(
-            "trial", "run", "attempt", SimpleNamespace(), 10.0, clock
-        ))
-        collector_outcome = collector.stop(handle)
-        assert collector_outcome.status is CollectorStatus.OK
-        assert b"second_pack" in collector_outcome.chunks[0]
+            collector = build_collectors(
+                {"otherpack.collector.events": source}, capture.registry
+            )["otherpack.collector.events"]
+            clock = SimpleNamespace(now=lambda: "2026-09-21T00:00:00Z")
+            handle = collector.start(CollectorContext(
+                "trial", "run", "attempt", SimpleNamespace(), 10.0, clock
+            ))
+            collector_outcome = collector.stop(handle)
+            assert collector_outcome.status is CollectorStatus.OK
+            assert b"second_pack" in collector_outcome.chunks[0]
 
-        run_store = LocalRunStore(Path.cwd() / "runs")
-        capture_context = _LabStartContext(
-            backend=backend,
-            project_dir=Path.cwd(),
-            skip_seed=False,
-            raw_env={},
-            admitted_start=admitted,
-            raes_outcome=start_outcome,
-            run_store=run_store,
-            run_id="second-pack-run",
-        )
-        assert capture_context.env is None
-        raes_evaluator.refresh_evidence_truth = lambda **kwargs: SimpleNamespace(
-            status=OperationState.SUCCEEDED,
-            snapshot=kwargs["snapshot"],
-        )
-        capture_failure = _step_acquire_required_native_evidence(capture_context)
-        assert capture_failure is None, capture_failure
-        acquired = capture_context.native_evidence_acquisition
-        assert acquired.disposition is AcquisitionDisposition.SEALED_READY
-        assert len(acquired.records) == 1
-        assert (
-            run_store.get_run_path("second-pack-run")
-            / f"evidence/capture-plans/{admitted.capture_plan.plan_id}.json"
-        ).read_bytes() == admitted.capture_plan.canonical_bytes
+            run_store = LocalRunStore(Path.cwd() / "runs")
+            capture_context = _LabStartContext(
+                backend=backend,
+                project_dir=Path.cwd(),
+                skip_seed=False,
+                raw_env={},
+                admitted_start=admitted,
+                raes_outcome=start_outcome,
+                run_store=run_store,
+                run_id="second-pack-run",
+            )
+            assert capture_context.env is None
+            raes_evaluator.refresh_evidence_truth = lambda **kwargs: SimpleNamespace(
+                status=OperationState.SUCCEEDED,
+                snapshot=kwargs["snapshot"],
+            )
+            capture_failure = _step_acquire_required_native_evidence(capture_context)
+            assert capture_failure is None, capture_failure
+            acquired = capture_context.native_evidence_acquisition
+            assert acquired.disposition is AcquisitionDisposition.SEALED_READY
+            assert len(acquired.records) == 1
+            assert (
+                run_store.get_run_path("second-pack-run")
+                / f"evidence/capture-plans/{admitted.capture_plan.plan_id}.json"
+            ).read_bytes() == admitted.capture_plan.canonical_bytes
 
-        planning = resolve_scenario_planning_compatibility(
-            ScenarioPlanningCompatibilityContext(pack, backend_identity)
-        )
-        assert planning.decision.runtime_max_nodes == 2048
-        report = verify_scenario(VerificationContext(
-            run_id="run",
-            attempt_id="attempt",
-            scenario=ScenarioIdentity(
-                "otherpack", digest, source_kind="env-pack", version="1.0.0"
-            ),
-            backend=backend_identity,
-        ))
-        assert report.status is VerificationStatus.PASSED, report.diagnostics
-        assert report.distribution == "otherpack-aptl-adapter"
+            planning = resolve_scenario_planning_compatibility(
+                ScenarioPlanningCompatibilityContext(pack, backend_identity)
+            )
+            assert planning.decision.runtime_max_nodes == 2048
+            report = verify_scenario(VerificationContext(
+                run_id="run",
+                attempt_id="attempt",
+                scenario=ScenarioIdentity(
+                    "otherpack", digest, source_kind="env-pack", version="1.0.0"
+                ),
+                backend=backend_identity,
+            ))
+            assert report.status is VerificationStatus.PASSED, report.diagnostics
+            assert report.distribution == "otherpack-aptl-adapter"
+        finally:
+            if start_outcome.runtime_manager is not None:
+                start_outcome.runtime_manager.close()
         """
     )
     env = os.environ.copy()

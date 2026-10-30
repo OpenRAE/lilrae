@@ -67,6 +67,22 @@ def test_released_kit_selector_resolves_to_a_reviewed_pin(tmp_path, name, versio
     assert image.source_version == version
 
 
+def test_roundcube_selector_resolves_to_the_patched_lookup(tmp_path):
+    """Roundcube 1.6.11 carried PHP 8.4.15, vulnerable to php2shell (#1407).
+
+    The supported selector stays ``roundcube / 1``. Only the reviewed image
+    and the record of the lookup that produced it change.
+    """
+
+    image, diagnostics = _resolve(tmp_path, "roundcube", "1")
+    assert not diagnostics
+    assert image.image_ref.startswith("roundcube/roundcubemail@sha256:")
+    assert image.provenance_refs[:2] == (
+        "docker://roundcube/roundcubemail:1.6.20-apache",
+        "resolved:2026-10-25",
+    )
+
+
 @pytest.mark.parametrize("name,version", [("postgresql", "17"), ("gitea", "1")])
 def test_catalog_runtime_facts_constrain_new_source_records(tmp_path, name, version):
     runtime = RuntimeConfiguration.model_validate(

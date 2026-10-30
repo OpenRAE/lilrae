@@ -41,6 +41,7 @@ vi.mock('../src/telemetry.js', () => ({
   initTracing: vi.fn(),
   shutdownTracing: vi.fn().mockResolvedValue(undefined),
   getTracer: vi.fn(),
+  recordToolResultSize: vi.fn(),
   traceToolCall: vi.fn(async (_n: unknown, _s: unknown, _a: unknown, fn: () => unknown) => fn())
 }));
 
@@ -447,5 +448,71 @@ describe('tool arguments over an MCP transport', () => {
     }] as any);
 
     expect(() => createMCPServer(mockConfig)).toThrow('Cannot compile the input schema of test_info');
+  });
+
+  // Over the default budget of 4000 tokens (16000 characters).
+  const LONG_OUTPUT = Array.from({ length: 1000 }, (_, index) => `entry ${index} ${'v'.repeat(30)}`).join('\n');
+
+  it('cuts long command output and keeps the run_command envelope valid', async () => {
+    fakes.ssh.executeCommand.mockResolvedValue({
+      stdout: LONG_OUTPUT, stderr: '', code: 0, signal: null, sessionId: 'exec-7', mode: 'normal',
+    });
+    const client = await connect(mockConfig);
+
+    const result = await client.callTool({ name: 'test_run_command', arguments: { command: 'ls -la /srv/data' } });
+    const body = payload(result);
+
+    expect((result.content as { text: string }[])[0].text.length).toBeLessThanOrEqual(16000);
+    expect(body).toMatchObject({ success: true, command: 'ls -la /srv/data' });
+    expect(body.output).toMatchObject({ code: 0, signal: null, sessionId: 'exec-7', mode: 'normal' });
+    expect(body.output.stdout.length).toBeGreaterThan(8000);
+    expect(LONG_OUTPUT.startsWith(`${body.output.stdout}\n`)).toBe(true);
+    expect(body._truncated.total_characters).toBe(LONG_OUTPUT.length);
+  });
+
+  it('cuts long session output and keeps exit_code and session_mode', async () => {
+    fakes.ssh.executeInSession.mockResolvedValue({
+      stdout: LONG_OUTPUT, stderr: '', code: 3, signal: null, mode: 'normal',
+    });
+    const client = await connect(mockConfig);
+
+    const result = await client.callTool({
+      name: 'test_session_command',
+      arguments: { session_id: 'sess-1', command: 'cat notes.txt' },
+    });
+    const body = payload(result);
+
+    expect(body).toMatchObject({ success: true, exit_code: 3, session_mode: 'normal' });
+    expect(LONG_OUTPUT.startsWith(body.output)).toBe(true);
+  });
+
+  it.each([
+    ['returns a whole rule file when the query budget is null', null, true],
+    ['cuts a rule file when the query sets no budget', undefined, false],
+  ])('%s', async (_label, budget, whole) => {
+    const ruleFile = LONG_OUTPUT.split('\n').map((line) => `<!-- ${line} -->`).join('\n');
+    fakes.http.makeRequest.mockResolvedValue({ status: 200, data: ruleFile });
+    const client = await connect({
+      ...apiConfig,
+      queries: {
+        get_rule_file: {
+          url: 'https://wazuh.example:55000/rules/files/{filename}',
+          method: 'GET',
+          response_type: 'text',
+          description: 'Fetch a rule file',
+          ...(budget === undefined ? {} : { max_result_tokens: budget }),
+        },
+      },
+    });
+
+    const result = await client.callTool({
+      name: 'wazuh_get_rule_file',
+      arguments: { params: { filename: 'custom_rules.xml' } },
+    });
+    const body = payload(result);
+
+    expect(body.data === ruleFile).toBe(whole);
+    expect(ruleFile.startsWith(body.data)).toBe(true);
+    expect('_truncated' in body).toBe(!whole);
   });
 });
