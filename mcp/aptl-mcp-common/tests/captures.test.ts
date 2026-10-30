@@ -496,3 +496,46 @@ describe('captures: docker binary resolution', () => {
     }
   });
 });
+
+describe('metadata wait for a session finalizing at teardown (#campaign)', () => {
+  const sessionDir = (session: string) => join(tmp, 'runs', RUN, 'kali-side', session);
+  const runRoot = () => join(tmp, 'container', ROOT, RUN);
+
+  // The broker has written frames but not yet metadata.json (still finalizing).
+  const framesOnly = (session: string) => {
+    mkdirSync(join(runRoot(), 'sessions', session), { recursive: true });
+    writeFileSync(join(runRoot(), 'sessions', session, 'frames.jsonl'), FRAMES);
+    spawnControl.container = { name: FIXED, root: join(tmp, 'container') };
+  };
+  const harvest = (session: string, awaitMetadataMs?: number) =>
+    harvestSession({ containerName: FIXED, env: { APTL_STATE_DIR: tmp }, awaitMetadataMs }, session);
+
+  beforeEach(() => activateScenario(RUN));
+
+  it('without a wait, a frames-only session still harvests (close path, metadata already present elsewhere)', async () => {
+    framesOnly('sess-1');
+    expect(await harvest('sess-1')).toBe(true);
+  });
+
+  it('fails loud when metadata never finalizes within the wait', async () => {
+    framesOnly('sess-1');
+
+    expect(await harvest('sess-1', 500)).toBe(false);
+
+    const record = JSON.parse(readFileSync(join(sessionDir('sess-1'), 'capture-harvest-failure.json'), 'utf-8'));
+    expect(record.failure).toBe('aptl.capture-harvest.metadata-missing');
+    expect(existsSync(join(sessionDir('sess-1'), 'frames.jsonl'))).toBe(true);
+  });
+
+  it('re-copies and succeeds when metadata lands during the wait', async () => {
+    framesOnly('sess-1');
+    // The broker finishes finalizing shortly after teardown closed the session.
+    setTimeout(
+      () => writeFileSync(join(runRoot(), 'sessions', 'sess-1', 'metadata.json'), METADATA),
+      250,
+    );
+
+    expect(await harvest('sess-1', 3000)).toBe(true);
+    expect(readFileSync(join(sessionDir('sess-1'), 'metadata.json'), 'utf-8')).toBe(METADATA);
+  });
+});

@@ -21,7 +21,7 @@ import { HTTPClient } from './http.js';
 import { initTracing, recordToolResultSize, shutdownTracing, traceToolCall } from './telemetry.js';
 import { boundToolResult, toolResultBudgets, type ToolResult } from './tool-output-cap.js';
 import { generateToolDefinitions } from './tools/definitions.js';
-import { errorMessage, generateToolHandlers, maybeHarvest, type ToolHandler, type ToolContext } from './tools/handlers.js';
+import { errorMessage, generateToolHandlers, maybeHarvest, HARVEST_METADATA_WAIT_MS, type ToolHandler, type ToolContext } from './tools/handlers.js';
 import { generateAPIToolDefinitions } from './tools/api-definitions.js';
 import { generateAPIToolHandlers, type APIToolHandler, type APIToolContext } from './tools/api-handlers.js';
 
@@ -195,9 +195,20 @@ async function harvestOpenSessions(
 ): Promise<boolean> {
   const open = sshManager.listSessions();
   const results = await Promise.all(
-    open.map((session) =>
-      maybeHarvest(labConfig, session.sessionId, sshManager.getSessionRunId(session.sessionId)),
-    ),
+    open.map(async (session) => {
+      const runId = sshManager.getSessionRunId(session.sessionId);
+      // Close the session first so the broker finalizes it and writes
+      // metadata.json, then harvest. Harvesting an open session copies its
+      // frames before the broker's metadata lands, which the collector rejects
+      // as a lost session. closeSession marks the session agent-closing, so the
+      // manager's remote-close harvest stands aside and this one owns it.
+      try {
+        await sshManager.closeSession(session.sessionId);
+      } catch (err) {
+        console.error(`[MCP] closing ${session.sessionId} during shutdown failed:`, err);
+      }
+      return maybeHarvest(labConfig, session.sessionId, runId, HARVEST_METADATA_WAIT_MS);
+    }),
   );
   return results.every(Boolean);
 }
@@ -213,7 +224,9 @@ export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOp
   // before it drops the session: otherwise the shutdown sweep below never sees
   // it. The manager cannot resolve the capture container, so it calls back here.
   if (sshManager) {
-    sshManager.setHarvestHook((sessionId, runId) => maybeHarvest(labConfig, sessionId, runId));
+    sshManager.setHarvestHook((sessionId, runId) =>
+      maybeHarvest(labConfig, sessionId, runId, HARVEST_METADATA_WAIT_MS),
+    );
   }
   const httpClient = labConfig.api ? new HTTPClient(labConfig.api) : null;
   initTracing(labConfig.server.name);

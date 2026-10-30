@@ -556,17 +556,27 @@ describe('gracefulShutdown capture harvest', () => {
     await createMCPServer(mockConfig).start();
   }
 
-  it('harvests a session still open at shutdown, before disconnectAll', async () => {
+  it('closes a session open at shutdown, then harvests it with a metadata wait, before disconnectAll', async () => {
     fakes.ssh.listSessions.mockReturnValue([{ sessionId: 'hydra-victim' }]);
     fakes.ssh.getSessionRunId.mockReturnValue('run-x');
+    fakes.ssh.closeSession.mockResolvedValue(true);
     fakes.ssh.disconnectAll.mockResolvedValue(undefined);
 
     await startServer();
     process.emit('SIGTERM');
-    // Let the async shutdown run to completion (harvest + disconnect + exit).
     await vi.waitFor(() => expect(exitSpy).toHaveBeenCalled());
 
-    expect(harvestSession).toHaveBeenCalledWith(expect.anything(), 'hydra-victim');
+    // Close first so the broker finalizes and writes metadata, then harvest
+    // waiting for that metadata, then disconnect.
+    expect(fakes.ssh.closeSession).toHaveBeenCalledWith('hydra-victim');
+    expect(harvestSession).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: 'run-x', awaitMetadataMs: expect.any(Number) }),
+      'hydra-victim',
+    );
+    expect(harvestSession.mock.calls[0][0].awaitMetadataMs).toBeGreaterThan(0);
+    expect(fakes.ssh.closeSession.mock.invocationCallOrder[0]).toBeLessThan(
+      harvestSession.mock.invocationCallOrder[0],
+    );
     expect(harvestSession.mock.invocationCallOrder[0]).toBeLessThan(
       fakes.ssh.disconnectAll.mock.invocationCallOrder[0],
     );
@@ -576,6 +586,7 @@ describe('gracefulShutdown capture harvest', () => {
   it('exits non-zero when a shutdown harvest fails, so finalization fails loudly', async () => {
     fakes.ssh.listSessions.mockReturnValue([{ sessionId: 'smbbf' }]);
     fakes.ssh.getSessionRunId.mockReturnValue('run-y');
+    fakes.ssh.closeSession.mockResolvedValue(true);
     fakes.ssh.disconnectAll.mockResolvedValue(undefined);
     (harvestSession as any).mockResolvedValue(false);
 
