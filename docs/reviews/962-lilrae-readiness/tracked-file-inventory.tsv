@@ -920,6 +920,7 @@ src/aptl/backends/raes_participant_apparatus_models.py	core-candidate	Migrate on
 src/aptl/backends/raes_participant_bindings.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_participant_candidates.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_participant_control_evidence.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/backends/_lilrae_bounded_agency_freeze.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_participant_driver.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_participant_evidence_publication.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_participant_execution_support.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
