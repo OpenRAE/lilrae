@@ -61,7 +61,7 @@
       "asset_id": "mcp-red-config",
       "kind": "project-file",
       "source": "mcp/mcp-red/docker-lab-config.json",
-      "sha256": "7ed86aed3341ff3ffcff07b6dc9b8e57a34745cef6161d2267b4c09c8559c461"
+      "sha256": "93302a762d6c2a5bf54aa5395ed48f51aaa1d7758f6ef1f175b708fbde3f9177"
     },
     {
       "asset_id": "mcp-indexer-build",
