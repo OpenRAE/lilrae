@@ -466,9 +466,7 @@ export class PersistentSession extends EventEmitter {
    * shutdown and close paths.
    */
   harvestOnce(harvest: () => Promise<boolean>): Promise<boolean> {
-    if (this.harvestResult === undefined) {
-      this.harvestResult = harvest();
-    }
+    this.harvestResult ??= harvest();
     return this.harvestResult;
   }
 

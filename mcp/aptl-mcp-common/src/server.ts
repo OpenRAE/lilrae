@@ -199,7 +199,7 @@ async function harvestOpenSessions(
       maybeHarvest(labConfig, session.sessionId, sshManager.getSessionRunId(session.sessionId)),
     ),
   );
-  return results.every((ok) => ok);
+  return results.every(Boolean);
 }
 
 
