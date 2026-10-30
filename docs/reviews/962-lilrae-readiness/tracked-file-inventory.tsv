@@ -672,11 +672,13 @@ mcp/mcp-red/src/effective-mode.ts	scenario-integration-mcp	TechVault-selected MC
 mcp/mcp-red/src/extractor.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/mcp-red/src/index.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/mcp-red/src/logger.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
+mcp/mcp-red/src/result-envelope.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/mcp-red/tests/capture.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/mcp-red/tests/classifier.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/mcp-red/tests/effective-mode.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/mcp-red/tests/extractor.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/mcp-red/tests/logger.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+mcp/mcp-red/tests/result-envelope.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/mcp-red/tsconfig.build.json	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/mcp-red/tsconfig.json	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/mcp-red/vitest.config.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer

@@ -110,6 +110,7 @@
       },
       "verify_ssl": false,
       "response_type": "text",
+      "max_result_tokens": null,
       "path_param_patterns": {
         "filename": "[A-Za-z0-9][A-Za-z0-9_.-]{0,250}\\.xml"
       },

@@ -19,7 +19,7 @@ import { type LabConfig } from './config.js';
 import { SSHConnectionManager } from './ssh.js';
 import { HTTPClient } from './http.js';
 import { initTracing, recordToolResultSize, shutdownTracing, traceToolCall } from './telemetry.js';
-import { DEFAULT_MAX_TOOL_RESULT_TOKENS, boundToolResult, type ToolResult } from './tool-output-cap.js';
+import { boundToolResult, toolResultBudgets, type ToolResult } from './tool-output-cap.js';
 import { generateToolDefinitions } from './tools/definitions.js';
 import { errorMessage, generateToolHandlers, type ToolHandler, type ToolContext } from './tools/handlers.js';
 import { generateAPIToolDefinitions } from './tools/api-definitions.js';
@@ -31,6 +31,7 @@ import { generateAPIToolHandlers, type APIToolHandler, type APIToolContext } fro
 export interface PostToolHookInfo {
   toolName: string;
   args: Record<string, unknown>;
+  /** The result as the client receives it, after the tool result size limit. */
   result?: unknown;
   durationMs: number;
   error?: Error;
@@ -181,8 +182,7 @@ function invalidArgumentsResult(toolName: string, errors: ErrorObject[] | null |
 export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOptions = {}) {
   const { postToolHook } = options;
   const hookTimeoutMs = options.postToolHookTimeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS;
-  const maxToolResultTokens =
-    labConfig.server.maxToolResultTokens ?? DEFAULT_MAX_TOOL_RESULT_TOKENS;
+  const resultBudget = toolResultBudgets(labConfig);
   // Initialize clients and OTel tracing based on config
   const sshManager = labConfig.containers ? new SSHConnectionManager() : null;
   const httpClient = labConfig.api ? new HTTPClient(labConfig.api) : null;
@@ -276,7 +276,7 @@ export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOp
         async () => {
           const bounded = boundToolResult<ToolResult>(
             await (handler as any)(safeArgs, context),
-            maxToolResultTokens,
+            resultBudget(name),
           );
           recordToolResultSize(bounded);
           if (bounded.truncated) {

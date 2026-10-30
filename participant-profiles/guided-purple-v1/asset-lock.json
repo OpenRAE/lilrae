@@ -79,7 +79,7 @@
       "asset_id": "mcp-indexer-config",
       "kind": "project-file",
       "source": "mcp/mcp-indexer/docker-lab-config.json",
-      "sha256": "42444584ce92d43597fed4d09310632dd7d0bb1759e2f909ab6498ad2542b852"
+      "sha256": "e388fbb0e04446c7db2635bfc7d1bdedb686f5b41497a63dd981ff24d8b61b66"
     },
     {
       "asset_id": "mcp-wazuh-build",
