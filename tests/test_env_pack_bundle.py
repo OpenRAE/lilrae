@@ -81,8 +81,8 @@ def test_released_pack_owns_only_scenario_and_retains_its_evidence_contracts(
     from raes_processor.capture_admission import compile_scenario_capture_demands
 
     # Ranges, not single-version pins: the installed releases satisfy them.
-    assert version("raes-env-packs") in SpecifierSet(">=6.4.2,<7")
-    assert version("raes") in SpecifierSet(">=9.1.0,<10")
+    assert version("raes-env-packs") in SpecifierSet(">=6.5.1,<7")
+    assert version("raes") in SpecifierSet(">=10.0.0,<11")
     bundle = env_pack_bundle(tmp_path / "released", "techvault")
     scenario = parse_sdl(bundle.sdl_path.read_text())
     assert not {"aptl-otel-collector", "aptl-tempo", "aptl-grafana-otel"}.intersection(
