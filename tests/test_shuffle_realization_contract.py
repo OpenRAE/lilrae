@@ -10,12 +10,11 @@ import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# SHUFFLE_DEFAULT_APIKEY is no longer baked here: it is a runtime-provenance
+# variable supplied at start (aliased from SHUFFLE_API_KEY), so it does not
+# appear in the statically rendered backend environment below.
 EXPECTED_ENVIRONMENT = {
     "SHUFFLE_APP_SDK_TIMEOUT": ("120", "plain"),
-    "SHUFFLE_DEFAULT_APIKEY": (
-        "31a211c4-ea5c-4a49-b022-5e2434e758a7",
-        "secret_fixture",
-    ),
     "SHUFFLE_OPENSEARCH_PASSWORD": ("StrongPassword123!", "secret_fixture"),
     "SHUFFLE_OPENSEARCH_SKIPSSL_VERIFY": ("true", "plain"),
     "SHUFFLE_OPENSEARCH_URL": ("https://shuffle-opensearch:9200", "plain"),

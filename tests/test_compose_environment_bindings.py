@@ -1200,7 +1200,11 @@ _TECHVAULT_SOURCED = {
         "DASHBOARD_PASSWORD",
     },
     "misp": {"ADMIN_KEY"},
-    "shuffle-backend": {"SHUFFLE_DEFAULT_USERNAME", "SHUFFLE_DEFAULT_PASSWORD"},
+    "shuffle-backend": {
+        "SHUFFLE_DEFAULT_USERNAME",
+        "SHUFFLE_DEFAULT_PASSWORD",
+        "SHUFFLE_DEFAULT_APIKEY",
+    },
 }
 
 

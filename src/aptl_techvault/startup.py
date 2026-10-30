@@ -84,6 +84,9 @@ class TechVaultStartupProvider:
             activation_profiles=("soc",),
             environment_aliases=(
                 EnvironmentAlias(target="ADMIN_KEY", source="MISP_API_KEY"),
+                EnvironmentAlias(
+                    target="SHUFFLE_DEFAULT_APIKEY", source="SHUFFLE_API_KEY"
+                ),
             ),
             environment_fixtures=techvault_account_environment(),
             container_environment=(

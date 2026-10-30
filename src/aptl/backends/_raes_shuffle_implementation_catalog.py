@@ -46,10 +46,13 @@ SHUFFLE_APPLICATION_PROFILES = (
                     classification="secret_fixture",
                     provenance="runtime",
                 ),
+                # The default API key is generated per build and supplied at
+                # start (aliased from SHUFFLE_API_KEY), never baked here, so a
+                # fresh lab cannot be driven with a publicly known default key.
                 _variable(
                     "SHUFFLE_DEFAULT_APIKEY",
-                    "31a211c4-ea5c-4a49-b022-5e2434e758a7",
                     classification="secret_fixture",
+                    provenance="runtime",
                 ),
                 _variable("SHUFFLE_APP_SDK_TIMEOUT", "120"),
             ),

@@ -360,7 +360,8 @@ def test_exact_release_resolves_seed_and_runtime_bindings() -> None:
     }
     assert plan.activation_profiles == ("soc",)
     assert [(item.target, item.source) for item in plan.environment_aliases] == [
-        ("ADMIN_KEY", "MISP_API_KEY")
+        ("ADMIN_KEY", "MISP_API_KEY"),
+        ("SHUFFLE_DEFAULT_APIKEY", "SHUFFLE_API_KEY"),
     ]
     assert {item.name for item in plan.environment_fixtures} == {
         "INDEXER_USERNAME",
@@ -534,6 +535,7 @@ def test_core_preparation_binds_operator_alias_without_scenario_import(
         "API_USERNAME": "api",
         "API_PASSWORD": "api-password",
         "MISP_API_KEY": "opaque-misp-key",
+        "SHUFFLE_API_KEY": "opaque-shuffle-key",
     }
     env_file = tmp_path / ".env"
     env_file.write_text("".join(f"{key}={value}\n" for key, value in values.items()))
@@ -546,6 +548,7 @@ def test_core_preparation_binds_operator_alias_without_scenario_import(
     assert _prepare_scenario_startup(ctx, _bundle()) is None
     assert ctx.scenario_startup is not None
     assert ctx.raw_env["ADMIN_KEY"] == values["MISP_API_KEY"]
+    assert ctx.raw_env["SHUFFLE_DEFAULT_APIKEY"] == values["SHUFFLE_API_KEY"]
 
 
 def test_core_preparation_rejects_a_missing_declared_operator_alias(tmp_path) -> None:
@@ -558,6 +561,7 @@ def test_core_preparation_rejects_a_missing_declared_operator_alias(tmp_path) ->
     assert failure is not None
     assert not failure.success
     assert "MISP_API_KEY" in failure.error
+    assert "SHUFFLE_API_KEY" in failure.error
     assert ctx.scenario_startup is None
     assert (tmp_path / ".env").exists()
 
