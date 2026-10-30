@@ -47,12 +47,12 @@ def test_project_depends_on_the_raes_major_range() -> None:
 
     project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
 
-    assert "raes>=9.1.0,<10" in project["project"]["dependencies"]
+    assert "raes>=10.0.0,<11" in project["project"]["dependencies"]
     assert all(
         not dependency.startswith("aces-sdl")
         for dependency in project["project"]["dependencies"]
     )
-    assert raes.__version__ in SpecifierSet(">=9.1.0,<10")
+    assert raes.__version__ in SpecifierSet(">=10.0.0,<11")
 
 
 def _source_and_test_imports_of(import_roots: frozenset[str]) -> list[str]:
