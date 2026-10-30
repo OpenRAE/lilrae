@@ -24,8 +24,10 @@ private project state, and validates it with the env-packs gates before use.
 Install the distribution that carries the pack:
 
 ```shell
-pip install "raes-env-packs==6.4.2"
+pip install "raes-env-packs>=6.4.2,<7"
 ```
+
+LilRAE supports env-packs 6.4.2 and later 6.x releases.
 
 TechVault ships in `raes-env-packs` as two packs: `techvault` (the environment)
 and `techvault-participant-study` (the environment plus authored red and blue

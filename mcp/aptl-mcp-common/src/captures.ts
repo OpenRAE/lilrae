@@ -18,6 +18,8 @@
  * best-effort — a missing container / docker / missing subdir logs to stderr
  * but does not throw out of the close path. Each of those failures also
  * leaves a named failure record in the session's kali-side evidence (#1242).
+ * An unresolved or invalid container name is recorded the same way, and
+ * docker cp does not run.
  */
 
 import { spawn } from 'node:child_process';
@@ -28,7 +30,7 @@ import { kaliSideSessionDir, loadActiveTraceId } from './runs.js';
 
 export interface HarvestOptions {
   /** Docker container to harvest from. Per ADR-041 this is the capture
-   * sidecar (e.g. `aptl-kali-capture`), which owns the captures volume. */
+   * sidecar (e.g. `aptl-w<id>-kali-capture`), which owns the captures volume. */
   containerName: string;
   /** Path inside the container that holds per-run capture subdirs.
    * Defaults to `/var/log/aptl/captures` to match the capture broker. */
@@ -51,7 +53,12 @@ const DEFAULT_CONTAINER_CAPTURES_ROOT = '/var/log/aptl/captures';
 const CONTAINER_MISSING = 'aptl.capture-harvest.container-missing';
 const SESSION_MISSING = 'aptl.capture-harvest.session-missing';
 const COPY_FAILED = 'aptl.capture-harvest.copy-failed';
-type HarvestFailure = typeof CONTAINER_MISSING | typeof SESSION_MISSING | typeof COPY_FAILED;
+const CONTAINER_UNRESOLVED = 'aptl.capture-harvest.container-unresolved';
+type HarvestFailure =
+  | typeof CONTAINER_MISSING
+  | typeof SESSION_MISSING
+  | typeof COPY_FAILED
+  | typeof CONTAINER_UNRESOLVED;
 /** Evidence record for a failure, inside the session's kali-side dir. */
 const HARVEST_FAILURE_FILE = 'capture-harvest-failure.json';
 
@@ -102,6 +109,8 @@ async function chmodTreeBestEffort(root: string, fileMode: number, dirMode: numb
     for (const entry of entries) {
       const full = join(root, entry.name);
       try {
+        // chmod follows links, so a copied link would change a host file.
+        if (entry.isSymbolicLink()) continue;
         if (entry.isDirectory()) {
           await chmod(full, dirMode);
           await chmodTreeBestEffort(full, fileMode, dirMode);
@@ -145,8 +154,17 @@ function resolveHarvestParams(opts: HarvestOptions): ResolvedHarvestParams {
 /** Outcome of one per-session copy: `null` on success, else the failure. */
 interface CopyFailure {
   failure: HarvestFailure;
-  exitCode: number;
+  /** `null` when docker cp did not run. */
+  exitCode: number | null;
 }
+
+/**
+ * Docker's container-name grammar, `[a-zA-Z0-9][a-zA-Z0-9_.-]+`. It also keeps
+ * a leading `-` out of the `docker cp` argv. An unresolved `${VAR}` reference
+ * from the lab config, such as an unbound `LILRAE_MCP_CAPTURE_CONTAINER`, does
+ * not match.
+ */
+const DOCKER_CONTAINER_NAME = /^[a-zA-Z\d][\w.-]+$/;
 
 /**
  * Copy one session's per-session capture subtree out of the container.
@@ -192,6 +210,18 @@ async function copyPerSessionCaptures(
     cpResult.stderr.trim(),
   );
   return { failure: COPY_FAILED, exitCode };
+}
+
+/**
+ * Refuse a capture container name that is not a resolved Docker name. Lab
+ * start binds the workspace-scoped sidecar name; without it no fixed name
+ * stands in, so a legacy container can never supply the evidence.
+ */
+function unresolvedContainer(containerName: string): CopyFailure {
+  console.error(
+    `[captures] capture container ${JSON.stringify(containerName)} is not resolved (${CONTAINER_UNRESOLVED})`,
+  );
+  return { failure: CONTAINER_UNRESOLVED, exitCode: null };
 }
 
 /**
@@ -267,7 +297,9 @@ export async function harvestSession(opts: HarvestOptions, sessionId: string): P
   // copies the source directory itself into dest, producing
   // dest/<session_id>/... which would nest one level too deep.
   const src = `${containerCapturesRoot}/${tid}/sessions/${sessionId}/.`;
-  const failed = await copyPerSessionCaptures(opts.containerName, src, destDir, env, sessionId);
+  const failed = DOCKER_CONTAINER_NAME.test(opts.containerName)
+    ? await copyPerSessionCaptures(opts.containerName, src, destDir, env, sessionId)
+    : unresolvedContainer(opts.containerName);
   if (failed) {
     await recordHarvestFailure(destDir, failed, opts.containerName, tid, sessionId);
   }
