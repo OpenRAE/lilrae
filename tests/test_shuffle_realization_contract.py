@@ -5,6 +5,7 @@ from __future__ import annotations
 from importlib.metadata import version
 from pathlib import Path
 
+from packaging.specifiers import SpecifierSet
 import pytest
 
 
@@ -30,7 +31,7 @@ def _enum_value(value: object) -> object:
 def test_released_pack_supplies_shuffle_semantics_and_leaves_mechanics_open(
     released_techvault_scenario,
 ) -> None:
-    assert version("raes-env-packs") == "6.5.0"
+    assert version("raes-env-packs") in SpecifierSet(">=6.5.1,<7")
     scenario = released_techvault_scenario
     backend = scenario.nodes["shuffle-backend"].runtime
     opensearch = scenario.nodes["shuffle-opensearch"].runtime

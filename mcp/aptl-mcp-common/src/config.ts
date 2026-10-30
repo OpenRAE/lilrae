@@ -27,7 +27,6 @@ export interface LabConfig {
   };
   containers?: {
     [key: string]: {
-      container_name: string;
       container_ip: string;
       ssh_key: string;
       ssh_user: string;
@@ -38,13 +37,12 @@ export interface LabConfig {
       enabled: boolean;
       shell?: 'bash' | 'sh' | 'powershell' | 'cmd';
       /**
-       * ADR-041 / issue #305: container to harvest per-session captures from,
-       * when it differs from the workload container. The Kali capture sidecar
-       * (`aptl-kali-capture`) owns the captures volume; the workload container
-       * does not mount it, so harvest must target the sidecar. Defaults to
-       * `container_name` when unset (workload also owns its captures).
-       * `LILRAE_MCP_CAPTURE_CONTAINER` replaces it with the workspace-scoped
-       * name that lab start resolves (#1242).
+       * ADR-041 / issue #305: the capture sidecar to harvest per-session
+       * captures from. The Kali capture sidecar owns the captures volume; the
+       * workload container does not mount it. Unset means the server has no
+       * capture sidecar and does no harvest. The red config names it as
+       * `${LILRAE_MCP_CAPTURE_CONTAINER}`, the workspace-scoped name that lab
+       * start resolves (#1242); the harvest validates the resolved name.
        */
       capture_container_name?: string;
     };
@@ -277,7 +275,6 @@ export async function loadLabConfig(configPath: string): Promise<LabConfig> {
     const configKey = config.server.configKey;
     const container = config.containers[configKey];
     applyNativeKaliIngress(config, configKey);
-    applyCaptureContainer(config, configKey);
     if (container && container.ssh_key.startsWith('~')) {
       container.ssh_key = expandTilde(container.ssh_key);
     }
@@ -341,22 +338,4 @@ function applyNativeKaliIngress(config: LabConfig, configKey: string): void {
   // Native RAES uses the capture broker on port 22; workload sshd stays private.
   container.container_ip = nativeKaliHost;
   container.ssh_port = 22;
-}
-
-/** Docker's container-name grammar, `[a-zA-Z0-9][a-zA-Z0-9_.-]+`. */
-const DOCKER_CONTAINER_NAME = /^[a-zA-Z\d][\w.-]+$/;
-
-/**
- * Bind the workspace-scoped capture sidecar that lab start resolved (#1242).
- * Since #1054 the backend names `aptl-kali-capture` per workspace
- * (`aptl-w<id>-kali-capture`), so the configured fixed name never matches.
- * The name is the Kali sidecar's, so no other server's harvest can adopt it.
- */
-function applyCaptureContainer(config: LabConfig, configKey: string): void {
-  const name = process.env.LILRAE_MCP_CAPTURE_CONTAINER;
-  const container = config.containers?.[configKey];
-  if (configKey !== 'kali' || name === undefined || !container) return;
-  // The grammar also keeps a leading `-` out of the `docker cp` argv.
-  if (!DOCKER_CONTAINER_NAME.test(name)) throw new Error('Invalid capture container name');
-  container.capture_container_name = name;
 }

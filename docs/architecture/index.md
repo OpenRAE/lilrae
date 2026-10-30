@@ -174,6 +174,8 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 
 ## Preflights
 
+- [Issue #1465 Released Structural Factorial Experiment Tuple](issue-1465-released-experiment-tuple-preflight.md)
+- [Issue #1465 Released Structural Factorial Tuple Design](issue-1465-released-experiment-tuple-design.md)
 - [Issue #1468 CI Feedback and Test Suite](issue-1468-ci-feedback-preflight.md)
 - [Owned Descendant Reporting Design](issue-1130-owned-descendant-reporting-design.md)
 - [Issue #1130 Runtime Realization Attestation](issue-1130-runtime-realization-attestation-preflight.md)

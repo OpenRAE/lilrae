@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lilrae-structural-family-fixture"
+version = "1.0.0"
+requires-python = ">=3.14"
+dependencies = ["lilrae", "raes>=10.0.0,<11", "raes-env-packs>=6.5.1,<7"]
+
+[project.entry-points."aptl.pack_backend_interactions"]
+"structural-fixture.aptl" = "structural_family_adapter:serving"
+
+[project.entry-points."aptl.scenario_runtime_parameters"]
+"structural-fixture" = "structural_family_adapter:parameters"
+
+[project.entry-points."aptl.scenario_startup"]
+"structural-fixture" = "structural_family_adapter:startup"
+
+[project.entry-points."aptl.scenario_capture"]
+"structural-fixture.aptl" = "structural_family_adapter:capture"
+
+[project.entry-points."aptl.scenario_planning_compatibility"]
+"structural-fixture.aptl" = "structural_family_adapter:planning"
+
+[project.entry-points."aptl.scenario_verifiers"]
+"structural-fixture.aptl" = "structural_family_adapter:verifier"
+
+[tool.hatch.build.targets.wheel]
+packages = ["structural_family_adapter"]
