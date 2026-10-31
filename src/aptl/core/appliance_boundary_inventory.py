@@ -10,10 +10,10 @@ from aptl.core.appliance_boundary import (
     ApplianceBoundaryPolicy,
 )
 from aptl.core.appliance_boundary_observation import (
-    BoundaryEndpoint,
+    BoundaryEndpoint as _BoundaryEndpoint,
     BoundaryEnforcementObservation,
     BoundaryProbeObservation,
-    DockerAuthorityHolder,
+    DockerAuthorityHolder as _DockerAuthorityHolder,
     GuestBoundaryObservation,
     HostBoundaryObservation,
     RangeWorkloadObservation,
@@ -24,6 +24,10 @@ from aptl.core._appliance_boundary_inventory_render import (
 from aptl.utils.redaction import redact
 
 _INCOMPLETE_ENFORCEMENT = "boundary.guest-enforcement-incomplete"
+
+# Preserve the established import surface while keeping observation models separate.
+BoundaryEndpoint = _BoundaryEndpoint
+DockerAuthorityHolder = _DockerAuthorityHolder
 
 
 @dataclass(frozen=True)

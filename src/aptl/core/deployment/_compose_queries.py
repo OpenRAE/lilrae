@@ -19,6 +19,7 @@ from aptl.core.deployment._proc_net_listeners import (
     read_container_listeners,
 )
 from aptl.core.deployment._compose_capture_config import KALI_CONTAINER
+from aptl.core.deployment._compose_network_query import network_bridge
 from aptl.core.deployment._compose_resource_ownership import OwnershipConflictError
 from aptl.utils.logging import get_logger
 
@@ -212,9 +213,7 @@ class ComposeQueryMixin(object):
         labels = _string_mapping(payload.get("Labels"))
         options = _string_mapping(payload.get("Options"))
         network_id = str(payload.get("Id", ""))
-        bridge = options.get("com.docker.network.bridge.name", "")
-        if not bridge and payload.get("Driver") == "bridge" and network_id:
-            bridge = f"br-{network_id[:12]}"
+        bridge = network_bridge(payload, options, network_id)
         subnets = [
             str(config.get("Subnet", ""))
             for config in ipam_configs
