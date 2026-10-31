@@ -76,6 +76,38 @@ Test collection reads no lab environment file and provisions no API key.
 Superseded PR cancellation uses a PR-specific group; release and branch validation have separate groups.
 Cleanup steps retain their unconditional execution conditions.
 
+## Go cutover branch
+
+Milestone 44 ports LilRAE to Go on the long-lived `go-cutover` branch (#1584).
+The Python release on `dev` and `main` keeps shipping until Go port 31.
+
+```mermaid
+flowchart LR
+    F[Milestone issue branch] -->|pull request| C[go-cutover]
+    D[dev] -->|pull request with a merge commit| C
+    C -->|Go port 31 pull request with a merge commit| D
+    D -->|promotion with a merge commit| M[main]
+```
+
+- Each pull request of the milestone targets `go-cutover`. Other work keeps `dev` as its base.
+- `go-cutover` has the protection and the required checks of `dev`.
+  `.github/branch-protection-baseline.json` records both branches.
+  A test keeps the `go-cutover` contexts a superset of the `dev` contexts.
+- `checks.yml`, `pr-title-lint.yml`, and the Phase E workflow run for pull requests into each protected branch.
+  `checks.yml` also runs on pushes to `go-cutover`, so SonarCloud keeps a current analysis of the branch.
+  SonarCloud classifies `go-cutover` as a long-lived branch before its first analysis.
+- On `go-cutover`, `.ground-control.yaml` sets `workflow.base_branch` to `go-cutover`.
+  `/implement` then uses `go-cutover` for branch preparation, synchronization, and pull requests.
+  `dev` keeps the default base.
+- `dev` merges into `go-cutover` through a pull request with a merge commit.
+  Do not rebase, reset, or force-push `go-cutover`.
+- Pull requests into `go-cutover` use a Conventional Commit type that does not release.
+  Nothing ships before Go port 31, which records the breaking change.
+- Go port 31 removes the `go-cutover` entries and the `base_branch` setting.
+  Then it opens the pull request from `go-cutover` into `dev`.
+  The maintainer merges it with a merge commit, so Release Please keeps each commit subject.
+- The release, documentation deployment, and Scorecard workflows run only for `main`.
+
 ## Verification policy
 
 Evidence follows changed behavior and risk.
@@ -93,6 +125,9 @@ Released-kit qualification belongs in the periodic integration lane when it exce
 - [pytest markers](https://docs.pytest.org/en/stable/how-to/mark.html): explicit test selection.
 - [pytest-split](https://jerry-git.github.io/pytest-split/): complementary groups without repeating a full suite.
 - [Coverage.py combination](https://coverage.readthedocs.io/en/7.15.2/commands/cmd_combine.html): merge measured data before XML export.
+- [GitHub Actions workflow events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows): base-branch filters for `pull_request` and `push`.
+- [GitHub branch protection API](https://docs.github.com/en/rest/branches/branch-protection): required status checks of a protected branch.
+- [SonarQube Cloud long-lived branch pattern](https://docs.sonarsource.com/sonarqube-cloud/managing-your-projects/project-analysis/long-lived-branch-pattern): branch classification at first analysis.
 
 This document describes the verification architecture.
 The issue plan owns implementation tasks and measured delivery results.
