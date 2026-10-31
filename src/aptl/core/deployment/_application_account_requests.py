@@ -20,18 +20,6 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-#: Image-owned bootstrap principal of the TheHive 5 image. It is a fact of the
-#: product, not of any scenario, and the provider uses it only to create the
-#: declared principal when that principal cannot authenticate yet.
-THEHIVE_BOOTSTRAP_USER = "admin@thehive.local"
-THEHIVE_BOOTSTRAP_PASSWORD = "secret"
-#: The organisation and profile that TheHive 5 reserves for platform administrators.
-THEHIVE_ADMIN_ORGANISATION = "admin"
-THEHIVE_ADMIN_PROFILE = "admin"
-#: Cortex reserves the ``cortex`` organisation for platform administrators.
-CORTEX_ADMIN_ORGANISATION = "cortex"
-CORTEX_ADMIN_ROLES = ("superadmin",)
-
 _STATUS_FORMAT = "%{http_code}\\n"
 
 
@@ -143,118 +131,6 @@ def shuffle_login(username: str, secret: str) -> tuple[CurlStep, ...]:
     )
 
 
-def thehive_login(username: str, secret: str) -> tuple[CurlStep, ...]:
-    """Prove a TheHive user authenticates."""
-
-    return (
-        CurlStep(
-            "GET",
-            "/api/v1/user/current",
-            (basic_authorization(username, secret),),
-        ),
-    )
-
-
-def thehive_converge(
-    username: str,
-    secret: str,
-    *,
-    administrator: tuple[str, str] | None = None,
-) -> tuple[CurlStep, ...]:
-    """Create the declared administrator if absent, then set its password.
-
-    Use an existing declared administrator when available, and the image's
-    bootstrap administrator only during initial creation. The create returns
-    a client error when the principal already exists; authentication readback
-    decides whether the credential was applied.
-    """
-
-    authentication = (
-        basic_authorization(
-            *(administrator or (THEHIVE_BOOTSTRAP_USER, THEHIVE_BOOTSTRAP_PASSWORD))
-        ),
-    )
-    return (
-        CurlStep(
-            "POST",
-            "/api/v1/user",
-            authentication,
-            json_body(
-                {
-                    "login": username,
-                    "name": username,
-                    "organisation": THEHIVE_ADMIN_ORGANISATION,
-                    "profile": THEHIVE_ADMIN_PROFILE,
-                }
-            ),
-        ),
-        *thehive_set_password(
-            administrator or (THEHIVE_BOOTSTRAP_USER, THEHIVE_BOOTSTRAP_PASSWORD),
-            username,
-            secret,
-        ),
-    )
-
-
-def thehive_set_password(
-    administrator: tuple[str, str], username: str, secret: str
-) -> tuple[CurlStep, ...]:
-    """Set a user's password through TheHive's authenticated native API."""
-
-    return (
-        CurlStep(
-            "POST",
-            f"/api/v1/user/{_path_segment(username)}/password/set",
-            (basic_authorization(*administrator),),
-            json_body({"password": secret}),
-        ),
-    )
-
-
-def cortex_migrate() -> tuple[CurlStep, ...]:
-    """Initialize Cortex's native schema before its first user is written."""
-
-    return (CurlStep("POST", "/api/maintenance/migrate", body="{}"),)
-
-
-def cortex_login(username: str, secret: str) -> tuple[CurlStep, ...]:
-    """Prove a Cortex user signs in and reads its own session."""
-
-    return (
-        CurlStep(
-            "POST",
-            "/api/login",
-            body=json_body({"user": username, "password": secret}),
-        ),
-        CurlStep("GET", "/api/user/current"),
-    )
-
-
-def cortex_first_administrator(username: str, secret: str) -> tuple[CurlStep, ...]:
-    """Create the declared administrator in Cortex's first-run window.
-
-    Cortex accepts one unauthenticated user creation while its user index is
-    empty. Creating any user closes that window, so this succeeds only on a
-    fresh datastore.
-    """
-
-    return (
-        CurlStep(
-            "POST",
-            "/api/user",
-            body=json_body(
-                {
-                    "login": username,
-                    "name": username,
-                    "organization": CORTEX_ADMIN_ORGANISATION,
-                    "roles": list(CORTEX_ADMIN_ROLES),
-                    "password": secret,
-                }
-            ),
-        ),
-    )
-
-
 def misp_key_login(secret: str) -> tuple[CurlStep, ...]:
     """Prove a MISP API key authenticates."""
 
@@ -265,14 +141,6 @@ def misp_key_login(secret: str) -> tuple[CurlStep, ...]:
             (f"Authorization: {secret}", "Accept: application/json"),
         ),
     )
-
-
-def _path_segment(value: str) -> str:
-    """Percent-encode one URL path segment."""
-
-    from urllib.parse import quote
-
-    return quote(value, safe="")
 
 
 # --- MISP database programs ------------------------------------------------
@@ -357,19 +225,10 @@ def program_status(stdout: str | None) -> str:
 
 
 __all__ = (
-    "CORTEX_ADMIN_ORGANISATION",
-    "CORTEX_ADMIN_ROLES",
     "MISP_KEY_PROGRAM",
     "MISP_PASSWORD_PROGRAM",
-    "THEHIVE_ADMIN_ORGANISATION",
-    "THEHIVE_ADMIN_PROFILE",
-    "THEHIVE_BOOTSTRAP_PASSWORD",
-    "THEHIVE_BOOTSTRAP_USER",
     "CurlStep",
     "basic_authorization",
-    "cortex_first_administrator",
-    "cortex_login",
-    "cortex_migrate",
     "curl_config",
     "json_body",
     "misp_key_input",
@@ -380,8 +239,5 @@ __all__ = (
     "shuffle_login",
     "status_codes",
     "succeeded",
-    "thehive_converge",
-    "thehive_login",
-    "thehive_set_password",
     "wazuh_api_login",
 )

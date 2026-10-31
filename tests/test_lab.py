@@ -2135,7 +2135,7 @@ class TestOrchestrateLabStart:
         """A .env.example placeholder secret must stop the start fail-closed.
 
         Hydration only repairs the vars it owns generators for; a sensitive
-        var outside `_HYDRATED_ENV_SPECS` (THEHIVE_SECRET) keeps its copied
+        var outside `_HYDRATED_ENV_SPECS` (SHUFFLE_API_KEY) keeps its copied
         .env.example placeholder, and booting with it would bring the SOC
         stack up with admin credentials anyone can read in the repo. If
         `_validate_env_secrets` were unwired from `_step_load_env`, only
@@ -2146,13 +2146,13 @@ class TestOrchestrateLabStart:
         mocks = self._patch_all_steps(mocker, tmp_path)
         env_file = tmp_path / ".env"
         env_file.write_text(
-            env_file.read_text() + "THEHIVE_SECRET=CHANGE_ME_thehive_secret\n"
+            env_file.read_text() + "SHUFFLE_API_KEY=CHANGE_ME_shuffle_api_key\n"
         )
 
         result = orchestrate_lab_start(tmp_path)
 
         assert result.success is False
-        assert "THEHIVE_SECRET" in result.error
+        assert "SHUFFLE_API_KEY" in result.error
         mocks["start"].assert_not_called()
 
     def test_stops_on_env_loading_failure(self, mocker, tmp_path):
@@ -3599,10 +3599,10 @@ class TestResolveHostPortsStep:
 
         resolution = [
             ResolvedPort(
-                service="cortex",
-                env_var="APTL_HP_CORTEX_9001",
-                default_port=9001,
-                resolved_port=9001,
+                service="misp",
+                env_var="APTL_HP_MISP_443",
+                default_port=8443,
+                resolved_port=8443,
                 protos=("tcp",),
                 host_ip="127.0.0.1",
                 remapped=False,
@@ -4826,7 +4826,7 @@ class TestStartupClassificationWiring:
         ctx = self._ctx(tmp_path)
         mocker.patch(
             "aptl.core.lab._sync_mcp_config_keys",
-            side_effect=RuntimeError("THEHIVE_API_KEY mismatch"),
+            side_effect=RuntimeError("MISP_API_KEY mismatch"),
         )
 
         result = _step_sync_mcp_config(ctx)
@@ -4839,7 +4839,7 @@ class TestStartupClassificationWiring:
         assert diag.severity is DiagnosticSeverity.WARNING
         # Exception text contains a sensitive-looking key name —
         # diagnostic message must not echo the raw exception payload.
-        assert "THEHIVE_API_KEY" not in diag.message
+        assert "MISP_API_KEY" not in diag.message
 
     def test_mcp_config_sync_clean_emits_no_diagnostic(self, tmp_path, mocker):
         from aptl.core.lab import _step_sync_mcp_config
@@ -5305,8 +5305,8 @@ class TestLabOrchestrationContracts:
         unowned_error = (
             "RAES runtime handoff failed: aptl.provisioner.backend-start-failed "
             "at runtime.apply.provisioning: service materialization failed for "
-            "provision.content.cortex-job-index-schema (reason=unowned-collision): "
-            "search index cortex_6 in container aptl-thehive-es lacks this "
+            "provision.content.example-index-schema (reason=unowned-collision): "
+            "search index example_index in container aptl-search lacks this "
             "content's ownership marker, so APTL cannot prove it owns the "
             "index, and it did not adopt, delete or overwrite it."
         )

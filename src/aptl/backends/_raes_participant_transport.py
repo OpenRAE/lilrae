@@ -59,15 +59,6 @@ _MCP_RUNTIME_ENVIRONMENT = {
             "OTEL_EXPORTER_OTLP_ENDPOINT",
         }
     ),
-    "aptl-casemgmt": frozenset(
-        {
-            "APTL_HP_THEHIVE_9000",
-            "APTL_MCP_ADMITTED_RUN_ID",
-            "APTL_MCP_RUN_STORE_BASE",
-            "APTL_STATE_DIR",
-            "OTEL_EXPORTER_OTLP_ENDPOINT",
-        }
-    ),
     "aptl-indexer": frozenset(
         {
             "APTL_HP_WAZUH_INDEXER_9200",

@@ -97,7 +97,7 @@ COPY --from=npm-cache-input /opt/aptl/npm-cache-input-identity.json \
     /opt/aptl/npm-cache-input-identity.json
 ENV npm_config_cache=/opt/aptl/npm-cache
 RUN set -eu; \
-    for project in aptl-mcp-common mcp-casemgmt mcp-indexer mcp-network \
+    for project in aptl-mcp-common mcp-indexer mcp-network \
         mcp-red mcp-reverse mcp-soar mcp-threatintel mcp-wazuh; do \
         npm --prefix "/opt/aptl/npm-source/$project" ci \
             --include=dev --ignore-scripts --no-audit --no-fund; \

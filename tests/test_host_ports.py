@@ -165,7 +165,7 @@ def _compose():
                     "${APTL_DNS_HOST_PORT:-5353}:53/udp",
                 ]
             },
-            "cortex": {"ports": ["127.0.0.1:${APTL_HP_CORTEX_9001:-9001}:9001"]},
+            "misp": {"ports": ["127.0.0.1:${APTL_HP_MISP_443:-8443}:443"]},
         }
     }
 
@@ -175,7 +175,7 @@ def _clean_env(monkeypatch):
     for var in (
         "APTL_HP_WAZUH_DASHBOARD_5601",
         "APTL_DNS_HOST_PORT",
-        "APTL_HP_CORTEX_9001",
+        "APTL_HP_MISP_443",
     ):
         monkeypatch.delenv(var, raising=False)
 
@@ -209,8 +209,8 @@ def test_remaps_only_the_occupied_port(mocker, tmp_path, _clean_env):
     assert os.environ["APTL_HP_WAZUH_DASHBOARD_5601"] == str(
         by_service["wazuh.dashboard"].resolved_port
     )
-    assert by_service["cortex"].remapped is False
-    assert "APTL_HP_CORTEX_9001" not in os.environ
+    assert by_service["misp"].remapped is False
+    assert "APTL_HP_MISP_443" not in os.environ
 
 
 def test_dns_tcp_and_udp_remap_together(mocker, tmp_path, _clean_env):

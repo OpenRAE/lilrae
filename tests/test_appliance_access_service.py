@@ -147,7 +147,7 @@ def test_dispatcher_ca_access_preserves_private_signing_keys(tmp_path):
     key = ca / "lab-ca.key"
     key.write_bytes(b"private fixture")
     key.chmod(0o600)
-    service = ca / "thehive"
+    service = ca / "misp"
     service.mkdir(mode=0o700)
     access_service._prepare_dispatch_ca(tmp_path, gid=os.getgid())
     assert ca.stat().st_mode & 0o777 == 0o710

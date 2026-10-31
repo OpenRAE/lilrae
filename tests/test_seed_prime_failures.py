@@ -28,12 +28,7 @@ def test_required_seed_failure_returns_nonzero_and_names_component(tmp_path):
     if env_helper.exists():
         shutil.copy2(env_helper, scripts)
 
-    _write_executable(scripts / "thehive-apikey.sh", "#!/bin/sh\nexit 1\n")
-    _write_executable(
-        scripts / "cortex-apikey.sh",
-        "#!/bin/sh\nprintf 'cortex-test-key\\n'\n",
-    )
-    _write_executable(scripts / "seed-misp.sh", "#!/bin/sh\nexit 0\n")
+    _write_executable(scripts / "seed-misp.sh", "#!/bin/sh\nexit 1\n")
     _write_executable(
         scripts / "seed-shuffle.sh",
         "#!/bin/sh\nprintf 'http://shuffle.invalid/hook' > "
@@ -70,7 +65,7 @@ fi
 
     assert result.returncode == 1
     assert "Prime Scenario Seed Incomplete" in result.stdout
-    assert "- TheHive API key" in result.stdout
+    assert "- MISP" in result.stdout
     assert "Prime Scenario Seed Complete" not in result.stdout
 
 

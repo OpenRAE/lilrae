@@ -263,31 +263,31 @@ def test_generated_compose_uses_the_realized_membership_not_a_name_table() -> No
         networks=(),
         nodes=(
             DeploymentNodeRealization(
-                address="provision.node.thehive",
-                name="thehive",
-                service_name="thehive",
-                container_name="aptl-thehive",
+                address="provision.node.console",
+                name="console",
+                service_name="console",
+                container_name="aptl-console",
                 networks=(),
                 profiles=("enterprise",),
             ),
         ),
         images=(
             DeploymentImageRealization(
-                address="provision.node.thehive",
-                service_name="thehive",
-                source_name="thehive",
+                address="provision.node.console",
+                service_name="console",
+                source_name="console",
                 source_version="1",
-                image_ref="thehive:1",
+                image_ref="console:1",
                 mode="pull",
                 policy_rule="test",
             ),
         ),
     )
 
-    service = render_realization_compose(spec)["services"]["thehive"]
+    service = render_realization_compose(spec)["services"]["console"]
 
     assert service["profiles"] == ["enterprise"]
-    assert service["labels"]["aptl.node.address"] == "provision.node.thehive"
+    assert service["labels"]["aptl.node.address"] == "provision.node.console"
 
 
 def test_deployment_attachments_carry_the_admitted_network_cidr() -> None:

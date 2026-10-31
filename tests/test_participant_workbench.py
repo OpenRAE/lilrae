@@ -35,7 +35,6 @@ def test_profiles_expose_exactly_the_allowed_mcp_servers() -> None:
         "aptl-wazuh",
     )
     assert profile_for(ProfileId.BLUE).server_ids == (
-        "aptl-casemgmt",
         "aptl-indexer",
         "aptl-network",
         "aptl-soar",
@@ -57,13 +56,6 @@ def test_profiles_expose_exactly_the_allowed_mcp_servers() -> None:
         server.server_id: server.tool_names
         for server in profile_for(ProfileId.BLUE).servers
     } == {
-        "aptl-casemgmt": (
-            "cases_list_cases",
-            "cases_create_case",
-            "cases_add_observable",
-            "cases_update_case",
-            "cases_create_alert",
-        ),
         "aptl-indexer": (
             "indexer_query",
             "indexer_create_rule",
@@ -126,7 +118,6 @@ def test_profile_renderer_keeps_credentials_out_of_client_config(
         "mcp/mcp-wazuh/build/index.js",
         "mcp/mcp-network/build/index.js",
         "mcp/mcp-threatintel/build/index.js",
-        "mcp/mcp-casemgmt/build/index.js",
         "mcp/mcp-soar/build/index.js",
     ):
         target = payload_root / entrypoint
@@ -146,7 +137,6 @@ def test_profile_renderer_keeps_credentials_out_of_client_config(
             "API_USERNAME",
             "API_PASSWORD",
             "MISP_API_KEY",
-            "THEHIVE_API_KEY",
             "SHUFFLE_API_KEY",
         },
     )
@@ -154,7 +144,6 @@ def test_profile_renderer_keeps_credentials_out_of_client_config(
     rendered = config_path.read_text(encoding="utf-8")
     parsed = json.loads(rendered)
     assert set(parsed["mcpServers"]) == {
-        "aptl-casemgmt",
         "aptl-indexer",
         "aptl-network",
         "aptl-soar",
@@ -191,7 +180,6 @@ def test_profile_renderer_rejects_missing_required_credential_alias(
             "INDEXER_PASSWORD",
             "API_USERNAME",
             "API_PASSWORD",
-            "THEHIVE_API_KEY",
             "SHUFFLE_API_KEY",
         },
     }
@@ -837,7 +825,6 @@ def _payload_with_all_artifacts(payload_root: Path) -> Path:
         "wazuh",
         "network",
         "threatintel",
-        "casemgmt",
         "soar",
     ):
         artifact = payload_root / "mcp" / f"mcp-{profile}" / "build" / "index.js"

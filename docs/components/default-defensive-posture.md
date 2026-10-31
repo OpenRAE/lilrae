@@ -46,7 +46,7 @@ Every section in this document is tagged with one of three banners:
   boot** and produces output (alerts, logs, traces). Blue does **not**
   need to enable these; they fire on their own. What blue *does*
   control is the downstream coupling: which baseline detections feed
-  enforcement (active-response) or workflow (Shuffle → TheHive).
+  enforcement (active-response) or workflow (Shuffle).
   Examples: Wazuh detection rules, Suricata IDS alerting.
 
 If you can't tell whether a surface is `WEAKNESS BY DESIGN`,
@@ -193,8 +193,8 @@ per-run experimental record under `.aptl/runs/<run_id>/`.
 Detection content is part of the lab's static surface—rules don't
 move during a run, and the Wazuh manager would have to restart to
 pick up changes. What *is* dynamic is whether their detections lead
-to enforcement (active-response) or to incident workflow (Shuffle →
-TheHive). Both of those are wired but disabled at first boot.
+to enforcement (active-response) or to incident workflow (Shuffle).
+Both of those are wired but disabled at first boot.
 
 **What blue would do to raise it**
 
@@ -376,14 +376,14 @@ indicators on purpose.
   Until that file is written, Wazuh's `<integration>` block is wired
   but inert.
 - The seed flow runs in two scripts:
-  1. [`scripts/seed-shuffle.sh:260-265`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-shuffle.sh)
-     creates the `APTL Alert to Case` workflow inside the running
+  1. [`scripts/seed-shuffle.sh:240-245`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-shuffle.sh)
+     creates the `APTL Alert Enrichment` workflow inside the running
      Shuffle instance via Shuffle's REST API and writes its webhook
      URL to a **host-side staging file** at
      `/tmp/aptl_shuffle_webhook_url`. **This step alone is not enough
      — the Wazuh `custom-shuffle` forwarder reads from inside the
      manager container, not the host.**
-  2. [`scripts/seed-prime.sh:249-266`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh)
+  2. [`scripts/seed-prime.sh:210-227`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh)
      reads the host staging file and `docker exec`s the URL into the
      Wazuh manager container at
      `/var/ossec/etc/shuffle_webhook_url`. **This step is what
@@ -417,8 +417,8 @@ alerts to a missing webhook while the lab is unseeded.
   the Wazuh-side webhook-URL copy in one shot). Running
   `seed-shuffle.sh` alone does not copy the webhook URL into Wazuh.
 - Author additional Shuffle workflows that consume Wazuh alerts,
-  query MISP for context, enrich TheHive cases, or trigger automated
-  containment outside the Wazuh AR path. Workflow content lives in
+  query MISP for context, or trigger automated containment outside the
+  Wazuh AR path. Workflow content lives in
   Shuffle's own DB; check exports into `scripts/seed-*.sh` patterns
   if a workflow becomes part of the permanent baseline.
 - Lower the `<level>` threshold in the manager `<integration>` block
@@ -432,39 +432,6 @@ alerts to a missing webhook while the lab is unseeded.
 | Forwarder script (gated by webhook file) | `custom-shuffle` in the acquired TechVault pack's [`wazuh-integrations.tar`](https://github.com/OpenRAE/env-packs/blob/main/packs/techvault/assets/content/wazuh-integrations.tar) |
 | Workflow seed script | [`scripts/seed-shuffle.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-shuffle.sh) |
 | Prime master seed | [`scripts/seed-prime.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh) |
-
----
-
-## TheHive case templates
-
-**Tag:** `STARTING POSTURE`
-
-**Default state**
-
-- TheHive starts with **upstream defaults**—no APTL-side seeded case
-  templates, observable types, or custom case fields.
-- Case structure is driven by what `APTL Alert to Case` (Shuffle
-  workflow) posts: title from the Wazuh rule, observables from the
-  alert payload, severity from `level`.
-
-**Why it ships this way**
-
-Case workflow design is part of blue's per-iteration content. A
-prescriptive template would steer the experiment.
-
-**What blue would do to raise it**
-
-- Define case templates in TheHive (categories, severity ladder,
-  required observable fields) per scenario.
-- Customize the Shuffle workflow that creates cases to populate those
-  fields from Wazuh + MISP.
-
-**Source of truth**
-
-| Surface | File |
-|---|---|
-| Wazuh→Shuffle→TheHive integration | [`config/wazuh_cluster/wazuh_manager.conf:316-320`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf) |
-| Case templates | none in repo; configured in TheHive UI per iteration |
 
 ---
 
@@ -706,8 +673,8 @@ When mode lands as a real SDL feature, the intended contract is:
 - `red` runs—full WEAKNESS-BY-DESIGN baseline; STARTING POSTURE
   surfaces stay disabled. Red exploits; defenders observe.
 - `blue` runs—same baseline, plus blue-side MCP surfaces
-  (`aptl-wazuh`, `aptl-threatintel`, `aptl-casemgmt`, `aptl-soar`,
-  `aptl-network`, `aptl-indexer`) so blue can enable, configure, and
+  (`aptl-wazuh`, `aptl-threatintel`, `aptl-soar`, `aptl-network`,
+  `aptl-indexer`) so blue can enable, configure, and
   graduate STARTING POSTURE surfaces.
 - `purple` runs—both red and blue MCP surfaces exposed. Each
   iteration alternates: red attacks under the current posture; blue

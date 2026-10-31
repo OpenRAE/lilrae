@@ -23,6 +23,27 @@ from cryptography.hazmat.primitives.serialization import pkcs12
 # ---------------------------------------------------------------------------
 
 
+#: A service whose declared bundle outputs include a PKCS#12 keystore.
+_KEYSTORE_SERVICE = "keystore-app"
+
+
+def _keystore_services():
+    """Derive a service set with one PEM-only and one keystore-bearing service."""
+
+    from aptl.core.soc_ca import derive_soc_service_certs
+
+    return derive_soc_service_certs(
+        (
+            "lab-ca.pem",
+            "misp/server.pem",
+            "shuffle-frontend/server.pem",
+            f"{_KEYSTORE_SERVICE}/server.pem",
+            f"{_KEYSTORE_SERVICE}/keystore.p12",
+            f"{_KEYSTORE_SERVICE}/keystore.p12.password",
+        )
+    )
+
+
 def _load_cert(path: Path) -> x509.Certificate:
     return x509.load_pem_x509_certificate(path.read_bytes())
 
@@ -72,17 +93,16 @@ class TestFirstRunGeneration:
                 assert (svc_dir / "keystore.p12").is_file()
                 assert (svc_dir / "keystore.p12.password").is_file()
 
-    def test_registry_covers_all_four_soc_tools(self):
+    def test_registry_covers_the_legacy_soc_tools(self):
         from aptl.core.soc_ca import SOC_SERVICE_REGISTRY
 
         names = {s.name for s in SOC_SERVICE_REGISTRY}
-        assert names == {"misp", "thehive", "cortex", "shuffle-frontend"}
+        assert names == {"misp", "shuffle-frontend"}
 
-    def test_keystore_only_for_play_framework_services(self):
+    def test_registry_requests_no_keystore(self):
         from aptl.core.soc_ca import SOC_SERVICE_REGISTRY
 
-        keystore = {s.name for s in SOC_SERVICE_REGISTRY if s.needs_keystore}
-        assert keystore == {"thehive", "cortex"}
+        assert not any(s.needs_keystore for s in SOC_SERVICE_REGISTRY)
 
     def test_ca_cert_is_self_signed(self, tmp_path):
         from aptl.core.soc_ca import LAB_CA_RELDIR, ensure_soc_certs
@@ -280,22 +300,22 @@ class TestEarlyReturnConsistency:
         regeneration via the consistency path."""
         from aptl.core.soc_ca import LAB_CA_RELDIR, ensure_soc_certs
 
-        first = ensure_soc_certs(tmp_path)
+        first = ensure_soc_certs(tmp_path, services=_keystore_services())
         assert first.generated is True
 
         ca_dir = tmp_path / LAB_CA_RELDIR
-        pw_path = ca_dir / "thehive" / "keystore.p12.password"
-        original_keystore = (ca_dir / "thehive" / "keystore.p12").read_bytes()
+        pw_path = ca_dir / _KEYSTORE_SERVICE / "keystore.p12.password"
+        original_keystore = (ca_dir / _KEYSTORE_SERVICE / "keystore.p12").read_bytes()
 
         # Corrupt the password — the keystore can no longer be unlocked
         # with what's on disk. Consistency check must catch this.
         pw_path.write_bytes(b"HTTPS_KEYSTORE_PASSWORD=wrong\n")
 
-        second = ensure_soc_certs(tmp_path)
+        second = ensure_soc_certs(tmp_path, services=_keystore_services())
         assert second.success is True
         # Generator must have re-issued the keystore so the password
         # matches again.
-        new_keystore = (ca_dir / "thehive" / "keystore.p12").read_bytes()
+        new_keystore = (ca_dir / _KEYSTORE_SERVICE / "keystore.p12").read_bytes()
         assert new_keystore != original_keystore
 
     def test_service_key_cert_mismatch_triggers_regeneration(self, tmp_path):
@@ -396,22 +416,22 @@ class TestStaleCertConsistency:
     def test_regenerated_leaf_invalidates_old_keystore(self, tmp_path):
         from aptl.core.soc_ca import LAB_CA_RELDIR, ensure_soc_certs
 
-        first = ensure_soc_certs(tmp_path)
+        first = ensure_soc_certs(tmp_path, services=_keystore_services())
         assert first.success is True
 
         ca_dir = tmp_path / LAB_CA_RELDIR
-        thehive_keystore = ca_dir / "thehive" / "keystore.p12"
-        assert thehive_keystore.is_file()
-        original_keystore = thehive_keystore.read_bytes()
+        keystore = ca_dir / _KEYSTORE_SERVICE / "keystore.p12"
+        assert keystore.is_file()
+        original_keystore = keystore.read_bytes()
 
         # Same partial-cleanup setup → CA regenerated, leaves invalidated,
         # keystore must therefore be re-issued from the new pair.
         (ca_dir / "lab-ca.pem").unlink()
         (ca_dir / "lab-ca.key").unlink()
-        second = ensure_soc_certs(tmp_path)
+        second = ensure_soc_certs(tmp_path, services=_keystore_services())
         assert second.success is True
-        assert thehive_keystore.is_file()
-        assert thehive_keystore.read_bytes() != original_keystore
+        assert keystore.is_file()
+        assert keystore.read_bytes() != original_keystore
 
 
 # ---------------------------------------------------------------------------
@@ -467,17 +487,19 @@ class TestContainment:
 
 
 # ---------------------------------------------------------------------------
-# PKCS#12 keystore correctness (TheHive / Cortex)
+# PKCS#12 keystore correctness (SDL-declared ``.p12`` outputs)
 # ---------------------------------------------------------------------------
 
 
 class TestKeystore:
     def test_keystore_can_be_unlocked_with_password_file_and_contains_cert(self, tmp_path):
-        from aptl.core.soc_ca import LAB_CA_RELDIR, SOC_SERVICE_REGISTRY, ensure_soc_certs
+        from aptl.core.soc_ca import LAB_CA_RELDIR, ensure_soc_certs
 
-        ensure_soc_certs(tmp_path)
+        services = _keystore_services()
+        ensure_soc_certs(tmp_path, services=services)
         ca_dir = tmp_path / LAB_CA_RELDIR
-        for svc in SOC_SERVICE_REGISTRY:
+        assert any(svc.needs_keystore for svc in services)
+        for svc in services:
             if not svc.needs_keystore:
                 continue
             keystore = (ca_dir / svc.name / "keystore.p12").read_bytes()
@@ -522,17 +544,17 @@ class TestDeriveSocServiceCerts:
         outputs = (
             "lab-ca.pem",  # the CA, root-level -> not a per-service leaf
             "misp/server.pem",
-            "thehive/server.pem",
-            "thehive/keystore.p12",
-            "thehive/keystore.p12.password",
+            f"{_KEYSTORE_SERVICE}/server.pem",
+            f"{_KEYSTORE_SERVICE}/keystore.p12",
+            f"{_KEYSTORE_SERVICE}/keystore.p12.password",
             "shuffle-frontend/server.pem",
         )
 
         services = {s.name: s for s in derive_soc_service_certs(outputs)}
 
-        assert set(services) == {"misp", "thehive", "shuffle-frontend"}
+        assert set(services) == {"misp", _KEYSTORE_SERVICE, "shuffle-frontend"}
         # keystore requirement derived from the declared .p12 output
-        assert services["thehive"].needs_keystore is True
+        assert services[_KEYSTORE_SERVICE].needs_keystore is True
         assert services["misp"].needs_keystore is False
         # SANs derive from the service's own name plus host loopback
         assert services["misp"].sans == ("misp", "localhost", "127.0.0.1")
@@ -557,7 +579,7 @@ class TestDeriveSocServiceCerts:
         certs = tmp_path / LAB_CA_RELDIR
         assert (certs / "misp" / "server.pem").is_file()
         # a service not in the derived set is not generated
-        assert not (certs / "thehive").exists()
+        assert not (certs / "shuffle-frontend").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -570,8 +592,8 @@ _SOC_BUNDLE_OUTPUTS = (
     "lab-ca.pem",
     "misp/server.pem",
     "misp/server.key",
-    "thehive/keystore.p12",
-    "thehive/keystore.p12.password",
+    "keystore-app/keystore.p12",
+    "keystore-app/keystore.p12.password",
 )
 
 

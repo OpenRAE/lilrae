@@ -77,7 +77,6 @@ UPDATED 2026-10-12: b4b9c04d (#757) removed the aptl aces-inventory command and 
 - IMPLEMENTS → GITHUB_ISSUE `343` (SCN-010 inventory: wazuh-sidecar-db container (steady-state asset spec))
 - IMPLEMENTS → PULL_REQUEST `396` (added: SCN-010 wazuh-sidecar-db ACES steady-state inventory (+ #388 secret-redaction reconciliation))
 - IMPLEMENTS → GITHUB_ISSUE `357` (SCN-010 inventory: cortex container (steady-state asset spec))
-- TESTS → TEST `tests/test_cortex_integration_config.py` (TheHive/Cortex integration configuration checks)
 - IMPLEMENTS → PULL_REQUEST `409` ([codex] Integrate and inventory Cortex)
 - IMPLEMENTS → GITHUB_ISSUE `341` (SCN-010 inventory: wazuh.indexer container (steady-state asset spec))
 - IMPLEMENTS → PULL_REQUEST `392` (added: SCN-010 wazuh.indexer ACES steady-state inventory)

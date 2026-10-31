@@ -80,9 +80,9 @@ class ServiceCert:  # NOSONAR python:S5663 - Python 3 dataclass; no need for exp
             detected and emitted as IPAddress SAN entries.
         cert_filename: PEM cert filename inside ``<output>/<name>/``.
         key_filename: PEM private-key filename inside ``<output>/<name>/``.
-        needs_keystore: ``True`` for Play-framework services (TheHive,
-            Cortex) which consume a PKCS#12 keystore alongside the PEM
-            files. Adds ``keystore.p12`` and ``keystore.p12.password``.
+        needs_keystore: ``True`` for a service that consumes a PKCS#12
+            keystore alongside the PEM files. Adds ``keystore.p12`` and
+            ``keystore.p12.password``.
     """
 
     name: str
@@ -107,18 +107,6 @@ SOC_SERVICE_REGISTRY: tuple[ServiceCert, ...] = (
         sans=("misp", "localhost", "127.0.0.1"),
     ),
     ServiceCert(
-        name="thehive",
-        subject_cn="aptl-thehive",
-        sans=("thehive", "localhost", "127.0.0.1"),
-        needs_keystore=True,
-    ),
-    ServiceCert(
-        name="cortex",
-        subject_cn="aptl-cortex",
-        sans=("cortex", "localhost", "127.0.0.1"),
-        needs_keystore=True,
-    ),
-    ServiceCert(
         name="shuffle-frontend",
         subject_cn="aptl-shuffle-frontend",
         sans=("shuffle-frontend", "localhost", "127.0.0.1"),
@@ -134,7 +122,7 @@ def derive_soc_service_certs(
 
     The SDL authors *which* SOC services get certificates and *what* each needs
     as the certificate-bundle artifact's declared outputs — e.g.
-    ``misp/server.pem``, ``thehive/keystore.p12``. APTL derives the request set
+    ``misp/server.pem``, ``<service>/keystore.p12``. APTL derives the request set
     from those paths instead of a hardcoded service registry, so it never decides
     the range's service identity (issue #875):
 

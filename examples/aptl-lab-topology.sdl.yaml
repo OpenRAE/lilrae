@@ -7,7 +7,7 @@
 name: aptl-lab-topology
 description: >
   TechVault enterprise purple team lab with Wazuh SIEM, SOC stack
-  (Suricata, TheHive, MISP, Shuffle), enterprise targets (AD, webapp,
+  (Suricata, MISP, Shuffle), enterprise targets (AD, webapp,
   database, fileshare), and Kali red team platform across four
   segmented networks.
 
@@ -131,51 +131,6 @@ nodes:
       db-svc:
         username: misp
 
-  thehive:
-    type: VM
-    description: "TheHive — security incident response platform"
-    source:
-      name: strangebee/thehive
-      version: "5.4"
-    resources:
-      ram: 1 GiB
-      cpu: 1
-    conditions:
-      thehive-health: thehive-svc
-    roles:
-      thehive-svc:
-        username: admin
-
-  thehive-cassandra:
-    type: VM
-    description: "TheHive backend (Cassandra)"
-    source:
-      name: cassandra
-      version: "4.1"
-    resources:
-      ram: 1 GiB
-      cpu: 1
-    conditions:
-      cassandra-health: cassandra-svc
-    roles:
-      cassandra-svc:
-        username: cassandra
-
-  thehive-es:
-    type: VM
-    description: "TheHive search index (Elasticsearch)"
-    source:
-      name: docker.elastic.co/elasticsearch/elasticsearch
-      version: "7.17.28"
-    resources:
-      ram: 1 GiB
-      cpu: 1
-    conditions:
-      thehive-es-health: es-svc
-    roles:
-      es-svc:
-        username: elastic
-
   shuffle-backend:
     type: VM
     description: "Shuffle SOAR — backend API"
@@ -213,16 +168,6 @@ nodes:
     roles:
       os-svc:
         username: admin
-
-  cortex:
-    type: VM
-    description: "Cortex — observable analysis engine"
-    source:
-      name: thehiveproject/cortex
-      version: "3.1.8"
-    resources:
-      ram: 512 MiB
-      cpu: 1
 
   # --- Enterprise targets ---
   webapp:
@@ -481,26 +426,6 @@ infrastructure:
     properties:
       - security-net: 172.20.0.17
 
-  thehive:
-    count: 1
-    links:
-      - security-net
-    dependencies:
-      - thehive-cassandra
-      - thehive-es
-    properties:
-      - security-net: 172.20.0.18
-
-  thehive-cassandra:
-    count: 1
-    links:
-      - security-net
-
-  thehive-es:
-    count: 1
-    links:
-      - security-net
-
   shuffle-backend:
     count: 1
     links:
@@ -523,15 +448,6 @@ infrastructure:
     count: 1
     links:
       - security-net
-
-  cortex:
-    count: 1
-    links:
-      - security-net
-    dependencies:
-      - thehive-es
-    properties:
-      - security-net: 172.20.0.22
 
   webapp:
     count: 1
@@ -716,18 +632,6 @@ conditions:
   misp-db-health:
     command: "healthcheck.sh --connect --innodb_initialized"
     interval: 15
-
-  thehive-health:
-    command: "curl -ksf https://localhost:9000/api/status || exit 1"
-    interval: 30
-
-  cassandra-health:
-    command: "cqlsh -e 'describe cluster' || exit 1"
-    interval: 30
-
-  thehive-es-health:
-    command: "curl -sf http://localhost:9200/_cluster/health || exit 1"
-    interval: 30
 
   shuffle-os-health:
     command: "curl -ks https://localhost:9200 -u admin:pass || exit 1"

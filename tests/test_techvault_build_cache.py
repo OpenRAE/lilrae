@@ -25,7 +25,7 @@ def test_cache_refuses_an_unqualified_pack_before_writing(tmp_path, monkeypatch)
 
     bundle = env_pack_bundle(tmp_path / "source", "techvault")
     bundle = replace(
-        bundle, pack_identity=PackIdentity("techvault", "0.1.3", "sha256:" + "0" * 64)
+        bundle, pack_identity=PackIdentity("techvault", "6.5.1", "sha256:" + "0" * 64)
     )
     monkeypatch.setattr(build_cache, "env_pack_bundle", lambda *args: bundle)
     with pytest.raises(ValueError, match="identity"):
@@ -69,3 +69,19 @@ def test_build_cache_cli_writes_only_to_the_fixed_build_locations():
 
     assert build_cache.BUILD_CACHE_DESTINATION == Path("/opt/aptl/npm-source")
     assert build_cache.BUILD_CACHE_STAGING == Path("/opt/aptl/npm-cache-pack")
+
+
+def test_node22_base_image_installs_exactly_the_cached_projects():
+    """The image runs ``npm ci`` only for projects whose lockfiles the cache emits."""
+    import re
+
+    from aptl_techvault import build_cache
+
+    dockerfile = (
+        Path(__file__).resolve().parents[1]
+        / "containers/generic-systemd-node22-base/Dockerfile"
+    ).read_text(encoding="utf-8")
+    loop = re.search(r"for project in ([^;]+); do", dockerfile)
+
+    assert loop is not None
+    assert set(loop.group(1).replace("\\", " ").split()) == set(build_cache._PROJECTS)

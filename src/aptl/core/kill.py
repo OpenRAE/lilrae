@@ -45,7 +45,6 @@ MCP_SERVER_NAMES = [
     "mcp-reverse",
     "mcp-soar",
     "mcp-indexer",
-    "mcp-casemgmt",
     "mcp-network",
     "mcp-threatintel",
 ]
