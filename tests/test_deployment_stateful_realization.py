@@ -944,6 +944,61 @@ def test_certificate_materialization_rejects_symlinked_output_before_docker(
     assert "containment" in result.error.lower()
 
 
+@pytest.mark.parametrize("offline_staged", [False, True], ids=["online", "offline"])
+@pytest.mark.parametrize("available", [True, False], ids=["held", "missing"])
+def test_certificate_artifact_realizes_generator_pin_before_running(
+    tmp_path: Path, mocker, offline_staged: bool, available: bool
+) -> None:
+    """Pack-owned certificates use the pin and stop before generation on failure."""
+    from aptl.core.helper_images import CERT_GENERATOR_IMAGE, PINNED_HELPER_IMAGES
+
+    backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
+    backend._offline_staged = offline_staged
+    mocker.patch("aptl.core.certs.hostenv.needs_host_ownership_fix", return_value=False)
+    commands = []
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        if command[:3] == ["docker", "image", "inspect"] or command[:2] == [
+            "docker",
+            "pull",
+        ]:
+            return subprocess.CompletedProcess(
+                command, 0 if available else 1, "", "registry unavailable"
+            )
+        if "run" in command:
+            _write_certificate_bundle(tmp_path)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    mocker.patch.object(backend, "_run", side_effect=run)
+    spec = _spec()
+    artifact = replace(spec.generated_artifacts[0], outputs=_certificate_outputs())
+    result = backend._realize_certificate_bundle(artifact, tmp_path, spec)
+
+    pinned = PINNED_HELPER_IMAGES[CERT_GENERATOR_IMAGE]
+    expected = [
+        [
+            "docker",
+            "image",
+            "inspect",
+            CERT_GENERATOR_IMAGE if offline_staged else pinned,
+        ]
+    ]
+    if available:
+        if not offline_staged:
+            expected.append(["docker", "tag", pinned, CERT_GENERATOR_IMAGE])
+        assert commands[: len(expected)] == expected
+        assert "run" in commands[len(expected)]
+        assert result is None
+    else:
+        if not offline_staged:
+            expected.append(["docker", "pull", pinned])
+        assert commands == expected
+        assert result is not None
+        assert result.success is False
+        assert not (tmp_path / "config/wazuh_indexer_ssl_certs").exists()
+
+
 def test_missing_declared_certificate_output_blocks_before_image_side_effect(
     tmp_path: Path,
     monkeypatch,
@@ -2174,7 +2229,9 @@ def test_a_generator_failure_stops_base_container_placement(
         "provision.node.workstation": {"STALE_SECRET": "must-not-survive"}
     }
     _stub_ssh_generator(monkeypatch, error="no entropy source")
-    consumer = _base_container_consumer("workstation", selected=("target-authorized-keys",))
+    consumer = _base_container_consumer(
+        "workstation", selected=("target-authorized-keys",)
+    )
     realization = DeploymentRealizationSpec(
         profiles=(),
         nodes=(),
@@ -2204,7 +2261,9 @@ def test_a_declared_output_that_never_materialized_stops_base_container_placemen
             None
         ),  # reports success, writes nothing
     )
-    consumer = _base_container_consumer("workstation", selected=("target-authorized-keys",))
+    consumer = _base_container_consumer(
+        "workstation", selected=("target-authorized-keys",)
+    )
     realization = DeploymentRealizationSpec(
         profiles=(),
         nodes=(),
@@ -2226,7 +2285,9 @@ def test_a_declared_output_that_never_materialized_stops_base_container_placemen
 # -- SOC certificate bundle and flag-signing keys (issue #875) ---------------
 
 
-def _soc_artifact(paths=("lab-ca.pem", "misp/server.pem", "shuffle-frontend/server.pem")):
+def _soc_artifact(
+    paths=("lab-ca.pem", "misp/server.pem", "shuffle-frontend/server.pem"),
+):
     return DeploymentGeneratedArtifactRealization(
         address="provision.generated-artifact.soc-certs",
         name="soc-certs",
@@ -2498,7 +2559,9 @@ def test_an_in_tree_scenario_binds_its_declared_image_content(tmp_path: Path) ->
         _content_override_spec(tmp_path), tmp_path, tmp_path
     )
     document = yaml.safe_load(path.read_text())
-    assert document["services"]["tempo"]["volumes"][0]["target"] == "/etc/tempo/tempo.yaml"
+    assert (
+        document["services"]["tempo"]["volumes"][0]["target"] == "/etc/tempo/tempo.yaml"
+    )
 
 
 def test_no_image_node_content_means_no_override_file(tmp_path: Path) -> None:
