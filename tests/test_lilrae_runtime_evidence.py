@@ -120,9 +120,10 @@ def test_protected_handoff_refuses_disclosure_or_byte_rewriting(
     tmp_path, monkeypatch, change
 ):
     outcome, _, _, _, _ = _started(tmp_path, monkeypatch)
+    binding = replace(_protected_binding(), **change)
     try:
         with pytest.raises(ValueError, match="protected"):
-            outcome.native_evidence.source(replace(_protected_binding(), **change))
+            outcome.native_evidence.source(binding)
     finally:
         outcome.runtime_manager.close()
 

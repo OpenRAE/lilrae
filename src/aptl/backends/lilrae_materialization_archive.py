@@ -1,10 +1,13 @@
 """Bind RAES protected bytes to the existing local run seal and write lock."""
 
+from __future__ import annotations
+
 import os
 import hashlib
 from pathlib import Path
 import stat
 from tempfile import TemporaryDirectory
+from typing import TYPE_CHECKING
 
 from raes import parse_sdl
 from raes_operations.run_artifacts import RunMaterializationArchive, is_valid_run_id_label
@@ -17,11 +20,16 @@ from raes_contracts.materialization import (
 from aptl.core.runstore import LocalRunStore
 from aptl.utils.pathsafe import create_exclusive_nofollow, open_contained_nofollow
 
+if TYPE_CHECKING:
+    from raes_contracts.contracts.materialization_attestation import (
+        MaterializationArchiveRecord,
+    )
+
 
 class LilraeMaterializationArchive:
     """RAES references are relative to the run's materialization directory."""
 
-    def __init__(self, store: LocalRunStore, run_id: str):
+    def __init__(self, store: LocalRunStore, run_id: str) -> None:
         if not isinstance(store, LocalRunStore):
             raise ValueError("Materialization requires protected local run storage")
         self.store = store
@@ -31,7 +39,8 @@ class LilraeMaterializationArchive:
             raise ValueError("Materialization run directory is not an owned path")
         self.archive = RunMaterializationArchive(expected / "materialization")
 
-    def publish(self, content):
+    def publish(self, content: str) -> MaterializationArchiveRecord:
+        """Publish one materialized SDL once into the protected run store."""
         if parse_sdl(content).materialization_provenance.run_id != self.run_id:
             raise ValueError("Materialization belongs to another run")
         with self.store.finalization_lock(self.run_id):
@@ -51,7 +60,8 @@ class LilraeMaterializationArchive:
             self.read(record)
             return record
 
-    def _path(self, record):
+    def _path(self, record: MaterializationArchiveRecord) -> Path:
+        """Return the contained store path for a valid archive record."""
         require_materialization_records((record,))
         if record.run_id != self.run_id:
             raise ValueError("Materialization belongs to another run")
@@ -67,7 +77,8 @@ class LilraeMaterializationArchive:
             raise ValueError("Materialization reference has an invalid path")
         return Path(self.run_id) / "materialization" / expected
 
-    def read(self, record):
+    def read(self, record: MaterializationArchiveRecord) -> MaterializationSubmission:
+        """Read the protected SDL bytes and verify them against the record."""
         with open_contained_nofollow(self.store.base_dir, self._path(record)) as handle:
             info = os.fstat(handle.fileno())
             if (

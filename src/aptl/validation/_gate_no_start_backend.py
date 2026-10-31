@@ -18,6 +18,7 @@ from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING
 
 from aptl.core.deployment._compose_realization_networks import _concrete_network_name
+from aptl.core.deployment.lilrae_recorded_inventory import RecordedInventorySnapshot
 from aptl.core.deployment.observation import DeploymentObservationContext
 from aptl.core.lab_types import LabResult, LabStatus
 
@@ -53,9 +54,8 @@ class _NoStartBackend(object):
     project_name = "aptl"
 
     @staticmethod
-    def runtime_descendant_inventory(attempt_id: str):
+    def runtime_descendant_inventory(attempt_id: str) -> RecordedInventorySnapshot:
         """The offline simulator creates no native descendants or daemon authority."""
-        from aptl.core.deployment.lilrae_recorded_inventory import RecordedInventorySnapshot
 
         del attempt_id
         return RecordedInventorySnapshot(())

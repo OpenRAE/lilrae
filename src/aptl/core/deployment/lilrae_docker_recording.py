@@ -34,6 +34,7 @@ _NATIVE_ID = re.compile(r"[0-9a-f]{64}\Z", re.ASCII)
 _ADDRESS = re.compile(r"provision\.node\.[A-Za-z0-9_.-]{1,240}\Z", re.ASCII)
 _TOKEN = re.compile(r"[0-9a-f]{32}\Z", re.ASCII)
 _INVALID = "Docker creation receipt is absent, invalid, or outside this attempt"
+_RECORD_SUFFIX = ".json"
 
 
 def recording_digest(value: object) -> str:
@@ -42,11 +43,14 @@ def recording_digest(value: object) -> str:
 
 
 def _encode(value: object) -> bytes:
+    """Encode a value as one canonical JSON line."""
     return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
 
 @dataclass(frozen=True)
 class CreationIntent:
+    """Record one admitted create request before the daemon answers it."""
+
     operation_id: str
     source_address: str
     parent_native_id: str
@@ -55,25 +59,37 @@ class CreationIntent:
     timeout_seconds: int
 
     def __post_init__(self) -> None:
+        """Reject an intent with an invalid identity or time window."""
+        if not (self._valid_identity() and self._valid_window()):
+            raise OwnershipConflictError(_INVALID)
+
+    def _valid_identity(self) -> bool:
+        """Return True when the operation, source, and parent IDs are valid."""
         valid_parent = not self.parent_native_id or _NATIVE_ID.fullmatch(
             self.parent_native_id
         )
-        if not (
+        return bool(
             _TOKEN.fullmatch(self.operation_id)
             and _ADDRESS.fullmatch(self.source_address)
             and valid_parent
-            and type(self.timeout_seconds) is int
+        )
+
+    def _valid_window(self) -> bool:
+        """Return True when the timeout and the deadline window are valid."""
+        return (
+            type(self.timeout_seconds) is int
             and 0 < self.timeout_seconds <= 86400
             and math.isfinite(self.created_utc)
             and math.isfinite(self.deadline_utc)
             and 0 <= self.created_utc
             and self.deadline_utc <= self.created_utc + self.timeout_seconds
-        ):
-            raise OwnershipConflictError(_INVALID)
+        )
 
 
 @dataclass(frozen=True)
 class RecordedCreation:
+    """Record one container that a daemon create response identified."""
+
     native_id: str
     address: str
     parent_address: str
@@ -90,9 +106,11 @@ class RecordedCreation:
 
     @property
     def evidence_digest(self) -> str:
+        """Return the digest of this creation record."""
         return recording_digest(asdict(self))
 
     def receipt(self) -> ResourceReceipt:
+        """Return the native resource receipt for this child container."""
         return ResourceReceipt(
             kind="container",
             native_id=self.native_id,
@@ -137,6 +155,7 @@ class RecordingStore:
         timeout_seconds: int,
         parent_native_id: str = "",
     ) -> CreationIntent:
+        """Publish a create intent for a source, bounded by its parent deadline."""
         now = self.wall_clock()
         deadline = now + timeout_seconds
         if parent_native_id:
@@ -200,12 +219,14 @@ class RecordingStore:
         )
 
     def creation(self, native_id: str) -> RecordedCreation:
+        """Return a verified creation record, or raise an ownership conflict."""
         try:
             return self._creation(native_id)
         except (OSError, PathContainmentError, TypeError, ValueError) as exc:
             raise OwnershipConflictError(_INVALID) from exc
 
     def _creation(self, native_id: str) -> RecordedCreation:
+        """Read a creation record and check it against its intent and response."""
         if not _NATIVE_ID.fullmatch(native_id):
             raise OwnershipConflictError(_INVALID)
         try:
@@ -237,6 +258,7 @@ class RecordingStore:
         return creation
 
     def verify(self, receipt: ResourceReceipt) -> RecordedCreation:
+        """Verify a receipt and its parent chain, and return its creation record."""
         creation = self.creation(receipt.native_id)
         if receipt != creation.receipt():
             raise OwnershipConflictError(_INVALID)
@@ -259,12 +281,14 @@ class RecordingStore:
         return creation
 
     def records(self) -> tuple[RecordedCreation, ...]:
+        """Return all verified creation records of this attempt."""
         return tuple(
-            self.creation(name.removesuffix(".json"))
+            self.creation(name.removesuffix(_RECORD_SUFFIX))
             for name in self._names("children")
         )
 
     def pending(self) -> tuple[CreationIntent, ...]:
+        """Return the intents that have no complete recorded outcome."""
         pending = []
         receipts = set(self.ownership.receipts("container"))
         for name in self._names("intents"):
@@ -298,9 +322,11 @@ class RecordingStore:
         self._publish(Path("gaps") / f"{code}.json", {"code": code})
 
     def gaps(self) -> tuple[str, ...]:
-        return tuple(name.removesuffix(".json") for name in self._names("gaps"))
+        """Return the recorded diagnostic gap codes."""
+        return tuple(name.removesuffix(_RECORD_SUFFIX) for name in self._names("gaps"))
 
     def _names(self, directory: str) -> list[str]:
+        """Return the sorted record names in a state directory."""
         try:
             names = listdir_contained_nofollow(
                 self.ownership.root, self.relative / directory
@@ -311,9 +337,10 @@ class RecordingStore:
             if exc.reason == REASON_NOT_FOUND:
                 return []
             raise OwnershipConflictError(_INVALID) from exc
-        return sorted(name for name in names if name.endswith(".json"))
+        return sorted(name for name in names if name.endswith(_RECORD_SUFFIX))
 
-    def _optional_read(self, relative: Path) -> dict | None:
+    def _optional_read(self, relative: Path) -> dict[str, object] | None:
+        """Return a state record, or None when it does not exist."""
         try:
             return self._read(relative)
         except FileNotFoundError:
@@ -323,7 +350,8 @@ class RecordingStore:
                 return None
             raise OwnershipConflictError(_INVALID) from exc
 
-    def _read(self, relative: Path) -> dict:
+    def _read(self, relative: Path) -> dict[str, object]:
+        """Return a state record that must be a JSON object."""
         try:
             value = json.loads(
                 read_contained_nofollow(self.ownership.root, self.relative / relative)
@@ -334,7 +362,8 @@ class RecordingStore:
         except (ValueError, TypeError) as exc:
             raise OwnershipConflictError(_INVALID) from exc
 
-    def _publish(self, relative: Path, value: dict) -> None:
+    def _publish(self, relative: Path, value: dict[str, object]) -> None:
+        """Write a state record once, and reject a different later value."""
         payload = _encode(value)
         try:
             create_exclusive_nofollow(

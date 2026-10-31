@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-from raes_backend_protocols.capabilities import BackendManifest
-
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from raes_backend_protocols.capabilities import BackendManifest
 from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.planning import ProvisioningPlan
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
-from raes_runtime.backend_account_credentials import plan_has_account_credentials
 
 from aptl.backends._raes_apply_reporting import (
     bounded_apply_details as _bounded_apply_details,
@@ -162,68 +160,99 @@ class AptlProvisioner(LilraeApparatusReportingMixin, ProvisionerStartMixin):
             snapshot if isinstance(snapshot, RuntimeSnapshot) else RuntimeSnapshot()
         )
         diagnostics = self._invalid_plan_diagnostics(plan)
-        if (
-            isinstance(plan, ProvisioningPlan)
-            and plan.materialization_source is not None
-        ):
-            run_id = plan.materialization_source.run_id
-            if self._attempt_id is None:
-                self.bind_attempt_id(run_id)
-            elif self._attempt_id != run_id:
-                diagnostics.append(
-                    diagnostic(
-                        "lilrae.provisioner.run-identity-mismatch",
-                        PROVISIONING_ADDRESS,
-                        "Native ownership and the admitted plan identify different runs.",
-                    )
-                )
-        result = ApplyResult(
+        if isinstance(plan, ProvisioningPlan):
+            diagnostics.extend(self._materialization_run_diagnostics(plan))
+        if not isinstance(plan, ProvisioningPlan) or has_error(diagnostics):
+            result = ApplyResult(
+                success=False,
+                snapshot=working_snapshot,
+                diagnostics=diagnostics,
+            )
+        else:
+            apparatus_failure = self._prepare_lilrae_apparatus(plan, working_snapshot)
+            if apparatus_failure is not None:
+                diagnostics.append(apparatus_failure)
+                return ApplyResult(False, working_snapshot, diagnostics=diagnostics)
+            result = self._apply_realized_plan(plan, working_snapshot)
+        return self._record_apply_result(plan, working_snapshot, result)
+
+    def _materialization_run_diagnostics(
+        self, plan: ProvisioningPlan
+    ) -> list[Diagnostic]:
+        """Bind the admitted run, or refuse a plan for a different run."""
+
+        if plan.materialization_source is None:
+            return []
+        run_id = plan.materialization_source.run_id
+        if self._attempt_id is None:
+            self.bind_attempt_id(run_id)
+            return []
+        if self._attempt_id == run_id:
+            return []
+        return [
+            diagnostic(
+                "lilrae.provisioner.run-identity-mismatch",
+                PROVISIONING_ADDRESS,
+                "Native ownership and the admitted plan identify different runs.",
+            )
+        ]
+
+    def _prepare_lilrae_apparatus(
+        self, plan: ProvisioningPlan, working_snapshot: RuntimeSnapshot
+    ) -> Diagnostic | None:
+        """Prepare capture apparatus resources, or return why they are invalid."""
+
+        from aptl.backends.lilrae_apparatus_reporting import (
+            prepare_apparatus_resources,
+        )
+        from aptl.backends.raes_manifest import create_aptl_manifest
+
+        self._lilrae_apparatus_resources = ()
+        if plan.materialization_source is None:
+            return None
+        try:
+            self._lilrae_apparatus_resources = prepare_apparatus_resources(
+                plan,
+                working_snapshot,
+                self.reporting_manifest or create_aptl_manifest(),
+                self.capture_plan.apparatus,
+            )
+        except TypeError, ValueError:
+            return diagnostic(
+                "lilrae.apparatus.scope-invalid",
+                PROVISIONING_ADDRESS,
+                "Capture apparatus exceeds its admitted scope or has no valid description.",
+            )
+        return None
+
+    def _apply_realized_plan(
+        self, plan: ProvisioningPlan, working_snapshot: RuntimeSnapshot
+    ) -> ApplyResult:
+        """Realize a valid plan and apply it when realization has no errors."""
+
+        realization = self.realize_plan(plan)
+        diagnostics = list(realization.diagnostics)
+        if not has_error(diagnostics):
+            return self._apply_valid_plan(
+                plan,
+                working_snapshot,
+                diagnostics,
+                realization,
+            )
+        return ApplyResult(
             success=False,
             snapshot=working_snapshot,
             diagnostics=diagnostics,
+            details=_bounded_apply_details(
+                {"realization": realization.details()}, realization
+            ),
         )
-        if isinstance(plan, ProvisioningPlan) and not has_error(diagnostics):
-            from aptl.backends.lilrae_apparatus_reporting import (
-                prepare_apparatus_resources,
-            )
-            from aptl.backends.raes_manifest import create_aptl_manifest
 
-            self._lilrae_apparatus_resources = ()
-            if plan.materialization_source is not None:
-                try:
-                    self._lilrae_apparatus_resources = prepare_apparatus_resources(
-                        plan,
-                        working_snapshot,
-                        self.reporting_manifest or create_aptl_manifest(),
-                        self.capture_plan.apparatus,
-                    )
-                except TypeError, ValueError:
-                    diagnostics.append(
-                        diagnostic(
-                            "lilrae.apparatus.scope-invalid",
-                            PROVISIONING_ADDRESS,
-                            "Capture apparatus exceeds its admitted scope or has no valid description.",
-                        )
-                    )
-                    return ApplyResult(False, working_snapshot, diagnostics=diagnostics)
-            realization = self.realize_plan(plan)
-            diagnostics = list(realization.diagnostics)
-            if not has_error(diagnostics):
-                result = self._apply_valid_plan(
-                    plan,
-                    working_snapshot,
-                    diagnostics,
-                    realization,
-                )
-            else:
-                result = ApplyResult(
-                    success=False,
-                    snapshot=working_snapshot,
-                    diagnostics=diagnostics,
-                    details=_bounded_apply_details(
-                        {"realization": realization.details()}, realization
-                    ),
-                )
+    def _record_apply_result(
+        self, plan: object, working_snapshot: RuntimeSnapshot, result: ApplyResult
+    ) -> ApplyResult:
+        """Record apply evidence and close the result for credential plans."""
+
         self.last_failure_diagnostics = (
             () if result.success else tuple(result.diagnostics)
         )

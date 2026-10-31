@@ -199,7 +199,8 @@ def test_remote_attempt_without_delegation_reports_complete_empty_inventory():
     assert not inventory.children
     assert not backend.runtime_descendant_inventory("another-attempt").complete
     failure = backend._prepare_docker_recording(_spec())
-    assert failure is not None and not failure.success
+    assert failure is not None
+    assert not failure.success
     assert not backend.runtime_descendant_inventory("remote-attempt").complete
 
 
@@ -238,7 +239,8 @@ def test_local_no_delegation_uses_its_empty_admission_not_the_default_socket(
         backend._prepare_docker_recording(DeploymentRealizationSpec((), (), ())) is None
     )
     observed = backend.runtime_descendant_inventory("local-no-delegation")
-    assert observed.complete and not observed.children
+    assert observed.complete
+    assert not observed.children
 
 
 def test_native_handoff_retains_original_receipt_and_verified_cleanup(

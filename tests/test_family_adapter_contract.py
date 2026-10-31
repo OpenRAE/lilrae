@@ -527,7 +527,10 @@ def test_family_admission_rejects_missing_capability_before_backend(
 ):
     from aptl.backends import scenario_family as contract
     from aptl.backends.raes import admit_raes_scenario
-    from aptl.backends.raes_start_model import ScenarioAdmissionSource
+    from aptl.backends.raes_start_model import (
+        ScenarioAdmissionRun,
+        ScenarioAdmissionSource,
+    )
     from aptl.core.config import AptlConfig
 
     bundle, family, plan = family_input()
@@ -545,7 +548,7 @@ def test_family_admission_rejects_missing_capability_before_backend(
             config,
             backend,
             source=source,
-            trial=request,
+            run=ScenarioAdmissionRun(trial=request),
         )
 
 

@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import stat
+from typing import TYPE_CHECKING
 from uuid import uuid4
 import zipfile
 
@@ -29,14 +30,30 @@ from aptl.utils.pathsafe import (
     open_contained_nofollow,
 )
 
+if TYPE_CHECKING:
+    from raes_contracts.contracts.materialization_attestation import (
+        MaterializationArchiveRecord,
+    )
+    from raes_contracts.runtime_state import OperationStatus, RuntimeSnapshot
+    from raes_processor.models import ExecutionPlan
+
+    from aptl.backends.lilrae_materialization_archive import (
+        LilraeMaterializationArchive,
+    )
+    from aptl.core.experiment.capture_registry import CaptureBinding
+
 _ROOT = Path("native-evidence")
 _MAX_MEMBER = 8 * 1024 * 1024
 _MAX_BYTES = 64 * 1024 * 1024
 _MAX_MEMBERS = 1024
 _HASH = re.compile(r"[0-9a-f]{64}\Z", re.ASCII)
+_CUT_NAME = re.compile(r"[0-9a-f]{32}\.json")
+_CUT_SCHEMA = "lilrae.native-evidence-cut/v1"
+_EXCEEDS_BOUND = "native evidence collection exceeds its bound"
 
 
-def _json_bytes(value):
+def _json_bytes(value: object) -> bytes:
+    """Encode a value as canonical UTF-8 JSON bytes."""
     return json.dumps(
         value,
         sort_keys=True,
@@ -49,7 +66,13 @@ def _json_bytes(value):
 class LilraeRuntimeEvidence:
     """Retain native cuts; provide a narrow source only for protected bindings."""
 
-    def __init__(self, archive, backend, *, provisioner=None):
+    def __init__(
+        self,
+        archive: LilraeMaterializationArchive,
+        backend: object,
+        *,
+        provisioner: object | None = None,
+    ) -> None:
         self.archive = archive
         self.backend = backend
         self.provisioner = provisioner
@@ -57,10 +80,12 @@ class LilraeRuntimeEvidence:
         self.failed = False
 
     @property
-    def _root(self):
+    def _root(self) -> Path:
+        """Return the base directory of the protected run store."""
         return self.archive.store.base_dir
 
-    def _read(self, relative, *, limit=_MAX_MEMBER):
+    def _read(self, relative: Path | str, *, limit: int = _MAX_MEMBER) -> bytes:
+        """Read one protected native evidence file within the byte limit."""
         path = Path(self.run_id) / _ROOT / relative
         with open_contained_nofollow(self._root, path) as handle:
             info = os.fstat(handle.fileno())
@@ -73,7 +98,8 @@ class LilraeRuntimeEvidence:
             raise BufferError("native evidence exceeds the collection bound")
         return data
 
-    def _publish(self, relative, data):
+    def _publish(self, relative: Path, data: bytes) -> None:
+        """Write one native evidence file once, or confirm identical bytes."""
         if len(data) > _MAX_MEMBER:
             raise BufferError("native evidence member exceeds the bound")
         with self.archive.store.finalization_lock(self.run_id):
@@ -87,7 +113,8 @@ class LilraeRuntimeEvidence:
                 if self._read(relative) != data:
                     raise ValueError("native evidence identity conflicts") from None
 
-    def _blob(self, role, data, **metadata):
+    def _blob(self, role: str, data: bytes, **metadata: object) -> dict[str, object]:
+        """Store bytes by digest and return the artifact entry."""
         digest = hashlib.sha256(data).hexdigest()
         path = Path("objects") / f"{digest}.bin"
         self._publish(path, data)
@@ -99,7 +126,8 @@ class LilraeRuntimeEvidence:
             **metadata,
         }
 
-    def _native(self):
+    def _native(self) -> tuple[tuple[str, bytes], ...]:
+        """Read and validate the backend native evidence for this attempt."""
         reader = getattr(self.backend, "native_evidence_artifacts", None)
         if not callable(reader):
             raise ValueError("native evidence source is unsupported")
@@ -119,7 +147,15 @@ class LilraeRuntimeEvidence:
                 raise ValueError("native evidence belongs to another attempt")
         return artifacts
 
-    def capture(self, execution, snapshot, *, phase, success=None, operation=None):
+    def capture(
+        self,
+        execution: ExecutionPlan,
+        snapshot: RuntimeSnapshot,
+        *,
+        phase: str,
+        success: bool | None = None,
+        operation: OperationStatus | None = None,
+    ) -> None:
         """Record already accepted public state without changing its provenance."""
         try:
             self._capture(
@@ -130,7 +166,16 @@ class LilraeRuntimeEvidence:
             # native result or makes its effects appear unknown to the runtime.
             self.failed = True
 
-    def _capture(self, execution, snapshot, *, phase, success, operation):
+    def _capture(
+        self,
+        execution: ExecutionPlan,
+        snapshot: RuntimeSnapshot,
+        *,
+        phase: str,
+        success: bool | None,
+        operation: OperationStatus | None,
+    ) -> None:
+        """Store the cut artifacts and the cut index for one runtime state."""
         source = execution.provisioning.materialization_source
         if source is None or source.run_id != self.run_id:
             raise ValueError("native evidence belongs to another run")
@@ -169,7 +214,7 @@ class LilraeRuntimeEvidence:
                 self._blob("materialization-archive-record", _json_bytes(metadata))
             )
         cut = {
-            "schema": "lilrae.native-evidence-cut/v1",
+            "schema": _CUT_SCHEMA,
             "run_id": self.run_id,
             "attempt_id": self.run_id,
             "target_scope": execution.target_name,
@@ -185,7 +230,7 @@ class LilraeRuntimeEvidence:
         }
         self._publish(Path("cuts") / f"{uuid4().hex}.json", _json_bytes(cut))
 
-    def source(self, binding):
+    def source(self, binding: CaptureBinding) -> CallableWindowedSource:
         """Use the incumbent collector boundary without exposing protected data."""
         if (
             binding.visibility_class
@@ -201,7 +246,8 @@ class LilraeRuntimeEvidence:
         limit = min(_MAX_BYTES, binding.limits.max_bytes)
         return CallableWindowedSource(lambda _start, _end: self._fetch(limit))
 
-    def _fetch(self, limit):
+    def _fetch(self, limit: int) -> SourceResult:
+        """Package the evidence and map failures to collector status."""
         try:
             if self.failed:
                 raise ValueError("native evidence capture was incomplete")
@@ -230,7 +276,13 @@ class LilraeRuntimeEvidence:
             },
         )
 
-    def _artifact_bytes(self, artifact, objects, remaining):
+    def _artifact_bytes(
+        self,
+        artifact: dict[str, object],
+        objects: dict[str, bytes],
+        remaining: int,
+    ) -> bytes:
+        """Read one cut artifact and verify its digest and size."""
         digest = artifact["sha256"]
         if not _HASH.fullmatch(digest) or artifact["path"] != f"objects/{digest}.bin":
             raise ValueError("native evidence artifact identity is invalid")
@@ -251,35 +303,47 @@ class LilraeRuntimeEvidence:
                 raise ValueError("materialization archive record changed")
         return data
 
-    def _package(self, limit):
+    def _read_cut(self, name: str, remaining: int) -> dict[str, object]:
+        """Read one cut file and verify that it belongs to this run."""
+        if not _CUT_NAME.fullmatch(name):
+            raise ValueError("native evidence cut is invalid")
+        cut = json.loads(
+            self._read(Path("cuts") / name, limit=min(_MAX_MEMBER, remaining))
+        )
+        if (
+            cut["schema"] != _CUT_SCHEMA
+            or cut["run_id"] != self.run_id
+            or cut["attempt_id"] != self.run_id
+        ):
+            raise ValueError("native evidence cut has another identity")
+        if len(cut["artifacts"]) > _MAX_MEMBERS:
+            raise BufferError("native evidence cut exceeds its artifact bound")
+        return cut
+
+    def _collect_cuts(
+        self, objects: dict[str, bytes], remaining: int
+    ) -> tuple[list[dict[str, object]], int]:
+        """Read all cuts, add their artifacts to objects, and return the budget."""
         names = listdir_contained_nofollow(
             self._root, Path(self.run_id) / _ROOT / "cuts"
         )
         if not names or len(names) > _MAX_MEMBERS:
             raise ValueError("native evidence cuts are unavailable")
         cuts = []
-        objects = {}
-        remaining = limit
         for name in names:
-            if not re.fullmatch(r"[0-9a-f]{32}\.json", name):
-                raise ValueError("native evidence cut is invalid")
-            cut = json.loads(
-                self._read(Path("cuts") / name, limit=min(_MAX_MEMBER, remaining))
-            )
-            if (
-                cut["schema"] != "lilrae.native-evidence-cut/v1"
-                or cut["run_id"] != self.run_id
-                or cut["attempt_id"] != self.run_id
-            ):
-                raise ValueError("native evidence cut has another identity")
-            if len(cut["artifacts"]) > _MAX_MEMBERS:
-                raise BufferError("native evidence cut exceeds its artifact bound")
+            cut = self._read_cut(name, remaining)
             for artifact in cut["artifacts"]:
                 data = self._artifact_bytes(artifact, objects, remaining)
                 if artifact["path"] not in objects:
                     objects[artifact["path"]] = data
                     remaining -= len(data)
             cuts.append(cut)
+        return cuts, remaining
+
+    def _collect_native(
+        self, objects: dict[str, bytes], remaining: int
+    ) -> tuple[list[dict[str, object]], int]:
+        """Add backend native artifacts to objects and return the budget."""
         native = []
         for role, data in self._native():
             digest = hashlib.sha256(data).hexdigest()
@@ -290,8 +354,15 @@ class LilraeRuntimeEvidence:
             native.append(
                 {"role": role, "sha256": digest, "size_bytes": len(data), "path": path}
             )
+        return native, remaining
+
+    def _package(self, limit: int) -> bytes:
+        """Build the bounded ZIP handoff of all cuts and native artifacts."""
+        objects: dict[str, bytes] = {}
+        cuts, remaining = self._collect_cuts(objects, limit)
+        native, remaining = self._collect_native(objects, remaining)
         if remaining < 0 or len(objects) > _MAX_MEMBERS:
-            raise BufferError("native evidence collection exceeds its bound")
+            raise BufferError(_EXCEEDS_BOUND)
         index = {
             "schema": "lilrae.native-evidence-handoff/v1",
             "run_id": self.run_id,
@@ -299,14 +370,17 @@ class LilraeRuntimeEvidence:
             "cuts": cuts,
             "native_artifacts": native,
         }
-        stream = BytesIO()
-        with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_STORED) as bundle:
-            for path, data in sorted(
-                {"index.json": _json_bytes(index), **objects}.items()
-            ):
-                bundle.writestr(zipfile.ZipInfo(path), data)
-                if stream.tell() > limit:
-                    raise BufferError("native evidence collection exceeds its bound")
-        if stream.tell() > limit:
-            raise BufferError("native evidence collection exceeds its bound")
-        return stream.getvalue()
+        return _zip_members({"index.json": _json_bytes(index), **objects}, limit)
+
+
+def _zip_members(members: dict[str, bytes], limit: int) -> bytes:
+    """Write sorted members to a stored ZIP that stays within the byte limit."""
+    stream = BytesIO()
+    with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_STORED) as bundle:
+        for path, data in sorted(members.items()):
+            bundle.writestr(zipfile.ZipInfo(path), data)
+            if stream.tell() > limit:
+                raise BufferError(_EXCEEDS_BOUND)
+    if stream.tell() > limit:
+        raise BufferError(_EXCEEDS_BOUND)
+    return stream.getvalue()

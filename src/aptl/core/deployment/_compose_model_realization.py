@@ -278,33 +278,9 @@ class ComposeRealizationModelMixin:
         )
 
         profile = self._runtime_materialization_profile(realization)
-        stateful_payload = stateful_override_payload(
-            realization_root,
-            self.project_name,
-            realization,
+        validated_service_volumes = self._validated_service_volumes(
+            realization, realization_root
         )
-        stateful_services = stateful_payload.get("services", {})
-        validated_service_volumes = {
-            str(service_name): tuple(volumes)
-            for service_name, service in stateful_services.items()
-            if isinstance(service, Mapping)
-            and isinstance((volumes := service.get("volumes")), Sequence)
-            and not isinstance(volumes, (str, bytes))
-        }
-        for service_name, mounts in self._recording_service_volumes(
-            realization
-        ).items():
-            validated_service_volumes[service_name] = (
-                *validated_service_volumes.get(service_name, ()),
-                *mounts,
-            )
-        content = getattr(self, "_realized_content_mounts", None)
-        if content and content[0] is realization and content[1] == realization_root.resolve():
-            for service_name, mounts in content[2].items():
-                validated_service_volumes[service_name] = (
-                    *validated_service_volumes.get(service_name, ()),
-                    *mounts,
-                )
         errors.extend(
             issue.render()
             for issue in effective_runtime_contract_issues(
@@ -315,3 +291,50 @@ class ComposeRealizationModelMixin:
             )
         )
         return "; ".join(errors[:5]) if errors else None
+
+    def _validated_service_volumes(
+        self,
+        realization: DeploymentRealizationSpec,
+        realization_root: Path,
+    ) -> dict[str, tuple[object, ...]]:
+        """Collect the service volumes that APTL wrote and validated itself."""
+
+        stateful_payload = stateful_override_payload(
+            realization_root,
+            self.project_name,
+            realization,
+        )
+        stateful_services = stateful_payload.get("services", {})
+        validated_service_volumes: dict[str, tuple[object, ...]] = {
+            str(service_name): tuple(volumes)
+            for service_name, service in stateful_services.items()
+            if isinstance(service, Mapping)
+            and isinstance((volumes := service.get("volumes")), Sequence)
+            and not isinstance(volumes, (str, bytes))
+        }
+        for service_mounts in (
+            self._recording_service_volumes(realization),
+            self._content_mounts_for(realization, realization_root),
+        ):
+            for service_name, mounts in service_mounts.items():
+                validated_service_volumes[service_name] = (
+                    *validated_service_volumes.get(service_name, ()),
+                    *mounts,
+                )
+        return validated_service_volumes
+
+    def _content_mounts_for(
+        self,
+        realization: DeploymentRealizationSpec,
+        realization_root: Path,
+    ) -> Mapping[str, tuple[object, ...]]:
+        """Return content mounts written for this realization and root only."""
+
+        content = getattr(self, "_realized_content_mounts", None)
+        if (
+            content
+            and content[0] is realization
+            and content[1] == realization_root.resolve()
+        ):
+            return content[2]
+        return {}

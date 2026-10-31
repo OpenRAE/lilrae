@@ -884,6 +884,7 @@ src/aptl/backends/identity.py	core-candidate	Migrate only after public-import, h
 src/aptl/backends/pack_interaction.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/pack_interaction_discovery.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/backends/_raes_start_run.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_account_realization.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_acl_realization.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_artifact_availability.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
@@ -898,6 +899,7 @@ src/aptl/backends/raes_dependency_closure.py	core-candidate	Migrate only after p
 src/aptl/backends/raes_diagnostics.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_docker_materializer.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_evaluator.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/backends/_raes_evidence_truth_refresh.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_evidence.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_evidence_acquisition.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_execution_helpers.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
@@ -938,6 +940,7 @@ src/aptl/backends/raes_participant_runtime.py	core-candidate	Migrate only after 
 src/aptl/backends/raes_participant_support.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_placement_realization.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_planning_compat.py	backend-owned-runtime	Temporary TechVault planning compatibility for unconstrained native observation provenance
+src/aptl/backends/_raes_planning_adjustment.py	backend-owned-runtime	Temporary TechVault planning compatibility for unconstrained native observation provenance
 src/aptl/backends/raes_profiles.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_provisioner.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_realization.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
@@ -950,6 +953,7 @@ src/aptl/backends/raes_runtime_attestation.py	backend-owned-runtime	Remove relea
 src/aptl/backends/raes_runtime_guest_observation.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_runtime_model_artifact.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_runtime_observation.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/backends/_raes_runtime_local_control_observation.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_runtime_orchestration.py	core-candidate	Scenario-independent RAES orchestration adapter added after the #962 baseline; retain and assess under #970
 src/aptl/backends/raes_service_index_schema.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_start_model.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
@@ -1051,6 +1055,7 @@ src/aptl/core/deployment/_compose_mixed_realization.py	backend-substrate	Post-ba
 src/aptl/core/deployment/_compose_model_realization.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/deployment/_compose_network_conflicts.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/deployment/_compose_network_realization.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/core/deployment/_compose_network_operations.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/deployment/_compose_node_generation.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/deployment/_compose_node_topology.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/deployment/_compose_observability.py	backend-substrate	Post-baseline optional observability mechanism; retain with deployment authority

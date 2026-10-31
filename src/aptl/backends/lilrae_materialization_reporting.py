@@ -10,6 +10,7 @@ from uuid import uuid4
 from typing import Any
 
 from raes import admit_instantiated_scenario, parse_sdl
+from raes.scenario import InstantiatedScenario
 from raes_backend_protocols.manifest import backend_manifest_v2_model
 from raes_backend_protocols.capabilities import BackendManifest
 from raes_contracts.canonical import canonical_json_digest
@@ -22,19 +23,23 @@ from raes_contracts.materialization_inventory import (
 from raes_contracts.plan_projection import runtime_plan_digest
 from raes_contracts.planning import ProvisioningPlan, OrchestrationPlan, EvaluationPlan
 from raes_contracts.realization_preparation import preparation_snapshot_digest
-from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
+from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotEntry
 from raes_processor.compiler import materialization_differences
 from raes_processor.semantics.realization_concerns import (
     realization_concern_descriptors,
 )
 
 from aptl.backends.raes_diagnostics import _set_path, _pop_path
-from aptl.core.deployment.lilrae_recorded_inventory import RecordedInventorySnapshot
+from aptl.core.deployment.lilrae_recorded_inventory import (
+    RecordedChild,
+    RecordedInventorySnapshot,
+)
 
 _ABSENT = object()
 
 
 def _value(mapping: object, path: tuple[str, ...]) -> object:
+    """Return the value at a key path, or the absent marker."""
     current = mapping
     for token in path:
         if not isinstance(current, dict) or token not in current:
@@ -54,24 +59,32 @@ def _describe_nodes(document: dict[str, Any], snapshot: RuntimeSnapshot) -> None
             if entry.payload.get("spec", {}).get("node"):
                 nodes[name] = deepcopy(entry.payload["spec"]["node"])
             continue
-        node = nodes[name]
-        for descriptor in realization_concern_descriptors():
-            if descriptor.section != "nodes":
-                continue
-            observed = _value(entry.payload, descriptor.payload_path)
-            if (
-                observed is _ABSENT
-                or observed is None
-                or (len(descriptor.authored_path) == 1 and observed == "")
-            ):
-                _pop_path(node, descriptor.authored_path)
-            else:
-                _set_path(node, descriptor.authored_path, deepcopy(observed))
+        _describe_node(nodes[name], entry)
+
+
+def _describe_node(node: dict[str, Any], entry: SnapshotEntry) -> None:
+    """Replace the observed concern values of one authored node."""
+    for descriptor in realization_concern_descriptors():
+        if descriptor.section != "nodes":
+            continue
+        observed = _value(entry.payload, descriptor.payload_path)
+        if _is_unobserved(observed, descriptor.authored_path):
+            _pop_path(node, descriptor.authored_path)
+        else:
+            _set_path(node, descriptor.authored_path, deepcopy(observed))
+
+
+def _is_unobserved(observed: object, authored_path: tuple[str, ...]) -> bool:
+    """Return True when the native state supplies no value for the concern."""
+    if observed is _ABSENT or observed is None:
+        return True
+    return len(authored_path) == 1 and observed == ""
 
 
 def _previous_report(
     request: ProvisioningPlan, previous: RuntimeSnapshot
 ) -> RuntimeInventoryReport | None:
+    """Return the latest inventory report for the same run, source and scope."""
     source = request.materialization_source
     return next(
         (
@@ -87,6 +100,7 @@ def _previous_report(
 
 
 def _evidence(request: ProvisioningPlan, digest: str) -> RuntimeInventoryEvidence:
+    """Return inventory evidence bound to the current operation and attempt."""
     return RuntimeInventoryEvidence(
         run_id=request.materialization_source.run_id,
         operation_id=request.operation_id,
@@ -101,60 +115,21 @@ def _descendants(
     facts: RecordedInventorySnapshot,
     document: dict[str, Any],
 ) -> RuntimeInventoryReport:
+    """Bind native descendants to prior records and describe them as nodes."""
     preceding = _previous_report(request, previous)
     records = {r.address: r for r in preceding.descendants} if preceding else {}
     nodes = document.setdefault("nodes", {})
     for child in facts.children:
-        creation = child.creation
-        if creation.attempt_id != request.materialization_source.run_id:
+        if child.creation.attempt_id != request.materialization_source.run_id:
             raise ValueError("native descendant belongs to another attempt")
-        old = records.get(creation.address)
-        record = RuntimeDescendantBinding(
-            address=creation.address,
-            parent_address=creation.parent_address,
-            source_address=creation.source_address,
-            native_identity_digest=canonical_json_digest(
-                {
-                    "daemon": creation.daemon_id,
-                    "workspace": creation.workspace_id,
-                    "native_id": creation.native_id,
-                }
-            ),
-            creation=old.creation
-            if old
-            else _evidence(request, creation.evidence_digest),
-            state=child.state,
-            lifecycle=(
-                None
-                if child.state == "active"
-                else old.lifecycle
-                if old and old.state == child.state
-                else _evidence(
-                    request,
-                    canonical_json_digest(
-                        {"creation": creation.evidence_digest, "state": child.state}
-                    ),
-                )
-            ),
-        )
+        old = records.get(child.creation.address)
+        record = _descendant_binding(request, child, old)
         if old and record.native_identity_digest != old.native_identity_digest:
             raise ValueError("native descendant incarnation changed")
         records[record.address] = record
-        name = record.address.removeprefix("provision.node.")
         if child.state != "autoremoved":
-            nodes[name] = {"type": "compute"}
-            if child.platform:
-                nodes[name]["os"] = child.platform
-    # A failed scan cannot erase previously accepted members or tombstones.
-    for record in records.values():
-        name = record.address.removeprefix("provision.node.")
-        if record.state == "autoremoved":
-            nodes.pop(name, None)
-        elif name not in nodes:
-            entry = previous.entries.get(record.address)
-            if entry is None:
-                raise ValueError("retained descendant description unavailable")
-            nodes[name] = deepcopy(entry.payload["spec"]["node"])
+            nodes[record.address.removeprefix("provision.node.")] = _child_node(child)
+    _retain_descendants(records, nodes, previous)
     report = RuntimeInventoryReport(
         attempt_id=request.inventory_attempt_id,
         sequence=preceding.sequence + 1 if preceding else 1,
@@ -168,6 +143,114 @@ def _descendants(
         ),
     )
     return report
+
+
+def _descendant_binding(
+    request: ProvisioningPlan,
+    child: RecordedChild,
+    old: RuntimeDescendantBinding | None,
+) -> RuntimeDescendantBinding:
+    """Return the binding for one native descendant and its prior record."""
+    creation = child.creation
+    return RuntimeDescendantBinding(
+        address=creation.address,
+        parent_address=creation.parent_address,
+        source_address=creation.source_address,
+        native_identity_digest=canonical_json_digest(
+            {
+                "daemon": creation.daemon_id,
+                "workspace": creation.workspace_id,
+                "native_id": creation.native_id,
+            }
+        ),
+        creation=old.creation if old else _evidence(request, creation.evidence_digest),
+        state=child.state,
+        lifecycle=_lifecycle(request, child, old),
+    )
+
+
+def _lifecycle(
+    request: ProvisioningPlan,
+    child: RecordedChild,
+    old: RuntimeDescendantBinding | None,
+) -> RuntimeInventoryEvidence | None:
+    """Return lifecycle evidence for a descendant that is not active."""
+    if child.state == "active":
+        return None
+    if old and old.state == child.state:
+        return old.lifecycle
+    return _evidence(
+        request,
+        canonical_json_digest(
+            {"creation": child.creation.evidence_digest, "state": child.state}
+        ),
+    )
+
+
+def _child_node(child: RecordedChild) -> dict[str, str]:
+    """Return the portable node description of one present descendant."""
+    node = {"type": "compute"}
+    if child.platform:
+        node["os"] = child.platform
+    return node
+
+
+def _retain_descendants(
+    records: dict[str, RuntimeDescendantBinding],
+    nodes: dict[str, Any],
+    previous: RuntimeSnapshot,
+) -> None:
+    """Keep accepted members and tombstones that the current scan omits."""
+    # A failed scan cannot erase previously accepted members or tombstones.
+    for record in records.values():
+        name = record.address.removeprefix("provision.node.")
+        if record.state == "autoremoved":
+            nodes.pop(name, None)
+        elif name not in nodes:
+            entry = previous.entries.get(record.address)
+            if entry is None:
+                raise ValueError("retained descendant description unavailable")
+            nodes[name] = deepcopy(entry.payload["spec"]["node"])
+
+
+def _resource_bindings(
+    request: ProvisioningPlan | OrchestrationPlan | EvaluationPlan,
+    result: ApplyResult,
+    document: dict[str, Any],
+    original: InstantiatedScenario,
+) -> list[dict[str, object]]:
+    """Return one resource binding for each realized node instance."""
+    bindings: list[dict[str, object]] = []
+    for name, node in document.get("nodes", {}).items():
+        kind = "network" if node.get("type") == "switch" else "node"
+        address = f"provision.{kind}.{name}"
+        payload = _binding_payload(request, result, address)
+        for index in range(payload.get("count") or 1):
+            binding: dict[str, object] = {
+                "address": address,
+                "node_name": name,
+                "instance_index": index,
+            }
+            if name in original.nodes:
+                binding["source_node"] = name
+            bindings.append(binding)
+    return bindings
+
+
+def _binding_payload(
+    request: ProvisioningPlan | OrchestrationPlan | EvaluationPlan,
+    result: ApplyResult,
+    address: str,
+) -> dict[str, Any]:
+    """Return the planned payload, else the snapshot payload, for an address."""
+    if isinstance(request, ProvisioningPlan):
+        resource = request.resources.get(address)
+        if resource:
+            return resource.payload
+    entry = result.snapshot.entries.get(address)
+    if entry:
+        return entry.payload
+    return {}
 
 
 def materialization_result(
@@ -191,22 +274,7 @@ def materialization_result(
         if not isinstance(facts, RecordedInventorySnapshot):
             raise ValueError("native descendant inventory unavailable")
         report = _descendants(request, previous, facts, document)
-    bindings = []
-    for name, node in document.get("nodes", {}).items():
-        kind = "network" if node.get("type") == "switch" else "node"
-        address = f"provision.{kind}.{name}"
-        resource = (
-            request.resources.get(address)
-            if isinstance(request, ProvisioningPlan)
-            else None
-        )
-        entry = result.snapshot.entries.get(address)
-        payload = resource.payload if resource else entry.payload if entry else {}
-        for index in range(payload.get("count") or 1):
-            binding = {"address": address, "node_name": name, "instance_index": index}
-            if name in original.nodes:
-                binding["source_node"] = name
-            bindings.append(binding)
+    bindings = _resource_bindings(request, result, document, original)
     provenance = {
         "profile": "raes-materialization-attestation/v1",
         "attestation_id": "lilrae-" + uuid4().hex,

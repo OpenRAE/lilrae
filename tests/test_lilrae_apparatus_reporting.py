@@ -85,8 +85,7 @@ def test_missing_native_capture_readback_grants_no_entry(tmp_path):
             plan.manifest,
             (APPARATUS,),
         )
+        applied = ApplyResult(True, manager.snapshot)
         with pytest.raises(ValueError, match="readback"):
-            append_verified_apparatus(
-                ApplyResult(True, manager.snapshot), resources, ()
-            )
+            append_verified_apparatus(applied, resources, ())
         assert not manager.snapshot.entries

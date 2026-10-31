@@ -41,7 +41,7 @@ from aptl.utils.pathsafe import (
 _CONFIG = Path("config.json")
 
 
-def _socket_directory(config: dict) -> Path:
+def _socket_directory(config: dict[str, object]) -> Path:
     """Return the attempt's recorded socket directory."""
     directory = config.get("socket_directory")
     if not isinstance(directory, str) or not Path(directory).is_absolute():
@@ -49,7 +49,7 @@ def _socket_directory(config: dict) -> Path:
     return Path(directory)
 
 
-def _publish_config(store: RecordingStore, config: dict) -> Path:
+def _publish_config(store: RecordingStore, config: dict[str, object]) -> Path:
     """Publish the write-once attempt config with its private socket directory.
 
     The first start creates an unpredictable owner-only directory, because a
@@ -70,7 +70,8 @@ def _publish_config(store: RecordingStore, config: dict) -> Path:
     return directory
 
 
-def existing_sessions(ownership: WorkspaceOwnership) -> tuple["RecordingSession", ...]:
+def existing_sessions(ownership: WorkspaceOwnership) -> tuple[RecordingSession, ...]:
+    """Return the recording sessions that the workspace lifecycle state records."""
     relative = Path(".aptl/lifecycle/lilrae-docker-recording-v1")
     try:
         names = listdir_contained_nofollow(ownership.root, relative)
@@ -86,7 +87,7 @@ def existing_sessions(ownership: WorkspaceOwnership) -> tuple["RecordingSession"
     for name in names:
         try:
             config = json.loads(
-                read_contained_nofollow(ownership.root, relative / name / "config.json")
+                read_contained_nofollow(ownership.root, relative / name / _CONFIG)
             )
         except FileNotFoundError:
             continue
@@ -105,12 +106,15 @@ def existing_sessions(ownership: WorkspaceOwnership) -> tuple["RecordingSession"
 
 @dataclass
 class RecordingSession:
+    """Control one lab-scoped recorder process through its control socket."""
+
     store: RecordingStore
     directory: Path
     sockets: dict[str, Path]
-    process: subprocess.Popen | None = None
+    process: subprocess.Popen[bytes] | None = None
 
-    def _control(self, command: str) -> dict:
+    def _control(self, command: str) -> dict[str, object]:
+        """Send one control command and return the verified recorder reply."""
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
             client.settimeout(2)
             client.connect(str(self.directory / "control.sock"))
@@ -125,7 +129,8 @@ class RecordingSession:
             raise OwnershipConflictError("recording session identity changed")
         return result
 
-    def status(self) -> dict | None:
+    def status(self) -> dict[str, object] | None:
+        """Return the recorder status, or None when no recorder is live."""
         try:
             return self._control("status")
         except FileNotFoundError, ConnectionRefusedError:
@@ -134,17 +139,26 @@ class RecordingSession:
             raise OwnershipConflictError("recording status is unavailable") from exc
 
     def quiesce(self) -> tuple[str, ...]:
+        """Drain the recorder and return the gap codes for a failed drain."""
+        gaps: list[str] = []
+        if not self._drain():
+            gaps.append("recording-drain-unavailable")
+        return tuple(gaps)
+
+    def _drain(self) -> bool:
+        """Ask the recorder to quiesce and return True when it drains in time."""
         deadline = time.monotonic() + 10
         try:
             while time.monotonic() < deadline:
                 if self._control("quiesce").get("quiesced"):
-                    return ()
+                    return True
                 time.sleep(0.05)
         except OSError, ValueError:
             pass
-        return ("recording-drain-unavailable",)
+        return False
 
     def shutdown(self) -> None:
+        """Drain and stop the recorder, and wait for its process to exit."""
         self.quiesce()
         try:
             self._control("shutdown")
@@ -182,34 +196,47 @@ def start_recording(
     session = RecordingSession(store, directory, {})
     status = session.status()
     if status is None:
-        if store._optional_read(Path("issued.json")) and not (
-            restart_allowed is not None and restart_allowed()
-        ):
-            raise OwnershipConflictError(
-                "recording lifecycle was interrupted; stop the lab before another start"
-            )
-        config_path = store.ownership.root / store.relative / _CONFIG
-        session.process = subprocess.Popen(
-            [sys.executable, "-I", "-m", __name__, str(config_path)],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-            env={"PATH": os.defpath, "PYTHONNOUSERSITE": "1"},
-        )
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            status = session.status()
-            if status is not None:
-                break
-            if session.process.poll() is not None:
-                break
-            time.sleep(0.05)
-        if status is None:
-            session.shutdown()
-            raise OwnershipConflictError("recording process could not start")
+        _require_restart_allowed(store, restart_allowed)
+        status = _spawn_recorder(session)
     session.sockets = {key: Path(value) for key, value in status["sockets"].items()}
     return session
+
+
+def _require_restart_allowed(
+    store: RecordingStore, restart_allowed: Callable[[], bool] | None
+) -> None:
+    """Refuse a restart after issued sockets unless the caller allows it."""
+    if store._optional_read(Path("issued.json")) and not (
+        restart_allowed is not None and restart_allowed()
+    ):
+        raise OwnershipConflictError(
+            "recording lifecycle was interrupted; stop the lab before another start"
+        )
+
+
+def _spawn_recorder(session: RecordingSession) -> dict[str, object]:
+    """Start the recorder process and return its first live status."""
+    store = session.store
+    config_path = store.ownership.root / store.relative / _CONFIG
+    session.process = subprocess.Popen(
+        [sys.executable, "-I", "-m", __name__, str(config_path)],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        env={"PATH": os.defpath, "PYTHONNOUSERSITE": "1"},
+    )
+    status = None
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        status = session.status()
+        if status is not None or session.process.poll() is not None:
+            break
+        time.sleep(0.05)
+    if status is None:
+        session.shutdown()
+        raise OwnershipConflictError("recording process could not start")
+    return status
 
 
 def _serve_control(
@@ -219,6 +246,7 @@ def _serve_control(
     supervisor: threading.Thread,
     stopping: threading.Event,
 ) -> bool:
+    """Answer one control command and return True when it asks for shutdown."""
     client, _ = listener.accept()
     with client:
         client.settimeout(2)
@@ -239,7 +267,8 @@ def _serve_control(
 
 
 def serve_recording(config_path: Path) -> None:
-    config = json.loads(read_contained_nofollow(config_path.parent, "config.json"))
+    """Run the recorder for one attempt config while it holds the owner lock."""
+    config = json.loads(read_contained_nofollow(config_path.parent, _CONFIG))
     ownership = WorkspaceOwnership.load(Path(config["root"]), config["project"])
     if ownership is None:
         raise OwnershipConflictError("recording workspace is unavailable")
@@ -283,6 +312,7 @@ def serve_recording(config_path: Path) -> None:
 def _serve_owned(
     store: RecordingStore, upstream: Path, directory: Path, authorities: dict[str, int]
 ) -> bool:
+    """Serve the relay and control socket, and return True after a clean stop."""
     native = NativeDocker(upstream, store.daemon_id)
     native.verify_daemon()
     inventory = RecordedInventory(store, native)
@@ -312,16 +342,7 @@ def _serve_owned(
         )
         supervisor.start()
         try:
-            while True:
-                try:
-                    if _serve_control(
-                        control, session, relay, supervisor, supervision_stop
-                    ):
-                        break
-                except TimeoutError:
-                    pass
-                except OSError, ValueError:
-                    store.gap("recording-control-unavailable")
+            _control_loop(control, session, relay, supervisor, supervision_stop)
         finally:
             supervision_stop.set()
             control_path.unlink(missing_ok=True)
@@ -329,7 +350,26 @@ def _serve_owned(
     return not supervisor.is_alive()
 
 
+def _control_loop(
+    control: socket.socket,
+    session: RecordingSession,
+    relay: DockerRecordingRelay,
+    supervisor: threading.Thread,
+    stopping: threading.Event,
+) -> None:
+    """Answer control commands until one of them asks for shutdown."""
+    while True:
+        try:
+            if _serve_control(control, session, relay, supervisor, stopping):
+                return
+        except TimeoutError:
+            pass
+        except OSError, ValueError:
+            session.store.gap("recording-control-unavailable")
+
+
 def _supervise_attempt(inventory: RecordedInventory, stopping: threading.Event) -> None:
+    """Enforce child deadlines until stopped, and record a gap on failure."""
     try:
         while not stopping.wait(0.5):
             if inventory.supervise(cancelled=stopping.is_set):

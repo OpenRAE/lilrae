@@ -297,8 +297,9 @@ def test_local_archive_uses_custom_store_and_refuses_sealed_run(tmp_path):
     assert archive.read(copied) == source_archive.read(record)
     before = set(artifact.parent.iterdir())
     store.commit_seal_marker("run-1", {"sealed": True})
+    sealed_sdl = source_archive.read(record).sdl
     with pytest.raises(ValueError, match="sealed"):
-        archive.publish(source_archive.read(record).sdl)
+        archive.publish(sealed_sdl)
     assert set(artifact.parent.iterdir()) == before
 
 
@@ -611,11 +612,12 @@ def test_planning_keeps_the_sealed_family_run_identity(tmp_path, family_input):
         assert (
             plan.provisioning.materialization_source.run_id == trial.provenance.run_id
         )
+        other_run = AptlPlanningOptions(run_scope=PlanScope(run_id="other"))
         with pytest.raises(ValueError, match="family-run-identity-mismatch"):
             plan_aptl_scenario(
                 target=manager._target,
                 scenario=trial.scenario,
-                options=AptlPlanningOptions(run_scope=PlanScope(run_id="other")),
+                options=other_run,
             )
         assert not native.reads
 

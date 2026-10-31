@@ -41,15 +41,17 @@ from aptl.backends._raes_admission_helpers import (
 )
 from aptl.backends._raes_runtime_target_options import RuntimeTargetOptions
 from aptl.backends._raes_runtime_target import create_aptl_runtime_target
-from aptl.backends.scenario_family import (
-    FamilyTrialInput,
-)
 from aptl.backends._raes_start_failure import (
     INSTANTIATION_FAILURE_MESSAGE as INSTANTIATION_FAILURE_MESSAGE,
     start_failure_outcome as _start_failure_outcome,
 )
 from aptl.backends._raes_participant_crossing import participant_runtime_options
 from aptl.backends.raes_diagnostics import render_raes_diagnostics
+from aptl.backends._raes_start_run import (
+    admitted_run_target,
+    materialization_reporting_options,
+    refresh_materialized_inventory,
+)
 from aptl.backends.raes_execution_helpers import (
     evaluation_results as collect_evaluation_results,
     interpret_realization,
@@ -77,6 +79,7 @@ from aptl.backends.raes_start_model import (
     AcesRunTarget,
     AcesStartOutcome,
     AdmittedScenarioStart,
+    ScenarioAdmissionRun,
     ScenarioAdmissionSource,
 )
 from aptl.core.config import AptlConfig
@@ -153,22 +156,12 @@ def start_raes_scenario(
                 config,
                 backend,
                 scenario_path=scenario_path,
-                run_id=run_target.run_id if run_target is not None else None,
+                run=ScenarioAdmissionRun(
+                    run_id=run_target.run_id if run_target is not None else None
+                ),
             )
         resolved_scenario = admitted.bundle.sdl_path
-        if admitted.bundle.trial is not None and (
-            run_target is None
-            or run_target.run_id != admitted.bundle.trial.provenance.run_id
-        ):
-            raise ValueError("family-run-identity-mismatch")
-        source = admitted.execution_plan.provisioning.materialization_source
-        if source is not None and run_target is None:
-            from aptl.core.runstore import LocalRunStore
-
-            storage_path = Path(config.run_storage.local_path)
-            if not storage_path.is_absolute():
-                storage_path = project_dir / storage_path
-            run_target = AcesRunTarget(LocalRunStore(storage_path), source.run_id)
+        run_target = admitted_run_target(admitted, run_target, project_dir, config)
         return _run_execution_plan(
             admitted.target,
             admitted.execution_plan,
@@ -199,8 +192,7 @@ def admit_raes_scenario(
     scenario_path: Path | None = None,
     parameters: Mapping[str, object] | None = None,
     source: ScenarioAdmissionSource | None = None,
-    trial: FamilyTrialInput | None = None,
-    run_id: str | None = None,
+    run: ScenarioAdmissionRun | None = None,
 ) -> AdmittedScenarioStart:
     """Admit one scenario execution: resolve, parse, plan, and interpret it once.
 
@@ -217,10 +209,13 @@ def admit_raes_scenario(
     # this rather than the engine's checkout, so rehoming changes only the
     # resolver (issue #874 / #875).
     selected = source or ScenarioAdmissionSource()
+    admission_run = run or ScenarioAdmissionRun()
     bundle, startup_selection = selected.bundle, selected.startup_selection
     if bundle is None:
         bundle = resolve_scenario_bundle(project_dir, scenario_path, config)
-    bundle = bind_admission_trial(bundle, config, trial, parameters, startup_selection)
+    bundle = bind_admission_trial(
+        bundle, config, admission_run.trial, parameters, startup_selection
+    )
     startup_selection, capture_selection = resolve_admission_adapters(
         bundle, config, startup_selection
     )
@@ -268,7 +263,11 @@ def admit_raes_scenario(
         options=AptlPlanningOptions(
             parameters=dict(parameters) if parameters is not None else None,
             artifact_availability=availability,
-            run_scope=PlanScope(run_id=run_id) if run_id is not None else None,
+            run_scope=(
+                PlanScope(run_id=admission_run.run_id)
+                if admission_run.run_id is not None
+                else None
+            ),
         ),
     )
     provisioner = target.provisioner
@@ -406,21 +405,10 @@ def _apply_execution_plan(
     no second apply is attempted. Returns ``(failure | None, snapshot, manager)``.
     """
 
-    from aptl.backends.lilrae_materialization_archive import (
-        LilraeMaterializationArchive,
-    )
-
     source = execution_plan.provisioning.materialization_source
-    reporting_options = {}
-    if source is not None:
-        if run_id != source.run_id or run_store is None:
-            raise ValueError("The admitted plan and archive must identify the same run")
-        if run_store.is_sealed(run_id):
-            raise ValueError("The admitted run is sealed")
-        reporting_options = {
-            "run_scope": f"run:{run_id}",
-            "materialization_archive": LilraeMaterializationArchive(run_store, run_id),
-        }
+    reporting_options = materialization_reporting_options(
+        execution_plan, run_store=run_store, run_id=run_id
+    )
     if isinstance(target.provisioner, AptlProvisioner):
         target.provisioner.bind_attempt_id(run_id)
     manager = RuntimeManager(
@@ -452,11 +440,5 @@ def _apply_execution_plan(
         run_id=run_id,
     )
     if failure is None and source is not None:
-        refreshed = manager.refresh_inventory(execution_plan)
-        snapshot = refreshed.snapshot
-        if not refreshed.success:
-            failure = LabResult(
-                success=False,
-                error=render_raes_diagnostics(list(refreshed.diagnostics)),
-            )
+        failure, snapshot = refresh_materialized_inventory(manager, execution_plan)
     return failure, snapshot, manager

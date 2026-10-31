@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 import json
 import os
@@ -12,13 +13,18 @@ import socket
 import stat
 import threading
 import time
+from typing import Self
 from uuid import uuid4
 
 import h11
 
 from aptl.core.deployment._compose_resource_ownership import OwnershipConflictError
 from aptl.core.deployment._docker_endpoint_binding import _local_docker_socket_identity
-from aptl.core.deployment.lilrae_docker_recording import CreationIntent, RecordingStore
+from aptl.core.deployment.lilrae_docker_recording import (
+    CreationIntent,
+    RecordedCreation,
+    RecordingStore,
+)
 from aptl.core.deployment.lilrae_docker_http import (
     HTTPPeer,
     forward_body,
@@ -27,15 +33,38 @@ from aptl.core.deployment.lilrae_docker_http import (
 )
 from aptl.utils.pathsafe import open_private_dir_contained_nofollow
 
-_CREATE = re.compile(rb"/(?:v[0-9]+\.[0-9]+/)?containers/create(?:\?|$)")
+_CREATE = re.compile(rb"/(?:v\d+\.\d+/)?containers/create(?:\?|$)")
 _OPAQUE_ALLOCATION = re.compile(
-    rb"/(?:v[0-9]+\.[0-9]+/)?(?:build|services/create|networks/create|volumes/create|plugins/.*)(?:\?|$)"
+    rb"/(?:v\d+\.\d+/)?(?:build|services/create|networks/create|volumes/create|plugins/.*)(?:\?|$)"
 )
 _CANONICAL_SOCKETS = frozenset({"/var/run/docker.sock", "/run/docker.sock"})
+_BYPASS_SOURCES = frozenset({"/", "/run", "/var", "/var/run"})
+_CREATE_REJECTED = frozenset({400, 401, 403, 404, 405, 409, 422})
+
+
+def _discard_creation(_creation: RecordedCreation) -> None:
+    """Ignore a recorded creation when no observer is set."""
+
+
+def _request_path(request: h11.Request) -> bytes:
+    """Return the request target without the query string."""
+    return request.target.split(b"?", 1)[0]
+
+
+def _must_close(client: HTTPPeer, upstream: HTTPPeer) -> bool:
+    """Return True when one of the two HTTP peers must close the connection."""
+    return h11.MUST_CLOSE in {
+        client.protocol.our_state,
+        client.protocol.their_state,
+        upstream.protocol.our_state,
+        upstream.protocol.their_state,
+    }
 
 
 @dataclass
 class _Holder:
+    """Keep the causal source and parent identity for one recording endpoint."""
+
     source_address: str
     timeout_seconds: int
     native_id: str = ""
@@ -64,19 +93,22 @@ class DockerRecordingRelay:
         self._roots: dict[str, Path] = {}
         self._worker: threading.Thread | None = None
         self._inflight = 0
-        self.on_creation = lambda creation: None
+        self.on_creation: Callable[[RecordedCreation], None] = _discard_creation
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
+        """Start the accept worker and return the relay."""
         self._worker = threading.Thread(
             target=self._accept, name="lilrae-docker-recording", daemon=True
         )
         self._worker.start()
         return self
 
-    def __exit__(self, *_exc):
+    def __exit__(self, *_exc: object) -> None:
+        """Close the relay."""
         self.close()
 
     def endpoint(self, source_address: str, *, timeout_seconds: int) -> Path:
+        """Return the recording endpoint for a source, and open it on first use."""
         with self._guard:
             if source_address not in self._roots:
                 holder = _Holder(source_address, timeout_seconds)
@@ -85,6 +117,7 @@ class DockerRecordingRelay:
             return self._roots[source_address]
 
     def _listen(self, holder: _Holder) -> Path:
+        """Open a new recording socket for a holder and return its path."""
         if len(self._listeners) >= 1024:
             raise ValueError("Docker recording endpoint capacity reached")
         descriptor = open_private_dir_contained_nofollow(
@@ -110,6 +143,7 @@ class DockerRecordingRelay:
         return path
 
     def _accept(self) -> None:
+        """Accept connections and start one serving thread for each connection."""
         while not self._stopping.is_set():
             for key, _ in self._selector.select(timeout=0.1):
                 with self._guard:
@@ -130,6 +164,7 @@ class DockerRecordingRelay:
                     worker.start()
 
     def _serve(self, stream: socket.socket, holder: _Holder) -> None:
+        """Connect one client stream to the upstream Docker socket and relay it."""
         upstream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         with self._guard:
             self._streams.add(upstream)
@@ -158,25 +193,23 @@ class DockerRecordingRelay:
             self._capacity.release()
 
     def _exchange(self, client: HTTPPeer, upstream: HTTPPeer, holder: _Holder) -> None:
-        while not self._stopping.is_set():
-            request = client.receive()
-            if isinstance(request, h11.ConnectionClosed):
-                return
-            if not isinstance(request, h11.Request):
-                raise ValueError("invalid Docker request framing")
-            if self._quiescing.is_set():
-                return
-            if self._transaction(client, upstream, holder, request):
-                return
-            if h11.MUST_CLOSE in {
-                client.protocol.our_state,
-                client.protocol.their_state,
-                upstream.protocol.our_state,
-                upstream.protocol.their_state,
-            }:
-                return
+        """Relay request and response cycles until one side stops the connection."""
+        while not self._stopping.is_set() and self._cycle(client, upstream, holder):
             client.protocol.start_next_cycle()
             upstream.protocol.start_next_cycle()
+
+    def _cycle(self, client: HTTPPeer, upstream: HTTPPeer, holder: _Holder) -> bool:
+        """Relay one request cycle and return True when the connection continues."""
+        request = client.receive()
+        if isinstance(request, h11.ConnectionClosed):
+            return False
+        if not isinstance(request, h11.Request):
+            raise ValueError("invalid Docker request framing")
+        if self._quiescing.is_set() or self._transaction(
+            client, upstream, holder, request
+        ):
+            return False
+        return not _must_close(client, upstream)
 
     def _transaction(
         self,
@@ -185,6 +218,7 @@ class DockerRecordingRelay:
         holder: _Holder,
         request: h11.Request,
     ) -> bool:
+        """Relay one request and record container creation when it applies."""
         if client.protocol.they_are_waiting_for_100_continue:
             client.send(h11.InformationalResponse(status_code=100, headers=[]))
             request = h11.Request(
@@ -194,11 +228,9 @@ class DockerRecordingRelay:
                     (key, value) for key, value in request.headers if key != b"expect"
                 ],
             )
-        if request.method != b"POST" or not _CREATE.fullmatch(
-            request.target.split(b"?", 1)[0]
-        ):
+        if request.method != b"POST" or not _CREATE.fullmatch(_request_path(request)):
             if request.method == b"POST" and _OPAQUE_ALLOCATION.fullmatch(
-                request.target.split(b"?", 1)[0]
+                _request_path(request)
             ):
                 self.store.gap("opaque-native-allocation")
             upstream.send(request)
@@ -228,7 +260,10 @@ class DockerRecordingRelay:
         request: h11.Request,
         delegated: _Holder,
     ) -> None:
-        def transform(body: bytes):
+        """Relay a create request body with socket delegation rewritten."""
+
+        def transform(body: bytes) -> tuple[h11.Request, bytes]:
+            """Rewrite socket delegation in the create body, or keep the body."""
             try:
                 document = json.loads(body)
                 self._rewrite_delegation(document, delegated)
@@ -254,10 +289,14 @@ class DockerRecordingRelay:
             lambda: self.store.gap("create-request-uninspected"),
         )
 
-    def _rewrite_delegation(self, document: dict, delegated: _Holder) -> None:
-        endpoint = None
+    def _rewrite_delegation(
+        self, document: dict[str, object], delegated: _Holder
+    ) -> None:
+        """Point Docker socket mounts in a create body at a delegated endpoint."""
+        endpoint: Path | None = None
 
-        def delegation_path():
+        def delegation_path() -> Path:
+            """Open the delegated endpoint once and return its path."""
             nonlocal endpoint
             if endpoint is None:
                 with self._guard:
@@ -265,18 +304,8 @@ class DockerRecordingRelay:
             return endpoint
 
         host = document.get("HostConfig") or {}
-        binds = host.get("Binds") or []
-        for index, binding in enumerate(binds):
-            source, separator, rest = binding.partition(":")
-            if os.path.normpath(source) in _CANONICAL_SOCKETS or source in self._paths:
-                binds[index] = f"{delegation_path()}{separator}{rest}"
-            elif source in {"/", "/run", "/var", "/var/run"}:
-                self.store.gap("possible-socket-bypass")
-        for mount in host.get("Mounts") or []:
-            if mount.get("Type") == "bind" and mount.get("Source") in (
-                _CANONICAL_SOCKETS | self._paths
-            ):
-                mount["Source"] = str(delegation_path())
+        self._rewrite_binds(host.get("Binds") or [], delegation_path)
+        self._rewrite_mounts(host.get("Mounts") or [], delegation_path)
         if host.get("VolumesFrom"):
             self.store.gap("inherited-socket-delegation")
         if any(
@@ -285,6 +314,27 @@ class DockerRecordingRelay:
         ):
             self.store.gap("alternate-docker-endpoint")
 
+    def _rewrite_binds(
+        self, binds: list[str], delegation_path: Callable[[], Path]
+    ) -> None:
+        """Replace Docker socket bind sources with the delegated endpoint."""
+        for index, binding in enumerate(binds):
+            source, separator, rest = binding.partition(":")
+            if os.path.normpath(source) in _CANONICAL_SOCKETS or source in self._paths:
+                binds[index] = f"{delegation_path()}{separator}{rest}"
+            elif source in _BYPASS_SOURCES:
+                self.store.gap("possible-socket-bypass")
+
+    def _rewrite_mounts(
+        self, mounts: list[dict[str, object]], delegation_path: Callable[[], Path]
+    ) -> None:
+        """Replace Docker socket bind mount sources with the delegated endpoint."""
+        for mount in mounts:
+            if mount.get("Type") == "bind" and mount.get("Source") in (
+                _CANONICAL_SOCKETS | self._paths
+            ):
+                mount["Source"] = str(delegation_path())
+
     def _response(
         self,
         client: HTTPPeer,
@@ -292,45 +342,18 @@ class DockerRecordingRelay:
         intent: CreationIntent | None,
         delegated: _Holder | None,
     ) -> bool:
-        response = upstream.receive()
-        while isinstance(response, h11.InformationalResponse):
-            client.send(response)
-            if response.status_code == 101:
-                tunnel(client, upstream)
-                return True
-            response = upstream.receive()
-        if not isinstance(response, h11.Response):
-            raise ConnectionError("Docker response is unavailable")
-        if intent is None:
+        """Relay one Docker response and return True when the stream is done."""
+        response = self._final_response(client, upstream)
+        if response is None:
+            return True
+        if intent is None or delegated is None:
             client.send(response)
             forward_body(upstream, client)
         else:
 
-            def transform(body: bytes):
-                if response.status_code == 201:
-                    try:
-                        creation = self.store.commit(intent, json.loads(body)["Id"])
-                        delegated.native_id = creation.native_id
-                        delegated.ready.set()
-                    except (
-                        ValueError,
-                        TypeError,
-                        KeyError,
-                        OwnershipConflictError,
-                        OSError,
-                    ):
-                        self.store.gap("creation-response-unrecorded")
-                    else:
-                        try:
-                            self.on_creation(creation)
-                        except OSError, ValueError, OwnershipConflictError:
-                            # The ID is durable; live inventory discloses any
-                            # unavailable metadata without losing that identity.
-                            pass
-                elif response.status_code in {400, 401, 403, 404, 405, 409, 422}:
-                    self.store.failed(intent)
-                else:
-                    self.store.gap("creation-response-unrecorded")
+            def transform(body: bytes) -> tuple[h11.Response, bytes]:
+                """Record the create outcome and keep the response unchanged."""
+                self._record_outcome(response, body, intent, delegated)
                 return response, body
 
             inspect_body(
@@ -342,12 +365,68 @@ class DockerRecordingRelay:
             )
         return False
 
+    def _final_response(
+        self, client: HTTPPeer, upstream: HTTPPeer
+    ) -> h11.Response | None:
+        """Relay interim responses and return the final one, or None after an upgrade."""
+        response = upstream.receive()
+        while isinstance(response, h11.InformationalResponse):
+            client.send(response)
+            if response.status_code == 101:
+                tunnel(client, upstream)
+                return None
+            response = upstream.receive()
+        if not isinstance(response, h11.Response):
+            raise ConnectionError("Docker response is unavailable")
+        return response
+
+    def _record_outcome(
+        self,
+        response: h11.Response,
+        body: bytes,
+        intent: CreationIntent,
+        delegated: _Holder,
+    ) -> None:
+        """Record a create response as a creation, a failure, or a gap."""
+        if response.status_code == 201:
+            self._record_creation(body, intent, delegated)
+        elif response.status_code in _CREATE_REJECTED:
+            self.store.failed(intent)
+        else:
+            self.store.gap("creation-response-unrecorded")
+
+    def _record_creation(
+        self, body: bytes, intent: CreationIntent, delegated: _Holder
+    ) -> None:
+        """Commit the created container ID and tell the creation observer."""
+        try:
+            creation = self.store.commit(intent, json.loads(body)["Id"])
+            delegated.native_id = creation.native_id
+            delegated.ready.set()
+        except (
+            ValueError,
+            TypeError,
+            KeyError,
+            OwnershipConflictError,
+            OSError,
+        ):
+            self.store.gap("creation-response-unrecorded")
+            return
+        try:
+            self.on_creation(creation)
+        except OSError, ValueError, OwnershipConflictError:
+            # The ID is durable; live inventory discloses any
+            # unavailable metadata without losing that identity.
+            pass
+
     def quiesce(self) -> bool:
+        """Stop new create requests and return True when none are in flight."""
         with self._guard:
             self._quiescing.set()
             return self._inflight == 0
 
     def close(self) -> None:
+        """Stop the relay, close all sockets, and wait for the workers."""
         self._stopping.set()
         if self._worker:
             self._worker.join(2)

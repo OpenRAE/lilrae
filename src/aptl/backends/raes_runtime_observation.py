@@ -20,6 +20,10 @@ from aptl.backends._raes_runtime_container_observation import (
     CONTAINER_DAEMON_FIELDS as _CONTAINER_DAEMON_FIELDS,
     observe_container_field as _observe_container_field,
 )
+from aptl.backends._raes_runtime_local_control_observation import (
+    observe_local_control_interfaces as _observe_local_control_interfaces,
+    recorded_socket_source as _recorded_socket_source,
+)
 from aptl.backends._raes_runtime_environment_observation import (
     observe_environment as _observe_environment,
 )
@@ -77,7 +81,6 @@ _LOCAL_CONTROL_INTERFACES_PATH = CONCERN_PAYLOAD_PATH[
 ]
 _LOCAL_IDENTITY_PATH = CONCERN_PAYLOAD_PATH["runtime-local-identity"]
 _DEPENDENCY_MANIFESTS_PATH = CONCERN_PAYLOAD_PATH["runtime-dependency-manifests"]
-_DOCKER_SOCKET = "/var/run/docker.sock"
 
 # The excess-detection, scope, and init-baseline helpers this module's observers
 # rely on live in :mod:`aptl.backends._runtime_concern_excess`; they are imported
@@ -407,78 +410,6 @@ def _observe_autoremove(
         value = _host_config(info).get("AutoRemove")
         corroborated = isinstance(value, bool)
     return _disclose("runtime-container-autoremove", value) if corroborated else None
-
-
-def _recorded_socket_source(backend: object, container_name: str) -> str | None:
-    reader = getattr(backend, "recorded_docker_source", None)
-    source = reader(container_name) if callable(reader) else None
-    return source if isinstance(source, str) else None
-
-
-def _observe_local_control_interfaces(
-    info: Mapping[str, Any],
-    runtime: RuntimeConfiguration,
-    *,
-    recording_source: str | None = None,
-) -> object | None:
-    """Corroborate the canonical Docker socket from daemon mount metadata."""
-
-    interfaces = tuple(runtime.local_control_interfaces)
-    mounts = info.get("Mounts")
-    corroborated = bool(
-        interfaces
-        and isinstance(mounts, list)
-        and all(
-            _local_control_interface_matches(item, mounts, recording_source)
-            for item in interfaces
-        )
-    )
-    value = [item.model_dump(mode="json", by_alias=True) for item in interfaces]
-    return (
-        _disclose("runtime-local-control-interfaces", value) if corroborated else None
-    )
-
-
-def _local_control_interface_matches(
-    interface: object, mounts: list[object], recording_source: str | None = None
-) -> bool:
-    """Corroborate the canonical Docker socket in daemon mount metadata."""
-
-    expected = _supported_local_control_interface(interface)
-    return expected is not None and any(
-        _local_control_mount_matches(
-            mount, recording_source or expected[0], expected[1]
-        )
-        for mount in mounts
-    )
-
-
-def _supported_local_control_interface(interface: object) -> tuple[str, str] | None:
-    """Return the admitted Docker socket source and access mode."""
-
-    kind = str(getattr(interface.kind, "value", interface.kind))
-    access = str(getattr(interface.access, "value", interface.access))
-    source = interface.bind_source or interface.path
-    supported = (
-        kind == "unix_socket"
-        and access in {"read_only", "read_write"}
-        and interface.path == _DOCKER_SOCKET
-        and source == _DOCKER_SOCKET
-        and not interface.protocol
-    )
-    return (source, access) if supported else None
-
-
-def _local_control_mount_matches(mount: object, source: str, access: str) -> bool:
-    """Compare one daemon-observed bind mount to the admitted interface."""
-
-    return bool(
-        isinstance(mount, Mapping)
-        and mount.get("Type") == "bind"
-        and mount.get("Source") == source
-        and mount.get("Destination") == _DOCKER_SOCKET
-        and bool(mount.get("RW")) == (access == "read_write")
-    )
 
 
 # --------------------------------------------------------------------------- #
