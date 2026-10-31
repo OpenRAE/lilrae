@@ -168,6 +168,10 @@ class _RecordingBackend:
         self.events.append("verify")
         return ProjectRuntimePresence()
 
+    def retire_removed_runtime_receipts(self):
+        self.events.append("retire")
+        return []
+
 
 def test_stop_sweeps_after_resolving_the_project_and_before_networks(tmp_path):
     """Direct containers resolve the workspace project; networks must wait for

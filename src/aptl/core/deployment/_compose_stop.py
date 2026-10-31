@@ -71,6 +71,11 @@ class _ComposeStopBackend(Protocol):
 
         ...
 
+    def retire_removed_runtime_receipts(self) -> list[str]:
+        """Retire container and network receipts after proven absence."""
+
+        ...
+
 
 def stop_compose_lab(
     backend: _ComposeStopBackend,
@@ -137,7 +142,11 @@ def _run_compose_down(
 
 
 def _verification_failures(backend: _ComposeStopBackend) -> list[str]:
-    """Return a failure unless checked observation proves runtime absence."""
+    """Return a failure unless checked observation proves runtime absence.
+
+    Proven absence also retires the removed containers' and networks'
+    receipts, so the next start in this project resolves only its own.
+    """
 
     presence = backend.observe_project_runtime()
     if presence.error:
@@ -147,7 +156,7 @@ def _verification_failures(backend: _ComposeStopBackend) -> list[str]:
             "Project runtime artifacts remain after cleanup "
             f"(containers={presence.container_count}, networks={presence.network_count})"
         ]
-    return []
+    return backend.retire_removed_runtime_receipts()
 
 
 def _cleanup_failures(
