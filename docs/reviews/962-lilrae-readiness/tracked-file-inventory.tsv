@@ -1626,6 +1626,7 @@ tests/test_redaction_fuzz.py	tests-follow-owner	Retain meaningful boundary and p
 tests/test_redaction_parity.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_runstore.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_runstore_content_store.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_runstore_modes.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_runtime_materialization.py	tests-follow-owner	Retain runtime materialization regression coverage
 tests/test_scenario_bundle.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_scenario_bundle_realization_roots.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
