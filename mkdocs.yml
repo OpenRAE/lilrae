@@ -246,6 +246,7 @@ nav:
     - ADR-060 VM-Only Seat Containment: adrs/adr-060-vm-only-seat-containment.md
     - ADR-061 Browser Desktop for VM Seats: adrs/adr-061-gateless-vm-seat-access.md
     - ADR-062 LilRAE Name and Naming Convention: adrs/adr-062-lilrae-name-and-naming-convention.md
+    - ADR-063 Remove TheHive and Cortex: adrs/adr-063-remove-thehive-and-cortex.md
 
 extra:
   social:

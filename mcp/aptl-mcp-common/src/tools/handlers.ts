@@ -40,22 +40,19 @@ function assertSessionIdContract(value: unknown): asserts value is string {
  * close_session / close_all_sessions handlers harvest per-session captures
  * from, into `.aptl/runs/<run_id>/kali-side/<session_id>/` on the host.
  *
- * Per ADR-041 the capture sink may be owned by a dedicated sidecar that the
- * workload container does not mount (so a sudo-capable agent cannot read or
- * tamper with evidence). When `capture_container_name` is set, harvest targets
- * it (e.g. `aptl-kali-capture`); otherwise it falls back to the workload's own
- * `container_name`.
+ * Per ADR-041 the capture sink is a dedicated sidecar that the workload
+ * container does not mount, so a sudo-capable agent cannot read or tamper
+ * with evidence. Harvest targets only the declared `capture_container_name`;
+ * a workload container never owns captures, so there is no fallback (#1242).
  *
- * Returns `undefined` when the lab is configured for an API-only target (no
- * container) or when the configKey is missing — those MCP servers don't ship
- * captures and harvest is a no-op.
+ * Returns `undefined` when the server declares no capture sidecar (API-only
+ * servers, mcp-reverse) or when the configKey is missing — those MCP servers
+ * don't ship captures and harvest is a no-op.
  */
 export function resolveCaptureContainer(labConfig: LabConfig): string | undefined {
   const key = labConfig.server.configKey;
   if (!key || !labConfig.containers) return undefined;
-  const container = labConfig.containers[key];
-  if (!container) return undefined;
-  return container.capture_container_name ?? container.container_name;
+  return labConfig.containers[key]?.capture_container_name;
 }
 
 /**
@@ -82,12 +79,12 @@ export async function maybeHarvest(
   awaitMetadataMs = 0,
 ): Promise<boolean> {
   const containerName = resolveCaptureContainer(labConfig);
-  if (!containerName) return true;
-  // Keep the options identical to the pre-wait shape when no wait is asked for,
-  // so the close and timeout paths are unchanged.
+  // An absent declaration disables captures; an empty declared name must fail.
+  if (containerName === undefined) return true;
   const opts = awaitMetadataMs > 0
     ? { containerName, runId, awaitMetadataMs }
     : { containerName, runId };
+
   try {
     return await harvestSession(opts, sessionId);
   } catch (err) {

@@ -57,6 +57,12 @@ the volume is mounted. This is wired through the existing capture-container
 configuration path (`capture_container_name` in the MCP lab config; see
 `resolveCaptureContainer`), so no second harvester is introduced.
 
+> **Update (2026-10-30, #1242):** the harvest targets only a declared capture
+> sidecar. It never falls back to the workload container. Lab start supplies the
+> workspace-scoped sidecar name in `LILRAE_MCP_CAPTURE_CONTAINER`. If that name
+> is not set or not valid, the harvest records
+> `aptl.capture-harvest.container-unresolved` and runs no `docker cp`.
+
 The Kali ForceCommand wrapper remains the single SSH session ingress point, but
 it stops writing capture files directly. Its responsibility becomes:
 
@@ -183,6 +189,9 @@ typescript/timing artifacts from a wrapper-to-sidecar byte stream. Do not leave
   MCP lab config that `resolveCaptureContainer` returns in preference to the
   workload `container_name`. No second harvester is introduced; `docker cp`
   reads the same volume from whichever container mounts it.
+  Update (2026-10-30, #1242): `resolveCaptureContainer` returns only
+  `capture_container_name`. The workload `container_name` is not a harvest
+  target, and the MCP lab config no longer has that field.
 
 ## Maintainability
 

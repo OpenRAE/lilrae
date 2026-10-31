@@ -26,11 +26,10 @@ Mandatory constraints the `/implement` skill applies during plan phase.
   `pre-commit run --all-files`, whole-tree prose checks, dependency checks, and
   coverage runs are CI/CD-only.
 - Plans MUST NOT edit `CHANGELOG.md` or the version. Releases are automated by
-  release-please from Conventional Commit PR titles. `feat:`, `fix:`, `perf:`,
-  `feat!:`, and a `BREAKING CHANGE:` footer release a minor bump;
-  `docs`/`chore`/`refactor`/`test`/`ci`/`build` do not release. Plans MUST NOT
-  add a `Release-As:` footer; only the maintainer starts a major bump. The PR
-  title is the changelog entry, so make it a clear Conventional Commit. See
+  release-please from Conventional Commit PR titles: `feat:` (minor),
+  `fix:`/`perf:` (patch), `feat!:` or a `BREAKING CHANGE:` footer (major);
+  `docs`/`chore`/`refactor`/`test`/`ci`/`build` do not release. The PR title is
+  the changelog entry, so make it a clear Conventional Commit. See
   `docs/releasing.md`.
 - New code MUST use `lilrae` naming: a new module, package, service,
   environment variable (`LILRAE_`), resource name, or configuration file is

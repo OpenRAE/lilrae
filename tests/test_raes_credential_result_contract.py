@@ -23,8 +23,8 @@ from copy import deepcopy
 from unittest.mock import MagicMock
 
 import pytest
-import raes_processor.planner as raes_planner
 from raes.runtime_configuration import RuntimeCapabilityPolicy
+from raes_contracts.errors import InvalidInputError
 from raes_contracts.evaluation import EvaluationExecutionState, EvaluationResultStatus
 from raes_contracts.planning import (
     ChangeAction,
@@ -66,7 +66,6 @@ _NODE_TYPE = CONCERN_PAYLOAD_PATH["node-type"]
 _PORTS = CONCERN_PAYLOAD_PATH["published-ports"]
 _CAPABILITIES = CONCERN_PAYLOAD_PATH["linux-capabilities"]
 _COMPONENTS = CONCERN_PAYLOAD_PATH["runtime-software-components"]
-_PAYLOAD_MISMATCH = "credential-bearing backend payload does not match the submitted plan"
 _SOURCE_IMAGE = {"verified": True, "selected_digest": "sha256:" + "0" * 64}
 
 
@@ -280,7 +279,7 @@ def _closure_refusal(plan, observations) -> str | None:
         sanitize_account_credential_result(
             _closed_result(plan, observations), plan, RuntimeSnapshot()
         )
-    except ValueError as exc:
+    except (InvalidInputError, ValueError) as exc:
         return str(exc)
     return None
 
@@ -365,22 +364,20 @@ def _admitted(plan: ProvisioningPlan) -> dict[str, set[str]]:
     return admitted
 
 
-def _observed_value(path: tuple[str, ...], planned: object, *, differ: bool) -> object:
-    """Observe the plan's value, or (``differ``) a capability choice for ``null``."""
+def _observed_value(path: tuple[str, ...], planned: object) -> object:
+    """Observe the plan's value, or a capability choice where the plan has ``null``."""
 
-    if differ and planned is None and path == _CAPABILITIES:
+    if planned is None and path == _CAPABILITIES:
         return RuntimeCapabilityPolicy(add=["CAP_NET_ADMIN"]).model_dump(mode="json")
     return deepcopy(planned)
 
 
-def _observations(
-    plan: ProvisioningPlan, *, differ: bool
-) -> dict[str, ObservedResource]:
-    """Observe every admitted concern the plan gives a value.
+def _differing_observations(plan: ProvisioningPlan) -> dict[str, ObservedResource]:
+    """Observe every admitted concern, with values that differ from the plan.
 
-    ``differ`` reorders one collection and makes the backend's OPEN choices: a
-    capability policy where the plan has ``null`` and published ports under a
-    ``null`` network parent. Otherwise every observation equals the plan.
+    The observations reorder one collection and make the backend's OPEN choices:
+    a capability policy where the plan has ``null`` and published ports under a
+    ``null`` network parent.
     """
 
     admitted = _admitted(plan)
@@ -391,12 +388,10 @@ def _observations(
             path = CONCERN_PAYLOAD_PATH.get(kind)
             planned = concern_value(resource.payload, path) if path else MISSING_CONCERN_VALUE
             if planned is not MISSING_CONCERN_VALUE:
-                concerns[path] = _observed_value(path, planned, differ=differ)
-            elif differ and kind == "published-ports":
+                concerns[path] = _observed_value(path, planned)
+            elif kind == "published-ports":
                 concerns[path] = []
         observations[address] = ObservedResource(realized=True, concerns=concerns)
-    if not differ:
-        return observations
     reordered = next(
         observed.concerns
         for observed in observations.values()
@@ -406,20 +401,9 @@ def _observations(
     return observations
 
 
-def test_differing_observations_are_admitted_once_raes_carries_rae_1640(
-    techvault_plan,
-):
-    """raes 7.0.0 compares the whole payload; rae#1640 admits observed concerns.
+def test_differing_observations_are_admitted_under_rae_1640(techvault_plan):
+    """The supported RAES release admits observed concerns that differ (rae#1640)."""
 
-    On 7.0.0, observations equal to the plan pass, so every entry status and
-    plan-owned value does; only the differing observations are refused.
-    """
+    differing = _differing_observations(techvault_plan)
 
-    refusal = _closure_refusal(techvault_plan, _observations(techvault_plan, differ=True))
-
-    if hasattr(raes_planner, "realization_payload_projections"):
-        assert refusal is None
-    else:
-        equal = _observations(techvault_plan, differ=False)
-        assert _closure_refusal(techvault_plan, equal) is None
-        assert refusal == _PAYLOAD_MISMATCH
+    assert _closure_refusal(techvault_plan, differing) is None
