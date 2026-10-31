@@ -108,7 +108,6 @@ def _chown_direct(paths: list[Path], uid: int, gid: int) -> list[Path]:
     return [p for p in paths if p.stat().st_uid != uid]
 
 
-
 def _captured_run(
     command: list[str], *, timeout: int
 ) -> subprocess.CompletedProcess[str]:
@@ -180,10 +179,7 @@ def _restore_via_container(
     except (OSError, subprocess.TimeoutExpired) as exc:
         return SuricataSourceOwnershipResult(
             success=False,
-            error=(
-                f"Suricata config sources are owned by another user and "
-                f"could not be restored: {exc}"
-            ),
+            error=f"Suricata config source ownership could not be restored: {exc}",
         )
 
     if perm_result.returncode != 0:
