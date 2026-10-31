@@ -351,5 +351,6 @@ def _classify_failure_layer(exc: BaseException) -> str:
 
 
 def _is_soc_ca_module(filename: str) -> bool:
+    """Return whether a traceback frame comes from a SOC CA module."""
     name = Path(filename).name
     return name == "soc_ca.py" or name.startswith("_soc_ca_")
