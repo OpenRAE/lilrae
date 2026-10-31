@@ -109,7 +109,11 @@ def _timed_out_operation(cmd: list[str], timeout: int | None) -> BackendTimeoutE
     return BackendTimeoutError(f"{operation} timed out after {timeout}s")
 
 
+from aptl.core.deployment.lilrae_compose_recording import ComposeDockerRecordingMixin
+
+
 class DockerComposeBackend(
+    ComposeDockerRecordingMixin,
     ComposeOwnedStartMixin,
     ComposeDirectNetworkMixin,
     ComposeReceiptCaptureMixin,
@@ -153,6 +157,8 @@ class DockerComposeBackend(
         self._project_name = self._logical_project_name
         self._resource_ownership: WorkspaceOwnership | None = None
         self._resource_attempt_id: str | None = None
+        self._recording_sockets: dict[str, str] = {}
+        self._recording_session = None
         # Concurrent node materialization can share a named volume. Serialize
         # its creation and receipt publication within this backend instance.
         self._project_volume_lock = threading.Lock()

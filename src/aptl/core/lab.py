@@ -387,6 +387,7 @@ def admit_start_surface(
     *,
     bundle: ScenarioBundle | None = None,
     startup_selection: ScenarioStartupSelection | None = None,
+    run_id: str | None = None,
 ) -> tuple["AdmittedScenarioStart", "AdmittedStartSurface"]:
     """Lazy RAES import for the one admitted execution lab start reuses."""
 
@@ -401,6 +402,7 @@ def admit_start_surface(
         scenario_path=scenario_path,
         bundle=bundle,
         startup_selection=startup_selection,
+        run_id=run_id,
     )
 
 
@@ -2053,11 +2055,13 @@ def _load_admitted_start_surface(
             if ctx.start_selection is not None
             else {}
         )
+        ctx.run_store, ctx.run_id = _resolve_run_target(ctx)
         admitted, surface = admit_start_surface(
             ctx.project_dir,
             ctx.config,
             ctx.backend,
             scenario_path=ctx.scenario_path,
+            run_id=ctx.run_id,
             **admission_kwargs,
         )
     except AdmissionRejection as exc:
@@ -3238,18 +3242,29 @@ def _resolve_run_target(ctx: _LabStartContext) -> tuple[object, str]:
     from datetime import datetime, timezone
 
     from aptl.core.runstore import LocalRunStore, resolve_active_run_dir
+    from uuid import uuid4
+
+    if ctx.run_store is not None and ctx.run_id is not None:
+        return ctx.run_store, ctx.run_id
 
     state_dir = ctx.project_dir / ".aptl"
     active_run_dir = resolve_active_run_dir(state_dir)
     if active_run_dir is not None:
-        return LocalRunStore(active_run_dir.parent), active_run_dir.name
+        ctx.run_store, ctx.run_id = (
+            LocalRunStore(active_run_dir.parent),
+            active_run_dir.name,
+        )
+        return ctx.run_store, ctx.run_id
     configured_path = Path(
         getattr(getattr(ctx.config, "run_storage", None), "local_path", "./runs")
     )
     if not configured_path.is_absolute():
         configured_path = ctx.project_dir / configured_path
-    run_id = datetime.now(timezone.utc).strftime("run_%Y%m%dT%H%M%SZ")
-    return LocalRunStore(configured_path), run_id
+    run_id = (
+        datetime.now(timezone.utc).strftime("run_%Y%m%dT%H%M%SZ_") + uuid4().hex[:12]
+    )
+    ctx.run_store, ctx.run_id = LocalRunStore(configured_path), run_id
+    return ctx.run_store, ctx.run_id
 
 
 def _resolve_raes_snapshot(outcome: object) -> object:

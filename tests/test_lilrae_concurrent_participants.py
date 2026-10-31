@@ -65,8 +65,13 @@ def target_for(installed):
     target = create_stub_target()
     manifest = replace(
         target.manifest,
-        supported_contract_versions=target.manifest.supported_contract_versions
-        | manifest.supported_contract_versions,
+        supported_contract_versions=(
+            target.manifest.supported_contract_versions
+            | manifest.supported_contract_versions
+        ) - {
+            "backend-runtime-descendants-v1",
+            "backend-materialization-attestation-v1",
+        },
         capabilities=replace(
             target.manifest.capabilities,
             participant_runtime=manifest.participant_runtime,

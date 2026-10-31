@@ -123,7 +123,7 @@ selection, safe activity, result inspection, troubleshooting, and teardown.
 
 ## Requirements
 
-- Python 3.14 or newer and [pipx](https://pipx.pypa.io/)
+- Python 3.14 and [pipx](https://pipx.pypa.io/)
 - Docker Engine 28.0 or newer (native, or inside Docker Desktop or Colima)
   with Compose and Buildx, on a cgroup v2 host
 - OpenSSH client with `ssh-keygen` on `PATH`

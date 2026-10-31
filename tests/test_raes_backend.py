@@ -198,6 +198,13 @@ class _RealizedBackend(MagicMock):
         self._content_types = content_types or {}
         self.realize.return_value = LabResult(success=True, message="ok")
 
+    def runtime_descendant_inventory(self, attempt_id):
+        from aptl.core.deployment.lilrae_recorded_inventory import (
+            RecordedInventorySnapshot,
+        )
+
+        return RecordedInventorySnapshot(())
+
     def container_exists(self, name: str) -> bool:
         return name in self._containers
 
@@ -286,7 +293,7 @@ def _execution_plan_with_realization_requirements():
     return plan(
         compile_runtime_model(scenario),
         create_aptl_manifest(),
-        scope=PlanScope(target_name=APTL_RAES_TARGET_NAME),
+        scope=PlanScope(target_name=APTL_RAES_TARGET_NAME, run_id="disclosure"),
     )
 
 
@@ -333,7 +340,7 @@ def _execution_plan_with_derived_realization_requirements():
     return plan(
         compile_runtime_model(scenario),
         create_aptl_manifest(),
-        scope=PlanScope(target_name=APTL_RAES_TARGET_NAME),
+        scope=PlanScope(target_name=APTL_RAES_TARGET_NAME, run_id="disclosure"),
     )
 
 
@@ -369,7 +376,7 @@ def _execution_plan_with_content_realization_requirement():
     return plan(
         compile_runtime_model(scenario),
         create_aptl_manifest(),
-        scope=PlanScope(target_name=APTL_RAES_TARGET_NAME),
+        scope=PlanScope(target_name=APTL_RAES_TARGET_NAME, run_id="disclosure"),
     )
 
 
@@ -2185,7 +2192,7 @@ def test_start_raes_scenario_applies_a_supplied_admission_without_replanning(
     admitted = SimpleNamespace(
         bundle=bundle,
         target=object(),
-        execution_plan=object(),
+        execution_plan=_FakeExecutionPlan(ProvisioningPlan()),
         realization=None,
         participant_delivery_plan=None,
     )
@@ -2865,7 +2872,7 @@ def test_apply_failure_reattaches_backend_diagnostics_after_gate_flood(
     target.provisioner.last_failure_diagnostics = (backend_diag,)
 
     failure, _snapshot, _manager = raes._apply_execution_plan(
-        target, MagicMock()
+        target, _FakeExecutionPlan(ProvisioningPlan())
     )
 
     assert failure is not None
@@ -4310,7 +4317,20 @@ def _apply_disclosure_scenario(tmp_path, backend, execution_plan=None):
     # so container-name resolution binds to it). Use an explicitly enabled
     # ordinary scenario profile; backend apparatus is never a default profile.
     _write_compose(tmp_path, {"vm": ["victim"]})
-    config = AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']})
+    config = AptlConfig(
+        lab={"name": "test"},
+        containers={
+            "profiles": [
+                "wazuh",
+                "victim",
+                "kali",
+                "enterprise",
+                "soc",
+                "fileshare",
+                "dns",
+            ]
+        },
+    )
     target = create_aptl_runtime_target(
         project_dir=tmp_path,
         bundle=_bundle(tmp_path),
@@ -4319,8 +4339,15 @@ def _apply_disclosure_scenario(tmp_path, backend, execution_plan=None):
     )
     if execution_plan is None:
         execution_plan = _execution_plan_with_realization_requirements()
-    manager = RuntimeManager(target, initial_snapshot=execution_plan.base_snapshot)
-    return manager.apply(execution_plan)
+    from raes_operations.run_artifacts import RunMaterializationArchive
+
+    with RuntimeManager(
+        target,
+        initial_snapshot=execution_plan.base_snapshot,
+        run_scope="run:disclosure",
+        materialization_archive=RunMaterializationArchive(tmp_path / "materialization"),
+    ) as manager:
+        return manager.apply(execution_plan)
 
 
 def _apply_content_disclosure_scenario(tmp_path, observed_content_type):
@@ -4340,12 +4367,31 @@ def _apply_content_disclosure_scenario(tmp_path, observed_content_type):
     target = create_aptl_runtime_target(
         project_dir=tmp_path,
         bundle=_bundle(tmp_path),
-        config=AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
+        config=AptlConfig(
+            lab={"name": "test"},
+            containers={
+                "profiles": [
+                    "wazuh",
+                    "victim",
+                    "kali",
+                    "enterprise",
+                    "soc",
+                    "fileshare",
+                    "dns",
+                ]
+            },
+        ),
         backend=backend,
     )
-    return RuntimeManager(target, initial_snapshot=execution_plan.base_snapshot).apply(
-        execution_plan
-    )
+    from raes_operations.run_artifacts import RunMaterializationArchive
+
+    with RuntimeManager(
+        target,
+        initial_snapshot=execution_plan.base_snapshot,
+        run_scope="run:disclosure",
+        materialization_archive=RunMaterializationArchive(tmp_path / "materialization"),
+    ) as manager:
+        return manager.apply(execution_plan)
 
 
 def test_apply_provisioning_populates_realization_and_profiles(tmp_path):
@@ -4773,6 +4819,6 @@ def test_the_run_runtime_allows_a_full_lab_apply(mocker):
 
     mocker.patch("aptl.backends.raes.RuntimeManager", CapturingRuntimeManager)
 
-    raes._apply_execution_plan(MagicMock(), MagicMock())
+    raes._apply_execution_plan(MagicMock(), _FakeExecutionPlan(ProvisioningPlan()))
 
     assert captured["supervision"].execution_ms >= 60 * 60 * 1000
