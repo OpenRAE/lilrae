@@ -8,6 +8,7 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 from tests.fixture_pack import FIXTURE_SDL
@@ -89,6 +90,43 @@ def test_dev_requires_existing_platform_job_contexts() -> None:
         "clean-install-lab-boot",
     }
     assert {jobs[job]["name"] for job in platform_jobs} <= contexts
+
+
+def _protected_branches() -> dict:
+    return json.loads(BASELINE.read_text(encoding="utf-8"))["branches"]
+
+
+def _triggers(workflow: str) -> dict:
+    data = yaml.safe_load((WORKFLOW.parent / workflow).read_text(encoding="utf-8"))
+    # PyYAML follows YAML 1.1, which reads the `on:` key as the boolean True.
+    return data[True]
+
+
+@pytest.mark.parametrize(
+    "workflow", ["checks.yml", "pr-title-lint.yml", "ground-control-phase-e.yml"]
+)
+def test_pull_request_workflows_run_for_every_protected_branch(workflow: str) -> None:
+    branches = set(_triggers(workflow)["pull_request"]["branches"])
+    assert set(_protected_branches()) <= branches, (
+        f"{workflow} does not run for pull requests into every protected branch; "
+        "a required check that never runs leaves the pull request blocked or unchecked"
+    )
+
+
+def test_checks_analyze_every_protected_branch_on_push() -> None:
+    branches = set(_triggers("checks.yml")["push"]["branches"])
+    assert set(_protected_branches()) <= branches
+
+
+def test_go_cutover_requires_at_least_the_dev_checks() -> None:
+    branches = _protected_branches()
+    dev, cutover = branches["dev"], branches["go-cutover"]
+    assert cutover["changes_land_via_pull_request"] is True
+    assert cutover["admin_bypass_allowed"] == dev["admin_bypass_allowed"]
+    assert cutover["required_status_checks"]["strict"] is True
+    assert set(dev["required_status_checks"]["contexts"]) <= set(
+        cutover["required_status_checks"]["contexts"]
+    )
 
 
 def test_combined_python_coverage_refuses_a_missing_group(tmp_path: Path) -> None:

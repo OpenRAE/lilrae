@@ -20,6 +20,11 @@ Nobody runs a script, hand-edits the version, or edits `CHANGELOG.md`.
 
 Feature PRs land on `dev`. Nothing releases until `dev` is promoted to `main`.
 
+Milestone 44 is the exception. Its PRs land on `go-cutover` and use a type
+that does not release. Go port 31 merges `go-cutover` into `dev` with a merge
+commit, so Release Please keeps each commit subject. See
+[CI verification](architecture/ci-verification.md#go-cutover-branch).
+
 Open the promotion PR with:
 
 ```bash
