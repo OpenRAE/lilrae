@@ -649,8 +649,10 @@ def test_session_finalization_requires_final_metadata(
     if state == "registered":
         (runtime / "sessions" / "session-1.pid").write_text("1234")
     monkeypatch.setattr(broker.os, "kill", lambda *_args: None)
-    with pytest.raises(getattr(broker, error)):
-        getattr(broker, action)("run-1", "session-1", runtime, captures, 0)
+    finalize = getattr(broker, action)
+    expected = getattr(broker, error)
+    with pytest.raises(expected):
+        finalize("run-1", "session-1", runtime, captures, 0)
 
 
 @pytest.mark.parametrize("action", ["stop-session", "await-session"])

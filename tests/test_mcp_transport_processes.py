@@ -225,16 +225,11 @@ def request(process, method, identifier, params, *, stderr_log=None):
     """
     import select
 
-    try:
-        process.stdin.write(
-            json.dumps(
-                dict(jsonrpc="2.0", id=identifier, method=method, params=params)
-            )
-            + "\n"
-        )
-        process.stdin.flush()
-    except BrokenPipeError:
-        pytest.fail(_exit_report(process, method, stderr_log))
+    process.stdin.write(
+        json.dumps(dict(jsonrpc="2.0", id=identifier, method=method, params=params))
+        + "\n"
+    )
+    process.stdin.flush()
     assert select.select([process.stdout], [], [], 15)[0], "MCP response timed out"
     line = process.stdout.readline()
     if not line:
