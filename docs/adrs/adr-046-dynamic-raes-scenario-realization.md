@@ -754,8 +754,8 @@ value. The provisioner's snapshot follows that contract:
   constrained or exact authority, or a planned constraint) is still omitted, as
   the Runtime Service and SEM-218 Execution Addendum requires. If the plan has
   a value at that path and the snapshot omits it, the entry differs from the
-  plan and RAES refuses the whole result. A credential-bearing start therefore fails
-  unless the snapshot retains every admitted concern that has a plan value.
+  plan and RAES refuses the whole result. A credential-bearing start therefore
+  fails unless the snapshot retains every admitted concern that has a plan value.
   Materialization plans retain compiler-generated null and empty-string values
   as absence when the concern's observation contract accepts them, without
   claiming an observation. An invalid absence, such as a null capability policy,
@@ -769,8 +769,10 @@ value. The provisioner's snapshot follows that contract:
 - An entry carries no `backend_evidence`, because the contract admits no
   backend evidence key in an entry. The run outcome still carries the
   source-image evidence.
-- A plan without account credential bindings keeps every unobserved concern
-  omitted and keeps source-image evidence in its entries.
+- A plan without account credential bindings keeps unobserved concerns omitted,
+  apart from compiler absence values retained for materialization. It keeps
+  source-image evidence in its entries unless materialization reporting requires
+  portable payloads; the run outcome retains that evidence in either case.
 
 ### Exception to the #692 rule
 

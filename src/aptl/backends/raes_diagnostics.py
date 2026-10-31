@@ -378,6 +378,8 @@ def _observed_payload(
     ``admitted_kinds`` is plan-owned like a name and keeps the plan's value;
     ``None`` admits every concern. Source-image evidence is added only when
     ``evidence`` is set; otherwise the run outcome alone carries it.
+    Materialization retains compiler absence values, but a credential-bearing
+    admitted concern must also accept that absence as a valid observation value.
     """
 
     payload = deepcopy(dict(planned_payload))
