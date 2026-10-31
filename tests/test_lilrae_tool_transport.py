@@ -1,8 +1,11 @@
 """Real local socket protocol, including lost responses and foreign authority."""
 
 import json
+import runpy
 import socket
+import socketserver
 from threading import Event
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -10,6 +13,25 @@ import pytest
 from aptl.backends.participant_tools.session import LilraeToolSession
 from aptl.backends.participant_tools.transport import LilraeToolTransport
 from tests.test_lilrae_participant_tools import binding, port, result
+
+
+def test_transport_module_imports_without_unix_server_classes(monkeypatch):
+    from aptl.backends.participant_tools import transport
+
+    monkeypatch.delattr(socketserver, "ThreadingUnixStreamServer", raising=False)
+    monkeypatch.delattr(socketserver, "UnixStreamServer", raising=False)
+    assert "LilraeToolTransport" in runpy.run_path(transport.__file__)
+
+
+def test_non_posix_carrier_refuses_before_creating_a_socket(monkeypatch):
+    from aptl.backends.participant_tools import transport
+
+    monkeypatch.setattr(transport, "os", SimpleNamespace(name="nt"))
+    authority = port()
+    session = LilraeToolSession(authority, (binding(),), Event())
+    with pytest.raises(ValueError, match="requires POSIX"):
+        LilraeToolTransport(session)
+    authority.dispatch.assert_not_called()
 
 
 def connect(environment):

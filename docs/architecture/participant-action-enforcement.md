@@ -179,6 +179,8 @@ The management process and installed native adapters remain trusted.
 A malicious process with the same host credentials can bypass local IPC.
 This design does not claim host containment from file permissions, tokens, or process supervision.
 Existing appliance and lab containment profiles retain their own qualification requirements.
+The local socket carrier requires POSIX ownership and permissions.
+Other platforms can import the CLI and core contracts, but cannot launch this carrier.
 
 ## Research and qualification surface
 

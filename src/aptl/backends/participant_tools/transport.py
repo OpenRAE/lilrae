@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import secrets
 import socket
-from socketserver import StreamRequestHandler, ThreadingUnixStreamServer
+from socketserver import StreamRequestHandler, ThreadingTCPServer
 from tempfile import TemporaryDirectory
 from threading import BoundedSemaphore, Lock, Thread
 from typing import Annotated, BinaryIO
@@ -98,7 +98,7 @@ class _Handler(StreamRequestHandler):
                 pass
 
 
-class _Server(ThreadingUnixStreamServer):
+class _Server(ThreadingTCPServer):
     """Bound connection threads before starting them, including unauthenticated ones."""
 
     daemon_threads = False
@@ -106,6 +106,9 @@ class _Server(ThreadingUnixStreamServer):
     request_queue_size = MAX_CONCURRENT_TOOLS
 
     def __init__(self, path: str, owner: LilraeToolTransport) -> None:
+        # UnixStreamServer uses this same base and address-family override,
+        # but the stdlib does not export that class on Windows.
+        self.address_family = socket.AF_UNIX
         self.owner = owner
         self.capacity = BoundedSemaphore(MAX_CONCURRENT_TOOLS)
         self.guard = Lock()
@@ -155,6 +158,8 @@ class LilraeToolTransport:
     """Private per-invocation IPC, with per-server credentials and no retries."""
 
     def __init__(self, session: ToolSession) -> None:
+        if os.name != "posix":
+            raise ValueError("participant tool transport requires POSIX")
         self.session = session
         self.tokens = {
             item.server_id: secrets.token_hex(32) for item in session.bindings
