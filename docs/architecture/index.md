@@ -166,6 +166,8 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 
 ## Preflights
 
+- [Issue #1510 Code Quality Architecture Preflight](issue-1510-code-quality-preflight.md)
+- [Issue #1510 Code Quality Architecture Design](issue-1510-code-quality-design.md)
 - [Issue #1465 Released Structural Factorial Experiment Tuple](issue-1465-released-experiment-tuple-preflight.md)
 - [Issue #1465 Released Structural Factorial Tuple Design](issue-1465-released-experiment-tuple-design.md)
 - [Issue #1468 CI Feedback and Test Suite](issue-1468-ci-feedback-preflight.md)

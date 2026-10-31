@@ -66,11 +66,6 @@ RUN set -eu; \
 # npm 11.21.1 still bundles ip-address 10.7.2 and undici 6.29.0, below the
 # fixes for CVE-2026-111997, CVE-2026-109869 and CVE-2026-109924. Replace
 # only these dependency-free packages with compatible, integrity-pinned fixes.
-# npm (through 12.2.1) also bundles glob 13.0.6 and minimatch 10.2.5. The fixes
-# for CVE-2026-118773 and CVE-2026-118764 exist only in glob 14 and minimatch 11.
-# npm calls only glob(), minimatch(), and Minimatch match/negate/globParts, which
-# those majors keep. Install them with their new dependencies: path-scurry 3
-# (glob is its only user), brace-expansion 5.0.12, and nonrecursive-glob-match.
 # Use tar -m for replacements: npm archives share a fixed timestamp, and
 # BuildKit can omit a same-size replacement from the layer if its mtime is
 # unchanged. Undici's old and fixed package.json are both 6290 bytes.
@@ -78,10 +73,16 @@ ARG IP_ADDRESS_VERSION=10.7.4
 ARG IP_ADDRESS_SHA512=0d604c2b278cdb90fbd27ac889392042d879f7f1be9da28e4dea7a86e17d8fe1a678adc3303eb466fc60e5de6a427cfedfc007828bba79a9f62c4097fa5aca0e
 ARG UNDICI_VERSION=6.29.1
 ARG UNDICI_SHA512=12f46552dfd0a8012f5dd41e44c6147f0390b1fce90f3b7292b1b6a3018413fac1381a18bfdb85dfd673b0d0e1e254c51e14ebd973998ca91882e783d7666618
+# npm (through 12.2.1) bundles glob 13.0.6 and minimatch 10.2.5, below the
+# fixes for CVE-2026-118773 (glob 14.0.2) and CVE-2026-118764 (minimatch
+# 11.0.1). npm calls only the API that the new majors keep: minimatch(),
+# minimatch.match(), Minimatch#match, and glob(). Replace both, update
+# path-scurry and brace-expansion, which only they use, and add the new
+# minimatch dependency. Each tarball is integrity-pinned.
+ARG GLOB_MATCH_VERSION=1.0.3
+ARG GLOB_MATCH_SHA512=488ee4c8a1eae175c3468cf0fabf4695166489ad59905ae92d6f7caf6202d81a6bf18905184ddfbe3ce6c421b4c7bf00fbeebd1e60cdac3bd23180599871a928
 ARG BRACE_EXPANSION_VERSION=5.0.12
 ARG BRACE_EXPANSION_SHA512=628bd0debce168b308ac38cd0cc90d4b4d6d79af77aa11211b9c72f1febe47497e770dca8bee6c0a822823de368ae2d94c75a881692d830543854d3d88d12299
-ARG NONRECURSIVE_GLOB_MATCH_VERSION=1.0.3
-ARG NONRECURSIVE_GLOB_MATCH_SHA512=488ee4c8a1eae175c3468cf0fabf4695166489ad59905ae92d6f7caf6202d81a6bf18905184ddfbe3ce6c421b4c7bf00fbeebd1e60cdac3bd23180599871a928
 ARG MINIMATCH_VERSION=11.0.3
 ARG MINIMATCH_SHA512=8a7cbfe343c41a4349439fcfbfacf79e6e856d101bcb7d86799463094264d969cd0db80f49371d23e0c3bcbaac801743e1c0f9b0cb4c85ea8f3e77a10826bc37
 ARG PATH_SCURRY_VERSION=3.0.0
@@ -102,8 +103,8 @@ RUN set -eu; \
     }; \
     patch_bundle ip-address "${IP_ADDRESS_VERSION}" "${IP_ADDRESS_SHA512}"; \
     patch_bundle undici "${UNDICI_VERSION}" "${UNDICI_SHA512}"; \
+    patch_bundle @isaacs/nonrecursive-glob-match "${GLOB_MATCH_VERSION}" "${GLOB_MATCH_SHA512}"; \
     patch_bundle brace-expansion "${BRACE_EXPANSION_VERSION}" "${BRACE_EXPANSION_SHA512}"; \
-    patch_bundle @isaacs/nonrecursive-glob-match "${NONRECURSIVE_GLOB_MATCH_VERSION}" "${NONRECURSIVE_GLOB_MATCH_SHA512}"; \
     patch_bundle minimatch "${MINIMATCH_VERSION}" "${MINIMATCH_SHA512}"; \
     patch_bundle path-scurry "${PATH_SCURRY_VERSION}" "${PATH_SCURRY_SHA512}"; \
     patch_bundle glob "${GLOB_VERSION}" "${GLOB_SHA512}"; \

@@ -92,6 +92,9 @@ dev = [
     "build>=1.2.0",
     "pytest-cov>=7.1.0",
     "pytest-split>=0.11.0",
+    # tools/check_architecture.py builds its static import graph with grimp;
+    # its tests run in the dev environment.
+    "grimp>=3.18",
 ]
 docs = [
     "mkdocs-material>=9.5.0",
@@ -110,6 +113,10 @@ ci = [
     "build>=1.2.0",
     "cyclonedx-bom>=6.0.0",
     "coverage>=7.10.6",
+    # The ADR-064 conventions check and the complexity gate run these locked
+    # versions through `uv run --frozen --only-group ci`.
+    "grimp>=3.18",
+    "ruff>=0.15.0",
 ]
 
 # The PEP 517 build backend, locked like everything else. `--require-hashes`
@@ -202,11 +209,91 @@ select = ["C901"]
 # threshold (15); ratchet down over time as the backlog shrinks.
 max-complexity = 15
 
+[tool.ruff.lint.flake8-tidy-imports]
+# Optional extras (`s3`, `parquet`). Enrolled code imports them only inside
+# the function that uses them (ADR-064). TID253 and PLC0415 read this list
+# only when tools/check_architecture.py selects them.
+banned-module-level-imports = ["boto3", "pyarrow"]
+
 # [tool.ruff.lint.per-file-ignores] intentionally absent: the complexity
 # backlog is empty. Every function under `src/` is now gated at
 # max-complexity 15 with no carve-outs (issue #286). If a future change must
 # temporarily exempt a file, add the table back and record the offender in
 # ADR-010's backlog with its measured score.
+
+[tool.lilrae.architecture]
+# ADR-064 conventions check (tools/check_architecture.py). The check covers
+# only the enrolled packages and modules. A refactor issue adds the code that
+# it completes. An empty list is intentional: no code is enrolled yet.
+enrolled = []
+# Core modules that scenario adapter plugins may import (#1515 adds them).
+extension-api = []
+# Ruff rules for enrolled code. UP042 is not selected: replacing a str-mixin
+# Enum with StrEnum changes the str() and format() output of its members.
+ruff-select = ["ANN", "DTZ", "F", "FAST002", "PLC0415", "SLF001", "TID253", "UP"]
+ruff-ignore = ["UP042"]
+
+# The layer of each module comes from its most specific entry. A refactor
+# that moves or adds code updates this map. Only the root package module
+# `aptl`, which holds the version, has no layer.
+[tool.lilrae.architecture.layers]
+entry = [
+    "aptl.api",
+    "aptl.cli",
+    "aptl.services",
+    "aptl.workbench.bootstrap",
+]
+application = [
+    "aptl.appliance",
+    "aptl.core._doctor_common",
+    "aptl.core._doctor_runtime",
+    "aptl.core._participant_desktop_endpoints",
+    "aptl.core._participant_desktop_files",
+    "aptl.core._participant_desktop_tls",
+    "aptl.core._port_bindings",
+    "aptl.core.appliance_boundary_inventory",
+    "aptl.core.collectors",
+    "aptl.core.continuity",
+    "aptl.core.doctor",
+    "aptl.core.execution",
+    "aptl.core.execution_boundary",
+    "aptl.core.exporter",
+    "aptl.core.flags",
+    "aptl.core.health",
+    "aptl.core.host_ports",
+    "aptl.core.hostenv",
+    "aptl.core.kill",
+    "aptl.core.lab",
+    "aptl.core.lifecycle_cleanup",
+    "aptl.core.lifecycle_enforce",
+    "aptl.core.mcp_ingress",
+    "aptl.core.participant_desktop",
+    "aptl.core.participant_hosts",
+    "aptl.core.snapshot",
+    "aptl.core.sysreqs",
+    "aptl.validation",
+    "aptl.workbench",
+]
+core = [
+    "aptl._asset_manifest",
+    "aptl.core",
+    "aptl.runtime_authority",
+]
+foundation = ["aptl.utils"]
+# Scenario adapter plugins. Each entry is one plugin.
+plugins = ["aptl_techvault"]
+
+# One entry for each external system. An adapter imports no other adapter.
+[tool.lilrae.architecture.layers.adapters]
+deployment = [
+    "aptl.core.certs",
+    "aptl.core.credentials",
+    "aptl.core.deployment",
+    "aptl.core.ephemeral_containers",
+    "aptl.core.services",
+    "aptl.core.suricata_seed",
+]
+raes = ["aptl.backends"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
