@@ -320,7 +320,8 @@ def _generate_with_error_envelope(
     except Exception as exc:
         layer = _classify_failure_layer(exc)
         failure = exc.__class__.__name__
-        log.exception("soc_cert_generation: %s failed: %s", layer, failure)
+        # No traceback: it would carry the message this layer drops.
+        log.error("soc_cert_generation: %s failed: %s", layer, failure)
         return CertResult(
             success=False,
             generated=False,
@@ -339,10 +340,16 @@ def _classify_failure_layer(exc: BaseException) -> str:
     always surface the outer ``ensure_soc_certs`` wrapper. Iterate in
     reverse so we report the actual failing inner phase (e.g.
     ``_build_server_cert``, ``_atomic_write``, ``_safe_service_subdir``)
-    that operators need to inspect.
+    that operators need to inspect. The phases live in ``soc_ca.py`` and
+    its ``_soc_ca_*`` split modules.
     """
     frames = traceback.extract_tb(exc.__traceback__)
     for frame in reversed(frames):
-        if frame.filename.endswith("soc_ca.py") and frame.name:
+        if _is_soc_ca_module(frame.filename) and frame.name:
             return frame.name.lstrip("_")
     return "soc_ca"
+
+
+def _is_soc_ca_module(filename: str) -> bool:
+    name = Path(filename).name
+    return name == "soc_ca.py" or name.startswith("_soc_ca_")

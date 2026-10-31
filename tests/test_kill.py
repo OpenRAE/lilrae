@@ -395,6 +395,18 @@ class TestKillLabContainers:
         assert "ownership conflict" in error.lower()
 
     @patch("aptl.core.kill.subprocess.run")
+    def test_invalid_config_fails_closed_without_docker(self, mock_run, tmp_path):
+        from aptl.core.kill import kill_lab_containers
+
+        (tmp_path / "aptl.json").write_text("{not json", encoding="utf-8")
+
+        success, error = kill_lab_containers(project_dir=tmp_path)
+
+        assert success is False
+        assert error.startswith("[lifecycle-invalid-configuration]")
+        mock_run.assert_not_called()
+
+    @patch("aptl.core.kill.subprocess.run")
     def test_uses_project_dir_as_cwd(self, mock_run, tmp_path):
         from aptl.core.kill import kill_lab_containers
 

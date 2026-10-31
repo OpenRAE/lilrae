@@ -378,6 +378,26 @@ class TestFailureContextInError:
         # operator can fix the right artifact.
         assert "misp" in result.error.lower()
 
+    def test_generation_failure_names_the_inner_phase_but_not_its_message(
+        self, tmp_path, caplog
+    ):
+        from unittest.mock import patch
+
+        from aptl.core.soc_ca import ensure_soc_certs
+
+        secret = "-----BEGIN PRIVATE KEY-----"
+        with patch(
+            "aptl.core._soc_ca_generation._build_ca", side_effect=ValueError(secret)
+        ):
+            result = ensure_soc_certs(tmp_path)
+
+        assert result.success is False
+        assert result.error == (
+            "SOC certificate generation failed in ensure_ca_pair: ValueError"
+        )
+        assert "ensure_ca_pair failed: ValueError" in caplog.text
+        assert secret not in caplog.text
+
 
 class TestStaleCertConsistency:
     """Codex finding: presence-only idempotency lets a stale service cert
