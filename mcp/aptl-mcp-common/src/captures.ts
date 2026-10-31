@@ -10,11 +10,13 @@
  * evidence (ADR-041). The volume is invisible to the host filesystem to
  * prevent cross-scenario tampering (codex pre-push cycle 1 finding-10).
  *
- * When an SSH session closes, the MCP server invokes `harvestSession()` which
- * runs `docker cp` against the capture container (the sidecar — see
- * `resolveCaptureContainer` / `capture_container_name`) to copy the
- * per-session subtree out into `<run_store_base>/<run_id>/kali-side/<session_id>/`
- * on the host, then sets 0600 permissions on every file. The harvest is
+ * When an SSH session closes, the MCP server invokes `harvestSession()`. It
+ * first runs `broker.py await-session` in the capture container (the sidecar —
+ * see `resolveCaptureContainer` / `capture_container_name`), which waits until
+ * the broker has finalized the session and written `metadata.json`. Only then
+ * does it run one `docker cp` to copy the per-session subtree out into
+ * `<run_store_base>/<run_id>/kali-side/<session_id>/` on the host, and set 0600
+ * permissions on every file. The harvest is
  * best-effort — a missing container / docker / missing subdir logs to stderr
  * but does not throw out of the close path. Each of those failures also
  * leaves a named failure record in the session's kali-side evidence (#1242).
@@ -26,6 +28,7 @@ import { spawn } from 'node:child_process';
 import { chmod, mkdir, readdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { redact } from './redaction.js';
 import { kaliSideSessionDir, loadActiveTraceId } from './runs.js';
 
 export interface HarvestOptions {
@@ -45,12 +48,6 @@ export interface HarvestOptions {
    * its run_id at open time and the active trace context may have
    * rotated since (codex pre-push cycle 3 finding-6). */
   runId?: string;
-  /** When set, wait up to this many milliseconds for the broker to write the
-   * session's `metadata.json` before giving up. The broker writes it only when
-   * the session closes, so a session closed at teardown is harvested before it
-   * finalizes unless the harvest waits. Defaults to 30 seconds. Zero checks once without waiting; missing
-   * metadata is always a failure. */
-  awaitMetadataMs?: number;
 }
 
 const DEFAULT_CONTAINER_CAPTURES_ROOT = '/var/log/aptl/captures';
@@ -59,10 +56,9 @@ const DEFAULT_CONTAINER_CAPTURES_ROOT = '/var/log/aptl/captures';
 const CONTAINER_MISSING = 'aptl.capture-harvest.container-missing';
 const SESSION_MISSING = 'aptl.capture-harvest.session-missing';
 const COPY_FAILED = 'aptl.capture-harvest.copy-failed';
-// A session whose frames copied but whose metadata.json never appeared within
-// the bounded wait: the broker had not finished finalizing it. Recorded so a
-// frames-only copy fails loudly instead of sealing a session the collector
-// then reports as mid-run-loss.
+// The broker did not finalize the session with its metadata.json in its time
+// limit. No frames are copied, so a frames-only directory never stands in for
+// a session.
 const METADATA_MISSING = 'aptl.capture-harvest.metadata-missing';
 const FINALIZE_FAILED = 'aptl.capture-harvest.finalize-failed';
 const CONTAINER_UNRESOLVED = 'aptl.capture-harvest.container-unresolved';
@@ -91,7 +87,19 @@ function dockerBin(env: NodeJS.ProcessEnv = process.env): string {
   return DEFAULT_DOCKER_BIN;
 }
 
-function execDockerCp(
+// Docker stderr comes from another trust zone. Keep only its start, which
+// holds the error the failure classification reads.
+const MAX_DOCKER_STDERR_CHARS = 2048;
+
+// containers/kali-capture/broker.py: the session finalization actions, and
+// their exit codes for a session with no directory and for a session that did
+// not finalize with metadata.json.
+const BROKER = '/usr/local/bin/broker.py';
+const BROKER_SESSION_MISSING = 3;
+const BROKER_SESSION_UNFINISHED = 4;
+type BrokerSessionAction = 'stop-session' | 'await-session';
+
+function execDocker(
   args: string[],
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<{ code: number; stderr: string }> {
@@ -104,7 +112,9 @@ function execDockerCp(
     const child = spawn(dockerBin(env), args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 45000, killSignal: 'SIGKILL' });
     let stderr = '';
     child.stderr.on('data', (b) => {
-      stderr += b.toString();
+      if (stderr.length < MAX_DOCKER_STDERR_CHARS) {
+        stderr = (stderr + b.toString()).slice(0, MAX_DOCKER_STDERR_CHARS);
+      }
     });
     child.on('error', (err) => {
       res({ code: -1, stderr: String(err) });
@@ -113,6 +123,11 @@ function execDockerCp(
       res({ code: code ?? -1, stderr });
     });
   });
+}
+
+/** Redacted Docker stderr as one JSON string, so it cannot forge log lines. */
+function dockerErrorText(stderr: string): string {
+  return JSON.stringify(redact(stderr.trim()));
 }
 
 async function chmodTreeBestEffort(root: string, fileMode: number, dirMode: number): Promise<void> {
@@ -193,7 +208,7 @@ async function copyPerSessionCaptures(
   env: NodeJS.ProcessEnv,
   sessionId: string,
 ): Promise<CopyFailure | null> {
-  const cpResult = await execDockerCp(['cp', `${containerName}:${src}`, destDir], env);
+  const cpResult = await execDocker(['cp', `${containerName}:${src}`, destDir], env);
   if (cpResult.code === 0) return null;
   const exitCode = cpResult.code;
   // Docker reports `No such container: <name>`; a missing path inside an
@@ -219,11 +234,63 @@ async function copyPerSessionCaptures(
     );
     return { failure: SESSION_MISSING, exitCode };
   }
-  console.error(
-    `[captures] docker cp failed (rc=${cpResult.code}):`,
-    cpResult.stderr.trim(),
-  );
+  console.error(`[captures] docker cp failed (rc=${cpResult.code}): ${dockerErrorText(cpResult.stderr)}`);
   return { failure: COPY_FAILED, exitCode };
+}
+
+/**
+ * Run one broker session action in the capture container. Returns `null` when
+ * the broker reports the session finalized with its metadata.json, else the
+ * named failure.
+ */
+async function runBrokerSessionAction(
+  containerName: string,
+  action: BrokerSessionAction,
+  runId: string,
+  sessionId: string,
+  env: NodeJS.ProcessEnv,
+): Promise<CopyFailure | null> {
+  if (!DOCKER_CONTAINER_NAME.test(containerName)) return unresolvedContainer(containerName);
+  const result = await execDocker([
+    'exec', '--user', 'root', containerName, 'python3', BROKER,
+    action, '--run-id', runId, '--session-id', sessionId,
+  ], env);
+  if (result.code === 0) return null;
+  const exitCode = result.code;
+  if (/No such container: /i.test(result.stderr)) {
+    console.error(`[captures] capture container ${containerName} is missing (${CONTAINER_MISSING})`);
+    return { failure: CONTAINER_MISSING, exitCode };
+  }
+  if (exitCode === BROKER_SESSION_MISSING) {
+    console.error(`[captures] capture broker has no session ${sessionId} (${SESSION_MISSING})`);
+    return { failure: SESSION_MISSING, exitCode };
+  }
+  if (exitCode === BROKER_SESSION_UNFINISHED) {
+    console.error(`[captures] session ${sessionId} did not finalize with metadata (${METADATA_MISSING})`);
+    return { failure: METADATA_MISSING, exitCode };
+  }
+  console.error(`[captures] capture broker ${action} failed (rc=${exitCode}): ${dockerErrorText(result.stderr)}`);
+  return { failure: FINALIZE_FAILED, exitCode };
+}
+
+/**
+ * Copy one finalized session. The broker's metadata.json is the commit marker
+ * of a complete session: the copy runs once, only after the broker confirms
+ * it, and a copy that arrives without it is a failure.
+ */
+async function copyFinalizedSession(
+  containerName: string,
+  paths: { src: string; destDir: string },
+  ids: { runId: string; sessionId: string },
+  env: NodeJS.ProcessEnv,
+): Promise<CopyFailure | null> {
+  const unfinished = await runBrokerSessionAction(
+    containerName, 'await-session', ids.runId, ids.sessionId, env,
+  );
+  if (unfinished) return unfinished;
+  const copyFailed = await copyPerSessionCaptures(containerName, paths.src, paths.destDir, env, ids.sessionId);
+  if (copyFailed) return copyFailed;
+  return (await metadataPresent(paths.destDir)) ? null : { failure: METADATA_MISSING, exitCode: null };
 }
 
 /**
@@ -311,32 +378,15 @@ export async function harvestSession(opts: HarvestOptions, sessionId: string): P
   // copies the source directory itself into dest, producing
   // dest/<session_id>/... which would nest one level too deep.
   const src = `${containerCapturesRoot}/${tid}/sessions/${sessionId}/.`;
-  const failed = DOCKER_CONTAINER_NAME.test(opts.containerName)
-    ? await copyPerSessionCaptures(opts.containerName, src, destDir, env, sessionId)
-    : unresolvedContainer(opts.containerName);
+  const failed = await copyFinalizedSession(
+    opts.containerName, { src, destDir }, { runId: tid, sessionId }, env,
+  );
   if (failed) {
     await recordHarvestFailure(destDir, failed, opts.containerName, tid, sessionId);
     return finalizeHarvest(destDir, false);
   }
-
-  // The broker writes metadata.json only when it finalizes the session on
-  // close. A session closed at teardown may still be finalizing when the copy
-  // above runs, leaving a frames-only directory the collector rejects. When the
-  // caller asked to wait, re-copy until metadata.json lands or the bound
-  // elapses, then fail loud if it never did.
-  const metadataFailure = await awaitSessionMetadata(
-    opts,
-    { src, destDir, env, tid, sessionId },
-  );
-  if (metadataFailure) {
-    await recordHarvestFailure(destDir, metadataFailure, opts.containerName, tid, sessionId);
-    return finalizeHarvest(destDir, false);
-  }
-
   return finalizeHarvest(destDir, true);
 }
-
-const _METADATA_POLL_INTERVAL_MS = 200;
 
 /** Whether the harvested session directory now holds the broker's metadata. */
 async function metadataPresent(destDir: string): Promise<boolean> {
@@ -347,45 +397,13 @@ async function metadataPresent(destDir: string): Promise<boolean> {
   }
 }
 
-/**
- * Wait for the broker's metadata.json, re-copying the session subtree on an
- * interval so a late finalize is picked up. Returns a failure when the caller
- * asked to wait and metadata never arrived; returns null when metadata is
- * present. A zero wait still requires final metadata.
- */
-async function awaitSessionMetadata(
-  opts: HarvestOptions,
-  ctx: { src: string; destDir: string; env: NodeJS.ProcessEnv; tid: string; sessionId: string },
-): Promise<CopyFailure | null> {
-  if (await metadataPresent(ctx.destDir)) return null;
-  const budget = opts.awaitMetadataMs ?? 30000;
-  if (budget <= 0) return { failure: METADATA_MISSING, exitCode: null };
-  const deadline = Date.now() + budget;
-  while (Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, _METADATA_POLL_INTERVAL_MS));
-    const failed = await copyPerSessionCaptures(
-      opts.containerName, ctx.src, ctx.destDir, ctx.env, ctx.sessionId,
-    );
-    if (!failed && (await metadataPresent(ctx.destDir))) return null;
-  }
-  console.error(
-    `[captures] session ${ctx.sessionId} finalized no metadata within ${budget}ms; harvest incomplete`,
-  );
-  return { failure: METADATA_MISSING, exitCode: null };
-}
-
 /** Ask the sidecar to finalize only this run/session, without shell interpolation. */
 export async function finalizeCaptureSession(opts: HarvestOptions, sessionId: string): Promise<boolean> {
   const { env, stateDir, tid } = resolveHarvestParams(opts);
   const destDir = kaliSideSessionDir(stateDir, tid, sessionId, env);
   await mkdir(destDir, { recursive: true, mode: 0o700 });
-  const result = DOCKER_CONTAINER_NAME.test(opts.containerName)
-    ? await execDockerCp([
-      'exec', '--user', 'root', opts.containerName, 'python3', '/usr/local/bin/broker.py',
-      'stop-session', '--run-id', tid, '--session-id', sessionId,
-    ], env)
-    : { code: -1 };
-  if (result.code === 0) return true;
-  await recordHarvestFailure(destDir, { failure: FINALIZE_FAILED, exitCode: result.code }, opts.containerName, tid, sessionId);
+  const failed = await runBrokerSessionAction(opts.containerName, 'stop-session', tid, sessionId, env);
+  if (!failed) return true;
+  await recordHarvestFailure(destDir, failed, opts.containerName, tid, sessionId);
   return false;
 }

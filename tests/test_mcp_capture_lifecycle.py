@@ -123,6 +123,7 @@ class MCP:
             "tools/call",
             self.identifier,
             {"name": name, "arguments": arguments},
+            stderr_log=self.log_path,
         )
         assert not result.get("isError"), result
         return json.loads(result["content"][0]["text"])
@@ -160,7 +161,7 @@ class MCP:
 def mcp(tmp_path, red_payload, capture_broker):
     client = MCP(tmp_path, red_payload, capture_broker)
     try:
-        initialize(client.process)
+        initialize(client.process, stderr_log=client.log_path)
         client.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
         yield client
     finally:

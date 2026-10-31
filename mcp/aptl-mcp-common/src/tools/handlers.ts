@@ -76,28 +76,18 @@ export async function maybeHarvest(
   labConfig: LabConfig,
   sessionId: string,
   runId?: string,
-  awaitMetadataMs = HARVEST_METADATA_WAIT_MS,
 ): Promise<boolean> {
   const containerName = resolveCaptureContainer(labConfig);
   // An absent declaration disables captures; an empty declared name must fail.
   if (containerName === undefined) return true;
-  const opts = awaitMetadataMs > 0
-    ? { containerName, runId, awaitMetadataMs }
-    : { containerName, runId };
 
   try {
-    return await harvestSession(opts, sessionId);
+    return await harvestSession({ containerName, runId }, sessionId);
   } catch (err) {
     console.error('[captures] harvest threw:', err);
     return false;
   }
 }
-
-// How long harvest waits for the broker to finalize a session closed at
-// teardown or a remote death, before failing the harvest loud. The broker's
-// own close is near-immediate; this covers the metadata write landing in the
-// capture volume after the SSH channel closed.
-export const HARVEST_METADATA_WAIT_MS = 30000;
 
 export interface ToolContext {
   sshManager: SSHConnectionManager;

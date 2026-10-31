@@ -206,23 +206,45 @@ def transport():
             test.close()
 
 
-def request(process, method, identifier, params):
+def _exit_report(process, method, stderr_log):
+    """Name the exit status and the stderr of an MCP that stopped first."""
+    status = process.wait(timeout=15)
+    if stderr_log is not None:
+        detail = Path(stderr_log).read_text()
+    elif process.stderr is not None:
+        detail = process.stderr.read()
+    else:
+        detail = "(stderr not captured)"
+    return f"MCP exited with status {status} before it answered {method}:\n{detail}"
+
+
+def request(process, method, identifier, params, *, stderr_log=None):
+    """Send one JSON-RPC request and return its result.
+
+    Give stderr_log when the MCP writes stderr to a file, not to a pipe.
+    """
     import select
 
-    process.stdin.write(
-        json.dumps(dict(jsonrpc="2.0", id=identifier, method=method, params=params))
-        + "\n"
-    )
-    process.stdin.flush()
+    try:
+        process.stdin.write(
+            json.dumps(
+                dict(jsonrpc="2.0", id=identifier, method=method, params=params)
+            )
+            + "\n"
+        )
+        process.stdin.flush()
+    except BrokenPipeError:
+        pytest.fail(_exit_report(process, method, stderr_log))
     assert select.select([process.stdout], [], [], 15)[0], "MCP response timed out"
     line = process.stdout.readline()
-    assert line, process.stderr.read()
+    if not line:
+        pytest.fail(_exit_report(process, method, stderr_log))
     result = json.loads(line)
     assert "error" not in result, result
     return result["result"]
 
 
-def initialize(process):
+def initialize(process, *, stderr_log=None):
     return request(
         process,
         "initialize",
@@ -232,7 +254,33 @@ def initialize(process):
             capabilities={},
             clientInfo=dict(name="transport-test", version="1"),
         ),
+        stderr_log=stderr_log,
     )
+
+
+def test_request_reports_child_exit_and_stderr_log(tmp_path):
+    log_path = tmp_path / "child.stderr"
+    with log_path.open("w") as log:
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import sys; sys.stdin.readline(); sys.exit('module not found')",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=log,
+            text=True,
+        )
+    try:
+        with pytest.raises(pytest.fail.Exception) as failure:
+            initialize(process, stderr_log=log_path)
+    finally:
+        process.stdin.close()
+        process.stdout.close()
+        process.wait(timeout=15)
+    assert "exited with status 1 before it answered initialize" in str(failure.value)
+    assert "module not found" in str(failure.value)
 
 
 def test_real_ssh_relay_and_mcp_reject_role_escape_and_revoke(transport):

@@ -22,7 +22,7 @@ import { HTTPClient } from './http.js';
 import { initTracing, recordToolResultSize, shutdownTracing, traceToolCall } from './telemetry.js';
 import { boundToolResult, toolResultBudgets, type ToolResult } from './tool-output-cap.js';
 import { generateToolDefinitions } from './tools/definitions.js';
-import { errorMessage, generateToolHandlers, maybeHarvest, resolveCaptureContainer, HARVEST_METADATA_WAIT_MS, type ToolHandler, type ToolContext } from './tools/handlers.js';
+import { errorMessage, generateToolHandlers, maybeHarvest, resolveCaptureContainer, type ToolHandler, type ToolContext } from './tools/handlers.js';
 import { generateAPIToolDefinitions } from './tools/api-definitions.js';
 import { generateAPIToolHandlers, type APIToolHandler, type APIToolContext } from './tools/api-handlers.js';
 
@@ -190,9 +190,7 @@ export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOp
   // before it drops the session: otherwise the shutdown sweep below never sees
   // it. The manager cannot resolve the capture container, so it calls back here.
   if (sshManager) {
-    sshManager.setHarvestHook((sessionId, runId) =>
-      maybeHarvest(labConfig, sessionId, runId, HARVEST_METADATA_WAIT_MS),
-    );
+    sshManager.setHarvestHook((sessionId, runId) => maybeHarvest(labConfig, sessionId, runId));
   }
   const httpClient = labConfig.api ? new HTTPClient(labConfig.api) : null;
   initTracing(labConfig.server.name);
@@ -355,6 +353,9 @@ export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOp
 
         process.on('SIGINT', () => { void gracefulShutdown('SIGINT'); });
         process.on('SIGTERM', () => { void gracefulShutdown('SIGTERM'); });
+        // A closed stdin is the MCP stdio client's first shutdown signal. The
+        // client can send SIGKILL soon after SIGTERM, so start here.
+        process.stdin.once('end', () => { void gracefulShutdown('stdin EOF'); });
 
         handlersSetup = true;
       }

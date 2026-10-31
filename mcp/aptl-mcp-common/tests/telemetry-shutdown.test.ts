@@ -37,7 +37,6 @@ vi.mock('../src/tools/handlers.js', () => ({
   generateToolHandlers: vi.fn().mockReturnValue({}),
   maybeHarvest: vi.fn(),
   resolveCaptureContainer: vi.fn(),
-  HARVEST_METADATA_WAIT_MS: 30000,
 }));
 
 const SPAN_NAME = 'span-recorded-before-sigterm';
