@@ -231,6 +231,11 @@ class ComposeQueryMixin(object):
             for config in ipam_configs
             if isinstance(config, dict) and config.get("Subnet")
         ]
+        gateways = [
+            str(config.get("Gateway", ""))
+            for config in ipam_configs
+            if isinstance(config, dict) and config.get("Gateway")
+        ]
         return {
             "name": str(payload.get("Name", name)),
             "id": network_id,
@@ -240,6 +245,7 @@ class ComposeQueryMixin(object):
             "subnet": ipam.get("Subnet", ""),
             "subnets": subnets,
             "gateway": ipam.get("Gateway", ""),
+            "gateways": gateways,
             "labels": labels,
             "options": options,
             "containers": sorted(c.get("Name", "") for c in containers_map.values()),

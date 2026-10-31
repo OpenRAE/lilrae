@@ -53,22 +53,25 @@ grc:
       description: Outermost trust boundary — the contained range vs. the external internet; egress firewall (SAF-002) is the primary safety boundary.
       paths:
         - docker-compose.yml
+        - containers/appliance-egress-proxy/**
         - src/aptl/core/**
         - config/suricata/**
-      # src/aptl/core (python) -> application; docker-compose.yml -> docker-compose;
-      # config/suricata uncovered.
-      surfaces: [application, docker-compose]
+      # src/aptl/core and appliance-egress-proxy (python) -> application;
+      # docker-compose.yml -> docker-compose; the egress proxy Dockerfile ->
+      # dockerfile; config/suricata uncovered.
+      surfaces: [application, docker-compose, dockerfile]
     - key: host-boundary
       name: Docker Host Boundary
       description: Docker host vs. range containers — kill switch (SAF-001), resource limits (INF-004), health checks (INF-003).
       paths:
         - docker-compose.yml
         - containers/base/**
+        - containers/network-boundary-helper/**
         - appliance/guest/**
         - src/aptl/appliance/**
         - src/aptl/cli/**
       # src/aptl/cli (python) -> application; docker-compose.yml -> docker-compose;
-      # containers/base/Dockerfile.* -> dockerfile.
+      # containers/base and network-boundary-helper Dockerfiles -> dockerfile.
       surfaces: [application, docker-compose, dockerfile]
     - key: mcp-control-plane
       name: MCP Control Plane

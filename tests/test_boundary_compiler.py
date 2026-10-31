@@ -3,12 +3,14 @@
 import pytest
 
 from aptl.core.appliance_boundary import ApplianceBoundaryPolicy
+from aptl.appliance.policy import full_techvault_boundary_policy
 from aptl.core.deployment.boundary import BoundaryNetwork, BoundaryWorkload
 from aptl.core.deployment.boundary_compiler import (
     BoundaryCompileError,
     compile_raes_boundary,
     compile_platform_bootstrap,
     compile_platform_boundary,
+    compile_seat_protection_boundary,
 )
 from aptl.core.deployment.realization import (
     DeploymentAclRealization,
@@ -330,5 +332,75 @@ def test_platform_binding_rejects_ipv6_until_crossings_are_dual_stack() -> None:
             policy_digest="sha256:" + "a" * 64,
             networks=networks,
             workloads=(),
+            owner="seat-17",
+        )
+
+
+def test_seat_protection_binds_every_realized_range_bridge_without_zoning() -> None:
+    networks = (
+        BoundaryNetwork(
+            name="orchard",
+            bridge="br-orchard",
+            ipv4_cidr="10.44.1.0/24",
+            ipv4_gateway="10.44.1.1",
+        ),
+        BoundaryNetwork(
+            name="quartz",
+            bridge="br-quartz",
+            ipv4_cidr="10.44.2.0/24",
+            ipv6_cidr="2001:db8:44::/64",
+            ipv4_gateway="10.44.2.1",
+            ipv6_gateway="2001:db8:44::1",
+        ),
+    )
+
+    spec = compile_seat_protection_boundary(
+        full_techvault_boundary_policy(),
+        _realization(),
+        policy_digest="sha256:" + "a" * 64,
+        networks=networks,
+        owner="seat-17",
+    )
+
+    assert spec.authority == "seat-protection"
+    assert spec.default_deny is True
+    assert {item.name for item in spec.networks} == {"orchard", "quartz"}
+    assert {item.component_class for item in spec.protected_components} == {
+        "management-control",
+        "evidence-capture",
+        "evidence-store",
+        "docker-authority",
+        "credentials",
+    }
+    assert spec.permitted_flows == ()
+    assert "zone_networks" not in spec.details()
+    assert "forward" not in spec.details()
+
+
+def test_seat_protection_requires_exact_complete_realization_networks() -> None:
+    policy = full_techvault_boundary_policy()
+
+    with pytest.raises(BoundaryCompileError, match="network binding is incomplete"):
+        compile_seat_protection_boundary(
+            policy,
+            _realization(),
+            policy_digest="sha256:" + "a" * 64,
+            networks=(
+                BoundaryNetwork(
+                    name="orchard",
+                    bridge="br-orchard",
+                    ipv4_cidr="10.44.1.0/24",
+                    ipv4_gateway="10.44.1.1",
+                ),
+            ),
+            owner="seat-17",
+        )
+
+    with pytest.raises(BoundaryCompileError, match="protected-seat policy"):
+        compile_seat_protection_boundary(
+            _policy(),
+            _realization(),
+            policy_digest="sha256:" + "a" * 64,
+            networks=_networks(),
             owner="seat-17",
         )

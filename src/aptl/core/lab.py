@@ -768,7 +768,7 @@ def _stop_recovery_configuration(
             from aptl.core.operator_group_state import load_admitted_operator_groups
 
             admitted_groups = list(load_admitted_operator_groups(search_dir))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             failure = LabResult(
                 success=False,
                 error=f"[lifecycle-state-invalid] Lab {command} blocked: invalid "
@@ -1121,7 +1121,7 @@ def _clean_boot_rootless_refusal(
         try:
             config = load_config(config_path) if config_path is not None else None
             backend = _get_backend(project_root, config)
-        except (FileNotFoundError, ValueError):
+        except FileNotFoundError, ValueError:
             return None
     return _rootless_daemon_refusal(backend)
 
@@ -1151,7 +1151,7 @@ def lab_status(
             try:
                 config = load_config(config_path)
                 backend = _get_backend(config_path.parent, config)
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 return LabStatus(
                     running=False,
                     error="[lifecycle-invalid-configuration] Lab status blocked: "
@@ -1947,7 +1947,16 @@ def _configure_verified_appliance_launch(
             binding = ApplianceBoundaryBinding(
                 policy_digest=descriptor.boundary_policy_digest,
                 payload_digest=descriptor.image_digest,
-                raes_plan_digest=descriptor.participant_routes_digest,
+                participant_routes_digest=(
+                    descriptor.participant_routes_digest
+                    if boundary_policy.seat_component_protection
+                    else None
+                ),
+                raes_plan_digest=(
+                    None
+                    if boundary_policy.seat_component_protection
+                    else descriptor.participant_routes_digest
+                ),
                 raes_boundary_required=boundary_policy.internal_zone_isolation,
                 boundary_helper_image=descriptor.boundary_helper_image,
                 egress_proxy_image=descriptor.egress_proxy_image,
@@ -2110,7 +2119,7 @@ def _prepare_scenario_startup(
         if plan is None:
             return None
         return _bind_scenario_startup_environment(ctx, plan)
-    except (OSError, ValueError, ScenarioStartupProviderError):
+    except OSError, ValueError, ScenarioStartupProviderError:
         log.warning("Scenario startup adapter preparation failed")
         return LabResult(
             success=False,
@@ -2712,14 +2721,14 @@ def _persist_start_recovery(ctx: _LabStartContext) -> LabResult | None:
         from aptl.core.operator_group_state import persist_admitted_operator_groups
 
         persist_admitted_operator_groups(ctx.project_dir, ctx.selected_profiles)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return LabResult(
             success=False,
             error="Could not persist admitted operator groups for recovery.",
         )
     try:
         _persist_cleanup_actions(ctx)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return LabResult(
             success=False,
             error="Could not persist pending lab cleanup records for recovery.",
@@ -4066,7 +4075,7 @@ def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-        except (OSError, subprocess.CalledProcessError):
+        except OSError, subprocess.CalledProcessError:
             return LabResult(
                 success=False,
                 error="Seat desktop MCP handoff failed.",

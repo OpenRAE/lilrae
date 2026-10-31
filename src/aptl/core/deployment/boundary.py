@@ -24,6 +24,8 @@ class BoundaryNetwork:
     bridge: str
     ipv4_cidr: str | None = None
     ipv6_cidr: str | None = None
+    ipv4_gateway: str | None = None
+    ipv6_gateway: str | None = None
     labels: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
@@ -32,6 +34,19 @@ class BoundaryNetwork:
         for cidr in (self.ipv4_cidr, self.ipv6_cidr):
             if cidr is not None:
                 ipaddress.ip_network(cidr, strict=False)
+        for gateway, cidr, version in (
+            (self.ipv4_gateway, self.ipv4_cidr, 4),
+            (self.ipv6_gateway, self.ipv6_cidr, 6),
+        ):
+            if gateway is None:
+                continue
+            parsed = ipaddress.ip_address(gateway)
+            if (
+                parsed.version != version
+                or cidr is None
+                or parsed not in ipaddress.ip_network(cidr, strict=False)
+            ):
+                raise ValueError("boundary network gateway is outside its subnet")
         if list(self.labels) != sorted(self.labels) or len(dict(self.labels)) != len(
             self.labels
         ):
@@ -43,6 +58,8 @@ class BoundaryNetwork:
             "bridge": self.bridge,
             "ipv4_cidr": self.ipv4_cidr,
             "ipv6_cidr": self.ipv6_cidr,
+            "ipv4_gateway": self.ipv4_gateway,
+            "ipv6_gateway": self.ipv6_gateway,
             "labels": [list(item) for item in self.labels],
         }
 
@@ -156,6 +173,7 @@ class PlatformCrossing:
     def __post_init__(self) -> None:
         if (
             not self.ports
+            or self.ports != tuple(sorted(self.ports))
             or len(self.ports) != len(set(self.ports))
             or any(not 0 < port <= 65535 for port in self.ports)
             or not self.purpose
@@ -278,8 +296,154 @@ class PlatformBoundaryBootstrapSpec:
         return _digest(self.canonical_json())
 
 
+@dataclass(frozen=True)
+class SeatProtectedComponent:
+    """One signed protected component projected into enforcement evidence."""
+
+    component_class: Literal[
+        "management-control",
+        "evidence-capture",
+        "evidence-store",
+        "docker-authority",
+        "credentials",
+    ]
+    probe_identity: str
+    protocol: Literal["tcp", "udp"]
+    port: int
+    purpose: str
+
+    def __post_init__(self) -> None:
+        if (
+            not _OWNER.fullmatch(self.probe_identity)
+            or not 0 < self.port <= 65535
+            or not self.purpose
+        ):
+            raise ValueError("invalid protected component")
+
+    def details(self) -> dict[str, object]:
+        return {
+            "component_class": self.component_class,
+            "probe_identity": self.probe_identity,
+            "protocol": self.protocol,
+            "port": self.port,
+            "purpose": self.purpose,
+        }
+
+
+@dataclass(frozen=True)
+class SeatPermittedFlow:
+    """One signed exception to the range-to-guest-host deny boundary."""
+
+    source: Literal["ordinary-range-workload"]
+    destination: Literal[
+        "management-control",
+        "evidence-capture",
+        "evidence-store",
+        "docker-authority",
+        "credentials",
+    ]
+    protocol: Literal["tcp", "udp"]
+    ports: tuple[int, ...]
+    purpose: str
+    probe_identity: str
+
+    def __post_init__(self) -> None:
+        if (
+            not self.ports
+            or len(self.ports) != len(set(self.ports))
+            or any(not 0 < port <= 65535 for port in self.ports)
+            or not self.purpose
+            or not _OWNER.fullmatch(self.probe_identity)
+        ):
+            raise ValueError("invalid protected-seat permitted flow")
+
+    def details(self) -> dict[str, object]:
+        return {
+            "source": self.source,
+            "destination": self.destination,
+            "protocol": self.protocol,
+            "ports": list(self.ports),
+            "purpose": self.purpose,
+            "probe_identity": self.probe_identity,
+        }
+
+
+@dataclass(frozen=True)
+class SeatProtectionBoundarySpec:
+    """Input-only default deny from all admitted range bridges to the guest."""
+
+    owner: str
+    policy_digest: str
+    networks: tuple[BoundaryNetwork, ...]
+    protected_components: tuple[SeatProtectedComponent, ...]
+    permitted_flows: tuple[SeatPermittedFlow, ...]
+    default_deny: Literal[True] = True
+    authority: Literal["seat-protection"] = "seat-protection"
+
+    def __post_init__(self) -> None:
+        _validate_owner(self.owner)
+        if not re.fullmatch(r"sha256:[a-f0-9]{64}", self.policy_digest):
+            raise ValueError("invalid protected-seat policy digest")
+        _validate_networks(self.networks)
+        if not self.networks or any(
+            network.ipv4_cidr is None and network.ipv6_cidr is None
+            for network in self.networks
+        ):
+            raise ValueError(
+                "protected-seat networks require observed address families"
+            )
+        if any(
+            (network.ipv4_cidr is not None and network.ipv4_gateway is None)
+            or (network.ipv6_cidr is not None and network.ipv6_gateway is None)
+            for network in self.networks
+        ):
+            raise ValueError("protected-seat networks require observed gateways")
+        classes = [item.component_class for item in self.protected_components]
+        probes = [
+            item.probe_identity
+            for item in (*self.protected_components, *self.permitted_flows)
+        ]
+        required_classes = {
+            "management-control",
+            "evidence-capture",
+            "evidence-store",
+            "docker-authority",
+            "credentials",
+        }
+        if (
+            set(classes) != required_classes
+            or len(classes) != len(required_classes)
+            or len(probes) != len(set(probes))
+        ):
+            raise ValueError(
+                "protected-seat component coverage must be complete and unique"
+            )
+
+    def details(self) -> dict[str, object]:
+        return {
+            "authority": self.authority,
+            "owner": self.owner,
+            "policy_digest": self.policy_digest,
+            "networks": [item.details() for item in self.networks],
+            "protected_components": [
+                item.details() for item in self.protected_components
+            ],
+            "permitted_flows": [item.details() for item in self.permitted_flows],
+            "default_deny": self.default_deny,
+        }
+
+    def canonical_json(self) -> str:
+        return _canonical(self.details())
+
+    def digest(self) -> str:
+        return _digest(self.canonical_json())
+
+
 BoundaryEnforcementSpec = (
-    AcesBoundarySpec | PlatformBoundarySpec | PlatformBoundaryBootstrapSpec
+    AcesBoundarySpec
+    | PlatformBoundarySpec
+    | PlatformBoundaryBootstrapSpec
+    | SeatProtectionBoundarySpec
 )
 
 

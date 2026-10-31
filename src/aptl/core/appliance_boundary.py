@@ -29,6 +29,20 @@ _IMAGE_DIGEST = re.compile(r"^[a-z0-9][a-z0-9._/:~-]{0,254}@sha256:[a-f0-9]{64}$
 Digest = Annotated[str, Field(pattern=_DIGEST.pattern)]
 PlatformZone = Literal["participant", "management", "egress"]
 Transport = Literal["tcp", "udp"]
+ProtectedComponentClass = Literal[
+    "management-control",
+    "evidence-capture",
+    "evidence-store",
+    "docker-authority",
+    "credentials",
+]
+_PROTECTED_COMPONENT_CLASSES = {
+    "management-control",
+    "evidence-capture",
+    "evidence-store",
+    "docker-authority",
+    "credentials",
+}
 
 
 class _StrictModel(BaseModel):
@@ -149,6 +163,40 @@ class DockerAuthorityPolicy(_StrictModel):
         return values
 
 
+class ProtectedComponent(_StrictModel):
+    """One non-secret seat component class with an active probe instrument."""
+
+    component_class: ProtectedComponentClass
+    probe_identity: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,79}$")
+    protocol: Transport
+    port: int = Field(ge=1, le=65535)
+    purpose: str = Field(min_length=1, max_length=80)
+
+
+class PermittedHostFlow(_StrictModel):
+    """One reviewed range-to-guest-host exception in a protected seat."""
+
+    source: Literal["ordinary-range-workload"]
+    destination: ProtectedComponentClass
+    protocol: Transport
+    ports: list[int] = Field(min_length=1)
+    purpose: str = Field(min_length=1, max_length=80)
+    probe_identity: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,79}$")
+
+    @field_validator("ports")
+    @classmethod
+    def validate_ports(cls, values: list[int]) -> list[int]:
+        if (
+            values != sorted(values)
+            or len(values) != len(set(values))
+            or any(
+                isinstance(value, bool) or not 0 < value <= 65535 for value in values
+            )
+        ):
+            raise ValueError("ports must be sorted unique integers in 1..65535")
+        return values
+
+
 class EgressProxyLimits(_StrictModel):
     """Signed resource and timeout bounds for the egress broker."""
 
@@ -162,7 +210,11 @@ class EgressProxyLimits(_StrictModel):
 class ApplianceBoundaryPolicy(_StrictModel):
     """Platform policy that deliberately cannot contain scenario topology."""
 
-    schema_version: Literal["aptl.appliance-boundary/v1", "aptl.appliance-boundary/v2"]
+    schema_version: Literal[
+        "aptl.appliance-boundary/v1",
+        "aptl.appliance-boundary/v2",
+        "aptl.appliance-boundary/v3",
+    ]
     policy_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,79}$")
     generation: int = Field(ge=1)
     workbench_policy_version: str = Field(pattern=r"^[a-z0-9][a-z0-9._/-]{0,127}$")
@@ -175,12 +227,20 @@ class ApplianceBoundaryPolicy(_StrictModel):
     guest_publications: list[GuestPublication] = Field(default_factory=list)
     host_mcp_contract: Literal["aptl.restricted-ssh-mcp/v1"] | None = None
     docker_authority: DockerAuthorityPolicy
+    protected_components: list[ProtectedComponent] = Field(default_factory=list)
+    permitted_host_flows: list[PermittedHostFlow] = Field(default_factory=list)
 
     @property
     def internal_zone_isolation(self) -> bool:
         """V1 promises internal enforcement; V2 explicitly promises VM containment."""
 
         return self.schema_version == "aptl.appliance-boundary/v1"
+
+    @property
+    def seat_component_protection(self) -> bool:
+        """Return whether the policy promises the v3 inner-seat boundary."""
+
+        return self.schema_version == "aptl.appliance-boundary/v3"
 
     @model_validator(mode="after")
     def validate_unique_entries(self) -> ApplianceBoundaryPolicy:
@@ -202,20 +262,45 @@ def _validate_containment_contract(policy: ApplianceBoundaryPolicy) -> None:
                 policy.egress_proxy_limits,
             )
         ):
-            raise ValueError(
-                "internal-zone policy requires its complete deny boundary"
-            )
+            raise ValueError("internal-zone policy requires its complete deny boundary")
+        if policy.protected_components or policy.permitted_host_flows:
+            raise ValueError("internal-zone policy cannot claim seat protection")
         return
-    vm_only_fields = (
-        policy.default_deny,
+    if policy.schema_version == "aptl.appliance-boundary/v2":
+        vm_only_fields = (
+            policy.default_deny,
+            policy.platform_networks,
+            policy.platform_anchors,
+            policy.egress_proxy_limits,
+            policy.fixed_crossings,
+            policy.egress_authorities,
+            policy.protected_components,
+            policy.permitted_host_flows,
+        )
+        if any(vm_only_fields):
+            raise ValueError("VM-only policy cannot claim inner-seat enforcement")
+        return
+    legacy_fields = (
         policy.platform_networks,
         policy.platform_anchors,
         policy.egress_proxy_limits,
         policy.fixed_crossings,
         policy.egress_authorities,
     )
-    if any(vm_only_fields):
-        raise ValueError("VM-only policy cannot claim internal-zone enforcement")
+    if not policy.default_deny or any(legacy_fields):
+        raise ValueError("seat-component policy requires its distinct deny boundary")
+    component_classes = {item.component_class for item in policy.protected_components}
+    if component_classes != _PROTECTED_COMPONENT_CLASSES or len(
+        policy.protected_components
+    ) != len(_PROTECTED_COMPONENT_CLASSES):
+        raise ValueError(
+            "seat-component policy requires all protected component classes"
+        )
+    component_probe_ids = [item.probe_identity for item in policy.protected_components]
+    flow_probe_ids = [item.probe_identity for item in policy.permitted_host_flows]
+    all_probe_ids = component_probe_ids + flow_probe_ids
+    if len(all_probe_ids) != len(set(all_probe_ids)):
+        raise ValueError("seat-component probe identities must be unique")
 
 
 def _validate_host_mcp_contract(policy: ApplianceBoundaryPolicy) -> None:
@@ -242,10 +327,20 @@ def _validate_unique_policy_entries(policy: ApplianceBoundaryPolicy) -> None:
         (item.audience, item.address, item.port, item.protocol)
         for item in policy.guest_publications
     ]
+    host_flows = [
+        (
+            item.source,
+            item.destination,
+            item.protocol,
+            tuple(item.ports),
+        )
+        for item in policy.permitted_host_flows
+    ]
     for values, message in (
         (crossings, "fixed crossings must be unique"),
         (authorities, "egress authorities must be unique"),
         (publications, "guest publications must be unique"),
+        (host_flows, "permitted host flows must be unique"),
     ):
         if len(values) != len(set(values)):
             raise ValueError(message)
@@ -256,7 +351,8 @@ class ApplianceBoundaryBinding(_StrictModel):
 
     policy_digest: Digest
     payload_digest: Digest
-    raes_plan_digest: Digest
+    participant_routes_digest: Digest | None = None
+    raes_plan_digest: Digest | None = None
     raes_boundary_required: bool
     boundary_helper_image: str = Field(pattern=_IMAGE_DIGEST.pattern)
     egress_proxy_image: str = Field(pattern=_IMAGE_DIGEST.pattern)
@@ -265,6 +361,23 @@ class ApplianceBoundaryBinding(_StrictModel):
     guest_boot_id: str | None = Field(default=None, min_length=1, max_length=128)
     guest_daemon_id: str = Field(min_length=1, max_length=128)
     host_observation_id: str = Field(min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_artifact_identities(self) -> ApplianceBoundaryBinding:
+        if self.participant_routes_digest is None and self.raes_plan_digest is None:
+            raise ValueError(
+                "boundary binding requires a route or runtime plan identity"
+            )
+        if (
+            self.participant_routes_digest is not None
+            and self.participant_routes_digest == self.raes_plan_digest
+        ):
+            raise ValueError(
+                "route and runtime plan digests identify different artifacts"
+            )
+        if self.raes_boundary_required and self.raes_plan_digest is None:
+            raise ValueError("required RAES boundary needs the admitted runtime plan")
+        return self
 
 
 def load_boundary_policy(

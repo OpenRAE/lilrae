@@ -12,9 +12,7 @@ from aptl.core.appliance_boundary_inventory import GuestBoundaryObservation
 from aptl.core.deployment._compose_boundary import (
     realize_boundary as _realize_boundary,
 )
-from aptl.core.deployment._compose_realization_networks import (
-    _match_managed_network,
-)
+from aptl.core.deployment._compose_resource_ownership import OwnershipConflictError
 from aptl.core.deployment.boundary import (
     AcesBoundarySpec,
     BoundaryEnforcementSpec,
@@ -27,6 +25,7 @@ from aptl.core.deployment.boundary_compiler import (
     compile_raes_boundary,
     compile_platform_bootstrap,
     compile_platform_boundary,
+    compile_seat_protection_boundary,
 )
 from aptl.core.deployment.realization import DeploymentRealizationSpec
 from aptl.core.lab_types import LabResult
@@ -74,11 +73,29 @@ def _network_observation(
     if not isinstance(subnets, list):
         subnets = [details.get("subnet", "")]
     ipv4, ipv6 = _boundary_ip_families(subnets)
+    gateways = details.get("gateways")
+    if not isinstance(gateways, list):
+        gateways = [details.get("gateway", "")]
+    ipv4_gateway: str | None = None
+    ipv6_gateway: str | None = None
+    for value in gateways:
+        if not isinstance(value, str) or not value:
+            continue
+        try:
+            version = ipaddress.ip_address(value).version
+        except ValueError as exc:
+            raise BoundaryCompileError("boundary network gateway was invalid") from exc
+        if version == 4 and ipv4_gateway is None:
+            ipv4_gateway = value
+        elif version == 6 and ipv6_gateway is None:
+            ipv6_gateway = value
     return BoundaryNetwork(
         name=name,
         bridge=bridge,
         ipv4_cidr=ipv4,
         ipv6_cidr=ipv6,
+        ipv4_gateway=ipv4_gateway,
+        ipv6_gateway=ipv6_gateway,
         labels=_sorted_labels(details.get("labels")),
     )
 
@@ -158,7 +175,7 @@ class ComposeBoundaryRealizationMixin:
             else None
         )
         source_digest = ""
-        if policy.authority == "platform":
+        if policy.authority in {"platform", "seat-protection"}:
             source_digest = policy.policy_digest
         elif binding is not None:
             source_digest = binding.raes_plan_digest
@@ -166,7 +183,20 @@ class ComposeBoundaryRealizationMixin:
             "source_digest": source_digest,
             "enforcement_digest": policy.digest(),
             "families": ("bridge", "inet"),
-            "default_deny": policy.authority == "platform",
+            "default_deny": policy.authority in {"platform", "seat-protection"},
+            "network_coverage": (
+                tuple(
+                    f"{network.name}/{family}"
+                    for network in policy.networks
+                    for family, cidr in (
+                        ("ipv4", network.ipv4_cidr),
+                        ("ipv6", network.ipv6_cidr),
+                    )
+                    if cidr is not None
+                )
+                if policy.authority == "seat-protection"
+                else ()
+            ),
         }
         self._boundary_specs[policy.authority] = policy
 
@@ -197,10 +227,72 @@ class ComposeBoundaryRealizationMixin:
     ) -> LabResult | None:
         """Install the platform deny floor before any scenario node can run."""
 
+        binding_failure = self._bind_appliance_realization(realization)
+        if binding_failure is not None:
+            return binding_failure
         platform = self._realize_platform_baseline()
         if platform is not None:
             return platform
+        protection = self._realize_seat_protection_boundary(realization)
+        if protection is not None:
+            return protection
         return self._realize_raes_boundary(realization)
+
+    def _bind_appliance_realization(
+        self,
+        realization: DeploymentRealizationSpec,
+    ) -> LabResult | None:
+        """Bind the admitted runtime plan without relabelling image routes."""
+
+        configured = getattr(self, "_appliance_boundary", None)
+        if configured is None:
+            return None
+        policy, binding = configured
+        if policy.seat_component_protection and realization.raes_plan_digest is None:
+            return LabResult(
+                success=False,
+                error="Admitted runtime plan identity was unavailable.",
+            )
+        values = binding.model_dump()
+        if policy.seat_component_protection:
+            values["raes_plan_digest"] = realization.raes_plan_digest
+        values["raes_boundary_required"] = bool(realization.acls)
+        try:
+            updated = ApplianceBoundaryBinding.model_validate(values)
+        except ValueError:
+            return LabResult(
+                success=False,
+                error="Admitted runtime plan identity was invalid.",
+            )
+        self._appliance_boundary = (policy, updated)
+        return None
+
+    def _realize_seat_protection_boundary(
+        self,
+        realization: DeploymentRealizationSpec,
+    ) -> LabResult | None:
+        """Protect guest-host components before any range workload starts."""
+
+        configured = getattr(self, "_appliance_boundary", None)
+        if configured is None or not configured[0].seat_component_protection:
+            return None
+        policy, binding = configured
+        try:
+            networks = self._boundary_network_observations(realization)
+            enforcement = compile_seat_protection_boundary(
+                policy,
+                realization,
+                policy_digest=binding.policy_digest,
+                networks=networks,
+                owner=self._project_name,
+            )
+        except BoundaryCompileError, OwnershipConflictError:
+            return LabResult(
+                success=False,
+                error="Protected-seat networks were not observed exactly.",
+            )
+        result = self.realize_boundary(enforcement)
+        return None if result.success else result
 
     def _realize_platform_baseline(self) -> LabResult | None:
         """Enforce signed zones with no grants until anchors can be observed."""
@@ -286,17 +378,10 @@ class ComposeBoundaryRealizationMixin:
     ) -> tuple[BoundaryNetwork, ...]:
         """Return concrete bridge identities for scenario-declared networks."""
 
-        if not realization.acls:
-            return ()
-        managed = set(self.host_list_lab_networks(self._project_name))
         observed: list[BoundaryNetwork] = []
         for desired in realization.networks:
-            concrete = _match_managed_network(
-                desired.name,
-                managed,
-                self._project_name,
-            )
-            details = self.host_inspect_network(concrete) if concrete else {}
+            concrete = self._resolve_owned_network_id(desired.name)
+            details = self.host_inspect_network(concrete)
             observed.append(_network_observation(desired.name, details))
         return tuple(observed)
 
