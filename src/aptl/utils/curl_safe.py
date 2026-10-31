@@ -207,8 +207,8 @@ def _tls_args(insecure: bool, ca_cert_path: str | None) -> list[str]:
 def _json_headers(body: dict | list | None) -> list[str]:
     """Request JSON and describe JSON content only when content exists.
 
-    Some APIs, including Cortex, interpret a JSON content type on a bodyless
-    GET as a promise of a JSON entity and reject the empty body. ``Accept`` is
+    Some APIs interpret a JSON content type on a bodyless GET as a promise of
+    a JSON entity and reject the empty body. ``Accept`` is
     valid on every request; ``Content-Type`` is valid only when this helper is
     also sending ``body``.
     """

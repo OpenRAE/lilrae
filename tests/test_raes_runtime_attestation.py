@@ -103,7 +103,7 @@ def test_study_copy_uses_same_projection_only_at_its_exact_digest(declared_pack)
     backend = _Backend(node.image.image_ref.rsplit("@", 1)[1])
     study = PackIdentity(
         "techvault-participant-study",
-        "0.1.3",
+        "6.5.1",
         TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST,
     )
 

@@ -97,7 +97,7 @@ V1 does not include:
 > "Shipped implementation (UI-008a)" above.
 - remote shared deployment as a default mode;
 - generic Docker command, shell command, or arbitrary API execution endpoints;
-- full replacement of Wazuh Dashboard, TheHive, MISP, Shuffle, or Cortex;
+- full replacement of Wazuh Dashboard, MISP, or Shuffle;
 - in-browser editing of SDL or RAES artifacts;
 - persisted operator notes, terminal transcripts, or investigation notebooks;
 - case-management workflow;
