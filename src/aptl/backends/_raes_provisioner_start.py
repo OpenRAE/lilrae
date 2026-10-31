@@ -17,6 +17,8 @@ from dataclasses import replace
 
 from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.planning import ProvisioningPlan
+from raes_contracts.realization_envelope import BackendRealizationEnvelopeModel
+from raes_contracts.realization_observation import RealizationObservationDisclosure
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 from raes_processor.planner import realization_authority_disclosure
 
@@ -218,29 +220,16 @@ class ProvisionerStartMixin(object):
                     _policy_diagnostic(address, "catalog-image-unverified")
                     for address in unverified_images
                 )
-                return ApplyResult(
-                    success=False, snapshot=snapshot, diagnostics=diagnostics,
-                    details=_bounded_apply_details({
-                        "profiles": selected_profiles,
-                        "realization": realization.details(),
-                        "observation_evidence": observation_evidence(observations),
-                    }, realization),
+                return _unverified_catalog_image_result(
+                    snapshot, diagnostics, selected_profiles, realization, observations
                 )
-            realized_snapshot = self._with_artifact_satisfactions(
+            realized_snapshot, operational_observations = self._realized_snapshot(
                 plan,
-                snapshot_after_apply(plan, snapshot, observations),
+                snapshot,
+                observations,
                 realization,
                 observation_context,
-            )
-            realized_snapshot = replace(
-                realized_snapshot,
-                realization_envelope=realization_envelope.identity,
-            )
-            operational_observations = operational_realization_observations(
-                plan=plan,
-                observations=observations,
-                envelope=realization_envelope,
-                previous=realized_snapshot.realization_observations,
+                realization_envelope,
             )
             validation_snapshot = replace(
                 realized_snapshot,
@@ -282,7 +271,7 @@ class ProvisionerStartMixin(object):
             return self._failed_apply(
                 snapshot, diagnostics, selected_profiles, realization
             )
-        return ApplyResult(
+        result = ApplyResult(
             success=True,
             snapshot=realized_snapshot,
             diagnostics=diagnostics,
@@ -292,6 +281,40 @@ class ProvisionerStartMixin(object):
             ),
             operational_realization_observations=operational_observations,
         )
+        from aptl.backends.lilrae_apparatus_reporting import append_verified_apparatus
+
+        return append_verified_apparatus(
+            result, self._lilrae_apparatus_resources, apparatus_observations
+        )
+
+    def _realized_snapshot(
+        self,
+        plan: ProvisioningPlan,
+        snapshot: RuntimeSnapshot,
+        observations: dict[str, ObservedResource],
+        realization: AptlRealization,
+        observation_context: DeploymentObservationContext,
+        realization_envelope: BackendRealizationEnvelopeModel,
+    ) -> tuple[RuntimeSnapshot, tuple[RealizationObservationDisclosure, ...]]:
+        """Build the realized snapshot and its operational observations."""
+
+        realized_snapshot = self._with_artifact_satisfactions(
+            plan,
+            snapshot_after_apply(plan, snapshot, observations),
+            realization,
+            observation_context,
+        )
+        realized_snapshot = replace(
+            realized_snapshot,
+            realization_envelope=realization_envelope.identity,
+        )
+        operational_observations = operational_realization_observations(
+            plan=plan,
+            observations=observations,
+            envelope=realization_envelope,
+            previous=realized_snapshot.realization_observations,
+        )
+        return realized_snapshot, operational_observations
 
     def _successful_apply_details(
         self,
@@ -319,3 +342,27 @@ class ProvisionerStartMixin(object):
             },
             realization,
         )
+
+
+def _unverified_catalog_image_result(
+    snapshot: RuntimeSnapshot,
+    diagnostics: list[Diagnostic],
+    selected_profiles: list[str],
+    realization: AptlRealization,
+    observations: dict[str, ObservedResource],
+) -> ApplyResult:
+    """Return the failed apply for catalog images that APTL cannot verify."""
+
+    return ApplyResult(
+        success=False,
+        snapshot=snapshot,
+        diagnostics=diagnostics,
+        details=_bounded_apply_details(
+            {
+                "profiles": selected_profiles,
+                "realization": realization.details(),
+                "observation_evidence": observation_evidence(observations),
+            },
+            realization,
+        ),
+    )

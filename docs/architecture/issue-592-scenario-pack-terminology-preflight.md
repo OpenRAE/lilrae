@@ -41,6 +41,7 @@ prose must not accidentally rename them.
 
 | Surface | Files | Disposition |
 | --- | --- | --- |
+| Native realization reporting and runtime dependencies | `docs/adrs/adr-007-python-cli-control-plane.md`, `docs/architecture/issue-1130-owned-descendant-reporting-design.md`, `docs/architecture/issue-1130-runtime-realization-attestation-preflight.md` | Keep the released environment-pack identity distinct from the RAES reporting contract, Python dependency boundary, native ownership and protected evidence handoff. |
 | Pack boundary enforcement | `docs/architecture/issue-1121-pack-boundary-preflight.md` | Preserve original and independent RPT adapter ownership, exact compatibility exceptions, and selected host requirements. |
 | PHP image re-pin | `docs/architecture/issue-1407-php-image-repin-preflight.md` | Keep the released environment-pack MISP and Roundcube selectors distinct from the backend-selected image digests and the MISP web companion. |
 | Configured pack source | `docs/architecture/issue-1413-configured-pack-source-preflight.md` | Keep release-directory acquisition distinct from portable pack semantics, content identity, installed adapters, and backend realization. |
@@ -51,6 +52,7 @@ prose must not accidentally rename them.
 | Participant desktop adapter boundary | `docs/architecture/issue-1273-participant-desktop-adapter-preflight.md`, `docs/reference/appliance-seat-launcher.md` | Keep authored pack references distinct from generic desktop resolution, publication, and rule-tool validation. |
 | Dashboard owner-declared config | `docs/architecture/issue-1422-wazuh-dashboard-config-readability-preflight.md`, `docs/architecture/issue-1422-wazuh-dashboard-owned-config-design.md` | Keep pack-declared file owners and modes distinct from generic content placement and the backend profile start steps. |
 | LilRAE public naming boundary | `docs/architecture/issue-1232-lilrae-naming-preflight.md` | Preserve pack, RAES, and backend ownership while explaining the project's public name and retained compatibility identifiers. |
+| TheHive and Cortex removal | `docs/adrs/adr-063-remove-thehive-and-cortex.md`, `docs/architecture/issue-1411-thehive-license-readiness-preflight.md` | Keep the TechVault pack removal in env-packs distinct from the LilRAE realization, MCP server, and SOC integration that LilRAE removes when it adopts that pack release. |
 | LilRAE name and command decisions | `docs/adrs/adr-062-lilrae-name-and-naming-convention.md` | The command successor clause (#1402) renames only the CLI command. The TechVault environment pack keeps its own frozen sync-service command name; a pack change, not the backend, can rename it. |
 | Shipped seat network investigation | `docs/architecture/issue-1194-shipped-seat-network-preflight.md` | Keep authored environment-pack topology distinct from APTL runtime attachment verification and shipped seat delivery evidence. |
 | Base-container terminology | `docs/architecture/issue-1193-base-container-terminology-preflight.md` | Keep env-pack artifact resolution and authored content sources distinct from the base-container node route and its base image. |

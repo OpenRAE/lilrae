@@ -436,6 +436,7 @@ def test_container_action_uses_recorded_id_and_rejects_replacement(
 
 def test_cleanup_targets_only_receipt_owned_native_ids(tmp_path: Path) -> None:
     backend = DockerComposeBackend(tmp_path, project_name="aptl")
+    backend._current_docker_daemon_id = lambda: "daemon-a"
     ownership = backend._ensure_resource_ownership(attempt_id="run-a")
     external = ownership.container_name("aptl-victim")
     ownership.record(
@@ -470,8 +471,9 @@ def test_cleanup_targets_only_receipt_owned_native_ids(tmp_path: Path) -> None:
     assert backend.remove_generic_materializer_containers() == []
     # ``-v`` removes the container's anonymous volumes with it; receipt-owned
     # named volumes are untouched by it and retired separately.
-    assert backend._run.call_args.args[0] == ["docker", "rm", "-f", "-v", _ID_A]
-    assert all("--filter" not in call.args[0] for call in backend._run.call_args_list)
+    commands = [call.args[0] for call in backend._run.call_args_list]
+    assert ["docker", "rm", "-f", "-v", _ID_A] in commands
+    assert all(cmd[-1] == _ID_A for cmd in commands if cmd[:2] == ["docker", "rm"])
 
 
 @pytest.mark.parametrize("remove_volumes", [False, True])
@@ -518,6 +520,17 @@ def test_stop_applies_volume_policy_to_receipt_owned_nodes(
     )
 
     def run(cmd, *, timeout=None):
+        if cmd[:3] == ["docker", "container", "ls"]:
+            return subprocess.CompletedProcess(
+                cmd,
+                0,
+                "\n".join(
+                    item
+                    for item in containers
+                    if item == cmd[cmd.index("--filter") + 1].removeprefix("id=")
+                ),
+                "",
+            )
         if cmd[:2] == ["docker", "rm"]:
             assert cmd[-1] == _ID_A
             containers.remove(_ID_A)
@@ -528,6 +541,7 @@ def test_stop_applies_volume_policy_to_receipt_owned_nodes(
         return subprocess.CompletedProcess(cmd, 1, "", "")
 
     backend._run = run
+    backend._current_docker_daemon_id = lambda: "daemon-a"
     backend._build_command = lambda *args, **kwargs: ["docker", "compose", "down"]
     backend.remove_stranded_helpers = lambda: []
     backend.remove_project_networks = lambda: []
@@ -719,10 +733,14 @@ def test_network_creation_records_native_id_and_cleanup_uses_only_that_id(
     )
     backend._run.reset_mock()
     backend._run.return_value = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+    backend._current_docker_daemon_id = lambda: "daemon-a"
 
     assert backend.remove_project_networks() == []
-    assert backend._run.call_args.args[0] == ["docker", "network", "rm", _ID_A]
-    assert all("--filter" not in call.args[0] for call in backend._run.call_args_list)
+    commands = [call.args[0] for call in backend._run.call_args_list]
+    assert ["docker", "network", "rm", _ID_A] in commands
+    assert all(
+        cmd[-1] == _ID_A for cmd in commands if cmd[:3] == ["docker", "network", "rm"]
+    )
 
 
 def test_network_namespace_discovery_uses_full_receipted_native_ids(
@@ -853,7 +871,9 @@ def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(
                 "Name": volume,
                 "Labels": {
                     "com.docker.compose.project": (
-                        "foreign" if outcome == "foreign-label" else ownership.project_name
+                        "foreign"
+                        if outcome == "foreign-label"
+                        else ownership.project_name
                     )
                 },
             }
@@ -864,6 +884,10 @@ def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(
 
     def fake_run(argv, **_kwargs):
         nonlocal present
+        if argv[:3] == ["docker", "volume", "ls"]:
+            return subprocess.CompletedProcess(
+                argv, 0, stdout=volume if present else "", stderr=""
+            )
         if argv[:3] == ["docker", "volume", "rm"]:
             if outcome == "remove-failed":
                 return subprocess.CompletedProcess(argv, 1, stdout="", stderr="")
@@ -875,6 +899,7 @@ def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(
         )
 
     backend._run = MagicMock(side_effect=fake_run)
+    backend._current_docker_daemon_id = lambda: "daemon-a"
 
     failures = backend._remove_owned_volumes()
     expected_failures = {
@@ -885,8 +910,14 @@ def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(
     }
     assert failures == expected_failures[outcome]
     commands = [call.args[0] for call in backend._run.call_args_list]
-    assert (["docker", "volume", "rm", volume] in commands) == (outcome != "foreign-label")
-    assert all("ls" not in command for command in commands)
+    assert (["docker", "volume", "rm", volume] in commands) == (
+        outcome != "foreign-label"
+    )
+    assert all(
+        command[command.index("--filter") + 1] == f"name={volume}"
+        for command in commands
+        if command[:3] == ["docker", "volume", "ls"]
+    )
     assert bool(ownership.receipts("volume")) == (outcome != "removed")
 
 
@@ -908,8 +939,14 @@ def test_clean_volume_cleanup_retires_already_absent_receipt(tmp_path: Path) -> 
     )
     ownership.record(receipt)
     backend._run = MagicMock(
-        return_value=subprocess.CompletedProcess([], 1, stdout="", stderr="")
+        side_effect=lambda argv, **_: subprocess.CompletedProcess(
+            argv,
+            0 if argv[:3] == ["docker", "volume", "ls"] else 1,
+            stdout="",
+            stderr="",
+        )
     )
+    backend._current_docker_daemon_id = lambda: "daemon-a"
 
     assert backend._remove_owned_volumes() == []
     assert ownership.receipts("volume") == ()

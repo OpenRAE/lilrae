@@ -1,77 +1,49 @@
-# Issue #1447: Runtime Ownership During Evidence Refresh
+# Runtime Ownership During Evidence Refresh
 
-> **Superseded (issue #1407).** RAES 9.0.0 uses one runtime for the whole run (OpenRAE/rae#1660). The run's runtime delivers participant turns and evaluates later evidence with `evaluate()`, so this handoff and its module are removed.
-
-The Cortex seed fix exposes a second startup failure. Native evidence refresh
-constructs a control plane while the apply outcome retains its runtime manager.
-RAES 7 permits only one owner of the target's components. Participant delivery
-has the same conflict after each clock advance.
+RAES 9.2.0 provides one runtime owner for each run.
+`RuntimeManager` and `RuntimeControlPlane` name the same class.
+LilRAE keeps that owner for apply, time, native evidence, participant delivery, and teardown.
+The former private claim handoff is removed.
 
 ## Ownership Decision
 
-Keep the initialized manager for clock and scheduler state. Give each temporary
-control plane exclusive ownership through a scoped handoff:
+The constructor binds the target, admitted run scope, protected archive, and participant policy.
+The owner retains the initialized clock, scheduler, operation ledger, and authoritative snapshot.
+Later native evidence enters the evaluator before the public `evaluate()` call.
+Each distinct evidence cut uses a distinct idempotency key.
+Replaying the same cut retains that key.
+RAES replans evaluation from the original compiled context against current committed state.
+It does not provision again or restart workflows.
+LilRAE reads the terminal operation before accepting refreshed truth.
 
-1. Serialize handoffs and refuse a closed manager.
-2. Call the manager's `close()` method. It drains callbacks and stops the
-   participant clock driver before releasing the component claim.
-3. Read the drained manager's latest snapshot. Evidence refresh clears only
-   evaluation state before replaying the admitted evaluation plan.
-4. Construct the control plane with that snapshot and the existing information
-   state resolver. Its normal constructor acquires the component claim.
-5. Run the phase and retain its authoritative snapshot. Close the control plane.
-6. Adopt the closed phase's snapshot before acquiring a new manager claim
-   through RAES's `RuntimeResourceClaim` constructor. Restart the existing clock
-   driver only after reacquisition succeeds.
-
-No two owners act at once. The new claim constructor still refuses an active or
-unresolved owner. A failed drain never starts another owner. A construction,
-execution, or close exception leaves the manager closed and fails startup.
-
-## Pinned Extension Boundary
-
-The checkout pins `raes==7.0.0`. Its manager has no public handoff method.
-`_lilrae_runtime_handoff.py` extends that manager using the existing
-`RuntimeResourceClaim` in `raes_runtime.runtime_resource_ownership` and the clock
-driver lifecycle in `raes_runtime.participant_execution_control`. These are
-version-specific integration points, covered by tests against the pinned release.
-An upstream API can replace this extension when available.
-
-The extension never clears the claim registry or changes another owner's claim.
-It creates no replacement backend, manager, evaluator, or clock. Retaining the
-manager preserves its time declaration, scheduler, activity controls, and clock
-progress. Evidence refresh binds records only after the handoff has drained the
-old owner.
+Participant delivery uses the same owner and its admitted behavior specifications.
+The constructor installs the delivery plan's existing crossing policy.
+Execution cannot replace that policy, the run scope, or the materialization archive.
+No private snapshot adoption or component claim mutation is required.
+A second owner remains excluded while the run is open.
+The existing RAES drain and uncertain-effect rules govern closure and reuse.
 
 ## Authority And Failure Handling
 
-The existing RAES control plane remains the only writer during each phase.
-Native evidence refresh still registers the planner-produced plan, checks its
-terminal result, and verifies exact evidence bindings. Its participant crossing
-policy remains closed. Participant delivery retains its existing behavior
-specifications, crossing policy, and evidence acquisition boundary.
+The RAES runtime remains the only writer during each phase.
+It validates backend results and publishes materialization references before accepting them.
+The configured target manifest remains the producer identity for every phase.
+Participant delivery retains its existing behavior, crossing, and evidence boundaries.
+A failed or pending operation never becomes successful merely because a receipt was accepted.
+A failed apply ends the start without an automatic backend retry.
+Closing that owner does not prove cleanup or permit a new target owner.
+The retained operation requires the existing explicit recovery and resolution path.
 
-The handoff adds no credential, network listener, external service, or persisted
-state format. Exceptions retain the existing bounded lab-start failure behavior.
-[ADR-046](../adrs/adr-046-dynamic-raes-scenario-realization.md) remains the
-governing decision. This extends the explicit ownership lifecycle used by
-[issue #1424](issue-1424-runtime-retry-ownership-design.md) to temporary phases.
+This migration adds no network listener, credential source, service, or persisted state format.
+[ADR-046](../adrs/adr-046-dynamic-raes-scenario-realization.md) remains the governing decision.
+The [upstream migration guide](https://github.com/OpenRAE/rae/blob/v9.1.0/docs/migration/runtime-lifetime.md)
+defines the supported public lifetime API.
 
 ## Verification
 
-- `tests/test_raes_native_evidence_truth.py` drives the real apply manager through
-  lab-start evidence refresh, including a target with participant capabilities.
-  It checks committed truth, retained metadata, snapshot agreement, and exclusive
-  ownership after refresh.
-- `tests/test_lilrae_runtime_handoff.py` checks repeated handoffs with initialized
-  time, ownership exclusion, failed drain, failed execution, failed close, and
-  unresolved claims.
-- `tests/test_raes_participant_delivery.py` uses real component claims for its
-  four-turn delivery sequence. Only clock advancement and the provider transport
-  remain simulated.
-
-CI verifies the changed branch. The original Cortex live result used a custom
-RAES build and does not prove this ownership repair against a live lab.
+Targeted native evidence, participant delivery, runtime ownership, and descendant reporting tests
+check state continuity, run identity, protected archives, failed operations, and ownership exclusion.
+CI owns full-suite and clean lab qualification.
 
 ## Security Gate Repairs
 
