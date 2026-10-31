@@ -127,16 +127,16 @@ according to the proven failure, with negative cases that detect false readiness
 
 `scripts/ci/assert_boot_realization.py` and the installed-wheel boot job in
 `.github/workflows/checks.yml` exercise the shared minimal fixture; they do not
-certify heron1 or the bounded scenario. `scripts/appliance/qualify-seat-image.sh`
-uses a disposable overlay but disables actual first boot and substitutes
-`seat-qualification-smoke.service`. Its shell defaults, MCP checks, and
-stop/start cycle alone do not prove signed launch, desktop-user selection, or
-the explicit bounded scenario's attachments. Regression qualification must
-exercise the delivered workflow in a matching disposable seat, default
-TechVault and explicit bounded selection separately, with actual readback and
-participant reachability. Retain this useful smoke path without claiming it is
-full participant-path evidence. Do not modify the golden just to instrument it
-and then claim those changed bytes were delivered.
+certify heron1 or the bounded scenario. At this preflight's baseline,
+`scripts/appliance/qualify-seat-image.sh` substituted the now-retired
+`seat-qualification-smoke.service` and disabled actual first boot. The
+qualifier now requires an immutable signed image and uses the delivered
+launcher, first boot, readiness, reset, and second clean start.
+Scenario-specific regression evidence must still exercise default TechVault
+and explicit bounded selection separately, with actual readback and participant
+reachability; a successful launcher cycle alone does not prove those
+attachments. Do not modify the golden merely to instrument it and then claim
+those changed bytes were delivered.
 
 Keep local verification targeted through `tools/run-targeted-tests.sh` and
 staged `pre-commit run`. Full suites, coverage, long VM/live gates, and clean lab

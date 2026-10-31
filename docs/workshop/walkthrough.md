@@ -112,8 +112,7 @@ configuration, and switch to the `guided-blue` workbench:
 ```
 
 Confirm the exact indexer and Wazuh tool inventories. Network IDS, threat
-intelligence, case management, SOAR, and reverse-engineering MCPs must be
-absent. Never keep red and guided-blue MCPs in one process environment or
+intelligence, SOAR, and reverse-engineering MCPs must be absent. Never keep red and guided-blue MCPs in one process environment or
 client config.
 
 ## 4. Confirm the agent can reach Kali [3, 5]
@@ -226,7 +225,7 @@ agentic purple.
   loop.
 
 The full `techvault-operational` research stack is a separate follow-on. Its
-enterprise, web, MISP, TheHive, Cortex, Shuffle, and Suricata exercises are not
+enterprise, web, MISP, Shuffle, and Suricata exercises are not
 required participant-profile operations.
 
 ## Developer-preview clean reset

@@ -16,10 +16,6 @@ from aptl.core.deployment._misp_fastcgi_loopback import (
     MISP_FASTCGI_LOOPBACK_PROFILE,
 )
 from aptl.core.deployment._misp_server_tls import MISP_SERVER_TLS_PROFILE
-from aptl.core.deployment._cortex_service_credentials import (
-    CORTEX_SERVICE_CREDENTIALS_PROFILE,
-    CORTEX_SERVICE_CREDENTIALS_ROOT_RELPATH,
-)
 from aptl.core.deployment._compose_stateful_constants import (
     CERTIFICATE_ROOT_RELPATH,
     CERTIFICATE_PROVENANCE,
@@ -60,8 +56,6 @@ def artifact_source_path(
         relative = Path(SSH_KEY_BUNDLE_ROOT_RELPATH) / artifact.name
     elif provenance == FLAG_SIGNING_PROFILE_V2:
         relative = Path(FLAG_SIGNING_ROOT_RELPATH) / artifact.name
-    elif provenance == CORTEX_SERVICE_CREDENTIALS_PROFILE:
-        relative = Path(CORTEX_SERVICE_CREDENTIALS_ROOT_RELPATH)
     elif provenance == MISP_CACHE_CREDENTIAL_PROFILE:
         relative = Path(MISP_CACHE_CREDENTIAL_ROOT_RELPATH)
     elif provenance == MISP_SERVER_TLS_PROFILE:

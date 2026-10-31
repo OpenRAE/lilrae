@@ -5,7 +5,7 @@
 ```mermaid
 flowchart TD
     subgraph "Host System"
-        H[Host Ports<br/>443, 2023, 2024, 8443, 9000, 9001, 9200, 55000, ...]
+        H[Host Ports<br/>443, 2023, 2024, 8443, 9200, 55000, ...]
     end
 
     subgraph "Security Network 172.20.0.0/24"
@@ -13,9 +13,7 @@ flowchart TD
         WD[Wazuh Dashboard<br/>172.20.0.11]
         WI[Wazuh Indexer<br/>172.20.0.12]
         MISP[MISP<br/>172.20.0.16]
-        TH[TheHive<br/>172.20.0.18]
         SHUF[Shuffle SOAR<br/>172.20.0.20/.21]
-        CTX[Cortex<br/>172.20.0.22]
         SUR[Suricata IDS<br/>172.20.0.50]
         R[Reverse Engineering<br/>172.20.0.27]
     end
@@ -65,7 +63,6 @@ flowchart TD
     MCP --> WI
     MCP --> R
     MCP --> MISP
-    MCP --> TH
     MCP --> SHUF
     MCP --> SUR
 ```
@@ -80,8 +77,6 @@ flowchart TD
 | aptl-suricata | security, dmz, internal | 172.20.0.50 | Network IDS |
 | aptl-misp | security | 172.20.0.16 | Threat intelligence |
 | aptl-misp-web | Shares the `aptl-misp` network namespace | 172.20.0.16 | MISP HTTPS web tier |
-| aptl-thehive | security | 172.20.0.18 | Case management |
-| aptl-cortex | security | 172.20.0.22 | Automated enrichment |
 | aptl-shuffle-backend | security | 172.20.0.20 | SOAR backend |
 | aptl-shuffle-frontend | security | 172.20.0.21 | SOAR frontend |
 | aptl-webapp | dmz, internal | 172.20.1.20 | Vulnerable web app |
@@ -105,8 +100,6 @@ flowchart TD
 | 2024 | aptl-operator-ssh-soc-workstation, relaying to soc-workstation:22 | Operator SSH to the SOC workstation |
 | 3443, 3001 | aptl-shuffle-frontend | Shuffle SOAR UI |
 | 8443 | aptl-misp:443 | MISP UI |
-| 9000 | aptl-thehive:9000 | TheHive UI |
-| 9001 | aptl-cortex:9001 | Cortex UI |
 | 9200 | aptl-wazuh-indexer:9200 | OpenSearch API |
 | 55000 | aptl-wazuh-manager:55000 | Wazuh API |
 
@@ -158,7 +151,6 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 
 - Suricata: Network IDS on all zones
 - MISP: Threat intelligence and IOC feeds
-- TheHive + Cortex: Case management and enrichment
 - Shuffle: SOAR playbooks
 
 **Lab Environment:**
@@ -237,3 +229,5 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 - [Issue #823 Versioned Disposable Lab Appliance](issue-823-versioned-disposable-appliance-preflight.md)
 - [Issue #824 Kiosk Launcher, Reset, And Recovery](issue-824-kiosk-launcher-reset-recovery-preflight.md)
 - [Issue #1022 Appliance Seat Delivery](issue-1022-appliance-seat-delivery-preflight.md)
+- [Issue #1127 Seat Component Protection](issue-1127-seat-component-protection-preflight.md)
+- [Issue #1127 Seat Component Protection Design](issue-1127-seat-component-protection-design.md)

@@ -229,7 +229,7 @@ root = Path('/home/aptl')
 servers = {
     'red': ('mcp-red',),
     'blue': ('mcp-wazuh', 'mcp-indexer', 'mcp-network',
-             'mcp-threatintel', 'mcp-casemgmt', 'mcp-soar'),
+             'mcp-threatintel', 'mcp-soar'),
 }
 for role, names in servers.items():
     config = {'mcpServers': {

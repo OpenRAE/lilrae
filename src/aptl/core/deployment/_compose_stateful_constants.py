@@ -69,7 +69,6 @@ WAZUH_MANAGER_SERVICE = "wazuh.manager"
 # writes the files; both read this one set so they cannot drift apart.
 ENVIRONMENT_DELIVERY_PROVENANCES = frozenset(
     {
-        "techvault:cortex-service-credentials/v1",
         "techvault:misp-cache-credential/v2",
     }
 )

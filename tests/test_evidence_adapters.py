@@ -204,7 +204,6 @@ class TestWiring:
                 "aptl.collector.suricata-eve",
                 "aptl.collector.wazuh-alerts",
                 "aptl.collector.tempo-traces",
-                "aptl.collector.cortex-enrichment",
                 "aptl.collector.misp-authenticated-api-readiness",
                 "aptl.collector.redteam-session-transcript",
                 "aptl.collector.suricata-rule-readiness",

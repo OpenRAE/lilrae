@@ -38,7 +38,7 @@ nodes:
     description: Backup and recovery network
 
   mail-gateway:
-    type: VM
+    type: compute
     os: linux
     source: secure-mail-gateway
     resources: {ram: 2 gib, cpu: 1}
@@ -50,7 +50,7 @@ nodes:
     roles: {mail-admin: postfix}
 
   vpn-gateway:
-    type: VM
+    type: compute
     os: linux
     source: vpn-concentrator
     resources: {ram: 2 gib, cpu: 2}
@@ -67,8 +67,9 @@ nodes:
         entities: [hospital-blue.identity]
 
   ad01:
-    type: VM
+    type: compute
     os: windows
+    os_distribution: windows-server
     os_version: "Server 2022"
     source: windows-ad
     resources: {ram: 4 gib, cpu: 2}
@@ -90,8 +91,9 @@ nodes:
         username: adfs_svc
 
   exchange01:
-    type: VM
+    type: compute
     os: windows
+    os_distribution: windows-server
     os_version: "Server 2019"
     source: exchange-2019
     resources: {ram: 4 gib, cpu: 2}
@@ -108,7 +110,7 @@ nodes:
         entities: [hospital-blue.identity]
 
   ehr-frontend:
-    type: VM
+    type: compute
     os: linux
     source: ehr-web-tier
     resources: {ram: 6 gib, cpu: 4}
@@ -129,7 +131,7 @@ nodes:
       availability: critical
 
   ehr-db:
-    type: VM
+    type: compute
     os: linux
     source: postgres-cluster
     resources: {ram: 8 gib, cpu: 4}
@@ -148,7 +150,7 @@ nodes:
       integrity: critical
 
   pacs01:
-    type: VM
+    type: compute
     os: linux
     source: pacs-archive
     resources: {ram: 6 gib, cpu: 4}
@@ -169,7 +171,7 @@ nodes:
       availability: critical
 
   med-gateway:
-    type: VM
+    type: compute
     os: linux
     source: medical-device-broker
     resources: {ram: 2 gib, cpu: 2}
@@ -183,7 +185,7 @@ nodes:
         entities: [hospital-blue.clinical-it]
 
   backup-vault:
-    type: VM
+    type: compute
     os: linux
     source: immutable-backup-appliance
     resources: {ram: 4 gib, cpu: 2}
@@ -200,7 +202,7 @@ nodes:
         entities: [hospital-blue.recovery]
 
   siem01:
-    type: VM
+    type: compute
     os: linux
     source: siem-stack
     resources: {ram: 8 gib, cpu: 4}
@@ -219,8 +221,9 @@ nodes:
         entities: [hospital-blue.soc]
 
   vendor-jump:
-    type: VM
+    type: compute
     os: windows
+    os_distribution: windows-client
     os_version: "11"
     source: vendor-workstation
     resources: {ram: 2 gib, cpu: 2}
@@ -389,28 +392,6 @@ conditions:
   vendor-jump-online:
     command: /usr/local/bin/check-vendor-rdp
     interval: 30
-
-vulnerabilities:
-  macro-lure:
-    name: Phishing macro lure
-    description: Macro-enabled attachment delivers initial access to the vendor support path
-    technical: false
-    class: CWE-451
-  vpn-portal-bypass:
-    name: VPN portal bypass
-    description: Vendor VPN policy allows credential reuse from unmanaged endpoints
-    technical: true
-    class: CWE-287
-  kerberoastable-service:
-    name: Kerberoastable service credential
-    description: Weak service account password permits offline cracking
-    technical: true
-    class: CWE-521
-  backup-share-exposure:
-    name: Backup share exposure
-    description: Restore staging area is writable from the clinical tier
-    technical: true
-    class: CWE-732
 
 propositions:
   backup-catalog-intact:
@@ -731,6 +712,13 @@ content:
     text: "tenant=hospital\\naccess=vpn\\nprofile=imaging-support"
     sensitive: true
 
+identity_domains:
+  hospital:
+    profile: active_directory
+    dns_name: hospital.local
+    netbios_name: HOSPITAL
+    authority_account_ref: domain-admin
+
 accounts:
   nurse-user:
     username: nurse.jane
@@ -754,12 +742,14 @@ accounts:
     groups: [AppServices]
     password_strength: weak
     spn: "HTTP/ehr.hospital.local"
+    domain_ref: hospital
   svc-sql:
     username: ehrsql
     node: ehr-db
     groups: [DBA]
     password_strength: weak
     spn: "POSTGRES/ehr-db.hospital.local"
+    domain_ref: hospital
   backup-operator:
     username: backupops
     node: backup-vault
@@ -775,8 +765,28 @@ accounts:
     node: siem01
     groups: [SOC]
     password_strength: strong
+  domain-admin:
+    username: Administrator
+    node: ad01
+    groups: [Domain Admins]
+    password_strength: strong
 
 relationships:
+  ad01-controls-hospital-domain:
+    type: domain_controller_for
+    source: ad01
+    target: hospital
+    domain_controller: {}
+  ehr-frontend-joins-hospital-domain:
+    type: joins_domain
+    source: ehr-frontend
+    target: hospital
+    domain_join: {controller_refs: [ad01]}
+  ehr-db-joins-hospital-domain:
+    type: joins_domain
+    source: ehr-db
+    target: hospital
+    domain_join: {controller_refs: [ad01]}
   exchange-auths-ad:
     type: authenticates_with
     source: exchange-mailbox
@@ -809,10 +819,378 @@ relationships:
     source: immutable-backup
     target: ehr-db
 
+# Abstract action intent; backend realization and authorization remain separate.
+action_contracts:
+  abuse-vpn:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared AbuseVPN intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt AbuseVPN against the scenario-declared subject set.
+      target_refs:
+      - exchange01
+      - infrastructure.corp-it.acls.allow-vendor-support
+      - nodes.vpn-gateway.services.vpn-portal
+      - vpn-gateway
+      - vpn-vendor-support-path
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  contain:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Contain intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Contain against the scenario-declared subject set.
+      target_refs:
+      - backup-manages-ehr
+      - backup-vault
+      - ehr-db
+      - pacs01
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  disable:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Disable intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Disable against the scenario-declared subject set.
+      target_refs:
+      - ehr-db
+      - ehr-frontend
+      - pacs01
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  discover:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Discover intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Discover against the scenario-declared subject set.
+      target_refs:
+      - mail-gateway
+      - vendor-jump
+      - vpn-gateway
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  encrypt:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Encrypt intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Encrypt against the scenario-declared subject set.
+      target_refs:
+      - ehr-db
+      - ehr-frontend
+      - pacs01
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  escalate:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Escalate intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Escalate against the scenario-declared subject set.
+      target_refs:
+      - infrastructure.corp-it.acls.allow-vendor-support
+      - mail-gateway
+      - nodes.vpn-gateway.services.vpn-portal
+      - siem01
+      - vpn-gateway
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  exfiltrate:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Exfiltrate intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Exfiltrate against the scenario-declared subject set.
+      target_refs:
+      - ehr-db
+      - ehr-to-database
+      - phi-records
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  inspect:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Inspect intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Inspect against the scenario-declared subject set.
+      target_refs:
+      - infrastructure.corp-it.acls.allow-vendor-support
+      - mail-gateway
+      - nodes.vpn-gateway.services.vpn-portal
+      - siem01
+      - vpn-gateway
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  isolate:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Isolate intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Isolate against the scenario-declared subject set.
+      target_refs:
+      - mail-gateway
+      - siem01
+      - vpn-gateway
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  phish:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Phish intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Phish against the scenario-declared subject set.
+      target_refs:
+      - exchange01
+      - infrastructure.corp-it.acls.allow-vendor-support
+      - nodes.vpn-gateway.services.vpn-portal
+      - vpn-gateway
+      - vpn-vendor-support-path
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  pivot:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Pivot intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Pivot against the scenario-declared subject set.
+      target_refs:
+      - ehr-db
+      - ehr-to-database
+      - phi-records
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  reissue-creds:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared ReissueCreds intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt ReissueCreds against the scenario-declared subject set.
+      target_refs:
+      - backup-vault
+      - ehr-db
+      - pacs01
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  restore:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Restore intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Restore against the scenario-declared subject set.
+      target_refs:
+      - backup-manages-ehr
+      - backup-vault
+      - ehr-db
+      - pacs01
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  steal-cred:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared StealCred intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt StealCred against the scenario-declared subject set.
+      target_refs:
+      - mail-gateway
+      - vendor-jump
+      - vpn-gateway
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  triage:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Triage intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Triage against the scenario-declared subject set.
+      target_refs:
+      - infrastructure.corp-it.acls.allow-vendor-support
+      - mail-gateway
+      - nodes.vpn-gateway.services.vpn-portal
+      - siem01
+      - vpn-gateway
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  validate:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Validate intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Validate against the scenario-declared subject set.
+      target_refs:
+      - backup-manages-ehr
+      - backup-vault
+      - ehr-db
+      - pacs01
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+
 agents:
   red-initial:
-    entity: ransom-crew
-    actions: [Phish, AbuseVPN, Discover, StealCred]
+    affiliations: [ransom-crew]
+    actions: [phish, abuse-vpn, discover, steal-cred]
     initial_knowledge:
       hosts: [mail-gateway, vpn-gateway, vendor-jump]
       subnets: [internet-edge, vendor-segment]
@@ -820,8 +1198,8 @@ agents:
       accounts: [vendor-tech]
     allowed_subnets: [internet-edge, vendor-segment, corp-it]
   red-operator:
-    entity: ransom-crew
-    actions: [Pivot, Exfiltrate, Encrypt, Disable]
+    affiliations: [ransom-crew]
+    actions: [pivot, exfiltrate, encrypt, disable]
     starting_accounts: [svc-ehr]
     initial_knowledge:
       hosts: [ehr-frontend, ehr-db, pacs01]
@@ -830,8 +1208,8 @@ agents:
       accounts: [svc-sql, backup-operator]
     allowed_subnets: [clinical-it, backup-net, identity-net]
   blue-soc-agent:
-    entity: hospital-blue.soc
-    actions: [Inspect, Triage, Isolate, Escalate]
+    affiliations: [hospital-blue.soc]
+    actions: [inspect, triage, isolate, escalate]
     starting_accounts: [soc-analyst]
     initial_knowledge:
       hosts: [siem01, mail-gateway, vpn-gateway]
@@ -840,8 +1218,8 @@ agents:
       accounts: [helpdesk-user, vendor-tech]
     allowed_subnets: [security-net, corp-it, vendor-segment]
   blue-ir-agent:
-    entity: hospital-blue.recovery
-    actions: [Contain, Restore, ReissueCreds, Validate]
+    affiliations: [hospital-blue.recovery]
+    actions: [contain, restore, reissue-creds, validate]
     starting_accounts: [backup-operator]
     initial_knowledge:
       hosts: [backup-vault, ehr-db, pacs01]
@@ -852,8 +1230,8 @@ agents:
 
 objectives:
   red-establish-foothold:
-    agent: red-initial
-    actions: [Phish, AbuseVPN]
+    assigned_participant: red-initial
+    actions: [phish, abuse-vpn]
     targets:
       - vpn-gateway
       - exchange01
@@ -867,8 +1245,8 @@ objectives:
       scripts: [pre-surgery]
       events: [phishing-delivery]
   red-stage-phi:
-    agent: red-operator
-    actions: [Pivot, Exfiltrate]
+    assigned_participant: red-operator
+    actions: [pivot, exfiltrate]
     targets: [phi-records, ehr-to-database, ehr-db]
     success:
       assertions: [phi-staging-observed]
@@ -877,7 +1255,7 @@ objectives:
       stories: [surgery-day]
       scripts: [live-clinic]
   red-disrupt-radiology:
-    entity: ransom-crew
+    owner: ransom-crew
     targets: [pacs01, radiology-images, pacs-sync-to-backup]
     success:
       assertions: [radiology-workflow-delayed, clinical-disruption-observed]
@@ -887,8 +1265,8 @@ objectives:
       scripts: [live-clinic]
       events: [surgery-pressure]
   blue-detect-and-triage:
-    agent: blue-soc-agent
-    actions: [Inspect, Triage, Escalate]
+    assigned_participant: blue-soc-agent
+    actions: [inspect, triage, escalate]
     targets:
       - siem01
       - vpn-gateway
@@ -901,8 +1279,8 @@ objectives:
       stories: [surgery-day]
       scripts: [pre-surgery, live-clinic]
   blue-restore-clinical-services:
-    agent: blue-ir-agent
-    actions: [Contain, Restore, Validate]
+    assigned_participant: blue-ir-agent
+    actions: [contain, restore, validate]
     targets: [backup-vault, ehr-db, pacs01, backup-manages-ehr]
     success:
       assertions: [ehr-api-healthy, pacs-archive-healthy, backup-catalog-intact]
@@ -910,3 +1288,50 @@ objectives:
     window:
       stories: [surgery-day]
       scripts: [recovery-window]
+
+realization:
+  constraints:
+    - field_pointer: /nodes/mail-gateway
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/vpn-gateway
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/ad01
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/exchange01
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/ehr-frontend
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/ehr-db
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/pacs01
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/med-gateway
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/backup-vault
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/siem01
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/vendor-jump
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}

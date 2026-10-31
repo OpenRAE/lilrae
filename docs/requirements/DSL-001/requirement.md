@@ -6,7 +6,7 @@ type: FUNCTIONAL
 priority: MUST
 wave: 1
 created_at: 2026-03-21T07:52:20.057307Z
-updated_at: 2026-05-19T05:11:45.570071Z
+updated_at: 2026-10-31T00:00:00.000000Z
 ---
 
 # DSL-001: Formal Scenario Specification Language
@@ -24,4 +24,4 @@ Current ad-hoc YAML schema has no grammar, no parser beyond Pydantic, and no sem
 - IMPLEMENTS → GITHUB_ISSUE `239` (DSL-001: Formal Scenario Specification Language)
 - DOCUMENTS → DOCUMENTATION `docs/sdl/` (SDL documentation suite (7 files: reference, parser, validation, precedents, limitations, testing))
 - DOCUMENTS → ADR `docs/adrs/adr-014-scenario-description-language.md` (ADR-014: Scenario Description Language)
-- VERIFIES → CODE_FILE `examples/aptl-lab-topology.sdl.yaml` (SDL specification of the real APTL lab topology (28 nodes, 4 networks))
+- VERIFIES → CODE_FILE `examples/aptl-lab-topology.sdl.yaml` (SDL specification of the real APTL lab topology (24 nodes, 4 networks))

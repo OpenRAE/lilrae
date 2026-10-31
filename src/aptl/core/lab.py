@@ -193,15 +193,6 @@ _UNOWNED_SEARCH_INDEX_RECOVERY_HINT = (
     "https://openrae.github.io/lilrae/troubleshooting/"
     "#lilrae-lab-start-reports-an-unowned-search-index"
 )
-# The backend also names an adopted index whose mapping drifted (#1280).
-_DRIFTED_SEARCH_INDEX_RECOVERY_HINT = (
-    "Back up the index first; `lilrae lab stop` keeps every lab volume, and a "
-    "later start finds the same index. Only if its data is disposable, run "
-    "`lilrae lab stop --volumes`, a destructive reset that permanently deletes "
-    "every lab volume; the next start then creates the index. Recovery steps: "
-    "https://openrae.github.io/lilrae/troubleshooting/"
-    "#lilrae-lab-start-reports-a-search-index-whose-mapping-drifted"
-)
 _WAZUH_MANAGER_SERVICE = "wazuh.manager"
 _WAZUH_MANAGER_CONTAINER = "aptl-wazuh-manager"
 _WAZUH_INDEXER_SERVICE = "wazuh.indexer"
@@ -233,15 +224,6 @@ def _looks_like_unowned_search_index_error(error: str) -> bool:
     )
 
 
-def _looks_like_drifted_search_index_error(error: str) -> bool:
-    """Return True when service materialization named an adopted drifted index."""
-
-    return (
-        "service materialization failed for " in error
-        and "(reason=native-product-contract-mismatch): search index " in error
-    )
-
-
 def _lab_start_failure_error(error: str) -> str:
     """Build the CLI-visible lab-start failure message with recovery hints."""
 
@@ -250,8 +232,6 @@ def _lab_start_failure_error(error: str) -> str:
         return f"{message}\n{_STALE_NETWORK_RECOVERY_HINT}"
     if _looks_like_unowned_search_index_error(error):
         return f"{message}\n{_UNOWNED_SEARCH_INDEX_RECOVERY_HINT}"
-    if _looks_like_drifted_search_index_error(error):
-        return f"{message}\n{_DRIFTED_SEARCH_INDEX_RECOVERY_HINT}"
     return message
 
 
@@ -768,7 +748,7 @@ def _stop_recovery_configuration(
             from aptl.core.operator_group_state import load_admitted_operator_groups
 
             admitted_groups = list(load_admitted_operator_groups(search_dir))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             failure = LabResult(
                 success=False,
                 error=f"[lifecycle-state-invalid] Lab {command} blocked: invalid "
@@ -1121,7 +1101,7 @@ def _clean_boot_rootless_refusal(
         try:
             config = load_config(config_path) if config_path is not None else None
             backend = _get_backend(project_root, config)
-        except (FileNotFoundError, ValueError):
+        except FileNotFoundError, ValueError:
             return None
     return _rootless_daemon_refusal(backend)
 
@@ -1151,7 +1131,7 @@ def lab_status(
             try:
                 config = load_config(config_path)
                 backend = _get_backend(config_path.parent, config)
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 return LabStatus(
                     running=False,
                     error="[lifecycle-invalid-configuration] Lab status blocked: "
@@ -1947,7 +1927,16 @@ def _configure_verified_appliance_launch(
             binding = ApplianceBoundaryBinding(
                 policy_digest=descriptor.boundary_policy_digest,
                 payload_digest=descriptor.image_digest,
-                raes_plan_digest=descriptor.participant_routes_digest,
+                participant_routes_digest=(
+                    descriptor.participant_routes_digest
+                    if boundary_policy.seat_component_protection
+                    else None
+                ),
+                raes_plan_digest=(
+                    None
+                    if boundary_policy.seat_component_protection
+                    else descriptor.participant_routes_digest
+                ),
                 raes_boundary_required=boundary_policy.internal_zone_isolation,
                 boundary_helper_image=descriptor.boundary_helper_image,
                 egress_proxy_image=descriptor.egress_proxy_image,
@@ -2110,7 +2099,7 @@ def _prepare_scenario_startup(
         if plan is None:
             return None
         return _bind_scenario_startup_environment(ctx, plan)
-    except (OSError, ValueError, ScenarioStartupProviderError):
+    except OSError, ValueError, ScenarioStartupProviderError:
         log.warning("Scenario startup adapter preparation failed")
         return LabResult(
             success=False,
@@ -2712,14 +2701,14 @@ def _persist_start_recovery(ctx: _LabStartContext) -> LabResult | None:
         from aptl.core.operator_group_state import persist_admitted_operator_groups
 
         persist_admitted_operator_groups(ctx.project_dir, ctx.selected_profiles)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return LabResult(
             success=False,
             error="Could not persist admitted operator groups for recovery.",
         )
     try:
         _persist_cleanup_actions(ctx)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return LabResult(
             success=False,
             error="Could not persist pending lab cleanup records for recovery.",
@@ -3989,8 +3978,8 @@ def _step_publish_participant_desktop(ctx: _LabStartContext) -> LabResult | None
 def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
     """Refresh local MCP client env keys after SOC seeding."""
     # `.mcp.json` is the canonical config Claude Code, Cursor, and Cline
-    # read to spawn MCP servers. Seed-prime writes API keys (TheHive
-    # provisioned, MISP/Shuffle defaults) to `.env`. If the user has a
+    # read to spawn MCP servers. Seed-prime writes API keys (MISP/Shuffle
+    # defaults) to `.env`. If the user has a
     # local `.mcp.json`, surface those keys into per-server env blocks
     # so the MCPs authenticate without manual rewiring after a fresh
     # `lab stop -v` + `lab start`.
@@ -4066,7 +4055,7 @@ def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-        except (OSError, subprocess.CalledProcessError):
+        except OSError, subprocess.CalledProcessError:
             return LabResult(
                 success=False,
                 error="Seat desktop MCP handoff failed.",
@@ -4854,7 +4843,6 @@ def _serve_appliance_guest_access(ctx: _LabStartContext) -> LabResult | None:
 
 
 _MCP_SERVER_KEYS = {
-    "aptl-casemgmt": ("THEHIVE_API_KEY",),
     "aptl-threatintel": ("MISP_API_KEY",),
     "aptl-soar": ("SHUFFLE_API_KEY",),
 }

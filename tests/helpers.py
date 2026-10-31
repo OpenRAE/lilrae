@@ -26,7 +26,6 @@ LIVE_CREDENTIAL_NAMES = {
     "API_USER": "API_USERNAME",
     "API_PASS": "API_PASSWORD",
     "MISP_API_KEY": "MISP_API_KEY",
-    "THEHIVE_API_KEY": "THEHIVE_API_KEY",
     "SHUFFLE_API_KEY": "SHUFFLE_API_KEY",
 }
 
@@ -51,17 +50,15 @@ SSH_KEY = os.path.expanduser(os.getenv("APTL_SSH_KEY", "~/.ssh/aptl_lab_key"))
 
 MISP_URL = os.getenv("MISP_URL", "https://localhost:8443")
 MISP_API_KEY = ""
-# SEC-006 / ADR-034: TheHive and Shuffle's host-facing surfaces moved
-# to HTTPS with lab-CA-signed certs. Tests default to the verified
-# endpoints and to the lab CA bundle materialized by `aptl lab start`.
-THEHIVE_URL = os.getenv("THEHIVE_URL", "https://localhost:9000")
+# SEC-006 / ADR-034: Shuffle's host-facing surface moved to HTTPS with
+# lab-CA-signed certs. Tests default to the verified endpoints and to the lab
+# CA bundle materialized by `aptl lab start`.
 LAB_CA_PATH = os.getenv(
     "APTL_LAB_CA_PATH",
     os.path.join(PROJECT_ROOT, "config", "soc_certs", "lab-ca.pem"),
 )
 
 
-THEHIVE_API_KEY = ""
 SHUFFLE_URL = os.getenv("SHUFFLE_URL", "https://localhost:3443")
 SHUFFLE_API_KEY = ""
 
@@ -107,7 +104,6 @@ CUSTOM_MCP_SERVERS = [
     "mcp-wazuh",
     "mcp-network",
     "mcp-threatintel",
-    "mcp-casemgmt",
     "mcp-soar",
 ]
 
@@ -201,19 +197,6 @@ def mcp_server_cmd(name: str) -> tuple[list[str], dict]:
                 ),
             ],
             "env": {"MISP_API_KEY": MISP_API_KEY},
-        },
-        "thehive": {
-            "cmd": [
-                node_bin,
-                os.path.join(
-                    PROJECT_ROOT,
-                    "mcp",
-                    "mcp-casemgmt",
-                    "build",
-                    "index.js",
-                ),
-            ],
-            "env": {"THEHIVE_API_KEY": THEHIVE_API_KEY},
         },
     }
 
@@ -414,7 +397,7 @@ def curl_json(
 
     if not insecure and ca_cert_path is None and any(
         url == base or url.startswith(f"{base}/")
-        for base in (MISP_URL, THEHIVE_URL, SHUFFLE_URL)
+        for base in (MISP_URL, SHUFFLE_URL)
     ):
         ca_cert_path = LAB_CA_PATH
     result = safe_json(

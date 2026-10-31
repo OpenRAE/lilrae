@@ -787,18 +787,18 @@ def test_readiness_uses_native_labels_for_workspace_scoped_names():
     webapp = _node("webapp", ["dmz"])
     webapp["address"] = "provision.node.webapp"
     webapp["container_name"] = "aptl-webapp"
-    cortex = _node("cortex", ["soc"])
-    cortex["container_name"] = "aptl-cortex"
+    misp = _node("misp", ["soc"])
+    misp["container_name"] = "aptl-misp"
     state = _readiness_state(
-        [webapp, cortex],
+        [webapp, misp],
         [
             _container(
                 "aptl-w123456789abc-webapp",
                 labels={**owner, "aptl.node.address": "provision.node.webapp"},
             ),
             _container(
-                "aptl-w123456789abc-cortex",
-                labels={**owner, "com.docker.compose.service": "cortex"},
+                "aptl-w123456789abc-misp",
+                labels={**owner, "com.docker.compose.service": "misp"},
             ),
         ],
     )
@@ -806,7 +806,7 @@ def test_readiness_uses_native_labels_for_workspace_scoped_names():
     assert lgc.check_defensive_stack_readiness(state=state).passed
     assert state.semantic_container_names == {
         "aptl-webapp": "aptl-w123456789abc-webapp",
-        "aptl-cortex": "aptl-w123456789abc-cortex",
+        "aptl-misp": "aptl-w123456789abc-misp",
     }
 
 

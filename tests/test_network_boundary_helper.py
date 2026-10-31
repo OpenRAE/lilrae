@@ -1,6 +1,7 @@
 """Pure rendering checks for the authority-separated nftables helper."""
 
 import importlib.util
+import ipaddress
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,8 @@ def _network(name: str, bridge: str, cidr: str) -> dict[str, object]:
         "bridge": bridge,
         "ipv4_cidr": cidr,
         "ipv6_cidr": None,
+        "ipv4_gateway": str(ipaddress.ip_network(cidr)[1]),
+        "ipv6_gateway": None,
         "labels": [],
     }
 
@@ -126,6 +129,154 @@ def _platform_policy() -> dict[str, object]:
     }
 
 
+def _seat_protection_policy() -> dict[str, object]:
+    return {
+        "authority": "seat-protection",
+        "owner": "seat-17",
+        "policy_digest": "sha256:" + "b" * 64,
+        "networks": [
+            _network("orchard", "br-orchard", "10.44.1.0/24"),
+            {
+                **_network("quartz", "br-quartz", "10.44.2.0/24"),
+                "ipv6_cidr": "2001:db8:44::/64",
+                "ipv6_gateway": "2001:db8:44::1",
+            },
+        ],
+        "protected_components": [
+            {
+                "component_class": component_class,
+                "probe_identity": "seat-" + component_class,
+                "protocol": "tcp",
+                "port": 43101 + index,
+                "purpose": component_class + " boundary",
+            }
+            for index, component_class in enumerate(
+                (
+                    "management-control",
+                    "evidence-capture",
+                    "evidence-store",
+                    "docker-authority",
+                    "credentials",
+                )
+            )
+        ],
+        "permitted_flows": [
+            {
+                "source": "ordinary-range-workload",
+                "destination": "management-control",
+                "protocol": "tcp",
+                "ports": [8443],
+                "purpose": "reviewed management callback",
+                "probe_identity": "reviewed-management-callback",
+            }
+        ],
+        "default_deny": True,
+    }
+
+
+def _seat_observation(helper, family: str) -> dict[str, object]:
+    ingress_key = "ibrname" if family == "bridge" else "iifname"
+    table = helper._table_name("seat-17", "seat-protection")
+    rules: list[dict[str, object]] = []
+    network_gateways = {
+        "br-orchard": (("ip", "10.44.1.1"),),
+        "br-quartz": (("ip", "10.44.2.1"), ("ip6", "2001:db8:44::1")),
+    }
+
+    def interface_match(bridge: str) -> dict[str, object]:
+        return {
+            "match": {
+                "op": "==",
+                "left": {"meta": {"key": ingress_key}},
+                "right": bridge,
+            }
+        }
+
+    def add_rule(identity: str, expressions: list[dict[str, object]]) -> None:
+        rules.append(
+            {
+                "rule": {
+                    "family": family,
+                    "table": table,
+                    "chain": "host_input",
+                    "expr": expressions,
+                    "comment": helper._rule_marker(identity),
+                }
+            }
+        )
+
+    for bridge in network_gateways:
+        add_rule(
+            f"seat-protection/reply/{bridge}",
+            [
+                interface_match(bridge),
+                {
+                    "match": {
+                        "op": "in",
+                        "left": {"ct": {"key": "state"}},
+                        "right": {"set": ["established", "related"]},
+                    }
+                },
+                {"accept": None},
+            ],
+        )
+    for bridge, gateways in network_gateways.items():
+        for address_family, gateway in gateways:
+            add_rule(
+                "seat-protection/reviewed-management-callback/"
+                f"{bridge}/{address_family}",
+                [
+                    interface_match(bridge),
+                    {
+                        "match": {
+                            "op": "==",
+                            "left": {
+                                "payload": {
+                                    "protocol": address_family,
+                                    "field": "daddr",
+                                }
+                            },
+                            "right": gateway,
+                        }
+                    },
+                    {
+                        "match": {
+                            "op": "==",
+                            "left": {
+                                "payload": {
+                                    "protocol": "tcp",
+                                    "field": "dport",
+                                }
+                            },
+                            "right": 8443,
+                        }
+                    },
+                    {"accept": None},
+                ],
+            )
+    for bridge in network_gateways:
+        add_rule(
+            f"seat-protection/default/{bridge}",
+            [interface_match(bridge), {"drop": None}],
+        )
+    return {
+        "nftables": [
+            {
+                "chain": {
+                    "family": family,
+                    "table": table,
+                    "name": "host_input",
+                    "type": "filter",
+                    "hook": "input",
+                    "prio": -300,
+                    "policy": "accept",
+                }
+            },
+            *rules,
+        ]
+    }
+
+
 def test_raes_rules_remain_owner_anchored_and_separate(helper) -> None:
     rendered = helper.render_ruleset(_raes_policy(), existing_families=())
 
@@ -160,6 +311,77 @@ def test_platform_floor_covers_forward_and_guest_host_paths(helper) -> None:
         "192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, "
         "224.0.0.0/4, 240.0.0.0/4 } drop"
     ) in rendered
+
+
+def test_seat_protection_filters_only_guest_input_for_every_range_bridge(
+    helper,
+) -> None:
+    rendered = helper.render_ruleset(_seat_protection_policy(), existing_families=())
+
+    assert "authority=seat-protection" in rendered
+    assert "hook input priority -300" in rendered
+    assert "hook forward" not in rendered
+    assert "hook output" not in rendered
+    assert "oifname" not in rendered
+    assert "obrname" not in rendered
+    assert "ct state established,related accept" in rendered
+    assert "tcp dport 8443 accept" in rendered
+    assert "ip daddr 10.44.1.1 tcp dport 8443 accept" in rendered
+    assert "ip6 daddr 2001:db8:44::1 tcp dport 8443 accept" in rendered
+    for bridge in ("br-orchard", "br-quartz"):
+        assert f'iifname "{bridge}" drop comment' in rendered
+        assert f'ibrname "{bridge}" drop comment' in rendered
+
+
+def test_seat_protection_payload_is_closed_and_complete(helper) -> None:
+    policy = _seat_protection_policy()
+    policy["forward"] = True
+    with pytest.raises(ValueError, match="fields"):
+        helper.validate_policy(policy)
+
+    policy = _seat_protection_policy()
+    policy["protected_components"] = policy["protected_components"][:-1]
+    with pytest.raises(ValueError, match="component classes"):
+        helper.validate_policy(policy)
+
+    policy = _seat_protection_policy()
+    policy["networks"] = []
+    with pytest.raises(ValueError, match="network"):
+        helper.validate_policy(policy)
+
+    policy = _seat_protection_policy()
+    policy["networks"][0]["ipv4_gateway"] = None
+    with pytest.raises(ValueError, match="gateway"):
+        helper.validate_policy(policy)
+
+    policy = _seat_protection_policy()
+    policy["permitted_flows"][0]["ports"] = [8444, 8443]
+    with pytest.raises(ValueError, match="semantics"):
+        helper.validate_policy(policy)
+
+
+@pytest.mark.parametrize("family", ["inet", "bridge"])
+def test_seat_protection_readback_verifies_rule_expressions(
+    helper, monkeypatch, family: str
+) -> None:
+    observed = _seat_observation(helper, family)
+    monkeypatch.setattr(helper, "_table_payload", lambda *_: observed)
+
+    assert helper._verify_observed_family(_seat_protection_policy(), family)
+
+    default_rule = observed["nftables"][-1]["rule"]
+    default_rule["expr"][-1] = {"accept": None}
+
+    assert not helper._verify_observed_family(_seat_protection_policy(), family)
+
+    reordered = _seat_observation(helper, family)
+    reordered["nftables"][1], reordered["nftables"][-1] = (
+        reordered["nftables"][-1],
+        reordered["nftables"][1],
+    )
+    monkeypatch.setattr(helper, "_table_payload", lambda *_: reordered)
+
+    assert not helper._verify_observed_family(_seat_protection_policy(), family)
 
 
 def test_platform_bootstrap_is_deny_only_before_anchors_exist(helper) -> None:

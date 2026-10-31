@@ -35,7 +35,6 @@ _GRAFANA_DEFAULT = 3100
 _MCP_BACKED_SERVICES = {
     "wazuh-indexer",
     "wazuh-manager",
-    "thehive",
     "misp",
     "shuffle-frontend",
     "kali-ssh-proxy",

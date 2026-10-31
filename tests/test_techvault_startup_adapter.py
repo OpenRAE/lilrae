@@ -64,7 +64,7 @@ def _bundle(*, digest: str = TECHVAULT_PACK_SET_DIGEST) -> ScenarioBundle:
         root=pack_root,
         sdl_path=pack_root / "sdl/techvault.sdl.yaml",
         source_kind=ScenarioSourceKind.ENV_PACK,
-        pack_identity=PackIdentity("techvault", "0.1.3", digest),
+        pack_identity=PackIdentity("techvault", "6.5.1", digest),
     )
 
 
@@ -72,14 +72,14 @@ def _startup_spec(
     *, digest: str = TECHVAULT_PACK_SET_DIGEST
 ) -> DeploymentRealizationSpec:
     dependencies = {
-        "cortex": ("provision.node.thehive-es",),
-        "thehive": (
-            "provision.node.thehive-cassandra",
-            "provision.node.thehive-es",
-            "provision.node.cortex",
+        "worker": ("provision.node.search",),
+        "app": (
+            "provision.node.store",
+            "provision.node.search",
+            "provision.node.worker",
         ),
     }
-    names = ("thehive-cassandra", "thehive-es", "cortex", "thehive")
+    names = ("store", "search", "worker", "app")
     nodes = tuple(
         DeploymentNodeRealization(
             address=f"provision.node.{name}",
@@ -108,29 +108,48 @@ def _startup_spec(
         nodes=nodes,
         networks=(),
         images=images,
-        pack_identity=PackIdentity("techvault", "0.1.3", digest),
+        pack_identity=PackIdentity("techvault", "6.5.1", digest),
     )
 
 
-def test_qualified_techvault_policy_waits_for_declared_healthy_dependencies(
-    tmp_path,
+def test_qualified_techvault_policy_adds_no_health_override(tmp_path) -> None:
+    assert write_scenario_startup_override(_startup_spec(), tmp_path) is None
+
+
+def test_qualified_policy_waits_for_declared_healthy_dependencies(
+    tmp_path, monkeypatch
 ) -> None:
+    from aptl_techvault.startup import provider
+
+    monkeypatch.setattr(
+        provider,
+        "compose_startup_policy",
+        lambda: ScenarioComposeStartupPolicy(
+            probes=(
+                StartupHealthProbe("store", ("CMD", "store-ready")),
+                StartupHealthProbe("search", ("CMD", "search-ready")),
+                StartupHealthProbe("worker", ("CMD", "worker-ready")),
+            ),
+            dependencies=(
+                StartupHealthDependency("worker", "search"),
+                StartupHealthDependency("app", "store"),
+                StartupHealthDependency("app", "search"),
+                StartupHealthDependency("app", "worker"),
+            ),
+        ),
+    )
+
     path = write_scenario_startup_override(_startup_spec(), tmp_path)
 
     assert path is not None
     services = yaml.safe_load(path.read_text(encoding="utf-8"))["services"]
-    assert services["thehive-cassandra"]["healthcheck"]["test"] == [
-        "CMD",
-        "cqlsh",
-        "-e",
-        "describe cluster",
-    ]
-    assert services["cortex"]["depends_on"]["thehive-es"] == {
+    assert services["store"]["healthcheck"]["test"] == ["CMD", "store-ready"]
+    assert services["worker"]["depends_on"]["search"] == {
         "condition": "service_healthy"
     }
-    assert services["thehive"]["depends_on"] == {
+    assert services["app"]["depends_on"] == {
         name: {"condition": "service_healthy"}
-        for name in ("thehive-cassandra", "thehive-es", "cortex")
+        for name in ("store", "search", "worker")
     }
     assert (
         write_scenario_startup_override(
@@ -174,9 +193,6 @@ def test_qualified_techvault_service_policy_binds_generated_tls_files(tmp_path) 
     for name in (
         "config/soc_certs/shuffle-frontend/server.pem",
         "config/soc_certs/shuffle-frontend/server.key",
-        "config/soc_certs/thehive/keystore.p12",
-        "config/soc_certs/thehive/keystore.p12.password",
-        "config/thehive/application.conf",
     ):
         target = tmp_path / name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -188,17 +204,10 @@ def test_qualified_techvault_service_policy_binds_generated_tls_files(tmp_path) 
     )
     assert path is not None
     services = yaml.safe_load(path.read_text(encoding="utf-8"))["services"]
-    assert {item["target"] for item in services["thehive"]["volumes"]} == {
-        "/etc/thehive/keystore.p12",
-        "/etc/thehive/application.conf",
-    }
     assert {item["target"] for item in services["shuffle-frontend"]["volumes"]} == {
         "/etc/nginx/fullchain.cert.pem",
         "/etc/nginx/privkey.pem",
     }
-    assert services["thehive"]["env_file"] == [
-        str(tmp_path / "config/soc_certs/thehive/keystore.p12.password")
-    ]
     assert services["shuffle-orborus"]["environment"] == {
         "ORBORUS_CONTAINER_NAME": "workspace-aptl-shuffle-orborus"
     }
@@ -224,7 +233,7 @@ def test_service_policy_rejects_missing_or_escaping_files(
         provider,
         "compose_service_policy",
         lambda: ScenarioComposeServicePolicy(
-            mounts=(ServiceFileMount("thehive", "../outside", "/etc/thehive/x"),)
+            mounts=(ServiceFileMount("app", "../outside", "/etc/app/x"),)
         ),
     )
     spec = _startup_spec()
@@ -238,8 +247,6 @@ def test_certificate_aliases_require_the_same_declared_source_and_consumer(
     names = (
         "config/soc_certs/shuffle-frontend/server.pem",
         "config/soc_certs/shuffle-frontend/server.key",
-        "config/soc_certs/thehive/keystore.p12",
-        "config/thehive/application.conf",
     )
     for name in names:
         path = tmp_path / name
@@ -250,12 +257,6 @@ def test_certificate_aliases_require_the_same_declared_source_and_consumer(
             (
                 str(tmp_path / "config/soc_certs/shuffle-frontend/server.pem"),
                 "/opt/techvault/soc-certs/shuffle-frontend/server.pem",
-            )
-        },
-        "thehive": {
-            (
-                str(tmp_path / "config/soc_certs/thehive/keystore.p12"),
-                "/opt/techvault/soc-certs/thehive/keystore.p12",
             )
         },
     }
@@ -269,20 +270,14 @@ def test_certificate_aliases_require_the_same_declared_source_and_consumer(
                 "/etc/nginx/fullchain.cert.pem",
             )
         },
-        "thehive": {
-            (
-                str(tmp_path / "config/soc_certs/thehive/keystore.p12"),
-                "/etc/thehive/keystore.p12",
-            )
-        },
     }
 
 
 def test_startup_policy_cannot_add_undeclared_dependency_or_service() -> None:
     spec = _startup_spec()
     undeclared_edge = ScenarioComposeStartupPolicy(
-        probes=(StartupHealthProbe("thehive-cassandra", ("CMD", "true")),),
-        dependencies=(StartupHealthDependency("cortex", "thehive-cassandra"),),
+        probes=(StartupHealthProbe("store", ("CMD", "true")),),
+        dependencies=(StartupHealthDependency("worker", "store"),),
     )
     with pytest.raises(ScenarioStartupProviderError, match="result-invalid"):
         _validated_policy(undeclared_edge, spec)
@@ -296,10 +291,10 @@ def test_startup_policy_cannot_add_undeclared_dependency_or_service() -> None:
 @pytest.mark.parametrize(
     "probe",
     [
-        StartupHealthProbe("thehive", ("CMD-SHELL", "true")),
-        StartupHealthProbe("thehive", ("CMD",)),
-        StartupHealthProbe("thehive", ("CMD", "true"), timeout_seconds=0),
-        StartupHealthProbe("thehive", ("CMD", "true"), retries=True),
+        StartupHealthProbe("app", ("CMD-SHELL", "true")),
+        StartupHealthProbe("app", ("CMD",)),
+        StartupHealthProbe("app", ("CMD", "true"), timeout_seconds=0),
+        StartupHealthProbe("app", ("CMD", "true"), retries=True),
     ],
 )
 def test_startup_policy_rejects_malformed_health_probes(probe) -> None:
@@ -310,7 +305,7 @@ def test_startup_policy_rejects_malformed_health_probes(probe) -> None:
 
 
 def test_startup_policy_rejects_duplicate_health_probe() -> None:
-    probe = StartupHealthProbe("thehive", ("CMD", "true"))
+    probe = StartupHealthProbe("app", ("CMD", "true"))
     policy = ScenarioComposeStartupPolicy(probes=(probe, probe))
     spec = _startup_spec()
     with pytest.raises(ScenarioStartupProviderError, match="result-invalid"):
@@ -371,19 +366,14 @@ def test_exact_release_resolves_seed_and_runtime_bindings() -> None:
         "API_PASSWORD",
         "SHUFFLE_DEFAULT_USERNAME",
         "SHUFFLE_DEFAULT_PASSWORD",
-        "THEHIVE_ADMIN_USER",
-        "THEHIVE_ADMIN_PASS",
-        "CORTEX_SUPERADMIN_USER",
-        "CORTEX_SUPERADMIN_PASSWORD",
     }
     assert {
         (item.variable, item.semantic_name) for item in plan.container_environment
     } >= {
-        ("CORTEX_CONTAINER", "aptl-cortex"),
+        ("MISP_CONTAINER", "aptl-misp"),
         ("WAZUH_MANAGER_CONTAINER", "aptl-wazuh-manager"),
     }
     assert {item.server_id: item.environment_keys for item in plan.mcp_server_keys} == {
-        "aptl-casemgmt": ("THEHIVE_API_KEY",),
         "aptl-indexer": (
             "INDEXER_USERNAME",
             "INDEXER_PASSWORD",
@@ -583,7 +573,7 @@ def test_seed_environment_uses_receipt_resolved_container_names(tmp_path) -> Non
 
     environment = _scenario_seed_environment(ctx, plan)
 
-    assert environment["CORTEX_CONTAINER"] == "workspace-cortex"
+    assert environment["MISP_CONTAINER"] == "workspace-misp"
     assert environment["WAZUH_MANAGER_CONTAINER"] == "workspace-wazuh-manager"
     assert backend.container_inspect.call_count == len(plan.container_environment)
 
