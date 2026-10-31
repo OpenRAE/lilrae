@@ -543,3 +543,44 @@ def test_teardown_finishes_custody_update_before_finalizing(
     assert killed == expected_kills
     assert handlers[signal.SIGTERM] is signal.SIG_IGN
     assert handlers[signal.SIGHUP] is signal.SIG_IGN
+
+
+def test_stop_session_checks_authority_before_signalling(broker, tmp_path, monkeypatch):
+    runtime = tmp_path / "runtime"
+    broker.activate_authority(
+        runtime, run_id="run-1", plan_id="plan-1", binding_id="binding-1"
+    )
+    signals = []
+    monkeypatch.setattr(broker.os, "kill", lambda *args: signals.append(args))
+    with pytest.raises(ValueError, match="authority mismatch"):
+        broker.stop_session("other-run", "session-1", runtime)
+    with pytest.raises(ValueError, match="invalid session"):
+        broker.stop_session("run-1", "../escape", runtime)
+    assert signals == []
+
+
+def test_stop_session_only_signals_the_selected_registration(
+    broker, tmp_path, monkeypatch
+):
+    runtime = tmp_path / "runtime"
+    broker.activate_authority(
+        runtime, run_id="run-1", plan_id="plan-1", binding_id="binding-1"
+    )
+    sessions = runtime / "sessions"
+    sessions.mkdir(exist_ok=True)
+    selected = sessions / "selected.pid"
+    selected.write_text("1234")
+    peer = sessions / "peer.pid"
+    peer.write_text("5678")
+    signals = []
+
+    def terminate(pid, signum):
+        signals.append((pid, signum))
+        selected.unlink()
+
+    monkeypatch.setattr(broker.os, "kill", terminate)
+    broker.stop_session("run-1", "selected", runtime)
+    broker.stop_session("run-1", "selected", runtime)
+    assert signals == [(1234, signal.SIGTERM)]
+    assert peer.exists()
+    assert not (runtime / "quiesce").exists()

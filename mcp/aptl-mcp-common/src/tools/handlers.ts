@@ -76,7 +76,7 @@ export async function maybeHarvest(
   labConfig: LabConfig,
   sessionId: string,
   runId?: string,
-  awaitMetadataMs = 0,
+  awaitMetadataMs = HARVEST_METADATA_WAIT_MS,
 ): Promise<boolean> {
   const containerName = resolveCaptureContainer(labConfig);
   // An absent declaration disables captures; an empty declared name must fail.
@@ -97,7 +97,7 @@ export async function maybeHarvest(
 // teardown or a remote death, before failing the harvest loud. The broker's
 // own close is near-immediate; this covers the metadata write landing in the
 // capture volume after the SSH channel closed.
-export const HARVEST_METADATA_WAIT_MS = 10000;
+export const HARVEST_METADATA_WAIT_MS = 30000;
 
 export interface ToolContext {
   sshManager: SSHConnectionManager;
@@ -235,7 +235,7 @@ const baseHandlers: Record<string, ToolHandler> = {
       // captures out of the docker named volume now that the stream
       // has closed. Best-effort; failure logs to stderr and never
       // turns into a tool error.
-      await maybeHarvest(labConfig, result.sessionId);
+      await sshManager.harvestSession(result.sessionId, result.runId, () => maybeHarvest(labConfig, result.sessionId, result.runId));
 
       return {
         content: [
@@ -253,7 +253,7 @@ const baseHandlers: Record<string, ToolHandler> = {
       };
     } catch (error) {
       if (error instanceof CommandTimeoutError) {
-        await harvestOnceClosed(error, (sessionId, runId) => maybeHarvest(labConfig, sessionId, runId));
+        await harvestOnceClosed(error, (sessionId, runId) => sshManager.harvestSession(sessionId, runId, () => maybeHarvest(labConfig, sessionId, runId)));
       }
       return {
         content: [
@@ -486,7 +486,7 @@ const baseHandlers: Record<string, ToolHandler> = {
       // failure can't leave the session stuck in the manager.
       let harvestWarning: string | undefined;
       if (closed) {
-        const ok = await maybeHarvest(labConfig, session_id, boundRunId);
+        const ok = await sshManager.harvestSession(session_id, boundRunId, () => maybeHarvest(labConfig, session_id, boundRunId));
         if (!ok) {
           // Surface the anomaly to the tool caller, not just MCP
           // stderr (codex pre-push cycle 3 finding-2).
@@ -591,7 +591,7 @@ const baseHandlers: Record<string, ToolHandler> = {
       // sequential is fine and keeps stderr ordering deterministic.
       const harvestWarnings: string[] = [];
       for (const { sessionId, runId } of sessionBindings) {
-        const ok = await maybeHarvest(labConfig, sessionId, runId);
+        const ok = await sshManager.harvestSession(sessionId, runId, () => maybeHarvest(labConfig, sessionId, runId));
         if (!ok) {
           harvestWarnings.push(sessionId);
         }

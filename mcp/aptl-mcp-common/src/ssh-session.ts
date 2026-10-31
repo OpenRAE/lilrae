@@ -46,16 +46,6 @@ export class PersistentSession extends EventEmitter {
   // emit 'close' arbitrarily later. (Codex pre-push cycle 3, ADR-004.)
   private cleanupVerified = false;
   private closedEmitted = false;
-  // The agent asked to close this session (close_session), so the close-path
-  // harvest in the tool handler owns its capture. The manager's remote-close
-  // harvest skips it to avoid a double copy. A session that dies on its own,
-  // or that is still open at shutdown, has this false and is harvested by the
-  // manager / shutdown path instead.
-  public agentClosing = false;
-  // Memoized harvest: the first trigger (remote close, shutdown, or the close
-  // path) runs the harvest; later triggers return that same result, so a
-  // session's capture is copied at most once.
-  private harvestResult: Promise<boolean> | undefined;
   // #304: latched promise that resolves when the SSH stream's remote
   // 'close' event fires. close() awaits this before returning so the
   // post-close harvest does not race the kali wrapper's EXIT trap.
@@ -458,16 +448,6 @@ export class PersistentSession extends EventEmitter {
   /** The session's stable id, for a harvest keyed by it. */
   getSessionId(): string {
     return this.sessionInfo.sessionId;
-  }
-
-  /**
-   * Run ``harvest`` for this session exactly once, returning the first run's
-   * result for every later caller. Idempotent across the remote-close,
-   * shutdown and close paths.
-   */
-  harvestOnce(harvest: () => Promise<boolean>): Promise<boolean> {
-    this.harvestResult ??= harvest();
-    return this.harvestResult;
   }
 
   /**

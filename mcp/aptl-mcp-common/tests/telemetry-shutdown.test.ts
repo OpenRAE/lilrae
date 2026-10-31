@@ -13,7 +13,7 @@ import { createServer as createNetServer, type AddressInfo, type Server as NetSe
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { trace } from '@opentelemetry/api';
 
-const ssh = vi.hoisted(() => ({ disconnectAll: vi.fn(), listSessions: vi.fn(() => []), setHarvestHook: vi.fn() }));
+const ssh = vi.hoisted(() => ({ shutdown: vi.fn(), listSessions: vi.fn(() => []), setHarvestHook: vi.fn() }));
 
 vi.mock('@modelcontextprotocol/sdk/server/index.js', () => ({
   Server: vi.fn(function () {
@@ -26,7 +26,7 @@ vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
 }));
 
 vi.mock('../src/ssh.js', () => ({
-  SSHConnectionManager: vi.fn(function () { return { disconnectAll: ssh.disconnectAll, listSessions: ssh.listSessions, setHarvestHook: ssh.setHarvestHook }; }),
+  SSHConnectionManager: vi.fn(function () { return { shutdown: ssh.shutdown, listSessions: ssh.listSessions, setHarvestHook: ssh.setHarvestHook }; }),
 }));
 
 vi.mock('../src/tools/definitions.js', () => ({
@@ -35,6 +35,9 @@ vi.mock('../src/tools/definitions.js', () => ({
 
 vi.mock('../src/tools/handlers.js', () => ({
   generateToolHandlers: vi.fn().mockReturnValue({}),
+  maybeHarvest: vi.fn(),
+  resolveCaptureContainer: vi.fn(),
+  HARVEST_METADATA_WAIT_MS: 30000,
 }));
 
 const SPAN_NAME = 'span-recorded-before-sigterm';
@@ -138,7 +141,7 @@ async function sigtermWithCollectorAt(endpoint: string): Promise<ShutdownObserva
   });
 
   let teardownAt = Number.NaN;
-  ssh.disconnectAll.mockImplementation(async () => { teardownAt = performance.now(); });
+  ssh.shutdown.mockImplementation(async () => { teardownAt = performance.now(); return true; });
 
   const { createMCPServer } = await import('../src/server.js');
   const { getTracer } = await import('../src/telemetry.js');
@@ -161,7 +164,7 @@ describe('MCP server SIGTERM trace flush', () => {
   afterEach(async () => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
-    ssh.disconnectAll.mockReset();
+    ssh.shutdown.mockReset();
     await Promise.all(closers.splice(0).map(closeServer => closeServer()));
   });
 
@@ -174,7 +177,7 @@ describe('MCP server SIGTERM trace flush', () => {
       const { exitCode, teardownAfterMs } = await sigtermWithCollectorAt(await unreachableEndpoint());
 
       expect(exitCode).toBe(0);
-      expect(ssh.disconnectAll).toHaveBeenCalledOnce();
+      expect(ssh.shutdown).toHaveBeenCalledOnce();
       expect(teardownAfterMs).toBeLessThan(TEARDOWN_LIMIT_MS);
       expect(console.error).toHaveBeenCalledWith(
         expect.stringContaining('[OTel] Trace export did not finish within'),

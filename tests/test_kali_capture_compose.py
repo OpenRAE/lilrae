@@ -650,6 +650,38 @@ EOF
             env=_brokered_ssh_environment("session-3"),
         )
         _wait_for_broker_session(container_id, "session-3")
+        # Per-MCP shutdown must force only its owned session, leaving its peer open.
+        selected = subprocess.Popen(
+            _brokered_ssh_argv(outer_key, port, None, tty=True),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=_brokered_ssh_environment("session-5"),
+        )
+        _wait_for_broker_session(container_id, "session-5")
+        subprocess.run(
+            [
+                "docker",
+                "exec",
+                "--user",
+                "root",
+                container_id,
+                "python3",
+                "/usr/local/bin/broker.py",
+                "stop-session",
+                "--run-id",
+                "run-1",
+                "--session-id",
+                "session-5",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+        selected.wait(timeout=30)
+        _wait_for_broker_session(container_id, "session-5", finished=True)
+        assert held_open.poll() is None
         # A different client closes before quiesce. Preserve its transcript too.
         _close_pty_session_while_it_runs(container_id, outer_key, port, "session-4")
         subprocess.run(
@@ -683,11 +715,12 @@ EOF
         held_open.wait(timeout=30)
         payload = json.loads(exported.stdout)
         sessions = {item["session_id"]: item for item in payload["sessions"]}
-        expected = ["session-1", "session-2", "session-3", "session-4"]
+        expected = ["session-1", "session-2", "session-3", "session-4", "session-5"]
         assert sorted(payload["accepted_session_ids"]) == expected
         assert sorted(sessions) == expected
         assert sessions["session-4"]["close_reason"] == "signal"
         assert sessions["session-3"]["close_reason"] == "forced-teardown"
+        assert sessions["session-5"]["close_reason"] == "forced-teardown"
         ownership = subprocess.run(
             [
                 "docker",

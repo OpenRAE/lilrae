@@ -17,11 +17,12 @@ import {
 import Ajv2020, { type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js';
 import { type LabConfig } from './config.js';
 import { SSHConnectionManager } from './ssh.js';
+import { finalizeCaptureSession } from './captures.js';
 import { HTTPClient } from './http.js';
 import { initTracing, recordToolResultSize, shutdownTracing, traceToolCall } from './telemetry.js';
 import { boundToolResult, toolResultBudgets, type ToolResult } from './tool-output-cap.js';
 import { generateToolDefinitions } from './tools/definitions.js';
-import { errorMessage, generateToolHandlers, maybeHarvest, HARVEST_METADATA_WAIT_MS, type ToolHandler, type ToolContext } from './tools/handlers.js';
+import { errorMessage, generateToolHandlers, maybeHarvest, resolveCaptureContainer, HARVEST_METADATA_WAIT_MS, type ToolHandler, type ToolContext } from './tools/handlers.js';
 import { generateAPIToolDefinitions } from './tools/api-definitions.js';
 import { generateAPIToolHandlers, type APIToolHandler, type APIToolContext } from './tools/api-handlers.js';
 
@@ -178,41 +179,6 @@ function invalidArgumentsResult(toolName: string, errors: ErrorObject[] | null |
     ],
   };
 }
-
-/**
- * Harvest every session still open at shutdown, before SSH teardown drops them.
- *
- * Returns `true` when every harvest completed (or captures are not configured),
- * `false` when at least one failed. Each harvest records its own failure in the
- * run evidence; the boolean lets the caller exit non-zero so finalization treats
- * the run as incomplete instead of sealing a transcript that is missing a
- * session. Harvest is idempotent with the close-path harvest, so a session the
- * manager already harvested on remote close is copied at most once.
- */
-async function harvestOpenSessions(
-  sshManager: SSHConnectionManager,
-  labConfig: LabConfig,
-): Promise<boolean> {
-  const open = sshManager.listSessions();
-  const results = await Promise.all(
-    open.map(async (session) => {
-      const runId = sshManager.getSessionRunId(session.sessionId);
-      // Close the session first so the broker finalizes it and writes
-      // metadata.json, then harvest. Harvesting an open session copies its
-      // frames before the broker's metadata lands, which the collector rejects
-      // as a lost session. closeSession marks the session agent-closing, so the
-      // manager's remote-close harvest stands aside and this one owns it.
-      try {
-        await sshManager.closeSession(session.sessionId);
-      } catch (err) {
-        console.error(`[MCP] closing ${session.sessionId} during shutdown failed:`, err);
-      }
-      return maybeHarvest(labConfig, session.sessionId, runId, HARVEST_METADATA_WAIT_MS);
-    }),
-  );
-  return results.every(Boolean);
-}
-
 
 export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOptions = {}) {
   const { postToolHook } = options;
@@ -373,34 +339,18 @@ export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOp
 
       // Setup graceful shutdown only once
       if (!handlersSetup) {
+        let shuttingDown = false;
         const gracefulShutdown = async (signal: string): Promise<void> => {
+          if (shuttingDown) return;
+          shuttingDown = true;
           console.error(`[MCP] Shutting down gracefully (${signal})...`);
+          const clean = sshManager ? await sshManager.shutdown(async (sessionId, runId) => {
+            const containerName = resolveCaptureContainer(labConfig);
+            if (containerName === undefined) return true;
+            return finalizeCaptureSession({ containerName, runId }, sessionId);
+          }) : true;
           await shutdownTracing();
-          let uncleanShutdown = false;
-          if (sshManager) {
-            // Harvest every session still open at the deadline BEFORE tearing
-            // down SSH. A session the agent never closed (a background
-            // brute-force shell left running) was captured by the sidecar but
-            // never copied into the run store, because harvest is otherwise
-            // close-triggered. disconnectAll would then drop it, and the host
-            // census would miss it, failing the whole transcript. Each harvest
-            // is best-effort and idempotent with the close-path harvest; a
-            // failure is surfaced (a run-evidence record plus a non-zero exit)
-            // rather than swallowed, so finalization fails loudly, not silently.
-            uncleanShutdown = !(await harvestOpenSessions(sshManager, labConfig));
-            // disconnectAll propagates SSHError on teardown contract failures so
-            // callers can detect unclean shutdown. The signal handler still
-            // needs to exit; log the failure and exit non-zero rather than
-            // letting an unhandled rejection terminate Node abruptly.
-            try {
-              await sshManager.disconnectAll();
-            } catch (err) {
-              console.error('[MCP] disconnectAll failed during shutdown:', err);
-              process.exit(1);
-              return;
-            }
-          }
-          process.exit(uncleanShutdown ? 1 : 0);
+          process.exit(clean ? 0 : 1);
         };
 
         process.on('SIGINT', () => { void gracefulShutdown('SIGINT'); });

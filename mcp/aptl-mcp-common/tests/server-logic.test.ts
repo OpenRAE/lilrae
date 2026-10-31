@@ -17,6 +17,8 @@ const fakes = vi.hoisted(() => ({
     listSessions: vi.fn(),
     disconnectAll: vi.fn(),
     setHarvestHook: vi.fn(),
+    harvestSession: vi.fn(async (_id, _run, harvest) => harvest()),
+    shutdown: vi.fn().mockResolvedValue(true),
   },
   http: { makeRequest: vi.fn() },
 }));
@@ -35,7 +37,8 @@ vi.mock('../src/http.js', () => ({
 }));
 
 vi.mock('../src/captures.js', () => ({
-  harvestSession: vi.fn().mockResolvedValue(true)
+  harvestSession: vi.fn().mockResolvedValue(true),
+  finalizeCaptureSession: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('../src/telemetry.js', () => ({
@@ -556,46 +559,28 @@ describe('gracefulShutdown capture harvest', () => {
     await createMCPServer(mockConfig).start();
   }
 
-  it('closes a session open at shutdown, then harvests it with a metadata wait, before disconnectAll', async () => {
-    fakes.ssh.listSessions.mockReturnValue([{ sessionId: 'hydra-victim' }]);
-    fakes.ssh.getSessionRunId.mockReturnValue('run-x');
-    fakes.ssh.closeSession.mockResolvedValue(true);
-    fakes.ssh.disconnectAll.mockResolvedValue(undefined);
-
+  it('uses manager shutdown to drain and harvest before exit', async () => {
+    fakes.ssh.shutdown.mockResolvedValue(true);
     await startServer();
     process.emit('SIGTERM');
-    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalled());
-
-    // Close first so the broker finalizes and writes metadata, then harvest
-    // waiting for that metadata, then disconnect.
-    expect(fakes.ssh.closeSession).toHaveBeenCalledWith('hydra-victim');
-    expect(harvestSession).toHaveBeenCalledWith(
-      expect.objectContaining({ runId: 'run-x', awaitMetadataMs: expect.any(Number) }),
-      'hydra-victim',
-    );
-    expect(harvestSession.mock.calls[0][0].awaitMetadataMs).toBeGreaterThan(0);
-    expect(fakes.ssh.closeSession.mock.invocationCallOrder[0]).toBeLessThan(
-      harvestSession.mock.invocationCallOrder[0],
-    );
-    expect(harvestSession.mock.invocationCallOrder[0]).toBeLessThan(
-      fakes.ssh.disconnectAll.mock.invocationCallOrder[0],
-    );
-    expect(exitSpy).toHaveBeenCalledWith(0);
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(0));
+    expect(fakes.ssh.shutdown).toHaveBeenCalledOnce();
+    expect(fakes.ssh.shutdown).toHaveBeenCalledWith(expect.any(Function));
   });
 
-  it('exits non-zero when a shutdown harvest fails, so finalization fails loudly', async () => {
-    fakes.ssh.listSessions.mockReturnValue([{ sessionId: 'smbbf' }]);
-    fakes.ssh.getSessionRunId.mockReturnValue('run-y');
-    fakes.ssh.closeSession.mockResolvedValue(true);
-    fakes.ssh.disconnectAll.mockResolvedValue(undefined);
-    (harvestSession as any).mockResolvedValue(false);
-
+  it('exits non-zero for any retained harvest or teardown failure', async () => {
+    fakes.ssh.shutdown.mockResolvedValue(false);
     await startServer();
     process.emit('SIGTERM');
-    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalled());
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(1));
+  });
 
-    expect(harvestSession).toHaveBeenCalledWith(expect.anything(), 'smbbf');
-    expect(fakes.ssh.disconnectAll).toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+  it('does not run two shutdown sweeps for repeated signals', async () => {
+    fakes.ssh.shutdown.mockResolvedValue(true);
+    await startServer();
+    process.emit('SIGTERM');
+    process.emit('SIGINT');
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(0));
+    expect(fakes.ssh.shutdown).toHaveBeenCalledOnce();
   });
 });

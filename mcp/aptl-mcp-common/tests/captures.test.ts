@@ -55,6 +55,9 @@ const spawnControl: SpawnControl = {
 /** Answer one `docker cp` from the stand-in container, else with the set reply. */
 function replay(args: string[]): DockerResult {
   if (spawnControl.container) return copyFromContainer(spawnControl.container, args);
+  if (spawnControl.exitCode === 0 && args[0] === 'cp') {
+    writeFileSync(join(args[2], 'metadata.json'), METADATA);
+  }
   return { code: spawnControl.exitCode, stderr: spawnControl.stderrText };
 }
 
@@ -127,7 +130,7 @@ vi.mock('node:child_process', () => ({
   },
 }));
 
-import { harvestSession } from '../src/captures.js';
+import { harvestSession, finalizeCaptureSession } from '../src/captures.js';
 import { loadLabConfig } from '../src/config.js';
 import { resolveCaptureContainer } from '../src/tools/handlers.js';
 
@@ -558,9 +561,9 @@ describe('metadata wait for a session finalizing at teardown (#campaign)', () =>
 
   beforeEach(() => activateScenario(RUN));
 
-  it('without a wait, a frames-only session still harvests (close path, metadata already present elsewhere)', async () => {
+  it('rejects frames-only captures even when the caller disables waiting', async () => {
     framesOnly('sess-1');
-    expect(await harvest('sess-1')).toBe(true);
+    expect(await harvest('sess-1', 0)).toBe(false);
   });
 
   it('fails loud when metadata never finalizes within the wait', async () => {
@@ -583,5 +586,26 @@ describe('metadata wait for a session finalizing at teardown (#campaign)', () =>
 
     expect(await harvest('sess-1', 3000)).toBe(true);
     expect(readFileSync(join(sessionDir('sess-1'), 'metadata.json'), 'utf-8')).toBe(METADATA);
+  });
+});
+
+
+describe('trusted broker session finalization', () => {
+  beforeEach(() => activateScenario(RUN));
+
+  it('passes exact run and session arguments to the configured sidecar', async () => {
+    expect(await finalizeCaptureSession({ containerName: SCOPED, env: { APTL_STATE_DIR: tmp } }, 'sess-1')).toBe(true);
+    expect(spawnControl.capturedArgs).toEqual([[
+      'exec', '--user', 'root', SCOPED, 'python3', '/usr/local/bin/broker.py',
+      'stop-session', '--run-id', RUN, '--session-id', 'sess-1',
+    ]]);
+  });
+
+  it.each([SCOPED, ''])('records finalization failure for container %j', async (containerName) => {
+    spawnControl.exitCode = 1;
+    expect(await finalizeCaptureSession({ containerName, env: { APTL_STATE_DIR: tmp } }, 'sess-1')).toBe(false);
+    const record = JSON.parse(readFileSync(join(tmp, 'runs', RUN, 'kali-side', 'sess-1', 'capture-harvest-failure.json'), 'utf-8'));
+    expect(record.failure).toBe('aptl.capture-harvest.finalize-failed');
+    expect(spawnControl.callCount).toBe(containerName ? 1 : 0);
   });
 });
