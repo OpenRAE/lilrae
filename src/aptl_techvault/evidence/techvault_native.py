@@ -20,15 +20,11 @@ from typing import Any
 from urllib.parse import urlunsplit
 
 from aptl_techvault.evidence.techvault import (
-    CORTEX_OBSERVABLE,
+    SQLI_PROBE_SOURCE_IP,
     SURICATA_SQLI_SID,
     WAZUH_SQLI_RULE_ID,
-    CortexEnrichmentSource,
     SuricataRuleReadinessSource,
     SuricataWazuhSqliSource,
-)
-from aptl_techvault.evidence._techvault_native_cortex import (
-    TechVaultNativeCortexMixin,
 )
 from aptl_techvault.evidence.techvault_misp_readiness import (
     MispAuthenticatedApiReadinessSource,
@@ -46,10 +42,7 @@ from aptl_techvault.evidence.techvault_native_support import (
     MAX_SOURCE_BYTES,
     content_identities,
     find_node,
-    generated_output,
-    generated_output_path,
     inside_window,
-    published_url,
     utc_iso_now,
     webapp_endpoint,
 )
@@ -57,12 +50,10 @@ from aptl_techvault.evidence.techvault_manager_alerts import (
     WazuhManagerAlertRead,
     read_wazuh_manager_alerts,
 )
-from aptl.utils.curl_safe import curl_json
 from aptl_techvault.evidence.techvault_telemetry_stimulus import (
     emit_missing_agent_events,
 )
 
-_CORTEX_REGISTRATION = "aptl.collector.cortex-enrichment"
 _MISP_READINESS_REGISTRATION = "aptl.collector.misp-authenticated-api-readiness"
 _WAZUH_AGENT_REGISTRATION = "aptl.collector.wazuh-agent-readiness"
 _READINESS_REGISTRATION = "aptl.collector.suricata-rule-readiness"
@@ -88,12 +79,11 @@ sed -nE 's/.*sid:([0-9]+).*/sid=\1/p' /etc/suricata/rules/local.rules
 class TechVaultNativeDependencies:
     """Injectable boundaries used by deterministic owner tests."""
 
-    request_json: Callable[..., object | None] = curl_json
     now: Callable[[], str] = utc_iso_now
     sleep: Callable[[float], None] | None = None
 
 
-class TechVaultNativeEvidenceOwner(TechVaultNativeCortexMixin):
+class TechVaultNativeEvidenceOwner:
     """Own the bounded native operations behind the TechVault sources."""
 
     def __init__(
@@ -103,7 +93,6 @@ class TechVaultNativeEvidenceOwner(TechVaultNativeCortexMixin):
         realization: object,
         project_dir: Path,
         indexer_auth: tuple[str, str],
-        thehive_api_key: str,
         dependencies: TechVaultNativeDependencies | None = None,
     ) -> None:
         """Bind trusted operations to one admitted TechVault realization."""
@@ -117,24 +106,8 @@ class TechVaultNativeEvidenceOwner(TechVaultNativeCortexMixin):
         # never consumes them: TechVault declares the manager alert log as the
         # Wazuh source for this registration (issue #957).
         _ = indexer_auth
-        self._thehive_api_key = thehive_api_key
-        self._request_json = selected_dependencies.request_json
         self._now = selected_dependencies.now
         self._sleep = selected_dependencies.sleep
-        self._cortex_url = published_url(realization, "cortex", 9001, "http")
-        self._thehive_url = published_url(realization, "thehive", 9000, "https")
-        self._thehive_ca_path = generated_output_path(
-            realization,
-            project_dir,
-            "techvault:soc-certificate-profile/v1",
-            "ca-certificate",
-        )
-        self._connector_key = generated_output(
-            realization,
-            project_dir,
-            "techvault:cortex-service-credentials/v1",
-            "connector-api-key",
-        )
         endpoint = webapp_endpoint(realization)
         self._webapp_ip = endpoint[0] if endpoint is not None else None
         self._webapp_port = endpoint[1] if endpoint is not None else None
@@ -149,7 +122,6 @@ class TechVaultNativeEvidenceOwner(TechVaultNativeCortexMixin):
         if self._sleep is not None:
             kwargs["sleep"] = self._sleep
         return {
-            _CORTEX_REGISTRATION: CortexEnrichmentSource(self.cortex_query),
             **self._misp_readiness_source(),
             _WAZUH_AGENT_REGISTRATION: WazuhAgentReadinessSource(
                 self.wazuh_agent_readiness_query,
@@ -393,7 +365,7 @@ class TechVaultNativeEvidenceOwner(TechVaultNativeCortexMixin):
             "trigger_id": trigger_id,
             "method": "POST",
             "path": "/login",
-            "source_ip": CORTEX_OBSERVABLE,
+            "source_ip": SQLI_PROBE_SOURCE_IP,
             "destination_ip": self._webapp_ip,
             "contains_union_select": True,
             "triggered_at": triggered_at,

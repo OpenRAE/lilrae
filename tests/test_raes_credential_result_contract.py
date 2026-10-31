@@ -20,11 +20,12 @@ from __future__ import annotations
 
 import importlib.resources as ir
 from copy import deepcopy
+from dataclasses import replace
 from unittest.mock import MagicMock
 
 import pytest
-import raes_processor.planner as raes_planner
 from raes.runtime_configuration import RuntimeCapabilityPolicy
+from raes_contracts.errors import InvalidInputError
 from raes_contracts.evaluation import EvaluationExecutionState, EvaluationResultStatus
 from raes_contracts.planning import (
     ChangeAction,
@@ -36,6 +37,7 @@ from raes_contracts.planning import (
     ResolvedRealizationAuthority,
     RuntimeDomain,
 )
+from raes_contracts.run_scope import PlanScope
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 from raes_processor.semantics.realization import CONCERN_PAYLOAD_PATH
 from raes_processor.semantics.realization_runtime_common import (
@@ -69,7 +71,6 @@ _NODE_TYPE = CONCERN_PAYLOAD_PATH["node-type"]
 _PORTS = CONCERN_PAYLOAD_PATH["published-ports"]
 _CAPABILITIES = CONCERN_PAYLOAD_PATH["linux-capabilities"]
 _COMPONENTS = CONCERN_PAYLOAD_PATH["runtime-software-components"]
-_PAYLOAD_MISMATCH = "credential-bearing backend payload does not match the submitted plan"
 _SOURCE_IMAGE = {"verified": True, "selected_digest": "sha256:" + "0" * 64}
 
 
@@ -83,6 +84,7 @@ def _payload() -> dict[str, object]:
                 "runtime": {
                     "dns_services": [],
                     "environment": [],
+                    "linux_capabilities": None,
                     "packages": [{"name": "curl"}],
                     "network": None,
                 }
@@ -283,7 +285,7 @@ def _closure_refusal(plan, observations) -> str | None:
         sanitize_account_credential_result(
             _closed_result(plan, observations), plan, RuntimeSnapshot()
         )
-    except ValueError as exc:
+    except (InvalidInputError, ValueError) as exc:
         return str(exc)
     return None
 
@@ -354,7 +356,9 @@ def techvault_plan(tmp_path_factory) -> ProvisioningPlan:
         project_dir=PROJECT_ROOT, config=config, backend=MagicMock(), bundle=bundle
     )
     plan = RuntimeManager(target).plan(
-        parse_sdl_file(bundle.sdl_path), parameters=_TECHVAULT_FLAG_PARAMETERS
+        parse_sdl_file(bundle.sdl_path),
+        parameters=_TECHVAULT_FLAG_PARAMETERS,
+        run_scope=PlanScope(run_id="credential-result"),
     ).provisioning
     assert plan_has_account_credentials(plan)
     return plan
@@ -368,22 +372,20 @@ def _admitted(plan: ProvisioningPlan) -> dict[str, set[str]]:
     return admitted
 
 
-def _observed_value(path: tuple[str, ...], planned: object, *, differ: bool) -> object:
-    """Observe the plan's value, or (``differ``) a capability choice for ``null``."""
+def _observed_value(path: tuple[str, ...], planned: object) -> object:
+    """Observe the plan's value, or a capability choice where the plan has ``null``."""
 
-    if differ and planned is None and path == _CAPABILITIES:
+    if planned is None and path == _CAPABILITIES:
         return RuntimeCapabilityPolicy(add=["CAP_NET_ADMIN"]).model_dump(mode="json")
     return deepcopy(planned)
 
 
-def _observations(
-    plan: ProvisioningPlan, *, differ: bool
-) -> dict[str, ObservedResource]:
-    """Observe every admitted concern the plan gives a value.
+def _differing_observations(plan: ProvisioningPlan) -> dict[str, ObservedResource]:
+    """Observe every admitted concern, with values that differ from the plan.
 
-    ``differ`` reorders one collection and makes the backend's OPEN choices: a
-    capability policy where the plan has ``null`` and published ports under a
-    ``null`` network parent. Otherwise every observation equals the plan.
+    The observations reorder one collection and make the backend's OPEN choices:
+    a capability policy where the plan has ``null`` and published ports under a
+    ``null`` network parent.
     """
 
     admitted = _admitted(plan)
@@ -394,12 +396,10 @@ def _observations(
             path = CONCERN_PAYLOAD_PATH.get(kind)
             planned = concern_value(resource.payload, path) if path else MISSING_CONCERN_VALUE
             if planned is not MISSING_CONCERN_VALUE:
-                concerns[path] = _observed_value(path, planned, differ=differ)
-            elif differ and kind == "published-ports":
+                concerns[path] = _observed_value(path, planned)
+            elif kind == "published-ports":
                 concerns[path] = []
         observations[address] = ObservedResource(realized=True, concerns=concerns)
-    if not differ:
-        return observations
     reordered = next(
         observed.concerns
         for observed in observations.values()
@@ -409,23 +409,12 @@ def _observations(
     return observations
 
 
-def test_differing_observations_are_admitted_once_raes_carries_rae_1640(
-    techvault_plan,
-):
-    """raes 7.0.0 compares the whole payload; rae#1640 admits observed concerns.
+def test_differing_observations_are_admitted_under_rae_1640(techvault_plan):
+    """The supported RAES release admits observed concerns that differ (rae#1640)."""
 
-    On 7.0.0, observations equal to the plan pass, so every entry status and
-    plan-owned value does; only the differing observations are refused.
-    """
+    differing = _differing_observations(techvault_plan)
 
-    refusal = _closure_refusal(techvault_plan, _observations(techvault_plan, differ=True))
-
-    if hasattr(raes_planner, "realization_payload_projections"):
-        assert refusal is None
-    else:
-        equal = _observations(techvault_plan, differ=False)
-        assert _closure_refusal(techvault_plan, equal) is None
-        assert refusal == _PAYLOAD_MISMATCH
+    assert _closure_refusal(techvault_plan, differing) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -433,14 +422,15 @@ def test_differing_observations_are_admitted_once_raes_carries_rae_1640(
 # --------------------------------------------------------------------------- #
 
 _OBSERVED = {_ENVIRONMENT: [], _NODE_TYPE: "vm"}
+_PAYLOAD_MISMATCH = "credential-bearing backend payload does not match the submitted plan"
 
 
-def _readback_plan(*, credentials=True) -> ProvisioningPlan:
+def _readback_plan(*, credentials=True, kind="runtime-environment") -> ProvisioningPlan:
     """An open concern the plan leaves empty and an exact one it sets."""
 
     return _node_plan(
         _authority("runtime-dns-services", RealizationAuthorityMode.CLOSED),
-        _authority("runtime-environment", RealizationAuthorityMode.OPEN),
+        _authority(kind, RealizationAuthorityMode.OPEN),
         _authority("node-type", RealizationAuthorityMode.EXACT),
         credentials=credentials,
     )
@@ -474,7 +464,8 @@ def test_readback_reports_exactly_the_concerns_the_closed_contract_refuses(
     plan = _readback_plan()
     observations = {_NODE: node, _ACCOUNT: ObservedResource(realized=True)}
 
-    reported = unobserved_admitted_concerns(plan, observations)
+    snapshot = snapshot_after_apply(plan, RuntimeSnapshot(), observations)
+    reported = unobserved_admitted_concerns(plan, snapshot)
     refusal = _closure_refusal(plan, observations)
 
     assert reported == tuple((_NODE, kind) for kind in missed)
@@ -504,7 +495,8 @@ def test_readback_reports_exactly_the_concerns_the_closed_contract_refuses(
 def test_readback_reports_nothing_the_closed_contract_does_not_read(plan, node):
     """Other plans, unrealized nodes and concerns the plan leaves unset."""
 
-    assert unobserved_admitted_concerns(plan, {_NODE: node}) == ()
+    snapshot = snapshot_after_apply(plan, RuntimeSnapshot(), {_NODE: node})
+    assert unobserved_admitted_concerns(plan, snapshot) == ()
 
 
 class _Start(provisioner_start.ProvisionerStartMixin):
@@ -513,6 +505,7 @@ class _Start(provisioner_start.ProvisionerStartMixin):
     deployment_backend = object()
     bundle = MagicMock()
     startup_selection = None
+    _lilrae_apparatus_resources = ()
 
     def selected_profiles(self, *_):
         return []
@@ -570,14 +563,16 @@ def test_readback_waits_for_an_admitted_concern_it_missed(monkeypatch):
     assert sleeps == [2.0]
 
 
+@pytest.mark.parametrize("kind", ["runtime-environment", "linux-capabilities"])
 def test_readback_names_each_admitted_concern_still_missed_at_its_deadline(
     monkeypatch,
+    kind,
 ):
     missed = ObservedResource(realized=True, concerns={_NODE_TYPE: "vm"})
 
     result, _ = _readback(
         monkeypatch,
-        _readback_plan(),
+        _readback_plan(kind=kind),
         [missed, missed],
         clock=(0.0, 0.0, 301.0),
     )
@@ -586,7 +581,62 @@ def test_readback_names_each_admitted_concern_still_missed_at_its_deadline(
     assert [(item.code, item.address) for item in result.diagnostics] == [
         ("aptl.provisioner.admitted-concern-unobserved", _NODE)
     ]
-    assert "'runtime-environment'" in result.diagnostics[0].message
+    assert f"'{kind}'" in result.diagnostics[0].message
+
+
+def test_retained_materialization_null_does_not_delay_or_fail_readback(
+    monkeypatch,
+    techvault_plan,
+):
+    assert techvault_plan.materialization_source is not None
+    plan = replace(
+        _readback_plan(kind="domain-topology"),
+        materialization_source=techvault_plan.materialization_source,
+    )
+    observed = ObservedResource(realized=True, concerns={_NODE_TYPE: "vm"})
+    observations = {_NODE: observed, _ACCOUNT: ObservedResource(realized=True)}
+
+    assert _closure_refusal(plan, observations) is None
+    result, sleeps = _readback(monkeypatch, plan, [observed])
+
+    assert result.success
+    assert sleeps == []
+
+
+@pytest.mark.parametrize("credentials", [True, False])
+def test_invalid_materialization_null_waits_only_for_credential_plans(
+    monkeypatch,
+    techvault_plan,
+    credentials,
+):
+    plan = replace(
+        _readback_plan(kind="linux-capabilities", credentials=credentials),
+        materialization_source=techvault_plan.materialization_source,
+    )
+    first = ObservedResource(realized=True, concerns={_NODE_TYPE: "vm"})
+    late = ObservedResource(
+        realized=True,
+        concerns={
+            _NODE_TYPE: "vm",
+            _CAPABILITIES: RuntimeCapabilityPolicy().model_dump(mode="json"),
+        },
+    )
+    assert _closure_refusal(plan, {_NODE: late, _ACCOUNT: ObservedResource(True)}) is None
+
+    result, sleeps = _readback(monkeypatch, plan, [first, late])
+
+    assert result.success
+    assert sleeps == ([2.0] if credentials else [])
+
+
+@pytest.mark.parametrize(
+    "plan", [_readback_plan(credentials=False), _node_plan(credentials=True)]
+)
+def test_readback_does_not_wait_for_other_plans(monkeypatch, plan):
+    result, sleeps = _readback(monkeypatch, plan, [ObservedResource(realized=True)])
+
+    assert result.success
+    assert sleeps == []
 
 
 def test_a_gap_raes_names_itself_keeps_its_own_diagnostic(monkeypatch):

@@ -125,6 +125,7 @@ def _admitted() -> AdmittedExperiment:
         task=_minimal_task(),
         scenario_snapshot_ref=run.scenario_snapshot_ref,
         apparatus_context=run.apparatus_context,
+        capture_spec_pins=(),
         participant_provenance=run.participant_implementation_provenance,
     )
 

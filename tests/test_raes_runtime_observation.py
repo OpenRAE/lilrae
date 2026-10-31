@@ -1130,7 +1130,8 @@ def test_wazuh_software_component_rejects_wrong_guest_version():
     assert _SOFTWARE_PATH not in observations[_ADDRESS].concerns
 
 
-def test_declared_package_is_disclosed_only_after_guest_query_matches():
+@pytest.mark.parametrize("explicitness", [ExplicitnessClass.EXACT, ExplicitnessClass.CONSTRAINED])
+def test_declared_package_is_disclosed_only_after_guest_query_matches(explicitness):
     runtime = _runtime(packages=[{"manager": "apt", "name": "curl", "version": "*"}])
     query = (
         "dpkg-query",
@@ -1142,7 +1143,7 @@ def test_declared_package_is_disclosed_only_after_guest_query_matches():
         exec_results={_CONTAINER: {query: (0, "ii \tcurl\t8.10.1-1\tamd64\t\n")}},
     )
 
-    codes, _provenance, observations = _gate(runtime, backend, "runtime-packages")
+    codes, _provenance, observations = _gate(runtime, backend, "runtime-packages", explicitness=explicitness)
 
     assert codes == []
     assert _PACKAGES_PATH in observations[_ADDRESS].concerns
@@ -1222,11 +1223,12 @@ def test_declared_package_with_no_provider_is_still_rejected():
     assert _PACKAGES_PATH not in observations[_ADDRESS].concerns
 
 
-def test_missing_declared_package_is_omitted_and_rejected():
+@pytest.mark.parametrize("explicitness", [ExplicitnessClass.EXACT, ExplicitnessClass.CONSTRAINED])
+def test_missing_declared_package_is_omitted_and_rejected(explicitness):
     runtime = _runtime(packages=[{"manager": "apt", "name": "curl", "version": "*"}])
     backend = _Backend({_CONTAINER: _inspect()})
 
-    codes, _provenance, observations = _gate(runtime, backend, "runtime-packages")
+    codes, _provenance, observations = _gate(runtime, backend, "runtime-packages", explicitness=explicitness)
 
     assert _PACKAGES_PATH not in observations[_ADDRESS].concerns
     assert _GATE_REJECT in codes
@@ -1377,7 +1379,8 @@ def test_mismatched_systemd_unit_state_is_omitted_and_rejected():
     assert _GATE_REJECT in codes
 
 
-def test_local_identity_is_disclosed_only_after_guest_account_readback():
+@pytest.mark.parametrize("explicitness", [ExplicitnessClass.EXACT, ExplicitnessClass.CONSTRAINED])
+def test_local_identity_is_disclosed_only_after_guest_account_readback(explicitness):
     runtime = _runtime(
         local_identity={
             "groups": [{"name": "analyst"}],
@@ -1405,7 +1408,7 @@ def test_local_identity_is_disclosed_only_after_guest_account_readback():
         },
     )
 
-    codes, _provenance, observations = _gate(runtime, backend, "runtime-local-identity")
+    codes, _provenance, observations = _gate(runtime, backend, "runtime-local-identity", explicitness=explicitness)
 
     assert codes == []
     assert (
@@ -1452,7 +1455,8 @@ def test_local_identity_observes_backend_selected_primary_group_and_membership()
     )
 
 
-def test_local_identity_group_mismatch_is_omitted_and_rejected():
+@pytest.mark.parametrize("explicitness", [ExplicitnessClass.EXACT, ExplicitnessClass.CONSTRAINED])
+def test_local_identity_group_mismatch_is_omitted_and_rejected(explicitness):
     runtime = _runtime(
         local_identity={
             "groups": [{"name": "analyst"}],
@@ -1480,7 +1484,7 @@ def test_local_identity_group_mismatch_is_omitted_and_rejected():
         },
     )
 
-    codes, _provenance, observations = _gate(runtime, backend, "runtime-local-identity")
+    codes, _provenance, observations = _gate(runtime, backend, "runtime-local-identity", explicitness=explicitness)
 
     assert (
         CONCERN_PAYLOAD_PATH["runtime-local-identity"]

@@ -19,6 +19,7 @@ from aptl.core.deployment._docker_image_identity import (
     is_exact_image_reference,
     local_image_state,
 )
+from aptl.core.deployment._companion_realization import companion_images
 from aptl.core.deployment.realization import (
     DeploymentImageRealization,
     DeploymentRealizationSpec,
@@ -92,10 +93,12 @@ class ComposeRealizationImageMixin:
         realization_root = realization_root or scenario_root
         if not realization.images:
             return None, None
-        exact = any(is_exact_image_reference(i.image_ref) for i in realization.images)
+        # A node's backend companions are obtained and verified like its image.
+        images = (*realization.images, *companion_images(realization))
+        exact = any(is_exact_image_reference(i.image_ref) for i in images)
         # A cached pin must also run on the daemon's platform, as a child must.
         platform, failure = _daemon_platform(self) if exact else (None, None)
-        for image in realization.images:
+        for image in images:
             if failure is not None:
                 break
             failure = (
@@ -105,7 +108,7 @@ class ComposeRealizationImageMixin:
             )
         if failure is not None:
             return failure, None
-        override_path = self._write_image_override(realization.images, realization_root)
+        override_path = self._write_image_override(images, realization_root)
         base = base_compose_file(realization, scenario_root, realization_root)
         return None, (base, override_path)
 

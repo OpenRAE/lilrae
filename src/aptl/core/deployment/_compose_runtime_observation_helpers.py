@@ -55,14 +55,16 @@ def inspect_has_socket_route(info: object) -> bool:
     )
 
 
-def _mount_is_canonical_authority_socket(mount: object) -> bool:
+def _mount_is_canonical_authority_socket(
+    mount: object, source: str = DOCKER_SOCKET_PATH
+) -> bool:
     """Whether one observed mount is the declared host-root-equivalent bind."""
 
     if not isinstance(mount, Mapping):
         return False
     return bool(
         mount.get("Type") == "bind"
-        and mount.get("Source") == DOCKER_SOCKET_PATH
+        and mount.get("Source") == source
         and mount.get("Destination") == DOCKER_SOCKET_PATH
         and mount.get("RW") is True
     )
@@ -87,11 +89,14 @@ def authority_mount_is_valid(
     ]
     return bool(
         len(socket_mounts) == 1
-        and _mount_is_canonical_authority_socket(socket_mounts[0])
+        and _mount_is_canonical_authority_socket(
+            socket_mounts[0], admission.endpoint_source
+        )
         and not has_undeclared_runtime_mounts(
             entries,
             allowed_targets=set(admission.allowed_mount_targets),
             docker_authority_admitted=True,
+            docker_socket_source=admission.endpoint_source,
         )
     )
 

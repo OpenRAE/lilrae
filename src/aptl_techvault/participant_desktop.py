@@ -25,19 +25,11 @@ from aptl_techvault.pack_identity import (
 TECHVAULT_DESKTOP = ParticipantDesktopSpec(
     consoles=(
         DesktopConsole("Wazuh", "wazuh-dashboard", "dashboard"),
-        DesktopConsole("TheHive", "thehive", "thehive-api"),
-        DesktopConsole("Cortex", "cortex", "cortex-api"),
         DesktopConsole("Shuffle", "shuffle-frontend", "https"),
         DesktopConsole("MISP", "misp", "https"),
     ),
     credentials=(
         DesktopCredential("Wazuh", "wazuh-indexer-admin", "wazuh-indexer-admin-primary"),
-        DesktopCredential(
-            "TheHive", "thehive-administrator", "thehive-administrator-primary"
-        ),
-        DesktopCredential(
-            "Cortex", "cortex-administrator", "cortex-administrator-primary"
-        ),
         DesktopCredential(
             "Shuffle", "shuffle-administrator", "shuffle-administrator-primary"
         ),

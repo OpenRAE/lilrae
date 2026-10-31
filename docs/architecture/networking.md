@@ -14,7 +14,7 @@ of truth for a scenario whose compiled plan declares different segmentation.
 
 | Network | Subnet | Purpose |
 |---------|--------|---------|
-| aptl-security | 172.20.0.0/24 | SOC stack (Wazuh, MISP, TheHive, Cortex, Shuffle, Suricata mgmt) |
+| aptl-security | 172.20.0.0/24 | SOC stack (Wazuh, MISP, Shuffle, Suricata mgmt) |
 | aptl-dmz | 172.20.1.0/24 | Externally reachable services (webapp, mail, DNS) |
 | aptl-internal | 172.20.2.0/24 | Enterprise services (AD, DB, file server, victim, workstation) |
 | aptl-redteam | 172.20.4.0/24 | Red team (Kali) |
@@ -29,11 +29,10 @@ of truth for a scenario whose compiled plan declares different segmentation.
 | aptl-wazuh-dashboard | 172.20.0.11 | Web UI |
 | aptl-wazuh-indexer | 172.20.0.12 | OpenSearch data storage |
 | aptl-misp | 172.20.0.16 | Threat intelligence |
+| aptl-misp-web | 172.20.0.16 (shares the `aptl-misp` network namespace) | MISP HTTPS web tier |
 | aptl-misp-db | 172.20.0.17 | MISP database |
-| aptl-thehive | 172.20.0.18 | Case management |
 | aptl-shuffle-backend | 172.20.0.20 | SOAR backend |
 | aptl-shuffle-frontend | 172.20.0.21 | SOAR frontend |
-| aptl-cortex | 172.20.0.22 | Automated enrichment |
 | aptl-dns | 172.20.0.25 | DNS (security interface) |
 | aptl-reverse | 172.20.0.27 | Reverse engineering |
 | aptl-suricata | 172.20.0.50 | IDS (security interface) |
@@ -92,8 +91,6 @@ Several containers connect to multiple networks:
 | 2024 | aptl-operator-ssh-soc-workstation, relaying to soc-workstation:22 | Operator SSH to the SOC workstation |
 | 3443, 3001 | aptl-shuffle-frontend | Shuffle SOAR UI |
 | 8443 | aptl-misp:443 | MISP UI |
-| 9000 | aptl-thehive:9000 | TheHive UI |
-| 9001 | aptl-cortex:9001 | Cortex UI |
 | 9200 | aptl-wazuh-indexer:9200 | OpenSearch API |
 | 55000 | aptl-wazuh-manager:55000 | Wazuh API |
 

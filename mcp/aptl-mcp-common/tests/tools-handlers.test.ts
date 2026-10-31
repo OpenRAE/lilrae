@@ -250,7 +250,7 @@ describe('handler error paths return a failure envelope', () => {
   it('reports a nonzero remote command exit as unsuccessful', async () => {
     const context = {
       ...throwingCtx,
-      sshManager: { executeCommand: vi.fn().mockResolvedValue({
+      sshManager: { harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(), executeCommand: vi.fn().mockResolvedValue({
         stdout: 'session could not start', stderr: '', code: 254,
       }) } as any,
     };
@@ -309,6 +309,7 @@ describe('#1319: run_command harvests a timed-out exec session', () => {
       closeChannel = settle;
     });
     const sshManager = {
+      harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(),
       executeCommand: vi.fn(async () => {
         throw new CommandTimeoutError(timeoutEnvelope.error, sessionId, 'run-1319', channelClosed);
       }),
@@ -399,24 +400,21 @@ describe('resolveCaptureContainer (ADR-041 harvest target)', () => {
   it('harvests from capture_container_name when set (sidecar)', () => {
     const labConfig = {
       ...base,
-      containers: {
-        kali: {
-          container_name: 'aptl-kali',
-          capture_container_name: 'aptl-kali-capture',
-        },
-      },
+      containers: { kali: { capture_container_name: 'aptl-kali-capture' } },
     } as any;
     // ADR-041: captures live in the sidecar, not the workload container, so a
     // sudo-capable agent cannot read or tamper with them.
     expect(resolveCaptureContainer(labConfig)).toBe('aptl-kali-capture');
   });
 
-  it('falls back to container_name when capture_container_name is unset', () => {
+  it('names no harvest target when the server declares no capture sidecar (#1242)', () => {
+    // A workload container never owns captures (ADR-041), so a legacy
+    // `container_name` is not a harvest target.
     const labConfig = {
       ...base,
-      containers: { kali: { container_name: 'aptl-kali' } },
+      containers: { kali: { container_name: 'aptl-kali', ssh_user: 'kali' } },
     } as any;
-    expect(resolveCaptureContainer(labConfig)).toBe('aptl-kali');
+    expect(resolveCaptureContainer(labConfig)).toBeUndefined();
   });
 
   it('returns undefined for an API-only target (no containers)', () => {
@@ -430,13 +428,52 @@ describe('resolveCaptureContainer (ADR-041 harvest target)', () => {
   });
 
   it('returns undefined when the configKey container is missing', () => {
-    const labConfig = { ...base, containers: { other: { container_name: 'x' } } } as any;
+    const labConfig = { ...base, containers: { other: { capture_container_name: 'x-capture' } } } as any;
     expect(resolveCaptureContainer(labConfig)).toBeUndefined();
   });
 });
 
+describe('#1242: a declared empty capture binding still reaches the harvester', () => {
+  const handlers = generateToolHandlers({ toolPrefix: 'test', targetName: 'Test', configKey: 'test-container' });
+  const withSidecar = (capture: Record<string, string>) => ({
+    server: { configKey: 'test-container', targetName: 'Test' },
+    lab: { name: 'test-lab', network_subnet: '172.20.0.0/16' },
+    containers: {
+      'test-container': {
+        container_ip: '172.20.0.50', ssh_user: 'testuser', ssh_port: 2022, enabled: true, ...capture,
+      },
+    },
+  }) as any;
+  const sshManager = { harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(), getSessionRunId: vi.fn(() => 'run-1242'), closeSession: vi.fn(async () => true) } as any;
+
+  beforeEach(() => {
+    vi.mocked(harvestSession).mockClear();
+  });
+
+  it('harvests and warns when the declared sidecar name is empty', async () => {
+    // An empty LILRAE_MCP_CAPTURE_CONTAINER resolves the declaration to ''.
+    // The harvester records container-unresolved; the handler must not skip it.
+    vi.mocked(harvestSession).mockResolvedValueOnce(false);
+    const result = await handlers.test_close_session(
+      { session_id: 'sess-1' },
+      { sshManager, labConfig: withSidecar({ capture_container_name: '' }) },
+    );
+    expect(harvestSession).toHaveBeenCalledExactlyOnceWith({ containerName: '', runId: 'run-1242' }, 'sess-1');
+    expect(JSON.parse(result.content[0].text).harvest_warning).toBeDefined();
+  });
+
+  it('does not harvest when the server declares no capture sidecar', async () => {
+    const result = await handlers.test_close_session(
+      { session_id: 'sess-1' },
+      { sshManager, labConfig: withSidecar({}) },
+    );
+    expect(harvestSession).not.toHaveBeenCalled();
+    expect(JSON.parse(result.content[0].text).harvest_warning).toBeUndefined();
+  });
+});
+
 describe('close_session / close_all_sessions harvest behaviour', () => {
-  // OBS-003: when the labConfig has no `containers[configKey].container_name`,
+  // OBS-003: when the labConfig declares no capture sidecar,
   // `resolveCaptureContainer` returns undefined and `maybeHarvest`
   // is a true no-op (returns `true` without invoking docker). This
   // exercises the close handlers' happy path without involving the
@@ -445,7 +482,7 @@ describe('close_session / close_all_sessions harvest behaviour', () => {
   const labConfig = {
     server: { configKey: 'test-container', targetName: 'Test' },
     lab: { name: 'test-lab', network_subnet: '172.20.0.0/16' },
-    // No container_name in containers[configKey] — harvest no-ops.
+    // No capture_container_name in containers[configKey] — harvest no-ops.
     containers: {
       'test-container': {
         container_ip: '172.20.0.50',
@@ -463,6 +500,7 @@ describe('close_session / close_all_sessions harvest behaviour', () => {
       configKey: 'test-container',
     });
     const sshManager = {
+      harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(),
       getSessionRunId: vi.fn(() => undefined),
       closeSession: vi.fn(async () => true),
     } as any;
@@ -483,6 +521,7 @@ describe('close_session / close_all_sessions harvest behaviour', () => {
       configKey: 'test-container',
     });
     const sshManager = {
+      harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(),
       getSessionRunId: vi.fn(() => undefined),
       closeSession: vi.fn(async () => false),
     } as any;
@@ -553,6 +592,7 @@ describe('close_session / close_all_sessions harvest behaviour', () => {
       configKey: 'test-container',
     });
     const sshManager = {
+      harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(),
       listSessions: vi.fn(() => [
         { sessionId: 'sess-a' },
         { sessionId: 'sess-b' },

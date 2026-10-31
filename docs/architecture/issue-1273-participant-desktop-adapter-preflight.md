@@ -117,7 +117,9 @@ coercion; require an actual string, bounded length, and a params mapping before
 merging. Validate overwrite's supported shape and reject unsafe/missing names
 before even the JWT authentication request. A TypeScript interface is not a
 runtime validator. Catch malformed input within the existing MCP error envelope;
-do not echo supplied values or raw validation/HTTP exceptions.
+do not echo supplied values or raw validation/HTTP exceptions. Exception
+(issue #1488): a failed API call also returns the API's own error message in
+`api_error`, redacted and bounded. That message can echo supplied values.
 
 The existing participant narrative/profile and managed-client schemas have no
 rule-default field. Supply defaults as validated tool arguments through the

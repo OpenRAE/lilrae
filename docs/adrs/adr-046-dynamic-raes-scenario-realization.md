@@ -1471,6 +1471,38 @@ extended with APTL mirrors.
   represented/deferred contract) as a condition of the static or live
   validation gate.
 
+## Descendant recording and attestation addendum
+
+Issues #1128 and #1130 add cooperative creation recording on the existing Docker daemon.
+The maintainer selected recording without another authority enforcement policy.
+The host daemon and its configuration remain unchanged.
+Raw Docker authority remains host-root-equivalent.
+The recorder cannot prove complete coverage against a hostile holder that bypasses it.
+
+The deployment provider records native creation responses before returning them to holders.
+Canonical socket delegation preserves the recorded parent chain.
+Immutable creation records supplement `WorkspaceOwnership` and `ResourceReceipt`.
+Recorded native IDs authorize revalidated child observations, deadlines, and cleanup.
+Names, images, topology, and ordinary labels do not authorize adoption.
+Uncertain creation or inspection remains an explicit recording gap.
+
+RAES 8.1.0 owns portable membership admission, materialization archives, and SEM-218 provenance.
+The provisioner submits materialized SDL through the negotiated descendant and materialization contracts.
+It uses the original source, run scope, operation, predecessor, and attempt bindings.
+Later inventory refresh is read-only and uses `RuntimeManager.refresh_inventory()`.
+The final returned snapshot includes accepted later observations.
+The backend never edits the runtime-owned ledger or executable plan.
+
+The [owned descendant design](../architecture/issue-1130-owned-descendant-reporting-design.md) defines the recording boundary, data flows, and recovery behavior.
+Mutable native lifecycle records remain separate from sealed run evidence.
+The public native-evidence handoff retains immutable runtime state cuts and
+original materialization/archive bytes for restricted experiment collectors.
+Native observation and verified cleanup records remain backend-owned evidence.
+They neither grant resource authority nor replace runtime-derived provenance.
+The existing collector source and sealing interfaces retain those original bytes;
+participant-visible or byte-redacting bindings cannot consume the protected handoff.
+ADR-055's independent operator-grant policy remains proposed and outside this delivery.
+
 ## References
 
 - [ADR-025](adr-025-strict-first-party-config-schema.md): strict first-party

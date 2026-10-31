@@ -231,7 +231,7 @@ class TestPlanAccountTargets:
         assert errors == []
         assert len(targets) == 1
 
-    @pytest.mark.parametrize("kind", [provider.SAMBA_AD, provider.THEHIVE])
+    @pytest.mark.parametrize("kind", [provider.SAMBA_AD, provider.SHUFFLE])
     @pytest.mark.parametrize(
         "changed",
         [
@@ -263,7 +263,7 @@ class TestPlanAccountTargets:
         assert result.success is False
         mutate.assert_not_called()
 
-    @pytest.mark.parametrize("kind", [provider.SAMBA_AD, provider.THEHIVE])
+    @pytest.mark.parametrize("kind", [provider.SAMBA_AD, provider.SHUFFLE])
     def test_equivalent_duplicate_credentials_are_accepted(self, kind):
         node = _node(address="scenario.node.ad", account_provider=kind)
         first = replace(
@@ -421,7 +421,7 @@ class TestApplicationAccountFields:
             address="provision.node.console",
             service_name="console",
             container_name="aptl-console",
-            account_provider=provider.THEHIVE,
+            account_provider=provider.SHUFFLE,
         )
         account = DeploymentAccountRealization(
             address="provision.account.console-admin",
@@ -435,7 +435,7 @@ class TestApplicationAccountFields:
     def test_an_enabled_or_default_principal_is_accepted(self, disabled):
         targets, errors = self._plan(disabled=disabled)
         assert errors == []
-        assert targets[0].provider == provider.THEHIVE
+        assert targets[0].provider == provider.SHUFFLE
 
     @pytest.mark.parametrize(
         "fields",

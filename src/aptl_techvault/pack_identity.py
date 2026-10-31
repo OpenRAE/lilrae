@@ -13,12 +13,12 @@ from __future__ import annotations
 #: against, and it takes an adapter release -- not a wider declaration -- to
 #: admit one. Every TechVault surface in this package reads this one pair.
 TECHVAULT_PACK_SET_DIGEST = (
-    "sha256:b23696c91f6313aad7bbc5c0000da26f719d9456e01bd7b81d740de34bcd681e"
+    "sha256:a1abd4a382e048e4f74ce343c1b544626fe0633739dfe473c79f1b5fa3aded2f"
 )
 #: The pack release these bytes belong to. Version and digest form one pair:
 #: a release qualifies content, not a version number that content might later
 #: change under.
-TECHVAULT_PACK_VERSION = "0.1.2"
+TECHVAULT_PACK_VERSION = "6.5.1"
 
 
 __all__ = ("TECHVAULT_PACK_SET_DIGEST", "TECHVAULT_PACK_VERSION")

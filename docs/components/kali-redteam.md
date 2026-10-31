@@ -132,16 +132,59 @@ instructions.
 When a session closes, the red-team MCP server copies that session's capture
 directory from the capture sidecar,
 `/var/log/aptl/captures/<run_id>/sessions/<session_id>/`, into the run's
-`kali-side/<session_id>/` directory on the host. If the copy fails, the server
-writes `capture-harvest-failure.json` there instead. The record names the
-failure, the container, the run and session IDs, the `docker cp` exit code, and
-the time. It does not contain the `docker cp` output.
+`kali-side/<session_id>/` directory on the host. A session closes when the agent
+closes it, when its remote side closes, or when the server shuts down. Lab start
+gives the server the workspace-scoped sidecar name in
+`LILRAE_MCP_CAPTURE_CONTAINER`.
+
+Before the copy, the server runs `broker.py await-session` in the sidecar. This
+check waits until the broker finalizes the session and writes `metadata.json`.
+The server copies the session one time, after the check passes. The server
+shuts down when stdin closes, or when it receives `SIGTERM` or `SIGINT`. At
+shutdown, it runs `broker.py stop-session` for each open session first, so the
+broker records `forced-teardown`. Then it harvests each session.
+
+If the check or the copy fails, the server writes
+`capture-harvest-failure.json` there instead. The record names the failure, the
+container, the run and session IDs, the Docker exit code, and the time. It does
+not contain the Docker output.
 
 | Failure | Cause |
 |---|---|
 | `aptl.capture-harvest.container-missing` | The capture container does not exist. |
 | `aptl.capture-harvest.session-missing` | The container has no directory for the session. |
 | `aptl.capture-harvest.copy-failed` | `docker cp` failed for a different reason, for example the Docker daemon is not reachable. |
+| `aptl.capture-harvest.metadata-missing` | The broker did not finalize the session in its time limit, or the session has no `metadata.json`. The server copies no frames. |
+| `aptl.capture-harvest.finalize-failed` | `broker.py stop-session` or `broker.py await-session` failed for a different reason, for example a run authority mismatch. |
+| `aptl.capture-harvest.container-unresolved` | The server has no valid sidecar name, for example because `LILRAE_MCP_CAPTURE_CONTAINER` is not set. `docker cp` does not run, and the exit code is `null`. |
+
+Only a server that declares a capture sidecar harvests. The red-team server
+declares one. The reverse-engineering server declares none, so it does not
+harvest.
+
+```mermaid
+flowchart LR
+  subgraph host["Host: operator trust boundary"]
+    start["lilrae lab start"]
+    owner[("Workspace ownership record")]
+    mcp["mcp-red server"]
+    runs[("Run evidence: kali-side/session_id")]
+  end
+  subgraph lab["Lab: Docker daemon boundary"]
+    sidecar["Kali capture sidecar"]
+    vol[("Capture volume")]
+  end
+  kali["Kali workload (agent)"]
+  owner -- "workspace ID" --> start
+  start -- "LILRAE_MCP_CAPTURE_CONTAINER" --> mcp
+  kali -- "SSH session" --> sidecar
+  sidecar -- "frames.jsonl, metadata.json" --> vol
+  mcp -- "docker exec broker.py stop-session, await-session (validated name)" --> sidecar
+  mcp -- "docker cp (validated name)" --> vol
+  mcp -- "session files or failure record" --> runs
+```
+
+The Kali workload has no path to the capture volume or the run evidence.
 
 A `kali_run_command` call is harvested the same way, under its exec session
 ID, when the command finishes. When the command times out, the server stops it

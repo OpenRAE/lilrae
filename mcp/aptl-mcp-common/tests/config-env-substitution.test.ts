@@ -1,6 +1,7 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { fileURLToPath } from 'url';
 import { describe, it, expect, vi } from 'vitest';
 import {
   environmentForConfig,
@@ -33,32 +34,42 @@ describe('native Kali capture ingress', () => {
 });
 
 describe('workspace-scoped capture container (#1242)', () => {
-  it('keeps the configured sidecar when unset, stays Kali-only, and rejects non-Docker names', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'aptl-capture-container-'));
-    const path = join(root, 'docker-lab-config.json');
-    const reverse = join(root, 'reverse-lab-config.json');
-    writeFileSync(path, JSON.stringify({
-      server: { configKey: 'kali' }, lab: { name: 'test' },
-      containers: { kali: { capture_container_name: 'aptl-kali-capture', ssh_key: '/key' } },
-    }));
-    writeFileSync(reverse, JSON.stringify({
-      server: { configKey: 'reverse' }, lab: { name: 'test' },
-      containers: { reverse: { container_name: 'aptl-reverse', ssh_key: '/key' } },
-    }));
+  // tests/ -> aptl-mcp-common/ -> mcp/, then each shipped server config.
+  const shipped = (server: string) =>
+    fileURLToPath(new URL(`../../${server}/docker-lab-config.json`, import.meta.url));
+  const SCOPED = 'aptl-w123456789abc-kali-capture';
+
+  it('resolves the red sidecar only from the name lab start binds', async () => {
     try {
+      vi.stubEnv('APTL_MCP_DISABLE_DOTENV', '1');
+      vi.stubEnv('LILRAE_MCP_CAPTURE_CONTAINER', SCOPED);
+      expect(resolveCaptureContainer(await loadLabConfig(shipped('mcp-red')))).toBe(SCOPED);
+      // Without the binding, no fixed name stands in for the sidecar; the
+      // unresolved reference stays visible to the harvest.
       vi.stubEnv('LILRAE_MCP_CAPTURE_CONTAINER', undefined);
-      const config = await loadLabConfig(path);
-      expect(config.containers!.kali.capture_container_name).toBe('aptl-kali-capture');
-      // The Kali sidecar name never redirects another server's harvest.
-      vi.stubEnv('LILRAE_MCP_CAPTURE_CONTAINER', 'aptl-w123456789abc-kali-capture');
-      expect(resolveCaptureContainer(await loadLabConfig(reverse))).toBe('aptl-reverse');
-      for (const invalid of ['--privileged', '-q', 'kali:/etc', 'a b', 'x', '']) {
-        vi.stubEnv('LILRAE_MCP_CAPTURE_CONTAINER', invalid);
-        await expect(loadLabConfig(path)).rejects.toThrow('Invalid capture container name');
-      }
+      expect(resolveCaptureContainer(await loadLabConfig(shipped('mcp-red')))).toBe(
+        '${LILRAE_MCP_CAPTURE_CONTAINER}',
+      );
     } finally {
       vi.unstubAllEnvs();
-      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('gives mcp-reverse no harvest target, even when the Kali sidecar is bound', async () => {
+    try {
+      vi.stubEnv('APTL_MCP_DISABLE_DOTENV', '1');
+      vi.stubEnv('LILRAE_MCP_CAPTURE_CONTAINER', SCOPED);
+      expect(resolveCaptureContainer(await loadLabConfig(shipped('mcp-reverse')))).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('names no fixed workload container in the shipped SSH configs', () => {
+    for (const server of ['mcp-red', 'mcp-reverse']) {
+      const text = readFileSync(shipped(server), 'utf8');
+      expect(text).not.toMatch(/"container_name"/);
+      expect(text).not.toMatch(/container_name": "aptl-/);
     }
   });
 });

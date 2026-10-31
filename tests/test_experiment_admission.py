@@ -66,6 +66,7 @@ from aptl.core.experiment.spec_loading import (
     load_experiment_root,
     load_participant_manifest,
 )
+from aptl.core.experiment.trial_plan_models import CaptureSpecPin
 from aptl.core.runstore import LocalRunStore
 
 CORPUS_ROOT = corpus_family_root(FIXTURES)
@@ -427,6 +428,16 @@ class TestAdmissionResult:
         with pytest.raises(ValueError, match="must carry plan"):
             AdmissionResult(admitted=True)
 
+    def test_plain_constructor_rejects_a_rejected_shape_carrying_pins(self):
+        from raes_contracts.diagnostics import Diagnostic
+
+        d = Diagnostic(
+            code="c", domain="experiment-admission", address="a", message="m"
+        )
+        pins = (CaptureSpecPin("capture-minimal", "1.0.0"),)
+        with pytest.raises(ValueError, match="never carry capture spec pins"):
+            AdmissionResult(admitted=False, diagnostics=(d,), capture_spec_pins=pins)
+
 
 # ---------------------------------------------------------------------------
 # admit_experiment — happy path (a): capability-only task, default policy
@@ -618,7 +629,7 @@ def _condition_allocation_spec_payload_one_infeasible() -> dict:
                     },
                     "cond-infeasible": {
                         "condition_id": "cond-infeasible",
-                        "factor_levels": {"danger": "undeclared"},
+                        "factor_levels": {"danger": "low"},
                         "required_parameters": [
                             {
                                 "name": "totally-undeclared-target",
@@ -633,11 +644,21 @@ def _condition_allocation_spec_payload_one_infeasible() -> dict:
                 "replication_policy": "independent-replications",
             },
         },
+        # raes 9 requires every assigned factor level to be declared.
+        "factors": {
+            "danger": {
+                "name": "danger",
+                "factor_kind": "treatment",
+                "levels": ["high", "low"],
+            }
+        },
     }
 
 
 def _explicit_binding_spec_payload(
-    *, scenario_target: str = "variables.danger_level"
+    *,
+    scenario_target: str = "variables.danger_level",
+    apparatus_target: str = "participant-runtime.action-timeout-seconds",
 ) -> dict:
     return {
         "schema_version": "experiment-authoring-input/v1",
@@ -724,7 +745,7 @@ def _explicit_binding_spec_payload(
                         "component_name": "aptl",
                         "component_version": "0.1.0",
                         "manifest_version": "backend-manifest/v2",
-                        "target_id": "participant-runtime.action-timeout-seconds",
+                        "target_id": apparatus_target,
                     },
                     "value_type": "integer",
                     "value": {"kind": "literal", "value": 90},
@@ -740,11 +761,35 @@ def _explicit_binding_spec_payload(
     }
 
 
-def _explicit_binding_bundle(*, scenario_target: str = "variables.danger_level"):
-    task_payload = _condition_allocation_task_payload()
-    return _Bundle(
-        task_payload=task_payload,
-        spec_payload=_explicit_binding_spec_payload(scenario_target=scenario_target),
+def _explicit_binding_bundle(**targets: str) -> _Bundle:
+    bundle = _Bundle(
+        task_payload=_condition_allocation_task_payload(),
+        spec_payload=_explicit_binding_spec_payload(**targets),
+    )
+    bundle.scenario_bytes = _EXPLICIT_BINDING_SCENARIO_TEXT.encode("utf-8")
+    bundle.artifact_source = MappingArtifactSource(
+        artifacts={
+            "task-condition-admission": _resolved(
+                bundle.task_bytes, "task.json", "application/json"
+            ),
+            "scenario-condition-admission": _resolved(
+                bundle.scenario_bytes,
+                "scenario.sdl.yaml",
+                "application/x-yaml",
+            ),
+        }
+    )
+    return bundle
+
+
+def _admit_explicit_binding_bundle(bundle: _Bundle, run_store) -> AdmissionResult:
+    return admit_experiment(
+        experiment_root=bundle.experiment_root,
+        artifact_source=bundle.artifact_source,
+        run_store=run_store,
+        policy=dataclasses.replace(
+            default_admission_policy(), allow_uncertified_apparatus=True
+        ),
     )
 
 
@@ -797,28 +842,8 @@ class TestAdmitExperimentConditionAllocationAllOrNothing:
         assert store.calls == {}
 
     def test_explicit_bindings_are_validated_before_planning_and_pinned(self, tmp_path):
-        bundle = _explicit_binding_bundle()
-        bundle.scenario_bytes = _EXPLICIT_BINDING_SCENARIO_TEXT.encode("utf-8")
-        bundle.artifact_source = MappingArtifactSource(
-            artifacts={
-                "task-condition-admission": _resolved(
-                    bundle.task_bytes, "task.json", "application/json"
-                ),
-                "scenario-condition-admission": _resolved(
-                    bundle.scenario_bytes,
-                    "scenario.sdl.yaml",
-                    "application/x-yaml",
-                ),
-            }
-        )
-
-        result = admit_experiment(
-            experiment_root=bundle.experiment_root,
-            artifact_source=bundle.artifact_source,
-            run_store=LocalRunStore(tmp_path / "store"),
-            policy=dataclasses.replace(
-                default_admission_policy(), allow_uncertified_apparatus=True
-            ),
+        result = _admit_explicit_binding_bundle(
+            _explicit_binding_bundle(), LocalRunStore(tmp_path / "store")
         )
 
         assert result.admitted is True
@@ -832,34 +857,28 @@ class TestAdmitExperimentConditionAllocationAllOrNothing:
             "apparatus",
         }
 
-    def test_unknown_explicit_target_rejects_without_a_store_write(self, tmp_path):
-        bundle = _explicit_binding_bundle(scenario_target="variables.unknown_target")
-        bundle.scenario_bytes = _EXPLICIT_BINDING_SCENARIO_TEXT.encode("utf-8")
-        bundle.artifact_source = MappingArtifactSource(
-            artifacts={
-                "task-condition-admission": _resolved(
-                    bundle.task_bytes, "task.json", "application/json"
-                ),
-                "scenario-condition-admission": _resolved(
-                    bundle.scenario_bytes,
-                    "scenario.sdl.yaml",
-                    "application/x-yaml",
-                ),
-            }
-        )
+    @pytest.mark.parametrize(
+        "targets",
+        [
+            {"scenario_target": "variables.unknown_target"},
+            # RAES's target owner, not LilRAE, refuses this one (InvalidInputError).
+            {"apparatus_target": "participant-runtime.unknown-target"},
+        ],
+    )
+    def test_unknown_explicit_target_rejects_without_a_store_write(
+        self, tmp_path, targets
+    ):
         store = _SpyRunStore(tmp_path / "store")
 
-        result = admit_experiment(
-            experiment_root=bundle.experiment_root,
-            artifact_source=bundle.artifact_source,
-            run_store=store,
-            policy=dataclasses.replace(
-                default_admission_policy(), allow_uncertified_apparatus=True
-            ),
+        result = _admit_explicit_binding_bundle(
+            _explicit_binding_bundle(**targets), store
         )
 
         assert result.admitted is False
         assert result.plan is None
+        assert [item.code for item in result.diagnostics] == [
+            "aptl.experiment-admission.binding-invalid"
+        ]
         assert store.calls == {}
 
 
@@ -1789,14 +1808,20 @@ def _covering_registration() -> CollectorRegistration:
     )
 
 
-def _capture_bearing_bundle():
-    """Build a capability-only bundle whose spec references the corpus capture spec."""
+def _capture_bearing_bundle(
+    *, spec_version: str = "1.0.0", authored_ref_version: str | None = "1.0.0"
+):
+    """Build a capability-only bundle whose spec references the corpus capture spec.
+
+    ``authored_ref_version=None`` authors the capture-spec reference without a
+    version, so admission resolves the version from the capture spec itself.
+    """
     backend, processor = _synthetic_manifests()
     declared = sorted(backend.supported_contract_versions)[0]
     task_payload = _capability_only_task_payload(declared_capability=declared)
     capture_payload = _read_corpus_capture_spec_payload()
     capture_payload["capture_spec_id"] = "capture-minimal"
-    capture_payload["spec_version"] = "1.0.0"
+    capture_payload["spec_version"] = spec_version
     capture_payload["scope_refs"] = [
         {
             "ref_kind": "task",
@@ -1804,15 +1829,10 @@ def _capture_bearing_bundle():
             "ref_version": task_payload["task_version"],
         }
     ]
-    spec_payload = _flat_spec_payload(
-        capture_spec_refs=[
-            {
-                "ref_kind": "capture-spec",
-                "ref_id": "capture-minimal",
-                "ref_version": "1.0.0",
-            }
-        ]
-    )
+    capture_ref = {"ref_kind": "capture-spec", "ref_id": "capture-minimal"}
+    if authored_ref_version is not None:
+        capture_ref["ref_version"] = authored_ref_version
+    spec_payload = _flat_spec_payload(capture_spec_refs=[capture_ref])
     bundle = _Bundle(
         task_payload=task_payload,
         spec_payload=spec_payload,
@@ -1847,6 +1867,30 @@ class TestAdmitExperimentWithCoveringRegistry:
         assert binding.requirement_id == "network-trace"
         # The binding travelled into the persisted canonical bytes.
         assert b"aptl.collector.network-trace" in result.plan.canonical_bytes
+
+    def test_admission_pins_the_resolved_version_of_an_unversioned_ref(
+        self, tmp_path
+    ):
+        bundle, backend, processor = _capture_bearing_bundle(
+            spec_version="2.3.0", authored_ref_version=None
+        )
+
+        result = admit_experiment(
+            experiment_root=bundle.experiment_root,
+            artifact_source=bundle.artifact_source,
+            run_store=LocalRunStore(tmp_path / "store"),
+            policy=default_admission_policy(),
+            environment=AdmissionEnvironment(
+                backend_manifest=backend,
+                processor_manifest=processor,
+            ),
+            capture_registry=CollectorRegistry((_covering_registration(),)),
+        )
+
+        assert result.admitted is True, [d.code for d in result.diagnostics]
+        assert result.capture_spec_pins == (
+            CaptureSpecPin("capture-minimal", "2.3.0"),
+        )
 
     def test_the_same_registry_missing_the_capability_still_fails_closed(
         self, tmp_path

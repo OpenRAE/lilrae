@@ -385,6 +385,7 @@ class TestDockerComposeBackend:
             tmp_path, "test", "0" * 32, "test"
         )
         backend._docker_daemon_id = "test-daemon"
+        backend._current_docker_daemon_id = lambda: "test-daemon"
         backend._resolve_owned_container_id = lambda selector: selector  # type: ignore[method-assign]
         backend._resolve_owned_network_id = lambda selector: selector  # type: ignore[method-assign]
         backend._verify_compose_namespace_is_owned = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
@@ -1666,7 +1667,7 @@ services:
                     attempt_id="run-a",
                 )
             )
-        networks_present = True
+        networks_present = set(network_names)
 
         def fake_run(cmd, **kwargs):
             nonlocal networks_present
@@ -1675,7 +1676,12 @@ services:
                 return MagicMock(
                     returncode=0,
                     stdout=(
-                        "\n".join(network_names) + "\n" if networks_present else ""
+                        "\n".join(
+                            native_id
+                            for native_id in networks_present
+                            if "--filter" not in cmd
+                            or cmd[cmd.index("--filter") + 1] == f"id={native_id}"
+                        )
                     ),
                     stderr="",
                 )
@@ -1698,7 +1704,7 @@ services:
                     stderr="",
                 )
             if cmd[:3] == ["docker", "network", "rm"]:
-                networks_present = False
+                networks_present.discard(cmd[-1])
             return MagicMock(returncode=0, stdout="", stderr="")
 
         with patch("subprocess.run", side_effect=fake_run) as mock_run:
@@ -3507,7 +3513,12 @@ class TestSeedNamedVolumes:
             nonlocal created
             if cmd[:3] == ["docker", "volume", "inspect"]:
                 if not created:
-                    return MagicMock(returncode=1, stdout="", stderr="missing")
+                    return MagicMock(
+                        returncode=1,
+                        stdout="",
+                        stderr="Error response from daemon: get "
+                        "test_suricata_config_seed: no such volume",
+                    )
                 return MagicMock(
                     returncode=0,
                     stdout=json.dumps(

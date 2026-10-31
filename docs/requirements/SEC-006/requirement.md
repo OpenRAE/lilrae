@@ -6,14 +6,14 @@ type: NON_FUNCTIONAL
 priority: SHOULD
 wave: 3
 created_at: 2026-05-03T01:10:06.093447Z
-updated_at: 2026-05-18T03:43:57.248076Z
+updated_at: 2026-10-31T00:00:00.000000Z
 ---
 
 # SEC-006: Verified TLS for SOC Stack Clients via Lab-Managed CA
 
 ## Statement
 
-All clients of the SOC stack (MISP, TheHive, Cortex, Shuffle), including Python service daemons (for example, aptl-misp-suricata-sync), MCP servers (mcp-threatintel, mcp-casemgmt, mcp-soar, mcp-cortex when delivered via INT-006), and CLI collectors (aptl.core.collectors), shall verify TLS using a lab-managed CA chain. SOC tools shall serve TLS certificates issued by a single lab CA generated at first startup, mirroring INF-005's pattern for Wazuh. Default posture for these clients shall be verification ENABLED, with an explicit per-client override (for example, MISP_VERIFY_SSL=false) reserved for local debugging only. SEC-004's allowance for `rejectUnauthorized: false` covers Wazuh inter-component traffic only and shall not be applied to SOC stack consumers once this requirement is ACTIVE.
+All clients of the SOC stack (MISP, Shuffle), including Python service daemons (for example, aptl-misp-suricata-sync), MCP servers (mcp-threatintel, mcp-soar), and CLI collectors (aptl.core.collectors), shall verify TLS using a lab-managed CA chain. SOC tools shall serve TLS certificates issued by a single lab CA generated at first startup, mirroring INF-005's pattern for Wazuh. Default posture for these clients shall be verification ENABLED, with an explicit per-client override (for example, MISP_VERIFY_SSL=false) reserved for local debugging only. SEC-004's allowance for `rejectUnauthorized: false` covers Wazuh inter-component traffic only and shall not be applied to SOC stack consumers once this requirement is ACTIVE.
 
 ## Rationale
 

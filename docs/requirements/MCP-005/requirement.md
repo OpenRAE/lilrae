@@ -6,14 +6,14 @@ type: FUNCTIONAL
 priority: MUST
 wave: 4
 created_at: 2026-03-20T06:12:06.806135Z
-updated_at: 2026-03-20T06:18:11.649650Z
+updated_at: 2026-10-31T00:00:00.000000Z
 ---
 
 # MCP-005: REST API MCP Servers for SOC Tools
 
 ## Statement
 
-The system shall provide API-based MCP servers for SOC tool integration: mcp-wazuh (SIEM API), mcp-indexer (OpenSearch DSL queries), mcp-network (Suricata via indexer), mcp-threatintel (MISP), mcp-casemgmt (TheHive), mcp-soar (Shuffle). Each shall use the common library's HTTPClient.
+The system shall provide API-based MCP servers for SOC tool integration: mcp-wazuh (SIEM API), mcp-indexer (OpenSearch DSL queries), mcp-network (Suricata via indexer), mcp-threatintel (MISP), mcp-soar (Shuffle). Each shall use the common library's HTTPClient.
 
 ## Rationale
 

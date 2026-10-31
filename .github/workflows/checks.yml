@@ -45,7 +45,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/ci.txt
       - run: pip install --require-hashes -r requirements/ci.txt
@@ -68,7 +68,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/*.txt
       - run: pip install --require-hashes -r requirements/ci.txt
@@ -96,7 +96,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/*.txt
       - run: |
@@ -129,7 +129,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/*.txt
       - run: |
@@ -173,7 +173,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/*.txt
       - run: |
@@ -220,6 +220,24 @@ jobs:
           python -m pytest -q -m integration \
             tests/test_raes_runtime_environment.py::test_docker_reads_the_env_file_back_exactly \
             tests/test_deployment_stateful_realization.py::test_compose_reads_the_generated_env_file_back_exactly
+      # The capture sidecar must open a PTY session with exactly its shipped
+      # capabilities (#1496). Only a real image and sshd can prove that. This
+      # module is integration-marked, so the run above deselects it. The probes
+      # stop the step if Docker or an SSH client tool is missing, so the tests
+      # cannot pass by a skip.
+      - name: Kali capture sidecar sessions through Docker
+        run: |
+          docker info > /dev/null
+          command -v ssh ssh-keygen
+          python -m pytest -q -m integration tests/test_kali_capture_compose.py
+      # Mixed realization starts a materialized base container and a generated
+      # Compose service together. Only a real Docker daemon can prove that. The
+      # module is integration-marked, so the runs above deselect it. The probe
+      # stops the step if Docker is missing, so the test cannot pass by a skip.
+      - name: Mixed base-container and Compose realization through Docker
+        run: |
+          docker info > /dev/null
+          python -m pytest -q -m integration tests/test_mixed_realization_integration.py
       - name: Linux CLI and init smoke
         run: |
           lilrae --help
@@ -246,7 +264,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/ci.txt
       - run: |
@@ -289,7 +307,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/*.txt
       - name: Install the hash-verified test and build toolchain
@@ -297,6 +315,13 @@ jobs:
       - name: Prove core-only and separately installed verifier wheels
         run: >-
           python -m pytest tests/test_scenario_verification_artifacts.py tests/test_lab_core_only_artifact.py -q
+          -m integration
+      # Independent family adapter wheels run outside the source tree on the
+      # released RAES tuple (#1465). The modules are integration-marked, so the
+      # ordinary runs deselect them.
+      - name: Prove installed family adapters on the released RAES tuple
+        run: >-
+          python -m pytest tests/test_family_adapter_contract.py tests/test_structural_factorial_family.py -q
           -m integration
 
   pack-identity-compatibility:
@@ -321,7 +346,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/*.txt
       - run: |
@@ -379,7 +404,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/*.txt
       - run: |
@@ -417,7 +442,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/*.txt
       - run: |
@@ -468,7 +493,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/*.txt
       - run: |
@@ -495,7 +520,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/*.txt
       - name: Build the wheel with the locked, no-isolation toolchain
@@ -689,7 +714,7 @@ jobs:
           done
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/*.txt
       - name: Restricted SSH transport against built MCP processes
@@ -702,6 +727,14 @@ jobs:
           pip install -e . --no-deps --no-build-isolation
           coverage run --data-file=.coverage.transport -m pytest tests/test_mcp_transport_processes.py tests/test_mcp_payload_processes.py -q -m integration
           coverage xml --data-file=.coverage.transport -o coverage/transport.xml
+      - name: Extracted MCP shutdown through the real capture sidecar
+        # The installed red MCP, SSH broker and Docker harvest must agree on
+        # the complete session census. Include real writer/container failures.
+        # Prerequisite failures must fail this required lane, never skip it.
+        run: |
+          docker info > /dev/null
+          command -v node ssh ssh-keygen
+          python -m pytest tests/test_mcp_capture_lifecycle.py -q -m integration
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-transport-coverage
@@ -734,6 +767,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: web/caddy-build/go.mod
+          cache-dependency-path: web/caddy-build/go.sum
+      - name: Verify Caddy security backport and configuration
+        working-directory: web/caddy-build
+        run: |
+          go test -v .
+          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/caddy" .
+          "$RUNNER_TEMP/caddy" validate --config ../Caddyfile --adapter caddyfile
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: '22.23.4'
@@ -769,7 +812,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/*.txt
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
@@ -1255,7 +1298,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/dev.txt
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6

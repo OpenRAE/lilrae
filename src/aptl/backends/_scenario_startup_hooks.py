@@ -25,7 +25,6 @@ class StartupHook(str, Enum):
     """Fixed lifecycle hook slots an admitted adapter may implement."""
 
     STACK_ENVIRONMENT = "stack_environment"
-    BEFORE_BACKEND_RETRY = "before_backend_retry"
     RESET = "reset"
 
 

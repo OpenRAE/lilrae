@@ -9,7 +9,7 @@ import logging
 import threading
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import ANY, MagicMock, call, patch
+from unittest.mock import MagicMock, call, patch
 from uuid import uuid4
 
 import pytest
@@ -27,7 +27,6 @@ def _raes_outcome(
     success: bool,
     error: str = "",
     selected_profiles: tuple[str, ...] = (),
-    retryable: bool = False,
 ):
     """Build the concrete outcome returned by the RAES backend handoff."""
     from raes_contracts.runtime_state import RuntimeSnapshot
@@ -45,7 +44,6 @@ def _raes_outcome(
         realization_details={},
         selected_profiles=list(selected_profiles),
         scenario_path=None,
-        retryable=retryable,
     )
 
 
@@ -182,14 +180,8 @@ def _admitted_start_fixture(bundle_root: Path):
     )
 
 
-def _raes_start_after_backend_retry(
-    *_args,
-    before_backend_retry=None,
-    **_kwargs,
-):
-    """Model the backend invoking the lifecycle callback between apply attempts."""
-    assert before_backend_retry is not None
-    before_backend_retry()
+def _raes_start_success(*_args, **_kwargs):
+    """Model one successful RAES start; a failed apply is never retried."""
     return _raes_outcome(
         success=True,
         selected_profiles=("soc", "wazuh", "victim", "kali"),
@@ -2143,7 +2135,7 @@ class TestOrchestrateLabStart:
         """A .env.example placeholder secret must stop the start fail-closed.
 
         Hydration only repairs the vars it owns generators for; a sensitive
-        var outside `_HYDRATED_ENV_SPECS` (THEHIVE_SECRET) keeps its copied
+        var outside `_HYDRATED_ENV_SPECS` (SHUFFLE_API_KEY) keeps its copied
         .env.example placeholder, and booting with it would bring the SOC
         stack up with admin credentials anyone can read in the repo. If
         `_validate_env_secrets` were unwired from `_step_load_env`, only
@@ -2154,13 +2146,13 @@ class TestOrchestrateLabStart:
         mocks = self._patch_all_steps(mocker, tmp_path)
         env_file = tmp_path / ".env"
         env_file.write_text(
-            env_file.read_text() + "THEHIVE_SECRET=CHANGE_ME_thehive_secret\n"
+            env_file.read_text() + "SHUFFLE_API_KEY=CHANGE_ME_shuffle_api_key\n"
         )
 
         result = orchestrate_lab_start(tmp_path)
 
         assert result.success is False
-        assert "THEHIVE_SECRET" in result.error
+        assert "SHUFFLE_API_KEY" in result.error
         mocks["start"].assert_not_called()
 
     def test_stops_on_env_loading_failure(self, mocker, tmp_path):
@@ -3607,10 +3599,10 @@ class TestResolveHostPortsStep:
 
         resolution = [
             ResolvedPort(
-                service="cortex",
-                env_var="APTL_HP_CORTEX_9001",
-                default_port=9001,
-                resolved_port=9001,
+                service="misp",
+                env_var="APTL_HP_MISP_443",
+                default_port=8443,
+                resolved_port=8443,
                 protos=("tcp",),
                 host_ip="127.0.0.1",
                 remapped=False,
@@ -4834,7 +4826,7 @@ class TestStartupClassificationWiring:
         ctx = self._ctx(tmp_path)
         mocker.patch(
             "aptl.core.lab._sync_mcp_config_keys",
-            side_effect=RuntimeError("THEHIVE_API_KEY mismatch"),
+            side_effect=RuntimeError("MISP_API_KEY mismatch"),
         )
 
         result = _step_sync_mcp_config(ctx)
@@ -4847,7 +4839,7 @@ class TestStartupClassificationWiring:
         assert diag.severity is DiagnosticSeverity.WARNING
         # Exception text contains a sensitive-looking key name —
         # diagnostic message must not echo the raw exception payload.
-        assert "THEHIVE_API_KEY" not in diag.message
+        assert "MISP_API_KEY" not in diag.message
 
     def test_mcp_config_sync_clean_emits_no_diagnostic(self, tmp_path, mocker):
         from aptl.core.lab import _step_sync_mcp_config
@@ -5020,7 +5012,7 @@ class TestLabOrchestrationContracts:
             seed_script="scripts/seed-prime.sh",
             required_profiles=(),
             activation_profiles=(),
-            startup_hooks=frozenset({StartupHook.BEFORE_BACKEND_RETRY}),
+            startup_hooks=frozenset(),
         )
         bundle = project_tree_bundle(tmp_path, tmp_path / "fixture.sdl.yaml")
         provider_selection = ScenarioStartupSelection(
@@ -5189,39 +5181,9 @@ class TestLabOrchestrationContracts:
             scenario_path=None,
             admitted=ctx.admitted_start,
             run_target=AcesRunTarget(run_store=ctx.run_store, run_id=ctx.run_id),
-            before_backend_retry=ANY,
         )
         assert ctx.run_store is not None
         assert ctx.run_id
-
-    # -- SOC retry gate reads the attempt's own selected profiles -----
-
-    def test_start_containers_allows_plan_selected_soc_retry_when_config_flag_off(
-        self, mocker, tmp_path
-    ):
-        """An admitted SOC plan can recover even when the config flag is off.
-
-        The backend owns the retry gate because only it has the admitted
-        plan's selected profiles. The mocked handoff models that backend
-        invoking the callback between apply attempts (issue #550).
-        """
-        from aptl.core.lab import _step_start_containers
-
-        ctx = self._ctx(tmp_path)
-        ctx.config = self._full_config(soc=False)
-        ctx.backend = MagicMock()
-        start_raes = mocker.patch(
-            "aptl.core.lab.start_raes_scenario",
-            side_effect=_raes_start_after_backend_retry,
-        )
-        sleep = mocker.patch("time.sleep")
-
-        result = _step_start_containers(ctx)
-
-        assert result is None
-        start_raes.assert_called_once()
-        assert start_raes.call_args.kwargs["before_backend_retry"] is not None
-        sleep.assert_called_once_with(60)
 
     def test_start_containers_reuses_profiles_from_raes_outcome(self, mocker, tmp_path):
         from raes_contracts.runtime_state import RuntimeSnapshot
@@ -5251,7 +5213,7 @@ class TestLabOrchestrationContracts:
         assert ctx.selected_profiles == {"wazuh", "otel"}
         replan.assert_not_called()
 
-    def test_start_containers_does_not_retry_nonretryable_raes_failure(
+    def test_start_containers_ends_on_a_failed_raes_start(
         self, mocker, tmp_path
     ):
         from raes_contracts.runtime_state import RuntimeSnapshot
@@ -5271,7 +5233,6 @@ class TestLabOrchestrationContracts:
             realization_details={},
             selected_profiles=[],
             scenario_path=None,
-            retryable=False,
         )
         start_raes = mocker.patch(
             "aptl.core.lab.start_raes_scenario", return_value=outcome
@@ -5285,27 +5246,7 @@ class TestLabOrchestrationContracts:
         start_raes.assert_called_once()
         sleep.assert_not_called()
 
-    def test_start_containers_retries_retryable_backend_start_failure(
-        self, mocker, tmp_path
-    ):
-        from aptl.core.lab import _step_start_containers
-
-        ctx = self._ctx(tmp_path)
-        ctx.config = self._full_config(soc=True)
-        ctx.backend = MagicMock()
-        start_raes = mocker.patch(
-            "aptl.core.lab.start_raes_scenario",
-            side_effect=_raes_start_after_backend_retry,
-        )
-        sleep = mocker.patch("time.sleep")
-
-        result = _step_start_containers(ctx)
-
-        assert result is None
-        start_raes.assert_called_once()
-        sleep.assert_called_once_with(60)
-
-    def test_start_containers_preserves_scenario_path_on_soc_retry(
+    def test_start_containers_preserves_scenario_path(
         self, mocker, tmp_path
     ):
         from aptl.core.lab import _step_start_containers
@@ -5317,7 +5258,7 @@ class TestLabOrchestrationContracts:
         ctx.scenario_path = selected
         start_raes = mocker.patch(
             "aptl.core.lab.start_raes_scenario",
-            side_effect=_raes_start_after_backend_retry,
+            side_effect=_raes_start_success,
         )
         mocker.patch("time.sleep")
 
@@ -5327,373 +5268,6 @@ class TestLabOrchestrationContracts:
         assert [call.kwargs["scenario_path"] for call in start_raes.call_args_list] == [
             selected,
         ]
-
-    def test_start_containers_restarts_wazuh_manager_when_stuck_between_attempts(
-        self, mocker, tmp_path
-    ):
-        """When the first compose up fails and the SOC retry path fires,
-        aptl inspects wazuh-manager. On Colima/macOS it can be Up but
-        with zero wazuh-* daemons alive (#732). One `docker restart`
-        clears the state; do it once, before the retry, so compose is
-        not asked to `up` against a broken container."""
-        from aptl.core.lab import _step_start_containers
-
-        ctx = self._ctx(tmp_path)
-        ctx.config = self._full_config(soc=True)
-        backend = MagicMock()
-        backend.container_inspect.return_value = {
-            "State": {"Status": "running"},
-        }
-        # Stub the /proc walk that counts wazuh-* daemons — 0 alive.
-        backend.container_exec.return_value = MagicMock(returncode=0, stdout="0\n")
-        ctx.backend = backend
-
-        start_raes = mocker.patch(
-            "aptl.core.lab.start_raes_scenario",
-            side_effect=_raes_start_after_backend_retry,
-        )
-        mocker.patch("time.sleep")
-
-        result = _step_start_containers(ctx)
-
-        assert result is None
-        start_raes.assert_called_once()
-        backend.container_restart.assert_called_once_with("aptl-wazuh-manager")
-
-    def test_start_containers_skips_restart_when_wazuh_daemons_alive(
-        self, mocker, tmp_path
-    ):
-        """Daemons alive inside the container: the retry is likely
-        succeeding for a different reason; do NOT restart wazuh-manager."""
-        from aptl.core.lab import _step_start_containers
-
-        ctx = self._ctx(tmp_path)
-        ctx.config = self._full_config(soc=True)
-        backend = MagicMock()
-        backend.container_inspect.return_value = {
-            "State": {"Status": "running"},
-        }
-        # 9 wazuh-* processes alive => watchdog stays quiet.
-        backend.container_exec.return_value = MagicMock(returncode=0, stdout="9\n")
-        ctx.backend = backend
-
-        start_raes = mocker.patch(
-            "aptl.core.lab.start_raes_scenario",
-            side_effect=_raes_start_after_backend_retry,
-        )
-        mocker.patch("time.sleep")
-
-        _step_start_containers(ctx)
-
-        start_raes.assert_called_once()
-        backend.container_restart.assert_not_called()
-
-    def test_start_containers_repairs_missing_wazuh_api_in_place(
-        self, mocker, tmp_path, caplog
-    ):
-        """A partial manager failure gets one API start before the sole retry.
-
-        Other Wazuh daemons and the existing container stay running, so a
-        container restart or volume reset would discard useful live state.
-        """
-        from aptl.core.lab import _step_start_containers
-
-        ctx = self._ctx(tmp_path)
-        ctx.config = self._full_config(soc=True)
-        backend = MagicMock()
-        backend.container_inspect.return_value = {
-            "State": {"Status": "running", "OOMKilled": False},
-            "RestartCount": 2,
-        }
-        backend.container_exec.side_effect = [
-            MagicMock(returncode=0, stdout="8\n"),
-            MagicMock(
-                returncode=1,
-                stdout=(
-                    "wazuh-analysisd is running...\n"
-                    "wazuh-maild not running...\n"
-                    "wazuh-apid not running...\n"
-                ),
-            ),
-            MagicMock(returncode=0, stdout="5000\n"),
-            MagicMock(
-                returncode=0,
-                stdout=(
-                    "RBAC database integrity check finished successfully\n"
-                    "ERROR: password=do-not-log-this\n"
-                    "PermissionError: password=do-not-log-this\n"
-                ),
-            ),
-            MagicMock(returncode=0, stdout="oom 1\noom_kill 0\n"),
-            MagicMock(returncode=0, stdout="Completed.\n"),
-        ]
-        ctx.backend = backend
-        start_raes = mocker.patch(
-            "aptl.core.lab.start_raes_scenario",
-            side_effect=_raes_start_after_backend_retry,
-        )
-        mocker.patch("time.sleep")
-
-        with caplog.at_level("WARNING", logger="aptl"):
-            assert _step_start_containers(ctx) is None
-
-        start_raes.assert_called_once()
-        assert [call.args[1] for call in backend.container_exec.call_args_list[2:6]] == [
-            ["stat", "-c", "%s", "/var/ossec/logs/api.log"],
-            ["tail", "-c", "4096", "/var/ossec/logs/api.log"],
-            ["head", "-c", "512", "/sys/fs/cgroup/memory.events"],
-            ["/var/ossec/bin/wazuh-control", "start"],
-        ]
-        assert "'api_phase': 'rbac_complete'" in caplog.text
-        assert "'cgroup_oom': 1" in caplog.text
-        assert "'api_log_offset': 904" in caplog.text
-        assert "'exception_class': 'PermissionError'" in caplog.text
-        assert "'unclassified_fatal': True" in caplog.text
-        assert "do-not-log-this" not in caplog.text
-        assert "password=" not in caplog.text
-        assert backend.container_exec.call_args_list[-1] == call(
-            "aptl-wazuh-manager",
-            ["/var/ossec/bin/wazuh-control", "start"],
-            timeout=30,
-        )
-        backend.container_restart.assert_not_called()
-        backend.compose_down.assert_not_called()
-        backend.volume_remove.assert_not_called()
-
-    def test_start_containers_reports_failed_api_repair_without_exec_output(
-        self, mocker, tmp_path, caplog
-    ):
-        """A failed start remains subject to readiness and leaks no exec text."""
-        from aptl.core.lab import _step_start_containers
-
-        ctx = self._ctx(tmp_path)
-        ctx.config = self._full_config(soc=True)
-        backend = MagicMock()
-        backend.container_inspect.return_value = {"State": {"Status": "running"}}
-        backend.container_exec.side_effect = [
-            MagicMock(returncode=0, stdout="8\n"),
-            MagicMock(returncode=1, stdout="wazuh-apid not running...\n"),
-            OSError("sensitive diagnostic failure"),
-            OSError("sensitive diagnostic failure"),
-            OSError("sensitive diagnostic failure"),
-            MagicMock(returncode=1, stdout="sensitive-output", stderr="sensitive-error"),
-        ]
-        ctx.backend = backend
-        mocker.patch(
-            "aptl.core.lab.start_raes_scenario",
-            side_effect=_raes_start_after_backend_retry,
-        )
-        mocker.patch("time.sleep")
-
-        with caplog.at_level("WARNING", logger="aptl"):
-            assert _step_start_containers(ctx) is None
-
-        assert "Wazuh manager API recovery failed" in caplog.text
-        assert "sensitive-output" not in caplog.text
-        assert "sensitive-error" not in caplog.text
-        assert "sensitive diagnostic failure" not in caplog.text
-        assert "'api_phase': 'unknown'" in caplog.text
-        backend.container_restart.assert_not_called()
-
-    def test_start_containers_does_not_restart_on_empty_daemon_probe(
-        self, mocker, tmp_path
-    ):
-        """An empty read is unknown process state, not proof of zero daemons."""
-        from aptl.core.lab import _step_start_containers
-
-        ctx = self._ctx(tmp_path)
-        ctx.config = self._full_config(soc=True)
-        backend = MagicMock()
-        backend.container_inspect.return_value = {"State": {"Status": "running"}}
-        backend.container_exec.return_value = MagicMock(returncode=0, stdout="")
-        ctx.backend = backend
-        mocker.patch(
-            "aptl.core.lab.start_raes_scenario",
-            side_effect=_raes_start_after_backend_retry,
-        )
-        mocker.patch("time.sleep")
-
-        assert _step_start_containers(ctx) is None
-
-        backend.container_restart.assert_not_called()
-        assert backend.container_exec.call_count == 1
-
-    @pytest.mark.parametrize(
-        ("status_code", "status_text"),
-        [
-            (0, "wazuh-apid is running...\n"),
-            (0, "wazuh-apid not running...\n"),
-            (1, "wazuh-maild not running...\nwazuh-apid is running...\n"),
-            (
-                1,
-                "wazuh-apid not running...\nwazuh-apid is running...\n",
-            ),
-            (1, " wazuh-apid not running...\n"),
-            (1, "wazuh-apid not running... \n"),
-            (0, "unrecognized API state\n"),
-            (2, "wazuh-apid not running...\n"),
-        ],
-    )
-    def test_start_containers_does_not_guess_api_repair(
-        self, mocker, tmp_path, status_code, status_text
-    ):
-        """Only an exact, noncontradictory API status authorizes repair."""
-        from aptl.core.lab import _step_start_containers
-
-        ctx = self._ctx(tmp_path)
-        ctx.config = self._full_config(soc=True)
-        backend = MagicMock()
-        backend.container_inspect.return_value = {"State": {"Status": "running"}}
-        backend.container_exec.side_effect = [
-            MagicMock(returncode=0, stdout="8\n"),
-            MagicMock(returncode=status_code, stdout=status_text),
-        ]
-        ctx.backend = backend
-        mocker.patch(
-            "aptl.core.lab.start_raes_scenario",
-            side_effect=_raes_start_after_backend_retry,
-        )
-        mocker.patch("time.sleep")
-
-        assert _step_start_containers(ctx) is None
-
-        assert backend.container_exec.call_count == 2
-        backend.container_restart.assert_not_called()
-
-    def test_start_containers_skips_restart_when_wazuh_manager_not_running(
-        self, mocker, tmp_path
-    ):
-        """State.Status != 'running' means the container is gone / dead /
-        being recreated by compose itself — restarting would race
-        compose. Skip."""
-        from aptl.core.lab import _step_start_containers
-
-        ctx = self._ctx(tmp_path)
-        ctx.config = self._full_config(soc=True)
-        backend = MagicMock()
-        backend.container_inspect.return_value = {
-            "State": {"Status": "exited"},
-        }
-        ctx.backend = backend
-
-        start_raes = mocker.patch(
-            "aptl.core.lab.start_raes_scenario",
-            side_effect=_raes_start_after_backend_retry,
-        )
-        mocker.patch("time.sleep")
-
-        _step_start_containers(ctx)
-
-        start_raes.assert_called_once()
-        backend.container_restart.assert_not_called()
-        backend.container_exec.assert_not_called()
-
-    def test_start_containers_watchdog_swallows_probe_exceptions(
-        self, mocker, tmp_path, caplog
-    ):
-        """The watchdog is best-effort: exceptions from container_inspect
-        or container_exec must not abort the retry. Also covers the
-        `int()` ValueError branch when the /proc walk emits garbage."""
-        from aptl.core.lab import _step_start_containers
-
-        ctx = self._ctx(tmp_path)
-        ctx.config = self._full_config(soc=True)
-        backend = MagicMock()
-        backend.container_inspect.side_effect = RuntimeError("boom")
-        ctx.backend = backend
-
-        start_raes = mocker.patch(
-            "aptl.core.lab.start_raes_scenario",
-            side_effect=_raes_start_after_backend_retry,
-        )
-        mocker.patch("time.sleep")
-
-        # Should complete without raising; retry still runs.
-        result = _step_start_containers(ctx)
-        assert result is None
-        start_raes.assert_called_once()
-        backend.container_restart.assert_not_called()
-        assert "Wazuh manager retry preparation failed (RuntimeError)" in caplog.text
-        assert "boom" not in caplog.text
-
-    def test_start_containers_watchdog_swallows_exec_failures(self, mocker, tmp_path):
-        """A nonzero exec probe (or non-int stdout) blocks the restart —
-        we do not know the process state, so refuse to restart rather
-        than guess wrong."""
-        from aptl.core.lab import _step_start_containers
-
-        ctx = self._ctx(tmp_path)
-        ctx.config = self._full_config(soc=True)
-        backend = MagicMock()
-        backend.container_inspect.return_value = {"State": {"Status": "running"}}
-        backend.container_exec.return_value = MagicMock(
-            returncode=1, stdout="", stderr="probe failed"
-        )
-        ctx.backend = backend
-
-        start_raes = mocker.patch(
-            "aptl.core.lab.start_raes_scenario",
-            side_effect=_raes_start_after_backend_retry,
-        )
-        mocker.patch("time.sleep")
-
-        _step_start_containers(ctx)
-        start_raes.assert_called_once()
-        backend.container_restart.assert_not_called()
-
-    def test_start_containers_watchdog_swallows_restart_failure(self, mocker, tmp_path):
-        """`container_restart` raising is logged and swallowed — the
-        retry proceeds regardless."""
-        from aptl.core.lab import _step_start_containers
-
-        ctx = self._ctx(tmp_path)
-        ctx.config = self._full_config(soc=True)
-        backend = MagicMock()
-        backend.container_inspect.return_value = {"State": {"Status": "running"}}
-        backend.container_exec.return_value = MagicMock(returncode=0, stdout="0\n")
-        backend.container_restart.side_effect = RuntimeError("daemon down")
-        ctx.backend = backend
-
-        start_raes = mocker.patch(
-            "aptl.core.lab.start_raes_scenario",
-            side_effect=_raes_start_after_backend_retry,
-        )
-        mocker.patch("time.sleep")
-
-        result = _step_start_containers(ctx)
-        assert result is None
-        start_raes.assert_called_once()
-        # We tried, we failed, we did not raise.
-        backend.container_restart.assert_called_once_with("aptl-wazuh-manager")
-
-    def test_start_containers_watchdog_handles_non_numeric_daemon_count(
-        self, mocker, tmp_path
-    ):
-        """If /proc walk returns non-numeric output (e.g. a sh error line),
-        the ValueError branch keeps the retry going with no restart."""
-        from aptl.core.lab import _step_start_containers
-
-        ctx = self._ctx(tmp_path)
-        ctx.config = self._full_config(soc=True)
-        backend = MagicMock()
-        backend.container_inspect.return_value = {"State": {"Status": "running"}}
-        backend.container_exec.return_value = MagicMock(
-            returncode=0, stdout="not-a-number\n"
-        )
-        ctx.backend = backend
-
-        start_raes = mocker.patch(
-            "aptl.core.lab.start_raes_scenario",
-            side_effect=_raes_start_after_backend_retry,
-        )
-        mocker.patch("time.sleep")
-
-        _step_start_containers(ctx)
-        # Without this the test cannot tell "retry ran and the ValueError
-        # branch handled it" from "retry never fired", which is exactly what
-        # a bare LabResult side_effect would silently cause (issue #550).
-        start_raes.assert_called_once()
-        backend.container_restart.assert_not_called()
 
     def test_start_containers_hints_for_stale_realization_networks(
         self, mocker, tmp_path
@@ -5731,8 +5305,8 @@ class TestLabOrchestrationContracts:
         unowned_error = (
             "RAES runtime handoff failed: aptl.provisioner.backend-start-failed "
             "at runtime.apply.provisioning: service materialization failed for "
-            "provision.content.cortex-job-index-schema (reason=unowned-collision): "
-            "search index cortex_6 in container aptl-thehive-es lacks this "
+            "provision.content.example-index-schema (reason=unowned-collision): "
+            "search index example_index in container aptl-search lacks this "
             "content's ownership marker, so APTL cannot prove it owns the "
             "index, and it did not adopt, delete or overwrite it."
         )
@@ -6172,10 +5746,49 @@ class TestGenerateSocCertsStep:
             "aptl.core.lab.ensure_soc_certs",
             return_value=CertResult(success=True, generated=True, certs_dir=tmp_path),
         )
+        stage = mocker.patch("aptl.core.lab.stage_misp_server_tls", return_value=None)
         ctx = self._ctx(tmp_path, soc=True)
         result = _step_generate_soc_certs(ctx)
         assert result is None
         spy.assert_called_once_with(tmp_path)
+        stage.assert_called_once_with(tmp_path)
+
+    def test_stages_the_misp_leaf_for_the_root_compose_web_tier(self, tmp_path):
+        """The root Compose misp-web (uid 101) reads a staged copy (#1407).
+
+        The SOC CA key stays owner-only; only the copy under the owner-only
+        staging root is readable across the bind mount.
+        """
+        from aptl.core.lab import _step_generate_soc_certs
+
+        assert _step_generate_soc_certs(self._ctx(tmp_path, soc=True)) is None
+
+        staged = tmp_path / ".aptl/realization/misp-server-tls"
+        source = tmp_path / "config/soc_certs/misp"
+        assert (staged / "key.pem").read_bytes() == (source / "server.key").read_bytes()
+        assert (staged / "cert.pem").read_bytes() == (source / "server.pem").read_bytes()
+        assert (staged / "key.pem").stat().st_mode & 0o777 == 0o644
+        assert staged.stat().st_mode & 0o777 == 0o700
+        assert (source / "server.key").stat().st_mode & 0o777 == 0o600
+
+    def test_fails_when_the_misp_leaf_cannot_be_staged(self, tmp_path, mocker):
+        from aptl.core.lab import _step_generate_soc_certs
+        from aptl.core.soc_ca import CertResult
+
+        mocker.patch(
+            "aptl.core.lab.ensure_soc_certs",
+            return_value=CertResult(success=True, generated=True, certs_dir=tmp_path),
+        )
+        mocker.patch(
+            "aptl.core.lab.stage_misp_server_tls",
+            return_value="MISP server TLS staging failed.",
+        )
+
+        result = _step_generate_soc_certs(self._ctx(tmp_path, soc=True))
+
+        assert result is not None
+        assert result.success is False
+        assert result.error == "MISP server TLS staging failed."
 
     def test_returns_failed_labresult_on_cert_generation_failure(
         self, tmp_path, mocker
@@ -6336,3 +5949,28 @@ class TestSuricataSeederImagePin:
         assert compose["services"]["suricata"]["image"] == SURICATA_IMAGE, (
             "SURICATA_IMAGE drifted from the suricata service image"
         )
+
+
+def test_a_failed_apply_still_closes_the_run_runtime(tmp_path):
+    """A failed start owns a runtime too, and the start must close it (#1407)."""
+    from dataclasses import replace
+
+    from aptl.core.lab import (
+        _close_run_runtime,
+        _interpret_start_outcome,
+        _LabStartContext,
+    )
+
+    runtime = MagicMock()
+    outcome = replace(
+        _raes_outcome(success=False, error="apply failed"), runtime_manager=runtime
+    )
+    ctx = _LabStartContext(project_dir=tmp_path, skip_seed=False)
+
+    result = _interpret_start_outcome(ctx, outcome)
+    _close_run_runtime(ctx)
+
+    assert result is not None
+    assert not result.success
+    assert ctx.raes_outcome is None
+    runtime.close.assert_called_once_with()

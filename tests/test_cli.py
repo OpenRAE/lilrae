@@ -918,6 +918,30 @@ class TestLabStartCommand:
         assert result.exit_code == 2
         assert "mutually exclusive" in result.stderr
 
+    def test_start_without_project_config_says_so_not_unknown_scenario(
+        self, runner, mocker, tmp_path
+    ):
+        """A scenario id where no aptl.json exists names the missing project."""
+        from aptl.cli.main import app
+
+        orchestrate = mocker.patch("aptl.cli.lab.orchestrate_lab_start")
+        result = runner.invoke(
+            app,
+            [
+                "lab",
+                "start",
+                "--project-dir",
+                str(tmp_path),
+                "--scenario",
+                "techvault-purpleteam",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "No aptl.json was found in" in result.stderr
+        assert "Unknown scenario id" not in result.stderr
+        orchestrate.assert_not_called()
+
     def test_start_clean_calls_clean_boot_lab(self, runner, mocker, tmp_path):
         """--clean routes through clean_boot_lab, not the plain start path."""
         from aptl.cli.main import app

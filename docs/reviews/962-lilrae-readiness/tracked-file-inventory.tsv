@@ -1,4 +1,5 @@
 path	proposed_owner	migration_rule
+docs/architecture/issue-1447-runtime-owner-handoff.md	architecture-history	Preserve issue 1447 runtime ownership handoff design
 .claude/hooks/protect_files.sh	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 .claude/settings.json	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
 .claude/skills/gh-workflow-monitor/SKILL.md	repository-metadata	Inspect identity/content owner during #934; no runtime capability implied
@@ -116,6 +117,7 @@ config/suricata/rules/misp/misp-sha1.list	split-pack-delivery	Inventory exact co
 config/suricata/rules/misp/misp-sha256.list	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 config/suricata/suricata.yaml	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 config/thehive/application.conf	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
+config/misp/zz-lilrae-loopback.conf	backend-substrate	Root Compose copy of the MISP FastCGI loopback override; retain with deployment authority
 config/wazuh-certs-tool.sh	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 config/wazuh_cluster/etc/lists/active-response-whitelist	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
 config/wazuh_cluster/filebeat_wazuh_module.yml	split-pack-delivery	Inventory exact content owner; retain reusable delivery/evidence tools, retire static duplication after parity
@@ -599,6 +601,7 @@ mcp/aptl-mcp-common/src/ssh-session.ts	scenario-integration-mcp	TechVault-select
 mcp/aptl-mcp-common/src/ssh.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/aptl-mcp-common/src/telemetry-export.ts	core-candidate	Migrate only after public-import, history and scenario-independence verification
 mcp/aptl-mcp-common/src/telemetry.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
+mcp/aptl-mcp-common/src/tool-output-cap.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/aptl-mcp-common/src/tools/api-definitions.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/aptl-mcp-common/src/tools/api-handlers.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/aptl-mcp-common/src/tools/definitions.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
@@ -613,6 +616,7 @@ mcp/aptl-mcp-common/tests/endpoint-url.test.ts	tests-follow-owner	Retain meaning
 mcp/aptl-mcp-common/tests/http-brotli-runtime.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/http-ca.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/http-endpoint-security.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+mcp/aptl-mcp-common/tests/http-failures.test.ts	tests-follow-owner	Retain the HTTP failure classification tests with the MCP transport
 mcp/aptl-mcp-common/tests/http-insecure.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/http.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/redaction.parity.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
@@ -626,6 +630,7 @@ mcp/aptl-mcp-common/tests/ssh.test.ts	tests-follow-owner	Retain meaningful bound
 mcp/aptl-mcp-common/tests/telemetry-export.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/telemetry-shutdown.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/telemetry.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+mcp/aptl-mcp-common/tests/tool-output-cap.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/tools-definitions.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tests/tools-handlers.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/aptl-mcp-common/tsconfig.json	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
@@ -667,11 +672,13 @@ mcp/mcp-red/src/effective-mode.ts	scenario-integration-mcp	TechVault-selected MC
 mcp/mcp-red/src/extractor.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/mcp-red/src/index.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/mcp-red/src/logger.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
+mcp/mcp-red/src/result-envelope.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/mcp-red/tests/capture.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/mcp-red/tests/classifier.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/mcp-red/tests/effective-mode.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/mcp-red/tests/extractor.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/mcp-red/tests/logger.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+mcp/mcp-red/tests/result-envelope.test.ts	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 mcp/mcp-red/tsconfig.build.json	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/mcp-red/tsconfig.json	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
 mcp/mcp-red/vitest.config.ts	scenario-integration-mcp	TechVault-selected MCP integration or shared consumer library; retain as a technical capability, not a product layer
@@ -877,6 +884,7 @@ src/aptl/backends/identity.py	core-candidate	Migrate only after public-import, h
 src/aptl/backends/pack_interaction.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/pack_interaction_discovery.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/backends/_raes_start_run.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_account_realization.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_acl_realization.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_artifact_availability.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
@@ -891,6 +899,7 @@ src/aptl/backends/raes_dependency_closure.py	core-candidate	Migrate only after p
 src/aptl/backends/raes_diagnostics.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_docker_materializer.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_evaluator.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/backends/_raes_evidence_truth_refresh.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_evidence.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_evidence_acquisition.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_execution_helpers.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
@@ -913,6 +922,7 @@ src/aptl/backends/raes_participant_apparatus_models.py	core-candidate	Migrate on
 src/aptl/backends/raes_participant_bindings.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_participant_candidates.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_participant_control_evidence.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/backends/_lilrae_bounded_agency_freeze.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_participant_driver.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_participant_evidence_publication.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_participant_execution_support.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
@@ -930,6 +940,7 @@ src/aptl/backends/raes_participant_runtime.py	core-candidate	Migrate only after 
 src/aptl/backends/raes_participant_support.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_placement_realization.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_planning_compat.py	backend-owned-runtime	Temporary TechVault planning compatibility for unconstrained native observation provenance
+src/aptl/backends/_raes_planning_adjustment.py	backend-owned-runtime	Temporary TechVault planning compatibility for unconstrained native observation provenance
 src/aptl/backends/raes_profiles.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_provisioner.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_realization.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
@@ -942,6 +953,7 @@ src/aptl/backends/raes_runtime_attestation.py	backend-owned-runtime	Remove relea
 src/aptl/backends/raes_runtime_guest_observation.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_runtime_model_artifact.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_runtime_observation.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/backends/_raes_runtime_local_control_observation.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_runtime_orchestration.py	core-candidate	Scenario-independent RAES orchestration adapter added after the #962 baseline; retain and assess under #970
 src/aptl/backends/raes_service_index_schema.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/backends/raes_start_model.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
@@ -1043,6 +1055,7 @@ src/aptl/core/deployment/_compose_mixed_realization.py	backend-substrate	Post-ba
 src/aptl/core/deployment/_compose_model_realization.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/deployment/_compose_network_conflicts.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/deployment/_compose_network_realization.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
+src/aptl/core/deployment/_compose_network_operations.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/deployment/_compose_node_generation.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/deployment/_compose_node_topology.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 src/aptl/core/deployment/_compose_observability.py	backend-substrate	Post-baseline optional observability mechanism; retain with deployment authority
@@ -1095,6 +1108,7 @@ src/aptl/core/deployment/_flag_signing_keys.py	core-candidate	Migrate only after
 src/aptl/core/deployment/_forwarding_agent_realization.py	backend-observability	Retain semantic forwarding-agent realization and native readback
 src/aptl/core/deployment/_misp_cache_credential.py	backend-substrate	Post-baseline runtime credential delivery; retain with deployment authority
 src/aptl/core/deployment/_misp_server_tls.py	backend-substrate	Image-native delivery of the authored MISP leaf; retain with deployment authority
+src/aptl/core/deployment/_misp_fastcgi_loopback.py	backend-substrate	Image-native confinement of MISP FastCGI to loopback; retain with deployment authority
 src/aptl/core/deployment/_operator_access.py	backend-substrate	Retain declared operator interactive-access relays and reachability proof
 src/aptl/core/deployment/_operator_access_endpoints.py	backend-substrate	Retain the catalog of operator interactive-access targets the backend can realize
 src/aptl/core/deployment/_operator_access_proof.py	backend-substrate	Retain operator interactive-access reachability proof and admitted-endpoint reporting
@@ -1431,6 +1445,7 @@ tests/test_correlation_clock.py	tests-follow-owner	Retain meaningful boundary an
 tests/test_correlation_identity.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_correlation_models.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_correlation_persistence.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_cortex_apikey_script.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_cortex_integration_config.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_credentials.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_credentials_fuzz.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
@@ -1671,6 +1686,7 @@ tests/test_techvault_telemetry_spine.py	tests-follow-owner	Retain meaningful bou
 tests/test_techvault_telemetry_stimulus.py	tests-follow-owner	Retain native TechVault telemetry-stimulation contract coverage with its scenario owner
 tests/test_telemetry.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_traffic_mirror.py	tests-follow-owner	Retain admitted traffic-mirror realization and reporting coverage with the backend owner
+tests/test_transcript_export.py	tests-follow-owner	Retain the teardown transcript export step diagnostics with transcript finalization
 tests/test_version.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_version_consistency.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_wazuh_active_response.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
@@ -1852,7 +1868,6 @@ src/aptl/backends/raes_participant_delivery.py	core-candidate	Keep generic SDL p
 src/aptl_techvault/study.py	scenario-integration	Keep TechVault-specific participant tool bindings behind the installed adapter seam
 tests/test_raes_participant_delivery.py	tests-follow-owner	Retain generic SDL participant-delivery regression coverage with the RAES runtime integration
 tests/test_techvault_study_adapter.py	tests-follow-owner	Retain TechVault participant adapter regression coverage with its scenario owner
-src/aptl/backends/_raes_evidence_refresh_policy.py	core-candidate	Keep evaluator-only participant crossing rejection with native evidence refresh
 src/aptl/backends/_raes_participant_crossing.py	core-candidate	Keep generic authored participant crossing policy realization with RAES integration
 src/aptl/backends/_raes_participant_evidence.py	core-candidate	Keep generic participant delivery evidence collection and indexing with RAES integration
 src/aptl/backends/_raes_participant_execution.py	core-candidate	Keep generic governed participant delivery execution with RAES integration
@@ -1902,6 +1917,7 @@ docs/components/node-realization.md	docs-follow-owner	Separate current user guid
 .trivyignore.yaml	build-governance	Migrate policy by surface; remove bundle-of-entire-repository from generic artifact
 tests/test_web_api_identity.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 docs/architecture/issue-1201-transcript-redaction-preflight.md	architecture-history	Preserve transcript redaction and retained-payload validation guardrails
+src/aptl/backends/_raes_transcript_export.py	backend-observability	Retain the teardown transcript export and its failure diagnostics with transcript finalization
 src/aptl/backends/_raes_transcript_qualification.py	backend-observability	Retain retained-transcript read-back qualification with transcript finalization
 docs/architecture/issue-1183-techvault-postgresql-startup-preflight.md	architecture-history	Preserve issue 1183 TechVault database realization, client-authentication, and initialization guardrails
 src/aptl_techvault/database_access.py	scenario-integration	Keep TechVault database client-authentication realization with the scenario adapter
@@ -1928,6 +1944,7 @@ tests/test_lilrae_source_image_catalog.py	tests-follow-owner	Retain source admis
 docs/architecture/issue-1402-command-rename-preflight.md	architecture-history	Preserve lilrae command rename, alias deprecation, and identity-boundary guardrails
 docs/architecture/issue-1413-configured-pack-source-preflight.md	architecture-history	Preserve configured pack-source acquisition and containment guardrails
 tests/test_lilrae_pack_source.py	tests-follow-owner	Retain configured pack-source, catalog, admission, and filesystem containment regressions
+docs/architecture/issue-1407-php-image-repin-preflight.md	architecture-history	Preserve MISP and Roundcube PHP image re-pin, release coupling, and evidence guardrails
 src/aptl/cli/_command_alias.py	core-candidate	Migrate only after public-import, history and scenario-independence verification
 tests/test_cli_command_alias.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 appliance/guest/participant-desktop-open.sh	optional-delivery	Keep VM seat delivery with the appliance owner
@@ -1946,6 +1963,7 @@ src/aptl_techvault/participant_desktop.py	core-runtime	TechVault participant des
 tests/test_application_accounts.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_declared_account_credentials.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_misp_sync_declared_key.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_misp_web_companion.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_pack_boundary_policy.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_participant_desktop.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tools/check_pack_boundary.py	build-governance	Migrate policy by surface; remove bundle-of-entire-repository from generic artifact

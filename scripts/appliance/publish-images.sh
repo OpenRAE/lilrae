@@ -116,7 +116,7 @@ build_image generic-wazuh-agent-base-debian aptl/generic-wazuh-agent-base-debian
 build_image suricata-wazuh-agent aptl/suricata-wazuh-agent:latest \
   . containers/suricata-wazuh-agent/Dockerfile
 build_image kali-capture aptl-kali-capture:latest . containers/kali-capture/Dockerfile
-build_image network-boundary-helper aptl-network-boundary-helper:5 \
+build_image network-boundary-helper aptl-network-boundary-helper:6 \
   . containers/network-boundary-helper/Dockerfile
 build_image appliance-egress-proxy aptl-appliance-egress-proxy:1 \
   . containers/appliance-egress-proxy/Dockerfile

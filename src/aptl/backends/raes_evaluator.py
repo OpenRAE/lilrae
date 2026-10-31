@@ -37,6 +37,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from raes_backend_protocols.capabilities import BackendManifest
 from raes_contracts.contracts import ExperimentEvidenceRecordModel
 from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.evaluation import EvaluationExecutionState, EvaluationResultContract
@@ -47,12 +48,7 @@ from raes_contracts.runtime_state import (
     RuntimeSnapshot,
     SnapshotEntry,
 )
-from raes_runtime.control_plane import RuntimeControlPlane
 
-from aptl.backends._raes_evidence_refresh_policy import (
-    EvidenceRefreshCrossingPolicyResolver,
-    without_evaluation_state,
-)
 from aptl.backends._raes_evaluator_engine import (
     EVALUATION_ADDRESS,
     OBSERVABLE_RESOURCE_TYPES,
@@ -63,10 +59,12 @@ from aptl.backends._raes_evaluator_engine import (
     register_evaluation,
     utc_now,
 )
-from aptl.backends._raes_proposition_truth import (
-    native_evidence_truth_is_complete,
-    project_proposition_truth_results,
+from aptl.backends._raes_evidence_truth_refresh import (
+    EvidenceTruthRefresh,
+    evidence_cut_key,
+    evidence_refresh_result,
 )
+from aptl.backends._raes_proposition_truth import project_proposition_truth_results
 
 # Proposition and assertion truth is carried in ``proposition_truth_results``,
 # not the condition/objective ``EvaluationResultContract`` path (ADR-069 §3).
@@ -77,6 +75,7 @@ _PROPOSITION_RESOURCE_TYPES = frozenset({"proposition", "assertion"})
 if TYPE_CHECKING:
     from raes_processor.models import ExecutionPlan
     from raes_runtime.registry import RuntimeTarget
+    from aptl.backends.raes_planning_compat import AptlRuntimeManager
 
 
 @dataclass
@@ -91,15 +90,6 @@ class _EvaluationRegistration(object):
     diagnostics: list[Diagnostic] = field(default_factory=list)
     changed: list[str] = field(default_factory=list)
     registered_at: str = field(default_factory=utc_now)
-
-
-@dataclass(frozen=True)
-class EvidenceTruthRefresh(object):
-    """Terminal result of a post-capture evaluator reconciliation."""
-
-    status: OperationState
-    snapshot: RuntimeSnapshot
-    diagnostics: tuple[Diagnostic, ...] = ()
 
 
 def _registration_for_snapshot(snapshot: RuntimeSnapshot) -> _EvaluationRegistration:
@@ -248,6 +238,7 @@ class AptlEvaluator(object):
     proposition_interpreter: Callable[..., object] | None = field(
         default=None, repr=False
     )
+    reporting_manifest: BackendManifest | None = field(default=None, repr=False)
     _results: dict[str, dict[str, object]] = field(default_factory=dict, init=False)
     _history: dict[str, list[dict[str, object]]] = field(
         default_factory=dict, init=False
@@ -322,7 +313,7 @@ class AptlEvaluator(object):
             evidence_records=self._evidence_records,
             proposition_interpreter=self.proposition_interpreter,
         )
-        return ApplyResult(
+        result = ApplyResult(
             success=True,
             snapshot=working_snapshot.with_entries(
                 registration.entries,
@@ -331,6 +322,17 @@ class AptlEvaluator(object):
                 proposition_truth_results=truth_results,
             ),
             changed_addresses=registration.changed,
+        )
+        from aptl.backends.lilrae_materialization_reporting import (
+            materialization_result,
+        )
+        from aptl.backends.raes_manifest import create_aptl_manifest
+
+        return materialization_result(
+            plan,
+            working_snapshot,
+            result,
+            self.reporting_manifest or create_aptl_manifest(),
         )
 
     def status(self) -> dict[str, object]:
@@ -382,16 +384,20 @@ def refresh_evidence_truth(
     execution_plan: ExecutionPlan,
     snapshot: RuntimeSnapshot,
     evidence_records: tuple[ExperimentEvidenceRecordModel, ...],
+    runtime_manager: AptlRuntimeManager | None = None,
 ) -> EvidenceTruthRefresh:
-    """Reconcile acquired evidence through RAES's runtime control plane.
+    """Evaluate acquired evidence through the run's one runtime.
 
-    The exact planner-produced evaluation phase is resubmitted against the
-    post-provisioning snapshot after the evaluator receives the sealed native
-    record cut. The control plane remains the sole writer of runtime truth.
+    The runtime that applied the plan evaluates it again against the sealed
+    native record cut (OpenRAE/rae#1660). It replans only the evaluation phase
+    from the original compiled context and writes the refreshed truth itself;
+    no other runtime owner is created.
     """
 
     evaluator = target.evaluator
-    if not isinstance(evaluator, AptlEvaluator):
+    if not isinstance(evaluator, AptlEvaluator) or (
+        runtime_manager is None or runtime_manager._target is not target
+    ):
         return EvidenceTruthRefresh(
             status=OperationState.FAILED,
             snapshot=snapshot,
@@ -399,90 +405,19 @@ def refresh_evidence_truth(
                 evaluation_diagnostic(
                     "aptl.evaluator.native-evidence-refresh-unavailable",
                     EVALUATION_ADDRESS,
-                    "APTL native evidence requires the APTL evaluator.",
+                    "APTL native evidence requires the APTL evaluator and the "
+                    "run's runtime.",
                 ),
             ),
         )
     evaluator.bind_evidence_records(evidence_records)
-    # The planner-produced evaluation operations are immutable CREATEs. The
-    # provisioning run already applied them once before native evidence was
-    # available, so replaying them against that registered evaluation state is
-    # an invalid create-over-existing transition in RAES 5. Rebuild only the
-    # evaluation domain from the same observed provisioning snapshot; the new
-    # control plane then remains the sole writer of the refreshed truth.
-    refresh_snapshot = without_evaluation_state(snapshot)
-    control_plane = RuntimeControlPlane(
-        target,
-        initial_snapshot=refresh_snapshot,
-        crossing_policy_resolver=EvidenceRefreshCrossingPolicyResolver(),
+    receipt = runtime_manager.evaluate(
+        execution_plan, idempotency_key=evidence_cut_key(evidence_records)
     )
-    try:
-        return _run_evidence_refresh(
-            control_plane,
-            execution_plan,
-            evidence_records,
-            evaluator.proposition_interpreter,
-        )
-    finally:
-        control_plane.close()
-
-
-def _run_evidence_refresh(
-    control_plane: RuntimeControlPlane,
-    execution_plan: ExecutionPlan,
-    evidence_records: tuple[ExperimentEvidenceRecordModel, ...],
-    proposition_interpreter: object | None,
-) -> EvidenceTruthRefresh:
-    """Run one registered evaluation and return its exact terminal disposition."""
-
-    control_plane.register_planner_produced_plan(execution_plan)
-    receipt = control_plane.submit_evaluation(execution_plan.evaluation)
-    operation = (
-        control_plane.get_operation(receipt.operation_id) if receipt.accepted else None
+    return evidence_refresh_result(
+        runtime_manager,
+        receipt,
+        execution_plan,
+        evidence_records,
+        evaluator.proposition_interpreter,
     )
-    snapshot = control_plane.snapshot
-    if not receipt.accepted:
-        result = EvidenceTruthRefresh(
-            status=OperationState.FAILED,
-            snapshot=snapshot,
-            diagnostics=tuple(receipt.diagnostics),
-        )
-    elif operation is None:
-        result = EvidenceTruthRefresh(
-            status=OperationState.FAILED,
-            snapshot=snapshot,
-            diagnostics=(
-                evaluation_diagnostic(
-                    "aptl.evaluator.native-evidence-refresh-incomplete",
-                    EVALUATION_ADDRESS,
-                    "RAES did not return a terminal evidence evaluation operation.",
-                ),
-            ),
-        )
-    elif (
-        operation.state is OperationState.SUCCEEDED
-        and not native_evidence_truth_is_complete(
-            execution_plan.evaluation,
-            snapshot,
-            evidence_records,
-            proposition_interpreter,
-        )
-    ):
-        result = EvidenceTruthRefresh(
-            status=OperationState.FAILED,
-            snapshot=snapshot,
-            diagnostics=(
-                evaluation_diagnostic(
-                    "aptl.evaluator.native-evidence-truth-incomplete",
-                    EVALUATION_ADDRESS,
-                    "Not every required native evidence record decided its exact authored proposition.",
-                ),
-            ),
-        )
-    else:
-        result = EvidenceTruthRefresh(
-            status=operation.state,
-            snapshot=snapshot,
-            diagnostics=tuple(operation.diagnostics),
-        )
-    return result
