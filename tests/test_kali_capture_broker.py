@@ -545,17 +545,21 @@ def test_teardown_finishes_custody_update_before_finalizing(
     assert handlers[signal.SIGHUP] is signal.SIG_IGN
 
 
-def test_stop_session_checks_authority_before_signalling(broker, tmp_path, monkeypatch):
+@pytest.mark.parametrize("action", ["stop_session", "await_session"])
+def test_session_finalization_checks_authority_before_signalling(
+    broker, tmp_path, monkeypatch, action
+):
     runtime = tmp_path / "runtime"
     broker.activate_authority(
         runtime, run_id="run-1", plan_id="plan-1", binding_id="binding-1"
     )
     signals = []
     monkeypatch.setattr(broker.os, "kill", lambda *args: signals.append(args))
+    finalize = getattr(broker, action)
     with pytest.raises(ValueError, match="authority mismatch"):
-        broker.stop_session("other-run", "session-1", runtime)
+        finalize("other-run", "session-1", runtime, tmp_path / "captures")
     with pytest.raises(ValueError, match="invalid session"):
-        broker.stop_session("run-1", "../escape", runtime)
+        finalize("run-1", "../escape", runtime, tmp_path / "captures")
     assert signals == []
 
 
@@ -579,8 +583,90 @@ def test_stop_session_only_signals_the_selected_registration(
         selected.unlink()
 
     monkeypatch.setattr(broker.os, "kill", terminate)
-    broker.stop_session("run-1", "selected", runtime)
-    broker.stop_session("run-1", "selected", runtime)
+    captures = tmp_path / "captures"
+    _finalized_session(captures, "selected")
+    broker.stop_session("run-1", "selected", runtime, captures)
+    broker.stop_session("run-1", "selected", runtime, captures)
     assert signals == [(1234, signal.SIGTERM)]
     assert peer.exists()
     assert not (runtime / "quiesce").exists()
+
+
+def _finalized_session(captures, session_id, *, metadata=True):
+    root = captures / "run-1" / "sessions" / session_id
+    root.mkdir(parents=True)
+    (root / "frames.jsonl").write_text("")
+    if metadata:
+        (root / "metadata.json").write_text("{}")
+    return root
+
+
+def _activated_runtime(broker, tmp_path):
+    runtime = tmp_path / "runtime"
+    broker.activate_authority(
+        runtime, run_id="run-1", plan_id="plan-1", binding_id="binding-1"
+    )
+    (runtime / "sessions").mkdir(exist_ok=True)
+    return runtime
+
+
+def test_await_session_waits_for_finalization_without_signalling(
+    broker, tmp_path, monkeypatch
+):
+    runtime = _activated_runtime(broker, tmp_path)
+    captures = tmp_path / "captures"
+    registration = runtime / "sessions" / "remote.pid"
+    registration.write_text("1234")
+    root = _finalized_session(captures, "remote", metadata=False)
+    signals = []
+    monkeypatch.setattr(broker.os, "kill", lambda *args: signals.append(args))
+
+    def broker_finalizes(_seconds):
+        (root / "metadata.json").write_text("{}")
+        registration.unlink()
+
+    monkeypatch.setattr(broker.time, "sleep", broker_finalizes)
+    broker.await_session("run-1", "remote", runtime, captures)
+    assert signals == []
+
+
+@pytest.mark.parametrize("action", ["stop_session", "await_session"])
+@pytest.mark.parametrize(
+    ("state", "error"),
+    [
+        ("missing", "CaptureSessionMissing"),
+        ("frames-only", "CaptureSessionUnfinished"),
+        ("registered", "CaptureSessionUnfinished"),
+    ],
+)
+def test_session_finalization_requires_final_metadata(
+    broker, tmp_path, monkeypatch, action, state, error
+):
+    runtime = _activated_runtime(broker, tmp_path)
+    captures = tmp_path / "captures"
+    if state != "missing":
+        _finalized_session(captures, "session-1", metadata=False)
+    if state == "registered":
+        (runtime / "sessions" / "session-1.pid").write_text("1234")
+    monkeypatch.setattr(broker.os, "kill", lambda *_args: None)
+    finalize = getattr(broker, action)
+    expected = getattr(broker, error)
+    with pytest.raises(expected):
+        finalize("run-1", "session-1", runtime, captures, 0)
+
+
+@pytest.mark.parametrize("action", ["stop-session", "await-session"])
+@pytest.mark.parametrize(
+    ("state", "code"), [("finalized", 0), ("missing", 3), ("frames-only", 4)]
+)
+def test_session_finalization_exit_codes(
+    broker, tmp_path, monkeypatch, action, state, code
+):
+    runtime = _activated_runtime(broker, tmp_path)
+    captures = tmp_path / "captures"
+    if state != "missing":
+        _finalized_session(captures, "session-1", metadata=state == "finalized")
+    monkeypatch.setattr(broker, "_RUNTIME_ROOT", runtime)
+    monkeypatch.setattr(broker, "_CAPTURE_ROOT", captures)
+    argv = [action, "--run-id", "run-1", "--session-id", "session-1"]
+    assert broker.main(argv) == code

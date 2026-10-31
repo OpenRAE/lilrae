@@ -51,14 +51,15 @@ from aptl.workbench._pipe_exchange import POLL_SECONDS, PipeExchange
 _TERM_GRACE_SECONDS = 1.0
 # After the child has exited on its own, its remaining helpers are winding
 # down, so they get time to finish a graceful shutdown before SIGKILL. The
-# common MCP server's SIGTERM handler (mcp/aptl-mcp-common/src/server.ts) first
-# flushes its traces, which the OTLP exporter bounds at its default 10 s
-# timeout, then awaits sshManager.disconnectAll(). That allows each session up
-# to REMOTE_CLOSE_AWAIT (3 s) for the remote close that the Kali capture
-# wrapper's transcript flush depends on, then each connection up to
-# SESSION_CLOSE (5 s), both in mcp/aptl-mcp-common/src/ssh-contracts.ts. The
-# other 2 s cover the signal delivery and the process exit. A group that ends
-# sooner ends the wait sooner.
+# common MCP server's shutdown (mcp/aptl-mcp-common/src/server.ts) awaits
+# sshManager.disconnectAll(), which allows each session up to
+# REMOTE_CLOSE_AWAIT (3 s) for its remote close and each connection up to
+# SESSION_CLOSE (5 s), both in mcp/aptl-mcp-common/src/ssh-contracts.ts. Its
+# trace flush is bounded well inside the OTLP exporter's default 10 s timeout,
+# which this budget still allows. The other 2 s cover the signal delivery and
+# the process exit. The same shutdown also finalizes and harvests open capture
+# sessions; that work has no place in this bound, and lab stop does not depend
+# on it (ADR-042). A group that ends sooner ends the wait sooner.
 _SHUTDOWN_GRACE_SECONDS = 20.0
 _REAP_SECONDS = 1.0
 _RELEASE_SECONDS = 1.0

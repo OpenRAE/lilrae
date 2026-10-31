@@ -189,28 +189,43 @@ const SCENARIO_COMMAND = [
   "cat <<'EOF' > /tmp/notes.txt\nrésumé de $(id -un) \\ \"quoted\"\nEOF",
 ].join('\n');
 
+/**
+ * Snapshot the process listeners that start() installs once per server, and
+ * return a function that drops the ones a test added.
+ */
+function snapshotShutdownListeners(): () => void {
+  const signals = ['SIGINT', 'SIGTERM'] as const;
+  const before = new Map(signals.map((signal) => [signal, process.listeners(signal)]));
+  const stdinBefore = process.stdin.listeners('end');
+  return () => {
+    for (const signal of signals) {
+      process.listeners(signal)
+        .filter((listener) => !before.get(signal)?.includes(listener))
+        .forEach((listener) => process.removeListener(signal, listener));
+    }
+    process.stdin.listeners('end')
+      .filter((listener) => !stdinBefore.includes(listener))
+      .forEach((listener) => process.stdin.removeListener('end', listener as () => void));
+  };
+}
+
 describe('tool arguments over an MCP transport', () => {
   let createMCPServer: any;
   let traceToolCall: any;
   const clients: Client[] = [];
-  const signals = ['SIGINT', 'SIGTERM'] as const;
-  let listenersBefore: Record<string, unknown[]>;
+  let restoreListeners: () => void;
 
   beforeEach(async () => {
     vi.clearAllMocks();
     ({ createMCPServer } = await import('../src/server.js'));
     ({ traceToolCall } = await import('../src/telemetry.js'));
-    listenersBefore = Object.fromEntries(signals.map((signal) => [signal, process.listeners(signal)]));
+    restoreListeners = snapshotShutdownListeners();
   });
 
   afterEach(async () => {
     await Promise.all(clients.splice(0).map((client) => client.close()));
     // start() installs shutdown handlers once per server; drop this test's.
-    for (const signal of signals) {
-      process.listeners(signal)
-        .filter((listener) => !listenersBefore[signal].includes(listener))
-        .forEach((listener) => process.removeListener(signal, listener));
-    }
+    restoreListeners();
   });
 
   async function connect(config: object, options: object = {}): Promise<Client> {
@@ -530,8 +545,7 @@ describe('tool arguments over an MCP transport', () => {
 describe('gracefulShutdown capture harvest', () => {
   let createMCPServer: any;
   let harvestSession: any;
-  const signals = ['SIGINT', 'SIGTERM'] as const;
-  let listenersBefore: Record<string, unknown[]>;
+  let restoreListeners: () => void;
   let exitSpy: any;
 
   beforeEach(async () => {
@@ -539,18 +553,14 @@ describe('gracefulShutdown capture harvest', () => {
     ({ createMCPServer } = await import('../src/server.js'));
     ({ harvestSession } = await import('../src/captures.js'));
     (harvestSession as any).mockResolvedValue(true);
-    listenersBefore = Object.fromEntries(signals.map((signal) => [signal, process.listeners(signal)]));
+    restoreListeners = snapshotShutdownListeners();
     // gracefulShutdown ends with process.exit; keep it from killing the runner.
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(((): never => undefined as never));
   });
 
   afterEach(() => {
     exitSpy.mockRestore();
-    for (const signal of signals) {
-      process.listeners(signal)
-        .filter((listener) => !listenersBefore[signal].includes(listener))
-        .forEach((listener) => process.removeListener(signal, listener));
-    }
+    restoreListeners();
   });
 
   async function startServer(): Promise<void> {
@@ -573,6 +583,15 @@ describe('gracefulShutdown capture harvest', () => {
     await startServer();
     process.emit('SIGTERM');
     await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(1));
+  });
+
+  it('starts one shutdown when the MCP client closes stdin', async () => {
+    fakes.ssh.shutdown.mockResolvedValue(true);
+    await startServer();
+    process.stdin.emit('end');
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(0));
+    process.emit('SIGTERM');
+    expect(fakes.ssh.shutdown).toHaveBeenCalledOnce();
   });
 
   it('does not run two shutdown sweeps for repeated signals', async () => {
