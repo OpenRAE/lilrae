@@ -121,7 +121,25 @@ def test_only_verified_profile_tools_reach_opencode(tmp_path):
         prompt="red task",
         timeout_seconds=30,
     )
-    executor("action", Event())
+    cancellation = Event()
+    with pytest.raises(AgentExecutionError, match="tool session"):
+        executor("action", cancellation)
+    assert runner.calls == []
+    from dataclasses import replace
+    from aptl.backends.participant_tools.session import LilraeToolSession
+    from tests.test_lilrae_participant_tools import binding, port
+
+    cancellation = Event()
+    session = LilraeToolSession(
+        port(),
+        tuple(
+            replace(binding(), server_id=server, tool_name=tool)
+            for server, tools in inventory.items()
+            for tool in tools
+        ),
+        cancellation,
+    )
+    executor.invoke_with_tools("outer-red", cancellation, session)
     config = runner.calls[0][2]
     assert set(config["mcp"]) == set(servers)
     expected = {
@@ -131,13 +149,15 @@ def test_only_verified_profile_tools_reach_opencode(tmp_path):
         tool for tool, value in config["permission"].items() if value == "allow"
     } == expected
     assert config["permission"]["*"] == "deny"
+    for server in config["mcp"].values():
+        assert len(server["environment"]["LILRAE_TOOL_TOKEN"]) == 64
+        assert not Path(server["environment"]["LILRAE_TOOL_SOCKET"]).exists()
     # Replacing the admitted file cannot widen the next invocation's tools.
     path.write_text(
         json.dumps({"mcpServers": {**servers, "peer": servers[next(iter(servers))]}})
     )
-    cancellation = Event()
     with pytest.raises(AgentExecutionError, match="changed"):
-        executor("action-2", cancellation)
+        executor.invoke_with_tools("outer-red", cancellation, session)
     assert len(runner.calls) == 1
 
 

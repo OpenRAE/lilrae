@@ -47,12 +47,12 @@ def test_project_depends_on_the_raes_major_range() -> None:
 
     project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
 
-    assert "raes>=10.1.0,<11" in project["project"]["dependencies"]
+    assert "raes>=10.2.0,<11" in project["project"]["dependencies"]
     assert all(
         not dependency.startswith("aces-sdl")
         for dependency in project["project"]["dependencies"]
     )
-    assert raes.__version__ in SpecifierSet(">=10.1.0,<11")
+    assert raes.__version__ in SpecifierSet(">=10.2.0,<11")
 
 
 def _source_and_test_imports_of(import_roots: frozenset[str]) -> list[str]:
@@ -122,9 +122,7 @@ def test_no_private_raes_imports_or_manifest_fallback_remain() -> None:
             row["surface_id"]: row for row in csv.DictReader(stream, delimiter="\t")
         }
 
-    assert all(
-        not surface_id.startswith("raes-private-") for surface_id in rows
-    )
+    assert all(not surface_id.startswith("raes-private-") for surface_id in rows)
 
     manifest = (
         PROJECT_ROOT / "src" / "aptl" / "backends" / "raes_manifest.py"

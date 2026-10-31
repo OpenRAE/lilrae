@@ -1,5 +1,9 @@
 # Lab Architecture
 
+- [Issue #1418 Participant MCP Action Admission](issue-1418-participant-tool-admission-preflight.md)
+- [Participant action and control architecture assessment](participant-tool-admission.md)
+- [Participant action enforcement](participant-action-enforcement.md)
+
 ## Network Topology
 
 ```mermaid

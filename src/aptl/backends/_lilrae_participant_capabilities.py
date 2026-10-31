@@ -6,6 +6,13 @@ from raes_backend_protocols.capabilities import (
     ParticipantRuntimeCapabilities,
     TimeCapabilities,
     TIME_CAPABILITY_REQUIRED_CONTRACTS,
+    ParticipantFeatureSupport,
+)
+from raes_contracts.contracts.participant_invocation_tools import (
+    ParticipantInvocationToolActionCapabilitiesModel,
+)
+from raes_contracts.contracts.participant_tool_support import (
+    ParticipantToolProfilesModel,
 )
 from raes_contracts.manifest_authority import (
     PARTICIPANT_RUNTIME_CAPABILITY_REQUIRED_CONTRACTS,
@@ -15,6 +22,10 @@ from aptl.backends.lilrae_participant_execution import (
     LilraeParticipantBinding,
     LilraeParticipantExecution,
     MAX_CONCURRENT_PARTICIPANTS,
+)
+from aptl.backends.participant_tools.session import (
+    MAX_TOOL_ACTIONS,
+    MAX_CONCURRENT_TOOLS,
 )
 
 
@@ -28,7 +39,11 @@ def autonomous_manifest_options(
     if not bindings:
         return contracts, participant, options
     installed = LilraeParticipantExecution(bindings).bindings
-    offers = tuple(item.execution_binding for item in installed)
+    # One portable offer may serve distinct participants. Tool admission must
+    # see one exact offer rather than a duplicate per controller or role.
+    tools = tuple(tool for item in installed for tool in item.tool_bindings)
+    tool_offers = tuple(dict.fromkeys(tool.execution_binding for tool in tools))
+    offers = (*tuple(item.execution_binding for item in installed), *tool_offers)
     participant = replace(
         participant,
         supported_behavior_features=participant.supported_behavior_features
@@ -45,7 +60,7 @@ def autonomous_manifest_options(
             address for item in offers for address in item.target_addresses
         ),
         supported_autonomous_observation_boundaries=frozenset(
-            item.observation_boundary_address for item in installed
+            item.observation_boundary_address for item in (*installed, *tools)
         ),
         execution_bindings=offers,
         max_autonomous_participants=min(
@@ -65,6 +80,34 @@ def autonomous_manifest_options(
         supports_bounded_concurrency=True,
         max_concurrent_actions=MAX_CONCURRENT_PARTICIPANTS,
     )
+    if tools:
+        features = frozenset(
+            {"tool_affordances", "preconditions", "effects", "failure_classes"}
+        )
+        participant = replace(
+            participant,
+            supported_behavior_features=participant.supported_behavior_features
+            | features,
+            feature_support=(
+                *participant.feature_support,
+                *(
+                    ParticipantFeatureSupport(
+                        feature=feature,
+                        support_level="exact",
+                        evidence_refs=("evidence:lilrae:installed-tool-contract",),
+                    )
+                    for feature in sorted(features)
+                ),
+            ),
+            tool_profiles=ParticipantToolProfilesModel(
+                semantic_versions=["participant-tool-profile/v1"]
+            ),
+            invocation_tool_actions=ParticipantInvocationToolActionCapabilitiesModel(
+                semantic_versions=["participant-invocation-tool-actions/v1"],
+                max_tool_actions_per_invocation=MAX_TOOL_ACTIONS,
+                max_concurrent_tool_actions_per_invocation=MAX_CONCURRENT_TOOLS,
+            ),
+        )
     for terms in PARTICIPANT_RUNTIME_CAPABILITY_REQUIRED_CONTRACTS.values():
         for feature in participant.supported_behavior_features:
             contracts |= terms.get(feature, frozenset())

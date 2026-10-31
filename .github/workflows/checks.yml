@@ -725,7 +725,7 @@ jobs:
           sudo apt-get install -y openssh-server
           pip install --require-hashes -r requirements/dev.txt
           pip install -e . --no-deps --no-build-isolation
-          coverage run --data-file=.coverage.transport -m pytest tests/test_mcp_transport_processes.py tests/test_mcp_payload_processes.py -q -m integration
+          coverage run --data-file=.coverage.transport -m pytest tests/test_mcp_transport_processes.py tests/test_mcp_payload_processes.py tests/test_lilrae_mcp_runtime_integration.py -q -m integration
           coverage xml --data-file=.coverage.transport -o coverage/transport.xml
       - name: Extracted MCP shutdown through the real capture sidecar
         # The installed red MCP, SSH broker and Docker harvest must agree on

@@ -86,3 +86,4 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [062](adr-062-lilrae-name-and-naming-convention.md) | LilRAE Name and Naming Convention for New Code | superseded in part by ADR-064 | 2026-10-05 |
 | [063](adr-063-remove-thehive-and-cortex.md) | Remove TheHive and Cortex from the TechVault SOC Stack | accepted | 2026-10-30 |
 | [064](adr-064-layered-architecture-and-code-conventions.md) | Layered Architecture and Code Conventions | accepted | 2026-10-31 |
+| [065](adr-065-executable-participant-action-boundaries.md) | Executable Participant Action Boundaries | proposed | 2026-10-31 |

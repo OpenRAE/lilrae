@@ -41,6 +41,8 @@ from pathlib import Path
 from threading import Event
 from typing import Protocol
 
+from aptl.core.agent_errors import AgentExecutionError as AgentExecutionError
+
 from aptl.workbench._pipe_exchange import POLL_SECONDS, PipeExchange
 
 # Cleanup bounds, each applied once: the SIGTERM grace period for the group,
@@ -72,10 +74,6 @@ REASON_RESIDUE = "agent process cleanup left residual processes"
 _RESIDUAL_AGENT_RUNNING = "agent-process-running"
 _RESIDUAL_STREAMS_HELD = "output-streams-held"
 _RESIDUAL_GROUP_UNCONFIRMED = "process-group-cleanup-unconfirmed"
-
-
-class AgentExecutionError(RuntimeError):
-    """The installed agent or one of its selected MCP servers failed safely."""
 
 
 @dataclass(frozen=True)
@@ -304,7 +302,7 @@ def _signal_group(pid: int, number: int) -> None:
 
     try:
         os.killpg(pid, number)
-    except (ProcessLookupError, PermissionError):
+    except ProcessLookupError, PermissionError:
         pass
 
 

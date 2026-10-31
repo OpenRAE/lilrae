@@ -1052,7 +1052,7 @@ requires-dist = [
     { name = "pytest-split", marker = "extra == 'dev'", specifier = ">=0.11.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6.0" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "raes", specifier = ">=10.1.0,<11" },
+    { name = "raes", specifier = ">=10.2.0,<11" },
     { name = "raes-env-packs", specifier = ">=7.0.0,<8" },
     { name = "rfc8785", specifier = ">=0.1.4,<0.2.0" },
     { name = "rich", specifier = ">=13.0.0" },
@@ -1918,7 +1918,7 @@ wheels = [
 
 [[package]]
 name = "raes"
-version = "10.1.0"
+version = "10.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1943,9 +1943,9 @@ dependencies = [
     { name = "uvicorn", extra = ["standard"] },
     { name = "z3-solver" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e4/f9/9452dc859d4415e13bcbad4be96487c43c13d4b9d5570c5739d1cc7981f3/raes-10.1.0.tar.gz", hash = "sha256:7a23fa2f739a5cf606d516dd1d295d2be8e627585e998df35382ec8fce4f32dc", size = 5813115, upload-time = "2026-10-31T00:07:22.644Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/63/fa/01a3b0c744a58c862a02c28a1b710ba5027e56698eafaf52b20fbf38b7c1/raes-10.2.0.tar.gz", hash = "sha256:b28205ef0a8f033c34fc2eb2e2e7f5cb1d599859486cf7a06a7271a8f4241a63", size = 5872064, upload-time = "2026-10-31T17:15:04.861Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c2/fa/b481167353f83a1130ecfb4693159a37ef85f0c74d2ec95985f56d073f23/raes-10.1.0-py3-none-any.whl", hash = "sha256:6b61c99fb08c95100a73cc0022c118eddd2da8384895e63f0cd0dd3ce3424fa6", size = 5135630, upload-time = "2026-10-31T00:07:20.541Z" },
+    { url = "https://files.pythonhosted.org/packages/8c/8d/410bf4f8ac086f99603774eed198fe0b0e345a086ba0e1c1a246bc5f5108/raes-10.2.0-py3-none-any.whl", hash = "sha256:f8209874f44ad77c3ded6ed3c9057c0d425dacd52953fada76848671fd444631", size = 5155778, upload-time = "2026-10-31T17:15:02.536Z" },
 ]
 
 [[package]]

@@ -9,6 +9,9 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, cast
 
 from raes_backend_protocols.participant_runtime_base import BaseParticipantRuntime
+from raes_backend_protocols.participant_invocation_tools import (
+    ParticipantInvocationToolActionPort,
+)
 from raes_contracts.contracts import (
     ParticipantDecisionSurfaceSelectionV2Model,
     ParticipantTemporalRuntimeContextModel,
@@ -88,6 +91,12 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         """Bind the management-owned decision source for one governed run."""
 
         self._selection_provider = provider
+
+    def attach_invocation_tool_actions(
+        self, port: ParticipantInvocationToolActionPort
+    ) -> None:
+        """Pass the runtime-owned port to its exact installed native worker."""
+        self.autonomous_execution.attach_tool_port(port)
 
     def bind_autonomous_action(
         self,

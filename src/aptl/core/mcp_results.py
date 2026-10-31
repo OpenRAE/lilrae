@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from pydantic import JsonValue
 
 from aptl.utils.redaction import redact
 
@@ -22,7 +22,7 @@ _SESSION_TOOLS = frozenset(
 )
 
 
-def _session_row(value: dict[str, Any]) -> dict[str, Any]:
+def _session_row(value: dict[str, JsonValue]) -> dict[str, JsonValue]:
     """Redact credentials while preserving validated terminal handle fields."""
     safe = redact(value)
     identifier = value.get("session_id")
@@ -37,7 +37,7 @@ def _session_row(value: dict[str, Any]) -> dict[str, Any]:
     return safe
 
 
-def _session_payload(value: dict[str, Any], tool: str) -> dict[str, Any]:
+def _session_payload(value: dict[str, JsonValue], tool: str) -> dict[str, JsonValue]:
     """Retain typed terminal session inventory after redaction."""
     safe = _session_row(value)
     if tool == "kali_list_sessions" and isinstance(value.get("sessions"), list):
@@ -50,7 +50,9 @@ def _session_payload(value: dict[str, Any], tool: str) -> dict[str, Any]:
     return safe
 
 
-def redact_mcp_result(result: dict[str, Any], server: str, tool: str) -> dict[str, Any]:
+def redact_mcp_result(
+    result: dict[str, JsonValue], server: str, tool: str
+) -> dict[str, JsonValue]:
     """Keep only the red MCP's typed terminal handles, never API login sessions.
 
     Handles address sessions inside this caller's isolated MCP process. They
@@ -69,7 +71,7 @@ def redact_mcp_result(result: dict[str, Any], server: str, tool: str) -> dict[st
             continue
         try:
             payload = json.loads(block.get("text", ""))
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             continue
         if isinstance(payload, dict):
             safe["content"][index]["text"] = json.dumps(_session_payload(payload, tool))
