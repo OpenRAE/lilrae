@@ -263,3 +263,19 @@ dependent MCP package per the repo plan rules.
 - [ADR-033: Red-Side Behavioural Capture and Non-Contamination Boundary](adr-033-agent-reasoning-trace-boundary.md)
 - [ADR-029: Control-Plane Secret Handling in Run Data and Local State](adr-029-control-plane-secret-handling.md)
 - [ADR-037: Docker Compose Backend Cohesion](adr-037-docker-compose-backend-cohesion.md)
+
+## Session finalization at MCP shutdown (#1541)
+
+The common SSH manager stops accepting new sessions and waits for pending
+session creation before shutdown. It tracks one-shot exec channels as well as
+persistent shells. All harvest triggers share one result per run and session;
+remote-close failures remain visible to the shutdown owner.
+
+The trusted host invokes `broker.py stop-session --run-id ... --session-id ...`
+through the configured capture container. The broker validates the run against
+its active authority and signals only that session's registration. It records
+`forced-teardown` without injecting an agent `exit` command or quiescing other
+MCP servers. Normal agent closes retain their existing shell exit semantics.
+The harvester waits for final metadata before reporting success. Finalization,
+harvest, or SSH teardown failure makes MCP shutdown exit non-zero. This adds
+no workload-accessible control endpoint or capture-volume mount.

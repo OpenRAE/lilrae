@@ -17,11 +17,12 @@ import {
 import Ajv2020, { type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js';
 import { type LabConfig } from './config.js';
 import { SSHConnectionManager } from './ssh.js';
+import { finalizeCaptureSession } from './captures.js';
 import { HTTPClient } from './http.js';
 import { initTracing, recordToolResultSize, shutdownTracing, traceToolCall } from './telemetry.js';
 import { boundToolResult, toolResultBudgets, type ToolResult } from './tool-output-cap.js';
 import { generateToolDefinitions } from './tools/definitions.js';
-import { errorMessage, generateToolHandlers, type ToolHandler, type ToolContext } from './tools/handlers.js';
+import { errorMessage, generateToolHandlers, maybeHarvest, resolveCaptureContainer, HARVEST_METADATA_WAIT_MS, type ToolHandler, type ToolContext } from './tools/handlers.js';
 import { generateAPIToolDefinitions } from './tools/api-definitions.js';
 import { generateAPIToolHandlers, type APIToolHandler, type APIToolContext } from './tools/api-handlers.js';
 
@@ -185,6 +186,14 @@ export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOp
   const resultBudget = toolResultBudgets(labConfig);
   // Initialize clients and OTel tracing based on config
   const sshManager = labConfig.containers ? new SSHConnectionManager() : null;
+  // Let the manager harvest a session whose remote side closes on its own,
+  // before it drops the session: otherwise the shutdown sweep below never sees
+  // it. The manager cannot resolve the capture container, so it calls back here.
+  if (sshManager) {
+    sshManager.setHarvestHook((sessionId, runId) =>
+      maybeHarvest(labConfig, sessionId, runId, HARVEST_METADATA_WAIT_MS),
+    );
+  }
   const httpClient = labConfig.api ? new HTTPClient(labConfig.api) : null;
   initTracing(labConfig.server.name);
 
@@ -330,23 +339,18 @@ export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOp
 
       // Setup graceful shutdown only once
       if (!handlersSetup) {
+        let shuttingDown = false;
         const gracefulShutdown = async (signal: string): Promise<void> => {
+          if (shuttingDown) return;
+          shuttingDown = true;
           console.error(`[MCP] Shutting down gracefully (${signal})...`);
+          const clean = sshManager ? await sshManager.shutdown(async (sessionId, runId) => {
+            const containerName = resolveCaptureContainer(labConfig);
+            if (containerName === undefined) return true;
+            return finalizeCaptureSession({ containerName, runId }, sessionId);
+          }) : true;
           await shutdownTracing();
-          if (sshManager) {
-            // disconnectAll now propagates SSHError on teardown contract
-            // failures so callers can detect unclean shutdown. The signal
-            // handler still needs to exit; log the failure non-zero rather
-            // than letting an unhandled rejection terminate Node abruptly.
-            try {
-              await sshManager.disconnectAll();
-            } catch (err) {
-              console.error('[MCP] disconnectAll failed during shutdown:', err);
-              process.exit(1);
-              return;
-            }
-          }
-          process.exit(0);
+          process.exit(clean ? 0 : 1);
         };
 
         process.on('SIGINT', () => { void gracefulShutdown('SIGINT'); });
