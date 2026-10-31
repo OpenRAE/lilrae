@@ -1,8 +1,6 @@
 module github.com/OpenRAE/lilrae/tools
 
-go 1.27.0
-
-toolchain go1.27.3
+go 1.27.3
 
 tool (
 	github.com/go-gremlins/gremlins/cmd/gremlins

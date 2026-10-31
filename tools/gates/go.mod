@@ -1,8 +1,6 @@
 module github.com/OpenRAE/lilrae/tools/gates
 
-go 1.27.0
-
-toolchain go1.27.3
+go 1.27.3
 
 require github.com/rogpeppe/go-internal v1.16.0
 

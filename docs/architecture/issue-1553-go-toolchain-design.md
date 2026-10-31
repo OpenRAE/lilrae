@@ -9,6 +9,7 @@ architecture model and the design check belong to Go port 02b.
 
 | Fact | Source |
 | --- | --- |
+| `actions/setup-go` v7.0.0 installs the release of the `go` directive, not of the `toolchain` directive. With `go 1.27.0` and `toolchain go1.27.3`, CI ran Go 1.27.0, and govulncheck reported ten fixed standard-library vulnerabilities. | Checks run 41249756129 on PR #1594. |
 | In a module that has no packages, `go vet`, `go test`, and `go fix` exit 1, golangci-lint exits 5, and govulncheck exits 2. `go mod tidy -diff` exits 0. | Fixture experiment with Go 1.27.3. |
 | `go fix -diff` and `go mod tidy -diff` exit 1 when they print a change. `gofmt -l` exits 0 when it lists a file. | Fixture experiment with Go 1.27.3. |
 | The `ignore node_modules` directive removes the packages below each `node_modules` directory from `./...`. | Fixture experiment; Go 1.25 release notes. |
@@ -64,48 +65,50 @@ flowchart LR
 1. **Separate tool modules.** golangci-lint has a module of its own (ADR-065).
    The gate fixtures have a module of their own, because Gremlins sets each
    mutant timeout from the test time of the whole module.
-2. **Host tool binaries.** `go-gates.sh` builds the pinned tools for the host
+2. **Patched release in the go directive.** Each `go.mod` sets `go 1.27.3`, so
+   CI installs the patched release, and `GOTOOLCHAIN=local` keeps it.
+3. **Host tool binaries.** `go-gates.sh` builds the pinned tools for the host
    once per run. It runs golangci-lint for `linux`, `darwin`, and `windows`.
-3. **No packages is a reported state.** A module without packages gets
+4. **No packages is a reported state.** A module without packages gets
    `go mod tidy -diff` and the tool scan, and the script prints that it has no
    packages. The model of Go port 02b detects a package that disappears.
-4. **Lint.** Each module gets `go mod tidy -diff`, `go vet`, `go fix -diff`,
+5. **Lint.** Each module gets `go mod tidy -diff`, `go vet`, `go fix -diff`,
    and golangci-lint with `.golangci.yml`. The golangci-lint formatters check
    gofmt and goimports.
-5. **Tests.** `go test -race -shuffle=on` with atomic coverage. The script
+6. **Tests.** `go test -race -shuffle=on` with atomic coverage. The script
    rewrites each coverage path to the repository path for SonarCloud.
-6. **Vale.** The pinned Vale moves from 3.14.2 to 3.26.0, so Go doc comments
+7. **Vale.** The pinned Vale moves from 3.14.2 to 3.26.0, so Go doc comments
    can name identifiers with doc links. The installer points the current Vale
    at the pinned version on each run.
-7. **Vulnerabilities.** govulncheck scans the packages and the `tool` pattern
+8. **Vulnerabilities.** govulncheck scans the packages and the `tool` pattern
    of each module. OSV scans each first-party `go.mod` without call analysis.
    Trivy already scans each `go.mod`. A fixture module with a known
    vulnerability proves that OSV and Trivy detect a Go module finding.
-8. **Regression replay.** The check reads the issue number from the branch
+9. **Regression replay.** The check reads the issue number from the branch
    name. It validates each `regression:` comment in the changed test files. It
    replays each test for the issue of the pull request that the change adds or
    changes. Tests for other issues are not replayed, because the base revision
    already has their fix.
-9. **Replay mechanics.** A temporary Git worktree holds the base revision. In
+10. **Replay mechanics.** A temporary Git worktree holds the base revision. In
    each package directory of a selected test, the test files and `testdata`
    become those of the head revision. Each test runs alone with
    `go test -json -count=1 -run '^Name$'`. Only a test `fail` on the base
    revision and a test `pass` on the head revision satisfy the check.
-10. **Bug label.** A pull request that changes Go production code for an issue
+11. **Bug label.** A pull request that changes Go production code for an issue
    with the `bug` label must add or change a regression test for that issue.
    The CI step reads the label with a read-only token and prints it.
-11. **Mutation.** `mutationcheck` runs Gremlins in each module that has
+12. **Mutation.** `mutationcheck` runs Gremlins in each module that has
     changed production files, with `--diff` at the base revision. It sets
     `diff.relative=true` for Git and `-count=1` for Go. It reads the JSON
     report and applies the thresholds itself. A full run, without `--diff`,
     covers each module on a schedule or a manual run.
-12. **Mutation results.** Changed lines without a mutant pass, and the check
+13. **Mutation results.** Changed lines without a mutant pass, and the check
     names the changed files. A tool error fails, and so does a change where
     each mutant timed out. A pull request cannot lower a threshold. The first
     measurement gave 100% efficacy and 100% mutant coverage, so both
     thresholds are 100. Changed code therefore uses an if statement for a
     comparison that a case clause would hide from the coverage.
-13. **Scheduled run and Dependabot.** Both read the default branch, which has
+14. **Scheduled run and Dependabot.** Both read the default branch, which has
     no Go code before Go port 31. Issue #1593, on `dev`, adds Dependabot
     entries for the Go modules with `target-branch: go-cutover` and a weekly
     dispatch of the Checks workflow on `go-cutover`. Go port 31 removes both.
