@@ -23,6 +23,11 @@ APTL applies that same admitted `ExecutionPlan` one more time. It does not parse
 the SDL or invoke the planner again. The retry decision therefore follows the
 realized profile set, not the global container configuration.
 
+A refusal that a retry of the same plan can't clear doesn't get that retry.
+For example, the deployment backend reports an unowned search index as
+`aptl.provisioner.backend-start-refused`, and startup ends without the wait and
+the second apply.
+
 Runtime bindings are an in-process admission input, not APTL configuration or
 secrets. APTL does not source them from the environment, forward them to
 Compose or process arguments, or persist them in run records. Instantiation
