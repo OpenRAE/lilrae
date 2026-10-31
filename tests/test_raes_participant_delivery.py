@@ -662,7 +662,16 @@ def _execute_study_plan(
     store = LocalRunStore(tmp_path / "runs")
     target = replace(
         create_stub_target(),
-        manifest=create_aptl_manifest(participant_inject_delivery=True),
+        manifest=replace(
+            create_aptl_manifest(participant_inject_delivery=True),
+            supported_contract_versions=create_aptl_manifest(
+                participant_inject_delivery=True
+            ).supported_contract_versions
+            - {
+                "backend-runtime-descendants-v1",
+                "backend-materialization-attestation-v1",
+            },
+        ),
     )
     # Production builds the run's one runtime with the plan's participant
     # configuration before any turn (OpenRAE/rae#1660).

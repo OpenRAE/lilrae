@@ -32,8 +32,8 @@ def test_real_pipe_relay_admits_inventory_denies_blue_and_revokes_live_session(
     monkeypatch,
 ):
     from contextlib import nullcontext
-    from aptl.backends.lilrae_participant_tools import LilraeToolSession
-    from aptl.workbench.lilrae_tool_transport import LilraeToolTransport
+    from aptl.backends.participant_tools.session import LilraeToolSession
+    from aptl.backends.participant_tools.transport import LilraeToolTransport
     from tests.test_lilrae_participant_tools import binding, port
 
     selected = profile_for("red").servers[0]

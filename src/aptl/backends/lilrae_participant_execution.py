@@ -29,7 +29,7 @@ from raes_contracts.participant_configuration import (
 from raes_processor.models import RuntimeModel, ParticipantAutonomousExecutionRuntime
 
 from aptl.utils.redaction import redact
-from aptl.backends.lilrae_participant_tools import LilraeToolBinding, LilraeToolSession
+from aptl.backends.participant_tools.session import LilraeToolBinding, LilraeToolSession
 from aptl.workbench.process import (
     AgentExecutionError,
     BoundedProcessError,

@@ -10,13 +10,13 @@ name: Checks
 #   SONAR_TOKEN — SonarCloud authentication
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, go-cutover]
     tags: ["v*"]
   schedule:
     - cron: "17 3 * * 1"
   workflow_dispatch:
   pull_request:
-    branches: [main, dev]
+    branches: [main, dev, go-cutover]
 
 env:
   COVERAGE_CORE: sysmon
@@ -230,6 +230,14 @@ jobs:
           docker info > /dev/null
           command -v ssh ssh-keygen
           python -m pytest -q -m integration tests/test_kali_capture_compose.py
+      # Mixed realization starts a materialized base container and a generated
+      # Compose service together. Only a real Docker daemon can prove that. The
+      # module is integration-marked, so the runs above deselect it. The probe
+      # stops the step if Docker is missing, so the test cannot pass by a skip.
+      - name: Mixed base-container and Compose realization through Docker
+        run: |
+          docker info > /dev/null
+          python -m pytest -q -m integration tests/test_mixed_realization_integration.py
       - name: Linux CLI and init smoke
         run: |
           lilrae --help
@@ -307,6 +315,13 @@ jobs:
       - name: Prove core-only and separately installed verifier wheels
         run: >-
           python -m pytest tests/test_scenario_verification_artifacts.py tests/test_lab_core_only_artifact.py -q
+          -m integration
+      # Independent family adapter wheels run outside the source tree on the
+      # released RAES tuple (#1465). The modules are integration-marked, so the
+      # ordinary runs deselect them.
+      - name: Prove installed family adapters on the released RAES tuple
+        run: >-
+          python -m pytest tests/test_family_adapter_contract.py tests/test_structural_factorial_family.py -q
           -m integration
 
   pack-identity-compatibility:
@@ -712,6 +727,14 @@ jobs:
           pip install -e . --no-deps --no-build-isolation
           coverage run --data-file=.coverage.transport -m pytest tests/test_mcp_transport_processes.py tests/test_mcp_payload_processes.py tests/test_lilrae_mcp_runtime_integration.py -q -m integration
           coverage xml --data-file=.coverage.transport -o coverage/transport.xml
+      - name: Extracted MCP shutdown through the real capture sidecar
+        # The installed red MCP, SSH broker and Docker harvest must agree on
+        # the complete session census. Include real writer/container failures.
+        # Prerequisite failures must fail this required lane, never skip it.
+        run: |
+          docker info > /dev/null
+          command -v node ssh ssh-keygen
+          python -m pytest tests/test_mcp_capture_lifecycle.py -q -m integration
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-transport-coverage

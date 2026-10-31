@@ -15,12 +15,9 @@ from aptl.backends.scenario_startup import (
 )
 from aptl.backends.scenario_startup_policy import (
     ScenarioComposeStartupPolicy,
-    StartupHealthDependency,
-    StartupHealthProbe,
 )
 from aptl.backends.scenario_service_policy import (
     ScenarioComposeServicePolicy,
-    ServiceEnvironmentFile,
     ServiceFileMount,
     ServiceContainerNameEnvironment,
 )
@@ -34,7 +31,6 @@ from aptl_techvault.runtime_parameters import (
     TECHVAULT_PACK_VERSION,
 )
 from aptl_techvault.account_environment import (
-    SEED_ADMINISTRATOR_KEYS,
     techvault_account_environment,
 )
 
@@ -87,8 +83,6 @@ class TechVaultStartupProvider:
             ),
             environment_fixtures=techvault_account_environment(),
             container_environment=(
-                ContainerEnvironmentBinding("CORTEX_CONTAINER", "aptl-cortex"),
-                ContainerEnvironmentBinding("THEHIVE_CONTAINER", "aptl-thehive"),
                 ContainerEnvironmentBinding("MISP_CONTAINER", "aptl-misp"),
                 ContainerEnvironmentBinding(
                     "SHUFFLE_CONTAINER", "aptl-shuffle-frontend"
@@ -122,13 +116,9 @@ class TechVaultStartupProvider:
                 "MISP_URL",
                 "SHUFFLE_API_KEY",
                 "SHUFFLE_URL",
-                "CORTEX_API_KEY",
-                "THEHIVE_API_KEY",
-                *SEED_ADMINISTRATOR_KEYS,
             ),
             mcp_build_script="mcp/build-all-mcps.sh",
             mcp_server_keys=(
-                McpServerCredentials("aptl-casemgmt", ("THEHIVE_API_KEY",)),
                 McpServerCredentials(
                     "aptl-indexer",
                     (
@@ -158,38 +148,16 @@ class TechVaultStartupProvider:
 
     @staticmethod
     def compose_startup_policy() -> ScenarioComposeStartupPolicy:
-        """Wait for declared stateful dependencies before starting JVM services."""
+        """Add no health probes; TechVault's stateful services declare their own."""
 
-        return ScenarioComposeStartupPolicy(
-            probes=(
-                StartupHealthProbe(
-                    "thehive-cassandra",
-                    ("CMD", "cqlsh", "-e", "describe cluster"),
-                ),
-                StartupHealthProbe(
-                    "thehive-es",
-                    ("CMD", "curl", "-fsS", "http://localhost:9200/_cluster/health"),
-                ),
-                StartupHealthProbe(
-                    "cortex",
-                    ("CMD", "curl", "-fsS", "http://localhost:9001/api/status"),
-                    start_period_seconds=180,
-                ),
-            ),
-            dependencies=(
-                StartupHealthDependency("cortex", "thehive-es"),
-                StartupHealthDependency("thehive", "thehive-cassandra"),
-                StartupHealthDependency("thehive", "thehive-es"),
-                StartupHealthDependency("thehive", "cortex"),
-            ),
-        )
+        return ScenarioComposeStartupPolicy()
 
     @staticmethod
     def compose_service_policy() -> ScenarioComposeServicePolicy:
         """Connect SDL-owned certificate files to upstream image TLS paths.
 
         The pack delivers these generated files at portable locations. The
-        image-specific paths and TheHive Play config belong to this adapter.
+        image-specific paths belong to this adapter.
         """
 
         return ScenarioComposeServicePolicy(
@@ -203,21 +171,6 @@ class TechVaultStartupProvider:
                     "shuffle-frontend",
                     "config/soc_certs/shuffle-frontend/server.key",
                     "/etc/nginx/privkey.pem",
-                ),
-                ServiceFileMount(
-                    "thehive",
-                    "config/soc_certs/thehive/keystore.p12",
-                    "/etc/thehive/keystore.p12",
-                ),
-                ServiceFileMount(
-                    "thehive",
-                    "config/thehive/application.conf",
-                    "/etc/thehive/application.conf",
-                ),
-            ),
-            environment_files=(
-                ServiceEnvironmentFile(
-                    "thehive", "config/soc_certs/thehive/keystore.p12.password"
                 ),
             ),
             container_name_environment=(

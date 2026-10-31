@@ -14,7 +14,7 @@ import subprocess
 import pytest
 from raes_contracts.canonical import canonical_json_digest
 
-from aptl.workbench.lilrae_tool_transport import LilraeToolTransport
+from aptl.backends.participant_tools.transport import LilraeToolTransport
 from tests.lilrae_tool_fixture import tool_scenario, tool_bindings
 from tests.test_lilrae_tool_runtime import Controller
 from tests.test_lilrae_concurrent_participants import manager_for

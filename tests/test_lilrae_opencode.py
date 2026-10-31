@@ -125,7 +125,7 @@ def test_only_verified_profile_tools_reach_opencode(tmp_path):
         executor("action", Event())
     assert runner.calls == []
     from dataclasses import replace
-    from aptl.backends.lilrae_participant_tools import LilraeToolSession
+    from aptl.backends.participant_tools.session import LilraeToolSession
     from tests.test_lilrae_participant_tools import binding, port
 
     cancellation = Event()

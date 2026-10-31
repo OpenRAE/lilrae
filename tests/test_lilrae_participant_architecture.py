@@ -17,7 +17,7 @@ def test_participant_components_obey_the_executable_owner_model():
 
 
 def test_model_rejects_a_second_runtime_owner_in_tool_dispatch():
-    path = "src/aptl/backends/lilrae_participant_tools.py"
+    path = "src/aptl/backends/participant_tools/session.py"
     original = (ROOT / path).read_text()
     mutant = (
         original + "\nfrom raes_runtime.manager import RuntimeManager as HiddenOwner\n"
@@ -28,7 +28,7 @@ def test_model_rejects_a_second_runtime_owner_in_tool_dispatch():
 
 
 def test_model_rejects_native_transport_or_history_ownership_in_the_pure_model():
-    path = "src/aptl/backends/lilrae_participant_action_model.py"
+    path = "src/aptl/core/participant_tools/model.py"
     assert path in COMPONENTS
     assert check_component(path, (ROOT / path).read_text() + "\nimport socket\n")
     assert check_component(

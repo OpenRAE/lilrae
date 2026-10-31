@@ -30,7 +30,7 @@ ADRs [003](../adrs/adr-003-mcp-common-library.md),
 [050](../adrs/adr-050-terminal-attempt-archival-and-atomic-seal.md) already own
 the relevant boundaries. This preflight adds no new ADR or policy engine.
 
-The concurrently added [proposed ADR-063](../adrs/adr-063-executable-participant-action-boundaries.md)
+The concurrently added [proposed ADR-065](../adrs/adr-065-executable-participant-action-boundaries.md)
 and [enforcement design](participant-action-enforcement.md) describe scoped
 tool sessions, local IPC and finite verification models. Their proposed
 status does not establish support or acceptance. Verification models must

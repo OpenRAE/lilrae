@@ -1939,3 +1939,191 @@ describe('#304: PersistentSession.close() awaits remote stream-close', () => {
     expect((manager as any).sessions.size).toBe(0);
   });
 });
+
+describe('harvest on remote close (#campaign: harvest-at-shutdown)', () => {
+  function mockStreamSession(sessionId: string, runId: string) {
+    const mockStream = Object.assign(new EventEmitter(), {
+      write: vi.fn(),
+      end: vi.fn(() => mockStream.emit('close')),
+      stderr: new EventEmitter(),
+    });
+    const mockClient = {
+      shell: vi.fn((_opts: any, callback: any) => {
+        callback(null, mockStream);
+        return mockStream;
+      }),
+    } as any;
+    const session = new PersistentSession(sessionId, 'victim', 'kali', 'background', mockClient, {
+      port: 22,
+      mode: 'normal',
+      timeoutMs: 60000,
+    });
+    // Pin the bound run id the harvest uses, as the real open path does.
+    (session as any).boundRunId = runId;
+    return { session, mockStream };
+  }
+
+  it('harvests a remotely-closed session before dropping it from the map', async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new SSHConnectionManager();
+      const listedAtHarvest: string[][] = [];
+      const hook = vi.fn(async (id: string, runId: string | undefined) => {
+        listedAtHarvest.push(manager.listSessions().map((s) => s.sessionId));
+        expect(id).toBe('hydra-victim');
+        expect(runId).toBe('run-x');
+        return true;
+      });
+      manager.setHarvestHook(hook);
+
+      const { session, mockStream } = mockStreamSession('hydra-victim', 'run-x');
+      const initP = session.initialize();
+      await vi.advanceTimersByTimeAsync(1000);
+      await initP;
+      // Adopt the session exactly as createSession does.
+      (manager as any).attachSessionLifecycle('hydra-victim', session);
+      (manager as any).sessions.set('hydra-victim', session);
+      expect(manager.listSessions().map((s) => s.sessionId)).toContain('hydra-victim');
+
+      // The remote side dies: the kernel closes the PTY stream.
+      mockStream.emit('close');
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.waitFor(() => expect(hook).toHaveBeenCalledTimes(1));
+
+      // Harvested while still listed, then removed.
+      expect(listedAtHarvest[0]).toContain('hydra-victim');
+      expect(manager.listSessions()).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['close_session', 'close_all_sessions'])('deduplicates remote events with the real %s handler', async (tool) => {
+    vi.useFakeTimers();
+    try {
+      const manager = new SSHConnectionManager();
+      const hook = vi.fn().mockResolvedValue(true);
+      manager.setHarvestHook(hook);
+      const { session } = mockStreamSession('agent', 'run-a');
+      const init = session.initialize();
+      await vi.advanceTimersByTimeAsync(1000);
+      await init;
+      (session as any).boundRunId = 'run-a';
+      (manager as any).sessions.set('agent', session);
+      (manager as any).attachSessionLifecycle('agent', session);
+      const handlers = generateToolHandlers({ toolPrefix: 'test', targetName: 'Test' });
+      const result = await handlers[`test_${tool}`]({ session_id: 'agent' }, {
+        sshManager: manager, labConfig: { server: {} } as any,
+      });
+      expect(JSON.parse(result.content[0].text).success).toBe(true);
+      expect(hook).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('awaits a remote harvest already running when shutdown begins', async () => {
+    const manager = new SSHConnectionManager();
+    let finish!: (ok: boolean) => void;
+    manager.setHarvestHook(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+    const harvest = manager.harvestSession('remote', 'run-x');
+    await Promise.resolve();
+    let exited = false;
+    const shutdown = manager.shutdown(vi.fn()).then((ok) => { exited = true; return ok; });
+    await Promise.resolve();
+    expect(exited).toBe(false);
+    finish(false);
+    await harvest;
+    expect(await shutdown).toBe(false);
+  });
+
+  it('shares a harvest across remote close, agent close and shutdown', async () => {
+    const manager = new SSHConnectionManager();
+    const hook = vi.fn().mockResolvedValue(true);
+    manager.setHarvestHook(hook);
+    const { session } = mockStreamSession('once', 'run-z');
+    const first = (manager as any).harvestRemoteClose(session);
+    const second = manager.harvestSession('once', 'run-z', hook);
+    await Promise.all([first, second]);
+    expect(await manager.shutdown(vi.fn())).toBe(true);
+    expect(hook).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains a failed remote harvest after removing the session', async () => {
+    const manager = new SSHConnectionManager();
+    const hook = vi.fn().mockResolvedValue(false);
+    manager.setHarvestHook(hook);
+    const { session } = mockStreamSession('failed', 'run-x');
+    await (manager as any).harvestRemoteClose(session);
+    expect(manager.listSessions()).toHaveLength(0);
+    expect(await manager.shutdown(vi.fn())).toBe(false);
+    expect(hook).toHaveBeenCalledTimes(1);
+  });
+
+  it('drains a pending create before forced finalization and refuses new work', async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new SSHConnectionManager();
+      const { session, mockStream } = mockStreamSession('pending', 'run-x');
+      let created!: (session: PersistentSession) => void;
+      (manager as any).pendingSessions.set('pending', new Promise<PersistentSession>((resolve) => { created = resolve; }));
+      const finalize = vi.fn(async () => { mockStream.emit('close'); return true; });
+      const shutdown = manager.shutdown(finalize);
+      await expect(manager.createSession('late', 'h', 'u', 'background', '/k')).rejects.toThrow('shutting down');
+      await expect(manager.executeCommand('h', 'u', '/k', 'id')).rejects.toThrow('shutting down');
+      expect(finalize).not.toHaveBeenCalled();
+      const init = session.initialize();
+      await vi.advanceTimersByTimeAsync(1000);
+      await init;
+      (session as any).boundRunId = 'run-x';
+      (manager as any).sessions.set('pending', session);
+      (manager as any).attachSessionLifecycle('pending', session);
+      created(session);
+      expect(await shutdown).toBe(true);
+      expect(finalize).toHaveBeenCalledWith('pending', 'run-x');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('harvests a session that dies during initialization', async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new SSHConnectionManager();
+      const stream = Object.assign(new EventEmitter(), { write: vi.fn(), end: vi.fn(), stderr: new EventEmitter() });
+      (manager as any).getConnection = vi.fn().mockResolvedValue({ shell: (_options: unknown, cb: any) => cb(null, stream) });
+      const hook = vi.fn().mockResolvedValue(true);
+      manager.setHarvestHook(hook);
+      const creation = manager.createSession('init-death', 'h', 'u', 'background', '/k');
+      const failure = expect(creation).rejects.toThrow('Shell closed during initialization');
+      await Promise.resolve();
+      stream.emit('close');
+      await vi.advanceTimersByTimeAsync(0);
+      await failure;
+      expect(hook).toHaveBeenCalledTimes(1);
+      expect(hook.mock.calls[0][0]).toBe('init-death');
+      expect(manager.listSessions()).toHaveLength(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('releases startup when the SSH client rejects an exec synchronously', async () => {
+    const manager = new SSHConnectionManager();
+    (manager as any).getConnection = vi.fn().mockResolvedValue({ exec: () => { throw new Error('connection closed'); } });
+    await expect(manager.executeCommand('h', 'u', '/k', 'id')).rejects.toThrow('connection closed');
+    const finalize = vi.fn();
+    expect(await manager.shutdown(finalize)).toBe(true);
+    expect(finalize).not.toHaveBeenCalled();
+  });
+
+  it('finalizes an in-flight exec and waits for its single harvest at shutdown', async () => {
+    const manager = new SSHConnectionManager();
+    const stream = Object.assign(new EventEmitter(), { signal: vi.fn(), close: vi.fn(), stderr: new EventEmitter() });
+    const client = { exec: vi.fn((_cmd: unknown, _opts: unknown, cb: any) => cb(null, stream)) };
+    (manager as any).getConnection = vi.fn().mockResolvedValue(client);
+    const hook = vi.fn().mockResolvedValue(true);
+    manager.setHarvestHook(hook);
+    const command = manager.executeCommand('h', 'u', '/k', 'sleep 300', 22, 60000, { sessionId: 'exec-active' });
+    await Promise.resolve();
+    const finalize = vi.fn(async () => { stream.emit('close', 143, null); return true; });
+    expect(await manager.shutdown(finalize)).toBe(true);
+    await command;
+    expect(finalize.mock.calls[0][0]).toBe('exec-active');
+    expect(hook).toHaveBeenCalledTimes(1);
+  });
+});

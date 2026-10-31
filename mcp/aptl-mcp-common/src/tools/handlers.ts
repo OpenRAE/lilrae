@@ -41,22 +41,19 @@ function assertSessionIdContract(value: unknown): asserts value is string {
  * close_session / close_all_sessions handlers harvest per-session captures
  * from, into `.aptl/runs/<run_id>/kali-side/<session_id>/` on the host.
  *
- * Per ADR-041 the capture sink may be owned by a dedicated sidecar that the
- * workload container does not mount (so a sudo-capable agent cannot read or
- * tamper with evidence). When `capture_container_name` is set, harvest targets
- * it (e.g. `aptl-kali-capture`); otherwise it falls back to the workload's own
- * `container_name`.
+ * Per ADR-041 the capture sink is a dedicated sidecar that the workload
+ * container does not mount, so a sudo-capable agent cannot read or tamper
+ * with evidence. Harvest targets only the declared `capture_container_name`;
+ * a workload container never owns captures, so there is no fallback (#1242).
  *
- * Returns `undefined` when the lab is configured for an API-only target (no
- * container) or when the configKey is missing — those MCP servers don't ship
- * captures and harvest is a no-op.
+ * Returns `undefined` when the server declares no capture sidecar (API-only
+ * servers, mcp-reverse) or when the configKey is missing — those MCP servers
+ * don't ship captures and harvest is a no-op.
  */
 export function resolveCaptureContainer(labConfig: LabConfig): string | undefined {
   const key = labConfig.server.configKey;
   if (!key || !labConfig.containers) return undefined;
-  const container = labConfig.containers[key];
-  if (!container) return undefined;
-  return container.capture_container_name ?? container.container_name;
+  return labConfig.containers[key]?.capture_container_name;
 }
 
 /**
@@ -76,13 +73,15 @@ export function resolveCaptureContainer(labConfig: LabConfig): string | undefine
  * cause the harvest to look under the wrong run dir (codex
  * pre-push cycle 3 finding-6).
  */
-async function maybeHarvest(
+export async function maybeHarvest(
   labConfig: LabConfig,
   sessionId: string,
   runId?: string,
 ): Promise<boolean> {
   const containerName = resolveCaptureContainer(labConfig);
-  if (!containerName) return true;
+  // An absent declaration disables captures; an empty declared name must fail.
+  if (containerName === undefined) return true;
+
   try {
     return await harvestSession({ containerName, runId }, sessionId);
   } catch (err) {
@@ -227,7 +226,7 @@ const baseHandlers: Record<string, ToolHandler> = {
       // captures out of the docker named volume now that the stream
       // has closed. Best-effort; failure logs to stderr and never
       // turns into a tool error.
-      await maybeHarvest(labConfig, result.sessionId);
+      await sshManager.harvestSession(result.sessionId, result.runId, () => maybeHarvest(labConfig, result.sessionId, result.runId));
 
       return {
         content: [
@@ -246,7 +245,7 @@ const baseHandlers: Record<string, ToolHandler> = {
     } catch (error) {
       markToolFailure(error);
       if (error instanceof CommandTimeoutError) {
-        await harvestOnceClosed(error, (sessionId, runId) => maybeHarvest(labConfig, sessionId, runId));
+        await harvestOnceClosed(error, (sessionId, runId) => sshManager.harvestSession(sessionId, runId, () => maybeHarvest(labConfig, sessionId, runId)));
       }
       return {
         content: [
@@ -483,7 +482,7 @@ const baseHandlers: Record<string, ToolHandler> = {
       // failure can't leave the session stuck in the manager.
       let harvestWarning: string | undefined;
       if (closed) {
-        const ok = await maybeHarvest(labConfig, session_id, boundRunId);
+        const ok = await sshManager.harvestSession(session_id, boundRunId, () => maybeHarvest(labConfig, session_id, boundRunId));
         if (!ok) {
           // Surface the anomaly to the tool caller, not just MCP
           // stderr (codex pre-push cycle 3 finding-2).
@@ -590,7 +589,7 @@ const baseHandlers: Record<string, ToolHandler> = {
       // sequential is fine and keeps stderr ordering deterministic.
       const harvestWarnings: string[] = [];
       for (const { sessionId, runId } of sessionBindings) {
-        const ok = await maybeHarvest(labConfig, sessionId, runId);
+        const ok = await sshManager.harvestSession(sessionId, runId, () => maybeHarvest(labConfig, sessionId, runId));
         if (!ok) {
           harvestWarnings.push(sessionId);
         }

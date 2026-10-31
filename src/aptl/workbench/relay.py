@@ -11,12 +11,12 @@ from pathlib import Path
 from typing import Any, Protocol, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from aptl.workbench.lilrae_tool_transport import LilraeToolTransport
+    from aptl.core.participant_tools.contracts import ToolCarrier
 
 from anyio import CancelScope
 
 from aptl.workbench.dispatch import ProtocolAdmission
-from aptl.workbench.mcp_results import redact_mcp_result
+from aptl.core.mcp_results import redact_mcp_result
 from aptl.workbench.process import _signal_group
 from aptl.workbench.profiles import ServerProfile, WorkbenchConfigurationError
 
@@ -68,7 +68,7 @@ class RelayLaunch:
     cwd: Path
     env: Mapping[str, str]
     server: ServerProfile
-    participant_tools: LilraeToolTransport | None = field(
+    participant_tools: ToolCarrier | None = field(
         default=None, repr=False, compare=False
     )
 

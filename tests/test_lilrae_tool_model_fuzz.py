@@ -6,8 +6,8 @@ import pytest
 from hypothesis import settings, strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 
-from aptl.backends.lilrae_participant_action_model import violations
-from aptl.backends.lilrae_participant_tools import LilraeToolSession
+from aptl.core.participant_tools.model import violations
+from aptl.backends.participant_tools.session import LilraeToolSession
 from aptl.workbench.process import AgentExecutionError
 from tests.test_lilrae_participant_tools import binding, port, result
 

@@ -7,8 +7,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from aptl.backends.lilrae_participant_tools import LilraeToolSession
-from aptl.workbench.lilrae_tool_transport import LilraeToolTransport
+from aptl.backends.participant_tools.session import LilraeToolSession
+from aptl.backends.participant_tools.transport import LilraeToolTransport
 from tests.test_lilrae_participant_tools import binding, port, result
 
 
@@ -36,7 +36,7 @@ def proposal(environment, **changes):
 
 
 def test_worker_start_failure_closes_socket_without_waiting_for_a_worker(monkeypatch):
-    from aptl.workbench import lilrae_tool_transport as module
+    from aptl.backends.participant_tools import transport as module
 
     session = LilraeToolSession(port(), (binding(),), Event())
     transport = LilraeToolTransport(session)
@@ -81,7 +81,14 @@ def test_socket_preserves_authority_and_redacts_completion(tmp_path):
 
 @pytest.mark.parametrize(
     "extra",
-    [{"token": "foreign"}, {"participant_address": "peer"}, {"tool": "unknown"}],
+    [
+        {"token": "foreign"},
+        {"participant_address": "peer"},
+        {"tool": "unknown"},
+        {"version": True},
+        {"arguments": []},
+        {"configuration": []},
+    ],
 )
 def test_foreign_or_extended_proposal_has_no_dispatch(extra):
     authority = port()

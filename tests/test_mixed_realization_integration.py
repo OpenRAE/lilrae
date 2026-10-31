@@ -23,6 +23,7 @@ import time
 
 import pytest
 from raes.runtime_configuration import RuntimeConfiguration, RuntimePackage
+from raes.runtime_environment import RuntimeEnvironmentVariable
 
 from aptl.core.deployment import (
     DeploymentImageRealization,
@@ -64,9 +65,6 @@ services:
   image-box:
     image: postgres:16-alpine
     container_name: aptl-image-box
-    environment:
-      POSTGRES_PASSWORD: test
-      POSTGRES_HOST_AUTH_METHOD: trust
   free-box:
     image: alpine:3.19
     container_name: aptl-free-box
@@ -122,7 +120,15 @@ def test_realize_materializes_runtime_node_and_starts_image_node_together(tmp_pa
         ),
         os="linux",
         os_version="",
-        runtime=None,
+        # Generated Compose takes service environment from the spec, not from
+        # the project's docker-compose.yml. Postgres exits without this setting.
+        runtime=RuntimeConfiguration(
+            environment=[
+                RuntimeEnvironmentVariable(
+                    name="POSTGRES_HOST_AUTH_METHOD", value="trust"
+                )
+            ]
+        ),
     )
     spec = DeploymentRealizationSpec(
         profiles=("default",),

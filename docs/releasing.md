@@ -7,15 +7,9 @@ Nobody runs a script, hand-edits the version, or edits `CHANGELOG.md`.
 
 - **Squash-merge** PRs so the PR title becomes the commit on the branch.
 - The PR title must be a **Conventional Commit** (`<type>: <lowercase subject>`).
-  Release rules: `feat:`, `fix:`, `perf:`, `feat!:`, and a `BREAKING CHANGE:`
-  footer each cause a release. Other types (`docs`, `chore`, `refactor`, `test`,
-  `ci`, `build`) do not cause a release.
-- Each release bumps the **minor** version. Breaking changes and fix-only
-  releases also bump the minor version. The configuration sets
-  `"versioning": "always-bump-minor"` in `release-please-config.json`.
-- A major version bump occurs only when the maintainer decides it. To make one,
-  put a `Release-As: X.0.0` footer in the body of a commit that goes to `main`.
-  Do not add this footer unless the maintainer asks for it.
+  Bump rules: `feat:` → minor, `fix:` / `perf:` → patch, `feat!:` or a
+  `BREAKING CHANGE:` footer → major (demoted to minor while `0.x`). Other types
+  (`docs`, `chore`, `refactor`, `test`, `ci`, `build`) → no release.
 - Use one Conventional Commit type and scope only; compound titles such as
   `fix(...) + docs:` are not parseable by release-please.
 - **Do not** edit `CHANGELOG.md` or the version; release-please owns both.
@@ -25,6 +19,11 @@ Nobody runs a script, hand-edits the version, or edits `CHANGELOG.md`.
 ## Promoting `dev` to `main`
 
 Feature PRs land on `dev`. Nothing releases until `dev` is promoted to `main`.
+
+Milestone 44 is the exception. Its PRs land on `go-cutover` and use a type
+that does not release. Go port 31 merges `go-cutover` into `dev` with a merge
+commit, so Release Please keeps each commit subject. See
+[CI verification](architecture/ci-verification.md#go-cutover-branch).
 
 Open the promotion PR with:
 

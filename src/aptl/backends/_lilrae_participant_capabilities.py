@@ -23,7 +23,7 @@ from aptl.backends.lilrae_participant_execution import (
     LilraeParticipantExecution,
     MAX_CONCURRENT_PARTICIPANTS,
 )
-from aptl.backends.lilrae_participant_tools import (
+from aptl.backends.participant_tools.session import (
     MAX_TOOL_ACTIONS,
     MAX_CONCURRENT_TOOLS,
 )

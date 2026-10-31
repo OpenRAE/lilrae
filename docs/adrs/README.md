@@ -29,9 +29,9 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [005](adr-005-docker-compose-profiles.md) | Docker Compose Profiles for Selective Deployment | accepted | 2025-09-01 |
 | [006](adr-006-four-network-segmentation.md) | Four-Network Segmentation Architecture | accepted | 2026-02-07 |
 | [007](adr-007-python-cli-control-plane.md) | Python CLI as Primary Control Plane | accepted | 2026-02-07 |
-| [008](adr-008-soc-stack-integration.md) | Integrated SOC Stack (MISP, TheHive, Cortex, Shuffle, Suricata) | accepted | 2026-02-22 |
+| [008](adr-008-soc-stack-integration.md) | Integrated SOC Stack (MISP, TheHive, Cortex, Shuffle, Suricata) | superseded in part by ADR-063 | 2026-02-22 |
 | [009](adr-009-scenario-engine.md) | Scenario Engine with YAML Specs and Run Archive Collectors | accepted | 2026-03-02 |
-| [010](adr-010-sonarcloud-quality.md) | SonarCloud for Continuous Code Quality | accepted | 2026-03-07 |
+| [010](adr-010-sonarcloud-quality.md) | SonarCloud for Continuous Code Quality | superseded in part by ADR-064 | 2026-03-07 |
 | [011](adr-011-web-ui.md) | Notebook-Style Web UI (SvelteKit + FastAPI) | proposed | 2026-03-20 |
 | [012](adr-012-opentelemetry-integration.md) | OpenTelemetry Integration | accepted | 2026-03-21 |
 | [013](adr-013-deployment-abstraction.md) | Deployment Backend Abstraction Layer | accepted | 2026-03-22 |
@@ -83,5 +83,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [059](adr-059-canonical-techvault-delivery-and-host-mcp-access.md) | Canonical TechVault Delivery and Host MCP Access | superseded in part by ADR-060 and ADR-061 | 2026-09-17 |
 | [060](adr-060-vm-only-seat-containment.md) | VM-Only Seat Containment | superseded in part by ADR-061 | 2026-09-20 |
 | [061](adr-061-gateless-vm-seat-access.md) | Browser Desktop for VM Seats | accepted | 2026-09-30 |
-| [062](adr-062-lilrae-name-and-naming-convention.md) | LilRAE Name and Naming Convention for New Code | accepted | 2026-10-05 |
-| [063](adr-063-executable-participant-action-boundaries.md) | Executable Participant Action Boundaries | proposed | 2026-10-31 |
+| [062](adr-062-lilrae-name-and-naming-convention.md) | LilRAE Name and Naming Convention for New Code | superseded in part by ADR-064 | 2026-10-05 |
+| [063](adr-063-remove-thehive-and-cortex.md) | Remove TheHive and Cortex from the TechVault SOC Stack | accepted | 2026-10-30 |
+| [064](adr-064-layered-architecture-and-code-conventions.md) | Layered Architecture and Code Conventions | accepted | 2026-10-31 |
+| [065](adr-065-executable-participant-action-boundaries.md) | Executable Participant Action Boundaries | proposed | 2026-10-31 |

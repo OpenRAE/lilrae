@@ -1,0 +1,1522 @@
+{
+  "release": "v7.0.0",
+  "revision": "aad8f8b93b9f890493ad6d7f15d6259512c489f7",
+  "method": "raes_env_packs.kits.load_kit_release (latest release of every kit)",
+  "nodes": [
+    {
+      "kit": "infrastructure.application-api-service",
+      "kit_version": "1.2.0",
+      "node": "application",
+      "source": {
+        "name": "application-service",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "application_surface",
+            "service": "http",
+            "name": "Application surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "${api_base_path}",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.authoritative-dns-service",
+      "kit_version": "1.2.0",
+      "node": "dns",
+      "source": {
+        "name": "bind9",
+        "version": "9"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.browser-workstation",
+      "kit_version": "1.2.0",
+      "node": "workstation",
+      "source": {
+        "name": "chromium",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.cache-key-value-store",
+      "kit_version": "1.2.0",
+      "node": "cache",
+      "source": {
+        "name": "valkey",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.certificate-authority",
+      "kit_version": "1.2.0",
+      "node": "ca",
+      "source": {
+        "name": "step-ca",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.container-orchestration",
+      "kit_version": "1.2.0",
+      "node": "orchestrator",
+      "source": {
+        "name": "k3s",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.dhcp-ipam-service",
+      "kit_version": "1.2.0",
+      "node": "dhcp",
+      "source": {
+        "name": "kea",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.firewall-nat",
+      "kit_version": "1.2.0",
+      "node": "firewall",
+      "source": {
+        "name": "nftables",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.git-forge",
+      "kit_version": "1.2.0",
+      "node": "forge",
+      "source": {
+        "name": "gitea",
+        "version": "1"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "forge_surface",
+            "service": "http",
+            "name": "Forge surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.image-inference-service",
+      "kit_version": "1.2.0",
+      "node": "inference",
+      "source": {
+        "name": "triton-inference-server",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "inference_surface",
+            "service": "http",
+            "name": "Inference surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.inference-api-gateway",
+      "kit_version": "1.2.0",
+      "node": "gateway",
+      "source": {
+        "name": "litellm",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "gateway_surface",
+            "service": "http",
+            "name": "Gateway surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.isolated-python-analysis-sandbox",
+      "kit_version": "1.2.0",
+      "node": "sandbox",
+      "source": {
+        "name": "python",
+        "version": "3.12"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.issue-tracker",
+      "kit_version": "1.2.0",
+      "node": "tracker",
+      "source": {
+        "name": "openproject",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "tracker_surface",
+            "service": "http",
+            "name": "Tracker surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.lab-portal",
+      "kit_version": "1.2.0",
+      "node": "portal",
+      "source": {
+        "name": "homepage",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "portal_surface",
+            "service": "http",
+            "name": "Portal surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.ldap-directory",
+      "kit_version": "1.2.0",
+      "node": "directory",
+      "source": {
+        "name": "openldap",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.linux-domain-member",
+      "kit_version": "1.2.0",
+      "node": "domain_member",
+      "source": {
+        "name": "linux",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.load-rehearsal-runner",
+      "kit_version": "1.2.0",
+      "node": "runner",
+      "source": {
+        "name": "k6",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.message-broker",
+      "kit_version": "1.2.0",
+      "node": "broker",
+      "source": {
+        "name": "rabbitmq",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.model-registry",
+      "kit_version": "1.2.0",
+      "node": "registry",
+      "source": {
+        "name": "mlflow",
+        "version": "3"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "registry_surface",
+            "service": "http",
+            "name": "Registry surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.notebook-environment",
+      "kit_version": "1.2.0",
+      "node": "notebook",
+      "source": {
+        "name": "jupyterlab",
+        "version": "4"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "notebook_surface",
+            "service": "http",
+            "name": "Notebook surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.observability-evidence-store",
+      "kit_version": "1.2.0",
+      "node": "metrics",
+      "source": {
+        "name": "grafana",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "metrics_surface",
+            "service": "http",
+            "name": "Metrics surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.observability-evidence-store",
+      "kit_version": "1.2.0",
+      "node": "traces",
+      "source": {
+        "name": "tempo",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "traces_surface",
+            "service": "http",
+            "name": "Traces surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.oidc-identity-provider",
+      "kit_version": "1.2.0",
+      "node": "identity_provider",
+      "source": {
+        "name": "keycloak",
+        "version": "26"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "identity_provider_surface",
+            "service": "http",
+            "name": "Identity Provider surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.policy-engine",
+      "kit_version": "1.2.0",
+      "node": "policy",
+      "source": {
+        "name": "open-policy-agent",
+        "version": "1"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "policy_surface",
+            "service": "http",
+            "name": "Policy surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.postgresql-database",
+      "kit_version": "1.2.0",
+      "node": "database",
+      "source": {
+        "name": "postgresql",
+        "version": "17"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "database_services": [
+          {
+            "database_service_id": "postgresql_service",
+            "service": "postgresql",
+            "engine": "postgresql",
+            "protocol": "postgresql",
+            "version": "17",
+            "databases": [
+              {
+                "database_id": "application_database",
+                "name": "${database_name}",
+                "origin": "scenario",
+                "schemas": [
+                  {
+                    "schema_id": "application_schema",
+                    "name": "application",
+                    "tables": [
+                      {
+                        "table_id": "records_table",
+                        "name": "records"
+                      },
+                      {
+                        "table_id": "audit_table",
+                        "name": "audit_log"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "roles": [
+              {
+                "role_id": "application_role",
+                "name": "application",
+                "role_type": "application",
+                "can_login": true
+              },
+              {
+                "role_id": "operator_role",
+                "name": "operator",
+                "role_type": "admin",
+                "can_login": true
+              }
+            ],
+            "grants": [
+              {
+                "grantee_role_ref": "application_role",
+                "object_type": "table",
+                "object_ref": "records_table",
+                "privileges": [
+                  "SELECT",
+                  "INSERT",
+                  "UPDATE"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.python-evaluation-worker",
+      "kit_version": "1.2.0",
+      "node": "worker",
+      "source": {
+        "name": "python",
+        "version": "3.12"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.python-package-resolver",
+      "kit_version": "1.2.0",
+      "node": "resolver",
+      "source": {
+        "name": "devpi",
+        "version": "6"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "resolver_surface",
+            "service": "http",
+            "name": "Resolver surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.rdp-accessible-windows-host",
+      "kit_version": "1.1.0",
+      "node": "endpoint",
+      "source": {
+        "name": "windows-server",
+        "version": "2022"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.reverse-proxy-api-gateway",
+      "kit_version": "1.2.0",
+      "node": "gateway",
+      "source": {
+        "name": "traefik",
+        "version": "3"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "gateway_surface",
+            "service": "http",
+            "name": "Gateway surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "${route_prefix}",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.s3-compatible-object-store",
+      "kit_version": "1.2.0",
+      "node": "object_store",
+      "source": {
+        "name": "minio",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.samba-active-directory-domain-controller",
+      "kit_version": "1.2.0",
+      "node": "domain_controller",
+      "source": {
+        "name": "samba",
+        "version": "4"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.search-index-service",
+      "kit_version": "1.2.0",
+      "node": "search",
+      "source": {
+        "name": "opensearch",
+        "version": "2"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "search_surface",
+            "service": "http",
+            "name": "Search surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.secrets-store",
+      "kit_version": "1.2.0",
+      "node": "secrets_store",
+      "source": {
+        "name": "openbao",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.shuffle-automation-service",
+      "kit_version": "1.2.0",
+      "node": "automation",
+      "source": {
+        "name": "shuffle",
+        "version": "2"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "automation_surface",
+            "service": "http",
+            "name": "Automation surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.shuffle-automation-service",
+      "kit_version": "1.2.0",
+      "node": "storage",
+      "source": {
+        "name": "opensearch",
+        "version": "2"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "storage_surface",
+            "service": "http",
+            "name": "Storage surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.smb-file-service",
+      "kit_version": "1.2.0",
+      "node": "file_service",
+      "source": {
+        "name": "samba",
+        "version": "4"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.smtp-imap-mail-service",
+      "kit_version": "1.3.0",
+      "node": "mail",
+      "source": {
+        "name": "mail-server",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "mail_services": [
+          {
+            "mail_service_id": "environment_mail",
+            "service": "smtp",
+            "engine": "postfix-dovecot",
+            "listeners": [
+              {
+                "listener_id": "smtp_listener",
+                "service": "smtp",
+                "protocol": "smtp",
+                "tls_mode": "starttls_available"
+              },
+              {
+                "listener_id": "imap_listener",
+                "service": "imap",
+                "protocol": "imap",
+                "tls_mode": "starttls_available"
+              }
+            ],
+            "domains": [
+              {
+                "domain_id": "primary_domain",
+                "name": "${mail_domain}"
+              }
+            ],
+            "mailboxes": [
+              {
+                "mailbox_id": "operator_mailbox",
+                "address": "operator@${mail_domain}",
+                "domain_ref": "primary_domain"
+              },
+              {
+                "mailbox_id": "service_mailbox",
+                "address": "service@${mail_domain}",
+                "domain_ref": "primary_domain"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.ssh-accessible-linux-host",
+      "kit_version": "1.2.0",
+      "node": "endpoint",
+      "source": {
+        "name": "linux",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.static-web-service",
+      "kit_version": "1.2.0",
+      "node": "web",
+      "source": {
+        "name": "nginx",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "web_surface",
+            "service": "http",
+            "name": "Web surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.suricata-network-intrusion-detection-sensor",
+      "kit_version": "1.2.0",
+      "node": "sensor",
+      "source": {
+        "name": "suricata",
+        "version": "8"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.telemetry-collector",
+      "kit_version": "1.2.0",
+      "node": "collector",
+      "source": {
+        "name": "opentelemetry-collector",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.text-model-serving",
+      "kit_version": "1.2.0",
+      "node": "model_server",
+      "source": {
+        "name": "vllm",
+        "version": "stable"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "model_server_surface",
+            "service": "http",
+            "name": "Model Server surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.wazuh-security-monitoring-stack",
+      "kit_version": "1.2.0",
+      "node": "manager",
+      "source": {
+        "name": "wazuh-manager",
+        "version": "4"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.wazuh-security-monitoring-stack",
+      "kit_version": "1.2.0",
+      "node": "indexer",
+      "source": {
+        "name": "wazuh-indexer",
+        "version": "4"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "indexer_surface",
+            "service": "http",
+            "name": "Indexer surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.wazuh-security-monitoring-stack",
+      "kit_version": "1.2.0",
+      "node": "dashboard",
+      "source": {
+        "name": "wazuh-dashboard",
+        "version": "4"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "dashboard_surface",
+            "service": "http",
+            "name": "Dashboard surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.webmail-service",
+      "kit_version": "1.2.0",
+      "node": "webmail",
+      "source": {
+        "name": "roundcube",
+        "version": "1"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "webmail_surface",
+            "service": "http",
+            "name": "Webmail surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kit": "infrastructure.windows-active-directory-domain-controller",
+      "kit_version": "1.1.0",
+      "node": "domain_controller",
+      "source": {
+        "name": "windows-server",
+        "version": "2022"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.windows-domain-member",
+      "kit_version": "1.1.0",
+      "node": "domain_member",
+      "source": {
+        "name": "windows-server",
+        "version": "2022"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {}
+    },
+    {
+      "kit": "infrastructure.workflow-orchestrator",
+      "kit_version": "1.2.0",
+      "node": "orchestrator",
+      "source": {
+        "name": "airflow",
+        "version": "3"
+      },
+      "os": "",
+      "os_version": "",
+      "runtime": {
+        "applications": [
+          {
+            "application_id": "orchestrator_surface",
+            "service": "http",
+            "name": "Orchestrator surface",
+            "routes": [
+              {
+                "route_id": "primary",
+                "path": "/",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared primary response."
+                  }
+                ]
+              },
+              {
+                "route_id": "health",
+                "path": "/health",
+                "methods": [
+                  "GET"
+                ],
+                "responses": [
+                  {
+                    "status_code": 200,
+                    "description": "Declared health response."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -7,14 +7,17 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from aptl.core.content_seed import build_content_volume_seeds
+from aptl.core.deployment.errors import BackendSeedError
 from aptl.core.deployment.realization import DeploymentContentRealization
+from aptl.core.helper_images import PINNED_HELPER_IMAGES, SURICATA_SEEDER_IMAGE
 
 # Reuses the Suricata seeder image: it is already pulled unconditionally by
 # every lab start (Suricata is part of the default profile set), so content
 # realization introduces no new image dependency (ADR-043 "already in the
 # lab's supply chain"). The image only needs `/bin/sh`, `mkdir`, and `cp`,
-# which this Alpine-based image provides.
-CONTENT_SEEDER_IMAGE = "jasonish/suricata:7.0"
+# which this Alpine-based image provides. Its digest is pinned in
+# ``aptl.core.helper_images``.
+CONTENT_SEEDER_IMAGE = SURICATA_SEEDER_IMAGE
 
 # Content read-back is a short metadata probe against a local/remote Docker
 # daemon. Keep it independently bounded so an unhealthy daemon cannot stall the
@@ -62,6 +65,14 @@ class ComposeRealizationContentMixin:
 
         if not content:
             return
+        # A pack without Suricata skips the seed step, so content placement
+        # can be the first use of the seeder: point its tag at the pin first.
+        # ``pull_images`` logs the Docker detail; the error carries none.
+        pinned = PINNED_HELPER_IMAGES.get(seeder_image)
+        if pinned is not None and self.pull_images([pinned]):
+            raise BackendSeedError(
+                f"Pinned content seeder image is unavailable: {pinned}"
+            )
         seeds = build_content_volume_seeds(scenario_root, content)
         self.seed_named_volumes(seeds, seeder_image=seeder_image)
 

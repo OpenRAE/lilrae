@@ -12,8 +12,8 @@ from raes_contracts.participant_tool_actions import (
 )
 from raes_contracts.canonical import canonical_json_digest
 
-from aptl.backends.lilrae_participant_tools import LilraeToolBinding, LilraeToolSession
-from aptl.backends.lilrae_participant_action_model import Phase
+from aptl.backends.participant_tools.session import LilraeToolBinding, LilraeToolSession
+from aptl.core.participant_tools.model import Phase
 from aptl.workbench.process import AgentExecutionError
 
 

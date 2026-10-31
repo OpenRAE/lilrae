@@ -42,7 +42,7 @@ rules:
 # issue #634 / autarchy-ai/Ground-Control#1326): CodeQL -> `application`
 # (python/js/ts); IaC/pipeline & Boundary -> `dockerfile`, `docker-compose`,
 # `terraform`, `github-actions`. Each boundary lists only the surfaces its actual
-# `paths` content warrants. `config/**` (suricata, wazuh_*, cortex, thehive, otel)
+# `paths` content warrants. `config/**` (suricata, wazuh_*, otel)
 # and network topology have NO derivation adapter — they stay owned by their
 # boundary via `paths` but contribute no `surfaces` (accept-as-uncovered rather
 # than declaring a token that silently derives nothing).
@@ -53,22 +53,25 @@ grc:
       description: Outermost trust boundary — the contained range vs. the external internet; egress firewall (SAF-002) is the primary safety boundary.
       paths:
         - docker-compose.yml
+        - containers/appliance-egress-proxy/**
         - src/aptl/core/**
         - config/suricata/**
-      # src/aptl/core (python) -> application; docker-compose.yml -> docker-compose;
-      # config/suricata uncovered.
-      surfaces: [application, docker-compose]
+      # src/aptl/core and appliance-egress-proxy (python) -> application;
+      # docker-compose.yml -> docker-compose; the egress proxy Dockerfile ->
+      # dockerfile; config/suricata uncovered.
+      surfaces: [application, docker-compose, dockerfile]
     - key: host-boundary
       name: Docker Host Boundary
       description: Docker host vs. range containers — kill switch (SAF-001), resource limits (INF-004), health checks (INF-003).
       paths:
         - docker-compose.yml
         - containers/base/**
+        - containers/network-boundary-helper/**
         - appliance/guest/**
         - src/aptl/appliance/**
         - src/aptl/cli/**
       # src/aptl/cli (python) -> application; docker-compose.yml -> docker-compose;
-      # containers/base/Dockerfile.* -> dockerfile.
+      # containers/base and network-boundary-helper Dockerfiles -> dockerfile.
       surfaces: [application, docker-compose, dockerfile]
     - key: mcp-control-plane
       name: MCP Control Plane
@@ -106,12 +109,10 @@ grc:
       surfaces: [dockerfile]
     - key: security-zone
       name: Security/SOC Zone (aptl-security)
-      description: Defensive stack — Wazuh, Suricata, MISP, TheHive, Cortex, Shuffle; zone isolation via multi-homing only (NET-005).
+      description: Defensive stack — Wazuh, Suricata, MISP, Shuffle; zone isolation via multi-homing only (NET-005).
       paths:
         - containers/misp-suricata-sync/**
         - config/wazuh_cluster/**
-        - config/cortex/**
-        - config/thehive/**
         - config/wazuh_dashboard/**
         - config/wazuh_indexer/**
       # misp-suricata-sync Dockerfile -> dockerfile; config/* uncovered.

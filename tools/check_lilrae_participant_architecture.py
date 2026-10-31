@@ -12,13 +12,13 @@ import sys
 
 
 COMPONENTS = {
-    "src/aptl/backends/lilrae_participant_action_model.py": frozenset(
+    "src/aptl/core/participant_tools/model.py": frozenset(
         {
             "dataclasses",
             "enum",
         }
     ),
-    "src/aptl/backends/lilrae_participant_tools.py": frozenset(
+    "src/aptl/backends/participant_tools/session.py": frozenset(
         {
             "__future__",
             "collections.abc",
@@ -34,12 +34,14 @@ COMPONENTS = {
             "raes_contracts.contracts",
             "raes_contracts.canonical",
             "raes_contracts.participant_tool_actions",
-            "aptl.backends.lilrae_participant_action_model",
-            "aptl.workbench.mcp_results",
-            "aptl.workbench.process",
+            "aptl.core.participant_tools.model",
+            "aptl.core.mcp_results",
+            "aptl.core.agent_errors",
+            "aptl.core.participant_tools.contracts",
+            "aptl.backends.participant_tools.transport",
         }
     ),
-    "src/aptl/workbench/lilrae_tool_transport.py": frozenset(
+    "src/aptl/backends/participant_tools/transport.py": frozenset(
         {
             "__future__",
             "hmac",
@@ -51,7 +53,9 @@ COMPONENTS = {
             "socketserver",
             "tempfile",
             "threading",
-            "aptl.backends.lilrae_participant_tools",
+            "aptl.core.participant_tools.contracts",
+            "typing",
+            "pydantic",
         }
     ),
 }
@@ -68,12 +72,6 @@ def check_component(path: str, source: str) -> list[str]:
             modules = [alias.name for alias in node.names]
         elif isinstance(node, ast.ImportFrom):
             modules = [node.module if not node.level else "relative-import"]
-            if node.module == "aptl.workbench.process" and any(
-                alias.name != "AgentExecutionError" for alias in node.names
-            ):
-                findings.append(
-                    f"{path}:{node.lineno}: tool adapter cannot own native process execution"
-                )
             if any(alias.name == "*" for alias in node.names):
                 findings.append(
                     f"{path}:{node.lineno}: wildcard import obscures ownership"

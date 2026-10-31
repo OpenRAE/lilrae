@@ -19,6 +19,7 @@ from aptl.core.deployment._proc_net_listeners import (
     read_container_listeners,
 )
 from aptl.core.deployment._compose_capture_config import KALI_CONTAINER
+from aptl.core.deployment._compose_network_query import network_bridge
 from aptl.core.deployment._compose_resource_ownership import OwnershipConflictError
 from aptl.utils.logging import get_logger
 
@@ -113,19 +114,6 @@ def _read_copied_file(destination: Path, max_bytes: int) -> bytes | None:
     except OSError:
         pass
     return payload
-
-
-def _network_bridge(
-    payload: dict[str, Any],
-    options: dict[str, str],
-    network_id: str,
-) -> str:
-    """Return the explicit or deterministic default bridge interface name."""
-
-    bridge = options.get("com.docker.network.bridge.name", "")
-    if not bridge and payload.get("Driver") == "bridge" and network_id:
-        return f"br-{network_id[:12]}"
-    return bridge
 
 
 def _decode_compose_ps(stdout: str) -> list[dict[str, Any]]:
@@ -225,11 +213,16 @@ class ComposeQueryMixin(object):
         labels = _string_mapping(payload.get("Labels"))
         options = _string_mapping(payload.get("Options"))
         network_id = str(payload.get("Id", ""))
-        bridge = _network_bridge(payload, options, network_id)
+        bridge = network_bridge(payload, options, network_id)
         subnets = [
             str(config.get("Subnet", ""))
             for config in ipam_configs
             if isinstance(config, dict) and config.get("Subnet")
+        ]
+        gateways = [
+            str(config.get("Gateway", ""))
+            for config in ipam_configs
+            if isinstance(config, dict) and config.get("Gateway")
         ]
         return {
             "name": str(payload.get("Name", name)),
@@ -240,6 +233,7 @@ class ComposeQueryMixin(object):
             "subnet": ipam.get("Subnet", ""),
             "subnets": subnets,
             "gateway": ipam.get("Gateway", ""),
+            "gateways": gateways,
             "labels": labels,
             "options": options,
             "containers": sorted(c.get("Name", "") for c in containers_map.values()),

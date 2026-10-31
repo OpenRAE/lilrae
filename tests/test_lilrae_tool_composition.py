@@ -14,7 +14,7 @@ from raes_runtime.participant_invocation_tool_actions import (
 )
 
 from aptl.backends.raes_manifest import create_aptl_manifest
-from aptl.backends.lilrae_participant_tools import LilraeToolSession
+from aptl.backends.participant_tools.session import LilraeToolSession
 from aptl.workbench.process import AgentExecutionError
 from tests.lilrae_tool_fixture import tool_bindings, tool_scenario
 from tests.test_lilrae_tool_runtime import Controller

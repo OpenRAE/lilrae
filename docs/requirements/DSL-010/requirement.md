@@ -52,14 +52,16 @@ Extends DSL-008. APTL on origin/main already realizes ACES SDL onto real Docker 
 - IMPLEMENTS → DOCUMENTATION `docs/raes/techvault-curated-live-validation-gate/techvault-attacker-target/participant-action.json`
 - IMPLEMENTS → DOCUMENTATION `docs/raes/techvault-curated-live-validation-gate/techvault-attacker-target/result.json`
 - IMPLEMENTS → DOCUMENTATION `docs/raes/techvault-curated-live-validation-gate/techvault-attacker-target/snapshot.json`
-- IMPLEMENTS → CODE_FILE `src/aptl/backends/lilrae_participant_action_model.py` (Executable action invariants)
-- IMPLEMENTS → CODE_FILE `src/aptl/backends/lilrae_participant_tools.py` (Exact installed mapping and invocation admission)
-- IMPLEMENTS → CODE_FILE `src/aptl/workbench/lilrae_tool_transport.py` (Bounded authenticated carrier)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/participant_tools/model.py` (Executable action invariants)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/participant_tools/session.py` (Exact installed mapping and invocation admission)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/participant_tools/transport.py` (Bounded authenticated carrier)
 - IMPLEMENTS → CODE_FILE `mcp/aptl-mcp-common/src/lilrae-tool-admission.ts` (Pre-handler dispatch and outcome receipt)
 - IMPLEMENTS → CODE_FILE `mcp/aptl-mcp-common/src/server.ts` (Shared red and blue MCP enforcement)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/participant_tools/contracts.py` (Controller interfaces and exact installed bindings)
+- IMPLEMENTS → CODE_FILE `tools/check_architecture.py` (Enrolled transitive layers and conventions)
 - IMPLEMENTS → CODE_FILE `tools/check_lilrae_participant_architecture.py` (Executable dependency ownership check)
 - IMPLEMENTS → DOCUMENTATION `docs/architecture/participant-action-enforcement.md` (Composition controls and qualification boundaries)
-- IMPLEMENTS → DOCUMENTATION `docs/adrs/adr-063-executable-participant-action-boundaries.md` (Executable architecture decision)
+- IMPLEMENTS → DOCUMENTATION `docs/adrs/adr-065-executable-participant-action-boundaries.md` (Executable architecture decision)
 - TESTS → TEST `tests/test_lilrae_participant_action_model.py` (Finite state exploration and negative controls)
 - TESTS → TEST `tests/test_lilrae_participant_architecture.py` (Component dependency controls and mutations)
 - TESTS → TEST `tests/test_lilrae_participant_tools.py` (Exact mapping, refusal, replay, and redaction)

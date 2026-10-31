@@ -52,7 +52,7 @@ function nonEmptyString(value: unknown): string | undefined {
 }
 
 // The error message an API put in its response body: RFC 7807 `detail`
-// (Wazuh), `error.reason` (OpenSearch), `message` (TheHive, MISP), `reason`
+// (Wazuh), `error.reason` (OpenSearch), `message` (MISP), `reason`
 // (Shuffle), or a plain string `error`.
 function apiErrorMessage(body: unknown): string | undefined {
   if (!argumentMapping(body)) {

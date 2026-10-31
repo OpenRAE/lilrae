@@ -1,6 +1,6 @@
 # Participant action enforcement
 
-Status: implementation design for #1418, under ADR-063.
+Status: implementation design for #1418, under ADR-065.
 
 ## Purpose and ownership
 
@@ -24,7 +24,12 @@ An operator connection must never acquire a fabricated participant identity from
 The architecture has two executable views.
 The component view assigns semantic owners and allowed dependencies.
 The action view defines permitted transitions and effect invariants.
-Both views live beside the backend implementation and have change-scoped checks.
+The core owns the action model and shared contracts.
+The RAES adapter package owns the session and local carrier.
+Controllers receive core interfaces.
+The new packages and shared result/error owners are enrolled in the ADR-064 layer check.
+That check follows indirect imports and checks cycles, private imports, and Python conventions.
+The stricter component check also prevents a second runtime owner or native process execution in the session.
 
 The action view is a finite labelled transition model.
 It extends the approach used by RAE's participant-crossing models.
@@ -75,11 +80,14 @@ The same interface accepts automated harnesses and management-owned interactive 
 Controller choice does not change the authored participant's identity.
 
 The current RAES hosted-tool composition supports v1 autonomous execution.
-The dependency pair is RAES 10.2.0 and environment packs 6.5.1.
-Pack release 6.5.1 supports RAES 10 and retains the existing scenario content.
+The locked dependency pair is RAES 10.2.0 and environment packs 7.0.0.
+The supported ranges are RAES `>=10.2.0,<11` and packs `>=7.0.0,<8`.
+This retains the integration branch's TheHive/Cortex removal under ADR-063.
+Tool-action support requires the newer RAES lower bound.
 The bounded-participant authored freeze is unchanged.
 Comparing its RAES 9.1 and 10.2 artifacts found 199 removed empty fields and no other value changes.
-The compiled approval digest changes; the source approval digest and exact-match guard remain.
+The integration branch already accepts that compiled digest in its bounded-agency freeze.
+The source approval digest and exact-match guard remain.
 Here, autonomous execution is the enclosing authored invocation lifecycle.
 It does not require every decision within that invocation to come from a model.
 It does not authorize relabelling arbitrary guest sessions as autonomous participants.
@@ -192,6 +200,7 @@ An unsupported case passing a refusal check does not implement that composition.
 | 10. Mixed realization | `test_lilrae_tool_composition.py` checks distinct released-port refusals for crossing, resource-governed, and shared-time compositions. No general simulation/emulation equivalence is claimed. |
 | 11. Capture choice | Tool histories require no experiment collector. Redaction tests remain effective with capture redaction opt-out set. Existing workload tests retain evaluator and archival ownership. |
 
+Run the enrolled layer check with `python tools/check_architecture.py` in the project environment.
 Run the component check with `python tools/check_lilrae_participant_architecture.py` in the project environment.
 Run the finite model with `bash tools/run-targeted-tests.sh tests/test_lilrae_participant_action_model.py`.
 Run generated traces with `bash tools/run-targeted-tests.sh tests/test_lilrae_tool_model_fuzz.py -m fuzz`.

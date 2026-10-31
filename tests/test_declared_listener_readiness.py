@@ -1,9 +1,10 @@
 """A declared listener is a readiness signal, not something to race.
 
 A node realized from declared facts carries no healthcheck of its own, so the
-container health wait passes the moment it starts. TheHive needs well over a
-minute to bind 9000, so observation read the world too early and the exact
-`service-listeners` requirement failed on timing alone (issue #1006).
+container health wait passes the moment it starts. A slow service can need
+well over a minute to bind its port, so observation read the world too early
+and the exact `service-listeners` requirement failed on timing alone (issue
+#1006).
 """
 
 from __future__ import annotations
@@ -55,7 +56,7 @@ class _Backend:
 
 def _node(
     port: int = 9000,
-    container: str | None = "aptl-thehive",
+    container: str | None = "aptl-console",
     protocol: str = "tcp",
 ) -> _Node:
     return _Node(
@@ -87,12 +88,12 @@ def test_listener_that_never_binds_still_fails():
 
     assert len(failures) == 1
     assert "did not bind" in failures[0]
-    assert "aptl-thehive" in failures[0]
+    assert "aptl-console" in failures[0]
     assert "9000" in failures[0]
 
 
 def test_ipv6_wildcard_bind_satisfies_the_declaration():
-    """TheHive binds `::`; the declaration says 0.0.0.0. Both are wildcards."""
+    """A service binds `::`; the declaration says 0.0.0.0. Both are wildcards."""
     backend = _Backend(appears_after=0, ports=(9000,))
 
     assert await_declared_listeners(backend, (_node(9000),)) == []
@@ -108,12 +109,12 @@ def test_nodes_without_declared_listeners_are_not_waited_on():
 
 def test_every_unmet_node_is_named():
     backend = _Backend(appears_after=10_000)
-    nodes = (_node(9000, "aptl-thehive"), _node(8443, "aptl-misp"))
+    nodes = (_node(9000, "aptl-console"), _node(8443, "aptl-misp"))
 
     failures = await_declared_listeners(backend, nodes, timeout=0, interval=0)
 
     assert len(failures) == 1
-    assert "aptl-thehive" in failures[0]
+    assert "aptl-console" in failures[0]
     assert "aptl-misp" in failures[0]
 
 

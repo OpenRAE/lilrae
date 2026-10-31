@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { generateAPIToolHandlers, HTTPClient } from 'aptl-mcp-common';
+import {
+  DEFAULT_MAX_TOOL_RESULT_TOKENS,
+  generateAPIToolHandlers,
+  HTTPClient,
+  toolResultBudgets,
+} from 'aptl-mcp-common';
 
 // The indexer rule tools take the rule file name from the caller (#1273). No
 // scenario file name or replace-all default lives in this generic config.
@@ -33,6 +38,15 @@ describe('indexer rule-file tools', () => {
     const text = readFileSync(new URL('../docker-lab-config.json', import.meta.url), 'utf8');
     expect(text).not.toMatch(/purple_loop/);
     expect(queries.create_rule.params).toBeUndefined();
+  });
+
+  // create_rule replaces the whole file, so a cut read would delete the rules
+  // after the cut when the agent writes the file back.
+  it('returns a whole rule file and bounds the other tools', () => {
+    const budget = toolResultBudgets(config);
+
+    expect(budget('indexer_get_rule_file')).toBeNull();
+    expect(budget('indexer_query')).toBe(DEFAULT_MAX_TOOL_RESULT_TOKENS);
   });
 
   it('writes the caller-named file and passes overwrite only when asked', async () => {

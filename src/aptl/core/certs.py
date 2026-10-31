@@ -16,6 +16,7 @@ from pathlib import Path
 
 from aptl.core import hostenv
 from aptl.core.ephemeral_containers import EphemeralContainer
+from aptl.core.helper_images import CERT_GENERATOR_IMAGE, PINNED_HELPER_IMAGES
 from aptl.utils.logging import get_logger
 
 log = get_logger("certs")
@@ -38,6 +39,7 @@ class CertResult:
 
 
 CommandRunner = Callable[..., subprocess.CompletedProcess]
+ImagePuller = Callable[[list[str]], list[str]]
 
 
 def ensure_ssl_certs(
@@ -45,6 +47,7 @@ def ensure_ssl_certs(
     *,
     run_command: CommandRunner | None = None,
     project: str | None = None,
+    pull_images: ImagePuller | None = None,
 ) -> CertResult:
     """Ensure SSL certificates exist for the Wazuh Indexer.
 
@@ -58,6 +61,9 @@ def ensure_ssl_certs(
     Args:
         project_dir: Root directory of the APTL project (where
                      docker-compose.yml lives).
+        pull_images: The deployment backend's ``pull_images``. Before the
+                     generator runs, it points the generator's tag at the
+                     pinned digest.
 
     Returns:
         CertResult indicating success, whether certs were generated,
@@ -93,7 +99,13 @@ def ensure_ssl_certs(
             certs_dir=certs_dir,
         )
 
-    return _generate_ssl_certs(project_dir, certs_dir, run_command, project=project)
+    return _generate_ssl_certs(
+        project_dir,
+        certs_dir,
+        run_command,
+        project=project,
+        pull_images=pull_images,
+    )
 
 
 def _generate_ssl_certs(
@@ -102,10 +114,15 @@ def _generate_ssl_certs(
     run_command: CommandRunner | None,
     *,
     project: str | None = None,
+    pull_images: ImagePuller | None = None,
 ) -> CertResult:
     """Run certificate generation and convert the generator outcome."""
     log.info("Generating SSL certificates...")
-    error = _run_cert_generator(project_dir, certs_dir, run_command, project=project)
+    error = _pinned_generator_failure(certs_dir, pull_images)
+    if error is None:
+        error = _run_cert_generator(
+            project_dir, certs_dir, run_command, project=project
+        )
     result = error
     if result is None:
         alias_error = _ensure_manager_root_ca_alias(certs_dir)
@@ -120,6 +137,20 @@ def _generate_ssl_certs(
         log.info("SSL certificates generated successfully at %s", certs_dir)
         result = CertResult(success=True, generated=True, certs_dir=certs_dir)
     return result
+
+
+def _pinned_generator_failure(
+    certs_dir: Path, pull_images: ImagePuller | None
+) -> CertResult | None:
+    """Point the generator's tag at its pinned digest, or report why not."""
+    if pull_images is None:
+        return None
+    warnings = list(pull_images([PINNED_HELPER_IMAGES[CERT_GENERATOR_IMAGE]]))
+    if not warnings:
+        return None
+    error = f"Pinned certificate generator image is unavailable: {'; '.join(warnings)}"
+    log.error(error)
+    return CertResult(success=False, generated=False, certs_dir=certs_dir, error=error)
 
 
 def _ensure_manager_root_ca_alias(certs_dir: Path) -> str | None:

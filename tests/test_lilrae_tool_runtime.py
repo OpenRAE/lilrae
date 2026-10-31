@@ -4,7 +4,7 @@ from threading import Barrier, Event
 
 import pytest
 
-from aptl.backends.lilrae_participant_action_model import (
+from aptl.core.participant_tools.model import (
     Event as ModelEvent,
     advance,
     violations,

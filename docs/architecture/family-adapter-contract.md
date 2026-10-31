@@ -20,6 +20,8 @@ Each provider declares exact qualified targets and a literal family API version.
 Installed distribution versions remain separate from contract versions.
 One distribution must provide the required capabilities for a trial.
 Duplicate compatible providers cause admission failure.
+The release set is `lilrae`, `raes`, and `raes-env-packs`.
+The host and adapter requirements on the release set must include each installed version.
 
 ## Admission and data flows
 
@@ -27,6 +29,8 @@ The caller supplies a sealed RAES trial plan, entry ID, and expanded family.
 Core compares the family with the validated bundle source.
 RAES reconstructs the sealed plan and instantiates its selected entry.
 Core retains the resulting canonical snapshot and provenance.
+Core also retains the entry's sealed participant configurations from the plan copy that RAES verified.
+The entry digest in the provenance binds those configurations to the trial.
 Providers receive detached copies of this context where their capability needs it.
 Serving discovery uses trial identity internally.
 Serving callbacks receive only pack identity, backend identity, and admitted component addresses, as ADR-053 requires.
@@ -55,8 +59,8 @@ flowchart LR
   U[Caller: sealed trial plan] -->|Plan and entry identity| P
   B -->|Validated source and release identity| P
   P -->|Public RAES validation request| V[RAES]
-  V -->|Instantiated scenario and provenance| T
-  D -->|Exact selectors and distribution identity| S
+  V -->|Instantiated scenario, provenance, and sealed configurations| T
+  D -->|Exact selectors, distribution identity, and requirements| S
   A -->|Atomic qualification and typed results| S
   T -->|Detached trial context| S
   S -->|Validated selections| R
@@ -72,9 +76,11 @@ The protected assets are admitted scenario identity, credentials, evidence, and 
 Pack content cannot select Python import paths or install executable code.
 Core selects exact installed entry-point names before loading providers.
 Atomic qualification prevents unqualified version and digest combinations.
+The release-set check prevents an install without dependency resolution from mixing incompatible releases.
 RAES validation prevents altered selections from acquiring trial authority.
 Detached snapshots prevent callback changes to the admitted scenario.
 Snapshot values remain absent from automatic representations and safe identity projections.
+Trial evidence records participant configuration digests, not configuration values.
 Existing environment, path, capture, and backend validators remain mandatory.
 Provider failures produce bounded codes without exception payloads.
 Tests cover rejected admission before backend effects and credential canaries.
@@ -104,4 +110,5 @@ Independent adapter ownership clarifies their application without changing porta
 - [PyPA entry-point specification](https://packaging.python.org/en/latest/specifications/entry-points/): group, name, object reference, and conflict ownership.
 - [PyPA plugin discovery pattern](https://packaging.python.org/en/latest/guides/creating-and-discovering-plugins/): installed package metadata.
 - [Python 3.12 metadata API](https://docs.python.org/3.12/library/importlib.metadata.html): entry-point selection and distribution provenance.
+- [PyPA version specifiers](https://packaging.python.org/en/latest/specifications/version-specifiers/): release-set range checks.
 - [ASD-STE100 Issue 9](https://www.asd-ste100.org/assets/files/ASD-STE100_ISSUE9.pdf): writing rules and consistent technical names.

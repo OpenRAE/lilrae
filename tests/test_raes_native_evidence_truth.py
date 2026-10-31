@@ -168,14 +168,6 @@ def test_sealed_native_record_decides_only_its_exact_techvault_proposition():
     ),
     [
         (
-            "cortex-enrichment-readback",
-            "cortex-enrichment-ready",
-            "urn:raes:observable:cortex-enrichment-ready",
-            "api_response",
-            "observation",
-            "participant-observation",
-        ),
-        (
             "suricata-local-rule-readiness",
             "network-detection-rule-source-ready",
             "urn:raes:observable:network-detection-rule-source-ready",

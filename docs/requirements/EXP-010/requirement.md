@@ -55,7 +55,7 @@ A research apparatus must know before a trial whether it can observe what the pr
 - IMPLEMENTS → CODE_FILE `src/aptl/backends/scenario_capture_discovery.py` (Exact pack/backend capture-provider selection and validation)
 - IMPLEMENTS → CODE_FILE `src/aptl_techvault/capture.py` (TechVault capture declarations and bounded runtime operations)
 - IMPLEMENTS → CODE_FILE `src/aptl_techvault/evidence/techvault.py` (Bounded TechVault source validation and evidence shaping)
-- IMPLEMENTS → CODE_FILE `src/aptl_techvault/evidence/techvault_native.py` (Backend-native Cortex, Suricata, and Wazuh acquisition)
+- IMPLEMENTS → CODE_FILE `src/aptl_techvault/evidence/techvault_native.py` (Backend-native MISP, Suricata, and Wazuh acquisition)
 - IMPLEMENTS → CODE_FILE `src/aptl/core/deployment/_compose_capture_apparatus.py` (Scope-admitted capture realization, activation, observation, and export)
 - IMPLEMENTS → CODE_FILE `src/aptl/backends/raes_runtime_attestation.py` (Exact-release configuration corroboration)
 - IMPLEMENTS → DOCUMENTATION `docs/architecture/issue-992-backend-observability-ownership-preflight.md` (Evidence ownership, intrusion, disclosure, and lifecycle contract)

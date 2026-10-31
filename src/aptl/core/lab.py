@@ -25,6 +25,7 @@ import icontract
 import yaml
 
 from aptl.core.certs import ensure_ssl_certs
+from aptl.core.helper_images import PINNED_HELPER_IMAGES, SURICATA_SEEDER_IMAGE
 from aptl.core.soc_ca import ensure_soc_certs
 from aptl.core.deployment._misp_server_tls import stage_misp_server_tls
 from aptl.core.config import AptlConfig, DeploymentConfig, find_config, load_config
@@ -193,15 +194,6 @@ _UNOWNED_SEARCH_INDEX_RECOVERY_HINT = (
     "https://openrae.github.io/lilrae/troubleshooting/"
     "#lilrae-lab-start-reports-an-unowned-search-index"
 )
-# The backend also names an adopted index whose mapping drifted (#1280).
-_DRIFTED_SEARCH_INDEX_RECOVERY_HINT = (
-    "Back up the index first; `lilrae lab stop` keeps every lab volume, and a "
-    "later start finds the same index. Only if its data is disposable, run "
-    "`lilrae lab stop --volumes`, a destructive reset that permanently deletes "
-    "every lab volume; the next start then creates the index. Recovery steps: "
-    "https://openrae.github.io/lilrae/troubleshooting/"
-    "#lilrae-lab-start-reports-a-search-index-whose-mapping-drifted"
-)
 _WAZUH_MANAGER_SERVICE = "wazuh.manager"
 _WAZUH_MANAGER_CONTAINER = "aptl-wazuh-manager"
 _WAZUH_INDEXER_SERVICE = "wazuh.indexer"
@@ -233,15 +225,6 @@ def _looks_like_unowned_search_index_error(error: str) -> bool:
     )
 
 
-def _looks_like_drifted_search_index_error(error: str) -> bool:
-    """Return True when service materialization named an adopted drifted index."""
-
-    return (
-        "service materialization failed for " in error
-        and "(reason=native-product-contract-mismatch): search index " in error
-    )
-
-
 def _lab_start_failure_error(error: str) -> str:
     """Build the CLI-visible lab-start failure message with recovery hints."""
 
@@ -250,8 +233,6 @@ def _lab_start_failure_error(error: str) -> str:
         return f"{message}\n{_STALE_NETWORK_RECOVERY_HINT}"
     if _looks_like_unowned_search_index_error(error):
         return f"{message}\n{_UNOWNED_SEARCH_INDEX_RECOVERY_HINT}"
-    if _looks_like_drifted_search_index_error(error):
-        return f"{message}\n{_DRIFTED_SEARCH_INDEX_RECOVERY_HINT}"
     return message
 
 
@@ -387,6 +368,7 @@ def admit_start_surface(
     *,
     bundle: ScenarioBundle | None = None,
     startup_selection: ScenarioStartupSelection | None = None,
+    run_id: str | None = None,
 ) -> tuple["AdmittedScenarioStart", "AdmittedStartSurface"]:
     """Lazy RAES import for the one admitted execution lab start reuses."""
 
@@ -401,6 +383,7 @@ def admit_start_surface(
         scenario_path=scenario_path,
         bundle=bundle,
         startup_selection=startup_selection,
+        run_id=run_id,
     )
 
 
@@ -410,8 +393,9 @@ WAZUH_IMAGE_VERSION = "4.12.0"
 # Suricata service's own image is reused so the seed step adds no new
 # supply-chain surface; it is already pulled for the `suricata` service.
 # A test pins this to the `suricata` service's `image:` in
-# docker-compose.yml so the two cannot drift.
-SURICATA_IMAGE = "jasonish/suricata:7.0"
+# docker-compose.yml so the two cannot drift. Its digest is pinned in
+# ``aptl.core.helper_images``.
+SURICATA_IMAGE = SURICATA_SEEDER_IMAGE
 
 # All known Docker Compose profiles. Used as fallback when config is
 # unavailable (e.g. stop_lab, kill switch).  Keep in sync with
@@ -766,7 +750,7 @@ def _stop_recovery_configuration(
             from aptl.core.operator_group_state import load_admitted_operator_groups
 
             admitted_groups = list(load_admitted_operator_groups(search_dir))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             failure = LabResult(
                 success=False,
                 error=f"[lifecycle-state-invalid] Lab {command} blocked: invalid "
@@ -1119,7 +1103,7 @@ def _clean_boot_rootless_refusal(
         try:
             config = load_config(config_path) if config_path is not None else None
             backend = _get_backend(project_root, config)
-        except (FileNotFoundError, ValueError):
+        except FileNotFoundError, ValueError:
             return None
     return _rootless_daemon_refusal(backend)
 
@@ -1149,7 +1133,7 @@ def lab_status(
             try:
                 config = load_config(config_path)
                 backend = _get_backend(config_path.parent, config)
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 return LabStatus(
                     running=False,
                     error="[lifecycle-invalid-configuration] Lab status blocked: "
@@ -1945,7 +1929,16 @@ def _configure_verified_appliance_launch(
             binding = ApplianceBoundaryBinding(
                 policy_digest=descriptor.boundary_policy_digest,
                 payload_digest=descriptor.image_digest,
-                raes_plan_digest=descriptor.participant_routes_digest,
+                participant_routes_digest=(
+                    descriptor.participant_routes_digest
+                    if boundary_policy.seat_component_protection
+                    else None
+                ),
+                raes_plan_digest=(
+                    None
+                    if boundary_policy.seat_component_protection
+                    else descriptor.participant_routes_digest
+                ),
                 raes_boundary_required=boundary_policy.internal_zone_isolation,
                 boundary_helper_image=descriptor.boundary_helper_image,
                 egress_proxy_image=descriptor.egress_proxy_image,
@@ -2053,11 +2046,13 @@ def _load_admitted_start_surface(
             if ctx.start_selection is not None
             else {}
         )
+        ctx.run_store, ctx.run_id = _resolve_run_target(ctx)
         admitted, surface = admit_start_surface(
             ctx.project_dir,
             ctx.config,
             ctx.backend,
             scenario_path=ctx.scenario_path,
+            run_id=ctx.run_id,
             **admission_kwargs,
         )
     except AdmissionRejection as exc:
@@ -2106,7 +2101,7 @@ def _prepare_scenario_startup(
         if plan is None:
             return None
         return _bind_scenario_startup_environment(ctx, plan)
-    except (OSError, ValueError, ScenarioStartupProviderError):
+    except OSError, ValueError, ScenarioStartupProviderError:
         log.warning("Scenario startup adapter preparation failed")
         return LabResult(
             success=False,
@@ -2448,23 +2443,25 @@ def _seed_suricata_volumes_local(ctx: _LabStartContext) -> LabResult | None:
 
     # ctx.backend is narrowed to the local Compose backend by the caller's guard.
     assert ctx.backend is not None
-    # Pull the seeder image up front. Both the ownership repair and the seed
-    # container implicitly pull it via `docker run`, and on a fresh host a
-    # failed/slow implicit pull can surface as an opaque `exit 125` from the
-    # seeder with no docker stderr in the redacted log path — pulling here
-    # keeps registry failures at a stage the user can reason about (a
-    # `Failed to pull ...` warning) instead of a bare seed-exit code.
-    pull_warnings = list(ctx.backend.pull_images([SURICATA_IMAGE]))
+    # Point the seeder tag at its pinned digest up front. Both the ownership
+    # repair and the seed container run the tag via `docker run`, so a failure
+    # here stops the step with a `Failed to pull ...` warning rather than an
+    # opaque `exit 125`, and never falls back to whatever the tag names.
+    pull_warnings = list(
+        ctx.backend.pull_images([PINNED_HELPER_IMAGES[SURICATA_IMAGE]])
+    )
     for pull_warning in pull_warnings:
         log.warning(pull_warning)
     result: LabResult | None = None
-    if ctx.offline_staged and pull_warnings:
+    if pull_warnings:
+        failure = (
+            "Offline staged Suricata image verification failed"
+            if ctx.offline_staged
+            else "Pinned Suricata seeder image is unavailable"
+        )
         result = LabResult(
             success=False,
-            error=(
-                "Offline staged Suricata image verification failed: "
-                f"{'; '.join(pull_warnings)}"
-            ),
+            error=f"{failure}: {'; '.join(pull_warnings)}",
         )
     if result is None:
         ownership = ensure_suricata_config_source_ownership(
@@ -2516,6 +2513,7 @@ def _step_generate_certs(ctx: _LabStartContext) -> LabResult | None:
     cert_result = ensure_ssl_certs(
         ctx.project_dir,
         project=None if ctx.backend is None else ctx.backend._ephemeral_project(),
+        pull_images=None if ctx.backend is None else ctx.backend.pull_images,
     )
     if cert_result.success:
         return None
@@ -2708,14 +2706,14 @@ def _persist_start_recovery(ctx: _LabStartContext) -> LabResult | None:
         from aptl.core.operator_group_state import persist_admitted_operator_groups
 
         persist_admitted_operator_groups(ctx.project_dir, ctx.selected_profiles)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return LabResult(
             success=False,
             error="Could not persist admitted operator groups for recovery.",
         )
     try:
         _persist_cleanup_actions(ctx)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return LabResult(
             success=False,
             error="Could not persist pending lab cleanup records for recovery.",
@@ -3238,18 +3236,29 @@ def _resolve_run_target(ctx: _LabStartContext) -> tuple[object, str]:
     from datetime import datetime, timezone
 
     from aptl.core.runstore import LocalRunStore, resolve_active_run_dir
+    from uuid import uuid4
+
+    if ctx.run_store is not None and ctx.run_id is not None:
+        return ctx.run_store, ctx.run_id
 
     state_dir = ctx.project_dir / ".aptl"
     active_run_dir = resolve_active_run_dir(state_dir)
     if active_run_dir is not None:
-        return LocalRunStore(active_run_dir.parent), active_run_dir.name
+        ctx.run_store, ctx.run_id = (
+            LocalRunStore(active_run_dir.parent),
+            active_run_dir.name,
+        )
+        return ctx.run_store, ctx.run_id
     configured_path = Path(
         getattr(getattr(ctx.config, "run_storage", None), "local_path", "./runs")
     )
     if not configured_path.is_absolute():
         configured_path = ctx.project_dir / configured_path
-    run_id = datetime.now(timezone.utc).strftime("run_%Y%m%dT%H%M%SZ")
-    return LocalRunStore(configured_path), run_id
+    run_id = (
+        datetime.now(timezone.utc).strftime("run_%Y%m%dT%H%M%SZ_") + uuid4().hex[:12]
+    )
+    ctx.run_store, ctx.run_id = LocalRunStore(configured_path), run_id
+    return ctx.run_store, ctx.run_id
 
 
 def _resolve_raes_snapshot(outcome: object) -> object:
@@ -3974,8 +3983,8 @@ def _step_publish_participant_desktop(ctx: _LabStartContext) -> LabResult | None
 def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
     """Refresh local MCP client env keys after SOC seeding."""
     # `.mcp.json` is the canonical config Claude Code, Cursor, and Cline
-    # read to spawn MCP servers. Seed-prime writes API keys (TheHive
-    # provisioned, MISP/Shuffle defaults) to `.env`. If the user has a
+    # read to spawn MCP servers. Seed-prime writes API keys (MISP/Shuffle
+    # defaults) to `.env`. If the user has a
     # local `.mcp.json`, surface those keys into per-server env blocks
     # so the MCPs authenticate without manual rewiring after a fresh
     # `lab stop -v` + `lab start`.
@@ -4051,7 +4060,7 @@ def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-        except (OSError, subprocess.CalledProcessError):
+        except OSError, subprocess.CalledProcessError:
             return LabResult(
                 success=False,
                 error="Seat desktop MCP handoff failed.",
@@ -4839,7 +4848,6 @@ def _serve_appliance_guest_access(ctx: _LabStartContext) -> LabResult | None:
 
 
 _MCP_SERVER_KEYS = {
-    "aptl-casemgmt": ("THEHIVE_API_KEY",),
     "aptl-threatintel": ("MISP_API_KEY",),
     "aptl-soar": ("SHUFFLE_API_KEY",),
 }

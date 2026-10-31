@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from raes_contracts.contracts import ParticipantConfigurationResultModel
-    from aptl.backends.lilrae_participant_tools import LilraeToolSession
+    from aptl.core.participant_tools.contracts import ToolSession
 
 from aptl.utils.pathsafe import create_exclusive_nofollow
 from aptl.workbench.agent import (
@@ -267,11 +267,9 @@ class LilraeOpenCodeExecutor:
         return self._run(cancellation, {})
 
     def invoke_with_tools(
-        self, action_id: str, cancellation: Event, tools: LilraeToolSession
+        self, action_id: str, cancellation: Event, tools: ToolSession
     ) -> str:
         """Deliver fresh server authority from the enclosing RAES invocation."""
-        from aptl.workbench.lilrae_tool_transport import LilraeToolTransport
-
         self._verify_profile_config()
         installed = frozenset(
             (item.server_id, item.tool_name) for item in tools.bindings
@@ -284,7 +282,7 @@ class LilraeOpenCodeExecutor:
             raise AgentExecutionError(
                 "Participant tool session does not match the installed profile."
             )
-        with LilraeToolTransport(tools) as carrier:
+        with tools.transport() as carrier:
             servers = deepcopy(self._tool_servers)
             for name, server in servers.items():
                 server["environment"].update(carrier.environment(name))

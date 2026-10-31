@@ -41,10 +41,10 @@ if TYPE_CHECKING:
 
 
 TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST = (
-    "sha256:530ca558c02c6c4dd80f1d5e45ea0ceaa799ba687a3bf8294be0aade5116d0eb"
+    "sha256:a1abd4a382e048e4f74ce343c1b544626fe0633739dfe473c79f1b5fa3aded2f"
 )
 TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST = (
-    "sha256:6dfe161bf9b4b63dfa64d732f12e71538f5e2bfd0f863ca1fad2fdb2635a9121"
+    "sha256:b989d7d57311574d51c3bba89afa1397c22ee4b28f3cec39e0d0d5fc08aa0422"
 )
 
 # These are configuration descriptions whose realized implementation is bound
@@ -85,8 +85,8 @@ _RUNTIME_FIELD_BY_KIND = {
     "runtime-software-components": "software_components",
 }
 
-# Canonical RAES projections, rechecked with 10.2.0 and raes-env-packs 6.5.1's
-# unchanged content-identified
+# Canonical raes 10.0.0 projections (unchanged since raes 9.1.0) from the
+# env-packs 7.0.0 content-identified
 # TechVault semantic parent.  Each key is independently pinned so changing one
 # SDL claim cannot borrow the pack-level identity and pass as the old contract.
 _TECHVAULT_PROJECTION_DIGESTS: Mapping[tuple[str, str], str] = {
@@ -134,34 +134,6 @@ _TECHVAULT_PROJECTION_DIGESTS: Mapping[tuple[str, str], str] = {
         "misp-redis",
         "runtime-datastore-services",
     ): "sha256:d61c29f46d1fe792418f5ebb6dc523af9742646c9bffc76244b33709986bda28",
-    (
-        "thehive",
-        "runtime-applications",
-    ): "sha256:caa9cc43023ac404efbd77e614cb0d110cc47d4ac755cc268d823dbf0dfb3c61",
-    (
-        "thehive",
-        "runtime-platform-applications",
-    ): "sha256:6f72e8fbddcbf04718071a280e2c0611f7c9aaf7a31248455f73792014a95e78",
-    (
-        "thehive-cassandra",
-        "runtime-datastore-services",
-    ): "sha256:326196501a77fab81362db069cf443d657b2ae01f4bb4e4ea9cb9cdd3e97db3b",
-    (
-        "thehive-es",
-        "runtime-datastore-services",
-    ): "sha256:80f071daa8b1525d255bb004cefc651b948fb0b9ac420d0fc44d01123fb82ae3",
-    (
-        "cortex",
-        "runtime-applications",
-    ): "sha256:0a9e923b5b72896dd1597addbde277cadaa54ef7157f08695c8e9473fc357488",
-    (
-        "cortex",
-        "runtime-platform-applications",
-    ): "sha256:7b0a86a0170dffbfc5cb253bfa4ba359e31aa25e749797112342304aa331a464",
-    (
-        "cortex",
-        "runtime-app-authorizations",
-    ): "sha256:3aa823bef478c17bff706dd7c4634777a33439341ef86d391e5752c8193b059e",
     (
         "shuffle-backend",
         "runtime-applications",
@@ -217,7 +189,7 @@ _TECHVAULT_PROJECTION_DIGESTS: Mapping[tuple[str, str], str] = {
     (
         "soc-workstation",
         "runtime-software-components",
-    ): "sha256:e45538e8e267f242ca508397cdb200219da2d4b20fa846f3d72f594c14826db6",
+    ): "sha256:eba630d4e0938180884e725a319a358affeff4aac3537b8a1bc1d548e272971e",
 }
 
 
@@ -232,10 +204,10 @@ def _identified_release(identity: PackIdentity | None) -> bool:
             identity.set_digest,
         )
         in {
-            ("techvault", "0.1.3", TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST),
+            ("techvault", "6.5.1", TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST),
             (
                 "techvault-participant-study",
-                "0.1.3",
+                "6.5.1",
                 TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST,
             ),
         }

@@ -2,7 +2,7 @@ name: techvault-defensive-min
 description: >
   Curated TechVault defensive-minimum slice. Declares the Wazuh manager, indexer,
   and dashboard. Includes the Wazuh monitoring core; omits the wider SOC stack (Suricata,
-  MISP, TheHive, Cortex, Shuffle, Wazuh sidecars) and every attacker, target, and
+  MISP, Shuffle, Wazuh sidecars) and every attacker, target, and
   enterprise component. Proves APTL realizes the `wazuh` profile from declared
   defensive node content without pulling the full `soc` profile.
 

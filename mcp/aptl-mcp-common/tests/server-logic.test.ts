@@ -20,6 +20,9 @@ const fakes = vi.hoisted(() => ({
     closeSession: vi.fn(),
     listSessions: vi.fn(),
     disconnectAll: vi.fn(),
+    setHarvestHook: vi.fn(),
+    harvestSession: vi.fn(async (_id, _run, harvest) => harvest()),
+    shutdown: vi.fn().mockResolvedValue(true),
   },
   http: { makeRequest: vi.fn() },
 }));
@@ -39,13 +42,15 @@ vi.mock('../src/http.js', async (importOriginal) => ({
 }));
 
 vi.mock('../src/captures.js', () => ({
-  harvestSession: vi.fn().mockResolvedValue(true)
+  harvestSession: vi.fn().mockResolvedValue(true),
+  finalizeCaptureSession: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('../src/telemetry.js', () => ({
   initTracing: vi.fn(),
   shutdownTracing: vi.fn().mockResolvedValue(undefined),
   getTracer: vi.fn(),
+  recordToolResultSize: vi.fn(),
   traceToolCall: vi.fn(async (_n: unknown, _s: unknown, _a: unknown, fn: () => unknown) => fn())
 }));
 
@@ -190,29 +195,44 @@ const SCENARIO_COMMAND = [
   "cat <<'EOF' > /tmp/notes.txt\nrésumé de $(id -un) \\ \"quoted\"\nEOF",
 ].join('\n');
 
+/**
+ * Snapshot the process listeners that start() installs once per server, and
+ * return a function that drops the ones a test added.
+ */
+function snapshotShutdownListeners(): () => void {
+  const signals = ['SIGINT', 'SIGTERM'] as const;
+  const before = new Map(signals.map((signal) => [signal, process.listeners(signal)]));
+  const stdinBefore = process.stdin.listeners('end');
+  return () => {
+    for (const signal of signals) {
+      process.listeners(signal)
+        .filter((listener) => !before.get(signal)?.includes(listener))
+        .forEach((listener) => process.removeListener(signal, listener));
+    }
+    process.stdin.listeners('end')
+      .filter((listener) => !stdinBefore.includes(listener))
+      .forEach((listener) => process.stdin.removeListener('end', listener as () => void));
+  };
+}
+
 describe('tool arguments over an MCP transport', () => {
   let createMCPServer: any;
   let traceToolCall: any;
   const clients: Client[] = [];
-  const signals = ['SIGINT', 'SIGTERM'] as const;
-  let listenersBefore: Record<string, unknown[]>;
+  let restoreListeners: () => void;
 
   beforeEach(async () => {
     vi.clearAllMocks();
     ({ createMCPServer } = await import('../src/server.js'));
     ({ traceToolCall } = await import('../src/telemetry.js'));
-    listenersBefore = Object.fromEntries(signals.map((signal) => [signal, process.listeners(signal)]));
+    restoreListeners = snapshotShutdownListeners();
   });
 
   afterEach(async () => {
     vi.unstubAllEnvs();
     await Promise.all(clients.splice(0).map((client) => client.close()));
     // start() installs shutdown handlers once per server; drop this test's.
-    for (const signal of signals) {
-      process.listeners(signal)
-        .filter((listener) => !listenersBefore[signal].includes(listener))
-        .forEach((listener) => process.removeListener(signal, listener));
-    }
+    restoreListeners();
   });
 
   async function connect(config: object, options: object = {}): Promise<Client> {
@@ -231,7 +251,12 @@ describe('tool arguments over an MCP transport', () => {
   }
 
   function backendOperations(): number {
-    return [...Object.values(fakes.ssh), fakes.http.makeRequest]
+    // setHarvestHook is wired once at server creation, not per tool call, so it
+    // is not a backend operation these assertions count.
+    const perCall = Object.entries(fakes.ssh)
+      .filter(([name]) => name !== 'setHarvestHook')
+      .map(([, operation]) => operation);
+    return [...perCall, fakes.http.makeRequest]
       .reduce((count, operation) => count + operation.mock.calls.length, 0);
   }
 
@@ -630,5 +655,134 @@ describe('tool arguments over an MCP transport', () => {
     }] as any);
 
     expect(() => createMCPServer(mockConfig)).toThrow('Cannot compile the input schema of test_info');
+  });
+
+  // Over the default budget of 4000 tokens (16000 characters).
+  const LONG_OUTPUT = Array.from({ length: 1000 }, (_, index) => `entry ${index} ${'v'.repeat(30)}`).join('\n');
+
+  it('cuts long command output and keeps the run_command envelope valid', async () => {
+    fakes.ssh.executeCommand.mockResolvedValue({
+      stdout: LONG_OUTPUT, stderr: '', code: 0, signal: null, sessionId: 'exec-7', mode: 'normal',
+    });
+    const client = await connect(mockConfig);
+
+    const result = await client.callTool({ name: 'test_run_command', arguments: { command: 'ls -la /srv/data' } });
+    const body = payload(result);
+
+    expect((result.content as { text: string }[])[0].text.length).toBeLessThanOrEqual(16000);
+    expect(body).toMatchObject({ success: true, command: 'ls -la /srv/data' });
+    expect(body.output).toMatchObject({ code: 0, signal: null, sessionId: 'exec-7', mode: 'normal' });
+    expect(body.output.stdout.length).toBeGreaterThan(8000);
+    expect(LONG_OUTPUT.startsWith(`${body.output.stdout}\n`)).toBe(true);
+    expect(body._truncated.total_characters).toBe(LONG_OUTPUT.length);
+  });
+
+  it('cuts long session output and keeps exit_code and session_mode', async () => {
+    fakes.ssh.executeInSession.mockResolvedValue({
+      stdout: LONG_OUTPUT, stderr: '', code: 3, signal: null, mode: 'normal',
+    });
+    const client = await connect(mockConfig);
+
+    const result = await client.callTool({
+      name: 'test_session_command',
+      arguments: { session_id: 'sess-1', command: 'cat notes.txt' },
+    });
+    const body = payload(result);
+
+    expect(body).toMatchObject({ success: true, exit_code: 3, session_mode: 'normal' });
+    expect(LONG_OUTPUT.startsWith(body.output)).toBe(true);
+  });
+
+  it.each([
+    ['returns a whole rule file when the query budget is null', null, true],
+    ['cuts a rule file when the query sets no budget', undefined, false],
+  ])('%s', async (_label, budget, whole) => {
+    const ruleFile = LONG_OUTPUT.split('\n').map((line) => `<!-- ${line} -->`).join('\n');
+    fakes.http.makeRequest.mockResolvedValue({ status: 200, data: ruleFile });
+    const client = await connect({
+      ...apiConfig,
+      queries: {
+        get_rule_file: {
+          url: 'https://wazuh.example:55000/rules/files/{filename}',
+          method: 'GET',
+          response_type: 'text',
+          description: 'Fetch a rule file',
+          ...(budget === undefined ? {} : { max_result_tokens: budget }),
+        },
+      },
+    });
+
+    const result = await client.callTool({
+      name: 'wazuh_get_rule_file',
+      arguments: { params: { filename: 'custom_rules.xml' } },
+    });
+    const body = payload(result);
+
+    expect(body.data === ruleFile).toBe(whole);
+    expect(ruleFile.startsWith(body.data)).toBe(true);
+    expect('_truncated' in body).toBe(!whole);
+  });
+});
+
+
+describe('gracefulShutdown capture harvest', () => {
+  let createMCPServer: any;
+  let harvestSession: any;
+  let restoreListeners: () => void;
+  let exitSpy: any;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ createMCPServer } = await import('../src/server.js'));
+    ({ harvestSession } = await import('../src/captures.js'));
+    (harvestSession as any).mockResolvedValue(true);
+    restoreListeners = snapshotShutdownListeners();
+    // gracefulShutdown ends with process.exit; keep it from killing the runner.
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(((): never => undefined as never));
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+    restoreListeners();
+  });
+
+  async function startServer(): Promise<void> {
+    const [, serverTransport] = InMemoryTransport.createLinkedPair();
+    fakes.serverTransport = serverTransport;
+    await createMCPServer(mockConfig).start();
+  }
+
+  it('uses manager shutdown to drain and harvest before exit', async () => {
+    fakes.ssh.shutdown.mockResolvedValue(true);
+    await startServer();
+    process.emit('SIGTERM');
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(0));
+    expect(fakes.ssh.shutdown).toHaveBeenCalledOnce();
+    expect(fakes.ssh.shutdown).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('exits non-zero for any retained harvest or teardown failure', async () => {
+    fakes.ssh.shutdown.mockResolvedValue(false);
+    await startServer();
+    process.emit('SIGTERM');
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(1));
+  });
+
+  it('starts one shutdown when the MCP client closes stdin', async () => {
+    fakes.ssh.shutdown.mockResolvedValue(true);
+    await startServer();
+    process.stdin.emit('end');
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(0));
+    process.emit('SIGTERM');
+    expect(fakes.ssh.shutdown).toHaveBeenCalledOnce();
+  });
+
+  it('does not run two shutdown sweeps for repeated signals', async () => {
+    fakes.ssh.shutdown.mockResolvedValue(true);
+    await startServer();
+    process.emit('SIGTERM');
+    process.emit('SIGINT');
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(0));
+    expect(fakes.ssh.shutdown).toHaveBeenCalledOnce();
   });
 });

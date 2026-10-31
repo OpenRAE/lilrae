@@ -1,0 +1,164 @@
+schema_version: experiment-authoring-input/v1
+spec_id: structural-fixture-design
+spec_version: 1.0.0
+title: Structural fixture design
+description: Cross the operator's model and prompt with sensor presence.
+task_ref:
+  ref_kind: task
+  ref_id: structural-fixture-evaluation
+  ref_version: 1.0.0
+intended_scenario_ref:
+  ref_kind: scenario
+  ref_id: structural-fixture
+apparatus_intent:
+  required_capabilities:
+  - workflow-results
+  - evaluation-results
+capture_spec_refs:
+- ref_kind: capture-spec
+  ref_id: structural-fixture-capture
+  ref_version: 1.0.0
+factors:
+  operator-model:
+    name: operator model
+    factor_kind: treatment
+    levels:
+    - lite
+    - full
+  operator-prompt:
+    name: operator prompt
+    factor_kind: treatment
+    levels:
+    - terse
+    - rich
+  sensor:
+    name: Sensor presence
+    factor_kind: treatment
+    levels:
+    - absent
+    - present
+factorial_design:
+  profile: factorial-treatments-v1
+  factor_ids:
+  - operator-model
+  - operator-prompt
+  - sensor
+  level_effects:
+    operator-model:
+      lite:
+        bindings:
+        - target:
+            plane: participant-implementation
+            participant_address: agents.operator
+            implementation_name: fixture-agent
+            implementation_version: 2.0.0
+            manifest_version: participant-implementation-manifest/v1
+            target_id: engine.model
+          value_type: string
+          value:
+            kind: literal
+            value: small-model
+          owner:
+            contract_id: participant-configuration-result-v1
+            contract_version: '1'
+            validator_id: participant-config
+            validator_version: '1'
+      full:
+        bindings:
+        - target:
+            plane: participant-implementation
+            participant_address: agents.operator
+            implementation_name: fixture-agent
+            implementation_version: 2.0.0
+            manifest_version: participant-implementation-manifest/v1
+            target_id: engine.model
+          value_type: string
+          value:
+            kind: literal
+            value: large-model
+          owner:
+            contract_id: participant-configuration-result-v1
+            contract_version: '1'
+            validator_id: participant-config
+            validator_version: '1'
+    operator-prompt:
+      terse:
+        bindings:
+        - target:
+            plane: participant-implementation
+            participant_address: agents.operator
+            implementation_name: fixture-agent
+            implementation_version: 2.0.0
+            manifest_version: participant-implementation-manifest/v1
+            target_id: context.brief
+          value_type: string
+          value:
+            kind: literal
+            value: control_context_assets.brief-terse
+          owner:
+            contract_id: participant-configuration-result-v1
+            contract_version: '1'
+            validator_id: participant-config
+            validator_version: '1'
+      rich:
+        bindings:
+        - target:
+            plane: participant-implementation
+            participant_address: agents.operator
+            implementation_name: fixture-agent
+            implementation_version: 2.0.0
+            manifest_version: participant-implementation-manifest/v1
+            target_id: context.brief
+          value_type: string
+          value:
+            kind: literal
+            value: control_context_assets.brief-rich
+          owner:
+            contract_id: participant-configuration-result-v1
+            contract_version: '1'
+            validator_id: participant-config
+            validator_version: '1'
+    sensor:
+      absent:
+        selections:
+        - target:
+            plane: scenario
+            scenario_family_id: structural-fixture
+            variation_point_id: sensor-layout
+            target_id: nodes.sensor-9.presence
+          scenario_family_digest: sha256:cb0bb9c113268fdc22779039278233808785b0b98cfc5feeaf1a3fba2c01abe1
+          owner:
+            contract_id: sdl-authoring-input-v1
+            contract_version: '1'
+            validator_id: raes-selected-scenario
+            validator_version: '1'
+          outcome:
+            kind: member
+            member_id: dark
+      present:
+        selections:
+        - target:
+            plane: scenario
+            scenario_family_id: structural-fixture
+            variation_point_id: sensor-layout
+            target_id: nodes.sensor-9.presence
+          scenario_family_digest: sha256:cb0bb9c113268fdc22779039278233808785b0b98cfc5feeaf1a3fba2c01abe1
+          owner:
+            contract_id: sdl-authoring-input-v1
+            contract_version: '1'
+            validator_id: raes-selected-scenario
+            validator_version: '1'
+          outcome:
+            kind: member
+            member_id: watching
+  target_runs_per_condition: 1
+  condition_bound: 8
+run_plan:
+  episode_control:
+    description: Fixed-horizon episode.
+    max_steps: 50
+    termination_rule: Stop after 50 logical steps.
+    turn_order: sequential
+validity_notes:
+- category: internal
+  note: Every condition uses the same fixed horizon.

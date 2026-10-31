@@ -2,7 +2,11 @@
 
 ## Status
 
-accepted
+superseded in part by ADR-063
+
+[ADR-063](adr-063-remove-thehive-and-cortex.md) supersedes the TheHive and
+Cortex decisions in this record. The MISP, Shuffle, and Suricata decisions
+remain in force.
 
 ## Date
 
@@ -71,12 +75,16 @@ TheHive 5 provides case management with alert escalation, observable tracking, a
 - MCP server: `mcp-casemgmt`—create cases, add observables, run Cortex analyzers, update case status, generate reports
 - Known issue: TheHive-ES JVM memory starvation—256MB heap in 512MB container caused Cassandra query timeouts. Fixed by doubling heap to 512MB and container limit to 1GB (v4.1.0).
 
+> **Update (ADR-063, 2026-10-30):** TheHive 5 is proprietary StrangeBee software, not open source. After its 14-day trial, it needs a license for each instance. ADR-063 removes TheHive from the TechVault SOC stack. See [ADR-063](adr-063-remove-thehive-and-cortex.md).
+
 #### 4. Cortex Enrichment (`aptl-cortex`, 172.20.0.22)
 
 Cortex provides automated observable enrichment—analyzing IPs, domains, hashes, and emails against external sources (VirusTotal, abuse.ch, WHOIS). Tightly integrated with TheHive; analyzers are triggered from case observables.
 
 - Shares TheHive's Elasticsearch backend
 - Accessible via TheHive's MCP server (no separate MCP server)
+
+> **Update (ADR-063, 2026-10-30):** ADR-063 removes Cortex from the TechVault SOC stack together with TheHive. See [ADR-063](adr-063-remove-thehive-and-cortex.md).
 
 #### 5. Shuffle SOAR (`aptl-shuffle-backend` 172.20.0.20, `aptl-shuffle-frontend` 172.20.0.21)
 

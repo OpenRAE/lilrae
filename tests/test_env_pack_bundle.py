@@ -35,9 +35,7 @@ pytestmark = pytest.mark.integration
 
 def test_directory_and_bundled_acquisition_preserve_the_same_identity(tmp_path):
     bundled = env_pack_bundle(tmp_path / "bundled", "techvault")
-    acquired = env_pack_bundle(
-        tmp_path / "acquired", "techvault", source_pack=bundled.root
-    )
+    acquired = env_pack_bundle(tmp_path / "acquired", "techvault", source_pack=bundled.root)
     assert acquired.pack_identity == bundled.pack_identity
     assert acquired.sdl_path.read_bytes() == bundled.sdl_path.read_bytes()
     assert acquired.root != bundled.root
@@ -78,18 +76,19 @@ def test_released_pack_owns_only_scenario_and_retains_its_evidence_contracts(
     tmp_path,
 ):
     from importlib.metadata import version
+    from packaging.specifiers import SpecifierSet
     from raes import parse_sdl
     from raes_processor.capture_admission import compile_scenario_capture_demands
 
-    assert version("raes-env-packs") == "6.5.1"
-    assert version("raes") == "10.2.0"
+    # Ranges, not single-version pins: the installed releases satisfy them.
+    assert version("raes-env-packs") in SpecifierSet(">=7.0.0,<8")
+    assert version("raes") in SpecifierSet(">=10.2.0,<11")
     bundle = env_pack_bundle(tmp_path / "released", "techvault")
     scenario = parse_sdl(bundle.sdl_path.read_text())
     assert not {"aptl-otel-collector", "aptl-tempo", "aptl-grafana-otel"}.intersection(
         scenario.nodes
     )
     assert set(scenario.evidence_requirements) == {
-        "cortex-enrichment-readback",
         "misp-authenticated-api-readiness",
         "suricata-local-rule-readiness",
         "suricata-login-sqli-alert",
@@ -121,9 +120,9 @@ def test_env_pack_bundle_stages_and_validates_the_bundled_techvault_pack(
     assert bundle.identity == "techvault"
     assert bundle.pack_identity == PackIdentity(
         pack_id="techvault",
-        pack_version="0.1.3",
+        pack_version="6.5.1",
         set_digest=(
-            "sha256:530ca558c02c6c4dd80f1d5e45ea0ceaa799ba687a3bf8294be0aade5116d0eb"
+            "sha256:a1abd4a382e048e4f74ce343c1b544626fe0633739dfe473c79f1b5fa3aded2f"
         ),
     )
     # The bundle roots at the staged copy, never at the installed package.

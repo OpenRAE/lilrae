@@ -5,7 +5,7 @@ from itertools import product
 
 import pytest
 
-from aptl.backends.lilrae_participant_action_model import (
+from aptl.core.participant_tools.model import (
     ActionState,
     Event,
     Phase,

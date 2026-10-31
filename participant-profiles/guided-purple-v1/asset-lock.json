@@ -7,7 +7,7 @@
       "asset_id": "narrative",
       "kind": "project-file",
       "source": "participant-profiles/guided-purple-v1/narrative.json",
-      "sha256": "a1d971348cbf22f97c3f7957ccb1387bef6de7a5f5bd9c031863a7f6959ef8af"
+      "sha256": "592062f843f5fc849e1dff9130eef22f6f8ae7a4b0022dc68fc952bf4133c938"
     },
     {
       "asset_id": "readiness",
@@ -37,19 +37,19 @@
       "asset_id": "workbench-registry",
       "kind": "project-file",
       "source": "src/aptl/workbench/profiles.py",
-      "sha256": "c52c5ab26d211b42e584a7c890400afdda8a0338622ec40449b4d8e0c60d0734"
+      "sha256": "c8b737b6b9f868c611aeb816da20bc92fb420b0cef1df24da46a277ac5eacdc9"
     },
     {
       "asset_id": "compose-model",
       "kind": "project-file",
       "source": "docker-compose.yml",
-      "sha256": "e377bfae3f6630a8310c945b3dee610dd24ce7c9fd5049a83b15284c1f320b94"
+      "sha256": "bf40ff69bdf0bfa358de4c2ef84ad7f72f8991c9be6a800a160cacf9cad7110c"
     },
     {
       "asset_id": "mcp-red-build",
       "kind": "mcp-artifact",
       "source": "mcp/mcp-red/build/index.js",
-      "sha256": "8e2b2072d2787b6c28d73ec31a54d5da29ce6c0601ee9cbf9ba51de3c93de6e9"
+      "sha256": "b1fa53c0de6c467f3f06111663d9a20a93db3c91a587a20c971be5d3c9a6ed07"
     },
     {
       "asset_id": "mcp-red-dependencies",
@@ -61,7 +61,7 @@
       "asset_id": "mcp-red-config",
       "kind": "project-file",
       "source": "mcp/mcp-red/docker-lab-config.json",
-      "sha256": "7ed86aed3341ff3ffcff07b6dc9b8e57a34745cef6161d2267b4c09c8559c461"
+      "sha256": "93302a762d6c2a5bf54aa5395ed48f51aaa1d7758f6ef1f175b708fbde3f9177"
     },
     {
       "asset_id": "mcp-indexer-build",
@@ -79,7 +79,7 @@
       "asset_id": "mcp-indexer-config",
       "kind": "project-file",
       "source": "mcp/mcp-indexer/docker-lab-config.json",
-      "sha256": "42444584ce92d43597fed4d09310632dd7d0bb1759e2f909ab6498ad2542b852"
+      "sha256": "e388fbb0e04446c7db2635bfc7d1bdedb686f5b41497a63dd981ff24d8b61b66"
     },
     {
       "asset_id": "mcp-wazuh-build",
