@@ -22,9 +22,10 @@ import { HTTPClient } from './http.js';
 import { initTracing, recordToolResultSize, shutdownTracing, traceToolCall } from './telemetry.js';
 import { boundToolResult, toolResultBudgets, type ToolResult } from './tool-output-cap.js';
 import { generateToolDefinitions } from './tools/definitions.js';
-import { errorMessage, generateToolHandlers, maybeHarvest, resolveCaptureContainer, type ToolHandler, type ToolContext } from './tools/handlers.js';
+import { errorMessage, generateToolHandlers, type ToolHandler, type ToolContext } from './tools/handlers.js';
 import { generateAPIToolDefinitions } from './tools/api-definitions.js';
 import { generateAPIToolHandlers, type APIToolHandler, type APIToolContext } from './tools/api-handlers.js';
+import { maybeHarvest, resolveCaptureContainer } from './tools/session-capture.js';
 import { participantToolAdmission, participantToolRefusal } from './lilrae-tool-admission.js';
 
 /**
@@ -183,6 +184,20 @@ function invalidArgumentsResult(toolName: string, errors: ErrorObject[] | null |
   };
 }
 
+/** Select the already-installed native client for the validated tool. */
+function toolContext(
+  name: string, labConfig: LabConfig,
+  sshManager: SSHConnectionManager | null, httpClient: HTTPClient | null,
+): ToolContext | APIToolContext {
+  const query = Object.keys(labConfig.queries ?? {}).some(q => name.endsWith(`_${q}`));
+  if (name.includes('_api_') || query) {
+    if (!httpClient) throw new Error('API tool requested but HTTP client not configured');
+    return { httpClient, labConfig };
+  }
+  if (!sshManager) throw new Error('SSH tool requested but SSH manager not configured');
+  return { sshManager, labConfig };
+}
+
 export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOptions = {}) {
   // Admission and handlers must use the same detached installation. A caller
   // changing its original object must not retarget an already admitted server.
@@ -260,28 +275,7 @@ export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOp
       return invalidArgumentsResult(name, validateArguments.errors);
     }
 
-    // Determine context type based on tool name and available clients
-    let context: ToolContext | APIToolContext;
-
-    if (name.includes('_api_') || (labConfig.queries && Object.keys(labConfig.queries).some(q => name.endsWith(`_${q}`)))) {
-      // API tool context
-      if (!httpClient) {
-        throw new Error('API tool requested but HTTP client not configured');
-      }
-      context = {
-        httpClient,
-        labConfig,
-      };
-    } else {
-      // SSH tool context
-      if (!sshManager) {
-        throw new Error('SSH tool requested but SSH manager not configured');
-      }
-      context = {
-        sshManager,
-        labConfig,
-      };
-    }
+    const context = toolContext(name, labConfig, sshManager, httpClient);
 
     const t0 = Date.now();
     try {

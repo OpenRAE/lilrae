@@ -35,6 +35,9 @@ vi.mock('../src/tools/definitions.js', () => ({
 
 vi.mock('../src/tools/handlers.js', () => ({
   generateToolHandlers: vi.fn().mockReturnValue({}),
+}));
+
+vi.mock('../src/tools/session-capture.js', () => ({
   maybeHarvest: vi.fn(),
   resolveCaptureContainer: vi.fn(),
 }));

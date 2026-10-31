@@ -24,7 +24,7 @@ An operator connection must never acquire a fabricated participant identity from
 The architecture has two executable views.
 The component view assigns semantic owners and allowed dependencies.
 The action view defines permitted transitions and effect invariants.
-The core owns the action model and shared contracts.
+The core owns the action model, installed participant bindings, and shared contracts.
 The RAES adapter package owns the session and local carrier.
 Controllers receive core interfaces.
 The new packages and shared result/error owners are enrolled in the ADR-064 layer check.

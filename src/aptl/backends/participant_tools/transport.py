@@ -22,10 +22,14 @@ from aptl.core.participant_tools.contracts import (
 
 
 class _Frame(BaseModel):
+    """Strict wire object with no extension fields."""
+
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
 class _Proposal(_Frame):
+    """One complete native call and its installed server authority."""
+
     version: Annotated[int, Field(ge=1, le=1)]
     token: str
     call_id: str
@@ -35,11 +39,14 @@ class _Proposal(_Frame):
 
 
 class _Completion(_Frame):
+    """Native result with an explicit uncertainty signal."""
+
     result: dict[str, JsonValue]
     uncertain: Annotated[bool, Field(strict=True)]
 
 
 def _read(stream: BinaryIO) -> bytes:
+    """Read one size-limited newline-terminated frame."""
     line = stream.readline(MAX_TOOL_FRAME + 1)
     if not line.endswith(b"\n") or len(line) > MAX_TOOL_FRAME:
         raise ValueError("invalid tool frame")
@@ -47,6 +54,7 @@ def _read(stream: BinaryIO) -> bytes:
 
 
 def _write(stream: BinaryIO, value: dict[str, object]) -> None:
+    """Write and flush one size-limited JSON frame."""
     data = json.dumps(value, separators=(",", ":"), allow_nan=False).encode() + b"\n"
     if len(data) > MAX_TOOL_FRAME:
         raise ValueError("tool frame limit exceeded")
@@ -55,6 +63,8 @@ def _write(stream: BinaryIO, value: dict[str, object]) -> None:
 
 
 class _Handler(StreamRequestHandler):
+    """Authenticate one proposal and report its terminal or unknown outcome."""
+
     def handle(self) -> None:
         owner = self.server.owner
         call = None

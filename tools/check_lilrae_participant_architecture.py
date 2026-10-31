@@ -16,6 +16,7 @@ COMPONENTS = {
         {
             "dataclasses",
             "enum",
+            "typing",
         }
     ),
     "src/aptl/backends/participant_tools/session.py": frozenset(

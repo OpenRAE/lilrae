@@ -83,9 +83,10 @@ def test_released_composition_refuses_before_native_effects(composition, expecte
 
     port.admit = record
     native = Mock()
+    session = LilraeToolSession(port, item.tool_bindings, Event())
     try:
         with pytest.raises(AgentExecutionError):
-            LilraeToolSession(port, item.tool_bindings, Event()).invoke(
+            session.invoke(
                 "aptl-red",
                 "kali_run_command",
                 {"command": "id"},

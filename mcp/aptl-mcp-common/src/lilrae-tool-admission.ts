@@ -40,9 +40,9 @@ async function requestCleanup(cleanup: () => Promise<void>): Promise<void> {
 
 class Channel {
   private buffered = Buffer.alloc(0);
-  private iterator: AsyncIterator<Buffer>;
+  private readonly iterator: AsyncIterator<Buffer>;
 
-  constructor(private socket: Socket) {
+  constructor(private readonly socket: Socket) {
     this.iterator = socket[Symbol.asyncIterator]();
   }
 
@@ -69,7 +69,7 @@ class Channel {
 }
 
 export class LilraeToolAdmission {
-  constructor(private path: string, private token: string, private timeout: number, private configuration: unknown) {}
+  constructor(private readonly path: string, private readonly token: string, private readonly timeout: number, private readonly configuration: unknown) {}
 
   async execute(tool: string, args: Record<string, unknown>, native: () => Promise<ToolResult>, cleanup: () => Promise<void>): Promise<ToolResult> {
     const socket = createConnection(this.path);
@@ -114,7 +114,7 @@ export function participantToolAdmission(configuration: unknown, environment: No
   const deadline = environment.LILRAE_TOOL_TIMEOUT_MS;
   if (path === undefined && token === undefined && deadline === undefined) return undefined;
   if (!path || !isAbsolute(path) || Buffer.byteLength(path) > 103 || !token || !/^[a-f0-9]{64}$/.test(token)
-    || !deadline || !/^[1-9][0-9]*$/.test(deadline) || Number(deadline) > 3_600_000) {
+    || !deadline || !/^[1-9]\d*$/.test(deadline) || Number(deadline) > 3_600_000) {
     throw new Error('Participant tool transport configuration is invalid.');
   }
   return new LilraeToolAdmission(path, token, Number(deadline), structuredClone(configuration));

@@ -225,7 +225,7 @@ banned-module-level-imports = ["boto3", "pyarrow"]
 # ADR-064 conventions check (tools/check_architecture.py). The check covers
 # only the enrolled packages and modules. A refactor issue adds the code that
 # it completes. Participant tool boundaries are enrolled by issue #1418.
-enrolled = ["aptl.core.participant_tools", "aptl.core.agent_errors", "aptl.core.mcp_results", "aptl.backends.participant_tools"]
+enrolled = ["aptl.core.participant_binding", "aptl.core.participant_tools", "aptl.core.agent_errors", "aptl.core.mcp_results", "aptl.backends.participant_tools"]
 # Core modules that scenario adapter plugins may import (#1515 adds them).
 extension-api = []
 # Ruff rules for enrolled code. UP042 is not selected: replacing a str-mixin

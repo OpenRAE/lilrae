@@ -121,8 +121,9 @@ def test_only_verified_profile_tools_reach_opencode(tmp_path):
         prompt="red task",
         timeout_seconds=30,
     )
+    cancellation = Event()
     with pytest.raises(AgentExecutionError, match="tool session"):
-        executor("action", Event())
+        executor("action", cancellation)
     assert runner.calls == []
     from dataclasses import replace
     from aptl.backends.participant_tools.session import LilraeToolSession

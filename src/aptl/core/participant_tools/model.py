@@ -7,9 +7,12 @@ response. This finite model claims neither host isolation nor unbounded proof.
 
 from dataclasses import dataclass, replace
 from enum import StrEnum
+from typing import cast
 
 
 class Phase(StrEnum):
+    """Authority and native-effect phases of one local action."""
+
     PROPOSED = "proposed"
     REFUSED = "refused"
     ADMITTED = "admitted"
@@ -20,6 +23,8 @@ class Phase(StrEnum):
 
 
 class Event(StrEnum):
+    """Observed receipts and effects that can advance an action."""
+
     ADMIT = "admit"
     REFUSE = "refuse"
     DISPATCH = "dispatch"
@@ -32,6 +37,8 @@ class Event(StrEnum):
 
 @dataclass(frozen=True)
 class ActionState:
+    """Finite action state, with delivery and history tracked independently."""
+
     phase: Phase = Phase.PROPOSED
     admitted: bool = False
     dispatches: int = 0
@@ -79,23 +86,33 @@ def advance(state: ActionState, event: Event) -> ActionState:
     """Refuse invalid adapter transitions before the caller performs effects."""
     if violations(state):
         raise ValueError("invalid participant action state")
+    if event in {Event.COMMIT, Event.DELIVER}:
+        return _observe_settlement(state, event)
+    phase = _TRANSITIONS.get((state.phase, event))
+    if phase is None:
+        raise ValueError("participant action transition refused")
+    result = cast(
+        ActionState,
+        replace(
+            state,
+            phase=phase,
+            admitted=state.admitted or event == Event.ADMIT,
+            dispatches=state.dispatches + (event == Event.DISPATCH),
+        ),
+    )
+    if violations(result):
+        raise ValueError("participant action invariant violated")
+    return result
+
+
+def _observe_settlement(state: ActionState, event: Event) -> ActionState:
+    """Record delivery or history only after the appropriate settlement."""
     if event == Event.COMMIT and state.phase in _SETTLED and not state.committed:
-        return replace(state, committed=True)
+        return cast(ActionState, replace(state, committed=True))
     if (
         event == Event.DELIVER
         and state.phase == Phase.COMPLETED
         and not state.delivered
     ):
-        return replace(state, delivered=True)
-    phase = _TRANSITIONS.get((state.phase, event))
-    if phase is None:
-        raise ValueError("participant action transition refused")
-    result = replace(
-        state,
-        phase=phase,
-        admitted=state.admitted or event == Event.ADMIT,
-        dispatches=state.dispatches + (event == Event.DISPATCH),
-    )
-    if violations(result):
-        raise ValueError("participant action invariant violated")
-    return result
+        return cast(ActionState, replace(state, delivered=True))
+    raise ValueError("participant action transition refused")

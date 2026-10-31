@@ -2,32 +2,27 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from copy import deepcopy
-from dataclasses import dataclass, field
 from threading import Condition, Event
 
-from raes_backend_protocols.capabilities import ParticipantExecutionBinding
 from raes_backend_protocols.participant_invocation_tools import (
     ParticipantInvocationToolActionPort,
 )
 from raes_contracts.canonical import canonical_json_digest
 from raes_contracts.contracts import (
     ParticipantActionResultModel,
-    ParticipantImplementationManifestModel,
-    ParticipantImplementationSelectionModel,
     ParticipantTemporalRuntimeContextModel,
 )
 from raes_contracts.participant_binding import ParticipantActionAdmissionRequest
 from raes_contracts.participant_native_execution import ParticipantNativeActionExecution
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
-from raes_contracts.satisfiability import canonical_contract_digest
 from raes_contracts.diagnostics import Diagnostic
-from raes_contracts.participant_configuration import (
-    validate_participant_configuration_selection,
-)
 from raes_processor.models import RuntimeModel, ParticipantAutonomousExecutionRuntime
 
+from aptl.core.participant_binding import (
+    LilraeParticipantBinding as LilraeParticipantBinding,
+    MAX_CONCURRENT_PARTICIPANTS,
+)
 from aptl.utils.redaction import redact
 from aptl.backends.participant_tools.session import LilraeToolBinding, LilraeToolSession
 from aptl.workbench.process import (
@@ -36,82 +31,6 @@ from aptl.workbench.process import (
     REASON_TIMEOUT,
     REASON_CANCELLED,
 )
-
-MAX_CONCURRENT_PARTICIPANTS = 8
-
-
-@dataclass(frozen=True)
-class LilraeParticipantBinding:
-    """Trusted installed executor for one exact participant/action relation.
-
-    The callable receives only its action identity and cancellation signal.
-    It owns bounded native execution, including its configured prompt and model.
-    It never receives another participant's snapshot or executor.
-    """
-
-    implementation_manifest: ParticipantImplementationManifestModel
-    implementation_selection: ParticipantImplementationSelectionModel
-    observation_boundary_address: str
-    execution_binding: ParticipantExecutionBinding
-    executor: Callable[[str, Event], str] = field(repr=False, compare=False)
-    tool_bindings: tuple[LilraeToolBinding, ...] = ()
-
-    def __post_init__(self) -> None:
-        selection = self.implementation_selection
-        manifest = self.implementation_manifest
-        if (
-            selection.implementation_identity != manifest.identity
-            or selection.manifest_digest != canonical_contract_digest(manifest)
-            or selection.manifest_ref
-            != self.execution_binding.participant_implementation_ref
-            or selection.selected_decision_surface_mode != "autonomous"
-            or not self.observation_boundary_address.startswith(
-                "participant.observation-boundary."
-            )
-            or not callable(self.executor)
-        ):
-            raise ValueError("participant implementation binding is inconsistent")
-        if self.execution_binding.max_in_flight > MAX_CONCURRENT_PARTICIPANTS:
-            raise ValueError("participant binding exceeds native capacity")
-        if self.execution_binding.max_retries != 0:
-            raise ValueError("native participant retries are not supported")
-        self._validate_executor()
-        if self.tool_bindings and (
-            not callable(getattr(self.executor, "invoke_with_tools", None))
-            or any(
-                tool.execution_binding.participant_implementation_ref
-                != selection.manifest_ref
-                for tool in self.tool_bindings
-            )
-        ):
-            raise ValueError("tool bindings require a matching tool-enabled executor")
-        inventory = getattr(self.executor, "tool_inventory", None)
-        if inventory is not None and inventory != frozenset(
-            (tool.server_id, tool.tool_name) for tool in self.tool_bindings
-        ):
-            raise ValueError(
-                "installed tool bindings differ from the executor inventory"
-            )
-
-    def _validate_executor(self) -> None:
-        """Require the executor's configuration and deadline to match admission."""
-        configuration = getattr(self.executor, "configuration_result", None)
-        if (
-            self.implementation_manifest.configuration_registry is not None
-            and configuration is None
-        ):
-            raise ValueError(
-                "participant configuration result is required by its manifest"
-            )
-        if configuration is not None:
-            validate_participant_configuration_selection(
-                self.implementation_selection, configuration
-            )
-        if (
-            hasattr(self.executor, "timeout_seconds")
-            and self.executor.timeout_seconds > self.execution_binding.timeout_seconds
-        ):
-            raise ValueError("participant executor exceeds the admitted timeout")
 
 
 class LilraeParticipantExecution:
@@ -190,28 +109,7 @@ class LilraeParticipantExecution:
             if participant not in policy.participant_addresses:
                 continue
             for tool in item.tool_bindings:
-                action = model.action_contracts.get(
-                    tool.execution_binding.action_contract_address
-                )
-                relations = [
-                    row
-                    for row in policy.invocation_tool_bindings
-                    if row.tool_affordance_address == tool.tool_affordance_address
-                    and row.action_contract_address
-                    == tool.execution_binding.action_contract_address
-                    and participant in row.participant_addresses
-                ]
-                if (
-                    action is None
-                    or canonical_json_digest(action.spec) != tool.action_contract_digest
-                    or len(relations) != 1
-                    or relations[0].shared_time_bound
-                    or tool.observation_boundary_address
-                    not in relations[0].observation_boundary_addresses
-                    or not set(tool.execution_binding.target_addresses).issubset(
-                        relations[0].target_addresses
-                    )
-                ):
+                if not self._tool_matches_model(model, policy, participant, tool):
                     diagnostics.append(
                         Diagnostic(
                             code="lilrae.tool-binding-refused",
@@ -221,6 +119,37 @@ class LilraeParticipantExecution:
                         )
                     )
         return diagnostics
+
+    @staticmethod
+    def _tool_matches_model(
+        model: RuntimeModel,
+        policy: ParticipantAutonomousExecutionRuntime,
+        participant: str,
+        tool: LilraeToolBinding,
+    ) -> bool:
+        """Match the complete action and exactly one authored tool relation."""
+        action = model.action_contracts.get(
+            tool.execution_binding.action_contract_address
+        )
+        relations = [
+            row
+            for row in policy.invocation_tool_bindings
+            if row.tool_affordance_address == tool.tool_affordance_address
+            and row.action_contract_address
+            == tool.execution_binding.action_contract_address
+            and participant in row.participant_addresses
+        ]
+        return not (
+            action is None
+            or canonical_json_digest(action.spec) != tool.action_contract_digest
+            or len(relations) != 1
+            or relations[0].shared_time_bound
+            or tool.observation_boundary_address
+            not in relations[0].observation_boundary_addresses
+            or not set(tool.execution_binding.target_addresses).issubset(
+                relations[0].target_addresses
+            )
+        )
 
     def _supports_policy(
         self, participant: str, policy: ParticipantAutonomousExecutionRuntime

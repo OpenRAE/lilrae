@@ -53,6 +53,7 @@ Extends DSL-008. APTL on origin/main already realizes ACES SDL onto real Docker 
 - IMPLEMENTS → DOCUMENTATION `docs/raes/techvault-curated-live-validation-gate/techvault-attacker-target/result.json`
 - IMPLEMENTS → DOCUMENTATION `docs/raes/techvault-curated-live-validation-gate/techvault-attacker-target/snapshot.json`
 - IMPLEMENTS → CODE_FILE `src/aptl/core/participant_tools/model.py` (Executable action invariants)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/participant_binding.py` (Validated installed participant bindings)
 - IMPLEMENTS → CODE_FILE `src/aptl/backends/participant_tools/session.py` (Exact installed mapping and invocation admission)
 - IMPLEMENTS → CODE_FILE `src/aptl/backends/participant_tools/transport.py` (Bounded authenticated carrier)
 - IMPLEMENTS → CODE_FILE `mcp/aptl-mcp-common/src/lilrae-tool-admission.ts` (Pre-handler dispatch and outcome receipt)

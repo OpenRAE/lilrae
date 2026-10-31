@@ -40,6 +40,7 @@ _UNKNOWN = "Participant tool outcome is unknown."
 
 
 def _detached_json(value: object) -> tuple[object, bytes]:
+    """Bound and detach a value in the canonical JSON domain."""
     data = rfc8785.dumps(value)
     if len(data) > MAX_TOOL_FRAME:
         raise ValueError("participant tool frame limit exceeded")
@@ -53,18 +54,25 @@ def _result_failed(result: dict[str, object]) -> bool:
         raise ValueError("invalid participant tool result")
     failed = result.get("isError") is True
     for block in content:
-        if not isinstance(block, dict) or block.get("type") != "text":
-            raise ValueError("unsupported participant tool result")
-        payload = json.loads(block["text"])
-        if not isinstance(payload, dict) or (
-            "success" in payload and type(payload["success"]) is not bool
-        ):
-            raise ValueError("invalid native completion status")
-        if payload.get("session_mode") == "raw" or payload.get("failure") == "timeout":
-            raise ValueError("native completion is unknown")
-        failed |= payload.get("success") is False
-        failed |= payload.get("exit_code", 0) not in (0, None)
+        failed |= _payload_failed(block)
     return failed
+
+
+def _payload_failed(block: object) -> bool:
+    """Read explicit completion evidence from one common-handler content block."""
+    if not isinstance(block, dict) or block.get("type") != "text":
+        raise ValueError("unsupported participant tool result")
+    payload = json.loads(block["text"])
+    if not isinstance(payload, dict) or (
+        "success" in payload and type(payload["success"]) is not bool
+    ):
+        raise ValueError("invalid native completion status")
+    if payload.get("session_mode") == "raw" or payload.get("failure") == "timeout":
+        raise ValueError("native completion is unknown")
+    return payload.get("success") is False or payload.get("exit_code", 0) not in (
+        0,
+        None,
+    )
 
 
 class LilraeToolSession:
@@ -129,17 +137,7 @@ class LilraeToolSession:
             if not isinstance(detached, dict) or not _IDENTIFIER.fullmatch(call_id):
                 raise ValueError("invalid call")
             with self._lock:
-                if (
-                    not self._live()
-                    or (server, call_id) in self._calls
-                    or len(self._calls) >= MAX_TOOL_ACTIONS
-                    or sum(
-                        call.state.phase == Phase.DISPATCHED
-                        for _, call in self._calls.values()
-                    )
-                    >= MAX_CONCURRENT_TOOLS
-                ):
-                    raise ValueError("call unavailable")
+                self._require_available(server, call_id)
                 matches = [
                     item
                     for item in self.bindings
@@ -153,6 +151,19 @@ class LilraeToolSession:
                 return self._admit(matches[0], call_id, data)
         except Exception:
             raise AgentExecutionError(_REFUSED) from None
+
+    def _require_available(self, server: str, call_id: str) -> None:
+        """Reject replay, closed authority and exceeded budgets while locked."""
+        if (
+            not self._live()
+            or (server, call_id) in self._calls
+            or len(self._calls) >= MAX_TOOL_ACTIONS
+            or sum(
+                call.state.phase == Phase.DISPATCHED for _, call in self._calls.values()
+            )
+            >= MAX_CONCURRENT_TOOLS
+        ):
+            raise ValueError("call unavailable")
 
     def _admit(
         self, binding: LilraeToolBinding, call_id: str, data: bytes

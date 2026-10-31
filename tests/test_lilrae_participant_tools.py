@@ -122,8 +122,9 @@ def test_refusal_never_calls_native_handler(failure):
     if failure == "closed":
         authority.closed = True
     native = Mock(return_value=result())
+    session = LilraeToolSession(authority, bindings, cancellation)
     with pytest.raises(AgentExecutionError):
-        LilraeToolSession(authority, bindings, cancellation).invoke(
+        session.invoke(
             "aptl-red", "kali_run_command", {"command": "id"}, "call", native
         )
     native.assert_not_called()
