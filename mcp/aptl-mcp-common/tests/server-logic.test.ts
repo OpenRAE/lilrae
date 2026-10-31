@@ -16,6 +16,9 @@ const fakes = vi.hoisted(() => ({
     closeSession: vi.fn(),
     listSessions: vi.fn(),
     disconnectAll: vi.fn(),
+    setHarvestHook: vi.fn(),
+    harvestSession: vi.fn(async (_id, _run, harvest) => harvest()),
+    shutdown: vi.fn().mockResolvedValue(true),
   },
   http: { makeRequest: vi.fn() },
 }));
@@ -34,7 +37,8 @@ vi.mock('../src/http.js', () => ({
 }));
 
 vi.mock('../src/captures.js', () => ({
-  harvestSession: vi.fn().mockResolvedValue(true)
+  harvestSession: vi.fn().mockResolvedValue(true),
+  finalizeCaptureSession: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('../src/telemetry.js', () => ({
@@ -225,7 +229,12 @@ describe('tool arguments over an MCP transport', () => {
   }
 
   function backendOperations(): number {
-    return [...Object.values(fakes.ssh), fakes.http.makeRequest]
+    // setHarvestHook is wired once at server creation, not per tool call, so it
+    // is not a backend operation these assertions count.
+    const perCall = Object.entries(fakes.ssh)
+      .filter(([name]) => name !== 'setHarvestHook')
+      .map(([, operation]) => operation);
+    return [...perCall, fakes.http.makeRequest]
       .reduce((count, operation) => count + operation.mock.calls.length, 0);
   }
 
@@ -514,5 +523,64 @@ describe('tool arguments over an MCP transport', () => {
     expect(body.data === ruleFile).toBe(whole);
     expect(ruleFile.startsWith(body.data)).toBe(true);
     expect('_truncated' in body).toBe(!whole);
+  });
+});
+
+
+describe('gracefulShutdown capture harvest', () => {
+  let createMCPServer: any;
+  let harvestSession: any;
+  const signals = ['SIGINT', 'SIGTERM'] as const;
+  let listenersBefore: Record<string, unknown[]>;
+  let exitSpy: any;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ createMCPServer } = await import('../src/server.js'));
+    ({ harvestSession } = await import('../src/captures.js'));
+    (harvestSession as any).mockResolvedValue(true);
+    listenersBefore = Object.fromEntries(signals.map((signal) => [signal, process.listeners(signal)]));
+    // gracefulShutdown ends with process.exit; keep it from killing the runner.
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(((): never => undefined as never));
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+    for (const signal of signals) {
+      process.listeners(signal)
+        .filter((listener) => !listenersBefore[signal].includes(listener))
+        .forEach((listener) => process.removeListener(signal, listener));
+    }
+  });
+
+  async function startServer(): Promise<void> {
+    const [, serverTransport] = InMemoryTransport.createLinkedPair();
+    fakes.serverTransport = serverTransport;
+    await createMCPServer(mockConfig).start();
+  }
+
+  it('uses manager shutdown to drain and harvest before exit', async () => {
+    fakes.ssh.shutdown.mockResolvedValue(true);
+    await startServer();
+    process.emit('SIGTERM');
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(0));
+    expect(fakes.ssh.shutdown).toHaveBeenCalledOnce();
+    expect(fakes.ssh.shutdown).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('exits non-zero for any retained harvest or teardown failure', async () => {
+    fakes.ssh.shutdown.mockResolvedValue(false);
+    await startServer();
+    process.emit('SIGTERM');
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(1));
+  });
+
+  it('does not run two shutdown sweeps for repeated signals', async () => {
+    fakes.ssh.shutdown.mockResolvedValue(true);
+    await startServer();
+    process.emit('SIGTERM');
+    process.emit('SIGINT');
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(0));
+    expect(fakes.ssh.shutdown).toHaveBeenCalledOnce();
   });
 });

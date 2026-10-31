@@ -45,6 +45,12 @@ export interface HarvestOptions {
    * its run_id at open time and the active trace context may have
    * rotated since (codex pre-push cycle 3 finding-6). */
   runId?: string;
+  /** When set, wait up to this many milliseconds for the broker to write the
+   * session's `metadata.json` before giving up. The broker writes it only when
+   * the session closes, so a session closed at teardown is harvested before it
+   * finalizes unless the harvest waits. Defaults to 30 seconds. Zero checks once without waiting; missing
+   * metadata is always a failure. */
+  awaitMetadataMs?: number;
 }
 
 const DEFAULT_CONTAINER_CAPTURES_ROOT = '/var/log/aptl/captures';
@@ -53,11 +59,19 @@ const DEFAULT_CONTAINER_CAPTURES_ROOT = '/var/log/aptl/captures';
 const CONTAINER_MISSING = 'aptl.capture-harvest.container-missing';
 const SESSION_MISSING = 'aptl.capture-harvest.session-missing';
 const COPY_FAILED = 'aptl.capture-harvest.copy-failed';
+// A session whose frames copied but whose metadata.json never appeared within
+// the bounded wait: the broker had not finished finalizing it. Recorded so a
+// frames-only copy fails loudly instead of sealing a session the collector
+// then reports as mid-run-loss.
+const METADATA_MISSING = 'aptl.capture-harvest.metadata-missing';
+const FINALIZE_FAILED = 'aptl.capture-harvest.finalize-failed';
 const CONTAINER_UNRESOLVED = 'aptl.capture-harvest.container-unresolved';
 type HarvestFailure =
   | typeof CONTAINER_MISSING
   | typeof SESSION_MISSING
   | typeof COPY_FAILED
+  | typeof METADATA_MISSING
+  | typeof FINALIZE_FAILED
   | typeof CONTAINER_UNRESOLVED;
 /** Evidence record for a failure, inside the session's kali-side dir. */
 const HARVEST_FAILURE_FILE = 'capture-harvest-failure.json';
@@ -87,7 +101,7 @@ function execDockerCp(
   // "no PATH lookup" contract was unverifiable. (Test-quality review
   // cycle 1 T-002.)
   return new Promise((res) => {
-    const child = spawn(dockerBin(env), args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(dockerBin(env), args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 45000, killSignal: 'SIGKILL' });
     let stderr = '';
     child.stderr.on('data', (b) => {
       stderr += b.toString();
@@ -154,7 +168,7 @@ function resolveHarvestParams(opts: HarvestOptions): ResolvedHarvestParams {
 /** Outcome of one per-session copy: `null` on success, else the failure. */
 interface CopyFailure {
   failure: HarvestFailure;
-  /** `null` when docker cp did not run. */
+  // null when the failure is not a docker exit (e.g. metadata never finalized).
   exitCode: number | null;
 }
 
@@ -302,7 +316,76 @@ export async function harvestSession(opts: HarvestOptions, sessionId: string): P
     : unresolvedContainer(opts.containerName);
   if (failed) {
     await recordHarvestFailure(destDir, failed, opts.containerName, tid, sessionId);
+    return finalizeHarvest(destDir, false);
   }
 
-  return finalizeHarvest(destDir, failed === null);
+  // The broker writes metadata.json only when it finalizes the session on
+  // close. A session closed at teardown may still be finalizing when the copy
+  // above runs, leaving a frames-only directory the collector rejects. When the
+  // caller asked to wait, re-copy until metadata.json lands or the bound
+  // elapses, then fail loud if it never did.
+  const metadataFailure = await awaitSessionMetadata(
+    opts,
+    { src, destDir, env, tid, sessionId },
+  );
+  if (metadataFailure) {
+    await recordHarvestFailure(destDir, metadataFailure, opts.containerName, tid, sessionId);
+    return finalizeHarvest(destDir, false);
+  }
+
+  return finalizeHarvest(destDir, true);
+}
+
+const _METADATA_POLL_INTERVAL_MS = 200;
+
+/** Whether the harvested session directory now holds the broker's metadata. */
+async function metadataPresent(destDir: string): Promise<boolean> {
+  try {
+    return (await stat(join(destDir, 'metadata.json'))).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Wait for the broker's metadata.json, re-copying the session subtree on an
+ * interval so a late finalize is picked up. Returns a failure when the caller
+ * asked to wait and metadata never arrived; returns null when metadata is
+ * present. A zero wait still requires final metadata.
+ */
+async function awaitSessionMetadata(
+  opts: HarvestOptions,
+  ctx: { src: string; destDir: string; env: NodeJS.ProcessEnv; tid: string; sessionId: string },
+): Promise<CopyFailure | null> {
+  if (await metadataPresent(ctx.destDir)) return null;
+  const budget = opts.awaitMetadataMs ?? 30000;
+  if (budget <= 0) return { failure: METADATA_MISSING, exitCode: null };
+  const deadline = Date.now() + budget;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, _METADATA_POLL_INTERVAL_MS));
+    const failed = await copyPerSessionCaptures(
+      opts.containerName, ctx.src, ctx.destDir, ctx.env, ctx.sessionId,
+    );
+    if (!failed && (await metadataPresent(ctx.destDir))) return null;
+  }
+  console.error(
+    `[captures] session ${ctx.sessionId} finalized no metadata within ${budget}ms; harvest incomplete`,
+  );
+  return { failure: METADATA_MISSING, exitCode: null };
+}
+
+/** Ask the sidecar to finalize only this run/session, without shell interpolation. */
+export async function finalizeCaptureSession(opts: HarvestOptions, sessionId: string): Promise<boolean> {
+  const { env, stateDir, tid } = resolveHarvestParams(opts);
+  const destDir = kaliSideSessionDir(stateDir, tid, sessionId, env);
+  await mkdir(destDir, { recursive: true, mode: 0o700 });
+  const result = DOCKER_CONTAINER_NAME.test(opts.containerName)
+    ? await execDockerCp([
+      'exec', '--user', 'root', opts.containerName, 'python3', '/usr/local/bin/broker.py',
+      'stop-session', '--run-id', tid, '--session-id', sessionId,
+    ], env)
+    : { code: -1 };
+  if (result.code === 0) return true;
+  await recordHarvestFailure(destDir, { failure: FINALIZE_FAILED, exitCode: result.code }, opts.containerName, tid, sessionId);
+  return false;
 }

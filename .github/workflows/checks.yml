@@ -727,6 +727,14 @@ jobs:
           pip install -e . --no-deps --no-build-isolation
           coverage run --data-file=.coverage.transport -m pytest tests/test_mcp_transport_processes.py tests/test_mcp_payload_processes.py -q -m integration
           coverage xml --data-file=.coverage.transport -o coverage/transport.xml
+      - name: Extracted MCP shutdown through the real capture sidecar
+        # The installed red MCP, SSH broker and Docker harvest must agree on
+        # the complete session census. Include real writer/container failures.
+        # Prerequisite failures must fail this required lane, never skip it.
+        run: |
+          docker info > /dev/null
+          command -v node ssh ssh-keygen
+          python -m pytest tests/test_mcp_capture_lifecycle.py -q -m integration
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-transport-coverage

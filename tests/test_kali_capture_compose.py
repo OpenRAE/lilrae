@@ -372,17 +372,18 @@ def _close_pty_session_while_it_runs(
     _wait_for_broker_session(container_id, session_id, finished=True)
 
 
-@pytest.mark.integration
-def test_capture_sidecar_accepts_a_real_kali_session_and_preserves_identity(
-    capture_image, tmp_path
-):
+@pytest.fixture
+def capture_broker(capture_image, tmp_path, request):
+    """Run the shipped sidecar with a real inner SSH endpoint and fresh keys."""
     if shutil.which("ssh") is None:
         pytest.skip("ssh client is not available")
+    run_id = getattr(request, "param", "run-1")
     inner_key = tmp_path / "inner_key"
     outer_key = tmp_path / "outer_key"
     _generate_ed25519_key(inner_key)
     _generate_ed25519_key(outer_key)
     container = "aptl-capture-session-test-" + uuid.uuid4().hex
+    volume = "lilrae-capture-test-" + uuid.uuid4().hex
     command = [
         "docker",
         "run",
@@ -396,6 +397,10 @@ def test_capture_sidecar_accepts_a_real_kali_session_and_preserves_identity(
         "/tmp:rw,nosuid,nodev,size=16m",
         "--tmpfs",
         "/var/log:rw,nosuid,nodev,size=32m",
+        # Match the shipped named capture volume. Docker's archive API cannot
+        # harvest the earlier fixture's tmpfs-only /var/log (moby #22020).
+        "--mount",
+        f"type=volume,source={volume},target=/var/log/aptl/captures",
         "--tmpfs",
         "/home/kali:rw,nosuid,nodev,size=16m",
         "--cap-drop",
@@ -422,11 +427,11 @@ def test_capture_sidecar_accepts_a_real_kali_session_and_preserves_identity(
             capture_image,
         )
     )
-    created = subprocess.run(
-        command, capture_output=True, text=True, check=True, timeout=120
-    )
-    container_id = created.stdout.strip()
     try:
+        created = subprocess.run(
+            command, capture_output=True, text=True, check=True, timeout=120
+        )
+        container_id = created.stdout.strip()
         state = subprocess.run(
             ["docker", "inspect", "--format", "{{.State.Running}}", container_id],
             capture_output=True,
@@ -512,7 +517,7 @@ EOF
                 "/usr/local/bin/broker.py",
                 "activate",
                 "--run-id",
-                "run-1",
+                run_id,
                 "--plan-id",
                 "capture-plan-1",
                 "--binding-id",
@@ -602,117 +607,172 @@ EOF
             timeout=30,
         )
         port = port_result.stdout.strip().rsplit(":", 1)[-1]
-        connected = _brokered_ssh(
-            outer_key, port, "session-1", "printf capture-ok", tty=False
-        )
-        if connected.returncode != 0:
-            logs = subprocess.run(
-                ["docker", "logs", container_id],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            capture_state = subprocess.run(
-                [
-                    "docker",
-                    "exec",
-                    container_id,
-                    "sh",
-                    "-c",
-                    "find /run/aptl-capture /var/log/aptl/captures -ls; "
-                    "python3 /usr/local/bin/broker.py export",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            pytest.fail(
-                f"brokered SSH failed: stdout={connected.stdout!r} "
-                f"stderr={connected.stderr!r} logs={logs.stderr!r} "
-                f"capture_stdout={capture_state.stdout!r} "
-                f"capture_stderr={capture_state.stderr!r}"
-            )
-        assert "capture-ok" in connected.stdout
-        # The MCP's interactive and background sessions request a PTY. sshd
-        # writes an audit login record for it, which needs AUDIT_WRITE.
-        with_pty = _brokered_ssh(
-            outer_key, port, "session-2", "printf capture-pty-ok", tty=True
-        )
-        assert with_pty.returncode == 0, with_pty.stderr
-        assert "capture-pty-ok" in with_pty.stdout
-        # A participant can leave an interactive session open at lab stop.
-        # Quiesce must end it and finalize its record (#1407).
-        held_open = subprocess.Popen(
-            _brokered_ssh_argv(outer_key, port, None, tty=True),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=_brokered_ssh_environment("session-3"),
-        )
-        _wait_for_broker_session(container_id, "session-3")
-        # A different client closes before quiesce. Preserve its transcript too.
-        _close_pty_session_while_it_runs(container_id, outer_key, port, "session-4")
-        subprocess.run(
-            [
-                "docker",
-                "exec",
-                container_id,
-                "python3",
-                "/usr/local/bin/broker.py",
-                "quiesce",
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=45,
-        )
-        exported = subprocess.run(
-            [
-                "docker",
-                "exec",
-                container_id,
-                "python3",
-                "/usr/local/bin/broker.py",
-                "export",
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=30,
-        )
-        held_open.wait(timeout=30)
-        payload = json.loads(exported.stdout)
-        sessions = {item["session_id"]: item for item in payload["sessions"]}
-        expected = ["session-1", "session-2", "session-3", "session-4"]
-        assert sorted(payload["accepted_session_ids"]) == expected
-        assert sorted(sessions) == expected
-        assert sessions["session-4"]["close_reason"] == "signal"
-        assert sessions["session-3"]["close_reason"] == "forced-teardown"
-        ownership = subprocess.run(
-            [
-                "docker",
-                "exec",
-                container_id,
-                "stat",
-                "-c",
-                "%U:%G %a",
-                "/run/aptl-capture",
-                "/run/aptl-inner",
-                "/var/log/aptl/captures",
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=30,
-        )
-        assert ownership.stdout.splitlines() == ["kali:kali 700"] * 3
+        yield {
+            "container": container_id,
+            "port": port,
+            "key": outer_key,
+            "run_id": run_id,
+        }
+
     finally:
         subprocess.run(
-            ["docker", "rm", "-f", container_id],
+            ["docker", "rm", "-f", container],
             capture_output=True,
             text=True,
             timeout=120,
         )
+        subprocess.run(
+            ["docker", "volume", "rm", volume],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+
+@pytest.mark.integration
+def test_capture_sidecar_accepts_a_real_kali_session_and_preserves_identity(
+    capture_broker,
+):
+    container_id = capture_broker["container"]
+    port = capture_broker["port"]
+    outer_key = capture_broker["key"]
+    connected = _brokered_ssh(
+        outer_key, port, "session-1", "printf capture-ok", tty=False
+    )
+    if connected.returncode != 0:
+        logs = subprocess.run(
+            ["docker", "logs", container_id],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        capture_state = subprocess.run(
+            [
+                "docker",
+                "exec",
+                container_id,
+                "sh",
+                "-c",
+                "find /run/aptl-capture /var/log/aptl/captures -ls; "
+                "python3 /usr/local/bin/broker.py export",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        pytest.fail(
+            f"brokered SSH failed: stdout={connected.stdout!r} "
+            f"stderr={connected.stderr!r} logs={logs.stderr!r} "
+            f"capture_stdout={capture_state.stdout!r} "
+            f"capture_stderr={capture_state.stderr!r}"
+        )
+    assert "capture-ok" in connected.stdout
+    # The MCP's interactive and background sessions request a PTY. sshd
+    # writes an audit login record for it, which needs AUDIT_WRITE.
+    with_pty = _brokered_ssh(
+        outer_key, port, "session-2", "printf capture-pty-ok", tty=True
+    )
+    assert with_pty.returncode == 0, with_pty.stderr
+    assert "capture-pty-ok" in with_pty.stdout
+    # A participant can leave an interactive session open at lab stop.
+    # Quiesce must end it and finalize its record (#1407).
+    held_open = subprocess.Popen(
+        _brokered_ssh_argv(outer_key, port, None, tty=True),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=_brokered_ssh_environment("session-3"),
+    )
+    _wait_for_broker_session(container_id, "session-3")
+    # Per-MCP shutdown must force only its owned session, leaving its peer open.
+    selected = subprocess.Popen(
+        _brokered_ssh_argv(outer_key, port, None, tty=True),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=_brokered_ssh_environment("session-5"),
+    )
+    _wait_for_broker_session(container_id, "session-5")
+    subprocess.run(
+        [
+            "docker",
+            "exec",
+            "--user",
+            "root",
+            container_id,
+            "python3",
+            "/usr/local/bin/broker.py",
+            "stop-session",
+            "--run-id",
+            "run-1",
+            "--session-id",
+            "session-5",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+    selected.wait(timeout=30)
+    _wait_for_broker_session(container_id, "session-5", finished=True)
+    assert held_open.poll() is None
+    # A different client closes before quiesce. Preserve its transcript too.
+    _close_pty_session_while_it_runs(container_id, outer_key, port, "session-4")
+    subprocess.run(
+        [
+            "docker",
+            "exec",
+            container_id,
+            "python3",
+            "/usr/local/bin/broker.py",
+            "quiesce",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=45,
+    )
+    exported = subprocess.run(
+        [
+            "docker",
+            "exec",
+            container_id,
+            "python3",
+            "/usr/local/bin/broker.py",
+            "export",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    held_open.wait(timeout=30)
+    payload = json.loads(exported.stdout)
+    sessions = {item["session_id"]: item for item in payload["sessions"]}
+    expected = ["session-1", "session-2", "session-3", "session-4", "session-5"]
+    assert sorted(payload["accepted_session_ids"]) == expected
+    assert sorted(sessions) == expected
+    assert sessions["session-4"]["close_reason"] == "signal"
+    assert sessions["session-3"]["close_reason"] == "forced-teardown"
+    assert sessions["session-5"]["close_reason"] == "forced-teardown"
+    ownership = subprocess.run(
+        [
+            "docker",
+            "exec",
+            container_id,
+            "stat",
+            "-c",
+            "%U:%G %a",
+            "/run/aptl-capture",
+            "/run/aptl-inner",
+            "/var/log/aptl/captures",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    assert ownership.stdout.splitlines() == ["kali:kali 700"] * 3
 
 
 @pytest.mark.integration

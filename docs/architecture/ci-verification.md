@@ -35,6 +35,17 @@ The periodic lane pulls the pinned Dashboard prerequisite from the production ca
 A missing prerequisite fails preparation.
 Live-lab checks require an explicit operator opt-in and credentials.
 
+The required MCP lane also tests the capture lifecycle through an extracted
+production red MCP payload. It opens real SSH sessions through the shipped
+capture broker, leaves a shell and a one-shot command active, then signals
+the MCP process. The complete broker census must reach the configured run
+archive with final metadata, faithful close reasons, and valid custody chains
+accepted by the transcript collector. Real container loss and a metadata
+write failure must produce evidence records and a non-zero shutdown exit.
+This check uses the shared isolated SSH fixture; it does not qualify a full
+TechVault SOC deployment. The generic installed-wheel smoke scenario remains
+a separate installation and realization check.
+
 The planner builds authored field prefixes once per compatibility application.
 Each requirement queries that operation's index.
 The index preserves exact fields, descendants, collection entries, and explicit empty declarations.
