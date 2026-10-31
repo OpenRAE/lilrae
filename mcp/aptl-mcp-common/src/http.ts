@@ -174,9 +174,10 @@ export class HTTPClient {
   }
 
   /**
-   * Append query-string params to a URL. Mirrors the inline branch the
-   * original makeRequest used; extracted so the orchestrator stays under
-   * its cognitive-complexity budget.
+   * Append query-string params to an absolute URL. The endpoint may already
+   * carry a query string (`/_search?size=1`) or a fragment, so the params
+   * join the existing query with `&` and go before any fragment. The
+   * endpoint's own query text is kept as written.
    */
   private appendParams(url: string, params: Record<string, any> | undefined): string {
     if (!params) return url;
@@ -187,7 +188,11 @@ export class HTTPClient {
       }
     });
     const qs = searchParams.toString();
-    return qs ? `${url}?${qs}` : url;
+    if (!qs) return url;
+    const target = new URL(url);
+    const existing = target.search.slice(1);
+    target.search = existing ? `${existing}&${qs}` : qs;
+    return target.href;
   }
 
   /**
