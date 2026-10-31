@@ -1,6 +1,7 @@
 """The lab owns its recorder process and can drain it without PID guessing."""
 
 import json
+import os
 from pathlib import Path
 import yaml
 import threading
@@ -194,3 +195,31 @@ def test_a_clean_retry_requires_parent_cleanup_proof_and_gets_new_socket_inodes(
             assert second.store.attempt_id == first.store.attempt_id
         finally:
             second.shutdown()
+
+
+def test_recorder_sockets_live_in_an_unpredictable_owner_only_directory(tmp_path):
+    import stat
+
+    from aptl.core.deployment.lilrae_docker_recorder import start_recording
+
+    first, second = _store(tmp_path / "first"), _store(tmp_path / "second")
+    with fake_docker() as (upstream, _endpoints, _calls):
+        sessions = [
+            start_recording(store, upstream, {"provision.node.holder": 60})
+            for store in (first, second)
+        ]
+        try:
+            directories = [session.directory for session in sessions]
+            assert directories[0] != directories[1]
+            for directory in directories:
+                mode = directory.lstat()
+                assert stat.S_ISDIR(mode.st_mode)
+                assert mode.st_uid == os.getuid()
+                assert stat.S_IMODE(mode.st_mode) & 0o077 == 0
+            assert first._read(Path("config.json"))["socket_directory"] == str(
+                directories[0]
+            )
+        finally:
+            for session in sessions:
+                session.shutdown()
+    assert not any(directory.exists() for directory in directories)

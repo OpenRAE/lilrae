@@ -9,13 +9,14 @@ try:
     import fcntl
 except ModuleNotFoundError:
     fcntl = None
-import hashlib
+import contextlib
 import json
 import os
 from pathlib import Path
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -37,11 +38,36 @@ from aptl.utils.pathsafe import (
 )
 
 
-def _socket_directory(store: RecordingStore) -> Path:
-    identity = hashlib.sha256(
-        f"{store.ownership.workspace_id}:{store.attempt_id}".encode()
-    ).hexdigest()[:24]
-    return Path("/tmp") / f"lilrae-recording-{os.getuid()}" / identity
+_CONFIG = Path("config.json")
+
+
+def _socket_directory(config: dict) -> Path:
+    """Return the attempt's recorded socket directory."""
+    directory = config.get("socket_directory")
+    if not isinstance(directory, str) or not Path(directory).is_absolute():
+        raise OwnershipConflictError("recording lifecycle identity changed")
+    return Path(directory)
+
+
+def _publish_config(store: RecordingStore, config: dict) -> Path:
+    """Publish the write-once attempt config with its private socket directory.
+
+    The first start creates an unpredictable owner-only directory, because a
+    fixed name in a shared temporary directory lets another local user occupy
+    it first. Later starts reuse the recorded directory.
+    """
+    prior = store._optional_read(_CONFIG)
+    if prior is not None:
+        directory = _socket_directory(prior)
+        store._publish(_CONFIG, {**config, "socket_directory": str(directory)})
+        return directory
+    directory = Path(tempfile.mkdtemp(prefix="lilrae-recording-"))
+    try:
+        store._publish(_CONFIG, {**config, "socket_directory": str(directory)})
+    except BaseException:
+        directory.rmdir()
+        raise
+    return directory
 
 
 def existing_sessions(ownership: WorkspaceOwnership) -> tuple["RecordingSession", ...]:
@@ -73,7 +99,7 @@ def existing_sessions(ownership: WorkspaceOwnership) -> tuple["RecordingSession"
         )
         if store.relative.name != name or config["root"] != str(ownership.root):
             raise OwnershipConflictError("recording lifecycle identity changed")
-        sessions.append(RecordingSession(store, _socket_directory(store), {}))
+        sessions.append(RecordingSession(store, _socket_directory(config), {}))
     return tuple(sessions)
 
 
@@ -152,8 +178,7 @@ def start_recording(
         "upstream": str(upstream),
         "authorities": authorities,
     }
-    store._publish(Path("config.json"), config)
-    directory = _socket_directory(store)
+    directory = _publish_config(store, config)
     session = RecordingSession(store, directory, {})
     status = session.status()
     if status is None:
@@ -163,7 +188,7 @@ def start_recording(
             raise OwnershipConflictError(
                 "recording lifecycle was interrupted; stop the lab before another start"
             )
-        config_path = store.ownership.root / store.relative / "config.json"
+        config_path = store.ownership.root / store.relative / _CONFIG
         session.process = subprocess.Popen(
             [sys.executable, "-I", "-m", __name__, str(config_path)],
             stdin=subprocess.DEVNULL,
@@ -221,16 +246,20 @@ def serve_recording(config_path: Path) -> None:
     store = RecordingStore(
         ownership, daemon_id=config["daemon_id"], attempt_id=config["attempt_id"]
     )
-    if ownership.root / store.relative / "config.json" != config_path:
+    if ownership.root / store.relative / _CONFIG != config_path:
         raise OwnershipConflictError("recording configuration identity changed")
-    directory = _socket_directory(store)
-    descriptor = open_private_dir_contained_nofollow(
-        Path("/tmp"), directory.relative_to("/tmp")
+    directory = _socket_directory(config)
+    # Fails closed unless this user owns the directory and only it has access.
+    os.close(
+        open_private_dir_contained_nofollow(directory.parent, Path(directory.name))
     )
-    lock = os.open(
-        "owner.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600, dir_fd=descriptor
-    )
-    os.close(descriptor)
+    state = open_private_dir_contained_nofollow(ownership.root, store.relative)
+    try:
+        lock = os.open(
+            "owner.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600, dir_fd=state
+        )
+    finally:
+        os.close(state)
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         replace_private_nofollow(
@@ -244,6 +273,9 @@ def serve_recording(config_path: Path) -> None:
                 store.relative / "closed.json",
                 _encode({"closed": True}),
             )
+            # A residual empty owner-only directory is harmless.
+            with contextlib.suppress(OSError):
+                directory.rmdir()
     finally:
         os.close(lock)
 
