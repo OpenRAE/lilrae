@@ -17,6 +17,7 @@ from raes_runtime.manager import RuntimeManager
 from raes_runtime.registry import RuntimeTarget
 
 from aptl.backends.raes_manifest import create_aptl_manifest
+from aptl.backends.raes_diagnostics import diagnostic
 from aptl.backends.raes_provisioner import AptlProvisioner
 from aptl.core.config import AptlConfig
 from aptl.core.deployment.lilrae_recorded_inventory import (
@@ -673,3 +674,33 @@ def test_conflicting_run_binding_prevents_deployment(tmp_path, monkeypatch):
             for d in provisioner.last_failure_diagnostics
         )
         assert "different-run" not in repr(result.diagnostics)
+
+
+def test_invalid_apparatus_scope_replaces_stale_failure_diagnostics(
+    tmp_path, monkeypatch
+):
+    from aptl.backends import lilrae_apparatus_reporting
+
+    manager, provisioner, native, _, plan, _ = reporting_runtime(tmp_path)
+
+    def invalid_scope(*_args):
+        raise ValueError("capture apparatus collides with authored membership")
+
+    monkeypatch.setattr(
+        lilrae_apparatus_reporting, "prepare_apparatus_resources", invalid_scope
+    )
+    monkeypatch.setattr(
+        provisioner,
+        "_apply_valid_plan",
+        lambda *args: pytest.fail("invalid apparatus must not deploy"),
+    )
+    provisioner.last_failure_diagnostics = (
+        diagnostic("stale.prior-failure", "provisioning", "Earlier failure."),
+    )
+    with manager:
+        result = manager.apply(plan)
+    assert not result.success
+    assert not native.reads
+    assert [d.code for d in provisioner.last_failure_diagnostics] == [
+        "lilrae.apparatus.scope-invalid"
+    ]

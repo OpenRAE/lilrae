@@ -172,8 +172,9 @@ class AptlProvisioner(LilraeApparatusReportingMixin, ProvisionerStartMixin):
             apparatus_failure = self._prepare_lilrae_apparatus(plan, working_snapshot)
             if apparatus_failure is not None:
                 diagnostics.append(apparatus_failure)
-                return ApplyResult(False, working_snapshot, diagnostics=diagnostics)
-            result = self._apply_realized_plan(plan, working_snapshot)
+                result = ApplyResult(False, working_snapshot, diagnostics=diagnostics)
+            else:
+                result = self._apply_realized_plan(plan, working_snapshot)
         return self._record_apply_result(plan, working_snapshot, result)
 
     def _materialization_run_diagnostics(
