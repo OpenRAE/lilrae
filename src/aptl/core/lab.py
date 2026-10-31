@@ -25,6 +25,7 @@ import icontract
 import yaml
 
 from aptl.core.certs import ensure_ssl_certs
+from aptl.core.helper_images import PINNED_HELPER_IMAGES, SURICATA_SEEDER_IMAGE
 from aptl.core.soc_ca import ensure_soc_certs
 from aptl.core.deployment._misp_server_tls import stage_misp_server_tls
 from aptl.core.config import AptlConfig, DeploymentConfig, find_config, load_config
@@ -412,8 +413,9 @@ WAZUH_IMAGE_VERSION = "4.12.0"
 # Suricata service's own image is reused so the seed step adds no new
 # supply-chain surface; it is already pulled for the `suricata` service.
 # A test pins this to the `suricata` service's `image:` in
-# docker-compose.yml so the two cannot drift.
-SURICATA_IMAGE = "jasonish/suricata:7.0"
+# docker-compose.yml so the two cannot drift. Its digest is pinned in
+# ``aptl.core.helper_images``.
+SURICATA_IMAGE = SURICATA_SEEDER_IMAGE
 
 # All known Docker Compose profiles. Used as fallback when config is
 # unavailable (e.g. stop_lab, kill switch).  Keep in sync with
@@ -2452,23 +2454,25 @@ def _seed_suricata_volumes_local(ctx: _LabStartContext) -> LabResult | None:
 
     # ctx.backend is narrowed to the local Compose backend by the caller's guard.
     assert ctx.backend is not None
-    # Pull the seeder image up front. Both the ownership repair and the seed
-    # container implicitly pull it via `docker run`, and on a fresh host a
-    # failed/slow implicit pull can surface as an opaque `exit 125` from the
-    # seeder with no docker stderr in the redacted log path — pulling here
-    # keeps registry failures at a stage the user can reason about (a
-    # `Failed to pull ...` warning) instead of a bare seed-exit code.
-    pull_warnings = list(ctx.backend.pull_images([SURICATA_IMAGE]))
+    # Point the seeder tag at its pinned digest up front. Both the ownership
+    # repair and the seed container run the tag via `docker run`, so a failure
+    # here stops the step with a `Failed to pull ...` warning rather than an
+    # opaque `exit 125`, and never falls back to whatever the tag names.
+    pull_warnings = list(
+        ctx.backend.pull_images([PINNED_HELPER_IMAGES[SURICATA_IMAGE]])
+    )
     for pull_warning in pull_warnings:
         log.warning(pull_warning)
     result: LabResult | None = None
-    if ctx.offline_staged and pull_warnings:
+    if pull_warnings:
+        failure = (
+            "Offline staged Suricata image verification failed"
+            if ctx.offline_staged
+            else "Pinned Suricata seeder image is unavailable"
+        )
         result = LabResult(
             success=False,
-            error=(
-                "Offline staged Suricata image verification failed: "
-                f"{'; '.join(pull_warnings)}"
-            ),
+            error=f"{failure}: {'; '.join(pull_warnings)}",
         )
     if result is None:
         ownership = ensure_suricata_config_source_ownership(
@@ -2520,6 +2524,7 @@ def _step_generate_certs(ctx: _LabStartContext) -> LabResult | None:
     cert_result = ensure_ssl_certs(
         ctx.project_dir,
         project=None if ctx.backend is None else ctx.backend._ephemeral_project(),
+        pull_images=None if ctx.backend is None else ctx.backend.pull_images,
     )
     if cert_result.success:
         return None

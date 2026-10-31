@@ -3508,7 +3508,9 @@ class TestSyncCredentialsStep:
         # The lab's project scopes the generator so teardown can find it if a
         # killed process strands it.
         generator.assert_called_once_with(
-            tmp_path, project=ctx.backend._ephemeral_project()
+            tmp_path,
+            project=ctx.backend._ephemeral_project(),
+            pull_images=ctx.backend.pull_images,
         )
 
     def test_renders_to_aptl_config_and_leaves_source_untouched(self, mocker, tmp_path):
@@ -3752,9 +3754,9 @@ class TestSeedSuricataVolumesStep:
         assert suffixes == {"suricata_config_seed", "suricata_misp_rules"}
 
     def test_seeder_image_pulled_before_ownership_and_seed(self, tmp_path):
-        """Pre-pull surfaces registry failures before opaque `exit 125` from
-        the seeder container (both the ownership repair and seed step
-        implicitly pull the same image via `docker run`)."""
+        """The seeder tag is pointed at its pinned digest before the ownership
+        repair and the seed step run it via `docker run`."""
+        from aptl.core.helper_images import PINNED_HELPER_IMAGES
         from aptl.core.lab import SURICATA_IMAGE, _step_seed_suricata_volumes
 
         _write_suricata_seed_sources(tmp_path)
@@ -3764,7 +3766,9 @@ class TestSeedSuricataVolumesStep:
         result = _step_seed_suricata_volumes(self._ctx(tmp_path, backend))
 
         assert result is None
-        backend.pull_images.assert_called_once_with([SURICATA_IMAGE])
+        backend.pull_images.assert_called_once_with(
+            [PINNED_HELPER_IMAGES[SURICATA_IMAGE]]
+        )
         # Pull happens before the seed hand-off.
         pull_call = next(
             i for i, c in enumerate(backend.mock_calls) if c[0] == "pull_images"
@@ -3773,6 +3777,21 @@ class TestSeedSuricataVolumesStep:
             i for i, c in enumerate(backend.mock_calls) if c[0] == "seed_named_volumes"
         )
         assert pull_call < seed_call
+
+    def test_unavailable_pinned_seeder_image_stops_before_any_seed(self, tmp_path):
+        """Online, a failed pinned pull never falls back to the mutable tag."""
+        from aptl.core.lab import _step_seed_suricata_volumes
+
+        _write_suricata_seed_sources(tmp_path)
+        backend = MagicMock()
+        warning = "Failed to pull jasonish/suricata:7.0@sha256:0364: 429"
+        backend.pull_images.return_value = [warning]
+
+        result = _step_seed_suricata_volumes(self._ctx(tmp_path, backend))
+
+        assert result is not None
+        assert result.error == f"Pinned Suricata seeder image is unavailable: {warning}"
+        backend.seed_named_volumes.assert_not_called()
 
     def test_offline_missing_seeder_image_is_named_before_any_seed(self, tmp_path):
         from aptl.core.lab import SURICATA_IMAGE, _step_seed_suricata_volumes

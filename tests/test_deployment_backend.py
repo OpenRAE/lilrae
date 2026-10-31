@@ -2118,6 +2118,90 @@ services:
 
         assert len(warnings) == 1
 
+    _PINNED_TAG_REF = "jasonish/suricata:7.0@sha256:" + "a" * 64
+
+    def test_pull_images_points_the_tag_at_a_held_pinned_digest(self, tmp_path):
+        """A held pin needs no registry; its tag is pointed at that digest."""
+        backend = self._make_backend(tmp_path)
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            warnings = backend.pull_images([self._PINNED_TAG_REF])
+
+        assert warnings == []
+        assert [call.args[0] for call in mock_run.call_args_list] == [
+            ["docker", "image", "inspect", self._PINNED_TAG_REF],
+            ["docker", "tag", self._PINNED_TAG_REF, "jasonish/suricata:7.0"],
+        ]
+
+    def test_pull_images_pulls_a_missing_pin_by_digest_then_tags_it(self, tmp_path):
+        """A missing pin is pulled by digest, never by its mutable tag."""
+        backend = self._make_backend(tmp_path)
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=1, stdout="", stderr="No such image"),
+                MagicMock(returncode=0, stdout="", stderr=""),
+                MagicMock(returncode=0, stdout="", stderr=""),
+            ]
+            warnings = backend.pull_images([self._PINNED_TAG_REF])
+
+        assert warnings == []
+        assert [call.args[0] for call in mock_run.call_args_list] == [
+            ["docker", "image", "inspect", self._PINNED_TAG_REF],
+            ["docker", "pull", self._PINNED_TAG_REF],
+            ["docker", "tag", self._PINNED_TAG_REF, "jasonish/suricata:7.0"],
+        ]
+
+    def test_failed_pinned_pull_leaves_the_tag_alone(self, tmp_path):
+        """The tag never keeps naming an image the pin did not select."""
+        backend = self._make_backend(tmp_path)
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=1, stdout="", stderr="No such image"),
+                MagicMock(returncode=1, stdout="", stderr="429 Too Many Requests\n"),
+            ]
+            warnings = backend.pull_images([self._PINNED_TAG_REF])
+
+        assert warnings == [f"Failed to pull {self._PINNED_TAG_REF}: 429 Too Many Requests"]
+        assert all(call.args[0][1] != "tag" for call in mock_run.call_args_list)
+
+    def test_failed_tag_of_a_pinned_image_is_reported(self, tmp_path):
+        """A tag that cannot be pointed at the pin is a warning, not a pass."""
+        backend = self._make_backend(tmp_path)
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=0, stdout="", stderr=""),
+                MagicMock(returncode=1, stdout="", stderr="tag refused\n"),
+            ]
+            warnings = backend.pull_images([self._PINNED_TAG_REF])
+
+        assert warnings == [
+            f"Failed to tag {self._PINNED_TAG_REF} as jasonish/suricata:7.0: tag refused"
+        ]
+
+    @pytest.mark.parametrize("held", [True, False], ids=["staged", "missing"])
+    def test_offline_pinned_image_verifies_only_the_staged_tag(self, tmp_path, held):
+        """docker load need not keep a registry digest, so offline reads the tag."""
+        backend = self._make_backend(tmp_path)
+        backend._offline_staged = True
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0 if held else 1, stdout="", stderr=""
+            )
+            warnings = backend.pull_images([self._PINNED_TAG_REF])
+
+        expected = [] if held else [
+            "Required staged image is missing: jasonish/suricata:7.0"
+        ]
+        assert warnings == expected
+        assert [call.args[0] for call in mock_run.call_args_list] == [
+            ["docker", "image", "inspect", "jasonish/suricata:7.0"]
+        ]
+
     @pytest.mark.parametrize(
         ("offline_staged", "local_copy", "expected_error", "pulled"),
         [
@@ -4004,6 +4088,53 @@ class TestRealizeContent:
                 )
         assert "fileshare_data" in str(exc_info.value)
         assert "secret docker stderr" not in str(exc_info.value)
+
+    def test_pinned_seeder_tag_is_pointed_at_its_digest_before_seeding(self, tmp_path):
+        """A pack without Suricata skips the seed step; content still runs the pin."""
+        from aptl.core.deployment._compose_content_realization import (
+            CONTENT_SEEDER_IMAGE,
+        )
+        from aptl.core.helper_images import PINNED_HELPER_IMAGES
+
+        backend = self._backend(tmp_path)
+        with (
+            patch.object(backend, "pull_images", return_value=[]) as pull_images,
+            patch("subprocess.run", side_effect=self._content_run_mock()) as mock_run,
+        ):
+            backend.realize_content(
+                [self._inline_text_item()],
+                seeder_image=CONTENT_SEEDER_IMAGE,
+                scenario_root=tmp_path,
+            )
+
+        pull_images.assert_called_once_with([PINNED_HELPER_IMAGES[CONTENT_SEEDER_IMAGE]])
+        assert mock_run.call_args[0][0][-3] == CONTENT_SEEDER_IMAGE
+
+    def test_unavailable_pinned_seeder_stops_before_seeding(self, tmp_path):
+        """No seed runs on an unpinned image; the error carries no Docker detail."""
+        from aptl.core.deployment._compose_content_realization import (
+            CONTENT_SEEDER_IMAGE,
+        )
+        from aptl.core.deployment.errors import BackendSeedError
+        from aptl.core.helper_images import PINNED_HELPER_IMAGES
+
+        backend = self._backend(tmp_path)
+        content = [self._inline_text_item()]
+        with (
+            patch.object(
+                backend, "pull_images", return_value=["Failed to pull: secret stderr"]
+            ),
+            patch("subprocess.run") as mock_run,
+        ):
+            with pytest.raises(BackendSeedError) as exc_info:
+                backend.realize_content(
+                    content, seeder_image=CONTENT_SEEDER_IMAGE, scenario_root=tmp_path
+                )
+        assert str(exc_info.value) == (
+            "Pinned content seeder image is unavailable: "
+            + PINNED_HELPER_IMAGES[CONTENT_SEEDER_IMAGE]
+        )
+        mock_run.assert_not_called()
 
 
 class TestObserveContentType:
