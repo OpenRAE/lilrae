@@ -164,8 +164,15 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 [Verification architecture](ci-verification.md) describes changed-input selection.
 [Performance evidence](../testing/ci-performance.md) records pruning and measurement rules.
 
+## Go architecture
+
+[Go architecture](go-architecture.md) shows the architecture model of the Go
+code.
+
 ## Preflights
 
+- [Issue #1583 Architecture Model Preflight](issue-1583-architecture-model-preflight.md)
+- [Issue #1583 Architecture Model Design](issue-1583-architecture-model-design.md)
 - [Issue #1552 Go Architecture Preflight](issue-1552-go-architecture-preflight.md)
 - [Issue #1553 Go Toolchain Preflight](issue-1553-go-toolchain-preflight.md)
 - [Issue #1553 Go Toolchain Design](issue-1553-go-toolchain-design.md)

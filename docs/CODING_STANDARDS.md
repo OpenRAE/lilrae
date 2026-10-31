@@ -41,9 +41,24 @@ the architecture, the architecture model, the design step, the style, and the
 gates of the Go implementation. Apply it to all Go code. ADR-064 stays in force
 for the Python code until Go port 31 removes that code.
 
-Before you write code, record the design and run the design check. The tools
-enforce each style rule that a tool can check. Review checks the rules in this
-list:
+Before you write code, record the design and run the design check:
+
+1. Write the design record in the YAML front matter of
+   `docs/architecture/issue-<number>-<topic>-design.md`. The
+   [#1583 design](architecture/issue-1583-architecture-model-design.md#schemas)
+   gives the fields.
+2. If the design needs a model change, change `architecture/model.yaml`. List
+   each change in `model_changes`.
+3. Run `go run -C tools ./cmd/archcheck design -base origin/<base branch> <note>`.
+4. Fix each finding before you write code.
+
+After a model change, run `go run -C tools ./cmd/archcheck diagram -write` to
+update [the diagram](architecture/go-architecture.md). On each pull request, CI
+runs `archcheck pr`. It fails when the code differs from the model or from the
+design record.
+
+The tools enforce each style rule that a tool can check. Review checks the rules
+in this list:
 
 1. A name is clear and in proportion to its scope. It does not repeat its
    package name, and a getter has no `Get` prefix.

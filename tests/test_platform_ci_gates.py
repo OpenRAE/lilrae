@@ -496,3 +496,25 @@ def test_go_gates_block_and_are_required_on_go_cutover() -> None:
     # The project-wide analysis waits for current Go coverage.
     assert "go-tests" in jobs["sonarcloud"]["needs"]
     assert jobs["go-regression"]["permissions"] == {"contents": "read", "issues": "read"}
+
+
+def test_go_architecture_runs_on_every_change_and_is_required_on_go_cutover() -> None:
+    """The architecture check of ADR-065 runs whatever routing selects (#1583).
+
+    The model covers web/caddy-build and the design notes, which routing does
+    not send to the Go lane. Only a pull request from a protected branch of
+    this repository skips the design comparison.
+    """
+
+    jobs = _jobs()
+    job = jobs["go-architecture"]
+    cutover = set(_protected_branches()["go-cutover"]["required_status_checks"]["contexts"])
+    assert job["name"] in cutover
+    assert "continue-on-error" not in job
+    assert job["if"] == "always()"
+    assert job["permissions"] == {"contents": "read"}
+    assert job["steps"][0]["name"] == "Validate check selection"
+    assert job["steps"][1]["with"]["fetch-depth"] == 0
+    script = job["steps"][-1]["run"]
+    assert 'bash tools/ci/go-gates.sh architecture "$BASE_SHA" "$issue" "$promotion"' in script
+    assert '"$HEAD_REPO" == "$REPOSITORY" && "$HEAD_REF" =~ ^(main|dev|go-cutover)$' in script

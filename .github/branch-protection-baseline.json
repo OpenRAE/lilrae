@@ -64,6 +64,7 @@
           "Go tests + coverage",
           "Go mutation tests",
           "Go regression tests",
+          "Go architecture",
           "Go vulnerability scan",
           "OSV-scanner (Go modules)"
         ]

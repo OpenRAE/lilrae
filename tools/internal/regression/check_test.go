@@ -251,6 +251,49 @@ func TestCheckRequiresARegressionTestForABugFix(t *testing.T) {
 	}
 }
 
+// regression: #1583
+func TestCheckIgnoresThePathsThatTheGoCommandIgnores(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		files map[string]string
+		want  []string
+	}{
+		{
+			name: "production files",
+			files: map[string]string{
+				"_scratch/scratch.go": "package scratch\n",
+				".hidden/hidden.go":   "package hidden\n",
+				"calc/_old.go":        "package calc\n",
+				"calc/.new.go":        "package calc\n",
+				"calc/testdata/x.go":  "package x\n",
+			},
+		},
+		{
+			name:  "regression test",
+			files: map[string]string{"calc/calc.go": valueSource("2"), "calc/_value_test.go": valueTest("// regression: #7\n", "")},
+			want:  []string{"issue #7: the issue has the bug label and the change edits Go production code, but the change adds or changes no test with \"regression: #7\""},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := newRepo(t)
+			base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1")})
+			r.Commit(tc.files)
+
+			report := r.check(base, 7, true)
+
+			if diff := cmp.Diff(tc.want, messages(report)); diff != "" {
+				t.Errorf("findings mismatch (-want +got):\n%s", diff)
+			}
+			if len(report.Selected) != 0 {
+				t.Errorf("Check() replayed %v, want no test from an ignored path", report.Selected)
+			}
+		})
+	}
+}
+
 func TestCheckValidatesTheRegressionComments(t *testing.T) {
 	t.Parallel()
 	r := newRepo(t)

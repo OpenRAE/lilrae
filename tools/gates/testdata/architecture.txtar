@@ -1,0 +1,221 @@
+# The architecture gate passes a change that matches its design record.
+exec git init --quiet --initial-branch=main
+exec git config user.name Fixture
+exec git config user.email fixture@example.invalid
+exec git config commit.gpgsign false
+exec git add --all
+exec git commit --quiet --message=base
+exec git tag base
+exec bash $GATES architecture
+stdout 'archcheck: check passed'
+stdout 'archcheck: diagram passed'
+mkdir internal/extra
+cp _head/model.yaml architecture/model.yaml
+cp _head/extra.go internal/extra/extra.go
+cp _head/design.md docs/architecture/issue-7-extra-design.md
+cp _head/go-architecture.md docs/architecture/go-architecture.md
+exec git add --all
+exec git commit --quiet --message=change
+exec bash $GATES architecture base 7 false
+stdout 'archcheck: pr passed'
+stdout 'archcheck: diagram passed'
+
+# A diagram that differs from the model fails the gate.
+cp docs/base-architecture.md docs/architecture/go-architecture.md
+! exec bash $GATES architecture base 7 false
+stdout 'archcheck: pr passed'
+stdout '\[stale-diagram\] docs/architecture/go-architecture.md: the generated diagram differs from the model'
+stdout 'fix: Fix stale-diagram.'
+
+# A forbidden import fails the gate with the fix-it message of its rule.
+cp _head/go-architecture.md docs/architecture/go-architecture.md
+cp _head/forbidden.go internal/extra/extra.go
+exec git add --all
+exec git commit --quiet --message=forbidden
+! exec bash $GATES architecture base 7 false
+stdout '\[forbidden-import\] internal/extra/extra.go:4: the import "example.com/fixture/internal/app" is in "app", which "extra" does not use'
+stdout 'fix: Fix forbidden-import.'
+stdout '\[design-imports-differ\] docs/architecture/issue-7-extra-design.md'
+stdout 'archcheck: diagram passed'
+
+# A promotion skips the design comparison, but not the repository check.
+! exec bash $GATES architecture base 0 true
+stdout '\[forbidden-import\]'
+! stdout 'design-imports-differ'
+
+-- go.mod --
+module example.com/fixture
+
+go 1.27.0
+-- architecture/model.yaml --
+version: 1
+layers:
+  - name: entry
+    description: Commands.
+    may_use: [entry, core]
+  - name: core
+    description: Values.
+    may_use: [core]
+components:
+  - name: app
+    layer: entry
+    responsibility: Runs the application.
+    packages: [cmd/app, internal/app]
+    uses: [values]
+  - name: values
+    layer: core
+    responsibility: Holds values.
+    packages: [internal/values]
+public: []
+vendored: []
+rules:
+  unassigned-package: Fix unassigned-package.
+  stale-package: Fix stale-package.
+  forbidden-import: Fix forbidden-import.
+  forbidden-module: Fix forbidden-module.
+  unresolved-import: Fix unresolved-import.
+  undeclared-public-package: Fix undeclared-public-package.
+  invalid-model: Fix invalid-model.
+  missing-design: Fix missing-design.
+  invalid-design: Fix invalid-design.
+  design-package-missing: Fix design-package-missing.
+  design-imports-differ: Fix design-imports-differ.
+  design-forbidden: Fix design-forbidden.
+  design-model-changes-differ: Fix design-model-changes-differ.
+  stale-diagram: Fix stale-diagram.
+-- cmd/app/main.go --
+package main
+
+import "example.com/fixture/internal/app"
+
+func main() { app.Run() }
+-- internal/app/app.go --
+// Package app runs the application.
+package app
+
+import "example.com/fixture/internal/values"
+
+// Run runs the application.
+func Run() { _ = values.X }
+-- internal/values/values.go --
+// Package values holds values.
+package values
+
+// X is a value.
+const X = 1
+-- docs/architecture/go-architecture.md --
+# Architecture
+
+<!-- Generated from architecture/model.yaml by archcheck diagram. Do not edit. -->
+```mermaid
+flowchart TB
+    subgraph layer_entry[entry]
+        component_app[app]
+    end
+    subgraph layer_core[core]
+        component_values[values]
+    end
+    component_app --> component_values
+```
+<!-- End of the generated diagram. -->
+-- docs/base-architecture.md --
+# Architecture
+
+<!-- Generated from architecture/model.yaml by archcheck diagram. Do not edit. -->
+```mermaid
+flowchart TB
+    subgraph layer_entry[entry]
+        component_app[app]
+    end
+    subgraph layer_core[core]
+        component_values[values]
+    end
+    component_app --> component_values
+```
+<!-- End of the generated diagram. -->
+-- _head/model.yaml --
+version: 1
+layers:
+  - name: entry
+    description: Commands.
+    may_use: [entry, core]
+  - name: core
+    description: Values.
+    may_use: [core]
+components:
+  - name: app
+    layer: entry
+    responsibility: Runs the application.
+    packages: [cmd/app, internal/app]
+    uses: [values]
+  - name: values
+    layer: core
+    responsibility: Holds values.
+    packages: [internal/values]
+  - name: extra
+    layer: core
+    responsibility: Doubles values.
+    packages: [internal/extra]
+    uses: [values]
+public: []
+vendored: []
+rules:
+  unassigned-package: Fix unassigned-package.
+  stale-package: Fix stale-package.
+  forbidden-import: Fix forbidden-import.
+  forbidden-module: Fix forbidden-module.
+  unresolved-import: Fix unresolved-import.
+  undeclared-public-package: Fix undeclared-public-package.
+  invalid-model: Fix invalid-model.
+  missing-design: Fix missing-design.
+  invalid-design: Fix invalid-design.
+  design-package-missing: Fix design-package-missing.
+  design-imports-differ: Fix design-imports-differ.
+  design-forbidden: Fix design-forbidden.
+  design-model-changes-differ: Fix design-model-changes-differ.
+  stale-diagram: Fix stale-diagram.
+-- _head/extra.go --
+// Package extra doubles values.
+package extra
+
+import "example.com/fixture/internal/values"
+
+// Double returns twice the value.
+func Double() int { return 2 * values.X }
+-- _head/forbidden.go --
+// Package extra doubles values.
+package extra
+
+import "example.com/fixture/internal/app"
+
+// Double runs the application.
+func Double() { app.Run() }
+-- _head/design.md --
+---
+design: 1
+issue: 7
+packages:
+  - path: internal/extra
+    component: extra
+    imports: [example.com/fixture/internal/values]
+model_changes: [component:extra]
+---
+
+# Issue #7: Extra Design
+-- _head/go-architecture.md --
+# Architecture
+
+<!-- Generated from architecture/model.yaml by archcheck diagram. Do not edit. -->
+```mermaid
+flowchart TB
+    subgraph layer_entry[entry]
+        component_app[app]
+    end
+    subgraph layer_core[core]
+        component_values[values]
+        component_extra[extra]
+    end
+    component_app --> component_values
+    component_extra --> component_values
+```
+<!-- End of the generated diagram. -->

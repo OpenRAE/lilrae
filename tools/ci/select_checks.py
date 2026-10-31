@@ -12,9 +12,13 @@ import subprocess
 
 LANES = ("python", "mcp", "web", "docs", "dependencies", "lab", "images", "iac", "go")
 
-# The Go modules of ADR-065: the product module at the root, and the tool
-# modules below tools/. web/caddy-build keeps its own module and checks.
-_GO_PREFIXES = ("cmd/", "internal/", "adapter/", "conformance/", "tools/cmd/", "tools/internal/", "tools/lint/", "tools/gates/")
+# The Go modules of ADR-065: the product module at the root, the tool modules
+# below tools/, and the architecture model. web/caddy-build keeps its own
+# module and checks.
+_GO_PREFIXES = (
+    "cmd/", "internal/", "adapter/", "conformance/", "architecture/",
+    "tools/cmd/", "tools/internal/", "tools/lint/", "tools/gates/",
+)
 _GO_FILES = {"go.mod", "go.sum", ".golangci.yml", "tools/go.mod", "tools/go.sum", "tools/mutation-thresholds.json"}
 
 

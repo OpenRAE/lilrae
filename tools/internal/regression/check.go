@@ -116,7 +116,7 @@ func scanChanges(ctx context.Context, root, base, head string, issue int) (chang
 	}
 	var scan changes
 	for _, file := range files {
-		if inTestdata(file.Path) {
+		if ignored(file.Path) {
 			continue
 		}
 		if !strings.HasSuffix(file.Path, "_test.go") {
@@ -223,8 +223,14 @@ func packageTests(ctx context.Context, root, rev, dir string) (map[string]testFu
 	return funcs, nil
 }
 
-// inTestdata reports whether a repository path is in a testdata directory,
-// which the go command ignores.
-func inTestdata(file string) bool {
+// ignored reports whether the go command ignores a repository path: a
+// directory or file name in it begins with a dot or an underscore, or a
+// directory is named testdata.
+func ignored(file string) bool {
+	for part := range strings.SplitSeq(file, "/") {
+		if strings.HasPrefix(part, ".") || strings.HasPrefix(part, "_") {
+			return true
+		}
+	}
 	return slices.Contains(strings.Split(path.Dir(file), "/"), "testdata")
 }
