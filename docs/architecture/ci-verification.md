@@ -95,7 +95,7 @@ flowchart LR
   A test keeps the `go-cutover` contexts a superset of the `dev` contexts.
 - `checks.yml`, `pr-title-lint.yml`, and the Phase E workflow run for pull requests into each protected branch.
   `checks.yml` also runs on pushes to `go-cutover`, so SonarCloud keeps a current analysis of the branch.
-  SonarCloud classifies `go-cutover` as a long-lived branch before its first analysis.
+  SonarCloud analyzes `go-cutover` as a short-lived branch, as it does `dev`, so each push gets a quality gate result.
 - On `go-cutover`, `.ground-control.yaml` sets `workflow.base_branch` to `go-cutover`.
   `/implement` then uses `go-cutover` for branch preparation, synchronization, and pull requests.
   `dev` keeps the default base.
