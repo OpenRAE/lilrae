@@ -274,9 +274,9 @@ assume the repository will redact it later.
 - Delivery and operations: appliance build, scan, configuration and
   qualification scripts; installed TechVault journey/live gates; launcher and
   limitation documentation; `.ground-control.yaml`, `.gc/plan-rules.md`,
-  pre-commit, strict MkDocs, CI, and clean-seat qualification. Ground Control
-  routes `containers/network-boundary-helper/**` to the host boundary and
-  `containers/appliance-egress-proxy/**` to the range perimeter.
+  pre-commit, strict MkDocs, CI, and clean-seat qualification. The GRC workflow
+  platform routes `containers/network-boundary-helper/**` to the host boundary
+  and `containers/appliance-egress-proxy/**` to the range perimeter.
 
 ## Extensibility Seam
 
