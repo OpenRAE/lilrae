@@ -1,3 +1,4 @@
+import { knownToolFailure, markToolFailure } from '../lilrae-tool-outcome.js';
 import { HTTPClient, HTTPTimeoutError, type HTTPError } from '../http.js';
 import { LabConfig } from '../config.js';
 import { assertPathOnlyEndpoint } from '../endpoint-url.js';
@@ -31,7 +32,12 @@ export type APIToolHandler = (args: any, context: APIToolContext) => Promise<{ c
 
 type QueryConfig = NonNullable<LabConfig['queries']>[string];
 
-class QueryArgumentError extends Error {}
+class QueryArgumentError extends Error {
+  constructor(message: string) {
+    super(message);
+    knownToolFailure(this);
+  }
+}
 
 interface FailureDetail {
   status?: number;
@@ -233,6 +239,7 @@ const baseAPIHandlers = {
         ],
       };
     } catch (error) {
+      markToolFailure(error);
       return {
         content: [
           {
@@ -297,6 +304,7 @@ const baseAPIHandlers = {
         ],
       };
     } catch (error) {
+      markToolFailure(error);
       return {
         content: [
           {

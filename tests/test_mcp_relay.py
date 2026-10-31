@@ -4,6 +4,9 @@ import asyncio
 import json
 import os
 import sys
+from dataclasses import replace
+from threading import Event
+import pytest
 
 from aptl.workbench.profiles import profile_for
 from aptl.workbench.relay import RelayLaunch, RelayPolling, relay_mcp
@@ -22,9 +25,43 @@ for line in sys.stdin:
 """
 
 
+@pytest.mark.parametrize("participant_bound", [False, True])
 def test_real_pipe_relay_admits_inventory_denies_blue_and_revokes_live_session(
     tmp_path,
+    participant_bound,
+    monkeypatch,
 ):
+    from contextlib import nullcontext
+    from aptl.backends.lilrae_participant_tools import LilraeToolSession
+    from aptl.workbench.lilrae_tool_transport import LilraeToolTransport
+    from tests.test_lilrae_participant_tools import binding, port
+
+    selected = profile_for("red").servers[0]
+    session = LilraeToolSession(
+        port(),
+        tuple(
+            replace(
+                binding(),
+                tool_name=name,
+                server_id=selected.server_id,
+                execution_binding=replace(
+                    binding().execution_binding, timeout_seconds=300
+                ),
+            )
+            for name in selected.tool_names
+        ),
+        Event(),
+    )
+
+    response_deadlines = []
+    wait_for = asyncio.wait_for
+
+    async def observe_wait(awaitable, timeout):
+        response_deadlines.append(timeout)
+        return await wait_for(awaitable, timeout)
+
+    monkeypatch.setattr(asyncio, "wait_for", observe_wait)
+
     async def exercise():
         revoked = False
         authorizations = 0
@@ -53,11 +90,21 @@ def test_real_pipe_relay_admits_inventory_denies_blue_and_revokes_live_session(
                         argv=(
                             sys.executable,
                             "-c",
-                            "TOOLS=" + repr(selected.tool_names) + "\n" + SERVER,
+                            "import os\n"
+                            + (
+                                "assert len(os.environ['LILRAE_TOOL_TOKEN']) == 64\n"
+                                if participant_bound
+                                else "assert 'LILRAE_TOOL_TOKEN' not in os.environ\n"
+                            )
+                            + "TOOLS="
+                            + repr(selected.tool_names)
+                            + "\n"
+                            + SERVER,
                         ),
                         cwd=tmp_path,
                         env={"PATH": os.defpath},
                         server=selected,
+                        participant_tools=carrier,
                     ),
                     authorize=authorize,
                     cleanup_observer=cleanups.append,
@@ -118,4 +165,8 @@ def test_real_pipe_relay_admits_inventory_denies_blue_and_revokes_live_session(
             await asyncio.gather(*tasks)
         assert cleanups == [True]
 
-    asyncio.run(exercise())
+    with (
+        LilraeToolTransport(session) if participant_bound else nullcontext() as carrier
+    ):
+        asyncio.run(exercise())
+    assert (330 if participant_bound else 120) in response_deadlines

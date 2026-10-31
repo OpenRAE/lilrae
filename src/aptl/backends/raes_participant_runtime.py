@@ -89,6 +89,10 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
 
         self._selection_provider = provider
 
+    def attach_invocation_tool_actions(self, port) -> None:
+        """Pass the runtime-owned port to its exact installed native worker."""
+        self.autonomous_execution.attach_tool_port(port)
+
     def bind_autonomous_action(
         self,
         participant_address: str,

@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_ENVIRONMENT = {
     "SHUFFLE_APP_SDK_TIMEOUT": ("120", "plain"),
@@ -30,7 +29,7 @@ def _enum_value(value: object) -> object:
 def test_released_pack_supplies_shuffle_semantics_and_leaves_mechanics_open(
     released_techvault_scenario,
 ) -> None:
-    assert version("raes-env-packs") == "6.4.2"
+    assert version("raes-env-packs") == "6.5.1"
     scenario = released_techvault_scenario
     backend = scenario.nodes["shuffle-backend"].runtime
     opensearch = scenario.nodes["shuffle-opensearch"].runtime
@@ -108,7 +107,9 @@ def test_generated_compose_uses_only_the_admitted_shuffle_runtime(
     )
 
 
-def test_released_pack_selects_shuffle_failure_recovery(released_techvault_realization) -> None:
+def test_released_pack_selects_shuffle_failure_recovery(
+    released_techvault_realization,
+) -> None:
     realization = released_techvault_realization
     backend = next(node for node in realization.nodes if node.name == "shuffle-backend")
 

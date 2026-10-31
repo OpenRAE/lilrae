@@ -53,9 +53,9 @@ BOUNDED_PARTICIPANT_AGENCY_SOURCE_SHA256 = (
     "cdd16c1bb18c0e281030137719bf88f7a8df9c7f0b6288de28e4355501942252"
 )
 BOUNDED_PARTICIPANT_AGENCY_COMPILED_SHA256 = (
-    # raes 9.1.0 compiles the unchanged authored freeze to a new model; the
-    # source digest above does not change.
-    "57135bd5c38467849c68561b62dfabe0b7448631a68e3adda17b98601025afdd"
+    # RAES 10.2 removes 199 empty node/runtime fields from the 9.1 artifact.
+    # The authored freeze and every nonempty compiled value are unchanged.
+    "31539407a07892bd106d502b95aea256c97ed107eef411c45b298ca3a3c2a3a5"
 )
 MAX_PARTICIPANT_PROPOSALS = 12
 MAX_ADMITTED_PARTICIPANT_ACTIONS = 8

@@ -84,3 +84,4 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [060](adr-060-vm-only-seat-containment.md) | VM-Only Seat Containment | superseded in part by ADR-061 | 2026-09-20 |
 | [061](adr-061-gateless-vm-seat-access.md) | Browser Desktop for VM Seats | accepted | 2026-09-30 |
 | [062](adr-062-lilrae-name-and-naming-convention.md) | LilRAE Name and Naming Convention for New Code | accepted | 2026-10-05 |
+| [063](adr-063-executable-participant-action-boundaries.md) | Executable Participant Action Boundaries | proposed | 2026-10-31 |

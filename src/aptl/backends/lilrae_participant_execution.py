@@ -8,6 +8,10 @@ from dataclasses import dataclass, field
 from threading import Condition, Event
 
 from raes_backend_protocols.capabilities import ParticipantExecutionBinding
+from raes_backend_protocols.participant_invocation_tools import (
+    ParticipantInvocationToolActionPort,
+)
+from raes_contracts.canonical import canonical_json_digest
 from raes_contracts.contracts import (
     ParticipantActionResultModel,
     ParticipantImplementationManifestModel,
@@ -25,6 +29,7 @@ from raes_contracts.participant_configuration import (
 from raes_processor.models import RuntimeModel, ParticipantAutonomousExecutionRuntime
 
 from aptl.utils.redaction import redact
+from aptl.backends.lilrae_participant_tools import LilraeToolBinding, LilraeToolSession
 from aptl.workbench.process import (
     AgentExecutionError,
     BoundedProcessError,
@@ -49,6 +54,7 @@ class LilraeParticipantBinding:
     observation_boundary_address: str
     execution_binding: ParticipantExecutionBinding
     executor: Callable[[str, Event], str] = field(repr=False, compare=False)
+    tool_bindings: tuple[LilraeToolBinding, ...] = ()
 
     def __post_init__(self) -> None:
         selection = self.implementation_selection
@@ -70,6 +76,22 @@ class LilraeParticipantBinding:
         if self.execution_binding.max_retries != 0:
             raise ValueError("native participant retries are not supported")
         self._validate_executor()
+        if self.tool_bindings and (
+            not callable(getattr(self.executor, "invoke_with_tools", None))
+            or any(
+                tool.execution_binding.participant_implementation_ref
+                != selection.manifest_ref
+                for tool in self.tool_bindings
+            )
+        ):
+            raise ValueError("tool bindings require a matching tool-enabled executor")
+        inventory = getattr(self.executor, "tool_inventory", None)
+        if inventory is not None and inventory != frozenset(
+            (tool.server_id, tool.tool_name) for tool in self.tool_bindings
+        ):
+            raise ValueError(
+                "installed tool bindings differ from the executor inventory"
+            )
 
     def _validate_executor(self) -> None:
         """Require the executor's configuration and deadline to match admission."""
@@ -103,6 +125,7 @@ class LilraeParticipantExecution:
                 observation_boundary_address=item.observation_boundary_address,
                 execution_binding=deepcopy(item.execution_binding),
                 executor=item.executor,
+                tool_bindings=deepcopy(item.tool_bindings),
             )
             for item in bindings
         )
@@ -128,6 +151,14 @@ class LilraeParticipantExecution:
         self._seen: set[str] = set()
         self._cancelled: set[str] = set()
         self._closed = False
+        self._tool_ports: dict[str, ParticipantInvocationToolActionPort] = {}
+
+    def attach_tool_port(self, port: ParticipantInvocationToolActionPort) -> None:
+        """Retain the scheduler-issued port until its exact worker starts."""
+        with self._condition:
+            if self._closed or port.invocation_action_instance_id in self._tool_ports:
+                raise ValueError("participant tool port is unavailable")
+            self._tool_ports[port.invocation_action_instance_id] = port
 
     def planning_diagnostics(self, model: RuntimeModel) -> list[Diagnostic]:
         """Check each participant against its installed offer before provisioning."""
@@ -144,6 +175,49 @@ class LilraeParticipantExecution:
                             domain="participant",
                             address=participant,
                             message="Autonomous policy does not match the participant's installed binding.",
+                        )
+                    )
+            diagnostics.extend(self._tool_diagnostics(model, policy))
+        return diagnostics
+
+    def _tool_diagnostics(
+        self, model: RuntimeModel, policy: ParticipantAutonomousExecutionRuntime
+    ) -> list[Diagnostic]:
+        """Check complete installed semantics before provisioning or dispatch."""
+        diagnostics = []
+        for item in self.bindings:
+            participant = item.implementation_selection.participant_address
+            if participant not in policy.participant_addresses:
+                continue
+            for tool in item.tool_bindings:
+                action = model.action_contracts.get(
+                    tool.execution_binding.action_contract_address
+                )
+                relations = [
+                    row
+                    for row in policy.invocation_tool_bindings
+                    if row.tool_affordance_address == tool.tool_affordance_address
+                    and row.action_contract_address
+                    == tool.execution_binding.action_contract_address
+                    and participant in row.participant_addresses
+                ]
+                if (
+                    action is None
+                    or canonical_json_digest(action.spec) != tool.action_contract_digest
+                    or len(relations) != 1
+                    or relations[0].shared_time_bound
+                    or tool.observation_boundary_address
+                    not in relations[0].observation_boundary_addresses
+                    or not set(tool.execution_binding.target_addresses).issubset(
+                        relations[0].target_addresses
+                    )
+                ):
+                    diagnostics.append(
+                        Diagnostic(
+                            code="lilrae.tool-binding-refused",
+                            domain="participant",
+                            address=participant,
+                            message="Installed tool semantics do not match the compiled participant relation.",
                         )
                     )
         return diagnostics
@@ -230,6 +304,7 @@ class LilraeParticipantExecution:
         finally:
             with self._condition:
                 self._active.pop(request.action_instance_id, None)
+                self._tool_ports.pop(request.action_instance_id, None)
                 self._condition.notify_all()
 
     def _reserve(
@@ -265,7 +340,7 @@ class LilraeParticipantExecution:
     ) -> ParticipantNativeActionExecution:
         """Convert native output or supervised failure into a portable result."""
         try:
-            output = item.executor(request.action_instance_id, event)
+            output = self._run_executor(item, request, episode_id, event)
             if event.is_set():
                 outcome = self._outcome(
                     request,
@@ -287,6 +362,40 @@ class LilraeParticipantExecution:
             # indeterminate work and preserves the peer results.
             outcome = self._unknown_outcome(request, snapshot)
         return outcome
+
+    def _run_executor(
+        self,
+        item: LilraeParticipantBinding,
+        request: ParticipantActionAdmissionRequest,
+        episode_id: str,
+        event: Event,
+    ) -> str:
+        """Supply tools only from the exact outer invocation's runtime port."""
+        with self._condition:
+            port = self._tool_ports.pop(request.action_instance_id, None)
+        if not item.tool_bindings:
+            return item.executor(request.action_instance_id, event)
+        if port is None or (
+            port.participant_address,
+            port.episode_id,
+            port.participant_implementation_ref,
+            port.execution_scope_ref,
+            port.execution_generation,
+        ) != (
+            request.participant_address,
+            episode_id,
+            item.implementation_selection.manifest_ref,
+            request.execution_scope_ref,
+            request.execution_generation,
+        ):
+            raise ValueError("participant tool port mismatch")
+        session = LilraeToolSession(port, item.tool_bindings, event)
+        try:
+            return item.executor.invoke_with_tools(
+                request.action_instance_id, event, session
+            )
+        finally:
+            session.close()
 
     def _failure_outcome(
         self,

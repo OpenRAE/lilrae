@@ -8,6 +8,7 @@ import math
 import os
 import re
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -16,6 +17,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from raes_contracts.contracts import ParticipantConfigurationResultModel
+    from aptl.backends.lilrae_participant_tools import LilraeToolSession
 
 from aptl.utils.pathsafe import create_exclusive_nofollow
 from aptl.workbench.agent import (
@@ -160,6 +162,11 @@ class LilraeOpenCodeExecutor:
         # dispatch. It must not delay cancellation of an already admitted action.
         self._tool_servers, self._tool_permissions = self._tools()
 
+    @property
+    def tool_inventory(self) -> frozenset[tuple[str, str]]:
+        """Exact installed inventory, independent of an invocation's authority."""
+        return self._tool_inventory
+
     def _validate_delivery(self) -> None:
         """Verify delivered model, prompt, and deadline against the sealed result."""
         if self._configuration_result is None:
@@ -216,6 +223,7 @@ class LilraeOpenCodeExecutor:
     def _tools(self) -> tuple[dict[str, object], dict[str, str]]:
         """Translate only a private, unchanged and verified profile."""
         if self._profile_config is None:
+            self._tool_inventory = frozenset()
             return {}, {"*": "deny"}
         self._verify_profile_config()
         inventory = {}
@@ -232,6 +240,9 @@ class LilraeOpenCodeExecutor:
                 "enabled": True,
             }
         verify_profile_tool_inventory(self._profile, inventory)
+        self._tool_inventory = frozenset(
+            (server, tool) for server, tools in inventory.items() for tool in tools
+        )
         permissions = {"*": "deny"}
         permissions.update(
             {
@@ -250,9 +261,37 @@ class LilraeOpenCodeExecutor:
             raise AgentExecutionError("participant MCP configuration changed")
 
     def __call__(self, action_id: str, cancellation: Event) -> str:
+        """Preserve ordinary no-tool invocations; refuse ungoverned tool launch."""
+        if self._tool_servers:
+            raise AgentExecutionError("Participant tool session is required.")
+        return self._run(cancellation, {})
+
+    def invoke_with_tools(
+        self, action_id: str, cancellation: Event, tools: LilraeToolSession
+    ) -> str:
+        """Deliver fresh server authority from the enclosing RAES invocation."""
+        from aptl.workbench.lilrae_tool_transport import LilraeToolTransport
+
+        self._verify_profile_config()
+        installed = frozenset(
+            (item.server_id, item.tool_name) for item in tools.bindings
+        )
+        if (
+            action_id != tools.invocation_action_instance_id
+            or tools.cancellation is not cancellation
+            or installed != self.tool_inventory
+        ):
+            raise AgentExecutionError(
+                "Participant tool session does not match the installed profile."
+            )
+        with LilraeToolTransport(tools) as carrier:
+            servers = deepcopy(self._tool_servers)
+            for name, server in servers.items():
+                server["environment"].update(carrier.environment(name))
+            return self._run(cancellation, servers)
+
+    def _run(self, cancellation: Event, servers: dict[str, object]) -> str:
         """Deliver the exact prompt on stdin and retain only terminal text."""
-        # Never use an external action identity as a path.
-        del action_id
         if cancellation.is_set():
             raise AgentExecutionError(REASON_CANCELLED)
         self._verify_profile_config()
@@ -265,7 +304,7 @@ class LilraeOpenCodeExecutor:
                 "autoupdate": False,
                 "share": "disabled",
                 "permission": self._tool_permissions,
-                "mcp": self._tool_servers,
+                "mcp": servers,
                 "plugin": [],
                 "instructions": [],
                 "snapshot": False,
@@ -346,5 +385,5 @@ def _terminal_text(output: bytes) -> str:
         if not texts:
             raise ValueError("missing terminal text")
         return "\n".join(texts)
-    except (ValueError, KeyError, TypeError):
+    except ValueError, KeyError, TypeError:
         raise AgentExecutionError("participant harness output is invalid") from None

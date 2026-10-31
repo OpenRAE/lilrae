@@ -6,9 +6,12 @@ import asyncio
 import json
 import signal
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aptl.workbench.lilrae_tool_transport import LilraeToolTransport
 
 from anyio import CancelScope
 
@@ -65,6 +68,25 @@ class RelayLaunch:
     cwd: Path
     env: Mapping[str, str]
     server: ServerProfile
+    participant_tools: LilraeToolTransport | None = field(
+        default=None, repr=False, compare=False
+    )
+
+    def environment(self) -> dict[str, str]:
+        """Bind only management-supplied participant authority to this server."""
+        result = dict(self.env)
+        if self.participant_tools is not None:
+            installed = {
+                item.tool_name
+                for item in self.participant_tools.session.bindings
+                if item.server_id == self.server.server_id
+            }
+            if installed != set(self.server.tool_names):
+                raise WorkbenchConfigurationError(
+                    "participant tool inventory does not match relay"
+                )
+            result.update(self.participant_tools.environment(self.server.server_id))
+        return result
 
 
 @dataclass(frozen=True)
@@ -86,10 +108,12 @@ class _Relay:
         server: ServerProfile,
         authorize: Callable[[], None],
         check_revocation: Callable[[], None] | None,
+        response_timeout: float = 120,
     ) -> None:
         self.child = child
         self.reader = reader
         self.writer = writer
+        self.response_timeout = response_timeout
         self.gate = ProtocolAdmission(server)
         self.authorize = authorize
         self.check_revocation = check_revocation or authorize
@@ -139,7 +163,7 @@ class _Relay:
             if "id" not in request:
                 continue
             response = await asyncio.wait_for(
-                self._response(request["id"]), timeout=120
+                self._response(request["id"]), timeout=self.response_timeout
             )
             if request["method"] == "initialize":
                 await self._admit_backend(response)
@@ -224,7 +248,7 @@ async def _stop(child: asyncio.subprocess.Process) -> bool:
         child.stdin.close()
         try:
             await child.stdin.wait_closed()
-        except (BrokenPipeError, ConnectionResetError):
+        except BrokenPipeError, ConnectionResetError:
             pass
     return clean
 
@@ -248,14 +272,27 @@ async def relay_mcp(
     child = await asyncio.create_subprocess_exec(
         *launch.argv,
         cwd=launch.cwd,
-        env=dict(launch.env),
+        env=launch.environment(),
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
         start_new_session=True,
         limit=_MAX_FRAME,
     )
-    relay = _Relay(child, reader, writer, launch.server, authorize, check_revocation)
+    response_timeout = (
+        max(120, launch.participant_tools.timeout + 30)
+        if launch.participant_tools is not None
+        else 120
+    )
+    relay = _Relay(
+        child,
+        reader,
+        writer,
+        launch.server,
+        authorize,
+        check_revocation,
+        response_timeout=response_timeout,
+    )
     authorization_interval = (
         polling.authorization_seconds
         if check_revocation is not None

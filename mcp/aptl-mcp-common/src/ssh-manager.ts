@@ -19,6 +19,7 @@ import {
   SessionConnectOptions,
 } from './ssh-contracts.js';
 import { PersistentSession } from './ssh-session.js';
+import { knownToolFailure, toolAbortSignal } from './lilrae-tool-outcome.js';
 
 interface ConnectionInfo {
   client: Client;
@@ -86,6 +87,7 @@ export class SSHConnectionManager {
     options: { sessionId?: string } = {},
   ): Promise<CommandResult & { sessionId: string }> {
     const client = await this.getConnection(host, username, privateKeyPath, port);
+    toolAbortSignal()?.throwIfAborted();
     const sessionId =
       options.sessionId ??
       // crypto.randomBytes for the unique-id suffix (SonarCloud
@@ -209,7 +211,7 @@ export class SSHConnectionManager {
       })
       .catch(err => {
         this.pendingConnections.delete(connectionKey);
-        throw err;
+        throw knownToolFailure(err);
       });
     this.pendingConnections.set(connectionKey, creating);
     return creating;
@@ -294,6 +296,7 @@ export class SSHConnectionManager {
     const creation = (async (): Promise<PersistentSession> => {
       const port = options.port ?? 22;
       const client = await this.getConnection(target, username, privateKeyPath, port);
+      toolAbortSignal()?.throwIfAborted();
       const session = new PersistentSession(sessionId, target, username, type, client, options);
 
       // Attach ownership-transfer listeners BEFORE the initialize() await so a
@@ -391,6 +394,7 @@ export class SSHConnectionManager {
     timeout?: number,
     raw?: boolean
   ): Promise<CommandResult> {
+    toolAbortSignal()?.throwIfAborted();
     const session = this.sessions.get(sessionId);
     require_(session !== undefined, `Session '${sessionId}' not found`);
 

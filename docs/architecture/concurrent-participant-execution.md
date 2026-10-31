@@ -14,7 +14,7 @@ The manifest describes these installed bindings, not arbitrary capabilities requ
 Missing bindings fail admission before execution.
 The first supported autonomous policy is RAES v1 with ordered selection.
 Additional policy profiles require separate qualification.
-RAES 7 batches participants within one authored execution policy.
+The installed RAES 10.2 batches participants within one authored execution policy.
 The representative red/blue scenario therefore uses one shared task-invocation policy.
 Each participant still has its own installed executor, tools, model, and prompt.
 The shared policy names one implementation manifest.
@@ -126,9 +126,11 @@ flowchart LR
 
 Process supervision is not an operating-system sandbox.
 Runtime bindings are trusted host inputs; participant outputs are untrusted.
-Individual MCP-call admission remains the separate
-[#1418 boundary](issue-1418-participant-tool-admission-preflight.md).
-This design does not claim that a session-level action records each tool call.
+Individual MCP calls use the [participant action boundary](participant-action-enforcement.md).
+Tool-enabled bindings require an exact installed mapping and the invocation's scoped tool session.
+The common MCP server gates SSH and API handlers before dispatch.
+RAES commits each accepted tool history alongside its enclosing invocation.
+An invocation without installed tool bindings makes no per-tool history claim.
 
 ## Existing architecture and verification
 
@@ -177,14 +179,15 @@ Its existing runtime declarations use generic composition; the engine does not r
 | --- | --- | --- |
 | #1419 | OpenCode typed model, prompt reference, prompt-byte digest, and timeout targets; model-domain validation | Complete manifest publication and prompt-asset resolution for every installed participant implementation |
 | #1420 | Trial-to-executor configuration equality, independent prompt delivery, and fresh invocation contexts | Operator and study assembly across all harnesses, complete actual-delivery evidence, and installed experiment qualification |
-| #1418 | No individual MCP-call admission claim | Admission and evidence for each tool call through RAES |
+| #1418 | Scoped tool sessions, common MCP enforcement, and retained red/blue action history | Released composition limits and installed-provider qualification are stated in the enforcement design |
 | #894 | Generic composition remains available; parameterized packages and local accounts pass the same readback checks | Composed kit publication and qualification |
 
-These issues are not fully absorbed and are not closure candidates on this evidence.
+The #1418 delivery uses the enforcement design's acceptance evidence.
+The other issues retain the acceptance surfaces shown above.
 
 ## References
 
-- RAES 7.0.0: installed `raes_backend_protocols.protocols`, `participant_execution_runtime`, and `participant_configuration`.
+- RAES 10.2.0: installed `raes_backend_protocols.protocols`, `participant_execution_runtime`, and `participant_configuration`.
 - [RAES execution architecture](https://github.com/OpenRAE/rae/blob/main/specs/formal/participant-semantics/autonomous-execution.md): admission, lifecycle, and scheduler ownership.
 - [Docker Compose application model](https://docs.docker.com/compose/intro/compose-application-model/): services, networks, volumes, and configuration.
 - [Python 3.12 futures](https://docs.python.org/3.12/library/concurrent.futures.html): cancellation and executor shutdown.

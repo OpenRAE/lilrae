@@ -506,15 +506,15 @@ pyyaml==6.0.3 \
     #   raes
     #   raes-env-packs
     #   uvicorn
-raes==9.1.0 \
-    --hash=sha256:4ccbd167ff39f9a7550c9c5794d22fc16e555100d7795ea5c34be0da9ad92af2 \
-    --hash=sha256:ffac8e2b931f791bbd138925118fe3106703840b40fa60aa406a6ccc897b9d95
+raes==10.2.0 \
+    --hash=sha256:b28205ef0a8f033c34fc2eb2e2e7f5cb1d599859486cf7a06a7271a8f4241a63 \
+    --hash=sha256:f8209874f44ad77c3ded6ed3c9057c0d425dacd52953fada76848671fd444631
     # via
     #   lilrae
     #   raes-env-packs
-raes-env-packs==6.4.2 \
-    --hash=sha256:00f6efa7af022bf238922af2a4bace7d7b06096e93eca7001faf9c0c4b1dd5c0 \
-    --hash=sha256:0ca5151aa0a1bd2a61fd048aeeb0d6c37ba2c8d1ee353e2c335f139215b613dd
+raes-env-packs==6.5.1 \
+    --hash=sha256:7fcf226eafd951561b1b6ba529917ccd23abf0a1618378ffd619378fa41a757b \
+    --hash=sha256:a86cba369c81232951187d0831ee7a7e6e4f84a8404a0f930328f7f67173db4b
     # via lilrae
 referencing==0.37.0 \
     --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231 \

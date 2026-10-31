@@ -1,3 +1,4 @@
+import { knownToolFailure, markToolFailure } from '../lilrae-tool-outcome.js';
 
 
 import { SSHConnectionManager, SessionMetadata, SSHError, CommandTimeoutError } from '../ssh.js';
@@ -28,10 +29,10 @@ export function errorMessage(error: unknown): string {
  */
 function assertSessionIdContract(value: unknown): asserts value is string {
   if (typeof value !== 'string' || value.length === 0) {
-    throw new SSHError(`invalid session_id: must be a non-empty string`);
+    throw knownToolFailure(new SSHError(`invalid session_id: must be a non-empty string`));
   }
   if (value.includes('..')) {
-    throw new SSHError(`invalid session_id (contains '..'): ${JSON.stringify(value)}`);
+    throw knownToolFailure(new SSHError(`invalid session_id (contains '..'): ${JSON.stringify(value)}`));
   }
 }
 
@@ -243,6 +244,7 @@ const baseHandlers: Record<string, ToolHandler> = {
         ],
       };
     } catch (error) {
+      markToolFailure(error);
       if (error instanceof CommandTimeoutError) {
         await harvestOnceClosed(error, (sessionId, runId) => maybeHarvest(labConfig, sessionId, runId));
       }
@@ -302,6 +304,7 @@ const baseHandlers: Record<string, ToolHandler> = {
         ],
       };
     } catch (error) {
+      markToolFailure(error);
       return {
         content: [
           {
@@ -358,6 +361,7 @@ const baseHandlers: Record<string, ToolHandler> = {
         ],
       };
     } catch (error) {
+      markToolFailure(error);
       return {
         content: [
           {
@@ -400,6 +404,7 @@ const baseHandlers: Record<string, ToolHandler> = {
         ],
       };
     } catch (error) {
+      markToolFailure(error);
       return {
         content: [
           {
@@ -443,6 +448,7 @@ const baseHandlers: Record<string, ToolHandler> = {
         ],
       };
     } catch (error) {
+      markToolFailure(error);
       return {
         content: [
           {
@@ -501,6 +507,7 @@ const baseHandlers: Record<string, ToolHandler> = {
         ],
       };
     } catch (error) {
+      markToolFailure(error);
       return {
         content: [
           {
@@ -547,6 +554,7 @@ const baseHandlers: Record<string, ToolHandler> = {
         ],
       };
     } catch (error) {
+      markToolFailure(error);
       return {
         content: [
           {
@@ -608,6 +616,7 @@ const baseHandlers: Record<string, ToolHandler> = {
         ],
       };
     } catch (error) {
+      markToolFailure(error);
       return {
         content: [
           {

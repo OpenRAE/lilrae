@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { createServer, type Socket } from 'node:net';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // The real SDK server runs below; only its stdio transport and the backends
 // are replaced. `start()` connects to the in-memory end the test hands over,
@@ -29,7 +33,8 @@ vi.mock('../src/ssh.js', async (importOriginal) => ({
   SSHConnectionManager: vi.fn(function () { return fakes.ssh; })
 }));
 
-vi.mock('../src/http.js', () => ({
+vi.mock('../src/http.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/http.js')>()),
   HTTPClient: vi.fn(function () { return fakes.http; })
 }));
 
@@ -128,6 +133,7 @@ describe('createMCPServer', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    fakes.ssh.disconnectAll.mockResolvedValue(undefined);
     const module = await import('../src/server.js');
     createMCPServer = module.createMCPServer;
   });
@@ -199,6 +205,7 @@ describe('tool arguments over an MCP transport', () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await Promise.all(clients.splice(0).map((client) => client.close()));
     // start() installs shutdown handlers once per server; drop this test's.
     for (const signal of signals) {
@@ -227,6 +234,182 @@ describe('tool arguments over an MCP transport', () => {
     return [...Object.values(fakes.ssh), fakes.http.makeRequest]
       .reduce((count, operation) => count + operation.mock.calls.length, 0);
   }
+
+  async function withAdmission(permit: boolean, exercise: (frames: any[], disconnect: () => void) => Promise<void>) {
+    const directory = await mkdtemp(join(tmpdir(), 'lilrae-admission-test-'));
+    const path = join(directory, 'actions.sock');
+    const frames: any[] = [];
+    const sockets = new Set<Socket>();
+    const broker = createServer((socket) => {
+      sockets.add(socket);
+      let buffered = '';
+      let ordinal = 0;
+      socket.on('data', (data) => {
+        buffered += data.toString();
+        while (buffered.includes('\n')) {
+          const index = buffered.indexOf('\n');
+          const frame = JSON.parse(buffered.slice(0, index));
+          buffered = buffered.slice(index + 1);
+          frames.push(frame);
+          if (ordinal++ === 0) socket.write(JSON.stringify({ accepted: permit }) + '\n');
+          else socket.write(JSON.stringify(frame.uncertain
+            ? { accepted: false }
+            : { accepted: true, result: { content: [{ type: 'text', text: '{"success":true,"admitted":true}' }] } }) + '\n');
+        }
+      });
+      socket.on('error', () => {});
+    });
+    await new Promise<void>((resolve) => broker.listen(path, resolve));
+    vi.stubEnv('LILRAE_TOOL_SOCKET', path);
+    vi.stubEnv('LILRAE_TOOL_TOKEN', 'a'.repeat(64));
+    vi.stubEnv('LILRAE_TOOL_TIMEOUT_MS', '30000');
+    try { await exercise(frames, () => { for (const socket of sockets) socket.destroy(); }); }
+    finally {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => broker.close(() => resolve()));
+      await rm(directory, { recursive: true });
+    }
+  }
+
+  it.each([
+    [mockConfig, 'test_run_command', { command: 'id' }],
+    [apiConfig, 'wazuh_api_call', { endpoint: '/agents', method: 'GET' }],
+  ])('refuses participant effects before SSH or API dispatch', async (config, tool, args) => {
+    await withAdmission(false, async (frames) => {
+      const client = await connect(config);
+      const result = await client.callTool({ name: tool, arguments: args });
+      expect(result.isError).toBe(true);
+      expect(backendOperations()).toBe(0);
+      expect(frames).toHaveLength(1);
+      expect(frames[0].arguments).toEqual(args);
+    });
+  });
+
+  it('validates schema before requesting participant admission', async () => {
+    await withAdmission(true, async (frames) => {
+      const client = await connect(mockConfig);
+      expect((await client.callTool({ name: 'test_run_command', arguments: {} })).isError).toBe(true);
+      expect(frames).toHaveLength(0);
+      expect(backendOperations()).toBe(0);
+    });
+  });
+
+  it('does not echo untrusted tool names or schema property names on participant calls', async () => {
+    await withAdmission(true, async (frames) => {
+      const client = await connect(mockConfig);
+      for (const call of [
+        { name: 'private-tool-canary', arguments: {} },
+        { name: 'test_run_command', arguments: { command: 'id', 'private-property-canary': 'value' } },
+      ]) {
+        const result = await client.callTool(call);
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result)).not.toContain('canary');
+      }
+      expect(frames).toHaveLength(0);
+      expect(backendOperations()).toBe(0);
+    });
+  });
+
+  it('keeps participant hook failures out of stderr payloads', async () => {
+    fakes.ssh.executeCommand.mockResolvedValue({ code: 0, stdout: '', stderr: '' });
+    await withAdmission(true, async () => {
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const client = await connect(mockConfig, {
+        postToolHook: async () => { throw new Error('private-hook-canary'); },
+      });
+      await client.callTool({ name: 'test_run_command', arguments: { command: 'id' } });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(errors.mock.calls.some((args) => args.includes('Hook failed.'))).toBe(true);
+      expect(JSON.stringify(errors.mock.calls)).not.toContain('private-hook-canary');
+      errors.mockRestore();
+    });
+  });
+
+  it('delivers only the result returned with the outcome receipt', async () => {
+    fakes.ssh.executeCommand.mockResolvedValue({ code: 0, stdout: 'native', stderr: '' });
+    await withAdmission(true, async (frames) => {
+      const client = await connect(mockConfig);
+      const result = await client.callTool({ name: 'test_run_command', arguments: { command: 'id' } });
+      expect(payload(result)).toEqual({ success: true, admitted: true });
+      expect(fakes.ssh.executeCommand).toHaveBeenCalledTimes(1);
+      expect(frames).toHaveLength(2);
+      expect(frames[1].uncertain).toBe(false);
+    });
+  });
+
+  it('reports caught native exceptions as unknown instead of a settled failure', async () => {
+    fakes.ssh.executeCommand.mockRejectedValue(new Error('private-canary'));
+    await withAdmission(true, async (frames) => {
+      const client = await connect(mockConfig);
+      const result = await client.callTool({ name: 'test_run_command', arguments: { command: 'id' } });
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result)).not.toContain('private-canary');
+      expect(frames[1].uncertain).toBe(true);
+    });
+  });
+
+  it('preserves known query, session, and completed HTTP failures', async () => {
+    const { SSHConnectionManager: ActualSSH } = await vi.importActual<typeof import('../src/ssh.js')>('../src/ssh.js');
+    const { HTTPClient: ActualHTTP } = await vi.importActual<typeof import('../src/http.js')>('../src/http.js');
+    const ssh = new ActualSSH();
+    fakes.ssh.executeInSession.mockImplementation(ssh.executeInSession.bind(ssh));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"message":"rejected"}', { status: 409 })));
+    const http = new ActualHTTP(apiConfig.api);
+    fakes.http.makeRequest.mockImplementation(http.makeRequest.bind(http));
+    try {
+      for (const [config, call] of [
+        [ruleFileConfig, { name: 'wazuh_create_detection_rule', arguments: { body: RULE_XML } }],
+        [mockConfig, { name: 'test_session_command', arguments: { session_id: 'missing', command: 'id' } }],
+        [apiConfig, { name: 'wazuh_api_call', arguments: { endpoint: '/agents' } }],
+      ] as const) {
+        await withAdmission(true, async (frames) => {
+          const client = await connect(config);
+          await client.callTool(call);
+          expect(frames).toHaveLength(2);
+          expect(frames[1].uncertain).toBe(false);
+          expect(payload(frames[1].result).success).toBe(false);
+        });
+      }
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it.each(['timeout', 'disconnect', 'pending cleanup'])(
+    'bounds a pending native call and requests cleanup after %s', async (cause) => {
+    await withAdmission(true, async (frames, disconnect) => {
+      fakes.ssh.executeCommand.mockImplementation(() => {
+        if (cause === 'disconnect') disconnect();
+        return new Promise(() => {});
+      });
+      if (cause === 'pending cleanup') {
+        fakes.ssh.disconnectAll.mockImplementation(() => new Promise(() => {}));
+      }
+      vi.stubEnv('LILRAE_TOOL_TIMEOUT_MS', '30');
+      const client = await connect(mockConfig);
+      const result = await client.callTool({ name: 'test_run_command', arguments: { command: 'id' } });
+      expect(result.isError).toBe(true);
+      expect(fakes.ssh.disconnectAll).toHaveBeenCalledTimes(1);
+      expect(frames).toHaveLength(1);
+    });
+  }, 5000);
+
+  it('uses the admitted configuration even if its caller changes the original', async () => {
+    fakes.ssh.executeCommand.mockResolvedValue({ code: 0, stdout: '', stderr: '' });
+    await withAdmission(true, async (frames) => {
+      const config = structuredClone(mockConfig);
+      const client = await connect(config);
+      config.containers!['test-container'].container_ip = 'changed-target.invalid';
+      await client.callTool({ name: 'test_run_command', arguments: { command: SCENARIO_COMMAND } });
+      expect(frames[0].configuration).toEqual(mockConfig);
+      expect(fakes.ssh.executeCommand).toHaveBeenCalledWith(
+        'localhost', 'testuser', '/path/to/key', SCENARIO_COMMAND, 22,
+      );
+    });
+  });
+
+  it('refuses incomplete participant transport configuration at startup', async () => {
+    vi.stubEnv('LILRAE_TOOL_TOKEN', 'a'.repeat(64));
+    expect(() => createMCPServer(mockConfig)).toThrow('Participant tool');
+  });
 
   it.each([
     ['a missing required argument', mockConfig, 'test_run_command', {},
