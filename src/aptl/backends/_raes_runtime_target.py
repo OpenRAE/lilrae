@@ -74,21 +74,26 @@ def create_aptl_runtime_target(
         if selected.capture_selection is not None
         else None
     )
+    manifest = create_aptl_manifest(
+        capture_registry,
+        participant_inject_delivery=selected.participant_inject_delivery,
+        autonomous_bindings=selected.autonomous_bindings,
+        realization_preparation=bool(provisioner.capture_plan.apparatus),
+    )
+    provisioner.reporting_manifest = manifest
+    orchestrator.reporting_manifest = manifest
     return RuntimeTarget(
         name=APTL_RAES_TARGET_NAME,
-        manifest=create_aptl_manifest(
-            capture_registry,
-            participant_inject_delivery=selected.participant_inject_delivery,
-            autonomous_bindings=selected.autonomous_bindings,
-        ),
+        manifest=manifest,
         provisioner=provisioner,  # type: ignore[arg-type]
         orchestrator=orchestrator,  # type: ignore[arg-type]
         evaluator=AptlEvaluator(
+            reporting_manifest=manifest,
             proposition_interpreter=(
                 selected.capture_selection.contribution.proposition_interpreter
                 if selected.capture_selection is not None
                 else None
-            )
+            ),
         ),  # type: ignore[arg-type]
         participant_runtime=participant_runtime,  # type: ignore[arg-type]
         time_runtime=(

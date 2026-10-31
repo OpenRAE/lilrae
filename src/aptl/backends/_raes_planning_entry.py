@@ -5,11 +5,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from raes_contracts.artifact_requirements import ArtifactAvailabilityContext
 from raes_contracts.realization_profiles import PlanProfileAuthority
 from raes_contracts.planning import PlanScope
 from raes_contracts.runtime_state import RuntimeSnapshot
+from aptl.core.scenario_bundle import ScenarioBundle
 
 if TYPE_CHECKING:
     from raes_processor.models import ExecutionPlan
@@ -26,6 +28,27 @@ class AptlPlanningOptions:
     artifact_availability: ArtifactAvailabilityContext | None = None
     profile_authority: PlanProfileAuthority | None = None
     run_scope: PlanScope | None = None
+
+
+def planning_run_scope(
+    bundle: ScenarioBundle | None,
+    requested: PlanScope | None = None,
+    *,
+    required: bool = False,
+) -> PlanScope:
+    """Preserve a sealed trial's run identity when planning its report."""
+    selected = requested or PlanScope()
+    trial = bundle.trial if isinstance(bundle, ScenarioBundle) else None
+    run_id = selected.run_id
+    if trial is not None:
+        if run_id is not None and run_id != trial.provenance.run_id:
+            raise ValueError("family-run-identity-mismatch")
+        run_id = trial.provenance.run_id
+    return PlanScope(
+        target_name=selected.target_name,
+        run_id=run_id or (uuid4().hex if required else None),
+        instantiation_id=selected.instantiation_id,
+    )
 
 
 def plan_aptl_scenario(

@@ -432,7 +432,7 @@ def test_aptl_planning_applies_compatibility_before_raes_planner(
         return "planned"
 
     monkeypatch.setattr(raes_planning_compat, "plan", _plan)
-    manifest = object()
+    manifest = SimpleNamespace(supported_contract_versions=frozenset())
     target = SimpleNamespace(
         name="aptl-full-remote-control-plane",
         manifest=manifest,
@@ -489,6 +489,7 @@ def test_aptl_runtime_manager_preserves_raes_constructor_contract(
     assert captured == {
         "target": target,
         "options": {
+            "run_scope": "run:default",
             "initial_snapshot": snapshot,
             "stochastic_controls": stochastic_controls,
             "information_state_context_resolver": resolver,
@@ -563,6 +564,7 @@ def test_aptl_runtime_manager_scopes_large_plan_limits_to_exact_pack(
 
     monkeypatch.setattr(raes_planning_compat._RaesRuntimeManager, "apply", _apply)
     manager = object.__new__(AptlRuntimeManager)
+    manager.native_evidence = None
     manager._aptl_bundle = _bundle(tmp_path)
     manager._aptl_planning_compatibility = compatibility_provider.resolve(None)  # type: ignore[arg-type]
 

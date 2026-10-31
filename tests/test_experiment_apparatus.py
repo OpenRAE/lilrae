@@ -742,14 +742,16 @@ class TestPlanConditionFeasibilityHappyPath:
         assert result.is_valid is True
         require_feasible_plan(result, address="condition")  # must not raise
 
-    def test_uses_the_aptl_manifest_by_default(self):
+    def test_default_reporting_target_has_a_planning_only_run_scope(self):
         scenario = parse_sdl(_minimal_scenario_bytes().decode("utf-8"))
 
         result = plan_condition_feasibility(scenario, {})
-        direct = run_reference_processor(scenario, create_aptl_manifest(), parameters={})
-
-        assert result.scenario_name == direct.scenario_name
-        assert result.is_valid == direct.is_valid
+        assert result.is_valid, result.diagnostics
+        assert result.execution_plan.target_name == create_aptl_manifest().name
+        assert (
+            result.execution_plan.provisioning.materialization_source.run_id
+            == "planning-feasibility"
+        )
 
 
 class TestPlanConditionFeasibilityBrokenParameterBinding:

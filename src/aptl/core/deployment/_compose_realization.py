@@ -46,6 +46,9 @@ from aptl.core.deployment._compose_image_realization import (
     image_override_text,
 )
 from aptl.core.deployment._lilrae_compose_capabilities import compose_capability_refusal
+from aptl.core.deployment._compose_network_operations import (
+    ComposeNetworkOperationsMixin,
+)
 from aptl.core.deployment._compose_network_realization import (
     ComposeRealizationNetworkMixin,
 )
@@ -93,6 +96,7 @@ class ComposeRealizationMixin(
     ComposeBoundaryRealizationMixin,
     ComposeRealizationImageMixin,
     ComposeRealizationNetworkMixin,
+    ComposeNetworkOperationsMixin,
     ComposeRealizationContentMixin,
     ComposeRealizationAccountMixin,
     ComposeRealizationModelMixin,
@@ -193,6 +197,8 @@ class ComposeRealizationMixin(
             failure = self._runtime_orchestration_preflight(realization)
         if failure is None:
             failure = self._compose_feature_preflight(realization)
+        if failure is None:
+            failure = self._prepare_docker_recording(realization)
         if failure is None:
             failure = self._start_backend_observability(realization.profiles)
         return failure
@@ -466,10 +472,8 @@ def _append_base_container_artifact_ops(
             except OSError:
                 return LabResult(
                     success=False,
-                    error=(
-                        "Generated artifact output missing for base-container "
-                        f"consumer {consumer.target_address}: {output.path}."
-                    ),
+                    error="Generated artifact output missing for base-container "
+                    f"consumer {consumer.target_address}: {output.path}.",
                 )
             destination = str(PurePosixPath(consumer.mount_destination) / output.path)
             mode = "0600" if output.sensitivity == "secret" else "0644"

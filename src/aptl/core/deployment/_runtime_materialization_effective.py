@@ -233,7 +233,9 @@ def _authority_field_issues(
     address = str(getattr(node, "address", ""))
     issues: list[RuntimeMaterializationIssue] = []
     for compose_field in _COMPOSE_AUTHORITY_FIELDS:
-        if compose_field not in service or compose_field in expected:
+        if compose_field not in service or (
+            compose_field != "volumes" and compose_field in expected
+        ):
             continue
         allowed_volumes = (
             compose_field == "volumes"

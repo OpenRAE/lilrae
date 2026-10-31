@@ -12,6 +12,7 @@ from aptl.core.lab_types import LabResult
 from aptl.core.experiment.capture_plan import CapturePlan, empty_capture_plan
 
 if TYPE_CHECKING:
+    from aptl.backends.lilrae_runtime_evidence import LilraeRuntimeEvidence
     from aptl.backends.lilrae_participant_execution import LilraeParticipantBinding
     from raes_processor.models import ExecutionPlan
     from raes_runtime.registry import RuntimeTarget
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
 
     from aptl.backends.raes_participant_delivery import ParticipantDeliveryPlan
     from aptl.backends.raes_realization_model import AptlRealization
+    from aptl.backends.scenario_family import FamilyTrialInput
     from aptl.backends.scenario_startup import ScenarioStartupSelection
     from aptl.backends.scenario_capture import ResolvedScenarioCapture
     from aptl.core.runstore import RunStorageBackend
@@ -32,6 +34,14 @@ class ScenarioAdmissionSource:
     bundle: ScenarioBundle | None = None
     startup_selection: ScenarioStartupSelection | None = field(default=None, repr=False)
     autonomous_bindings: tuple[LilraeParticipantBinding, ...] = ()
+
+
+@dataclass(frozen=True)
+class ScenarioAdmissionRun:
+    """Run identity that one scenario admission plans for."""
+
+    run_id: str | None = None
+    trial: FamilyTrialInput | None = None
 
 
 @dataclass(frozen=True)
@@ -80,3 +90,4 @@ class AcesStartOutcome:
     scenario_runtime_selections: list[dict[str, str]] = field(default_factory=list)
     capture_plan: CapturePlan | None = None
     runtime_manager: RuntimeManager | None = None
+    native_evidence: LilraeRuntimeEvidence | None = None

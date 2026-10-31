@@ -344,7 +344,8 @@ def test_second_installed_pack_starts_captures_plans_and_verifies(
         from types import SimpleNamespace
         from unittest.mock import MagicMock
 
-        from aptl.backends import raes, raes_evaluator
+        from aptl.backends import raes, raes_evaluator, _raes_provisioner_start
+        _raes_provisioner_start._REALIZATION_READBACK_TIMEOUT_SECONDS = 0
         from aptl.backends.identity import BackendIdentity
         from aptl.backends.scenario_capture import ScenarioCaptureContext
         from aptl.backends.scenario_capture_discovery import resolve_scenario_capture
@@ -391,6 +392,8 @@ def test_second_installed_pack_starts_captures_plans_and_verifies(
             "State": {"Status": "running", "Running": True},
         }
         backend.host_list_lab_networks.return_value = []
+        from aptl.core.deployment.lilrae_recorded_inventory import RecordedInventorySnapshot
+        backend.runtime_descendant_inventory.return_value = RecordedInventorySnapshot()
         def container_exec(_container, command, **_kwargs):
             if command == ["cat", "/etc/os-release"]:
                 return SimpleNamespace(
@@ -503,5 +506,6 @@ def test_second_installed_pack_starts_captures_plans_and_verifies(
         env=env,
         capture_output=True,
         text=True,
+        timeout=45,
     )
     assert completed.returncode == 0, completed.stderr

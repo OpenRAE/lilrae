@@ -122,6 +122,8 @@ _BASE_SUPPORTED_CONTRACT_VERSIONS = frozenset(
         "operation-receipt-v1",
         "operation-status-v1",
         "runtime-snapshot-v1",
+        "backend-materialization-attestation-v1",
+        "backend-runtime-descendants-v1",
         # Required to publish the realization-envelope-v1 disclosure that backs
         # the manifest's independent-native-readback claim for ADR-088 service
         # materialization (#889).
@@ -328,6 +330,7 @@ def create_aptl_manifest(
     *,
     participant_inject_delivery: bool = False,
     autonomous_bindings: tuple[LilraeParticipantBinding, ...] = (),
+    realization_preparation: bool = False,
 ) -> BackendManifest:
     """Return APTL's canonical full remote-control-plane backend manifest.
 
@@ -368,6 +371,10 @@ def create_aptl_manifest(
             supported_contract_versions | OBSERVATION_EVIDENCE_CONTRACTS
         )
         capability_options["observation"] = observation
+    if realization_preparation:
+        supported_contract_versions = supported_contract_versions | {
+            "backend-realization-preparation-v1"
+        }
     return BackendManifest(
         name=APTL_RAES_TARGET_NAME,
         version=APTL_RAES_TARGET_VERSION,
