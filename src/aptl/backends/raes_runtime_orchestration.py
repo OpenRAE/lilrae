@@ -28,7 +28,6 @@ if TYPE_CHECKING:
     from aptl.core.deployment.realization import DeploymentNodeRealization
 
 
-
 class DockerControlBinder(Protocol):
     """The one backend operation scenario preparation needs."""
 
@@ -288,6 +287,9 @@ def admit_docker_authorities(
                 ),
                 allowed_mount_targets=tuple(sorted(allowed_mount_targets)),
                 allowed_networks=tuple(sorted(_node_networks(node))),
+                execution_timeout_seconds=_bounded_execution_timeout(
+                    authority, node_address=node.address
+                ),
             )
         )
     return tuple(admissions)

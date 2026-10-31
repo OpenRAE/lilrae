@@ -24,8 +24,10 @@ private project state, and validates it with the env-packs gates before use.
 Install the distribution that carries the pack:
 
 ```shell
-pip install "raes-env-packs==6.3.3"
+pip install "raes-env-packs>=6.5.1,<7"
 ```
+
+LilRAE supports env-packs 6.5.1 and later 6.x releases.
 
 TechVault ships in `raes-env-packs` as two packs: `techvault` (the environment)
 and `techvault-participant-study` (the environment plus authored red and blue
@@ -164,6 +166,10 @@ not configure. To run a different pack, set `scenario.identity` in `aptl.json`.
 
 ## Troubleshooting
 
+- **`No aptl.json was found in <directory>`**. The command ran outside a lab
+  project. `lilrae lab start --scenario` reads the nearest `aptl.json` at or
+  above the project directory. `lilrae lab scenarios` reads only the project
+  directory itself. Run the command in the project, or pass `--project-dir`.
 - **`Unknown scenario id '<x>'. Available scenarios: <y>`**. The identity is
   not the configured pack. Set `scenario.identity` to `<x>` in `aptl.json`, then
   run `lilrae lab scenarios` to confirm the catalog lists it.

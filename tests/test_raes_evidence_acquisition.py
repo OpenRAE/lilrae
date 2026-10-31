@@ -29,7 +29,7 @@ from aptl.utils.pathsafe import PathContainmentError
 def _capture_selection(runtime_adapter: object | None = None):
     selection = resolve_scenario_capture(
         ScenarioCaptureContext(
-            PackIdentity("techvault", "0.1.2", TECHVAULT_PACK_SET_DIGEST),
+            PackIdentity("techvault", "0.1.3", TECHVAULT_PACK_SET_DIGEST),
             BackendIdentity("aptl", "0.1.0", "full-remote-control-plane"),
         )
     )
@@ -539,25 +539,49 @@ def test_lab_start_native_step_rejects_collector_exception(tmp_path, monkeypatch
     assert result.error == "aptl.scenario-evidence.required-native-capture-failed"
 
 
-def test_lab_start_activates_admitted_transcript_before_ssh(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "registration_id",
+    [
+        "aptl.collector.redteam-session-transcript",
+        "rpt.collector.redteam-session-transcript",
+    ],
+    ids=("bundled-adapter", "family-adapter"),
+)
+def test_lab_start_activates_admitted_transcript_before_ssh(
+    registration_id, tmp_path, monkeypatch
+):
+    """The broker is bound to the selected adapter's transcript registration."""
     from aptl.backends import raes_evidence_acquisition as acquisition
     from aptl.core.lab import _step_activate_capture_apparatus
 
-    binding = _binding("aptl.collector.redteam-session-transcript", "transcript")
+    binding = replace(
+        _binding("aptl.collector.redteam-session-transcript", "transcript"),
+        registration_id=registration_id,
+    )
     plan = SimpleNamespace(
         plan_id="capture-plan-test",
         canonical_bytes=b"{}",
         runtime_bindings=lambda: (binding,),
     )
     context = _lab_context(tmp_path, plan)
+    selection = context.admitted_start.capture_selection
+    context.admitted_start.capture_selection = replace(
+        selection,
+        contribution=replace(
+            selection.contribution, transcript_registration_id=registration_id
+        ),
+    )
     authority = {
         "run_id": "run-1",
         "plan_id": "capture-plan-test",
-        "binding_id": "aptl.collector.redteam-session-transcript",
+        "binding_id": registration_id,
         "activated_at": "2026-09-14T10:00:00Z",
     }
+    activations = []
     context.backend = SimpleNamespace(
-        activate_capture_apparatus=lambda **_kwargs: authority
+        activate_capture_apparatus=lambda **kwargs: (
+            activations.append(kwargs) or authority
+        )
     )
     prepared = []
     retired = []
@@ -587,6 +611,13 @@ def test_lab_start_activates_admitted_transcript_before_ssh(tmp_path, monkeypatc
     ]
     assert prepared[0]["binding"] is binding
     assert prepared[0]["run_id"] == "run-1"
+    assert activations == [
+        {
+            "plan_id": "capture-plan-test",
+            "run_id": "run-1",
+            "binding_id": registration_id,
+        }
+    ]
 
 
 def test_lab_start_rejects_unactivatable_required_transcript(tmp_path, monkeypatch):
@@ -752,8 +783,8 @@ def test_active_transcript_authority_rejects_conflicting_binding(tmp_path):
 
 
 def test_expected_transcript_sessions_come_from_sorted_mcp_census(tmp_path):
-    from aptl.backends.raes_evidence_acquisition import (
-        _expected_transcript_session_ids,
+    from aptl.backends._raes_transcript_export import (
+        expected_transcript_session_ids,
     )
 
     census = tmp_path / "run-1/mcp-side/sessions"
@@ -761,7 +792,7 @@ def test_expected_transcript_sessions_come_from_sorted_mcp_census(tmp_path):
     (census / "session-b.jsonl").write_text("")
     (census / "session-a.jsonl").write_text("")
 
-    assert _expected_transcript_session_ids(
+    assert expected_transcript_session_ids(
         tmp_path,
         "run-1",
         max_sessions=10,
@@ -769,8 +800,8 @@ def test_expected_transcript_sessions_come_from_sorted_mcp_census(tmp_path):
 
 
 def test_expected_transcript_sessions_reject_symlinked_census_entry(tmp_path):
-    from aptl.backends.raes_evidence_acquisition import (
-        _expected_transcript_session_ids,
+    from aptl.backends._raes_transcript_export import (
+        expected_transcript_session_ids,
     )
 
     census = tmp_path / "run-1/mcp-side/sessions"
@@ -780,7 +811,7 @@ def test_expected_transcript_sessions_reject_symlinked_census_entry(tmp_path):
     (census / "session-a.jsonl").symlink_to(outside)
 
     with pytest.raises(PathContainmentError):
-        _expected_transcript_session_ids(
+        expected_transcript_session_ids(
             tmp_path,
             "run-1",
             max_sessions=10,
@@ -1048,6 +1079,165 @@ def test_finalize_transcript_rejects_mismatched_broker_authority_and_uses_host_c
     assert next(clock._values, None) is None
 
 
+def test_finalization_names_a_census_the_broker_never_accepted(tmp_path):
+    """A census session with no broker custody is a named loss, never a clean seal."""
+    from aptl.backends.raes_evidence_acquisition import (
+        finalize_active_transcript_authority,
+        load_active_transcript_authorities,
+        persist_active_transcript_authority,
+    )
+    from aptl.core.deployment.errors import CaptureReconciliationError
+
+    binding = _binding("aptl.collector.redteam-session-transcript", "transcript")
+    plan = SimpleNamespace(plan_id="capture-plan-test", canonical_bytes=b"{}")
+    store = LocalRunStore(tmp_path / ".aptl/runs")
+    persist_active_transcript_authority(
+        project_dir=tmp_path,
+        plan=plan,
+        binding=binding,
+        run_store=store,
+        run_id="run-1",
+        capture_selection=_capture_selection(),
+    )
+    census = store.get_run_path("run-1") / "mcp-side/sessions"
+    census.mkdir(parents=True)
+    (census / "session-1.jsonl").write_text("")
+
+    def export_capture_apparatus(*, expected_session_ids):
+        raise CaptureReconciliationError(
+            census=len(expected_session_ids), accepted=0, census_only=1, broker_only=0
+        )
+
+    result = finalize_active_transcript_authority(
+        project_dir=tmp_path,
+        state=load_active_transcript_authorities(tmp_path)[0],
+        backend=SimpleNamespace(
+            quiesce_capture_apparatus=lambda: True,
+            export_capture_apparatus=export_capture_apparatus,
+        ),
+        expected_run_store_base=store.base_dir,
+        clock=_SequenceClock("2026-09-14T10:00:03Z", "2026-09-14T10:00:04Z"),
+    )
+
+    assert result.disposition is not AcquisitionDisposition.SEALED_READY
+    assert result.diagnostics[-1].code == (
+        "aptl.experiment-capture.transcript-export-failed"
+    )
+    assert result.diagnostics[-1].message == (
+        "transcript export failed at reconciliation: "
+        "census 1, broker accepted 0, census-only 1, broker-only 0"
+    )
+    assert load_active_transcript_authorities(tmp_path)
+
+
+def test_the_failure_marker_records_why_finalization_failed(tmp_path, caplog):
+    """The terminal marker and the log keep the fixed diagnostics of the result."""
+    import json
+
+    from raes_contracts.diagnostics import Diagnostic, Severity
+
+    from aptl.backends.raes_evidence_acquisition import (
+        load_active_transcript_authorities,
+        mark_transcript_finalization_failed,
+        persist_active_transcript_authority,
+    )
+
+    binding = _binding("aptl.collector.redteam-session-transcript", "transcript")
+    plan = SimpleNamespace(plan_id="capture-plan-test", canonical_bytes=b"{}")
+    persist_active_transcript_authority(
+        project_dir=tmp_path,
+        plan=plan,
+        binding=binding,
+        run_store=LocalRunStore(tmp_path / "runs"),
+        run_id="run-1",
+        capture_selection=_capture_selection(),
+    )
+    diagnostic = Diagnostic(
+        code="aptl.experiment-capture.transcript-export-failed",
+        domain="experiment-capture",
+        address="transcript",
+        message="transcript export failed at quiesce",
+        severity=Severity.ERROR,
+    )
+    result = SimpleNamespace(diagnostics=(diagnostic,))
+
+    mark_transcript_finalization_failed(
+        project_dir=tmp_path,
+        state=load_active_transcript_authorities(tmp_path)[0],
+        result=result,
+    )
+
+    marker = json.loads(
+        (tmp_path / ".aptl/capture-finalization-failed/run-1.json").read_text()
+    )
+    assert marker["diagnostics"] == [
+        {
+            "code": "aptl.experiment-capture.transcript-export-failed",
+            "message": "transcript export failed at quiesce",
+        }
+    ]
+    assert "transcript export failed at quiesce" in caplog.text
+    assert load_active_transcript_authorities(tmp_path) == ()
+
+
+@pytest.mark.parametrize("step", ["quiesce", "export"])
+def test_lab_stop_records_transcript_backend_timeouts(
+    tmp_path, monkeypatch, caplog, step
+):
+    """Backend timeouts retain the failing step through finalization and stop."""
+    import json
+
+    from aptl.backends.raes_evidence_acquisition import (
+        load_active_transcript_authorities,
+        persist_active_transcript_authority,
+    )
+    from aptl.core import lab
+    from aptl.core.deployment.docker_compose import DockerComposeBackend
+    from aptl.core.deployment.errors import BackendTimeoutError
+
+    binding = _binding("aptl.collector.redteam-session-transcript", "transcript")
+    store = LocalRunStore(tmp_path / ".aptl/runs")
+    persist_active_transcript_authority(
+        project_dir=tmp_path,
+        plan=SimpleNamespace(plan_id="capture-plan-test", canonical_bytes=b"{}"),
+        binding=binding,
+        run_store=store,
+        run_id="run-1",
+        capture_selection=_capture_selection(),
+    )
+    backend = DockerComposeBackend(tmp_path)
+    commands = []
+
+    def container_exec(_name, command, *, timeout):
+        commands.append(command[-1])
+        if command[-1] == step:
+            raise BackendTimeoutError("private-session-identity and transcript content")
+        return SimpleNamespace(returncode=0, stdout="{}")
+
+    monkeypatch.setattr(backend, "container_exec", container_exec)
+    monkeypatch.setattr(lab, "_expected_transcript_store", lambda _project: store.base_dir)
+
+    result = lab._finalize_required_transcript_capture(tmp_path, backend)
+
+    assert result.error == (
+        "aptl.scenario-evidence.required-transcript-finalization-failed"
+    )
+    marker_text = (
+        tmp_path / ".aptl/capture-finalization-failed/run-1.json"
+    ).read_text()
+    diagnostic = {
+        "code": "aptl.experiment-capture.transcript-export-failed",
+        "message": f"transcript export failed at {step}",
+    }
+    assert diagnostic in json.loads(marker_text)["diagnostics"]
+    assert diagnostic["message"] in caplog.text
+    assert "private-session-identity" not in marker_text + caplog.text
+    assert "transcript content" not in marker_text + caplog.text
+    assert commands == (["quiesce"] if step == "quiesce" else ["quiesce", "export"])
+    assert not (tmp_path / ".aptl/capture-finalized/run-1.json").exists()
+    assert load_active_transcript_authorities(tmp_path) == ()
+
+
 def _exported_session(*, session_id="session-1", frames=()):
     return {
         "session_id": session_id,
@@ -1111,6 +1301,44 @@ def test_transcript_export_validation_maps_to_finalization_failure(payload):
     outcome = collector.stop(collector.start(context))
 
     assert outcome.status is CollectorStatus.FINALIZATION_FAILURE
+
+
+@pytest.mark.parametrize("raises", [False, True], ids=("failed-result", "exception"))
+def test_lab_stop_passes_the_failed_result_to_the_failure_marker(
+    tmp_path, monkeypatch, raises
+):
+    """The marker gets the result's diagnostics, or none when finalization raised."""
+    from aptl.backends import raes_evidence_acquisition as acquisition
+    from aptl.core import lab
+
+    failed = SimpleNamespace(disposition=AcquisitionDisposition.INCONCLUSIVE)
+    state = {"run_id": "run-1"}
+    marked = []
+
+    def finalize(**_kwargs):
+        if raises:
+            raise ValueError("finalization failed")
+        return failed
+
+    monkeypatch.setattr(
+        acquisition, "load_active_transcript_authorities", lambda _project: (state,)
+    )
+    monkeypatch.setattr(acquisition, "finalize_active_transcript_authority", finalize)
+    monkeypatch.setattr(
+        acquisition,
+        "mark_transcript_finalization_failed",
+        lambda **kwargs: marked.append(kwargs),
+    )
+    monkeypatch.setattr(lab, "_expected_transcript_store", lambda _project: tmp_path)
+
+    result = lab._finalize_required_transcript_capture(tmp_path, object())
+
+    assert result.error == (
+        "aptl.scenario-evidence.required-transcript-finalization-failed"
+    )
+    assert marked == [
+        {"project_dir": tmp_path, "state": state, "result": None if raises else failed}
+    ]
 
 
 def test_lab_stop_still_tears_down_when_required_transcript_finalization_fails(

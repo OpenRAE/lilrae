@@ -787,7 +787,7 @@
       "owner": "LilRAE original-scenario compatibility",
       "symbol": "_identified_release",
       "kind": "pack identifier",
-      "line_digest": "sha256:96878487d903ba3298824903043717a532ff2b558c67d3fee26eca7ae663f7e6",
+      "line_digest": "sha256:0b52e99130f8c77abb63d55e6771ea52c59d35e8d09fbd03f89de49b4d12d17f",
       "count": 1,
       "purpose": "Retained backend compatibility bridge for the exact original pack release, implementation and projection digests; it is gated on an admitted adapter.",
       "allowed_use": "Only this exact reviewed source line and occurrence count, supporting original-scenario contracts; never an implicit selector for another pack.",

@@ -1,6 +1,7 @@
-import { HTTPClient } from '../http.js';
+import { HTTPClient, HTTPTimeoutError, type HTTPError } from '../http.js';
 import { LabConfig } from '../config.js';
 import { assertPathOnlyEndpoint } from '../endpoint-url.js';
+import { redact } from '../redaction.js';
 import Ajv2020, { type ValidateFunction } from 'ajv/dist/2020.js';
 
 export interface APIToolContext {
@@ -31,6 +32,59 @@ export type APIToolHandler = (args: any, context: APIToolContext) => Promise<{ c
 type QueryConfig = NonNullable<LabConfig['queries']>[string];
 
 class QueryArgumentError extends Error {}
+
+interface FailureDetail {
+  status?: number;
+  failure?: 'timeout';
+  api_error?: string;
+}
+
+const API_ERROR_MAX_LENGTH = 512;
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+}
+
+// The error message an API put in its response body: RFC 7807 `detail`
+// (Wazuh), `error.reason` (OpenSearch), `message` (TheHive, MISP), `reason`
+// (Shuffle), or a plain string `error`.
+function apiErrorMessage(body: unknown): string | undefined {
+  if (!argumentMapping(body)) {
+    return undefined;
+  }
+  const nestedError = body.error;
+  return nonEmptyString(body.detail)
+    ?? (argumentMapping(nestedError) ? nonEmptyString(nestedError.reason) : undefined)
+    ?? nonEmptyString(body.message)
+    ?? nonEmptyString(body.reason)
+    ?? nonEmptyString(body.error);
+}
+
+// Return the API's error message, redacted and then bounded. The message can
+// echo supplied values (issue #1488); the exception text never appears.
+function boundedApiError(body: unknown): string | undefined {
+  const message = apiErrorMessage(body);
+  if (message === undefined) {
+    return undefined;
+  }
+  const redacted = String(redact(message));
+  return redacted.length > API_ERROR_MAX_LENGTH
+    ? `${redacted.slice(0, API_ERROR_MAX_LENGTH)}…`
+    : redacted;
+}
+
+// Classify a failed call by the HTTP status of the exchange that failed, with
+// the API's own error message when its response body has one, or as a timeout.
+function failureDetail(error: unknown): FailureDetail {
+  const httpError = error instanceof Error ? (error as HTTPError) : undefined;
+  if (typeof httpError?.statusCode === 'number') {
+    const apiError = boundedApiError(httpError.response);
+    return apiError === undefined
+      ? { status: httpError.statusCode }
+      : { status: httpError.statusCode, api_error: apiError };
+  }
+  return error instanceof HTTPTimeoutError ? { failure: 'timeout' } : {};
+}
 
 function argumentMapping(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -188,6 +242,7 @@ const baseAPIHandlers = {
               method,
               endpoint,
               error: error instanceof Error ? error.message : 'Unknown error',
+              ...failureDetail(error),
             }, null, 2),
           },
         ],
@@ -251,6 +306,7 @@ const baseAPIHandlers = {
               query: queryConfig.description,
               endpoint: queryConfig.url,
               error: error instanceof QueryArgumentError ? error.message : 'API query failed',
+              ...failureDetail(error),
             }, null, 2),
           },
         ],

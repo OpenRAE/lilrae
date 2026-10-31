@@ -381,7 +381,6 @@ def _validate_hook_methods(provider: object, plan: ScenarioStartupPlan) -> None:
 
     methods = {
         StartupHook.STACK_ENVIRONMENT: "prepare_stack_environment",
-        StartupHook.BEFORE_BACKEND_RETRY: "before_backend_retry",
         StartupHook.RESET: "reset",
     }
     if any(
@@ -406,7 +405,6 @@ def run_startup_hook(
         return None
     method = {
         StartupHook.STACK_ENVIRONMENT: "prepare_stack_environment",
-        StartupHook.BEFORE_BACKEND_RETRY: "before_backend_retry",
         StartupHook.RESET: "reset",
     }.get(hook)
     if method is None:

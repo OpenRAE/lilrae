@@ -43,10 +43,13 @@ def load_seat_record(seat_root: Path) -> SeatRecord | None:
     """Load persisted seat metadata when present and valid."""
 
     path = seat_state_path(seat_root)
-    if not path.exists():
-        return None
+    # Python 3.14's Path.exists() returns False for an unreadable seat root,
+    # so only a missing path counts as no record. Other errors propagate.
     try:
         info = path.stat(follow_symlinks=False)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    try:
         if stat.S_ISLNK(info.st_mode):
             raise SeatLauncherError(
                 "corrupt-seat-state", "seat state must not be a symlink"

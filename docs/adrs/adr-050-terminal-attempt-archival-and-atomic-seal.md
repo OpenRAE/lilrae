@@ -8,6 +8,19 @@ accepted
 
 2026-07-28
 
+## Released-producer successor boundary (issue #1465)
+
+For adoption under [issue #1465's preflight](../architecture/issue-1465-released-experiment-tuple-preflight.md),
+released RAE run/study record producers own portable record composition and
+runtime outcome semantics. LilRAE supplies owner-native evidence, provenance,
+clock and evaluator facts and retains the local archival transaction, atomic
+seal, recovery index and read-only export. Do not maintain a second portable
+record builder or terminal-state policy beside the released producer. Public
+trial identity and distinct execution attempts must retain explicit lineage
+under the released contracts, without rewriting existing archives. These
+guardrails do not claim the adoption is implemented or relax any seal,
+validation, redaction or immutability rule below.
+
 ## Context
 
 EXP-009 requires one conformant `experiment-run-v1` record for every terminal

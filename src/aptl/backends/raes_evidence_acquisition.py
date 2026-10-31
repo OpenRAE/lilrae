@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -13,14 +13,15 @@ from aptl.core.evidence.coordinator import AcquisitionResult, acquire_evidence
 from aptl.core.evidence.outcomes import AcquisitionDisposition
 from aptl.core.experiment.capture_registry import CaptureBinding
 from aptl.core.runstore import LocalRunStore
+from aptl.utils.logging import get_logger
 from aptl.utils.pathsafe import (
     REASON_NOT_FOUND,
     PathContainmentError,
     create_exclusive_nofollow,
     listdir_contained_nofollow,
-    open_contained_nofollow,
     read_contained_nofollow,
 )
+from aptl.backends._raes_transcript_export import export_transcript_payload
 from aptl.backends._raes_transcript_qualification import qualify_retained_transcript
 from aptl.backends.identity import BackendIdentity
 from aptl.backends.scenario_capture import (
@@ -36,6 +37,8 @@ from aptl.backends.scenario_capture_discovery import (
 if TYPE_CHECKING:
     from aptl.core.experiment.capture_plan import CapturePlan
 
+
+log = get_logger("raes_evidence_acquisition")
 
 _ACTIVE_AUTHORITY_DIR = ".aptl/capture-authorities"
 _FINALIZED_AUTHORITY_DIR = ".aptl/capture-finalized"
@@ -204,9 +207,16 @@ def mark_transcript_activation_failed(
 
 
 def mark_transcript_finalization_failed(
-    *, project_dir: Path, state: Mapping[str, object]
+    *,
+    project_dir: Path,
+    state: Mapping[str, object],
+    result: AcquisitionResult | None = None,
 ) -> None:
-    """Retain an auditable terminal marker when teardown cannot seal capture."""
+    """Retain an auditable terminal marker when teardown cannot seal capture.
+
+    The marker and the log name each diagnostic of ``result``: fixed codes and
+    redacted text built from steps and counts, never transcript content.
+    """
 
     run_id = str(state["run_id"])
     plan_id = str(state["capture_plan_id"])
@@ -220,10 +230,19 @@ def mark_transcript_finalization_failed(
         or active.get("capture_plan_id") != plan_id
     ):
         raise ValueError("failed transcript finalization identity mismatch")
+    diagnostics = [
+        {"code": item.code, "message": item.message}
+        for item in (result.diagnostics if result is not None else ())
+    ]
+    for item in diagnostics:
+        log.error(
+            "Required transcript finalization: %s (%s)", item["message"], item["code"]
+        )
     payload = {
         "schema_version": "aptl-transcript-finalization-failed/v1",
         "run_id": run_id,
         "capture_plan_id": plan_id,
+        **({"diagnostics": diagnostics} if diagnostics else {}),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     relative = f"{_FAILED_FINALIZATION_DIR}/{name}"
@@ -252,70 +271,6 @@ def _mark_transcript_finalized(
         f"{_FINALIZED_AUTHORITY_DIR}/{run_id}.json",
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(),
     )
-
-
-def _expected_transcript_session_ids(
-    store_base: Path,
-    run_id: str,
-    *,
-    max_sessions: int,
-) -> tuple[str, ...]:
-    """Read the MCP-owned expected-session census without following links."""
-
-    relative_dir = f"{run_id}/mcp-side/sessions"
-    try:
-        names = listdir_contained_nofollow(store_base, relative_dir)
-    except PathContainmentError as exc:
-        if exc.reason == REASON_NOT_FOUND:
-            return ()
-        raise
-    if len(names) > max_sessions:
-        raise ValueError("transcript session census exceeds admitted limits")
-    session_ids: list[str] = []
-    for name in names:
-        if not name.endswith(".jsonl"):
-            raise ValueError("unexpected transcript session census entry")
-        session_id = name.removesuffix(".jsonl")
-        if (
-            not session_id
-            or session_id.startswith(".")
-            or ".." in session_id
-            or re.fullmatch(r"\w[\w.-]*", session_id, flags=re.ASCII) is None
-        ):
-            raise ValueError("invalid transcript session census identity")
-        with open_contained_nofollow(store_base, f"{relative_dir}/{name}") as handle:
-            # Opening is the check: the census requires a contained regular
-            # file, while its content remains owned by the MCP capture path.
-            handle.read(0)
-        session_ids.append(session_id)
-    if len(session_ids) != len(set(session_ids)):
-        raise ValueError("duplicate transcript session census identity")
-    return tuple(session_ids)
-
-
-def _export_transcript_payload(
-    backend: object,
-    store_base: Path,
-    run_id: str,
-    binding: CaptureBinding,
-) -> object | None:
-    """Quiesce the broker and export against the stable session census."""
-
-    quiesce = getattr(backend, "quiesce_capture_apparatus", None)
-    export = getattr(backend, "export_capture_apparatus", None)
-    try:
-        if not callable(quiesce) or not callable(export) or not quiesce():
-            return None
-        # Admission is now closed under the broker's registration lock.
-        # Read the independent MCP census only after that boundary is stable.
-        expected_session_ids = _expected_transcript_session_ids(
-            store_base,
-            run_id,
-            max_sessions=binding.limits.max_artifact_count // 2,
-        )
-        return export(expected_session_ids=expected_session_ids)
-    except (OSError, PathContainmentError, TypeError, ValueError):
-        return None
 
 
 def _validated_activation_time(
@@ -363,8 +318,11 @@ def finalize_active_transcript_authority(
     run_id = str(state["run_id"])
     scope = capture_run_scope(capture_selection.context, run_id, plan_id, "teardown")
     active_clock = clock or SystemClockProvider()
+    exported, export_failure = export_transcript_payload(
+        backend, store_base, run_id, binding
+    )
     payload, activated_at = _validated_activation_time(
-        _export_transcript_payload(backend, store_base, run_id, binding),
+        exported,
         run_id=run_id,
         plan_id=plan_id,
         clock=active_clock,
@@ -381,6 +339,10 @@ def finalize_active_transcript_authority(
     if result.disposition is AcquisitionDisposition.SEALED_READY:
         result = qualify_retained_transcript(
             result, runtime_adapter, payload, binding, store_base, run_id
+        )
+    if export_failure is not None:
+        result = replace(
+            result, diagnostics=(*result.diagnostics, export_failure.diagnostic())
         )
     if result.disposition is AcquisitionDisposition.SEALED_READY:
         _mark_transcript_finalized(project_dir, state, result)

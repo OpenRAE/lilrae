@@ -24,7 +24,7 @@
   `!reset` or `!override` needs 2.24.4 or newer. Startup checks the emitted
   features before applying that model.
 - Docker Buildx (`docker buildx version`)
-- Python 3.12+ (for the CLI)
+- Python 3.14+ (for the CLI)
 - OpenSSH client. `ssh-keygen` must be on `PATH`. `lilrae lab start` generates the
   lab SSH keys (the control-plane key and, for pack-backed scenarios, the
   scenario's `ssh_key_bundle` keypairs) with it, and hardens them per-platform
@@ -119,7 +119,7 @@ block system-wide `pip` under [PEP 668](https://peps.python.org/pep-0668/), so
 For released installs on any OS, prefer `pipx install lilrae`.
 
 **macOS gotcha—pipx bound to the system Python 3.9.** `lilrae` requires
-Python 3.12+ (declared in `pyproject.toml`). If your `pipx` was installed
+Python 3.14+ (declared in `pyproject.toml`). If your `pipx` was installed
 against the Command Line Tools Python (`/usr/bin/python3`, which is 3.9),
 `pipx install lilrae` fails with:
 
@@ -133,10 +133,10 @@ different python version" line further up in pip's output—every published
 a scoped standalone Python that pipx fetches just for this venv:
 
 ```bash
-pipx install --python 3.12 --fetch-missing-python lilrae
+pipx install --python 3.14 --fetch-missing-python lilrae
 ```
 
-Alternatively, `brew install python@3.12` and use that interpreter.
+Alternatively, `brew install python@3.14` and use that interpreter.
 
 For source installs, create a virtualenv. On Debian/Ubuntu/WSL2, install the
 `venv` module first (Debian ships it separately from `python3`):
@@ -154,7 +154,7 @@ python3 -m venv .venv && source .venv/bin/activate
 On Windows PowerShell:
 
 ```powershell
-py -3.12 -m venv .venv
+py -3.14 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 

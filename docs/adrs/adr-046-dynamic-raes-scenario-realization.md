@@ -2,7 +2,7 @@
 
 ## Status
 
-accepted (amended 2026-10-25)
+accepted (amended 2026-10-28)
 
 ## Date
 
@@ -10,7 +10,7 @@ accepted (amended 2026-10-25)
 
 ## Last Updated
 
-2026-10-25
+2026-10-28
 
 ## Context
 
@@ -737,6 +737,53 @@ it as follows.
 
 The manifest therefore advertises `credential_bindings` and `auth_method`.
 
+## Credential-Bearing Apply Result Addendum
+
+RAES gives a plan with account credential bindings a closed result contract
+(RAES `specs/sdl/account-credential-bindings.md`, section 6). RAES checks each
+returned entry against the submitted operation, and every returned value must
+equal the plan's. raes 7.0.0 compares the whole payload and keeps the plan's
+entry. raes 8.0.0 (OpenRAE/rae#1640) exempts an observed value at an admitted
+concern path from that comparison and keeps a safe projection of the observed
+value. The provisioner's snapshot follows that contract:
+
+- Each entry status names what the backend did with its operation: `applied`,
+  or `unchanged` for an unchanged operation. The evaluator reads both, and the
+  RAES default `ready`, as a realized node.
+- An unobserved concern that the plan admits at that address (an open,
+  constrained or exact authority, or a planned constraint) is still omitted, as
+  the Runtime Service and SEM-218 Execution Addendum requires. If the plan has
+  a value at that path, even `null`, the entry then differs from the plan and
+  RAES refuses the whole result. A credential-bearing start therefore fails
+  unless the backend observes every admitted concern that has a plan value.
+- An entry carries no `backend_evidence`, because the contract admits no
+  backend evidence key in an entry. The run outcome still carries the
+  source-image evidence.
+- A plan without account credential bindings keeps every unobserved concern
+  omitted and keeps source-image evidence in its entries.
+
+### Exception to the #692 rule
+
+The Runtime Service and SEM-218 Execution Addendum says that APTL must not read
+a concern back from the plan, and that an unobserved concern does not fall back
+to the plan. It allows a plan value only in a non-concern field that the RAES
+reconciliation contract requires. This addendum makes one narrow exception at
+concern paths:
+
+- It applies only to a plan with account credential bindings and realization
+  authority.
+- It covers only a concern path that the plan closes, or that has no authority
+  at that address. RAES reads no observation there. Its closed-concern check
+  gives the same result whether the value is absent or equal to the plan, and
+  the closed result contract requires the plan's value.
+- There the snapshot keeps the plan's value. That value claims no
+  observation: it gets no observation disclosure and no realization
+  provenance.
+- An observed value always replaces the plan's. A closed concern observed with
+  a different value is still refused.
+
+Every other concern path, and every other plan, keeps the #692 rule.
+
 ## Owner-Declared Image Content Addendum
 
 A bind mount keeps the host owner and mode. An image node can need a declared
@@ -1418,6 +1465,38 @@ extended with APTL mirrors.
   manifest, a `check_parity_manifest`-style gate check, or a
   represented/deferred contract) as a condition of the static or live
   validation gate.
+
+## Descendant recording and attestation addendum
+
+Issues #1128 and #1130 add cooperative creation recording on the existing Docker daemon.
+The maintainer selected recording without another authority enforcement policy.
+The host daemon and its configuration remain unchanged.
+Raw Docker authority remains host-root-equivalent.
+The recorder cannot prove complete coverage against a hostile holder that bypasses it.
+
+The deployment provider records native creation responses before returning them to holders.
+Canonical socket delegation preserves the recorded parent chain.
+Immutable creation records supplement `WorkspaceOwnership` and `ResourceReceipt`.
+Recorded native IDs authorize revalidated child observations, deadlines, and cleanup.
+Names, images, topology, and ordinary labels do not authorize adoption.
+Uncertain creation or inspection remains an explicit recording gap.
+
+RAES 8.1.0 owns portable membership admission, materialization archives, and SEM-218 provenance.
+The provisioner submits materialized SDL through the negotiated descendant and materialization contracts.
+It uses the original source, run scope, operation, predecessor, and attempt bindings.
+Later inventory refresh is read-only and uses `RuntimeManager.refresh_inventory()`.
+The final returned snapshot includes accepted later observations.
+The backend never edits the runtime-owned ledger or executable plan.
+
+The [owned descendant design](../architecture/issue-1130-owned-descendant-reporting-design.md) defines the recording boundary, data flows, and recovery behavior.
+Mutable native lifecycle records remain separate from sealed run evidence.
+The public native-evidence handoff retains immutable runtime state cuts and
+original materialization/archive bytes for restricted experiment collectors.
+Native observation and verified cleanup records remain backend-owned evidence.
+They neither grant resource authority nor replace runtime-derived provenance.
+The existing collector source and sealing interfaces retain those original bytes;
+participant-visible or byte-redacting bindings cannot consume the protected handoff.
+ADR-055's independent operator-grant policy remains proposed and outside this delivery.
 
 ## References
 

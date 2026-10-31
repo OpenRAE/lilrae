@@ -2,37 +2,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import replace
 from threading import RLock
-from typing import TYPE_CHECKING
 
-from raes.explicitness import ExplicitnessClass
 from raes_contracts.artifact_requirements import ArtifactAvailabilityContext
-from raes_contracts.contracts import (
-    ExperimentStochasticControlModel,
-    ParticipantInformationStateContextResolver,
-)
-from raes_contracts.planning import (
-    RealizationAuthorityMode,
-    RealizationResolutionSource,
-)
 from raes_contracts.realization_profiles import PlanProfileAuthority
 from raes_contracts.run_scope import PlanScope
-from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
-from raes_contracts.vocabulary import ObservationStrength
+from raes_contracts.runtime_state import (
+    ApplyResult,
+    OperationReceipt,
+    RuntimeSnapshot,
+)
 from raes_processor.compiler import compile_scenario_runtime_model
-from raes_processor.models import RuntimeModel
+from raes_processor.models import ExecutionPlan
 from raes_processor.planner import plan
 from raes_runtime.manager import RuntimeManager as _RaesRuntimeManager
-
-if TYPE_CHECKING:
-    from raes_processor.models import ExecutionPlan
-    from raes_runtime.registry import RuntimeTarget
+from raes_runtime.registry import RuntimeTarget
 
 from aptl.core.scenario_bundle import ScenarioBundle
-from aptl.backends import _raes_participant_snapshot as participant_snapshot
 from aptl.backends.identity import (
     APTL_RAES_TARGET_NAME,
     APTL_RAES_TARGET_PROFILE,
@@ -48,7 +36,7 @@ from aptl.backends.scenario_planning_compatibility import (
 from aptl.backends.scenario_planning_compatibility_discovery import (
     resolve_scenario_planning_compatibility,
 )
-from aptl.backends import _raes_backend_implementation_profiles as implementation_profiles
+from aptl.backends._raes_planning_adjustment import apply_planning_compatibility
 
 _RAES_LIMIT_OVERRIDE_LOCK = RLock()
 
@@ -117,276 +105,139 @@ def _runtime_value_limits(
             backend_snapshot_contracts._VALUE_LIMITS = snapshot_limits
 
 
-def _requirement_identity(item: object) -> tuple[object, ...]:
-    """Return the stable identity joining a requirement to its authority."""
+def target_planning_compatibility(target: RuntimeTarget) -> object | None:
+    """Return the compatibility decision resolved when the target was admitted."""
 
-    return (
-        getattr(item, "address", None),
-        getattr(item, "field_path", None),
-        getattr(item, "domain", None),
-        getattr(item, "requirement_kind", None),
-    )
+    selection = getattr(target.provisioner, "planning_compatibility", None)
+    return selection.decision if selection is not None else None
 
 
-def _authored_paths(scenario: object | None) -> frozenset[str] | None:
-    """Index exact and ancestor paths from the parser's authority map once."""
+def plan_for_target(
+    target: RuntimeTarget,
+    scenario: object,
+    options: AptlPlanningOptions,
+) -> ExecutionPlan:
+    """Compile once, adjust the identified pack, then invoke the RAES planner once.
 
-    explicitness = getattr(scenario, "explicitness", None)
-    if not isinstance(explicitness, Mapping):
-        return None
-    paths: set[str] = set()
-    for path in explicitness:
-        paths.add(path)
-        paths.update(path[:index] for index, char in enumerate(path) if char in ".[")
-    return frozenset(paths)
-
-
-def _authored_concern(paths: frozenset[str] | None, requirement: object) -> bool:
-    """An explicit empty field counts; an absent parser default does not."""
-
-    field_path = getattr(requirement, "field_path", None)
-    return paths is None or not isinstance(field_path, str) or field_path in paths
-
-
-def _selected_open_requirement(
-    scenario: object | None,
-    requirement: object,
-    decision: PlanningCompatibilityDecision,
-    authored_paths: frozenset[str] | None,
-) -> bool:
-    """Keep authored state and the two open defaults APTL actually selects."""
-
-    kind = getattr(requirement, "requirement_kind", None)
-    return (
-        scenario is None
-        or getattr(requirement, "explicitness", None) is not ExplicitnessClass.OPEN
-        or _authored_concern(authored_paths, requirement)
-        or _backend_profile_selects_concern(scenario, requirement)
-        or (
-            kind in decision.open_default_concerns
-            and _image_backed_node(scenario, requirement)
-        )
-    )
-
-
-def _backend_profile_selects_concern(scenario: object, requirement: object) -> bool:
-    """Keep authority for mechanics selected by a semantic backend profile."""
-
-    nodes = getattr(scenario, "nodes", None)
-    address = getattr(requirement, "address", None)
-    kind = getattr(requirement, "requirement_kind", None)
-    if not isinstance(nodes, Mapping) or not isinstance(address, str):
-        return False
-    node = next(
-        (item for name, item in nodes.items() if address == f"provision.node.{name}"),
-        None,
-    )
-    runtime = getattr(node, "runtime", None) if node is not None else None
-    return isinstance(kind, str) and kind in implementation_profiles.backend_profile_selected_concerns(runtime)
-
-
-def _image_backed_node(scenario: object, requirement: object) -> bool:
-    """Return whether a requirement's node has a materialized image source."""
-
-    nodes = getattr(scenario, "nodes", None)
-    address = getattr(requirement, "address", None)
-    if not isinstance(nodes, Mapping) or not isinstance(address, str):
-        return True
-    node = next(
-        (item for name, item in nodes.items() if address == f"provision.node.{name}"),
-        None,
-    )
-    return node is None or getattr(node, "source", None) is not None
-
-
-def apply_planning_compatibility(
-    model: RuntimeModel,
-    decision: PlanningCompatibilityDecision | None,
-    *,
-    scenario: object | None = None,
-) -> RuntimeModel:
-    """Apply one adapter's validated bounded compatibility decision.
-
-    Configuration-scope corroboration remains mandatory and no evidence is
-    relabelled.  For the finite concern set whose released OPEN relation RAES
-    cannot evaluate, APTL commits its least-intrusive choice: exactly the
-    authored value, with no backend additions, verified by native readback.
+    Planning reads the target's manifest and profile context but acts on no
+    backend, so it needs no runtime owner. The one runtime for the run is
+    created for apply.
     """
 
-    if decision is None:
-        return model
-
-    authored_paths = _authored_paths(scenario)
-    authority_identities = {
-        _requirement_identity(item) for item in model.realization_authority
-    }
-    adjusted_identities: set[tuple[object, ...]] = set()
-    delegated_identities: set[tuple[object, ...]] = set()
-    exact_identities: set[tuple[object, ...]] = set()
-    requirements = []
-    for requirement in model.realization_requirements:
-        requirement, adjusted, delegated, exact = _adjust_requirement(
-            requirement,
-            scenario=scenario,
-            authored_paths=authored_paths,
-            authority_identities=authority_identities,
-            decision=decision,
-        )
-        identity = _requirement_identity(requirement)
-        if adjusted:
-            adjusted_identities.add(_requirement_identity(requirement))
-        if delegated:
-            delegated_identities.add(identity)
-        if exact:
-            exact_identities.add(identity)
-        requirements.append(requirement)
-
-    if not adjusted_identities and not delegated_identities and not exact_identities:
-        return model
-
-    authority = tuple(
-        _adjust_authority(
-            item,
-            adjusted_identities,
-            delegated_identities,
-            exact_identities,
-        )
-        for item in model.realization_authority
+    parameters = options.parameters
+    run_scope = planning_run_scope(
+        getattr(target.provisioner, "bundle", None),
+        options.run_scope,
+        required="backend-materialization-attestation-v1"
+        in target.manifest.supported_contract_versions,
     )
-    return replace(
+    model = compile_scenario_runtime_model(
+        scenario,
+        parameters=dict(parameters) if parameters is not None else None,
+        profile=options.profile,
+        profile_authority=options.profile_authority,
+    )
+    model = apply_planning_compatibility(
+        model, target_planning_compatibility(target), scenario=scenario
+    )
+    scope = PlanScope(
+        target_name=target.name,
+        run_id=run_scope.run_id if run_scope is not None else None,
+        instantiation_id=(
+            run_scope.instantiation_id if run_scope is not None else None
+        ),
+    )
+    execution_plan = plan(
         model,
-        realization_requirements=tuple(requirements),
-        realization_authority=authority,
+        target.manifest,
+        options.snapshot if options.snapshot is not None else RuntimeSnapshot(),
+        scope=scope,
+        artifact_availability=options.artifact_availability,
+        profile_context=getattr(target.provisioner, "domain_profile_context", None),
     )
+    from aptl.backends.raes_participant_runtime import AptlParticipantRuntime
 
-
-def _adjust_requirement(
-    requirement: object,
-    *,
-    scenario: object | None,
-    authored_paths: frozenset[str] | None,
-    authority_identities: set[tuple[object, ...]],
-    decision: PlanningCompatibilityDecision,
-) -> tuple[object, bool, bool, bool]:
-    """Apply delegation and provenance compatibility to one requirement."""
-
-    identity = _requirement_identity(requirement)
-    delegated = identity in authority_identities and not _selected_open_requirement(
-        scenario, requirement, decision, authored_paths
-    )
-    if delegated:
-        requirement = replace(requirement, explicitness=None, delegated=True)
-    exact = _requires_exact_native_evidence(requirement, authored_paths, decision)
-    if exact:
-        requirement = replace(
-            requirement,
-            explicitness=ExplicitnessClass.EXACT,
-            structure=None,
-            constraint_document=None,
-            constraint_binding=None,
-            recursive_pending=False,
+    participant_runtime = getattr(target, "participant_runtime", None)
+    if isinstance(participant_runtime, AptlParticipantRuntime):
+        execution_plan.diagnostics.extend(
+            participant_runtime.autonomous_execution.planning_diagnostics(model)
         )
-    adjusted = (
-        not requirement.delegated
-        and requirement.requirement_kind in decision.daemon_readback_concerns
-        and requirement.required_observation_strength
-        is ObservationStrength.GUEST_OBSERVED
-    )
-    if adjusted:
-        requirement = replace(
-            requirement,
-            required_observation_strength=ObservationStrength.DAEMON_OBSERVED,
-        )
-    return requirement, adjusted, delegated, exact
-
-
-def _requires_exact_native_evidence(
-    requirement: object,
-    authored_paths: frozenset[str] | None,
-    decision: PlanningCompatibilityDecision,
-) -> bool:
-    """Return whether minimum intrusion closes an authored open concern."""
-
-    authored = _authored_concern(authored_paths, requirement)
-    return bool(
-        not requirement.delegated
-        and requirement.explicitness is ExplicitnessClass.OPEN
-        and requirement.requirement_kind in decision.minimum_intrusion_exact_concerns
-        and authored
-    )
-
-
-def _adjust_authority(
-    authority: object,
-    adjusted: set[tuple[object, ...]],
-    delegated: set[tuple[object, ...]],
-    exact: set[tuple[object, ...]],
-) -> object:
-    """Mirror an adjusted requirement onto its compiled authority."""
-
-    identity = _requirement_identity(authority)
-    if identity in delegated:
-        return replace(
-            authority,
-            delegated=True,
-            source=RealizationResolutionSource.APPARATUS_DEFAULT,
-        )
-    if identity in exact:
-        authority = replace(authority, mode=RealizationAuthorityMode.EXACT)
-    if (
-        identity in adjusted
-        and authority.required_observation_strength
-        is ObservationStrength.GUEST_OBSERVED
-    ):
-        return replace(
-            authority,
-            required_observation_strength=ObservationStrength.DAEMON_OBSERVED,
-        )
-    return authority
+    return execution_plan
 
 
 class AptlRuntimeManager(_RaesRuntimeManager):
     """RAES runtime manager with APTL's removable TechVault compile adapter."""
+
+    # One instance is the run's only runtime owner (OpenRAE/rae#1660).
 
     def __init__(
         self,
         target: RuntimeTarget,
         *,
         bundle: ScenarioBundle | None = None,
-        initial_snapshot: RuntimeSnapshot | None = None,
-        stochastic_controls: Iterable[ExperimentStochasticControlModel] = (),
-        information_state_context_resolver: (
-            ParticipantInformationStateContextResolver | None
-        ) = None,
+        run_scope: str = "run:default",
+        **options: object,
     ) -> None:
-        super().__init__(
-            target,
-            initial_snapshot=initial_snapshot,
-            stochastic_controls=stochastic_controls,
-            information_state_context_resolver=information_state_context_resolver,
-        )
+        super().__init__(target, run_scope=run_scope, **options)
+        self._lilrae_run_id = run_scope.removeprefix("run:")
         self._aptl_bundle = bundle or getattr(target.provisioner, "bundle", None)
-        self._aptl_planning_compatibility_selection = getattr(
-            target.provisioner, "planning_compatibility", None
+        self._aptl_planning_compatibility = target_planning_compatibility(target)
+        self.native_evidence = None
+        from aptl.backends.lilrae_materialization_archive import (
+            LilraeMaterializationArchive,
         )
-        selection = self._aptl_planning_compatibility_selection
-        self._aptl_planning_compatibility = (
-            selection.decision if selection is not None else None
-        )
+        from aptl.backends.lilrae_runtime_evidence import LilraeRuntimeEvidence
+
+        archive = options.get("materialization_archive")
+        if isinstance(archive, LilraeMaterializationArchive):
+            self.native_evidence = LilraeRuntimeEvidence(
+                archive,
+                getattr(target.provisioner, "deployment_backend", None),
+                provisioner=target.provisioner,
+            )
 
     def apply(self, execution_plan: ExecutionPlan) -> ApplyResult:
         """Apply with a finite node budget for the exact released large plan."""
 
         with _runtime_value_limits(getattr(self, "_aptl_planning_compatibility", None)):
-            return super().apply(execution_plan)
+            result = super().apply(execution_plan)
+        if self.native_evidence is not None:
+            self.native_evidence.capture(
+                execution_plan, result.snapshot, phase="initial", success=result.success
+            )
+        return result
 
-    def adopt_participant_delivery_snapshot(
+    def refresh_inventory(self, execution_plan: ExecutionPlan) -> ApplyResult:
+        """Refresh inventory and capture native evidence for the run."""
+
+        result = super().refresh_inventory(execution_plan)
+        if self.native_evidence is not None:
+            self.native_evidence.capture(
+                execution_plan,
+                result.snapshot,
+                phase="inventory",
+                success=result.success,
+            )
+        return result
+
+    def evaluate(
         self,
-        snapshot: RuntimeSnapshot,
-    ) -> RuntimeSnapshot:
-        """Resume manager-owned time from a governed participant delivery cut."""
+        execution_plan: ExecutionPlan | None = None,
+        *,
+        idempotency_key: str = "",
+        identity: object | None = None,
+    ) -> OperationReceipt:
+        """Evaluate the plan and capture native evidence for the run."""
 
-        return participant_snapshot.adopt_participant_delivery_snapshot(self, snapshot)
+        receipt = super().evaluate(
+            execution_plan, idempotency_key=idempotency_key, identity=identity
+        )
+        if self.native_evidence is not None and execution_plan is not None:
+            operation = self.get_operation(receipt.operation_id, identity=identity)
+            self.native_evidence.capture(
+                execution_plan, self.snapshot, phase="evaluation", operation=operation
+            )
+        return receipt
 
     def plan(
         self,
@@ -399,48 +250,31 @@ class AptlRuntimeManager(_RaesRuntimeManager):
         profile_authority: PlanProfileAuthority | None = None,
         run_scope: PlanScope | None = None,
     ) -> ExecutionPlan:
-        """Compile once, adjust the identified pack, then invoke RAES once."""
+        """Plan against this runtime's committed snapshot."""
 
-        model = compile_scenario_runtime_model(
+        return plan_for_target(
+            self._target,
             scenario,
-            parameters=parameters,
-            profile=profile,
-            profile_authority=profile_authority,
-        )
-        model = apply_planning_compatibility(
-            model,
-            getattr(self, "_aptl_planning_compatibility", None),
-            scenario=scenario,
-        )
-        effective_snapshot = snapshot if snapshot is not None else self._snapshot
-        scope = PlanScope(
-            target_name=self._target.name,
-            run_id=run_scope.run_id if run_scope is not None else None,
-            instantiation_id=(
-                run_scope.instantiation_id if run_scope is not None else None
-            ),
-        )
-        return plan(
-            model,
-            self._target.manifest,
-            effective_snapshot,
-            scope=scope,
-            artifact_availability=artifact_availability,
-            profile_context=getattr(
-                self._target.provisioner,
-                "domain_profile_context",
-                None,
+            AptlPlanningOptions(
+                snapshot=snapshot if snapshot is not None else self.snapshot,
+                parameters=parameters,
+                profile=profile,
+                artifact_availability=artifact_availability,
+                profile_authority=profile_authority,
+                run_scope=run_scope or PlanScope(run_id=self._lilrae_run_id),
             ),
         )
 
 
 from aptl.backends._raes_planning_entry import (
     AptlPlanningOptions,
+    planning_run_scope,
     plan_aptl_scenario,
 )
 
 __all__ = [
     "AptlRuntimeManager",
+    "plan_for_target",
     "AptlPlanningOptions",
     "DAEMON_READBACK_RUNTIME_CONCERNS",
     "apply_planning_compatibility",

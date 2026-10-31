@@ -15,6 +15,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
+  chmodSync,
   cpSync,
   mkdtempSync,
   rmSync,
@@ -54,6 +55,9 @@ const spawnControl: SpawnControl = {
 /** Answer one `docker cp` from the stand-in container, else with the set reply. */
 function replay(args: string[]): DockerResult {
   if (spawnControl.container) return copyFromContainer(spawnControl.container, args);
+  if (spawnControl.exitCode === 0 && args[0] === 'cp') {
+    writeFileSync(join(args[2], 'metadata.json'), METADATA);
+  }
   return { code: spawnControl.exitCode, stderr: spawnControl.stderrText };
 }
 
@@ -126,7 +130,7 @@ vi.mock('node:child_process', () => ({
   },
 }));
 
-import { harvestSession } from '../src/captures.js';
+import { harvestSession, finalizeCaptureSession } from '../src/captures.js';
 import { loadLabConfig } from '../src/config.js';
 import { resolveCaptureContainer } from '../src/tools/handlers.js';
 
@@ -315,6 +319,24 @@ describe('harvestSession', () => {
     expect(statSync(join(dest, 'pcap', 'session.pcap')).mode & 0o777).toBe(0o600);
   });
 
+  it('never changes the mode of a file that a harvested link points to (#1242)', async () => {
+    const tid = 'a'.repeat(32);
+    activateScenario(tid);
+    const outside = join(tmp, 'host-file.txt');
+    writeFileSync(outside, 'host');
+    chmodSync(outside, 0o644);
+    const dest = join(tmp, 'runs', tid, 'kali-side', 'sess-1');
+    mkdirSync(dest, { recursive: true });
+    symlinkSync(outside, join(dest, 'link'));
+
+    await harvestSession(
+      { containerName: 'aptl-kali', env: { APTL_STATE_DIR: tmp } },
+      'sess-1',
+    );
+
+    expect(statSync(outside).mode & 0o777).toBe(0o644);
+  });
+
   it('rejects an unsafe session id without invoking docker cp', async () => {
     const tid = 'a'.repeat(32);
     activateScenario(tid);
@@ -436,6 +458,33 @@ describe('#1242: workspace-scoped capture container (recorded docker cp)', () =>
     expect(text).not.toContain(stderr.trim());
   });
 
+  it('records an unbound red sidecar as unresolved and runs no docker cp', async () => {
+    vi.stubEnv('APTL_MCP_DISABLE_DOTENV', '1');
+    vi.stubEnv('LILRAE_MCP_CAPTURE_CONTAINER', undefined);
+    // A legacy sidecar under the old fixed name must never stand in.
+    brokerContainer(FIXED, 'sess-1');
+    const containerName = resolveCaptureContainer(await loadLabConfig(RED_CONFIG)) as string;
+
+    expect(await harvest(containerName)).toBe(false);
+    expect(spawnControl.callCount).toBe(0);
+    expect(JSON.parse(readFileSync(failureRecord('sess-1'), 'utf-8'))).toEqual({
+      ...recordFor('aptl.capture-harvest.container-unresolved', containerName, 'sess-1', 0),
+      exit_code: null,
+    });
+    expect(statSync(failureRecord('sess-1')).mode & 0o777).toBe(0o600);
+  });
+
+  it.each(['--privileged', '-q', 'kali:/etc', 'a b', 'x', ''])(
+    'records the invalid name %j as unresolved and keeps it out of the docker argv',
+    async (name) => {
+      expect(await harvest(name)).toBe(false);
+      expect(spawnControl.callCount).toBe(0);
+      expect(JSON.parse(readFileSync(failureRecord('sess-1'), 'utf-8')).failure).toBe(
+        'aptl.capture-harvest.container-unresolved',
+      );
+    },
+  );
+
   it('never writes through a link already at the failure record path', async () => {
     brokerContainer(OTHER_WORKSPACE, 'sess-1');
     const outside = join(tmp, 'outside.txt');
@@ -494,5 +543,69 @@ describe('captures: docker binary resolution', () => {
     for (const cmd of spawnControl.capturedCmds) {
       expect(cmd).toBe('/opt/docker/bin/docker');
     }
+  });
+});
+
+describe('metadata wait for a session finalizing at teardown (#campaign)', () => {
+  const sessionDir = (session: string) => join(tmp, 'runs', RUN, 'kali-side', session);
+  const runRoot = () => join(tmp, 'container', ROOT, RUN);
+
+  // The broker has written frames but not yet metadata.json (still finalizing).
+  const framesOnly = (session: string) => {
+    mkdirSync(join(runRoot(), 'sessions', session), { recursive: true });
+    writeFileSync(join(runRoot(), 'sessions', session, 'frames.jsonl'), FRAMES);
+    spawnControl.container = { name: FIXED, root: join(tmp, 'container') };
+  };
+  const harvest = (session: string, awaitMetadataMs?: number) =>
+    harvestSession({ containerName: FIXED, env: { APTL_STATE_DIR: tmp }, awaitMetadataMs }, session);
+
+  beforeEach(() => activateScenario(RUN));
+
+  it('rejects frames-only captures even when the caller disables waiting', async () => {
+    framesOnly('sess-1');
+    expect(await harvest('sess-1', 0)).toBe(false);
+  });
+
+  it('fails loud when metadata never finalizes within the wait', async () => {
+    framesOnly('sess-1');
+
+    expect(await harvest('sess-1', 500)).toBe(false);
+
+    const record = JSON.parse(readFileSync(join(sessionDir('sess-1'), 'capture-harvest-failure.json'), 'utf-8'));
+    expect(record.failure).toBe('aptl.capture-harvest.metadata-missing');
+    expect(existsSync(join(sessionDir('sess-1'), 'frames.jsonl'))).toBe(true);
+  });
+
+  it('re-copies and succeeds when metadata lands during the wait', async () => {
+    framesOnly('sess-1');
+    // The broker finishes finalizing shortly after teardown closed the session.
+    setTimeout(
+      () => writeFileSync(join(runRoot(), 'sessions', 'sess-1', 'metadata.json'), METADATA),
+      250,
+    );
+
+    expect(await harvest('sess-1', 3000)).toBe(true);
+    expect(readFileSync(join(sessionDir('sess-1'), 'metadata.json'), 'utf-8')).toBe(METADATA);
+  });
+});
+
+
+describe('trusted broker session finalization', () => {
+  beforeEach(() => activateScenario(RUN));
+
+  it('passes exact run and session arguments to the configured sidecar', async () => {
+    expect(await finalizeCaptureSession({ containerName: SCOPED, env: { APTL_STATE_DIR: tmp } }, 'sess-1')).toBe(true);
+    expect(spawnControl.capturedArgs).toEqual([[
+      'exec', '--user', 'root', SCOPED, 'python3', '/usr/local/bin/broker.py',
+      'stop-session', '--run-id', RUN, '--session-id', 'sess-1',
+    ]]);
+  });
+
+  it.each([SCOPED, ''])('records finalization failure for container %j', async (containerName) => {
+    spawnControl.exitCode = 1;
+    expect(await finalizeCaptureSession({ containerName, env: { APTL_STATE_DIR: tmp } }, 'sess-1')).toBe(false);
+    const record = JSON.parse(readFileSync(join(tmp, 'runs', RUN, 'kali-side', 'sess-1', 'capture-harvest-failure.json'), 'utf-8'));
+    expect(record.failure).toBe('aptl.capture-harvest.finalize-failed');
+    expect(spawnControl.callCount).toBe(containerName ? 1 : 0);
   });
 });

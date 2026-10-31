@@ -79,6 +79,7 @@ flowchart TD
 | aptl-wazuh-indexer | security | 172.20.0.12 | OpenSearch data storage |
 | aptl-suricata | security, dmz, internal | 172.20.0.50 | Network IDS |
 | aptl-misp | security | 172.20.0.16 | Threat intelligence |
+| aptl-misp-web | Shares the `aptl-misp` network namespace | 172.20.0.16 | MISP HTTPS web tier |
 | aptl-thehive | security | 172.20.0.18 | Case management |
 | aptl-cortex | security | 172.20.0.22 | Automated enrichment |
 | aptl-shuffle-backend | security | 172.20.0.20 | SOAR backend |
@@ -173,10 +174,17 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 
 ## Preflights
 
+- [Issue #1510 Code Quality Architecture Preflight](issue-1510-code-quality-preflight.md)
+- [Issue #1510 Code Quality Architecture Design](issue-1510-code-quality-design.md)
+- [Issue #1465 Released Structural Factorial Experiment Tuple](issue-1465-released-experiment-tuple-preflight.md)
+- [Issue #1465 Released Structural Factorial Tuple Design](issue-1465-released-experiment-tuple-design.md)
 - [Issue #1468 CI Feedback and Test Suite](issue-1468-ci-feedback-preflight.md)
+- [Owned Descendant Reporting Design](issue-1130-owned-descendant-reporting-design.md)
+- [Issue #1130 Runtime Realization Attestation](issue-1130-runtime-realization-attestation-preflight.md)
 - [Issue #1406 Native Evidence Test Target](issue-1406-native-evidence-test-target-preflight.md)
 - [Issue #1424 Runtime Retry Ownership](issue-1424-runtime-retry-preflight.md)
 - [Issue #1424 Runtime Retry Ownership Design](issue-1424-runtime-retry-ownership-design.md)
+- [Issue #1447 Runtime Ownership During Evidence Refresh](issue-1447-runtime-owner-handoff.md)
 - [Issue #1423 Shuffle Startup Recovery](issue-1423-shuffle-startup-readiness-preflight.md)
 - [Issue #1422 Wazuh Dashboard Config Readability](issue-1422-wazuh-dashboard-config-readability-preflight.md)
 - [Issue #1422 Wazuh Dashboard Owner-Declared Config Design](issue-1422-wazuh-dashboard-owned-config-design.md)

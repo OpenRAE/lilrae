@@ -1,7 +1,8 @@
 """Reviewed source bindings added for the released Linux infrastructure kits.
 
-Tags in provenance record the lookup used on 2026-10-15. Runtime selection
-uses only the immutable references below and never contacts a registry.
+Tags in provenance record the lookup that produced each pin, on 2026-10-15
+unless a record names a later date. Runtime selection uses only the immutable
+references below and never contacts a registry.
 """
 
 from aptl.backends._raes_backend_implementation_types import (
@@ -42,7 +43,13 @@ _SOURCE_ORIGINS = {
 
 
 def _source(
-    name: str, version: str, repository: str, tag: str, digest: str
+    name: str,
+    version: str,
+    repository: str,
+    tag: str,
+    digest: str,
+    *,
+    resolved: str = "2026-10-15",
 ) -> BackendImplementationProfile:
     """Build a source-only pin with its reviewed registry lookup provenance."""
 
@@ -55,7 +62,7 @@ def _source(
         image_ref=f"{repository}@sha256:{digest}",
         provenance_refs=(
             f"docker://{repository}:{tag}",
-            "resolved:2026-10-15",
+            f"resolved:{resolved}",
             *((origin,) if origin else ()),
         ),
         source_runtime_selector=_RUNTIME_SELECTORS.get(name),
@@ -299,8 +306,10 @@ SOURCE_IMAGE_PROFILES = (
         "roundcube",
         "1",
         "roundcube/roundcubemail",
-        "1.6.11-apache",
-        "7191357d2ee2b50e4068571f683a85fec86f5b2f27b764e5850c5799f0ad89df",
+        "1.6.20-apache",
+        # PHP 8.4.27 fixes CVE-2026-109618 and CVE-2026-109619 (issue #1407).
+        "ac370d75104cb2d6b94b472396fe81c29dbe82a1e8db98464ff5693d16844cc4",
+        resolved="2026-10-25",
     ),
     _source(
         "step-ca",
