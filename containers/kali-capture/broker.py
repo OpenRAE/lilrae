@@ -604,6 +604,29 @@ def quiesce(runtime_root: Path = _RUNTIME_ROOT) -> None:
         time.sleep(0.1)
 
 
+def stop_session(
+    run_id: str, session_id: str, runtime_root: Path = _RUNTIME_ROOT
+) -> None:
+    """Finalize one registered session without stopping other broker users."""
+    validate_id(run_id, "run id")
+    validate_id(session_id, "session id")
+    with _admission_lock(runtime_root):
+        if read_authority(runtime_root)["run_id"] != run_id:
+            raise ValueError("capture run authority mismatch")
+        path = runtime_root / "sessions" / f"{session_id}.pid"
+        if not path.exists():
+            return  # Already finalized: harvest still verifies metadata exists.
+        try:
+            os.kill(int(path.read_text().strip()), signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    deadline = time.monotonic() + 30
+    while path.exists():
+        if time.monotonic() >= deadline:
+            raise TimeoutError("capture session did not finalize")
+        time.sleep(0.1)
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="action")
@@ -611,6 +634,9 @@ def _parser() -> argparse.ArgumentParser:
     activate.add_argument("--run-id", required=True)
     activate.add_argument("--plan-id", required=True)
     activate.add_argument("--binding-id", required=True)
+    stop = subparsers.add_parser("stop-session")
+    stop.add_argument("--run-id", required=True)
+    stop.add_argument("--session-id", required=True)
     subparsers.add_parser("status")
     subparsers.add_parser("quiesce")
     subparsers.add_parser("export")
@@ -627,6 +653,9 @@ def main(argv: list[str] | None = None) -> int:
             binding_id=args.binding_id,
         )
         print(json.dumps(value, separators=(",", ":")))
+        return 0
+    if args.action == "stop-session":
+        stop_session(args.run_id, args.session_id)
         return 0
     if args.action == "status":
         authority = read_authority()

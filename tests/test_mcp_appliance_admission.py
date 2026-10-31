@@ -11,22 +11,28 @@ import pytest
 from aptl.appliance.seat.observation import build_host_observation
 from aptl.core.appliance_boundary_inventory import BoundaryEndpoint
 from aptl.workbench.guest_binding import ApplianceAccessObservation, GuestAdmission
-from tests.test_appliance_boundary_inventory import _binding, _guest, _policy
+from tests.test_appliance_boundary_inventory import (
+    _binding,
+    _guest,
+    _policy,
+    _protected_binding,
+    _protected_guest,
+)
 from tests.test_mcp_access import access_record, grant
 from aptl.workbench.dispatch import DispatchSelector
 from aptl.workbench.guest_binding import GuestDispatchBinding, ApplianceAccessPaths
 from aptl.appliance.seat.launch_descriptor import SeatLaunchDescriptor
 
 
-@pytest.mark.parametrize("vm_only", [False, True])
+@pytest.mark.parametrize("protected", [False, True])
 def test_appliance_transport_checks_freshness_identity_mapping_and_live_probes(
     tmp_path,
-    vm_only,
+    protected,
 ):
     from aptl.appliance.policy import full_techvault_boundary_policy
 
     policy_data = (
-        full_techvault_boundary_policy() if vm_only else _policy()
+        full_techvault_boundary_policy() if protected else _policy()
     ).model_dump()
     policy_data.update(
         host_mcp_contract="aptl.restricted-ssh-mcp/v1",
@@ -35,13 +41,15 @@ def test_appliance_transport_checks_freshness_identity_mapping_and_live_probes(
         ],
     )
     policy = type(_policy()).model_validate(policy_data)
-    binding = _binding().model_copy(
+    base_binding = _protected_binding() if protected else _binding()
+    binding = base_binding.model_copy(
         update={
-            "policy_digest": "sha256:" + hashlib.sha256(rfc8785.dumps(policy.model_dump(mode="json"))).hexdigest(),
+            "policy_digest": "sha256:"
+            + hashlib.sha256(rfc8785.dumps(policy.model_dump(mode="json"))).hexdigest(),
             "boot_id": "host-boot-42",
             "host_boot_id": "host-boot-42",
             "guest_boot_id": "boot-42",
-            "raes_boundary_required": not vm_only,
+            "raes_boundary_required": not protected,
         }
     )
     endpoint = BoundaryEndpoint(
@@ -59,39 +67,43 @@ def test_appliance_transport_checks_freshness_identity_mapping_and_live_probes(
         forbidden_reachability_passed=True,
     )
     binding = binding.model_copy(update={"host_observation_id": host.observation_id})
-    guest = _guest()
-    guest = guest.model_copy(update={
-        "policy_digest": binding.policy_digest,
-        "enforcements": tuple(item.model_copy(update={"source_digest": binding.policy_digest})
-                              for item in guest.enforcements),
-    })
+    guest = _protected_guest() if protected else _guest()
     guest = guest.model_copy(
         update={
-            "enforcements": (
-                *guest.enforcements,
-                guest.enforcements[0].model_copy(
-                    update={
-                        "authority": "raes",
-                        "source_digest": binding.raes_plan_digest,
-                    }
-                ),
-            ),
-            "probes": (
-                *guest.probes,
-                *(
-                    probe.model_copy(
-                        update={
-                            "identity": "raes-" + probe.identity,
-                            "authority": "raes",
-                        }
-                    )
-                    for probe in guest.probes
-                ),
+            "policy_digest": binding.policy_digest,
+            "raes_boundary_required": binding.raes_boundary_required,
+            "enforcements": tuple(
+                item.model_copy(update={"source_digest": binding.policy_digest})
+                for item in guest.enforcements
             ),
         }
     )
-    if vm_only:
-        guest = guest.model_copy(update={"enforcements": (), "probes": ()})
+    if not protected:
+        guest = guest.model_copy(
+            update={
+                "enforcements": (
+                    *guest.enforcements,
+                    guest.enforcements[0].model_copy(
+                        update={
+                            "authority": "raes",
+                            "source_digest": binding.raes_plan_digest,
+                        }
+                    ),
+                ),
+                "probes": (
+                    *guest.probes,
+                    *(
+                        probe.model_copy(
+                            update={
+                                "identity": "raes-" + probe.identity,
+                                "authority": "raes",
+                            }
+                        )
+                        for probe in guest.probes
+                    ),
+                ),
+            }
+        )
     observed = ApplianceAccessObservation(
         schema_version="aptl.mcp-boundary-observation/v1",
         observed_at=datetime.now(UTC),
@@ -110,7 +122,9 @@ def test_appliance_transport_checks_freshness_identity_mapping_and_live_probes(
         image_digest=binding.payload_digest,
         image_config_digest="sha256:" + "f" * 64,
         boundary_policy_digest=binding.policy_digest,
-        participant_routes_digest=binding.raes_plan_digest,
+        participant_routes_digest=(
+            binding.participant_routes_digest if protected else binding.raes_plan_digest
+        ),
         boundary_helper_image=binding.boundary_helper_image,
         egress_proxy_image=binding.egress_proxy_image,
         host_observation_id=binding.host_observation_id,
@@ -123,18 +137,26 @@ def test_appliance_transport_checks_freshness_identity_mapping_and_live_probes(
     caller = grant(profile="red")
     access = access_record(guest_boot_id="boot-42", guest_daemon_id="daemon-42")
     dispatch = GuestDispatchBinding(
-        schema_version="aptl.mcp-dispatch/v1", access=access, grants=(caller,),
-        project_dir=tmp_path, management_home=tmp_path,
-        node_executable=Path("/usr/bin/node"), run_id="c" * 32,
-        delivery="appliance", appliance=ApplianceAccessPaths(
-            launch_descriptor=launch_path, runtime_observation=path,
+        schema_version="aptl.mcp-dispatch/v1",
+        access=access,
+        grants=(caller,),
+        project_dir=tmp_path,
+        management_home=tmp_path,
+        node_executable=Path("/usr/bin/node"),
+        run_id="c" * 32,
+        delivery="appliance",
+        appliance=ApplianceAccessPaths(
+            launch_descriptor=launch_path,
+            runtime_observation=path,
         ),
     )
     dispatch_path = tmp_path / "dispatch.json"
     dispatch_path.write_text(dispatch.model_dump_json())
     dispatch_path.chmod(0o600)
     admission = GuestAdmission(
-        dispatch_path, caller.grant_id, caller.public_key_fingerprint,
+        dispatch_path,
+        caller.grant_id,
+        caller.public_key_fingerprint,
         DispatchSelector(access.instance_id, access.generation, "aptl-red"),
     )
     admission._verify_appliance_observation()
@@ -152,7 +174,7 @@ def test_appliance_transport_checks_freshness_identity_mapping_and_live_probes(
         {"binding": binding.model_copy(update={"guest_daemon_id": "other"})},
         {
             "guest": guest.model_copy(
-                update={"observation_complete": False} if vm_only else {"probes": ()}
+                update={"probes": ()} if protected else {"probes": ()}
             )
         },
         {

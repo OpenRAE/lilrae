@@ -229,3 +229,5 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 - [Issue #823 Versioned Disposable Lab Appliance](issue-823-versioned-disposable-appliance-preflight.md)
 - [Issue #824 Kiosk Launcher, Reset, And Recovery](issue-824-kiosk-launcher-reset-recovery-preflight.md)
 - [Issue #1022 Appliance Seat Delivery](issue-1022-appliance-seat-delivery-preflight.md)
+- [Issue #1127 Seat Component Protection](issue-1127-seat-component-protection-preflight.md)
+- [Issue #1127 Seat Component Protection Design](issue-1127-seat-component-protection-design.md)

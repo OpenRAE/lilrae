@@ -250,7 +250,7 @@ describe('handler error paths return a failure envelope', () => {
   it('reports a nonzero remote command exit as unsuccessful', async () => {
     const context = {
       ...throwingCtx,
-      sshManager: { executeCommand: vi.fn().mockResolvedValue({
+      sshManager: { harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(), executeCommand: vi.fn().mockResolvedValue({
         stdout: 'session could not start', stderr: '', code: 254,
       }) } as any,
     };
@@ -299,7 +299,7 @@ describe('#1319: run_command harvests a timed-out exec session', () => {
   const timeoutEnvelope = { command, success: false, error: `Command timeout after 30000ms: ${command}` };
 
   const sessionId = 'exec-1760000000000-0a1b2c3d';
-  const harvestedFrom = [{ containerName: 'aptl-test-capture', runId: 'run-1319' }, sessionId];
+  const harvestedFrom = [{ containerName: 'aptl-test-capture', runId: 'run-1319', awaitMetadataMs: 30000 }, sessionId];
 
   // A stub manager whose executeCommand rejects the way SSHConnectionManager
   // does when the timer fires; the test decides when the channel closes.
@@ -309,6 +309,7 @@ describe('#1319: run_command harvests a timed-out exec session', () => {
       closeChannel = settle;
     });
     const sshManager = {
+      harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(),
       executeCommand: vi.fn(async () => {
         throw new CommandTimeoutError(timeoutEnvelope.error, sessionId, 'run-1319', channelClosed);
       }),
@@ -443,7 +444,7 @@ describe('#1242: a declared empty capture binding still reaches the harvester', 
       },
     },
   }) as any;
-  const sshManager = { getSessionRunId: vi.fn(() => 'run-1242'), closeSession: vi.fn(async () => true) } as any;
+  const sshManager = { harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(), getSessionRunId: vi.fn(() => 'run-1242'), closeSession: vi.fn(async () => true) } as any;
 
   beforeEach(() => {
     vi.mocked(harvestSession).mockClear();
@@ -457,7 +458,7 @@ describe('#1242: a declared empty capture binding still reaches the harvester', 
       { session_id: 'sess-1' },
       { sshManager, labConfig: withSidecar({ capture_container_name: '' }) },
     );
-    expect(harvestSession).toHaveBeenCalledExactlyOnceWith({ containerName: '', runId: 'run-1242' }, 'sess-1');
+    expect(harvestSession).toHaveBeenCalledExactlyOnceWith({ containerName: '', runId: 'run-1242', awaitMetadataMs: 30000 }, 'sess-1');
     expect(JSON.parse(result.content[0].text).harvest_warning).toBeDefined();
   });
 
@@ -499,6 +500,7 @@ describe('close_session / close_all_sessions harvest behaviour', () => {
       configKey: 'test-container',
     });
     const sshManager = {
+      harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(),
       getSessionRunId: vi.fn(() => undefined),
       closeSession: vi.fn(async () => true),
     } as any;
@@ -519,6 +521,7 @@ describe('close_session / close_all_sessions harvest behaviour', () => {
       configKey: 'test-container',
     });
     const sshManager = {
+      harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(),
       getSessionRunId: vi.fn(() => undefined),
       closeSession: vi.fn(async () => false),
     } as any;
@@ -589,6 +592,7 @@ describe('close_session / close_all_sessions harvest behaviour', () => {
       configKey: 'test-container',
     });
     const sshManager = {
+      harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(),
       listSessions: vi.fn(() => [
         { sessionId: 'sess-a' },
         { sessionId: 'sess-b' },
