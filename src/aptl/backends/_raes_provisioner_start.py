@@ -122,7 +122,6 @@ def _unsettled_readback(
     plan: ProvisioningPlan,
     snapshot: RuntimeSnapshot,
     readback_diagnostics: list[Diagnostic],
-    observations: dict[str, ObservedResource],
 ) -> tuple[bool, tuple[tuple[str, str], ...]]:
     """Return whether readback may still settle, and the concerns it missed.
 
@@ -133,7 +132,7 @@ def _unsettled_readback(
 
     if readback_diagnostics:
         return _retryable_readback_gaps(plan, snapshot, readback_diagnostics), ()
-    unobserved = unobserved_admitted_concerns(plan, observations)
+    unobserved = unobserved_admitted_concerns(plan, snapshot)
     return bool(unobserved), unobserved
 
 
@@ -284,7 +283,7 @@ class ProvisionerStartMixin(object):
                 manifest=create_aptl_manifest(),
             )
             settling, unobserved = _unsettled_readback(
-                plan, validation_snapshot, readback_diagnostics, observations
+                plan, validation_snapshot, readback_diagnostics
             )
             if not settling:
                 break
