@@ -182,13 +182,10 @@ class AptlProvisioner(LilraeApparatusReportingMixin, ProvisionerStartMixin):
     ) -> list[Diagnostic]:
         """Bind the admitted run, or refuse a plan for a different run."""
 
-        if plan.materialization_source is None:
-            return []
-        run_id = plan.materialization_source.run_id
-        if self._attempt_id is None:
-            self.bind_attempt_id(run_id)
-            return []
-        if self._attempt_id == run_id:
+        source = plan.materialization_source
+        if source is not None and self._attempt_id is None:
+            self.bind_attempt_id(source.run_id)
+        if source is None or self._attempt_id == source.run_id:
             return []
         return [
             diagnostic(

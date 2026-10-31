@@ -541,15 +541,11 @@ def test_family_admission_rejects_missing_capability_before_backend(
     )
     config, backend = AptlConfig(), object()
     source = ScenarioAdmissionSource(bundle)
-    request = contract.FamilyTrialInput(plan, "entry-a", family)
+    run = ScenarioAdmissionRun(
+        trial=contract.FamilyTrialInput(plan, "entry-a", family)
+    )
     with pytest.raises(ValueError, match="^family-provider-missing$"):
-        admit_raes_scenario(
-            bundle.root,
-            config,
-            backend,
-            source=source,
-            run=ScenarioAdmissionRun(trial=request),
-        )
+        admit_raes_scenario(bundle.root, config, backend, source=source, run=run)
 
 
 def test_startup_planning_and_verifier_receive_same_trial(monkeypatch, family_input):

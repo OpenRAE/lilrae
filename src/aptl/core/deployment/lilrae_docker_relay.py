@@ -365,9 +365,8 @@ class DockerRecordingRelay:
             )
         return False
 
-    def _final_response(
-        self, client: HTTPPeer, upstream: HTTPPeer
-    ) -> h11.Response | None:
+    @staticmethod
+    def _final_response(client: HTTPPeer, upstream: HTTPPeer) -> h11.Response | None:
         """Relay interim responses and return the final one, or None after an upgrade."""
         response = upstream.receive()
         while isinstance(response, h11.InformationalResponse):

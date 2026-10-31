@@ -31,9 +31,6 @@ from aptl.utils.pathsafe import (
 )
 
 if TYPE_CHECKING:
-    from raes_contracts.contracts.materialization_attestation import (
-        MaterializationArchiveRecord,
-    )
     from raes_contracts.runtime_state import OperationStatus, RuntimeSnapshot
     from raes_processor.models import ExecutionPlan
 

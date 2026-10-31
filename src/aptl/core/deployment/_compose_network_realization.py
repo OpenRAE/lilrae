@@ -6,7 +6,6 @@ from typing import Any
 
 from aptl.core.deployment._compose_network_operations import (
     _DEFAULT_BRIDGE_NETWORK,
-    _REALIZATION_TIMEOUT,
 )
 from aptl.core.deployment._compose_network_conflicts import (
     _network_subnet_conflicts,
@@ -29,7 +28,6 @@ from aptl.core.deployment._compose_realization_networks import (
     _resolve_realization_network_attachments,
     _realized_attachment_failures,
 )
-from aptl.core.deployment.errors import BackendTimeoutError
 from aptl.core.deployment._compose_resource_ownership import (
     OwnershipConflictError,
 )
