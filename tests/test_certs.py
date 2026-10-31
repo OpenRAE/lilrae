@@ -8,6 +8,8 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
+from aptl.core.helper_images import CERT_GENERATOR_IMAGE, PINNED_HELPER_IMAGES
+
 _COMPOSE_PATH = Path(__file__).resolve().parent.parent / "generate-indexer-certs.yml"
 
 
@@ -142,6 +144,58 @@ class TestEnsureSSLCerts:
             ],
         ]
         subprocess_run.assert_not_called()
+
+    def test_generator_tag_is_pointed_at_its_pin_before_it_runs(
+        self, tmp_path, mocker
+    ):
+        """The generator runs only after its tag names the pinned digest."""
+        from aptl.core.certs import ensure_ssl_certs
+
+        certs_dir = tmp_path / "config" / "wazuh_indexer_ssl_certs"
+        generator = _successful_generator(mocker, certs_dir)
+        pulled = []
+
+        def pull_images(images):
+            generator.assert_not_called()
+            pulled.append(images)
+            return []
+
+        result = ensure_ssl_certs(tmp_path, pull_images=pull_images)
+
+        assert result.success is True
+        assert pulled == [[PINNED_HELPER_IMAGES[CERT_GENERATOR_IMAGE]]]
+        assert generator.called
+
+    def test_unavailable_pinned_generator_image_is_fail_closed(
+        self, tmp_path, mocker
+    ):
+        """A failed pinned pull never lets Compose pull the mutable tag."""
+        from aptl.core.certs import ensure_ssl_certs
+
+        mock_run = mocker.patch("aptl.core.certs.subprocess.run")
+        warning = "Failed to pull wazuh/wazuh-certs-generator: 429"
+
+        result = ensure_ssl_certs(tmp_path, pull_images=lambda _images: [warning])
+
+        assert result.success is False
+        assert result.error == (
+            f"Pinned certificate generator image is unavailable: {warning}"
+        )
+        mock_run.assert_not_called()
+
+    def test_existing_certs_need_no_generator_image(self, tmp_path):
+        """Existing certificates need no generator, so nothing is pulled."""
+        from aptl.core.certs import ensure_ssl_certs
+
+        certs_dir = tmp_path / "config" / "wazuh_indexer_ssl_certs"
+        certs_dir.mkdir(parents=True)
+        (certs_dir / "root-ca.pem").write_text("fake-cert")
+        pull_images = MagicMock(return_value=[])
+
+        result = ensure_ssl_certs(tmp_path, pull_images=pull_images)
+
+        assert result.success is True
+        pull_images.assert_not_called()
 
     def test_existing_certs_are_widened_for_non_root_container_mounts(
         self, tmp_path, mocker
@@ -601,7 +655,7 @@ class TestCertGeneratorComposeFile:
         compose = yaml.safe_load(_COMPOSE_PATH.read_text())
         generator = compose["services"]["generator"]
 
-        assert generator["image"] == "wazuh/wazuh-certs-generator:0.0.2"
+        assert generator["image"] == CERT_GENERATOR_IMAGE
         assert generator["working_dir"] == "/tmp"
         assert "entrypoint" in generator
 
