@@ -590,9 +590,9 @@ pyyaml-env-tag==1.1 \
     --hash=sha256:17109e1a528561e32f026364712fee1264bc2ea6715120891174ed1b980d2e04 \
     --hash=sha256:2eb38b75a2d21ee0475d6d97ec19c63287a7e140231e4214969d0eac923cd7ff
     # via mkdocs
-raes==10.0.0 \
-    --hash=sha256:33d4213497c999769b9ad61990c6267ba6b11a99818b4266ab85b231f33edfd4 \
-    --hash=sha256:b2c1bd909618443ade49732413ebf16bf09f1f8e8bbd49a6d60049367d5ad73f
+raes==10.1.0 \
+    --hash=sha256:6b61c99fb08c95100a73cc0022c118eddd2da8384895e63f0cd0dd3ce3424fa6 \
+    --hash=sha256:7a23fa2f739a5cf606d516dd1d295d2be8e627585e998df35382ec8fce4f32dc
     # via
     #   lilrae
     #   raes-env-packs
