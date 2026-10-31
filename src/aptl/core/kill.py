@@ -50,6 +50,11 @@ MCP_SERVER_NAMES = [
 ]
 
 _TRACE_CONTEXT_FILENAME = "trace-context.json"
+_INVALID_CONFIGURATION_ERROR = (
+    "[lifecycle-invalid-configuration] Container kill blocked: "
+    "invalid configuration; refusing to guess the deployment "
+    "project identity."
+)
 
 
 @dataclass
@@ -335,11 +340,7 @@ def _kill_backend(
             try:
                 config = load_config(config_path)
             except (FileNotFoundError, ValueError):
-                error = (
-                    "[lifecycle-invalid-configuration] Container kill blocked: "
-                    "invalid configuration; refusing to guess the deployment "
-                    "project identity."
-                )
+                error = _INVALID_CONFIGURATION_ERROR
             else:
                 resolved_backend = get_backend(config, project_dir)
     return resolved_backend, error

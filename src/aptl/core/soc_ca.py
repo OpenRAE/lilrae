@@ -319,18 +319,13 @@ def _generate_with_error_envelope(
     # converts to a fatal CertResult (see docstring catalog).
     except Exception as exc:
         layer = _classify_failure_layer(exc)
-        log.exception(
-            "soc_cert_generation: %s failed: %s",
-            layer, exc.__class__.__name__,
-        )
+        failure = exc.__class__.__name__
+        log.exception("soc_cert_generation: %s failed: %s", layer, failure)
         return CertResult(
             success=False,
             generated=False,
             certs_dir=output_dir,
-            error=(
-                f"SOC certificate generation failed in {layer}: "
-                f"{exc.__class__.__name__}"
-            ),
+            error=f"SOC certificate generation failed in {layer}: {failure}",
         )
     return CertResult(success=True, generated=True, certs_dir=output_dir)
 

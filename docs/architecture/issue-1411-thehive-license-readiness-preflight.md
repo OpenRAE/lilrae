@@ -29,6 +29,11 @@ failed seat reaches supported operation, how retained data can be restored or
 accessed, and what interrupted-transition recovery guarantees cover. New-image
 success alone cannot close that gap. Do not invent a migration mechanism here.
 
+Owner decision (2026-10-31): an expired seat moves to the new image through the
+existing seat update, which resets its overlay. Before the reset, an operator
+reads the retained files that they need through `lilrae seat rescue`. No other
+migration path is added. The troubleshooting guide documents this procedure.
+
 No affected VM was inspected. Record its immutable image, installed application
 build, pack/backend identity, and sanitized failure state before claiming an
 observed diagnosis or recovery. The checked-in legacy Compose tag does not

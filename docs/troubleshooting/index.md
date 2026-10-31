@@ -286,6 +286,39 @@ APTL cleanup is deliberately bounded by the validated project labels.
 
 Tracked in [#722](https://github.com/Brad-Edwards/aptl/issues/722).
 
+### An older TechVault seat stops before it is ready
+
+A TechVault seat image built before
+[ADR-063](../adrs/adr-063-remove-thehive-and-cortex.md) includes TheHive.
+TheHive's trial ends 14 days after the seat first starts. After that, the seat
+fails its readiness check and the launcher stops the guest.
+
+Such a seat can't recover in place. Move it to a seat image built from a
+release that includes ADR-063. An image update resets the seat and deletes its
+overlay data, so read the files that you need first:
+
+1.  Stop the seat as its host owner. Then, as a host administrator with
+    `virt-rescue` installed, open the rescue shell and read the guest files
+    that you need:
+
+    ```shell
+    lilrae seat stop --seat-root <seat-root>
+    sudo lilrae seat rescue --seat-root <seat-root>
+    ```
+
+    The [seat launcher reference](../reference/appliance-seat-launcher.md)
+    describes the rescue shell.
+
+2.  Exit the rescue shell. Then update and start the seat:
+
+    ```shell
+    lilrae seat update
+    lilrae seat start
+    ```
+
+The new image has no TheHive or Cortex, and their cases and analyzer jobs are
+not restored.
+
 ### `lilrae lab start` reports an unowned search index
 
 A scenario can declare a search-index schema as initial service state. APTL
