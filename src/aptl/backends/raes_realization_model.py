@@ -246,6 +246,7 @@ class AptlRealization(object):
     networks: tuple[NetworkRealization, ...]
     placements: tuple[PlacementRealization, ...]
     diagnostics: tuple[Diagnostic, ...]
+    raes_plan_digest: str | None = None
     acls: tuple[DeploymentAclRealization, ...] = ()
     generated_artifacts: tuple[DeploymentGeneratedArtifactRealization, ...] = ()
     persistent_volumes: tuple[DeploymentPersistentVolumeRealization, ...] = ()
@@ -273,6 +274,7 @@ class AptlRealization(object):
         return DeploymentRealizationSpec(
             profiles=tuple(profiles),
             nodes=nodes,
+            raes_plan_digest=self.raes_plan_digest,
             realization_authority=self.realization_authority,
             networks=tuple(
                 DeploymentNetworkRealization(

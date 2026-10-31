@@ -142,14 +142,16 @@ and no new participant-facing publication. Preserve root lab startup in both
 modes. Recovery must not depend on the event account regaining Docker or sudo.
 
 Use the existing `build-seat-image.sh` / `provision-offline.sh` /
-`scan-golden.sh` baseline gate and `qualify-seat-image.sh` /
-`seat-qualification-smoke.sh` qualification owner. The current qualification
-disables first-boot and runs root-only lab checks: it cannot attest launch-mode
-application or unprivileged desktop behavior. Extend evidence through the
-actual launcher, systemd startup and Guacamole/xrdp path for both modes and
-both administrative password choices. Preserve offline closure, clean-source
-`seat-build-record.py`, Cosign publication and fresh anonymous boot evidence.
-Image cuts remain independent of package release workflows.
+`scan-golden.sh` baseline gate and `qualify-seat-image.sh` qualification owner.
+At this preflight's baseline, the retired `seat-qualification-smoke.sh`
+disabled first boot and could not attest launch-mode application or
+unprivileged desktop behavior. The qualifier now accepts only an immutable
+signed image and uses the actual launcher, first boot, readiness, reset, and
+second clean start. Privilege evidence must additionally cover the
+Guacamole/xrdp path for both modes and both administrative password choices.
+Preserve offline closure, clean-source `seat-build-record.py`, Cosign
+publication and fresh anonymous boot evidence. Image cuts remain independent
+of package release workflows.
 
 Targeted tests extend the existing CLI, lifecycle, persistence, launch-descriptor,
 image-config/build/trust and desktop suites in `tests/`. Required evidence covers

@@ -21,8 +21,10 @@ For current VM-only seats, ADR-060 defines the signed containment policy.
 Issue #1162 replaces the bespoke release transport with the owner-approved
 GHCR/Cosign delivery in ADR-060. Traceability below names the replacement
 artifacts; ACTIVE status does not assert complete multi-machine qualification.
-APP-1 internal-zone implementation is deferred to #1127; the release must name
-its actual containment contract and must not claim internal-isolation evidence.
+#1127 adds APP-1 seat-component protection as the distinct V3 signed contract.
+V2 releases remain VM-only and must not claim V3 evidence. V3 binds the policy,
+participant-route identity, admitted runtime-plan identity, and helper wire
+version separately so an older image or observation cannot acquire the claim.
 
 Issue #823 supplies the release artifact consumed by the host launcher in issue #824 and the hosted per-seat adapter in issue #825. APP-1 remains the boundary-enforcement authority and APP-2 remains the bounded participant-profile authority; this requirement binds those existing contracts into one immutable release unit without duplicating their schemas.
 
