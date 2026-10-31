@@ -20,6 +20,8 @@ import {
 } from './ssh-contracts.js';
 import { PersistentSession } from './ssh-session.js';
 
+const SHUTTING_DOWN = 'SSH manager is shutting down';
+
 interface ActiveExec {
   sessionId: string;
   runId?: string;
@@ -165,6 +167,22 @@ export class SSHConnectionManager {
     });
   }
 
+  private trackExec(sessionId: string, runId?: string): { active: ActiveExec; ready: () => void } {
+    let ready!: () => void;
+    const active: ActiveExec = {
+      sessionId, runId,
+      ready: new Promise<void>((resolve) => { ready = resolve; }),
+      stop: () => {},
+    };
+    this.activeExecs.set(sessionId, active);
+    return { active, ready };
+  }
+
+  private async harvestClosedExec(sessionId: string, runId?: string): Promise<void> {
+    await this.harvestSession(sessionId, runId);
+    this.activeExecs.delete(sessionId);
+  }
+
   /**
    * Execute a command on a target host via SSH.
    *
@@ -191,7 +209,7 @@ export class SSHConnectionManager {
     timeout: number = TIMEOUTS.DEFAULT_COMMAND,
     options: { sessionId?: string } = {},
   ): Promise<CommandResult & { sessionId: string; runId?: string }> {
-    require_(!this.stopping, 'SSH manager is shutting down');
+    require_(!this.stopping, SHUTTING_DOWN);
     const sessionId =
       options.sessionId ??
       // crypto.randomBytes for the unique-id suffix (SonarCloud
@@ -202,13 +220,7 @@ export class SSHConnectionManager {
       `exec-${Date.now()}-${randomBytes(4).toString('hex')}`;
     const shellEnv = aptlShellEnv(sessionId);
     require_(!this.activeExecs.has(sessionId) && !this.sessions.has(sessionId) && !this.pendingSessions.has(sessionId), `Session with ID '${sessionId}' already exists`);
-    let ready!: () => void;
-    const active: ActiveExec = {
-      sessionId, runId: shellEnv.APTL_RUN_ID,
-      ready: new Promise<void>((resolve) => { ready = resolve; }),
-      stop: () => {},
-    };
-    this.activeExecs.set(sessionId, active);
+    const { active, ready } = this.trackExec(sessionId, shellEnv.APTL_RUN_ID);
     let client: Client;
     try {
       client = await this.getConnection(host, username, privateKeyPath, port);
@@ -262,7 +274,7 @@ export class SSHConnectionManager {
           channel = stream;
 
           stream.on('close', (code: number | null, signal: string | null) => {
-            void this.harvestSession(sessionId, shellEnv.APTL_RUN_ID).finally(() => this.activeExecs.delete(sessionId));
+            void this.harvestClosedExec(sessionId, shellEnv.APTL_RUN_ID);
             clearTimeout(timeoutId);
             markClosed();
             if (!hasTimedOut) {
@@ -418,7 +430,7 @@ export class SSHConnectionManager {
     privateKeyPath: string,
     options: SessionConnectOptions = {}
   ): Promise<PersistentSession> {
-    require_(!this.stopping, 'SSH manager is shutting down');
+    require_(!this.stopping, SHUTTING_DOWN);
     // Reserve the id SYNCHRONOUSLY (before any await) so a concurrent
     // createSession with the same id cannot pass the precondition and
     // overwrite this entry between getConnection() and session.initialize().
@@ -525,7 +537,7 @@ export class SSHConnectionManager {
     timeout?: number,
     raw?: boolean
   ): Promise<CommandResult> {
-    require_(!this.stopping, 'SSH manager is shutting down');
+    require_(!this.stopping, SHUTTING_DOWN);
     const session = this.sessions.get(sessionId);
     require_(session !== undefined, `Session '${sessionId}' not found`);
 
