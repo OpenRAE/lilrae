@@ -13,7 +13,7 @@ updated_at: 2026-03-20T06:18:11.648907Z
 
 ## Statement
 
-The system shall integrate SonarCloud via GitHub Actions for continuous code quality analysis across Python (src/aptl/) and TypeScript (mcp/) codebases, with coverage reports from pytest and vitest.
+The system shall integrate SonarCloud via GitHub Actions for continuous code quality analysis across the server code and the browser UI, with coverage reports from their test suites.
 
 ## Rationale
 

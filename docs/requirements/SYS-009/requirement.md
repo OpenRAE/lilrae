@@ -13,7 +13,7 @@ updated_at: 2026-03-20T06:18:11.648456Z
 
 ## Statement
 
-The system shall maintain continuous code quality analysis, automated test coverage, and secure credential handling across both Python and TypeScript codebases.
+The system shall maintain continuous code quality analysis, automated test coverage, and secure credential handling across all of its code.
 
 ## Rationale
 
@@ -30,4 +30,5 @@ A security training lab that has poor code quality or leaks credentials undermin
 - TESTS → TEST `tests/test_check_architecture.py` (Activation and rejection of the ADR-064 checks on fixture trees)
 - TESTS → TEST `tests/test_sonar_project_properties.py` (SonarCloud ignore entries name existing files)
 - DOCUMENTS → ADR `ADR-064` (ADR-064 layered architecture and code conventions)
+- DOCUMENTS → ADR `ADR-065` (ADR-065 Go implementation, architecture model, and engineering standards)
 - IMPLEMENTS → GITHUB_ISSUE `1510` (Record the target architecture and code conventions for the code quality refactor)

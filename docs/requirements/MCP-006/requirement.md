@@ -1,6 +1,6 @@
 ---
 id: MCP-006
-title: "TypeScript Typed MCP Tool Arguments"
+title: "Typed MCP Tool Arguments"
 status: ACTIVE
 type: NON_FUNCTIONAL
 priority: SHOULD
@@ -9,11 +9,11 @@ created_at: 2026-03-20T06:12:10.821388Z
 updated_at: 2026-03-20T06:18:11.649672Z
 ---
 
-# MCP-006: TypeScript Typed MCP Tool Arguments
+# MCP-006: Typed MCP Tool Arguments
 
 ## Statement
 
-All MCP tool handlers shall use named TypeScript interfaces (RunCommandArgs, SessionCommandArgs, etc.) instead of args: any. The MCP SDK validates args against JSON Schema at runtime; TypeScript interfaces add compile-time type checking.
+All MCP tool handlers shall receive named, typed argument structures instead of untyped maps. The runtime shall validate the arguments against the JSON Schema of the tool before the handler runs, and the typed structures add compile-time type checking.
 
 ## Rationale
 

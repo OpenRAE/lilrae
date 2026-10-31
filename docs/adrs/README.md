@@ -24,15 +24,15 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [000](adr-000-use-adrs.md) | Use Architecture Decision Records | accepted | 2026-03-20 |
 | [001](adr-001-docker-compose-deployment.md) | Migrate from AWS/Terraform to Local Docker Compose | accepted | 2025-08-06 |
 | [002](adr-002-wazuh-siem.md) | Wazuh SIEM over Splunk and qRadar | accepted | 2025-08-06 |
-| [003](adr-003-mcp-common-library.md) | MCP Common Library with Config-Driven Server Generation | accepted | 2025-08-30 |
+| [003](adr-003-mcp-common-library.md) | MCP Common Library with Config-Driven Server Generation | superseded in part by ADR-065 | 2025-08-30 |
 | [004](adr-004-persistent-ssh-sessions.md) | Persistent SSH Session Architecture with Command Queuing | accepted | 2025-08-30 |
 | [005](adr-005-docker-compose-profiles.md) | Docker Compose Profiles for Selective Deployment | accepted | 2025-09-01 |
 | [006](adr-006-four-network-segmentation.md) | Four-Network Segmentation Architecture | accepted | 2026-02-07 |
-| [007](adr-007-python-cli-control-plane.md) | Python CLI as Primary Control Plane | accepted | 2026-02-07 |
+| [007](adr-007-python-cli-control-plane.md) | Python CLI as Primary Control Plane | superseded in part by ADR-065 | 2026-02-07 |
 | [008](adr-008-soc-stack-integration.md) | Integrated SOC Stack (MISP, TheHive, Cortex, Shuffle, Suricata) | superseded in part by ADR-063 | 2026-02-22 |
 | [009](adr-009-scenario-engine.md) | Scenario Engine with YAML Specs and Run Archive Collectors | accepted | 2026-03-02 |
-| [010](adr-010-sonarcloud-quality.md) | SonarCloud for Continuous Code Quality | superseded in part by ADR-064 | 2026-03-07 |
-| [011](adr-011-web-ui.md) | Notebook-Style Web UI (SvelteKit + FastAPI) | proposed | 2026-03-20 |
+| [010](adr-010-sonarcloud-quality.md) | SonarCloud for Continuous Code Quality | superseded in part by ADR-064 and ADR-065 | 2026-03-07 |
+| [011](adr-011-web-ui.md) | Notebook-Style Web UI (SvelteKit + FastAPI) | superseded in part by ADR-065 | 2026-03-20 |
 | [012](adr-012-opentelemetry-integration.md) | OpenTelemetry Integration | accepted | 2026-03-21 |
 | [013](adr-013-deployment-abstraction.md) | Deployment Backend Abstraction Layer | accepted | 2026-03-22 |
 | [014](adr-014-scenario-description-language.md) | Scenario Description Language (SDL) | accepted | 2026-03-29 |
@@ -46,7 +46,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [022](adr-022-misp-driven-suricata-rules.md) | MISP-driven Suricata rules via a tag-graduated sync service | accepted | 2026-05-03 |
 | [023](adr-023-container-interaction-in-deployment-backend.md) | Container interaction (list/logs/shell/exec/inspect) on the DeploymentBackend Protocol | accepted | 2026-05-03 |
 | [024](adr-024-orchestrator-side-purple-continuity-carve-out.md) | Orchestrator-side purple-team continuity carve-out | accepted | 2026-05-03 |
-| [025](adr-025-strict-first-party-config-schema.md) | Strict first-party config schema | accepted | 2026-05-05 |
+| [025](adr-025-strict-first-party-config-schema.md) | Strict first-party config schema | superseded in part by ADR-065 | 2026-05-05 |
 | [026](adr-026-advisory-ci-vulnerability-scanning.md) | Advisory CI Vulnerability Scanning (scanners made blocking by the #1193 amendment) | accepted (amended) | 2026-05-09 |
 | [027](adr-027-red-team-structured-logging.md) | Red Team Structured Logging Boundary (SIEM-transport superseded by ADR-033) | accepted (amended) | 2026-05-09 |
 | [028](adr-028-runtime-rendered-service-config.md) | Runtime-Rendered Service Config | accepted | 2026-05-10 |
@@ -58,7 +58,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [034](adr-034-lab-managed-soc-tls-ca.md) | Lab-Managed CA for Verified SOC Stack TLS | accepted | 2026-05-18 |
 | [035](adr-035-raes-sdl-adoption.md) | Adopt RAES SDL as APTL's Scenario Authoring Surface (realization model superseded by ADR-046) | accepted (amended) | 2026-05-18 |
 | [036](adr-036-snapshot-endpoint-registry.md) | Snapshot Endpoint Registry Boundary | accepted | 2026-05-18 |
-| [037](adr-037-docker-compose-backend-cohesion.md) | Docker Compose Backend Cohesion | accepted | 2026-05-18 |
+| [037](adr-037-docker-compose-backend-cohesion.md) | Docker Compose Backend Cohesion | superseded in part by ADR-065 | 2026-05-18 |
 | [038](adr-038-docs-style-lint-and-published-site.md) | Documentation Style Lint and Published Docs Site | accepted | 2026-06-11 |
 | [039](adr-039-web-control-plane-authentication.md) | Web Control Plane Authentication and Loopback Exposure | accepted | 2026-06-14 |
 | [040](adr-040-terminal-ssh-host-key-verification-boundary.md) | Terminal SSH Host-Key Verification Boundary | accepted | 2026-06-13 |
@@ -85,4 +85,5 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [061](adr-061-gateless-vm-seat-access.md) | Browser Desktop for VM Seats | accepted | 2026-09-30 |
 | [062](adr-062-lilrae-name-and-naming-convention.md) | LilRAE Name and Naming Convention for New Code | superseded in part by ADR-064 | 2026-10-05 |
 | [063](adr-063-remove-thehive-and-cortex.md) | Remove TheHive and Cortex from the TechVault SOC Stack | accepted | 2026-10-30 |
-| [064](adr-064-layered-architecture-and-code-conventions.md) | Layered Architecture and Code Conventions | accepted | 2026-10-31 |
+| [064](adr-064-layered-architecture-and-code-conventions.md) | Layered Architecture and Code Conventions | superseded in part by ADR-065 | 2026-10-31 |
+| [065](adr-065-go-implementation-and-engineering-standards.md) | Go Implementation, Architecture Model, and Engineering Standards | accepted | 2026-10-31 |
