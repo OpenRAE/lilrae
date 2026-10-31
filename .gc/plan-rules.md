@@ -31,9 +31,12 @@ Mandatory constraints the `/implement` skill applies during plan phase.
   `docs`/`chore`/`refactor`/`test`/`ci`/`build` do not release. The PR title is
   the changelog entry, so make it a clear Conventional Commit. See
   `docs/releasing.md`.
-- New code MUST use `lilrae` naming: a new module, package, service,
-  environment variable (`LILRAE_`), resource name, or configuration file is
-  named for LilRAE, not APTL. Code that extends an existing interface MUST keep
+- New code MUST use `lilrae` naming: a new distribution, top-level import
+  package, command, service, environment variable (`LILRAE_`), resource name,
+  or configuration file is named for LilRAE, not APTL. Module and package
+  names inside `src/` state their responsibility and carry no product prefix
+  ([ADR-064](../docs/adrs/adr-064-layered-architecture-and-code-conventions.md)).
+  Code that extends an existing interface MUST keep
   that interface's current identifiers (for example the `aptl` import root,
   `aptl.*` entry-point groups, existing config fields, `APTL_*` variables, and
   runtime resource names); add no alias, shim, or parallel `lilrae` spelling.
