@@ -2,7 +2,11 @@
 
 ## Status
 
-accepted
+superseded in part by ADR-064
+
+[ADR-064](adr-064-layered-architecture-and-code-conventions.md) supersedes
+the statement that `C901` is the only Ruff rule. Enrolled code also runs the
+ADR-064 rules. The SonarCloud gate and the global `C901` gate stay in force.
 
 ## Date
 
@@ -91,6 +95,9 @@ SonarCloud's default cognitive-complexity threshold (cyclomatic complexity is
 a fine proxy for "this method does too much"). This is the only `ruff` rule
 turned on; it is a complexity guard, not a style linter; widen the rule set
 deliberately if/when the team wants more from `ruff`.
+
+> **Update (ADR-064, 2026-10-31):** ADR-064 adds Ruff rules for enrolled code.
+> `ruff check src/` with only `C901` still runs on all code.
 
 ### TypeScript complexity extension guardrails
 
@@ -195,6 +202,8 @@ for mocking` (it predates this gate)—`ruff check` prints a one-line warning
 for it but still passes. Left as-is here because fixing it touches `lab.py`,
 which would drag `lab.py`'s pre-existing SonarCloud issues into this
 config-only PR; fix it to `# noqa: PLC0415` the next time `lab.py` is edited.
+
+> **Update (2026-10-31):** `src/aptl/core/lab.py` no longer has this comment.
 
 ## Update (2026-09-20): Platform dependency gate (issue #969)
 
