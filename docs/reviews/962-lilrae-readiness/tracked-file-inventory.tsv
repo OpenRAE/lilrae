@@ -1440,6 +1440,7 @@ tests/test_content_realization_fuzz.py	tests-follow-owner	Retain meaningful boun
 tests/test_content_realization_source_policy.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_continuity.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_contracts.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
+tests/test_core_dependency_declarations.py	tests-follow-owner	Retain the core dependency declaration guard with the package metadata
 tests/test_correlation_builder.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_correlation_clock.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
 tests/test_correlation_identity.py	tests-follow-owner	Retain meaningful boundary and parity tests with migrated owner
