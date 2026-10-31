@@ -2,7 +2,7 @@
 
 ## Status
 
-accepted (amended 2026-10-28)
+accepted (amended 2026-10-31)
 
 ## Date
 
@@ -10,7 +10,7 @@ accepted (amended 2026-10-28)
 
 ## Last Updated
 
-2026-10-28
+2026-10-31
 
 ## Context
 
@@ -753,14 +753,26 @@ value. The provisioner's snapshot follows that contract:
 - An unobserved concern that the plan admits at that address (an open,
   constrained or exact authority, or a planned constraint) is still omitted, as
   the Runtime Service and SEM-218 Execution Addendum requires. If the plan has
-  a value at that path, even `null`, the entry then differs from the plan and
-  RAES refuses the whole result. A credential-bearing start therefore fails
-  unless the backend observes every admitted concern that has a plan value.
+  a value at that path and the snapshot omits it, the entry differs from the
+  plan and RAES refuses the whole result. A credential-bearing start therefore
+  fails unless the snapshot retains every admitted concern that has a plan value.
+  Materialization plans retain compiler-generated null and empty-string values
+  as absence when the concern's observation contract accepts them, without
+  claiming an observation. An invalid absence, such as a null capability policy,
+  is omitted so readback waits for a valid observation. Other plans omit an
+  unobserved concern even when its plan value is `null`.
+  RAES's authority check names some of these gaps, but not one whose plan value
+  is empty or `null`. So when that check reports nothing, realization readback
+  waits for any such omitted concern within its deadline. A concern still
+  omitted then fails the start with `aptl.provisioner.admitted-concern-unobserved`,
+  which names the address and concern kind.
 - An entry carries no `backend_evidence`, because the contract admits no
   backend evidence key in an entry. The run outcome still carries the
   source-image evidence.
-- A plan without account credential bindings keeps every unobserved concern
-  omitted and keeps source-image evidence in its entries.
+- A plan without account credential bindings keeps unobserved concerns omitted,
+  apart from compiler absence values retained for materialization. It keeps
+  source-image evidence in its entries unless materialization reporting requires
+  portable payloads; the run outcome retains that evidence in either case.
 
 ### Exception to the #692 rule
 
