@@ -2,18 +2,30 @@
 
 from __future__ import annotations
 
-import hashlib
 import ipaddress
-import json
 import re
 from dataclasses import dataclass
 from typing import Literal
 
+from aptl.core.deployment._boundary_validation import (
+    DIGEST_PATTERN,
+    OWNER_PATTERN,
+    canonical as _canonical,
+    digest as _digest,
+    validate_boundary_network,
+    validate_egress_ports as _validate_egress_ports,
+    validate_networks as _validate_networks,
+    validate_owner as _validate_owner,
+    validate_platform_anchors as _validate_platform_anchors,
+    validate_platform_networks as _validate_platform_networks,
+    validate_raes_rules as _validate_raes_rules,
+    validate_seat_component_coverage,
+    validate_seat_network_scope,
+    validate_zone_networks as _validate_zone_networks,
+)
 from aptl.core.deployment.realization import DeploymentAclRealization
 
-_OWNER = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$")
 _BRIDGE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,14}$")
-_PLATFORM_ZONES = {"participant", "management", "egress"}
 
 
 @dataclass(frozen=True)
@@ -29,28 +41,10 @@ class BoundaryNetwork:
     labels: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
-        if not self.name or not _BRIDGE.fullmatch(self.bridge):
-            raise ValueError("invalid boundary network")
-        for cidr in (self.ipv4_cidr, self.ipv6_cidr):
-            if cidr is not None:
-                ipaddress.ip_network(cidr, strict=False)
-        for gateway, cidr, version in (
-            (self.ipv4_gateway, self.ipv4_cidr, 4),
-            (self.ipv6_gateway, self.ipv6_cidr, 6),
-        ):
-            if gateway is None:
-                continue
-            parsed = ipaddress.ip_address(gateway)
-            if (
-                parsed.version != version
-                or cidr is None
-                or parsed not in ipaddress.ip_network(cidr, strict=False)
-            ):
-                raise ValueError("boundary network gateway is outside its subnet")
-        if list(self.labels) != sorted(self.labels) or len(dict(self.labels)) != len(
-            self.labels
-        ):
-            raise ValueError("boundary network labels must be unique and sorted")
+        validate_boundary_network(
+            self,
+            bridge_valid=_BRIDGE.fullmatch(self.bridge) is not None,
+        )
 
     def details(self) -> dict[str, object]:
         return {
@@ -212,7 +206,7 @@ class PlatformBoundarySpec:
 
     def __post_init__(self) -> None:
         _validate_owner(self.owner)
-        if not re.fullmatch(r"sha256:[a-f0-9]{64}", self.policy_digest):
+        if not DIGEST_PATTERN.fullmatch(self.policy_digest):
             raise ValueError("invalid platform policy digest")
         known = _validate_platform_networks(self.networks)
         zone_networks = _validate_zone_networks(self.zone_networks, known)
@@ -265,7 +259,7 @@ class PlatformBoundaryBootstrapSpec:
 
     def __post_init__(self) -> None:
         _validate_owner(self.owner)
-        if not re.fullmatch(r"sha256:[a-f0-9]{64}", self.policy_digest):
+        if not DIGEST_PATTERN.fullmatch(self.policy_digest):
             raise ValueError("invalid platform policy digest")
         known = _validate_platform_networks(self.networks)
         _validate_zone_networks(self.zone_networks, known)
@@ -314,7 +308,7 @@ class SeatProtectedComponent:
 
     def __post_init__(self) -> None:
         if (
-            not _OWNER.fullmatch(self.probe_identity)
+            not OWNER_PATTERN.fullmatch(self.probe_identity)
             or not 0 < self.port <= 65535
             or not self.purpose
         ):
@@ -353,7 +347,7 @@ class SeatPermittedFlow:
             or len(self.ports) != len(set(self.ports))
             or any(not 0 < port <= 65535 for port in self.ports)
             or not self.purpose
-            or not _OWNER.fullmatch(self.probe_identity)
+            or not OWNER_PATTERN.fullmatch(self.probe_identity)
         ):
             raise ValueError("invalid protected-seat permitted flow")
 
@@ -382,42 +376,12 @@ class SeatProtectionBoundarySpec:
 
     def __post_init__(self) -> None:
         _validate_owner(self.owner)
-        if not re.fullmatch(r"sha256:[a-f0-9]{64}", self.policy_digest):
+        if not DIGEST_PATTERN.fullmatch(self.policy_digest):
             raise ValueError("invalid protected-seat policy digest")
-        _validate_networks(self.networks)
-        if not self.networks or any(
-            network.ipv4_cidr is None and network.ipv6_cidr is None
-            for network in self.networks
-        ):
-            raise ValueError(
-                "protected-seat networks require observed address families"
-            )
-        if any(
-            (network.ipv4_cidr is not None and network.ipv4_gateway is None)
-            or (network.ipv6_cidr is not None and network.ipv6_gateway is None)
-            for network in self.networks
-        ):
-            raise ValueError("protected-seat networks require observed gateways")
-        classes = [item.component_class for item in self.protected_components]
-        probes = [
-            item.probe_identity
-            for item in (*self.protected_components, *self.permitted_flows)
-        ]
-        required_classes = {
-            "management-control",
-            "evidence-capture",
-            "evidence-store",
-            "docker-authority",
-            "credentials",
-        }
-        if (
-            set(classes) != required_classes
-            or len(classes) != len(required_classes)
-            or len(probes) != len(set(probes))
-        ):
-            raise ValueError(
-                "protected-seat component coverage must be complete and unique"
-            )
+        validate_seat_network_scope(self.networks)
+        validate_seat_component_coverage(
+            self.protected_components, self.permitted_flows
+        )
 
     def details(self) -> dict[str, object]:
         return {
@@ -445,115 +409,3 @@ BoundaryEnforcementSpec = (
     | PlatformBoundaryBootstrapSpec
     | SeatProtectionBoundarySpec
 )
-
-
-def _validate_owner(owner: str) -> None:
-    """Require a bounded project/seat ownership token."""
-
-    if not _OWNER.fullmatch(owner):
-        raise ValueError("invalid boundary owner")
-
-
-def _validate_networks(networks: tuple[BoundaryNetwork, ...]) -> None:
-    """Require unique concrete network and bridge identities."""
-
-    names = [network.name for network in networks]
-    bridges = [network.bridge for network in networks]
-    if len(names) != len(set(names)) or len(bridges) != len(set(bridges)):
-        raise ValueError("boundary networks must have unique names and bridges")
-
-
-def _canonical(details: dict[str, object]) -> str:
-    """Serialize enforcement input deterministically for hashing and transport."""
-
-    return json.dumps(details, sort_keys=True, separators=(",", ":"))
-
-
-def _digest(payload: str) -> str:
-    """Return the lowercase SHA-256 identity of canonical policy text."""
-
-    return "sha256:" + hashlib.sha256(payload.encode()).hexdigest()
-
-
-def _validate_raes_rules(
-    rules: tuple[DeploymentAclRealization, ...],
-    bindings: dict[str, AcesAclOwnerBinding],
-    known_networks: set[str],
-) -> None:
-    """Require exact owner bindings, known endpoints, and deterministic order."""
-
-    prior: tuple[str, int, str] | None = None
-    for rule in rules:
-        binding = bindings.get(rule.owner_address)
-        if binding is None or binding.owner_resource_type != rule.owner_resource_type:
-            raise ValueError("ACL rule has no exact owner binding")
-        endpoints = (rule.from_network, rule.to_network)
-        if any(item is not None and item not in known_networks for item in endpoints):
-            raise ValueError("ACL rule references an unknown network")
-        current = (rule.owner_address, rule.order, rule.name)
-        if prior is not None and current < prior:
-            raise ValueError("ACL rules must have deterministic owner order")
-        prior = current
-
-
-def _validate_platform_networks(
-    networks: tuple[BoundaryNetwork, ...],
-) -> set[str]:
-    """Require exactly three distinct IPv4-only platform policy domains."""
-
-    _validate_networks(networks)
-    if len(networks) != 3 or any(network.ipv6_cidr is not None for network in networks):
-        raise ValueError("platform networks must be three IPv4 policy domains")
-    return {network.name for network in networks}
-
-
-def _validate_zone_networks(
-    entries: tuple[
-        tuple[Literal["participant", "management", "egress"], str],
-        ...,
-    ],
-    known_networks: set[str],
-) -> dict[str, str]:
-    """Require an exact one-to-one mapping from zones to platform networks."""
-
-    zone_networks = dict(entries)
-    if (
-        set(zone_networks) != _PLATFORM_ZONES
-        or len(entries) != 3
-        or set(zone_networks.values()) != known_networks
-    ):
-        raise ValueError("platform zone networks must be exact and distinct")
-    return zone_networks
-
-
-def _validate_platform_anchors(
-    anchors: tuple[
-        tuple[Literal["participant", "management", "egress"], BoundaryWorkload],
-        ...,
-    ],
-    known_networks: set[str],
-    zone_networks: dict[str, str],
-) -> None:
-    """Require one IPv4 anchor per zone on only signed platform networks."""
-
-    zones = [zone for zone, _workload in anchors]
-    if set(zones) != _PLATFORM_ZONES or len(zones) != 3:
-        raise ValueError("platform anchors must cover each policy zone")
-    for zone, workload in anchors:
-        attached = (*workload.ipv4_by_network, *workload.ipv6_by_network)
-        if any(network not in known_networks for network, _address in attached):
-            raise ValueError("platform workload references an unknown network")
-        ipv4_networks = {network for network, _address in workload.ipv4_by_network}
-        if (
-            not ipv4_networks
-            or workload.ipv6_by_network
-            or zone_networks[zone] not in ipv4_networks
-        ):
-            raise ValueError("platform workload requires its IPv4 policy attachment")
-
-
-def _validate_egress_ports(ports: tuple[int, ...]) -> None:
-    """Require unique, valid external TCP port numbers."""
-
-    if len(ports) != len(set(ports)) or any(not 0 < port <= 65535 for port in ports):
-        raise ValueError("invalid platform egress ports")

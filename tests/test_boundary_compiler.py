@@ -379,28 +379,32 @@ def test_seat_protection_binds_every_realized_range_bridge_without_zoning() -> N
 
 def test_seat_protection_requires_exact_complete_realization_networks() -> None:
     policy = full_techvault_boundary_policy()
+    incomplete_networks = (
+        BoundaryNetwork(
+            name="orchard",
+            bridge="br-orchard",
+            ipv4_cidr="10.44.1.0/24",
+            ipv4_gateway="10.44.1.1",
+        ),
+    )
+    realization = _realization()
 
     with pytest.raises(BoundaryCompileError, match="network binding is incomplete"):
         compile_seat_protection_boundary(
             policy,
-            _realization(),
+            realization,
             policy_digest="sha256:" + "a" * 64,
-            networks=(
-                BoundaryNetwork(
-                    name="orchard",
-                    bridge="br-orchard",
-                    ipv4_cidr="10.44.1.0/24",
-                    ipv4_gateway="10.44.1.1",
-                ),
-            ),
+            networks=incomplete_networks,
             owner="seat-17",
         )
 
+    legacy_policy = _policy()
+    complete_networks = _networks()
     with pytest.raises(BoundaryCompileError, match="protected-seat policy"):
         compile_seat_protection_boundary(
-            _policy(),
-            _realization(),
+            legacy_policy,
+            realization,
             policy_digest="sha256:" + "a" * 64,
-            networks=_networks(),
+            networks=complete_networks,
             owner="seat-17",
         )

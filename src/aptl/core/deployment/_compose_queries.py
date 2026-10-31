@@ -115,19 +115,6 @@ def _read_copied_file(destination: Path, max_bytes: int) -> bytes | None:
     return payload
 
 
-def _network_bridge(
-    payload: dict[str, Any],
-    options: dict[str, str],
-    network_id: str,
-) -> str:
-    """Return the explicit or deterministic default bridge interface name."""
-
-    bridge = options.get("com.docker.network.bridge.name", "")
-    if not bridge and payload.get("Driver") == "bridge" and network_id:
-        return f"br-{network_id[:12]}"
-    return bridge
-
-
 def _decode_compose_ps(stdout: str) -> list[dict[str, Any]]:
     """Parse ``docker compose ps --format json`` output (NDJSON or array)."""
     stripped = stdout.strip()
@@ -225,7 +212,9 @@ class ComposeQueryMixin(object):
         labels = _string_mapping(payload.get("Labels"))
         options = _string_mapping(payload.get("Options"))
         network_id = str(payload.get("Id", ""))
-        bridge = _network_bridge(payload, options, network_id)
+        bridge = options.get("com.docker.network.bridge.name", "")
+        if not bridge and payload.get("Driver") == "bridge" and network_id:
+            bridge = f"br-{network_id[:12]}"
         subnets = [
             str(config.get("Subnet", ""))
             for config in ipam_configs

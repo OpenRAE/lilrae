@@ -25,6 +25,7 @@ _AUTHORITY = re.compile(
 )
 _LABEL_SELECTOR = re.compile(r"^[a-z0-9][a-z0-9._/-]*=[a-z0-9][a-z0-9._-]*$")
 _IMAGE_DIGEST = re.compile(r"^[a-z0-9][a-z0-9._/:~-]{0,254}@sha256:[a-f0-9]{64}$")
+_IDENTITY_PATTERN = r"^[a-z0-9][a-z0-9._-]{0,79}$"
 
 Digest = Annotated[str, Field(pattern=_DIGEST.pattern)]
 PlatformZone = Literal["participant", "management", "egress"]
@@ -167,7 +168,7 @@ class ProtectedComponent(_StrictModel):
     """One non-secret seat component class with an active probe instrument."""
 
     component_class: ProtectedComponentClass
-    probe_identity: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,79}$")
+    probe_identity: str = Field(pattern=_IDENTITY_PATTERN)
     protocol: Transport
     port: int = Field(ge=1, le=65535)
     purpose: str = Field(min_length=1, max_length=80)
@@ -181,7 +182,7 @@ class PermittedHostFlow(_StrictModel):
     protocol: Transport
     ports: list[int] = Field(min_length=1)
     purpose: str = Field(min_length=1, max_length=80)
-    probe_identity: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,79}$")
+    probe_identity: str = Field(pattern=_IDENTITY_PATTERN)
 
     @field_validator("ports")
     @classmethod
@@ -215,7 +216,7 @@ class ApplianceBoundaryPolicy(_StrictModel):
         "aptl.appliance-boundary/v2",
         "aptl.appliance-boundary/v3",
     ]
-    policy_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,79}$")
+    policy_id: str = Field(pattern=_IDENTITY_PATTERN)
     generation: int = Field(ge=1)
     workbench_policy_version: str = Field(pattern=r"^[a-z0-9][a-z0-9._/-]{0,127}$")
     default_deny: bool
@@ -254,32 +255,47 @@ def _validate_containment_contract(policy: ApplianceBoundaryPolicy) -> None:
     """Require the fields promised by exactly one containment model."""
 
     if policy.internal_zone_isolation:
-        if not policy.default_deny or any(
-            value is None
-            for value in (
-                policy.platform_networks,
-                policy.platform_anchors,
-                policy.egress_proxy_limits,
-            )
-        ):
-            raise ValueError("internal-zone policy requires its complete deny boundary")
-        if policy.protected_components or policy.permitted_host_flows:
-            raise ValueError("internal-zone policy cannot claim seat protection")
-        return
-    if policy.schema_version == "aptl.appliance-boundary/v2":
-        vm_only_fields = (
-            policy.default_deny,
-            policy.platform_networks,
-            policy.platform_anchors,
-            policy.egress_proxy_limits,
-            policy.fixed_crossings,
-            policy.egress_authorities,
-            policy.protected_components,
-            policy.permitted_host_flows,
-        )
-        if any(vm_only_fields):
-            raise ValueError("VM-only policy cannot claim inner-seat enforcement")
-        return
+        _validate_internal_zone_contract(policy)
+    elif policy.schema_version == "aptl.appliance-boundary/v2":
+        _validate_vm_only_contract(policy)
+    else:
+        _validate_seat_component_contract(policy)
+
+
+def _validate_internal_zone_contract(policy: ApplianceBoundaryPolicy) -> None:
+    """Require the complete legacy internal-zone deny boundary."""
+
+    required = (
+        policy.platform_networks,
+        policy.platform_anchors,
+        policy.egress_proxy_limits,
+    )
+    if not policy.default_deny or any(value is None for value in required):
+        raise ValueError("internal-zone policy requires its complete deny boundary")
+    if policy.protected_components or policy.permitted_host_flows:
+        raise ValueError("internal-zone policy cannot claim seat protection")
+
+
+def _validate_vm_only_contract(policy: ApplianceBoundaryPolicy) -> None:
+    """Reject inner-seat claims from a VM-containment-only policy."""
+
+    vm_only_fields = (
+        policy.default_deny,
+        policy.platform_networks,
+        policy.platform_anchors,
+        policy.egress_proxy_limits,
+        policy.fixed_crossings,
+        policy.egress_authorities,
+        policy.protected_components,
+        policy.permitted_host_flows,
+    )
+    if any(vm_only_fields):
+        raise ValueError("VM-only policy cannot claim inner-seat enforcement")
+
+
+def _validate_seat_component_contract(policy: ApplianceBoundaryPolicy) -> None:
+    """Require exact, unique component coverage for the V3 deny boundary."""
+
     legacy_fields = (
         policy.platform_networks,
         policy.platform_anchors,

@@ -127,6 +127,19 @@ class _ProbePath:
     expectation: str
 
 
+@dataclass(frozen=True)
+class _HostComponentProbe:
+    """Bound inputs for one range-to-guest-host component assertion."""
+
+    image: str
+    source: _LiveContainer
+    network: str
+    family: str
+    gateway: str
+    target: object
+    port: int
+
+
 def _live_containers(backend: _ProbeBackend) -> tuple[_LiveContainer, ...]:
     """Normalize running containers from the guest backend."""
 
@@ -539,39 +552,32 @@ def _probe_host_reply(
 
 def _probe_host_component(
     backend: _ProbeBackend,
-    *,
-    image: str,
-    source: _LiveContainer,
-    network: str,
-    family: str,
-    gateway: str,
-    target: object,
-    port: int,
+    probe: _HostComponentProbe,
 ) -> BoundaryProbeObservation:
     """Prove one protected host target is ready, then test the signed outcome."""
 
-    component_class = getattr(target, "component_class", None)
-    destination = component_class or getattr(target, "destination")
-    probe_identity = str(getattr(target, "probe_identity"))
-    protocol = str(getattr(target, "protocol"))
+    component_class = getattr(probe.target, "component_class", None)
+    destination = component_class or getattr(probe.target, "destination")
+    probe_identity = str(getattr(probe.target, "probe_identity"))
+    protocol = str(getattr(probe.target, "protocol"))
     expectation = "blocked" if component_class is not None else "reachable"
     identity = probe_identity
     if component_class is None:
-        identity = f"{probe_identity}/port-{port}"
+        identity = f"{probe_identity}/port-{probe.port}"
     listener = _start_host_listener(
         backend,
-        image=image,
-        address=gateway,
-        port=port,
+        image=probe.image,
+        address=probe.gateway,
+        port=probe.port,
         protocol=protocol,
     )
     try:
         reachable = listener is not None and _connect(
             backend,
-            image=image,
-            source=source,
-            address=gateway,
-            port=port,
+            image=probe.image,
+            source=probe.source,
+            address=probe.gateway,
+            port=probe.port,
             protocol=protocol,
         )
     finally:
@@ -581,14 +587,14 @@ def _probe_host_component(
         reachable if expectation == "reachable" else not reachable
     )
     return BoundaryProbeObservation(
-        identity=f"seat-protection/{network}/{family}/{identity}",
+        identity=f"seat-protection/{probe.network}/{probe.family}/{identity}",
         authority="seat-protection",
         source="ordinary-range-workload",
         destination=str(destination),
-        source_network=network,
-        address_family=family,
+        source_network=probe.network,
+        address_family=probe.family,
         protocol=protocol,
-        port=port,
+        port=probe.port,
         expectation=expectation,
         target_ready=listener is not None,
         passed=passed,
@@ -648,13 +654,15 @@ def _seat_protection_probes(
                 probes.append(
                     _probe_host_component(
                         backend,
-                        image=image,
-                        source=source,
-                        network=network.name,
-                        family=family,
-                        gateway=gateway,
-                        target=target,
-                        port=port,
+                        _HostComponentProbe(
+                            image=image,
+                            source=source,
+                            network=network.name,
+                            family=family,
+                            gateway=gateway,
+                            target=target,
+                            port=port,
+                        ),
                     )
                 )
     return tuple(probes)

@@ -76,6 +76,23 @@ def _network_observation(
     gateways = details.get("gateways")
     if not isinstance(gateways, list):
         gateways = [details.get("gateway", "")]
+    ipv4_gateway, ipv6_gateway = _boundary_gateways(gateways)
+    return BoundaryNetwork(
+        name=name,
+        bridge=bridge,
+        ipv4_cidr=ipv4,
+        ipv6_cidr=ipv6,
+        ipv4_gateway=ipv4_gateway,
+        ipv6_gateway=ipv6_gateway,
+        labels=_sorted_labels(details.get("labels")),
+    )
+
+
+def _boundary_gateways(
+    gateways: list[object],
+) -> tuple[str | None, str | None]:
+    """Return the first observed IPv4 and IPv6 gateways without guessing."""
+
     ipv4_gateway: str | None = None
     ipv6_gateway: str | None = None
     for value in gateways:
@@ -89,15 +106,7 @@ def _network_observation(
             ipv4_gateway = value
         elif version == 6 and ipv6_gateway is None:
             ipv6_gateway = value
-    return BoundaryNetwork(
-        name=name,
-        bridge=bridge,
-        ipv4_cidr=ipv4,
-        ipv6_cidr=ipv6,
-        ipv4_gateway=ipv4_gateway,
-        ipv6_gateway=ipv6_gateway,
-        labels=_sorted_labels(details.get("labels")),
-    )
+    return ipv4_gateway, ipv6_gateway
 
 
 def _workload_addresses(
@@ -227,15 +236,15 @@ class ComposeBoundaryRealizationMixin:
     ) -> LabResult | None:
         """Install the platform deny floor before any scenario node can run."""
 
-        binding_failure = self._bind_appliance_realization(realization)
-        if binding_failure is not None:
-            return binding_failure
-        platform = self._realize_platform_baseline()
-        if platform is not None:
-            return platform
-        protection = self._realize_seat_protection_boundary(realization)
-        if protection is not None:
-            return protection
+        stages = (
+            lambda: self._bind_appliance_realization(realization),
+            self._realize_platform_baseline,
+            lambda: self._realize_seat_protection_boundary(realization),
+        )
+        for stage in stages:
+            failure = stage()
+            if failure is not None:
+                return failure
         return self._realize_raes_boundary(realization)
 
     def _bind_appliance_realization(
@@ -248,24 +257,27 @@ class ComposeBoundaryRealizationMixin:
         if configured is None:
             return None
         policy, binding = configured
+        failure: LabResult | None = None
         if policy.seat_component_protection and realization.raes_plan_digest is None:
-            return LabResult(
+            failure = LabResult(
                 success=False,
                 error="Admitted runtime plan identity was unavailable.",
             )
-        values = binding.model_dump()
-        if policy.seat_component_protection:
-            values["raes_plan_digest"] = realization.raes_plan_digest
-        values["raes_boundary_required"] = bool(realization.acls)
-        try:
-            updated = ApplianceBoundaryBinding.model_validate(values)
-        except ValueError:
-            return LabResult(
-                success=False,
-                error="Admitted runtime plan identity was invalid.",
-            )
-        self._appliance_boundary = (policy, updated)
-        return None
+        else:
+            values = binding.model_dump()
+            if policy.seat_component_protection:
+                values["raes_plan_digest"] = realization.raes_plan_digest
+            values["raes_boundary_required"] = bool(realization.acls)
+            try:
+                updated = ApplianceBoundaryBinding.model_validate(values)
+            except ValueError:
+                failure = LabResult(
+                    success=False,
+                    error="Admitted runtime plan identity was invalid.",
+                )
+            else:
+                self._appliance_boundary = (policy, updated)
+        return failure
 
     def _realize_seat_protection_boundary(
         self,

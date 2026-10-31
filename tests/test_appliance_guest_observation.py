@@ -438,17 +438,20 @@ def test_seat_probes_cover_each_network_family_and_protected_component() -> None
             passed=True,
         )
 
-    def component(_backend, *, image, source, network, family, gateway, target, port):
-        del image, source, gateway
+    def component(_backend, probe):
+        target = probe.target
         return BoundaryProbeObservation(
-            identity=f"seat-protection/{network}/{family}/{target.probe_identity}",
+            identity=(
+                f"seat-protection/{probe.network}/{probe.family}/"
+                f"{target.probe_identity}"
+            ),
             authority="seat-protection",
             source="ordinary-range-workload",
             destination=target.component_class,
-            source_network=network,
-            address_family=family,
+            source_network=probe.network,
+            address_family=probe.family,
             protocol=target.protocol,
-            port=port,
+            port=probe.port,
             expectation="blocked",
             target_ready=True,
             passed=True,
@@ -524,21 +527,21 @@ def test_seat_probes_cover_every_port_in_a_permitted_flow() -> None:
             passed=True,
         )
 
-    def component(_backend, *, image, source, network, family, gateway, target, port):
-        del image, source, gateway
+    def component(_backend, probe):
+        target = probe.target
         protected = hasattr(target, "component_class")
         identity = target.probe_identity
         if not protected:
-            identity = f"{identity}/port-{port}"
+            identity = f"{identity}/port-{probe.port}"
         return BoundaryProbeObservation(
-            identity=f"seat-protection/{network}/{family}/{identity}",
+            identity=f"seat-protection/{probe.network}/{probe.family}/{identity}",
             authority="seat-protection",
             source="ordinary-range-workload",
             destination=(target.component_class if protected else target.destination),
-            source_network=network,
-            address_family=family,
+            source_network=probe.network,
+            address_family=probe.family,
             protocol=target.protocol,
-            port=port,
+            port=probe.port,
             expectation="blocked" if protected else "reachable",
             target_ready=True,
             passed=True,
