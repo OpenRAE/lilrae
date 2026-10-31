@@ -8,19 +8,16 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, TypedDict
+from typing import Optional, TypedDict
 
-from aptl.core.config import find_config, load_config
+from aptl.core.kill_containers import kill_lab_containers
 from aptl.core.lifecycle_guard import (
     LifecycleLockUnavailableError,
     lifecycle_mutation_lock,
 )
 from aptl.core.lifecycle_policy import LifecycleBusyError
-from aptl.core.session import ScenarioSession
+from aptl.core.session import clean_trace_context, clear_session
 from aptl.utils.logging import get_logger
-
-if TYPE_CHECKING:
-    from aptl.core.deployment.backend import DeploymentBackend
 
 log = get_logger("kill")
 
@@ -50,8 +47,6 @@ MCP_SERVER_NAMES = [
     "mcp-threatintel",
 ]
 
-_TRACE_CONTEXT_FILENAME = "trace-context.json"
-
 
 @dataclass
 class KillResult:
@@ -59,10 +54,32 @@ class KillResult:
 
     success: bool
     mcp_processes_killed: int = 0
+    mcp_discovery_unavailable: bool = False
     containers_stopped: bool = False
     session_cleared: bool = False
     trace_context_cleaned: bool = False
     errors: list[str] = field(default_factory=list)
+
+
+class McpDiscoveryUnavailableError(RuntimeError):
+    """The kill could not look for every MCP server process on this host.
+
+    ``found`` lists the processes that discovery found anyway.
+    ``kill_mcp_processes`` stops them before it re-raises, and records the
+    outcome in ``killed`` and ``errors``.
+    """
+
+    def __init__(self, reason: str, found: list[McpProcess]) -> None:
+        self.found = found
+        self.killed = 0
+        self.errors: list[str] = []
+        missed = "that it did not find" if found else "that are running"
+        super().__init__(
+            f"MCP process discovery is unavailable: {reason}. Any MCP servers "
+            f"{missed} were not stopped; end each node process running an "
+            "mcp-*/build/index.js server by hand, for example with Task "
+            "Manager or Stop-Process on Windows."
+        )
 
 
 def find_mcp_processes() -> list[McpProcess]:
@@ -75,6 +92,10 @@ def find_mcp_processes() -> list[McpProcess]:
     Returns:
         List of dicts with keys ``pid`` (int), ``cmdline`` (str), and
         ``name`` (str, the matched server name).
+
+    Raises:
+        McpDiscoveryUnavailableError: ``pgrep`` is needed but cannot run,
+            as on native Windows, or it runs and reports an error.
     """
     if sys.platform == "linux":
         return _find_via_proc()
@@ -119,8 +140,16 @@ def _find_via_proc() -> list[McpProcess]:
 
 
 def _find_via_pgrep() -> list[McpProcess]:
-    """Discover MCP processes using pgrep (non-Linux fallback)."""
+    """Discover MCP processes using pgrep (non-Linux fallback).
+
+    A ``pgrep`` that cannot run, or exits with neither 0 (a match) nor 1 (no
+    match), raises instead of returning an empty list: a host that cannot
+    look must not report that no MCP server is running. The scan still asks
+    about every server, and the error carries the first failure and the
+    processes that were found, so that the kill can stop them.
+    """
     found: list[McpProcess] = []
+    failures: list[tuple[str, Optional[OSError]]] = []
     for name in MCP_SERVER_NAMES:
         pattern = f"{name}/build/index.js"
         try:
@@ -129,12 +158,21 @@ def _find_via_pgrep() -> list[McpProcess]:
                 capture_output=True,
                 text=True,
             )
+            if result.returncode not in (0, 1):
+                stderr = result.stderr.strip().splitlines() or ["no error output"]
+                status = f"pgrep exited with status {result.returncode}"
+                failures.append((f"{status} ({stderr[0]})", None))
             if result.returncode == 0:
                 for line in result.stdout.strip().splitlines():
                     pid = int(line.strip())
                     found.append({"pid": pid, "cmdline": pattern, "name": name})
-        except (OSError, ValueError):
+        except OSError as exc:
+            failures.append((f"pgrep could not run ({exc})", exc))
+        except ValueError:
             continue
+    if failures:
+        reason, cause = failures[0]
+        raise McpDiscoveryUnavailableError(reason, found) from cause
     return found
 
 
@@ -241,12 +279,34 @@ def kill_mcp_processes(
 
     Returns:
         Tuple of (number of processes killed, list of error messages).
+
+    Raises:
+        McpDiscoveryUnavailableError: The host could not look for every MCP
+            server process. The processes that it found are still stopped
+            first, and the error's ``killed`` and ``errors`` report that.
     """
-    processes = find_mcp_processes()
+    try:
+        processes = find_mcp_processes()
+    except McpDiscoveryUnavailableError as exc:
+        # Stop what discovery did find before reporting that it failed.
+        if exc.found:
+            exc.killed, exc.errors = _stop_processes(
+                exc.found, timeout, time_source, sleep
+            )
+        raise
     if not processes:
         log.info("No MCP server processes found")
         return 0, []
+    return _stop_processes(processes, timeout, time_source, sleep)
 
+
+def _stop_processes(
+    processes: list[McpProcess],
+    timeout: float,
+    time_source: Callable[[], float],
+    sleep: Callable[[float], None],
+) -> tuple[int, list[str]]:
+    """SIGTERM *processes*, then SIGKILL the survivors; return (killed, errors)."""
     log.info(
         "Found %d MCP server process(es): %s",
         len(processes),
@@ -260,128 +320,6 @@ def kill_mcp_processes(
     killed = len(processes) - len(errors)
     log.info("Killed %d MCP server process(es)", killed)
     return killed, errors
-
-
-def kill_lab_containers(
-    project_dir: Optional[Path] = None,
-    backend: Optional["DeploymentBackend"] = None,
-) -> tuple[bool, str]:
-    """Emergency-stop all lab containers.
-
-    Uses the configured deployment backend's kill method for immediate
-    shutdown. A missing config uses the bounded default Compose backend;
-    an invalid present config fails closed rather than guessing identity.
-
-    Args:
-        project_dir: Working directory for Docker Compose.
-        backend: Optional pre-created deployment backend.
-
-    Returns:
-        Tuple of (success, error_message).
-    """
-    resolved_dir = Path(project_dir) if project_dir is not None else Path(".")
-    try:
-        with lifecycle_mutation_lock(resolved_dir) as project_root:
-            result = _kill_lab_containers_owned(project_root, backend)
-    except LifecycleBusyError:
-        result = (
-            False,
-            "[lifecycle-owner-busy] Another lab lifecycle operation is active; "
-            "wait for it to finish before retrying container kill.",
-        )
-    except LifecycleLockUnavailableError:
-        result = (
-            False,
-            "[lifecycle-lock-unavailable] Container kill blocked because safe "
-            "project lifecycle ownership could not be established.",
-        )
-    return result
-
-
-def _kill_lab_containers_owned(
-    project_dir: Path,
-    backend: Optional["DeploymentBackend"],
-) -> tuple[bool, str]:
-    """Kill project containers while the caller owns the lifecycle lock."""
-
-    resolved_backend, error = _kill_backend(project_dir, backend)
-    if error:
-        return False, error
-    assert resolved_backend is not None
-    try:
-        from aptl.core.operator_group_state import load_admitted_operator_groups
-
-        profiles = list(load_admitted_operator_groups(project_dir))
-    except (OSError, ValueError):
-        return False, "invalid operator-group recovery state"
-    return resolved_backend.kill(profiles)
-
-
-def _kill_backend(
-    project_dir: Path,
-    backend: Optional["DeploymentBackend"],
-) -> tuple[Optional["DeploymentBackend"], str]:
-    """Resolve the configured backend without guessing an invalid identity."""
-
-    resolved_backend = backend
-    error = ""
-    if resolved_backend is None:
-        from aptl.core.deployment import get_backend
-        from aptl.core.deployment.docker_compose import DockerComposeBackend
-
-        config_path = find_config(project_dir)
-        if config_path is None:
-            resolved_backend = DockerComposeBackend(project_dir=project_dir)
-        else:
-            try:
-                config = load_config(config_path)
-            except (FileNotFoundError, ValueError):
-                error = (
-                    "[lifecycle-invalid-configuration] Container kill blocked: "
-                    "invalid configuration; refusing to guess the deployment "
-                    "project identity."
-                )
-            else:
-                resolved_backend = get_backend(config, project_dir)
-    return resolved_backend, error
-
-
-def clear_session(state_dir: Path) -> bool:
-    """Clear any active scenario session.
-
-    Args:
-        state_dir: Path to the ``.aptl/`` state directory.
-
-    Returns:
-        True if a session was cleared, False if none existed.
-    """
-    session_mgr = ScenarioSession(state_dir)
-    active = session_mgr.get_active()
-    if active is None:
-        log.debug("No active session to clear")
-        return False
-
-    log.info("Clearing active session for scenario '%s'", active.scenario_id)
-    session_mgr.clear()
-    return True
-
-
-def clean_trace_context(state_dir: Path) -> bool:
-    """Remove the trace context file if it exists.
-
-    Args:
-        state_dir: Path to the ``.aptl/`` state directory.
-
-    Returns:
-        True if the file was removed, False if it did not exist.
-    """
-    trace_file = state_dir / _TRACE_CONTEXT_FILENAME
-    if trace_file.exists():
-        trace_file.unlink()
-        log.info("Removed trace context file: %s", trace_file)
-        return True
-    log.debug("No trace context file at %s", trace_file)
-    return False
 
 
 def execute_kill(
@@ -430,9 +368,17 @@ def _execute_kill_owned(containers: bool, resolved_dir: Path) -> KillResult:
 
     # Step 1: Kill MCP processes (highest priority)
     mcp_killed = 0
+    mcp_discovery_unavailable = False
     try:
         mcp_killed, mcp_errors = kill_mcp_processes()
         errors.extend(mcp_errors)
+    except McpDiscoveryUnavailableError as exc:
+        mcp_discovery_unavailable = True
+        mcp_killed = exc.killed
+        errors.extend(exc.errors)
+        msg = str(exc)
+        log.error(msg)
+        errors.append(msg)
     except Exception as exc:
         msg = f"MCP process kill failed: {exc}"
         log.error(msg)
@@ -471,15 +417,17 @@ def _execute_kill_owned(containers: bool, resolved_dir: Path) -> KillResult:
         errors.append(msg)
 
     # Success if any step accomplished something, or if there was simply
-    # nothing to kill (no errors).
+    # nothing to kill (no errors). A kill that could not look for MCP servers
+    # fails either way: the servers it exists to stop may still be running.
     any_action = (
         mcp_killed > 0 or containers_stopped or session_cleared or trace_cleaned
     )
-    success = any_action or len(errors) == 0
+    success = (any_action or len(errors) == 0) and not mcp_discovery_unavailable
 
     result = KillResult(
         success=success,
         mcp_processes_killed=mcp_killed,
+        mcp_discovery_unavailable=mcp_discovery_unavailable,
         containers_stopped=containers_stopped,
         session_cleared=session_cleared,
         trace_context_cleaned=trace_cleaned,

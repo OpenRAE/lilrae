@@ -4,6 +4,7 @@ All process discovery, signal sending, and Docker Compose interactions
 are mocked. No real processes are killed or containers stopped.
 """
 
+import errno
 import json
 import os
 import signal
@@ -14,12 +15,24 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+# Imported before any test below patches builtins.open. The first import of
+# aptl.core.kill reaches zoneinfo, whose sysconfig call reads the macOS version
+# file through open, so importing the module under that mock fails.
+import aptl.core.kill  # noqa: F401
+
 # The SIGTERM->SIGKILL escalation these exercise is POSIX-only: Windows has no
 # SIGKILL, and os.kill there maps every non-CTRL_* signal to the same forceful
 # TerminateProcess, so there is no distinct force signal to assert ordering on.
 _skip_no_sigkill = pytest.mark.skipif(
     sys.platform == "win32",
     reason="SIGKILL escalation is POSIX-only (Windows uses TerminateProcess)",
+)
+
+# The container kill reads the operator-group state through the pathsafe walk,
+# which needs os.O_DIRECTORY, so it fails on native Windows (#1315).
+_skip_no_posix_pathsafe = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="container kill reads state through the POSIX-only pathsafe walk (#1315)",
 )
 
 
@@ -201,6 +214,69 @@ class TestFindMcpProcesses:
         assert result[0]["pid"] == 12345
         assert result[0]["name"] == "mcp-wazuh"
 
+    @pytest.mark.parametrize("platform", ["win32", "linux"])
+    @patch("aptl.core.kill.os.listdir", side_effect=PermissionError("/proc"))
+    @patch("aptl.core.kill.sys")
+    def test_missing_pgrep_is_not_reported_as_no_processes(
+        self, mock_sys, mock_listdir, platform, tmp_path, monkeypatch
+    ):
+        """Issue #1295: a host without pgrep cannot look for MCP servers.
+
+        PATH holds no pgrep, so subprocess raises the FileNotFoundError that
+        native Windows raises. On Linux the same happens once /proc cannot be
+        listed. An empty list here would tell the kill that nothing runs.
+        """
+        from aptl.core.kill import McpDiscoveryUnavailableError, find_mcp_processes
+
+        mock_sys.platform = platform
+        monkeypatch.setenv("PATH", str(tmp_path))
+
+        with pytest.raises(McpDiscoveryUnavailableError) as excinfo:
+            find_mcp_processes()
+
+        # Linux reaches pgrep only after /proc cannot be listed.
+        assert mock_listdir.called is (platform == "linux")
+        assert isinstance(excinfo.value.__cause__, FileNotFoundError)
+        assert "pgrep could not run" in str(excinfo.value)
+        assert "mcp-*/build/index.js server by hand" in str(excinfo.value)
+
+    @pytest.mark.parametrize(
+        ("returncode", "stderr", "reason"),
+        [
+            (
+                2,
+                "pgrep: illegal option -- f\nusage: pgrep [-Lfilnoqvx] pattern\n",
+                "pgrep exited with status 2 (pgrep: illegal option -- f)",
+            ),
+            (3, "", "pgrep exited with status 3 (no error output)"),
+            (-9, "", "pgrep exited with status -9 (no error output)"),
+        ],
+        ids=["invalid-options", "internal-error", "ended-by-signal"],
+    )
+    @patch("aptl.core.kill.sys")
+    @patch("aptl.core.kill.subprocess.run")
+    def test_failing_pgrep_is_not_reported_as_no_processes(
+        self, mock_run, mock_sys, returncode, stderr, reason
+    ):
+        """pgrep exits 0 on a match and 1 on none; any other status is an error.
+
+        Both the procps and the BSD pgrep exit 2 for invalid options and 3 for
+        an internal error, and a negative status means that a signal ended it.
+        """
+        from aptl.core.kill import McpDiscoveryUnavailableError, find_mcp_processes
+
+        mock_sys.platform = "darwin"
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["pgrep"], returncode=returncode, stdout="", stderr=stderr
+        )
+
+        with pytest.raises(McpDiscoveryUnavailableError) as excinfo:
+            find_mcp_processes()
+
+        message = str(excinfo.value)
+        assert message.startswith(f"MCP process discovery is unavailable: {reason}.")
+        assert "mcp-*/build/index.js server by hand" in message
+
 
 class TestKillMcpProcesses:
     """Tests for SIGTERM/SIGKILL process termination."""
@@ -346,6 +422,7 @@ class TestKillMcpProcesses:
         assert errors == []
 
 
+@_skip_no_posix_pathsafe
 class TestKillLabContainers:
     """Tests for emergency container stop."""
 
@@ -659,3 +736,136 @@ class TestExecuteKill:
         assert result.trace_context_cleaned is True
         mock_session.assert_called_once()
         mock_trace.assert_called_once()
+
+    @pytest.mark.parametrize("trace_context_present", [False, True])
+    @patch("aptl.core.kill.sys")
+    def test_fails_when_pgrep_is_missing(
+        self, mock_sys, trace_context_present, tmp_path, monkeypatch
+    ):
+        """Issue #1295: without pgrep the kill could not look for MCP servers.
+
+        It fails and says why even when another step acted (here, removing
+        the trace context), because the MCP servers may still be running.
+        """
+        from aptl.core.kill import execute_kill
+
+        mock_sys.platform = "win32"
+        empty_bin = tmp_path / "empty-bin"
+        empty_bin.mkdir()
+        monkeypatch.setenv("PATH", str(empty_bin))
+        project = tmp_path / "project"
+        (project / ".aptl").mkdir(parents=True)
+        if trace_context_present:
+            (project / ".aptl" / "trace-context.json").write_text("{}")
+
+        result = execute_kill(containers=False, project_dir=project)
+
+        assert result.success is False
+        assert result.mcp_discovery_unavailable is True
+        assert result.mcp_processes_killed == 0
+        assert result.trace_context_cleaned is trace_context_present
+        assert len(result.errors) == 1
+        assert "pgrep could not run" in result.errors[0]
+
+    @patch("aptl.core.kill.sys")
+    @patch("aptl.core.kill.subprocess.run")
+    def test_succeeds_when_pgrep_matches_nothing(self, mock_run, mock_sys, tmp_path):
+        """pgrep ran for every server and matched none: a real empty result."""
+        from aptl.core.kill import MCP_SERVER_NAMES, execute_kill
+
+        mock_sys.platform = "darwin"
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["pgrep"], returncode=1, stdout="", stderr=""
+        )
+
+        result = execute_kill(containers=False, project_dir=tmp_path)
+
+        assert mock_run.call_count == len(MCP_SERVER_NAMES)
+        assert result.success is True
+        assert result.mcp_discovery_unavailable is False
+        assert result.mcp_processes_killed == 0
+        assert result.errors == []
+
+    @patch("aptl.core.kill.sys")
+    @patch("aptl.core.kill.subprocess.run")
+    def test_fails_when_pgrep_reports_an_error(self, mock_run, mock_sys, tmp_path):
+        """pgrep ran but exited 3, an internal error, so it could not look."""
+        from aptl.core.kill import execute_kill
+
+        mock_sys.platform = "darwin"
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["pgrep"],
+            returncode=3,
+            stdout="",
+            stderr="pgrep: Cannot get process list\n",
+        )
+
+        result = execute_kill(containers=False, project_dir=tmp_path)
+
+        assert result.success is False
+        assert result.mcp_discovery_unavailable is True
+        assert result.mcp_processes_killed == 0
+        assert len(result.errors) == 1
+        assert "pgrep exited with status 3 (pgrep: Cannot get process list)" in (
+            result.errors[0]
+        )
+
+    @pytest.mark.parametrize(
+        ("failure", "reason"),
+        [
+            (
+                subprocess.CompletedProcess(
+                    ["pgrep"], 3, "", "pgrep: Cannot get process list\n"
+                ),
+                "pgrep exited with status 3 (pgrep: Cannot get process list)",
+            ),
+            (
+                BlockingIOError(errno.EAGAIN, "Resource temporarily unavailable"),
+                f"pgrep could not run ([Errno {errno.EAGAIN}] Resource temporarily"
+                " unavailable)",
+            ),
+        ],
+        ids=["exit-status", "os-error"],
+    )
+    @patch("aptl.core.kill._process_exited", return_value=True)
+    @patch("aptl.core.kill.os.kill")
+    @patch("aptl.core.kill.sys")
+    @patch("aptl.core.kill.subprocess.run")
+    def test_stops_found_servers_when_a_later_pgrep_fails(
+        self, mock_run, mock_sys, mock_kill, mock_exited, failure, reason, tmp_path
+    ):
+        """pgrep fails for mcp-red alone: the kill still stops what it found.
+
+        It keeps asking about the other servers, sends SIGTERM to the
+        mcp-wazuh process found before the failure and the mcp-threatintel
+        process found after it, and still fails, because an mcp-red server
+        may be running.
+        """
+        from aptl.core.kill import MCP_SERVER_NAMES, execute_kill
+
+        def run(cmd, **kwargs):
+            name = cmd[2].removesuffix("/build/index.js")
+            if name == "mcp-red" and isinstance(failure, OSError):
+                raise failure
+            if name == "mcp-red":
+                return failure
+            pid = {"mcp-wazuh": "4242\n", "mcp-threatintel": "4343\n"}.get(name, "")
+            return subprocess.CompletedProcess(cmd, 0 if pid else 1, pid, "")
+
+        mock_sys.platform = "darwin"
+        mock_run.side_effect = run
+
+        result = execute_kill(containers=False, project_dir=tmp_path)
+
+        assert mock_run.call_count == len(MCP_SERVER_NAMES)
+        assert mock_kill.call_args_list == [
+            call(4242, signal.SIGTERM),
+            call(4343, signal.SIGTERM),
+        ]
+        assert result.success is False
+        assert result.mcp_discovery_unavailable is True
+        assert result.mcp_processes_killed == 2
+        assert len(result.errors) == 1
+        message = result.errors[0]
+        assert message.startswith(f"MCP process discovery is unavailable: {reason}.")
+        assert "Any MCP servers that it did not find were not stopped" in message
