@@ -10,7 +10,12 @@ import re
 import shlex
 import subprocess
 
-LANES = ("python", "mcp", "web", "docs", "dependencies", "lab", "images", "iac")
+LANES = ("python", "mcp", "web", "docs", "dependencies", "lab", "images", "iac", "go")
+
+# The Go modules of ADR-065: the product module at the root, and the tool
+# modules below tools/. web/caddy-build keeps its own module and checks.
+_GO_PREFIXES = ("cmd/", "internal/", "adapter/", "conformance/", "tools/cmd/", "tools/internal/", "tools/lint/", "tools/gates/")
+_GO_FILES = {"go.mod", "go.sum", ".golangci.yml", "tools/go.mod", "tools/go.sum", "tools/mutation-thresholds.json"}
 
 
 def select_lanes(paths: list[str], *, full: bool = False) -> dict[str, bool]:
@@ -26,6 +31,10 @@ def select_lanes(paths: list[str], *, full: bool = False) -> dict[str, bool]:
             full = True
         elif path.startswith("requirements/"):
             full = True
+        elif path in _GO_FILES or path.startswith(_GO_PREFIXES) or ("/" not in path and path.endswith(".go")):
+            # Vale checks Go comments and Markdown, so these select docs too.
+            lanes["go"] = True
+            lanes["docs"] |= path.endswith((".go", ".md"))
         elif path.startswith(("docs/", ".vale/")) or path.endswith(".md") or path in {"mkdocs.yml", ".vale.ini", ".readthedocs.yaml"}:
             lanes["docs"] = True
         elif path.startswith(("src/", "tests/")):
@@ -46,8 +55,8 @@ def select_lanes(paths: list[str], *, full: bool = False) -> dict[str, bool]:
             full = True
     # SonarCloud analyzes the whole project. Never submit partial coverage or
     # reuse an earlier revision's reports to make omitted stacks look covered.
-    if any(lanes[name] for name in ("python", "mcp", "web")):
-        lanes.update(python=True, mcp=True, web=True)
+    if any(lanes[name] for name in ("python", "mcp", "web", "go")):
+        lanes.update(python=True, mcp=True, web=True, go=True)
     return dict.fromkeys(LANES, True) if full else lanes
 
 

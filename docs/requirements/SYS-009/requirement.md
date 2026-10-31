@@ -23,7 +23,7 @@ A security training lab that has poor code quality or leaks credentials undermin
 
 - IMPLEMENTS → CONFIG `eslint.config.js` (Root ESLint flat config: per-function TypeScript complexity gate (issue #286))
 - IMPLEMENTS → CONFIG `.pre-commit-ci.yaml` (Python and TypeScript complexity gates and the ADR-064 architecture check run by CI)
-- IMPLEMENTS → CONFIG `.github/workflows/checks.yml` (Continuous Python and TypeScript tests, pre-commit, and security checks)
+- IMPLEMENTS → CONFIG `.github/workflows/checks.yml` (Continuous Python, TypeScript, and Go tests, pre-commit, and security checks)
 - DOCUMENTS → ADR `ADR-010` (ADR-010 SonarCloud quality: TypeScript complexity gate section + backlog)
 - IMPLEMENTS → CODE `tools/check_architecture.py` (ADR-064 layer, cycle, private-import, Typer, and Ruff checks for enrolled code)
 - IMPLEMENTS → CONFIG `pyproject.toml` (ADR-064 layer map, enrolled scope, and Ruff rules in [tool.lilrae.architecture])
@@ -32,3 +32,9 @@ A security training lab that has poor code quality or leaks credentials undermin
 - DOCUMENTS → ADR `ADR-064` (ADR-064 layered architecture and code conventions)
 - DOCUMENTS → ADR `ADR-065` (ADR-065 Go implementation, architecture model, and engineering standards)
 - IMPLEMENTS → GITHUB_ISSUE `1510` (Record the target architecture and code conventions for the code quality refactor)
+- IMPLEMENTS → CONFIG `.golangci.yml` (golangci-lint rules of the ADR-065 Go style table)
+- IMPLEMENTS → CODE_FILE `tools/ci/go-gates.sh` (Go lint, test, vulnerability, OSV, mutation, and regression gates over each first-party module)
+- IMPLEMENTS → CODE_FILE `tools/internal/regression/check.go` (ADR-065 regression test replay on the base and head revisions)
+- IMPLEMENTS → CODE_FILE `tools/internal/mutation/check.go` (ADR-065 changed-line mutation gate and thresholds)
+- TESTS → TEST `tools/gates/gates_test.go` (A failing and a passing fixture for each Go gate)
+- IMPLEMENTS → GITHUB_ISSUE `1553` (Go port 02: Go toolchain and CI gates)

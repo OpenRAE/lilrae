@@ -22,3 +22,4 @@ Manual code review found 30 issues in the team review. Continuous quality gates 
 ## Traceability
 
 - IMPLEMENTS → ADR `docs/adrs/adr-010-sonarcloud-quality.md` (ADR-010: SonarCloud Quality)
+- IMPLEMENTS → CONFIG `sonar-project.properties` (Go sources, tests, and coverage profiles in the project analysis)

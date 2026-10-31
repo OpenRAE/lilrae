@@ -32,11 +32,11 @@ cleanup failures without claiming full scenario or participant qualification.
 
 ## Traceability
 
-- IMPLEMENTS → CONFIG `.github/workflows/checks.yml` (Blocking platform audit and one installed-wheel lifecycle smoke)
-- IMPLEMENTS → CONFIG `.github/branch-protection-baseline.json` (Exact required dev check contexts)
+- IMPLEMENTS → CONFIG `.github/workflows/checks.yml` (Blocking platform audit, one installed-wheel lifecycle smoke, and the Go gates)
+- IMPLEMENTS → CONFIG `.github/branch-protection-baseline.json` (Exact required check contexts of dev and go-cutover)
 - IMPLEMENTS → CODE_FILE `scripts/ci/assert_project_teardown.py` (Workspace-scoped container, network, and volume absence proof)
 - IMPLEMENTS → ADR `docs/adrs/adr-026-advisory-ci-vulnerability-scanning.md` (Platform versus intentional-target vulnerability policy)
 - IMPLEMENTS → DOCUMENTATION `docs/testing/platform-pr-gates.md` (Supported gate profile and exception policy)
-- TESTS → TEST `tests/test_platform_ci_gates.py` (Required context, fail-closed audit, and smoke cleanup regressions)
+- TESTS → TEST `tests/test_platform_ci_gates.py` (Required context, fail-closed audit, smoke cleanup, and Go gate regressions)
 - TESTS → TEST `tests/test_assert_project_teardown.py` (Effective workspace resource cleanup regression)
 - IMPLEMENTS → GITHUB_ISSUE `969` (Required platform safety and installed-lab smoke checks)

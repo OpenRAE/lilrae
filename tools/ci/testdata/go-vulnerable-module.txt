@@ -1,0 +1,8 @@
+// A Go module with a dependency that has a known, fixed vulnerability. The
+// OSV and Trivy jobs prove with this file that they fail on a vulnerable Go
+// module. It is not named go.mod, so no scanner reads it as a manifest.
+module example.com/vulnerable-fixture
+
+go 1.27.0
+
+require golang.org/x/text v0.3.7

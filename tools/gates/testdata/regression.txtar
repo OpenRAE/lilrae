@@ -1,0 +1,60 @@
+# The regression gate passes a test that fails before the fix and passes after it.
+exec git init --quiet --initial-branch=main
+exec git config user.name Fixture
+exec git config user.email fixture@example.invalid
+exec git config commit.gpgsign false
+exec git add --all
+exec git commit --quiet --message=base
+exec git tag base
+cp _head/calc.go calc/calc.go
+cp _head/fails_test.go calc/calc_test.go
+exec git add --all
+exec git commit --quiet --message=fix
+exec bash $GATES regression base 7 true
+stdout 'issue #7, bug label true, 1 test\(s\) replayed'
+
+# A regression test that passes on the base revision fails the gate.
+cp _head/passes_test.go calc/calc_test.go
+exec git add --all
+exec git commit --quiet --message=weak
+! exec bash $GATES regression base 7 true
+stdout 'TestValue: the test passed on the base revision; it must fail there'
+
+-- go.mod --
+module example.com/fixture
+
+go 1.27.0
+-- calc/calc.go --
+// Package calc is a fixture.
+package calc
+
+// Value returns a number.
+func Value() int { return 1 }
+-- _head/calc.go --
+// Package calc is a fixture.
+package calc
+
+// Value returns a number.
+func Value() int { return 2 }
+-- _head/fails_test.go --
+package calc
+
+import "testing"
+
+// regression: #7
+func TestValue(t *testing.T) {
+	if got := Value(); got != 2 {
+		t.Fatalf("Value() = %d, want 2", got)
+	}
+}
+-- _head/passes_test.go --
+package calc
+
+import "testing"
+
+// regression: #7
+func TestValue(t *testing.T) {
+	if got := Value(); got < 1 {
+		t.Fatalf("Value() = %d, want at least 1", got)
+	}
+}

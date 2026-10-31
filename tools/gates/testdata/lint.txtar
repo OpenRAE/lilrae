@@ -1,0 +1,172 @@
+# The lint gate passes a clean module and reports a module without packages.
+exec git init --quiet
+exec git add go.mod empty/go.mod
+exec bash $GATES lint
+stdout '^empty: no packages$'
+stdout '0 issues'
+
+# The golangci-lint formatters check gofmt.
+cp _bad/format.go calc/calc.go
+! exec bash $GATES lint
+stdout 'calc/calc.go:.*\(gofmt\)'
+
+# go vet.
+cp _bad/vet.go calc/calc.go
+! exec bash $GATES lint
+stderr 'Sprintf format %d has arg "x" of wrong type string'
+
+# go fix.
+cp _bad/fix.go calc/calc.go
+! exec bash $GATES lint
+stdout 'for i := range n'
+
+# depguard rejects the log package.
+cp _bad/log.go calc/calc.go
+! exec bash $GATES lint
+stdout 'import ''log'' is not allowed.*\(depguard\)'
+
+# A suppression names its linter and its reason.
+cp _bad/nolint.go calc/calc.go
+! exec bash $GATES lint
+stdout 'include an explanation for nolint directive'
+cp _bad/nolint_generic.go calc/calc.go
+! exec bash $GATES lint
+stdout 'should mention specific linter.*\(nolintlint\)'
+
+# An exported function needs a doc comment.
+cp _bad/doc.go calc/calc.go
+! exec bash $GATES lint
+stdout 'exported function Sub should have comment'
+
+# go mod tidy.
+cp _good/calc.go calc/calc.go
+cp _bad/untidy.mod go.mod
+! exec bash $GATES lint
+stdout '^-require example.com/unused v1.0.0$'
+
+-- go.mod --
+module example.com/fixture
+
+go 1.27.0
+-- empty/go.mod --
+module example.com/fixture/empty
+
+go 1.27.0
+-- calc/calc.go --
+// Package calc adds numbers.
+package calc
+
+// Add returns the sum of a and b.
+func Add(a, b int) int {
+	return a + b
+}
+-- calc/calc_test.go --
+package calc
+
+import "testing"
+
+func TestAdd(t *testing.T) {
+	t.Parallel()
+	if got := Add(1, 2); got != 3 {
+		t.Errorf("Add(1, 2) = %d, want 3", got)
+	}
+}
+-- _good/calc.go --
+// Package calc adds numbers.
+package calc
+
+// Add returns the sum of a and b.
+func Add(a, b int) int {
+	return a + b
+}
+-- _bad/format.go --
+// Package calc adds numbers.
+package calc
+
+// Add returns the sum of a and b.
+func Add(a, b int) int {
+return a+b
+}
+-- _bad/vet.go --
+// Package calc adds numbers.
+package calc
+
+import "fmt"
+
+// Add returns the sum of a and b.
+func Add(a, b int) int {
+	return a + b
+}
+
+// Label returns a label.
+func Label() string {
+	return fmt.Sprintf("%d", "x")
+}
+-- _bad/fix.go --
+// Package calc adds numbers.
+package calc
+
+// Add returns the sum of a and b.
+func Add(a, b int) int {
+	return a + b
+}
+
+// Sum returns the sum of the integers below n.
+func Sum(n int) int {
+	s := 0
+	for i := 0; i < n; i++ {
+		s += i
+	}
+	return s
+}
+-- _bad/log.go --
+// Package calc adds numbers.
+package calc
+
+import "log"
+
+// Add returns the sum of a and b.
+func Add(a, b int) int {
+	log.Print("add")
+	return a + b
+}
+-- _bad/nolint.go --
+// Package calc adds numbers.
+package calc
+
+// Add returns the sum of a and b.
+func Add(a, b int) int {
+	return a + b //nolint:gosec
+}
+-- _bad/nolint_generic.go --
+// Package calc adds numbers.
+package calc
+
+// Add returns the sum of a and b.
+func Add(a, b int) int {
+	return a + b //nolint // The sum cannot overflow in the fixture.
+}
+-- _bad/doc.go --
+// Package calc adds numbers.
+package calc
+
+// Add returns the sum of a and b.
+func Add(a, b int) int {
+	return a + b
+}
+
+func Sub(a, b int) int {
+	return a - b
+}
+-- _bad/untidy.mod --
+module example.com/fixture
+
+go 1.27.0
+
+require example.com/unused v1.0.0
+
+replace example.com/unused => ./unused
+-- unused/go.mod --
+module example.com/unused
+
+go 1.27.0

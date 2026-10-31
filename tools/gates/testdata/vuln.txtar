@@ -1,0 +1,45 @@
+# govulncheck fails a call to a vulnerable function of a dependency.
+exec git init --quiet
+exec git add go.mod
+! exec bash $GATES vuln
+stdout 'GO-2022-1059'
+
+# The same module passes without the call.
+cp _good/accept.go accept/accept.go
+exec bash $GATES vuln
+stdout 'No vulnerabilities found'
+
+-- go.mod --
+module example.com/fixture
+
+go 1.27.0
+
+require golang.org/x/text v0.3.7
+-- go.sum --
+golang.org/x/text v0.3.7 h1:olpwvP2KacW1ZWvsR7uQhoyTYvKAupfQrRGBFM352Gk=
+golang.org/x/text v0.3.7/go.mod h1:u+2+/6zg+i71rQMx5EYifcz6MCKuco9NR6JIITiCfzQ=
+-- accept/accept.go --
+// Package accept reads Accept-Language headers.
+package accept
+
+import "golang.org/x/text/language"
+
+// First returns the first language of an Accept-Language header.
+func First(header string) string {
+	tags, _, err := language.ParseAcceptLanguage(header)
+	if err != nil || len(tags) == 0 {
+		return ""
+	}
+	return tags[0].String()
+}
+-- _good/accept.go --
+// Package accept reads Accept-Language headers.
+package accept
+
+import "strings"
+
+// First returns the first language of an Accept-Language header.
+func First(header string) string {
+	first, _, _ := strings.Cut(header, ",")
+	return strings.TrimSpace(first)
+}
