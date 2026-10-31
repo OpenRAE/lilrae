@@ -39,10 +39,6 @@ from aptl.core.deployment._compose_stateful_model import (
 )
 from aptl.core.deployment._compose_stateful_override import write_stateful_override
 from aptl.core.deployment._realization_primitives import EnvironmentDeliveryRefused
-from aptl.core.deployment._cortex_service_credentials import (
-    CORTEX_SERVICE_CREDENTIALS_PROFILE,
-    realize_cortex_service_credentials,
-)
 from aptl.core.deployment._misp_cache_credential import (
     MISP_CACHE_CREDENTIAL_PROFILE,
     realize_misp_cache_credential,
@@ -50,6 +46,10 @@ from aptl.core.deployment._misp_cache_credential import (
 from aptl.core.deployment._misp_server_tls import (
     MISP_SERVER_TLS_PROFILE,
     realize_misp_server_tls,
+)
+from aptl.core.deployment._misp_fastcgi_loopback import (
+    MISP_FASTCGI_LOOPBACK_PROFILE,
+    realize_misp_fastcgi_loopback,
 )
 from aptl.core.deployment._compose_stateful_readiness import (
     ComposeStatefulReadinessMixin,
@@ -200,11 +200,6 @@ class ComposeStatefulRealizationMixin(ComposeStatefulReadinessMixin):
         result: LabResult | None
         if artifact.provenance == FLAG_SIGNING_PROFILE_V2:
             result = self._realize_flag_signing_keys(artifact, scenario_root)
-        elif artifact.provenance == CORTEX_SERVICE_CREDENTIALS_PROFILE:
-            error = realize_cortex_service_credentials(artifact, scenario_root)
-            result = (
-                LabResult(success=False, error=error) if error is not None else None
-            )
         elif artifact.provenance == MISP_CACHE_CREDENTIAL_PROFILE:
             error = realize_misp_cache_credential(artifact, scenario_root)
             result = (
@@ -212,6 +207,11 @@ class ComposeStatefulRealizationMixin(ComposeStatefulReadinessMixin):
             )
         elif artifact.provenance == MISP_SERVER_TLS_PROFILE:
             error = realize_misp_server_tls(artifact, scenario_root)
+            result = (
+                LabResult(success=False, error=error) if error is not None else None
+            )
+        elif artifact.provenance == MISP_FASTCGI_LOOPBACK_PROFILE:
+            error = realize_misp_fastcgi_loopback(artifact, scenario_root)
             result = (
                 LabResult(success=False, error=error) if error is not None else None
             )
@@ -262,10 +262,8 @@ class ComposeStatefulRealizationMixin(ComposeStatefulReadinessMixin):
                 except (OSError, ValueError) as exc:
                     failure = LabResult(
                         success=False,
-                        error=(
-                            "Rendered config materialization failed: "
-                            f"{type(exc).__name__}."
-                        ),
+                        error="Rendered config materialization failed: "
+                        f"{type(exc).__name__}.",
                     )
         if failure is None and (output is None or not output.is_file()):
             failure = LabResult(
@@ -305,9 +303,7 @@ class ComposeStatefulRealizationMixin(ComposeStatefulReadinessMixin):
                 _write_artifact_environment_files(artifact, scenario_root, by_service)
             except (OSError, ValueError) as exc:
                 # A refusal names the variable or the unsafe target, never a value.
-                reason = (
-                    f": {exc}" if isinstance(exc, EnvironmentDeliveryRefused) else "."
-                )
+                reason = f": {exc}" if isinstance(exc, EnvironmentDeliveryRefused) else "."
                 failure = LabResult(
                     success=False,
                     error=f"Generated artifact {artifact.address} environment delivery failed{reason}",

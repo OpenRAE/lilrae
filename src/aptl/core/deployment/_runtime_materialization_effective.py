@@ -233,7 +233,9 @@ def _authority_field_issues(
     address = str(getattr(node, "address", ""))
     issues: list[RuntimeMaterializationIssue] = []
     for compose_field in _COMPOSE_AUTHORITY_FIELDS:
-        if compose_field not in service or compose_field in expected:
+        if compose_field not in service or (
+            compose_field != "volumes" and compose_field in expected
+        ):
             continue
         allowed_volumes = (
             compose_field == "volumes"
@@ -324,4 +326,74 @@ def effective_runtime_contract_issues(
             validated_service_volumes,
         )
     ]
+    issues.extend(
+        issue
+        for node in realization.nodes
+        if node.address in image_addresses and node.service_name
+        for companion in node.backend_companions
+        for issue in _companion_issues(
+            node, companion, services, profile, validated_service_volumes
+        )
+    )
     return tuple(issues)
+
+
+def _companion_issues(
+    node: object,
+    companion: object,
+    services: Mapping[object, object],
+    profile: RuntimeMaterializationProfile,
+    validated_service_volumes: Mapping[str, Sequence[object]] | None,
+) -> list[RuntimeMaterializationIssue]:
+    """Compare one backend companion with the exact authority it was rendered with.
+
+    A companion has no authored runtime to preserve, so every authority field
+    must equal its rendered contract and every mount must be graph-validated.
+    """
+
+    from aptl.core.deployment._compose_node_generation import (
+        companion_compose_contract,
+    )
+
+    address = str(getattr(node, "address", ""))
+    service_name = companion.image.service_name
+    service = services.get(service_name)
+    if not isinstance(service, Mapping):
+        return [
+            materialization_issue(
+                address,
+                "runtime",
+                profile,
+                "backend companion is absent from the effective Compose model",
+            )
+        ]
+    expected = companion_compose_contract(node, companion)
+    validated = (
+        validated_service_volumes.get(service_name, ())
+        if validated_service_volumes is not None
+        else ()
+    )
+    changed = [
+        field
+        for field in sorted(_COMPOSE_AUTHORITY_FIELDS | {"read_only"})
+        if (
+            _undeclared_mount_authority(
+                service.get(field), validated, allow_docker_socket=False
+            )
+            if field == "volumes"
+            else (
+                service.get(field) != expected[field]
+                if field in expected
+                else field in service
+            )
+        )
+    ]
+    return [
+        materialization_issue(
+            address,
+            _compose_authority_field(field),
+            profile,
+            "effective Compose model changes backend companion authority",
+        )
+        for field in changed
+    ]

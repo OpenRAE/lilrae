@@ -31,6 +31,7 @@ from aptl.backends._runtime_concern_disclosure import _disclose
 from aptl.core.deployment._wazuh_attestation import (
     declared_wazuh_facts_match,
 )
+from aptl.core.deployment.realization import companion_container_name
 from aptl.core.scenario_bundle import PackIdentity
 
 if TYPE_CHECKING:
@@ -40,10 +41,10 @@ if TYPE_CHECKING:
 
 
 TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST = (
-    "sha256:b23696c91f6313aad7bbc5c0000da26f719d9456e01bd7b81d740de34bcd681e"
+    "sha256:a1abd4a382e048e4f74ce343c1b544626fe0633739dfe473c79f1b5fa3aded2f"
 )
 TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST = (
-    "sha256:9220614453bf5b71836571fa0e59dd007dd95c959f68bd2b29270fd8b9b1094c"
+    "sha256:b989d7d57311574d51c3bba89afa1397c22ee4b28f3cec39e0d0d5fc08aa0422"
 )
 
 # These are configuration descriptions whose realized implementation is bound
@@ -84,7 +85,8 @@ _RUNTIME_FIELD_BY_KIND = {
     "runtime-software-components": "software_components",
 }
 
-# Canonical projections from raes-env-packs 6.3.3's content-identified
+# Canonical raes 10.0.0 projections (unchanged since raes 9.1.0) from the
+# env-packs 7.0.0 content-identified
 # TechVault semantic parent.  Each key is independently pinned so changing one
 # SDL claim cannot borrow the pack-level identity and pass as the old contract.
 _TECHVAULT_PROJECTION_DIGESTS: Mapping[tuple[str, str], str] = {
@@ -103,7 +105,7 @@ _TECHVAULT_PROJECTION_DIGESTS: Mapping[tuple[str, str], str] = {
     (
         "wazuh-dashboard",
         "runtime-platform-applications",
-    ): "sha256:610e9f3f21f2260c8839a4a4a6f57d7a02d4734596cf38a52e72222431d164ea",
+    ): "sha256:032c294f783abba855b3d8251fcaf3cd067c31ac73ac3be31d6c8b15229f38e4",
     (
         "suricata",
         "runtime-network-sensors",
@@ -119,7 +121,7 @@ _TECHVAULT_PROJECTION_DIGESTS: Mapping[tuple[str, str], str] = {
     (
         "misp",
         "runtime-platform-applications",
-    ): "sha256:8f624772231c88df702acaa80459c03c42c8262239b100a1e2efa881a77a0258",
+    ): "sha256:90b6a0e2aa2490ba8434f00447e9afbf58288ad47feb3abb2e29847bd19a5705",
     (
         "misp",
         "runtime-app-authorizations",
@@ -133,41 +135,13 @@ _TECHVAULT_PROJECTION_DIGESTS: Mapping[tuple[str, str], str] = {
         "runtime-datastore-services",
     ): "sha256:d61c29f46d1fe792418f5ebb6dc523af9742646c9bffc76244b33709986bda28",
     (
-        "thehive",
-        "runtime-applications",
-    ): "sha256:caa9cc43023ac404efbd77e614cb0d110cc47d4ac755cc268d823dbf0dfb3c61",
-    (
-        "thehive",
-        "runtime-platform-applications",
-    ): "sha256:3bde1d181f247b5e4ba276cea79e03e0a45637bc1726a4e47a78f77da23a64ab",
-    (
-        "thehive-cassandra",
-        "runtime-datastore-services",
-    ): "sha256:326196501a77fab81362db069cf443d657b2ae01f4bb4e4ea9cb9cdd3e97db3b",
-    (
-        "thehive-es",
-        "runtime-datastore-services",
-    ): "sha256:80f071daa8b1525d255bb004cefc651b948fb0b9ac420d0fc44d01123fb82ae3",
-    (
-        "cortex",
-        "runtime-applications",
-    ): "sha256:0a9e923b5b72896dd1597addbde277cadaa54ef7157f08695c8e9473fc357488",
-    (
-        "cortex",
-        "runtime-platform-applications",
-    ): "sha256:86ffcb02a02f981b318a6fceba6e28ae8479d5dfadba898f5652cc88e0979879",
-    (
-        "cortex",
-        "runtime-app-authorizations",
-    ): "sha256:3aa823bef478c17bff706dd7c4634777a33439341ef86d391e5752c8193b059e",
-    (
         "shuffle-backend",
         "runtime-applications",
     ): "sha256:821ef558662cee89cfa372b7d2ef46ef60acdb57be9e230fc2daf15d5e61168e",
     (
         "shuffle-backend",
         "runtime-platform-applications",
-    ): "sha256:a6d2948051f9478d4a86172a28dc86be39075e516565f2120b5193a03942b6db",
+    ): "sha256:dfd9a41aa98d01070e4a8b0ada7734a1498887251e92699b58d0547ed702ceb5",
     (
         "shuffle-frontend",
         "runtime-applications",
@@ -195,7 +169,7 @@ _TECHVAULT_PROJECTION_DIGESTS: Mapping[tuple[str, str], str] = {
     (
         "ad",
         "runtime-identity-authorities",
-    ): "sha256:4eac474d038b87493e76130f1546d5279a61dcc32957b50024056087522873b4",
+    ): "sha256:0cc7211f0729c14dfb98daba255ca453619b546dc86a4dfd6d66eb034fb73179",
     (
         "db",
         "runtime-database-services",
@@ -215,7 +189,7 @@ _TECHVAULT_PROJECTION_DIGESTS: Mapping[tuple[str, str], str] = {
     (
         "soc-workstation",
         "runtime-software-components",
-    ): "sha256:e45538e8e267f242ca508397cdb200219da2d4b20fa846f3d72f594c14826db6",
+    ): "sha256:eba630d4e0938180884e725a319a358affeff4aac3537b8a1bc1d548e272971e",
 }
 
 
@@ -230,10 +204,10 @@ def _identified_release(identity: PackIdentity | None) -> bool:
             identity.set_digest,
         )
         in {
-            ("techvault", "0.1.2", TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST),
+            ("techvault", "6.5.1", TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST),
             (
                 "techvault-participant-study",
-                "0.1.2",
+                "6.5.1",
                 TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST,
             ),
         }
@@ -262,7 +236,9 @@ def _implementation_observed(
 
     expected = _expected_image_digest(node)
     if expected is not None:
-        return _container_digest_observed(backend, node, expected, observation_context)
+        return _container_digest_observed(
+            backend, node.container_name or "", expected, observation_context
+        ) and _companion_digests_observed(backend, node, observation_context)
     image = getattr(node, "image", None)
     backend_build = bool(
         getattr(image, "mode", None) == "build"
@@ -278,15 +254,37 @@ def _implementation_observed(
     return bool(node.image is None and content_verified)
 
 
-def _container_digest_observed(
+def _companion_digests_observed(
     backend: DeploymentBackend,
     node: NodeRealization,
+    observation_context: DeploymentObservationContext | None,
+) -> bool:
+    """Verify every backend companion runs its pinned digest.
+
+    A companion serves part of the attested surface (MISP's web tier, #1407),
+    so a substituted companion image is a different implementation.
+    """
+
+    owner = node.container_name or f"aptl-{node.name}"
+    return all(
+        _container_digest_observed(
+            backend,
+            companion_container_name(owner, companion.role),
+            companion.image.image_ref.rsplit("@", 1)[-1],
+            observation_context,
+        )
+        for companion in node.backend_companions
+    )
+
+
+def _container_digest_observed(
+    backend: DeploymentBackend,
+    container_name: str,
     expected: str,
     observation_context: DeploymentObservationContext | None,
 ) -> bool:
     """Verify a running or completed container against its admitted digest."""
 
-    container_name = node.container_name or ""
     actual = backend.container_image_digest(container_name)
     if actual is None and observation_context is not None:
         actual = observation_context.completed_image_digest(container_name)

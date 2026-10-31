@@ -56,8 +56,8 @@ def _generate_all(
       bind-mounts and operator inspection work without root.
     - Private keys (``lab-ca.key``, ``server.key``) and the env_file
       keystore-password blobs are ``0o600``.
-    - PKCS#12 keystores are ``0o644`` because TheHive's non-root process reads
-      the bind-mounted file as a container UID that may not match the host user
+    - PKCS#12 keystores are ``0o644`` because a non-root container process
+      reads the bind-mounted file as a UID that may not match the host user
       that ran ``lilrae lab start``. The owner-only parent directory remains the
       host-side access control.
 
@@ -196,7 +196,7 @@ def _ensure_service_keystore(
         )
         _atomic_write(ks_path, ks_bytes, mode=0o644)
         # Write the password in Docker Compose ``env_file`` format
-        # (``KEY=value``) so the TheHive/Cortex services can
+        # (``KEY=value``) so a consuming service can
         # consume it via ``env_file:`` rather than baking the
         # value into the rendered application.conf or passing it
         # in argv. The KEY name is the same env var Play's

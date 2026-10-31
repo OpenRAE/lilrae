@@ -256,20 +256,6 @@ def test_coordinator_stage_result_carries_diagnostics_and_fatal_error(
     assert result.diagnostics[0].message == "bounded warning"
 
 
-def test_tiny_pack_cannot_trigger_legacy_soc_retry(tmp_path: Path) -> None:
-    from aptl.core.lab import _LabStartContext, _backend_retry_callback
-
-    ctx = _LabStartContext(project_dir=tmp_path, skip_seed=False)
-    ctx.admitted_surface = AdmittedStartSurface(
-        bundle_root=tmp_path,
-        source_kind=ScenarioSourceKind.ENV_PACK,
-        selected_profiles=("soc",),
-        stateful_artifact_ownership=frozenset(),
-    )
-
-    assert _backend_retry_callback(ctx) is None
-
-
 def test_non_wazuh_adapter_can_bind_alias_without_stack_credentials(
     tmp_path: Path,
 ) -> None:
@@ -442,7 +428,7 @@ def test_adapter_supplies_mcp_key_targets(tmp_path: Path) -> None:
     policy = _mcp_startup_policy(ctx)
 
     assert policy["tiny-tools"] == ("TINY_KEY",)
-    assert "aptl-casemgmt" not in policy
+    assert "aptl-threatintel" not in policy
 
 
 def test_adapter_mcp_keys_do_not_refresh_legacy_clients() -> None:
@@ -451,21 +437,21 @@ def test_adapter_mcp_keys_do_not_refresh_legacy_clients() -> None:
     config = {
         "mcpServers": {
             "tiny-tools": {"env": {}},
-            "aptl-casemgmt": {"env": {}},
+            "aptl-threatintel": {"env": {}},
         }
     }
 
     updated = _refresh_mcp_server_keys(
         config,
-        {"TINY_KEY": "tiny-value", "THEHIVE_API_KEY": "legacy-value"},
+        {"TINY_KEY": "tiny-value", "MISP_API_KEY": "legacy-value"},
         server_keys={"tiny-tools": ("TINY_KEY",)},
     )
 
     assert updated == ["tiny-tools.TINY_KEY"]
-    assert config["mcpServers"]["aptl-casemgmt"]["env"] == {}
+    assert config["mcpServers"]["aptl-threatintel"]["env"] == {}
     assert (
         _refresh_mcp_server_keys(
-            config, {"THEHIVE_API_KEY": "legacy-value"}, server_keys={}
+            config, {"MISP_API_KEY": "legacy-value"}, server_keys={}
         )
         == []
     )

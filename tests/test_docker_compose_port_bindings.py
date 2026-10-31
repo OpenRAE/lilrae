@@ -52,10 +52,8 @@ MANAGEMENT_SURFACES = [
     ("wazuh.indexer", 9200),
     ("wazuh.dashboard", 443),
     ("misp", 8443),
-    ("thehive", 9000),
     ("shuffle-frontend", 3443),
     ("shuffle-frontend", 3001),
-    ("cortex", 9001),
     ("aptl-otel-collector", 4317),
     ("aptl-otel-collector", 4318),
     ("aptl-tempo", 3200),
@@ -81,10 +79,8 @@ RENDERED_MANAGEMENT_SURFACES = [
     ("wazuh-indexer", 9200),
     ("wazuh-dashboard", 443),
     ("misp", 8443),
-    ("thehive", 9000),
     ("shuffle-frontend", 3443),
     ("shuffle-frontend", 3001),
-    ("cortex", 9001),
 ]
 
 # Each checked model's fixture name, with the surfaces classified on it.

@@ -287,7 +287,7 @@ class TestFindPlaceholderEnvValues:
 
         env = {
             "MISP_API_KEY": "abc123def456" * 4,
-            "THEHIVE_SECRET": "real-thehive-secret",
+            "DASHBOARD_PASSWORD": "real-dashboard-password",
             "SHUFFLE_API_KEY": "real-shuffle-key",
         }
         assert find_placeholder_env_values(env) == []
@@ -315,7 +315,7 @@ class TestFindPlaceholderEnvValues:
 
         env = {
             "MISP_API_KEY": "",
-            # THEHIVE_SECRET intentionally absent
+            # SHUFFLE_API_KEY intentionally absent
         }
         assert find_placeholder_env_values(env) == []
 
@@ -324,7 +324,7 @@ class TestFindPlaceholderEnvValues:
 
         env = {
             "MISP_API_KEY": "PLEASEREPLACEME...",
-            "THEHIVE_SECRET": "real-secret",
+            "DASHBOARD_PASSWORD": "real-secret",
             "SHUFFLE_API_KEY": "REPLACE_ME_with_real_key",
         }
         flagged = find_placeholder_env_values(env)

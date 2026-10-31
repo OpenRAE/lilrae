@@ -98,6 +98,15 @@ def _scenario_image_references(realization: AptlRealization) -> dict[str, str]:
                     for service in node.backend_services
                 }
             )
+        # An offline seat must also stage the containers that run beside it.
+        references.update(
+            {
+                "scenario." + companion.image.service_name: _pin_third_party(
+                    companion.image.image_ref
+                )
+                for companion in node.backend_companions
+            }
+        )
     return references
 
 

@@ -273,7 +273,7 @@ def test_startup_contract_uses_generic_hook_slots() -> None:
         {"WAZUH", "SOC", "WAZUH_REPAIR"}
     )
     assert StartupHook.STACK_ENVIRONMENT.value == "stack_environment"
-    assert StartupHook.BEFORE_BACKEND_RETRY.value == "before_backend_retry"
+    assert not hasattr(StartupHook, "BEFORE_BACKEND_RETRY")
 
 
 def test_installed_provider_owns_its_preparation_path(tmp_path: Path) -> None:

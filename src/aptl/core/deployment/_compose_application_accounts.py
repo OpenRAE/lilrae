@@ -14,7 +14,6 @@ own loopback listener, with each value on stdin
 
 from __future__ import annotations
 
-import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -41,8 +40,6 @@ _PROOF_INTERVAL = 5
 _PRODUCT_LISTENERS: dict[str, tuple[str, int]] = {
     provider.OPENSEARCH_SECURITY: ("https", 9200),
     provider.WAZUH_API: ("https", 55000),
-    provider.THEHIVE: ("https", 9000),
-    provider.CORTEX: ("http", 9001),
     provider.MISP: ("https", 443),
 }
 _KEY = "key"
@@ -144,17 +141,12 @@ class ComposeApplicationAccountMixin(object):
             return _failure(
                 target.container_name, "account-provider-ingress-unresolved"
             )
-        if target.provider == provider.THEHIVE:
-            reason = self._realize_thehive_accounts(ingress, target.accounts, timeout)
-            result = _failure(target.container_name, reason) if reason else None
-        else:
-            result = self._realize_product_accounts(target, ingress, timeout)
-        return result
+        return self._realize_product_accounts(target, ingress, timeout)
 
     def _realize_product_accounts(
         self, target: provider.AccountTarget, ingress: _Ingress, timeout: int
     ) -> LabResult | None:
-        """Realize non-TheHive accounts in password-before-key order."""
+        """Realize one product's accounts in password-before-key order."""
 
         ordered = sorted(target.accounts, key=lambda item: item.auth_method == _KEY)
         for account in ordered:
@@ -180,108 +172,12 @@ class ComposeApplicationAccountMixin(object):
         kind = target.provider
         if kind == provider.MISP:
             return self._realize_misp_account(target, ingress, account, timeout=timeout)
-        if kind == provider.CORTEX:
-            self._run_curl(ingress, requests.cortex_migrate(), timeout)
-            first = requests.cortex_first_administrator(username, secret)
-            return self._prove_or_converge(
-                ingress, requests.cortex_login(username, secret), first, timeout
-            )
         proofs = {
             provider.OPENSEARCH_SECURITY: requests.opensearch_login,
             provider.WAZUH_API: requests.wazuh_api_login,
             provider.SHUFFLE: requests.shuffle_login,
         }
         return self._await_proof(ingress, proofs[kind](username, secret), timeout)
-
-    def _realize_thehive_accounts(
-        self,
-        ingress: _Ingress,
-        accounts: Sequence[DeploymentAccountRealization],
-        timeout: int,
-    ) -> str | None:
-        """Converge declared administrators before retiring bootstrap access.
-
-        Discover a working declared administrator first so a rerun can add an
-        account even after the image's bootstrap credential has been retired.
-        The generated bootstrap password is discarded; future operations use
-        declared credentials, without a second stored administrator secret.
-        """
-
-        reason = None
-        administrator = next(
-            (
-                (account.username, account.credential.value)
-                for account in accounts
-                if self._curl_proves(
-                    ingress,
-                    requests.thehive_login(account.username, account.credential.value),
-                    timeout,
-                )
-            ),
-            None,
-        )
-        for account in accounts:
-            secret = account.credential.value
-            reason = self._prove_or_converge(
-                ingress,
-                requests.thehive_login(account.username, secret),
-                requests.thehive_converge(
-                    account.username, secret, administrator=administrator
-                ),
-                timeout,
-            )
-            if reason is not None:
-                break
-            administrator = (account.username, secret)
-        declared_bootstrap = any(
-            account.username.casefold() == requests.THEHIVE_BOOTSTRAP_USER.casefold()
-            for account in accounts
-        )
-        if reason is None and administrator is not None and not declared_bootstrap:
-            reason = self._retire_thehive_bootstrap(ingress, administrator, timeout)
-        return reason
-
-    def _retire_thehive_bootstrap(
-        self, ingress: _Ingress, administrator: tuple[str, str], timeout: int
-    ) -> str | None:
-        """Prove the default login is refused and declared access survives."""
-
-        failure = "account-bootstrap-retirement-unproven"
-        bootstrap = requests.thehive_login(
-            requests.THEHIVE_BOOTSTRAP_USER, requests.THEHIVE_BOOTSTRAP_PASSWORD
-        )
-        # Always replace the password: a refused old login alone could be a
-        # temporary account lock rather than proof that its password changed.
-        replacement = secrets.token_urlsafe(48)
-        rotation = requests.thehive_set_password(
-            administrator, requests.THEHIVE_BOOTSTRAP_USER, replacement
-        )
-        replacement_login = requests.thehive_login(
-            requests.THEHIVE_BOOTSTRAP_USER, replacement
-        )
-        verified = (
-            self._run_curl(ingress, rotation, timeout) == (204,)
-            and self._run_curl(ingress, replacement_login, timeout) == (200,)
-            and self._run_curl(ingress, bootstrap, timeout) == (401,)
-            and self._curl_proves(
-                ingress, requests.thehive_login(*administrator), timeout
-            )
-        )
-        return None if verified else failure
-
-    def _prove_or_converge(
-        self,
-        ingress: _Ingress,
-        proof: Sequence[requests.CurlStep],
-        converge: Sequence[requests.CurlStep],
-        timeout: int,
-    ) -> str | None:
-        """Keep a credential that already authenticates; else apply, then prove."""
-
-        if self._curl_proves(ingress, proof, timeout):
-            return None
-        self._run_curl(ingress, converge, timeout)
-        return self._await_proof(ingress, proof, timeout)
 
     def _realize_misp_account(
         self,

@@ -118,14 +118,15 @@ def test_generated_config_validates_against_the_launcher_contract() -> None:
 
     payload = json.dumps(
         {
-            "schema_version": "aptl.seat-image/v1",
+            "schema_version": "aptl.seat-image/v3",
+            "desktop_privilege_contract": "aptl.desktop-privileges/v1",
             "resources": resources,
             "boundary": full_techvault_boundary_policy().model_dump(mode="json"),
             "binding": {
                 "boundary_helper_image": "aptl-network-boundary-helper@sha256:"
                 + "c" * 64,
                 "egress_proxy_image": "aptl-appliance-egress-proxy@sha256:" + "d" * 64,
-                "raes_plan_digest": "sha256:" + "e" * 64,
+                "participant_routes_digest": "sha256:" + "e" * 64,
             },
         }
     ).encode()
@@ -143,7 +144,13 @@ def test_generated_config_reserves_the_baked_disks_virtual_size(
     disk = tmp_path / "seat.qcow2"
     disk.write_bytes(b"fixture")
     output = tmp_path / "config.json"
-    monkeypatch.setattr(module, "image_digest", lambda _ref: "image@sha256:" + "a" * 64)
+    image_references: list[str] = []
+
+    def pinned_image(reference: str) -> str:
+        image_references.append(reference)
+        return reference.rsplit(":", 1)[0] + "@sha256:" + "a" * 64
+
+    monkeypatch.setattr(module, "image_digest", pinned_image)
     monkeypatch.setattr(module, "file_digest", lambda _path: "sha256:" + "b" * 64)
     monkeypatch.setattr(
         module.subprocess,
@@ -159,8 +166,15 @@ def test_generated_config_reserves_the_baked_disks_virtual_size(
     assert module.main() == 0
     written = json.loads(output.read_bytes())
     assert written["resources"]["disk_bytes"] == 210 * 1024**3
-    assert written["schema_version"] == "aptl.seat-image/v2"
+    assert written["schema_version"] == "aptl.seat-image/v3"
     assert written["desktop_privilege_contract"] == "aptl.desktop-privileges/v1"
+    assert written["boundary"]["schema_version"] == "aptl.appliance-boundary/v3"
+    assert written["binding"]["participant_routes_digest"] == "sha256:" + "b" * 64
+    assert "raes_plan_digest" not in written["binding"]
+    assert written["binding"]["boundary_helper_image"].startswith(
+        "aptl-network-boundary-helper@sha256:"
+    )
+    assert "aptl-network-boundary-helper:6" in image_references
 
 
 def test_bake_uses_the_proven_offline_guest_provisioning() -> None:
@@ -332,13 +346,10 @@ def test_seat_image_runs_lilrae_and_keeps_the_deprecated_alias_launchers() -> No
         assert f"/usr/local/bin/{name}" in provision.split("chmod 0755", 1)[1]
     guest = ROOT / "appliance/guest"
     first_boot = (guest / "aptl-appliance-first-boot").read_text()
-    smoke = (guest / "seat-qualification-smoke.sh").read_text()
     scan = (guest / "scan-golden.sh").read_text()
-    for text in (first_boot, smoke):
-        assert "/usr/local/bin/aptl " not in text
+    assert "/usr/local/bin/aptl " not in first_boot
     assert "/usr/local/bin/lilrae kill --containers" in first_boot
     assert "/usr/local/bin/lilrae lab start" in first_boot
-    assert "/usr/local/bin/lilrae lab start" in smoke
     assert "test -x /opt/aptl/app/bin/lilrae\n" in scan
     assert "test -x /usr/local/bin/aptl\n" in scan
     assert "/usr/local/bin/aptl --version" not in scan

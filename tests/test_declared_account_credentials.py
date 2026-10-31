@@ -29,7 +29,7 @@ def _binding(**overrides):
     return binding
 
 
-def _resolve(spec: dict, account_provider: str = provider.THEHIVE):
+def _resolve(spec: dict, account_provider: str = provider.SHUFFLE):
     resource = PlannedResource(
         address="provision.account-placement.console-admin",
         domain=RuntimeDomain.PROVISIONING,
@@ -82,7 +82,7 @@ def test_a_key_credential_is_realized_only_by_a_key_capable_provider():
     assert account is not None
     assert account.auth_method == "key"
 
-    refused, diagnostics = _resolve(spec, provider.THEHIVE)
+    refused, diagnostics = _resolve(spec, provider.SHUFFLE)
     assert refused is None
     assert "account-auth-method-unsupported" in _reason(diagnostics)
 

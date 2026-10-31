@@ -21,13 +21,14 @@ vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
 }));
 
 vi.mock('../src/ssh.js', () => ({
-  SSHConnectionManager: vi.fn(function () { return {}; }),
+  SSHConnectionManager: vi.fn(function () { return { setHarvestHook: vi.fn() }; }),
 }));
 
 vi.mock('../src/telemetry.js', () => ({
   initTracing: vi.fn(),
   shutdownTracing: vi.fn().mockResolvedValue(undefined),
   getTracer: vi.fn(),
+  recordToolResultSize: vi.fn(),
   // Pass-through: invoke the handler immediately, no real OTel span machinery.
   traceToolCall: vi.fn(async (_n: unknown, _s: unknown, _a: unknown, fn: () => unknown) => fn()),
 }));
@@ -92,6 +93,32 @@ describe('createMCPServer postToolHook', () => {
     expect(typeof info.durationMs).toBe('number');
     expect(info.durationMs).toBeGreaterThanOrEqual(0);
     expect(info.error).toBeUndefined();
+  });
+
+  it('bounds a result over the server budget for the client, the hook and the span', async () => {
+    const handlersMod = await import('../src/tools/handlers.js');
+    const telemetry = await import('../src/telemetry.js');
+    const listing = Array.from({ length: 50 }, (_, id) => ({ id, body: 'x'.repeat(40) }));
+    const handlerResult = { content: [{ type: 'text', text: JSON.stringify({ success: true, data: listing }) }] };
+    vi.spyOn(handlersMod, 'generateToolHandlers').mockReturnValue({
+      test_run_command: vi.fn().mockResolvedValue(handlerResult),
+    } as any);
+
+    const createMCPServer = await loadCreateMCPServer();
+    const hook = vi.fn();
+    const config = { ...baseConfig, server: { ...baseConfig.server, maxToolResultTokens: 100 } };
+    createMCPServer(config as any, { postToolHook: hook });
+    const result: any = await registeredHandlers[1]({
+      params: { name: 'test_run_command', arguments: { command: 'cat listing' } },
+    });
+
+    const body = JSON.parse(result.content[0].text);
+    expect(result.content[0].text.length).toBeLessThanOrEqual(400);
+    expect(body._truncated.total).toBe(50);
+    expect(hook.mock.calls[0][0].result).toBe(result);
+    expect(telemetry.recordToolResultSize).toHaveBeenCalledWith(
+      expect.objectContaining({ truncated: true, originalChars: handlerResult.content[0].text.length }),
+    );
   });
 
   it('invokes the hook with the error when the handler throws and re-throws to the caller', async () => {
