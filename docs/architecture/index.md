@@ -1,5 +1,7 @@
 # Lab Architecture
 
+- [Issue #1418 Participant MCP Action Admission](issue-1418-participant-tool-admission-preflight.md)
+
 ## Network Topology
 
 ```mermaid

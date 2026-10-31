@@ -126,7 +126,8 @@ flowchart LR
 
 Process supervision is not an operating-system sandbox.
 Runtime bindings are trusted host inputs; participant outputs are untrusted.
-Individual MCP-call admission remains the separate #1418 boundary.
+Individual MCP-call admission remains the separate
+[#1418 boundary](issue-1418-participant-tool-admission-preflight.md).
 This design does not claim that a session-level action records each tool call.
 
 ## Existing architecture and verification
