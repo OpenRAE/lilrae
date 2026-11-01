@@ -86,4 +86,5 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [062](adr-062-lilrae-name-and-naming-convention.md) | LilRAE Name and Naming Convention for New Code | superseded in part by ADR-064 | 2026-10-05 |
 | [063](adr-063-remove-thehive-and-cortex.md) | Remove TheHive and Cortex from the TechVault SOC Stack | accepted | 2026-10-30 |
 | [064](adr-064-layered-architecture-and-code-conventions.md) | Layered Architecture and Code Conventions | superseded in part by ADR-065 | 2026-10-31 |
-| [065](adr-065-go-implementation-and-engineering-standards.md) | Go Implementation, Architecture Model, and Engineering Standards | accepted | 2026-10-31 |
+| [065](adr-065-go-implementation-and-engineering-standards.md) | Go Implementation, Architecture Model, and Engineering Standards | superseded in part by ADR-066 | 2026-10-31 |
+| [066](adr-066-descriptor-walk-for-contained-files.md) | Descriptor Walk for Contained Files on Unix | accepted | 2026-11-01 |

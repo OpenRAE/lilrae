@@ -2,7 +2,11 @@
 
 ## Status
 
-accepted
+superseded in part by ADR-066
+
+[ADR-066](adr-066-descriptor-walk-for-contained-files.md) supersedes the
+`os.Root` and renameio clause of this record for `internal/securefile` on
+Linux and macOS. The other rules continue.
 
 This record supersedes these clauses for the Go implementation. The Python
 implementation keeps them until Go port 31 (#1582) removes that code.
