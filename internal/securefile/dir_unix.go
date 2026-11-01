@@ -277,13 +277,33 @@ func checkLeaf(op, path string, parent int, leaf string) error {
 	if err != nil {
 		return &Error{Op: op, Path: path, Reason: ReasonOpenFailed, Err: err}
 	}
-	if st.Mode&unix.S_IFMT == unix.S_IFLNK {
+	return regularEntry(op, path, statMode(&st))
+}
+
+// regularEntry refuses the status mode of an entry that is a link or not a
+// regular file.
+func regularEntry(op, path string, mode uint32) error {
+	if mode&unix.S_IFMT == unix.S_IFLNK {
 		return &Error{Op: op, Path: path, Reason: ReasonSymlink}
 	}
-	if st.Mode&unix.S_IFMT != unix.S_IFREG {
+	if mode&unix.S_IFMT != unix.S_IFREG {
 		return &Error{Op: op, Path: path, Reason: ReasonNotRegularFile}
 	}
 	return nil
+}
+
+// keptPerm reports mode_not_kept when the permission bits mode of a file are
+// not perm.
+func keptPerm(op, path string, mode, perm fs.FileMode) error {
+	if mode != perm {
+		return &Error{Op: op, Path: path, Reason: ReasonModeNotKept}
+	}
+	return nil
+}
+
+// statPerm returns the permission bits of a file status.
+func statPerm(st *unix.Stat_t) fs.FileMode {
+	return fs.FileMode(statMode(st)) & fs.ModePerm
 }
 
 // writeTemp writes data to a new temporary file beside leaf, gives it the
@@ -302,29 +322,25 @@ func writeTemp(op, path string, parent int, leaf string, data []byte, perm fs.Fi
 	return name, nil
 }
 
-// setMode sets the mode of an open file and checks that the file system kept
-// it.
+// setMode sets the mode of an open file, reads the mode back, and reports
+// each failure, also a mode that the file system did not keep.
 func setMode(op, path string, file *os.File, perm fs.FileMode) error {
-	if err := file.Chmod(perm); err != nil {
-		return failure(op, path, err)
+	chmodErr := file.Chmod(perm)
+	info, statErr := file.Stat()
+	var mode fs.FileMode
+	if info != nil {
+		mode = info.Mode().Perm()
 	}
-	info, err := file.Stat()
-	if err != nil {
-		return failure(op, path, err)
-	}
-	if info.Mode().Perm() != perm {
-		return &Error{Op: op, Path: path, Reason: ReasonModeNotKept}
-	}
-	return nil
+	return errors.Join(failure(op, path, errors.Join(chmodErr, statErr)), keptPerm(op, path, mode, perm))
 }
 
-func (h dirHandle) chmod(op, path string, parts []string, perm fs.FileMode) (err error) {
-	file, err := h.openFile(op, path, parts)
+func (h dirHandle) chmod(op, path string, parts []string, perm fs.FileMode) error {
+	parent, leaf, err := h.walkParent(op, path, parts, ruleSearch)
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, failure(op, path, file.Close())) }()
-	return setMode(op, path, file, perm)
+	err = chmodLeaf(op, path, parent, leaf, uint32(perm))
+	return errors.Join(err, closeFd(op, path, parent))
 }
 
 func (h dirHandle) restrictToOwner(op, path string, parts []string) error {
@@ -444,6 +460,10 @@ func fstat(fd int, st *unix.Stat_t) error {
 
 func fchmod(fd int, mode uint32) error {
 	return ignoringEINTR(func() error { return unix.Fchmod(fd, mode) })
+}
+
+func fchmodat(dir int, name string, mode uint32, flags int) error {
+	return ignoringEINTR(func() error { return unix.Fchmodat(dir, name, mode, flags) })
 }
 
 func linkat(oldDir int, oldName string, newDir int, newName string) error {

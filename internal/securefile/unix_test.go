@@ -194,11 +194,25 @@ func TestChmodAndRestrictToOwner(t *testing.T) {
 	wantReason(t, d.RestrictToOwner("missing"), ReasonNotFound)
 }
 
-func TestAModeThatTheFileDoesNotKeepIsRefused(t *testing.T) {
+func TestChmodRestoresAnUnreadableFile(t *testing.T) {
+	requireModes(t)
 	root, d := newTree(t)
-	writeFile(t, root, "f", "x")
-	err := d.Chmod("f", fs.ModeSetuid|0o600)
-	wantReason(t, err, ReasonModeNotKept)
+	writeFile(t, root, "pub", "x")
+	writeFile(t, root, "key", "x")
+	chmodPath(t, root, "pub", 0)
+	chmodPath(t, root, "key", 0)
+	if err := d.Chmod("pub", 0o644); err != nil {
+		t.Fatalf("Chmod() of a file without read access = %v, want nil", err)
+	}
+	if err := d.RestrictToOwner("key"); err != nil {
+		t.Fatalf("RestrictToOwner() of a file without read access = %v, want nil", err)
+	}
+	if got := modeOf(t, root, "pub"); got != 0o644 {
+		t.Errorf("Chmod gave the mode %v, want 0644", got)
+	}
+	if got := modeOf(t, root, "key"); got != 0o600 {
+		t.Errorf("RestrictToOwner gave the mode %v, want 0600", got)
+	}
 }
 
 func TestReplacePrivateMakesTheFileAndItsParentPrivate(t *testing.T) {
@@ -312,6 +326,25 @@ func TestOnlyThePrivateRuleRequiresTheOwner(t *testing.T) {
 	}
 }
 
+// limitFileSize limits the size of each file that the process writes, until
+// the end of the test.
+func limitFileSize(t *testing.T, size uint64) {
+	t.Helper()
+	var old unix.Rlimit
+	if err := unix.Getrlimit(unix.RLIMIT_FSIZE, &old); err != nil {
+		t.Fatal(err)
+	}
+	limited := unix.Rlimit{Cur: size, Max: old.Max}
+	if err := unix.Setrlimit(unix.RLIMIT_FSIZE, &limited); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := unix.Setrlimit(unix.RLIMIT_FSIZE, &old); err != nil {
+			t.Error(err)
+		}
+	})
+}
+
 // openParent opens the parent of the leaf of name below d, as the write
 // operations do before they publish.
 func openParent(t *testing.T, d *Dir, name string) (parent int, leaf string) {
@@ -374,10 +407,13 @@ func TestADirectorySwappedMidWriteKeepsTheWriteInTheOpenedOne(t *testing.T) {
 func TestAnInterruptedReplacementKeepsThePreviousFile(t *testing.T) {
 	root, d := newTree(t)
 	writeFile(t, root, "env/node.env", "OLD=1\n")
-	// The file system keeps no setuid bit in the permission bits, so the
-	// write fails after the temporary file has its content.
-	err := d.Replace("env/node.env", []byte("NEW=1\n"), fs.ModeSetuid|0o600)
-	wantReason(t, err, ReasonModeNotKept)
+	// A file size limit of 2 bytes makes the write of the temporary file fail
+	// with EFBIG after its first bytes. The Go runtime ignores SIGXFSZ.
+	limitFileSize(t, 2)
+	err := d.Replace("env/node.env", []byte("NEW=1\n"), 0o600)
+	if !errors.Is(err, unix.EFBIG) {
+		t.Fatalf("Replace() = %v, want the cause EFBIG", err)
+	}
 	if got := readFile(t, root, "env/node.env"); got != "OLD=1\n" {
 		t.Errorf("the file holds %q, want the previous content", got)
 	}

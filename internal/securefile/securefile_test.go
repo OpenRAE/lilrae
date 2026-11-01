@@ -439,6 +439,33 @@ func TestReplace(t *testing.T) {
 	wantReason(t, d.Replace("dir/../f", nil, 0o600), ReasonTraversal)
 }
 
+func TestAModeWithOtherBitsIsRefusedBeforeAnyChange(t *testing.T) {
+	root, d := newTree(t)
+	writeFile(t, root, "f", "x")
+	before, err := os.Stat(filepath.Join(root, "f"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, perm := range []fs.FileMode{fs.ModeSetuid | 0o600, fs.ModeSetgid | 0o600, fs.ModeSticky | 0o600} {
+		if chmodErr := d.Chmod("f", perm); !errors.Is(chmodErr, fs.ErrInvalid) {
+			t.Errorf("Chmod(%v) = %v, want an error that matches fs.ErrInvalid", perm, chmodErr)
+		}
+		if replaceErr := d.Replace("g", []byte("y"), perm); !errors.Is(replaceErr, fs.ErrInvalid) {
+			t.Errorf("Replace(%v) = %v, want an error that matches fs.ErrInvalid", perm, replaceErr)
+		}
+	}
+	after, err := os.Stat(filepath.Join(root, "f"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Mode() != before.Mode() {
+		t.Errorf("the mode changed from %v to %v", before.Mode(), after.Mode())
+	}
+	if got, want := names(t, root, "."), []string{"f"}; !slices.Equal(got, want) {
+		t.Errorf("the directory holds %q, want %q", got, want)
+	}
+}
+
 func TestReplaceNeverRewritesAHardLink(t *testing.T) {
 	for name, replace := range map[string]func(*Dir) error{
 		"Replace":        func(d *Dir) error { return d.Replace("env/node.env", []byte("NEW=1\n"), 0o600) },

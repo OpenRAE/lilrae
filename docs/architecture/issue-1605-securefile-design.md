@@ -42,7 +42,8 @@ records the decision about `os.Root`.
 | On Windows, `pathsafe` cannot run, because it needs `dir_fd`. The other modules change modes there only on a best-effort basis. | Source. |
 | `filepath.Localize` accepts each name that `fs.ValidPath` accepts, except names that the platform cannot represent: on Windows a name with `\` or `:`, or a reserved name such as `NUL`. | Go 1.27 `path/filepath`. |
 | `os.Root` follows a link that stays inside the root, and it opens each directory with read access. `Root.Lstat` and `File.Stat` read the file identity from a handle, so `os.SameFile` does not open a path again. | Go 1.27 `os/root_unix.go`, `os/root_windows.go`, `os/stat_windows.go`; a probe. |
-| A handle from `os.Root` has no `WRITE_DAC` access. The Win32 `ReOpenFile` function opens the same file object again with other access, and `golang.org/x/sys/windows` does not wrap it. | Go 1.27 `internal/syscall/windows`; Microsoft Win32 documentation. |
+| A handle from `os.Root` has read or write access only, never `WRITE_DAC` alone. `NtCreateFile` opens an entry relative to a directory handle with the access that the caller asks for, and `golang.org/x/sys/windows` wraps it. | Go 1.27 `internal/syscall/windows`; Microsoft Win32 documentation. |
+| On Linux, `fchmodat` ignores `AT_SYMLINK_NOFOLLOW`. Go and GNU libc open the file with `O_PATH` and change the mode of that open file through `/proc/self/fd`. macOS supports the flag. | Go 1.27 `internal/syscall/unix/fchmodat_linux.go`. |
 
 ## Decisions
 
@@ -56,8 +57,11 @@ records the decision about `os.Root`.
    traverses each directory with `O_PATH` or `O_SEARCH`. A write opens each
    directory with read access, so that the package can sync it, and creates a
    missing directory with the mode `0700`. A read opens the leaf with
-   `O_NONBLOCK`, so a FIFO cannot block it, and then clears the flag. Each
-   failure has the reason code that `pathsafe` gives.
+   `O_NONBLOCK`, so a FIFO cannot block it, and then clears the flag. `Chmod`
+   needs no read access: on Linux it opens the file itself with `O_PATH` and
+   changes the mode through `/proc/self/fd`, and on macOS it uses `fchmodat`
+   with `AT_SYMLINK_NOFOLLOW`. Each failure has the reason code that
+   `pathsafe` gives.
 3. **The Windows walk.** On Windows, the package opens one component at a time
    through `os.Root` and `Root.OpenRoot`. It refuses a component when
    `Root.Lstat` reports a link or a reparse point, or when the entry is not
@@ -85,14 +89,16 @@ records the decision about `os.Root`.
    verifies it before the sync, so that the sync persists it, and never by
    path after the publication: `0600` for `CreateOnce` and `ReplacePrivate`,
    and the mode of the caller for `Replace`. A mode that the file system did
-   not keep is `mode_not_kept`.
+   not keep is `mode_not_kept`. `Replace` and `Chmod` refuse a mode with
+   other bits than the permission bits before any change.
 6. **Windows access.** On Windows, a mode sets only the read-only attribute,
    as `os.Chmod` does, and the private rules of `ReplacePrivate` and
    `PrivateSubdir` do not apply, as the Python modules give no mode
    protection there. `RestrictToOwner` gives a file the access that
    `core/ssh.py` gives a key: a protected access list that lets only the
-   current user read the file. It sets the list on a handle that
-   `ReOpenFile` opens from the verified handle.
+   current user read the file. `Chmod` and `RestrictToOwner` open the entry
+   with `NtCreateFile` relative to the handle of the verified parent, with
+   only the access of the change and with no access to the content.
 7. **Handle lifetime.** On Linux and macOS, a `Dir` holds its directory in an
    `*os.File`. Each operation duplicates the descriptor while the file holds a
    reference, so that `Close` cannot free the number during the operation. After

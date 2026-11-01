@@ -33,9 +33,10 @@ import (
 type Reason string
 
 // The reasons that an Error reports. ReasonInvalidName reports a name that
-// the platform cannot represent, and ReasonModeNotKept reports a file system
-// that did not keep the mode that a write set. The others are the reason
-// codes of utils/pathsafe.py.
+// the platform cannot represent, and ReasonModeNotKept reports a file whose
+// mode is not the mode that the operation set, for example on a file system
+// that does not keep modes. The others are the reason codes of
+// utils/pathsafe.py.
 const (
 	ReasonNotRelative        Reason = "not_relative"
 	ReasonNULByte            Reason = "nul_byte"
@@ -220,10 +221,13 @@ func (d *Dir) CreateOnce(name string, data []byte) error {
 // Replace creates or replaces the file name with the content data and the
 // mode perm, and first creates each missing directory with the mode 0700.
 // The file changes completely or not at all. An existing name must be a
-// regular file.
+// regular file. perm holds permission bits only.
 func (d *Dir) Replace(name string, data []byte, perm fs.FileMode) error {
 	parts, err := components("replace", name)
 	if err != nil {
+		return err
+	}
+	if err := checkMode("replace", name, perm); err != nil {
 		return err
 	}
 	return d.h.replace("replace", name, parts, data, perm, ruleCreate)
@@ -241,10 +245,14 @@ func (d *Dir) ReplacePrivate(name string, data []byte) error {
 	return d.h.replace("replace private", name, parts, data, privateFileMode, ruleRestrict)
 }
 
-// Chmod sets the mode of the regular file name to perm.
+// Chmod sets the mode of the regular file name to perm, which holds
+// permission bits only. It needs no access to the content of the file.
 func (d *Dir) Chmod(name string, perm fs.FileMode) error {
 	parts, err := components("chmod", name)
 	if err != nil {
+		return err
+	}
+	if err := checkMode("chmod", name, perm); err != nil {
 		return err
 	}
 	return d.h.chmod("chmod", name, parts, perm)
@@ -253,7 +261,7 @@ func (d *Dir) Chmod(name string, perm fs.FileMode) error {
 // RestrictToOwner lets only the current user use the regular file name. On
 // Linux and macOS it sets the mode 0600. On Windows it sets a protected
 // access list that lets only the current user read the file, as core/ssh.py
-// does with icacls.
+// does with icacls. It needs no access to the content of the file.
 func (d *Dir) RestrictToOwner(name string) error {
 	parts, err := components("restrict to owner", name)
 	if err != nil {
@@ -306,6 +314,15 @@ func components(op, name string) ([]string, error) {
 		return nil, &Error{Op: op, Path: name, Reason: ReasonInvalidName}
 	}
 	return parts, nil
+}
+
+// checkMode refuses a mode with bits other than the permission bits, before
+// any change, because the package sets and verifies only those bits.
+func checkMode(op, path string, perm fs.FileMode) error {
+	if perm&^fs.ModePerm != 0 {
+		return failure(op, path, fmt.Errorf("the mode %v holds bits other than the permission bits: %w", perm, fs.ErrInvalid))
+	}
+	return nil
 }
 
 // componentReason returns the rule that one component breaks, or "".

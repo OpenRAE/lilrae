@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -208,13 +209,7 @@ func checkLeaf(op, path string, parent *os.Root, leaf string) error {
 	if err != nil {
 		return &Error{Op: op, Path: path, Reason: ReasonOpenFailed, Err: err}
 	}
-	if isLink(entry) {
-		return &Error{Op: op, Path: path, Reason: ReasonSymlink}
-	}
-	if !entry.Mode().IsRegular() {
-		return &Error{Op: op, Path: path, Reason: ReasonNotRegularFile}
-	}
-	return nil
+	return regularInfo(op, path, entry)
 }
 
 // writeTemp writes data to a new temporary file beside leaf, gives it the
@@ -239,45 +234,91 @@ func setMode(op, path string, file *os.File, perm fs.FileMode) error {
 }
 
 func (h dirHandle) chmod(op, path string, parts []string, perm fs.FileMode) error {
-	return h.withAccess(op, path, parts, windows.FILE_READ_ATTRIBUTES|windows.FILE_WRITE_ATTRIBUTES, func(file *os.File) error {
+	return h.withMetadata(op, path, parts, windows.FILE_WRITE_ATTRIBUTES, func(file *os.File) error {
 		return setMode(op, path, file, perm)
 	})
 }
 
 func (h dirHandle) restrictToOwner(op, path string, parts []string) error {
-	return h.withAccess(op, path, parts, windows.READ_CONTROL|windows.WRITE_DAC, func(file *os.File) error {
+	return h.withMetadata(op, path, parts, windows.READ_CONTROL|windows.WRITE_DAC, func(file *os.File) error {
 		return failure(op, path, setOwnerOnlyACL(windows.Handle(file.Fd())))
 	})
 }
 
-// withAccess opens the regular file of parts, opens it again with access
-// through the verified handle, and calls fn with the new handle.
-func (h dirHandle) withAccess(op, path string, parts []string, access uint32, fn func(*os.File) error) (err error) {
-	file, err := h.openFile(op, path, parts)
+// withMetadata opens the regular file of parts with access and with no
+// access to its content, and calls fn with the open file.
+func (h dirHandle) withMetadata(op, path string, parts []string, access uint32, fn func(*os.File) error) (err error) {
+	parent, leaf, err := h.walkParent(op, path, parts, ruleSearch)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, parent.close()) }()
+	file, err := openForMetadata(op, path, parent.root, leaf, access)
 	if err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, failure(op, path, file.Close())) }()
-	handle, err := reopen(windows.Handle(file.Fd()), access)
-	if err != nil {
-		return failure(op, path, err)
-	}
-	reopened := os.NewFile(uintptr(handle), file.Name())
-	defer func() { err = errors.Join(err, failure(op, path, reopened.Close())) }()
-	return fn(reopened)
+	return fn(file)
 }
 
-// reopen opens the file of handle again with access, through the Win32
-// ReOpenFile function, which golang.org/x/sys/windows does not wrap. The new
-// handle refers to the same file, so no path is resolved again.
-func reopen(handle windows.Handle, access uint32) (windows.Handle, error) {
-	proc := windows.NewLazySystemDLL("kernel32.dll").NewProc("ReOpenFile")
-	share := windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE | windows.FILE_SHARE_DELETE
-	r, _, err := proc.Call(uintptr(handle), uintptr(access), uintptr(share), 0)
-	if windows.Handle(r) == windows.InvalidHandle {
-		return windows.InvalidHandle, fmt.Errorf("ReOpenFile: %w", err)
+// openForMetadata opens the entry leaf under parent with access, relative to
+// the handle of the verified parent, so that no path is resolved again. It
+// follows no reparse point, and it refuses a link and a file that is not
+// regular.
+func openForMetadata(op, path string, parent *os.Root, leaf string, access uint32) (file *os.File, err error) {
+	dir, err := parent.Open(".")
+	if err != nil {
+		return nil, failure(op, path, err)
 	}
-	return windows.Handle(r), nil
+	defer func() { err = errors.Join(err, failure(op, path, dir.Close())) }()
+	name, err := windows.NewNTUnicodeString(leaf)
+	if err != nil {
+		return nil, failure(op, path, err)
+	}
+	attrs := windows.OBJECT_ATTRIBUTES{
+		RootDirectory: windows.Handle(dir.Fd()),
+		ObjectName:    name,
+		Attributes:    windows.OBJ_CASE_INSENSITIVE,
+	}
+	attrs.Length = uint32(unsafe.Sizeof(attrs))
+	var handle windows.Handle
+	var status windows.IO_STATUS_BLOCK
+	err = windows.NtCreateFile(&handle, access|windows.FILE_READ_ATTRIBUTES|windows.SYNCHRONIZE, &attrs, &status, nil, 0,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, windows.FILE_OPEN,
+		windows.FILE_OPEN_REPARSE_POINT|windows.FILE_SYNCHRONOUS_IO_NONALERT, 0, 0)
+	if err != nil {
+		return nil, componentError(op, path, parent, leaf, ntError(err))
+	}
+	file = os.NewFile(uintptr(handle), leaf)
+	info, err := file.Stat()
+	if err == nil {
+		err = regularInfo(op, path, info)
+	}
+	if err != nil {
+		return nil, errors.Join(failure(op, path, err), failure(op, path, file.Close()))
+	}
+	return file, nil
+}
+
+// ntError returns the Win32 error of an NTSTATUS, which the os package and
+// [fs.ErrNotExist] match.
+func ntError(err error) error {
+	if status, ok := errors.AsType[windows.NTStatus](err); ok {
+		return fmt.Errorf("NtCreateFile: %w", status.Errno())
+	}
+	return err
+}
+
+// regularInfo refuses an entry that is a link or another reparse point, or
+// that is not a regular file.
+func regularInfo(op, path string, info fs.FileInfo) error {
+	if isLink(info) {
+		return &Error{Op: op, Path: path, Reason: ReasonSymlink}
+	}
+	if !info.Mode().IsRegular() {
+		return &Error{Op: op, Path: path, Reason: ReasonNotRegularFile}
+	}
+	return nil
 }
 
 // setOwnerOnlyACL gives a file a protected access list that lets only the

@@ -56,6 +56,47 @@ func TestRestrictToOwnerSetsAProtectedReadOnlyList(t *testing.T) {
 	}
 }
 
+func TestMetadataNeedsNoAccessToTheContent(t *testing.T) {
+	root, d := newTree(t)
+	writeFile(t, root, "key", "secret")
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The owner keeps the rights of a metadata change, but not the right to
+	// read the content.
+	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
+		AccessPermissions: windows.FILE_READ_ATTRIBUTES | windows.FILE_WRITE_ATTRIBUTES | windows.READ_CONTROL | windows.WRITE_DAC | windows.SYNCHRONIZE,
+		AccessMode:        windows.SET_ACCESS,
+		Inheritance:       windows.NO_INHERITANCE,
+		Trustee: windows.TRUSTEE{
+			TrusteeForm:  windows.TRUSTEE_IS_SID,
+			TrusteeType:  windows.TRUSTEE_IS_USER,
+			TrusteeValue: windows.TrusteeValueFromSID(user.User.Sid),
+		},
+	}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = windows.SetNamedSecurityInfo(filepath.Join(root, "key"), windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, acl, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fs.ReadFile(os.DirFS(root), "key"); err == nil {
+		t.Fatal("the test can still read the content of the key")
+	}
+	if err := d.Chmod("key", 0o444); err != nil {
+		t.Fatalf("Chmod() without access to the content = %v, want nil", err)
+	}
+	if err := d.RestrictToOwner("key"); err != nil {
+		t.Fatalf("RestrictToOwner() without access to the content = %v, want nil", err)
+	}
+	if got, err := d.ReadFile("key"); err != nil || string(got) != "secret" {
+		t.Errorf("ReadFile() = %q, %v, want the owner to read the key after RestrictToOwner", got, err)
+	}
+}
+
 func TestModesSetTheReadOnlyAttribute(t *testing.T) {
 	root, d := newTree(t)
 	writeFile(t, root, "f", "x")
