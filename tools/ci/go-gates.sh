@@ -45,6 +45,12 @@ packages() {
     go list ./...
 }
 
+# production_packages prints the packages of the module in the current
+# directory that have Go files other than tests. Mutation testing needs them.
+production_packages() {
+    go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./...
+}
+
 build_tool() {
     local module=$1 package=$2
     go build -C "$home/$module" -o "$bin/" "$package"
@@ -137,8 +143,10 @@ osv() {
 mutation() {
     local base=${1:-} dir pkgs targets=() args=()
     build_tool tools github.com/go-gremlins/gremlins/cmd/gremlins
+    # A module with test files only, such as the conformance suite, has no
+    # mutant, and its tests can need an installed binary.
     for dir in "${modules[@]}"; do
-        pkgs=$(cd -- "$repo/$dir" && packages)
+        pkgs=$(cd -- "$repo/$dir" && production_packages)
         if [[ -n "$pkgs" ]]; then
             targets+=("$dir")
         fi

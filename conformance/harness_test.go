@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -61,6 +62,7 @@ func runCases(t *testing.T, dir string, env map[string]string) {
 			"status":        checkStatus,
 			"envelope":      checkEnvelope,
 			"schema":        checkSchema(schemas),
+			"field":         checkField,
 			"doctor-counts": checkDoctorCounts,
 		},
 	})
@@ -269,6 +271,58 @@ func violations(err *jsonschema.ValidationError) []string {
 		out = append(out, violations(cause)...)
 	}
 	return out
+}
+
+// checkField is the field command: the value at a JSON Pointer (RFC 6901) of
+// the JSON file equals the JSON value. With a negation, the value exists and
+// differs. It compares parsed values, so the layout of the file does not
+// matter.
+func checkField(ts *testscript.TestScript, neg bool, args []string) {
+	if len(args) != 3 {
+		ts.Fatalf("usage: field FILE POINTER JSON")
+	}
+	want, err := jsonschema.UnmarshalJSON(strings.NewReader(args[2]))
+	if err != nil {
+		ts.Fatalf("field: %q is not a JSON value", args[2])
+	}
+	got, ok := lookup(readJSON(ts, args[0]), args[1])
+	if !ok {
+		ts.Fatalf("%s has no value at %s", args[0], args[1])
+	}
+	if equal := reflect.DeepEqual(got, want); equal == neg {
+		ts.Fatalf("the value at %s of %s does not match %s", args[1], args[0], args[2])
+	}
+}
+
+// lookup returns the value at the JSON Pointer of doc.
+func lookup(doc any, pointer string) (any, bool) {
+	if pointer == "" {
+		return doc, true
+	}
+	if !strings.HasPrefix(pointer, "/") {
+		return nil, false
+	}
+	value := doc
+	for token := range strings.SplitSeq(pointer[1:], "/") {
+		token = strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")
+		switch node := value.(type) {
+		case map[string]any:
+			next, ok := node[token]
+			if !ok {
+				return nil, false
+			}
+			value = next
+		case []any:
+			index, err := strconv.Atoi(token)
+			if err != nil || index < 0 || index >= len(node) {
+				return nil, false
+			}
+			value = node[index]
+		default:
+			return nil, false
+		}
+	}
+	return value, true
 }
 
 // checkDoctorCounts is the doctor-counts command: the counts of a doctor

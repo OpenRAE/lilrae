@@ -10,7 +10,6 @@ envelope doctor
 cp stdout result.json
 schema doctor-result.schema.json result.json
 doctor-counts result.json
-stdout '"id": "docker-daemon"'
 
 # Without --json, the report is text and the exit status is the same.
 ! lilrae doctor

@@ -105,6 +105,41 @@ func overlay(ctx context.Context, root, head string, tree *os.Root, dir string) 
 		if err := writeEntry(ctx, root, head, tree, file); err != nil {
 			return err
 		}
+		if file.Mode == "120000" && !isTestFile {
+			if err := overlayLinkTarget(ctx, root, head, tree, dir, file); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// overlayLinkTarget makes the target of a symlink in the test data of dir
+// equal to the head revision, because the files that the link names are test
+// data too. A target outside the repository is in no revision, so it stays.
+func overlayLinkTarget(ctx context.Context, root, head string, tree *os.Root, dir string, link git.Entry) error {
+	raw, err := git.Show(ctx, root, head, link.Path)
+	if err != nil {
+		return err
+	}
+	target := path.Join(path.Dir(link.Path), string(raw))
+	if path.IsAbs(string(raw)) || !filepath.IsLocal(filepath.FromSlash(target)) {
+		return nil
+	}
+	if target == "." || target == dir || strings.HasPrefix(dir, target+"/") {
+		return fmt.Errorf("the test data link %s names a directory that holds its package", link.Path)
+	}
+	if err = tree.RemoveAll(filepath.FromSlash(target)); err != nil {
+		return fmt.Errorf("remove the base target of %s: %w", link.Path, err)
+	}
+	entries, err := git.Files(ctx, root, head, target)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := writeEntry(ctx, root, head, tree, entry); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -188,6 +223,12 @@ func judge(t Test, revision string, want outcome, run testRun) []Finding {
 		return []Finding{{Location: t.File, Message: fmt.Sprintf("%s: the test %s on the %s revision; it must %s there",
 			t.Name, run.outcome, revision, verb(want))}}
 	}
+	// A test that passes in a package whose test binary then fails, for
+	// example in TestMain, does not pass.
+	if want == passed && run.processFailed {
+		return []Finding{{Location: t.File, Message: fmt.Sprintf("%s: the test passed, but the go test command failed on the %s revision; it must pass there",
+			t.Name, revision)}}
+	}
 	return nil
 }
 
@@ -260,6 +301,7 @@ func goTest(ctx context.Context, moduleDir, pkg, name string) (testRun, error) {
 	if err != nil {
 		return testRun{}, err
 	}
+	run.processFailed = runErr != nil
 	if runErr != nil && run.outcome == notRun && !run.buildFailed {
 		run.buildFailed = true
 		for line := range strings.Lines(stderr.String()) {

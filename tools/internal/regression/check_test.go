@@ -476,6 +476,64 @@ func TestCheckReplaysWithTestDataThatIsASymlink(t *testing.T) {
 	}
 }
 
+// regression: #1554
+func TestCheckReplaysTheHeadTargetOfATestDataLink(t *testing.T) {
+	t.Parallel()
+	r := newRepo(t)
+	if err := os.MkdirAll(filepath.Join(r.Dir, "calc"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../shared", filepath.Join(r.Dir, "calc", "testdata")); err != nil {
+		t.Fatal(err)
+	}
+	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1"), "shared/want.txt": "1\n"})
+	r.Commit(map[string]string{
+		"calc/calc.go":    valueSource("2"),
+		"shared/want.txt": "2\n",
+		"calc/calc_test.go": "package calc\n\nimport (\n\t\"os\"\n\t\"strconv\"\n\t\"testing\"\n)\n\n// regression: #7\nfunc TestValue(t *testing.T) {\n" +
+			"\twant, err := os.ReadFile(\"testdata/want.txt\")\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n" +
+			"\tif got := strconv.Itoa(Value()) + \"\\n\"; got != string(want) {\n\t\tt.Fatalf(\"Value() = %q, want %q\", got, want)\n\t}\n}\n",
+	})
+
+	report := r.check(base, 7, false)
+
+	if got := messages(report); len(got) != 0 {
+		t.Errorf("findings = %q, want none: the base run needs the head contents of the link target", got)
+	}
+}
+
+func TestCheckRejectsATestDataLinkToItsPackage(t *testing.T) {
+	t.Parallel()
+	r := newRepo(t)
+	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1")})
+	if err := os.Symlink(".", filepath.Join(r.Dir, "calc", "testdata")); err != nil {
+		t.Fatal(err)
+	}
+	r.Commit(map[string]string{"calc/calc.go": valueSource("2"), "calc/calc_test.go": valueTest("// regression: #7\n", "")})
+
+	_, err := regression.Check(t.Context(), regression.Config{Repo: r.Dir, Base: base, Issue: 7})
+
+	if err == nil || !strings.Contains(err.Error(), "names a directory that holds its package") {
+		t.Errorf("Check() error = %v, want the link to its package refused", err)
+	}
+}
+
+// regression: #1554
+func TestCheckRejectsAPassingTestWhoseTestBinaryFails(t *testing.T) {
+	t.Parallel()
+	r := newRepo(t)
+	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1")})
+	r.Commit(map[string]string{
+		"calc/calc.go":      valueSource("2"),
+		"calc/calc_test.go": valueTest("// regression: #7\n", ""),
+		"calc/main_test.go": "package calc\n\nimport (\n\t\"os\"\n\t\"testing\"\n)\n\nfunc TestMain(m *testing.M) {\n\tm.Run()\n\tos.Exit(1)\n}\n",
+	})
+
+	report := r.check(base, 7, false)
+
+	requireOneFinding(t, report, "TestValue: the test passed, but the go test command failed on the head revision; it must pass there")
+}
+
 func TestCheckQuotesAtMostFiveLinesOfBuildOutput(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

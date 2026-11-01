@@ -41,8 +41,10 @@ if (($#)); then
             *_test.go) go_tests+=("$arg") ;;
             *)
                 pytest_args+=("$arg")
-                # A Python target is an existing path, or a node ID of one.
-                if [[ "$arg" != -* && -e "${arg%%::*}" ]]; then
+                # A Python target is an existing .py file, or a node ID of one.
+                # The value of an option, such as the . of --rootdir ., is not.
+                target=${arg%%::*}
+                if [[ "$target" == *.py && -f "$target" ]]; then
                     python_target=true
                 fi
                 ;;

@@ -11,9 +11,9 @@ lilrae lab start --json --scenario-path scenarios/scenario.sdl.yaml
 envelope 'lab start'
 cp stdout start.json
 schema lab-start-result.schema.json start.json
-stdout '"outcome": "(ready|degraded_usable|degraded_unusable)"'
-stdout '"error": null'
-stdout '"residue": null'
+! field start.json /outcome '"failed"'
+field start.json /error null
+field start.json /residue null
 stderr '\[lab start\]'
 
 lilrae lab status --json
@@ -35,11 +35,11 @@ lilrae lab stop --json
 envelope 'lab stop'
 cp stdout stop.json
 schema lab-stop-result.schema.json stop.json
-stdout '"volumes": false'
-stdout '"error": null'
+field stop.json /volumes false
+field stop.json /error null
 
 lilrae lab reset --json --yes
 envelope 'lab reset'
 cp stdout reset.json
 schema lab-reset-result.schema.json reset.json
-stdout '"error": null'
+field reset.json /error null

@@ -7,6 +7,13 @@ packages:
     test_imports:
       - github.com/rogpeppe/go-internal
       - github.com/santhosh-tekuri/jsonschema/v6
+  - path: tools/internal/regression
+    component: regression-check
+    imports:
+      - github.com/OpenRAE/lilrae/tools/internal/git
+    test_imports:
+      - github.com/OpenRAE/lilrae/tools/internal/gittest
+      - github.com/google/go-cmp
 model_changes:
   - component:conformance-suite
 ---
@@ -54,6 +61,7 @@ design record.
    | `status N` | The last `lilrae` command exited with status `N`. |
    | `envelope COMMAND` | The standard output of the last `lilrae` command is one JSON object with this `command`, `schema_version` 1, and an `ok` that is true exactly when the exit status is 0. |
    | `schema NAME FILE` | The JSON file conforms to the published schema `NAME`. |
+   | `field FILE POINTER JSON` | The value at the JSON Pointer of the file equals the JSON value. `! field` expects a value that exists and differs. Parsed values are compared, so the JSON layout does not matter. |
    | `doctor-counts FILE` | The `counts` of a doctor result equal the number of checks with each status. |
 
    A failure message names the case, the command, and the rule. It prints no
@@ -96,7 +104,13 @@ design record.
     environment, and sets `LILRAE_CONFORMANCE_BINARY`, so `go-gates.sh test`
     runs the suite on the Python release. The selector sends
     `conformance/`, `docs/reference/schemas/`, and the inventory to the `go`
-    lane and to the `lab` lane, because the lab job runs the lab cases.
+    lane and to the `lab` lane, because the lab job runs the lab cases. The
+    mutation gate selects only the modules with production code, so the
+    test-only conformance package needs no binary there.
+12. **Review fixes of the gates.** The regression replay rejects a head run
+    whose `go test` command fails after the test passes, and it overlays the
+    head contents of the target of a test data link. The targeted runner
+    counts only Python files and node IDs as pytest targets.
 
 ## Schemas
 

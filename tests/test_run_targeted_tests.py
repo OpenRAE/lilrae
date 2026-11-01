@@ -87,7 +87,11 @@ def test_pytest_arguments_without_a_python_target_are_an_error(tmp_path):
     """pytest without a target would run the whole suite (#1583)."""
     repo = _repo(tmp_path)
 
-    for args in (("tools/internal/calc/calc_test.go", "-v"), ("-k", "calc")):
+    for args in (
+        ("tools/internal/calc/calc_test.go", "-v"),
+        ("-k", "calc"),
+        ("tools/internal/calc/calc_test.go", "--rootdir", "."),
+    ):
         result, calls = _run(repo, tmp_path, *args)
 
         assert result.returncode == 2, args
