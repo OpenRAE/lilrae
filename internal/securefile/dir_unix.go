@@ -182,6 +182,28 @@ func checkRegular(op, path string, fd int) error {
 	return failure(op, path, unix.SetNonblock(fd, false))
 }
 
+func (h dirHandle) openLockFile(op, path string, parts []string) (file *os.File, err error) {
+	parent, leaf, err := h.walkParent(op, path, parts, ruleCreate)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, closeFd(op, path, parent)) }()
+	// O_NOFOLLOW also keeps O_CREAT from creating the target of a link, and
+	// O_NONBLOCK keeps a FIFO from blocking the open.
+	fd, err := openat(parent, leaf, unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, uint32(privateFileMode))
+	if err != nil {
+		return nil, componentError(op, path, parent, leaf, err)
+	}
+	if err := checkRegular(op, path, fd); err != nil {
+		return nil, errors.Join(err, closeFd(op, path, fd))
+	}
+	file = os.NewFile(uintptr(fd), path)
+	if err := setMode(op, path, file, privateFileMode); err != nil {
+		return nil, errors.Join(err, failure(op, path, file.Close()))
+	}
+	return file, nil
+}
+
 func (h dirHandle) readDirNames(op, path string, parts []string) (names []string, err error) {
 	parent, leaf, err := h.walkParent(op, path, parts, ruleSearch)
 	if err != nil {

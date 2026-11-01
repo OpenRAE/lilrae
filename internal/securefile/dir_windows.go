@@ -136,6 +136,27 @@ func checkOpened(op, path string, parent *os.Root, leaf string, file *os.File) e
 	return nil
 }
 
+func (h dirHandle) openLockFile(op, path string, parts []string) (file *os.File, err error) {
+	parent, leaf, err := h.walkParent(op, path, parts, ruleCreate)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, parent.close()) }()
+	// O_EXCL creates a new file and never follows a link. An existing file
+	// opens without O_CREATE, so that a dangling link creates nothing.
+	file, err = parent.root.OpenFile(leaf, os.O_RDWR|os.O_CREATE|os.O_EXCL, privateFileMode)
+	if errors.Is(err, fs.ErrExist) {
+		file, err = parent.root.OpenFile(leaf, os.O_RDWR, 0)
+	}
+	if err != nil {
+		return nil, componentError(op, path, parent.root, leaf, err)
+	}
+	if err := checkOpened(op, path, parent.root, leaf, file); err != nil {
+		return nil, errors.Join(err, failure(op, path, file.Close()))
+	}
+	return file, nil
+}
+
 func (h dirHandle) readDirNames(op, path string, parts []string) (names []string, err error) {
 	d, err := h.walk(op, path, parts, ruleOpen)
 	if err != nil {

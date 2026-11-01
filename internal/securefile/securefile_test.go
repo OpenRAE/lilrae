@@ -386,6 +386,40 @@ func TestPrivateSubdir(t *testing.T) {
 	wantReason(t, refused, ReasonNotRelative)
 }
 
+func TestOpenLockFile(t *testing.T) {
+	root, d := newTree(t)
+	first, err := d.OpenLockFile(".aptl/lifecycle/.lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeOnCleanup(t, first)
+	if _, writeErr := first.WriteString("owner"); writeErr != nil {
+		t.Fatalf("the lock file is not open for writing: %v", writeErr)
+	}
+	second, err := d.OpenLockFile(".aptl/lifecycle/.lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeOnCleanup(t, second)
+	if got, readErr := io.ReadAll(second); readErr != nil || string(got) != "owner" {
+		t.Errorf("a second open reads %q, %v, want the same file without truncation", got, readErr)
+	}
+	symlink(t, root, ".lock", ".aptl/lifecycle/link.lock")
+	symlink(t, root, "missing.lock", ".aptl/lifecycle/dangling.lock")
+	for _, name := range []string{".aptl/lifecycle/link.lock", ".aptl/lifecycle/dangling.lock"} {
+		_, linkErr := d.OpenLockFile(name)
+		wantReason(t, linkErr, ReasonSymlink)
+	}
+	if got, want := names(t, root, ".aptl/lifecycle"), []string{".lock", "dangling.lock", "link.lock"}; !slices.Equal(got, want) {
+		t.Errorf("the directory holds %q, want %q and no target of the dangling link", got, want)
+	}
+	mkdir(t, root, "dir.lock")
+	_, err = d.OpenLockFile("dir.lock")
+	wantReason(t, err, ReasonOpenFailed)
+	_, err = d.OpenLockFile("../x.lock")
+	wantReason(t, err, ReasonTraversal)
+}
+
 func TestCreateOnce(t *testing.T) {
 	root, d := newTree(t)
 	if err := d.CreateOnce("top", []byte("one")); err != nil {
