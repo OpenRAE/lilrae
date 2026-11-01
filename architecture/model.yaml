@@ -95,6 +95,16 @@ components:
     responsibility: Runs each CI gate on a failing and a passing fixture.
     packages: [tools/gates]
     test_modules: [github.com/rogpeppe/go-internal]
+  - name: canonical-forms
+    layer: foundation
+    responsibility: Encodes the canonical JSON forms and decodes strict JSON.
+    packages: [internal/canonical]
+    modules: [github.com/gowebpki/jcs]
+    test_modules: [github.com/google/go-cmp]
+  - name: digest
+    layer: foundation
+    responsibility: Gives the SHA-256 digest spellings.
+    packages: [internal/digest]
   - name: conformance-suite
     layer: tools
     responsibility: Runs the black-box contract cases against an installed lilrae binary.

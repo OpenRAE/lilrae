@@ -16,6 +16,10 @@ the diagram differs from the model. Do not edit the diagram by hand.
 <!-- Generated from architecture/model.yaml by archcheck diagram. Do not edit. -->
 ```mermaid
 flowchart TB
+    subgraph layer_foundation[foundation]
+        component_canonical_forms[canonical-forms]
+        component_digest[digest]
+    end
     subgraph layer_tools[tools]
         component_regressioncheck_command[regressioncheck-command]
         component_mutationcheck_command[mutationcheck-command]
