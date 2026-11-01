@@ -25,7 +25,7 @@ _GO_FILES = {"go.mod", "go.sum", ".golangci.yml", "tools/go.mod", "tools/go.sum"
 # check, and the contract inventory that maps each contract to a case.
 _CONFORMANCE_PREFIXES = ("conformance/", "docs/reference/schemas/", "docs/reference/conformance-inventory.md")
 # Documents that a Python test reads, so a change to them runs that test.
-_PYTHON_TESTED_DOCS = {"docs/reference/serialization-schemes.md"}
+_PYTHON_TESTED_DOCS = {"docs/reference/serialization-schemes.md", "docs/architecture/raes-consumer-inventory.md"}
 
 
 def select_lanes(paths: list[str], *, full: bool = False) -> dict[str, bool]:
