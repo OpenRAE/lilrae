@@ -79,7 +79,10 @@ defines.
 1. **The checker reads the source.** `tools/internal/architecture` lists the
    tracked Go files, reads their imports with the Go parser, and resolves each
    import to a first-party package, the standard library, or a required module
-   of the module of the file. It reads each file, so each build constraint and
+   of the module of the file. As for the go command, the module with the
+   longest path that holds an import owns it, so a required module below a
+   first-party module path is a module, not a first-party package. It reads
+   each file, so each build constraint and
    each test file is in scope without a build matrix. It reads the working
    tree, so it skips a tracked file that the working tree deleted. It skips
    the vendored directories and the paths that the go command ignores
@@ -165,7 +168,12 @@ defines.
     the checks and the go command agree on the Go code.
 14. **Shared command support.** `archcheck` takes its exit statuses, flag
     parsing, and output handling from `tools/internal/checkcmd` (#1553).
-15. **Safe output.** A finding prints the rule, the repository path and line,
+15. **Linked test data.** The regression replay of #1553 overlays the head
+    revision of a test data link, of the file or the directory that the link
+    names, and of each link in that target. It follows each link once, so a
+    cycle of links ends, and a link that names a directory holding its package
+    stops the check.
+16. **Safe output.** A finding prints the rule, the repository path and line,
     the quoted import path, and the fix-it message. It prints no source text
     and no parser message. Each untrusted string (path, import, model text,
     YAML or Git error) is quoted, or its characters that are not printable and

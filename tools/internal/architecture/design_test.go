@@ -47,6 +47,31 @@ model_changes:
 	}
 }
 
+func TestCheckDesignResolvesARequiredModuleBelowTheFirstPartyPath(t *testing.T) {
+	t.Parallel()
+	r := newFixture(t, map[string]string{
+		"go.mod": "module example.com/app\n\ngo 1.27.0\n\nrequire (\n\texample.com/dep v1.0.0\n\texample.com/check v1.0.0\n\texample.com/app/dep v1.0.0\n)\n",
+	})
+	base := r.Git("rev-parse", "HEAD")
+	model := strings.Replace(fixtureModel, "    modules: [example.com/dep]\n", "    modules: [example.com/dep, example.com/app/dep]\n", 1)
+	r.Commit(map[string]string{
+		"architecture/model.yaml": model,
+		"docs/issue-7-design.md": noteFor(`design: 1
+issue: 7
+packages:
+  - path: internal/store
+    component: store
+    imports: [example.com/app/internal/values, example.com/dep, example.com/app/dep]
+model_changes:
+  - component:store.modules
+`),
+	})
+
+	if got := checkDesign(t, r, base, "docs/issue-7-design.md"); len(got) != 0 {
+		t.Errorf("CheckDesign() findings = %q, want none: example.com/app/dep is a required module", got)
+	}
+}
+
 func TestCheckDesignRejectsABrokenRecord(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

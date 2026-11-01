@@ -138,10 +138,8 @@ design record.
     mutation gate selects only the modules with production code, so the
     test-only conformance package needs no binary there.
 12. **Review fixes of the gates.** The regression replay rejects a head run
-    whose `go test` command fails after the test passes. It overlays the head
-    contents of the target of each test data link, a file or a directory, in
-    any order of the entries. It follows each link in a target too, once, so a
-    cycle of links ends.
+    whose `go test` command fails after the test passes. The overlay of linked
+    test data belongs to #1583.
 13. **Self-test.** `TestHarnessCommandsFail` runs scripts with false
     assertions against a fake binary, and each must fail, so a command of the
     harness cannot pass without a check.
