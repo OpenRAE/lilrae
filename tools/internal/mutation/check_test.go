@@ -113,6 +113,32 @@ func TestCheckFailsOnLivedMutantsInTheChangedLinesOfANestedModule(t *testing.T) 
 	}
 }
 
+// TestCheckMutatesEachEditOfAHunk changes two comparisons that are four lines
+// apart, so a diff with three context lines puts both in one hunk. The test
+// checks the boundary of the first and misses the boundary of the second.
+func TestCheckMutatesEachEditOfAHunk(t *testing.T) {
+	t.Parallel()
+	source := func(adult, senior string) string {
+		return "// Package calc is a fixture.\npackage calc\n\n// Adult reports whether age is adult.\nfunc Adult(age int) bool {\n\treturn age >= " + adult +
+			"\n}\n\n// Senior reports whether age is senior.\nfunc Senior(age int) bool {\n\treturn age >= " + senior + "\n}\n"
+	}
+	test := "package calc\n\nimport \"testing\"\n\nfunc TestAge(t *testing.T) {\n" +
+		"\tif Adult(20) || !Adult(21) || !Senior(90) {\n\t\tt.Error(\"wrong age class\")\n\t}\n}\n"
+	r := gittest.New(t)
+	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": source("18", "65"), "calc/calc_test.go": test})
+	r.Commit(map[string]string{"calc/calc.go": source("21", "67")})
+
+	report := check(t, mutation.Config{Repo: r.Dir, Base: base, Modules: []string{"."}, Gremlins: gremlins(t), Thresholds: thresholdsFile(t)})
+
+	lived := false
+	for _, f := range report.Findings {
+		lived = lived || strings.HasPrefix(f.Location, "calc/calc.go:11:") && strings.HasPrefix(f.Message, "LIVED")
+	}
+	if !lived {
+		t.Errorf("findings = %q, want a lived mutant at calc/calc.go:11, the second edit of the hunk", messages(report))
+	}
+}
+
 func TestCheckPassesWhenTheTestsKillEachMutant(t *testing.T) {
 	t.Parallel()
 	r := gittest.New(t)

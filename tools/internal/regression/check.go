@@ -5,10 +5,10 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"slices"
 	"strings"
 
 	"github.com/OpenRAE/lilrae/tools/internal/git"
+	"github.com/OpenRAE/lilrae/tools/internal/golayout"
 )
 
 // Config describes one regression check.
@@ -116,7 +116,7 @@ func scanChanges(ctx context.Context, root, base, head string, issue int) (chang
 	}
 	var scan changes
 	for _, file := range files {
-		if ignored(file.Path) {
+		if golayout.Ignored(file.Path) {
 			continue
 		}
 		if !strings.HasSuffix(file.Path, "_test.go") {
@@ -205,7 +205,7 @@ func packageTests(ctx context.Context, root, rev, dir string) (map[string]testFu
 	}
 	funcs := map[string]testFunc{}
 	for _, entry := range entries {
-		if path.Dir(entry.Path) != dir || !strings.HasSuffix(entry.Path, "_test.go") || ignored(entry.Path) {
+		if path.Dir(entry.Path) != dir || !strings.HasSuffix(entry.Path, "_test.go") || golayout.Ignored(entry.Path) {
 			continue
 		}
 		src, err := git.Show(ctx, root, rev, entry.Path)
@@ -221,16 +221,4 @@ func packageTests(ctx context.Context, root, rev, dir string) (map[string]testFu
 		}
 	}
 	return funcs, nil
-}
-
-// ignored reports whether the go command ignores a repository path: a
-// directory or file name in it begins with a dot or an underscore, or a
-// directory is named testdata.
-func ignored(file string) bool {
-	for part := range strings.SplitSeq(file, "/") {
-		if strings.HasPrefix(part, ".") || strings.HasPrefix(part, "_") {
-			return true
-		}
-	}
-	return slices.Contains(strings.Split(path.Dir(file), "/"), "testdata")
 }

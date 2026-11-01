@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/OpenRAE/lilrae/tools/internal/git"
 	"github.com/OpenRAE/lilrae/tools/internal/gittest"
 )
 
@@ -29,5 +30,32 @@ func TestCommitWritesAndDeletesFiles(t *testing.T) {
 	}
 	if got := r.Git("log", "-1", "--format=%an %ae %G?"); got != "Fixture fixture@example.invalid N" {
 		t.Errorf("commit identity = %q, want the fixed identity without a signature", got)
+	}
+}
+
+// TestRepoIgnoresTheHostConfiguration gives the host a Git configuration
+// whose hooks fail and whose commits are signed with a missing key. The
+// fixture commits still work, and so does a command that the code under test
+// runs in the repository with the host configuration.
+func TestRepoIgnoresTheHostConfiguration(t *testing.T) {
+	hooks := t.TempDir()
+	for _, hook := range []string{"pre-commit", "commit-msg", "post-checkout"} {
+		if err := os.WriteFile(filepath.Join(hooks, hook), []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil { //nolint:gosec // G306: a hook needs the owner execute bit; 0700 gives no access to other users.
+			t.Fatal(err)
+		}
+	}
+	global := filepath.Join(t.TempDir(), "gitconfig")
+	config := "[core]\n\thooksPath = " + hooks + "\n[commit]\n\tgpgsign = true\n[user]\n\tsigningkey = " + filepath.Join(hooks, "missing") + "\n[gpg]\n\tformat = ssh\n"
+	if err := os.WriteFile(global, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
+	r := gittest.New(t)
+
+	r.Commit(map[string]string{"a.txt": "a\n"})
+
+	tree := filepath.Join(t.TempDir(), "tree")
+	if _, err := git.Run(t.Context(), r.Dir, "worktree", "add", "--detach", "--quiet", tree, "HEAD"); err != nil {
+		t.Errorf("git worktree add with the host configuration: %v", err)
 	}
 }

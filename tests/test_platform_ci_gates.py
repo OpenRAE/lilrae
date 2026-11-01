@@ -518,3 +518,21 @@ def test_go_architecture_runs_on_every_change_and_is_required_on_go_cutover() ->
     script = job["steps"][-1]["run"]
     assert 'bash tools/ci/go-gates.sh architecture "$BASE_SHA" "$issue" "$promotion"' in script
     assert '"$HEAD_REPO" == "$REPOSITORY" && "$HEAD_REF" =~ ^(main|dev|go-cutover)$' in script
+
+
+def test_go_regression_keeps_the_token_away_from_the_replay() -> None:
+    """Only the label lookup has the token, before any checkout (#1553).
+
+    The replay runs the test code of the pull request, so no step after the
+    checkout gets a token or a secret.
+    """
+
+    steps = _jobs()["go-regression"]["steps"]
+    names = [step.get("name", step.get("uses", "")) for step in steps]
+    checkout = next(i for i, step in enumerate(steps) if step.get("uses", "").startswith("actions/checkout@"))
+    with_token = [i for i, step in enumerate(steps) if any("github.token" in str(v) or "secrets." in str(v) for v in step.get("env", {}).values())]
+    assert with_token == [names.index("Read the issue and the bug label of the branch")]
+    assert with_token[0] < checkout
+    replay = steps[names.index("Replay the regression tests of the pull request")]
+    assert "go-gates.sh regression" in replay["run"]
+    assert "GH_TOKEN" not in replay.get("env", {})

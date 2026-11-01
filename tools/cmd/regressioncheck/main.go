@@ -13,7 +13,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -22,6 +21,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/OpenRAE/lilrae/tools/internal/checkcmd"
 	"github.com/OpenRAE/lilrae/tools/internal/regression"
 )
 
@@ -40,18 +40,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&cfg.Base, "base", "", "the base revision of the change (required)")
 	flags.IntVar(&cfg.Issue, "issue", 0, "the issue number of the branch, or 0 for none")
 	flags.BoolVar(&cfg.Bug, "bug", false, "the issue has the bug label")
-	if err := flags.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return 0
-		}
-		return 2
+	if code, stop := checkcmd.Parse(flags, args); stop {
+		return code
 	}
 	if cfg.Base == "" || cfg.Issue < 0 || flags.NArg() != 0 {
-		return write(stderr, "regressioncheck: -base is required, -issue is not negative, and no argument follows the flags\n", 2)
+		return checkcmd.Write(stderr, "regressioncheck: -base is required, -issue is not negative, and no argument follows the flags\n", checkcmd.Error)
 	}
 	report, err := regression.Check(ctx, cfg)
 	if err != nil {
-		return write(stderr, fmt.Sprintf("regressioncheck: %v\n", err), 2)
+		return checkcmd.Write(stderr, fmt.Sprintf("regressioncheck: %v\n", err), checkcmd.Error)
 	}
 	var out strings.Builder
 	fmt.Fprintf(&out, "regressioncheck: base %s, head %s\n", report.Base, report.Head)
@@ -67,16 +64,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(&out, f)
 	}
 	if len(report.Findings) == 0 {
-		return write(stdout, out.String(), 0)
+		return checkcmd.Write(stdout, out.String(), checkcmd.Pass)
 	}
 	fmt.Fprintf(&out, "regressioncheck: %d finding(s)\n", len(report.Findings))
-	return write(stdout, out.String(), 1)
-}
-
-// write writes text to w and returns code, or 2 when the write fails.
-func write(w io.Writer, text string, code int) int {
-	if _, err := io.WriteString(w, text); err != nil {
-		return 2
-	}
-	return code
+	return checkcmd.Write(stdout, out.String(), checkcmd.Fail)
 }

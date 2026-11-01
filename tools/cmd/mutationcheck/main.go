@@ -13,7 +13,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -22,6 +21,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/OpenRAE/lilrae/tools/internal/checkcmd"
 	"github.com/OpenRAE/lilrae/tools/internal/mutation"
 )
 
@@ -42,25 +42,22 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&cfg.Thresholds, "thresholds", "", "the path of the thresholds file (required)")
 	flags.IntVar(&cfg.Workers, "workers", 0, "the number of mutants that Gremlins tests at the same time; 0 for one per CPU")
 	flags.IntVar(&cfg.TimeoutCoefficient, "timeout-coefficient", 0, "the multiple of the first test run time that a mutant may take; 0 for the Gremlins default")
-	if err := flags.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return 0
-		}
-		return 2
+	if code, stop := checkcmd.Parse(flags, args); stop {
+		return code
 	}
 	cfg.Modules = flags.Args()
 	if cfg.Gremlins == "" || cfg.Thresholds == "" {
-		return write(stderr, "mutationcheck: -gremlins and -thresholds are required\n", 2)
+		return checkcmd.Write(stderr, "mutationcheck: -gremlins and -thresholds are required\n", checkcmd.Error)
 	}
 	report, err := mutation.Check(ctx, cfg)
 	if err != nil {
-		return write(stderr, fmt.Sprintf("mutationcheck: %v\n", err), 2)
+		return checkcmd.Write(stderr, fmt.Sprintf("mutationcheck: %v\n", err), checkcmd.Error)
 	}
 	text := summary(report)
 	if len(report.Findings) == 0 {
-		return write(stdout, text, 0)
+		return checkcmd.Write(stdout, text, checkcmd.Pass)
 	}
-	return write(stdout, text+fmt.Sprintf("mutationcheck: %d finding(s)\n", len(report.Findings)), 1)
+	return checkcmd.Write(stdout, text+fmt.Sprintf("mutationcheck: %d finding(s)\n", len(report.Findings)), checkcmd.Fail)
 }
 
 // summary returns the scope, the counts, the measures, and the findings of a
@@ -99,12 +96,4 @@ func writeScope(out *strings.Builder, report mutation.Report) {
 	for _, file := range report.Changed {
 		fmt.Fprintf(out, "  %s\n", file)
 	}
-}
-
-// write writes text to w and returns code, or 2 when the write fails.
-func write(w io.Writer, text string, code int) int {
-	if _, err := io.WriteString(w, text); err != nil {
-		return 2
-	}
-	return code
 }

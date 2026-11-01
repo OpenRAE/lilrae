@@ -14,9 +14,9 @@ import (
 )
 
 // newRepo returns a repository with two commits: base and head.
-func newRepo(t *testing.T) (dir, base, head string) {
+func newRepo(t *testing.T) (r *gittest.Repo, base, head string) {
 	t.Helper()
-	r := gittest.New(t)
+	r = gittest.New(t)
 	base = r.Commit(map[string]string{
 		"a/keep.go": "package a\n",
 		"a/edit.go": "package a\n",
@@ -38,12 +38,13 @@ func newRepo(t *testing.T) (dir, base, head string) {
 		"other.txt":    "other\n",
 		"a/gone.go":    "",
 	})
-	return r.Dir, base, head
+	return r, base, head
 }
 
 func TestTopLevelAndResolveCommit(t *testing.T) {
 	t.Parallel()
-	dir, base, head := newRepo(t)
+	r, base, head := newRepo(t)
+	dir := r.Dir
 
 	top, err := git.TopLevel(t.Context(), filepath.Join(dir, "a", "b"))
 	if err != nil || top != dir {
@@ -63,7 +64,14 @@ func TestTopLevelAndResolveCommit(t *testing.T) {
 
 func TestChangedFiles(t *testing.T) {
 	t.Parallel()
-	dir, base, head := newRepo(t)
+	r, base, head := newRepo(t)
+	dir := r.Dir
+	// git diff would list the files in this order; diff-tree ignores it.
+	order := filepath.Join(t.TempDir(), "order")
+	if err := os.WriteFile(order, []byte("a/renamed.go\na/edit.go\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r.Git("config", "diff.orderFile", order)
 
 	got, err := git.ChangedFiles(t.Context(), dir, base, head, "*.go")
 	if err != nil {
@@ -85,7 +93,8 @@ func TestChangedFiles(t *testing.T) {
 
 func TestFiles(t *testing.T) {
 	t.Parallel()
-	dir, _, head := newRepo(t)
+	r, _, head := newRepo(t)
+	dir := r.Dir
 
 	got, err := git.Files(t.Context(), dir, head, "a")
 	if err != nil {
@@ -108,7 +117,8 @@ func TestFiles(t *testing.T) {
 
 func TestShow(t *testing.T) {
 	t.Parallel()
-	dir, base, head := newRepo(t)
+	r, base, head := newRepo(t)
+	dir := r.Dir
 
 	got, err := git.Show(t.Context(), dir, head, "a/edit.go")
 	if err != nil || string(got) != "package a // edited\n" {
@@ -124,7 +134,8 @@ func TestShow(t *testing.T) {
 
 func TestRunReportsTheCommandAndItsError(t *testing.T) {
 	t.Parallel()
-	dir, _, _ := newRepo(t)
+	r, _, _ := newRepo(t)
+	dir := r.Dir
 
 	_, err := git.Run(t.Context(), dir, "cat-file", "blob", "HEAD:missing")
 
