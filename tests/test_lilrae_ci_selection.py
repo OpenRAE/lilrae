@@ -125,6 +125,17 @@ def test_go_changes_select_the_go_and_docs_lanes_and_the_coverage_closure():
         assert not lanes["lab"], path
     assert select(["internal/core/value.go"])["docs"]
     assert not select(["tools/lint/go.sum"])["docs"]
+    # The conformance cases, the schemas, and the inventory also select the
+    # lab lane, whose clean-install job runs the lab cases (#1554).
+    for path in (
+        "conformance/harness_test.go",
+        "conformance/testdata/lab/lifecycle.txtar",
+        "docs/reference/schemas/lab-start-result.schema.json",
+        "docs/reference/conformance-inventory.md",
+    ):
+        lanes = select([path])
+        assert lanes["go"] and lanes["lab"], path
+    assert not select(["internal/core/value.go"])["lab"]
     # Python changes need current Go coverage for the project-wide analysis.
     assert select(["src/aptl/core/lab.py"])["go"]
     # The Caddy build keeps its own module and its web checks.

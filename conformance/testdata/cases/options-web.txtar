@@ -1,0 +1,18 @@
+# Each command accepts its options. The case checks the option names in the
+# help, not the help layout or the format of the defaults. Typer's
+# completion options and hidden options and commands are implementation
+# details. A wide terminal keeps a help table from shortening long option
+# names.
+env COLUMNS=240
+
+lilrae web --help
+
+lilrae web serve --help
+stdout '--host'
+stdout '--port'
+stdout '--reload'
+stdout '--no-reload'
+stdout '--project-dir'
+stdout '--web-root'
+stdout '--api-only'
+stdout '--public-origin'

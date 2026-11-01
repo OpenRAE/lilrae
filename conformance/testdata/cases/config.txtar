@@ -1,0 +1,42 @@
+# lilrae config validate checks aptl.json. lilrae config show prints the
+# resolved configuration, with the defaults, and --json prints it as JSON
+# without a result envelope.
+lilrae lab init proj
+cd proj
+lilrae config validate
+stdout 'aptl.json'
+lilrae config show --json
+cp stdout resolved.json
+schema aptl-config.schema.json resolved.json
+! stdout '"schema_version"'
+lilrae config show
+stdout 'network_subnet'
+
+# Each object rejects an unknown field.
+cp $WORK/unknown-field.json aptl.json
+! lilrae config validate
+status 1
+stderr 'lab\.unknown_field'
+! lilrae config show --json
+status 1
+! stdout .
+
+# Invalid JSON is an error that names the file.
+cp $WORK/broken.json aptl.json
+! lilrae config validate
+status 1
+stderr 'aptl\.json'
+
+# Without aptl.json, both commands report it.
+rm aptl.json
+! lilrae config validate
+status 1
+stderr 'no aptl\.json found'
+! lilrae config show
+status 1
+stderr 'no aptl\.json found'
+
+-- unknown-field.json --
+{"lab": {"name": "aptl", "unknown_field": 1}}
+-- broken.json --
+{"lab": 

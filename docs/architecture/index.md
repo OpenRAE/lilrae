@@ -171,6 +171,8 @@ code.
 
 ## Preflights
 
+- [Issue #1554 Conformance Preflight](issue-1554-conformance-preflight.md)
+- [Issue #1554 Conformance Design](issue-1554-conformance-design.md)
 - [Issue #1583 Architecture Model Preflight](issue-1583-architecture-model-preflight.md)
 - [Issue #1583 Architecture Model Design](issue-1583-architecture-model-design.md)
 - [Issue #1552 Go Architecture Preflight](issue-1552-go-architecture-preflight.md)

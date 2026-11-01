@@ -1,0 +1,94 @@
+# Each command accepts its options. The case checks the option names in the
+# help, not the help layout or the format of the defaults. Typer's
+# completion options and hidden options and commands are implementation
+# details. A wide terminal keeps a help table from shortening long option
+# names.
+env COLUMNS=240
+
+lilrae seat --help
+
+lilrae seat stage --help
+stdout '--seat-root'
+stdout '--seat-id'
+stdout '--image'
+stdout '--public-key'
+stdout '--image-cache'
+stdout '--yes'
+stdout '(^|[^-\w])-y\b'
+stdout '--mapping'
+stdout '--desktop-mode'
+
+lilrae seat start --help
+stdout '--seat-root'
+stdout '--seat-id'
+stdout '--image'
+stdout '--public-key'
+stdout '--image-cache'
+stdout '--yes'
+stdout '(^|[^-\w])-y\b'
+stdout '--mapping'
+stdout '--access-owner'
+stdout '--access-public-key'
+stdout '--access-identity-file'
+stdout '--access-project-dir'
+stdout '--access-profile'
+stdout '--access-client'
+stdout '--access-hours'
+stdout '--no-check'
+stdout '--desktop-mode'
+stdout '--sudo-password-file'
+
+lilrae seat stop --help
+stdout '--seat-root'
+
+lilrae seat rescue --help
+stdout '--seat-root'
+
+lilrae seat reset --help
+stdout '--seat-root'
+stdout '--seat-id'
+stdout '--image'
+stdout '--public-key'
+stdout '--image-cache'
+stdout '--yes'
+stdout '(^|[^-\w])-y\b'
+stdout '--desktop-mode'
+
+lilrae seat recover --help
+stdout '--seat-root'
+stdout '--seat-id'
+stdout '--image'
+stdout '--public-key'
+stdout '--image-cache'
+stdout '--yes'
+stdout '(^|[^-\w])-y\b'
+stdout '--desktop-mode'
+stdout '--sudo-password-file'
+
+lilrae seat reconcile --help
+stdout '--seat-root'
+
+lilrae seat status --help
+stdout '--seat-root'
+
+lilrae seat open-kiosk --help
+stdout '--participant-port'
+stdout '--seat-root'
+stdout '--browser-command'
+stdout '--dry-run'
+
+lilrae seat update --help
+stdout '--seat-root'
+stdout '--image'
+stdout '--public-key'
+stdout '--image-cache'
+stdout '--yes'
+stdout '(^|[^-\w])-y\b'
+stdout '--to'
+stdout '--desktop-mode'
+
+lilrae seat images --help
+stdout '--image-cache'
+stdout '--yes'
+stdout '(^|[^-\w])-y\b'
+stdout '--prune'

@@ -529,6 +529,10 @@ jobs:
           python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/*.txt
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
       - name: Build the wheel with the locked, no-isolation toolchain
         run: |
           pip install --require-hashes -r requirements/ci.txt
@@ -647,6 +651,15 @@ jobs:
             "$GITHUB_WORKSPACE/scripts/ci/assert_project_teardown.py" \
             "$RUNNER_TEMP/clean-install/ci-lab" \
             --baseline "$RUNNER_TEMP/daemon-baseline.json"
+      # ADR-065: the lab conformance cases start, observe, stop, and reset
+      # their own project with the clean wheel and the same scenario.
+      - name: Run the lab conformance cases
+        env:
+          GOWORK: "off"
+          GOTOOLCHAIN: local
+          LILRAE_CONFORMANCE_BINARY: ${{ runner.temp }}/clean-venv/bin/lilrae
+          LILRAE_CONFORMANCE_SCENARIO: ${{ github.workspace }}/tests/fixtures/packs/materialization-envelope/sdl/materialization-envelope.sdl.yaml
+        run: go test -tags integration -count=1 -run '^TestLab$' ./conformance/
 
   mcp-tests:
     name: MCP TypeScript tests + coverage
@@ -1269,7 +1282,23 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: "**/go.sum"
-      - name: Race-detected, shuffled tests with coverage, and the gate fixtures
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
+      # ADR-065: the conformance suite runs the installed Python release. The
+      # wheel goes into a clean environment, as in the clean-install lab job.
+      - name: Build and install the wheel for the conformance suite
+        run: |
+          pip install --require-hashes -r requirements/ci.txt
+          python -m build --wheel --no-isolation --outdir dist/
+          python -m venv "$RUNNER_TEMP/clean-venv"
+          "$RUNNER_TEMP/clean-venv/bin/pip" install --require-hashes -r requirements/runtime.txt
+          "$RUNNER_TEMP/clean-venv/bin/pip" install --no-deps dist/*.whl
+      - name: Race-detected, shuffled tests with coverage, the gate fixtures, and the conformance suite
+        env:
+          LILRAE_CONFORMANCE_BINARY: ${{ runner.temp }}/clean-venv/bin/lilrae
         run: bash tools/ci/go-gates.sh test "$GITHUB_WORKSPACE/go-coverage"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

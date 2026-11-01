@@ -118,7 +118,7 @@ modules: the tracked `go.mod` files, except `web/caddy-build` and test data.
 | Job | Gate |
 | --- | --- |
 | Go lint | `go mod tidy -diff`, `go vet`, `go fix -diff`, and golangci-lint for Linux, macOS, and Windows. The golangci-lint formatters check gofmt and goimports. |
-| Go tests + coverage | `go test -race -shuffle=on` with coverage, and the gate fixtures of `tools/gates`. |
+| Go tests + coverage | `go test -race -shuffle=on` with coverage, the gate fixtures of `tools/gates`, and the [conformance suite](../reference/conformance-inventory.md) on the clean wheel. |
 | Go mutation tests | Gremlins on the changed production lines, or on each whole module for a scheduled or manual run. `tools/mutation-thresholds.json` holds the thresholds. |
 | Go regression tests | The replay of each regression test for the issue of the pull request. |
 | Go architecture | `archcheck` checks the repository and the generated diagram against `architecture/model.yaml`, and the change against the design record of the issue of the pull request. |
@@ -127,6 +127,9 @@ modules: the tracked `go.mod` files, except `web/caddy-build` and test data.
 
 - The `go` lane of `tools/ci/select_checks.py` selects these jobs. Go source also
   selects the docs lane, because Vale checks Go comments.
+- The conformance cases, the published schemas, and the contract inventory
+  also select the `lab` lane. The clean-install lab job runs the lab cases with
+  its clean wheel.
 - The Go architecture job runs whatever the routing selects. The model also
   covers `web/caddy-build` and the design notes, which are not in the `go` lane.
 - SonarCloud needs current coverage from each stack. The `go` lane and the

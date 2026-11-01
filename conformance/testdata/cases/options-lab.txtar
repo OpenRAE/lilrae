@@ -1,0 +1,110 @@
+# Each command accepts its options. The case checks the option names in the
+# help, not the help layout or the format of the defaults. Typer's
+# completion options and hidden options and commands are implementation
+# details. A wide terminal keeps a help table from shortening long option
+# names.
+env COLUMNS=240
+
+lilrae lab --help
+
+lilrae lab continuity-audit --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+stdout '--target'
+stdout '(^|[^-\w])-t\b'
+stdout '--whitelist'
+stdout '--json'
+stdout '--run-id'
+
+lilrae lab init --help
+stdout '--force'
+stdout '(^|[^-\w])-f\b'
+
+lilrae lab enforce --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+stdout '--grace-minutes'
+
+lilrae lab monitor --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+stdout '--interval'
+stdout '--max-ticks'
+stdout '--grace-minutes'
+
+lilrae lab qualify-profile --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+stdout '--profile'
+stdout '--report'
+stdout '--public-key'
+stdout '--run-id'
+
+lilrae lab start --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+stdout '--skip-seed'
+stdout '--scenario'
+stdout '--scenario-path'
+stdout '--clean'
+stdout '(^|[^-\w])-c\b'
+stdout '--yes'
+stdout '(^|[^-\w])-y\b'
+stdout '--teardown-on-failure'
+stdout '--offline-staged'
+stdout '--appliance-launch-descriptor'
+stdout '--appliance-release-public-key'
+stdout '--appliance-qualification-public-key'
+stdout '--json'
+stdout '(^|[^-\w])-j\b'
+
+lilrae lab info --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+
+lilrae lab scenarios --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+
+lilrae lab stop --help
+stdout '--volumes'
+stdout '(^|[^-\w])-v\b'
+stdout '--yes'
+stdout '(^|[^-\w])-y\b'
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+stdout '--json'
+stdout '(^|[^-\w])-j\b'
+
+lilrae lab reset --help
+stdout '--yes'
+stdout '(^|[^-\w])-y\b'
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+stdout '--json'
+stdout '(^|[^-\w])-j\b'
+
+lilrae lab status --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+stdout '--json'
+stdout '(^|[^-\w])-j\b'
+stdout '--output'
+stdout '(^|[^-\w])-o\b'
+
+lilrae lab validate-live --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+stdout '--scenario'
+stdout '--profile'
+stdout '--run-id'
+stdout '--skip-clean-boot'
+stdout '--yes'
+stdout '(^|[^-\w])-y\b'
+
+lilrae lab policy --help
+
+lilrae lab policy show --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+stdout '--json'

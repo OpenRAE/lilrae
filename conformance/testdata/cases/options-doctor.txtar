@@ -1,0 +1,12 @@
+# Each command accepts its options. The case checks the option names in the
+# help, not the help layout or the format of the defaults. Typer's
+# completion options and hidden options and commands are implementation
+# details. A wide terminal keeps a help table from shortening long option
+# names.
+env COLUMNS=240
+
+lilrae doctor --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+stdout '--json'
+stdout '(^|[^-\w])-j\b'

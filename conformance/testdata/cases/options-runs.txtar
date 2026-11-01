@@ -1,0 +1,42 @@
+# Each command accepts its options. The case checks the option names in the
+# help, not the help layout or the format of the defaults. Typer's
+# completion options and hidden options and commands are implementation
+# details. A wide terminal keeps a help table from shortening long option
+# names.
+env COLUMNS=240
+
+lilrae runs --help
+
+lilrae runs list --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+stdout '--limit'
+stdout '(^|[^-\w])-n\b'
+
+lilrae runs show --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+
+lilrae runs path --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+
+lilrae runs export --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+stdout '--output-dir'
+stdout '(^|[^-\w])-o\b'
+stdout '--s3-bucket'
+stdout '--s3-prefix'
+
+lilrae runs export-bundle --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+stdout '--output-dir'
+stdout '(^|[^-\w])-o\b'
+stdout '--projection'
+stdout '(^|[^-\w])-p\b'
+stdout '--verify'
+stdout '--no-verify'
+
+lilrae runs verify-bundle --help

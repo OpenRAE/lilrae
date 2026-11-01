@@ -47,3 +47,4 @@ Researchers need interoperable evidence, not an APTL opinion about analysis or p
 - TESTS → TEST `tests/test_evidence_bundle_security.py`
 - TESTS → TEST `tests/test_evidence_bundle_cli.py`
 - TESTS → TEST `tests/test_evidence_bundle_inventory.py`
+- TESTS → TEST `conformance/testdata/cases/runs-bundle.txtar` (Black-box evidence bundle export, manifest schema, and verification)

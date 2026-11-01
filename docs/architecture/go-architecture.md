@@ -26,6 +26,7 @@ flowchart TB
         component_git[git]
         component_git_test_support[git-test-support]
         component_gate_fixtures[gate-fixtures]
+        component_conformance_suite[conformance-suite]
     end
     subgraph layer_build[build]
         component_caddy_build[caddy-build]

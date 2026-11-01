@@ -86,6 +86,11 @@ components:
     responsibility: Runs each CI gate on a failing and a passing fixture.
     packages: [tools/gates]
     test_modules: [github.com/rogpeppe/go-internal]
+  - name: conformance-suite
+    layer: tools
+    responsibility: Runs the black-box contract cases against an installed lilrae binary.
+    packages: [conformance]
+    test_modules: [github.com/rogpeppe/go-internal, github.com/santhosh-tekuri/jsonschema/v6]
   - name: caddy-build
     layer: build
     responsibility: Builds the Caddy binary of the web image.

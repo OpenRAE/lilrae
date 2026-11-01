@@ -1,0 +1,33 @@
+# Each command accepts its options. The case checks the option names in the
+# help, not the help layout or the format of the defaults. Typer's
+# completion options and hidden options and commands are implementation
+# details. A wide terminal keeps a help table from shortening long option
+# names.
+env COLUMNS=240
+
+lilrae mcp-access --help
+
+lilrae mcp-access configure --help
+stdout '--access-record'
+stdout '--grant'
+stdout '--host-public-key'
+stdout '--expected-host-key'
+stdout '--identity-file'
+stdout '--username'
+stdout '--owner-id'
+stdout '--seat-id'
+stdout '--instance-id'
+stdout '--project-dir'
+stdout '--client'
+
+lilrae mcp-access prepare-guest --help
+stdout '--request'
+stdout '--output-dir'
+
+lilrae mcp-access refresh --help
+stdout '--binding'
+stdout '--output'
+
+lilrae mcp-access revoke --help
+stdout '--binding'
+stdout '--grant-id'

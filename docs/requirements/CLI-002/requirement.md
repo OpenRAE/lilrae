@@ -30,3 +30,4 @@ The bash script passed invalid configurations silently, causing containers to fa
 - TESTS → TEST `tests/test_cli_config.py` (CLI config validate/show tests)
 - IMPLEMENTS → GITHUB_ISSUE `138` (Issue 138: implement stubbed CLI commands)
 - IMPLEMENTS → ADR `docs/adrs/adr-025-strict-first-party-config-schema.md` (ADR-025: Strict first-party config schema)
+- TESTS → TEST `conformance/testdata/cases/config.txtar` (Black-box config validation of unknown fields, invalid JSON, and a missing file)

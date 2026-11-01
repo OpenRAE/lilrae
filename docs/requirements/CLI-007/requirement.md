@@ -25,3 +25,4 @@ CLI-002 covers configuration *validation* but not inspection. Users currently ha
 - IMPLEMENTS → CODE_FILE `src/aptl/cli/_common.py` (resolve_config_for_cli helper)
 - TESTS → TEST `tests/test_cli_config.py` (CLI config validate/show tests)
 - IMPLEMENTS → GITHUB_ISSUE `138` (Issue 138: implement stubbed CLI commands)
+- TESTS → TEST `conformance/testdata/cases/config.txtar` (Black-box config show text and JSON with defaults)

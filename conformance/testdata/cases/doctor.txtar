@@ -1,0 +1,18 @@
+# lilrae doctor --json prints one result object on standard output. Its counts
+# match its checks, and its exit status is 1 because a check failed: the
+# Docker endpoint does not exist.
+env DOCKER_HOST=unix://$WORK/no-daemon.sock
+lilrae lab init proj
+cd proj
+! lilrae doctor --json
+status 1
+envelope doctor
+cp stdout result.json
+schema doctor-result.schema.json result.json
+doctor-counts result.json
+stdout '"id": "docker-daemon"'
+
+# Without --json, the report is text and the exit status is the same.
+! lilrae doctor
+status 1
+! stdout '"schema_version"'

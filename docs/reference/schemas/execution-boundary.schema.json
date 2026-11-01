@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openrae.github.io/lilrae/reference/schemas/execution-boundary.schema.json",
+  "title": "Execution boundary observation",
+  "description": "aptl.execution-boundary/v1: public, credential-free facts about the selected Docker endpoint. An observed daemon, a selected profile, and verified containment are different claims.",
+  "type": "object",
+  "required": [
+    "schema_version", "transport", "override_source", "daemon_runtime", "host_containment",
+    "observation_status", "host_os", "host_kernel", "docker_version", "containment_verified",
+    "profile_ref", "evidence_refs"
+  ],
+  "properties": {
+    "schema_version": {"const": "aptl.execution-boundary/v1"},
+    "transport": {"enum": ["local-unix", "local-npipe", "remote-ssh", "remote-tcp", "unknown"]},
+    "override_source": {"enum": ["none", "docker-host", "docker-context", "active-context", "conflicting-overrides"]},
+    "daemon_runtime": {"enum": ["native-linux", "docker-vm", "unknown"]},
+    "host_containment": {"enum": ["native-docker", "docker-vm-unverified", "remote-unverified", "seat-guest-unverified", "unknown"]},
+    "observation_status": {"enum": ["observed", "partial", "unknown", "mismatch"]},
+    "host_os": {"enum": ["linux", "macos", "windows", "unknown"]},
+    "host_kernel": {"type": "string", "maxLength": 80},
+    "docker_version": {"type": "string", "maxLength": 80},
+    "containment_verified": {"type": "boolean"},
+    "profile_ref": {"type": "string", "maxLength": 80},
+    "evidence_refs": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

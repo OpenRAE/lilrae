@@ -1,0 +1,22 @@
+# Each command accepts its options. The case checks the option names in the
+# help, not the help layout or the format of the defaults. Typer's
+# completion options and hidden options and commands are implementation
+# details. A wide terminal keeps a help table from shortening long option
+# names.
+env COLUMNS=240
+
+lilrae config --help
+
+lilrae config show --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+stdout '--json'
+
+lilrae config validate --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+
+lilrae config migrate --help
+stdout '--project-dir'
+stdout '(^|[^-\w])-d\b'
+stdout '--scenario'

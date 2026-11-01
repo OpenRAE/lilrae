@@ -1,0 +1,45 @@
+# The lab cases start the product-neutral scenario that
+# LILRAE_CONFORMANCE_SCENARIO names, on a Docker daemon that only the lab uses,
+# and check the JSON results of start, status, stop, and reset, the range
+# snapshot, and the run record.
+lilrae lab init proj
+cd proj
+mkdir scenarios
+cp $LILRAE_CONFORMANCE_SCENARIO scenarios/scenario.sdl.yaml
+
+lilrae lab start --json --scenario-path scenarios/scenario.sdl.yaml
+envelope 'lab start'
+cp stdout start.json
+schema lab-start-result.schema.json start.json
+stdout '"outcome": "(ready|degraded_usable|degraded_unusable)"'
+stdout '"error": null'
+stdout '"residue": null'
+stderr '\[lab start\]'
+
+lilrae lab status --json
+cp stdout status.json
+schema range-snapshot.schema.json status.json
+lilrae lab status --output snapshot.json
+schema range-snapshot.schema.json snapshot.json
+
+# The start wrote its run record as manifest.json in its run directory.
+lilrae runs list
+stdout '1 run\(s\) shown \(of 1 total\)'
+exec sh -c 'cp runs/*/manifest.json run-record.json'
+schema run-record.schema.json run-record.json
+
+lilrae container list
+stdout .
+
+lilrae lab stop --json
+envelope 'lab stop'
+cp stdout stop.json
+schema lab-stop-result.schema.json stop.json
+stdout '"volumes": false'
+stdout '"error": null'
+
+lilrae lab reset --json --yes
+envelope 'lab reset'
+cp stdout reset.json
+schema lab-reset-result.schema.json reset.json
+stdout '"error": null'

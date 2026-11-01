@@ -1,0 +1,430 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openrae.github.io/lilrae/reference/schemas/evidence-bundle.schema.json",
+  "title": "Evidence bundle manifest",
+  "description": "bundle.json, aptl-evidence-bundle/v1: the packaging envelope of an evidence bundle. It references the canonical records; RAES owns the record schemas. A field without a value is absent.",
+  "$defs": {
+    "DataDictionary": {
+      "additionalProperties": false,
+      "description": "The bundle's published schemas and projection descriptors.",
+      "properties": {
+        "schemas": {
+          "items": {
+            "$ref": "#/$defs/SchemaRef"
+          },
+          "type": "array"
+        },
+        "projections": {
+          "items": {
+            "$ref": "#/$defs/ProjectionDescriptor"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "schemas",
+        "projections"
+      ],
+      "type": "object"
+    },
+    "InventoryRow": {
+      "additionalProperties": false,
+      "description": "One inventory row referencing an included artifact by path/role/digest.",
+      "properties": {
+        "bundle_path": {
+          "type": "string"
+        },
+        "logical_role": {
+          "type": "string"
+        },
+        "classification": {
+          "type": "string"
+        },
+        "contract_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source_ref": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "sensitivity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "visibility": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "redaction_state": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "loss_disclosure": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "transformation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "provenance_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "clock_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "bundle_path",
+        "logical_role",
+        "classification",
+        "source_ref",
+        "digest",
+        "size",
+        "media_type"
+      ],
+      "type": "object"
+    },
+    "LimitationDoc": {
+      "additionalProperties": false,
+      "description": "One disclosed limitation: code, detail, and optional subject.",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "subject": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "code",
+        "detail"
+      ],
+      "type": "object"
+    },
+    "ProjectionDescriptor": {
+      "additionalProperties": false,
+      "description": "Describes one projection: its mapping, target format, and loss disclosures.",
+      "properties": {
+        "mapping_id": {
+          "type": "string"
+        },
+        "mapping_version": {
+          "type": "string"
+        },
+        "target_format": {
+          "type": "string"
+        },
+        "target_schema_version": {
+          "type": "string"
+        },
+        "source_contract_versions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "bundle_paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "field_maps": {
+          "items": {
+            "$ref": "#/$defs/ProjectionFieldMap"
+          },
+          "type": "array"
+        },
+        "reference_preservation": {
+          "type": "string"
+        },
+        "row_order": {
+          "type": "string"
+        },
+        "loss_disclosures": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "mapping_id",
+        "mapping_version",
+        "target_format",
+        "target_schema_version",
+        "source_contract_versions",
+        "bundle_paths",
+        "field_maps",
+        "reference_preservation",
+        "row_order",
+        "loss_disclosures"
+      ],
+      "type": "object"
+    },
+    "ProjectionFieldMap": {
+      "additionalProperties": false,
+      "description": "One source-to-target field mapping within a projection descriptor.",
+      "properties": {
+        "source_contract": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target_field": {
+          "type": "string"
+        },
+        "physical_type": {
+          "type": "string"
+        },
+        "null_treatment": {
+          "type": "string"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "source_contract",
+        "source_field",
+        "target_field",
+        "physical_type",
+        "null_treatment"
+      ],
+      "type": "object"
+    },
+    "SchemaRef": {
+      "additionalProperties": false,
+      "description": "A published RAES JSON Schema included in the bundle's data dictionary.",
+      "properties": {
+        "contract_id": {
+          "type": "string"
+        },
+        "bundle_path": {
+          "type": "string"
+        },
+        "schema_id": {
+          "type": "string"
+        },
+        "raes_version": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "contract_id",
+        "bundle_path",
+        "schema_id",
+        "raes_version",
+        "digest",
+        "size"
+      ],
+      "type": "object"
+    },
+    "SealDoc": {
+      "additionalProperties": false,
+      "description": "Seal identity recorded in the envelope: scope and optional root/verifier.",
+      "properties": {
+        "scope": {
+          "type": "string"
+        },
+        "root_identity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "verifier_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "scope"
+      ],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "aptl-evidence-bundle/v1",
+      "default": "aptl-evidence-bundle/v1",
+      "type": "string"
+    },
+    "bundle_profile": {
+      "type": "string"
+    },
+    "limits_profile": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "seal": {
+      "$ref": "#/$defs/SealDoc"
+    },
+    "inventory": {
+      "items": {
+        "$ref": "#/$defs/InventoryRow"
+      },
+      "type": "array"
+    },
+    "data_dictionary": {
+      "$ref": "#/$defs/DataDictionary"
+    },
+    "limitations": {
+      "items": {
+        "$ref": "#/$defs/LimitationDoc"
+      },
+      "type": "array"
+    },
+    "validation_disclosures": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "created_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "bundle_profile",
+    "limits_profile",
+    "run_id",
+    "seal",
+    "inventory",
+    "data_dictionary",
+    "limitations",
+    "validation_disclosures"
+  ],
+  "type": "object"
+}
