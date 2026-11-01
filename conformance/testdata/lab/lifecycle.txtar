@@ -8,12 +8,12 @@ mkdir scenarios
 cp $LILRAE_CONFORMANCE_SCENARIO scenarios/scenario.sdl.yaml
 
 lilrae lab start --json --scenario-path scenarios/scenario.sdl.yaml
-envelope 'lab start'
+jq stdout 'envelope("lab start"; $status)'
 cp stdout start.json
 schema lab-start-result.schema.json start.json
-! field start.json /outcome '"failed"'
-field start.json /error null
-field start.json /residue null
+jq start.json 'has("outcome") and .outcome != "failed"'
+jq start.json 'has("error") and .error == null'
+jq start.json 'has("residue") and .residue == null'
 stderr '\[lab start\]'
 
 lilrae lab status --json
@@ -32,14 +32,14 @@ lilrae container list
 stdout .
 
 lilrae lab stop --json
-envelope 'lab stop'
+jq stdout 'envelope("lab stop"; $status)'
 cp stdout stop.json
 schema lab-stop-result.schema.json stop.json
-field stop.json /volumes false
-field stop.json /error null
+jq stop.json '.volumes == false'
+jq stop.json 'has("error") and .error == null'
 
 lilrae lab reset --json --yes
-envelope 'lab reset'
+jq stdout 'envelope("lab reset"; $status)'
 cp stdout reset.json
 schema lab-reset-result.schema.json reset.json
-field reset.json /error null
+jq reset.json 'has("error") and .error == null'

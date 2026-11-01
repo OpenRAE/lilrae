@@ -2,109 +2,110 @@
 # help, not the help layout or the format of the defaults. Typer's
 # completion options and hidden options and commands are implementation
 # details. A wide terminal keeps a help table from shortening long option
-# names.
+# names. A long option matches only as a whole name, so --scenario does not
+# match --scenario-path.
 env COLUMNS=240
 
 lilrae lab --help
 
 lilrae lab continuity-audit --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
-stdout '--target'
+stdout '--target([^-\w]|$)'
 stdout '(^|[^-\w])-t\b'
-stdout '--whitelist'
-stdout '--json'
-stdout '--run-id'
+stdout '--whitelist([^-\w]|$)'
+stdout '--json([^-\w]|$)'
+stdout '--run-id([^-\w]|$)'
 
 lilrae lab init --help
-stdout '--force'
+stdout '--force([^-\w]|$)'
 stdout '(^|[^-\w])-f\b'
 
 lilrae lab enforce --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
-stdout '--grace-minutes'
+stdout '--grace-minutes([^-\w]|$)'
 
 lilrae lab monitor --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
-stdout '--interval'
-stdout '--max-ticks'
-stdout '--grace-minutes'
+stdout '--interval([^-\w]|$)'
+stdout '--max-ticks([^-\w]|$)'
+stdout '--grace-minutes([^-\w]|$)'
 
 lilrae lab qualify-profile --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
-stdout '--profile'
-stdout '--report'
-stdout '--public-key'
-stdout '--run-id'
+stdout '--profile([^-\w]|$)'
+stdout '--report([^-\w]|$)'
+stdout '--public-key([^-\w]|$)'
+stdout '--run-id([^-\w]|$)'
 
 lilrae lab start --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
-stdout '--skip-seed'
-stdout '--scenario'
-stdout '--scenario-path'
-stdout '--clean'
+stdout '--skip-seed([^-\w]|$)'
+stdout '--scenario([^-\w]|$)'
+stdout '--scenario-path([^-\w]|$)'
+stdout '--clean([^-\w]|$)'
 stdout '(^|[^-\w])-c\b'
-stdout '--yes'
+stdout '--yes([^-\w]|$)'
 stdout '(^|[^-\w])-y\b'
-stdout '--teardown-on-failure'
-stdout '--offline-staged'
-stdout '--appliance-launch-descriptor'
-stdout '--appliance-release-public-key'
-stdout '--appliance-qualification-public-key'
-stdout '--json'
+stdout '--teardown-on-failure([^-\w]|$)'
+stdout '--offline-staged([^-\w]|$)'
+stdout '--appliance-launch-descriptor([^-\w]|$)'
+stdout '--appliance-release-public-key([^-\w]|$)'
+stdout '--appliance-qualification-public-key([^-\w]|$)'
+stdout '--json([^-\w]|$)'
 stdout '(^|[^-\w])-j\b'
 
 lilrae lab info --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
 
 lilrae lab scenarios --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
 
 lilrae lab stop --help
-stdout '--volumes'
+stdout '--volumes([^-\w]|$)'
 stdout '(^|[^-\w])-v\b'
-stdout '--yes'
+stdout '--yes([^-\w]|$)'
 stdout '(^|[^-\w])-y\b'
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
-stdout '--json'
+stdout '--json([^-\w]|$)'
 stdout '(^|[^-\w])-j\b'
 
 lilrae lab reset --help
-stdout '--yes'
+stdout '--yes([^-\w]|$)'
 stdout '(^|[^-\w])-y\b'
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
-stdout '--json'
+stdout '--json([^-\w]|$)'
 stdout '(^|[^-\w])-j\b'
 
 lilrae lab status --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
-stdout '--json'
+stdout '--json([^-\w]|$)'
 stdout '(^|[^-\w])-j\b'
-stdout '--output'
+stdout '--output([^-\w]|$)'
 stdout '(^|[^-\w])-o\b'
 
 lilrae lab validate-live --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
-stdout '--scenario'
-stdout '--profile'
-stdout '--run-id'
-stdout '--skip-clean-boot'
-stdout '--yes'
+stdout '--scenario([^-\w]|$)'
+stdout '--profile([^-\w]|$)'
+stdout '--run-id([^-\w]|$)'
+stdout '--skip-clean-boot([^-\w]|$)'
+stdout '--yes([^-\w]|$)'
 stdout '(^|[^-\w])-y\b'
 
 lilrae lab policy --help
 
 lilrae lab policy show --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
-stdout '--json'
+stdout '--json([^-\w]|$)'

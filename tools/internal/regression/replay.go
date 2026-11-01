@@ -117,7 +117,9 @@ func overlay(ctx context.Context, root, head string, tree *os.Root, dir string) 
 
 // overlayLinkTarget makes the target of a symlink in the test data of dir
 // equal to the head revision, because the files that the link names are test
-// data too. A target outside the repository is in no revision, so it stays.
+// data too. The target can be a file or a directory, and an entry of dir that
+// the overlay wrote before can be in it, so the target is written again. A
+// target outside the repository is in no revision, so it stays.
 func overlayLinkTarget(ctx context.Context, root, head string, tree *os.Root, dir string, link git.Entry) error {
 	raw, err := git.Show(ctx, root, head, link.Path)
 	if err != nil {
@@ -178,6 +180,10 @@ func writeEntry(ctx context.Context, root, head string, tree *os.Root, entry git
 	}
 	switch entry.Mode {
 	case "120000":
+		// The target of an earlier link can hold this link already.
+		if err = tree.RemoveAll(name); err != nil {
+			return fmt.Errorf("replace %s in the base worktree: %w", entry.Path, err)
+		}
 		err = tree.Symlink(string(data), name)
 	case "100755":
 		err = tree.WriteFile(name, data, 0o700)

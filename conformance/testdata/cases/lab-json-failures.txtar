@@ -8,43 +8,43 @@ cd proj
 # A start without a scenario fails before admission and observation.
 ! lilrae lab start --json
 status 1
-envelope 'lab start'
+jq stdout 'envelope("lab start"; $status)'
 cp stdout start.json
 schema lab-start-result.schema.json start.json
-field start.json /outcome '"failed"'
-field start.json /execution_boundary null
-field start.json /published_ports '[]'
+jq start.json '.outcome == "failed"'
+jq start.json 'has("execution_boundary") and .execution_boundary == null'
+jq start.json '.published_ports == []'
 
 # A start with a scenario observes the execution boundary, then fails.
 mkdir scenarios
 cp $WORK/scenario.sdl.yaml scenarios/scenario.sdl.yaml
 ! lilrae lab start --json --scenario-path scenarios/scenario.sdl.yaml
 status 1
-envelope 'lab start'
+jq stdout 'envelope("lab start"; $status)'
 cp stdout start.json
 schema lab-start-result.schema.json start.json
-field start.json /execution_boundary/schema_version '"aptl.execution-boundary/v1"'
-field start.json /execution_boundary/override_source '"docker-host"'
+jq start.json '.execution_boundary.schema_version == "aptl.execution-boundary/v1"'
+jq start.json '.execution_boundary.override_source == "docker-host"'
 stderr '\[lab start\]'
 ! stderr '"command"'
 
 ! lilrae lab stop --json
 status 1
-envelope 'lab stop'
+jq stdout 'envelope("lab stop"; $status)'
 cp stdout stop.json
 schema lab-stop-result.schema.json stop.json
-field stop.json /volumes false
+jq stop.json '.volumes == false'
 
 ! lilrae lab stop --json --volumes --yes
 status 1
-envelope 'lab stop'
+jq stdout 'envelope("lab stop"; $status)'
 cp stdout stop.json
 schema lab-stop-result.schema.json stop.json
-field stop.json /volumes true
+jq stop.json '.volumes == true'
 
 ! lilrae lab reset --json --yes
 status 1
-envelope 'lab reset'
+jq stdout 'envelope("lab reset"; $status)'
 cp stdout reset.json
 schema lab-reset-result.schema.json reset.json
 

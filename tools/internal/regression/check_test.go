@@ -504,6 +504,42 @@ func TestCheckReplaysTheHeadTargetOfATestDataLink(t *testing.T) {
 	}
 }
 
+// TestCheckReplaysLinksInAnyOrder gives the test data a file link whose
+// target sorts before it, and a directory link that sorts before a link in
+// its target. The base run must see the head data of each.
+func TestCheckReplaysLinksInAnyOrder(t *testing.T) {
+	t.Parallel()
+	r := newRepo(t)
+	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1")})
+	links := map[string]string{"calc/testdata/z-link.txt": "a.txt", "calc/testdata/0-link": "dir", "calc/testdata/dir/inner.txt": "../a.txt"}
+	for name, target := range links {
+		path := filepath.Join(r.Dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func(name string) string {
+		return "\twant, err := os.ReadFile(\"" + name + "\")\n\tif err != nil {\n\t\treturn\n\t}\n" +
+			"\tif got := strconv.Itoa(Value()) + \"\\n\"; got != string(want) {\n\t\tt.Fatalf(\"Value() = %q, want %q\", got, want)\n\t}\n"
+	}
+	r.Commit(map[string]string{
+		"calc/calc.go":        valueSource("2"),
+		"calc/testdata/a.txt": "2\n",
+		"calc/calc_test.go": "package calc\n\nimport (\n\t\"os\"\n\t\"strconv\"\n\t\"testing\"\n)\n\n" +
+			"// regression: #7\nfunc TestFileLink(t *testing.T) {\n\t// Without the head test data, the test returns early and passes on the base revision.\n" + read("testdata/z-link.txt") + "}\n\n" +
+			"// regression: #7\nfunc TestDirectoryLink(t *testing.T) {\n" + read("testdata/0-link/inner.txt") + "}\n",
+	})
+
+	report := r.check(base, 7, false)
+
+	if got := messages(report); len(got) != 0 || len(report.Selected) != 2 {
+		t.Errorf("findings = %q for %d tests, want none for 2: the base run needs the head target of each link", got, len(report.Selected))
+	}
+}
+
 func TestCheckRejectsATestDataLinkToItsPackage(t *testing.T) {
 	t.Parallel()
 	r := newRepo(t)

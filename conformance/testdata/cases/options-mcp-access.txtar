@@ -2,32 +2,33 @@
 # help, not the help layout or the format of the defaults. Typer's
 # completion options and hidden options and commands are implementation
 # details. A wide terminal keeps a help table from shortening long option
-# names.
+# names. A long option matches only as a whole name, so --scenario does not
+# match --scenario-path.
 env COLUMNS=240
 
 lilrae mcp-access --help
 
 lilrae mcp-access configure --help
-stdout '--access-record'
-stdout '--grant'
-stdout '--host-public-key'
-stdout '--expected-host-key'
-stdout '--identity-file'
-stdout '--username'
-stdout '--owner-id'
-stdout '--seat-id'
-stdout '--instance-id'
-stdout '--project-dir'
-stdout '--client'
+stdout '--access-record([^-\w]|$)'
+stdout '--grant([^-\w]|$)'
+stdout '--host-public-key([^-\w]|$)'
+stdout '--expected-host-key([^-\w]|$)'
+stdout '--identity-file([^-\w]|$)'
+stdout '--username([^-\w]|$)'
+stdout '--owner-id([^-\w]|$)'
+stdout '--seat-id([^-\w]|$)'
+stdout '--instance-id([^-\w]|$)'
+stdout '--project-dir([^-\w]|$)'
+stdout '--client([^-\w]|$)'
 
 lilrae mcp-access prepare-guest --help
-stdout '--request'
-stdout '--output-dir'
+stdout '--request([^-\w]|$)'
+stdout '--output-dir([^-\w]|$)'
 
 lilrae mcp-access refresh --help
-stdout '--binding'
-stdout '--output'
+stdout '--binding([^-\w]|$)'
+stdout '--output([^-\w]|$)'
 
 lilrae mcp-access revoke --help
-stdout '--binding'
-stdout '--grant-id'
+stdout '--binding([^-\w]|$)'
+stdout '--grant-id([^-\w]|$)'

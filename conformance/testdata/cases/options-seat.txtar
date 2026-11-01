@@ -2,93 +2,94 @@
 # help, not the help layout or the format of the defaults. Typer's
 # completion options and hidden options and commands are implementation
 # details. A wide terminal keeps a help table from shortening long option
-# names.
+# names. A long option matches only as a whole name, so --scenario does not
+# match --scenario-path.
 env COLUMNS=240
 
 lilrae seat --help
 
 lilrae seat stage --help
-stdout '--seat-root'
-stdout '--seat-id'
-stdout '--image'
-stdout '--public-key'
-stdout '--image-cache'
-stdout '--yes'
+stdout '--seat-root([^-\w]|$)'
+stdout '--seat-id([^-\w]|$)'
+stdout '--image([^-\w]|$)'
+stdout '--public-key([^-\w]|$)'
+stdout '--image-cache([^-\w]|$)'
+stdout '--yes([^-\w]|$)'
 stdout '(^|[^-\w])-y\b'
-stdout '--mapping'
-stdout '--desktop-mode'
+stdout '--mapping([^-\w]|$)'
+stdout '--desktop-mode([^-\w]|$)'
 
 lilrae seat start --help
-stdout '--seat-root'
-stdout '--seat-id'
-stdout '--image'
-stdout '--public-key'
-stdout '--image-cache'
-stdout '--yes'
+stdout '--seat-root([^-\w]|$)'
+stdout '--seat-id([^-\w]|$)'
+stdout '--image([^-\w]|$)'
+stdout '--public-key([^-\w]|$)'
+stdout '--image-cache([^-\w]|$)'
+stdout '--yes([^-\w]|$)'
 stdout '(^|[^-\w])-y\b'
-stdout '--mapping'
-stdout '--access-owner'
-stdout '--access-public-key'
-stdout '--access-identity-file'
-stdout '--access-project-dir'
-stdout '--access-profile'
-stdout '--access-client'
-stdout '--access-hours'
-stdout '--no-check'
-stdout '--desktop-mode'
-stdout '--sudo-password-file'
+stdout '--mapping([^-\w]|$)'
+stdout '--access-owner([^-\w]|$)'
+stdout '--access-public-key([^-\w]|$)'
+stdout '--access-identity-file([^-\w]|$)'
+stdout '--access-project-dir([^-\w]|$)'
+stdout '--access-profile([^-\w]|$)'
+stdout '--access-client([^-\w]|$)'
+stdout '--access-hours([^-\w]|$)'
+stdout '--no-check([^-\w]|$)'
+stdout '--desktop-mode([^-\w]|$)'
+stdout '--sudo-password-file([^-\w]|$)'
 
 lilrae seat stop --help
-stdout '--seat-root'
+stdout '--seat-root([^-\w]|$)'
 
 lilrae seat rescue --help
-stdout '--seat-root'
+stdout '--seat-root([^-\w]|$)'
 
 lilrae seat reset --help
-stdout '--seat-root'
-stdout '--seat-id'
-stdout '--image'
-stdout '--public-key'
-stdout '--image-cache'
-stdout '--yes'
+stdout '--seat-root([^-\w]|$)'
+stdout '--seat-id([^-\w]|$)'
+stdout '--image([^-\w]|$)'
+stdout '--public-key([^-\w]|$)'
+stdout '--image-cache([^-\w]|$)'
+stdout '--yes([^-\w]|$)'
 stdout '(^|[^-\w])-y\b'
-stdout '--desktop-mode'
+stdout '--desktop-mode([^-\w]|$)'
 
 lilrae seat recover --help
-stdout '--seat-root'
-stdout '--seat-id'
-stdout '--image'
-stdout '--public-key'
-stdout '--image-cache'
-stdout '--yes'
+stdout '--seat-root([^-\w]|$)'
+stdout '--seat-id([^-\w]|$)'
+stdout '--image([^-\w]|$)'
+stdout '--public-key([^-\w]|$)'
+stdout '--image-cache([^-\w]|$)'
+stdout '--yes([^-\w]|$)'
 stdout '(^|[^-\w])-y\b'
-stdout '--desktop-mode'
-stdout '--sudo-password-file'
+stdout '--desktop-mode([^-\w]|$)'
+stdout '--sudo-password-file([^-\w]|$)'
 
 lilrae seat reconcile --help
-stdout '--seat-root'
+stdout '--seat-root([^-\w]|$)'
 
 lilrae seat status --help
-stdout '--seat-root'
+stdout '--seat-root([^-\w]|$)'
 
 lilrae seat open-kiosk --help
-stdout '--participant-port'
-stdout '--seat-root'
-stdout '--browser-command'
-stdout '--dry-run'
+stdout '--participant-port([^-\w]|$)'
+stdout '--seat-root([^-\w]|$)'
+stdout '--browser-command([^-\w]|$)'
+stdout '--dry-run([^-\w]|$)'
 
 lilrae seat update --help
-stdout '--seat-root'
-stdout '--image'
-stdout '--public-key'
-stdout '--image-cache'
-stdout '--yes'
+stdout '--seat-root([^-\w]|$)'
+stdout '--image([^-\w]|$)'
+stdout '--public-key([^-\w]|$)'
+stdout '--image-cache([^-\w]|$)'
+stdout '--yes([^-\w]|$)'
 stdout '(^|[^-\w])-y\b'
-stdout '--to'
-stdout '--desktop-mode'
+stdout '--to([^-\w]|$)'
+stdout '--desktop-mode([^-\w]|$)'
 
 lilrae seat images --help
-stdout '--image-cache'
-stdout '--yes'
+stdout '--image-cache([^-\w]|$)'
+stdout '--yes([^-\w]|$)'
 stdout '(^|[^-\w])-y\b'
-stdout '--prune'
+stdout '--prune([^-\w]|$)'

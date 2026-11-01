@@ -2,17 +2,18 @@
 # help, not the help layout or the format of the defaults. Typer's
 # completion options and hidden options and commands are implementation
 # details. A wide terminal keeps a help table from shortening long option
-# names.
+# names. A long option matches only as a whole name, so --scenario does not
+# match --scenario-path.
 env COLUMNS=240
 
 lilrae web --help
 
 lilrae web serve --help
-stdout '--host'
-stdout '--port'
-stdout '--reload'
-stdout '--no-reload'
-stdout '--project-dir'
-stdout '--web-root'
-stdout '--api-only'
-stdout '--public-origin'
+stdout '--host([^-\w]|$)'
+stdout '--port([^-\w]|$)'
+stdout '--reload([^-\w]|$)'
+stdout '--no-reload([^-\w]|$)'
+stdout '--project-dir([^-\w]|$)'
+stdout '--web-root([^-\w]|$)'
+stdout '--api-only([^-\w]|$)'
+stdout '--public-origin([^-\w]|$)'

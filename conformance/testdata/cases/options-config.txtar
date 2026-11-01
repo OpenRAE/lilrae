@@ -2,21 +2,22 @@
 # help, not the help layout or the format of the defaults. Typer's
 # completion options and hidden options and commands are implementation
 # details. A wide terminal keeps a help table from shortening long option
-# names.
+# names. A long option matches only as a whole name, so --scenario does not
+# match --scenario-path.
 env COLUMNS=240
 
 lilrae config --help
 
 lilrae config show --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
-stdout '--json'
+stdout '--json([^-\w]|$)'
 
 lilrae config validate --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
 
 lilrae config migrate --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
-stdout '--scenario'
+stdout '--scenario([^-\w]|$)'

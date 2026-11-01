@@ -2,41 +2,42 @@
 # help, not the help layout or the format of the defaults. Typer's
 # completion options and hidden options and commands are implementation
 # details. A wide terminal keeps a help table from shortening long option
-# names.
+# names. A long option matches only as a whole name, so --scenario does not
+# match --scenario-path.
 env COLUMNS=240
 
 lilrae runs --help
 
 lilrae runs list --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
-stdout '--limit'
+stdout '--limit([^-\w]|$)'
 stdout '(^|[^-\w])-n\b'
 
 lilrae runs show --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
 
 lilrae runs path --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
 
 lilrae runs export --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
-stdout '--output-dir'
+stdout '--output-dir([^-\w]|$)'
 stdout '(^|[^-\w])-o\b'
-stdout '--s3-bucket'
-stdout '--s3-prefix'
+stdout '--s3-bucket([^-\w]|$)'
+stdout '--s3-prefix([^-\w]|$)'
 
 lilrae runs export-bundle --help
-stdout '--project-dir'
+stdout '--project-dir([^-\w]|$)'
 stdout '(^|[^-\w])-d\b'
-stdout '--output-dir'
+stdout '--output-dir([^-\w]|$)'
 stdout '(^|[^-\w])-o\b'
-stdout '--projection'
+stdout '--projection([^-\w]|$)'
 stdout '(^|[^-\w])-p\b'
-stdout '--verify'
-stdout '--no-verify'
+stdout '--verify([^-\w]|$)'
+stdout '--no-verify([^-\w]|$)'
 
 lilrae runs verify-bundle --help

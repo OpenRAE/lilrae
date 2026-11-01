@@ -2,18 +2,18 @@ package conformance_test
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/itchyny/gojq"
 	"github.com/rogpeppe/go-internal/testscript"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/santhosh-tekuri/jsonschema/v6/kind"
@@ -28,6 +28,8 @@ const (
 	schemaBase = "https://openrae.github.io/lilrae/reference/schemas/"
 	// lastRunKey keys the outcome of the last lilrae command of a script.
 	lastRunKey = "lilrae-last-run"
+	// jqModule is the jq module of the case definitions, in testdata.
+	jqModule = "conformance"
 )
 
 // lastRun is the outcome of the last lilrae command of a script.
@@ -45,9 +47,19 @@ func TestConformance(t *testing.T) {
 // variables to the environment of each script.
 func runCases(t *testing.T, dir string, env map[string]string) {
 	t.Helper()
-	bin := binary(t)
+	testscript.Run(t, params(t, binary(t), dir, env))
+}
+
+// params returns the parameters of the scripts in dir, which run the binary
+// bin. env adds variables to the environment of each script.
+func params(t *testing.T, bin, dir string, env map[string]string) testscript.Params {
+	t.Helper()
 	schemas := loadSchemas(t)
-	testscript.Run(t, testscript.Params{
+	modules, err := filepath.Abs("testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return testscript.Params{
 		Dir:                dir,
 		RequireUniqueNames: true,
 		Setup: func(e *testscript.Env) error {
@@ -58,14 +70,12 @@ func runCases(t *testing.T, dir string, env map[string]string) {
 			return isolate(e)
 		},
 		Cmds: map[string]func(*testscript.TestScript, bool, []string){
-			"lilrae":        runBinary(bin),
-			"status":        checkStatus,
-			"envelope":      checkEnvelope,
-			"schema":        checkSchema(schemas),
-			"field":         checkField,
-			"doctor-counts": checkDoctorCounts,
+			"lilrae": runBinary(bin),
+			"status": checkStatus,
+			"schema": checkSchema(schemas),
+			"jq":     checkQuery(modules),
 		},
-	})
+	}
 }
 
 // binary returns the binary under test, or stops the test when
@@ -211,29 +221,6 @@ func checkStatus(ts *testscript.TestScript, neg bool, args []string) {
 	}
 }
 
-// checkEnvelope is the envelope command: the standard output of the last
-// lilrae command is one JSON object with the command, schema_version 1, and
-// an ok that is true exactly when the exit status is 0.
-func checkEnvelope(ts *testscript.TestScript, neg bool, args []string) {
-	if neg || len(args) != 1 {
-		ts.Fatalf("usage: envelope COMMAND")
-	}
-	object := readObject(ts, "stdout")
-	if object["command"] != args[0] {
-		ts.Fatalf("the command field is not %q", args[0])
-	}
-	if version, ok := object["schema_version"].(json.Number); !ok || version.String() != "1" {
-		ts.Fatalf("schema_version is not 1")
-	}
-	okField, isBool := object["ok"].(bool)
-	if !isBool {
-		ts.Fatalf("ok is not a boolean")
-	}
-	if status := lastStatus(ts); okField != (status == 0) {
-		ts.Fatalf("ok is %t, but the exit status is %d", okField, status)
-	}
-}
-
 // checkSchema returns the schema command: the JSON file conforms to the
 // published schema NAME. A failure names the instance locations and the
 // schema keywords, not the instance values.
@@ -273,105 +260,77 @@ func violations(err *jsonschema.ValidationError) []string {
 	return out
 }
 
-// checkField is the field command: the value at a JSON Pointer (RFC 6901) of
-// the JSON file equals the JSON value. With a negation, the value exists and
-// differs. It compares parsed values, so the layout of the file does not
-// matter.
-func checkField(ts *testscript.TestScript, neg bool, args []string) {
-	if len(args) != 3 {
-		ts.Fatalf("usage: field FILE POINTER JSON")
+// checkQuery returns the jq command: the jq query QUERY on the JSON file
+// FILE gives exactly one value, true. The query can use the definitions of
+// the module testdata/conformance.jq, and $status, the exit status of the
+// last lilrae command, after one ran. gojq evaluates the query, so a case
+// states its assertion in the jq language.
+func checkQuery(modules string) func(*testscript.TestScript, bool, []string) {
+	loader := gojq.WithModuleLoader(gojq.NewModuleLoader([]string{modules}))
+	return func(ts *testscript.TestScript, neg bool, args []string) {
+		if neg || len(args) != 2 {
+			ts.Fatalf("usage: jq FILE QUERY")
+		}
+		code, values, err := compileQuery(ts, loader, args[1])
+		if err != nil {
+			ts.Fatalf("jq: %v", err)
+		}
+		if problem := oneTrue(code.Run(readJSON(ts, args[0]), values...)); problem != "" {
+			ts.Fatalf("jq: %s on %s %s", args[1], args[0], problem)
+		}
 	}
-	want, err := jsonschema.UnmarshalJSON(strings.NewReader(args[2]))
+}
+
+// compileQuery compiles query with the case definitions, and with $status
+// after a lilrae command ran. It returns the values of the variables.
+func compileQuery(ts *testscript.TestScript, loader gojq.CompilerOption, query string) (*gojq.Code, []any, error) {
+	parsed, err := gojq.Parse(`include "` + jqModule + `"; ` + query)
 	if err != nil {
-		ts.Fatalf("field: %q is not a JSON value", args[2])
+		return nil, nil, fmt.Errorf("parse the query: %w", err)
 	}
-	got, ok := lookup(readJSON(ts, args[0]), args[1])
+	var names []string
+	var values []any
+	if last := lastRunOf(ts); last.ran {
+		names, values = []string{"$status"}, []any{last.status}
+	}
+	code, err := gojq.Compile(parsed, loader, gojq.WithVariables(names))
+	if err != nil {
+		return nil, nil, fmt.Errorf("compile the query: %w", err)
+	}
+	return code, values, nil
+}
+
+// oneTrue returns the problem of the results of a query, or "" when they are
+// exactly one value, true.
+func oneTrue(results gojq.Iter) string {
+	first, ok := results.Next()
 	if !ok {
-		ts.Fatalf("%s has no value at %s", args[0], args[1])
+		return "gives no value; want true"
 	}
-	if equal := reflect.DeepEqual(got, want); equal == neg {
-		ts.Fatalf("the value at %s of %s does not match %s", args[1], args[0], args[2])
+	if err, isErr := first.(error); isErr {
+		return "fails: " + err.Error()
 	}
-}
-
-// lookup returns the value at the JSON Pointer of doc.
-func lookup(doc any, pointer string) (any, bool) {
-	if pointer == "" {
-		return doc, true
+	if _, more := results.Next(); more {
+		return "gives more than one value; want true"
 	}
-	if !strings.HasPrefix(pointer, "/") {
-		return nil, false
+	if first != true {
+		return "is not true"
 	}
-	value := doc
-	for token := range strings.SplitSeq(pointer[1:], "/") {
-		token = strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")
-		switch node := value.(type) {
-		case map[string]any:
-			next, ok := node[token]
-			if !ok {
-				return nil, false
-			}
-			value = next
-		case []any:
-			index, err := strconv.Atoi(token)
-			if err != nil || index < 0 || index >= len(node) {
-				return nil, false
-			}
-			value = node[index]
-		default:
-			return nil, false
-		}
-	}
-	return value, true
-}
-
-// checkDoctorCounts is the doctor-counts command: the counts of a doctor
-// result equal the number of checks with each status, and the last exit
-// status is 0 exactly when no check failed.
-func checkDoctorCounts(ts *testscript.TestScript, neg bool, args []string) {
-	if neg || len(args) != 1 {
-		ts.Fatalf("usage: doctor-counts FILE")
-	}
-	object := readObject(ts, args[0])
-	checks, isList := object["checks"].([]any)
-	counts, isObject := object["counts"].(map[string]any)
-	if !isList || !isObject {
-		ts.Fatalf("the doctor result has no checks list or counts object")
-	}
-	tally := map[string]int{}
-	for _, check := range checks {
-		entry, isObject := check.(map[string]any)
-		status, isString := entry["status"].(string)
-		if !isObject || !isString {
-			ts.Fatalf("a doctor check has no status")
-		}
-		tally[status]++
-	}
-	for _, status := range []string{"pass", "warn", "fail", "skip"} {
-		count, isNumber := counts[status].(json.Number)
-		if !isNumber || count.String() != strconv.Itoa(tally[status]) {
-			ts.Fatalf("counts.%s does not equal the number of %s checks", status, status)
-		}
-	}
-	if (tally["fail"] == 0) != (lastStatus(ts) == 0) {
-		ts.Fatalf("the exit status is %d with %d failed checks", lastStatus(ts), tally["fail"])
-	}
+	return ""
 }
 
 // readJSON decodes the file name of the script, which can be stdout or
-// stderr, as exactly one JSON value.
+// stderr, as exactly one JSON value. The value must follow RFC 7493: valid
+// UTF-8 and unique member names. The decoder of the JSON Schema library keeps
+// each number exact.
 func readJSON(ts *testscript.TestScript, name string) any {
-	value, err := jsonschema.UnmarshalJSON(strings.NewReader(ts.ReadFile(name)))
+	data := ts.ReadFile(name)
+	if !jsontext.Value(data).IsValid() {
+		ts.Fatalf("%s is not exactly one JSON value with valid UTF-8 and unique member names", name)
+	}
+	value, err := jsonschema.UnmarshalJSON(strings.NewReader(data))
 	if err != nil {
-		ts.Fatalf("%s is not exactly one JSON value", name)
+		ts.Fatalf("decode %s: %v", name, err)
 	}
 	return value
-}
-
-func readObject(ts *testscript.TestScript, name string) map[string]any {
-	object, ok := readJSON(ts, name).(map[string]any)
-	if !ok {
-		ts.Fatalf("%s is not a JSON object", name)
-	}
-	return object
 }

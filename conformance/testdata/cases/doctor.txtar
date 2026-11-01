@@ -6,10 +6,10 @@ lilrae lab init proj
 cd proj
 ! lilrae doctor --json
 status 1
-envelope doctor
+jq stdout 'envelope("doctor"; $status)'
 cp stdout result.json
 schema doctor-result.schema.json result.json
-doctor-counts result.json
+jq result.json 'doctor_counts($status)'
 
 # Without --json, the report is text and the exit status is the same.
 ! lilrae doctor

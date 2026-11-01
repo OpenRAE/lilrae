@@ -312,6 +312,7 @@ components.
 | Web API | `github.com/oapi-codegen/oapi-codegen/v2`, from a checked-in OpenAPI document |
 | Shell parsing | `mvdan.cc/sh/v3` |
 | Tests | `github.com/google/go-cmp`, `github.com/rogpeppe/go-internal/testscript` |
+| Contract case queries and Markdown tables | `github.com/itchyny/gojq`, `github.com/yuin/goldmark` |
 | Lint and mutation | golangci-lint v2, Gremlins |
 | Architecture check | Go parser, `golang.org/x/mod`, `go.yaml.in/yaml/v3` |
 | Release | GoReleaser |

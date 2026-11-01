@@ -5,12 +5,20 @@ packages:
   - path: conformance
     component: conformance-suite
     test_imports:
+      - github.com/itchyny/gojq
       - github.com/rogpeppe/go-internal
       - github.com/santhosh-tekuri/jsonschema/v6
+      - github.com/yuin/goldmark
+  - path: tools/internal/git
+    component: git
+    test_imports:
+      - github.com/OpenRAE/lilrae/tools/internal/gittest
+      - github.com/google/go-cmp
   - path: tools/internal/regression
     component: regression-check
     imports:
       - github.com/OpenRAE/lilrae/tools/internal/git
+      - github.com/OpenRAE/lilrae/tools/internal/golayout
     test_imports:
       - github.com/OpenRAE/lilrae/tools/internal/gittest
       - github.com/google/go-cmp
@@ -39,6 +47,11 @@ design record.
 | `lab init` and `config validate` and `config show` run without a lab. | Probe with the installed release. |
 | ADR-065 selects `testscript` for the CLI contract suite and `github.com/santhosh-tekuri/jsonschema/v6` for JSON Schema. Tests that need a Docker daemon carry the `integration` build tag, and the linters read it. | ADR-065; `.golangci.yml`. |
 | The `clean-install-lab-boot` job installs the wheel in a clean environment and starts a product-neutral scenario on a dedicated daemon. | `.github/workflows/checks.yml`. |
+| gojq v0.12.19 runs jq queries in Go. Its input can hold `json.Number`, so a large integer stays exact, and it loads jq modules from a directory. | gojq source; experiment with a 2^53 + 1 integer. |
+| goldmark v1.8.7 parses GitHub Flavored Markdown tables into table, row, and cell nodes. | goldmark `extension/ast`. |
+| `jsontext.Value.IsValid` checks RFC 7493: valid UTF-8 and unique member names. It accepts surrounding white space and rejects trailing data. | Go documentation; experiment. |
+| testscript prints the output streams of each command in the log of a failed script. | `TestScript.Exec` and `logStd` in go-internal v1.16.0. |
+| `WorkspaceOwnership.load` reads `.aptl/lifecycle/workspace-ownership-v1.json`, which sets the Compose project name. The cleanup records of `startup_reset_state.py` keep the receipts of earlier releases readable, so the next stop finishes their cleanup. | `core/deployment/_compose_resource_ownership.py`; `core/startup_reset_state.py`. |
 
 ## Decisions
 
@@ -59,13 +72,20 @@ design record.
    | --- | --- |
    | `lilrae ARG...` | Run the binary. `! lilrae` expects a nonzero exit status. |
    | `status N` | The last `lilrae` command exited with status `N`. |
-   | `envelope COMMAND` | The standard output of the last `lilrae` command is one JSON object with this `command`, `schema_version` 1, and an `ok` that is true exactly when the exit status is 0. |
    | `schema NAME FILE` | The JSON file conforms to the published schema `NAME`. |
-   | `field FILE POINTER JSON` | The value at the JSON Pointer of the file equals the JSON value. `! field` expects a value that exists and differs. Parsed values are compared, so the JSON layout does not matter. |
-   | `doctor-counts FILE` | The `counts` of a doctor result equal the number of checks with each status. |
+   | `jq FILE QUERY` | The jq query on the JSON file gives exactly one value, `true`. gojq runs it. |
 
-   A failure message names the case, the command, and the rule. It prints no
-   input file and no schema instance.
+   A query can use `$status`, the exit status of the last `lilrae` command,
+   and the definitions of `testdata/conformance.jq`: `envelope($command;
+   $status)` for the result envelope, and `doctor_counts($status)` for the
+   counts of a doctor result. A case states its other assertions in the jq
+   language, for example `has("error") and .error == null`, so a missing
+   member and a null member stay different. Each JSON file must follow
+   RFC 7493: valid UTF-8 and unique member names. The decoder of the JSON
+   Schema library keeps each number exact. A failure message names the case,
+   the command, and the rule. A schema failure prints the instance locations
+   and the keywords, not the instance. The log of a failed case shows the
+   output streams of each command, so the cases use synthetic data only.
 4. **Lab cases.** `TestLab` runs each script in `testdata/lab`. Its file has
    the `integration` build tag, so only a job with a Docker daemon builds it.
    The `clean-install-lab-boot` job runs it with the installed wheel, a fresh
@@ -91,8 +111,12 @@ design record.
    option, exit status, output stream, JSON result, and persisted file. Each
    row gives its source, its class (contract or detail), and its coverage: a
    case, a lab case, or the later port that owns its protocol. `TestInventory`
-   fails when a row names a case that does not exist, or when no row names a
-   case.
+   reads the tables with goldmark. It finds the columns by their names, and a
+   code span of the coverage cell names a case. It fails when a contract row
+   names no case and no later port, when a row names a case that does not
+   exist, or when no row names a case. The workspace ownership, the resource
+   receipts, and the cleanup records in `.aptl/lifecycle/` are contracts,
+   because a later stop or reset reads them.
 9. **Text rule.** Human-readable text keeps its facts. Only the strings that a
    document or a test locks, such as `Aborted.`, stay byte-identical. Help
    layout, tables, colors, file counts, timestamps, and generated paths are not
@@ -108,9 +132,12 @@ design record.
     mutation gate selects only the modules with production code, so the
     test-only conformance package needs no binary there.
 12. **Review fixes of the gates.** The regression replay rejects a head run
-    whose `go test` command fails after the test passes, and it overlays the
-    head contents of the target of a test data link. The targeted runner
-    counts only Python files and node IDs as pytest targets.
+    whose `go test` command fails after the test passes. It overlays the head
+    contents of the target of each test data link, a file or a directory, in
+    any order of the entries.
+13. **Self-test.** `TestHarnessCommandsFail` runs scripts with false
+    assertions against a fake binary, and each must fail, so a command of the
+    harness cannot pass without a check.
 
 ## Schemas
 
@@ -155,25 +182,38 @@ flowchart LR
 | An inventory row names a missing case, or a case has no row. | `TestInventory` fails. |
 | The lab job has no daemon or no scenario. | `TestLab` fails. |
 
-## Data flows and security
+## Data flows and threat model
 
 ```text
 Case script + fixtures [repository]
   -> lilrae binary [installed artifact, isolated HOME and XDG]
   -> exit status, stdout, stderr, files in the work directory
-  -> schema and rule checks <- docs/reference/schemas [repository]
+  -> RFC 7493 check, schema checks, jq queries <- docs/reference/schemas [repository]
   -> test result [CI log]
 ```
 
-- The binary runs with argument arrays and no shell.
-- Each case has its own work directory and home. No operator project, run
-  store, credential, or Docker configuration reaches a case.
-- Synthetic secrets appear only in the redaction cases.
+The assets are the result of the suite, which says that a build keeps the
+contracts, and the CI log. The trust boundaries are these:
+
+1. The binary under test: its output is untrusted input to the harness.
+2. The cases, schemas, and inventory, which a pull request can change and
+   review covers.
+3. The CI log, which can show the output of the binary.
+
+| Threat | Boundary | Mitigation |
+| --- | --- | --- |
+| A harness command passes without a check, so a build that breaks a contract passes. | 2 | `TestHarnessCommandsFail` proves that each command fails on a false assertion, and `TestInventory` proves that each contract row names a case or a later port. |
+| Output with a duplicate member, invalid UTF-8, or trailing data passes as JSON. | 1 | `jsontext` checks RFC 7493 before any decoding. |
+| A schema reference loads a document from the network or another file. | 2 | The registry is closed: each `$id` is a published schema of `docs/reference/schemas`. |
+| A case reaches the projects, credentials, or Docker configuration of the operator. | 1 | Each case has its own home, XDG, and Docker configuration directories, and the binary runs with an argument array and no shell. |
+| A real secret reaches the CI log. | 3 | The cases use synthetic data only. Synthetic secrets appear only in the redaction cases. |
 
 ## Verification
 
 - Each case passes on the installed Python release in CI.
 - `TestInventory` proves that each inventory row names an existing case.
+- `TestHarnessCommandsFail` proves that each harness command fails on a false
+  assertion.
 - The lab cases pass in the `clean-install-lab-boot` job.
 
 ## References
@@ -181,4 +221,7 @@ Case script + fixtures [repository]
 - [testscript](https://pkg.go.dev/github.com/rogpeppe/go-internal/testscript)
 - [santhosh-tekuri/jsonschema v6](https://pkg.go.dev/github.com/santhosh-tekuri/jsonschema/v6)
 - [JSON Schema draft 2020-12](https://json-schema.org/draft/2020-12)
+- [gojq](https://pkg.go.dev/github.com/itchyny/gojq)
+- [goldmark](https://pkg.go.dev/github.com/yuin/goldmark)
+- [RFC 7493: The I-JSON Message Format](https://www.rfc-editor.org/rfc/rfc7493)
 - [CLI reference](../reference/cli.md)
