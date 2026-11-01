@@ -753,7 +753,7 @@ def test_manifest_realization_support_matches_exercised_concerns():
 
 def test_derived_realization_fixture_exercises_manifest_constrained_claim():
     """The retained constrained claim has a compiled runtime requirement."""
-    from raes.explicitness import ExplicitnessClass
+    from raes_contracts.explicitness import ExplicitnessClass
 
     execution_plan = _execution_plan_with_derived_realization_requirements()
 
@@ -989,10 +989,8 @@ def test_aptl_target_passes_full_remote_control_plane_conformance():
 
 
 def test_participant_runtime_lifecycle_updates_control_plane_snapshot(tmp_path):
-    from raes_contracts.participant_episode import (
-        ParticipantEpisodeTerminalReason,
-        iter_participant_episode_snapshot_violations,
-    )
+    from raes_contracts.participant_episode import ParticipantEpisodeTerminalReason
+    from raes_contracts.participant_episode_snapshot import iter_participant_episode_snapshot_violations
     from raes_contracts.runtime_state import OperationState
     from raes_runtime.control_plane import RuntimeControlPlane
 
@@ -1599,7 +1597,7 @@ def _participant_admission_request(
         ParticipantImplementationManifestModel,
         ParticipantImplementationSelectionModel,
     )
-    from raes_contracts.participant_binding import ParticipantActionAdmissionRequest
+    from raes_contracts.contracts.participant_action_admission import ParticipantActionAdmissionRequest
 
     manifest = ParticipantImplementationManifestModel.model_validate(
         {
@@ -4597,7 +4595,7 @@ def test_apply_provisioning_discloses_author_declared_provenance(tmp_path):
     below: the two values must be distinguishable, which is exactly what RAES
     #760 fixed upstream.
     """
-    from raes.explicitness import ExplicitnessProvenance
+    from raes_contracts.explicitness import ExplicitnessProvenance
 
     backend = _RealizedBackend(containers=("vm",), platform="linux")
 
@@ -4626,7 +4624,7 @@ def test_apply_provisioning_discloses_processor_derived_provenance(tmp_path):
     unreachable at the runtime gate, so this test is the regression guard on the
     dependency floor.
     """
-    from raes.explicitness import ExplicitnessClass, ExplicitnessProvenance
+    from raes_contracts.explicitness import ExplicitnessClass, ExplicitnessProvenance
 
     backend = _RealizedBackend(containers=("vm",), platform="linux")
 

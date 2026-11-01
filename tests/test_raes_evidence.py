@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 from raes import parse_sdl_file
-from raes.evidence_requirements import EvidenceRequirement
+from raes_contracts.evidence_requirements import EvidenceRequirement
 from raes.realization_designation import RealizationDesignation
 from raes_processor.capture_admission import (
     capture_admission_diagnostics,

@@ -17,7 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from raes.explicitness import ExplicitnessClass, ExplicitnessProvenance
+from raes_contracts.explicitness import ExplicitnessClass, ExplicitnessProvenance
 from raes.runtime_configuration import RuntimeConfiguration
 from raes_contracts.planning import (
     ChangeAction,

@@ -10,12 +10,8 @@ from raes_contracts.realization_envelope import (
     ObservationStrength,
     RealizationConcern,
 )
-from raes_contracts.realization_observation import (
-    RealizationObservation,
-    RealizationObservationDisclosure,
-    bind_compute_substrate_observations,
-    bind_operating_system_observations,
-)
+from raes_contracts.realization_observation import RealizationObservation, RealizationObservationDisclosure
+from raes_contracts.realization_operational_observation import bind_compute_substrate_observations, bind_operating_system_observations
 from raes_contracts.realization_observation_demand import (
     compute_substrate_collection_addresses,
 )

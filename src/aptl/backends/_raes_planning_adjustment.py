@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import replace
 
-from raes.explicitness import ExplicitnessClass
+from raes_contracts.explicitness import ExplicitnessClass
 from raes_contracts.planning import (
     RealizationAuthorityMode,
     RealizationResolutionSource,
