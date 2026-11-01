@@ -1,0 +1,15 @@
+# Each command accepts its options. The case checks the option names in the
+# help, not the help layout or the format of the defaults. Typer's
+# completion options and hidden options and commands are implementation
+# details. A wide terminal keeps a help table from shortening long option
+# names. A long option matches only as a whole name, so --scenario does not
+# match --scenario-path.
+env COLUMNS=240
+
+lilrae experiment --help
+
+lilrae experiment admit --help
+stdout '--manifest([^-\w]|$)'
+stdout '--base-dir([^-\w]|$)'
+stdout '(^|[^-\w])-d\b'
+stdout '--allow-uncertified-apparatus([^-\w]|$)'

@@ -1,6 +1,6 @@
 ---
 id: SEC-003
-title: "MCP Common Library Test Suite"
+title: "MCP Runtime Test Suite"
 status: ACTIVE
 type: NON_FUNCTIONAL
 priority: SHOULD
@@ -9,11 +9,11 @@ created_at: 2026-03-20T06:10:07.195882Z
 updated_at: 2026-03-20T06:18:11.648951Z
 ---
 
-# SEC-003: MCP Common Library Test Suite
+# SEC-003: MCP Runtime Test Suite
 
 ## Statement
 
-The aptl-mcp-common library shall maintain a vitest test suite covering SSH session management, HTTP client, server factory, config parsing, and tool handler generation.
+The shared MCP runtime shall maintain an automated test suite covering SSH session management, HTTP client, server factory, config parsing, and tool handler generation.
 
 ## Rationale
 

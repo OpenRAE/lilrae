@@ -149,11 +149,12 @@ never rewritten.
 
 ## Seal state and partial runs
 
-The bundle consumes a verified seal produced by the run-finalization boundary
-(issue #444). Until that boundary lands, the exporter reports the bundle as
-`UNSEALED` with an explicit `seal-absent` limitation. A `ready-to-seal`
-provenance state, a `SEALED_READY` disposition, a run manifest, or a
-`checksums.sha256` file is never treated as a verified seal.
+The exporter currently uses `UnsealedClosureVerifier` and reports the bundle as
+`UNSEALED` with an explicit `seal-absent` limitation. The run-finalization
+boundary can already produce a run archive's `seal.json`, but the exporter does
+not yet bind that seal to a verifiable bundle attestation. A run seal,
+`ready-to-seal` provenance state, `SEALED_READY` disposition, run manifest, or
+`checksums.sha256` file is never treated as a verified bundle seal.
 
 Partial, failed, invalid, and inconclusive runs remain exportable. Their
 capture outcomes, provenance limitations, missing references, and redaction and

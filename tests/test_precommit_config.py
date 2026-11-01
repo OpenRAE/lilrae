@@ -15,7 +15,7 @@ def _hooks(path: str = ".pre-commit-config.yaml") -> dict:
     return {hook["id"]: hook for repo in config["repos"] for hook in repo["hooks"]}
 
 
-def test_local_commit_runs_secrets_hygiene_and_pack_ownership() -> None:
+def test_local_commit_runs_secrets_hygiene_pack_ownership_and_gofmt() -> None:
     hooks = _hooks(".pre-commit-config.yaml")
     assert set(hooks) == {
         "trailing-whitespace",
@@ -26,7 +26,11 @@ def test_local_commit_runs_secrets_hygiene_and_pack_ownership() -> None:
         "check-merge-conflict",
         "detect-private-key",
         "lilrae-pack-boundary",
+        "go-format",
     }
+    # gofmt reads only the staged first-party Go files (ADR-065).
+    assert hooks["go-format"]["files"] == r"\.go$"
+    assert hooks["go-format"]["exclude"] == "^web/caddy-build/"
     # Ownership needs the covered paths and admitted pack facts; its files
     # pattern selects relevant commits. Hygiene still uses staged files only.
     assert hooks["lilrae-pack-boundary"]["pass_filenames"] is False

@@ -1,0 +1,26 @@
+{
+  "corpus": 1,
+  "scheme": "sealed-output-schema-name",
+  "version": "current",
+  "owner": "aptl.workbench.codex_agent.CodexManagedAgentAdapter._sealed_output_schema",
+  "cases": [
+    {
+      "id": "simple",
+      "input": {
+        "schema_json": "{\"type\":\"object\"}"
+      },
+      "expect": {
+        "text": "participant-selection-9091a8164f97eaca182b3d06d0e5a59e923c880ebc0148056c453c651f5b46cb.schema.json"
+      }
+    },
+    {
+      "id": "non-ascii",
+      "input": {
+        "schema_json": "{\"description\":\"é\"}"
+      },
+      "expect": {
+        "text": "participant-selection-ba1270a1c0e30c59ad8e3c7557e3480dc41eef85bc804c1a3fccd0f9348d8357.schema.json"
+      }
+    }
+  ]
+}

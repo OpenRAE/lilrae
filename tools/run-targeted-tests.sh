@@ -7,9 +7,65 @@ set -euo pipefail
 # --no-isolation`, so they need the hatchling backend from the build group.
 uv_test_env=(--group build --no-default-groups --extra dev --extra web)
 
+# run_go_tests runs the packages of Go test files, each from its module, with
+# the flags of the CI test gate (ADR-065). A package runs whole, because a
+# single test file can need the other files of its package.
+run_go_tests() {
+    local file dir module rel
+    local -A packages=()
+    for file in "$@"; do
+        dir=$(dirname -- "$file")
+        module=$dir
+        while [[ ! -f "$module/go.mod" ]]; do
+            if [[ "$module" == . || "$module" == / ]]; then
+                echo "No go.mod above $file." >&2
+                return 2
+            fi
+            module=$(dirname -- "$module")
+        done
+        rel=${dir#"$module"}
+        packages["$module"]+=" ./${rel#/}"
+    done
+    for module in "${!packages[@]}"; do
+        read -r -a package_dirs <<<"${packages[$module]}"
+        (cd -- "$module" && go test -race -shuffle=on "${package_dirs[@]}")
+    done
+}
+
+# run_pytest runs pytest with the plugin in tools/pytest-plugins that stops a
+# run without a test file, because pytest then runs the whole suite. pytest
+# parses its own options, so the value of an option never counts as a target.
+run_pytest() {
+    local plugins
+    plugins="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/pytest-plugins"
+    PYTHONPATH="$plugins${PYTHONPATH:+:$PYTHONPATH}" uv run "${uv_test_env[@]}" pytest -p require_test_targets "$@"
+}
+
 if (($#)); then
-    exec uv run "${uv_test_env[@]}" pytest "$@"
+    go_tests=()
+    pytest_args=()
+    for arg in "$@"; do
+        case "$arg" in
+            *_test.go) go_tests+=("$arg") ;;
+            *) pytest_args+=("$arg") ;;
+        esac
+    done
+    # pytest runs first, so a run that the plugin stops runs no Go test.
+    # Go tests take no extra arguments.
+    if ((${#pytest_args[@]})); then
+        run_pytest "${pytest_args[@]}"
+    fi
+    if ((${#go_tests[@]})); then
+        run_go_tests "${go_tests[@]}"
+    fi
+    exit 0
 fi
+
+# The base branch is the one that /implement uses (.ground-control.yaml
+# workflow.base_branch, default dev), so a long-lived branch such as
+# go-cutover does not select every test that differs from dev.
+base_branch=$(sed -n 's/^  base_branch: *\([^ #]*\).*/\1/p' .ground-control.yaml 2>/dev/null | head -n 1)
+base_ref="origin/${base_branch:-dev}"
 
 declare -A seen=()
 test_paths=()
@@ -18,7 +74,12 @@ add_path() {
     local path=$1
     [[ -n "$path" && -f "$path" ]] || return 0
     case "$path" in
-        tests/test_*.py|tests/**/test_*.py|mcp/*/tests/*.test.ts|mcp/*/tests/**/*.test.ts|web/tests/*.test.ts|web/tests/**/*.test.ts)
+        tests/test_*.py|tests/**/test_*.py|mcp/*/tests/*.test.ts|web/tests/*.test.ts)
+            ;;
+        web/caddy-build/*|*/testdata/*)
+            return 0
+            ;;
+        *_test.go)
             ;;
         *)
             return 0
@@ -34,7 +95,7 @@ while IFS= read -r path; do
     add_path "$path"
 done < <(
     {
-        git diff --name-only --diff-filter=ACMR origin/dev...HEAD 2>/dev/null || true
+        git diff --name-only --diff-filter=ACMR "$base_ref...HEAD" 2>/dev/null || true
         git diff --cached --name-only --diff-filter=ACMR
         git diff --name-only --diff-filter=ACMR
         git ls-files --others --exclude-standard
@@ -43,17 +104,22 @@ done < <(
 
 if ((${#test_paths[@]} == 0)); then
     echo "No changed test files found." >&2
-    echo "Pass explicit targeted Python tests, for example:" >&2
+    echo "Pass explicit targeted Python or Go tests, for example:" >&2
     echo "  bash tools/run-targeted-tests.sh tests/test_feature.py" >&2
+    echo "  bash tools/run-targeted-tests.sh tools/internal/regression/check_test.go" >&2
     echo "For Vitest, run npx vitest with exact test paths in the package." >&2
     exit 2
 fi
 
 python_tests=()
+go_test_files=()
 declare -A vitest_packages=()
 for path in "${test_paths[@]}"; do
     case "$path" in
-        tests/*.py|tests/**/*.py)
+        *_test.go)
+            go_test_files+=("$path")
+            ;;
+        tests/*.py)
             python_tests+=("$path")
             ;;
         mcp/*/tests/*)
@@ -68,8 +134,12 @@ for path in "${test_paths[@]}"; do
     esac
 done
 
+if ((${#go_test_files[@]})); then
+    run_go_tests "${go_test_files[@]}"
+fi
+
 if ((${#python_tests[@]})); then
-    uv run "${uv_test_env[@]}" pytest "${python_tests[@]}"
+    run_pytest "${python_tests[@]}"
 fi
 
 for package in "${!vitest_packages[@]}"; do

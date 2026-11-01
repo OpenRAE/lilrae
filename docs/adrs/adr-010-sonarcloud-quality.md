@@ -2,7 +2,10 @@
 
 ## Status
 
-superseded in part by ADR-064
+superseded in part by ADR-064 and ADR-065
+
+[ADR-065](adr-065-go-implementation-and-engineering-standards.md) extends the scope of the gates from the Python and
+TypeScript code to the Go code and the browser UI. The SonarCloud gate stays.
 
 [ADR-064](adr-064-layered-architecture-and-code-conventions.md) supersedes
 the statement that `C901` is the only Ruff rule. Enrolled code also runs the

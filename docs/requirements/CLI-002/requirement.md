@@ -1,6 +1,6 @@
 ---
 id: CLI-002
-title: "Pydantic Configuration Validation"
+title: "Strict Configuration Validation"
 status: ACTIVE
 type: FUNCTIONAL
 priority: MUST
@@ -9,11 +9,11 @@ created_at: 2026-03-20T06:09:36.363308Z
 updated_at: 2026-03-20T06:18:11.648800Z
 ---
 
-# CLI-002: Pydantic Configuration Validation
+# CLI-002: Strict Configuration Validation
 
 ## Statement
 
-The CLI shall validate aptl.json configuration using Pydantic models before any deployment operation. Validation shall catch invalid JSON, missing fields, type errors, and impossible profile combinations.
+The CLI shall validate aptl.json configuration against its strict schema before any deployment operation. Validation shall catch invalid JSON, missing fields, type errors, and impossible profile combinations.
 
 ## Rationale
 
@@ -30,3 +30,4 @@ The bash script passed invalid configurations silently, causing containers to fa
 - TESTS → TEST `tests/test_cli_config.py` (CLI config validate/show tests)
 - IMPLEMENTS → GITHUB_ISSUE `138` (Issue 138: implement stubbed CLI commands)
 - IMPLEMENTS → ADR `docs/adrs/adr-025-strict-first-party-config-schema.md` (ADR-025: Strict first-party config schema)
+- TESTS → TEST `conformance/testdata/cases/config.txtar` (Black-box config validation of unknown fields, invalid JSON, and a missing file)

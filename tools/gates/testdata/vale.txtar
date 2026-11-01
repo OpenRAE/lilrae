@@ -1,0 +1,12 @@
+# Vale checks Go comments with the repository styles.
+exec bash $REPO/tools/install-vale.sh
+! exec $REPO/.tools/vale/current/vale --config=$REPO/.vale.ini bad.go
+stdout 'Google.Latin'
+exec $REPO/.tools/vale/current/vale --config=$REPO/.vale.ini good.go
+
+-- bad.go --
+// Package fixture is checked, e.g. by Vale.
+package fixture
+-- good.go --
+// Package fixture is checked by Vale.
+package fixture

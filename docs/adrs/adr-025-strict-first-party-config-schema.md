@@ -2,7 +2,10 @@
 
 ## Status
 
-accepted
+superseded in part by ADR-065
+
+[ADR-065](adr-065-go-implementation-and-engineering-standards.md) replaces Pydantic as the mechanism of strict configuration
+with strict decoding in Go. The strict schema rule stays.
 
 ## Date
 

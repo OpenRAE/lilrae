@@ -4,6 +4,10 @@
 
 accepted
 
+[ADR-065](adr-065-go-implementation-and-engineering-standards.md) extends the
+prose-lint scope to Go comments. Its Go rule supersedes this record's
+Markdown-only scope and code-comment non-goal; the existing styles still apply.
+
 ## Date
 
 2026-06-11

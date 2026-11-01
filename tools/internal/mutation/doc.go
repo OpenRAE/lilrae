@@ -1,0 +1,16 @@
+// Package mutation implements the mutation test gate of ADR-065.
+//
+// The gate runs Gremlins in each Go module that has changed production files,
+// with --diff at the base revision, or in each module for a full run. It reads
+// the JSON report of Gremlins and applies the thresholds itself, because the
+// threshold flags of Gremlins v0.6.0 have no effect. Gremlins walks each file
+// below a module, so the gate leaves out each file that the tests of the
+// module cannot cover: a file of a nested module, a file that the go command
+// ignores, and a file that build constraints leave out on the host. CI runs
+// the gate on each platform of the product.
+//
+// Efficacy is killed mutants divided by killed and lived mutants. Mutant
+// coverage is killed and lived mutants divided by killed, lived, and uncovered
+// mutants. Mutants that do not compile and mutants that time out count in
+// neither value.
+package mutation

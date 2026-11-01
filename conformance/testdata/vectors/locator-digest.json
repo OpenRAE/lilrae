@@ -1,0 +1,59 @@
+{
+  "corpus": 1,
+  "scheme": "locator-digest",
+  "version": "current",
+  "owner": "aptl.core.experiment.resolver._digest_hex",
+  "cases": [
+    {
+      "id": "blake3-empty",
+      "input": {
+        "algorithm": "blake3",
+        "data_hex": ""
+      },
+      "expect": {
+        "text": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+      }
+    },
+    {
+      "id": "blake3-bytes",
+      "input": {
+        "algorithm": "blake3",
+        "data_hex": "68656c6c6f0a"
+      },
+      "expect": {
+        "text": "8e4c7c1b99dbfd50e7a95185fead5ee1448fa904a2fdd778eaf5f2dbfd629a99"
+      }
+    },
+    {
+      "id": "sha256-bytes",
+      "input": {
+        "algorithm": "sha256",
+        "data_hex": "68656c6c6f0a"
+      },
+      "expect": {
+        "text": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03"
+      }
+    },
+    {
+      "id": "sha512-bytes",
+      "input": {
+        "algorithm": "sha512",
+        "data_hex": "68656c6c6f0a"
+      },
+      "expect": {
+        "text": "e7c22b994c59d9cf2b48e549b1e24666636045930d3da7c1acb299d1c3b7f931f94aae41edda2c2b207a36e10f8bcb8d45223e54878f5b316e7ce3b6bc019629"
+      }
+    },
+    {
+      "id": "sha256-invalid-utf8",
+      "input": {
+        "algorithm": "sha256",
+        "data_hex": "c328ff"
+      },
+      "note": "raw bytes need no valid UTF-8",
+      "expect": {
+        "text": "7260da181cc952b2a568e214a50e99a75448e8d5c5f01d46da0dae0eae99409c"
+      }
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+# The test gate passes a clean module and writes repository paths into the
+# coverage profile.
+exec git init --quiet
+exec git add go.mod
+exec bash $GATES test $WORK/cov
+stdout 'ok  	example.com/fixture/calc'
+grep '^calc/calc.go:' cov/root.out
+
+# The race detector fails a data race.
+cp _bad/race_test.go calc/race_test.go
+! exec bash $GATES test $WORK/cov
+stdout 'WARNING: DATA RACE'
+rm calc/race_test.go
+
+# A module list limits the gate to those modules.
+mkdir broken
+cp _bad/go.mod broken/go.mod
+cp _bad/broken_test.go broken/broken_test.go
+exec git add broken/go.mod
+! exec bash $GATES test $WORK/cov
+stdout 'FAIL	example.com/broken'
+exec bash $GATES test $WORK/cov .
+stdout 'ok  	example.com/fixture/calc'
+! stdout 'example.com/broken'
+
+-- go.mod --
+module example.com/fixture
+
+go 1.27.0
+-- calc/calc.go --
+// Package calc adds numbers.
+package calc
+
+// Add returns the sum of a and b.
+func Add(a, b int) int {
+	return a + b
+}
+-- calc/calc_test.go --
+package calc
+
+import "testing"
+
+func TestAdd(t *testing.T) {
+	if got := Add(1, 2); got != 3 {
+		t.Errorf("Add(1, 2) = %d, want 3", got)
+	}
+}
+-- _bad/race_test.go --
+package calc
+
+import (
+	"sync"
+	"testing"
+)
+
+func TestRace(t *testing.T) {
+	var n int
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			n++
+		}()
+	}
+	wg.Wait()
+	t.Log(n)
+}
+-- _bad/go.mod --
+module example.com/broken
+
+go 1.27.0
+-- _bad/broken_test.go --
+package broken
+
+import "testing"
+
+func TestBroken(t *testing.T) {
+	t.Error("the module fails")
+}

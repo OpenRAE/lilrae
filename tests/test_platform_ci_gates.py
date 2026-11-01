@@ -472,3 +472,106 @@ def test_msgpack_c_extension_exception_requires_pips_pure_python_copy() -> None:
     assert find_spec("pip._vendor.msgpack._cmsgpack") is None
     assert msgpack.unpackb.__module__ == "pip._vendor.msgpack.fallback"
     assert msgpack.Unpacker.__module__ == "pip._vendor.msgpack.fallback"
+
+
+_GO_GATE_JOBS = ("go-lint", "go-tests", "go-mutation", "go-regression", "go-vuln", "osv-scanner-go")
+
+
+def test_go_gates_block_and_are_required_on_go_cutover() -> None:
+    """Each ADR-065 Go gate is a required go-cutover context (#1553).
+
+    A gate runs when routing fails or selects Go, checks the routing result
+    first, and never reports success after a failure.
+    """
+
+    jobs = _jobs()
+    cutover = set(_protected_branches()["go-cutover"]["required_status_checks"]["contexts"])
+    for job in _GO_GATE_JOBS:
+        assert jobs[job]["name"] in cutover, job
+        assert "continue-on-error" not in jobs[job], job
+        assert jobs[job]["if"] == (
+            "always() && (needs.changes.result != 'success' || needs.changes.outputs.go == 'true')"
+        ), job
+        assert jobs[job]["steps"][0]["name"] == "Validate check selection", job
+    # The project-wide analysis waits for current Go coverage.
+    assert "go-tests" in jobs["sonarcloud"]["needs"]
+    assert jobs["go-regression"]["permissions"] == {"contents": "read", "issues": "read"}
+
+
+def test_go_product_tests_and_mutation_run_on_macos_and_windows() -> None:
+    """The product module is tested and mutated on each platform (#1605).
+
+    The Linux mutation job leaves out each file that Linux does not build, so
+    this job is the gate of those files. It blocks like the other Go gates.
+    Gremlins reads no coverage on Windows, so the Windows job skips the
+    mutation gate until #1617 restores it.
+    """
+
+    jobs = _jobs()
+    job = jobs["go-cross-platform"]
+    cutover = set(_protected_branches()["go-cutover"]["required_status_checks"]["contexts"])
+    assert job["strategy"]["matrix"]["os"] == ["macos-latest", "windows-latest"]
+    for os_name in job["strategy"]["matrix"]["os"]:
+        assert job["name"].replace("${{ matrix.os }}", os_name) in cutover, os_name
+    assert "continue-on-error" not in job
+    assert job["if"] == jobs["go-mutation"]["if"]
+    assert job["steps"][0]["name"] == "Validate check selection"
+    assert job["steps"][1]["with"]["fetch-depth"] == 0
+    runs = [step.get("run", "") for step in job["steps"]]
+    assert 'bash tools/ci/go-gates.sh test "$RUNNER_TEMP/go-coverage" .' in runs
+    # The lock tests of #1609 run a Python child on each platform.
+    assert any(step.get("uses", "").startswith("actions/setup-python@") for step in job["steps"])
+    mutation = [
+        step
+        for step in job["steps"]
+        if step.get("run", "").endswith('bash tools/ci/go-gates.sh mutation "$base" .\n')
+    ]
+    assert len(mutation) == 1
+    assert mutation[0]["if"] == "matrix.os != 'windows-latest'"
+
+
+def test_go_architecture_runs_on_every_change_and_is_required_on_go_cutover() -> None:
+    """The architecture check of ADR-065 runs whatever routing selects (#1583).
+
+    The model covers web/caddy-build and the design notes, which routing does
+    not send to the Go lane. Only a pull request from a protected branch of
+    this repository skips the design comparison.
+    """
+
+    jobs = _jobs()
+    job = jobs["go-architecture"]
+    cutover = set(_protected_branches()["go-cutover"]["required_status_checks"]["contexts"])
+    assert job["name"] in cutover
+    assert "continue-on-error" not in job
+    assert job["if"] == "always()"
+    assert job["permissions"] == {"contents": "read"}
+    assert job["steps"][0]["name"] == "Validate check selection"
+    assert job["steps"][1]["with"]["fetch-depth"] == 0
+    script = job["steps"][-1]["run"]
+    assert 'bash tools/ci/go-gates.sh architecture "$BASE_SHA" "$issue" "$promotion"' in script
+    assert '"$HEAD_REPO" == "$REPOSITORY" && "$HEAD_REF" =~ ^(main|dev|go-cutover)$' in script
+
+
+def test_go_tests_run_each_fuzz_test_for_a_bounded_time() -> None:
+    """The fuzz tests of ADR-065 run on each change, for 30 seconds each (#1604)."""
+
+    runs = [step.get("run", "") for step in _jobs()["go-tests"]["steps"]]
+    assert "bash tools/ci/go-gates.sh fuzz 30s" in runs
+
+
+def test_go_regression_keeps_the_token_away_from_the_replay() -> None:
+    """Only the label lookup has the token, before any checkout (#1553).
+
+    The replay runs the test code of the pull request, so no step after the
+    checkout gets a token or a secret.
+    """
+
+    steps = _jobs()["go-regression"]["steps"]
+    names = [step.get("name", step.get("uses", "")) for step in steps]
+    checkout = next(i for i, step in enumerate(steps) if step.get("uses", "").startswith("actions/checkout@"))
+    with_token = [i for i, step in enumerate(steps) if any("github.token" in str(v) or "secrets." in str(v) for v in step.get("env", {}).values())]
+    assert with_token == [names.index("Read the issue and the bug label of the branch")]
+    assert with_token[0] < checkout
+    replay = steps[names.index("Replay the regression tests of the pull request")]
+    assert "go-gates.sh regression" in replay["run"]
+    assert "GH_TOKEN" not in replay.get("env", {})

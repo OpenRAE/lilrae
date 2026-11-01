@@ -54,3 +54,4 @@ APTL is the experimental apparatus, so its realized form is a scientific variabl
 - IMPLEMENTS → DOCUMENTATION `docs/architecture/rep-003-run-scoped-provenance-preflight.md` (REP-003 architecture preflight: binding boundaries, incumbents, and guardrails)
 - IMPLEMENTS → GITHUB_ISSUE `452` (Issue #452: REP-003: Run-scoped apparatus and detection-content provenance)
 - IMPLEMENTS → PULL_REQUEST `871` (PR #871: feat: record run-scoped apparatus and detection-content provenance)
+- TESTS → TEST `tests/test_serialization_vectors.py` (Shared vectors of the provenance identity, credential descriptor, and source set digests)

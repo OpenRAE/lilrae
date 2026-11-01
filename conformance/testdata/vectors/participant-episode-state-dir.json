@@ -1,0 +1,49 @@
+{
+  "corpus": 1,
+  "scheme": "participant-episode-state-dir",
+  "version": "current",
+  "owner": "aptl.backends.raes_participant_fixture_core.participant_episode_state_dir",
+  "cases": [
+    {
+      "id": "simple",
+      "input": {
+        "participant_address": "participant.red",
+        "episode_id": "episode-1"
+      },
+      "expect": {
+        "text": "/run/aptl/bounded-participant/8438ae09076c4371f9270b7a"
+      }
+    },
+    {
+      "id": "non-ascii",
+      "input": {
+        "participant_address": "participant.é",
+        "episode_id": "épisode-😀"
+      },
+      "expect": {
+        "text": "/run/aptl/bounded-participant/b06c23574fe57983cc8132b7"
+      }
+    },
+    {
+      "id": "empty-episode",
+      "input": {
+        "participant_address": "participant.red",
+        "episode_id": ""
+      },
+      "expect": {
+        "text": "/run/aptl/bounded-participant/ebccc06b42dcde91c06c139c"
+      }
+    },
+    {
+      "id": "separator-in-address",
+      "input": {
+        "participant_address": "participant\u0000red",
+        "episode_id": "1"
+      },
+      "expect": {
+        "text": "/run/aptl/bounded-participant/3054b668e31311fc542d75b4"
+      },
+      "note": "The fields join with a NUL byte, so this input hashes the same bytes as participant/red\\u00001."
+    }
+  ]
+}

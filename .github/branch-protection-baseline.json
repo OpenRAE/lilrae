@@ -59,7 +59,16 @@
           "OSV-scanner (uv.lock)",
           "RAES scenario validation gate",
           "SonarCloud quality gate",
-          "PR title lint"
+          "PR title lint",
+          "Go lint",
+          "Go tests + coverage",
+          "Go mutation tests",
+          "Go regression tests",
+          "Go architecture",
+          "Go vulnerability scan",
+          "OSV-scanner (Go modules)",
+          "Go product tests (macos-latest)",
+          "Go product tests (windows-latest)"
         ]
       }
     }

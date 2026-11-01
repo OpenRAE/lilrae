@@ -13,7 +13,7 @@ updated_at: 2026-03-20T06:18:11.648456Z
 
 ## Statement
 
-The system shall maintain continuous code quality analysis, automated test coverage, and secure credential handling across both Python and TypeScript codebases.
+The system shall maintain continuous code quality analysis, automated test coverage, and secure credential handling across all of its code.
 
 ## Rationale
 
@@ -23,11 +23,22 @@ A security training lab that has poor code quality or leaks credentials undermin
 
 - IMPLEMENTS → CONFIG `eslint.config.js` (Root ESLint flat config: per-function TypeScript complexity gate (issue #286))
 - IMPLEMENTS → CONFIG `.pre-commit-ci.yaml` (Python and TypeScript complexity gates and the ADR-064 architecture check run by CI)
-- IMPLEMENTS → CONFIG `.github/workflows/checks.yml` (Continuous Python and TypeScript tests, pre-commit, and security checks)
+- IMPLEMENTS → CONFIG `.github/workflows/checks.yml` (Continuous Python, TypeScript, and Go tests, pre-commit, and security checks)
 - DOCUMENTS → ADR `ADR-010` (ADR-010 SonarCloud quality: TypeScript complexity gate section + backlog)
 - IMPLEMENTS → CODE `tools/check_architecture.py` (ADR-064 layer, cycle, private-import, Typer, and Ruff checks for enrolled code)
 - IMPLEMENTS → CONFIG `pyproject.toml` (ADR-064 layer map, enrolled scope, and Ruff rules in [tool.lilrae.architecture])
 - TESTS → TEST `tests/test_check_architecture.py` (Activation and rejection of the ADR-064 checks on fixture trees)
 - TESTS → TEST `tests/test_sonar_project_properties.py` (SonarCloud ignore entries name existing files)
 - DOCUMENTS → ADR `ADR-064` (ADR-064 layered architecture and code conventions)
+- DOCUMENTS → ADR `ADR-065` (ADR-065 Go implementation, architecture model, and engineering standards)
 - IMPLEMENTS → GITHUB_ISSUE `1510` (Record the target architecture and code conventions for the code quality refactor)
+- IMPLEMENTS → CONFIG `.golangci.yml` (golangci-lint rules of the ADR-065 Go style table)
+- IMPLEMENTS → CODE_FILE `tools/ci/go-gates.sh` (Go lint, test, vulnerability, OSV, mutation, and regression gates over each first-party module, and the architecture gate)
+- IMPLEMENTS → CODE_FILE `tools/internal/regression/check.go` (ADR-065 regression test replay on the base and head revisions)
+- IMPLEMENTS → CODE_FILE `tools/internal/mutation/check.go` (ADR-065 changed-line mutation gate and thresholds)
+- TESTS → TEST `tools/gates/gates_test.go` (A failing and a passing fixture for each Go gate)
+- IMPLEMENTS → GITHUB_ISSUE `1553` (Go port 02: Go toolchain and CI gates)
+- IMPLEMENTS → CONFIG `architecture/model.yaml` (ADR-065 architecture model: layers, components, permitted uses and modules, and fix-it messages)
+- IMPLEMENTS → CODE_FILE `tools/internal/architecture/check.go` (ADR-065 whole-repository check against the architecture model)
+- IMPLEMENTS → CODE_FILE `tools/cmd/archcheck/main.go` (The check, design, pr, and diagram commands of the architecture checker)
+- IMPLEMENTS → GITHUB_ISSUE `1583` (Go port 02b: architecture model, whole-repository checks, and design check)

@@ -13,7 +13,7 @@ updated_at: 2026-03-20T06:18:11.648886Z
 
 ## Statement
 
-The CLI shall separate thin CLI layer (src/aptl/cli/) from domain logic (src/aptl/core/). Core modules shall have no dependency on Typer, Rich, or terminal I/O, enabling reuse by the web UI backend and direct scripting.
+The CLI shall keep a thin command layer separate from the application and domain logic. The application and domain code shall have no dependency on the CLI library or on terminal I/O, so that the web API and direct scripting can reuse it.
 
 ## Rationale
 
