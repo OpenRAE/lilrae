@@ -486,12 +486,14 @@ func TestCheckReplaysTheHeadTargetOfATestDataLink(t *testing.T) {
 	if err := os.Symlink("../shared", filepath.Join(r.Dir, "calc", "testdata")); err != nil {
 		t.Fatal(err)
 	}
-	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1"), "shared/want.txt": "1\n"})
+	// The target holds two files, so a partial overlay leaves want.txt out.
+	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1"), "shared/a.txt": "a\n", "shared/want.txt": "1\n"})
 	r.Commit(map[string]string{
 		"calc/calc.go":    valueSource("2"),
 		"shared/want.txt": "2\n",
 		"calc/calc_test.go": "package calc\n\nimport (\n\t\"os\"\n\t\"strconv\"\n\t\"testing\"\n)\n\n// regression: #7\nfunc TestValue(t *testing.T) {\n" +
-			"\twant, err := os.ReadFile(\"testdata/want.txt\")\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n" +
+			"\t// Without the head test data, the test returns early and passes on the base revision.\n" +
+			"\twant, err := os.ReadFile(\"testdata/want.txt\")\n\tif err != nil {\n\t\treturn\n\t}\n" +
 			"\tif got := strconv.Itoa(Value()) + \"\\n\"; got != string(want) {\n\t\tt.Fatalf(\"Value() = %q, want %q\", got, want)\n\t}\n}\n",
 	})
 
