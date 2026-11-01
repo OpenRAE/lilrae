@@ -1,6 +1,5 @@
 """Declared cleanup effects and evidence beneath the shared RAES trial lifecycle."""
 
-from asyncio import CancelledError
 from dataclasses import dataclass, field, replace
 from graphlib import TopologicalSorter
 import hashlib
@@ -52,7 +51,7 @@ class _CleanupExecution:
 
     results: dict[str, CleanupObligationResultModel] = field(default_factory=dict)
     evidence: list[ExperimentEvidenceRecordModel] = field(default_factory=list)
-    interrupted: BaseException | None = None
+    interrupted: bool = False
     publication_failure: Exception | None = None
 
 
@@ -151,20 +150,38 @@ class DeclaredCleanup:
             return self._execute_owned(outcome)
 
     def _execute_owned(self, outcome: str) -> TrialCleanupObservation:
+        execution = _CleanupExecution()
+        try:
+            self._execute_obligations(outcome, execution)
+        except BaseException as interruption:
+            # Publish interrupted and remaining obligations without more native
+            # effects, then re-raise the original stop from this handler.
+            execution.interrupted = True
+            try:
+                self._execute_obligations(outcome, execution)
+                self._observation(outcome, execution)
+            except Exception as publication_failure:
+                raise interruption from publication_failure
+            raise
+        return self._observation(outcome, execution)
+
+    def _execute_obligations(self, outcome: str, execution: _CleanupExecution) -> None:
         trigger = _TRIGGERS[outcome]
         plan = self.plan
-        execution = _CleanupExecution()
         order = TopologicalSorter(
             {key: value.depends_on for key, value in plan.cleanup_obligations.items()}
         )
         for key in order.static_order():
             obligation = plan.cleanup_obligations[key]
-            if trigger in obligation.triggers:
+            if trigger in obligation.triggers and key not in execution.results:
                 self._execute_obligation(key, obligation, execution)
+
+    def _observation(
+        self, outcome: str, execution: _CleanupExecution
+    ) -> TrialCleanupObservation:
         if execution.publication_failure is not None:
-            if execution.interrupted is not None:
-                raise execution.interrupted from execution.publication_failure
             raise execution.publication_failure
+        plan = self.plan
         status = "not-required"
         if execution.results:
             status = (
@@ -205,8 +222,6 @@ class DeclaredCleanup:
             f"cleanup/receipts/{receipt_id}.json",
             receipt.model_dump(mode="json"),
         )
-        if execution.interrupted is not None:
-            raise execution.interrupted
         return TrialCleanupObservation(
             receipt=receipt, evidence=tuple(execution.evidence), idempotent_effects=True
         )
@@ -222,18 +237,13 @@ class DeclaredCleanup:
             or execution.results[parent].status != "succeeded"
             for parent in obligation.depends_on
         )
-        try:
-            readback, status = self._perform(
-                obligation, failed_dependency or execution.interrupted is not None
-            )
-        except (KeyboardInterrupt, SystemExit, GeneratorExit, CancelledError) as exc:
-            # Retain interrupted attempts before propagating the original stop.
-            # No later native effect runs after an interruption.
-            execution.interrupted = exc
+        if execution.interrupted:
             readback, status = (
                 CleanupReadback((), ("native-cleanup-interrupted",)),
                 "unverified",
             )
+        else:
+            readback, status = self._perform(obligation, failed_dependency)
         try:
             record = retain_cleanup_readback(
                 self.store, self.clock, self._binding, key, readback

@@ -165,8 +165,20 @@ def test_interruption_retains_an_unverified_receipt_then_propagates(
     tmp_path, interruption
 ):
     cleanup, native = service(tmp_path)
+    payload = cleanup.plan.model_dump(mode="json")
+    payload["cleanup_obligations"]["independent"] = {
+        **payload["cleanup_obligations"]["destroy"],
+        "obligation_id": "independent",
+    }
+    cleanup = DeclaredCleanup(
+        TrialCleanupPlanModel.model_validate(payload),
+        native,
+        cleanup.store,
+        cleanup.clock,
+    )
 
     def interrupt(action, timeout_seconds):
+        native.calls.append((action, timeout_seconds))
         raise interruption
 
     native.execute = interrupt
@@ -181,6 +193,29 @@ def test_interruption_retains_an_unverified_receipt_then_propagates(
     receipt = TrialCleanupReceiptModel.model_validate_json(receipts[0].read_bytes())
     assert receipt.cleanup_status == "failed"
     assert receipt.obligation_results["destroy"].status == "unverified"
+    assert receipt.obligation_results["independent"].status == "unverified"
+    assert native.calls == [("destroy", 120)]
+
+
+def test_interruption_is_preserved_when_evidence_publication_fails(
+    tmp_path, monkeypatch
+):
+    cleanup, native = service(tmp_path)
+    interruption = KeyboardInterrupt()
+    publication_failure = OSError("publication unavailable")
+
+    def interrupt(action, timeout_seconds):
+        raise interruption
+
+    def unavailable(*args, **kwargs):
+        raise publication_failure
+
+    native.execute = interrupt
+    monkeypatch.setattr("aptl.backends.cleanup.retain_cleanup_readback", unavailable)
+    with pytest.raises(KeyboardInterrupt) as raised:
+        cleanup.execute("cancelled")
+    assert raised.value is interruption
+    assert raised.value.__cause__ is publication_failure
 
 
 def test_dependency_failure_keeps_independent_work_but_prevents_dependent_effects(
