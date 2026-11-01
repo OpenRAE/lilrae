@@ -35,12 +35,25 @@ run_go_tests() {
 if (($#)); then
     go_tests=()
     pytest_args=()
+    python_target=false
     for arg in "$@"; do
         case "$arg" in
             *_test.go) go_tests+=("$arg") ;;
-            *) pytest_args+=("$arg") ;;
+            *)
+                pytest_args+=("$arg")
+                # A Python target is an existing path, or a node ID of one.
+                if [[ "$arg" != -* && -e "${arg%%::*}" ]]; then
+                    python_target=true
+                fi
+                ;;
         esac
     done
+    # pytest without a target runs the whole suite, so other arguments need
+    # a Python test path. Go tests take no extra arguments.
+    if ((${#pytest_args[@]})) && [[ "$python_target" != true ]]; then
+        echo "These arguments need a Python test path: ${pytest_args[*]}" >&2
+        exit 2
+    fi
     if ((${#go_tests[@]})); then
         run_go_tests "${go_tests[@]}"
     fi
@@ -63,7 +76,7 @@ add_path() {
     local path=$1
     [[ -n "$path" && -f "$path" ]] || return 0
     case "$path" in
-        tests/test_*.py|tests/**/test_*.py|mcp/*/tests/*.test.ts|mcp/*/tests/**/*.test.ts|web/tests/*.test.ts|web/tests/**/*.test.ts)
+        tests/test_*.py|tests/**/test_*.py|mcp/*/tests/*.test.ts|web/tests/*.test.ts)
             ;;
         web/caddy-build/*|*/testdata/*)
             return 0
@@ -108,7 +121,7 @@ for path in "${test_paths[@]}"; do
         *_test.go)
             go_test_files+=("$path")
             ;;
-        tests/*.py|tests/**/*.py)
+        tests/*.py)
             python_tests+=("$path")
             ;;
         mcp/*/tests/*)

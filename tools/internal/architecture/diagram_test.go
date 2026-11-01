@@ -64,6 +64,9 @@ func TestDiagramWritesTheBlock(t *testing.T) {
 	t.Parallel()
 	r := newFixture(t, map[string]string{"architecture/model.yaml": diagramModel(), "docs/arch.md": diagramDoc("\nold\n")})
 	doc := filepath.Join(r.Dir, "docs", "arch.md")
+	if err := os.Chmod(doc, 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	report, err := architecture.Diagram(t.Context(), r.Dir, doc, true)
 	if err != nil || len(report.Findings) != 0 {
@@ -72,6 +75,16 @@ func TestDiagramWritesTheBlock(t *testing.T) {
 
 	if got, want := readFile(t, r.Dir, "docs/arch.md"), diagramDoc("\n"+fixtureDiagram+"\n"); got != want {
 		t.Errorf("Diagram(write) wrote\n%s\nwant\n%s", got, want)
+	}
+	info, err := os.Stat(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("the document after Diagram(write) has the mode %v, want -rw-------", info.Mode())
+	}
+	if entries, err := os.ReadDir(filepath.Join(r.Dir, "docs")); err != nil || len(entries) != 1 {
+		t.Errorf("docs holds %d entries after Diagram(write) (error %v), want only the document", len(entries), err)
 	}
 	if report, err := architecture.Diagram(t.Context(), r.Dir, "docs/arch.md", false); err != nil || len(report.Findings) != 0 {
 		t.Errorf("Diagram() after the write = %q, %v, want no findings and no error", findingStrings(report), err)

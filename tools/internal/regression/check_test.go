@@ -294,6 +294,26 @@ func TestCheckIgnoresThePathsThatTheGoCommandIgnores(t *testing.T) {
 	}
 }
 
+// regression: #1583
+func TestCheckReplaysATestThatLeavesAnIgnoredFile(t *testing.T) {
+	t.Parallel()
+	r := newRepo(t)
+	test := valueTest("// regression: #7\n", "")
+	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1"), "calc/_value_test.go": "package calc\n\nimport \"testing\"\n\n//regression broken\nfunc TestValue(t *testing.T) {"})
+	r.Commit(map[string]string{"calc/calc.go": valueSource("2"), "calc/_value_test.go": "", "calc/value_test.go": test})
+	baseWithTest := r.Commit(map[string]string{"calc/calc.go": valueSource("1"), "calc/value_test.go": "", "calc/_value_test.go": test})
+	r.Commit(map[string]string{"calc/calc.go": valueSource("2"), "calc/_value_test.go": "", "calc/value_test.go": test})
+
+	for _, from := range []string{baseWithTest, base} {
+		report := r.check(from, 7, false)
+
+		want := []regression.Test{{File: "calc/value_test.go", Name: "TestValue"}}
+		if diff := cmp.Diff(want, report.Selected); diff != "" || len(report.Findings) != 0 {
+			t.Errorf("Check(base %s) selected mismatch (-want +got):\n%s\nfindings: %q", from, diff, messages(report))
+		}
+	}
+}
+
 func TestCheckValidatesTheRegressionComments(t *testing.T) {
 	t.Parallel()
 	r := newRepo(t)

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -55,12 +56,12 @@ func Diagram(ctx context.Context, dir, doc string, write bool) (report Report, e
 	if !write {
 		return Report{Findings: []Finding{m.finding(RuleStaleDiagram, name, "the generated diagram differs from the model")}}, nil
 	}
-	updated := bytes.Join([][]byte{before, []byte(diagramBegin + want + diagramEnd), after}, nil)
-	// The document is tracked, so git can restore it after a failed write.
-	if err := root.WriteFile(rel, updated, 0o644); err != nil {
-		return Report{}, fmt.Errorf("write %s: %w", name, err)
+	info, err := root.Stat(rel)
+	if err != nil {
+		return Report{}, fmt.Errorf("read %s: %w", name, err)
 	}
-	return Report{}, nil
+	updated := bytes.Join([][]byte{before, []byte(diagramBegin + want + diagramEnd), after}, nil)
+	return Report{}, replaceFile(root, rel, updated, info.Mode().Perm())
 }
 
 // renderDiagram returns a Mermaid flowchart of the layers, the components, and
@@ -102,4 +103,36 @@ func renderDiagram(m *Model) string {
 // keeps a name such as "end" from becoming a Mermaid keyword.
 func nodeID(name string) string {
 	return "component_" + strings.ReplaceAll(name, "-", "_")
+}
+
+// replaceFile replaces the file name in root atomically (ADR-065): it writes
+// data to a new temporary file in the same directory, syncs it, and renames it
+// over name. After a failure, name is unchanged and the temporary file is gone.
+func replaceFile(root *os.Root, name string, data []byte, perm os.FileMode) error {
+	temp := fmt.Sprintf("%s.%d.tmp", name, os.Getpid())
+	f, err := root.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", temp, err)
+	}
+	if _, err := f.Write(data); err != nil {
+		return errors.Join(fmt.Errorf("write %s: %w", temp, err), f.Close(), removeTemp(root, temp))
+	}
+	if err := f.Sync(); err != nil {
+		return errors.Join(fmt.Errorf("sync %s: %w", temp, err), f.Close(), removeTemp(root, temp))
+	}
+	if err := f.Close(); err != nil {
+		return errors.Join(fmt.Errorf("close %s: %w", temp, err), removeTemp(root, temp))
+	}
+	if err := root.Rename(temp, name); err != nil {
+		return errors.Join(fmt.Errorf("replace %s: %w", name, err), removeTemp(root, temp))
+	}
+	return nil
+}
+
+// removeTemp removes the temporary file of a failed replacement.
+func removeTemp(root *os.Root, temp string) error {
+	if err := root.Remove(temp); err != nil {
+		return fmt.Errorf("remove %s: %w", temp, err)
+	}
+	return nil
 }

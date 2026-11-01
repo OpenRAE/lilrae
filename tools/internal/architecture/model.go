@@ -294,16 +294,17 @@ func (m *Model) validateUse(c *Component, key string, layer Layer, layerKnown bo
 // validatePublic returns the problems of the public packages.
 func (m *Model) validatePublic() []Finding {
 	var findings []Finding
+	key := m.location("public")
 	for _, p := range m.Public {
 		if m.owner(p) == nil {
-			findings = append(findings, m.problem(m.location("public"), "the public package %q is in no component", p))
+			findings = append(findings, m.problem(key, "the public package %q is in no component", p))
 		}
 		if internalPath(p) {
-			findings = append(findings, m.problem(m.location("public"), "the public package %q is under internal/", p))
+			findings = append(findings, m.problem(key, "the public package %q is under internal/", p))
 		}
 	}
 	for _, problem := range listProblems(m.Public, nil) {
-		findings = append(findings, m.problem(m.location("public"), "the public packages %s", problem))
+		findings = append(findings, m.problem(key, "the public packages %s", problem))
 	}
 	return findings
 }

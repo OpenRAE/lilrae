@@ -125,8 +125,9 @@ rules:
   invalid-model: >-
     Correct architecture/model.yaml as the finding states.
   missing-design: >-
-    Add docs/architecture/issue-<number>-<topic>-design.md with design front
-    matter that lists each changed package and each model change.
+    Name the branch <number>-<topic> after its issue, and add
+    docs/architecture/issue-<number>-<topic>-design.md with design front matter
+    that lists each changed package and each model change.
   invalid-design: >-
     Correct the design front matter as the finding states.
   design-package-missing: >-

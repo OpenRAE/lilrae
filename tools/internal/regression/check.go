@@ -197,7 +197,7 @@ func selectChanged(ctx context.Context, root, base string, candidates []candidat
 }
 
 // packageTests returns the test functions of the test files of dir at rev,
-// by name.
+// by name. It skips the test files that the go command ignores.
 func packageTests(ctx context.Context, root, rev, dir string) (map[string]testFunc, error) {
 	entries, err := git.Files(ctx, root, rev, dir)
 	if err != nil {
@@ -205,7 +205,7 @@ func packageTests(ctx context.Context, root, rev, dir string) (map[string]testFu
 	}
 	funcs := map[string]testFunc{}
 	for _, entry := range entries {
-		if path.Dir(entry.Path) != dir || !strings.HasSuffix(entry.Path, "_test.go") {
+		if path.Dir(entry.Path) != dir || !strings.HasSuffix(entry.Path, "_test.go") || ignored(entry.Path) {
 			continue
 		}
 		src, err := git.Show(ctx, root, rev, entry.Path)

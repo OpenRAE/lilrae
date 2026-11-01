@@ -33,6 +33,7 @@ def _run(repo: Path, tmp_path: Path, *args: str) -> tuple[subprocess.CompletedPr
     real_git = shutil.which("git")
     assert real_git
     (stubs / "go").write_text(f'#!/bin/sh\nprintf "%s|%s\\n" "$PWD" "$*" >> {log}\n', encoding="utf-8")
+    (stubs / "uv").write_text(f'#!/bin/sh\nprintf "uv|%s\\n" "$*" >> {log}\n', encoding="utf-8")
     (stubs / "git").write_text(f'#!/bin/sh\nprintf "git|%s\\n" "$*" >> {log}\nexec {real_git} "$@"\n', encoding="utf-8")
     for stub in stubs.iterdir():
         stub.chmod(0o700)
@@ -80,3 +81,29 @@ def test_a_go_test_file_without_a_module_is_an_error(tmp_path):
 
     assert result.returncode == 2
     assert "No go.mod above loose/loose_test.go." in result.stderr
+
+
+def test_pytest_arguments_without_a_python_target_are_an_error(tmp_path):
+    """pytest without a target would run the whole suite (#1583)."""
+    repo = _repo(tmp_path)
+
+    for args in (("tools/internal/calc/calc_test.go", "-v"), ("-k", "calc")):
+        result, calls = _run(repo, tmp_path, *args)
+
+        assert result.returncode == 2, args
+        assert "These arguments need a Python test path:" in result.stderr
+        assert [call for call in calls if not call.startswith("git|")] == [], args
+
+
+def test_python_targets_run_pytest_with_their_arguments(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "tests").mkdir()
+    (repo / "tests" / "test_calc.py").write_text("def test_calc():\n    pass\n", encoding="utf-8")
+
+    result, calls = _run(repo, tmp_path, "tools/internal/calc/calc_test.go", "tests/test_calc.py::test_calc", "-v")
+
+    assert result.returncode == 0, result.stderr
+    assert [call for call in calls if not call.startswith("git|")] == [
+        f"{repo}/tools|test -race -shuffle=on ./internal/calc",
+        "uv|run --group build --no-default-groups --extra dev --extra web pytest tests/test_calc.py::test_calc -v",
+    ]

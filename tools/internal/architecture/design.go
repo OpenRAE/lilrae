@@ -34,6 +34,9 @@ type RecordPackage struct {
 	Removed     bool     `yaml:"removed"`
 }
 
+// componentChange starts the model change of a component.
+const componentChange = "component:"
+
 var changePattern = regexp.MustCompile(`^(layers|public|rules|vendored|component:[a-z][a-z0-9-]*(\.(layer|responsibility|packages|uses|modules|test_uses|test_modules))?)$`)
 
 // errNoFrontMatter reports a design note without a design record.
@@ -143,16 +146,16 @@ func modelChanges(old, head *Model) []string {
 		c := &head.Components[i]
 		prior := old.component(c.Name)
 		if prior == nil {
-			changes = append(changes, "component:"+c.Name)
+			changes = append(changes, componentChange+c.Name)
 			continue
 		}
 		for _, field := range componentChanges(prior, c) {
-			changes = append(changes, "component:"+c.Name+"."+field)
+			changes = append(changes, componentChange+c.Name+"."+field)
 		}
 	}
 	for i := range old.Components {
 		if head.component(old.Components[i].Name) == nil {
-			changes = append(changes, "component:"+old.Components[i].Name)
+			changes = append(changes, componentChange+old.Components[i].Name)
 		}
 	}
 	slices.Sort(changes)
