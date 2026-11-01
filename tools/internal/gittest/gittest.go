@@ -16,16 +16,16 @@ type Repo struct {
 	Dir string
 }
 
-// New returns an empty repository on the branch main. Commits use a fixed
-// identity and no signature, so they do not depend on the Git configuration
-// of the host.
+// New returns an empty repository on the branch main, with a fixed identity
+// for its commits. The repository runs no hooks, so the code under test that
+// runs Git in it does not run the hooks of the host either.
 func New(tb testing.TB) *Repo {
 	tb.Helper()
 	r := &Repo{tb: tb, Dir: tb.TempDir()}
 	r.Git("init", "--quiet", "--initial-branch=main")
 	r.Git("config", "user.name", "Fixture")
 	r.Git("config", "user.email", "fixture@example.invalid")
-	r.Git("config", "commit.gpgsign", "false")
+	r.Git("config", "core.hooksPath", os.DevNull)
 	return r
 }
 
@@ -54,11 +54,13 @@ func (r *Repo) Commit(files map[string]string) string {
 }
 
 // Git runs git in the repository and returns its output without surrounding
-// space. It fails the test when git fails.
+// space. It fails the test when git fails. Git reads no global or system
+// configuration of the host, such as signing or hook settings.
 func (r *Repo) Git(args ...string) string {
 	r.tb.Helper()
 	cmd := exec.CommandContext(r.tb.Context(), "git", args...) //nolint:gosec // G204: tests pass fixed arguments, and no shell runs.
 	cmd.Dir = r.Dir
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		r.tb.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)

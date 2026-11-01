@@ -5,10 +5,10 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"slices"
 	"strings"
 
 	"github.com/OpenRAE/lilrae/tools/internal/git"
+	"github.com/OpenRAE/lilrae/tools/internal/golayout"
 )
 
 // Config describes one regression check.
@@ -116,7 +116,7 @@ func scanChanges(ctx context.Context, root, base, head string, issue int) (chang
 	}
 	var scan changes
 	for _, file := range files {
-		if inTestdata(file.Path) {
+		if golayout.Ignored(file.Path) {
 			continue
 		}
 		if !strings.HasSuffix(file.Path, "_test.go") {
@@ -197,7 +197,7 @@ func selectChanged(ctx context.Context, root, base string, candidates []candidat
 }
 
 // packageTests returns the test functions of the test files of dir at rev,
-// by name.
+// by name. It skips the test files that the go command ignores.
 func packageTests(ctx context.Context, root, rev, dir string) (map[string]testFunc, error) {
 	entries, err := git.Files(ctx, root, rev, dir)
 	if err != nil {
@@ -205,7 +205,7 @@ func packageTests(ctx context.Context, root, rev, dir string) (map[string]testFu
 	}
 	funcs := map[string]testFunc{}
 	for _, entry := range entries {
-		if path.Dir(entry.Path) != dir || !strings.HasSuffix(entry.Path, "_test.go") {
+		if path.Dir(entry.Path) != dir || !strings.HasSuffix(entry.Path, "_test.go") || golayout.Ignored(entry.Path) {
 			continue
 		}
 		src, err := git.Show(ctx, root, rev, entry.Path)
@@ -221,10 +221,4 @@ func packageTests(ctx context.Context, root, rev, dir string) (map[string]testFu
 		}
 	}
 	return funcs, nil
-}
-
-// inTestdata reports whether a repository path is in a testdata directory,
-// which the go command ignores.
-func inTestdata(file string) bool {
-	return slices.Contains(strings.Split(path.Dir(file), "/"), "testdata")
 }

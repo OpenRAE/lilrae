@@ -25,7 +25,10 @@ architecture model and the design check belong to Go port 02b.
 | osv-scanner 2.3.8 runs Go call analysis with a govulncheck built with Go 1.26, which cannot load Go 1.27 packages. `--no-call-analysis=go` keeps the module scan. | Fixture experiment. |
 | OSV reports GO-2026-5970 and GO-2026-6629 for `golang.org/x/text` v0.31.0, which Gremlins requires. v0.43.0 has neither. | osv-scanner 2.3.8 scan. |
 | govulncheck accepts the `tool` pattern and scans the tool dependencies. | Fixture experiment. |
-| The SonarCloud Go sensor resolves a coverage path as absolute, with the module name, relative to the project, and then by subpath. | `GoCoverageStorageImpl` in SonarSource/sonar-go. |
+| The SonarCloud Go sensor resolves a coverage path as absolute, with the module name, relative to the project, and then by subpath. It resolves a module name only through a `go.mod` file that the analysis indexes, and `sonar.sources` holds no `go.mod` file. | `GoCoverageStorageImpl` and `GoModFileFinder` in SonarSource/sonar-go; `sonar-project.properties`. |
+| Gremlins reads one range of changed lines from each diff hunk: the first added line and the count of added lines. With three context lines, Git puts two edits four lines apart in one hunk, and Gremlins skips the mutants of the second edit. | `internal/diff/diff.go`; OpenRAE/go-rae-gremlins#40; `TestCheckMutatesEachEditOfAHunk` fails without `diff.context=0`. |
+| `git diff` reads the diff settings of the user, for example `diff.orderFile`. The plumbing command `git diff-tree` does not. | Fixture experiment with Git 2.43.0. |
+| The fixture repositories of the tests read the global Git configuration of the host, so the global hooks and the signing settings applied to fixture commits. | `TestRepoIgnoresTheHostConfiguration` fails on the first `gittest`. |
 | GitHub runs a schedule only from the default branch. Dependabot reads its configuration from the default branch. | GitHub Actions and Dependabot documentation. |
 
 ## Architecture
@@ -40,7 +43,9 @@ architecture model and the design check belong to Go port 02b.
 | `tools/ci/go-gates.sh` | Finds the first-party modules and runs one gate over them. CI and the fixtures call it. |
 | `tools/internal/regression`, `tools/cmd/regressioncheck` | Selects and replays the regression tests of a pull request. |
 | `tools/internal/mutation`, `tools/cmd/mutationcheck` | Runs Gremlins and applies the thresholds. |
-| `tools/internal/git` | Runs the Git commands that both checks need. |
+| `tools/internal/git` | Runs the Git commands that both checks need. Changed files come from the plumbing command `git diff-tree`. |
+| `tools/internal/golayout` | Applies the rules of the go command to repository paths: the paths that it ignores, and the module of a directory. |
+| `tools/internal/checkcmd` | The exit statuses, the flag parsing, and the output handling of the check commands. |
 | `tools/mutation-thresholds.json` | The efficacy and mutant coverage thresholds. |
 | `tools/go-format-hook.sh` | The pre-commit gofmt check of staged Go files. |
 
@@ -76,7 +81,9 @@ flowchart LR
    and golangci-lint with `.golangci.yml`. The golangci-lint formatters check
    gofmt and goimports.
 6. **Tests.** `go test -race -shuffle=on` with atomic coverage. The script
-   rewrites each coverage path to the repository path for SonarCloud.
+   rewrites each coverage path to the repository path for SonarCloud. The
+   sensor resolves a module path only through an indexed `go.mod` file, and
+   the project sources hold none.
 7. **Vale.** The pinned Vale moves from 3.14.2 to 3.26.0, so Go doc comments
    can name identifiers with doc links. The installer points the current Vale
    at the pinned version on each run.
@@ -88,7 +95,9 @@ flowchart LR
    name. It validates each `regression:` comment in the changed test files. It
    replays each test for the issue of the pull request that the change adds or
    changes. Tests for other issues are not replayed, because the base revision
-   already has their fix.
+   already has their fix. The check skips each path that the go command
+   ignores: a name that starts with `.` or `_`, and each `testdata`
+   directory.
 10. **Replay mechanics.** A temporary Git worktree holds the base revision. In
    each package directory of a selected test, the test files and `testdata`
    become those of the head revision. Each test runs alone with
@@ -96,12 +105,28 @@ flowchart LR
    revision and a test `pass` on the head revision satisfy the check.
 11. **Bug label.** A pull request that changes Go production code for an issue
    with the `bug` label must add or change a regression test for that issue.
-   The CI step reads the label with a read-only token and prints it.
+   A separate step reads the label with a read-only token and prints it. It
+   runs before the checkout, and no later step has the token, because the
+   replay runs the test code of the pull request.
 12. **Mutation.** `mutationcheck` runs Gremlins in each module that has
-    changed production files, with `--diff` at the base revision. It sets
-    `diff.relative=true` for Git and `-count=1` for Go. It reads the JSON
-    report and applies the thresholds itself. A full run, without `--diff`,
-    covers each module on a schedule or a manual run.
+    changed production files, with `--diff` at the base revision. It reads
+    the JSON report and applies the thresholds itself. A full run, without
+    `--diff`, covers each module on a schedule or a manual run. The settings
+    in the table below work around the Gremlins v0.6.0 defects. Each one goes
+    when a Gremlins release that the tools module pins fixes its defect.
+
+    | Defect | OpenRAE/go-rae-gremlins | Workaround |
+    | --- | --- | --- |
+    | The threshold flags have no effect. | #27, #15, #26 | `mutationcheck` applies the thresholds to the JSON report. |
+    | `--diff` compares repository paths with module paths, so it skips each mutant of a nested module. | #36, #37, #43 | Git writes diff paths relative to the module (`diff.relative=true`). |
+    | `--diff` reads one range from each hunk, so it skips the second edit of a hunk. | #40, #41, #51 | Git writes no context lines (`diff.context=0`). |
+    | A cached first test run makes each mutant time out. | #22, #30, #53 | Go runs each test again (`-count=1`). |
+    | A comparison in a case clause, and a constant expression, are not covered. | #38, #62, #39 | Changed code uses an if statement and a literal (decision 13). |
+    | A module without mutants gets no report. | none | `mutationcheck` reads an empty report as no mutant. |
+
+    The Git of Gremlins also reads no global or system configuration of the
+    host, because a setting such as `diff.noprefix` changes the diff that
+    Gremlins parses.
 13. **Mutation results.** Changed lines without a mutant pass, and the check
     names the changed files. A tool error fails, and so does a change where
     each mutant timed out. A pull request cannot lower a threshold. The first
@@ -112,6 +137,14 @@ flowchart LR
     no Go code before Go port 31. Issue #1593, on `dev`, adds Dependabot
     entries for the Go modules with `target-branch: go-cutover` and a weekly
     dispatch of the Checks workflow on `go-cutover`. Go port 31 removes both.
+15. **Shared rules.** `tools/internal/golayout` gives both checks the paths
+    that the go command ignores and the module of a directory.
+    `tools/internal/checkcmd` gives both commands the exit statuses, the flag
+    parsing, and the output handling.
+16. **Git settings of the host.** The checks read changed files with the
+    plumbing command `git diff-tree`, which reads no diff settings of the
+    user. The test repositories of `gittest` read no global or system Git
+    configuration and run no hooks, so a test does not depend on the host.
 
 ## Failure behavior
 
@@ -129,28 +162,48 @@ flowchart LR
 | Efficacy or mutant coverage is below its threshold. | `mutationcheck` exits 1 with each lived and uncovered mutant. |
 | No Go production code changed. | The mutation job reports that no relevant input changed. |
 
-## Data flows and security
+## Data flows and threat model
 
 ```text
+Branch name [untrusted]
+  -> environment variable, bash regular expression
+  -> issue number [digits only]
+  -> GitHub issues API [issues: read, label step only] -> label names [printed]
+
 Pull request head and base revisions [untrusted content]
-  -> checkout with persist-credentials false [read-only token]
+  -> checkout with persist-credentials false [no token in later steps]
   -> go-gates.sh [fixed argv, no shell evaluation of paths]
   -> go, git, golangci-lint, Gremlins, govulncheck, osv-scanner [pinned]
   -> job result, step summary, coverage artifact [Actions storage]
   -> SonarCloud analysis [existing token, existing job]
-
-Branch name [untrusted]
-  -> environment variable, bash regular expression
-  -> issue number [digits only]
-  -> GitHub issues API [issues: read] -> label names [printed]
 ```
+
+The assets are the results of the gates that protect `go-cutover`, the
+`GITHUB_TOKEN` of each job, and the developer workstation that runs the checks
+and their tests. The trust boundaries are these:
+
+1. The pull request: its branch name, revisions, and test code are untrusted.
+2. The GitHub API, which accepts the token of the job.
+3. The pinned tools and modules, which `go.sum` verifies.
+4. The Actions cache of `setup-go`.
+5. The Git configuration of the host that runs a check or a test.
+
+| Threat | Boundary | Mitigation |
+| --- | --- | --- |
+| The test code of the pull request reads the token. The regression and mutation checks run that code. | 1, 2 | Only the label step has the token. It runs before the checkout and runs no project code. The token is read-only. A test proves that no later step has a token or a secret. |
+| A branch name injects a command or an argument. | 1 | The step reads the name from an environment variable, and a bash regular expression keeps the digits of the issue number only. |
+| A path or a revision becomes a Git option. | 1 | Git runs with a fixed argument list, full commit names, `--end-of-options`, and `--` before each path. |
+| A change passes a gate without a check: a test in an ignored path, a mutant that Gremlins skips, or a lowered threshold. | 1 | The checks skip only the paths that the go command ignores. Gremlins gets one hunk for each edit. A lowered threshold fails, and a run where each mutant timed out fails. |
+| A replaced tool or module changes a result. | 3 | The tools are pinned in `go.mod`, and `go.sum` verifies each module. `GOTOOLCHAIN=local` and `GOWORK=off` stop a toolchain change and an ambient workspace. |
+| A poisoned cache changes a build. | 4 | A pull request run writes only caches of its own ref, and `go.sum` verifies each module that a cache holds. zizmor reports cache poisoning because Checks runs on tag pushes. Checks publishes no release artifact, and a tag run restores only caches of its own ref and of the default branch. |
+| A Git setting of the host changes a result: a diff setting changes the diff that Gremlins parses, or a global hook runs in a test repository. | 5 | Changed files come from the plumbing command `git diff-tree`. The Git of Gremlins and of `gittest` reads no global or system configuration, and test repositories run no hooks. |
+
+Other properties:
 
 - The tools receive revisions, paths, and test names as argv elements. Test
   names come from the Go parser, so they are identifiers.
 - Each Go job keeps the read-only default permissions. The regression job adds
   `issues: read` only.
-- The jobs set `GOWORK=off` and `GOTOOLCHAIN=local`, so an ambient workspace or
-  an automatic toolchain change cannot alter the checked build.
 - The replay worktree and the Gremlins work directories are temporary, and the
   tools remove them.
 - The fixture with a known vulnerability is a text file, not a `go.mod`. No
@@ -171,7 +224,9 @@ Branch name [untrusted]
 | Routing | Go paths select the `go` and `docs` lanes, and the SonarCloud closure. | Other paths keep their lanes. |
 
 The fixture tests of `tools/gates` run the real script and the pinned tools.
-The unit tests of each check cover its parsing, selection, and evaluation.
+The unit tests of each check cover its parsing, selection, and evaluation. A
+mutation unit test runs Gremlins on two edits in one hunk, and a `gittest`
+test gives the host a configuration whose hooks fail.
 Go coverage in SonarCloud and the live `go-cutover` protection need evidence
 from the delivered workflow.
 

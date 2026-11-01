@@ -251,6 +251,67 @@ func TestCheckRequiresARegressionTestForABugFix(t *testing.T) {
 	}
 }
 
+func TestCheckIgnoresThePathsThatTheGoCommandIgnores(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		files map[string]string
+		want  []string
+	}{
+		{
+			name: "production files",
+			files: map[string]string{
+				"_scratch/scratch.go": "package scratch\n",
+				".hidden/hidden.go":   "package hidden\n",
+				"calc/_old.go":        "package calc\n",
+				"calc/.new.go":        "package calc\n",
+				"calc/testdata/x.go":  "package x\n",
+			},
+		},
+		{
+			name:  "regression test",
+			files: map[string]string{"calc/calc.go": valueSource("2"), "calc/_value_test.go": valueTest("// regression: #7\n", "")},
+			want:  []string{"issue #7: the issue has the bug label and the change edits Go production code, but the change adds or changes no test with \"regression: #7\""},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := newRepo(t)
+			base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1")})
+			r.Commit(tc.files)
+
+			report := r.check(base, 7, true)
+
+			if diff := cmp.Diff(tc.want, messages(report)); diff != "" {
+				t.Errorf("findings mismatch (-want +got):\n%s", diff)
+			}
+			if len(report.Selected) != 0 {
+				t.Errorf("Check() replayed %v, want no test from an ignored path", report.Selected)
+			}
+		})
+	}
+}
+
+func TestCheckReplaysATestThatLeavesAnIgnoredFile(t *testing.T) {
+	t.Parallel()
+	r := newRepo(t)
+	test := valueTest("// regression: #7\n", "")
+	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1"), "calc/_value_test.go": "package calc\n\nimport \"testing\"\n\n//regression broken\nfunc TestValue(t *testing.T) {"})
+	r.Commit(map[string]string{"calc/calc.go": valueSource("2"), "calc/_value_test.go": "", "calc/value_test.go": test})
+	baseWithTest := r.Commit(map[string]string{"calc/calc.go": valueSource("1"), "calc/value_test.go": "", "calc/_value_test.go": test})
+	r.Commit(map[string]string{"calc/calc.go": valueSource("2"), "calc/_value_test.go": "", "calc/value_test.go": test})
+
+	for _, from := range []string{baseWithTest, base} {
+		report := r.check(from, 7, false)
+
+		want := []regression.Test{{File: "calc/value_test.go", Name: "TestValue"}}
+		if diff := cmp.Diff(want, report.Selected); diff != "" || len(report.Findings) != 0 {
+			t.Errorf("Check(base %s) selected mismatch (-want +got):\n%s\nfindings: %q", from, diff, messages(report))
+		}
+	}
+}
+
 func TestCheckValidatesTheRegressionComments(t *testing.T) {
 	t.Parallel()
 	r := newRepo(t)
@@ -263,7 +324,8 @@ func TestCheckValidatesTheRegressionComments(t *testing.T) {
 		"/*\nregression: #16\nregression: #17\n*/\nfunc TestTwo(t *testing.T) {}\n\n" +
 		"// regression: #18\nfunc Testlower(t *testing.T) {}\n\n" +
 		"// A regression: #19 here is prose.\nfunc TestProse(t *testing.T) {}\n\n" +
-		"/*\nTestBlock has a malformed line.\nregression: #x\n*/\nfunc TestBlock(t *testing.T) {}\n",
+		"/*\nTestBlock has a malformed line.\nregression: #x\n*/\nfunc TestBlock(t *testing.T) {}\n\n" +
+		"// regression: #99999999999999999999\nfunc TestHuge(t *testing.T) {}\n",
 	})
 
 	got := messages(r.check(base, 0, false))
@@ -275,6 +337,7 @@ func TestCheckValidatesTheRegressionComments(t *testing.T) {
 		"calc/calc_test.go:14: the regression comment is not in the doc comment of a test function",
 		"calc/calc_test.go:24: the regression comment is not in the doc comment of a test function",
 		"calc/calc_test.go:32: malformed regression comment \"regression: #x\"; write \"regression: #<issue>\"",
+		"calc/calc_test.go:36: malformed issue number in \"regression: #99999999999999999999\"",
 		"calc/calc_test.go:22: TestTwo has more than one regression comment",
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
