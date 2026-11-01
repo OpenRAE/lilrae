@@ -1,0 +1,29 @@
+{
+  "corpus": 1,
+  "scheme": "postgres-scram-verifier",
+  "version": "current",
+  "owner": "aptl_techvault.database_access._scram_verifier",
+  "cases": [
+    {
+      "id": "simple",
+      "input": {
+        "password": "synthetic-password",
+        "salt_hex": "00112233445566778899aabbccddeeff"
+      },
+      "expect": {
+        "text": "SCRAM-SHA-256$100000:ABEiM0RVZneImaq7zN3u/w==$XIbGNA+c6WaK4NhB1qMGAcIhqx7odA4HodLK5WwWUd8=:lRLMT3JMQI1ZAKcZtal3XP7R8M6jCgKGJ59i6+U2vNE="
+      },
+      "note": "A synthetic fixture password."
+    },
+    {
+      "id": "non-ascii",
+      "input": {
+        "password": "pässwörd-😀",
+        "salt_hex": "ffeeddccbbaa99887766554433221100"
+      },
+      "expect": {
+        "text": "SCRAM-SHA-256$100000:/+7dzLuqmYh3ZlVEMyIRAA==$BxuCUvTe62WfDe/K064E8aposDXWUAtrPfHIRr1DS6A=:38yofMFlRNf6O2Ta48i5pgsvddO2OB69FzxHWIoBSxk="
+      }
+    }
+  ]
+}

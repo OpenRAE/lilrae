@@ -1,0 +1,107 @@
+{
+  "corpus": 1,
+  "scheme": "techvault-wazuh-agent-readiness",
+  "version": "current",
+  "owner": "aptl_techvault.evidence.techvault_wazuh_agent_readiness._readiness_document",
+  "cases": [
+    {
+      "id": "ready",
+      "input": {
+        "payload": {
+          "hosts": [
+            {
+              "node_ref": "suricata",
+              "enrollment_name": "techvault-suricata-agent",
+              "agent_id": "002",
+              "status": "active",
+              "sources_readable": true,
+              "telemetry_fresh": true,
+              "telemetry_event_count": 3,
+              "enrollment_preserved": true
+            },
+            {
+              "node_ref": "db",
+              "enrollment_name": "techvault-db-agent",
+              "agent_id": "001",
+              "status": "active",
+              "sources_readable": true,
+              "telemetry_fresh": true,
+              "telemetry_event_count": 3,
+              "enrollment_preserved": true
+            }
+          ]
+        },
+        "expected_nodes": [
+          "db",
+          "suricata"
+        ]
+      },
+      "expect": {
+        "value": "7b22686f737473223a5b7b226167656e745f6964223a22303031222c22656e726f6c6c6d656e745f6e616d65223a22746563687661756c742d64622d6167656e74222c22656e726f6c6c6d656e745f707265736572766564223a747275652c226e6f64655f726566223a226462222c22736f75726365735f7265616461626c65223a747275652c22737461747573223a22616374697665222c2274656c656d657472795f6576656e745f636f756e74223a332c2274656c656d657472795f6672657368223a747275657d2c7b226167656e745f6964223a22303032222c22656e726f6c6c6d656e745f6e616d65223a22746563687661756c742d73757269636174612d6167656e74222c22656e726f6c6c6d656e745f707265736572766564223a747275652c226e6f64655f726566223a227375726963617461222c22736f75726365735f7265616461626c65223a747275652c22737461747573223a22616374697665222c2274656c656d657472795f6576656e745f636f756e74223a332c2274656c656d657472795f6672657368223a747275657d5d2c2277617a75685f6167656e745f7265616479223a747275657d"
+      },
+      "note": "The document sorts the hosts by node reference."
+    },
+    {
+      "id": "stale-telemetry",
+      "input": {
+        "payload": {
+          "hosts": [
+            {
+              "node_ref": "db",
+              "enrollment_name": "techvault-db-agent",
+              "agent_id": "001",
+              "status": "active",
+              "sources_readable": true,
+              "telemetry_fresh": true,
+              "telemetry_event_count": 3,
+              "enrollment_preserved": true
+            },
+            {
+              "node_ref": "suricata",
+              "enrollment_name": "techvault-suricata-agent",
+              "agent_id": "002",
+              "status": "active",
+              "sources_readable": true,
+              "telemetry_fresh": false,
+              "telemetry_event_count": 3,
+              "enrollment_preserved": true
+            }
+          ]
+        },
+        "expected_nodes": [
+          "db",
+          "suricata"
+        ]
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "id": "missing-host",
+      "input": {
+        "payload": {
+          "hosts": [
+            {
+              "node_ref": "db",
+              "enrollment_name": "techvault-db-agent",
+              "agent_id": "001",
+              "status": "active",
+              "sources_readable": true,
+              "telemetry_fresh": true,
+              "telemetry_event_count": 3,
+              "enrollment_preserved": true
+            }
+          ]
+        },
+        "expected_nodes": [
+          "db",
+          "suricata"
+        ]
+      },
+      "expect": {
+        "value": null
+      }
+    }
+  ]
+}

@@ -43,7 +43,7 @@ functional change.
 | Correlation projection | `core/correlation/models.py:CorrelationProjection` | RFC 8785 of the canonical projection, and `sha256:` and its hex SHA-256. A dangling edge or an unknown reference kind is rejected. | The correlation projection of a run and its `projection_digest`. | `conformance/testdata/vectors/correlation-projection.json` |
 | Trial plan | `core/experiment/trial_plan_models.py:canonicalize_trial_plan` | RFC 8785 of the `aptl-experiment-trial-plan/v3` projection, its `sha256:` digest, and the `plan-` ID. | The trial plan file, its digest, and its plan ID. | `conformance/testdata/vectors/trial-plan.json` |
 | Seat launch descriptor | `appliance/seat/launch_descriptor.py:canonical_launch_bytes` | RFC 8785 of the `aptl.appliance-launch/v2` or `v3` descriptor. A `v3` descriptor needs exactly one desktop mode. | The launch descriptor that the seat guest authenticates. | `conformance/testdata/vectors/seat-launch-bytes.json` |
-| Seat policy digest | `appliance/seat/lifecycle.py:_canonical_policy_digest` | `sha256:` and the hex SHA-256 of RFC 8785 of the `aptl.appliance-boundary/v1` policy. | `boundary_policy_digest` of the launch descriptor, which binds the boundary gate. | `conformance/testdata/vectors/seat-policy-digest.json` |
+| Seat policy digest | `appliance/seat/lifecycle.py:_canonical_policy_digest` | `sha256:` and the hex SHA-256 of RFC 8785 of the `aptl.appliance-boundary/v1` policy. | `boundary_policy_digest` of the launch descriptor, which binds the boundary gate, and the policy file that `stage_seat` writes. | `conformance/testdata/vectors/seat-policy-digest.json` |
 | Flag token | `core/flags.py:verify_token` | `aptl:v1:<hostname>:<level>:<nonce>:<signature>`, where the signature is the hex MD5 of `key:hostname:level:nonce`. | The flags that the lab plants and checks. | `conformance/testdata/vectors/flag-token.json` |
 | Locator digest | `core/experiment/resolver.py:_digest_hex` | Lowercase hex BLAKE3, SHA-256, or SHA-512 of the artifact bytes. | The integrity check of each experiment artifact locator, and the `sha256:` digest of each resolved artifact. | `conformance/testdata/vectors/locator-digest.json` |
 
@@ -100,165 +100,152 @@ compares their digest.
 | The workspace state and the resource receipts | `core/deployment/_compose_resource_ownership.py` | A retry accepts only byte-identical receipt bytes. | `conformance/testdata/vectors/compose-ownership-json.json` |
 | The seat launch descriptor | `appliance/seat/launch_descriptor.py` | The guest authenticates the descriptor bytes and the policy digest that they carry. | `conformance/testdata/vectors/seat-launch-bytes.json` |
 
-## Other call sites
+## Owner schemes
 
-The owners below use the base schemes of this inventory: RFC 8785, sorted
-compact JSON, and raw bytes SHA-256. The base vectors define those serializers
-and the hash. No vector of its own pins the projection that each of these
-owners builds; the owner tests cover it. The Go port that ports an owner adds
-its owner vectors to this corpus.
+The owners below apply a rule of their own on top of the base schemes: a
+name, an identifier, a digest input, or the byte form of a document that
+another program reads or that a digest or a signature covers. Their
+vectors call the owner.
 
 | Scheme | Owner | Rule | Stored or compared by | Vectors |
 | --- | --- | --- | --- | --- |
+| Participant episode state dir | `backends/raes_participant_fixture_core.py:participant_episode_state_dir` | `/run/aptl/bounded-participant/` and the first 24 hex digits of the SHA-256 of the address, a NUL byte, and the episode ID. | The state root of one bounded participant episode in its container. | `conformance/testdata/vectors/participant-episode-state-dir.json` |
+| Participant binding post state digest | `backends/raes_participant_support.py:binding_post_state_digest` | `sha256:` and the hex SHA-256 of the participant, action contract, observation boundary, and action instance addresses joined with a vertical bar (U+007C). | `post_state_digest` of the behavior events of an admission without one. | `conformance/testdata/vectors/participant-binding-post-state-digest.json` |
+| Cert generator project name | `core/certs.py:_cert_generator_project_name` | `aptl-certs-` and the first 12 hex digits of the SHA-256 of the resolved project directory. | The Compose project name of the temporary certificate generator. | `conformance/testdata/vectors/cert-generator-project-name.json` |
+| Correlation stable ref | `core/correlation/identity.py:stable_ref` | The hex SHA-256 of the domain and each part, each part after a 0x1F byte. An empty domain or no part is rejected. | The correlation references of a run. | `conformance/testdata/vectors/correlation-stable-ref.json` |
+| Compose environment file names | `core/deployment/_compose_environment.py:sourced_environment_file` and `_compose_artifact_paths.py:artifact_environment_file_path` | The first 20 hex digits of the SHA-256 of the service name, and of the artifact address, as file and directory names. | The environment files that the Compose services read. | `conformance/testdata/vectors/compose-environment-file-names.json` |
+| Compose receipt path | `core/deployment/_compose_resource_ownership.py:WorkspaceOwnership._receipt_path` | `.aptl/lifecycle/resource-receipts-v1/<kind>/` and the hex SHA-256 of the native ID with `.json`. | The resource receipts that stop, reset, and evidence read. | `conformance/testdata/vectors/compose-receipt-path.json` |
+| Attempt directory names | `core/deployment/lilrae_docker_recording.py:RecordingStore` and `lilrae_native_evidence.py:_directory` | The hex SHA-256 of the attempt ID, below `.aptl/lifecycle/lilrae-docker-recording-v1/` and below `.aptl/lifecycle/lilrae-native-evidence-v1/`. | The recording and the native evidence of one start attempt. | `conformance/testdata/vectors/attempt-directory-names.json` |
+| Sealed output schema name | `workbench/codex_agent.py:CodexManagedAgentAdapter._sealed_output_schema` | `participant-selection-`, the hex SHA-256 of the schema text with a final LF, and `.schema.json`. | The response schema file of one decision agent run. | `conformance/testdata/vectors/sealed-output-schema-name.json` |
+| Ssh key fingerprint | `workbench/dispatch.py:key_fingerprint` | The OpenSSH SHA256 fingerprint: `SHA256:` and the unpadded base64 SHA-256 of the key blob. An invalid key is rejected. | The host key fingerprint of a seat access record and of the dispatch transport. | `conformance/testdata/vectors/ssh-key-fingerprint.json` |
+| Postgres scram verifier | `aptl_techvault/database_access.py:_scram_verifier` | A PostgreSQL SCRAM-SHA-256 verifier (RFC 5802 and RFC 7677) with 100000 PBKDF2 iterations and base64 salt and keys. | The verifiers that the TechVault database stores. | `conformance/testdata/vectors/postgres-scram-verifier.json` |
+| Techvault transcript chain | `aptl_techvault/evidence/techvault_transcript.py:_transcript_chain` | A SHA-256 chain from 32 zero bytes over each frame: sequence, timestamp, and direction, each followed by NUL, then the frame bytes. `sha256:` and hex. | The custody chain of a TechVault terminal transcript. | `conformance/testdata/vectors/techvault-transcript-chain.json` |
+| Trial id and seed | `core/experiment/trial_plan.py:_derive_planned_trial_id` and `_derive_seed` | The hex SHA-256 of a versioned domain and the source set digest, condition, replication ordinal, and control ID, each after a 0x1F byte. The trial ID has the `trial-` prefix. | `planned_trial_id` and the seeds of each trial of the plan. | `conformance/testdata/vectors/trial-id-and-seed.json` |
+| Participant control intent | `backends/_raes_participant_execution.py:_control_intent_fields` | The control intent fields, with the episode ID as the UUID 5 of `aptl:<run_id>:<participant>:episode` in the URL namespace. | The control intents that the participant evidence records. | `conformance/testdata/vectors/participant-control-intent.json` |
+| Apparatus node name | `backends/lilrae_apparatus_reporting.py:apparatus_node_name` | `lilrae-cap-` and the first 24 hex digits of the SHA-256 of the apparatus ID. | The node name of a capture apparatus in the reports. | `conformance/testdata/vectors/apparatus-node-name.json` |
+| Seat image names | `appliance/seat/image_selection.py:_selection_path` and `image_trust.py:configure_trust` | `refs/<the first 32 hex digits of the SHA-256 of the reference>.json` and `trust/<the hex SHA-256 of the repository>.pub`. | The image selection records and the trusted keys of the seat image cache. | `conformance/testdata/vectors/seat-image-names.json` |
+| Participant observation event | `backends/raes_participant_actions.py:_observation_event` | The behavior event of one observation; `post_state_digest` is `sha256:` and the hex SHA-256 of stdout, LF, and stderr. | The behavior history of a participant episode. | `conformance/testdata/vectors/participant-observation-event.json` |
+| Participant shared state records | `backends/raes_participant_actions.py:_shared_state_records` | The shared-state records of one action; each digest is `sha256:` and the hex SHA-256 of the reference, the action instance ID, and `True` or `False`, joined with `:`. | The shared-state records of a participant episode. | `conformance/testdata/vectors/participant-shared-state-records.json` |
+| Seat observation id | `appliance/seat/observation.py:observation_id_for` | `sha256:` and the hex SHA-256 of RFC 8785 of the policy digest, payload digest, boot ID, listeners, and reachability result. | The host observation ID that the seat record and the boundary gate bind. | `conformance/testdata/vectors/seat-observation-id.json` |
+| Live gate alert summary | `validation/_live_gate_probes.py:_matched_alert_summary` | The rule ID, event time, and redacted source of an alert, and the hex SHA-256 of its JSON with sorted keys, the default separators, and `default=str`. | The matched alerts of the live validation gate report. | `conformance/testdata/vectors/live-gate-alert-summary.json` |
+| Guest recovery status | `appliance/guest_surfaces.py:_RECOVERY_STATUS` | The constant body `{"status":"available"}`. | The recovery status response of the guest surface. | `conformance/testdata/vectors/guest-recovery-status.json` |
+| Seat guest access bundle | `appliance/seat/access.py:encode_guest_access_bundle` | RFC 8785 of the `aptl.guest-access-bundle/v1` model and a final LF. | The access response from the host to the seat guest. | `conformance/testdata/vectors/seat-guest-access-bundle.json` |
+| Seat guest access request | `appliance/seat/access.py:publish_guest_access_request` | RFC 8785 of the `aptl.guest-access-request/v1` model. | The access enrollment that the seat guest publishes. | `conformance/testdata/vectors/seat-guest-access-request.json` |
+| Seat overlay identity | `appliance/seat/overlay_identity.py:_new_identity` and `_persist_create_once` | The instance ID is `sha256:` and the hex SHA-256 of 32 random bytes, and the credential is the unpadded base64url of 32 more. The file is RFC 8785 of the identity. | The overlay identity of a seat instance. | `conformance/testdata/vectors/seat-overlay-identity.json` |
+| Seat record | `appliance/seat/persistence.py:persist_seat_record` | RFC 8785 of the `aptl.seat-record/v1` model. | The seat state file that later seat commands read. | `conformance/testdata/vectors/seat-record.json` |
+| Seat guest readiness | `appliance/seat/readiness.py:encode_guest_readiness` | RFC 8785 of the `aptl.guest-readiness/v1` envelope and a final LF. | The readiness response from the seat guest to the host. | `conformance/testdata/vectors/seat-guest-readiness.json` |
+| Seat readiness challenge | `appliance/seat/readiness.py:publish_readiness_challenge` | RFC 8785 of the `aptl.guest-readiness-challenge/v1` model with a random nonce. | The readiness challenge from the host to the seat guest. | `conformance/testdata/vectors/seat-readiness-challenge.json` |
+| Techvault boundary policy | `appliance/policy.py:write_full_techvault_boundary_policy` | RFC 8785 of the constant TechVault boundary policy. The vector holds its SHA-256 and size. | The boundary policy file of the TechVault appliance, whose digest the gate compares. | `conformance/testdata/vectors/techvault-boundary-policy.json` |
+| Runtime evidence json | `backends/lilrae_runtime_evidence.py:_json_bytes` | Sorted compact JSON with raw UTF-8 (`ensure_ascii=False`). NaN and infinities are rejected. | The runtime evidence artifacts, which their SHA-256 identifies. | `conformance/testdata/vectors/runtime-evidence-json.json` |
+| Docker recording json | `core/deployment/lilrae_docker_recording.py:_encode` and `recording_digest` | Sorted compact JSON with ASCII escapes and a final LF, and `sha256:` and its hex SHA-256. | The Docker operation recording of a start attempt and its digests. | `conformance/testdata/vectors/docker-recording-json.json` |
+| Cleanup action record | `core/startup_reset_state.py:persist_cleanup_action` | Sorted compact JSON of the `aptl-lifecycle-cleanup-action/v1` or `/v2` record with a final LF, in a file named by its hex SHA-256. An unsupported action is rejected. | The pending cleanup records that the next `lab stop -v` finishes. | `conformance/testdata/vectors/cleanup-action-record.json` |
+| Archival discovery line | `core/archival/discovery_index.py:DiscoveryIndex._render_line` | Sorted compact JSON of the event and the index entry, and a final LF. | The discovery index, which removes byte-identical lines on replay. | `conformance/testdata/vectors/archival-discovery-line.json` |
+| Egress proxy policy | `core/appliance_boundary.py:render_egress_proxy_policy` | Sorted compact JSON of the sorted authority and port pairs and the proxy limits. A policy without an authority is rejected. | The configuration of the egress proxy broker. | `conformance/testdata/vectors/egress-proxy-policy.json` |
+| Participant qualification attestation | `validation/participant_qualification_evidence.py:participant_qualification_attestation_payload` | Sorted compact JSON of the qualification report without its attestation. | The bytes that the qualification attestation signs and that the verifier checks. | `conformance/testdata/vectors/participant-qualification-attestation.json` |
+| Family target encoding | `backends/scenario_family.py:encode_family_target` | Sorted compact JSON of the family API version and the qualified family target. An invalid target is rejected. | `family_target` of a `/v2` cleanup action record. | `conformance/testdata/vectors/family-target-encoding.json` |
+| Operator group record | `core/operator_group_state.py:persist_admitted_operator_groups` | Sorted compact JSON of the sorted, unique groups and a final LF, in a file named by its hex SHA-256. An invalid group is rejected. | The admitted operator groups that recovery reads. | `conformance/testdata/vectors/operator-group-record.json` |
+| Techvault bounded json | `aptl_techvault/evidence/techvault.py:_bounded_json` and `techvault_readiness_probes.py:bounded_json` | Sorted compact JSON with ASCII escapes, or no bytes above the byte bound. NaN is written as `NaN`, which strict JSON rejects. A Go encoder that rejects NaN changes the scheme, which #1511 treats as a functional change. | The native responses and readiness documents in the TechVault evidence. | `conformance/testdata/vectors/techvault-bounded-json.json` |
+| Compose ownership override | `core/deployment/_compose_ownership_override.py:write_compose_ownership_override` | PyYAML `safe_dump` with sorted keys of the label and name overrides, in `.aptl/lifecycle/compose-ownership/` with the first 16 hex digits of the SHA-256 of the attempt ID and the YAML as its name. PyYAML writes an anchor and aliases for the shared label mapping. An invalid project name is rejected. | The Compose override of a start attempt, which `docker compose` reads. | `conformance/testdata/vectors/compose-ownership-override.json` |
+| Bundle JSONL projection | `core/evidence_bundle/projections/jsonl.py:JsonlProjection.project` | RFC 8785 of each evidence record in evidence record ID order, one row each, each row ending in LF; a null member stays. The member digest is `sha256:` and the hex SHA-256 of the body. No record gives no member. | `projections/jsonl/evidence-records.jsonl` in an evidence bundle and its member digest. | `conformance/testdata/vectors/bundle-jsonl-projection.json` |
+| Lifecycle attestation | `core/execution/assembly.py:write_lifecycle_evidence` | RFC 8785 of the `aptl.lifecycle-attestation/v1` payload in `lifecycle/<hex SHA-256>`, and the evidence record JSON of the run store. | The lifecycle evidence of each attempt, which the run record requires. | `conformance/testdata/vectors/lifecycle-attestation.json` |
+| Apparatus provenance leaves | `core/provenance/providers/apparatus.py:ApparatusManifestProvider.collect` | Each manifest leaf is `sha256:` and the hex SHA-256 of RFC 8785 of the manifest; the payload holds the identity projection of each manifest. | The apparatus leaves of the provenance record. | `conformance/testdata/vectors/apparatus-provenance-leaves.json` |
+| Runtime facts provenance | `core/provenance/providers/runtime_facts.py:RuntimeFactsProvider.collect` | The image, tool version, range snapshot, and host facts leaves, with the provenance identity of each projection, and the RFC 8785 digest of the snapshot as an observation. | The runtime leaves of the provenance record. | `conformance/testdata/vectors/runtime-facts-provenance.json` |
+| Apparatus configuration digest | `core/experiment/bindings.py:_apparatus_configuration` | `sha256:` and the hex SHA-256 of RFC 8785 of `aptl-experiment-apparatus-configuration/v1` and the apparatus binding values. An unknown target or two values for one target are rejected. | The apparatus configuration digest of an experiment condition. | `conformance/testdata/vectors/apparatus-configuration-digest.json` |
+| Capture plan | `core/experiment/capture_plan.py:admit_capture_demands` | RFC 8785 of the `aptl-capture-plan/v1` projection, its `sha256:` digest, and the `capture-plan-` ID. The vectors hold the empty plan. A plan with bindings needs a pack collector that RAES admits for a demand. | The capture plan of a run, its digest, and its ID. | `conformance/testdata/vectors/capture-plan.json` |
+| Techvault misp readiness | `aptl_techvault/evidence/techvault_misp_readiness.py:_readiness_document` | Sorted compact JSON of `misp_authenticated_api_ready` and the required MISP facts, or no document when a fact is false, missing, or differs from the admitted state. | The MISP readiness evidence of TechVault. | `conformance/testdata/vectors/techvault-misp-readiness.json` |
+| Techvault wazuh agent readiness | `aptl_techvault/evidence/techvault_wazuh_agent_readiness.py:_readiness_document` | Sorted compact JSON of `wazuh_agent_ready` and the required fields of each host in node reference order, or no document when a host is missing or not ready. | The Wazuh agent readiness evidence of TechVault. | `conformance/testdata/vectors/techvault-wazuh-agent-readiness.json` |
+| Techvault sqli correlation | `aptl_techvault/evidence/techvault.py:SuricataWazuhSqliSource.fetch` and `_sqli_result` | Sorted compact JSON of the `aptl-techvault-sqli-correlation/v1` document with one Suricata and one Wazuh row of a shared flow, and its source pipeline. An uncorrelated pair is a mid-run loss. | The SQL injection correlation evidence of TechVault. | `conformance/testdata/vectors/techvault-sqli-correlation.json` |
+| Techvault suricata readiness | `aptl_techvault/evidence/techvault_readiness.py:SuricataRuleReadinessSource.fetch` | Sorted compact JSON of the `aptl-techvault-suricata-readiness/v1` record and its source pipeline. | The Suricata rule readiness evidence of TechVault. | `conformance/testdata/vectors/techvault-suricata-readiness.json` |
+| Techvault transcript document | `aptl_techvault/evidence/techvault_transcript.py:_transcript_result` | Sorted compact JSON of the `aptl-techvault-transcript/v2` document with the sessions in start order, the redacted frames, and each `terminal-` reference as the hex SHA-256 of `aptl.techvault.terminal-ref/v1`, NUL, the session ID, NUL, and the chain digest. | The terminal transcript evidence of TechVault. | `conformance/testdata/vectors/techvault-transcript-document.json` |
+| Participant crossing policies | `backends/_raes_participant_crossing.py:_delivery_crossing_policies` | One policy reference for each participant; `policy_digest` is `sha256:` and the hex SHA-256 of the sorted compact JSON of the seven policy coordinates, and the interval runs from the first control order to one past the last. A policy that changes within one participant sequence is rejected. | The crossing policy references of the participant delivery evidence. | `conformance/testdata/vectors/participant-crossing-policies.json` |
+| Participant delivery evidence | `backends/_raes_participant_evidence.py:_ParticipantDeliveryCollector.stop` | `json.dumps` of the delivery payload with sorted keys and the default separators, so the bytes hold spaces and ASCII escapes. | The delivery evidence of each participant instruction. | `conformance/testdata/vectors/participant-delivery-evidence.json` |
+| Native cleanup observation | `core/deployment/lilrae_native_evidence.py:record_cleanup` | The receipt bytes retained under their hex SHA-256, and sorted compact JSON of the `lilrae.native-cleanup/v1` observation with a final LF under a random name. An unknown cause is rejected. | The native evidence of a removed resource. | `conformance/testdata/vectors/native-cleanup-observation.json` |
+| Compiled runtime model | `backends/raes_runtime_model_artifact.py:compiled_runtime_model_bytes` and `compiled_runtime_model_sha256` | RFC 8785 of `aptl.raes-runtime-model-artifact/v1` and the canonical runtime model, and a final LF: enumerations as values, data classes and models as objects, tuples as arrays, and sets sorted by the RFC 8785 bytes of each item. The vector holds the digest and size for a compiled scenario. | `compiled_model_sha256` of the bounded participant driver. | `conformance/testdata/vectors/compiled-runtime-model.json` |
+| Participant candidate selections | `backends/raes_participant_candidates.py:candidate_selections` | One selection for each variant of the finite argument domain; the proposal reference ends in `arguments-` and the first 16 hex digits of the SHA-256 of RFC 8785 of the arguments. | The candidate selections and proposal references of a participant decision. | `conformance/testdata/vectors/participant-candidate-selections.json` |
 | Parquet canonical JSON | `core/evidence_bundle/projections/parquet.py:_canonical_json` | RFC 8785 decoded as text. The current code decodes as ASCII and rejects a non-ASCII reference (#1598); `dev` fixes it in #1599. | The `source_refs` and `provenance_refs` columns of the Parquet projection. | `conformance/testdata/vectors/parquet-canonical-json.json` |
 
-### RFC 8785 owners
+## Other call sites
 
-| File | Functions |
-| --- | --- |
-| `aptl/appliance/policy.py` | `write_full_techvault_boundary_policy` |
-| `aptl/appliance/seat/access.py` | `encode_guest_access_bundle`, `publish_guest_access_request` |
-| `aptl/appliance/seat/lifecycle.py` | `stage_seat` |
-| `aptl/appliance/seat/observation.py` | `observation_id_for` |
-| `aptl/appliance/seat/overlay_identity.py` | `_persist_create_once` |
-| `aptl/appliance/seat/persistence.py` | `persist_seat_record` |
-| `aptl/appliance/seat/readiness.py` | `encode_guest_readiness`, `publish_readiness_challenge` |
-| `aptl/backends/raes_participant_candidates.py` | `candidate_selections` |
-| `aptl/backends/raes_runtime_model_artifact.py` | `compiled_runtime_model_bytes` |
-| `aptl/core/evidence_bundle/projections/jsonl.py` | `project` |
-| `aptl/core/execution/assembly.py` | `write_lifecycle_evidence` |
-| `aptl/core/experiment/bindings.py` | `_apparatus_configuration` |
-| `aptl/core/experiment/capture_plan.py` | `admit_capture_demands` |
-| `aptl/core/provenance/providers/apparatus.py` | `collect` |
-| `aptl/core/provenance/providers/runtime_facts.py` | `_gather` |
+The call sites below use a base scheme with no rule of their own, or write a
+value that no other run, program, or implementation reads as bytes.
 
-### Sorted JSON owners
+### Content digests
 
-| File | Functions |
-| --- | --- |
-| `aptl/appliance/guest_surfaces.py` | `<module>` |
-| `aptl/appliance/seat/image.py` | `cache_seat_image_config` |
-| `aptl/appliance/seat/image_disk_cache.py` | `write_verification_stamp` |
-| `aptl/appliance/seat/image_selection.py` | `save_selection` |
-| `aptl/appliance/seat/image_trust.py` | `publish_verified_image` |
-| `aptl/appliance/seat/vm.py` | `write_vm_pid` |
-| `aptl/backends/_raes_participant_crossing.py` | `_delivery_crossing_policies` |
-| `aptl/backends/_raes_participant_evidence.py` | `stop` |
-| `aptl/backends/_raes_participant_transport.py` | `_render_runtime_profile_config` |
-| `aptl/backends/lilrae_runtime_evidence.py` | `_json_bytes` |
-| `aptl/backends/raes_evidence_acquisition.py` | `_mark_transcript_finalized`, `mark_transcript_activation_failed`, `mark_transcript_finalization_failed`, `persist_active_transcript_authority` |
-| `aptl/backends/raes_participant_provider.py` | `_compact_selection_prompt`, `select` |
-| `aptl/backends/scenario_family.py` | `encode_family_target` |
-| `aptl/cli/seat.py` | `_emit` |
-| `aptl/core/appliance_boundary.py` | `render_egress_proxy_policy` |
-| `aptl/core/archival/discovery_index.py` | `_render_line` |
-| `aptl/core/deployment/lilrae_docker_recording.py` | `_encode` |
-| `aptl/core/deployment/lilrae_native_evidence.py` | `record_cleanup` |
-| `aptl/core/lifecycle_policy.py` | `save_state` |
-| `aptl/core/operator_group_state.py` | `load_admitted_operator_groups`, `persist_admitted_operator_groups` |
-| `aptl/core/startup_reset_state.py` | `_encode` |
-| `aptl/validation/_live_gate_probes.py` | `_matched_alert_summary` |
-| `aptl/validation/participant_qualification_evidence.py` | `participant_qualification_attestation_payload` |
-| `aptl/workbench/decision_schema.py` | `admit_decision_response_schema` |
-| `aptl/workbench/profiles.py` | `render_profile_config` |
-| `aptl_techvault/build_cache.py` | `<module>`, `_dependency_only_manifest` |
-| `aptl_techvault/evidence/techvault.py` | `_bounded_json`, `_sqli_result` |
-| `aptl_techvault/evidence/techvault_enrollment_baseline.py` | `record_enrollment_baseline` |
-| `aptl_techvault/evidence/techvault_misp_readiness.py` | `_readiness_document` |
-| `aptl_techvault/evidence/techvault_readiness.py` | `fetch` |
-| `aptl_techvault/evidence/techvault_readiness_probes.py` | `bounded_json` |
-| `aptl_techvault/evidence/techvault_transcript.py` | `_transcript_result` |
-| `aptl_techvault/evidence/techvault_wazuh_agent_readiness.py` | `_readiness_document` |
+Each owner hashes bytes or UTF-8 text with SHA-256 and adds no projection of
+its own, so the raw bytes vectors (`conformance/testdata/vectors/sha256-bytes.json`)
+define it. The input and the spelling are the owner rule.
 
-### SHA-256 owners
+| File | Functions | Input and form |
+| --- | --- | --- |
+| `aptl/appliance/access_service_support.py` | `_descriptor_digest` | The descriptor file bytes, as `sha256:<hex>`. |
+| `aptl/appliance/download.py` | `_file_identity` | The file bytes, as `sha256:<hex>`, and the size. |
+| `aptl/appliance/guest_observation.py` | `_read_guest_boot_id` | The UTF-8 text of `kern.boottime` when the kernel has no boot ID, as `sha256:<hex>`. |
+| `aptl/appliance/seat/image_disk_cache.py` | `_sha256_of` | The bytes, as `sha256:<hex>`. |
+| `aptl/appliance/seat/image_trust.py` | `verify_cached_image`, `verify_remote_image` | The public key file bytes, as hex. |
+| `aptl/appliance/seat/launch_descriptor.py` | `verify_seat_launch` | The policy file bytes, as `sha256:<hex>`, compared with the launch descriptor. |
+| `aptl/appliance/seat/lifecycle.py` | `_launch_descriptor_digest` | The launch descriptor file bytes, as `sha256:<hex>`. |
+| `aptl/backends/_raes_participant_evidence.py` | `_delivery_record` | The UTF-8 instruction, response, and session ID, each as `sha256:<hex>`. |
+| `aptl/backends/_raes_participant_transport.py` | `_private_file_sha256` | The private file bytes, as hex. |
+| `aptl/backends/_raes_stateful_observation.py` | `_artifact_evidence` | The rendered configuration file bytes, as hex. |
+| `aptl/backends/lilrae_materialization_archive.py` | `read` | The blob bytes, as hex, compared with the record checksum. |
+| `aptl/backends/lilrae_participant_configuration.py` | `configured_opencode_executor` | The UTF-8 prompt, as hex, compared with the recorded digest. |
+| `aptl/backends/lilrae_runtime_evidence.py` | `_artifact_bytes`, `_blob`, `_collect_native` | The artifact bytes, as hex. |
+| `aptl/backends/raes_artifact_availability.py` | `_materialized_specifications` | The Dockerfile bytes, as `sha256:<hex>`, compared with the realized digest. |
+| `aptl/backends/raes_content_satisfaction.py` | `_resolved_content_digest` | The bytes that the pack resolves, as `sha256:<hex>`. |
+| `aptl/backends/raes_docker_materializer.py` | `place_file` | The UTF-8 file content, as hex, compared with `sha256sum` in the container. |
+| `aptl/backends/raes_image_realization.py` | `_materialized_component_image` | The Dockerfile bytes, as `sha256:<hex>`, compared with the realized digest. |
+| `aptl/backends/raes_participant_driver.py` | `__post_init__` | The scenario file bytes, as hex. The compiled model digest has the compiled runtime model vectors. |
+| `aptl/backends/raes_participant_evidence_publication.py` | `persist_action_evidence` | The UTF-8 action instance ID, as hex, which names the evidence transaction. |
+| `aptl/backends/raes_participant_projection.py` | `_render_visible_context` | The UTF-8 text, as hex. |
+| `aptl/backends/raes_repro.py` | `_raes_lock_digest` | The lock file bytes, as hex. |
+| `aptl/core/appliance_boundary.py` | `load_boundary_policy` | The policy file bytes, as `sha256:<hex>`, compared with the expected digest. |
+| `aptl/core/archival/seal.py` | `build_inventory_entry` | The member bytes, as hex. |
+| `aptl/core/archival/verify.py` | `_verify_inventory`, `verify_sealed_archive` | The member and manifest bytes, as hex and as `sha256:<hex>`. |
+| `aptl/core/deployment/_forwarding_agent_realization.py` | `_file_digest_matches` | The UTF-8 payload, as hex, compared with `sha256sum` in the container. |
+| `aptl/core/deployment/_wazuh_agent_realization.py` | `_file_digest_matches` | The UTF-8 payload, as hex, compared with `sha256sum` in the container. |
+| `aptl/core/deployment/lilrae_native_evidence.py` | `_receipt_artifacts` | The receipt bytes, as hex, which name the retained receipts. |
+| `aptl/core/evidence/content_store.py` | `create_content_addressed` | The blob bytes, as `sha256:<hex>`, and the hex as the file name. |
+| `aptl/core/evidence_bundle/_io.py` | `_stream` | The bytes, as `sha256:<hex>`, and the size. |
+| `aptl/core/evidence_bundle/archive.py` | `_member_bytes` | The member bytes, as `sha256:<hex>`. |
+| `aptl/core/evidence_bundle/inventory.py` | `envelope_member` | The member bytes, as `sha256:<hex>`. |
+| `aptl/core/evidence_bundle/schemas.py` | `resolve_schema` | The schema bytes, as `sha256:<hex>`. |
+| `aptl/core/evidence_bundle/verify.py` | `_sha256_hex` | The bytes, as `sha256:<hex>`. |
+| `aptl/core/execution_boundary.py` | `_digest` | The UTF-8 value, as hex, or an empty string for an empty value. |
+| `aptl/core/exporter.py` | `_sha256_file` | The file bytes, as hex. |
+| `aptl/core/lab.py` | `_persist_cleanup_actions` | The UTF-8 run ID or reset admission ID, as hex, which is the admission ID. |
+| `aptl/core/provenance/identity.py` | `digest_bytes` | The bytes, as `sha256:<hex>`. |
+| `aptl/core/snapshot.py` | `_hash_config_files` | The configuration file bytes, as hex. |
+| `aptl/utils/deterministic_archive.py` | `hash_file_nofollow` | The file bytes, as `sha256:<hex>`, and the size. |
+| `aptl/validation/_gate_no_start_backend.py` | `_simulated_digest` | The UTF-8 reference, as `sha256:<hex>`, in the offline gate. |
+| `aptl/validation/_live_gate_models.py` | `make_live_gate_report` | The UTF-8 scenario text, as `sha256:<hex>`. |
+| `aptl/validation/participant_profile.py` | `_read_reference`, `_resolve_pack_profile`, `load_participant_profile` | The profile and manifest bytes, as hex. |
+| `aptl/validation/participant_qualification_evidence.py` | `_load_evidence_json`, `verify_participant_qualification_attestation` | The evidence bytes, as hex, and the DER key bytes, as the `sha256:<hex>` key ID. |
+| `aptl/validation/techvault_live_gate.py` | `_verification_identities` | The verified bytes, as `sha256:<hex>`. |
+| `aptl/workbench/agent.py` | `_assert_config_unchanged`, `_load_server_config` | The configuration bytes, as hex. |
+| `aptl/workbench/client_files.py` | `_digest` | The UTF-8 text, or an empty string, as hex. |
+| `aptl/workbench/lilrae_opencode.py` | `__init__`, `_verify_profile_config` | The prompt and configuration bytes, as hex. |
+| `aptl/workbench/runtime.py` | `_sha256_text` | The UTF-8 text, as hex. |
+| `aptl_techvault/log_sources.py` | `_ensure_samba_dropin` | The UTF-8 payload, as hex, compared with `sha256sum` in the container. |
 
-| File | Functions |
-| --- | --- |
-| `aptl/appliance/access_service_support.py` | `_descriptor_digest` |
-| `aptl/appliance/download.py` | `_file_identity` |
-| `aptl/appliance/guest_observation.py` | `_read_guest_boot_id` |
-| `aptl/appliance/seat/image_disk_cache.py` | `_sha256_of` |
-| `aptl/appliance/seat/image_selection.py` | `_selection_path` |
-| `aptl/appliance/seat/image_trust.py` | `_key_path`, `configure_trust`, `verify_cached_image`, `verify_remote_image` |
-| `aptl/appliance/seat/launch_descriptor.py` | `verify_seat_launch` |
-| `aptl/appliance/seat/lifecycle.py` | `_launch_descriptor_digest` |
-| `aptl/appliance/seat/observation.py` | `observation_id_for` |
-| `aptl/appliance/seat/overlay_identity.py` | `_new_identity` |
-| `aptl/backends/_raes_participant_crossing.py` | `_delivery_crossing_policies` |
-| `aptl/backends/_raes_participant_evidence.py` | `_delivery_record` |
-| `aptl/backends/_raes_participant_transport.py` | `_private_file_sha256` |
-| `aptl/backends/_raes_stateful_observation.py` | `_artifact_evidence` |
-| `aptl/backends/lilrae_apparatus_reporting.py` | `apparatus_node_name` |
-| `aptl/backends/lilrae_materialization_archive.py` | `read` |
-| `aptl/backends/lilrae_participant_configuration.py` | `configured_opencode_executor` |
-| `aptl/backends/lilrae_runtime_evidence.py` | `_artifact_bytes`, `_blob`, `_collect_native` |
-| `aptl/backends/raes_artifact_availability.py` | `_materialized_specifications` |
-| `aptl/backends/raes_content_satisfaction.py` | `_resolved_content_digest` |
-| `aptl/backends/raes_docker_materializer.py` | `place_file` |
-| `aptl/backends/raes_image_realization.py` | `_materialized_component_image` |
-| `aptl/backends/raes_participant_actions.py` | `_observation_event`, `_shared_state_records` |
-| `aptl/backends/raes_participant_candidates.py` | `candidate_selections` |
-| `aptl/backends/raes_participant_driver.py` | `__post_init__` |
-| `aptl/backends/raes_participant_evidence_publication.py` | `persist_action_evidence` |
-| `aptl/backends/raes_participant_fixture_core.py` | `participant_episode_state_dir` |
-| `aptl/backends/raes_participant_projection.py` | `_render_visible_context` |
-| `aptl/backends/raes_participant_support.py` | `binding_post_state_digest` |
-| `aptl/backends/raes_repro.py` | `_raes_lock_digest` |
-| `aptl/backends/raes_runtime_model_artifact.py` | `compiled_runtime_model_sha256` |
-| `aptl/core/appliance_boundary.py` | `load_boundary_policy` |
-| `aptl/core/archival/seal.py` | `build_inventory_entry` |
-| `aptl/core/archival/verify.py` | `_verify_inventory`, `verify_sealed_archive` |
-| `aptl/core/certs.py` | `_cert_generator_project_name` |
-| `aptl/core/correlation/identity.py` | `stable_ref` |
-| `aptl/core/deployment/_boundary_validation.py` | `digest` |
-| `aptl/core/deployment/_compose_artifact_paths.py` | `artifact_environment_file_path` |
-| `aptl/core/deployment/_compose_environment.py` | `sourced_environment_file` |
-| `aptl/core/deployment/_compose_ownership_override.py` | `write_compose_ownership_override` |
-| `aptl/core/deployment/_compose_resource_ownership.py` | `_receipt_path` |
-| `aptl/core/deployment/_forwarding_agent_realization.py` | `_file_digest_matches` |
-| `aptl/core/deployment/_wazuh_agent_realization.py` | `_file_digest_matches` |
-| `aptl/core/deployment/lilrae_docker_recording.py` | `__init__`, `recording_digest` |
-| `aptl/core/deployment/lilrae_native_evidence.py` | `_directory`, `_receipt_artifacts`, `record_cleanup` |
-| `aptl/core/evidence/content_store.py` | `create_content_addressed` |
-| `aptl/core/evidence_bundle/_io.py` | `_stream` |
-| `aptl/core/evidence_bundle/archive.py` | `_member_bytes` |
-| `aptl/core/evidence_bundle/envelope.py` | `root_identity` |
-| `aptl/core/evidence_bundle/inventory.py` | `envelope_member` |
-| `aptl/core/evidence_bundle/projections/jsonl.py` | `project` |
-| `aptl/core/evidence_bundle/schemas.py` | `resolve_schema` |
-| `aptl/core/evidence_bundle/verify.py` | `_sha256_hex` |
-| `aptl/core/execution/assembly.py` | `write_lifecycle_evidence` |
-| `aptl/core/execution_boundary.py` | `_digest` |
-| `aptl/core/experiment/bindings.py` | `_apparatus_configuration` |
-| `aptl/core/experiment/capture_plan.py` | `admit_capture_demands` |
-| `aptl/core/experiment/trial_plan.py` | `_derive_planned_trial_id`, `_derive_seed` |
-| `aptl/core/exporter.py` | `_sha256_file` |
-| `aptl/core/lab.py` | `_persist_cleanup_actions` |
-| `aptl/core/operator_group_state.py` | `load_admitted_operator_groups`, `persist_admitted_operator_groups` |
-| `aptl/core/provenance/identity.py` | `digest_bytes` |
-| `aptl/core/snapshot.py` | `_hash_config_files` |
-| `aptl/core/startup_reset_state.py` | `_read_record`, `persist_cleanup_action` |
-| `aptl/utils/deterministic_archive.py` | `hash_file_nofollow` |
-| `aptl/validation/_gate_no_start_backend.py` | `_simulated_digest` |
-| `aptl/validation/_live_gate_models.py` | `make_live_gate_report` |
-| `aptl/validation/_live_gate_probes.py` | `_matched_alert_summary` |
-| `aptl/validation/participant_profile.py` | `_read_reference`, `_resolve_pack_profile`, `load_participant_profile` |
-| `aptl/validation/participant_qualification_evidence.py` | `_load_evidence_json`, `verify_participant_qualification_attestation` |
-| `aptl/validation/techvault_live_gate.py` | `_verification_identities` |
-| `aptl/workbench/agent.py` | `_assert_config_unchanged`, `_load_server_config` |
-| `aptl/workbench/app.py` | `<module>` |
-| `aptl/workbench/browser_mcp.py` | `terminal_page` |
-| `aptl/workbench/client_files.py` | `_digest` |
-| `aptl/workbench/codex_agent.py` | `_sealed_output_schema` |
-| `aptl/workbench/dispatch.py` | `key_fingerprint` |
-| `aptl/workbench/lilrae_opencode.py` | `__init__`, `_verify_profile_config` |
-| `aptl/workbench/runtime.py` | `_sha256_text` |
-| `aptl_techvault/database_access.py` | `_scram_verifier` |
-| `aptl_techvault/evidence/techvault_transcript.py` | `_transcript_chain`, `_transcript_result` |
-| `aptl_techvault/log_sources.py` | `_ensure_samba_dropin` |
+### Values without vectors
 
-### UUID 5 owners
+No other run, program, or implementation reads these values as bytes.
 
-| File | Functions |
-| --- | --- |
-| `aptl/backends/_raes_participant_execution.py` | `_control_intent_fields` |
+| File | Functions | Reason |
+| --- | --- | --- |
+| `aptl/appliance/seat/image_disk_cache.py` | `write_verification_stamp` | A local cache record with the inode, mtime, and mode of the disk; the same host parses it. |
+| `aptl/appliance/seat/image_selection.py` | `save_selection` | A local cache record that the same host parses. Its file name has the seat image names vectors. |
+| `aptl/appliance/seat/image_trust.py` | `publish_verified_image` | A local trust receipt that the same host parses and compares by field. |
+| `aptl/appliance/seat/image.py` | `cache_seat_image_config` | A local binding file that the same host parses and compares by field. |
+| `aptl/appliance/seat/vm.py` | `write_vm_pid` | A runtime process file that the same host parses. |
+| `aptl/backends/_raes_participant_transport.py` | `_render_runtime_profile_config` | An MCP configuration file that each run writes again for its own runtime. |
+| `aptl/workbench/profiles.py` | `render_profile_config` | An agent configuration file that each run writes again for its own runtime. |
+| `aptl/backends/raes_participant_provider.py` | `_compact_selection_prompt`, `select` | The prompt text of one decision; no record holds it. |
+| `aptl/workbench/decision_schema.py` | `admit_decision_response_schema` | The response schema of one decision run. Its file name has the sealed output schema name vectors. |
+| `aptl/cli/seat.py` | `_emit` | A seat command result on standard output, as sorted compact JSON (base vectors). The conformance inventory owns the command results. |
+| `aptl/core/lifecycle_policy.py` | `save_state` | Local state with an indent of 2 that the next command parses. |
+| `aptl_techvault/evidence/techvault_enrollment_baseline.py` | `record_enrollment_baseline` | A local baseline file that the next readiness check parses and compares by value. |
+| `aptl/backends/raes_evidence_acquisition.py` | `_mark_transcript_finalized`, `mark_transcript_activation_failed`, `mark_transcript_finalization_failed`, `persist_active_transcript_authority` | Local restart state of a transcript capture that the next stop parses. |
+| `aptl/workbench/app.py` | `<module>` | The CSP hash of the script that the server sends, computed when the server starts. |
+| `aptl/workbench/browser_mcp.py` | `terminal_page` | The CSP hash of the script of the page, computed for each page. |
+| `aptl_techvault/build_cache.py` | `<module>`, `_dependency_only_manifest` | An npm manifest that each image build derives again for its cache. |

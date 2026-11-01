@@ -1,0 +1,85 @@
+{
+  "corpus": 1,
+  "scheme": "techvault-suricata-readiness",
+  "version": "current",
+  "owner": "aptl_techvault.evidence.techvault_readiness.SuricataRuleReadinessSource.fetch",
+  "cases": [
+    {
+      "id": "ready",
+      "input": {
+        "start": "2026-09-14T10:00:00Z",
+        "end": "2026-09-14T10:01:00Z",
+        "payload": {
+          "image_ref": "jasonish/suricata@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "content_identities": {
+            "suricata-config": "techvault-suricata-config@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "suricata-local-rules": "techvault-suricata-local-rules@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "realized_byte_digests": {
+            "suricata-config": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "suricata-local-rules": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "native_configuration_ok": true,
+          "selected_sources": [
+            "suricata-builtin",
+            "techvault-local"
+          ],
+          "local_sids": [
+            1000001,
+            1000002,
+            1000010,
+            1000011,
+            1000012,
+            1000020,
+            1000030,
+            1000031,
+            1000040,
+            1000050,
+            1000060,
+            1000061,
+            1000070,
+            1000080,
+            1000090,
+            1000091
+          ]
+        }
+      },
+      "expect": {
+        "value": {
+          "status": "ok",
+          "chunks_hex": [
+            "7b22636f6e74656e745f64696765737473223a7b2273757269636174612d636f6e666967223a227368613235363a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c2273757269636174612d6c6f63616c2d72756c6573223a227368613235363a62626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262227d2c22636f6e74656e745f6964656e746974696573223a7b2273757269636174612d636f6e666967223a22746563687661756c742d73757269636174612d636f6e666967407368613235363a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c2273757269636174612d6c6f63616c2d72756c6573223a22746563687661756c742d73757269636174612d6c6f63616c2d72756c6573407368613235363a62626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262227d2c22696d6167655f646967657374223a227368613235363a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c22696d6167655f726566223a226a61736f6e6973682f7375726963617461407368613235363a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226c6f63616c5f72756c655f636f756e74223a31362c226c6f63616c5f73696473223a5b313030303030312c313030303030322c313030303031302c313030303031312c313030303031322c313030303032302c313030303033302c313030303033312c313030303034302c313030303035302c313030303036302c313030303036312c313030303037302c313030303038302c313030303039302c313030303039315d2c226e61746976655f636f6e66696775726174696f6e223a226f6b222c22736368656d615f76657273696f6e223a226170746c2d746563687661756c742d73757269636174612d72656164696e6573732f7631222c2273656c65637465645f736f7572636573223a5b2273757269636174612d6275696c74696e222c22746563687661756c742d6c6f63616c225d7d"
+          ],
+          "source_pipeline": {
+            "source_refs": [
+              {
+                "ref_kind": "other",
+                "ref_id": "nodes.suricata.runtime.network_detection_engines.suricata-engine.rule_sources.suricata-builtin"
+              },
+              {
+                "ref_kind": "other",
+                "ref_id": "nodes.suricata.runtime.network_detection_engines.suricata-engine.rule_sources.techvault-local"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "unavailable",
+      "input": {
+        "start": "2026-09-14T10:00:00Z",
+        "end": "2026-09-14T10:01:00Z",
+        "payload": null
+      },
+      "expect": {
+        "value": {
+          "status": "source-unavailable",
+          "chunks_hex": [],
+          "source_pipeline": {}
+        }
+      }
+    }
+  ]
+}

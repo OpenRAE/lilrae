@@ -14,6 +14,8 @@ model change.
 | The lock pins RAES 10.1.0, PyYAML 6.0.3, and rfc8785 0.1.4. | `uv.lock`. |
 | `utils/strict_json.py` rejects duplicate members and non-finite constants; `json.loads` accepts both. | Source. |
 | The Parquet projection decoded RFC 8785 bytes as ASCII, so a non-ASCII reference failed. #1599 fixes it on `dev`. | Reproduction; #1598. |
+| PyYAML writes an anchor and aliases for the label mapping that a Compose ownership override shares, and the SHA-256 of those bytes names the override file. | `compose-ownership-override` vectors. |
+| The TechVault evidence helpers write `NaN`, which strict JSON rejects. | `techvault-bounded-json` vectors. |
 
 ## Decisions
 
@@ -22,8 +24,9 @@ model change.
    the same files. The Python tests call the existing owner of each scheme; no
    test computes its expected value with the code under test.
 2. **Corpus format.** Each file has `corpus` (1), `scheme` (a stable ID),
-   `version` (the scheme version that its owner states, or `current`),
-   `owner` (the module and function), and `cases`. A case has an `id`, an
+   `version` (the scheme version that its owner states, the locked library
+   version for a library scheme, or `current`), `owner` (the module and
+   function), and `cases`. A case has an `id`, an
    input, and an expected result: the exact bytes as hex, the digest, or a
    rejection with its stage (`parse`, `validate`, or `serialize`).
 3. **Inputs that JSON cannot carry.** Raw input bytes are hex
@@ -32,9 +35,11 @@ model change.
    `{"$float": "<repr>"}`, which includes `nan`, `inf`, `-inf`, and `-0.0`.
    The tags exist only in the corpus.
 4. **Closed dispatch.** `tests/test_serialization_vectors.py` maps each scheme
-   ID to one owner call. A corpus file with an unknown scheme, an unknown case
-   field, or no cases fails the test. A failure names the scheme and the case
-   ID; it prints no input and no expected bytes.
+   ID to one owner call: the base schemes in that module, and the owner
+   schemes in `tests/serialization_owner_schemes.py`. A corpus file with an
+   unknown scheme, an unknown case field, or no cases fails the test. A
+   malformed case or a different owner result names the scheme or file and
+   the case ID; it prints no input and no expected bytes.
 5. **Inventory.** `docs/reference/serialization-schemes.md` lists each scheme:
    its owner, input domain, byte form, hash and digest spelling, the records
    and fields that store or compare its output, and its vector file. It also
@@ -51,12 +56,44 @@ model change.
    public RAES models and corpus, not a local copy.
 8. **Secrets.** A vector holds a synthetic secret only when its scheme needs
    one, such as redaction before a digest.
-9. **Owner coverage.** Owner vectors pin the identities and digests that
-   records store or compare: evidence records, provenance, source sets, trial
-   plans, captures, correlation, bundles, seats, credentials, workspaces, and
-   the participant digests. The inventory lists each other owner that uses
-   the base serializers, by file and function. The Go port that ports an owner
-   adds its owner vectors to the corpus.
+9. **Owner coverage.** An owner rule gets owner vectors when it gives a
+   name, an identifier, a digest input, or the byte form of a value that a
+   record, evidence, or another program stores, compares, hashes, signs, or
+   verifies. `tests/serialization_owner_schemes.py` calls each owner, and it
+   fixes the clock and the random values that an owner reads. An owner that
+   hashes bytes or UTF-8 text with no projection of its own uses the raw bytes
+   vectors. A local file that only the same installation parses has no byte
+   vector. A value that each run makes again, such as a configuration, a
+   prompt, or a CSP hash, also has no byte vector. The inventory names each
+   call site of the base serializers with its class and, for a call site
+   without vectors, the reason.
+10. **Strict corpus.** The tests read each corpus file with `loads_strict`,
+    which rejects a duplicate member and a non-finite constant, as the Go
+    decoders of ADR-065 do.
+
+## Data flows and threat model
+
+```text
+Owner code in src/ [repository]
+  -> vector generation, once [developer]
+  -> conformance/testdata/vectors/*.json [repository, review]
+  -> tests/test_serialization_vectors.py: closed scheme map -> owner call
+  -> pass or fail with the scheme and case IDs [CI log]
+  -> the Go ports read the same files
+```
+
+The assets are the corpus values, which define the bytes that the Go ports
+must keep, and the CI log. The trust boundaries are the corpus files, which a
+pull request can change and review covers, the RAES models of the locked
+release, and the CI log.
+
+| Threat | Mitigation |
+| --- | --- |
+| A wrong expected value makes a Go port copy a mistake. | Each value comes from a call of the current owner, and the Python tests fail when an owner changes its bytes. |
+| A test computes its expected value with the code under test. | The corpus fixes each expected value; the tests only call the owners and compare. |
+| A vector holds a real secret, or a failure prints a synthetic one. | Vectors hold synthetic secrets only where a scheme needs one. A malformed case or a different owner result names the case, not the input or the bytes. |
+| A crafted corpus file runs code. | The corpus is JSON data. A closed map binds each scheme to one owner call, and the only tags are `$int` and `$float`. |
+| An owner reads a clock or a random source, so its vector is not stable. | The owner scheme fixes that value for the call. |
 
 ## Verification
 

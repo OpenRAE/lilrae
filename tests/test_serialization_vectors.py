@@ -77,6 +77,7 @@ from aptl.core.provenance.identity import ProvenanceIdentityError, derive_identi
 from aptl.core.runstore_internals import _canonicalize_payload, _validate_id
 from aptl.core.runtime import workflow_engine
 from aptl.utils.strict_json import loads_strict
+from tests.serialization_owner_schemes import OWNER_SCHEMES, Rejected
 
 ROOT = Path(__file__).resolve().parents[1]
 VECTORS = ROOT / "conformance" / "testdata" / "vectors"
@@ -84,14 +85,6 @@ INVENTORY = ROOT / "docs" / "reference" / "serialization-schemes.md"
 
 _CASE_FIELDS = {"id", "input", "input_hex", "expect", "note"}
 _EXPECT_FIELDS = {"hex", "text", "value", "reject"}
-
-
-class Rejected(Exception):
-    """An owner rejected a vector input at a named stage."""
-
-    def __init__(self, stage: str) -> None:
-        super().__init__(stage)
-        self.stage = stage
 
 
 def _decode(value: object) -> object:
@@ -445,6 +438,7 @@ SCHEMES: dict[str, Callable[[object], dict[str, object]]] = {
     "seat-policy-digest": _seat_policy_digest,
     "flag-token": _flag_token,
     "parquet-canonical-json": _parquet_canonical_json,
+    **OWNER_SCHEMES,
 }
 
 
@@ -452,10 +446,15 @@ def _corpus_files() -> list[Path]:
     return sorted(VECTORS.glob("*.json"))
 
 
+def _corpus(path: Path) -> dict[str, object]:
+    # The Go ports reject a duplicate member, so the corpus has none.
+    return loads_strict(path.read_bytes())
+
+
 def _cases() -> list[tuple[str, str, dict[str, object]]]:
     cases = []
     for path in _corpus_files():
-        corpus = json.loads(path.read_text(encoding="utf-8"))
+        corpus = _corpus(path)
         for case in corpus["cases"]:
             cases.append((corpus["scheme"], case["id"], case))
     return cases
@@ -465,7 +464,7 @@ def test_each_corpus_file_is_well_formed() -> None:
     files = _corpus_files()
     assert files, "the vector corpus is empty"
     for path in files:
-        corpus = json.loads(path.read_text(encoding="utf-8"))
+        corpus = _corpus(path)
         assert set(corpus) == {"corpus", "scheme", "version", "owner", "cases"}, path.name
         assert corpus["corpus"] == 1, path.name
         assert corpus["scheme"] in SCHEMES, path.name
@@ -474,10 +473,12 @@ def test_each_corpus_file_is_well_formed() -> None:
         ids = [case["id"] for case in corpus["cases"]]
         assert len(ids) == len(set(ids)), path.name
         for case in corpus["cases"]:
-            assert set(case) <= _CASE_FIELDS, (path.name, case["id"])
-            assert ("input" in case) != ("input_hex" in case), (path.name, case["id"])
-            assert len(case["expect"]) == 1, (path.name, case["id"])
-            assert set(case["expect"]) <= _EXPECT_FIELDS, (path.name, case["id"])
+            # Assert on the member names only: a failure must not print a value.
+            fields, expected = set(case), set(case["expect"])
+            assert fields <= _CASE_FIELDS, (path.name, case["id"])
+            assert len(fields & {"input", "input_hex"}) == 1, (path.name, case["id"])
+            assert len(expected) == 1, (path.name, case["id"])
+            assert expected <= _EXPECT_FIELDS, (path.name, case["id"])
 
 
 @pytest.mark.parametrize(

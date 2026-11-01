@@ -1,0 +1,80 @@
+{
+  "corpus": 1,
+  "scheme": "correlation-stable-ref",
+  "version": "current",
+  "owner": "aptl.core.correlation.identity.stable_ref",
+  "cases": [
+    {
+      "id": "one-part",
+      "input": {
+        "domain": "aptl.correlation.node/v1",
+        "parts": [
+          "run-1"
+        ]
+      },
+      "expect": {
+        "text": "f221003a067bcd4e9c4bfdaf0bc9b437c67eed94c44d3d403c8e684b57c81df3"
+      }
+    },
+    {
+      "id": "two-parts",
+      "input": {
+        "domain": "aptl.correlation.node/v1",
+        "parts": [
+          "run-1",
+          "event-7"
+        ]
+      },
+      "expect": {
+        "text": "ba59b0ff26332c77d0068259c6063d9a9ee38f1b6bb2e4099dab900756184ca6"
+      }
+    },
+    {
+      "id": "non-ascii",
+      "input": {
+        "domain": "aptl.correlation.node/v1",
+        "parts": [
+          "é",
+          "😀"
+        ]
+      },
+      "expect": {
+        "text": "dacaec5d61fb397fbc5755bad3b11e5fdac71eb33ab97f292b7a3f159d356017"
+      }
+    },
+    {
+      "id": "empty-part",
+      "input": {
+        "domain": "aptl.correlation.node/v1",
+        "parts": [
+          ""
+        ]
+      },
+      "expect": {
+        "text": "0534bed1df13f3f5ed510035b3a0001ae98e6fe4c47d5f3c01a82416e70b4079"
+      }
+    },
+    {
+      "id": "empty-domain",
+      "input": {
+        "domain": "",
+        "parts": [
+          "run-1"
+        ]
+      },
+      "expect": {
+        "reject": "validate"
+      }
+    },
+    {
+      "id": "no-parts",
+      "input": {
+        "domain": "aptl.correlation.node/v1",
+        "parts": []
+      },
+      "expect": {
+        "reject": "validate"
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "corpus": 1,
+  "scheme": "apparatus-node-name",
+  "version": "current",
+  "owner": "aptl.backends.lilrae_apparatus_reporting.apparatus_node_name",
+  "cases": [
+    {
+      "id": "simple",
+      "input": {
+        "apparatus_id": "capture.network"
+      },
+      "expect": {
+        "text": "lilrae-cap-dff86cba339221cf728b78c8"
+      }
+    },
+    {
+      "id": "non-ascii",
+      "input": {
+        "apparatus_id": "capture.é"
+      },
+      "expect": {
+        "text": "lilrae-cap-07eeeff6c5ebc87817e2903c"
+      }
+    }
+  ]
+}
