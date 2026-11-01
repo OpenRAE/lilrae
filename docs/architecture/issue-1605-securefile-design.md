@@ -6,6 +6,14 @@ packages:
     component: secure-file
     imports:
       - golang.org/x/sys
+  - path: tools/internal/mutation
+    component: mutation-check
+    imports:
+      - github.com/OpenRAE/lilrae/tools/internal/git
+      - github.com/OpenRAE/lilrae/tools/internal/golayout
+    test_imports:
+      - github.com/OpenRAE/lilrae/tools/internal/gittest
+      - github.com/google/go-cmp
 model_changes:
   - component:secure-file
 ---
@@ -23,65 +31,102 @@ records the decision about `os.Root`.
 | Fact | Source |
 | --- | --- |
 | `pathsafe` rejects an absolute path, a NUL byte, an empty component, `.`, and `..` before any system call, with a reason code for each. | `utils/_pathsafe_core.py`. |
-| `pathsafe` opens each component with `O_NOFOLLOW` under the descriptor of its parent, so it refuses a link anywhere, and it opens the target once. | `utils/pathsafe.py`; `tests/test_pathsafe.py`. |
+| `pathsafe` opens each component with `O_NOFOLLOW` under the descriptor of its parent, so it refuses a link anywhere, and it opens the target once. A failed open is `symlink` when the entry is a link, `not_found` when the entry is absent or is not a directory, and `open_failed` for another cause. | `utils/pathsafe.py`; `tests/test_pathsafe.py`. |
 | `pathsafe` traverses directories with `O_PATH` or `O_SEARCH`, so a caller reads through an execute-only directory. The access service makes a `0711` directory. | `utils/_pathsafe_read.py`; `appliance/access_service.py`. |
 | A create-once write writes a temporary file with a mode of `0600`, syncs it, links it to the final name with no replacement, removes the temporary name, and syncs the directory. | `pathsafe.create_exclusive_nofollow`. |
 | A private replacement clears group and other write on each directory below the root, requires a leaf parent that the caller owns with no group or other access, refuses an existing leaf that is not a regular file, and renames a synced temporary file onto the leaf. | `pathsafe.replace_private_nofollow`. |
-| `pathsafe` has no Windows path: it needs `dir_fd`. On Windows, `core/ssh.py` restricts a private key with `icacls /inheritance:r /grant:r <user>:R`. | Source; the Windows job of `checks.yml`. |
-| `os.Root` follows a link that stays inside the root, and it opens each directory with read access. | Go 1.27 `os/root_unix.go`, `os/root_windows.go`; a probe. |
-| An `os.Root` open, then `Lstat` of the same name and `os.SameFile`, refuses a link: the link and its target are different files. | A probe on Linux. |
+| A private directory requires that the caller owns each component, clears group and other write on each, and clears group and other access on the last. | `pathsafe.open_private_dir_contained_nofollow`. |
+| A removal refuses a link and a file that is not regular, treats an absent file or parent as done, and syncs the parent. No caller reads its result. | `pathsafe.remove_contained_nofollow` and its callers. |
+| The rendered credentials and the SOC CA files replace a file through a temporary file and then set the mode `0644` or `0600` and verify it on POSIX. Their directories are `0700`. The CA sets the modes of reused files again. | `core/credentials.py`; `core/_soc_ca_io.py`; `core/_soc_ca_generation.py`. |
+| `core/ssh.py` sets `0600` on a private key and `0644` on a public key that `ssh-keygen` wrote. On Windows it runs `icacls <key> /inheritance:r /grant:r <user>:R` and sets no mode. | `core/ssh.py`. |
+| On Windows, `pathsafe` cannot run, because it needs `dir_fd`. The other modules change modes there only on a best-effort basis. | Source. |
+| `filepath.Localize` accepts each name that `fs.ValidPath` accepts, except names that the platform cannot represent: on Windows a name with `\` or `:`, or a reserved name such as `NUL`. | Go 1.27 `path/filepath`. |
+| `os.Root` follows a link that stays inside the root, and it opens each directory with read access. `Root.Lstat` and `File.Stat` read the file identity from a handle, so `os.SameFile` does not open a path again. | Go 1.27 `os/root_unix.go`, `os/root_windows.go`, `os/stat_windows.go`; a probe. |
+| A handle from `os.Root` has no `WRITE_DAC` access. The Win32 `ReOpenFile` function opens the same file object again with other access, and `golang.org/x/sys/windows` does not wrap it. | Go 1.27 `internal/syscall/windows`; Microsoft Win32 documentation. |
 
 ## Decisions
 
 1. **A trusted directory and untrusted names.** `securefile.OpenDir` opens a
    directory that its owner trusts. Each method takes an untrusted relative
-   path with `/` separators and checks the lexical rules first.
+   path with `/` separators. `CheckPath` and each method check the `pathsafe`
+   rules first, and then `filepath.Localize`. A name that `Localize` refuses
+   is `invalid_name`. On Linux and macOS this refuses only invalid UTF-8.
 2. **The Unix walk.** On Linux and macOS, the package opens each component
-   with `golang.org/x/sys/unix.Openat` and `O_NOFOLLOW`, and each directory
-   with `O_PATH` or `O_SEARCH` (ADR-066). A link is a `symlink` error, a
-   missing component is `not_found`, and a target that is not a regular file
-   is `not_regular_file`.
-3. **The Windows walk.** On Windows, the package uses `os.Root`, and it
-   refuses a link with `Lstat` and `os.SameFile` at each component.
-4. **Operations.** `Open` and `ReadFile` read a regular file through one
-   handle. `ReadDirNames` lists a directory. `CreateOnce` publishes a file
-   with no replacement and returns `os.ErrExist` when the name exists.
-   `Replace` replaces a private file. `PrivateDir` creates or opens a private
-   directory. `Remove` removes a regular file, and `RemoveAll` removes a tree,
-   both without following a link. Each operation keeps the rules in the
-   evidence.
+   with `golang.org/x/sys/unix.Openat` and `O_NOFOLLOW` (ADR-066). A read
+   traverses each directory with `O_PATH` or `O_SEARCH`. A write opens each
+   directory with read access, so that the package can sync it, and creates a
+   missing directory with the mode `0700`. A read opens the leaf with
+   `O_NONBLOCK`, so a FIFO cannot block it, and then clears the flag. Each
+   failure has the reason code that `pathsafe` gives.
+3. **The Windows walk.** On Windows, the package opens one component at a time
+   through `os.Root` and `Root.OpenRoot`. It refuses a component when
+   `Root.Lstat` reports a link or a reparse point, or when the entry is not
+   the file that it opened (`os.SameFile`).
+4. **Operations.** Each operation keeps the rules in the evidence.
+
+   | Operation | Python source |
+   | --- | --- |
+   | `Open`, `ReadFile` | `open_contained_nofollow`, `read_contained_nofollow` |
+   | `ReadDirNames` (sorted) | `listdir_contained_nofollow` |
+   | `Subdir`, `MakeSubdir` | `open_dir_contained_nofollow` |
+   | `PrivateSubdir` | `open_private_dir_contained_nofollow` |
+   | `CreateOnce` (returns an error that matches `fs.ErrExist`) | `create_exclusive_nofollow` |
+   | `Replace` (with a mode) | the credentials and CA writers |
+   | `ReplacePrivate` | `replace_private_nofollow` |
+   | `Chmod`, `RestrictToOwner` | the mode settings of the CA and `core/ssh.py` |
+   | `Remove`, `RemoveAll` | `remove_contained_nofollow`, `remove_tree_contained_nofollow` |
+
+   `Replace` and `ReplacePrivate` refuse an existing leaf that is a link or
+   not a regular file. `RemoveAll` refuses a link at the top, and it removes a
+   link inside the tree as an entry. An absent file or tree is not an error.
 5. **Durability and modes.** A write syncs the file before it publishes it
    and syncs the directory after. The temporary name is random and created
-   with `O_EXCL`. The final mode is set through the descriptor before the
-   publication, never by path after it.
-6. **Owner-only access.** `RestrictToOwner` gives a file the access that
-   `core/ssh.py` gives a private key: the mode `0600` on Unix, and on Windows
-   a protected access list that lets only the current user read the file. It
-   acts on the open handle.
-7. **Errors.** An `*Error` holds the operation, the relative path, and one of
-   the `pathsafe` reason codes, because callers act on them. It holds no file
-   content.
+   with `O_EXCL`. Each write sets the final mode through the descriptor and
+   verifies it before the publication, never by path after it: `0600` for
+   `CreateOnce` and `ReplacePrivate`, and the mode of the caller for
+   `Replace`. A mode that the file system did not keep is `mode_not_kept`.
+6. **Windows access.** On Windows, a mode sets only the read-only attribute,
+   as `os.Chmod` does, and the private rules of `ReplacePrivate` and
+   `PrivateSubdir` do not apply, as the Python modules give no mode
+   protection there. `RestrictToOwner` gives a file the access that
+   `core/ssh.py` gives a key: a protected access list that lets only the
+   current user read the file. It sets the list on a handle that
+   `ReOpenFile` opens from the verified handle.
+7. **Errors.** An `*Error` holds the operation, the path, and one of the
+   `pathsafe` reason codes, or `invalid_name` or `mode_not_kept`, because
+   callers act on them. It holds no file content.
 8. **No renameio on Unix.** renameio contains a write only through an
    `*os.Root`. The descriptor walk publishes with `linkat` and `renameat`
    instead (ADR-066).
 9. **Tests.** Tests use real files on Linux, macOS, and Windows, including
-   links, execute-only directories, foreign ownership where the platform
-   allows it, and the race lessons of #966. Fuzz tests check the lexical
-   rules and the walk. A Go test job on macOS and Windows runs the package.
+   links, execute-only directories, FIFOs, and the race lessons of #966. A
+   test without root cannot make a directory that another user owns, so a
+   unit test checks the ownership rule. Fuzz tests check the lexical rules
+   against `filepath.Localize`, and the walk against a model that walks with
+   `Lstat`.
+10. **Each platform runs the gates of its files.** Gremlins walks each file
+    below a module, but the tests of the module cannot cover a file of a
+    nested module, a file below a directory that the go command ignores, or
+    a file that the host does not build. The mutation gate leaves out such
+    files, so it no longer counts their mutants as not covered. A new CI job
+    runs the tests and the mutation gate of the product module on macOS and
+    Windows. `go-gates.sh test` and `mutation` take a module list for it,
+    because the tools modules run on Linux only.
 
 ## Data flows and threat model
 
 ```text
 owner: trusted directory -> securefile.OpenDir -> Dir
-caller: untrusted relative path -> lexical rules -> descriptor walk -> file
-caller: bytes -> temporary file (0600, sync) -> link or rename -> sync dir
+caller: untrusted relative path -> lexical rules -> walk without links -> file
+caller: bytes -> temporary file (0600, mode, sync) -> link or rename -> sync dir
 ```
 
 | Threat | Mitigation |
 | --- | --- |
-| A path escapes the directory through `..`, an absolute path, or a link. | The lexical rules, and no component is followed when it is a link. |
+| A path escapes the directory through `..`, an absolute path, a Windows separator or drive, or a link. | The lexical rules, `filepath.Localize`, and no component is followed when it is a link. |
 | A link inside the directory redirects a write to another file of the directory. | Each component is opened without following a link. |
-| A component changes between a check and an open. | The walk opens each component once, under the descriptor of its parent, and uses that handle. |
+| A component changes between a check and an open. | The walk opens each component once, under the handle of its parent, and uses that handle. On Windows, `os.SameFile` compares the entry with the opened file. |
+| A FIFO at a leaf blocks a reader. | The read opens the leaf with `O_NONBLOCK` and refuses a file that is not regular. |
 | A crash leaves a partial file or a false create-once success. | A temporary file is synced before the link or rename, and the directory is synced after. |
-| Another user reads or replaces a private file. | The final mode is set before the publication, the leaf parent must belong to the caller, and directories lose group and other write. On Windows, `RestrictToOwner` sets the access list. |
+| Another user reads or replaces a private file. | The final mode is set before the publication, the leaf parent must belong to the caller, and directories lose group and other write. On Windows, `RestrictToOwner` sets the access list of a key. |
 | An error leaks file content. | Errors hold the operation, the path, and the reason only. |
