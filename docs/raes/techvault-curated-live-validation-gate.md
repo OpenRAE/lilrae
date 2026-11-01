@@ -166,7 +166,7 @@ aptl lab stop -v -y
   `selected_profiles` instead of the global `config.containers.soc` flag; before
   that fix, `aptl lab start` for these `soc`-less variants would otherwise
   attempt to run `scripts/seed-prime.sh` against a stack that never started SOC.
-  `--skip-seed` is no longer required for these (or any other) reduced variants
-  — none of them select `soc`, so the seed step is now an intentional no-op
+  `--skip-seed` is no longer required for these (or any other) reduced variants.
+  None of them select `soc`, so the seed step is now an intentional no-op
   regardless of the flag. The evidence rows are not re-recorded here because
   reproducing them needs live infrastructure; see "Reproducing the proof" above.

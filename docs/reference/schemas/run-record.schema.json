@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openrae.github.io/lilrae/reference/schemas/run-record.schema.json",
+  "title": "Run record",
+  "description": "aptl.run-record/v2: the reproducibility record that lilrae lab start writes as manifest.json in the run directory. The raes section anchors the RAES contract identity; RAES owns the formats inside backend_manifest and runtime_snapshot. Raw scenario parameters are never stored.",
+  "type": "object",
+  "required": ["schema_version", "run_id", "backend_name", "backend_manifest_version", "started_at", "finished_at", "outcome", "raes", "backend_evidence"],
+  "properties": {
+    "schema_version": {"const": "aptl.run-record/v2"},
+    "run_id": {"type": "string", "minLength": 1},
+    "backend_name": {"type": "string"},
+    "backend_manifest_version": {"type": "string"},
+    "started_at": {"type": "string"},
+    "finished_at": {"type": "string"},
+    "outcome": {"type": "string"},
+    "raes": {
+      "type": "object",
+      "required": ["backend_manifest", "runtime_snapshot", "scenario", "scenario_parameters", "scenario_parameters_note", "realization"],
+      "properties": {
+        "backend_manifest": {"type": "object"},
+        "runtime_snapshot": {"type": "object"},
+        "scenario": {
+          "type": "object",
+          "required": ["sdl_path", "display_name", "raes_lock_digest"],
+          "properties": {
+            "sdl_path": {"type": ["string", "null"]},
+            "display_name": {"type": "string"},
+            "raes_lock_digest": {"type": ["string", "null"]}
+          }
+        },
+        "scenario_parameters": {"type": "null"},
+        "scenario_parameters_note": {"type": "string"},
+        "realization": {"type": "object"}
+      }
+    },
+    "backend_evidence": {
+      "type": "object",
+      "required": [
+        "selected_profiles", "pack_interaction", "scenario_runtime_selections", "range_snapshot", "config_digests",
+        "container_image_digests", "detection_content_digest", "tool_versions", "evidence_references"
+      ],
+      "properties": {
+        "selected_profiles": {"type": "array", "items": {"type": "string"}},
+        "pack_interaction": {"type": "object"},
+        "scenario_runtime_selections": {"type": "array", "items": {"$ref": "#/$defs/strings"}},
+        "range_snapshot": {"$ref": "range-snapshot.schema.json"},
+        "config_digests": {"$ref": "#/$defs/strings"},
+        "container_image_digests": {"$ref": "#/$defs/strings"},
+        "detection_content_digest": {"type": "string"},
+        "tool_versions": {"$ref": "#/$defs/strings"},
+        "evidence_references": {"type": "array", "items": {"$ref": "#/$defs/strings"}}
+      }
+    }
+  },
+  "$defs": {
+    "strings": {"type": "object", "additionalProperties": {"type": "string"}}
+  }
+}

@@ -22,13 +22,11 @@ if [ ! -f "${VALE_INI}" ]; then
   exit 1
 fi
 
-if [ ! -x "${VALE_BIN}" ]; then
-  if [ ! -x "${INSTALL_SCRIPT}" ]; then
-    echo "vale-lint-hook: ${INSTALL_SCRIPT} missing or not executable; cannot install Vale" >&2
-    exit 1
-  fi
-  echo "vale-lint-hook: Vale not installed; running ${INSTALL_SCRIPT} ..." >&2
-  bash "${INSTALL_SCRIPT}" >&2
+if [ ! -x "${INSTALL_SCRIPT}" ]; then
+  echo "vale-lint-hook: ${INSTALL_SCRIPT} missing or not executable; cannot install Vale" >&2
+  exit 1
 fi
+# The installer is idempotent and points VALE_BIN at the pinned version.
+bash "${INSTALL_SCRIPT}" >&2
 
 exec "${VALE_BIN}" --config="${VALE_INI}" "$@"
