@@ -1,0 +1,165 @@
+{
+  "corpus": 1,
+  "scheme": "apparatus-configuration-digest",
+  "version": "current",
+  "owner": "aptl.core.experiment.bindings._apparatus_configuration",
+  "cases": [
+    {
+      "id": "action-timeout",
+      "input": {
+        "descriptors": [
+          {
+            "binding_id": "binding.long",
+            "source_factor_id": "factor.timeout",
+            "source_factor_level_id": "level.binding.long",
+            "source_condition_id": "condition.binding.long",
+            "target": {
+              "plane": "apparatus",
+              "component_kind": "participant-runtime",
+              "component_name": "aptl",
+              "component_version": "1.0.0",
+              "manifest_version": "1",
+              "target_id": "participant-runtime.action-timeout-seconds"
+            },
+            "value_type": "integer",
+            "value": {
+              "kind": "literal",
+              "value": 300
+            },
+            "owner": {
+              "contract_id": "aptl.apparatus",
+              "contract_version": "1",
+              "validator_id": "aptl.apparatus",
+              "validator_version": "1"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "digest": "sha256:b3af0a737dd2c009c18854508b4dd067e749766f8b3ad973cc4e1d380569b51b",
+          "projection": [
+            [
+              "participant-runtime.action-timeout-seconds",
+              300
+            ]
+          ],
+          "binding_ids": [
+            "binding.long"
+          ],
+          "action_timeout_seconds": 300
+        }
+      }
+    },
+    {
+      "id": "no-apparatus-binding",
+      "input": {
+        "descriptors": []
+      },
+      "expect": {
+        "value": {
+          "digest": null,
+          "projection": [],
+          "binding_ids": [],
+          "action_timeout_seconds": 120
+        }
+      },
+      "note": "Without an apparatus binding there is no digest."
+    },
+    {
+      "id": "unknown-target",
+      "input": {
+        "descriptors": [
+          {
+            "binding_id": "binding.other",
+            "source_factor_id": "factor.timeout",
+            "source_factor_level_id": "level.binding.other",
+            "source_condition_id": "condition.binding.other",
+            "target": {
+              "plane": "apparatus",
+              "component_kind": "participant-runtime",
+              "component_name": "aptl",
+              "component_version": "1.0.0",
+              "manifest_version": "1",
+              "target_id": "participant-runtime.other"
+            },
+            "value_type": "integer",
+            "value": {
+              "kind": "literal",
+              "value": 5
+            },
+            "owner": {
+              "contract_id": "aptl.apparatus",
+              "contract_version": "1",
+              "validator_id": "aptl.apparatus",
+              "validator_version": "1"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "reject": "validate"
+      }
+    },
+    {
+      "id": "duplicate-target",
+      "input": {
+        "descriptors": [
+          {
+            "binding_id": "binding.a",
+            "source_factor_id": "factor.timeout",
+            "source_factor_level_id": "level.binding.a",
+            "source_condition_id": "condition.binding.a",
+            "target": {
+              "plane": "apparatus",
+              "component_kind": "participant-runtime",
+              "component_name": "aptl",
+              "component_version": "1.0.0",
+              "manifest_version": "1",
+              "target_id": "participant-runtime.action-timeout-seconds"
+            },
+            "value_type": "integer",
+            "value": {
+              "kind": "literal",
+              "value": 60
+            },
+            "owner": {
+              "contract_id": "aptl.apparatus",
+              "contract_version": "1",
+              "validator_id": "aptl.apparatus",
+              "validator_version": "1"
+            }
+          },
+          {
+            "binding_id": "binding.b",
+            "source_factor_id": "factor.timeout",
+            "source_factor_level_id": "level.binding.b",
+            "source_condition_id": "condition.binding.b",
+            "target": {
+              "plane": "apparatus",
+              "component_kind": "participant-runtime",
+              "component_name": "aptl",
+              "component_version": "1.0.0",
+              "manifest_version": "1",
+              "target_id": "participant-runtime.action-timeout-seconds"
+            },
+            "value_type": "integer",
+            "value": {
+              "kind": "literal",
+              "value": 90
+            },
+            "owner": {
+              "contract_id": "aptl.apparatus",
+              "contract_version": "1",
+              "validator_id": "aptl.apparatus",
+              "validator_version": "1"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "reject": "validate"
+      }
+    }
+  ]
+}

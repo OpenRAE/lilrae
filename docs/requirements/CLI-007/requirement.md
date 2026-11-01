@@ -13,7 +13,7 @@ updated_at: 2026-05-03T06:31:43.762340Z
 
 ## Statement
 
-The CLI shall provide an `aptl config show` command that pretty-prints the resolved APTL configuration as loaded by `core/config.find_config()` + `core/config.load_config()`, including default values for any unset fields. The command shall locate the project's `aptl.json` via the same discovery rules used by the rest of the CLI, render the validated `AptlConfig` Pydantic model in a stable human-readable form, and exit with code 0 on success or non-zero with a clear error message when no config is found or loading fails.
+The CLI shall provide a `lilrae config show` command that prints the resolved configuration as the shared discovery and loading rules load it, including default values for any unset fields. The command shall locate the project's `aptl.json` via the same discovery rules used by the rest of the CLI, render the validated configuration in a stable human-readable form, and exit with code 0 on success or non-zero with a clear error message when no config is found or loading fails.
 
 ## Rationale
 
@@ -25,3 +25,4 @@ CLI-002 covers configuration *validation* but not inspection. Users currently ha
 - IMPLEMENTS → CODE_FILE `src/aptl/cli/_common.py` (resolve_config_for_cli helper)
 - TESTS → TEST `tests/test_cli_config.py` (CLI config validate/show tests)
 - IMPLEMENTS → GITHUB_ISSUE `138` (Issue 138: implement stubbed CLI commands)
+- TESTS → TEST `conformance/testdata/cases/config.txtar` (Black-box config show text and JSON with defaults)

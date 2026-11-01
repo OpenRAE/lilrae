@@ -1,0 +1,40 @@
+# Invalid usage exits with status 2. It prints no JSON object, and the usage
+# error goes to standard error.
+env DOCKER_HOST=unix://$WORK/no-daemon.sock
+lilrae lab init proj
+cd proj
+
+# JSON output cannot confirm a destructive action, so it needs --yes.
+! lilrae lab stop --json --volumes
+status 2
+! stdout .
+stderr '--yes'
+! lilrae lab reset --json
+status 2
+! stdout .
+stderr '--yes'
+! lilrae lab start --json --clean
+status 2
+! stdout .
+stderr '--yes'
+
+# The scenario selectors are mutually exclusive.
+! lilrae lab start --json --scenario a --scenario-path b
+status 2
+! stdout .
+stderr .
+
+# A scenario path must be inside the project.
+! lilrae lab start --json --scenario-path $WORK/outside.yaml
+status 2
+! stdout .
+stderr .
+
+# An unknown option is a usage error.
+! lilrae lab stop --json --no-such-option
+status 2
+! stdout .
+stderr 'Usage:'
+! lilrae doctor --json --no-such-option
+status 2
+! stdout .

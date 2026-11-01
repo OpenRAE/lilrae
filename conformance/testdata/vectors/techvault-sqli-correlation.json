@@ -1,0 +1,122 @@
+{
+  "corpus": 1,
+  "scheme": "techvault-sqli-correlation",
+  "version": "current",
+  "owner": "aptl_techvault.evidence.techvault.SuricataWazuhSqliSource.fetch and _sqli_result",
+  "cases": [
+    {
+      "id": "correlated-pair",
+      "input": {
+        "start": "2026-09-14T10:00:00Z",
+        "end": "2026-09-14T10:01:00Z",
+        "trigger": {
+          "trigger_id": "probe-1",
+          "method": "POST",
+          "path": "/login",
+          "source_ip": "172.20.1.30",
+          "destination_ip": "172.20.1.20",
+          "contains_union_select": true,
+          "triggered_at": "2026-09-14T10:00:05Z"
+        },
+        "suricata_events": [
+          {
+            "timestamp": "2026-09-14T10:00:10Z",
+            "flow_id": 4242,
+            "src_ip": "172.20.1.30",
+            "dest_ip": "172.20.1.20",
+            "alert": {
+              "signature_id": 1000010
+            }
+          }
+        ],
+        "wazuh_events": [
+          {
+            "timestamp": "2026-09-14T10:00:10Z",
+            "rule": {
+              "id": "303020"
+            },
+            "data": {
+              "flow_id": "4242",
+              "src_ip": "172.20.1.30",
+              "dest_ip": "172.20.1.20",
+              "alert": {
+                "signature_id": 1000010
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "status": "ok",
+          "chunks_hex": [
+            "7b227265636f726473223a5b7b2264657374696e6174696f6e5f6970223a223137322e32302e312e3230222c22666c6f775f6964223a2234323432222c22736f75726365223a227375726963617461222c22736f757263655f6970223a223137322e32302e312e3330222c2273757269636174615f7369676e61747572655f6964223a313030303031302c2274696d657374616d70223a22323032362d30392d31345431303a30303a31305a222c22747269676765725f6964223a2270726f62652d31222c2277617a75685f72756c655f6964223a22333033303230227d2c7b2264657374696e6174696f6e5f6970223a223137322e32302e312e3230222c22666c6f775f6964223a2234323432222c22736f75726365223a2277617a7568222c22736f757263655f6970223a223137322e32302e312e3330222c2273757269636174615f7369676e61747572655f6964223a313030303031302c2274696d657374616d70223a22323032362d30392d31345431303a30303a31305a222c22747269676765725f6964223a2270726f62652d31222c2277617a75685f72756c655f6964223a22333033303230227d5d2c22736368656d615f76657273696f6e223a226170746c2d746563687661756c742d73716c692d636f7272656c6174696f6e2f7631227d"
+          ],
+          "source_pipeline": {
+            "source_refs": [
+              {
+                "ref_kind": "other",
+                "ref_id": "nodes.suricata.runtime.network_detection_engines.suricata-engine.output_streams.eve-json"
+              },
+              {
+                "ref_kind": "other",
+                "ref_id": "nodes.wazuh-manager.runtime.security_monitoring_managers.wazuh-manager.content_sets.suricata-rules"
+              }
+            ],
+            "correlation": "shared-suricata-flow-id"
+          }
+        }
+      }
+    },
+    {
+      "id": "uncorrelated",
+      "input": {
+        "start": "2026-09-14T10:00:00Z",
+        "end": "2026-09-14T10:01:00Z",
+        "trigger": {
+          "trigger_id": "probe-1",
+          "method": "POST",
+          "path": "/login",
+          "source_ip": "172.20.1.30",
+          "destination_ip": "172.20.1.20",
+          "contains_union_select": true,
+          "triggered_at": "2026-09-14T10:00:05Z"
+        },
+        "suricata_events": [
+          {
+            "timestamp": "2026-09-14T10:00:10Z",
+            "flow_id": 4242,
+            "src_ip": "172.20.1.30",
+            "dest_ip": "172.20.1.20",
+            "alert": {
+              "signature_id": 1000010
+            }
+          }
+        ],
+        "wazuh_events": [
+          {
+            "timestamp": "2026-09-14T10:00:10Z",
+            "rule": {
+              "id": "302010"
+            },
+            "data": {
+              "flow_id": "4242",
+              "src_ip": "172.20.1.30",
+              "dest_ip": "172.20.1.20",
+              "alert": {
+                "signature_id": 1000010
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "status": "mid-run-loss",
+          "chunks_hex": [],
+          "source_pipeline": {}
+        }
+      }
+    }
+  ]
+}

@@ -37,3 +37,4 @@ The TechVault cutover moved scenario and experiment meaning to ACES. Reproducibi
 - IMPLEMENTS → CODE_FILE `src/aptl/backends/_lilrae_catalog_image_observation.py` (Selected and independently observed image identities)
 - TESTS → TEST `tests/test_lilrae_source_image_catalog.py` (Source policy and released-kit coverage)
 - TESTS → TEST `tests/test_lilrae_catalog_image_observation.py` (Image readback and durable run evidence)
+- TESTS → TEST `tests/test_serialization_vectors.py` (Shared vectors of the run store IDs, canonical payloads, and raw digests of the run record)

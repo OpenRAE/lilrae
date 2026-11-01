@@ -43,3 +43,5 @@ Lab lifecycle is the most fundamental operation.
 - TESTS → TEST `tests/test_execution_boundary.py` (Selected transport, unknown, seat, and disclosure coverage)
 - TESTS → TEST `tests/test_raes_backend.py` (RAES disclosure contract coverage)
 - TESTS → TEST `tests/test_api_lab.py` (Same-container state-transition event coverage)
+- TESTS → TEST `conformance/testdata/lab/lifecycle.txtar` (Black-box start, status, stop, and reset JSON results on a lab)
+- TESTS → TEST `conformance/testdata/cases/lab-json-failures.txtar` (Black-box lifecycle JSON results and exit statuses without a daemon)

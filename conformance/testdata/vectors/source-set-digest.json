@@ -1,0 +1,50 @@
+{
+  "corpus": 1,
+  "scheme": "source-set-digest",
+  "version": "current",
+  "owner": "aptl.core.experiment.trial_plan.compute_source_set_digest",
+  "cases": [
+    {
+      "id": "simple",
+      "input": {
+        "artifacts": [
+          {
+            "id": "spec",
+            "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        ],
+        "version": "1"
+      },
+      "expect": {
+        "text": "sha256:e8908c843153308022cd69c092ee2eb9a0cbf2cba66e30aafc3a467c1deeeff2"
+      }
+    },
+    {
+      "id": "non-ascii",
+      "input": {
+        "name": "é😀"
+      },
+      "expect": {
+        "text": "sha256:92860a2134c2220e7831f64fd45c2be6c5d1ed3082b64432f509e9b56006973c"
+      }
+    },
+    {
+      "id": "empty",
+      "input": {},
+      "expect": {
+        "text": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      }
+    },
+    {
+      "id": "large-integer",
+      "input": {
+        "n": {
+          "$int": "9007199254740993"
+        }
+      },
+      "expect": {
+        "reject": "serialize"
+      }
+    }
+  ]
+}

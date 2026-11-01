@@ -1,0 +1,224 @@
+{
+  "corpus": 1,
+  "scheme": "yaml-compose-loader",
+  "version": "PyYAML 6.0.3",
+  "owner": "aptl.core.deployment._compose_ownership_override._ComposeLoader",
+  "cases": [
+    {
+      "id": "yaml-1-1-booleans",
+      "input": "a: yes\nb: on\nc: off\nd: no\ne: true\nf: y\ng: n\n",
+      "note": "YAML 1.1 reads yes, no, on, and off as booleans; PyYAML reads y and n as strings",
+      "expect": {
+        "value": {
+          "a": true,
+          "b": true,
+          "c": false,
+          "d": false,
+          "e": true,
+          "f": "y",
+          "g": "n"
+        }
+      }
+    },
+    {
+      "id": "yaml-1-1-integers",
+      "input": "mode: 0755\nhex: 0x1f\nunderscore: 1_000\nsexagesimal: 1:30\nbinary: 0b101\n",
+      "expect": {
+        "value": {
+          "mode": 493,
+          "hex": 31,
+          "underscore": 1000,
+          "sexagesimal": 90,
+          "binary": 5
+        }
+      }
+    },
+    {
+      "id": "floats",
+      "input": "one: 1.0\nnan: .nan\nninf: -.inf\nexp-no-dot: 1e3\nexp-dot: 6.02e+23\nneg-zero: -0.0\n",
+      "note": "PyYAML reads 1e3 without a dot as a string",
+      "expect": {
+        "value": {
+          "one": {
+            "$float": "1.0"
+          },
+          "nan": {
+            "$float": "nan"
+          },
+          "ninf": {
+            "$float": "-inf"
+          },
+          "exp-no-dot": "1e3",
+          "exp-dot": {
+            "$float": "6.02e+23"
+          },
+          "neg-zero": {
+            "$float": "-0.0"
+          }
+        }
+      }
+    },
+    {
+      "id": "nulls",
+      "input": "a: ~\nb: null\nc:\n",
+      "expect": {
+        "value": {
+          "a": null,
+          "b": null,
+          "c": null
+        }
+      }
+    },
+    {
+      "id": "timestamps",
+      "input": "day: 2026-03-24\ninstant: 2026-03-24T02:00:00Z\nspaced: 2026-03-24 02:00:00\n",
+      "expect": {
+        "value": {
+          "day": {
+            "$date": "2026-03-24"
+          },
+          "instant": {
+            "$datetime": "2026-03-24T02:00:00+00:00"
+          },
+          "spaced": {
+            "$datetime": "2026-03-24T02:00:00"
+          }
+        }
+      }
+    },
+    {
+      "id": "quoted-strings",
+      "input": "a: 'yes'\nb: \"0755\"\nc: '1.0'\n",
+      "expect": {
+        "value": {
+          "a": "yes",
+          "b": "0755",
+          "c": "1.0"
+        }
+      }
+    },
+    {
+      "id": "duplicate-keys",
+      "input": "a: 1\na: 2\n",
+      "note": "the stock safe loader keeps the last value",
+      "expect": {
+        "value": {
+          "a": 2
+        }
+      }
+    },
+    {
+      "id": "merge-key",
+      "input": "base: &b {x: 1}\nderived:\n  <<: *b\n  y: 2\n",
+      "expect": {
+        "value": {
+          "base": {
+            "x": 1
+          },
+          "derived": {
+            "x": 1,
+            "y": 2
+          }
+        }
+      }
+    },
+    {
+      "id": "non-string-keys",
+      "input": "1: one\ntrue: yes\n~: none\n",
+      "expect": {
+        "value": {
+          "$map": [
+            [
+              1,
+              true
+            ],
+            [
+              null,
+              "none"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "large-integer",
+      "input": "n: 123456789012345678901234567890\n",
+      "expect": {
+        "value": {
+          "n": {
+            "$int": "123456789012345678901234567890"
+          }
+        }
+      }
+    },
+    {
+      "id": "binary",
+      "input": "b: !!binary aGVsbG8=\n",
+      "expect": {
+        "value": {
+          "b": {
+            "$bytes_hex": "68656c6c6f"
+          }
+        }
+      }
+    },
+    {
+      "id": "multiple-documents",
+      "input": "a: 1\n---\nb: 2\n",
+      "expect": {
+        "reject": "parse"
+      }
+    },
+    {
+      "id": "custom-tag",
+      "input": "a: !custom x\n",
+      "expect": {
+        "reject": "parse"
+      }
+    },
+    {
+      "id": "empty-document",
+      "input": "",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "id": "non-ascii",
+      "input": "name: capteur-é-😀\n",
+      "expect": {
+        "value": {
+          "name": "capteur-é-😀"
+        }
+      }
+    },
+    {
+      "id": "reset-sequence",
+      "input": "ports: !reset []\n",
+      "expect": {
+        "value": {
+          "ports": []
+        }
+      }
+    },
+    {
+      "id": "reset-mapping",
+      "input": "environment: !reset {}\n",
+      "expect": {
+        "value": {
+          "environment": {}
+        }
+      }
+    },
+    {
+      "id": "reset-scalar",
+      "input": "image: !reset null\n",
+      "note": "the reset constructor returns the scalar text",
+      "expect": {
+        "value": {
+          "image": "null"
+        }
+      }
+    }
+  ]
+}

@@ -13,7 +13,7 @@ updated_at: 2026-03-20T06:18:11.649566Z
 
 ## Statement
 
-The system shall provide a shared TypeScript library (aptl-mcp-common) that all MCP servers depend on, providing: PersistentSession for SSH, SSHConnectionManager for connection pooling, HTTPClient for API access, createMCPServer factory, startServer entry point, typed argument interfaces, and shell formatters.
+The system shall provide one shared MCP runtime that all MCP servers use. It shall provide persistent SSH sessions, SSH connection pooling, an HTTP client for API access, a configuration-driven server factory, one server entry point, typed tool arguments, and shell output formatting.
 
 ## Rationale
 

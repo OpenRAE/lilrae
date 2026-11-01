@@ -380,8 +380,8 @@ indicators on purpose.
      creates the `APTL Alert Enrichment` workflow inside the running
      Shuffle instance via Shuffle's REST API and writes its webhook
      URL to a **host-side staging file** at
-     `/tmp/aptl_shuffle_webhook_url`. **This step alone is not enough
-     — the Wazuh `custom-shuffle` forwarder reads from inside the
+     `/tmp/aptl_shuffle_webhook_url`. **This step alone is not enough,
+     because the Wazuh `custom-shuffle` forwarder reads from inside the
      manager container, not the host.**
   2. [`scripts/seed-prime.sh:210-227`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh)
      reads the host staging file and `docker exec`s the URL into the

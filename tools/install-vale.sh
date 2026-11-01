@@ -4,22 +4,25 @@
 # requested version is already installed.
 #
 # Usage: tools/install-vale.sh [--version v3.x.x]
-# Default version: v3.14.2 (pinned; change here and update checksums)
+# Default version: v3.26.0 (pinned; change here and update checksums)
 #
 # SHA-256 checksums sourced from:
-#   https://github.com/vale-cli/vale/releases/download/v3.14.2/vale_3.14.2_checksums.txt
+#   https://github.com/vale-cli/vale/releases/download/v3.26.0/vale_3.26.0_checksums.txt
+#
+# v3.23.0 and later read Go doc comments by the Go convention: the name a doc
+# comment opens with, [links], and tool directives are not prose (ADR-065).
 
 set -eu
 
-VALE_VERSION="${VALE_VERSION:-v3.14.2}"
+VALE_VERSION="${VALE_VERSION:-v3.26.0}"
 # Strip leading 'v' for filename construction
 VALE_VER_BARE="${VALE_VERSION#v}"
 
-# Checksums for v3.14.2 (update when VALE_VERSION changes)
-SHA256_LINUX_AMD64="469cf88ec58a374dca14b2564c4391d2c9a1c632210aa0b642758b794082e05f"
-SHA256_LINUX_ARM64="b11fa9955b93814f993442568b9b922604cc4b574643037b84900e9514860802"
-SHA256_MACOS_AMD64="083d1494dd411ee65ce4e14106426d69908b4fe65d35cc0576cdd70e6c3c2dae"
-SHA256_MACOS_ARM64="14305f4e5e0756351ffd4ff8dd1e561c5d49f6a27360834238d832d9e64ac70f"
+# Checksums for v3.26.0 (update when VALE_VERSION changes)
+SHA256_LINUX_AMD64="22aa69a556558e4a9dfc63c17030777383d8d3c48dcdfad655fa98e839d666ed"
+SHA256_LINUX_ARM64="3154179f4611140c9af54a8b3bc6a90bc02b73fe6c1f635369604dde0490406d"
+SHA256_MACOS_AMD64="df42b317be6ece6a6a70d06b952deec581d047046eb93ea4632f58da56a86ff9"
+SHA256_MACOS_ARM64="a6c3370f53bad93086c6b85f3163676e44e08049d69743afdcc13f3aab5b7482"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 INSTALL_DIR="${REPO_ROOT}/.tools/vale/${VALE_VERSION}"
@@ -46,6 +49,10 @@ sync_vale_styles() {
 
 if [ -x "${VALE_BIN}" ]; then
     printf 'vale %s already installed at %s\n' "${VALE_VERSION}" "${VALE_BIN}"
+    # Point current at the pinned version, also after a version change.
+    mkdir -p "$(dirname "${CURRENT_LINK}")"
+    rm -f "${CURRENT_LINK}"
+    ln -s "${INSTALL_DIR}" "${CURRENT_LINK}"
     sync_vale_styles
     exit 0
 fi
