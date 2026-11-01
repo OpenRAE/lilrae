@@ -659,7 +659,7 @@ jobs:
           GOTOOLCHAIN: local
           LILRAE_CONFORMANCE_BINARY: ${{ runner.temp }}/clean-venv/bin/lilrae
           LILRAE_CONFORMANCE_SCENARIO: ${{ github.workspace }}/tests/fixtures/packs/materialization-envelope/sdl/materialization-envelope.sdl.yaml
-        run: go test -tags integration -count=1 -run '^TestLab$' ./conformance/
+        run: go test -C conformance -tags integration -count=1 -run '^TestLab$' ./...
 
   mcp-tests:
     name: MCP TypeScript tests + coverage

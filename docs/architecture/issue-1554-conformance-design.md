@@ -55,8 +55,11 @@ design record.
 
 ## Decisions
 
-1. **Boundary.** `conformance/` in the root module holds the suite. It has
-   test files only, and it imports no product package. It observes the
+1. **Boundary.** `conformance/` holds the suite in a Go module of its own,
+   `github.com/OpenRAE/lilrae/conformance`. It has test files only, and it
+   imports no product package. Thus `go test ./...` and the mutation gate in
+   the product module do not run it, and the product module does not carry
+   its test dependencies. It observes the
    binary through its arguments, environment, exit status, output streams,
    and files.
 2. **Binary seam.** `LILRAE_CONFORMANCE_BINARY` names the binary by an absolute
@@ -136,7 +139,7 @@ design record.
     `conformance/`, `docs/reference/schemas/`, and the inventory to the `go`
     lane and to the `lab` lane, because the lab job runs the lab cases. The
     mutation gate selects only the modules with production code, so the
-    test-only conformance package needs no binary there.
+    test-only conformance module needs no binary there.
 12. **Review fixes of the gates.** The regression replay rejects a head run
     whose `go test` command fails after the test passes. The overlay of linked
     test data belongs to #1583.
