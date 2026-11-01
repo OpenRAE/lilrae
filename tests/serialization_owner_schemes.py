@@ -307,8 +307,7 @@ def _guest_readiness(case_input: dict) -> dict[str, str]:
 
 def _readiness_challenge(case_input: dict) -> dict[str, str]:
     fields = {key: case_input[key] for key in ("seat_id", "instance_id", "generation", "launch_descriptor_digest")}
-    tokens = iter((case_input["nonce"], "0" * 16))
-    with patch.object(readiness.secrets, "token_hex", lambda size: next(tokens)):
+    with patch.object(readiness.secrets, "token_hex", side_effect=[case_input["nonce"], "0" * 16]):
         data = _written(lambda path: readiness.publish_readiness_challenge(path, **fields), "challenge.json")
     return {"hex": data.hex()}
 
@@ -629,7 +628,7 @@ def _native_cleanup(case_input: dict) -> dict[str, object]:
         ownership.record(receipt)
         with (
             patch.object(lilrae_native_evidence, "datetime", _FixedClock(case_input["recorded_at"])),
-            patch.object(lilrae_native_evidence, "uuid4", lambda: SimpleNamespace(hex=case_input["uuid_hex"])),
+            patch.object(lilrae_native_evidence, "uuid4", return_value=SimpleNamespace(hex=case_input["uuid_hex"])),
         ):
             try:
                 lilrae_native_evidence.record_cleanup(ownership, receipt, cause=case_input["cause"])
