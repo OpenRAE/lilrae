@@ -1,8 +1,10 @@
 # Issue #1556: RAES and env-packs Go boundary preflight
 
 The supplied issue is the delivery contract. This note constrains the consumer
-inventory and upstream agreement; it is not that inventory, an implementation
-plan, or evidence of upstream acceptance. Inspection at `bf8edd67` found
+inventory and the upstream links; it is not that inventory or an
+implementation plan. LilRAE is downstream of RAES and env-packs. It conforms to
+the Go API that they set, and it makes no request or change to their issues.
+Inspection at `bf8edd67` found
 `uv.lock` selecting RAES 10.1.0 and env-packs 7.0.0. Historical release pins in
 the [#845 preflight](issue-845-raes-hard-rename-preflight.md) describe that
 cutover, not the Go contract.
@@ -53,22 +55,24 @@ source coverage or silently expand its denominator.
   refresh, and evaluation to retain native evidence. Its planning path compiles
   and plans once using the committed snapshot, admitted compatibility decision,
   profile, availability, and run scope. `_runtime_value_limits` temporarily
-  changes RAES module globals, including private `_VALUE_LIMITS`. Ask upstream
-  for public, bounded per-runtime configuration and lifecycle/evidence hooks.
-  Do not reproduce this global mutation, lock, inheritance, or hidden-state
-  embedding in Go. The existing pending reference `OpenRAE/rae#1285` is evidence
-  to check, not proof of a Go contract or agreement.
+  changes RAES module globals, including private `_VALUE_LIMITS`. The Go port
+  uses the configuration and the hooks that RAES Go sets for this behavior, and
+  it is blocked until they exist. Do not reproduce this global mutation, lock,
+  inheritance, or hidden-state embedding in Go. The existing pending reference
+  `OpenRAE/rae#1285` is evidence to check, not proof of a Go contract.
 - `backends/raes_participant_driver.py:AptlParticipantControlPlane` uses private
   `_target` and `_reject_submission` access. Its solicitation enters RAES's
   participant operation executor so durable operation state precedes provider
   execution; failure, idempotency, and request fingerprints remain governed.
-  Request a public operation extension point with those guarantees, not a
-  callback that runs before admission or a local operation-state machine.
+  The Go port uses the operation extension point that RAES Go sets with those
+  guarantees, and it is blocked until it exists. It adds no callback that runs
+  before admission and no local operation-state machine.
 - Do not stop at the two classes highlighted by the issue.
   `backends/raes_participant_runtime.py:AptlParticipantRuntime` also extends
   RAES `BaseParticipantRuntime`. Separate LilRAE provider mediation, budgets,
   installed bindings, and bounded effects from RAES admission, commit, history,
-  and concurrent-action semantics. The public Go seam must preserve that split.
+  and concurrent-action semantics. The Go port keeps that split in the seam
+  that RAES Go sets.
   The namespace test checks private imports; it does not detect private
   attribute access or certify the entire API surface as public.
 - `backends/raes_repro.py:runtime_snapshot_record_payload` now uses public RAES
@@ -87,7 +91,7 @@ the existing target/profile, corpus-root, and backend-witness inputs. A larger
 admitted pack needs a bounded runtime option, not a process-global override.
 A new pack/backend release qualifies through existing identity and capability
 selectors; it must not require TechVault-specific branches in shared code or
-another portable model. Exact Go signatures remain upstream agreement work.
+another portable model. RAES Go sets the exact Go signatures.
 
 Paths in the following table are relative to `src/aptl/` unless stated otherwise.
 These are behavioral owners to preserve, not a Go package layout to transliterate.
@@ -113,7 +117,7 @@ The intended Go boundary must preserve each layer below.
 | Errors and observability: `backends/raes_diagnostics.py`, `core/experiment/errors.py`, `core/lab_types.py`, `utils/{logging,redaction}.py`, `core/telemetry_export.py` | Reuse structured RAES diagnostics and existing bounded result/exit/HTTP/MCP error projections. Normalize upstream failures once; exclude rejected values, raw exception payloads, private paths, and Pydantic `input`/`ctx`/`url`. Go wraps errors with `%w` and adds a sentinel/type only when a caller acts on it. ADR-065's explicit `slog` and shared redaction protect stderr logs, access logs, command results, persisted text, and exported spans. Keep logs off MCP stdout; telemetry is not evidence. |
 | Persistence and identity: `core/runstore.py`, `core/archival/`, `core/evidence/`, `backends/{raes_repro,lilrae_materialization_archive}.py` | Preserve contained private writes, per-run finalization locks, create-once canonical records, seal immutability, and read-only export. RAES `RunMaterializationArchive` supplies portable bytes/validation; LilRAE still owns protected publication and seal enforcement. Use owner-defined canonicalization and the existing serialization vectors; never redact signed/canonical bytes into a different valid-looking record. Secret-bearing canonical input is rejected. Keep RAES `RuntimeSnapshot` separate from LilRAE `RangeSnapshot` and retain schema-aware historical reads. |
 
-## Conformance and upstream agreement
+## Conformance and upstream links
 
 The current backend claim is `aptl`, target version `0.1.0`, profile
 `full-remote-control-plane`, owned by `backends/identity.py` and
@@ -128,9 +132,10 @@ incumbents. Tests also exercise `provisioning-only` and
 
 Static checks currently defer only the two realization-envelope `no-witness`
 codes identified in `_gate_checks.py` to live lab qualification. This is not
-proof of live conformance or permission to add suppressions. The Go agreement
-must name the upstream suite/corpus release, profile and contract coverage,
-backend witness/registration seam, and static versus live harness obligations.
+proof of live conformance or permission to add suppressions. The Go port
+conforms to the suite and corpus release, the profile and contract coverage,
+the backend witness and registration seam, and the static and live harness
+obligations that RAES sets.
 Missing runners, unknown gaps, or failed constructive/readback cases cannot
 count as passing. The Go backend must be the system under test; a Python backend
 passing on its behalf establishes no Go conformance.
@@ -142,11 +147,9 @@ persisted-byte/identity vectors recorded in
 Reuse all applicable surfaces. None replaces the others or authorizes copying
 the upstream schema/corpus into a separately maintained LilRAE oracle.
 
-Each capability needs a real upstream owner issue and an explicit distinction
-between proposed Go names, maintainer-confirmed contracts, and released APIs.
-The agreement must identify public Go module/package/interface or schema access,
-including errors, limits, cancellation, canonical serialization, and corpus
-delivery where relevant. Capability identity is stable when package paths
+Each capability needs a real upstream owner issue. A Go port uses only a
+released RAES or env-packs Go API, with the errors, limits, cancellation,
+canonical serialization, and corpus delivery that its owner sets. Capability identity is stable when package paths
 change; Python module paths are evidence, not proposed Go package boundaries.
 Keep distribution, module, schema/profile, authored artifact, pack/family,
 plan/entry, snapshot, capture, and attempt identities separate.
@@ -154,8 +157,9 @@ plan/entry, snapshot, capture, and attempt identities separate.
 Go ports 16 through 22 must link their required owner issues and carry native
 blocked-by relationships for unresolved capabilities. An umbrella Go milestone,
 prose link, merged source change, or this preflight does not establish a usable
-released dependency. Do not invent upstream issue numbers or claim agreement
-from repository inspection. This preflight makes no upstream writes.
+released dependency. Do not invent upstream issue numbers or claim an
+upstream contract from repository inspection. This preflight makes no upstream
+writes.
 
 ## Repository scope and non-goals
 
@@ -176,10 +180,11 @@ import test cannot substitute for current contract evidence. Local checks stay
 change-scoped with `tools/run-targeted-tests.sh` and staged `pre-commit run`;
 whole-tree, full-suite, and installed-lab qualification remain in CI/CD.
 
-This preflight adds guidance only. #1556 delivers the inventory, upstream
-agreement/dependencies, and named conformance obligations against `go-cutover`.
+This preflight adds guidance only. #1556 delivers the inventory, the upstream
+links and blocked-by relationships, and the named conformance obligations
+against `go-cutover`.
 It changes no product behavior, schema, stored bytes, package pin, capability
 claim, extension version, or requirement lifecycle. It builds no RAES/env-packs
 code, local semantic/model/exception mirror, compatibility facade, scheduler,
 plugin sandbox, conformance runner, or new workflow. Existing ownership and
-security controls are constraints on the Go agreement, not optional follow-up.
+security controls are constraints on the Go port, not optional follow-up.

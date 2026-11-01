@@ -60,13 +60,17 @@ boundaries, so the contract is the capability.
 | Pack catalog | [env-packs#572](https://github.com/OpenRAE/env-packs/issues/572) | GP17 (#1568) |
 
 [rae#1825](https://github.com/OpenRAE/rae/issues/1825) owns the public Go API
-of RAES for environment packs, LilRAE, and Coldlight. Each RAES capability
-above must be reachable through that API. env-packs has no such issue. Each
-env-packs owner issue states the library operation that a consumer calls.
+of RAES for environment packs, LilRAE, and Coldlight. LilRAE uses the RAES
+capabilities above through that API, as rae sets it. env-packs has no such
+issue. LilRAE uses the library operation that each env-packs owner issue sets.
 
-The scope lists of the owner issues do not name each module. The
-[assignments to confirm](#assignments-to-confirm-upstream) list the names whose
-owner follows from the capability only.
+LilRAE is downstream of RAES and env-packs. It conforms to the Go API that they
+set, and it makes no request or change to their issues. Each LilRAE Go port
+above is blocked on its owner issues until they deliver.
+
+The scope lists of the owner issues do not name each module.
+[Names without a named owner](#names-without-a-named-owner) lists the names
+whose owner follows from the capability only.
 
 ## Names by capability
 
@@ -316,17 +320,18 @@ Owner: [env-packs#572](https://github.com/OpenRAE/env-packs/issues/572).
 
 ## Extended classes
 
-LilRAE extends three RAES classes. Go has no inheritance, so each class needs a
-public extension point in RAES Go. In RAES 10.1.0, `RuntimeManager` is another
+LilRAE extends three RAES classes. In RAES 10.1.0, `RuntimeManager` is another
 name for `RuntimeControlPlane`, so two of the classes extend the same base.
-LilRAE also uses private RAES members. A Go port must not copy a base class or
-change RAES state that is not public.
+LilRAE also uses private RAES members. Go has no inheritance. The Go port uses
+the extension points that RAES Go sets for this behavior, and it is blocked on
+the owner issue until they exist. It does not copy a base class, and it does
+not change RAES state that is not public.
 
-| LilRAE class | RAES base | Overrides and the behavior that they add | Private RAES members | Public extension point to ask for | Owner |
-| --- | --- | --- | --- | --- | --- |
-| `AptlRuntimeManager` in `backends/raes_planning_compat.py` | `raes_runtime.manager.RuntimeManager` | `__init__` binds the scenario bundle, the admitted planning compatibility decision, and native evidence capture. `apply` runs in the admitted runtime node budget, then captures native evidence. `refresh_inventory` and `evaluate` capture native evidence after the RAES call. `plan` compiles the scenario once, applies the admitted compatibility change, and plans against the committed snapshot. | `_target`. `_runtime_value_limits` replaces `raes_runtime.backend_input_contracts.RUNTIME_SNAPSHOT_VALUE_LIMITS` and the private `raes_runtime.backend_snapshot_contracts._VALUE_LIMITS` during a call, under a process lock. | A value limit option for one runtime, a hook after apply, inventory refresh, and evaluation, and a planning input for an admitted model change. | [rae#1791](https://github.com/OpenRAE/rae/issues/1791) |
-| `AptlParticipantControlPlane` in `backends/raes_participant_driver.py` | `raes_runtime.control_plane.RuntimeControlPlane` | No override. It adds `solicit_participant_selection`, which RAES does not have. The method runs the provider solicitation through `execute_participant_action`. Thus the operation is durable before the provider runs, and a timeout or malformed output becomes a failed operation. | `_target`, `_reject_submission` | A public way to add a participant operation that the control plane runs with its idempotency key, request fingerprint, and durable state. | [rae#1791](https://github.com/OpenRAE/rae/issues/1791) |
-| `AptlParticipantRuntime` in `backends/raes_participant_runtime.py` | `raes_backend_protocols.participant_runtime_base.BaseParticipantRuntime` | `__init__` binds the deployment backend, the action specifications, the plan authority, and the autonomous bindings. `admit_actions_concurrently` checks each installed binding before RAES dispatches the batch. `admit_action` keeps the committed behavior history and publishes the action evidence. A publication failure adds diagnostics and keeps the accepted transition. `status` adds the backend name, the action participants, and the scenario source digest. `_model_action` sends an admitted action to its LilRAE realization. | `_model_action`, a private method that the class overrides | A public interface for the native execution of an admitted action, and a hook after a committed admission. | [rae#1790](https://github.com/OpenRAE/rae/issues/1790) |
+| LilRAE class | RAES base | Overrides and the behavior that they add | Private RAES members | Owner |
+| --- | --- | --- | --- | --- |
+| `AptlRuntimeManager` in `backends/raes_planning_compat.py` | `raes_runtime.manager.RuntimeManager` | `__init__` binds the scenario bundle, the admitted planning compatibility decision, and native evidence capture. `apply` runs in the admitted runtime node budget, then captures native evidence. `refresh_inventory` and `evaluate` capture native evidence after the RAES call. `plan` compiles the scenario once, applies the admitted compatibility change, and plans against the committed snapshot. | `_target`. `_runtime_value_limits` replaces `raes_runtime.backend_input_contracts.RUNTIME_SNAPSHOT_VALUE_LIMITS` and the private `raes_runtime.backend_snapshot_contracts._VALUE_LIMITS` during a call, under a process lock. | [rae#1791](https://github.com/OpenRAE/rae/issues/1791) |
+| `AptlParticipantControlPlane` in `backends/raes_participant_driver.py` | `raes_runtime.control_plane.RuntimeControlPlane` | No override. It adds `solicit_participant_selection`, which RAES does not have. The method runs the provider solicitation through `execute_participant_action`. Thus the operation is durable before the provider runs, and a timeout or malformed output becomes a failed operation. | `_target`, `_reject_submission` | [rae#1791](https://github.com/OpenRAE/rae/issues/1791) |
+| `AptlParticipantRuntime` in `backends/raes_participant_runtime.py` | `raes_backend_protocols.participant_runtime_base.BaseParticipantRuntime` | `__init__` binds the deployment backend, the action specifications, the plan authority, and the autonomous bindings. `admit_actions_concurrently` checks each installed binding before RAES dispatches the batch. `admit_action` keeps the committed behavior history and publishes the action evidence. A publication failure adds diagnostics and keeps the accepted transition. `status` adds the backend name, the action participants, and the scenario source digest. `_model_action` sends an admitted action to its LilRAE realization. | `_model_action`, a private method that the class overrides | [rae#1790](https://github.com/OpenRAE/rae/issues/1790) |
 
 ## Stored and adapter-visible types
 
@@ -345,7 +350,7 @@ document against its schema without a local model.
 The scenario adapter API of
 [family adapters](../reference/family-adapters.md) passes these RAES types to
 an adapter. Go port 16 ([#1567](https://github.com/OpenRAE/lilrae/issues/1567))
-defines that API in Go, so RAES Go must make them public.
+defines that API in Go with the RAES Go types that rae sets.
 
 | RAES type | Role in the adapter API | Owner |
 | --- | --- | --- |
@@ -374,11 +379,12 @@ evidence for the Go backend. The LilRAE black-box suite in `conformance/` and
 the [serialization vectors](../reference/serialization-schemes.md) are separate
 evidence, and neither replaces the RAES suite.
 
-## Assignments to confirm upstream
+## Names without a named owner
 
-The owner issues name their scope with module lists and examples. These names
-come from modules that no owner issue names. The table gives the owner that
-follows from the capability. The owner issue must confirm or move each name.
+The owner issues name their scope with module lists and examples. No owner
+issue names the modules of these names. The inventory assigns each name to the
+owner of its capability. When rae or env-packs puts a name in another issue,
+the inventory follows that choice.
 
 | Capability | Owner that follows from the capability | Names |
 | --- | --- | --- |
