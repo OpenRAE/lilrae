@@ -15,12 +15,12 @@ The suite runs the binary that `LILRAE_CONFORMANCE_BINARY` names by an absolute
 path:
 
 ```shell
-LILRAE_CONFORMANCE_BINARY="$PWD/.venv/bin/lilrae" go test ./conformance/
+LILRAE_CONFORMANCE_BINARY="$PWD/.venv/bin/lilrae" go test -C conformance ./...
 ```
 
 The cases in `lab/` need a Docker daemon that only the lab uses. CI runs them
-in the clean-install lab job. `go test -tags integration -run TestLab
-./conformance/` runs them with `LILRAE_CONFORMANCE_SCENARIO` set to the
+in the clean-install lab job. `go test -C conformance -tags integration -run
+TestLab ./...` runs them with `LILRAE_CONFORMANCE_SCENARIO` set to the
 absolute path of the scenario file.
 
 The [serialization schemes](serialization-schemes.md) list the digests,
