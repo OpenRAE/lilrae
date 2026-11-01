@@ -13,11 +13,11 @@ updated_at: 2026-09-20T00:00:00Z
 
 ## Statement
 
-Pull requests to `dev` shall require the existing pre-commit, Python test, MCP
+Pull requests to `dev` shall require the existing pre-commit, control-plane test, MCP
 test, platform dependency audit, and clean-install lab boot checks. The audit
 shall fail for actionable vulnerabilities in shipped CLI/API and MCP
 dependencies while intentionally vulnerable target assets remain advisory.
-The installed-wheel check shall start one supported small lab scenario, verify
+The installed-distribution check shall start one supported small lab scenario, verify
 a native container effect, stop the lab, and prove project-scoped cleanup.
 The supported profile and any temporary platform vulnerability exception shall
 be documented with its affected component and reason.
@@ -32,11 +32,11 @@ cleanup failures without claiming full scenario or participant qualification.
 
 ## Traceability
 
-- IMPLEMENTS → CONFIG `.github/workflows/checks.yml` (Blocking platform audit and one installed-wheel lifecycle smoke)
-- IMPLEMENTS → CONFIG `.github/branch-protection-baseline.json` (Exact required dev check contexts)
+- IMPLEMENTS → CONFIG `.github/workflows/checks.yml` (Blocking platform audit, one installed-wheel lifecycle smoke, and the Go gates)
+- IMPLEMENTS → CONFIG `.github/branch-protection-baseline.json` (Exact required check contexts of dev and go-cutover)
 - IMPLEMENTS → CODE_FILE `scripts/ci/assert_project_teardown.py` (Workspace-scoped container, network, and volume absence proof)
 - IMPLEMENTS → ADR `docs/adrs/adr-026-advisory-ci-vulnerability-scanning.md` (Platform versus intentional-target vulnerability policy)
 - IMPLEMENTS → DOCUMENTATION `docs/testing/platform-pr-gates.md` (Supported gate profile and exception policy)
-- TESTS → TEST `tests/test_platform_ci_gates.py` (Required context, fail-closed audit, and smoke cleanup regressions)
+- TESTS → TEST `tests/test_platform_ci_gates.py` (Required context, fail-closed audit, smoke cleanup, and Go gate regressions)
 - TESTS → TEST `tests/test_assert_project_teardown.py` (Effective workspace resource cleanup regression)
 - IMPLEMENTS → GITHUB_ISSUE `969` (Required platform safety and installed-lab smoke checks)

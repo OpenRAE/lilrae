@@ -1,0 +1,175 @@
+{
+  "corpus": 1,
+  "scheme": "evidence-cut-key",
+  "version": "RAES 10.1.0 models",
+  "owner": "aptl.backends._raes_evidence_truth_refresh.evidence_cut_key",
+  "cases": [
+    {
+      "id": "two-records",
+      "input": [
+        {
+          "schema_version": "experiment-evidence-record/v1",
+          "evidence_record_id": "evidence-65e9c71277e305851e1ff9527a81d7792a6b2442a673bd58d14bdc9e90178e40",
+          "record_version": "1.0.0",
+          "capture_spec_ref": {
+            "ref_kind": "capture-spec",
+            "ref_id": "spec-a",
+            "ref_version": null
+          },
+          "capture_requirement_ref": "req-a",
+          "output_contract": "experiment-evidence-record-v1",
+          "run_ref": {
+            "ref_kind": "run",
+            "ref_id": "run-1",
+            "ref_version": null,
+            "ref_digest": null,
+            "ref_path": null
+          },
+          "task_ref": null,
+          "apparatus_context_ref": null,
+          "source_refs": [
+            {
+              "ref_kind": "measurement-channel",
+              "ref_id": "channel-1",
+              "ref_version": "1",
+              "ref_digest": null,
+              "ref_path": null
+            }
+          ],
+          "evidence_kind": "log",
+          "captured_at": "2026-03-24T02:42:29Z",
+          "capture_window_ref": "req-a",
+          "raw_content": {
+            "artifact_ref": null,
+            "content_uri": "evidence/blobs/b49b7b4fe5f5fa8fc9542e41c7628ee60433bb8cdf69b224695a5cd8d973b4ad",
+            "content_checksum": {
+              "algorithm": "sha256",
+              "value": "b49b7b4fe5f5fa8fc9542e41c7628ee60433bb8cdf69b224695a5cd8d973b4ad"
+            },
+            "payload_summary": "1 event(s), 6 byte(s) retained",
+            "loss_disclosure": null
+          },
+          "sensitivity": "restricted",
+          "redaction_state": "none",
+          "redaction_policy": null,
+          "provenance_refs": [],
+          "typed_description": null
+        },
+        {
+          "schema_version": "experiment-evidence-record/v1",
+          "evidence_record_id": "evidence-b061071c43199cd39589eaa351f6bbd75f25cca086b89a66df7528ea7bc5b1ef",
+          "record_version": "1.0.0",
+          "capture_spec_ref": {
+            "ref_kind": "capture-spec",
+            "ref_id": "spec-b",
+            "ref_version": null
+          },
+          "capture_requirement_ref": "req-b",
+          "output_contract": "experiment-evidence-record-v1",
+          "run_ref": {
+            "ref_kind": "run",
+            "ref_id": "run-1",
+            "ref_version": null,
+            "ref_digest": null,
+            "ref_path": null
+          },
+          "task_ref": null,
+          "apparatus_context_ref": null,
+          "source_refs": [
+            {
+              "ref_kind": "measurement-channel",
+              "ref_id": "channel-1",
+              "ref_version": "1",
+              "ref_digest": null,
+              "ref_path": null
+            }
+          ],
+          "evidence_kind": "log",
+          "captured_at": "2026-03-24T02:42:29Z",
+          "capture_window_ref": "req-b",
+          "raw_content": {
+            "artifact_ref": null,
+            "content_uri": "evidence/blobs/201e33b22aa4f55a98fc6b5b14c6ab2b99bccc1b1ca0a18af0454a047f6b0672",
+            "content_checksum": {
+              "algorithm": "sha256",
+              "value": "201e33b22aa4f55a98fc6b5b14c6ab2b99bccc1b1ca0a18af0454a047f6b0672"
+            },
+            "payload_summary": "1 event(s), 6 byte(s) retained",
+            "loss_disclosure": null
+          },
+          "sensitivity": "restricted",
+          "redaction_state": "none",
+          "redaction_policy": null,
+          "provenance_refs": [],
+          "typed_description": null
+        }
+      ],
+      "expect": {
+        "text": "aptl-native-evidence-187f94dfc1466e1a434fde4467370f70617f3593aabad84463b972776ce4f6de"
+      }
+    },
+    {
+      "id": "one-record",
+      "input": [
+        {
+          "schema_version": "experiment-evidence-record/v1",
+          "evidence_record_id": "evidence-65e9c71277e305851e1ff9527a81d7792a6b2442a673bd58d14bdc9e90178e40",
+          "record_version": "1.0.0",
+          "capture_spec_ref": {
+            "ref_kind": "capture-spec",
+            "ref_id": "spec-a",
+            "ref_version": null
+          },
+          "capture_requirement_ref": "req-a",
+          "output_contract": "experiment-evidence-record-v1",
+          "run_ref": {
+            "ref_kind": "run",
+            "ref_id": "run-1",
+            "ref_version": null,
+            "ref_digest": null,
+            "ref_path": null
+          },
+          "task_ref": null,
+          "apparatus_context_ref": null,
+          "source_refs": [
+            {
+              "ref_kind": "measurement-channel",
+              "ref_id": "channel-1",
+              "ref_version": "1",
+              "ref_digest": null,
+              "ref_path": null
+            }
+          ],
+          "evidence_kind": "log",
+          "captured_at": "2026-03-24T02:42:29Z",
+          "capture_window_ref": "req-a",
+          "raw_content": {
+            "artifact_ref": null,
+            "content_uri": "evidence/blobs/b49b7b4fe5f5fa8fc9542e41c7628ee60433bb8cdf69b224695a5cd8d973b4ad",
+            "content_checksum": {
+              "algorithm": "sha256",
+              "value": "b49b7b4fe5f5fa8fc9542e41c7628ee60433bb8cdf69b224695a5cd8d973b4ad"
+            },
+            "payload_summary": "1 event(s), 6 byte(s) retained",
+            "loss_disclosure": null
+          },
+          "sensitivity": "restricted",
+          "redaction_state": "none",
+          "redaction_policy": null,
+          "provenance_refs": [],
+          "typed_description": null
+        }
+      ],
+      "expect": {
+        "text": "aptl-native-evidence-9b1d27181e53cc57728426ff6abe97d0ca529c36e433abc136dd879d33429588"
+      }
+    },
+    {
+      "id": "empty",
+      "input": [],
+      "expect": {
+        "text": "aptl-native-evidence-4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      }
+    }
+  ]
+}

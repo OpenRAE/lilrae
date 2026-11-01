@@ -1,0 +1,71 @@
+{
+  "corpus": 1,
+  "scheme": "compose-project-name",
+  "version": "current",
+  "owner": "aptl.core.config.validate_compose_project_name",
+  "cases": [
+    {
+      "id": "default",
+      "input": "aptl",
+      "expect": {
+        "text": "aptl"
+      }
+    },
+    {
+      "id": "digits-and-separators",
+      "input": "lab_1-a",
+      "expect": {
+        "text": "lab_1-a"
+      }
+    },
+    {
+      "id": "max-length",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expect": {
+        "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "id": "too-long",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expect": {
+        "reject": "validate"
+      }
+    },
+    {
+      "id": "uppercase",
+      "input": "Aptl",
+      "expect": {
+        "reject": "validate"
+      }
+    },
+    {
+      "id": "leading-hyphen",
+      "input": "-aptl",
+      "expect": {
+        "reject": "validate"
+      }
+    },
+    {
+      "id": "empty",
+      "input": "",
+      "expect": {
+        "reject": "validate"
+      }
+    },
+    {
+      "id": "dot",
+      "input": "a.b",
+      "expect": {
+        "reject": "validate"
+      }
+    },
+    {
+      "id": "non-ascii",
+      "input": "été",
+      "expect": {
+        "reject": "validate"
+      }
+    }
+  ]
+}

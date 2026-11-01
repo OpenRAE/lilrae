@@ -1,0 +1,82 @@
+{
+  "corpus": 1,
+  "scheme": "strict-json",
+  "version": "current",
+  "owner": "aptl.utils.strict_json.loads_strict",
+  "cases": [
+    {
+      "id": "object",
+      "input_hex": "7b2261223a205b312c20322e352c20747275652c206e756c6c5d2c202262223a2022c3a9227d",
+      "expect": {
+        "value": {
+          "a": [
+            1,
+            {
+              "$float": "2.5"
+            },
+            true,
+            null
+          ],
+          "b": "é"
+        }
+      }
+    },
+    {
+      "id": "duplicate-member",
+      "input_hex": "7b2261223a20312c202261223a20327d",
+      "expect": {
+        "reject": "parse"
+      }
+    },
+    {
+      "id": "nan-constant",
+      "input_hex": "7b2261223a204e614e7d",
+      "expect": {
+        "reject": "parse"
+      }
+    },
+    {
+      "id": "infinity-constant",
+      "input_hex": "7b2261223a202d496e66696e6974797d",
+      "expect": {
+        "reject": "parse"
+      }
+    },
+    {
+      "id": "invalid-utf8",
+      "input_hex": "7b2261223a2022c328ff227d",
+      "expect": {
+        "reject": "parse"
+      }
+    },
+    {
+      "id": "large-integer",
+      "input_hex": "7b226e223a203132333435363738393031323334353637383930313233343536373839307d",
+      "expect": {
+        "value": {
+          "n": {
+            "$int": "123456789012345678901234567890"
+          }
+        }
+      }
+    },
+    {
+      "id": "float-one",
+      "input_hex": "7b226e223a20312e307d",
+      "expect": {
+        "value": {
+          "n": {
+            "$float": "1.0"
+          }
+        }
+      }
+    },
+    {
+      "id": "trailing-data",
+      "input_hex": "7b2261223a20317d2078",
+      "expect": {
+        "reject": "parse"
+      }
+    }
+  ]
+}

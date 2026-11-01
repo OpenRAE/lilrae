@@ -2,7 +2,12 @@
 
 ## Status
 
-accepted
+superseded in part by ADR-065
+
+[ADR-065](adr-065-go-implementation-and-engineering-standards.md) supersedes two parts of this record for the Go code: the
+Python mechanisms (grimp, Ruff, and the enrolled list), and the rule that no
+first-party package imports a plugin. In Go, `cmd/lilrae` imports each plugin
+to register it. The layers and the other rules continue.
 
 This record supersedes two clauses of earlier records:
 

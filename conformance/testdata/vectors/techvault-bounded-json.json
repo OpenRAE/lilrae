@@ -1,0 +1,81 @@
+{
+  "corpus": 1,
+  "scheme": "techvault-bounded-json",
+  "version": "current",
+  "owner": "aptl_techvault.evidence.techvault._bounded_json and techvault_readiness_probes.bounded_json",
+  "cases": [
+    {
+      "id": "sorted-nested",
+      "input": {
+        "value": {
+          "b": [
+            1,
+            {
+              "y": 2,
+              "x": 1
+            }
+          ],
+          "a": "é"
+        },
+        "limit": 1024
+      },
+      "expect": {
+        "value": {
+          "native_hex": "7b2261223a225c7530306539222c2262223a5b312c7b2278223a312c2279223a327d5d7d",
+          "readiness_hex": "7b2261223a225c7530306539222c2262223a5b312c7b2278223a312c2279223a327d5d7d"
+        }
+      }
+    },
+    {
+      "id": "over-limit",
+      "input": {
+        "value": {
+          "a": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        "limit": 16
+      },
+      "expect": {
+        "value": {
+          "native_hex": "7b2261223a2278787878787878787878787878787878787878787878787878787878787878787878787878787878227d",
+          "readiness_hex": null
+        }
+      },
+      "note": "The readiness helper returns no bytes above its limit."
+    },
+    {
+      "id": "float",
+      "input": {
+        "value": {
+          "a": {
+            "$float": "1.0"
+          }
+        },
+        "limit": 1024
+      },
+      "expect": {
+        "value": {
+          "native_hex": "7b2261223a312e307d",
+          "readiness_hex": "7b2261223a312e307d"
+        }
+      }
+    },
+    {
+      "id": "nan",
+      "input": {
+        "value": {
+          "a": {
+            "$float": "nan"
+          }
+        },
+        "limit": 1024
+      },
+      "expect": {
+        "value": {
+          "native_hex": "7b2261223a4e614e7d",
+          "readiness_hex": "7b2261223a4e614e7d"
+        }
+      },
+      "note": "The helpers write NaN, which is not JSON."
+    }
+  ]
+}

@@ -90,7 +90,19 @@ nav:
     - Coding Standards: CODING_STANDARDS.md
   - Architecture:
     - Overview: architecture/index.md
+    - Go Architecture: architecture/go-architecture.md
+    - RAES Consumer Inventory: architecture/raes-consumer-inventory.md
+    - "Issue #1583 Architecture Model Preflight": architecture/issue-1583-architecture-model-preflight.md
+    - "Issue #1583 Architecture Model Design": architecture/issue-1583-architecture-model-design.md
     - "Issue #1584 Go Cutover Branch Preflight": architecture/issue-1584-go-cutover-preflight.md
+    - "Issue #1552 Go Architecture Preflight": architecture/issue-1552-go-architecture-preflight.md
+    - "Issue #1553 Go Toolchain Preflight": architecture/issue-1553-go-toolchain-preflight.md
+    - "Issue #1553 Go Toolchain Design": architecture/issue-1553-go-toolchain-design.md
+    - "Issue #1554 Conformance Preflight": architecture/issue-1554-conformance-preflight.md
+    - "Issue #1554 Conformance Design": architecture/issue-1554-conformance-design.md
+    - "Issue #1555 Serialization Vectors Preflight": architecture/issue-1555-serialization-vectors-preflight.md
+    - "Issue #1555 Serialization Vectors Design": architecture/issue-1555-serialization-vectors-design.md
+    - "Issue #1556 RAES Go Boundary Preflight": architecture/issue-1556-raes-go-boundary-preflight.md
     - "Issue #1510 Code Quality Architecture Preflight": architecture/issue-1510-code-quality-preflight.md
     - "Issue #1510 Code Quality Architecture Design": architecture/issue-1510-code-quality-design.md
     - "Issue #1372 Capture Spec Version Preflight": architecture/issue-1372-capture-spec-version-preflight.md
@@ -185,6 +197,8 @@ nav:
     - TechVault OSINT Readiness: reference/techvault-osint-readiness.md
     - Experiment Runs: reference/experiment-runs.md
     - Portable Evidence Bundle Export: reference/evidence-bundle-export.md
+    - Conformance Inventory: reference/conformance-inventory.md
+    - Serialization Schemes: reference/serialization-schemes.md
     - SOC Feature Spec: specs/soc-feature-spec.md
     - Web GUI Design Specification: specs/web-gui-design.md
     - Web GUI Design Preflight Guardrails: specs/web-gui-design-preflight.md
@@ -255,6 +269,7 @@ nav:
     - ADR-062 LilRAE Name and Naming Convention: adrs/adr-062-lilrae-name-and-naming-convention.md
     - ADR-063 Remove TheHive and Cortex: adrs/adr-063-remove-thehive-and-cortex.md
     - ADR-064 Layered Architecture and Code Conventions: adrs/adr-064-layered-architecture-and-code-conventions.md
+    - ADR-065 Go Implementation, Architecture Model, and Engineering Standards: adrs/adr-065-go-implementation-and-engineering-standards.md
 
 extra:
   social:

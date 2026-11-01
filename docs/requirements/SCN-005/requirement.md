@@ -30,3 +30,4 @@ Comparing runs requires knowing the exact lab state during each run.
 - TESTS → TEST `mcp/aptl-mcp-common/tests/redaction.test.ts` (Vitest coverage for the TypeScript redaction helper)
 - IMPLEMENTS → CODE_FILE `src/aptl/core/endpoints.py` (Snapshot endpoint registry (service + SSH endpoint derivation))
 - TESTS → TEST `tests/test_endpoints.py` (Endpoint registry + parse_host_port unit tests)
+- TESTS → TEST `conformance/testdata/lab/lifecycle.txtar` (Black-box range snapshot of lab status against its published schema)

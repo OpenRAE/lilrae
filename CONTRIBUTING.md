@@ -98,9 +98,38 @@ cd web && npx vitest run tests/specific.test.ts
 ```
 
 When test files changed, `bash tools/run-targeted-tests.sh` derives those
-targets from the branch and worktree. You can instead pass explicit Python test
-paths to the script. CI/CD remains the authority for full suites, coverage,
+targets from the branch and worktree. You can instead pass explicit Python or
+Go test paths to the script. CI/CD remains the authority for full suites, coverage,
 whole-tree lint, dependency checks, and prose/build gates.
+
+### Go code
+
+Milestone 44 adds the Go implementation on the `go-cutover` branch. Its pull
+requests target `go-cutover`, not `dev`
+([CI verification](docs/architecture/ci-verification.md#go-cutover-branch)).
+[ADR-065](docs/adrs/adr-065-go-implementation-and-engineering-standards.md)
+gives the rules.
+
+- Install the Go release that `go.mod` names. With `GOTOOLCHAIN=auto`, the go
+  command downloads it.
+- `bash tools/run-targeted-tests.sh path/to/x_test.go` runs the whole package of
+  each named test file with `go test -race -shuffle=on`. Without arguments, it
+  runs the packages of the changed test files. It reads the base branch from
+  `.ground-control.yaml`. It sends other arguments to pytest, which runs
+  first. A pytest plugin stops the run unless each test path that pytest
+  reads names a test file.
+- The `go-format` pre-commit hook checks the staged Go files with the gofmt of
+  the pinned toolchain.
+- `bash tools/ci/go-gates.sh lint` runs gofmt, go vet, `go mod tidy -diff`,
+  `go fix -diff`, and golangci-lint over each first-party module.
+- `LILRAE_CONFORMANCE_BINARY="$PWD/.venv/bin/lilrae" go test -C conformance ./...`
+  runs the conformance suite against an installed binary. The suite is a Go
+  module of its own. The
+  [inventory](docs/reference/conformance-inventory.md) lists its cases.
+- A regression test carries the line `regression: #<issue>` in the doc comment
+  of its test function. CI replays it on the base revision, where it must fail.
+- Do not run the mutation, vulnerability, or full test gates locally. CI runs
+  them.
 
 When changing files under `mcp/aptl-mcp-common`, run targeted common and
 dependent-server tests while iterating. CI/CD rebuilds and tests every dependent

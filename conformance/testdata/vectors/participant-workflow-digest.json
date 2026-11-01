@@ -1,0 +1,94 @@
+{
+  "corpus": 1,
+  "scheme": "participant-workflow-digest",
+  "version": "current",
+  "owner": "aptl.backends.raes_participant_fixture_core._mapping_digest",
+  "cases": [
+    {
+      "id": "ascii-sorted",
+      "input": {
+        "b": 1,
+        "a": [
+          1,
+          2
+        ],
+        "c": {
+          "z": null,
+          "y": true
+        }
+      },
+      "expect": {
+        "text": "sha256:e837f1e32ce045a4445bf87ef13c79c402662502b5ada2404465274682067d44"
+      }
+    },
+    {
+      "id": "non-ascii",
+      "input": {
+        "ké": "vé€😀"
+      },
+      "expect": {
+        "text": "sha256:b52daeb2e6bd2ae50f8cc1a90770bef54349db17645073335a91ef08ff6503d3"
+      }
+    },
+    {
+      "id": "html-characters",
+      "input": {
+        "h": "<a>&</a>"
+      },
+      "expect": {
+        "text": "sha256:84261d82ef0a2f93041425ae297ad1055fb65443b2f2e45b74836b50acab1e42"
+      }
+    },
+    {
+      "id": "float-one",
+      "input": {
+        "n": {
+          "$float": "1.0"
+        }
+      },
+      "expect": {
+        "text": "sha256:3b6b06ecd1c968c8e738e0f11c4bb361fca80a9a694de22fe66a05286afbd081"
+      }
+    },
+    {
+      "id": "negative-zero",
+      "input": {
+        "n": {
+          "$float": "-0.0"
+        }
+      },
+      "expect": {
+        "text": "sha256:a8a313cade05001e69f7ddb5db01e1e2d06fb8f6913ab492cc4506d4e65d465a"
+      }
+    },
+    {
+      "id": "integer-large",
+      "input": {
+        "n": {
+          "$int": "123456789012345678901234567890"
+        }
+      },
+      "expect": {
+        "text": "sha256:03b8f78ef5e8a305f4cda82942db0c6accec4046b40457ae19055ea5e4fff2ac"
+      }
+    },
+    {
+      "id": "nan-written",
+      "input": {
+        "n": {
+          "$float": "nan"
+        }
+      },
+      "expect": {
+        "text": "sha256:df38c4379aa2b6d4a7151668f11c6cdf75dc52f52588502956377adddf9e1a26"
+      }
+    },
+    {
+      "id": "empty",
+      "input": {},
+      "expect": {
+        "text": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      }
+    }
+  ]
+}

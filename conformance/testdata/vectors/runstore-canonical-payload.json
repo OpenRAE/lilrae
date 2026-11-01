@@ -1,0 +1,57 @@
+{
+  "corpus": 1,
+  "scheme": "runstore-canonical-payload",
+  "version": "current",
+  "owner": "aptl.core.runstore_internals._canonicalize_payload",
+  "cases": [
+    {
+      "id": "nested",
+      "input": {
+        "b": [
+          1,
+          2
+        ],
+        "a": {
+          "z": "é"
+        }
+      },
+      "expect": {
+        "hex": "7b2261223a7b227a223a22c3a9227d2c2262223a5b312c325d7d"
+      }
+    },
+    {
+      "id": "float-one",
+      "input": {
+        "n": {
+          "$float": "1.0"
+        }
+      },
+      "expect": {
+        "hex": "7b226e223a317d"
+      }
+    },
+    {
+      "id": "nan",
+      "input": {
+        "n": {
+          "$float": "nan"
+        }
+      },
+      "note": "json.dumps accepts NaN; RFC 8785 then rejects it",
+      "expect": {
+        "reject": "serialize"
+      }
+    },
+    {
+      "id": "large-integer",
+      "input": {
+        "n": {
+          "$int": "9007199254740993"
+        }
+      },
+      "expect": {
+        "reject": "serialize"
+      }
+    }
+  ]
+}
