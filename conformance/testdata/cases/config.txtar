@@ -39,4 +39,4 @@ stderr 'no aptl\.json found'
 -- unknown-field.json --
 {"lab": {"name": "aptl", "unknown_field": 1}}
 -- broken.json --
-{"lab": 
+{"lab":

@@ -134,7 +134,8 @@ def test_go_changes_select_the_go_and_docs_lanes_and_the_coverage_closure():
         "docs/reference/conformance-inventory.md",
     ):
         lanes = select([path])
-        assert lanes["go"] and lanes["lab"], path
+        assert lanes["go"], path
+        assert lanes["lab"], path
     assert not select(["internal/core/value.go"])["lab"]
     # Python changes need current Go coverage for the project-wide analysis.
     assert select(["src/aptl/core/lab.py"])["go"]
