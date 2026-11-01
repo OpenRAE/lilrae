@@ -16,8 +16,11 @@ exec git commit --quiet --message=weak
 stdout 'efficacy: 50.00% is below the threshold of 100%'
 stdout 'sub/calc/calc.go:6:13: LIVED CONDITIONALS_BOUNDARY'
 
-# A strong test kills each mutant.
+# A strong test kills each mutant. Gremlins cannot test a file that the host
+# does not build, so the gate leaves it out instead of counting its mutants as
+# not covered.
 cp _head/strong_test.go sub/calc/calc_test.go
+cp _head/never.go sub/calc/never.go
 exec git add --all
 exec git commit --quiet --message=strong
 exec git tag strong
@@ -30,6 +33,37 @@ exec git add --all
 exec git commit --quiet --message=comment
 exec bash $GATES mutation strong
 stdout 'the changed lines hold no mutant'
+
+# A module list limits the gate to those modules.
+mkdir other/calc
+cp _head/go.mod other/go.mod
+cp _head/adult.go other/calc/calc.go
+cp _head/weak_test.go other/calc/calc_test.go
+exec git add --all
+exec git commit --quiet --message=other
+! exec bash $GATES mutation strong
+stdout 'other/calc/calc.go:6:13: LIVED CONDITIONALS_BOUNDARY'
+exec bash $GATES mutation strong sub
+stdout '1 changed production file\(s\) in 1 module\(s\)'
+stdout 'the changed lines hold no mutant'
+! stdout 'other/calc'
+
+# A change of a module and of a module nested in it mutates each file only in
+# its own module, where its tests run.
+exec git tag before-nested
+mkdir outer/inner/calc
+cp _head/outer.go.mod outer/go.mod
+cp _head/adult.go outer/adult.go
+cp _head/strong_test.go outer/adult_test.go
+cp _head/inner.go.mod outer/inner/go.mod
+cp _head/adult.go outer/inner/calc/calc.go
+cp _head/strong_test.go outer/inner/calc/calc_test.go
+exec git add --all
+exec git commit --quiet --message=nested
+exec bash $GATES mutation before-nested
+stdout '2 changed production file\(s\) in 2 module\(s\)'
+stdout 'efficacy 100.00%'
+stdout 'mutant coverage 100.00%'
 
 -- README --
 fixture
@@ -48,6 +82,27 @@ package calc
 func Adult(age int) bool {
 	return age >= 18
 }
+-- _head/never.go --
+//go:build never
+
+package calc
+
+// Never compares an age that no build reads.
+func Never(age int) bool {
+	return age > 1
+}
+-- _head/outer.go.mod --
+module example.com/outer
+
+go 1.27.0
+-- _head/inner.go.mod --
+module example.com/inner
+
+go 1.27.0
+-- _head/go.mod --
+module example.com/other
+
+go 1.27.0
 -- _head/comment.go --
 // Package calc decides ages.
 package calc

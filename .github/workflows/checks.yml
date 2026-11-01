@@ -1354,6 +1354,60 @@ jobs:
           fi
           bash tools/ci/go-gates.sh mutation "$base"
 
+  go-cross-platform:
+    name: Go product tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    needs: [changes]
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.go == 'true')
+    concurrency:
+      group: checks-go-cross-platform-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-${{ matrix.os }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      GOWORK: "off"
+      GOTOOLCHAIN: local
+    steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      # The product module ships for Linux, macOS, and Windows (#1605). The
+      # tools modules run on Linux only.
+      - name: Race-detected, shuffled tests of the product module
+        run: bash tools/ci/go-gates.sh test "$RUNNER_TEMP/go-coverage" .
+      # The Linux mutation job leaves out each file that Linux does not
+      # build. This job mutates the product module where those files build.
+      - name: Mutate the changed Go production lines of the product module
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE: ${{ github.event.before }}
+        run: |
+          base=
+          case "$EVENT_NAME" in
+            pull_request) base=$PR_BASE ;;
+            push) base=$PUSH_BASE ;;
+          esac
+          if [[ ! "$base" =~ ^[0-9a-f]{40}$ || "$base" =~ ^0{40}$ ]]; then
+            base=
+          fi
+          bash tools/ci/go-gates.sh mutation "$base" .
+
   go-regression:
     name: Go regression tests
     runs-on: ubuntu-latest

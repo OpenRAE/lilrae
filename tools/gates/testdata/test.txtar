@@ -10,6 +10,18 @@ grep '^calc/calc.go:' cov/root.out
 cp _bad/race_test.go calc/race_test.go
 ! exec bash $GATES test $WORK/cov
 stdout 'WARNING: DATA RACE'
+rm calc/race_test.go
+
+# A module list limits the gate to those modules.
+mkdir broken
+cp _bad/go.mod broken/go.mod
+cp _bad/broken_test.go broken/broken_test.go
+exec git add broken/go.mod
+! exec bash $GATES test $WORK/cov
+stdout 'FAIL	example.com/broken'
+exec bash $GATES test $WORK/cov .
+stdout 'ok  	example.com/fixture/calc'
+! stdout 'example.com/broken'
 
 -- go.mod --
 module example.com/fixture
@@ -53,4 +65,16 @@ func TestRace(t *testing.T) {
 	}
 	wg.Wait()
 	t.Log(n)
+}
+-- _bad/go.mod --
+module example.com/broken
+
+go 1.27.0
+-- _bad/broken_test.go --
+package broken
+
+import "testing"
+
+func TestBroken(t *testing.T) {
+	t.Error("the module fails")
 }

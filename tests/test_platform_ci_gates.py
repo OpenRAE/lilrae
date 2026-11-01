@@ -498,6 +498,28 @@ def test_go_gates_block_and_are_required_on_go_cutover() -> None:
     assert jobs["go-regression"]["permissions"] == {"contents": "read", "issues": "read"}
 
 
+def test_go_product_tests_and_mutation_run_on_macos_and_windows() -> None:
+    """The product module is tested and mutated on each platform (#1605).
+
+    The Linux mutation job leaves out each file that Linux does not build, so
+    this job is the gate of those files. It blocks like the other Go gates.
+    """
+
+    jobs = _jobs()
+    job = jobs["go-cross-platform"]
+    cutover = set(_protected_branches()["go-cutover"]["required_status_checks"]["contexts"])
+    assert job["strategy"]["matrix"]["os"] == ["macos-latest", "windows-latest"]
+    for os_name in job["strategy"]["matrix"]["os"]:
+        assert job["name"].replace("${{ matrix.os }}", os_name) in cutover, os_name
+    assert "continue-on-error" not in job
+    assert job["if"] == jobs["go-mutation"]["if"]
+    assert job["steps"][0]["name"] == "Validate check selection"
+    assert job["steps"][1]["with"]["fetch-depth"] == 0
+    runs = [step.get("run", "") for step in job["steps"]]
+    assert 'bash tools/ci/go-gates.sh test "$RUNNER_TEMP/go-coverage" .' in runs
+    assert any(run.endswith('bash tools/ci/go-gates.sh mutation "$base" .\n') for run in runs)
+
+
 def test_go_architecture_runs_on_every_change_and_is_required_on_go_cutover() -> None:
     """The architecture check of ADR-065 runs whatever routing selects (#1583).
 

@@ -393,9 +393,44 @@ func TestCheckPassesTheSettingsAndAddsTheCountsOfEachModule(t *testing.T) {
 		t.Fatal(err)
 	}
 	for line := range strings.SplitSeq(strings.TrimSpace(string(args)), "\n") {
-		if !strings.HasSuffix(line, " --workers 3 --timeout-coefficient 7 .") || strings.Contains(line, "--diff") {
+		if !strings.Contains(line, " --workers 3 --timeout-coefficient 7 ") || !strings.HasSuffix(line, " .") || strings.Contains(line, "--diff") {
 			t.Errorf("Gremlins arguments = %q, want --workers 3 --timeout-coefficient 7 and no --diff for a full run", line)
 		}
+	}
+}
+
+func TestCheckLeavesOutTheFilesThatTheTestsOfTheModuleCannotCover(t *testing.T) {
+	t.Parallel()
+	r := gittest.New(t)
+	never := "//go:build never\n\npackage calc\n"
+	r.Commit(map[string]string{
+		"go.mod":              goMod,
+		"calc/calc.go":        adultSource("// Adult reports whether age is adult.\n"),
+		"calc/never.go":       never,
+		"calc/never_test.go":  never,
+		"other/other.go":      "//go:build never\n\npackage other\n",
+		"sub/go.mod":          goMod,
+		"sub/calc/calc.go":    adultSource("// Adult reports whether age is adult.\n"),
+		"testdata/fixture.go": "package fixture\n",
+		"_scratch/scratch.go": "package scratch\n",
+	})
+	dir := t.TempDir()
+	gremlins := filepath.Join(dir, "gremlins")
+	writeFile(t, gremlins, "#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$(dirname \"$0\")/args.txt\"\n")
+	if err := os.Chmod(gremlins, 0o700); err != nil { //nolint:gosec // G302: the fake program needs the owner execute bit; 0700 gives no access to other users.
+		t.Fatal(err)
+	}
+
+	check(t, mutation.Config{Repo: r.Dir, Modules: []string{"."}, Gremlins: gremlins, Thresholds: thresholdsFile(t)})
+
+	args, err := os.ReadFile(filepath.Join(dir, "args.txt")) //nolint:gosec // G304: the path is in the temporary directory of the test.
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := ` --exclude-files ^\.git/ --exclude-files ^_scratch/ --exclude-files ^calc/never\.go$` +
+		` --exclude-files ^other/other\.go$ --exclude-files ^sub/ --exclude-files ^testdata/ .`
+	if got := strings.TrimSpace(string(args)); !strings.HasSuffix(got, want) {
+		t.Errorf("Gremlins arguments = %q, want the suffix %q: the ignored directories, the nested module, and each production file that the host does not build", got, want)
 	}
 }
 

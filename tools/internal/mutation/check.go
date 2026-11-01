@@ -230,10 +230,18 @@ func mutate(ctx context.Context, cfg Config, root, module, base string) (counts 
 	if base != "" {
 		args = append(args, "--diff", base)
 	}
+	moduleDir := filepath.Join(root, filepath.FromSlash(module))
+	rules, err := exclusions(moduleDir)
+	if err != nil {
+		return Counts{}, nil, err
+	}
+	for _, rule := range rules {
+		args = append(args, "--exclude-files", rule)
+	}
 	// G204 is a false positive: the program comes from the configuration, no
 	// shell runs, and the arguments are fixed or a full commit name.
 	cmd := exec.CommandContext(ctx, cfg.Gremlins, append(args, ".")...) //nolint:gosec // G204: fixed program, argv without a shell.
-	cmd.Dir = filepath.Join(root, filepath.FromSlash(module))
+	cmd.Dir = moduleDir
 	cmd.Env = gremlinsEnv(os.Environ())
 	cmd.Stdout = cfg.Log
 	cmd.Stderr = cfg.Log
