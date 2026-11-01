@@ -70,10 +70,11 @@ func params(t *testing.T, bin, dir string, env map[string]string) testscript.Par
 			return isolate(e)
 		},
 		Cmds: map[string]func(*testscript.TestScript, bool, []string){
-			"lilrae": runBinary(bin),
-			"status": checkStatus,
-			"schema": checkSchema(schemas),
-			"jq":     checkQuery(modules),
+			"lilrae":  runBinary(bin),
+			"cleanup": deferBinary(bin),
+			"status":  checkStatus,
+			"schema":  checkSchema(schemas),
+			"jq":      checkQuery(modules),
 		},
 	}
 }
@@ -185,6 +186,23 @@ func runBinary(bin string) func(*testscript.TestScript, bool, []string) {
 		if !neg && last.status != 0 {
 			ts.Fatalf("lilrae exited with status %d; want 0", last.status)
 		}
+	}
+}
+
+// deferBinary returns the cleanup command: it runs the binary under test with
+// the arguments when the script ends, also after a failure, so a case that
+// starts a lab does not leave it running. A cleanup failure goes to the log;
+// a case checks its own success path with its last commands.
+func deferBinary(bin string) func(*testscript.TestScript, bool, []string) {
+	return func(ts *testscript.TestScript, neg bool, args []string) {
+		if neg || len(args) == 0 {
+			ts.Fatalf("usage: cleanup ARG...")
+		}
+		ts.Defer(func() {
+			if err := ts.Exec(bin, args...); err != nil {
+				ts.Logf("cleanup: lilrae %s: %v", strings.Join(args, " "), err)
+			}
+		})
 	}
 }
 

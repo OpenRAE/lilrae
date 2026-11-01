@@ -71,6 +71,7 @@ design record.
    | Command | Meaning |
    | --- | --- |
    | `lilrae ARG...` | Run the binary. `! lilrae` expects a nonzero exit status. |
+   | `cleanup ARG...` | Run the binary when the script ends, also after a failure. A cleanup failure goes to the log. |
    | `status N` | The last `lilrae` command exited with status `N`. |
    | `schema NAME FILE` | The JSON file conforms to the published schema `NAME`. |
    | `jq FILE QUERY` | The jq query on the JSON file gives exactly one value, `true`. gojq runs it. |
@@ -91,7 +92,9 @@ design record.
    The `clean-install-lab-boot` job runs it with the installed wheel, a fresh
    project, and the product-neutral scenario that
    `LILRAE_CONFORMANCE_SCENARIO` names. The job keeps its own realization and
-   teardown checks.
+   teardown checks. A lab case registers `cleanup lab stop --volumes --yes`
+   before it starts the lab, so a failed assertion leaves no lab. Its last
+   command, `lab reset`, returns the lab to a clean, stopped state.
 5. **Schemas.** `docs/reference/schemas/` holds the published JSON Schemas
    (draft 2020-12). The documentation site serves the same files that the
    suite reads, so no copy can drift. Each schema has an `$id` below
@@ -101,9 +104,12 @@ design record.
 6. **Schema rules.** An action result permits additional fields, because a new
    field keeps its schema version. The configuration rejects unknown fields at
    each level, as its models do. A field that can be `null` and a field that
-   can be absent are different rules. Pydantic models give the first draft of
-   a schema; the published schema is reviewed, and the suite never makes a
-   schema from the implementation that it tests.
+   can be absent are different rules. A schema with a top-level
+   `schema_version` requires it, because each reader rejects a document
+   without its version; `TestSchemasRequireTheirVersion` checks this.
+   Pydantic models give the first draft of a schema; the published schema is
+   reviewed, and the suite never makes a schema from the implementation that
+   it tests.
 7. **RAES records.** RAES owns `experiment-run-v1` and
    `experiment-evidence-record-v1`. The inventory names their published RAES
    schemas. This issue does not copy them.
@@ -134,7 +140,8 @@ design record.
 12. **Review fixes of the gates.** The regression replay rejects a head run
     whose `go test` command fails after the test passes. It overlays the head
     contents of the target of each test data link, a file or a directory, in
-    any order of the entries.
+    any order of the entries. It follows each link in a target too, once, so a
+    cycle of links ends.
 13. **Self-test.** `TestHarnessCommandsFail` runs scripts with false
     assertions against a fake binary, and each must fail, so a command of the
     harness cannot pass without a check.

@@ -1,9 +1,12 @@
 # The lab cases start the product-neutral scenario that
 # LILRAE_CONFORMANCE_SCENARIO names, on a Docker daemon that only the lab uses,
 # and check the JSON results of start, status, stop, and reset, the range
-# snapshot, and the run record.
+# snapshot, and the run record. The reset at the end returns the lab to a
+# clean, stopped state. When an assertion fails before it, the cleanup stops
+# the lab and removes its volumes.
 lilrae lab init proj
 cd proj
+cleanup lab stop --project-dir $WORK/proj --volumes --yes
 mkdir scenarios
 cp $LILRAE_CONFORMANCE_SCENARIO scenarios/scenario.sdl.yaml
 

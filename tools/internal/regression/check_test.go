@@ -540,6 +540,36 @@ func TestCheckReplaysLinksInAnyOrder(t *testing.T) {
 	}
 }
 
+// regression: #1554
+func TestCheckReplaysTheTargetOfALinkInALinkTarget(t *testing.T) {
+	t.Parallel()
+	r := newRepo(t)
+	links := map[string]string{"calc/testdata": "../shared", "shared/want.txt": "../fixtures/want.txt"}
+	for name, target := range links {
+		path := filepath.Join(r.Dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1"), "fixtures/want.txt": "1\n"})
+	r.Commit(map[string]string{
+		"calc/calc.go":      valueSource("2"),
+		"fixtures/want.txt": "2\n",
+		"calc/calc_test.go": "package calc\n\nimport (\n\t\"os\"\n\t\"strconv\"\n\t\"testing\"\n)\n\n// regression: #7\nfunc TestValue(t *testing.T) {\n" +
+			"\twant, err := os.ReadFile(\"testdata/want.txt\")\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n" +
+			"\tif got := strconv.Itoa(Value()) + \"\\n\"; got != string(want) {\n\t\tt.Fatalf(\"Value() = %q, want %q\", got, want)\n\t}\n}\n",
+	})
+
+	report := r.check(base, 7, false)
+
+	if got := messages(report); len(got) != 0 {
+		t.Errorf("findings = %q, want none: the base run needs the head fixture behind the nested link", got)
+	}
+}
+
 func TestCheckRejectsATestDataLinkToItsPackage(t *testing.T) {
 	t.Parallel()
 	r := newRepo(t)

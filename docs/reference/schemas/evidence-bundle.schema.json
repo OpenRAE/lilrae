@@ -417,6 +417,7 @@
     }
   },
   "required": [
+    "schema_version",
     "bundle_profile",
     "limits_profile",
     "run_id",
