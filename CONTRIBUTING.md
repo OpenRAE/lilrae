@@ -122,8 +122,9 @@ gives the rules.
   the pinned toolchain.
 - `bash tools/ci/go-gates.sh lint` runs gofmt, go vet, `go mod tidy -diff`,
   `go fix -diff`, and golangci-lint over each first-party module.
-- `LILRAE_CONFORMANCE_BINARY="$PWD/.venv/bin/lilrae" go test ./conformance/`
-  runs the conformance suite against an installed binary. The
+- `LILRAE_CONFORMANCE_BINARY="$PWD/.venv/bin/lilrae" go test -C conformance ./...`
+  runs the conformance suite against an installed binary. The suite is a Go
+  module of its own. The
   [inventory](docs/reference/conformance-inventory.md) lists its cases.
 - A regression test carries the line `regression: #<issue>` in the doc comment
   of its test function. CI replays it on the base revision, where it must fail.
