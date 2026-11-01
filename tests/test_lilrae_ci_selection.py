@@ -103,3 +103,54 @@ def test_qualification_pulls_and_checks_the_catalog_dashboard(monkeypatch):
     )
     assert (["docker", "pull", image], {"check": True}) in calls
     assert (["docker", "image", "inspect", image], {"check": True}) in calls
+
+
+def test_go_changes_select_the_go_and_docs_lanes_and_the_coverage_closure():
+    select = selector().select_lanes
+    for path in (
+        "go.mod",
+        "doc.go",
+        "internal/core/value.go",
+        "cmd/lilrae/main.go",
+        "tools/internal/regression/check.go",
+        "architecture/model.yaml",
+        "tools/gates/testdata/lint.txtar",
+        "tools/lint/go.sum",
+        "tools/mutation-thresholds.json",
+        ".golangci.yml",
+    ):
+        lanes = select([path])
+        assert lanes["go"], path
+        assert all(lanes[name] for name in ("python", "mcp", "web")), path
+        assert not lanes["lab"], path
+    assert select(["internal/core/value.go"])["docs"]
+    assert not select(["tools/lint/go.sum"])["docs"]
+    # The conformance cases, the schemas, and the inventory also select the
+    # lab lane, whose clean-install job runs the lab cases (#1554).
+    for path in (
+        "conformance/harness_test.go",
+        "conformance/testdata/lab/lifecycle.txtar",
+        "docs/reference/schemas/lab-start-result.schema.json",
+        "docs/reference/conformance-inventory.md",
+    ):
+        lanes = select([path])
+        assert lanes["go"], path
+        assert lanes["lab"], path
+    assert not select(["internal/core/value.go"])["lab"]
+    # The serialization vectors feed the Python tests, not the lab (#1555).
+    vectors = select(["conformance/testdata/vectors/rfc8785.json"])
+    assert vectors["python"]
+    assert not vectors["lab"]
+    # A Python test reads the scheme inventory, so a change to it runs that test.
+    schemes = select(["docs/reference/serialization-schemes.md"])
+    assert schemes["python"]
+    assert schemes["docs"]
+    # Python changes need current Go coverage for the project-wide analysis.
+    assert select(["src/aptl/core/lab.py"])["go"]
+    # The Caddy build keeps its own module and its web checks.
+    caddy = select(["web/caddy-build/main.go"])
+    assert caddy["web"]
+    # Python tools still select all lanes, and Go source outside the ADR-065
+    # layout keeps the routing of its directory.
+    assert all(select(["tools/check_pack_boundary.py"]).values())
+    assert select(["scripts/tool/main.go"])["lab"]

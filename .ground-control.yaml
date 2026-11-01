@@ -2,6 +2,10 @@ schema_version: 1
 project: aptl
 github_repo: OpenRAE/lilrae
 workflow:
+  # go-cutover only: /implement prepares, synchronizes, and opens pull
+  # requests against this branch. dev keeps the default base. Go port 31
+  # removes this key before it merges go-cutover into dev (#1584).
+  base_branch: go-cutover
   # Local verification is deliberately change-scoped. The helper runs only
   # changed test files (or explicit paths supplied by the caller); it refuses
   # to fall back to a bare/full suite. CI/CD owns full suites and coverage.

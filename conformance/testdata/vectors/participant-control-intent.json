@@ -1,0 +1,98 @@
+{
+  "corpus": 1,
+  "scheme": "participant-control-intent",
+  "version": "current",
+  "owner": "aptl.backends._raes_participant_execution._control_intent_fields",
+  "cases": [
+    {
+      "id": "control-evidence",
+      "input": {
+        "run_id": "run-1",
+        "suffix": "inject",
+        "expected_state_revision": 3,
+        "turn": {
+          "participant_address": "participant.red",
+          "address": "turns.first",
+          "control_evidence_addresses": [
+            "evidence.a"
+          ],
+          "evidence_requirement_addresses": [
+            "evidence.b"
+          ],
+          "control_policy_revision": 2,
+          "event_address": "events.e",
+          "script_address": "scripts.s",
+          "story_address": "stories.t",
+          "source_item_ref": "items.i",
+          "failure_disposition": "limitations.l"
+        }
+      },
+      "expect": {
+        "value": {
+          "episode_id": "7cc9b9eb-22bb-5581-8b4a-d319fcaf7d7f",
+          "client_correlation_id": "turns.first:inject",
+          "policy_revision": 2,
+          "expected_state_revision": 3,
+          "provenance_refs": [
+            "events.e",
+            "scripts.s",
+            "stories.t"
+          ],
+          "evidence_refs": [
+            "evidence.a"
+          ],
+          "object_marking_refs": [
+            "items.i"
+          ],
+          "limitation_refs": [
+            "limitations.l"
+          ]
+        }
+      }
+    },
+    {
+      "id": "requirement-evidence",
+      "input": {
+        "run_id": "run-é",
+        "suffix": "observe",
+        "expected_state_revision": 0,
+        "turn": {
+          "participant_address": "participant.é",
+          "address": "turns.second",
+          "control_evidence_addresses": [],
+          "evidence_requirement_addresses": [
+            "evidence.b"
+          ],
+          "control_policy_revision": 1,
+          "event_address": "events.e",
+          "script_address": "scripts.s",
+          "story_address": "stories.t",
+          "source_item_ref": "items.i",
+          "failure_disposition": "limitations.l"
+        }
+      },
+      "expect": {
+        "value": {
+          "episode_id": "33a9e7ed-fbdf-504d-9808-fab8ccd8db9c",
+          "client_correlation_id": "turns.second:observe",
+          "policy_revision": 1,
+          "expected_state_revision": 0,
+          "provenance_refs": [
+            "events.e",
+            "scripts.s",
+            "stories.t"
+          ],
+          "evidence_refs": [
+            "evidence.b"
+          ],
+          "object_marking_refs": [
+            "items.i"
+          ],
+          "limitation_refs": [
+            "limitations.l"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "corpus": 1,
+  "scheme": "techvault-boundary-policy",
+  "version": "current",
+  "owner": "aptl.appliance.policy.write_full_techvault_boundary_policy",
+  "cases": [
+    {
+      "id": "constant",
+      "input": {},
+      "expect": {
+        "value": {
+          "sha256": "6eac13eb97e3769cd8d3f298a6cdd4ad1f8fa54be89c83a244099252acc2938d",
+          "size": 1307
+        }
+      },
+      "note": "The policy is a constant of the TechVault appliance."
+    }
+  ]
+}

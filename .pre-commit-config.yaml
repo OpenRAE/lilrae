@@ -1,4 +1,5 @@
-# Local commits run secret detection, file hygiene and pack ownership checks.
+# Local commits run secret detection, file hygiene, pack ownership, and gofmt
+# checks.
 # Dependency freshness, complexity, prose lint and tests run in CI/CD.
 fail_fast: true
 
@@ -53,4 +54,10 @@ repos:
         language: python
         additional_dependencies: [uv==0.11.8]
         pass_filenames: false
-        files: ^(scripts/|appliance/guest/|mcp/[^/]+/docker-lab-config\.json$|src/aptl|tools/check_pack_boundary\.py$|\.gc/pack-ownership\.json$|aptl\.json$|pyproject\.toml$|uv\.lock$)
+        files: ^(scripts/|appliance/guest/|mcp/[^/]+/docker-lab-config\.json$|src/aptl|tools/check_pack_boundary\.py$|\.gc/pack-ownership\.json$|aptl\.json$|pyproject\.toml$|uv\.lock$|(cmd|internal|adapter|conformance|tools)/.*\.go$|[^/]+\.go$)
+      - id: go-format
+        name: Go files are gofmt-formatted
+        entry: tools/go-format-hook.sh
+        language: script
+        files: \.go$
+        exclude: ^web/caddy-build/

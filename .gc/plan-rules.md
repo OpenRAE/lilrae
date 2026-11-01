@@ -47,3 +47,8 @@ Mandatory constraints the `/implement` skill applies during plan phase.
   `lilrae-misp-suricata-sync`. The `aptl` and `aptl-misp-suricata-sync`
   aliases exist only for existing users until 10.0.0 (#1403); do not add new
   callers of them.
+- Plans for Go code (ADR-065) MUST write the design record in the front matter
+  of `docs/architecture/issue-<number>-<topic>-design.md` before any code. The
+  plan phase runs `go run -C tools ./cmd/archcheck design -base
+  origin/<base branch> <note>` and states the result in the plan. Fix each
+  finding before the code phase.

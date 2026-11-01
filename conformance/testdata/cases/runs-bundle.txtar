@@ -1,0 +1,33 @@
+# lilrae runs export-bundle writes an evidence bundle whose bundle.json
+# conforms to the published schema. Without a verified seal, the bundle is
+# unsealed and says so. lilrae runs verify-bundle verifies it.
+lilrae lab init proj
+cd proj
+lilrae runs export-bundle run-ready --output-dir bundles
+stdout 'seal: UNSEALED'
+stdout 'seal-absent'
+exists bundles/run-ready.evidence-bundle.tar
+mkdir extracted
+exec tar -xf bundles/run-ready.evidence-bundle.tar -C extracted
+schema evidence-bundle.schema.json extracted/bundle.json
+lilrae runs verify-bundle bundles/run-ready.evidence-bundle.tar
+stdout 'OK: bundle verified'
+
+# A file that is not a bundle fails verification.
+! lilrae runs verify-bundle $WORK/not-a-bundle.tar
+status 1
+
+-- not-a-bundle.tar --
+not a bundle
+-- proj/runs/run-legacy/manifest.json --
+{"run_id": "run-legacy", "scenario_id": "materialization-envelope", "scenario_name": "Materialization envelope", "started_at": "2026-03-20T10:00:00Z", "finished_at": "2026-03-20T10:05:00Z", "duration_seconds": 300.0, "trace_id": "", "config_snapshot": {}, "containers": ["smoke-box"], "flags_captured": 2}
+-- proj/runs/run-ready/correlation.json --
+{"clock_contexts":[],"disclosures":[],"edges":[],"nodes":[],"run_id":"run-ready","schema_version":"aptl-correlation/v1"}
+-- proj/runs/run-ready/evidence/blobs/95375d3ec761f506f3f363000807ee85bffdb8d64eb92704cb7afb3d5874cd77 --
+{"event": 0, "id": "000"}
+-- proj/runs/run-ready/evidence/records/evidence-86c4f77042bb3f568ab5762e019b38f5769a7a5884709c13b57a82906fee5049.json --
+{"capture_requirement_ref":"req-0","capture_spec_ref":{"ref_id":"spec-0","ref_kind":"capture-spec"},"capture_window_ref":"req-0","captured_at":"2026-03-24T02:42:29Z","evidence_kind":"log","evidence_record_id":"evidence-86c4f77042bb3f568ab5762e019b38f5769a7a5884709c13b57a82906fee5049","output_contract":"experiment-evidence-record-v1","provenance_refs":[],"raw_content":{"content_checksum":{"algorithm":"sha256","value":"95375d3ec761f506f3f363000807ee85bffdb8d64eb92704cb7afb3d5874cd77"},"content_uri":"evidence/blobs/95375d3ec761f506f3f363000807ee85bffdb8d64eb92704cb7afb3d5874cd77","payload_summary":"1 event(s), 26 byte(s) retained"},"record_version":"1.0.0","redaction_state":"none","run_ref":{"ref_id":"run-ready","ref_kind":"run"},"schema_version":"experiment-evidence-record/v1","sensitivity":"restricted","source_refs":[{"ref_id":"channel-1","ref_kind":"measurement-channel","ref_version":"1"}]}
+-- proj/runs/run-ready/manifest.json --
+{"run_id": "run-ready", "scenario_id": "materialization-envelope", "scenario_name": "Materialization envelope", "started_at": "2026-03-24T02:00:00Z", "finished_at": "2026-03-24T02:42:29Z"}
+-- proj/runs/run-ready/provenance/run-provenance.json --
+{"aggregate_identity":"sha256:5884bc6de171b0e7364a32722e6c6b65b26f071e9e916a933676da90cea6e573","limitations":[],"registry_declaration_digest":"sha256:872491a30d60d598962de6e7b834ab76b2aa65fbab102c6ebaaae6acdc238822","run_id":"run-ready","schema_version":"aptl.run-provenance/v1","seal_state":"ready-to-seal","sections":[]}

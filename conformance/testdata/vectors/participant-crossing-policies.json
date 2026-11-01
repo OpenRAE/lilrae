@@ -1,0 +1,143 @@
+{
+  "corpus": 1,
+  "scheme": "participant-crossing-policies",
+  "version": "current",
+  "owner": "aptl.backends._raes_participant_crossing._delivery_crossing_policies",
+  "cases": [
+    {
+      "id": "two-turns-one-participant",
+      "input": {
+        "turns": [
+          {
+            "participant_address": "participant.red",
+            "policy_ref": "policies.delivery",
+            "policy_revision": "1",
+            "exposure_policy_ref": "exposure.full",
+            "audience_scope_ref": "audience.red",
+            "visibility_basis_ref": "visibility.direct",
+            "disclosure_basis_ref": "disclosure.authored",
+            "observation_boundary_address": "boundaries.shell",
+            "control_valid_from_order": 2,
+            "control_valid_until_order": 4
+          },
+          {
+            "participant_address": "participant.red",
+            "policy_ref": "policies.delivery",
+            "policy_revision": "1",
+            "exposure_policy_ref": "exposure.full",
+            "audience_scope_ref": "audience.red",
+            "visibility_basis_ref": "visibility.direct",
+            "disclosure_basis_ref": "disclosure.authored",
+            "observation_boundary_address": "boundaries.shell",
+            "control_valid_from_order": 1,
+            "control_valid_until_order": 3
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "participant.red": {
+            "policy_id": "policies.delivery",
+            "policy_revision": "1",
+            "policy_digest": "sha256:c98eece9763ccda9f3f13893aa956bb204e2c60c22531a98fd25fc0ecf227fed",
+            "policy_decision_ref": "disclosure.authored",
+            "decision_cut_ref": "boundaries.shell",
+            "effective_order": 1,
+            "valid_from_order": 1,
+            "valid_until_order": 5
+          }
+        }
+      },
+      "note": "The interval runs from the first order to one past the last."
+    },
+    {
+      "id": "two-participants",
+      "input": {
+        "turns": [
+          {
+            "participant_address": "participant.red",
+            "policy_ref": "policies.delivery",
+            "policy_revision": "1",
+            "exposure_policy_ref": "exposure.full",
+            "audience_scope_ref": "audience.red",
+            "visibility_basis_ref": "visibility.direct",
+            "disclosure_basis_ref": "disclosure.authored",
+            "observation_boundary_address": "boundaries.shell",
+            "control_valid_from_order": 1,
+            "control_valid_until_order": 3
+          },
+          {
+            "participant_address": "participant.blue",
+            "policy_ref": "policies.delivery",
+            "policy_revision": "1",
+            "exposure_policy_ref": "exposure.full",
+            "audience_scope_ref": "audience.red",
+            "visibility_basis_ref": "visibility.direct",
+            "disclosure_basis_ref": "disclosure.authored",
+            "observation_boundary_address": "boundaries.shell",
+            "control_valid_from_order": 5,
+            "control_valid_until_order": 6
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "participant.red": {
+            "policy_id": "policies.delivery",
+            "policy_revision": "1",
+            "policy_digest": "sha256:c98eece9763ccda9f3f13893aa956bb204e2c60c22531a98fd25fc0ecf227fed",
+            "policy_decision_ref": "disclosure.authored",
+            "decision_cut_ref": "boundaries.shell",
+            "effective_order": 1,
+            "valid_from_order": 1,
+            "valid_until_order": 4
+          },
+          "participant.blue": {
+            "policy_id": "policies.delivery",
+            "policy_revision": "1",
+            "policy_digest": "sha256:c98eece9763ccda9f3f13893aa956bb204e2c60c22531a98fd25fc0ecf227fed",
+            "policy_decision_ref": "disclosure.authored",
+            "decision_cut_ref": "boundaries.shell",
+            "effective_order": 5,
+            "valid_from_order": 5,
+            "valid_until_order": 7
+          }
+        }
+      }
+    },
+    {
+      "id": "policy-changes",
+      "input": {
+        "turns": [
+          {
+            "participant_address": "participant.red",
+            "policy_ref": "policies.delivery",
+            "policy_revision": "1",
+            "exposure_policy_ref": "exposure.full",
+            "audience_scope_ref": "audience.red",
+            "visibility_basis_ref": "visibility.direct",
+            "disclosure_basis_ref": "disclosure.authored",
+            "observation_boundary_address": "boundaries.shell",
+            "control_valid_from_order": 1,
+            "control_valid_until_order": 3
+          },
+          {
+            "participant_address": "participant.red",
+            "policy_ref": "policies.delivery",
+            "policy_revision": "2",
+            "exposure_policy_ref": "exposure.full",
+            "audience_scope_ref": "audience.red",
+            "visibility_basis_ref": "visibility.direct",
+            "disclosure_basis_ref": "disclosure.authored",
+            "observation_boundary_address": "boundaries.shell",
+            "control_valid_from_order": 1,
+            "control_valid_until_order": 3
+          }
+        ]
+      },
+      "expect": {
+        "reject": "validate"
+      }
+    }
+  ]
+}

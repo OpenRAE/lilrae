@@ -31,3 +31,4 @@ Users need to inspect container state and access shells without manually constru
 - TESTS → TEST `tests/test_cli_container.py` (CLI container list/shell/logs tests)
 - TESTS → TEST `tests/test_deployment_backend.py` (DeploymentBackend Protocol tests (container + host inventory))
 - IMPLEMENTS → GITHUB_ISSUE `138` (Issue 138: implement stubbed CLI commands)
+- TESTS → TEST `conformance/testdata/cases/options-container.txtar` (Black-box option surface of the container commands)

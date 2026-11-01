@@ -1,0 +1,107 @@
+{
+  "corpus": 1,
+  "scheme": "apparatus-provenance-leaves",
+  "version": "current",
+  "owner": "aptl.core.provenance.providers.apparatus.ApparatusManifestProvider.collect",
+  "cases": [
+    {
+      "id": "two-manifests",
+      "input": {
+        "backend": {
+          "schema_version": "backend-manifest/v1",
+          "identity": {
+            "name": "docker-compose",
+            "version": "1.0.0"
+          },
+          "supported_contract_versions": [
+            "2",
+            "1"
+          ],
+          "extra": "é"
+        },
+        "processor": {
+          "schema_version": "processor-manifest/v1",
+          "identity": {
+            "name": "aptl",
+            "version": "0.0.0"
+          },
+          "supported_contract_versions": [
+            "1"
+          ]
+        }
+      },
+      "expect": {
+        "value": {
+          "status": "collected",
+          "leaves": [
+            [
+              "backend-manifest",
+              "sha256:0eceab61b903d0e352a518221c855c9beb08744115b9f845844c8acf9e0efdb2"
+            ],
+            [
+              "processor-manifest",
+              "sha256:c374c5a7cfac81b376774e59ab3ed05cf49cdac37e5d204656d435cd3590b87a"
+            ]
+          ],
+          "payload": {
+            "backend": {
+              "name": "docker-compose",
+              "version": "1.0.0",
+              "schema_version": "backend-manifest/v1",
+              "supported_contract_versions": [
+                "1",
+                "2"
+              ]
+            },
+            "processor": {
+              "name": "aptl",
+              "version": "0.0.0",
+              "schema_version": "processor-manifest/v1",
+              "supported_contract_versions": [
+                "1"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "no-identity",
+      "input": {
+        "backend": {
+          "schema_version": "backend-manifest/v1"
+        },
+        "processor": {}
+      },
+      "expect": {
+        "value": {
+          "status": "collected",
+          "leaves": [
+            [
+              "backend-manifest",
+              "sha256:cb5e9f3bd2bb2aadc450ab1c3e6b933fc0ce0049936bd6822187d37b4928d0e7"
+            ],
+            [
+              "processor-manifest",
+              "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+            ]
+          ],
+          "payload": {
+            "backend": {
+              "name": null,
+              "version": null,
+              "schema_version": "backend-manifest/v1",
+              "supported_contract_versions": []
+            },
+            "processor": {
+              "name": null,
+              "version": null,
+              "schema_version": null,
+              "supported_contract_versions": []
+            }
+          }
+        }
+      }
+    }
+  ]
+}

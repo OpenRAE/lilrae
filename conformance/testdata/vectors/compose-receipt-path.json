@@ -1,0 +1,38 @@
+{
+  "corpus": 1,
+  "scheme": "compose-receipt-path",
+  "version": "current",
+  "owner": "aptl.core.deployment._compose_resource_ownership.WorkspaceOwnership._receipt_path",
+  "cases": [
+    {
+      "id": "container",
+      "input": {
+        "kind": "container",
+        "native_id": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "text": ".aptl/lifecycle/resource-receipts-v1/container/60e05bd1b195af2f94112fa7197a5c88289058840ce7c6df9693756bc6250f55.json"
+      }
+    },
+    {
+      "id": "network",
+      "input": {
+        "kind": "network",
+        "native_id": "lab-w0123456789ab_default"
+      },
+      "expect": {
+        "text": ".aptl/lifecycle/resource-receipts-v1/network/4383d5b8755218d556a507b330b9f013d881a73964a7262f52cf476f24268e42.json"
+      }
+    },
+    {
+      "id": "volume",
+      "input": {
+        "kind": "volume",
+        "native_id": "lab-w0123456789ab_data"
+      },
+      "expect": {
+        "text": ".aptl/lifecycle/resource-receipts-v1/volume/fcd15b4a71c9e1c089b9d20c951e4a01a740a8127fbb8a53accec9b82dcf9fcc.json"
+      }
+    }
+  ]
+}

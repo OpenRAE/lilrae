@@ -1,0 +1,66 @@
+{
+  "corpus": 1,
+  "scheme": "evidence-record-id",
+  "version": "current",
+  "owner": "aptl.core.evidence.records.derive_evidence_record_id",
+  "cases": [
+    {
+      "id": "simple",
+      "input": {
+        "run_id": "run-1",
+        "planned_trial_id": "trial-1",
+        "content_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "binding": {
+          "capture_spec_id": "spec-1",
+          "requirement_id": "req-1",
+          "window_refs": [
+            "w2",
+            "w1"
+          ],
+          "effective_config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "expect": {
+        "text": "evidence-1230ac1d2b3a205d33eac9de0411ba58e8a693b35a71755355d505ad5a4552b3"
+      }
+    },
+    {
+      "id": "window-order-ignored",
+      "input": {
+        "run_id": "run-1",
+        "planned_trial_id": "trial-1",
+        "content_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "binding": {
+          "capture_spec_id": "spec-1",
+          "requirement_id": "req-1",
+          "window_refs": [
+            "w1",
+            "w2"
+          ],
+          "effective_config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "note": "window_refs are sorted before hashing",
+      "expect": {
+        "text": "evidence-1230ac1d2b3a205d33eac9de0411ba58e8a693b35a71755355d505ad5a4552b3"
+      }
+    },
+    {
+      "id": "non-ascii",
+      "input": {
+        "run_id": "run-é",
+        "planned_trial_id": "trial-1",
+        "content_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "binding": {
+          "capture_spec_id": "spec-1",
+          "requirement_id": "req-😀",
+          "window_refs": [],
+          "effective_config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "expect": {
+        "text": "evidence-06e7efa26e767c178c7183c947ee616909803fd8b025c5d9c00b6897eef3fd84"
+      }
+    }
+  ]
+}
