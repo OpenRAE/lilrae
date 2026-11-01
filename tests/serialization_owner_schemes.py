@@ -13,12 +13,14 @@ import hashlib
 import json
 import tempfile
 from collections.abc import Callable
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from aptl.appliance import guest_surfaces
 from aptl.appliance.policy import write_full_techvault_boundary_policy
+from aptl.appliance.seat import access as seat_access
 from aptl.appliance.seat import overlay_identity, readiness
 from aptl.appliance.seat.access import (
     GuestAccessBundle,
@@ -280,8 +282,13 @@ def _guest_access_bundle(case_input: dict) -> dict[str, str]:
 
 
 def _guest_access_request(case_input: dict) -> dict[str, str]:
-    request = _model(GuestAccessRequest, case_input)
-    return {"hex": _written(lambda path: publish_guest_access_request(path, request)).hex()}
+    # The owner checks that the enrollment expires within 24 hours of now, so
+    # the vector pins now one hour before the expiry.
+    expires_at = datetime.fromisoformat(case_input["enrollment"]["expires_at"])
+    with patch.object(seat_access, "datetime", _pinned_datetime(expires_at - timedelta(hours=1))):
+        request = _model(GuestAccessRequest, case_input)
+        data = _written(lambda path: publish_guest_access_request(path, request))
+    return {"hex": data.hex()}
 
 
 def _overlay_identity(case_input: dict) -> dict[str, object]:
@@ -607,14 +614,15 @@ def _delivery_evidence(case_input: dict) -> dict[str, object]:
     return {"value": {"status": outcome.status.value, "chunks_hex": [chunk.hex() for chunk in outcome.chunks]}}
 
 
-class _FixedClock:
-    """A datetime stand-in whose now returns one instant."""
+def _pinned_datetime(instant: datetime) -> type[datetime]:
+    """Return a datetime class whose now returns instant, for owners that read the clock."""
 
-    def __init__(self, instant: str) -> None:
-        self._instant = instant
+    class _Pinned(datetime):
+        @classmethod
+        def now(cls, tz: object = None) -> datetime:
+            return instant.astimezone(tz) if tz is not None else instant
 
-    def now(self, tz: object = None) -> object:
-        return SimpleNamespace(isoformat=lambda: self._instant)
+    return _Pinned
 
 
 def _native_cleanup(case_input: dict) -> dict[str, object]:
@@ -627,7 +635,7 @@ def _native_cleanup(case_input: dict) -> dict[str, object]:
         )
         ownership.record(receipt)
         with (
-            patch.object(lilrae_native_evidence, "datetime", _FixedClock(case_input["recorded_at"])),
+            patch.object(lilrae_native_evidence, "datetime", _pinned_datetime(datetime.fromisoformat(case_input["recorded_at"]))),
             patch.object(lilrae_native_evidence, "uuid4", return_value=SimpleNamespace(hex=case_input["uuid_hex"])),
         ):
             try:
