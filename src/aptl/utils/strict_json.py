@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import NoReturn
 
 from pydantic import BaseModel
@@ -29,6 +30,15 @@ def _reject_constant(value: str) -> NoReturn:
     raise ValueError(f"invalid JSON constant: {value}")
 
 
+def _finite_float(text: str) -> float:
+    """Reject a JSON number that overflows to a non-finite float."""
+
+    value = float(text)
+    if not math.isfinite(value):
+        raise ValueError("JSON number out of range")
+    return value
+
+
 def loads_strict(payload: bytes | str) -> JsonValue:
     """Decode JSON while rejecting duplicate keys and non-finite numbers."""
 
@@ -36,6 +46,7 @@ def loads_strict(payload: bytes | str) -> JsonValue:
         payload,
         object_pairs_hook=_closed_object,
         parse_constant=_reject_constant,
+        parse_float=_finite_float,
     )
 
 
