@@ -23,6 +23,10 @@ in the clean-install lab job. `go test -tags integration -run TestLab
 ./conformance/` runs them with `LILRAE_CONFORMANCE_SCENARIO` set to the
 absolute path of the scenario file.
 
+The [serialization schemes](serialization-schemes.md) list the digests,
+canonical forms, identifiers, timestamps, and parse rules of the persisted
+values, with their vectors in `conformance/testdata/vectors`.
+
 ## Text rule
 
 Human-readable text keeps its facts. Only the strings that a document or a test

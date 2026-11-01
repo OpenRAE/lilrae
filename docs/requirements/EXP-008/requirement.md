@@ -48,3 +48,4 @@ Researchers need interoperable evidence, not an APTL opinion about analysis or p
 - TESTS → TEST `tests/test_evidence_bundle_cli.py`
 - TESTS → TEST `tests/test_evidence_bundle_inventory.py`
 - TESTS → TEST `conformance/testdata/cases/runs-bundle.txtar` (Black-box evidence bundle export, manifest schema, and verification)
+- TESTS → TEST `tests/test_serialization_vectors.py` (Shared vectors of the bundle identity, bundle.json bytes, and Parquet canonical JSON)

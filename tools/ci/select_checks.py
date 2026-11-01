@@ -43,8 +43,11 @@ def select_lanes(paths: list[str], *, full: bool = False) -> dict[str, bool]:
             # Vale checks Go comments and Markdown, so these select docs too.
             lanes["go"] = True
             lanes["docs"] |= path.endswith((".go", ".md"))
-            # The clean-install lab job runs the lab conformance cases.
-            lanes["lab"] |= path.startswith(_CONFORMANCE_PREFIXES)
+            # The clean-install lab job runs the lab conformance cases. The
+            # serialization vectors are data for the Python tests only.
+            lanes["lab"] |= path.startswith(_CONFORMANCE_PREFIXES) and not path.startswith(
+                "conformance/testdata/vectors/"
+            )
         elif path.startswith(("docs/", ".vale/")) or path.endswith(".md") or path in {"mkdocs.yml", ".vale.ini", ".readthedocs.yaml"}:
             lanes["docs"] = True
         elif path.startswith(("src/", "tests/")):

@@ -38,3 +38,4 @@ Reliable action-to-observation linkage requires both identity and clock evidence
 - TESTS → TEST `tests/test_correlation_models.py`
 - TESTS → TEST `tests/test_correlation_persistence.py`
 - IMPLEMENTS → GITHUB_ISSUE `447`
+- TESTS → TEST `tests/test_serialization_vectors.py` (Shared vectors of the correlation projection, run store IDs, and timestamp forms)

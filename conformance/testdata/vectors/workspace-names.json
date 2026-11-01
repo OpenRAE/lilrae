@@ -1,0 +1,79 @@
+{
+  "corpus": 1,
+  "scheme": "workspace-names",
+  "version": "current",
+  "owner": "aptl.core.deployment._compose_resource_ownership.WorkspaceOwnership",
+  "cases": [
+    {
+      "id": "default",
+      "input": {
+        "logical": "aptl",
+        "workspace_state": "{\"schema\":1,\"workspace_id\":\"0123456789abcdef0123456789abcdef\"}\n",
+        "semantic_names": [
+          "aptl-wazuh",
+          "smoke-box"
+        ],
+        "attempt_id": "attempt-1"
+      },
+      "expect": {
+        "value": {
+          "project_name": "aptl-w0123456789ab",
+          "container_names": {
+            "aptl-wazuh": "aptl-w0123456789ab-wazuh",
+            "smoke-box": "w0123456789ab-smoke-box"
+          },
+          "labels": {
+            "aptl.workspace.id": "0123456789abcdef0123456789abcdef",
+            "aptl.lifecycle.project": "aptl-w0123456789ab",
+            "aptl.attempt.id": "attempt-1"
+          }
+        }
+      }
+    },
+    {
+      "id": "long-logical-name",
+      "input": {
+        "logical": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "workspace_state": "{\"schema\":1,\"workspace_id\":\"0123456789abcdef0123456789abcdef\"}\n",
+        "semantic_names": [],
+        "attempt_id": "attempt-1"
+      },
+      "note": "the logical name is cut to fit the suffix in 63 characters",
+      "expect": {
+        "value": {
+          "project_name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-w0123456789ab",
+          "container_names": {},
+          "labels": {
+            "aptl.workspace.id": "0123456789abcdef0123456789abcdef",
+            "aptl.lifecycle.project": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-w0123456789ab",
+            "aptl.attempt.id": "attempt-1"
+          }
+        }
+      }
+    },
+    {
+      "id": "bad-state",
+      "input": {
+        "logical": "aptl",
+        "workspace_state": "{\"schema\":2}\n",
+        "semantic_names": [],
+        "attempt_id": "a"
+      },
+      "expect": {
+        "reject": "validate"
+      }
+    },
+    {
+      "id": "bad-attempt",
+      "input": {
+        "logical": "aptl",
+        "workspace_state": "{\"schema\":1,\"workspace_id\":\"0123456789abcdef0123456789abcdef\"}\n",
+        "semantic_names": [],
+        "attempt_id": "bad attempt"
+      },
+      "expect": {
+        "reject": "validate"
+      }
+    }
+  ]
+}

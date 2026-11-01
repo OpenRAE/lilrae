@@ -171,6 +171,8 @@ code.
 
 ## Preflights
 
+- [Issue #1555 Serialization Vectors Preflight](issue-1555-serialization-vectors-preflight.md)
+- [Issue #1555 Serialization Vectors Design](issue-1555-serialization-vectors-design.md)
 - [Issue #1554 Conformance Preflight](issue-1554-conformance-preflight.md)
 - [Issue #1554 Conformance Design](issue-1554-conformance-design.md)
 - [Issue #1583 Architecture Model Preflight](issue-1583-architecture-model-preflight.md)

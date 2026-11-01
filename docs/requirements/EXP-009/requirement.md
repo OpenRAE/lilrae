@@ -35,3 +35,4 @@ The principal output of a scientific instrument is trustworthy evidence with dur
 - TESTS → TEST `tests/test_archival_seal.py` (Atomic seal commit, immutability, idempotency/conflict, inventory tamper detection)
 - TESTS → TEST `tests/test_execution_executor.py` (Production-path integration: executor reaches sealing across every terminal cause + recovery)
 - TESTS → TEST `conformance/testdata/cases/runs.txtar` (Black-box run store reads of current and legacy run manifests)
+- TESTS → TEST `tests/test_serialization_vectors.py` (Shared vectors of the evidence record IDs, trial plans, and collector registration digests)
