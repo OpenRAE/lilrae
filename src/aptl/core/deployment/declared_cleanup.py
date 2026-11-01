@@ -23,6 +23,7 @@ from aptl.core.deployment.lilrae_native_evidence import (
     record_cleanup,
 )
 from aptl.core.lifecycle_guard import lifecycle_mutation_lock
+from aptl.core.ephemeral_containers import remove_container_command
 
 
 class ReceiptCleanup:
@@ -170,7 +171,9 @@ class ReceiptCleanup:
         if present and action == "destroy":
             self._require_authority()
             commands = {
-                "container": ["docker", "rm", "-f", receipt.native_id],
+                "container": remove_container_command(
+                    receipt.native_id, remove_volumes=False
+                ),
                 "network": ["docker", "network", "rm", receipt.native_id],
                 "volume": ["docker", "volume", "rm", receipt.native_id],
             }
