@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"syscall"
 )
 
@@ -105,9 +106,10 @@ const (
 )
 
 // Dir is a directory that its owner trusts. A Dir is safe for concurrent
-// use.
+// use. After Close, each method returns an error.
 type Dir struct {
-	h dirHandle
+	h      dirHandle
+	closed atomic.Bool
 }
 
 // OpenDir opens the directory at path, which the caller trusts. The path can
@@ -120,8 +122,12 @@ func OpenDir(path string) (*Dir, error) {
 	return &Dir{h: h}, nil
 }
 
-// Close closes the directory.
+// Close closes the directory. A second Close returns an error that matches
+// [fs.ErrClosed].
 func (d *Dir) Close() error {
+	if d.closed.Swap(true) {
+		return failure("close dir", ".", fs.ErrClosed)
+	}
 	return d.h.close()
 }
 
@@ -329,15 +335,13 @@ func openReason(err error, entryIsLink bool) Reason {
 	return ReasonOpenFailed
 }
 
-// fill writes data to a new file, syncs it, and gives it the mode perm.
+// fill writes data to a new file, gives it the mode perm, and syncs it. The
+// mode comes before the sync, so that the sync also persists the mode.
 func fill(op, path string, file *os.File, data []byte, perm fs.FileMode) error {
 	if _, err := file.Write(data); err != nil {
 		return failure(op, path, err)
 	}
-	if err := file.Sync(); err != nil {
-		return failure(op, path, err)
-	}
-	return setMode(op, path, file, perm)
+	return errors.Join(setMode(op, path, file, perm), failure(op, path, file.Sync()))
 }
 
 // absentIsDone returns nil for an entry that is absent, for example because

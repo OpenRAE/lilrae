@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -23,13 +24,32 @@ func TestRestrictToOwnerSetsAProtectedReadOnlyList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	control, _, err := sd.Control()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if control&windows.SE_DACL_PROTECTED == 0 {
+		t.Errorf("the access list %s inherits entries, want a protected list", sd)
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dacl.AceCount != 1 {
+		t.Fatalf("the access list %s has %d entries, want 1", sd, dacl.AceCount)
+	}
+	var ace *windows.ACCESS_ALLOWED_ACE
+	if aceErr := windows.GetAce(dacl, 0, &ace); aceErr != nil {
+		t.Fatal(aceErr)
+	}
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
 		t.Fatal(err)
 	}
-	// FR is FILE_GENERIC_READ, the right that icacls grants with R.
-	if got, want := sd.String(), "D:P(A;;FR;;;"+user.User.Sid.String()+")"; got != want {
-		t.Errorf("the access list is %s, want %s", got, want)
+	sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart)) //nolint:gosec // G103: the Win32 layout of an access entry puts its SID at SidStart.
+	// FILE_GENERIC_READ is the right that icacls grants with R.
+	if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Mask != windows.FILE_GENERIC_READ || !sid.Equals(user.User.Sid) {
+		t.Errorf("the access list is %s, want one entry that lets only the current user read", sd)
 	}
 	if got, err := d.ReadFile("key"); err != nil || string(got) != "secret" {
 		t.Errorf("ReadFile() = %q, %v, want the owner to read the key", got, err)

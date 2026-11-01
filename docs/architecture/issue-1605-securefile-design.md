@@ -82,9 +82,10 @@ records the decision about `os.Root`.
 5. **Durability and modes.** A write syncs the file before it publishes it
    and syncs the directory after. The temporary name is random and created
    with `O_EXCL`. Each write sets the final mode through the descriptor and
-   verifies it before the publication, never by path after it: `0600` for
-   `CreateOnce` and `ReplacePrivate`, and the mode of the caller for
-   `Replace`. A mode that the file system did not keep is `mode_not_kept`.
+   verifies it before the sync, so that the sync persists it, and never by
+   path after the publication: `0600` for `CreateOnce` and `ReplacePrivate`,
+   and the mode of the caller for `Replace`. A mode that the file system did
+   not keep is `mode_not_kept`.
 6. **Windows access.** On Windows, a mode sets only the read-only attribute,
    as `os.Chmod` does, and the private rules of `ReplacePrivate` and
    `PrivateSubdir` do not apply, as the Python modules give no mode
@@ -92,19 +93,24 @@ records the decision about `os.Root`.
    `core/ssh.py` gives a key: a protected access list that lets only the
    current user read the file. It sets the list on a handle that
    `ReOpenFile` opens from the verified handle.
-7. **Errors.** An `*Error` holds the operation, the path, and one of the
+7. **Handle lifetime.** On Linux and macOS, a `Dir` holds its directory in an
+   `*os.File`. Each operation duplicates the descriptor while the file holds a
+   reference, so that `Close` cannot free the number during the operation. After
+   `Close`, each method returns an error, and a second `Close` returns an error
+   that matches `fs.ErrClosed`.
+8. **Errors.** An `*Error` holds the operation, the path, and one of the
    `pathsafe` reason codes, or `invalid_name` or `mode_not_kept`, because
    callers act on them. It holds no file content.
-8. **No renameio on Unix.** renameio contains a write only through an
+9. **No renameio on Unix.** renameio contains a write only through an
    `*os.Root`. The descriptor walk publishes with `linkat` and `renameat`
    instead (ADR-066).
-9. **Tests.** Tests use real files on Linux, macOS, and Windows, including
+10. **Tests.** Tests use real files on Linux, macOS, and Windows, including
    links, execute-only directories, FIFOs, and the race lessons of #966. A
    test without root cannot make a directory that another user owns, so a
    unit test checks the ownership rule. Fuzz tests check the lexical rules
    against `filepath.Localize`, and the walk against a model that walks with
    `Lstat`.
-10. **Each platform runs the gates of its files.** Gremlins walks each file
+11. **Each platform runs the gates of its files.** Gremlins walks each file
     below a module, but the tests of the module cannot cover a file of a
     nested module, a file below a directory that the go command ignores, or
     a file that the host does not build. The mutation gate leaves out such
@@ -129,4 +135,5 @@ caller: bytes -> temporary file (0600, mode, sync) -> link or rename -> sync dir
 | A FIFO at a leaf blocks a reader. | The read opens the leaf with `O_NONBLOCK` and refuses a file that is not regular. |
 | A crash leaves a partial file or a false create-once success. | A temporary file is synced before the link or rename, and the directory is synced after. |
 | Another user reads or replaces a private file. | The final mode is set before the publication, the leaf parent must belong to the caller, and directories lose group and other write. On Windows, `RestrictToOwner` sets the access list of a key. |
+| A call after `Close` reaches a descriptor number that a later open reuses for another directory. | The `*os.File` of a `Dir` refuses each use after `Close`, and an operation works on its own duplicate of the descriptor. |
 | An error leaks file content. | Errors hold the operation, the path, and the reason only. |

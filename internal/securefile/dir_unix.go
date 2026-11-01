@@ -10,8 +10,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// dirHandle is an open directory descriptor.
-type dirHandle struct{ fd int }
+// dirHandle is an open directory. Its [*os.File] keeps the descriptor valid
+// while a walk duplicates it, and it refuses each use after a close, so that
+// no operation reaches a descriptor number that a later open reuses.
+type dirHandle struct{ f *os.File }
 
 func openDirHandle(path string) (dirHandle, error) {
 	fd, err := ignoringEINTR2(func() (int, error) {
@@ -20,43 +22,64 @@ func openDirHandle(path string) (dirHandle, error) {
 	if err != nil {
 		return dirHandle{}, &Error{Op: "open dir", Path: path, Reason: ReasonBaseDirUnavailable, Err: err}
 	}
-	return dirHandle{fd: fd}, nil
+	return dirHandle{f: os.NewFile(uintptr(fd), path)}, nil
 }
 
 func (h dirHandle) close() error {
-	return failure("close dir", ".", unix.Close(h.fd))
+	return failure("close dir", ".", h.f.Close())
+}
+
+// dup returns a new descriptor of the directory. The caller closes it.
+func (h dirHandle) dup(op, path string) (int, error) {
+	raw, err := h.f.SyscallConn()
+	if err != nil {
+		return 0, failure(op, path, err)
+	}
+	var fd int
+	var dupErr error
+	err = raw.Control(func(sysfd uintptr) {
+		fd, dupErr = unix.FcntlInt(sysfd, unix.F_DUPFD_CLOEXEC, 0)
+	})
+	return fd, failure(op, path, errors.Join(err, dupErr))
 }
 
 // walk opens the directories dirs below h one at a time, without following a
-// link, and returns a new descriptor of the last one, or of h when dirs is
-// empty. The caller closes it.
-func (h dirHandle) walk(op, path string, dirs []string, rule dirRule) (dirHandle, error) {
-	fd, err := unix.FcntlInt(uintptr(h.fd), unix.F_DUPFD_CLOEXEC, 0)
+// link, and returns a descriptor of the last one, or a new descriptor of h
+// when dirs is empty. The caller closes it. After an error, the descriptor
+// is 0 and the caller must not use it.
+func (h dirHandle) walk(op, path string, dirs []string, rule dirRule) (int, error) {
+	fd, err := h.dup(op, path)
 	if err != nil {
-		return dirHandle{}, failure(op, path, err)
+		return 0, err
 	}
-	cur := dirHandle{fd: fd}
 	for _, name := range dirs {
-		next, err := openDir(op, path, cur.fd, name, rule)
-		err = errors.Join(err, cur.close())
+		next, err := openDir(op, path, fd, name, rule)
 		if err != nil {
-			return dirHandle{}, err
+			return 0, errors.Join(err, closeFd(op, path, fd))
 		}
-		cur = next
+		if err := closeFd(op, path, fd); err != nil {
+			return 0, errors.Join(err, closeFd(op, path, next))
+		}
+		fd = next
 	}
-	return cur, nil
+	return fd, nil
 }
 
 // walkParent walks to the parent of the last component of parts and returns
 // it with the name of the last component.
-func (h dirHandle) walkParent(op, path string, parts []string, rule dirRule) (dirHandle, string, error) {
-	parent, err := h.walk(op, path, parts[:len(parts)-1], rule)
+func (h dirHandle) walkParent(op, path string, parts []string, rule dirRule) (parent int, leaf string, err error) {
+	parent, err = h.walk(op, path, parts[:len(parts)-1], rule)
 	return parent, parts[len(parts)-1], err
+}
+
+// closeFd closes a descriptor that a walk opened.
+func closeFd(op, path string, fd int) error {
+	return failure(op, path, unix.Close(fd))
 }
 
 // openDir opens the directory name under parent without following a link,
 // with the rule of the walk.
-func openDir(op, path string, parent int, name string, rule dirRule) (dirHandle, error) {
+func openDir(op, path string, parent int, name string, rule dirRule) (int, error) {
 	flags := unix.O_RDONLY | unix.O_DIRECTORY | unix.O_NOFOLLOW | unix.O_CLOEXEC
 	if rule == ruleSearch {
 		flags = searchFlag | unix.O_DIRECTORY | unix.O_NOFOLLOW | unix.O_CLOEXEC
@@ -69,15 +92,14 @@ func openDir(op, path string, parent int, name string, rule dirRule) (dirHandle,
 		}
 	}
 	if err != nil {
-		return dirHandle{}, componentError(op, path, parent, name, err)
+		return 0, componentError(op, path, parent, name, err)
 	}
-	d := dirHandle{fd: fd}
 	if rule >= ruleRestrict {
 		if err := restrictDir(op, path, fd, groupOrOtherWrite, rule.requiresOwner()); err != nil {
-			return dirHandle{}, errors.Join(err, d.close())
+			return 0, errors.Join(err, closeFd(op, path, fd))
 		}
 	}
-	return d, nil
+	return fd, nil
 }
 
 // requiresOwner reports whether the rule demands that the caller owns each
@@ -135,14 +157,14 @@ func (h dirHandle) openFile(op, path string, parts []string) (file *os.File, err
 	if err != nil {
 		return nil, err
 	}
-	defer func() { err = errors.Join(err, parent.close()) }()
+	defer func() { err = errors.Join(err, closeFd(op, path, parent)) }()
 	// O_NONBLOCK keeps a FIFO from blocking the open.
-	fd, err := openat(parent.fd, leaf, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	fd, err := openat(parent, leaf, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 	if err != nil {
-		return nil, componentError(op, path, parent.fd, leaf, err)
+		return nil, componentError(op, path, parent, leaf, err)
 	}
 	if err := checkRegular(op, path, fd); err != nil {
-		return nil, errors.Join(err, failure(op, path, unix.Close(fd)))
+		return nil, errors.Join(err, closeFd(op, path, fd))
 	}
 	return os.NewFile(uintptr(fd), path), nil
 }
@@ -165,26 +187,28 @@ func (h dirHandle) readDirNames(op, path string, parts []string) (names []string
 	if err != nil {
 		return nil, err
 	}
-	defer func() { err = errors.Join(err, parent.close()) }()
-	d, err := openDir(op, path, parent.fd, leaf, ruleOpen)
+	defer func() { err = errors.Join(err, closeFd(op, path, parent)) }()
+	d, err := openDir(op, path, parent, leaf, ruleOpen)
 	if err != nil {
 		return nil, err
 	}
-	dir := os.NewFile(uintptr(d.fd), path)
+	dir := os.NewFile(uintptr(d), path)
 	defer func() { err = errors.Join(err, failure(op, path, dir.Close())) }()
 	names, err = dir.Readdirnames(-1)
 	return names, failure(op, path, err)
 }
 
 func (h dirHandle) subdir(op, path string, parts []string, rule dirRule) (dirHandle, error) {
-	d, err := h.walk(op, path, parts, rule)
-	if err != nil || rule != rulePrivate {
-		return d, err
+	fd, err := h.walk(op, path, parts, rule)
+	if err != nil {
+		return dirHandle{}, err
 	}
-	if err := restrictDir(op, path, d.fd, groupOrOtherAccess, true); err != nil {
-		return dirHandle{}, errors.Join(err, d.close())
+	if rule == rulePrivate {
+		if err := restrictDir(op, path, fd, groupOrOtherAccess, true); err != nil {
+			return dirHandle{}, errors.Join(err, closeFd(op, path, fd))
+		}
 	}
-	return d, nil
+	return dirHandle{f: os.NewFile(uintptr(fd), path)}, nil
 }
 
 func (h dirHandle) createOnce(op, path string, parts []string, data []byte) (err error) {
@@ -192,15 +216,15 @@ func (h dirHandle) createOnce(op, path string, parts []string, data []byte) (err
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, parent.close()) }()
-	name, err := writeTemp(op, path, parent.fd, leaf, data, privateFileMode)
+	defer func() { err = errors.Join(err, closeFd(op, path, parent)) }()
+	name, err := writeTemp(op, path, parent, leaf, data, privateFileMode)
 	if err != nil {
 		return err
 	}
 	// linkat publishes the complete file and fails when the name exists.
-	published := linkat(parent.fd, name, parent.fd, leaf)
-	removed := unlinkat(parent.fd, name, 0)
-	return failure(op, path, errors.Join(published, removed, fsync(parent.fd)))
+	published := linkat(parent, name, parent, leaf)
+	removed := unlinkat(parent, name, 0)
+	return failure(op, path, errors.Join(published, removed, fsync(parent)))
 }
 
 // replace walks with rule. Under ruleRestrict it also applies the private
@@ -211,8 +235,8 @@ func (h dirHandle) replace(op, path string, parts []string, data []byte, perm fs
 	if err != nil {
 		return err
 	}
-	err = replaceIn(op, path, parent.fd, leaf, data, perm, rule == ruleRestrict && len(parts) > 1)
-	return errors.Join(err, parent.close())
+	err = replaceIn(op, path, parent, leaf, data, perm, rule == ruleRestrict && len(parts) > 1)
+	return errors.Join(err, closeFd(op, path, parent))
 }
 
 // replaceIn replaces leaf under parent. privateParent applies the private
@@ -315,14 +339,14 @@ func (h dirHandle) remove(op, path string, parts []string) (err error) {
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, parent.close()) }()
-	if err := checkLeaf(op, path, parent.fd, leaf); err != nil {
+	defer func() { err = errors.Join(err, closeFd(op, path, parent)) }()
+	if err := checkLeaf(op, path, parent, leaf); err != nil {
 		return err
 	}
-	if err := absentIsDone(op, path, unlinkat(parent.fd, leaf, 0)); err != nil {
+	if err := absentIsDone(op, path, unlinkat(parent, leaf, 0)); err != nil {
 		return err
 	}
-	return failure(op, path, fsync(parent.fd))
+	return failure(op, path, fsync(parent))
 }
 
 func (h dirHandle) removeAll(op, path string, parts []string) (err error) {
@@ -333,15 +357,15 @@ func (h dirHandle) removeAll(op, path string, parts []string) (err error) {
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, parent.close()) }()
+	defer func() { err = errors.Join(err, closeFd(op, path, parent)) }()
 	var st unix.Stat_t
-	if err := lstatat(parent.fd, leaf, &st); err != nil {
+	if err := lstatat(parent, leaf, &st); err != nil {
 		return absentIsDone(op, path, err)
 	}
 	if st.Mode&unix.S_IFMT == unix.S_IFLNK {
 		return &Error{Op: op, Path: path, Reason: ReasonSymlink}
 	}
-	return removeEntry(op, path, parent.fd, leaf, st.Mode&unix.S_IFMT == unix.S_IFDIR)
+	return removeEntry(op, path, parent, leaf, st.Mode&unix.S_IFMT == unix.S_IFDIR)
 }
 
 // removeEntry removes the entry name under dir, and a directory with all
@@ -363,7 +387,7 @@ func removeContent(op, path string, parent int, name string) (err error) {
 	if err != nil {
 		return err
 	}
-	dir := os.NewFile(uintptr(d.fd), name)
+	dir := os.NewFile(uintptr(d), name)
 	defer func() { err = errors.Join(err, failure(op, path, dir.Close())) }()
 	entries, err := dir.Readdirnames(-1)
 	if err != nil {
@@ -371,10 +395,10 @@ func removeContent(op, path string, parent int, name string) (err error) {
 	}
 	for _, entry := range entries {
 		var st unix.Stat_t
-		if err := lstatat(d.fd, entry, &st); err != nil {
+		if err := lstatat(d, entry, &st); err != nil {
 			return absentIsDone(op, path, err)
 		}
-		if err := removeEntry(op, path, d.fd, entry, st.Mode&unix.S_IFMT == unix.S_IFDIR); err != nil {
+		if err := removeEntry(op, path, d, entry, st.Mode&unix.S_IFMT == unix.S_IFDIR); err != nil {
 			return err
 		}
 	}

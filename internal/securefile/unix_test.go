@@ -314,7 +314,7 @@ func TestOnlyThePrivateRuleRequiresTheOwner(t *testing.T) {
 
 // openParent opens the parent of the leaf of name below d, as the write
 // operations do before they publish.
-func openParent(t *testing.T, d *Dir, name string) (parent dirHandle, leaf string) {
+func openParent(t *testing.T, d *Dir, name string) (parent int, leaf string) {
 	t.Helper()
 	parts, err := components("replace", name)
 	if err != nil {
@@ -325,7 +325,7 @@ func openParent(t *testing.T, d *Dir, name string) (parent dirHandle, leaf strin
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := parent.close(); err != nil {
+		if err := closeFd("replace", name, parent); err != nil {
 			t.Error(err)
 		}
 	})
@@ -338,7 +338,7 @@ func TestALeafSwappedForALinkIsReplacedNotFollowed(t *testing.T) {
 	mkdir(t, root, "env")
 	parent, leaf := openParent(t, d, "env/node.env")
 	symlink(t, root, filepath.Join(root, "outside.txt"), "env/node.env")
-	if err := publish("replace", "env/node.env", parent.fd, leaf, []byte("NEW=1\n"), 0o600); err != nil {
+	if err := publish("replace", "env/node.env", parent, leaf, []byte("NEW=1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if got := readFile(t, root, "outside.txt"); got != "keep" {
@@ -360,7 +360,7 @@ func TestADirectorySwappedMidWriteKeepsTheWriteInTheOpenedOne(t *testing.T) {
 	parent, leaf := openParent(t, d, "env/node.env")
 	rename(t, root, "env", "moved")
 	symlink(t, root, "outside", "env")
-	if err := publish("replace", "env/node.env", parent.fd, leaf, []byte("NEW=1\n"), 0o600); err != nil {
+	if err := publish("replace", "env/node.env", parent, leaf, []byte("NEW=1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if got := names(t, root, "outside"); len(got) != 0 {
@@ -391,7 +391,7 @@ func TestAFailedRenameRemovesTheTemporaryFile(t *testing.T) {
 	mkdir(t, root, "env")
 	parent, leaf := openParent(t, d, "env/node.env")
 	writeFile(t, root, "env/node.env/inside", "x")
-	err := publish("replace", "env/node.env", parent.fd, leaf, []byte("NEW=1\n"), 0o600)
+	err := publish("replace", "env/node.env", parent, leaf, []byte("NEW=1\n"), 0o600)
 	if err == nil {
 		t.Fatal("publish() = nil, want the error of the rename onto a directory")
 	}
@@ -416,6 +416,66 @@ func TestWritesInAReadOnlyDirectoryFail(t *testing.T) {
 	if got := readFile(t, root, "ro/f"); got != "x" {
 		t.Errorf("the file holds %q, want x", got)
 	}
+}
+
+func TestAClosedDirNeverReachesAReusedDescriptor(t *testing.T) {
+	root, d := newTree(t)
+	other := t.TempDir()
+	writeFile(t, other, "secret", "other")
+	sub, err := d.MakeSubdir("sub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	number := int(sub.h.f.Fd())
+	if err := sub.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// The kernel gives the closed number to the next open of another
+	// directory. An operation of the closed Dir must not reach it.
+	reused := reuseDescriptor(t, other, number)
+	t.Cleanup(func() {
+		if err := unix.Close(reused); err != nil {
+			t.Error(err)
+		}
+	})
+	if data, err := sub.ReadFile("secret"); err == nil {
+		t.Fatalf("ReadFile() through a closed Dir = %q, want an error", data)
+	}
+	if err := sub.CreateOnce("planted", []byte("x")); err == nil {
+		t.Fatal("CreateOnce() through a closed Dir = nil, want an error")
+	}
+	if got := names(t, other, "."); len(got) != 1 {
+		t.Errorf("the other directory holds %q, want only its own file", got)
+	}
+	if got := names(t, root, "sub"); len(got) != 0 {
+		t.Errorf("the closed directory holds %q, want nothing", got)
+	}
+}
+
+// reuseDescriptor opens dir until the kernel hands out the number n, closes
+// the other descriptors, and returns the descriptor with the number n.
+func reuseDescriptor(t *testing.T, dir string, n int) int {
+	t.Helper()
+	var extra []int
+	defer func() {
+		for _, fd := range extra {
+			if err := unix.Close(fd); err != nil {
+				t.Error(err)
+			}
+		}
+	}()
+	for range n + 1 {
+		fd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fd == n {
+			return fd
+		}
+		extra = append(extra, fd)
+	}
+	t.Fatalf("the kernel did not give the number %d again", n)
+	return -1
 }
 
 func TestIgnoringEINTR(t *testing.T) {

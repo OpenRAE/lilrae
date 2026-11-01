@@ -234,8 +234,32 @@ func TestCloseReportsASecondClose(t *testing.T) {
 	if err := d.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.Close(); err == nil || !strings.HasPrefix(err.Error(), "securefile: close dir .: ") {
-		t.Errorf("second Close() = %v, want an error of the package", err)
+	if err := d.Close(); !errors.Is(err, fs.ErrClosed) || !strings.HasPrefix(err.Error(), "securefile: close dir .: ") {
+		t.Errorf("second Close() = %v, want an error of the package that matches fs.ErrClosed", err)
+	}
+}
+
+func TestAClosedDirRefusesEachOperation(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "f", "x")
+	d, err := OpenDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.ReadFile("f"); err == nil {
+		t.Error("ReadFile() after Close = nil error, want an error")
+	}
+	if err := d.Replace("f", []byte("y"), 0o600); err == nil {
+		t.Error("Replace() after Close = nil, want an error")
+	}
+	if _, err := d.Subdir("missing"); err == nil {
+		t.Error("Subdir() after Close = nil error, want an error")
+	}
+	if got := readFile(t, root, "f"); got != "x" {
+		t.Errorf("the file holds %q after Close, want x", got)
 	}
 }
 
