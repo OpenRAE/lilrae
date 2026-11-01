@@ -21,9 +21,16 @@ boundaries, so the contract is the capability.
   modules.
 - The Python `ast` module finds each import statement. The scan does not
   import the product code.
-- `tests/test_raes_consumer_inventory.py` fails when an import in `src/` has no
-  row in the name tables. It also fails when a row names a module or a name
-  that `src/` does not import.
+- The scan also follows each imported RAES module to the attributes that
+  `src/` reads from it: `SCHEMAS` and `corpus_family_root` of
+  `raes_contracts.corpus`, and the two snapshot value limits of `raes_runtime`.
+- `core/evidence_bundle/schemas.py` also reads the installed RAES version with
+  `importlib.metadata.version("raes")`. An evidence bundle records that version
+  with each RAES schema that it carries. The Go port needs the version of the
+  RAES Go module for the same record.
+- `tests/test_raes_consumer_inventory.py` fails when an import or a module
+  attribute in `src/` has no row in the name tables. It also fails when a row
+  names a module or a name that `src/` does not use.
 - The LilRAE area of a name is the package of the importing file below `src/`.
   The LilRAE Go port of a file is the port whose scope contains that file. In
   the tables, GP*n* is LilRAE Go port *n*, followed by its issue number.
@@ -129,7 +136,7 @@ Owner: [rae#1780](https://github.com/OpenRAE/rae/issues/1780).
 | Module | Names | LilRAE areas |
 | --- | --- | --- |
 | `raes_contracts.associated_artifacts` | `AssociatedArtifactManifestModel`, `AssociatedArtifactValidationLimits`, `load_associated_artifact_manifest_json`, `validate_associated_artifact_manifest` | `core/experiment` |
-| `raes_contracts.corpus` | module import | `core/evidence_bundle` |
+| `raes_contracts.corpus` | `SCHEMAS`, `corpus_family_root`, module import | `core/evidence_bundle` |
 | `raes_contracts.diagnostics` | `Diagnostic`, `Severity` | `backends`, `cli`, `core/correlation`, `core/evidence`, `core/experiment`, `validation` |
 
 ### Concept authority and vocabularies
@@ -228,6 +235,8 @@ Owner: [rae#1791](https://github.com/OpenRAE/rae/issues/1791).
 | `raes_contracts.workflow` | `WorkflowExecutionContract`, `WorkflowExecutionState`, `WorkflowHistoryEvent`, `WorkflowHistoryEventType`, `WorkflowResultContract`, `WorkflowStatus`, `WorkflowStepExecutionState`, `WorkflowStepLifecycle`, `WorkflowStepOutcome` | `backends`, `core/runtime` |
 | `raes_runtime` | `backend_input_contracts`, `backend_snapshot_contracts` | `backends` |
 | `raes_runtime.backend_account_credentials` | `plan_has_account_credentials` | `backends` |
+| `raes_runtime.backend_input_contracts` | `RUNTIME_SNAPSHOT_VALUE_LIMITS` | `backends` |
+| `raes_runtime.backend_snapshot_contracts` | `_VALUE_LIMITS` | `backends` |
 | `raes_runtime.control_plane` | `RuntimeControlPlane` | `backends`, `validation` |
 | `raes_runtime.control_plane_execution` | `execute_participant_action` | `backends`, `validation` |
 | `raes_runtime.control_plane_security` | `ControlPlaneIdentity`, `ControlPlaneRole`, `ParticipantControlSubjectBinding` | `backends` |

@@ -1,8 +1,9 @@
-"""The RAES consumer inventory names each RAES and env-packs import in src/ (#1556)."""
+"""The RAES consumer inventory names each RAES and env-packs use in src/ (#1556)."""
 
 from __future__ import annotations
 
 import ast
+import importlib.util
 import re
 from pathlib import Path
 
@@ -24,26 +25,77 @@ UPSTREAM_ROOTS = frozenset(
 MODULE_IMPORT = "module import"
 
 
-def _source_imports() -> set[tuple[str, str]]:
-    """Return each imported (module, name), at any depth of each file."""
+def _is_module(name: str) -> bool:
+    # find_spec imports the parent packages, which are installed RAES
+    # distributions; it does not import product code.
+    try:
+        return importlib.util.find_spec(name) is not None
+    except ModuleNotFoundError:
+        # The parent is a module, not a package, so the name is an attribute.
+        return False
 
-    found: set[tuple[str, str]] = set()
+
+def _module_bindings(tree: ast.Module) -> dict[str, str]:
+    """Map each local name that holds an upstream module to that module."""
+
+    bound: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[0] in UPSTREAM_ROOTS:
+                    local = alias.asname or alias.name.split(".")[0]
+                    bound[local] = alias.name if alias.asname else local
+        elif isinstance(node, ast.ImportFrom) and _upstream_from(node):
+            for alias in node.names:
+                if _is_module(f"{node.module}.{alias.name}"):
+                    bound[alias.asname or alias.name] = f"{node.module}.{alias.name}"
+    return bound
+
+
+def _upstream_from(node: ast.ImportFrom) -> bool:
+    return node.level == 0 and node.module is not None and node.module.split(".")[0] in UPSTREAM_ROOTS
+
+
+def _attribute_reads(tree: ast.Module, bound: dict[str, str]) -> set[tuple[str, str]]:
+    """Return each (module, attribute) that the file reads through a module name."""
+
+    reads: set[tuple[str, str]] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute):
+            continue
+        chain: list[str] = []
+        current: ast.expr = node
+        while isinstance(current, ast.Attribute):
+            chain.insert(0, current.attr)
+            current = current.value
+        if not isinstance(current, ast.Name) or current.id not in bound:
+            continue
+        module = bound[current.id]
+        for attribute in chain:
+            if not _is_module(f"{module}.{attribute}"):
+                reads.add((module, attribute))
+                break
+            module = f"{module}.{attribute}"
+    return reads
+
+
+def _source_uses() -> set[tuple[str, str]]:
+    """Return each imported (module, name) and each attribute read through a module."""
+
+    uses: set[tuple[str, str]] = set()
     for path in sorted((ROOT / "src").rglob("*.py")):
-        for node in ast.walk(ast.parse(path.read_bytes(), filename=str(path))):
+        tree = ast.parse(path.read_bytes(), filename=str(path))
+        for node in ast.walk(tree):
             if isinstance(node, ast.Import):
-                found.update(
+                uses.update(
                     (alias.name, MODULE_IMPORT)
                     for alias in node.names
                     if alias.name.split(".")[0] in UPSTREAM_ROOTS
                 )
-            elif (
-                isinstance(node, ast.ImportFrom)
-                and node.level == 0
-                and node.module is not None
-                and node.module.split(".")[0] in UPSTREAM_ROOTS
-            ):
-                found.update((node.module, alias.name) for alias in node.names)
-    return found
+            elif isinstance(node, ast.ImportFrom) and _upstream_from(node):
+                uses.update((node.module, alias.name) for alias in node.names)
+        uses |= _attribute_reads(tree, _module_bindings(tree))
+    return uses
 
 
 def _inventory_rows() -> set[tuple[str, str]]:
@@ -53,16 +105,15 @@ def _inventory_rows() -> set[tuple[str, str]]:
     section = text.split("\n## Names by capability\n", 1)[1].split("\n## ", 1)[0]
     rows: set[tuple[str, str]] = set()
     for module, names in re.findall(r"^\| `([a-z0-9_.]+)` \| ([^|]+) \|", section, re.MULTILINE):
-        cells = re.findall(r"`([^`]+)`", names) or [names.strip()]
-        rows.update((module, name) for name in cells)
+        rows.update((module, name.strip().strip("`")) for name in names.split(","))
     return rows
 
 
-def test_inventory_names_each_upstream_import() -> None:
-    missing = _source_imports() - _inventory_rows()
-    assert not missing, f"src/ imports names that the inventory does not list: {sorted(missing)}"
+def test_inventory_names_each_upstream_use() -> None:
+    missing = _source_uses() - _inventory_rows()
+    assert not missing, f"src/ uses names that the inventory does not list: {sorted(missing)}"
 
 
-def test_inventory_lists_only_imported_names() -> None:
-    stale = _inventory_rows() - _source_imports()
-    assert not stale, f"the inventory lists names that src/ does not import: {sorted(stale)}"
+def test_inventory_lists_only_used_names() -> None:
+    stale = _inventory_rows() - _source_uses()
+    assert not stale, f"the inventory lists names that src/ does not use: {sorted(stale)}"
