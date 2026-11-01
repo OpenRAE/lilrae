@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openrae.github.io/lilrae/reference/schemas/range-snapshot.schema.json",
+  "title": "Range snapshot",
+  "description": "The redacted point-in-time snapshot of the lab range: lilrae lab status --json and --output, and the range snapshot of a run record. It has no result envelope and no schema version. A new field is additive. A redacted value is the string [REDACTED].",
+  "type": "object",
+  "required": ["timestamp", "software", "containers", "wazuh_rules", "networks", "config_hashes", "services", "ssh"],
+  "properties": {
+    "timestamp": {"type": "string"},
+    "software": {
+      "type": "object",
+      "required": ["python_version", "docker_version", "compose_version", "wazuh_manager_version", "wazuh_indexer_version", "aptl_version", "raes_version"],
+      "properties": {
+        "python_version": {"type": "string"},
+        "docker_version": {"type": "string"},
+        "compose_version": {"type": "string"},
+        "wazuh_manager_version": {"type": "string"},
+        "wazuh_indexer_version": {"type": "string"},
+        "aptl_version": {"type": "string"},
+        "raes_version": {"type": "string"}
+      }
+    },
+    "containers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "image", "image_id", "status", "health", "labels", "networks", "ports", "image_digest", "restart_policy"],
+        "properties": {
+          "name": {"type": "string"},
+          "image": {"type": "string"},
+          "image_id": {"type": "string"},
+          "status": {"type": "string"},
+          "health": {"type": "string"},
+          "labels": {"$ref": "#/$defs/strings"},
+          "networks": {"$ref": "#/$defs/strings"},
+          "ports": {"type": "array", "items": {"type": "string"}},
+          "image_digest": {"type": "string"},
+          "restart_policy": {"type": "string"}
+        }
+      }
+    },
+    "wazuh_rules": {
+      "type": "object",
+      "required": ["total_rules", "custom_rules", "custom_rule_files", "total_decoders", "custom_decoders"],
+      "properties": {
+        "total_rules": {"type": "integer", "minimum": 0},
+        "custom_rules": {"type": "integer", "minimum": 0},
+        "custom_rule_files": {"type": "array", "items": {"type": "string"}},
+        "total_decoders": {"type": "integer", "minimum": 0},
+        "custom_decoders": {"type": "integer", "minimum": 0}
+      }
+    },
+    "networks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "subnet", "gateway", "containers"],
+        "properties": {
+          "name": {"type": "string"},
+          "subnet": {"type": "string"},
+          "gateway": {"type": "string"},
+          "containers": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "config_hashes": {"$ref": "#/$defs/strings"},
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "url", "host", "port", "protocol", "credentials"],
+        "properties": {
+          "name": {"type": "string"},
+          "url": {"type": "string"},
+          "host": {"type": "string"},
+          "port": {"type": "integer", "minimum": 0, "maximum": 65535},
+          "protocol": {"type": "string"},
+          "credentials": {"type": "string"}
+        }
+      }
+    },
+    "ssh": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "host", "port", "user", "key_path", "command"],
+        "properties": {
+          "name": {"type": "string"},
+          "host": {"type": "string"},
+          "port": {"type": "integer", "minimum": 0, "maximum": 65535},
+          "user": {"type": "string"},
+          "key_path": {"type": "string"},
+          "command": {"type": "string"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "strings": {"type": "object", "additionalProperties": {"type": "string"}}
+  }
+}

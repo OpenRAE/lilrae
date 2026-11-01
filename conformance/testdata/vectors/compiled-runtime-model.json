@@ -1,0 +1,22 @@
+{
+  "corpus": 1,
+  "scheme": "compiled-runtime-model",
+  "version": "current",
+  "owner": "aptl.backends.raes_runtime_model_artifact.compiled_runtime_model_bytes and compiled_runtime_model_sha256",
+  "cases": [
+    {
+      "id": "bounded-participant-agency",
+      "input": {
+        "scenario": "scenarios/bounded-participant-agency-techvault.sdl.yaml"
+      },
+      "expect": {
+        "value": {
+          "sha256": "31539407a07892bd106d502b95aea256c97ed107eef411c45b298ca3a3c2a3a5",
+          "size": 1171980,
+          "last_byte_hex": "0a"
+        }
+      },
+      "note": "The RAES compiler of the locked release produces the model; the vector holds the digest of the artifact bytes."
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+# Each commit of the fixture repository changes the nested module sub.
+exec git init --quiet --initial-branch=main
+exec git config user.name Fixture
+exec git config user.email fixture@example.invalid
+exec git config commit.gpgsign false
+exec git add --all
+exec git commit --quiet --message=base
+exec git tag base
+
+# A weak test leaves a lived mutant on a changed line.
+cp _head/adult.go sub/calc/calc.go
+cp _head/weak_test.go sub/calc/calc_test.go
+exec git add --all
+exec git commit --quiet --message=weak
+! exec bash $GATES mutation base
+stdout 'efficacy: 50.00% is below the threshold of 100%'
+stdout 'sub/calc/calc.go:6:13: LIVED CONDITIONALS_BOUNDARY'
+
+# A strong test kills each mutant.
+cp _head/strong_test.go sub/calc/calc_test.go
+exec git add --all
+exec git commit --quiet --message=strong
+exec git tag strong
+exec bash $GATES mutation base
+stdout 'efficacy 100.00%'
+
+# A change of comments only holds no mutant.
+cp _head/comment.go sub/calc/calc.go
+exec git add --all
+exec git commit --quiet --message=comment
+exec bash $GATES mutation strong
+stdout 'the changed lines hold no mutant'
+
+-- README --
+fixture
+-- sub/go.mod --
+module example.com/fixture
+
+go 1.27.0
+-- sub/calc/calc.go --
+// Package calc decides ages.
+package calc
+-- _head/adult.go --
+// Package calc decides ages.
+package calc
+
+// Adult reports whether age is 18 or more.
+func Adult(age int) bool {
+	return age >= 18
+}
+-- _head/comment.go --
+// Package calc decides ages.
+package calc
+
+// Adult reports whether a person of age is an adult.
+func Adult(age int) bool {
+	return age >= 18
+}
+-- _head/weak_test.go --
+package calc
+
+import "testing"
+
+func TestAdult(t *testing.T) {
+	if !Adult(30) {
+		t.Error("Adult(30) = false, want true")
+	}
+}
+-- _head/strong_test.go --
+package calc
+
+import "testing"
+
+func TestAdult(t *testing.T) {
+	for age, want := range map[int]bool{17: false, 18: true, 30: true} {
+		if got := Adult(age); got != want {
+			t.Errorf("Adult(%d) = %t, want %t", age, got, want)
+		}
+	}
+}

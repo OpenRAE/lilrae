@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openrae.github.io/lilrae/reference/schemas/lab-stop-result.schema.json",
+  "title": "lilrae lab stop --json result",
+  "description": "Whether --volumes was requested, and the error of a failed stop.",
+  "$ref": "cli-result.schema.json",
+  "required": ["volumes", "error"],
+  "properties": {
+    "command": {"const": "lab stop"},
+    "volumes": {"type": "boolean"},
+    "error": {"type": ["string", "null"]}
+  }
+}

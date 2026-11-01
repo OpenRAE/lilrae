@@ -1,0 +1,220 @@
+# golangci-lint v2 configuration for the Go implementation (ADR-065).
+# Each enabled linter enforces a rule of the Google Go Style Guide or a
+# security, error, or test rule of ADR-065. A finding is fixed in the code.
+# A suppression is permitted only for a verified false positive: nolintlint
+# requires the linter name and the reason.
+version: "2"
+
+run:
+  build-tags:
+    - integration
+  modules-download-mode: readonly
+  relative-path-mode: gomod
+
+linters:
+  default: none
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - containedctx
+    - contextcheck
+    - copyloopvar
+    - depguard
+    - dogsled
+    - dupword
+    - durationcheck
+    - embeddedstructfieldcheck
+    - errcheck
+    - errchkjson
+    - errname
+    - errorlint
+    - exhaustive
+    - exptostd
+    - fatcontext
+    - forbidigo
+    - forcetypeassert
+    - gocheckcompilerdirectives
+    - gochecknoglobals
+    - gochecknoinits
+    - gochecksumtype
+    - gocognit
+    - gocritic
+    - godoclint
+    - godot
+    - gomoddirectives
+    - goprintffuncname
+    - gosec
+    - govet
+    - iface
+    - inamedparam
+    - ineffassign
+    - interfacebloat
+    - intrange
+    - ireturn
+    - loggercheck
+    - makezero
+    - mirror
+    - misspell
+    - modernize
+    - musttag
+    - nakedret
+    - nilerr
+    - nilnesserr
+    - nilnil
+    - noctx
+    - nolintlint
+    - nosprintfhostport
+    - perfsprint
+    - predeclared
+    - reassign
+    - recvcheck
+    - revive
+    - sloglint
+    - spancheck
+    - staticcheck
+    - testableexamples
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - usetesting
+    - wastedassign
+    - wrapcheck
+
+  settings:
+    depguard:
+      # architecture/model.yaml permits the third-party modules of each
+      # component. These rules ban standard-library packages only.
+      rules:
+        all:
+          deny:
+            - pkg: io/ioutil
+              desc: Use the io and os packages.
+            - pkg: log$
+              desc: Use log/slog with an explicit logger (ADR-065).
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    exhaustive:
+      default-signifies-exhaustive: false
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^panic$
+          msg: Return an error. Library code does not panic (ADR-065).
+        - pattern: ^os\.Exit$
+          msg: Return an error to main. Only main exits (ADR-065).
+        - pattern: ^fmt\.Print(f|ln)?$
+          msg: Write to an injected io.Writer, not to standard output.
+    gocognit:
+      min-complexity: 15
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      settings:
+        hugeParam:
+          # Google style passes small structs by value. The default of 80
+          # bytes flags a configuration of a few strings. 256 bytes is four
+          # cache lines.
+          sizeThreshold: 256
+    godot:
+      scope: declarations
+    gomoddirectives:
+      replace-local: false
+      retract-allow-no-explanation: false
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+    nakedret:
+      max-func-lines: 0
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+    revive:
+      enable-all-rules: false
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: early-return
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: exported
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+        - name: package-naming
+          arguments:
+            - check-extra-bad-name: true
+              user-defined-bad-names:
+                - base
+                - helper
+                - helpers
+                - misc
+                - models
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: unused-parameter
+        - name: use-any
+        - name: var-declaration
+        - name: var-naming
+    sloglint:
+      no-global: all
+      context: scope
+      static-msg: true
+      key-naming-case: snake
+    staticcheck:
+      checks:
+        - all
+    usetesting:
+      os-temp-dir: true
+    wrapcheck:
+      # First-party packages return errors with context. wrapcheck checks
+      # the errors of third-party packages.
+      ignore-package-globs:
+        - github.com/OpenRAE/lilrae/*
+
+  exclusions:
+    generated: strict
+    presets: []
+    rules:
+      # ADR-065: main exits with the status, and main and tests can panic.
+      # The paths are relative to the go.mod of each module.
+      - path: ^cmd/
+        linters:
+          - forbidigo
+        text: (os\.Exit|panic)
+      - path: _test\.go$
+        linters:
+          - forbidigo
+        text: panic
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/OpenRAE/lilrae
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

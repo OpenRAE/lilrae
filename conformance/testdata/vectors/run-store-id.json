@@ -1,0 +1,72 @@
+{
+  "corpus": 1,
+  "scheme": "run-store-id",
+  "version": "current",
+  "owner": "aptl.core.runstore_internals._validate_id",
+  "cases": [
+    {
+      "id": "uuid-hex",
+      "input": "0123456789abcdef0123456789abcdef",
+      "expect": {
+        "text": "0123456789abcdef0123456789abcdef"
+      }
+    },
+    {
+      "id": "uuid-dashed",
+      "input": "01234567-89ab-cdef-0123-456789abcdef",
+      "expect": {
+        "text": "01234567-89ab-cdef-0123-456789abcdef"
+      }
+    },
+    {
+      "id": "semver-shaped",
+      "input": "v1.2.3",
+      "expect": {
+        "text": "v1.2.3"
+      }
+    },
+    {
+      "id": "underscore-start",
+      "input": "_run",
+      "expect": {
+        "text": "_run"
+      }
+    },
+    {
+      "id": "dot-dot",
+      "input": "a..b",
+      "expect": {
+        "reject": "validate"
+      }
+    },
+    {
+      "id": "leading-dot",
+      "input": ".hidden",
+      "expect": {
+        "reject": "validate"
+      }
+    },
+    {
+      "id": "slash",
+      "input": "a/b",
+      "expect": {
+        "reject": "validate"
+      }
+    },
+    {
+      "id": "empty",
+      "input": "",
+      "expect": {
+        "reject": "validate"
+      }
+    },
+    {
+      "id": "non-ascii-word",
+      "input": "é-run",
+      "note": "the ID pattern accepts ASCII word characters only",
+      "expect": {
+        "reject": "validate"
+      }
+    }
+  ]
+}

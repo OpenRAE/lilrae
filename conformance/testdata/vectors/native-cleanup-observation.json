@@ -1,0 +1,59 @@
+{
+  "corpus": 1,
+  "scheme": "native-cleanup-observation",
+  "version": "current",
+  "owner": "aptl.core.deployment.lilrae_native_evidence.record_cleanup",
+  "cases": [
+    {
+      "id": "after-remove",
+      "input": {
+        "logical": "aptl",
+        "workspace_id": "0123456789abcdef0123456789abcdef",
+        "recorded_at": "2026-11-01T00:00:00+00:00",
+        "uuid_hex": "00000000000000000000000000000001",
+        "cause": "after-remove",
+        "receipt": {
+          "kind": "container",
+          "native_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "external_name": "aptl-w0123456789ab-web",
+          "semantic_name": "web",
+          "node_address": "provision.node.web",
+          "daemon_id": "daemon-1",
+          "attempt_id": "run-a",
+          "managed_by": "direct"
+        }
+      },
+      "expect": {
+        "value": {
+          "retained_name": "1606b843ab21f6ee015ebc32eb0b24e1e113b2ead9e7a71954da3a1a285b7ced.json",
+          "observation_name": "00000000000000000000000000000001.json",
+          "observation_hex": "7b22617474656d70745f6964223a2272756e2d61222c226361757365223a2261667465722d72656d6f7665222c226461656d6f6e5f6964223a226461656d6f6e2d31222c226b696e64223a22636f6e7461696e6572222c226e61746976655f6964223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c2270726f6a6563745f6e616d65223a226170746c2d77303132333435363738396162222c22726563656970745f736861323536223a2231363036623834336162323166366565303135656263333265623062323465316531313362326561643965376137313935346461336131613238356237636564222c227265636f726465645f6174223a22323032362d31312d30315430303a30303a30302b30303a3030222c22736368656d61223a226c696c7261652e6e61746976652d636c65616e75702f7631222c227374617465223a22616273656e74222c22776f726b73706163655f6964223a223031323334353637383961626364656630313233343536373839616263646566227d0a"
+        }
+      },
+      "note": "The owner reads the clock and draws the file name at random; the vector fixes both."
+    },
+    {
+      "id": "unknown-cause",
+      "input": {
+        "logical": "aptl",
+        "workspace_id": "0123456789abcdef0123456789abcdef",
+        "recorded_at": "2026-11-01T00:00:00+00:00",
+        "uuid_hex": "00000000000000000000000000000002",
+        "cause": "deleted",
+        "receipt": {
+          "kind": "volume",
+          "native_id": "owned-volume",
+          "external_name": "aptl-w0123456789ab_data",
+          "semantic_name": "data",
+          "node_address": "provision.node.web",
+          "daemon_id": "daemon-1",
+          "attempt_id": "run-a",
+          "managed_by": "direct"
+        }
+      },
+      "expect": {
+        "reject": "validate"
+      }
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+# The fuzz gate runs each fuzz test of a package with production code.
+exec git init --quiet
+exec git add go.mod
+exec bash $GATES fuzz 100x
+stdout '== example.com/fixture/calc FuzzAdd'
+stdout 'ok  	example.com/fixture/calc'
+
+# A fuzz test that fails fails the gate.
+cp _bad/fail_test.go calc/fail_test.go
+! exec bash $GATES fuzz 100x
+stdout '== example.com/fixture/calc FuzzFail'
+stdout 'FAIL'
+rm calc/fail_test.go
+
+# A package whose tests do not build fails the gate; it does not pass with no
+# fuzz test.
+cp _bad/broken_test.go calc/broken_test.go
+! exec bash $GATES fuzz 100x
+stderr 'undefined: missing'
+
+-- go.mod --
+module example.com/fixture
+
+go 1.27.0
+-- calc/calc.go --
+// Package calc adds numbers.
+package calc
+
+// Add returns the sum of a and b.
+func Add(a, b int) int {
+	return a + b
+}
+-- calc/calc_test.go --
+package calc
+
+import "testing"
+
+func FuzzAdd(f *testing.F) {
+	f.Add(1, 2)
+	f.Fuzz(func(t *testing.T, a, b int) {
+		if Add(a, b) != Add(b, a) {
+			t.Fatal("Add is not commutative")
+		}
+	})
+}
+-- _bad/fail_test.go --
+package calc
+
+import "testing"
+
+func FuzzFail(f *testing.F) {
+	f.Add("!")
+	f.Fuzz(func(t *testing.T, s string) {
+		if s == "!" {
+			t.Fatal("the seed fails")
+		}
+	})
+}
+-- _bad/broken_test.go --
+package calc
+
+func helper() int {
+	return missing
+}

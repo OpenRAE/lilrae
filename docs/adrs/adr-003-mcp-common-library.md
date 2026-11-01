@@ -2,7 +2,11 @@
 
 ## Status
 
-accepted
+superseded in part by ADR-065
+
+[ADR-065](adr-065-go-implementation-and-engineering-standards.md) replaces the TypeScript common library with one Go
+MCP runtime for the Go implementation. The configuration-driven server design
+stays. The TypeScript library stays in force until Go port 31 removes it.
 
 ## Date
 

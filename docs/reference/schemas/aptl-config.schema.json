@@ -1,0 +1,541 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openrae.github.io/lilrae/reference/schemas/aptl-config.schema.json",
+  "title": "aptl.json",
+  "description": "The durable, non-secret configuration of a LilRAE project. Each object rejects unknown fields. A field with a default can be absent. The schema checks the structure; lilrae config validate also checks the values and the deployment settings.",
+  "$defs": {
+    "ContainerSettings": {
+      "additionalProperties": false,
+      "description": "Optional selection from the admitted scenario's operator groups.",
+      "properties": {
+        "profiles": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "DeploymentConfig": {
+      "additionalProperties": false,
+      "description": "Configuration for deployment backend selection.\n\nControls which deployment backend is used for lab lifecycle\noperations (start, stop, status, kill).  Defaults to local\nDocker Compose.",
+      "properties": {
+        "provider": {
+          "default": "docker-compose",
+          "type": "string"
+        },
+        "project_name": {
+          "default": "aptl",
+          "type": "string"
+        },
+        "ssh_host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ssh_user": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ssh_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ssh_port": {
+          "default": 22,
+          "type": "integer"
+        },
+        "remote_dir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "environment_grants": {
+          "items": {
+            "$ref": "#/$defs/EnvironmentGrant"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "EnvironmentGrant": {
+      "additionalProperties": false,
+      "description": "Grant one configured source to one declared variable of one pack node.\n\nThe grant names the admitted pack (its ``pack_id``), the consuming node and\nthe variable that node declares, plus the exact source to read. It stores\nlocators, never a value, so ``aptl.json`` stays a non-secret file.",
+      "properties": {
+        "pack": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "consumer": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "variable": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "source": {
+          "discriminator": {
+            "mapping": {
+              "process-environment": "#/$defs/ProcessEnvironmentCredentialSource",
+              "project-env-file": "#/$defs/ProjectEnvironmentFileSource"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ProcessEnvironmentCredentialSource"
+            },
+            {
+              "$ref": "#/$defs/ProjectEnvironmentFileSource"
+            }
+          ]
+        }
+      },
+      "required": [
+        "pack",
+        "consumer",
+        "variable",
+        "source"
+      ],
+      "type": "object"
+    },
+    "ExperimentSettings": {
+      "additionalProperties": false,
+      "description": "Strict non-secret apparatus settings approved for experiment binding.",
+      "properties": {
+        "participant_action_timeout_seconds": {
+          "default": 120,
+          "maximum": 3600,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "participant_models": {
+          "$ref": "#/$defs/InstalledParticipantModels"
+        },
+        "participant_credential_sources": {
+          "$ref": "#/$defs/InstalledParticipantCredentialSources"
+        }
+      },
+      "type": "object"
+    },
+    "InstalledParticipantCredentialSources": {
+      "additionalProperties": false,
+      "description": "Closed configured credential-source selections for installed providers.",
+      "properties": {
+        "claude": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProcessEnvironmentCredentialSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "codex": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProcessEnvironmentCredentialSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "InstalledParticipantModels": {
+      "additionalProperties": false,
+      "description": "Closed model selections for APTL's installed participant providers.",
+      "properties": {
+        "claude": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "codex": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "LabLifecyclePolicyConfig": {
+      "additionalProperties": false,
+      "description": "Ephemeral lifecycle policy for the range (DEP-003).\n\nDeclarative policy consumed by ``lilrae lab enforce`` / ``monitor`` to\nauto-teardown an idle or expired range and to provision on a\nschedule. Enforcement is a separate single-owner control-plane tick;\nthis model is just the strict, first-party policy shape (ADR-025).\nAll durations are bounded positive integers in minutes.",
+      "properties": {
+        "ttl_minutes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "idle_timeout_minutes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "teardown_remove_volumes": {
+          "default": true,
+          "type": "boolean"
+        },
+        "schedule": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LifecycleScheduleEntry"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "LabSettings": {
+      "additionalProperties": false,
+      "description": "Lab-level configuration.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "network_subnet": {
+          "default": "172.20.0.0/16",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "LifecycleScheduleEntry": {
+      "additionalProperties": false,
+      "description": "One scheduled-provisioning window (DEP-003).\n\n``at`` is a 24-hour ``HH:MM`` wall-clock time interpreted in **UTC**\n(the platform stamps lifecycle timestamps as timezone-aware UTC, so\nthe schedule shares that frame). ``days`` is an optional weekday\nfilter (empty means every day). ``scenario`` optionally names a\ncurated RAES startup scenario id to boot with.",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "days": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "scenario": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "at"
+      ],
+      "type": "object"
+    },
+    "ProcessEnvironmentCredentialSource": {
+      "additionalProperties": false,
+      "description": "Select one exact parent-process variable without storing its value.",
+      "properties": {
+        "kind": {
+          "const": "process-environment",
+          "type": "string"
+        },
+        "variable": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "variable"
+      ],
+      "type": "object"
+    },
+    "ProjectEnvironmentFileSource": {
+      "additionalProperties": false,
+      "description": "Select one exact key of the project's private ``.env`` without its value.",
+      "properties": {
+        "kind": {
+          "const": "project-env-file",
+          "type": "string"
+        },
+        "variable": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "variable"
+      ],
+      "type": "object"
+    },
+    "RunStorageConfig": {
+      "additionalProperties": false,
+      "description": "Configuration for experiment run storage.",
+      "properties": {
+        "backend": {
+          "default": "local",
+          "type": "string"
+        },
+        "local_path": {
+          "default": "./runs",
+          "type": "string"
+        },
+        "s3_bucket": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "s3_prefix": {
+          "default": "runs/",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ScenarioSourceConfig": {
+      "additionalProperties": false,
+      "description": "Which scenario APTL realizes, and where its bytes come from.\n\nA backend is handed a scenario; it does not own one. Selecting it is an\noperator decision made before ``lilrae lab start`` rather than something the\nbackend decides or switches at runtime, so it lives here.\n\n``root`` applies only to an explicitly selected project-tree development\nscenario. ``pack_directory`` selects a released pack beneath the project;\nwhen absent, installed env-packs resources supply its bytes. Acquired packs\nare staged and validated beneath private project state. A configured root is\noperator input and is treated as untrusted: it must be a relative path that\ncannot escape the project.",
+      "properties": {
+        "identity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "root": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "pack_directory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "default": "env-pack",
+          "enum": [
+            "project-tree",
+            "env-pack"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "SeatSettings": {
+      "additionalProperties": false,
+      "description": "Operator-selected VM source and independent signing trust.",
+      "properties": {
+        "image": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "public_key": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "lab": {
+      "$ref": "#/$defs/LabSettings",
+      "default": {
+        "name": "aptl",
+        "network_subnet": "172.20.0.0/16"
+      }
+    },
+    "containers": {
+      "$ref": "#/$defs/ContainerSettings",
+      "default": {
+        "profiles": null
+      }
+    },
+    "deployment": {
+      "$ref": "#/$defs/DeploymentConfig",
+      "default": {
+        "provider": "docker-compose",
+        "project_name": "aptl",
+        "ssh_host": null,
+        "ssh_user": null,
+        "ssh_key": null,
+        "ssh_port": 22,
+        "remote_dir": null,
+        "environment_grants": []
+      }
+    },
+    "scenario": {
+      "$ref": "#/$defs/ScenarioSourceConfig",
+      "default": {
+        "identity": null,
+        "root": null,
+        "pack_directory": null,
+        "source": "env-pack"
+      }
+    },
+    "run_storage": {
+      "$ref": "#/$defs/RunStorageConfig",
+      "default": {
+        "backend": "local",
+        "local_path": "./runs",
+        "s3_bucket": null,
+        "s3_prefix": "runs/"
+      }
+    },
+    "lifecycle_policy": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LabLifecyclePolicyConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "experiment": {
+      "$ref": "#/$defs/ExperimentSettings",
+      "default": {
+        "participant_action_timeout_seconds": 120,
+        "participant_models": {
+          "claude": null,
+          "codex": null
+        },
+        "participant_credential_sources": {
+          "claude": null,
+          "codex": null
+        }
+      }
+    },
+    "seat": {
+      "$ref": "#/$defs/SeatSettings",
+      "default": {
+        "image": null,
+        "public_key": null
+      }
+    }
+  },
+  "type": "object"
+}

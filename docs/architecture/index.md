@@ -164,8 +164,28 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 [Verification architecture](ci-verification.md) describes changed-input selection.
 [Performance evidence](../testing/ci-performance.md) records pruning and measurement rules.
 
+## Go architecture
+
+[Go architecture](go-architecture.md) shows the architecture model of the Go
+code. The [RAES consumer inventory](raes-consumer-inventory.md) lists the RAES
+and env-packs names that LilRAE uses, and the upstream issue that owns each
+capability in Go.
+
 ## Preflights
 
+- [Issue #1604 Canonical Forms and Digests Design](issue-1604-canonical-digest-design.md)
+- [Issue #1557 Go Foundation Preflight](issue-1557-go-foundation-preflight.md)
+- [Issue #1557 Go Foundation Design](issue-1557-go-foundation-design.md)
+- [Issue #1556 RAES Go Boundary Preflight](issue-1556-raes-go-boundary-preflight.md)
+- [Issue #1555 Serialization Vectors Preflight](issue-1555-serialization-vectors-preflight.md)
+- [Issue #1555 Serialization Vectors Design](issue-1555-serialization-vectors-design.md)
+- [Issue #1554 Conformance Preflight](issue-1554-conformance-preflight.md)
+- [Issue #1554 Conformance Design](issue-1554-conformance-design.md)
+- [Issue #1583 Architecture Model Preflight](issue-1583-architecture-model-preflight.md)
+- [Issue #1583 Architecture Model Design](issue-1583-architecture-model-design.md)
+- [Issue #1552 Go Architecture Preflight](issue-1552-go-architecture-preflight.md)
+- [Issue #1553 Go Toolchain Preflight](issue-1553-go-toolchain-preflight.md)
+- [Issue #1553 Go Toolchain Design](issue-1553-go-toolchain-design.md)
 - [Issue #1510 Code Quality Architecture Preflight](issue-1510-code-quality-preflight.md)
 - [Issue #1510 Code Quality Architecture Design](issue-1510-code-quality-design.md)
 - [Issue #1465 Released Structural Factorial Experiment Tuple](issue-1465-released-experiment-tuple-preflight.md)

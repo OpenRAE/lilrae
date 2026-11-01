@@ -213,3 +213,29 @@ def test_owner_path_detects_a_dependency_without_a_pack_literal(check, tmp_path,
     caller = tmp_path / 'src/aptl/backends/another.py'
     caller.write_text('from aptl.backends.fixture_policy import read_policy\n')
     assert check.findings(tmp_path, facts) == [('src/aptl/backends/another.py', 'pack identifier')]
+
+
+def test_the_check_reads_go_source_and_its_pack_identifiers(check, tmp_path):
+    """A pack fact or a pack identifier in Go source fails the check (#1553)."""
+    facts = {"misp.example.test": "hostname", "examplepack": "pack identifier"}
+    surfaces = {
+        ("doc.go", "hostname"),
+        ("cmd/lilrae/main.go", "hostname"),
+        ("internal/core/scenario.go", "pack identifier"),
+        ("adapter/api.go", "pack identifier"),
+        ("conformance/cli_test.go", "hostname"),
+        ("tools/internal/check/check.go", "pack identifier"),
+    }
+    for relative, kind in surfaces:
+        fact = next(value for value, found in facts.items() if found == kind)
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f'package x\n\nconst name = "{fact}"\n', encoding="utf-8")
+    # A pack identifier outside Go and src/aptl stays out of scope, and the
+    # Caddy build is not first-party Go code.
+    for relative in ("scripts/run.sh", "web/caddy-build/main.go"):
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("examplepack\n", encoding="utf-8")
+
+    assert set(check.findings(tmp_path, facts)) == surfaces
