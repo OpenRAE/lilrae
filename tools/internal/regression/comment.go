@@ -15,7 +15,7 @@ import (
 // marker starts each line that the check reads as a regression comment.
 const marker = "regression:"
 
-var directivePattern = regexp.MustCompile(`^regression: #([1-9]\d{0,8})$`)
+var directivePattern = regexp.MustCompile(`^regression: #([1-9]\d*)$`)
 
 // testFunc is a top-level test function of a test file.
 type testFunc struct {

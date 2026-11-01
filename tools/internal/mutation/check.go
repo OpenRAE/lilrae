@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/OpenRAE/lilrae/tools/internal/git"
+	"github.com/OpenRAE/lilrae/tools/internal/golayout"
 )
 
 // Config describes one run of the gate.
@@ -116,7 +117,7 @@ type change struct {
 }
 
 // readChange reads the change from [Config.Base] to HEAD.
-func readChange(ctx context.Context, root string, cfg Config, thresholds Thresholds) (change, error) {
+func readChange(ctx context.Context, root string, cfg Config, thresholds Thresholds) (c change, err error) {
 	base, err := git.ResolveCommit(ctx, root, cfg.Base)
 	if err != nil {
 		return change{}, err
@@ -125,7 +126,7 @@ func readChange(ctx context.Context, root string, cfg Config, thresholds Thresho
 	if err != nil {
 		return change{}, err
 	}
-	c := change{base: base}
+	c.base = base
 	if c.findings, err = loweredThresholds(ctx, root, base, cfg.Thresholds, thresholds); err != nil {
 		return change{}, err
 	}
@@ -133,24 +134,38 @@ func readChange(ctx context.Context, root string, cfg Config, thresholds Thresho
 	if err != nil {
 		return change{}, err
 	}
-	for _, file := range files {
-		// A deleted file has no line to mutate.
-		if file.Deleted || strings.HasSuffix(file.Path, "_test.go") || slices.Contains(strings.Split(path.Dir(file.Path), "/"), "testdata") {
-			continue
-		}
-		module, err := moduleOf(root, file.Path)
-		if err != nil {
-			return change{}, err
-		}
-		if !slices.Contains(cfg.Modules, module) {
-			continue
-		}
-		c.files = append(c.files, file.Path)
-		if !slices.Contains(c.modules, module) {
-			c.modules = append(c.modules, module)
-		}
+	tree, err := os.OpenRoot(root)
+	if err != nil {
+		return change{}, fmt.Errorf("open the working tree: %w", err)
+	}
+	defer func() { err = errors.Join(err, tree.Close()) }()
+	if c.files, c.modules, err = productionChanges(tree.FS(), files, cfg.Modules); err != nil {
+		return change{}, err
 	}
 	return c, nil
+}
+
+// productionChanges returns the changed production files of files that are
+// in one of modules, and the modules that hold them. A deleted file has no
+// line to mutate.
+func productionChanges(tree fs.FS, files []git.Change, modules []string) (changed, mutated []string, err error) {
+	for _, file := range files {
+		if file.Deleted || strings.HasSuffix(file.Path, "_test.go") || golayout.Ignored(file.Path) {
+			continue
+		}
+		module, ok, err := golayout.ModuleDir(tree, path.Dir(file.Path))
+		if err != nil {
+			return nil, nil, err
+		}
+		if !ok || !slices.Contains(modules, module) {
+			continue
+		}
+		changed = append(changed, file.Path)
+		if !slices.Contains(mutated, module) {
+			mutated = append(mutated, module)
+		}
+	}
+	return changed, mutated, nil
 }
 
 // loweredThresholds returns a finding when the thresholds file is in the
@@ -184,22 +199,6 @@ func loweredThresholds(ctx context.Context, root, base, file string, current Thr
 		return []Finding{{Location: name, Message: "the change lowers a threshold: " + strings.Join(lowered, ", ")}}, nil
 	}
 	return nil, nil
-}
-
-// moduleOf returns the directory of the nearest go.mod above file.
-func moduleOf(root, file string) (string, error) {
-	for dir := path.Dir(file); ; dir = path.Dir(dir) {
-		_, err := os.Stat(filepath.Join(root, filepath.FromSlash(dir), "go.mod"))
-		if err == nil {
-			return dir, nil
-		}
-		if !errors.Is(err, fs.ErrNotExist) {
-			return "", fmt.Errorf("look for the go.mod of %s: %w", file, err)
-		}
-		if dir == "." {
-			return "", nil
-		}
-	}
 }
 
 // mutate runs Gremlins in module and returns its counts and the mutants that
@@ -252,10 +251,19 @@ func mutate(ctx context.Context, cfg Config, root, module, base string) (counts 
 	return readReport(data, module)
 }
 
-// gremlinsEnv returns the environment of Gremlins. Git reports diff paths
-// relative to the module, as Gremlins expects, and Go does not reuse cached
-// test results, because Gremlins derives the mutant timeout from the time of
-// the first test run.
+// gremlinsEnv returns the environment of Gremlins. Each setting works around
+// a defect of Gremlins v0.6.0 that the design note of #1553 lists with its
+// issue in OpenRAE/go-rae-gremlins:
+//
+//   - Git reads no global or system configuration of the host, because a
+//     setting such as diff.noprefix changes the diff that Gremlins parses.
+//   - Git writes diff paths relative to the module, because Gremlins compares
+//     them with module paths (#36).
+//   - Git writes no context lines, because Gremlins reads one range of
+//     changed lines from each hunk, and a hunk with context can hold two
+//     edits (#40).
+//   - Go does not reuse cached test results, because Gremlins derives the
+//     mutant timeout from the time of the first test run (#22).
 func gremlinsEnv(env []string) []string {
 	count := 0
 	goflags := ""
@@ -270,13 +278,17 @@ func gremlinsEnv(env []string) []string {
 			goflags = value
 		}
 	}
-	return append(env,
+	out := slices.Concat(env, []string{
 		"GOWORK=off",
-		"GOFLAGS="+strings.TrimSpace(goflags+" -count=1"),
-		fmt.Sprintf("GIT_CONFIG_KEY_%d=diff.relative", count),
-		fmt.Sprintf("GIT_CONFIG_VALUE_%d=true", count),
-		fmt.Sprintf("GIT_CONFIG_COUNT=%d", count+1),
-	)
+		"GOFLAGS=" + strings.TrimSpace(goflags+" -count=1"),
+		"GIT_CONFIG_GLOBAL=" + os.DevNull,
+		"GIT_CONFIG_NOSYSTEM=1",
+	})
+	settings := []struct{ key, value string }{{"diff.relative", "true"}, {"diff.context", "0"}}
+	for i, s := range settings {
+		out = append(out, fmt.Sprintf("GIT_CONFIG_KEY_%d=%s", count+i, s.key), fmt.Sprintf("GIT_CONFIG_VALUE_%d=%s", count+i, s.value))
+	}
+	return append(out, fmt.Sprintf("GIT_CONFIG_COUNT=%d", count+len(settings)))
 }
 
 // evaluate applies the thresholds to the counts.

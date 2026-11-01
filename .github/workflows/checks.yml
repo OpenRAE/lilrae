@@ -1369,29 +1369,18 @@ jobs:
         env:
           ROUTING_RESULT: ${{ needs.changes.result }}
         run: test "$ROUTING_RESULT" = success
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: "**/go.sum"
       # ADR-065: the branch name gives the issue, and its labels give the bug
-      # rule. A failed label lookup fails the job.
-      - name: Replay the regression tests of the pull request
+      # rule. A failed label lookup fails the job. This step is the only one
+      # with the token, and it runs before the checkout, because the replay
+      # runs the test code of the pull request.
+      - name: Read the issue and the bug label of the branch
+        id: issue
+        if: github.event_name == 'pull_request'
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_REF: ${{ github.head_ref }}
           REPOSITORY: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [[ "$EVENT_NAME" != pull_request ]]; then
-            echo "No pull request, so no regression test is replayed." | tee -a "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
           issue=0
           bug=false
           if [[ "$HEAD_REF" =~ ^([1-9][0-9]{0,8})- ]]; then
@@ -1404,7 +1393,31 @@ jobs:
           else
             echo "The branch names no issue." | tee -a "$GITHUB_STEP_SUMMARY"
           fi
-          bash tools/ci/go-gates.sh regression "$BASE_SHA" "$issue" "$bug"
+          {
+            echo "issue=$issue"
+            echo "bug=$bug"
+          } >>"$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: Replay the regression tests of the pull request
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          ISSUE: ${{ steps.issue.outputs.issue }}
+          BUG: ${{ steps.issue.outputs.bug }}
+        run: |
+          if [[ "$EVENT_NAME" != pull_request ]]; then
+            echo "No pull request, so no regression test is replayed." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          bash tools/ci/go-gates.sh regression "$BASE_SHA" "$ISSUE" "$BUG"
 
   go-architecture:
     name: Go architecture

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/OpenRAE/lilrae/tools/internal/git"
+	"github.com/OpenRAE/lilrae/tools/internal/golayout"
 )
 
 // cleanupTimeout bounds the removal of the base worktree after a cancellation.
@@ -193,7 +194,7 @@ func writeEntry(ctx context.Context, root, head string, tree *os.Root, entry git
 // wanted outcome. revision names the tree in the findings.
 func runOn(ctx context.Context, tree *os.Root, t Test, revision string, want outcome) ([]Finding, error) {
 	dir := path.Dir(t.File)
-	module, ok, err := moduleDir(tree, dir)
+	module, ok, err := golayout.ModuleDir(tree.FS(), dir)
 	if err != nil {
 		return nil, err
 	}
@@ -237,23 +238,6 @@ func verb(want outcome) string {
 		return "pass"
 	}
 	return "fail"
-}
-
-// moduleDir returns the directory of the nearest go.mod at or above dir in
-// tree. It reports false when there is none.
-func moduleDir(tree *os.Root, dir string) (module string, ok bool, err error) {
-	for current := dir; ; current = path.Dir(current) {
-		_, err = tree.Stat(filepath.Join(filepath.FromSlash(current), "go.mod"))
-		if err == nil {
-			return current, true, nil
-		}
-		if !errors.Is(err, fs.ErrNotExist) {
-			return "", false, fmt.Errorf("look for the go.mod of %s: %w", dir, err)
-		}
-		if current == "." {
-			return "", false, nil
-		}
-	}
 }
 
 // pattern returns the package pattern of dir for the go command in module.

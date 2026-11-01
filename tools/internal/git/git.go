@@ -57,15 +57,17 @@ type Change struct {
 }
 
 // ChangedFiles returns the files that differ between base and head, limited to
-// pathspec. A renamed file counts as a deleted file and a new file.
+// pathspec, in path order. A renamed file counts as a deleted file and a new
+// file. It uses the plumbing command diff-tree, which, unlike git diff, reads
+// no diff settings of the user, such as diff.orderFile.
 func ChangedFiles(ctx context.Context, dir, base, head, pathspec string) ([]Change, error) {
-	out, err := Run(ctx, dir, "diff", "--name-status", "--no-renames", "-z", base, head, "--", pathspec)
+	out, err := Run(ctx, dir, "diff-tree", "-r", "--name-status", "--no-renames", "-z", base, head, "--", pathspec)
 	if err != nil {
 		return nil, err
 	}
 	fields := splitNUL(out)
 	if len(fields)%2 != 0 {
-		return nil, fmt.Errorf("git diff: unexpected output %q", out)
+		return nil, fmt.Errorf("git diff-tree: unexpected output %q", out)
 	}
 	var changes []Change
 	for i := 0; i < len(fields); i += 2 {
@@ -76,7 +78,7 @@ func ChangedFiles(ctx context.Context, dir, base, head, pathspec string) ([]Chan
 		case "D":
 			changes = append(changes, Change{Path: path, Deleted: true})
 		default:
-			return nil, fmt.Errorf("git diff: unexpected status %q for %s", status, path)
+			return nil, fmt.Errorf("git diff-tree: unexpected status %q for %s", status, path)
 		}
 	}
 	return changes, nil

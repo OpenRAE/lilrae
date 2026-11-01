@@ -251,7 +251,6 @@ func TestCheckRequiresARegressionTestForABugFix(t *testing.T) {
 	}
 }
 
-// regression: #1583
 func TestCheckIgnoresThePathsThatTheGoCommandIgnores(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -294,7 +293,6 @@ func TestCheckIgnoresThePathsThatTheGoCommandIgnores(t *testing.T) {
 	}
 }
 
-// regression: #1583
 func TestCheckReplaysATestThatLeavesAnIgnoredFile(t *testing.T) {
 	t.Parallel()
 	r := newRepo(t)
@@ -326,7 +324,8 @@ func TestCheckValidatesTheRegressionComments(t *testing.T) {
 		"/*\nregression: #16\nregression: #17\n*/\nfunc TestTwo(t *testing.T) {}\n\n" +
 		"// regression: #18\nfunc Testlower(t *testing.T) {}\n\n" +
 		"// A regression: #19 here is prose.\nfunc TestProse(t *testing.T) {}\n\n" +
-		"/*\nTestBlock has a malformed line.\nregression: #x\n*/\nfunc TestBlock(t *testing.T) {}\n",
+		"/*\nTestBlock has a malformed line.\nregression: #x\n*/\nfunc TestBlock(t *testing.T) {}\n\n" +
+		"// regression: #99999999999999999999\nfunc TestHuge(t *testing.T) {}\n",
 	})
 
 	got := messages(r.check(base, 0, false))
@@ -338,6 +337,7 @@ func TestCheckValidatesTheRegressionComments(t *testing.T) {
 		"calc/calc_test.go:14: the regression comment is not in the doc comment of a test function",
 		"calc/calc_test.go:24: the regression comment is not in the doc comment of a test function",
 		"calc/calc_test.go:32: malformed regression comment \"regression: #x\"; write \"regression: #<issue>\"",
+		"calc/calc_test.go:36: malformed issue number in \"regression: #99999999999999999999\"",
 		"calc/calc_test.go:22: TestTwo has more than one regression comment",
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
