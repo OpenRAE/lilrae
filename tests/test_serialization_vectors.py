@@ -481,6 +481,12 @@ def test_each_corpus_file_is_well_formed() -> None:
             assert expected <= _EXPECT_FIELDS, (path.name, case["id"])
 
 
+def _matches(result: object, expect: object) -> bool:
+    """Compare as JSON text, which keeps true and 1, and 1.0 and 1, apart."""
+
+    return json.dumps(result, sort_keys=True) == json.dumps(expect, sort_keys=True)
+
+
 @pytest.mark.parametrize(
     ("scheme", "case_id", "case"),
     _cases(),
@@ -494,8 +500,15 @@ def test_vector(scheme: str, case_id: str, case: dict[str, object]) -> None:
     except Rejected as rejection:
         result = {"reject": rejection.stage}
     # Compare without an assertion diff: a vector can hold a synthetic secret.
-    if result != expect:
+    if not _matches(result, expect):
         pytest.fail(f"{scheme}/{case_id}: the owner result differs from the vector", pytrace=False)
+
+
+def test_vector_comparison_keeps_json_types_apart() -> None:
+    # Python equality treats True as 1 and 1.0 as 1, so it hides a type change.
+    assert not _matches({"value": [True, False]}, {"value": [1, 0]})
+    assert not _matches({"value": {"a": 1.0}}, {"value": {"a": 1}})
+    assert _matches({"value": {"b": 1, "a": [False]}}, {"value": {"a": [False], "b": 1}})
 
 
 def test_inventory_names_each_vector_file() -> None:

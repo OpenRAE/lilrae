@@ -37,9 +37,11 @@ model change.
 4. **Closed dispatch.** `tests/test_serialization_vectors.py` maps each scheme
    ID to one owner call: the base schemes in that module, and the owner
    schemes in `tests/serialization_owner_schemes.py`. A corpus file with an
-   unknown scheme, an unknown case field, or no cases fails the test. A
-   malformed case or a different owner result names the scheme or file and
-   the case ID; it prints no input and no expected bytes.
+   unknown scheme, an unknown case field, or no cases fails the test. The
+   test compares the owner result and the expectation as JSON text, so a
+   change from a boolean or a float to an integer fails. A malformed case or
+   a different owner result names the scheme or file and the case ID; it
+   prints no input and no expected bytes.
 5. **Inventory.** `docs/reference/serialization-schemes.md` lists each scheme:
    its owner, input domain, byte form, hash and digest spelling, the records
    and fields that store or compare its output, and its vector file. It also
