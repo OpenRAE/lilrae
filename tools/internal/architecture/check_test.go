@@ -2,6 +2,8 @@ package architecture_test
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -85,12 +87,40 @@ func TestCheckRules(t *testing.T) {
 				"testdata/dep/go.mod":     "module example.com/dep\n\ngo 1.27.0\n",
 				"testdata/dep/sub/sub.go": "package sub\n",
 			},
-			want: []string{`[undeclared-replacement] go.mod:10: the module "example.com/dep" is replaced with the directory "testdata/dep", which is not a first-party module or a vendored directory`},
+			want: []string{`[undeclared-replacement] go.mod:10: the module "example.com/dep" is replaced with the directory "testdata/dep", which is not a vendored directory`},
 		},
 		{
 			name:  "replacement outside the repository",
 			files: map[string]string{"go.mod": "module example.com/app\n\ngo 1.27.0\n\nrequire (\n\texample.com/dep v1.0.0\n\texample.com/check v1.0.0\n)\n\nreplace example.com/dep => ../dep\n"},
-			want:  []string{`[undeclared-replacement] go.mod:10: the module "example.com/dep" is replaced with the directory "../dep", which is not a first-party module or a vendored directory`},
+			want:  []string{`[undeclared-replacement] go.mod:10: the module "example.com/dep" is replaced with the directory "../dep", which is not a vendored directory`},
+		},
+		{
+			// The build would use the code of example.com/app/sub for
+			// example.com/dep, which the model checks as a module.
+			name: "replacement with another first-party module",
+			files: map[string]string{
+				"go.mod":     "module example.com/app\n\ngo 1.27.0\n\nrequire (\n\texample.com/dep v1.0.0\n\texample.com/check v1.0.0\n)\n\nreplace example.com/dep => ./sub\n",
+				"sub/go.mod": "module example.com/app/sub\n\ngo 1.27.0\n",
+			},
+			want: []string{`[undeclared-replacement] go.mod:10: the module "example.com/dep" is replaced with the directory "sub", which is not a vendored directory`},
+		},
+		{
+			// The build would use other code for the packages of a component.
+			name: "first-party module replaced with another directory",
+			files: map[string]string{
+				"go.mod":       "module example.com/app\n\ngo 1.27.0\n\nrequire (\n\texample.com/dep v1.0.0\n\texample.com/check v1.0.0\n)\n\nreplace example.com/app/sub => ./other\n",
+				"sub/go.mod":   "module example.com/app/sub\n\ngo 1.27.0\n",
+				"other/go.mod": "module example.com/app/other\n\ngo 1.27.0\n",
+			},
+			want: []string{`[undeclared-replacement] go.mod:10: the first-party module "example.com/app/sub" is replaced with something other than its directory "sub"`},
+		},
+		{
+			name: "first-party module replaced with a module",
+			files: map[string]string{
+				"go.mod":     "module example.com/app\n\ngo 1.27.0\n\nrequire (\n\texample.com/dep v1.0.0\n\texample.com/check v1.0.0\n)\n\nreplace example.com/app/sub => example.com/fork v1.0.0\n",
+				"sub/go.mod": "module example.com/app/sub\n\ngo 1.27.0\n",
+			},
+			want: []string{`[undeclared-replacement] go.mod:10: the first-party module "example.com/app/sub" is replaced with something other than its directory "sub"`},
 		},
 	}
 	for _, tc := range tests {
@@ -156,6 +186,11 @@ func TestCheckAcceptsWhatTheModelPermits(t *testing.T) {
 		"model of the largest size": {
 			"architecture/model.yaml": fixtureModel + "# " + strings.Repeat("x", 1<<20-len(fixtureModel)-3) + "\n",
 		},
+		// Only production uses form a cycle: the test files of store use
+		// testkit, which uses store.
+		"loop through a test use": {
+			"architecture/model.yaml": strings.Replace(fixtureModel, "    packages: [internal/testkit]\n", "    packages: [internal/testkit]\n    uses: [store]\n", 1),
+		},
 		"cgo and standard library": {
 			"internal/values/values.go": "package values\n\nimport (\n\t\"C\"\n\t\"net/http\"\n)\n\nvar _ = http.MethodGet\n",
 		},
@@ -168,6 +203,20 @@ func TestCheckAcceptsWhatTheModelPermits(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCheckReadsTheWorkingTree deletes tracked files without a commit. The
+// check reads the working tree, so the package of the files is stale.
+func TestCheckReadsTheWorkingTree(t *testing.T) {
+	t.Parallel()
+	r := newFixture(t, nil)
+	for _, name := range []string{"internal/testkit/testkit.go", "internal/store/store_test.go"} {
+		if err := os.Remove(filepath.Join(r.Dir, filepath.FromSlash(name))); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	requireFindings(t, check(t, r), []string{`[stale-package] architecture/model.yaml:27: the package "internal/testkit" of "testkit" has no Go file`})
 }
 
 func TestCheckValidatesTheModel(t *testing.T) {
@@ -209,7 +258,10 @@ func TestCheckValidatesTheModel(t *testing.T) {
 		{"self use", edit("uses: [values]\n", "uses: [values, store]\n"),
 			[]string{`[invalid-model] architecture/model.yaml:19: the component "store" uses itself`}},
 		{"use against the layers", edit("    packages: [internal/values]\n", "    packages: [internal/values]\n    uses: [app]\n"),
-			[]string{`[invalid-model] architecture/model.yaml:15: the layer "core" of "values" may not use the layer "entry" of "app"`}},
+			[]string{`[invalid-model] architecture/model.yaml:15: the layer "core" of "values" may not use the layer "entry" of "app"`,
+				`[invalid-model] architecture/model.yaml:15: the uses of "values" close the cycle "app" -> "values" -> "app"`}},
+		{"cycle in one layer", edit("    packages: [internal/values]\n", "    packages: [internal/values]\n    uses: [store]\n"),
+			[]string{`[invalid-model] architecture/model.yaml:20: the uses of "store" close the cycle "values" -> "store" -> "values"`}},
 		{"use listed twice", edit("test_uses: [testkit]", "test_uses: [testkit, values]"),
 			[]string{`[invalid-model] architecture/model.yaml:19: the uses of "store" list "values" twice`}},
 		{"invalid module", edit("modules: [example.com/dep]", "modules: [example.com/dep, Not A Module]"),

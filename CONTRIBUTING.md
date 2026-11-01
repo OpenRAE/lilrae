@@ -115,8 +115,9 @@ gives the rules.
 - `bash tools/run-targeted-tests.sh path/to/x_test.go` runs the whole package of
   each named test file with `go test -race -shuffle=on`. Without arguments, it
   runs the packages of the changed test files. It reads the base branch from
-  `.ground-control.yaml`. It sends other arguments to pytest, and they need a
-  Python test file or node ID.
+  `.ground-control.yaml`. It sends other arguments to pytest, which runs
+  first. A pytest plugin stops the run unless each test path that pytest
+  reads names a test file.
 - The `go-format` pre-commit hook checks the staged Go files with the gofmt of
   the pinned toolchain.
 - `bash tools/ci/go-gates.sh lint` runs gofmt, go vet, `go mod tidy -diff`,

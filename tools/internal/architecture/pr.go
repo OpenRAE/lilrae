@@ -7,9 +7,9 @@ import (
 	"path"
 	"slices"
 	"strconv"
-	"strings"
 
 	"github.com/OpenRAE/lilrae/tools/internal/git"
+	"github.com/OpenRAE/lilrae/tools/internal/golayout"
 )
 
 // PRConfig describes the check of a pull request.
@@ -89,7 +89,7 @@ func changedPackages(ctx context.Context, top, base string, m *Model) ([]string,
 	for _, f := range files {
 		dir := path.Dir(f.Path)
 		vendored := slices.ContainsFunc(m.Vendored, func(v string) bool { return within(f.Path, v) })
-		if ignored(f.Path) || vendored || slices.Contains(dirs, dir) {
+		if golayout.Ignored(f.Path) || vendored || slices.Contains(dirs, dir) {
 			continue
 		}
 		dirs = append(dirs, dir)
@@ -100,15 +100,9 @@ func changedPackages(ctx context.Context, top, base string, m *Model) ([]string,
 // compareDesign compares the change with the design record of issue.
 func compareDesign(ctx context.Context, top string, m *Model, repo *repository, issue int, changes, changed []string) ([]Finding, error) {
 	pattern := "docs/architecture/issue-" + strconv.Itoa(issue) + "-*-design.md"
-	out, err := git.Run(ctx, top, "ls-files", "-z", "--", pattern)
+	notes, err := git.TrackedFiles(ctx, top, pattern)
 	if err != nil {
 		return nil, err
-	}
-	var notes []string
-	for name := range strings.SplitSeq(string(out), "\x00") {
-		if name != "" {
-			notes = append(notes, name)
-		}
 	}
 	switch len(notes) {
 	case 0:
@@ -143,7 +137,7 @@ func compareCode(m *Model, repo *repository, name string, r *Record, changed []s
 	}
 	for _, dir := range changed {
 		if _, ok := recorded[dir]; !ok {
-			findings = append(findings, m.finding(RuleDesignPackageAbsent, name,
+			findings = append(findings, m.finding(RuleDesignPackageMissing, name,
 				fmt.Sprintf("the change edits the package %s, which the design record does not list", quote(dir))))
 		}
 	}

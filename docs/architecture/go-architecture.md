@@ -23,6 +23,8 @@ flowchart TB
         component_regression_check[regression-check]
         component_mutation_check[mutation-check]
         component_architecture_check[architecture-check]
+        component_check_command[check-command]
+        component_go_layout[go-layout]
         component_git[git]
         component_git_test_support[git-test-support]
         component_gate_fixtures[gate-fixtures]
@@ -32,17 +34,24 @@ flowchart TB
         component_caddy_build[caddy-build]
     end
     component_regressioncheck_command --> component_regression_check
+    component_regressioncheck_command --> component_check_command
     component_regressioncheck_command -. test .-> component_git_test_support
     component_mutationcheck_command --> component_mutation_check
+    component_mutationcheck_command --> component_check_command
     component_mutationcheck_command -. test .-> component_git_test_support
     component_archcheck_command --> component_architecture_check
+    component_archcheck_command --> component_check_command
     component_archcheck_command -. test .-> component_git_test_support
     component_regression_check --> component_git
+    component_regression_check --> component_go_layout
     component_regression_check -. test .-> component_git_test_support
     component_mutation_check --> component_git
+    component_mutation_check --> component_go_layout
     component_mutation_check -. test .-> component_git_test_support
     component_architecture_check --> component_git
+    component_architecture_check --> component_go_layout
     component_architecture_check -. test .-> component_git_test_support
     component_git -. test .-> component_git_test_support
+    component_git_test_support -. test .-> component_git
 ```
 <!-- End of the generated diagram. -->

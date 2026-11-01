@@ -84,6 +84,16 @@ func ChangedFiles(ctx context.Context, dir, base, head, pathspec string) ([]Chan
 	return changes, nil
 }
 
+// TrackedFiles returns the files that Git tracks in the working tree at dir
+// and that match one of the pathspecs.
+func TrackedFiles(ctx context.Context, dir string, pathspecs ...string) ([]string, error) {
+	out, err := Run(ctx, dir, append([]string{"ls-files", "-z", "--"}, pathspecs...)...)
+	if err != nil {
+		return nil, err
+	}
+	return splitNUL(out), nil
+}
+
 // Entry is a file of a tree.
 type Entry struct {
 	// Path is the path of the file.
