@@ -35,10 +35,7 @@ from raes_contracts.experiment_bindings import (
     ScenarioBindingResolution,
     validate_experiment_binding_targets,
 )
-from raes_contracts.participant_configuration import (
-    ConfigurationOverrideModel,
-    realize_participant_configuration,
-)
+from raes_contracts.contracts.participant_configuration import ConfigurationOverrideModel, realize_participant_configuration
 
 from aptl.backends.raes_manifest import (
     APTL_EXPERIMENT_ACTION_TIMEOUT_TARGET,

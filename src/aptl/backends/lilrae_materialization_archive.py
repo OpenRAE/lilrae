@@ -11,11 +11,8 @@ from typing import TYPE_CHECKING
 
 from raes import parse_sdl
 from raes_operations.run_artifacts import RunMaterializationArchive, is_valid_run_id_label
-from raes_contracts.materialization import (
-    MATERIALIZATION_MAX_BYTES,
-    MaterializationSubmission,
-    require_materialization_records,
-)
+from raes_contracts.materialization import MATERIALIZATION_MAX_BYTES, MaterializationSubmission
+from raes_contracts.contracts.materialization_attestation import require_materialization_records
 
 from aptl.core.runstore import LocalRunStore
 from aptl.utils.pathsafe import create_exclusive_nofollow, open_contained_nofollow

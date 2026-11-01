@@ -17,11 +17,8 @@ from raes_contracts.contracts import (
     ParticipantTemporalRuntimeContextModel,
 )
 from raes_contracts.diagnostics import Diagnostic
-from raes_contracts.participant_binding import (
-    ParticipantActionAdmissionRequest,
-    ParticipantActionApplyResult,
-    ParticipantNativeActionExecution,
-)
+from raes_contracts.participant_binding import ParticipantActionApplyResult, ParticipantNativeActionExecution
+from raes_contracts.contracts.participant_action_admission import ParticipantActionAdmissionRequest
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 
 from aptl.backends.raes_participant_actions import (
