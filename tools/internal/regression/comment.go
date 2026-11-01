@@ -20,6 +20,9 @@ var directivePattern = regexp.MustCompile(`^regression: #([1-9]\d*)$`)
 // testFunc is a top-level test function of a test file.
 type testFunc struct {
 	name string
+	// pkg is the package of the file: the package or its external test
+	// package, which can declare a test with the same name.
+	pkg string
 	// line is the line of the func keyword.
 	line int
 	// issue is the issue of the regression comment, or 0 without one.
@@ -97,6 +100,7 @@ func testFuncs(fset *token.FileSet, file *ast.File, src []byte) (funcs []testFun
 		start, end := fset.Position(fn.Pos()).Offset, fset.Position(fn.End()).Offset
 		funcs = append(funcs, testFunc{
 			name:   fn.Name.Name,
+			pkg:    file.Name.Name,
 			line:   fset.Position(fn.Pos()).Line,
 			source: src[start:end],
 		})

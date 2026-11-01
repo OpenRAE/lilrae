@@ -312,6 +312,29 @@ func TestCheckReplaysATestThatLeavesAnIgnoredFile(t *testing.T) {
 	}
 }
 
+// TestCheckRejectsATestNameInBothTestPackages declares TestValue in the
+// package and in its external test package. The marked internal test passes
+// on both revisions, and the external test fails on the base revision, so a
+// replay by name could credit the wrong test.
+func TestCheckRejectsATestNameInBothTestPackages(t *testing.T) {
+	t.Parallel()
+	r := newRepo(t)
+	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1")})
+	r.Commit(map[string]string{
+		"calc/calc.go":      valueSource("2"),
+		"calc/calc_test.go": "package calc\n\nimport \"testing\"\n\n// regression: #7\nfunc TestValue(t *testing.T) {}\n",
+		"calc/ext_test.go": "package calc_test\n\nimport (\n\t\"testing\"\n\n\t\"example.com/fixture/calc\"\n)\n\n" +
+			"func TestValue(t *testing.T) {\n\tif got := calc.Value(); got != 2 {\n\t\tt.Fatalf(\"Value() = %d, want 2\", got)\n\t}\n}\n",
+	})
+
+	report := r.check(base, 7, false)
+
+	requireOneFinding(t, report, "TestValue: the package and its external test package both declare TestValue, so the replay cannot tell their results apart; rename one")
+	if len(report.Selected) != 0 {
+		t.Errorf("Check() replayed %v, want no test with an ambiguous name", report.Selected)
+	}
+}
+
 func TestCheckValidatesTheRegressionComments(t *testing.T) {
 	t.Parallel()
 	r := newRepo(t)
