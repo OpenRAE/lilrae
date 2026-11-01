@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"golang.org/x/mod/module"
 
 	"github.com/OpenRAE/lilrae/tools/internal/git"
+	"github.com/OpenRAE/lilrae/tools/internal/golayout"
 )
 
 // repository is the first-party Go code of a working tree.
@@ -36,16 +38,17 @@ type goModule struct {
 	path string
 	// requires are the required module paths, longest first.
 	requires []string
-	// replacements are the replacements with a local directory.
+	// replacements are the replace directives.
 	replacements []replacement
 }
 
-// replacement is a replace directive with a local directory.
+// replacement is a replace directive.
 type replacement struct {
 	// module is the replaced module path.
 	module string
-	// dir is the directory of the replacement, from the repository root. It
-	// is not a valid path when the directory is outside the repository.
+	// dir is the local directory of the replacement, from the repository
+	// root, or empty when a module replaces the module. It is not a valid path
+	// when the directory is outside the repository.
 	dir  string
 	line int
 }
@@ -114,16 +117,20 @@ func treePath(top, file string) (string, error) {
 
 // scanRepository reads the tracked first-party Go files and go.mod files of
 // the working tree at top. Vendored directories and the paths that the go
-// command ignores are not first party.
+// command ignores are not first party, and a tracked file that the working
+// tree deleted is not in the tree.
 func scanRepository(ctx context.Context, top string, root *os.Root, vendored []string) (*repository, error) {
-	out, err := git.Run(ctx, top, "ls-files", "-z", "--", "*.go", "go.mod", "*/go.mod")
+	names, err := git.TrackedFiles(ctx, top, "*.go", "go.mod", "*/go.mod")
 	if err != nil {
 		return nil, err
 	}
 	repo := &repository{root: root}
 	var goFiles []string
-	for name := range strings.SplitSeq(string(out), "\x00") {
-		if name == "" || ignored(name) || slices.ContainsFunc(vendored, func(v string) bool { return within(name, v) }) {
+	for _, name := range names {
+		if golayout.Ignored(name) || slices.ContainsFunc(vendored, func(v string) bool { return within(name, v) }) {
+			continue
+		}
+		if _, err := root.Lstat(filepath.FromSlash(name)); errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
 		if path.Base(name) == "go.mod" {
@@ -164,10 +171,11 @@ func (r *repository) readModule(name string) (*goModule, error) {
 		mod.requires = append(mod.requires, req.Mod.Path)
 	}
 	for _, rep := range f.Replace {
+		r := replacement{module: rep.Old.Path, line: rep.Syntax.Start.Line}
 		if modfile.IsDirectoryPath(rep.New.Path) {
-			dir := path.Join(mod.dir, filepath.ToSlash(rep.New.Path))
-			mod.replacements = append(mod.replacements, replacement{module: rep.Old.Path, dir: dir, line: rep.Syntax.Start.Line})
+			r.dir = path.Join(mod.dir, filepath.ToSlash(rep.New.Path))
 		}
+		mod.replacements = append(mod.replacements, r)
 	}
 	slices.SortFunc(mod.requires, func(a, b string) int { return len(b) - len(a) })
 	return mod, nil
@@ -200,6 +208,16 @@ func (r *repository) readFile(name string) (goFile, error) {
 		f.imports = append(f.imports, importSpec{path: value, line: fset.Position(spec.Pos()).Line})
 	}
 	return f, nil
+}
+
+// modulePath returns the first-party module with the module path p, or nil.
+func (r *repository) modulePath(p string) *goModule {
+	for _, mod := range r.modules {
+		if mod.path == p {
+			return mod
+		}
+	}
+	return nil
 }
 
 // moduleOf returns the first-party module that holds a file, or nil.
@@ -263,18 +281,6 @@ func underPath(importPath, modulePath string) (string, bool) {
 	}
 	rest, ok := strings.CutPrefix(importPath, modulePath+"/")
 	return rest, ok
-}
-
-// ignored reports whether the go command ignores a repository path: a
-// directory or file name in it begins with a dot or an underscore, or a
-// directory is named testdata.
-func ignored(name string) bool {
-	for part := range strings.SplitSeq(name, "/") {
-		if strings.HasPrefix(part, ".") || strings.HasPrefix(part, "_") {
-			return true
-		}
-	}
-	return slices.Contains(strings.Split(path.Dir(name), "/"), "testdata")
 }
 
 // errNoModel reports a working tree without a model.

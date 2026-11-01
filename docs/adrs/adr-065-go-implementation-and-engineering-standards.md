@@ -216,8 +216,9 @@ record review history.
 - The vectors of Go port 04 define each persisted byte form, digest, and
   identifier. One function implements each scheme. Ordinary JSON encoding is
   not canonical encoding.
-- Use `os.Root` for contained file access. Replace a file atomically: write a
-  temporary file in the same root, sync it, and rename it.
+- Use `os.Root` for contained file access. Replace a file atomically with
+  `github.com/google/renameio/v2` inside the root (`WithRoot`). renameio
+  exports no function on Windows, where a file cannot be replaced atomically.
 - Time values are `time.Time` in UTC. Their text forms follow the vectors.
 
 ### Tests
@@ -304,6 +305,7 @@ components.
 | BLAKE3 | `lukechampine.com/blake3` |
 | UUID | `uuid` |
 | File locks | `github.com/gofrs/flock` |
+| Atomic file replacement | `github.com/google/renameio/v2` |
 | Concurrency | `golang.org/x/sync/errgroup` |
 | Terminal | `golang.org/x/term` |
 | Telemetry | `go.opentelemetry.io/otel` |

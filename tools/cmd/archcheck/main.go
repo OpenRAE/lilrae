@@ -28,6 +28,7 @@ import (
 	"syscall"
 
 	"github.com/OpenRAE/lilrae/tools/internal/architecture"
+	"github.com/OpenRAE/lilrae/tools/internal/checkcmd"
 )
 
 const usage = "usage: archcheck check|design|pr|diagram [flags]\n"
@@ -41,35 +42,32 @@ func main() {
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		return write(stderr, usage, 2)
+		return checkcmd.Write(stderr, usage, checkcmd.Error)
 	}
 	name := args[0]
 	flags := flag.NewFlagSet("archcheck "+name, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	cmd, ok := newCommand(ctx, name, flags)
 	if !ok {
-		return write(stderr, usage, 2)
+		return checkcmd.Write(stderr, usage, checkcmd.Error)
 	}
-	if err := flags.Parse(args[1:]); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return 0
-		}
-		return 2
+	if code, stop := checkcmd.Parse(flags, args[1:]); stop {
+		return code
 	}
 	if flags.NArg() != cmd.args {
-		return write(stderr, fmt.Sprintf("archcheck: %s takes %d argument(s) after the flags\n", name, cmd.args), 2)
+		return checkcmd.Write(stderr, fmt.Sprintf("archcheck: %s takes %d argument(s) after the flags\n", name, cmd.args), checkcmd.Error)
 	}
 	report, err := cmd.run(flags.Args())
 	if err != nil {
-		return write(stderr, "archcheck: "+architecture.Clean(err.Error())+"\n", 2)
+		return checkcmd.Write(stderr, "archcheck: "+architecture.Clean(err.Error())+"\n", checkcmd.Error)
 	}
 	if len(report.Findings) == 0 {
-		return write(stdout, "archcheck: "+name+" passed\n", 0)
+		return checkcmd.Write(stdout, "archcheck: "+name+" passed\n", checkcmd.Pass)
 	}
 	if err := architecture.Write(stdout, report.Findings); err != nil {
-		return 2
+		return checkcmd.Error
 	}
-	return write(stdout, fmt.Sprintf("archcheck: %d finding(s)\n", len(report.Findings)), 1)
+	return checkcmd.Write(stdout, fmt.Sprintf("archcheck: %d finding(s)\n", len(report.Findings)), checkcmd.Fail)
 }
 
 // command is a subcommand.
@@ -115,12 +113,4 @@ func newCommand(ctx context.Context, name string, flags *flag.FlagSet) (command,
 		}}, true
 	}
 	return command{}, false
-}
-
-// write writes text to w and returns code, or 2 when the write fails.
-func write(w io.Writer, text string, code int) int {
-	if _, err := io.WriteString(w, text); err != nil {
-		return 2
-	}
-	return code
 }

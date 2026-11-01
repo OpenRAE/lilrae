@@ -62,6 +62,15 @@ func quote(s string) string {
 	return strconv.Quote(s)
 }
 
+// quoteEach returns each entry as a Go string literal.
+func quoteEach(entries []string) []string {
+	quoted := make([]string, len(entries))
+	for i, entry := range entries {
+		quoted[i] = quote(entry)
+	}
+	return quoted
+}
+
 // Clean returns at most maxText bytes of s, with each character that is not
 // printable and each invalid byte escaped. Use it for each text that can come
 // from input files, Git, or a decoder, so the text cannot add a line or hide a

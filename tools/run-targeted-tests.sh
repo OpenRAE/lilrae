@@ -32,33 +32,31 @@ run_go_tests() {
     done
 }
 
+# run_pytest runs pytest with the plugin in tools/pytest-plugins that stops a
+# run without a test file, because pytest then runs the whole suite. pytest
+# parses its own options, so the value of an option never counts as a target.
+run_pytest() {
+    local plugins
+    plugins="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/pytest-plugins"
+    PYTHONPATH="$plugins${PYTHONPATH:+:$PYTHONPATH}" uv run "${uv_test_env[@]}" pytest -p require_test_targets "$@"
+}
+
 if (($#)); then
     go_tests=()
     pytest_args=()
-    python_target=false
     for arg in "$@"; do
         case "$arg" in
             *_test.go) go_tests+=("$arg") ;;
-            *)
-                pytest_args+=("$arg")
-                # A Python target is an existing path, or a node ID of one.
-                if [[ "$arg" != -* && -e "${arg%%::*}" ]]; then
-                    python_target=true
-                fi
-                ;;
+            *) pytest_args+=("$arg") ;;
         esac
     done
-    # pytest without a target runs the whole suite, so other arguments need
-    # a Python test path. Go tests take no extra arguments.
-    if ((${#pytest_args[@]})) && [[ "$python_target" != true ]]; then
-        echo "These arguments need a Python test path: ${pytest_args[*]}" >&2
-        exit 2
+    # pytest runs first, so a run that the plugin stops runs no Go test.
+    # Go tests take no extra arguments.
+    if ((${#pytest_args[@]})); then
+        run_pytest "${pytest_args[@]}"
     fi
     if ((${#go_tests[@]})); then
         run_go_tests "${go_tests[@]}"
-    fi
-    if ((${#pytest_args[@]})); then
-        exec uv run "${uv_test_env[@]}" pytest "${pytest_args[@]}"
     fi
     exit 0
 fi
@@ -141,7 +139,7 @@ if ((${#go_test_files[@]})); then
 fi
 
 if ((${#python_tests[@]})); then
-    uv run "${uv_test_env[@]}" pytest "${python_tests[@]}"
+    run_pytest "${python_tests[@]}"
 fi
 
 for package in "${!vitest_packages[@]}"; do

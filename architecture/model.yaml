@@ -36,41 +36,49 @@ components:
     layer: tools
     responsibility: Runs the regression test check of a pull request.
     packages: [tools/cmd/regressioncheck]
-    uses: [regression-check]
+    uses: [regression-check, check-command]
     test_uses: [git-test-support]
   - name: mutationcheck-command
     layer: tools
     responsibility: Runs the mutation test gate.
     packages: [tools/cmd/mutationcheck]
-    uses: [mutation-check]
+    uses: [mutation-check, check-command]
     test_uses: [git-test-support]
   - name: archcheck-command
     layer: tools
     responsibility: Runs the architecture, design, and diagram checks.
     packages: [tools/cmd/archcheck]
-    uses: [architecture-check]
+    uses: [architecture-check, check-command]
     test_uses: [git-test-support]
   - name: regression-check
     layer: tools
     responsibility: Selects and replays the regression tests of a change.
     packages: [tools/internal/regression]
-    uses: [git]
+    uses: [git, go-layout]
     test_uses: [git-test-support]
     test_modules: [github.com/google/go-cmp]
   - name: mutation-check
     layer: tools
     responsibility: Runs Gremlins and applies the mutation thresholds.
     packages: [tools/internal/mutation]
-    uses: [git]
+    uses: [git, go-layout]
     test_uses: [git-test-support]
     test_modules: [github.com/google/go-cmp]
   - name: architecture-check
     layer: tools
     responsibility: Checks the repository and design notes against this model.
     packages: [tools/internal/architecture]
-    uses: [git]
-    modules: [go.yaml.in/yaml/v3, golang.org/x/mod]
+    uses: [git, go-layout]
+    modules: [github.com/google/renameio/v2, go.yaml.in/yaml/v3, golang.org/x/mod]
     test_uses: [git-test-support]
+  - name: check-command
+    layer: tools
+    responsibility: Gives the check commands their exit statuses, flag parsing, and output handling.
+    packages: [tools/internal/checkcmd]
+  - name: go-layout
+    layer: tools
+    responsibility: Applies the go command rules for ignored paths and module directories.
+    packages: [tools/internal/golayout]
   - name: git
     layer: tools
     responsibility: Runs the Git commands that the tools need.
@@ -81,6 +89,7 @@ components:
     layer: tools
     responsibility: Creates Git repositories for tests.
     packages: [tools/internal/gittest]
+    test_uses: [git]
   - name: gate-fixtures
     layer: tools
     responsibility: Runs each CI gate on a failing and a passing fixture.
@@ -123,9 +132,9 @@ rules:
     Move the package under internal/, or list it in public in
     architecture/model.yaml through a recorded model change.
   undeclared-replacement: >-
-    Replace the module with a tracked first-party module, or list the
-    directory in vendored in architecture/model.yaml through a recorded model
-    change.
+    Replace a first-party module only with its own tracked directory. Replace
+    another module with a module version, or with a directory that vendored
+    in architecture/model.yaml lists through a recorded model change.
   invalid-model: >-
     Correct architecture/model.yaml as the finding states.
   missing-design: >-

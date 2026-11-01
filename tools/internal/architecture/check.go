@@ -76,7 +76,7 @@ func checkPackages(m *Model, repo *repository, dirs []string) []Finding {
 				fmt.Sprintf("the package %s is in no component", quote(dir))))
 		}
 		if repo.importable(dir) && !internalPath(dir) && !slices.Contains(m.Public, dir) {
-			findings = append(findings, m.finding(RuleUndeclaredPublic, dir,
+			findings = append(findings, m.finding(RuleUndeclaredPublicPackage, dir,
 				fmt.Sprintf("the package %s can be imported, but it is not under internal/ and not public", quote(dir))))
 		}
 	}
@@ -92,23 +92,37 @@ func checkPackages(m *Model, repo *repository, dirs []string) []Finding {
 	return findings
 }
 
-// checkReplacements returns the findings of the local replacements of the
-// first-party modules. Each must name a first-party module or a vendored
-// directory, so that the model covers each package that a build uses.
+// checkReplacements returns the findings of the replace directives of the
+// first-party modules. The checker resolves an import by its module path, so a
+// directive must not move a module path to code that the model does not
+// cover for that path.
 func checkReplacements(m *Model, repo *repository) []Finding {
 	var findings []Finding
 	for _, mod := range repo.modules {
 		for _, r := range mod.replacements {
-			firstParty := slices.ContainsFunc(repo.modules, func(other *goModule) bool { return other.dir == r.dir })
-			vendored := slices.ContainsFunc(m.Vendored, func(v string) bool { return within(r.dir, v) })
-			if firstParty || vendored {
-				continue
+			if problem := replacementProblem(m, repo, r); problem != "" {
+				findings = append(findings, m.finding(RuleUndeclaredReplacement, fmt.Sprintf("%s:%d", path.Join(mod.dir, "go.mod"), r.line), problem))
 			}
-			findings = append(findings, m.finding(RuleLocalReplacement, fmt.Sprintf("%s:%d", path.Join(mod.dir, "go.mod"), r.line),
-				fmt.Sprintf("the module %s is replaced with the directory %s, which is not a first-party module or a vendored directory", quote(r.module), quote(r.dir))))
 		}
 	}
 	return findings
+}
+
+// replacementProblem returns the problem of a replace directive, or "" when
+// it has none. A first-party module can be replaced only with its own
+// directory. Another module can be replaced with a module, which go.sum
+// verifies, or with a vendored directory.
+func replacementProblem(m *Model, repo *repository, r replacement) string {
+	if own := repo.modulePath(r.module); own != nil {
+		if r.dir == own.dir {
+			return ""
+		}
+		return fmt.Sprintf("the first-party module %s is replaced with something other than its directory %s", quote(r.module), quote(own.dir))
+	}
+	if r.dir == "" || slices.ContainsFunc(m.Vendored, func(v string) bool { return within(r.dir, v) }) {
+		return ""
+	}
+	return fmt.Sprintf("the module %s is replaced with the directory %s, which is not a vendored directory", quote(r.module), quote(r.dir))
 }
 
 // checkImports returns the findings of the imports of a file of component c.

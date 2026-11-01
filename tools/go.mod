@@ -9,6 +9,7 @@ tool (
 
 require (
 	github.com/google/go-cmp v0.7.0
+	github.com/google/renameio/v2 v2.0.2
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/mod v0.42.0
 )

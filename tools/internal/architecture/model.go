@@ -2,8 +2,8 @@ package architecture
 
 import (
 	"fmt"
+	"io/fs"
 	"maps"
-	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -17,30 +17,30 @@ const ModelPath = "architecture/model.yaml"
 
 // The rules of the checker. The model gives the fix-it message of each.
 const (
-	RuleUnassignedPackage   = "unassigned-package"
-	RuleStalePackage        = "stale-package"
-	RuleForbiddenImport     = "forbidden-import"
-	RuleForbiddenModule     = "forbidden-module"
-	RuleUnresolvedImport    = "unresolved-import"
-	RuleUndeclaredPublic    = "undeclared-public-package"
-	RuleLocalReplacement    = "undeclared-replacement"
-	RuleInvalidModel        = "invalid-model"
-	RuleMissingDesign       = "missing-design"
-	RuleInvalidDesign       = "invalid-design"
-	RuleDesignPackageAbsent = "design-package-missing"
-	RuleDesignImportsDiffer = "design-imports-differ"
-	RuleDesignForbidden     = "design-forbidden"
-	RuleDesignModelChanges  = "design-model-changes-differ"
-	RuleStaleDiagram        = "stale-diagram"
+	RuleUnassignedPackage        = "unassigned-package"
+	RuleStalePackage             = "stale-package"
+	RuleForbiddenImport          = "forbidden-import"
+	RuleForbiddenModule          = "forbidden-module"
+	RuleUnresolvedImport         = "unresolved-import"
+	RuleUndeclaredPublicPackage  = "undeclared-public-package"
+	RuleUndeclaredReplacement    = "undeclared-replacement"
+	RuleInvalidModel             = "invalid-model"
+	RuleMissingDesign            = "missing-design"
+	RuleInvalidDesign            = "invalid-design"
+	RuleDesignPackageMissing     = "design-package-missing"
+	RuleDesignImportsDiffer      = "design-imports-differ"
+	RuleDesignForbidden          = "design-forbidden"
+	RuleDesignModelChangesDiffer = "design-model-changes-differ"
+	RuleStaleDiagram             = "stale-diagram"
 )
 
 // rules returns each rule of the checker.
 func rules() []string {
 	return []string{
 		RuleUnassignedPackage, RuleStalePackage, RuleForbiddenImport, RuleForbiddenModule,
-		RuleUnresolvedImport, RuleUndeclaredPublic, RuleLocalReplacement, RuleInvalidModel, RuleMissingDesign,
-		RuleInvalidDesign, RuleDesignPackageAbsent, RuleDesignImportsDiffer, RuleDesignForbidden,
-		RuleDesignModelChanges, RuleStaleDiagram,
+		RuleUnresolvedImport, RuleUndeclaredPublicPackage, RuleUndeclaredReplacement, RuleInvalidModel, RuleMissingDesign,
+		RuleInvalidDesign, RuleDesignPackageMissing, RuleDesignImportsDiffer, RuleDesignForbidden,
+		RuleDesignModelChangesDiffer, RuleStaleDiagram,
 	}
 }
 
@@ -143,10 +143,8 @@ func lineLocation(line int) string {
 
 // component returns the component with name, or nil.
 func (m *Model) component(name string) *Component {
-	for i := range m.Components {
-		if m.Components[i].Name == name {
-			return &m.Components[i]
-		}
+	if i := m.componentIndex(name); i >= 0 {
+		return &m.Components[i]
 	}
 	return nil
 }
@@ -186,9 +184,60 @@ func (m *Model) validate() []Finding {
 		findings = append(findings, m.validateComponent(i, layers, owners)...)
 		findings = append(findings, m.validateDependencies(i, layers)...)
 	}
+	findings = append(findings, m.validateCycles()...)
 	findings = append(findings, m.validatePublic()...)
 	findings = append(findings, m.validateVendored()...)
 	return append(findings, m.validateRules()...)
+}
+
+// validateCycles returns a problem for each cycle in the uses of the
+// components, at the component whose use closes it. The Go compiler rejects a
+// cycle of packages, and this rule extends that to components, so the
+// components keep a dependency order. A depth-first search finds each cycle;
+// the standard library has no graph package.
+func (m *Model) validateCycles() []Finding {
+	const (
+		unvisited = iota
+		active
+		finished
+	)
+	state := make(map[string]int, len(m.Components))
+	var stack []string
+	var findings []Finding
+	var visit func(i int)
+	visit = func(i int) {
+		c := &m.Components[i]
+		state[c.Name] = active
+		stack = append(stack, c.Name)
+		for _, used := range c.Uses {
+			next := m.componentIndex(used)
+			if next < 0 || used == c.Name {
+				// validateUse reports an unknown component and a use of itself.
+				continue
+			}
+			if state[used] == active {
+				cycle := append(slices.Clone(stack[slices.Index(stack, used):]), used)
+				findings = append(findings, m.problem(m.componentLocation(i), "the uses of %q close the cycle %s", c.Name, strings.Join(quoteEach(cycle), " -> ")))
+				continue
+			}
+			if state[used] == unvisited {
+				visit(next)
+			}
+		}
+		stack = stack[:len(stack)-1]
+		state[c.Name] = finished
+	}
+	for i := range m.Components {
+		if state[m.Components[i].Name] == unvisited {
+			visit(i)
+		}
+	}
+	return findings
+}
+
+// componentIndex returns the index of the first component with name, or -1.
+func (m *Model) componentIndex(name string) int {
+	return slices.IndexFunc(m.Components, func(c Component) bool { return c.Name == name })
 }
 
 // problem returns an invalid-model finding at a model location.
@@ -374,9 +423,10 @@ func listProblems(list, extra []string) []string {
 }
 
 // validPath reports whether p is a clean, relative, slash-separated path that
-// stays in the repository.
+// stays in the repository. [fs.ValidPath] accepts a backslash, which is a
+// separator on Windows, so validPath rejects it.
 func validPath(p string) bool {
-	return p != "" && path.Clean(p) == p && !path.IsAbs(p) && p != ".." && !strings.HasPrefix(p, "../") && !strings.Contains(p, `\`)
+	return fs.ValidPath(p) && !strings.Contains(p, `\`)
 }
 
 // within reports whether path p is dir or below dir.

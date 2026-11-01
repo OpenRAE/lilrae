@@ -91,6 +91,27 @@ func TestChangedFiles(t *testing.T) {
 	}
 }
 
+func TestTrackedFiles(t *testing.T) {
+	t.Parallel()
+	r, _, _ := newRepo(t)
+	if err := os.WriteFile(filepath.Join(r.Dir, "a", "untracked.go"), []byte("package a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := git.TrackedFiles(t.Context(), r.Dir, "*.go", "other.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{"a/edit.go", "a/keep.go", "a/link.go", "a/new.go", "a/renamed.go", "other.txt"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("TrackedFiles(*.go, other.txt) mismatch (-want +got):\n%s", diff)
+	}
+	if _, err := git.TrackedFiles(t.Context(), filepath.Join(r.Dir, "missing")); err == nil {
+		t.Error("TrackedFiles(missing directory) returned no error")
+	}
+}
+
 func TestFiles(t *testing.T) {
 	t.Parallel()
 	r, _, head := newRepo(t)

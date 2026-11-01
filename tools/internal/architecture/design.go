@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"golang.org/x/mod/module"
@@ -229,10 +228,10 @@ func checkRecord(m *Model, repo *repository, name string, r *Record, issue int, 
 		add(RuleInvalidDesign, "the model changes %s", problem)
 	}
 	if missing := setDifference(changes, r.ModelChanges); len(missing) > 0 {
-		add(RuleDesignModelChanges, "the model changes %s are not in the record", quoteAll(missing))
+		add(RuleDesignModelChangesDiffer, "the model changes %s are not in the record", quoteAll(missing))
 	}
 	if extra := setDifference(r.ModelChanges, changes); len(extra) > 0 {
-		add(RuleDesignModelChanges, "the record lists the model changes %s, which did not change", quoteAll(extra))
+		add(RuleDesignModelChangesDiffer, "the record lists the model changes %s, which did not change", quoteAll(extra))
 	}
 	return findings
 }
@@ -328,9 +327,5 @@ func quoteAll(entries []string) string {
 	if len(entries) == 0 {
 		return "none"
 	}
-	quoted := make([]string, len(entries))
-	for i, entry := range entries {
-		quoted[i] = strconv.Quote(entry)
-	}
-	return strings.Join(quoted, ", ")
+	return strings.Join(quoteEach(entries), ", ")
 }
