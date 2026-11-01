@@ -286,7 +286,7 @@ func checkRecordPackage(m *Model, repo *repository, name string, p RecordPackage
 // checkRecordImport returns the findings of one import of a recorded package
 // of component c.
 func checkRecordImport(m *Model, repo *repository, name string, c *Component, pkg, imp string, test bool) []Finding {
-	resolved := repo.resolve(nil, imp)
+	resolved := repo.resolve(repo.moduleOf(pkg), imp)
 	switch resolved.kind {
 	case importUnresolved, importModule:
 		if module.CheckPath(imp) != nil {

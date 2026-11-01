@@ -231,29 +231,42 @@ func (r *repository) moduleOf(name string) *goModule {
 }
 
 // resolve resolves an import path of a file in module from. A path that is
-// not a valid import path resolves to nothing. With a nil module, as for the
-// imports of a design record, a path that is not first party and not in the
-// standard library resolves to nothing.
+// not a valid import path resolves to nothing. The module with the longest
+// path that holds the import owns it, as for the go command, so a required
+// module below a first-party module path is not first party. With a nil
+// module, no required module is known, so a path that is not first party and
+// not in the standard library resolves to nothing.
 func (r *repository) resolve(from *goModule, importPath string) resolvedImport {
 	if module.CheckImportPath(importPath) != nil {
 		return resolvedImport{kind: importUnresolved}
 	}
+	required := requiredModule(from, importPath)
 	for _, mod := range r.byPath {
-		if rest, ok := underPath(importPath, mod.path); ok {
+		if rest, ok := underPath(importPath, mod.path); ok && len(mod.path) >= len(required) {
 			return resolvedImport{kind: importFirstParty, dir: path.Join(mod.dir, rest)}
 		}
+	}
+	if required != "" {
+		return resolvedImport{kind: importModule, module: required}
 	}
 	if first, _, _ := strings.Cut(importPath, "/"); !strings.Contains(first, ".") {
 		return resolvedImport{kind: importStandard}
 	}
-	if from != nil {
-		for _, req := range from.requires {
-			if _, ok := underPath(importPath, req); ok {
-				return resolvedImport{kind: importModule, module: req}
-			}
+	return resolvedImport{kind: importUnresolved}
+}
+
+// requiredModule returns the longest module path that module from requires
+// and that holds importPath, or "" when there is none or from is nil.
+func requiredModule(from *goModule, importPath string) string {
+	if from == nil {
+		return ""
+	}
+	for _, req := range from.requires {
+		if _, ok := underPath(importPath, req); ok {
+			return req
 		}
 	}
-	return resolvedImport{kind: importUnresolved}
+	return ""
 }
 
 // packages returns the package directories of the first-party Go files.

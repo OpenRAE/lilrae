@@ -191,6 +191,22 @@ func TestCheckAcceptsWhatTheModelPermits(t *testing.T) {
 		"loop through a test use": {
 			"architecture/model.yaml": strings.Replace(fixtureModel, "    packages: [internal/testkit]\n", "    packages: [internal/testkit]\n    uses: [store]\n", 1),
 		},
+		// A first-party module that a module requires stays first party, so
+		// the component rules apply to its packages, not the module rules.
+		"required first-party module": {
+			"architecture/model.yaml":   strings.Replace(strings.Replace(fixtureModel, "packages: [internal/values]", "packages: [internal/values, sub/lib]", 1), "public: []", "public: [sub/lib]", 1),
+			"go.mod":                    "module example.com/app\n\ngo 1.27.0\n\nrequire (\n\texample.com/dep v1.0.0\n\texample.com/check v1.0.0\n\texample.com/app/sub v0.0.0\n)\n\nreplace example.com/app/sub => ./sub\n",
+			"sub/go.mod":                "module example.com/app/sub\n\ngo 1.27.0\n",
+			"sub/lib/lib.go":            "// Package lib is public.\npackage lib\n\n// V is a value.\nconst V = 1\n",
+			"internal/values/values.go": "package values\n\nimport \"example.com/app/sub/lib\"\n\n// X is a value.\nconst X = lib.V\n",
+		},
+		// The longest module path owns an import, so a required module below
+		// the first-party module path is not first party.
+		"required module below the first-party path": {
+			"architecture/model.yaml": strings.Replace(fixtureModel, "    modules: [example.com/dep]\n", "    modules: [example.com/dep, example.com/app/dep]\n", 1),
+			"go.mod":                  "module example.com/app\n\ngo 1.27.0\n\nrequire (\n\texample.com/dep v1.0.0\n\texample.com/check v1.0.0\n\texample.com/app/dep v1.0.0\n)\n",
+			"internal/store/extra.go": "package store\n\nimport \"example.com/app/dep/sub\"\n\nvar _ = sub.Z\n",
+		},
 		"cgo and standard library": {
 			"internal/values/values.go": "package values\n\nimport (\n\t\"C\"\n\t\"net/http\"\n)\n\nvar _ = http.MethodGet\n",
 		},

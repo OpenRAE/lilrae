@@ -102,9 +102,11 @@ type Entry struct {
 	Mode string
 }
 
-// Files returns the files of the tree of rev below dirPath, at any depth.
-func Files(ctx context.Context, dir, rev, dirPath string) ([]Entry, error) {
-	out, err := Run(ctx, dir, "ls-tree", "-r", "-z", "--full-tree", rev, "--", dirPath+"/")
+// Files returns the file at p in the tree of rev, or the files below the
+// directory p, at any depth. Git matches p by whole path elements, so p does
+// not match a sibling whose name starts with p.
+func Files(ctx context.Context, dir, rev, p string) ([]Entry, error) {
+	out, err := Run(ctx, dir, "ls-tree", "-r", "-z", "--full-tree", rev, "--", p)
 	if err != nil {
 		return nil, err
 	}

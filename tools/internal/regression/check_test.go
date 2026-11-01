@@ -457,12 +457,15 @@ func TestCheckReplaysAPackageAtTheModuleRootWithSymlinksAndScripts(t *testing.T)
 func TestCheckReplaysWithTestDataThatIsASymlink(t *testing.T) {
 	t.Parallel()
 	r := newRepo(t)
-	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1"), "shared/want.txt": "2\n"})
+	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1"), "shared/want.txt": "1\n"})
 	if err := os.Symlink("../shared", filepath.Join(r.Dir, "calc", "testdata")); err != nil {
 		t.Fatal(err)
 	}
+	// The head changes the linked fixture with the code, so the base run must
+	// read the head fixture through the link.
 	r.Commit(map[string]string{
-		"calc/calc.go": valueSource("2"),
+		"calc/calc.go":    valueSource("2"),
+		"shared/want.txt": "2\n",
 		"calc/calc_test.go": "package calc\n\nimport (\n\t\"os\"\n\t\"strconv\"\n\t\"testing\"\n)\n\n// regression: #7\nfunc TestValue(t *testing.T) {\n" +
 			"\t// Without the head test data, the test returns early and passes on the base revision.\n" +
 			"\twant, err := os.ReadFile(\"testdata/want.txt\")\n\tif err != nil {\n\t\treturn\n\t}\n" +
@@ -473,6 +476,117 @@ func TestCheckReplaysWithTestDataThatIsASymlink(t *testing.T) {
 
 	if got := messages(report); len(got) != 0 {
 		t.Errorf("findings = %q, want none: the base run needs the head symlink to the test data", got)
+	}
+}
+
+// regression: #1583
+func TestCheckReplaysTheHeadTargetOfATestDataLink(t *testing.T) {
+	t.Parallel()
+	r := newRepo(t)
+	if err := os.MkdirAll(filepath.Join(r.Dir, "calc"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../shared", filepath.Join(r.Dir, "calc", "testdata")); err != nil {
+		t.Fatal(err)
+	}
+	// The target holds two files, so a partial overlay leaves want.txt out.
+	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1"), "shared/a.txt": "a\n", "shared/want.txt": "1\n"})
+	r.Commit(map[string]string{
+		"calc/calc.go":    valueSource("2"),
+		"shared/want.txt": "2\n",
+		"calc/calc_test.go": "package calc\n\nimport (\n\t\"os\"\n\t\"strconv\"\n\t\"testing\"\n)\n\n// regression: #7\nfunc TestValue(t *testing.T) {\n" +
+			"\t// Without the head test data, the test returns early and passes on the base revision.\n" +
+			"\twant, err := os.ReadFile(\"testdata/want.txt\")\n\tif err != nil {\n\t\treturn\n\t}\n" +
+			"\tif got := strconv.Itoa(Value()) + \"\\n\"; got != string(want) {\n\t\tt.Fatalf(\"Value() = %q, want %q\", got, want)\n\t}\n}\n",
+	})
+
+	report := r.check(base, 7, false)
+
+	if got := messages(report); len(got) != 0 {
+		t.Errorf("findings = %q, want none: the base run needs the head contents of the link target", got)
+	}
+}
+
+// TestCheckReplaysLinksInAnyOrder gives the test data a file link whose
+// target sorts before it, and a directory link that sorts before a link in
+// its target. The base run must see the head data of each.
+func TestCheckReplaysLinksInAnyOrder(t *testing.T) {
+	t.Parallel()
+	r := newRepo(t)
+	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1")})
+	links := map[string]string{"calc/testdata/z-link.txt": "a.txt", "calc/testdata/0-link": "dir", "calc/testdata/dir/inner.txt": "../a.txt"}
+	for name, target := range links {
+		path := filepath.Join(r.Dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func(name string) string {
+		return "\twant, err := os.ReadFile(\"" + name + "\")\n\tif err != nil {\n\t\treturn\n\t}\n" +
+			"\tif got := strconv.Itoa(Value()) + \"\\n\"; got != string(want) {\n\t\tt.Fatalf(\"Value() = %q, want %q\", got, want)\n\t}\n"
+	}
+	r.Commit(map[string]string{
+		"calc/calc.go":        valueSource("2"),
+		"calc/testdata/a.txt": "2\n",
+		"calc/calc_test.go": "package calc\n\nimport (\n\t\"os\"\n\t\"strconv\"\n\t\"testing\"\n)\n\n" +
+			"// regression: #7\nfunc TestFileLink(t *testing.T) {\n\t// Without the head test data, the test returns early and passes on the base revision.\n" + read("testdata/z-link.txt") + "}\n\n" +
+			"// regression: #7\nfunc TestDirectoryLink(t *testing.T) {\n" + read("testdata/0-link/inner.txt") + "}\n",
+	})
+
+	report := r.check(base, 7, false)
+
+	if got := messages(report); len(got) != 0 || len(report.Selected) != 2 {
+		t.Errorf("findings = %q for %d tests, want none for 2: the base run needs the head target of each link", got, len(report.Selected))
+	}
+}
+
+// regression: #1583
+func TestCheckReplaysTheTargetOfALinkInALinkTarget(t *testing.T) {
+	t.Parallel()
+	r := newRepo(t)
+	links := map[string]string{"calc/testdata": "../shared", "shared/want.txt": "../fixtures/want.txt"}
+	for name, target := range links {
+		path := filepath.Join(r.Dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1"), "fixtures/want.txt": "1\n"})
+	r.Commit(map[string]string{
+		"calc/calc.go":      valueSource("2"),
+		"fixtures/want.txt": "2\n",
+		"calc/calc_test.go": "package calc\n\nimport (\n\t\"os\"\n\t\"strconv\"\n\t\"testing\"\n)\n\n// regression: #7\nfunc TestValue(t *testing.T) {\n" +
+			"\t// Without the head test data, the test returns early and passes on the base revision.\n" +
+			"\twant, err := os.ReadFile(\"testdata/want.txt\")\n\tif err != nil {\n\t\treturn\n\t}\n" +
+			"\tif got := strconv.Itoa(Value()) + \"\\n\"; got != string(want) {\n\t\tt.Fatalf(\"Value() = %q, want %q\", got, want)\n\t}\n}\n",
+	})
+
+	report := r.check(base, 7, false)
+
+	if got := messages(report); len(got) != 0 {
+		t.Errorf("findings = %q, want none: the base run needs the head fixture behind the nested link", got)
+	}
+}
+
+func TestCheckRejectsATestDataLinkToItsPackage(t *testing.T) {
+	t.Parallel()
+	r := newRepo(t)
+	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1")})
+	if err := os.Symlink(".", filepath.Join(r.Dir, "calc", "testdata")); err != nil {
+		t.Fatal(err)
+	}
+	r.Commit(map[string]string{"calc/calc.go": valueSource("2"), "calc/calc_test.go": valueTest("// regression: #7\n", "")})
+
+	_, err := regression.Check(t.Context(), regression.Config{Repo: r.Dir, Base: base, Issue: 7})
+
+	if err == nil || !strings.Contains(err.Error(), "names a directory that holds its package") {
+		t.Errorf("Check() error = %v, want the link to its package refused", err)
 	}
 }
 
