@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/OpenRAE/lilrae/tools/internal/git"
@@ -77,9 +78,11 @@ func Check(ctx context.Context, cfg Config) (Report, error) {
 	if cfg.Issue == 0 {
 		return report, nil
 	}
-	if report.Selected, err = selectChanged(ctx, root, base, scan.candidates); err != nil {
+	var ambiguous []Finding
+	if report.Selected, ambiguous, err = selectChanged(ctx, root, base, head, scan.candidates); err != nil {
 		return Report{}, err
 	}
+	report.Findings = append(report.Findings, ambiguous...)
 	if cfg.Bug && scan.productionChanged && len(report.Selected) == 0 {
 		report.Findings = append(report.Findings, Finding{
 			Location: fmt.Sprintf("issue #%d", cfg.Issue),
@@ -173,37 +176,64 @@ func readChangedTestFile(ctx context.Context, root, head, file string, issue int
 
 // selectChanged returns the candidates that the base revision does not have
 // with the same package, name, issue, and declaration. The order follows the
-// candidates, which follow the sorted file list of git diff.
-func selectChanged(ctx context.Context, root, base string, candidates []candidate) ([]Test, error) {
-	baseFuncs := map[string]map[string]testFunc{}
+// candidates, which follow the sorted file list of git diff. It returns a
+// finding for each candidate whose name the head declares in the package and
+// in its external test package, because go test runs both under one name and
+// the replay could credit the wrong test.
+func selectChanged(ctx context.Context, root, base, head string, candidates []candidate) ([]Test, []Finding, error) {
+	baseFuncs := map[string]map[string][]testFunc{}
+	headFuncs := map[string]map[string][]testFunc{}
 	var selected []Test
+	var findings []Finding
 	for _, c := range candidates {
 		dir := path.Dir(c.file)
-		funcs, ok := baseFuncs[dir]
-		if !ok {
-			var err error
-			if funcs, err = packageTests(ctx, root, base, dir); err != nil {
-				return nil, err
-			}
-			baseFuncs[dir] = funcs
+		before, err := cachedTests(ctx, root, base, dir, baseFuncs)
+		if err != nil {
+			return nil, nil, err
 		}
-		old, ok := funcs[c.fn.name]
-		if ok && old.issue == c.fn.issue && bytes.Equal(old.source, c.fn.source) {
+		after, err := cachedTests(ctx, root, head, dir, headFuncs)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(after[c.fn.name]) > 1 {
+			findings = append(findings, Finding{Location: c.file, Message: fmt.Sprintf(
+				"%s: the package and its external test package both declare %s, so the replay cannot tell their results apart; rename one",
+				c.fn.name, c.fn.name)})
+			continue
+		}
+		if slices.ContainsFunc(before[c.fn.name], func(old testFunc) bool {
+			return old.pkg == c.fn.pkg && old.issue == c.fn.issue && bytes.Equal(old.source, c.fn.source)
+		}) {
 			continue
 		}
 		selected = append(selected, Test{File: c.file, Name: c.fn.name})
 	}
-	return selected, nil
+	return selected, findings, nil
+}
+
+// cachedTests returns the test functions of dir at rev from cache, and reads
+// them into cache first when it does not have them.
+func cachedTests(ctx context.Context, root, rev, dir string, cache map[string]map[string][]testFunc) (map[string][]testFunc, error) {
+	if funcs, ok := cache[dir]; ok {
+		return funcs, nil
+	}
+	funcs, err := packageTests(ctx, root, rev, dir)
+	if err != nil {
+		return nil, err
+	}
+	cache[dir] = funcs
+	return funcs, nil
 }
 
 // packageTests returns the test functions of the test files of dir at rev,
-// by name. It skips the test files that the go command ignores.
-func packageTests(ctx context.Context, root, rev, dir string) (map[string]testFunc, error) {
+// by name, from the package and from its external test package. It skips the
+// test files that the go command ignores.
+func packageTests(ctx context.Context, root, rev, dir string) (map[string][]testFunc, error) {
 	entries, err := git.Files(ctx, root, rev, dir)
 	if err != nil {
 		return nil, err
 	}
-	funcs := map[string]testFunc{}
+	funcs := map[string][]testFunc{}
 	for _, entry := range entries {
 		if path.Dir(entry.Path) != dir || !strings.HasSuffix(entry.Path, "_test.go") || golayout.Ignored(entry.Path) {
 			continue
@@ -217,7 +247,7 @@ func packageTests(ctx context.Context, root, rev, dir string) (map[string]testFu
 			return nil, err
 		}
 		for _, fn := range parsed {
-			funcs[fn.name] = fn
+			funcs[fn.name] = append(funcs[fn.name], fn)
 		}
 	}
 	return funcs, nil

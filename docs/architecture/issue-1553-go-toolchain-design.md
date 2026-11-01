@@ -102,7 +102,11 @@ flowchart LR
    each package directory of a selected test, the test files and `testdata`
    become those of the head revision. Each test runs alone with
    `go test -json -count=1 -run '^Name$'`. Only a test `fail` on the base
-   revision and a test `pass` on the head revision satisfy the check.
+   revision and a test `pass` on the head revision satisfy the check. The
+   package and its external test package can declare tests with the same
+   name, and `go test` runs both under that name, so the check rejects a
+   selected test whose name both declare. A selected test keeps its package
+   when the check compares it with the base revision.
 11. **Bug label.** A pull request that changes Go production code for an issue
    with the `bug` label must add or change a regression test for that issue.
    A separate step reads the label with a read-only token and prints it. It
