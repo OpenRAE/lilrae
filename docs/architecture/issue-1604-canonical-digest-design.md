@@ -31,6 +31,7 @@ design record.
 | Python float text is the shortest text that reads back the same value. It uses the exponent form when the decimal point position is at most −4 or above 16, with at least two exponent digits. | `repr` of Python floats; vectors `float-exponent`, `float-one`. |
 | `loads_strict` keeps integers exact, reads a literal with a fraction or an exponent as a float, and rejects duplicate names, invalid UTF-8, non-finite constants, and trailing data. | `strict-json` vectors; `utils/strict_json.py`. |
 | `loads_strict` also accepts a number that overflows to infinity. #1610 fixes it on `dev`. | Probe of `loads_strict("1e400")`. |
+| Python reads and writes no integer with more than 4300 decimal digits by default. | `sys.get_int_max_str_digits()`; probes of `loads_strict` and `json.dumps`. |
 | `github.com/gowebpki/jcs` v1.0.2 canonicalizes JSON text with the RFC 8785 rules. It rejects duplicate names, invalid UTF-8, and nesting deeper than 10000 levels. It is under the Apache 2.0 license. | Module source and its tests. |
 | `encoding/json/jsontext` rejects duplicate names and invalid UTF-8 by default, and it gives the text of each number token. | Go 1.27 documentation and a probe. |
 
@@ -48,7 +49,9 @@ design record.
    value as `nil`, `bool`, `string`, `int`, `int64`, `*big.Int`, `float64`,
    `[]any`, or `map[string]any`. An integer and a float are different values,
    as in Python: `1` and `1.0` encode differently. An encoder rejects any
-   other type, and each string that is not valid UTF-8.
+   other type, and each string that is not valid UTF-8. As in Python, no
+   function reads or writes an integer with more than 4300 digits, which
+   also bounds the cost of a long number.
 3. **RFC 8785 through the library.** `RFC8785` rejects an integer outside
    ±(2^53 − 1) and each non-finite float, as the Python library does. Then it
    writes the value as JSON text and gives it to `jcs.Transform`. The library
@@ -57,15 +60,18 @@ design record.
    `SortedCompactJSON` writes them. It sorts names by code point, which is
    the byte order of UTF-8, and it escapes and formats as the evidence states.
    The Python vectors fix each byte, and the corpus gains a case with the
-   float forms at each boundary of the exponent rule.
+   float forms at each boundary of the exponent rule, and cases at the
+   integer digit limit.
 5. **Strict decoding.** `DecodeStrict` reads the tokens of `jsontext`. A
    number without a fraction or an exponent is an integer (`int64`, or
    `*big.Int` when it does not fit). Another number is a `float64`, and a
    number that overflows is rejected. The decoder reads one value and rejects
    trailing data. The overflow case gets a vector when `go-cutover` takes
    #1610.
-6. **Errors with no input.** An error names the rule and the position, not
-   the value, because the input can be a secret.
+6. **Errors with no input.** An error names the rule that the input breaks,
+   and a decode error gives the byte offset. No error holds the input, because
+   the input can be a secret. `jcs` errors can quote the input, so `RFC8785`
+   replaces them.
 7. **Tests read the corpus.** The tests read `conformance/testdata/vectors/`
    and compare exact bytes, digests, and rejection stages. The `$int` and
    `$float` tags stay in the tests. Fuzz tests check that strict decoding
