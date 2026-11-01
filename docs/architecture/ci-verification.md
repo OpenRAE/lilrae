@@ -118,7 +118,7 @@ modules: the tracked `go.mod` files, except `web/caddy-build` and test data.
 | Job | Gate |
 | --- | --- |
 | Go lint | `go mod tidy -diff`, `go vet`, `go fix -diff`, and golangci-lint for Linux, macOS, and Windows. The golangci-lint formatters check gofmt and goimports. |
-| Go tests + coverage | `go test -race -shuffle=on` with coverage, the gate fixtures of `tools/gates`, and the [conformance suite](../reference/conformance-inventory.md) on the clean wheel. |
+| Go tests + coverage | `go test -race -shuffle=on` with coverage, the gate fixtures of `tools/gates`, the [conformance suite](../reference/conformance-inventory.md) on the clean wheel, and each fuzz test for 30 seconds. |
 | Go mutation tests | Gremlins on the changed production lines, or on each whole module with production code for a scheduled or manual run. `tools/mutation-thresholds.json` holds the thresholds. |
 | Go regression tests | The replay of each regression test for the issue of the pull request. |
 | Go architecture | `archcheck` checks the repository and the generated diagram against `architecture/model.yaml`, and the change against the design record of the issue of the pull request. |

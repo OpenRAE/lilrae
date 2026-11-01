@@ -520,6 +520,13 @@ def test_go_architecture_runs_on_every_change_and_is_required_on_go_cutover() ->
     assert '"$HEAD_REPO" == "$REPOSITORY" && "$HEAD_REF" =~ ^(main|dev|go-cutover)$' in script
 
 
+def test_go_tests_run_each_fuzz_test_for_a_bounded_time() -> None:
+    """The fuzz tests of ADR-065 run on each change, for 30 seconds each (#1604)."""
+
+    runs = [step.get("run", "") for step in _jobs()["go-tests"]["steps"]]
+    assert "bash tools/ci/go-gates.sh fuzz 30s" in runs
+
+
 def test_go_regression_keeps_the_token_away_from_the_replay() -> None:
     """Only the label lookup has the token, before any checkout (#1553).
 

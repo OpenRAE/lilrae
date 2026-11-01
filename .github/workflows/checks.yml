@@ -1300,6 +1300,10 @@ jobs:
         env:
           LILRAE_CONFORMANCE_BINARY: ${{ runner.temp }}/clean-venv/bin/lilrae
         run: bash tools/ci/go-gates.sh test "$GITHUB_WORKSPACE/go-coverage"
+      # ADR-065: the fuzz tests of parsers, path containment, and canonical
+      # encoding run for a bounded time on each change.
+      - name: Fuzz tests, 30 seconds each
+        run: bash tools/ci/go-gates.sh fuzz 30s
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: go-coverage
