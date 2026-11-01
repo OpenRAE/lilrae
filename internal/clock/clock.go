@@ -5,7 +5,7 @@ package clock
 import "time"
 
 // System reads the clock of the host. Its zero value is ready to use, and it
-// satisfies an interface with the method Now() time.Time.
+// satisfies an interface with a Now method that returns a [time.Time].
 type System struct{}
 
 // Now returns the current instant in UTC.
