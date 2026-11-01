@@ -90,10 +90,14 @@ defines.
    components, or a use that the layers forbid, gives `invalid-model` findings
    at the model line, with exit 1.
 5. **Rules.** `unassigned-package`, `stale-package`, `forbidden-import`,
-   `forbidden-module`, `unresolved-import`, and `undeclared-public-package` check
-   the code. An importable package outside `internal/` must be public. A command
-   (package `main`) and a directory of test files only are not importable. The
-   model must give a fix-it message for each rule that the checker knows.
+   `forbidden-module`, `unresolved-import`, `undeclared-public-package`, and
+   `undeclared-replacement` check the code. An importable package outside
+   `internal/` must be public. A command (package `main`) and a directory of
+   test files only are not importable. A `replace` directive with a local
+   directory must name a tracked first-party module or a vendored directory, so
+   test data or a directory outside the repository cannot supply code that the
+   model does not cover. The model must give a fix-it message for each rule
+   that the checker knows.
 6. **Compilation.** The checker evaluates the model directly, so no analyzer
    configuration is generated. The generated artifact is the diagram, and CI
    compares it with the model. The issue text records this change.

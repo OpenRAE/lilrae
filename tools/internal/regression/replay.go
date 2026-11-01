@@ -98,7 +98,8 @@ func overlay(ctx context.Context, root, head string, tree *os.Root, dir string) 
 	for _, file := range files {
 		rel := relative(dir, file.Path)
 		isTestFile := !strings.Contains(rel, "/") && strings.HasSuffix(rel, "_test.go")
-		if !isTestFile && !strings.HasPrefix(rel, "testdata/") {
+		// A testdata entry without a slash is a symlink to the test data.
+		if !isTestFile && rel != "testdata" && !strings.HasPrefix(rel, "testdata/") {
 			continue
 		}
 		if err := writeEntry(ctx, root, head, tree, file); err != nil {

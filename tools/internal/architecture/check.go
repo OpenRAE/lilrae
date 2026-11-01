@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"slices"
 )
 
@@ -56,6 +57,7 @@ func checkCode(m *Model, repo *repository) []Finding {
 	findings := m.validate()
 	dirs := repo.packages()
 	findings = append(findings, checkPackages(m, repo, dirs)...)
+	findings = append(findings, checkReplacements(m, repo)...)
 	for _, f := range repo.files {
 		if c := m.owner(f.dir); c != nil {
 			findings = append(findings, checkImports(m, repo, c, f, dirs)...)
@@ -85,6 +87,25 @@ func checkPackages(m *Model, repo *repository, dirs []string) []Finding {
 				findings = append(findings, m.finding(RuleStalePackage, m.componentLocation(i),
 					fmt.Sprintf("the package %s of %q has no Go file", quote(p), c.Name)))
 			}
+		}
+	}
+	return findings
+}
+
+// checkReplacements returns the findings of the local replacements of the
+// first-party modules. Each must name a first-party module or a vendored
+// directory, so that the model covers each package that a build uses.
+func checkReplacements(m *Model, repo *repository) []Finding {
+	var findings []Finding
+	for _, mod := range repo.modules {
+		for _, r := range mod.replacements {
+			firstParty := slices.ContainsFunc(repo.modules, func(other *goModule) bool { return other.dir == r.dir })
+			vendored := slices.ContainsFunc(m.Vendored, func(v string) bool { return within(r.dir, v) })
+			if firstParty || vendored {
+				continue
+			}
+			findings = append(findings, m.finding(RuleLocalReplacement, fmt.Sprintf("%s:%d", path.Join(mod.dir, "go.mod"), r.line),
+				fmt.Sprintf("the module %s is replaced with the directory %s, which is not a first-party module or a vendored directory", quote(r.module), quote(r.dir))))
 		}
 	}
 	return findings

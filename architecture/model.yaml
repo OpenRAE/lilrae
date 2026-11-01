@@ -122,6 +122,10 @@ rules:
   undeclared-public-package: >-
     Move the package under internal/, or list it in public in
     architecture/model.yaml through a recorded model change.
+  undeclared-replacement: >-
+    Replace the module with a tracked first-party module, or list the
+    directory in vendored in architecture/model.yaml through a recorded model
+    change.
   invalid-model: >-
     Correct architecture/model.yaml as the finding states.
   missing-design: >-

@@ -31,6 +31,7 @@ rules:
   forbidden-module: Fix forbidden-module.
   unresolved-import: Fix unresolved-import.
   undeclared-public-package: Fix undeclared-public-package.
+  undeclared-replacement: Fix undeclared-replacement.
   invalid-model: Fix invalid-model.
   missing-design: Fix missing-design.
   invalid-design: Fix invalid-design.

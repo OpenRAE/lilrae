@@ -78,6 +78,20 @@ func TestCheckRules(t *testing.T) {
 			},
 			want: []string{`[undeclared-public-package] api: the package "api" can be imported, but it is not under internal/ and not public`},
 		},
+		{
+			name: "replacement with test data",
+			files: map[string]string{
+				"go.mod":                  "module example.com/app\n\ngo 1.27.0\n\nrequire (\n\texample.com/dep v1.0.0\n\texample.com/check v1.0.0\n)\n\nreplace example.com/dep => ./testdata/dep\n",
+				"testdata/dep/go.mod":     "module example.com/dep\n\ngo 1.27.0\n",
+				"testdata/dep/sub/sub.go": "package sub\n",
+			},
+			want: []string{`[undeclared-replacement] go.mod:10: the module "example.com/dep" is replaced with the directory "testdata/dep", which is not a first-party module or a vendored directory`},
+		},
+		{
+			name:  "replacement outside the repository",
+			files: map[string]string{"go.mod": "module example.com/app\n\ngo 1.27.0\n\nrequire (\n\texample.com/dep v1.0.0\n\texample.com/check v1.0.0\n)\n\nreplace example.com/dep => ../dep\n"},
+			want:  []string{`[undeclared-replacement] go.mod:10: the module "example.com/dep" is replaced with the directory "../dep", which is not a first-party module or a vendored directory`},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -131,6 +145,13 @@ func TestCheckAcceptsWhatTheModelPermits(t *testing.T) {
 			"q/go.mod":                  "module example.com/lib/sub\n\ngo 1.27.0\n",
 			"q/x/x.go":                  "// Package x is public.\npackage x\n\n// V is a value.\nconst V = 1\n",
 			"internal/values/values.go": "package values\n\nimport \"example.com/lib/sub/x\"\n\nvar _ = x.V\n",
+		},
+		"replacements with vendored source and a first-party module": {
+			"architecture/model.yaml": strings.Replace(fixtureModel, "packages: [app]", "packages: [app, sub/cmd]", 1),
+			"go.mod":                  "module example.com/app\n\ngo 1.27.0\n\nrequire (\n\texample.com/dep v1.0.0\n\texample.com/check v1.0.0\n)\n\nreplace (\n\texample.com/dep => ./third_party/dep\n\texample.com/app/sub => ./sub\n)\n",
+			"third_party/dep/go.mod":  "module example.com/dep\n\ngo 1.27.0\n",
+			"sub/go.mod":              "module example.com/app/sub\n\ngo 1.27.0\n",
+			"sub/cmd/main.go":         "package main\n\nfunc main() {}\n",
 		},
 		"model of the largest size": {
 			"architecture/model.yaml": fixtureModel + "# " + strings.Repeat("x", 1<<20-len(fixtureModel)-3) + "\n",
@@ -233,8 +254,8 @@ func TestCheckReportsAModelWithoutRules(t *testing.T) {
 
 	want := "[invalid-model] architecture/model.yaml: the rule \"unassigned-package\" has no fix-it message\n" +
 		"    fix: The model gives no fix-it message for this rule."
-	if len(got) != 14 || got[0] != want {
-		t.Errorf("Check() findings = %q, want 14 findings that start with %q", got, want)
+	if len(got) != 15 || got[0] != want {
+		t.Errorf("Check() findings = %q, want 15 findings that start with %q", got, want)
 	}
 }
 

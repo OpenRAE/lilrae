@@ -115,8 +115,9 @@ Rules:
   and build tag is in scope, and it resolves each import to its module with
   `golang.org/x/mod`. A module permission is never a global exemption. It
   rejects unknown keys, a package that has no component or two components, an
-  unknown dependency, and a stale reference. Each finding prints its rule and
-  the fix-it message of the model.
+  unknown dependency, a stale reference, and a local module replacement that
+  the model does not cover. Each finding prints its rule and the fix-it message
+  of the model.
 - The checker runs no project code, and the model is its only policy input. The
   checker does not use go-arch-lint (#1583): its dependency graph fails the
   vulnerability gates, and it has no layers, rule IDs, fix-it messages, or

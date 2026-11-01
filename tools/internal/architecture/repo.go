@@ -36,6 +36,18 @@ type goModule struct {
 	path string
 	// requires are the required module paths, longest first.
 	requires []string
+	// replacements are the replacements with a local directory.
+	replacements []replacement
+}
+
+// replacement is a replace directive with a local directory.
+type replacement struct {
+	// module is the replaced module path.
+	module string
+	// dir is the directory of the replacement, from the repository root. It
+	// is not a valid path when the directory is outside the repository.
+	dir  string
+	line int
 }
 
 // goFile is a first-party Go file.
@@ -143,13 +155,19 @@ func (r *repository) readModule(name string) (*goModule, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", name, err)
 	}
-	f, err := modfile.ParseLax(name, data, nil)
+	f, err := modfile.Parse(name, data, nil)
 	if err != nil || f.Module == nil {
 		return nil, fmt.Errorf("%s: cannot parse the module file", name)
 	}
 	mod := &goModule{dir: path.Dir(name), path: f.Module.Mod.Path}
 	for _, req := range f.Require {
 		mod.requires = append(mod.requires, req.Mod.Path)
+	}
+	for _, rep := range f.Replace {
+		if modfile.IsDirectoryPath(rep.New.Path) {
+			dir := path.Join(mod.dir, filepath.ToSlash(rep.New.Path))
+			mod.replacements = append(mod.replacements, replacement{module: rep.Old.Path, dir: dir, line: rep.Syntax.Start.Line})
+		}
 	}
 	slices.SortFunc(mod.requires, func(a, b string) int { return len(b) - len(a) })
 	return mod, nil

@@ -23,6 +23,7 @@ const (
 	RuleForbiddenModule     = "forbidden-module"
 	RuleUnresolvedImport    = "unresolved-import"
 	RuleUndeclaredPublic    = "undeclared-public-package"
+	RuleLocalReplacement    = "undeclared-replacement"
 	RuleInvalidModel        = "invalid-model"
 	RuleMissingDesign       = "missing-design"
 	RuleInvalidDesign       = "invalid-design"
@@ -37,7 +38,7 @@ const (
 func rules() []string {
 	return []string{
 		RuleUnassignedPackage, RuleStalePackage, RuleForbiddenImport, RuleForbiddenModule,
-		RuleUnresolvedImport, RuleUndeclaredPublic, RuleInvalidModel, RuleMissingDesign,
+		RuleUnresolvedImport, RuleUndeclaredPublic, RuleLocalReplacement, RuleInvalidModel, RuleMissingDesign,
 		RuleInvalidDesign, RuleDesignPackageAbsent, RuleDesignImportsDiffer, RuleDesignForbidden,
 		RuleDesignModelChanges, RuleStaleDiagram,
 	}
