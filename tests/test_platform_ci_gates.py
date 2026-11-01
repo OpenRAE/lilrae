@@ -503,6 +503,8 @@ def test_go_product_tests_and_mutation_run_on_macos_and_windows() -> None:
 
     The Linux mutation job leaves out each file that Linux does not build, so
     this job is the gate of those files. It blocks like the other Go gates.
+    Gremlins reads no coverage on Windows, so the Windows job skips the
+    mutation gate until #1617 restores it.
     """
 
     jobs = _jobs()
@@ -517,7 +519,13 @@ def test_go_product_tests_and_mutation_run_on_macos_and_windows() -> None:
     assert job["steps"][1]["with"]["fetch-depth"] == 0
     runs = [step.get("run", "") for step in job["steps"]]
     assert 'bash tools/ci/go-gates.sh test "$RUNNER_TEMP/go-coverage" .' in runs
-    assert any(run.endswith('bash tools/ci/go-gates.sh mutation "$base" .\n') for run in runs)
+    mutation = [
+        step
+        for step in job["steps"]
+        if step.get("run", "").endswith('bash tools/ci/go-gates.sh mutation "$base" .\n')
+    ]
+    assert len(mutation) == 1
+    assert mutation[0]["if"] == "matrix.os != 'windows-latest'"
 
 
 def test_go_architecture_runs_on_every_change_and_is_required_on_go_cutover() -> None:

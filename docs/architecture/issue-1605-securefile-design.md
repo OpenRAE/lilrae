@@ -117,7 +117,10 @@ records the decision about `os.Root`.
     files, so it no longer counts their mutants as not covered. A new CI job
     runs the tests and the mutation gate of the product module on macOS and
     Windows. `go-gates.sh test` and `mutation` take a module list for it,
-    because the tools modules run on Linux only.
+    because the tools modules run on Linux only. Gremlins reads no coverage
+    on Windows (OpenRAE/go-rae-gremlins#12), so as a temporary measure the
+    Windows job runs only the tests, until #1617 restores the mutation gate
+    there.
 
 ## Data flows and threat model
 

@@ -1392,7 +1392,10 @@ jobs:
         run: bash tools/ci/go-gates.sh test "$RUNNER_TEMP/go-coverage" .
       # The Linux mutation job leaves out each file that Linux does not
       # build. This job mutates the product module where those files build.
+      # Gremlins reads no coverage on Windows (OpenRAE/go-rae-gremlins#12),
+      # so the Windows job skips this step until #1617 restores it.
       - name: Mutate the changed Go production lines of the product module
+        if: matrix.os != 'windows-latest'
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}

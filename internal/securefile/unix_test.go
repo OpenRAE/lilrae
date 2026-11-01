@@ -478,6 +478,45 @@ func reuseDescriptor(t *testing.T, dir string, n int) int {
 	return -1
 }
 
+// openRaw opens the directory name below root as a descriptor that the test
+// closes.
+func openRaw(t *testing.T, root, name string) int {
+	t.Helper()
+	fd, err := unix.Open(filepath.Join(root, name), unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := unix.Close(fd); err != nil {
+			t.Error(err)
+		}
+	})
+	return fd
+}
+
+func TestRemovalGoesOnAfterAnEntryThatAnotherProcessRemoved(t *testing.T) {
+	root, _ := newTree(t)
+	writeFile(t, root, "tree/a", "x")
+	writeFile(t, root, "tree/c/d", "x")
+	// Readdirnames listed the entry b, and another process removed it before
+	// the removal reached it.
+	if err := removeEntries("remove all", "tree", openRaw(t, root, "tree"), []string{"a", "b", "c"}); err != nil {
+		t.Fatalf("removeEntries() = %v, want nil", err)
+	}
+	if got := names(t, root, "tree"); len(got) != 0 {
+		t.Errorf("the directory holds %q, want nothing", got)
+	}
+}
+
+func TestADirectoryThatAnotherProcessRemovedIsDone(t *testing.T) {
+	root, _ := newTree(t)
+	// An earlier lstat saw the directory gone, and another process removed it
+	// before the open.
+	if err := removeEntry("remove all", "tree", openRaw(t, root, "."), "gone", true); err != nil {
+		t.Errorf("removeEntry() = %v, want nil", err)
+	}
+}
+
 func TestIgnoringEINTR(t *testing.T) {
 	calls := 0
 	err := ignoringEINTR(func() error {

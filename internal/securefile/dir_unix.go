@@ -381,9 +381,13 @@ func removeEntry(op, path string, dir int, name string, isDir bool) error {
 	return absentIsDone(op, path, unlinkat(dir, name, flags))
 }
 
-// removeContent removes each entry of the directory name under parent.
+// removeContent removes each entry of the directory name under parent. A
+// directory that another process removed first is done.
 func removeContent(op, path string, parent int, name string) (err error) {
 	d, err := openDir(op, path, parent, name, ruleOpen)
+	if IsReason(err, ReasonNotFound) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -393,12 +397,23 @@ func removeContent(op, path string, parent int, name string) (err error) {
 	if err != nil {
 		return failure(op, path, err)
 	}
+	return removeEntries(op, path, d, entries)
+}
+
+// removeEntries removes the entries of the directory dir. An entry that
+// another process removed first is done, and the removal goes on with the
+// next entry.
+func removeEntries(op, path string, dir int, entries []string) error {
 	for _, entry := range entries {
 		var st unix.Stat_t
-		if err := lstatat(d, entry, &st); err != nil {
-			return absentIsDone(op, path, err)
+		err := lstatat(dir, entry, &st)
+		if errors.Is(err, unix.ENOENT) {
+			continue
 		}
-		if err := removeEntry(op, path, d, entry, st.Mode&unix.S_IFMT == unix.S_IFDIR); err != nil {
+		if err != nil {
+			return failure(op, path, err)
+		}
+		if err := removeEntry(op, path, dir, entry, st.Mode&unix.S_IFMT == unix.S_IFDIR); err != nil {
 			return err
 		}
 	}
