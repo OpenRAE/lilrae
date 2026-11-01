@@ -102,6 +102,8 @@ release, and the CI log.
 - The Python tests pass on every vector in CI.
 - Each inventory row names its vector file, and the test fails when a vector
   file has no row or a row names a missing file.
+- A change to a vector file or to the inventory selects the Python tests in
+  CI.
 
 ## References
 

@@ -24,6 +24,8 @@ _GO_FILES = {"go.mod", "go.sum", ".golangci.yml", "tools/go.mod", "tools/go.sum"
 # The conformance suite (#1554): its cases, the published schemas that they
 # check, and the contract inventory that maps each contract to a case.
 _CONFORMANCE_PREFIXES = ("conformance/", "docs/reference/schemas/", "docs/reference/conformance-inventory.md")
+# Documents that a Python test reads, so a change to them runs that test.
+_PYTHON_TESTED_DOCS = {"docs/reference/serialization-schemes.md"}
 
 
 def select_lanes(paths: list[str], *, full: bool = False) -> dict[str, bool]:
@@ -48,6 +50,8 @@ def select_lanes(paths: list[str], *, full: bool = False) -> dict[str, bool]:
             lanes["lab"] |= path.startswith(_CONFORMANCE_PREFIXES) and not path.startswith(
                 "conformance/testdata/vectors/"
             )
+        elif path in _PYTHON_TESTED_DOCS:
+            lanes.update(python=True, docs=True)
         elif path.startswith(("docs/", ".vale/")) or path.endswith(".md") or path in {"mkdocs.yml", ".vale.ini", ".readthedocs.yaml"}:
             lanes["docs"] = True
         elif path.startswith(("src/", "tests/")):
