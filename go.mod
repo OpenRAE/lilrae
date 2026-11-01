@@ -11,4 +11,5 @@ ignore node_modules
 require (
 	github.com/google/go-cmp v0.7.0
 	github.com/gowebpki/jcs v1.0.2
+	golang.org/x/sys v0.49.0
 )
