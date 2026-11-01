@@ -21,7 +21,7 @@ var (
 // scheme. It rejects duplicate member names, invalid UTF-8, the constants NaN
 // and Infinity, a number that overflows to an infinity, an integer with more
 // digits than Python reads, and data after the value. A number without a
-// fraction or an exponent decodes to an int64, or to a *big.Int when it does
+// fraction or an exponent decodes to an int64, or to a [*big.Int] when it does
 // not fit, and another number decodes to a float64.
 func DecodeStrict(data []byte) (any, error) {
 	dec := jsontext.NewDecoder(bytes.NewReader(data))

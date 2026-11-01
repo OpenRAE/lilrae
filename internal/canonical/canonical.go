@@ -2,7 +2,7 @@
 // store, hash, and sign, and it decodes strict JSON.
 //
 // The encoders take, and DecodeStrict returns, a JSON value as nil, bool,
-// string, int, int64, *big.Int, float64, []any, or map[string]any. An integer
+// string, int, int64, [*big.Int], float64, []any, or map[string]any. An integer
 // and a float are different values, as in Python: 1 and 1.0 encode
 // differently. Each function implements one scheme of the serialization
 // vectors in conformance/testdata/vectors. An error names the rule that the
