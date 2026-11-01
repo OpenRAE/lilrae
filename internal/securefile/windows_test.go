@@ -4,6 +4,7 @@ package securefile
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -83,9 +84,7 @@ func TestMetadataNeedsNoAccessToTheContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fs.ReadFile(os.DirFS(root), "key"); err == nil {
-		t.Fatal("the test can still read the content of the key")
-	}
+	requireNoReadAccess(t, filepath.Join(root, "key"))
 	if err := d.Chmod("key", 0o444); err != nil {
 		t.Fatalf("Chmod() without access to the content = %v, want nil", err)
 	}
@@ -94,6 +93,24 @@ func TestMetadataNeedsNoAccessToTheContent(t *testing.T) {
 	}
 	if got, err := d.ReadFile("key"); err != nil || string(got) != "secret" {
 		t.Errorf("ReadFile() = %q, %v, want the owner to read the key after RestrictToOwner", got, err)
+	}
+}
+
+// requireNoReadAccess stops the test when a plain open can read the file. It
+// opens without backup semantics: [os.Open] and [os.Root] use them, and an
+// administrator with the backup privilege passes the access list with them.
+func requireNoReadAccess(t *testing.T, path string) {
+	t.Helper()
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle, err := windows.CreateFile(name, windows.GENERIC_READ, windows.FILE_SHARE_READ, nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
+	if err == nil {
+		t.Fatalf("a plain open can read the file: %v", windows.CloseHandle(handle))
+	}
+	if !errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+		t.Fatalf("a plain open of the file = %v, want ERROR_ACCESS_DENIED", err)
 	}
 }
 
