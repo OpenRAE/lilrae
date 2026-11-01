@@ -7,3 +7,8 @@ go 1.27.3
 // Node.js trees hold third-party Go files. Package patterns such as ./...
 // skip them.
 ignore node_modules
+
+require (
+	github.com/google/go-cmp v0.7.0
+	github.com/gowebpki/jcs v1.0.2
+)

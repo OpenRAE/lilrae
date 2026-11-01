@@ -13,6 +13,7 @@ import hashlib
 import json
 import math
 import re
+import sys
 from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
@@ -87,12 +88,23 @@ _CASE_FIELDS = {"id", "input", "input_hex", "expect", "note"}
 _EXPECT_FIELDS = {"hex", "text", "value", "reject"}
 
 
+def _exact_int(text: str) -> int:
+    """Read a tagged integer of any length; an owner, not the corpus, applies the digit limit."""
+
+    limit = sys.get_int_max_str_digits()
+    sys.set_int_max_str_digits(0)
+    try:
+        return int(text)
+    finally:
+        sys.set_int_max_str_digits(limit)
+
+
 def _decode(value: object) -> object:
     """Return the vector input with its number tags decoded."""
 
     if isinstance(value, dict):
         if set(value) == {"$int"}:
-            return int(value["$int"])
+            return _exact_int(value["$int"])
         if set(value) == {"$float"}:
             return float(value["$float"])
         return {key: _decode(item) for key, item in value.items()}
@@ -109,7 +121,11 @@ def _rfc8785(case_input: object) -> dict[str, str]:
 
 
 def _sorted_compact_json(case_input: object) -> dict[str, str]:
-    data = json.dumps(case_input, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    try:
+        data = json.dumps(case_input, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    except ValueError as exc:
+        # Python writes no integer with more digits than sys.get_int_max_str_digits().
+        raise Rejected("serialize") from exc
     return {"hex": data.hex()}
 
 
