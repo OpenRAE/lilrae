@@ -98,11 +98,15 @@ def _source_uses() -> set[tuple[str, str]]:
     return uses
 
 
+def _section(title: str) -> str:
+    text = INVENTORY.read_text(encoding="utf-8")
+    return text.split(f"\n## {title}\n", 1)[1].split("\n## ", 1)[0]
+
+
 def _inventory_rows() -> set[tuple[str, str]]:
     """Return each (module, name) of the name tables of the inventory."""
 
-    text = INVENTORY.read_text(encoding="utf-8")
-    section = text.split("\n## Names by capability\n", 1)[1].split("\n## ", 1)[0]
+    section = _section("Names by capability")
     rows: set[tuple[str, str]] = set()
     for module, names in re.findall(r"^\| `([a-z0-9_.]+)` \| ([^|]+) \|", section, re.MULTILINE):
         rows.update((module, name.strip().strip("`")) for name in names.split(","))
@@ -117,3 +121,17 @@ def test_inventory_names_each_upstream_use() -> None:
 def test_inventory_lists_only_used_names() -> None:
     stale = _inventory_rows() - _source_uses()
     assert not stale, f"the inventory lists names that src/ does not use: {sorted(stale)}"
+
+
+def test_port_blockers_follow_the_capability_owners() -> None:
+    # Each port is blocked on the owner of each capability that it uses, and
+    # on rae#1825, the public Go API of RAES.
+    owners_of: dict[str, set[str]] = {}
+    for owner, ports in re.findall(r"^\| [^|]+ \| \[([a-z-]+#\d+)\]\([^)]+\) \| ([^|]+) \|", _section("Upstream owners"), re.MULTILINE):
+        for port in re.findall(r"GP\d+", ports):
+            owners_of.setdefault(port, {"rae#1825"}).add(owner)
+    blockers_of = {
+        port: set(re.findall(r"\[([a-z-]+#\d+)\]", blockers))
+        for port, blockers in re.findall(r"^\| (GP\d+) \([^|]+\) \| ([^|]+) \|", _section("Go port blockers"), re.MULTILINE)
+    }
+    assert blockers_of == owners_of
