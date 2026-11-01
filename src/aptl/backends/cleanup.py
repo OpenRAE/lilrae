@@ -1,6 +1,7 @@
 """Declared cleanup effects and evidence beneath the shared RAES trial lifecycle."""
 
-from dataclasses import replace
+from asyncio import CancelledError
+from dataclasses import dataclass, field, replace
 from graphlib import TopologicalSorter
 import hashlib
 
@@ -9,6 +10,7 @@ from raes_backend_protocols.capabilities import CleanupCapabilities
 from raes_contracts.contracts import (
     CleanupObligationModel,
     CleanupObligationResultModel,
+    ExperimentEvidenceRecordModel,
     TrialCleanupPlanModel,
     TrialCleanupReceiptModel,
     validate_trial_cleanup_receipt,
@@ -44,6 +46,16 @@ _TRIGGERS = {
 }
 
 
+@dataclass
+class _CleanupExecution:
+    """Retained results and failures from one ordered cleanup execution."""
+
+    results: dict[str, CleanupObligationResultModel] = field(default_factory=dict)
+    evidence: list[ExperimentEvidenceRecordModel] = field(default_factory=list)
+    interrupted: BaseException | None = None
+    publication_failure: Exception | None = None
+
+
 class DeclaredCleanup:
     """One immutable admitted plan bound to its installed native owner.
 
@@ -68,6 +80,19 @@ class DeclaredCleanup:
         return TrialCleanupPlanModel.model_validate_json(self._plan_bytes)
 
     def _validate_plan(self) -> None:
+        self._validate_boundary()
+        plan, scope = self.plan, self._binding
+        if plan.retry_policy.max_attempts != 1:
+            raise ValueError("cleanup retry preparation is not installed")
+        probes = [*plan.clean_state.verification_probe_refs]
+        for obligation in plan.cleanup_obligations.values():
+            probes.extend(obligation.verification_probe_refs)
+            if obligation.requirement == "required" and not self._supported(obligation):
+                raise ValueError("required cleanup semantics are unsupported")
+        if any(probe != f"native-absence:{scope.boundary_id}" for probe in probes):
+            raise ValueError("cleanup probe is not bound to the native boundary")
+
+    def _validate_boundary(self) -> None:
         plan, scope = self.plan, self._binding
         if (plan.plan_entry_id, plan.run_id) != (scope.plan_entry_id, scope.run_id):
             raise ValueError("cleanup plan does not match its native binding")
@@ -81,15 +106,6 @@ class DeclaredCleanup:
             or plan.clean_state.mode not in {"fresh", "fresh-range-required"}
         ):
             raise ValueError("cleanup boundary is not supported by the native binding")
-        if plan.retry_policy.max_attempts != 1:
-            raise ValueError("cleanup retry preparation is not installed")
-        probes = [*plan.clean_state.verification_probe_refs]
-        for obligation in plan.cleanup_obligations.values():
-            probes.extend(obligation.verification_probe_refs)
-            if obligation.requirement == "required" and not self._supported(obligation):
-                raise ValueError("required cleanup semantics are unsupported")
-        if any(probe != f"native-absence:{scope.boundary_id}" for probe in probes):
-            raise ValueError("cleanup probe is not bound to the native boundary")
 
     @staticmethod
     def _supported(obligation: CleanupObligationModel) -> bool:
@@ -137,65 +153,28 @@ class DeclaredCleanup:
     def _execute_owned(self, outcome: str) -> TrialCleanupObservation:
         trigger = _TRIGGERS[outcome]
         plan = self.plan
-        results: dict[str, CleanupObligationResultModel] = {}
-        evidence = []
-        interrupted: BaseException | None = None
-        publication_failure: Exception | None = None
+        execution = _CleanupExecution()
         order = TopologicalSorter(
             {key: value.depends_on for key, value in plan.cleanup_obligations.items()}
         )
         for key in order.static_order():
             obligation = plan.cleanup_obligations[key]
-            if trigger not in obligation.triggers:
-                continue
-            failed_dependency = any(
-                parent not in results or results[parent].status != "succeeded"
-                for parent in obligation.depends_on
-            )
-            try:
-                readback, status = self._perform(
-                    obligation, failed_dependency or interrupted is not None
-                )
-            except BaseException as exc:
-                # Preserve the interrupted attempt, then propagate the original
-                # interruption after publication. No later native effect runs.
-                interrupted = exc
-                readback, status = (
-                    CleanupReadback((), ("native-cleanup-interrupted",)),
-                    "unverified",
-                )
-            try:
-                record = retain_cleanup_readback(
-                    self.store, self.clock, self._binding, key, readback
-                )
-            except Exception as exc:
-                # Losing evidence must block success and dependent effects,
-                # but must not prevent independent safe cleanup obligations.
-                if publication_failure is None:
-                    publication_failure = exc
-                continue
-            evidence.append(record)
-            results[key] = CleanupObligationResultModel(
-                obligation_id=key,
-                status=status,
-                evidence_refs=[record.evidence_record_id],
-                residual_state_refs=[]
-                if status == "succeeded"
-                else [f"residual:{self._binding.boundary_id}"],
-            )
-        if publication_failure is not None:
-            if interrupted is not None:
-                raise interrupted from publication_failure
-            raise publication_failure
-        status = (
-            "not-required"
-            if not results
-            else (
+            if trigger in obligation.triggers:
+                self._execute_obligation(key, obligation, execution)
+        if execution.publication_failure is not None:
+            if execution.interrupted is not None:
+                raise execution.interrupted from execution.publication_failure
+            raise execution.publication_failure
+        status = "not-required"
+        if execution.results:
+            status = (
                 "succeeded"
-                if all(result.status == "succeeded" for result in results.values())
+                if all(
+                    result.status == "succeeded"
+                    for result in execution.results.values()
+                )
                 else "failed"
             )
-        )
         receipt_data = {
             "cleanup_plan_ref": plan.plan_id,
             "plan_entry_id": plan.plan_entry_id,
@@ -204,14 +183,17 @@ class DeclaredCleanup:
             "trial_outcome": outcome,
             "cleanup_status": status,
             "obligation_results": {
-                key: result.model_dump(mode="json") for key, result in results.items()
+                key: result.model_dump(mode="json")
+                for key, result in execution.results.items()
             },
         }
         if status == "succeeded" and plan.clean_state.mode == "fresh":
             receipt_data["clean_state_claim"] = {
                 "disposition": "verified-clean",
                 "boundary_refs": [self._binding.boundary_id],
-                "evidence_refs": [record.evidence_record_id for record in evidence],
+                "evidence_refs": [
+                    record.evidence_record_id for record in execution.evidence
+                ],
             }
         receipt_id = (
             "cleanup-" + hashlib.sha256(rfc8785.dumps(receipt_data)).hexdigest()
@@ -223,10 +205,53 @@ class DeclaredCleanup:
             f"cleanup/receipts/{receipt_id}.json",
             receipt.model_dump(mode="json"),
         )
-        if interrupted is not None:
-            raise interrupted
+        if execution.interrupted is not None:
+            raise execution.interrupted
         return TrialCleanupObservation(
-            receipt=receipt, evidence=tuple(evidence), idempotent_effects=True
+            receipt=receipt, evidence=tuple(execution.evidence), idempotent_effects=True
+        )
+
+    def _execute_obligation(
+        self,
+        key: str,
+        obligation: CleanupObligationModel,
+        execution: _CleanupExecution,
+    ) -> None:
+        failed_dependency = any(
+            parent not in execution.results
+            or execution.results[parent].status != "succeeded"
+            for parent in obligation.depends_on
+        )
+        try:
+            readback, status = self._perform(
+                obligation, failed_dependency or execution.interrupted is not None
+            )
+        except (KeyboardInterrupt, SystemExit, GeneratorExit, CancelledError) as exc:
+            # Retain interrupted attempts before propagating the original stop.
+            # No later native effect runs after an interruption.
+            execution.interrupted = exc
+            readback, status = (
+                CleanupReadback((), ("native-cleanup-interrupted",)),
+                "unverified",
+            )
+        try:
+            record = retain_cleanup_readback(
+                self.store, self.clock, self._binding, key, readback
+            )
+        except Exception as exc:
+            # Evidence loss blocks success and dependent effects. Independent
+            # safe cleanup obligations must still run.
+            if execution.publication_failure is None:
+                execution.publication_failure = exc
+            return
+        execution.evidence.append(record)
+        execution.results[key] = CleanupObligationResultModel(
+            obligation_id=key,
+            status=status,
+            evidence_refs=[record.evidence_record_id],
+            residual_state_refs=[]
+            if status == "succeeded"
+            else [f"residual:{self._binding.boundary_id}"],
         )
 
     def _perform(
@@ -240,7 +265,7 @@ class DeclaredCleanup:
             readback = self.native.execute(
                 obligation.action_kind, obligation.timeout_seconds
             )
-        except OSError, TimeoutError, ValueError:
+        except OSError, ValueError:
             readback = CleanupReadback((), ("native-cleanup-unavailable",))
         return readback, "succeeded" if readback.absent else "failed"
 

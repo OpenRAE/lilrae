@@ -28,6 +28,7 @@ _MAX_BYTES = 128 * 1024
 
 
 def _read(store: LocalRunStore, run_id: str, path: str) -> bytes:
+    """Read bounded evidence bytes without following links outside the run."""
     with open_contained_nofollow(store.get_run_path(run_id), path) as handle:
         data = handle.read(_MAX_BYTES + 1)
     if len(data) > _MAX_BYTES:

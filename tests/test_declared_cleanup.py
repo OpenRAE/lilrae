@@ -1,5 +1,6 @@
 """Declared cleanup uses released receipt semantics and retained native facts."""
 
+from asyncio import CancelledError
 from dataclasses import replace
 from pathlib import Path
 import json
@@ -138,9 +139,10 @@ def test_required_unsupported_action_is_refused_before_effects(tmp_path):
     cleanup, native = service(tmp_path)
     plan = cleanup_plan().model_dump(mode="json")
     plan["cleanup_obligations"]["destroy"]["action_kind"] = "reset"
+    unsupported_plan = TrialCleanupPlanModel.model_validate(plan)
     with pytest.raises(ValueError):
         DeclaredCleanup(
-            TrialCleanupPlanModel.model_validate(plan),
+            unsupported_plan,
             native,
             cleanup.store,
             cleanup.clock,
@@ -156,14 +158,19 @@ def test_sealed_archive_is_refused_before_native_effects(tmp_path):
     assert native.calls == []
 
 
-def test_interruption_retains_an_unverified_receipt_then_propagates(tmp_path):
+@pytest.mark.parametrize(
+    "interruption", [KeyboardInterrupt, SystemExit, GeneratorExit, CancelledError]
+)
+def test_interruption_retains_an_unverified_receipt_then_propagates(
+    tmp_path, interruption
+):
     cleanup, native = service(tmp_path)
 
     def interrupt(action, timeout_seconds):
-        raise KeyboardInterrupt
+        raise interruption
 
     native.execute = interrupt
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(interruption):
         cleanup.execute("cancelled")
     receipts = list(
         (cleanup.store.get_run_path("run-a") / "cleanup/receipts").glob("*.json")
@@ -257,10 +264,11 @@ def test_cleanup_receipt_is_consumable_by_the_public_batch_validator(tmp_path):
     )
     batch = BatchExecutionReceiptModel.model_validate(payload)
     validate_batch_execution_receipt(plan, batch, cleanup_receipt=observed.receipt)
+    foreign_batch = batch.model_copy(update={"execution_attempt_id": "foreign"})
     with pytest.raises(ValueError):
         validate_batch_execution_receipt(
             plan,
-            batch.model_copy(update={"execution_attempt_id": "foreign"}),
+            foreign_batch,
             cleanup_receipt=observed.receipt,
         )
 
@@ -306,9 +314,10 @@ def test_compensation_references_are_rejected_before_effects(tmp_path):
     payload["cleanup_obligations"]["destroy"]["compensation_refs"] = [
         "compensation:unknown"
     ]
+    unsupported_plan = TrialCleanupPlanModel.model_validate(payload)
     with pytest.raises(ValueError):
         DeclaredCleanup(
-            TrialCleanupPlanModel.model_validate(payload),
+            unsupported_plan,
             native,
             cleanup.store,
             cleanup.clock,

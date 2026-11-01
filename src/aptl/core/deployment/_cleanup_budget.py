@@ -11,6 +11,8 @@ from aptl.core.deployment.errors import BackendTimeoutError
 
 @dataclass(frozen=True)
 class CleanupDeadline:
+    """A fixed expiry shared by every operation in one cleanup obligation."""
+
     expires: float
     clock: Callable[[], float]
 

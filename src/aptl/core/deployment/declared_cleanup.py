@@ -117,15 +117,8 @@ class ReceiptCleanup:
         self, action: CleanupAction, budget: CleanupDeadline
     ) -> CleanupReadback:
         ownership = self._require_authority()
-        if action == "destroy" and self.backend._quiesce_docker_recordings(
-            self.binding.native_attempt_id
-        ):
+        if self._creation_unresolved(action):
             return CleanupReadback((), ("native-creation-unresolved",))
-        if not self.backend.runtime_descendant_inventory(
-            self.binding.native_attempt_id
-        ).complete:
-            return CleanupReadback((), ("native-creation-unresolved",))
-        budget.remaining()
         budget.remaining()
         receipts = self._receipts(ownership)
         if not receipts:
@@ -158,6 +151,15 @@ class ReceiptCleanup:
         except BackendTimeoutError:
             reasons = (*reasons, "native-cleanup-deadline-expired")
         return CleanupReadback(tuple(states), reasons)
+
+    def _creation_unresolved(self, action: CleanupAction) -> bool:
+        if action == "destroy" and self.backend._quiesce_docker_recordings(
+            self.binding.native_attempt_id
+        ):
+            return True
+        return not self.backend.runtime_descendant_inventory(
+            self.binding.native_attempt_id
+        ).complete
 
     def _cleanup_one(
         self,

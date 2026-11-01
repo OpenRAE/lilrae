@@ -466,7 +466,8 @@ class AptlProvisioner(LilraeApparatusReportingMixin, ProvisionerStartMixin):
             if any(operation.action is ChangeAction.DELETE for operation in plan.operations):
                 return [diagnostic(
                     "lilrae.provisioner.delete-scope-unavailable", PROVISIONING_ADDRESS,
-                    "Native deletion requires an installed receipt-bound trial cleanup owner; lab start cannot execute a delete plan.",
+                    "Native deletion requires an installed receipt-bound trial cleanup owner; "
+                    "lab start cannot execute a delete plan.",
                 )]
             return []
         return [
