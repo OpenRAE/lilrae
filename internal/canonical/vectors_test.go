@@ -201,6 +201,13 @@ func TestSortedCompactJSONVectors(t *testing.T) {
 	}
 }
 
+func TestSortedCompactUTF8JSONVectors(t *testing.T) {
+	for _, c := range loadVectors(t, "runtime-evidence-json") {
+		out, err := SortedCompactUTF8JSON(c.input(t))
+		checkBytes(t, c, out, err)
+	}
+}
+
 func TestDecodeStrictVectors(t *testing.T) {
 	for _, c := range loadVectors(t, "strict-json") {
 		v, err := DecodeStrict(c.rawInput(t))

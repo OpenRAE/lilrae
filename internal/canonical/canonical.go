@@ -23,6 +23,7 @@ var (
 	errInvalidUTF8     = errors.New("canonical: a string is not valid UTF-8")
 	errIntegerTooLong  = errors.New("canonical: an integer has more than 4300 digits")
 	errNilInteger      = errors.New("canonical: a *big.Int is nil")
+	errNonFinite       = errors.New("canonical: the form has no text for NaN or an infinity")
 	errUnsupportedType = errors.New("canonical: a value has a type outside the JSON value model")
 )
 

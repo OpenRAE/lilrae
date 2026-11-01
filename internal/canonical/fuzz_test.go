@@ -24,7 +24,8 @@ func addSeeds(f *testing.F) {
 }
 
 // FuzzDecodeStrict checks that strict decoding never panics, and that a
-// decoded value survives a round trip through SortedCompactJSON.
+// decoded value survives a round trip through SortedCompactJSON and
+// SortedCompactUTF8JSON.
 func FuzzDecodeStrict(f *testing.F) {
 	addSeeds(f)
 	f.Fuzz(func(t *testing.T, data []byte) {
@@ -40,8 +41,17 @@ func FuzzDecodeStrict(f *testing.F) {
 		if err != nil {
 			t.Fatalf("DecodeStrict rejected the sorted form: %v", err)
 		}
-		if !cmp.Equal(v, back, cmp.Comparer(func(a, b *big.Int) bool { return a.Cmp(b) == 0 })) {
-			t.Fatal("the round trip changed the value")
+		raw, err := SortedCompactUTF8JSON(v)
+		if err != nil {
+			t.Fatalf("SortedCompactUTF8JSON rejected a decoded value: %v", err)
+		}
+		rawBack, err := DecodeStrict(raw)
+		if err != nil {
+			t.Fatalf("DecodeStrict rejected the UTF-8 form: %v", err)
+		}
+		bigEqual := cmp.Comparer(func(a, b *big.Int) bool { return a.Cmp(b) == 0 })
+		if !cmp.Equal(v, back, bigEqual) || !cmp.Equal(v, rawBack, bigEqual) {
+			t.Fatal("a round trip changed the value")
 		}
 	})
 }

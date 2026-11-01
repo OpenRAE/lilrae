@@ -16,7 +16,6 @@ const maxSafeInteger = 9007199254740991
 
 var (
 	errUnsafeInteger = errors.New("canonical: an integer is outside the RFC 8785 range of ±(2^53 - 1)")
-	errNonFinite     = errors.New("canonical: RFC 8785 has no form for NaN or an infinity")
 	errTransform     = errors.New("canonical: the RFC 8785 transform rejected the value")
 )
 

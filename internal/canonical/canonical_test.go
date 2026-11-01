@@ -17,6 +17,27 @@ func TestSortedCompactJSONEscapesAtEachBoundary(t *testing.T) {
 	}
 }
 
+func TestSortedCompactUTF8JSONEscapesOnlyControlCharacters(t *testing.T) {
+	// The output of Python's json.dumps for the same string with
+	// ensure_ascii=False. DEL and the text above U+007E stay raw.
+	const want = `"\u001f ~` + "\x7f" + ` é😀\b\f\"\\\n\r\t/<>&"`
+	out, err := SortedCompactUTF8JSON("\x1f ~\x7f é😀\b\f\"\\\n\r\t/<>&")
+	if err != nil || string(out) != want {
+		t.Errorf("SortedCompactUTF8JSON = %s, %v; want %s", out, err, want)
+	}
+}
+
+func TestSortedCompactUTF8JSONRejectsNonFiniteFloats(t *testing.T) {
+	for _, f := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		if _, err := SortedCompactUTF8JSON([]any{f}); !errors.Is(err, errNonFinite) {
+			t.Errorf("SortedCompactUTF8JSON(%v) error = %v, want %v", f, err, errNonFinite)
+		}
+	}
+	if out, err := SortedCompactUTF8JSON(map[string]any{"b": 1.5, "a": "x"}); err != nil || string(out) != `{"a":"x","b":1.5}` {
+		t.Errorf("SortedCompactUTF8JSON = %s, %v", out, err)
+	}
+}
+
 func TestSortedCompactJSONValueModel(t *testing.T) {
 	limit := new(big.Int).Sub(new(big.Int).Exp(big.NewInt(10), big.NewInt(maxIntegerDigits), nil), big.NewInt(1))
 	tests := []struct {

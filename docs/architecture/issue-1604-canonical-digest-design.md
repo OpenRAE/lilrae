@@ -28,6 +28,7 @@ design record.
 | --- | --- |
 | RFC 8785 sorts member names by UTF-16 code units and writes numbers in the ECMAScript form. The Python `rfc8785` library rejects an integer outside ±(2^53 − 1), and each non-finite float. | `rfc8785` vectors: `key-order-utf16`, `integers`, `integer-above-safe-range`, `nan`. |
 | `json.dumps(sort_keys=True, separators=(",", ":"))` sorts names by code point, escapes each character outside U+0020 to U+007E, writes Python float text, and writes `NaN`, `Infinity`, and `-Infinity`. | `sorted-compact-json` vectors; the Python `json` module. |
+| With `ensure_ascii=False` and `allow_nan=False`, `json.dumps` escapes only `"`, `\`, and the control characters, and it rejects each non-finite float. `lilrae_runtime_evidence._json_bytes` is the only Python caller of that sorted form. | `runtime-evidence-json` vectors; a search of `src/`. |
 | Python float text is the shortest text that reads back the same value. It uses the exponent form when the decimal point position is at most −4 or above 16, with at least two exponent digits. | `repr` of Python floats; vectors `float-exponent`, `float-one`. |
 | `loads_strict` keeps integers exact, reads a literal with a fraction or an exponent as a float, and rejects duplicate names, invalid UTF-8, non-finite constants, and trailing data. | `strict-json` vectors; `utils/strict_json.py`. |
 | `loads_strict` also accepts a number that overflows to infinity. #1610 fixes it on `dev`. | Probe of `loads_strict("1e400")`. |
@@ -40,11 +41,14 @@ design record.
 1. **One function for each scheme.** `canonical.RFC8785` returns the RFC 8785
    form, `canonical.SortedCompactJSON` returns the bytes of the
    `sorted-compact-json` scheme, and `canonical.DecodeStrict` decodes the
-   `strict-json` scheme. `digest.SHA256Hex` and `digest.SHA256Ref` return the
-   hex and the `sha256:` spellings. A scheme that holds a LilRAE concept stays
-   with its owner (decision 3 of #1557). A variant that only an owner uses,
-   for example raw UTF-8 or the default separators, comes with the Go port of
-   that owner.
+   `strict-json` scheme. `canonical.SortedCompactUTF8JSON` returns the same
+   sorted form with raw UTF-8 and no text for a non-finite float; the
+   `runtime-evidence-json` vectors, whose owner uses that form, define its
+   bytes. `digest.SHA256Hex` and `digest.SHA256Ref` return the hex and the
+   `sha256:` spellings. A scheme that holds a LilRAE concept stays with its
+   owner (decision 3 of #1557). The form with the default separators also
+   converts unknown types with `str`, so it comes with the Go port of its
+   owner.
 2. **One value model.** The encoders take, and `DecodeStrict` returns, a JSON
    value as `nil`, `bool`, `string`, `int`, `int64`, `*big.Int`, `float64`,
    `[]any`, or `map[string]any`. An integer and a float are different values,
@@ -76,9 +80,9 @@ design record.
    and compare exact bytes, digests, and rejection stages. The `$int` and
    `$float` tags stay in the tests. Fuzz tests check that strict decoding
    never panics, that a decoded value survives a round trip through
-   `SortedCompactJSON`, and that `RFC8785` returns its own input when it
-   reads its own output. `tools/ci/go-gates.sh fuzz` runs each fuzz test for
-   a bounded time in CI.
+   `SortedCompactJSON` and `SortedCompactUTF8JSON`, and that `RFC8785`
+   returns its own input when it reads its own output.
+   `tools/ci/go-gates.sh fuzz` runs each fuzz test for a bounded time in CI.
 
 ## Data flows and threat model
 

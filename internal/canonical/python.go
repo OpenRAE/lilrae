@@ -17,17 +17,37 @@ import (
 // to U+007E, writes floats as Python does, and writes NaN, Infinity, and
 // -Infinity for the non-finite floats.
 func SortedCompactJSON(v any) ([]byte, error) {
-	return appendPython(nil, v)
+	return pythonForm{ascii: true, nonFinite: true}.append(nil, v)
 }
 
-func appendPython(b []byte, v any) ([]byte, error) {
+// SortedCompactUTF8JSON returns the output of Python's json.dumps(v,
+// sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+// allow_nan=False): the form of SortedCompactJSON with raw UTF-8 text, and
+// with no text for a non-finite float. The runtime-evidence-json vectors
+// define its bytes.
+func SortedCompactUTF8JSON(v any) ([]byte, error) {
+	return pythonForm{}.append(nil, v)
+}
+
+// pythonForm is one form of Python's json.dumps with sort_keys=True and
+// separators=(",", ":").
+type pythonForm struct {
+	// ascii escapes each character outside U+0020 to U+007E, as
+	// ensure_ascii=True does. Otherwise only control characters are escaped.
+	ascii bool
+	// nonFinite writes NaN, Infinity, and -Infinity, as allow_nan=True does.
+	// Otherwise the form rejects a non-finite float.
+	nonFinite bool
+}
+
+func (f pythonForm) append(b []byte, v any) ([]byte, error) {
 	switch v := v.(type) {
 	case nil:
 		return append(b, "null"...), nil
 	case bool:
 		return strconv.AppendBool(b, v), nil
 	case string:
-		return appendPythonString(b, v)
+		return f.appendString(b, v)
 	case int:
 		return strconv.AppendInt(b, int64(v), 10), nil
 	case int64:
@@ -39,17 +59,20 @@ func appendPython(b []byte, v any) ([]byte, error) {
 		}
 		return append(b, text...), nil
 	case float64:
+		if !f.nonFinite && (math.IsNaN(v) || math.IsInf(v, 0)) {
+			return nil, errNonFinite
+		}
 		return append(b, pythonFloat(v)...), nil
 	case []any:
-		return appendArray(b, v, appendPython)
+		return appendArray(b, v, f.append)
 	case map[string]any:
-		return appendPythonObject(b, v)
+		return f.appendObject(b, v)
 	default:
 		return nil, errUnsupportedType
 	}
 }
 
-func appendPythonObject(b []byte, members map[string]any) ([]byte, error) {
+func (f pythonForm) appendObject(b []byte, members map[string]any) ([]byte, error) {
 	// The byte order of valid UTF-8 is the code point order that Python sorts by.
 	names := slices.Sorted(maps.Keys(members))
 	b = append(b, '{')
@@ -58,19 +81,18 @@ func appendPythonObject(b []byte, members map[string]any) ([]byte, error) {
 			b = append(b, ',')
 		}
 		var err error
-		if b, err = appendPythonString(b, name); err != nil {
+		if b, err = f.appendString(b, name); err != nil {
 			return nil, err
 		}
 		b = append(b, ':')
-		if b, err = appendPython(b, members[name]); err != nil {
+		if b, err = f.append(b, members[name]); err != nil {
 			return nil, err
 		}
 	}
 	return append(b, '}'), nil
 }
 
-// appendPythonString writes s as json.dumps does with ensure_ascii=True.
-func appendPythonString(b []byte, s string) ([]byte, error) {
+func (f pythonForm) appendString(b []byte, s string) ([]byte, error) {
 	if !utf8.ValidString(s) {
 		return nil, errInvalidUTF8
 	}
@@ -92,15 +114,18 @@ func appendPythonString(b []byte, s string) ([]byte, error) {
 		case '\f':
 			b = append(b, `\f`...)
 		default:
-			b = appendPythonRune(b, r)
+			b = f.appendRune(b, r)
 		}
 	}
 	return append(b, '"'), nil
 }
 
-func appendPythonRune(b []byte, r rune) []byte {
-	if r >= ' ' && r <= '~' {
-		return append(b, byte(r))
+func (f pythonForm) appendRune(b []byte, r rune) []byte {
+	if r < ' ' {
+		return appendUnicodeEscape(b, r)
+	}
+	if !f.ascii || r <= '~' {
+		return utf8.AppendRune(b, r)
 	}
 	if r > 0xFFFF {
 		high, low := utf16.EncodeRune(r)
