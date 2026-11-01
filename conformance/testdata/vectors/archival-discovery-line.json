@@ -1,0 +1,42 @@
+{
+  "corpus": 1,
+  "scheme": "archival-discovery-line",
+  "version": "current",
+  "owner": "aptl.core.archival.discovery_index.DiscoveryIndex._render_line",
+  "cases": [
+    {
+      "id": "committed",
+      "input": {
+        "event": "committed",
+        "entry": {
+          "run_id": "run-1",
+          "run_version": "1",
+          "manifest_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "seal_state": "sealed",
+          "terminal_at": "2026-11-01T00:00:00+00:00",
+          "location": "runs/run-1/manifest.json"
+        }
+      },
+      "expect": {
+        "hex": "7b226576656e74223a22636f6d6d6974746564222c226c6f636174696f6e223a2272756e732f72756e2d312f6d616e69666573742e6a736f6e222c226d616e69666573745f646967657374223a227368613235363a64646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464222c2272756e5f6964223a2272756e2d31222c2272756e5f76657273696f6e223a2231222c227365616c5f7374617465223a227365616c6564222c227465726d696e616c5f6174223a22323032362d31312d30315430303a30303a30302b30303a3030227d0a"
+      }
+    },
+    {
+      "id": "non-ascii",
+      "input": {
+        "event": "committed",
+        "entry": {
+          "run_id": "run-é",
+          "run_version": "1",
+          "manifest_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "seal_state": "unsealed",
+          "terminal_at": "2026-11-01T00:00:00+00:00",
+          "location": "runs/run-é/manifest.json"
+        }
+      },
+      "expect": {
+        "hex": "7b226576656e74223a22636f6d6d6974746564222c226c6f636174696f6e223a2272756e732f72756e2d5c75303065392f6d616e69666573742e6a736f6e222c226d616e69666573745f646967657374223a227368613235363a64646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464222c2272756e5f6964223a2272756e2d5c7530306539222c2272756e5f76657273696f6e223a2231222c227365616c5f7374617465223a22756e7365616c6564222c227465726d696e616c5f6174223a22323032362d31312d30315430303a30303a30302b30303a3030227d0a"
+      }
+    }
+  ]
+}

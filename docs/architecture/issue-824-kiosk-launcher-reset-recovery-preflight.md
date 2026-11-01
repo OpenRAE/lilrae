@@ -132,8 +132,8 @@ manifest, readiness suite, participant routes, or recovery vocabulary.
   second exception hierarchy, or second release-config format for seat state.
 - Do not let kiosk/logout/reboot behavior imply reset. Only explicit overlay
   destruction returns a seat to known-good security state.
-- Do not expose participant shell access on the physical host, even if "locked
-  down". Participant shell, participant sudo, host Docker access, shared
+- Do not expose participant shell access on the physical host, also when the
+  host is locked down. Participant shell, participant sudo, host Docker access, shared
   folders, host clipboard, and USB forwarding are all out of bounds.
 - Do not treat VM power-on, browser open, TCP reachability, or a green guest
   container as seat readiness. Ready requires verified release admission and a

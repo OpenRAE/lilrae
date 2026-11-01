@@ -8,6 +8,10 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
+# The pytester fixture runs pytest in a test, for the tests of the repository's
+# pytest plugins.
+pytest_plugins = ["pytester"]
+
 
 # ---------------------------------------------------------------------------
 # Unit test fixtures

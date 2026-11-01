@@ -1,0 +1,181 @@
+# The architecture of the LilRAE Go code (ADR-065). tools/cmd/archcheck checks
+# the repository and each design note against this model. A change here is an
+# architecture decision: record it in the design note of the issue.
+version: 1
+
+# Each layer names the layers that its components can use. A component can
+# always use its own packages.
+layers:
+  - name: entry
+    description: Commands, HTTP handlers, MCP servers, and the object graph.
+    may_use: [entry, application, adapters, core, foundation, plugins]
+  - name: application
+    description: Services for one user operation.
+    may_use: [application, core, foundation]
+  - name: adapters
+    description: One adapter for each external system. An adapter does not use another adapter.
+    may_use: [core, foundation]
+  - name: core
+    description: Values, errors, policies, configuration, contracts, and the adapter API.
+    may_use: [core, foundation]
+  - name: foundation
+    description: Shared mechanisms with no LilRAE concept.
+    may_use: [foundation]
+  - name: plugins
+    description: Scenario adapters. They use the adapter API only.
+    may_use: [core]
+  - name: tools
+    description: Developer tools and their tests.
+    may_use: [tools]
+  - name: build
+    description: Build helpers for container images.
+    may_use: [build]
+
+components:
+  - name: regressioncheck-command
+    layer: tools
+    responsibility: Runs the regression test check of a pull request.
+    packages: [tools/cmd/regressioncheck]
+    uses: [regression-check, check-command]
+    test_uses: [git-test-support]
+  - name: mutationcheck-command
+    layer: tools
+    responsibility: Runs the mutation test gate.
+    packages: [tools/cmd/mutationcheck]
+    uses: [mutation-check, check-command]
+    test_uses: [git-test-support]
+  - name: archcheck-command
+    layer: tools
+    responsibility: Runs the architecture, design, and diagram checks.
+    packages: [tools/cmd/archcheck]
+    uses: [architecture-check, check-command]
+    test_uses: [git-test-support]
+  - name: regression-check
+    layer: tools
+    responsibility: Selects and replays the regression tests of a change.
+    packages: [tools/internal/regression]
+    uses: [git, go-layout]
+    test_uses: [git-test-support]
+    test_modules: [github.com/google/go-cmp]
+  - name: mutation-check
+    layer: tools
+    responsibility: Runs Gremlins and applies the mutation thresholds.
+    packages: [tools/internal/mutation]
+    uses: [git, go-layout]
+    test_uses: [git-test-support]
+    test_modules: [github.com/google/go-cmp]
+  - name: architecture-check
+    layer: tools
+    responsibility: Checks the repository and design notes against this model.
+    packages: [tools/internal/architecture]
+    uses: [git, go-layout]
+    modules: [github.com/google/renameio/v2, go.yaml.in/yaml/v3, golang.org/x/mod]
+    test_uses: [git-test-support]
+  - name: check-command
+    layer: tools
+    responsibility: Gives the check commands their exit statuses, flag parsing, and output handling.
+    packages: [tools/internal/checkcmd]
+  - name: go-layout
+    layer: tools
+    responsibility: Applies the go command rules for ignored paths and module directories.
+    packages: [tools/internal/golayout]
+  - name: git
+    layer: tools
+    responsibility: Runs the Git commands that the tools need.
+    packages: [tools/internal/git]
+    test_uses: [git-test-support]
+    test_modules: [github.com/google/go-cmp]
+  - name: git-test-support
+    layer: tools
+    responsibility: Creates Git repositories for tests.
+    packages: [tools/internal/gittest]
+    test_uses: [git]
+  - name: gate-fixtures
+    layer: tools
+    responsibility: Runs each CI gate on a failing and a passing fixture.
+    packages: [tools/gates]
+    test_modules: [github.com/rogpeppe/go-internal]
+  - name: canonical-forms
+    layer: foundation
+    responsibility: Encodes the canonical JSON forms and decodes strict JSON.
+    packages: [internal/canonical]
+    modules: [github.com/gowebpki/jcs]
+    test_modules: [github.com/google/go-cmp]
+  - name: digest
+    layer: foundation
+    responsibility: Gives the SHA-256 digest spellings.
+    packages: [internal/digest]
+  - name: clock
+    layer: foundation
+    responsibility: Reads the host clock and writes the UTC text forms.
+    packages: [internal/clock]
+  - name: deadline-wait
+    layer: foundation
+    responsibility: Waits for a condition until a deadline.
+    packages: [internal/wait]
+  - name: conformance-suite
+    layer: tools
+    responsibility: Runs the black-box contract cases against an installed lilrae binary.
+    packages: [conformance]
+    test_modules: [github.com/itchyny/gojq, github.com/rogpeppe/go-internal, github.com/santhosh-tekuri/jsonschema/v6, github.com/yuin/goldmark]
+  - name: caddy-build
+    layer: build
+    responsibility: Builds the Caddy binary of the web image.
+    packages: [web/caddy-build]
+    modules: [github.com/caddyserver/caddy/v2]
+    test_modules: [github.com/go-jose/go-jose/v3]
+
+# Packages that other modules can import. Each importable package outside
+# internal/ must be listed here.
+public: []
+
+# Directories of third-party source in the repository. Their Go files are not
+# first-party code.
+vendored: [web/caddy-build/third_party]
+
+# The fix-it message of each rule. The checker requires one for each rule.
+rules:
+  unassigned-package: >-
+    Add the package to the packages of one component in architecture/model.yaml,
+    and record the model change in the design note of the issue.
+  stale-package: >-
+    Remove the package from its component in architecture/model.yaml, or restore
+    its Go files, and record the model change in the design note.
+  forbidden-import: >-
+    Remove the import or move the code. A new use between components is a model
+    change: add it to uses in architecture/model.yaml within the layer rules,
+    and record it in the design note.
+  forbidden-module: >-
+    Use a module that the model permits for the component (see the dependency
+    table of ADR-065), or add the module to the component through a recorded
+    model change.
+  unresolved-import: >-
+    Require the module in go.mod with go get, or correct the import path.
+  undeclared-public-package: >-
+    Move the package under internal/, or list it in public in
+    architecture/model.yaml through a recorded model change.
+  undeclared-replacement: >-
+    Replace a first-party module only with its own tracked directory. Replace
+    another module with a module version, or with a directory that vendored
+    in architecture/model.yaml lists through a recorded model change.
+  invalid-model: >-
+    Correct architecture/model.yaml as the finding states.
+  missing-design: >-
+    Name the branch <number>-<topic> after its issue, and add
+    docs/architecture/issue-<number>-<topic>-design.md with design front matter
+    that lists each changed package and each model change.
+  invalid-design: >-
+    Correct the design front matter as the finding states.
+  design-package-missing: >-
+    Add the package, its component, and its imports to the design front matter.
+  design-imports-differ: >-
+    Make the imports of the package match the design, or correct the design
+    front matter and have the change reviewed.
+  design-forbidden: >-
+    Change the design so that each package is in its component and each import
+    is one that the model permits.
+  design-model-changes-differ: >-
+    List each changed part of architecture/model.yaml in model_changes of the
+    design front matter, and only those parts.
+  stale-diagram: >-
+    Run "go run -C tools ./cmd/archcheck diagram -write" and commit the result.

@@ -1,0 +1,48 @@
+{
+  "corpus": 1,
+  "scheme": "operator-group-record",
+  "version": "current",
+  "owner": "aptl.core.operator_group_state.persist_admitted_operator_groups",
+  "cases": [
+    {
+      "id": "sorted-unique",
+      "input": {
+        "groups": [
+          "red",
+          "blue",
+          "red"
+        ]
+      },
+      "expect": {
+        "value": {
+          "name": "af86faa73622df355bc5a59ee7807e51b13a930cc612f92f5a10f5179a380479.json",
+          "hex": "7b2267726f757073223a5b22626c7565222c22726564225d2c22736368656d615f76657273696f6e223a226170746c2d61646d69747465642d6f70657261746f722d67726f7570732f7631227d0a"
+        }
+      },
+      "note": "The record sorts the groups and keeps each once."
+    },
+    {
+      "id": "empty",
+      "input": {
+        "groups": []
+      },
+      "expect": {
+        "value": {
+          "name": "0184ff1cd0b5ce25531336bf27cc0180df8cebad7eda0440fd6c8f280041141e.json",
+          "hex": "7b2267726f757073223a5b5d2c22736368656d615f76657273696f6e223a226170746c2d61646d69747465642d6f70657261746f722d67726f7570732f7631227d0a"
+        }
+      }
+    },
+    {
+      "id": "invalid",
+      "input": {
+        "groups": [
+          "Red Team"
+        ]
+      },
+      "expect": {
+        "reject": "validate"
+      }
+    }
+  ]
+}

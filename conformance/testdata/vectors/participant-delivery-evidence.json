@@ -1,0 +1,38 @@
+{
+  "corpus": 1,
+  "scheme": "participant-delivery-evidence",
+  "version": "current",
+  "owner": "aptl.backends._raes_participant_evidence._ParticipantDeliveryCollector.stop",
+  "cases": [
+    {
+      "id": "delivered",
+      "input": {
+        "started_at": "2026-11-01T00:00:00+00:00",
+        "finished_at": "2026-11-01T00:00:05+00:00",
+        "payload": {
+          "delivery_address": "deliveries.first",
+          "participant_address": "participant.red",
+          "realization_profile_ref": "profiles.opencode",
+          "instruction": "Scan the host é.",
+          "model": "model-1"
+        },
+        "provider_payload": {
+          "result": "dropped",
+          "tokens": 12,
+          "provider": "opencode"
+        },
+        "response": "Done.",
+        "session_id": "session-1"
+      },
+      "expect": {
+        "value": {
+          "status": "ok",
+          "chunks_hex": [
+            "7b2264656c69766572795f61646472657373223a202264656c697665726965732e6669727374222c202264656c69766572795f737461747573223a202264656c697665726564222c2022696e737472756374696f6e223a20225363616e2074686520686f7374205c75303065392e222c20226d6f64656c223a20226d6f64656c2d31222c20226f62736572766174696f6e5f737461747573223a20226e6f742d6173736572746564222c20227061727469636970616e745f61646472657373223a20227061727469636970616e742e726564222c202270726f636573735f636c65616e7570223a206e756c6c2c202270726f76696465725f6d65746164617461223a207b2270726f7669646572223a20226f70656e636f6465222c2022746f6b656e73223a2031327d2c20227265616c697a6174696f6e5f70726f66696c655f726566223a202270726f66696c65732e6f70656e636f6465222c2022726573706f6e7365223a2022446f6e652e222c202273657373696f6e5f6964223a202273657373696f6e2d31227d"
+          ]
+        }
+      },
+      "note": "The payload uses json.dumps with sorted keys and the default separators, so the bytes hold spaces and ASCII escapes."
+    }
+  ]
+}

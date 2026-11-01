@@ -1,0 +1,137 @@
+{
+  "corpus": 1,
+  "scheme": "runtime-facts-provenance",
+  "version": "current",
+  "owner": "aptl.core.provenance.providers.runtime_facts.RuntimeFactsProvider.collect",
+  "cases": [
+    {
+      "id": "one-container",
+      "input": {
+        "host_facts": {
+          "os": "linux",
+          "arch": "amd64"
+        },
+        "snapshot": {
+          "timestamp": "2026-11-01T00:00:00Z",
+          "software": {
+            "python_version": "3.14.0",
+            "docker_version": "29.0.0",
+            "compose_version": "2.40.0",
+            "aptl_version": "1.0.0",
+            "raes_version": "10.1.0"
+          },
+          "containers": [
+            {
+              "name": "aptl-web",
+              "image": "example.invalid/web:1",
+              "image_id": "sha256:",
+              "status": "running",
+              "health": "healthy",
+              "labels": {
+                "b": "2",
+                "a": "1"
+              },
+              "networks": {
+                "aptl_default": "172.20.0.2"
+              },
+              "ports": [
+                "8080/tcp"
+              ],
+              "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "restart_policy": "unless-stopped"
+            }
+          ],
+          "networks": [
+            {
+              "name": "aptl_default",
+              "subnet": "172.20.0.0/16",
+              "gateway": "172.20.0.1",
+              "containers": [
+                "aptl-web"
+              ]
+            }
+          ],
+          "config_hashes": {
+            "aptl.json": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        }
+      },
+      "expect": {
+        "value": {
+          "status": "collected",
+          "leaves": [
+            [
+              "host-facts",
+              "sha256:27e1160c83554e9e385f3255087184648add3b093a8518d36e6caa204d3d50cf"
+            ],
+            [
+              "image/aptl-web",
+              "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            ],
+            [
+              "range-snapshot",
+              "sha256:e7015dccc20567f1f30e6ce411ae56e790021e720c3e0f9d8b5457e3e0dbc636"
+            ],
+            [
+              "tool-versions",
+              "sha256:2a91630511458bda1b04b69ae31d1c4a9236cc8e99ebe2e2d71b60948b4422d2"
+            ]
+          ],
+          "payload": {
+            "tool_versions": {
+              "python": "3.14.0",
+              "docker": "29.0.0",
+              "compose": "2.40.0",
+              "aptl": "1.0.0",
+              "raes": "10.1.0"
+            },
+            "range_snapshot_identity": "sha256:e7015dccc20567f1f30e6ce411ae56e790021e720c3e0f9d8b5457e3e0dbc636",
+            "range_snapshot_observation": "sha256:98212d71de76b466abbdc1bd7d5589f1b22df48102b30a571267c38b664d1aaa",
+            "container_count": 1,
+            "images_without_digest": [],
+            "host_facts": {
+              "os": "linux",
+              "arch": "amd64"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "no-containers",
+      "input": {
+        "host_facts": {},
+        "snapshot": {
+          "timestamp": "2026-11-01T00:00:00Z"
+        }
+      },
+      "expect": {
+        "value": {
+          "status": "collected",
+          "leaves": [
+            [
+              "host-facts",
+              "sha256:a8b49ebaecc735dfef684318951ce6fd3fbe945d38522d9d5513deb95dbb5750"
+            ],
+            [
+              "range-snapshot",
+              "sha256:f2068bd965a872a43ac507a9d0242a382c9fb83c6dca02142e84b8046d4d0074"
+            ],
+            [
+              "tool-versions",
+              "sha256:a8b49ebaecc735dfef684318951ce6fd3fbe945d38522d9d5513deb95dbb5750"
+            ]
+          ],
+          "payload": {
+            "tool_versions": {},
+            "range_snapshot_identity": "sha256:f2068bd965a872a43ac507a9d0242a382c9fb83c6dca02142e84b8046d4d0074",
+            "range_snapshot_observation": "sha256:65622eecac71a1f9a9a7b46280154dbd963d7a92dc59dfa0d09d075a421c591d",
+            "container_count": 0,
+            "images_without_digest": [],
+            "host_facts": {}
+          }
+        }
+      }
+    }
+  ]
+}

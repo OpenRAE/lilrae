@@ -72,12 +72,14 @@ Contract failure handling must preserve the existing user-facing surfaces:
 - Reuse `load_dotenv`, `env_vars_from_dict`, `EnvVars`, and
   `find_placeholder_env_values`; a contract may assert that typed env exists,
   but it must not parse or validate raw `.env` itself.
-- Reuse `AptlConfig`, `ContainerSettings.enabled_profiles()`, and
-  `ALL_KNOWN_PROFILES`; do not duplicate Docker profile names in a second schema.
+- Reuse `AptlConfig` and `ContainerSettings.enabled_profiles()` for bounded
+  operator-group selections. Membership comes from the admitted scenario through
+  `backends/raes_profiles.py`; the retired `ALL_KNOWN_PROFILES` registry is not
+  an authority. Do not encode a fixed profile enum in a second schema.
 - Keep scenario or operation-specific profile requirements data-driven at the
-  operation boundary. The prime scenario's required set is a value to pass into
-  a reusable profile precondition, not a hardcoded special case buried in lab
-  startup.
+  operation boundary. An operation's required set is a value to pass into a
+  reusable profile precondition, not a hardcoded scenario special case buried
+  in lab startup.
 - Reuse `LabResult`, `StartupOutcome`, and `StartupDiagnostic` for user-facing
   failures. Contract failures are fatal state bugs, not partial-readiness
   warnings.

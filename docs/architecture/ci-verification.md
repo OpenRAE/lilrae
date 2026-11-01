@@ -108,6 +108,41 @@ flowchart LR
   The maintainer merges it with a merge commit, so Release Please keeps each commit subject.
 - The release, documentation deployment, and Scorecard workflows run only for `main`.
 
+## Go checks
+
+[ADR-065](../adrs/adr-065-go-implementation-and-engineering-standards.md) gives
+the Go gates, and [the #1553 design](issue-1553-go-toolchain-design.md) gives
+their mechanics. `tools/ci/go-gates.sh` runs each gate over the first-party Go
+modules: the tracked `go.mod` files, except `web/caddy-build` and test data.
+
+| Job | Gate |
+| --- | --- |
+| Go lint | `go mod tidy -diff`, `go vet`, `go fix -diff`, and golangci-lint for Linux, macOS, and Windows. The golangci-lint formatters check gofmt and goimports. |
+| Go tests + coverage | `go test -race -shuffle=on` with coverage, the gate fixtures of `tools/gates`, the [conformance suite](../reference/conformance-inventory.md) on the clean wheel, and each fuzz test for 30 seconds. |
+| Go mutation tests | Gremlins on the changed production lines, or on each whole module with production code for a scheduled or manual run. `tools/mutation-thresholds.json` holds the thresholds. |
+| Go regression tests | The replay of each regression test for the issue of the pull request. |
+| Go architecture | `archcheck` checks the repository and the generated diagram against `architecture/model.yaml`, and the change against the design record of the issue of the pull request. |
+| Go vulnerability scan | govulncheck on the packages and the tool dependencies of each module. |
+| OSV-scanner (Go modules) | OSV on each first-party `go.mod`, and a fixture module with a known vulnerability that must fail. |
+
+- The `go` lane of `tools/ci/select_checks.py` selects these jobs. Go source also
+  selects the docs lane, because Vale checks Go comments.
+- The conformance cases, the published schemas, and the contract inventory
+  also select the `lab` lane. The clean-install lab job runs the lab cases with
+  its clean wheel.
+- The Go architecture job runs whatever the routing selects. The model also
+  covers `web/caddy-build` and the design notes, which are not in the `go` lane.
+- SonarCloud needs current coverage from each stack. The `go` lane and the
+  Python, MCP, and web lanes select each other, and the SonarCloud job reads the
+  Go profiles with repository paths.
+- The Trivy filesystem scan reads each `go.mod`. It also proves with the same
+  fixture module that it fails on a vulnerable Go module.
+- The Go jobs set `GOWORK=off` and `GOTOOLCHAIN=local`.
+- The `go-cutover` protection requires the seven Go jobs.
+- GitHub runs a schedule and Dependabot from the default branch, which has no Go
+  code before Go port 31. Until then, a manual Checks run on `go-cutover` runs the
+  full mutation and scans.
+
 ## Verification policy
 
 Evidence follows changed behavior and risk.
@@ -128,6 +163,8 @@ Released-kit qualification belongs in the periodic integration lane when it exce
 - [GitHub Actions workflow events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows): base-branch filters for `pull_request` and `push`.
 - [GitHub branch protection API](https://docs.github.com/en/rest/branches/branch-protection): required status checks of a protected branch.
 - [SonarQube Cloud long-lived branch pattern](https://docs.sonarsource.com/sonarqube-cloud/managing-your-projects/project-analysis/long-lived-branch-pattern): branch classification at first analysis.
+- [SonarQube Cloud Go test coverage](https://docs.sonarsource.com/sonarqube-cloud/analyzing-source-code/test-coverage/go-test-coverage): `sonar.go.coverage.reportPaths`.
+- [Gremlins unleash command](https://gremlins.dev/0.6/usage/commands/unleash/): changed-line mutation and the JSON report.
 
 This document describes the verification architecture.
 The issue plan owns implementation tasks and measured delivery results.
