@@ -9,8 +9,6 @@ from pathlib import Path
 
 import pytest
 
-pytest_plugins = ["pytester"]
-
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "tools" / "run-targeted-tests.sh"
 PLUGINS = ROOT / "tools" / "pytest-plugins"
