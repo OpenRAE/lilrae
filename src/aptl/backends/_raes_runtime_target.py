@@ -15,8 +15,9 @@ from aptl.backends.raes_operator_access import OperatorAccessDecision
 from aptl.backends.raes_orchestrator import AptlOrchestrator
 from aptl.backends.raes_participant_actions import DEFAULT_PARTICIPANT_ACTIONS
 from aptl.backends.raes_participant_runtime import AptlParticipantRuntime
-from aptl.backends.raes_planning_compat import resolve_target_planning_compatibility
 from aptl.backends.raes_provisioner import AptlProvisioner
+from aptl.backends.scenario_startup import select_scenario_startup
+from aptl.backends._raes_runtime_capabilities import adapter_runtime_concern_sources
 from aptl.core.config import AptlConfig
 from aptl.core.experiment.capture_plan import empty_capture_plan
 from aptl.core.scenario_bundle import ScenarioBundle
@@ -46,6 +47,7 @@ def create_aptl_runtime_target(
     """
 
     selected = options or RuntimeTargetOptions()
+    startup = selected.startup_selection or select_scenario_startup(bundle)
     provisioner = AptlProvisioner(
         project_dir=project_dir,
         config=config,
@@ -56,8 +58,7 @@ def create_aptl_runtime_target(
         observability_scope=selected.observability_scope
         or ObservabilityScopeDecision(),
         operator_access=selected.operator_access or OperatorAccessDecision(),
-        startup_selection=selected.startup_selection,
-        planning_compatibility=resolve_target_planning_compatibility(bundle, config),
+        startup_selection=startup,
     )
     orchestrator = AptlOrchestrator()
     action_specs = dict(DEFAULT_PARTICIPANT_ACTIONS)
@@ -79,6 +80,7 @@ def create_aptl_runtime_target(
         participant_inject_delivery=selected.participant_inject_delivery,
         autonomous_bindings=selected.autonomous_bindings,
         realization_preparation=bool(provisioner.capture_plan.apparatus),
+        runtime_concern_sources=adapter_runtime_concern_sources(startup.provider),
     )
     provisioner.reporting_manifest = manifest
     orchestrator.reporting_manifest = manifest

@@ -26,14 +26,6 @@ from aptl.backends.scenario_capture_discovery import (
     ScenarioCaptureProviderError,
     resolve_scenario_capture,
 )
-from aptl.backends.scenario_planning_compatibility import (
-    PlanningCompatibilityDecision,
-    ScenarioPlanningCompatibilityContext,
-)
-from aptl.backends.scenario_planning_compatibility_discovery import (
-    ScenarioPlanningCompatibilityError,
-    resolve_scenario_planning_compatibility,
-)
 from aptl.backends.scenario_startup import (
     ScenarioStartupPlan,
     ScenarioStartupSelection,
@@ -109,22 +101,6 @@ class _CaptureProvider:
         return ScenarioCaptureContribution(registrations=(_registration(),))
 
 
-class _PlanningProvider:
-    provider_id = "otherpack-planning"
-    extension_api_version = "1"
-    supported_pack_id = "otherpack"
-    supported_pack_versions = ("1.0.0",)
-    supported_pack_set_digests = (PACK.set_digest,)
-    backend_target_name = "aptl"
-    backend_target_versions = ("0.1.0",)
-    backend_profiles = ("full-remote-control-plane",)
-    backend_transports = ("docker",)
-
-    @staticmethod
-    def resolve(
-        _context: ScenarioPlanningCompatibilityContext,
-    ) -> PlanningCompatibilityDecision:
-        return PlanningCompatibilityDecision(runtime_max_nodes=131_072)
 
 
 def test_capture_provider_supplies_the_request_scoped_registry(monkeypatch) -> None:
@@ -151,88 +127,20 @@ def test_collector_wiring_accepts_only_the_supplied_registry() -> None:
         build_collectors({"otherpack.collector.unknown": source}, registry)
 
 
-def test_planning_compatibility_is_selected_from_the_exact_pack(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "aptl.backends.scenario_planning_compatibility_discovery._entry_points",
-        lambda: [_EntryPoint(_PlanningProvider())],
-    )
-
-    resolved = resolve_scenario_planning_compatibility(
-        ScenarioPlanningCompatibilityContext(PACK, BACKEND)
-    )
-
-    assert resolved is not None
-    assert resolved.decision.runtime_max_nodes == 131_072
-    assert resolved.provider_id == "otherpack-planning"
 
 
-def test_stale_adapter_claims_are_incompatible_not_malformed(monkeypatch) -> None:
+
+
+
+
+
+
+def test_stale_capture_claim_is_incompatible_not_malformed(monkeypatch):
     capture = _CaptureProvider()
     capture.supported_pack_versions = ("0.9.0",)
-    monkeypatch.setattr(
-        "aptl.backends.scenario_capture_discovery._entry_points",
-        lambda: [_EntryPoint(capture)],
-    )
-    capture_context = ScenarioCaptureContext(PACK, BACKEND)
+    monkeypatch.setattr("aptl.backends.scenario_capture_discovery._entry_points", lambda: [_EntryPoint(capture)])
     with pytest.raises(ScenarioCaptureProviderError, match="provider-missing"):
-        resolve_scenario_capture(capture_context)
-
-    planning = _PlanningProvider()
-    planning.supported_pack_versions = ("0.9.0",)
-    monkeypatch.setattr(
-        "aptl.backends.scenario_planning_compatibility_discovery._entry_points",
-        lambda: [_EntryPoint(planning)],
-    )
-    assert (
-        resolve_scenario_planning_compatibility(
-            ScenarioPlanningCompatibilityContext(PACK, BACKEND)
-        )
-        is None
-    )
-
-
-def test_planning_compatibility_rejects_unbounded_concern_data(monkeypatch) -> None:
-    provider = _PlanningProvider()
-    provider.resolve = lambda _context: PlanningCompatibilityDecision(
-        daemon_readback_concerns=frozenset({"not a concern id"})
-    )
-    monkeypatch.setattr(
-        "aptl.backends.scenario_planning_compatibility_discovery._entry_points",
-        lambda: [_EntryPoint(provider)],
-    )
-
-    planning_context = ScenarioPlanningCompatibilityContext(PACK, BACKEND)
-    with pytest.raises(
-        ScenarioPlanningCompatibilityError, match="provider-result-invalid"
-    ):
-        resolve_scenario_planning_compatibility(planning_context)
-
-
-@pytest.mark.parametrize(
-    ("field", "concern"),
-    [
-        ("daemon_readback_concerns", "syntactically-valid-but-unauthorized"),
-        ("open_default_concerns", "service-listeners"),
-        ("minimum_intrusion_exact_concerns", "service-listeners"),
-    ],
-)
-def test_planning_compatibility_rejects_semantically_unauthorized_concerns(
-    monkeypatch, field: str, concern: str
-) -> None:
-    provider = _PlanningProvider()
-    provider.resolve = lambda _context: PlanningCompatibilityDecision(
-        **{field: frozenset({concern})}
-    )
-    monkeypatch.setattr(
-        "aptl.backends.scenario_planning_compatibility_discovery._entry_points",
-        lambda: [_EntryPoint(provider)],
-    )
-
-    planning_context = ScenarioPlanningCompatibilityContext(PACK, BACKEND)
-    with pytest.raises(
-        ScenarioPlanningCompatibilityError, match="provider-result-invalid"
-    ):
-        resolve_scenario_planning_compatibility(planning_context)
+        resolve_scenario_capture(ScenarioCaptureContext(PACK, BACKEND))
 
 
 def test_pack_provider_defines_safe_operator_groups(monkeypatch) -> None:

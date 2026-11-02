@@ -581,7 +581,7 @@ def _patch_runtime(mocker, manager_cls):
             artifact_availability=options.artifact_availability,
         )
 
-    mocker.patch("aptl.backends.raes_planning_compat.plan_for_target", _plan)
+    mocker.patch("aptl.backends.raes_runtime.plan_for_target", _plan)
     return manager_cls
 
 
@@ -681,7 +681,7 @@ def test_manifest_realization_support_matches_exercised_concerns():
         APTL_PROCESS_RESOURCE_LIMITS,
         create_aptl_manifest,
     )
-    from aptl.backends.raes_planning_compat import DAEMON_READBACK_RUNTIME_CONCERNS
+    from aptl.backends._raes_manifest_realization import DAEMON_READBACK_RUNTIME_CONCERNS
 
     (support,) = create_aptl_manifest().realization_support
 
@@ -693,6 +693,8 @@ def test_manifest_realization_support_matches_exercised_concerns():
         {
             *DAEMON_READBACK_RUNTIME_CONCERNS,
             "declared-capability-match",
+            "process-resource-limits",
+            "runtime-software-components",
             "forwarding-agents",
             "runtime-dependency-manifests",
             "runtime-filesystem-inventory",
@@ -703,6 +705,8 @@ def test_manifest_realization_support_matches_exercised_concerns():
         }
     )
     for kind in (
+        "forwarding-agents",
+        "runtime-software-components",
         "runtime-dependency-manifests",
         "runtime-filesystem-inventory",
         "runtime-local-identity",
@@ -2090,7 +2094,7 @@ def _start_with_owning_managers(mocker, realize_results):
     """
 
     from aptl.backends import raes
-    from aptl.backends.raes_planning_compat import AptlRuntimeManager
+    from aptl.backends.raes_runtime import AptlRuntimeManager
 
     apply_spy = mocker.spy(AptlRuntimeManager, "apply")
     backend = _RealizedBackend(
@@ -2112,7 +2116,7 @@ def _start_with_owning_managers(mocker, realize_results):
 def test_admission_plans_without_a_runtime_owner():
     """Planning acts on no backend, so it takes no runtime claim (rae#1660)."""
     from aptl.backends import raes
-    from aptl.backends.raes_planning_compat import AptlRuntimeManager
+    from aptl.backends.raes_runtime import AptlRuntimeManager
 
     admitted = raes.admit_raes_scenario(
         PROJECT_ROOT,

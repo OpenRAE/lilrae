@@ -50,7 +50,7 @@ from aptl.backends.raes_manifest import (
     create_aptl_realization_envelope,
 )
 from aptl.backends.raes_observation import observe_realization
-from aptl.backends.raes_planning_compat import DAEMON_READBACK_RUNTIME_CONCERNS
+from aptl.backends._raes_manifest_realization import DAEMON_READBACK_RUNTIME_CONCERNS
 from aptl.backends.raes_realization_model import AptlRealization, NodeRealization
 from aptl.core.deployment.errors import BackendTimeoutError
 from aptl.core.deployment.observation import (
@@ -2802,8 +2802,6 @@ def test_service_listener_readback_binds_daemon_observation_disclosure():
         plan=plan,
         observations=observations,
         previous=(),
-        concern_kinds=frozenset({"service-listeners"}),
-        observation_strength=ObservationStrength.DAEMON_OBSERVED,
     )
 
     assert len(result) == 1

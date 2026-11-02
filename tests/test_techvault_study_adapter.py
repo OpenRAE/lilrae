@@ -23,7 +23,6 @@ def test_study_pack_has_exact_installed_adapter_claims() -> None:
     groups = (
         "aptl.pack_backend_interactions",
         "aptl.scenario_capture",
-        "aptl.scenario_planning_compatibility",
         "aptl.scenario_runtime_parameters",
         "aptl.scenario_startup",
         "aptl.scenario_verifiers",

@@ -19,17 +19,7 @@ from raes_contracts.vocabulary import RealizationVerificationScope
 from raes_processor.semantics.realization import CONCERN_PAYLOAD_PATH
 
 from aptl.backends._raes_observation_helpers import ObservedResource
-from aptl.backends.raes_planning_compat import DAEMON_READBACK_RUNTIME_CONCERNS
-
-_GUEST_RUNTIME_CONCERNS = frozenset(
-    {
-        "runtime-dependency-manifests",
-        "runtime-filesystem-inventory",
-        "runtime-local-identity",
-        "runtime-packages",
-        "runtime-service-manager-units",
-    }
-)
+from aptl.backends._raes_runtime_capabilities import CORE_RUNTIME_CONCERN_SOURCES
 
 
 def operational_realization_observations(
@@ -67,15 +57,6 @@ def operational_realization_observations(
         plan=plan,
         observations=observations,
         previous=bound,
-        concern_kinds=DAEMON_READBACK_RUNTIME_CONCERNS | {"forwarding-agents"},
-        observation_strength=ObservationStrength.DAEMON_OBSERVED,
-    )
-    bound = _bind_runtime_observations(
-        plan=plan,
-        observations=observations,
-        previous=bound,
-        concern_kinds=_GUEST_RUNTIME_CONCERNS,
-        observation_strength=ObservationStrength.GUEST_OBSERVED,
     )
     existing = {_disclosure_key(item) for item in previous}
     return tuple(item for item in bound if _disclosure_key(item) not in existing)
@@ -85,6 +66,30 @@ def _disclosure_key(item: RealizationObservationDisclosure) -> tuple[str, ...]:
     """Return the RuntimeSnapshot uniqueness key for one disclosure."""
 
     return (item.address, item.field_path, item.domain, item.requirement_kind)
+
+
+def runtime_observation_disclosures(
+    observations: Mapping[str, ObservedResource],
+) -> tuple[RealizationObservationDisclosure, ...]:
+    """Bind only values that have an installed native reader or an admitted source."""
+
+    result = []
+    kinds = {path: kind for kind, path in CONCERN_PAYLOAD_PATH.items()}
+    for address, observed in observations.items():
+        for path in observed.concerns:
+            kind = kinds.get(path)
+            source = observed.concern_sources.get(path, CORE_RUNTIME_CONCERN_SOURCES.get(kind))
+            if source is None:
+                continue
+            result.append(RealizationObservationDisclosure(
+                address=address,
+                field_path=f"nodes.{address.removeprefix('provision.node.')}." + ".".join(path[2:]),
+                domain="runtime-realization",
+                requirement_kind=kind,
+                verification_scope=RealizationVerificationScope.CONFIGURATION,
+                observation_strength=source,
+            ))
+    return tuple(result)
 
 
 def _native_observations(
@@ -174,15 +179,14 @@ def _bind_runtime_observations(
     plan: ProvisioningPlan,
     observations: Mapping[str, ObservedResource],
     previous: tuple[RealizationObservationDisclosure, ...],
-    concern_kinds: frozenset[str],
-    observation_strength: ObservationStrength,
 ) -> tuple[RealizationObservationDisclosure, ...]:
     """Disclose only runtime concerns actually returned by a native reader."""
 
     authorities = tuple(
         authority
         for authority in plan.realization_authority
-        if authority.requirement_kind in concern_kinds
+        if authority.requirement_kind in CORE_RUNTIME_CONCERN_SOURCES
+        or any(CONCERN_PAYLOAD_PATH.get(authority.requirement_kind) in item.concern_sources for item in observations.values())
     )
     replaced = {
         (
@@ -216,7 +220,9 @@ def _bind_runtime_observations(
                     domain=authority.domain,
                     requirement_kind=authority.requirement_kind,
                     verification_scope=RealizationVerificationScope.CONFIGURATION,
-                    observation_strength=observation_strength,
+                    observation_strength=observed.concern_sources.get(
+                        path, CORE_RUNTIME_CONCERN_SOURCES.get(authority.requirement_kind)
+                    ),
                 )
             )
     return (*retained, *disclosed)

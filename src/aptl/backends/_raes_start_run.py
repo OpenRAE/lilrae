@@ -8,7 +8,7 @@ from raes_contracts.runtime_state import RuntimeSnapshot
 from raes_processor.models import ExecutionPlan
 
 from aptl.backends.raes_diagnostics import render_raes_diagnostics
-from aptl.backends.raes_planning_compat import AptlRuntimeManager
+from aptl.backends.raes_runtime import AptlRuntimeManager
 from aptl.backends.raes_start_model import AcesRunTarget, AdmittedScenarioStart
 from aptl.core.config import AptlConfig
 from aptl.core.lab_types import LabResult

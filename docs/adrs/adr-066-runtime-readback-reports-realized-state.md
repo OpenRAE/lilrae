@@ -33,11 +33,12 @@ The [design](../architecture/issue-1017-native-runtime-attestation-design.md) gi
    No LilRAE code changes compiled requirements, authority, or RAES limits.
 2. A disclosed runtime concern value comes from native state that LilRAE reads after realization.
    A reader can use authored identities to select members.
-   It never discloses a planned, declared, or tabled value.
+   Each reported world fact must have native corroboration.
+   Logical identifiers and labels remain author-owned metadata.
 3. Each reading carries the source that its reader used.
    The disclosure binder uses that source.
 4. A reader reports the scenario-significant managed subset of its concern.
-   The design defines the subset for each concern class.
+   Authored identities select the managed subset.
    When the subset is empty, the reader discloses nothing.
 5. The manifest declares readback capability only for a kind that a registered reader reads.
    Capability is a projection of the core reader registry and the admitted adapter declaration.
@@ -73,9 +74,9 @@ The [design](../architecture/issue-1017-native-runtime-attestation-design.md) gi
 
 ### Negative
 
-- The authored TechVault plan fails until RAES closes three upstream gaps that the bridge hid.
-  The design lists them as U1, U2, and U3.
-- The TechVault adapter needs product readers for 25 node and family pairs.
+- Native observation exposes pack declarations that disagree with their exact implementation.
+  Required mismatches reject realization until the owner corrects them.
+- The adapter maintains readers for the product families that it supports.
 - Snapshots grow because they carry each realized concern.
 
 ## Relation to other decisions

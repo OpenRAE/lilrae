@@ -324,7 +324,6 @@ def family_capabilities(
         ("aptl.scenario_runtime_parameters", pack, "1", "resolve"),
         ("aptl.scenario_startup", pack, "1", "resolve"),
         ("aptl.scenario_capture", serving, "1", "resolve"),
-        ("aptl.scenario_planning_compatibility", serving, "1", "resolve"),
         ("aptl.scenario_verifiers", verifier, "2", "run"),
     )
 
