@@ -173,6 +173,9 @@ capability in Go.
 
 ## Preflights
 
+- [Issue #1604 Canonical Forms and Digests Design](issue-1604-canonical-digest-design.md)
+- [Issue #1557 Go Foundation Preflight](issue-1557-go-foundation-preflight.md)
+- [Issue #1557 Go Foundation Design](issue-1557-go-foundation-design.md)
 - [Issue #1556 RAES Go Boundary Preflight](issue-1556-raes-go-boundary-preflight.md)
 - [Issue #1555 Serialization Vectors Preflight](issue-1555-serialization-vectors-preflight.md)
 - [Issue #1555 Serialization Vectors Design](issue-1555-serialization-vectors-design.md)
