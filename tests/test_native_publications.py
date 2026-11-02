@@ -190,7 +190,8 @@ def test_publication_requires_policy_receipt_connection_and_effective_readback(
         events.append(step)
         if step == "create":
             assert "floor" in events
-            assert "--read-only" in argv and "--cap-drop=ALL" in argv
+            assert "--read-only" in argv
+            assert "--cap-drop=ALL" in argv
             assert "APTL_PROXY_TARGET_HOST=10.77.0.2" in argv
         if step == "start":
             assert len(records) == 1
