@@ -22,7 +22,6 @@ const maxIntegerDigits = 4300
 // maxContainerDepth matches the nesting bound of the JSON libraries.
 const maxContainerDepth = 10000
 
-var integerMagnitudeLimit = new(big.Int).Exp(big.NewInt(10), big.NewInt(maxIntegerDigits), nil)
 var errDepth = errors.New("canonical: container nesting exceeds 10000 levels")
 
 var (
@@ -44,7 +43,8 @@ func integerText(n *big.Int) (string, error) {
 	if n == nil {
 		return "", errNilInteger
 	}
-	if n.CmpAbs(integerMagnitudeLimit) >= 0 {
+	limit := new(big.Int).Exp(big.NewInt(10), big.NewInt(maxIntegerDigits), nil)
+	if n.CmpAbs(limit) >= 0 {
 		return "", errIntegerTooLong
 	}
 	return n.Text(10), nil
@@ -68,20 +68,22 @@ func appendArray(b []byte, items []any, appendValue func([]byte, any) ([]byte, e
 
 // checkDepth bounds traversal before an encoder allocates output.
 func checkDepth(v any, depth int) error {
-	switch v := v.(type) {
-	case []any:
+	switch v.(type) {
+	case []any, map[string]any:
 		if depth >= maxContainerDepth {
 			return errDepth
 		}
+	default:
+		return nil
+	}
+	switch v := v.(type) {
+	case []any:
 		for _, child := range v {
 			if err := checkDepth(child, depth+1); err != nil {
 				return err
 			}
 		}
 	case map[string]any:
-		if depth >= maxContainerDepth {
-			return errDepth
-		}
 		for _, child := range v {
 			if err := checkDepth(child, depth+1); err != nil {
 				return err

@@ -186,7 +186,7 @@ func TestEncodersBoundTraversal(t *testing.T) {
 	cycle["self"] = cycle
 	sliceCycle := make([]any, 1)
 	sliceCycle[0] = sliceCycle
-	var deep any = nil
+	var deep any
 	for range maxContainerDepth + 1 {
 		deep = []any{deep}
 	}
@@ -205,13 +205,9 @@ func TestEncodersBoundTraversal(t *testing.T) {
 
 func TestEncoderContainerDepthBoundary(t *testing.T) {
 	for _, object := range []bool{false, true} {
-		var atLimit any = nil
+		var atLimit any
 		for range maxContainerDepth {
-			if object {
-				atLimit = map[string]any{"child": atLimit}
-			} else {
-				atLimit = []any{atLimit}
-			}
+			atLimit = wrapContainer(atLimit, object)
 		}
 		for _, encode := range []func(any) ([]byte, error){SortedCompactJSON, SortedCompactUTF8JSON, RFC8785} {
 			if _, err := encode(atLimit); err != nil {
@@ -225,4 +221,12 @@ func TestEncoderContainerDepthBoundary(t *testing.T) {
 			}
 		}
 	}
+}
+
+// wrapContainer gives the depth test both object and array trees.
+func wrapContainer(value any, object bool) any {
+	if object {
+		return map[string]any{"child": value}
+	}
+	return []any{value}
 }
