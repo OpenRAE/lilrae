@@ -2,7 +2,17 @@
 
 from dataclasses import dataclass
 import re
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
+
+
+def _loopback_fixture(url: SplitResult) -> bool:
+    """Admit only explicit loopback ports for offline provider qualification."""
+    return (
+        url.scheme == "http"
+        and url.hostname in {"127.0.0.1", "::1"}
+        and url.path == "/api/v1"
+        and url.port is not None
+    )
 
 
 @dataclass(frozen=True)
@@ -14,7 +24,7 @@ class OpenCodeBuild:
 
     def __post_init__(self) -> None:
         if not re.fullmatch(
-            r"[0-9]+\.[0-9]+\.[0-9]+", self.version
+            r"\d+\.\d+\.\d+", self.version, flags=re.ASCII
         ) or not re.fullmatch(r"[0-9a-f]{64}", self.executable_sha256):
             raise ValueError("OpenCode build identity is invalid")
 
@@ -36,12 +46,7 @@ class OpenRouterRoute:
         url = urlsplit(self.endpoint)
         live = self.endpoint == "https://openrouter.ai/api/v1"
         # Loopback supports hermetic provider qualification without TLS bypasses.
-        fixture = (
-            url.scheme == "http"
-            and url.hostname in {"127.0.0.1", "::1"}
-            and url.path == "/api/v1"
-            and url.port is not None
-        )
+        fixture = _loopback_fixture(url)
         if (
             not (live or fixture)
             or url.username is not None

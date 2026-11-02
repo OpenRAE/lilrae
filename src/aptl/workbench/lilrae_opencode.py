@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import os
-import re
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from contextlib import ExitStack
@@ -14,7 +12,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from raes_contracts.contracts import ParticipantConfigurationResultModel
@@ -31,11 +29,13 @@ from aptl.workbench.opencode_events import (
     OpenCodeResponse,
     parse_opencode_response,
     _supervised_result_text,
-    _terminal_text as _terminal_text,
 )
 from aptl.workbench.opencode_configuration import (
     render_opencode_config,
     opencode_environment,
+    PROVIDER_CREDENTIAL_NAMES,
+    validate_provider_environment,
+    validate_invocation_inputs,
 )
 from aptl.workbench.agent import (
     InventoryProbe,
@@ -57,27 +57,9 @@ from aptl.workbench.process import (
     ProcessResult,
     BoundedProcessError,
     REASON_CANCELLED,
+    ProcessRequest,
+    CancellableProcessRunner,
 )
-
-_PROVIDER_ENVIRONMENT = frozenset({"OPENROUTER_API_KEY"})
-_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]*/[A-Za-z0-9][A-Za-z0-9_./:-]{0,255}\Z")
-
-
-class CancellableProcessRunner(Protocol):
-    """The process runner's explicit per-invocation cancellation extension."""
-
-    def run(
-        self,
-        argv: tuple[str, ...],
-        *,
-        env: dict[str, str],
-        cwd: Path,
-        stdin: bytes,
-        timeout_seconds: float,
-        max_output_bytes: int,
-        cancel_event: Event | None = None,
-        failure_stdout_observer: Callable[[bytes], None] | None = None,
-    ) -> ProcessResult: ...
 
 
 @dataclass(frozen=True)
@@ -106,41 +88,6 @@ class OpenCodeOptions:
     evidence_sink: Callable[[OpenCodeInvocationEvidence], None] | None = None
 
 
-def _validate_provider_environment(environment: Mapping[str, str]) -> None:
-    """Permit only explicit provider credentials without ambient configuration."""
-    if set(environment) - _PROVIDER_ENVIRONMENT:
-        raise ValueError("participant provider environment is not admitted")
-    if any(
-        not isinstance(value, str) or not value or "\0" in value
-        for value in environment.values()
-    ):
-        raise ValueError("participant provider environment is invalid")
-
-
-def _validate_invocation_inputs(
-    model: str,
-    prompt: str,
-    timeout_seconds: float,
-    max_output_bytes: int,
-    max_output_tokens: int,
-) -> None:
-    """Bound participant inputs before any process or tool probe starts."""
-    if (
-        not _MODEL.fullmatch(model)
-        or not prompt.strip()
-        or len(prompt.encode()) > 128_000
-    ):
-        raise ValueError("participant model or prompt is invalid")
-    if (
-        not math.isfinite(timeout_seconds)
-        or not 0 < timeout_seconds <= 3600
-        or not 0 < max_output_bytes <= 1_000_000
-        or type(max_output_tokens) is not int
-        or not 1 <= max_output_tokens <= 32768
-    ):
-        raise ValueError("participant execution limits are invalid")
-
-
 class LilraeOpenCodeExecutor:
     """Run one bounded prompt with no ambient workspace, history, or tools.
 
@@ -158,8 +105,8 @@ class LilraeOpenCodeExecutor:
         configuration_result: ParticipantConfigurationResultModel | None = None,
     ) -> None:
         """Validate participant configuration and verify tools before dispatch."""
-        _validate_provider_environment(options.environment)
-        _validate_invocation_inputs(
+        validate_provider_environment(options.environment)
+        validate_invocation_inputs(
             model,
             prompt,
             timeout_seconds,
@@ -365,10 +312,12 @@ class LilraeOpenCodeExecutor:
         process_error = None
 
         def retain_partial(output: bytes) -> None:
+            """Reduce private failure bytes to a safe metadata snapshot."""
             nonlocal partial
             partial = replace(parse_opencode_response(output), text="")
 
-        def close_transport(*exc):
+        def close_transport(*exc: object) -> bool | None:
+            """Retain transport closure status while preserving the original failure."""
             nonlocal transport_cleanup, process_error
             if isinstance(exc[1], BoundedProcessError):
                 process_error = exc[1]
@@ -395,7 +344,7 @@ class LilraeOpenCodeExecutor:
                         server["environment"].update(carrier.environment(name))
                         # OpenCode merges parent environment into MCP children.
                         server["environment"].update(
-                            {key: "" for key in _PROVIDER_ENVIRONMENT}
+                            dict.fromkeys(PROVIDER_CREDENTIAL_NAMES, "")
                         )
                 directory = stack.enter_context(
                     TemporaryDirectory(
@@ -410,7 +359,7 @@ class LilraeOpenCodeExecutor:
                     work, "opencode.json", json.dumps(config).encode()
                 )
                 try:
-                    result = self._runner.run(
+                    request = ProcessRequest(
                         (
                             str(self._executable),
                             "run",
@@ -429,8 +378,13 @@ class LilraeOpenCodeExecutor:
                         timeout_seconds=self.timeout_seconds,
                         max_output_bytes=self._max_output_bytes,
                         cancel_event=cancellation,
-                        failure_stdout_observer=retain_partial,
                     )
+                    if isinstance(self._runner, BoundedProcessRunner):
+                        result = self._runner.run_observed(
+                            request, failure_stdout_observer=retain_partial
+                        )
+                    else:
+                        result = request.run_with(self._runner)
                 except BoundedProcessError as exc:
                     process_error = exc
                     raise
@@ -466,7 +420,17 @@ class LilraeOpenCodeExecutor:
     ) -> None:
         """Retain safe partial metadata after process and transport cleanup."""
         response = partial or parse_opencode_response(result.stdout if result else b"")
-        cleanup = result.cleanup if result else error.cleanup if error else None
+        cleanup = None
+        stdout_sha256 = None
+        stdout_bytes = stderr_bytes = 0
+        if result is not None:
+            cleanup = result.cleanup
+            stdout_sha256 = hashlib.sha256(result.stdout).hexdigest()
+            stdout_bytes, stderr_bytes = len(result.stdout), len(result.stderr)
+        elif error is not None:
+            cleanup = error.cleanup
+            stdout_sha256 = error.stdout_sha256
+            stdout_bytes, stderr_bytes = error.stdout_bytes, error.stderr_bytes
         self._last_evidence = OpenCodeInvocationEvidence(
             action_id=action_id,
             build=self._build,
@@ -475,21 +439,9 @@ class LilraeOpenCodeExecutor:
             requested_serving_provider=self._route.serving_provider,
             prompt_sha256=self.prompt_sha256,
             status=status,
-            stdout_sha256=hashlib.sha256(result.stdout).hexdigest()
-            if result
-            else error.stdout_sha256
-            if error
-            else None,
-            stdout_bytes=len(result.stdout)
-            if result
-            else error.stdout_bytes
-            if error
-            else 0,
-            stderr_bytes=len(result.stderr)
-            if result
-            else error.stderr_bytes
-            if error
-            else 0,
+            stdout_sha256=stdout_sha256,
+            stdout_bytes=stdout_bytes,
+            stderr_bytes=stderr_bytes,
             partial_text_sha256=response.partial_text_sha256,
             session_id=response.session_id,
             input_tokens=response.input_tokens,

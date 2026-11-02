@@ -62,8 +62,9 @@ def test_changed_build_cannot_dispatch(tmp_path):
     settings = options(tmp_path, runner)
     active = executor(settings)
     settings.executable.write_text("#!/bin/sh\necho changed\n")
+    cancellation = Event()
     with pytest.raises(AgentExecutionError, match="build"):
-        active("action-1", Event())
+        active("action-1", cancellation)
     assert not runner.calls
     assert active.last_evidence.status == "failed"
 
@@ -115,8 +116,9 @@ def test_route_is_exclusive_and_credential_free(tmp_path):
 def test_partial_response_is_retained_without_claiming_success(tmp_path, events):
     records = []
     active = executor(options(tmp_path, Runner(events), evidence_sink=records.append))
+    cancellation = Event()
     with pytest.raises(AgentExecutionError):
-        active("action-1", Event())
+        active("action-1", cancellation)
     assert len(records) == 1
     assert records[0].status == "failed"
     assert records[0].stdout_bytes > 0
@@ -126,7 +128,7 @@ def test_partial_response_is_retained_without_claiming_success(tmp_path, events)
 
 
 def test_duplicate_json_event_cannot_become_completion():
-    from aptl.workbench.lilrae_opencode import _terminal_text
+    from aptl.workbench.opencode_events import _terminal_text
 
     with pytest.raises(AgentExecutionError):
         _terminal_text(
@@ -135,7 +137,7 @@ def test_duplicate_json_event_cannot_become_completion():
 
 
 def test_unknown_json_event_cannot_become_completion():
-    from aptl.workbench.lilrae_opencode import _terminal_text
+    from aptl.workbench.opencode_events import _terminal_text
 
     with pytest.raises(AgentExecutionError):
         _terminal_text(
@@ -194,8 +196,9 @@ def test_terminal_failure_cannot_be_replaced_by_later_stop(tmp_path, reason):
         {"type": "step_finish", "sessionID": "ses_partial", "part": {"reason": "stop"}},
     ]
     active = executor(options(tmp_path, Runner(events), evidence_sink=records.append))
+    cancellation = Event()
     with pytest.raises(AgentExecutionError):
-        active("action-1", Event())
+        active("action-1", cancellation)
     assert records[0].status == "failed"
     assert records[0].finish_reason == reason
     assert records[0].session_id == "ses_partial"
@@ -253,7 +256,10 @@ def test_installed_opencode_selection_and_source_are_projected_without_locator()
 
 def test_managed_source_is_minimal_and_cleaned_after_use(tmp_path):
     from aptl.core.config import ProcessEnvironmentCredentialSource
-    from aptl.workbench.opencode_bootstrap import managed_opencode_executor
+    from aptl.workbench.opencode_bootstrap import (
+        OpenCodeParticipantRequest,
+        managed_opencode_executor,
+    )
     from tests.opencode_fixture import synthetic_options
     from tests.test_lilrae_participant_configuration import configuration
     from tests.test_lilrae_opencode import RecordingRunner
@@ -265,11 +271,13 @@ def test_managed_source_is_minimal_and_cleaned_after_use(tmp_path):
     )
     with managed_opencode_executor(
         options=settings,
-        configuration=result,
-        manifest=manifest,
-        prompt="red task",
-        prompt_ref="content.red-prompt@v1",
-        supported_models=frozenset({"openrouter/model"}),
+        request=OpenCodeParticipantRequest(
+            configuration=result,
+            manifest=manifest,
+            prompt="red task",
+            prompt_ref="content.red-prompt@v1",
+            supported_models=frozenset({"openrouter/model"}),
+        ),
         run_id="trial-red",
         credential_source=ProcessEnvironmentCredentialSource(
             kind="process-environment", variable="PRIVATE_SOURCE"
@@ -284,8 +292,9 @@ def test_managed_source_is_minimal_and_cleaned_after_use(tmp_path):
         assert evidence.acquisition == "succeeded"
     assert evidence.local_cleanup == "succeeded"
     assert "private-test-credential" not in repr(evidence.to_payload())
+    cancellation = Event()
     with pytest.raises(AgentExecutionError, match="closed"):
-        active("action-2", Event())
+        active("action-2", cancellation)
 
 
 def test_private_context_cleanup_failure_cannot_record_success(tmp_path, monkeypatch):
@@ -309,8 +318,9 @@ def test_private_context_cleanup_failure_cannot_record_success(tmp_path, monkeyp
     )
     records = []
     active = executor(options(tmp_path, runner, evidence_sink=records.append))
+    cancellation = Event()
     with pytest.raises(AgentExecutionError) as error:
-        active("action-1", Event())
+        active("action-1", cancellation)
     assert "private-test-credential" not in str(error.value)
     assert len(records) == 1
     assert records[0].status == "failed"
@@ -348,8 +358,9 @@ def test_timeout_retains_commitment_to_partial_response(tmp_path):
         prompt="task",
         timeout_seconds=0.5,
     )
+    cancellation = Event()
     with pytest.raises(BoundedProcessError):
-        active("timed-action", Event())
+        active("timed-action", cancellation)
     assert active.last_evidence.status == "failed"
     assert active.last_evidence.stdout_sha256 == hashlib.sha256(partial).hexdigest()
     assert active.last_evidence.cleanup_residual == ()
@@ -373,8 +384,9 @@ def test_evidence_sink_failure_is_safe_and_cannot_claim_success(tmp_path):
         ]
     )
     active = executor(options(tmp_path, runner, evidence_sink=unavailable_sink))
+    cancellation = Event()
     with pytest.raises(AgentExecutionError) as error:
-        active("action-1", Event())
+        active("action-1", cancellation)
     assert "private-test-credential" not in str(error.value)
     assert active.last_evidence.status == "failed"
 

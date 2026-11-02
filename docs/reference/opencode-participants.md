@@ -65,7 +65,7 @@ The experiment's trusted entry assembly performs these steps for each participan
 1. Create `opencode_manifest(version=...)` from `aptl.backends.lilrae_participant_configuration`.
 2. Realize the seven manifest targets through RAES `realize_participant_configuration()`.
 3. Resolve the prompt through the experiment's admitted artifact owner.
-4. Enter `managed_opencode_executor()` from `aptl.workbench.opencode_bootstrap`.
+4. Group the configuration, manifest, exact prompt, prompt reference, and supported model domain in `OpenCodeParticipantRequest` from `aptl.workbench.opencode_bootstrap`. Pass it to `managed_opencode_executor()` from the same module.
 5. Bind the executor and its configuration digest through `LilraeParticipantBinding`.
 6. Admit the bindings through `ScenarioAdmissionSource.autonomous_bindings`.
 7. Execute with `run_participant_workload()` and the existing experiment evaluator.

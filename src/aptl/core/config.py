@@ -22,25 +22,13 @@ from aptl.core._credential_sources import (
     ProcessEnvironmentCredentialSource,
 )
 from aptl.core.mcp_policy import McpPolicy
+from aptl.core._participant_model_ids import validate_installed_participant_model_id
 from aptl.utils.logging import get_logger
 
 log = get_logger("config")
 
 _NAME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 _COMPOSE_PROJECT_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
-_PARTICIPANT_MODEL_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:/@-]{0,127}$")
-_IMMUTABLE_PARTICIPANT_MODEL_PATTERNS = {
-    "opencode": re.compile(r"^openrouter/[a-zA-Z0-9][a-zA-Z0-9._:/@-]{0,116}$", flags=re.ASCII),
-    "claude": re.compile(
-        r"^claude-(?:[a-z0-9-]+[-@]\d{8}|(?:sonnet|opus|haiku)-[1-9]\d*)$",
-        flags=re.ASCII,
-    ),
-    "codex": re.compile(
-        r"^(?:codex-[a-z0-9._-]+|gpt-[a-z0-9._-]+|o\d[a-z0-9._-]*)"
-        r"-\d{4}-\d{2}-\d{2}$",
-        flags=re.ASCII,
-    ),
-}
 _CONFIG_FILENAMES = ["aptl.json"]
 
 
@@ -327,20 +315,6 @@ class LabLifecyclePolicyConfig(BaseModel):
         if v is not None and v <= 0:
             raise ValueError("must be a positive number of minutes")
         return v
-
-
-def validate_installed_participant_model_id(provider: str, value: str) -> str:
-    """Validate one explicit, non-secret installed-provider model identity."""
-
-    immutable_pattern = _IMMUTABLE_PARTICIPANT_MODEL_PATTERNS.get(provider)
-    if (
-        immutable_pattern is None
-        or not isinstance(value, str)
-        or not _PARTICIPANT_MODEL_PATTERN.fullmatch(value)
-        or not immutable_pattern.fullmatch(value)
-    ):
-        raise ValueError("installed participant model identifier is invalid")
-    return value
 
 
 class InstalledParticipantModels(BaseModel):

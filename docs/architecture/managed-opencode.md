@@ -78,6 +78,8 @@ The process runner retains a SHA-256 commitment to captured stdout when a limit 
 The adapter retains this commitment even when no complete response is available.
 It captures the process failure before private-directory teardown can replace that exception.
 On supervised failure, the process runner can supply bounded captured stdout to a private observer after cleanup.
+The observer belongs to one process request and is supplied separately to the shared supervisor.
+Ordinary process callers retain the existing runner interface.
 The provider reduces those bytes to session, usage, finish, and commitment metadata.
 Raw bytes never enter the public process error record or the retained invocation evidence.
 Raw provider output remains untrusted and is excluded from public diagnostics.
@@ -109,4 +111,6 @@ Release publication and scientific control qualification occur downstream of thi
 - [Concurrent participant execution](concurrent-participant-execution.md): RAES ownership, process limits, and trial settlement.
 
 This design extends the existing participant and process contracts.
+The managed entry assembly groups admitted model, prompt, and manifest inputs in one immutable request.
+Event helpers validate text, terminal state, and bounded usage separately, then reduce them to one evidence record.
 It introduces no new scheduler, policy engine, containment mechanism, or architecture decision.

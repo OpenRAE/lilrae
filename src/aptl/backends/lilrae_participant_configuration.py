@@ -118,6 +118,26 @@ def _values(configuration: ParticipantConfigurationModel) -> dict[str, object]:
     return values
 
 
+def _validate_prompt_commitment(values: dict[str, object]) -> None:
+    """Require a prompt artifact reference and an exact byte commitment."""
+    if not isinstance(values["prompt_ref"], str) or not values["prompt_ref"].strip():
+        raise ValueError("participant prompt reference is invalid")
+    if not isinstance(values["prompt_sha256"], str) or not re.fullmatch(
+        r"[0-9a-f]{64}", values["prompt_sha256"]
+    ):
+        raise ValueError("participant prompt commitment is invalid")
+
+
+def _validate_request_limits(values: dict[str, object]) -> None:
+    """Bound integer request controls before native launch."""
+    timeout = values["timeout_seconds"]
+    tokens = values["max_output_tokens"]
+    if type(tokens) is not int or not 1 <= tokens <= 32768:
+        raise ValueError("participant output token limit is invalid")
+    if type(timeout) is not int or not 1 <= timeout <= 3600:
+        raise ValueError("participant timeout must be between 1 and 3600 seconds")
+
+
 @dataclass(frozen=True)
 class OpenCodeConfigurationValidator:
     """Validate against an operator-admitted model domain, never a study catalog."""
@@ -127,6 +147,7 @@ class OpenCodeConfigurationValidator:
     def validate_and_normalize(
         self, configuration: ParticipantConfigurationModel
     ) -> ParticipantConfigurationModel:
+        """Validate route, prompt commitment, model selection, and request bounds."""
         values = _values(configuration)
         if values["model"] not in self.supported_models:
             raise ValueError("participant model is not admitted")
@@ -138,21 +159,8 @@ class OpenCodeConfigurationValidator:
             endpoint=values["gateway_endpoint"],
             serving_provider=values["serving_provider"],
         )
-        if (
-            not isinstance(values["prompt_ref"], str)
-            or not values["prompt_ref"].strip()
-        ):
-            raise ValueError("participant prompt reference is invalid")
-        if not isinstance(values["prompt_sha256"], str) or not re.fullmatch(
-            r"[0-9a-f]{64}", values["prompt_sha256"]
-        ):
-            raise ValueError("participant prompt commitment is invalid")
-        timeout = values["timeout_seconds"]
-        tokens = values["max_output_tokens"]
-        if type(tokens) is not int or not 1 <= tokens <= 32768:
-            raise ValueError("participant output token limit is invalid")
-        if type(timeout) is not int or not 1 <= timeout <= 3600:
-            raise ValueError("participant timeout must be between 1 and 3600 seconds")
+        _validate_prompt_commitment(values)
+        _validate_request_limits(values)
         return configuration
 
 

@@ -2,7 +2,7 @@
 
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 
 from raes_contracts.contracts import (
     ParticipantConfigurationResultModel,
@@ -20,15 +20,22 @@ from aptl.workbench.participant_source_binding import (
 )
 
 
+@dataclass(frozen=True)
+class OpenCodeParticipantRequest:
+    """Admitted configuration, exact prompt, and the installed model domain."""
+
+    configuration: ParticipantConfigurationResultModel
+    manifest: ParticipantImplementationManifestModel
+    prompt: str = field(repr=False)
+    prompt_ref: str
+    supported_models: frozenset[str]
+
+
 @contextmanager
 def managed_opencode_executor(
     *,
     options: OpenCodeOptions,
-    configuration: ParticipantConfigurationResultModel,
-    manifest: ParticipantImplementationManifestModel,
-    prompt: str,
-    prompt_ref: str,
-    supported_models: frozenset[str],
+    request: OpenCodeParticipantRequest,
     run_id: str,
     credential_source: ProcessEnvironmentCredentialSource,
     source_environment: Mapping[str, str],
@@ -48,13 +55,14 @@ def managed_opencode_executor(
     active = None
     try:
         lease = broker.prepare_named("opencode", run_id, ("OPENROUTER_API_KEY",))
+        prepared_options: OpenCodeOptions = replace(options, environment=lease)
         active = configured_opencode_executor(
-            options=replace(options, environment=lease),
-            configuration=configuration,
-            manifest=manifest,
-            prompt=prompt,
-            prompt_ref=prompt_ref,
-            supported_models=supported_models,
+            options=prepared_options,
+            configuration=request.configuration,
+            manifest=request.manifest,
+            prompt=request.prompt,
+            prompt_ref=request.prompt_ref,
+            supported_models=request.supported_models,
         )
         # These controls are configuration/process controls, not an OS sandbox.
         evidence.isolation_controls_applied = (

@@ -1,6 +1,6 @@
 """Bounded OpenCode JSON events reduced to text and allowlisted metadata."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import re
 
@@ -27,6 +27,7 @@ class OpenCodeResponse:
 
 
 def _session(candidate: object, previous: str | None) -> str | None:
+    """Retain only a bounded session identifier and reject mixed sessions."""
     if not isinstance(candidate, str) or not re.fullmatch(
         r"ses_[A-Za-z0-9]{1,128}", candidate
     ):
@@ -36,7 +37,8 @@ def _session(candidate: object, previous: str | None) -> str | None:
     return candidate
 
 
-def _usage(tokens: dict, name: str, previous: int | None) -> int | None:
+def _usage(tokens: dict[str, object], name: str, previous: int | None) -> int | None:
+    """Accumulate bounded integer usage without accepting bool or float values."""
     value = tokens.get(name)
     if value is None:
         return previous
@@ -45,76 +47,102 @@ def _usage(tokens: dict, name: str, previous: int | None) -> int | None:
     return (previous or 0) + value
 
 
+def _cost(value: object, previous: float | None) -> float | None:
+    """Accumulate finite bounded cost without coercing oversized integers."""
+    if value is None:
+        return previous
+    if type(value) not in {int, float} or not 0 <= value <= 10**6:
+        raise ValueError("invalid cost")
+    return (previous or 0) + value
+
+
+def _part(event: dict[str, object]) -> dict[str, object]:
+    """Require the event part to be an object before interpreting its fields."""
+    part = event["part"]
+    if not isinstance(part, dict):
+        raise ValueError("invalid event part")
+    return part
+
+
+@dataclass
+class _ResponseState:
+    """Private reducer state; only its allowlisted response leaves the parser."""
+
+    texts: list[str] = field(default_factory=list)
+    session: str | None = None
+    inputs: int | None = None
+    outputs: int | None = None
+    cost: float | None = None
+    finish: str | None = None
+
+    def accept(self, event: object) -> None:
+        """Validate one event before changing terminal or text state."""
+        if not isinstance(event, dict):
+            raise ValueError("invalid event")
+        self.session = _session(event.get("sessionID"), self.session)
+        kind = event.get("type")
+        if kind not in {"text", "step_start", "step_finish", "tool_use", "reasoning"}:
+            raise ValueError("unknown event")
+        if self.finish is not None and self.finish != "tool-calls":
+            raise ValueError("events after terminal result")
+        if kind == "text":
+            text = _part(event)["text"]
+            if not isinstance(text, str):
+                raise ValueError("invalid text")
+            text.encode("utf-8")
+            self.texts.append(text)
+        elif kind == "step_finish":
+            self.accept_finish(_part(event))
+
+    def accept_finish(self, part: dict[str, object]) -> None:
+        """Retain the original finish and any valid partial usage fields."""
+        reason = part["reason"]
+        if reason not in {
+            "stop",
+            "tool-calls",
+            "length",
+            "content-filter",
+            "error",
+            "other",
+            "unknown",
+        }:
+            raise ValueError("invalid finish reason")
+        self.finish = reason
+        tokens = part.get("tokens", {})
+        if not isinstance(tokens, dict):
+            raise ValueError("invalid usage")
+        self.inputs = _usage(tokens, "input", self.inputs)
+        self.outputs = _usage(tokens, "output", self.outputs)
+        self.cost = _cost(part.get("cost"), self.cost)
+
+    def response(self, valid: bool) -> OpenCodeResponse:
+        """Freeze safe partial facts, requiring text and a successful final stop."""
+        text = "\n".join(self.texts)
+        return OpenCodeResponse(
+            text=text,
+            valid=valid and bool(text.strip()) and self.finish == "stop",
+            partial_text_sha256=hashlib.sha256(text.encode()).hexdigest()
+            if self.texts
+            else None,
+            session_id=self.session,
+            input_tokens=self.inputs,
+            output_tokens=self.outputs,
+            cost=self.cost,
+            finish_reason=self.finish,
+        )
+
+
 def parse_opencode_response(output: bytes) -> OpenCodeResponse:
     """Require a complete stop event; never expose uncontrolled provider errors."""
-    texts: list[str] = []
-    session = None
-    inputs = outputs = None
-    cost = None
-    finish = None
+    state = _ResponseState()
     valid = True
     try:
         for line in output.splitlines():
-            if not line.strip():
-                continue
-            event = loads_strict(line)
-            if not isinstance(event, dict):
-                raise ValueError("invalid event")
-            session = _session(event.get("sessionID"), session)
-            kind = event.get("type")
-            if kind not in {
-                "text",
-                "step_start",
-                "step_finish",
-                "tool_use",
-                "reasoning",
-            }:
-                raise ValueError("unknown event")
-            if finish is not None and finish != "tool-calls":
-                raise ValueError("events after terminal result")
-            if kind == "text":
-                text = event["part"]["text"]
-                if not isinstance(text, str):
-                    raise ValueError("invalid text")
-                text.encode("utf-8")
-                texts.append(text)
-            elif kind == "step_finish":
-                part = event["part"]
-                reason = part["reason"]
-                if reason not in {
-                    "stop",
-                    "tool-calls",
-                    "length",
-                    "content-filter",
-                    "error",
-                    "other",
-                    "unknown",
-                }:
-                    raise ValueError("invalid finish reason")
-                finish = reason
-                tokens = part.get("tokens", {})
-                inputs = _usage(tokens, "input", inputs)
-                outputs = _usage(tokens, "output", outputs)
-                value = part.get("cost")
-                if value is not None:
-                    if type(value) not in {int, float} or not 0 <= value <= 10**6:
-                        raise ValueError("invalid cost")
-                    cost = (cost or 0) + value
+            if line.strip():
+                state.accept(loads_strict(line))
     except ValueError, KeyError, TypeError, AttributeError:
         valid = False
-    text = "\n".join(texts)
-    return OpenCodeResponse(
-        text=text,
-        valid=valid and bool(text.strip()) and finish == "stop",
-        partial_text_sha256=hashlib.sha256(text.encode()).hexdigest()
-        if texts
-        else None,
-        session_id=session,
-        input_tokens=inputs,
-        output_tokens=outputs,
-        cost=cost,
-        finish_reason=finish,
-    )
+    return state.response(valid)
 
 
 def _supervised_result_text(result: ProcessResult) -> str:

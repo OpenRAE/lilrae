@@ -5,7 +5,10 @@ from tests.opencode_fixture import synthetic_options
 import hashlib
 
 import pytest
-from raes_contracts.contracts.participant_configuration import ConfigurationOverrideModel, realize_participant_configuration
+from raes_contracts.contracts.participant_configuration import (
+    ConfigurationOverrideModel,
+    realize_participant_configuration,
+)
 from raes_contracts.canonical import canonical_contract_digest
 
 
@@ -134,6 +137,7 @@ def test_configuration_refuses_route_changed_after_admission(tmp_path):
             endpoint="https://openrouter.ai/api/v1", serving_provider="different"
         ),
     )
+    supported_models = frozenset({"openrouter/model"})
     with pytest.raises(ValueError, match="route"):
         configured_opencode_executor(
             options=settings,
@@ -141,5 +145,5 @@ def test_configuration_refuses_route_changed_after_admission(tmp_path):
             manifest=manifest,
             prompt="red task",
             prompt_ref="content.red-prompt@v1",
-            supported_models=frozenset({"openrouter/model"}),
+            supported_models=supported_models,
         )

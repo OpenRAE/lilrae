@@ -792,20 +792,22 @@ def test_private_failure_observer_error_retains_cleanup_without_output_leak(tmp_
         assert b"private-observer-canary" in output
         raise RuntimeError("private-observer-canary")
 
+    from aptl.workbench.process import ProcessRequest
+
+    request = ProcessRequest(
+        (
+            sys.executable,
+            "-c",
+            "import time; print('private-observer-canary',flush=True); time.sleep(60)",
+        ),
+        env=_ENVIRONMENT,
+        cwd=tmp_path,
+        stdin=b"",
+        timeout_seconds=0.5,
+        max_output_bytes=4096,
+    )
     with pytest.raises(BoundedProcessError) as observed:
-        BoundedProcessRunner.run(
-            (
-                sys.executable,
-                "-c",
-                "import time; print('private-observer-canary',flush=True); time.sleep(60)",
-            ),
-            env=_ENVIRONMENT,
-            cwd=tmp_path,
-            stdin=b"",
-            timeout_seconds=0.5,
-            max_output_bytes=4096,
-            failure_stdout_observer=observe,
-        )
+        BoundedProcessRunner.run_observed(request, failure_stdout_observer=observe)
     assert observed.value.reason == "agent failure output observation failed"
     assert observed.value.cleanup.residual == ()
     assert "private-observer-canary" not in str(observed.value)

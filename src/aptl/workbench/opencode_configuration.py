@@ -2,6 +2,8 @@
 
 from collections.abc import Mapping
 import os
+import math
+import re
 from pathlib import Path
 
 from aptl.core.opencode import OpenRouterRoute
@@ -74,3 +76,42 @@ def opencode_environment(
         "OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX": str(max_output_tokens),
         **credentials,
     }
+
+
+PROVIDER_CREDENTIAL_NAMES = frozenset({"OPENROUTER_API_KEY"})
+_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]*/[A-Za-z0-9][A-Za-z0-9_./:-]{0,255}\Z")
+
+
+def validate_provider_environment(environment: Mapping[str, str]) -> None:
+    """Permit only explicit provider credentials without ambient configuration."""
+    if set(environment) - PROVIDER_CREDENTIAL_NAMES:
+        raise ValueError("participant provider environment is not admitted")
+    if any(
+        not isinstance(value, str) or not value or "\0" in value
+        for value in environment.values()
+    ):
+        raise ValueError("participant provider environment is invalid")
+
+
+def validate_invocation_inputs(
+    model: str,
+    prompt: str,
+    timeout_seconds: float,
+    max_output_bytes: int,
+    max_output_tokens: int,
+) -> None:
+    """Bound participant inputs before any process or tool probe starts."""
+    if (
+        not _MODEL.fullmatch(model)
+        or not prompt.strip()
+        or len(prompt.encode()) > 128_000
+    ):
+        raise ValueError("participant model or prompt is invalid")
+    if (
+        not math.isfinite(timeout_seconds)
+        or not 0 < timeout_seconds <= 3600
+        or not 0 < max_output_bytes <= 1_000_000
+        or type(max_output_tokens) is not int
+        or not 1 <= max_output_tokens <= 32768
+    ):
+        raise ValueError("participant execution limits are invalid")

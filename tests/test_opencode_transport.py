@@ -105,8 +105,9 @@ def test_real_launcher_request_and_failure_evidence(
         if status == 200:
             assert active("action-transport", Event()) == "transport completion"
         else:
+            cancellation = Event()
             with pytest.raises(AgentExecutionError) as error:
-                active("action-transport", Event())
+                active("action-transport", cancellation)
             assert "private-test-credential" not in str(error.value)
     assert requests
     assert len(requests) == 1
@@ -236,7 +237,7 @@ assert pathlib.Path(implementation.__file__).resolve().is_relative_to(pathlib.Pa
 from aptl.core.config import AptlConfig
 from aptl.core.opencode import OpenRouterRoute
 from aptl.backends.lilrae_participant_configuration import opencode_manifest, OpenCodeConfigurationValidator
-from aptl.workbench.opencode_bootstrap import managed_opencode_executor
+from aptl.workbench.opencode_bootstrap import OpenCodeParticipantRequest, managed_opencode_executor
 from aptl.workbench.process import AgentExecutionError
 from raes_contracts.contracts.participant_configuration import ConfigurationOverrideModel, realize_participant_configuration
 from raes_contracts.canonical import canonical_contract_digest
@@ -256,8 +257,9 @@ configuration=realize_participant_configuration(participant_address='participant
 with managed_opencode_executor(options=implementation.OpenCodeOptions(
     executable=pathlib.Path(sys.argv[2]),work_root=pathlib.Path(sys.argv[3]),max_output_tokens=16,
     route=OpenRouterRoute(endpoint=sys.argv[4],serving_provider='test-provider')),
-    configuration=configuration,manifest=manifest,prompt=prompt,prompt_ref=values['prompt_ref'],
-    supported_models=frozenset({model}),run_id='installed-trial',credential_source=source,
+    request=OpenCodeParticipantRequest(configuration=configuration,manifest=manifest,prompt=prompt,
+        prompt_ref=values['prompt_ref'],supported_models=frozenset({model})),
+    run_id='installed-trial',credential_source=source,
     source_environment={source.variable:os.environ[source.variable]}) as (active,evidence):
     if sys.argv[6] == '200':
         assert active('installed-action',Event()) == 'transport completion'
