@@ -242,6 +242,7 @@ entry = [
     "aptl.cli",
     "aptl.services",
     "aptl.workbench.bootstrap",
+    "aptl.workbench.opencode_bootstrap",
 ]
 application = [
     "aptl.appliance",

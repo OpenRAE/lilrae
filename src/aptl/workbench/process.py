@@ -32,10 +32,12 @@ Reports name these facts, never argv, environment or output.
 from __future__ import annotations
 
 import os
+import hashlib
 import selectors
 import signal
 import subprocess
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
@@ -136,6 +138,7 @@ class BoundedProcessError(AgentExecutionError):
         cleanup: ProcessCleanup,
         stdout_bytes: int,
         stderr_bytes: int,
+        stdout_sha256: str | None = None,
     ) -> None:
         super().__init__(
             f"{reason}; withheld captured output (stdout {stdout_bytes} bytes, "
@@ -145,6 +148,7 @@ class BoundedProcessError(AgentExecutionError):
         self.cleanup = cleanup
         self.stdout_bytes = stdout_bytes
         self.stderr_bytes = stderr_bytes
+        self.stdout_sha256 = stdout_sha256
 
     def stable_summary(self) -> str:
         """Name the reason and the residue, without timings or process ids."""
@@ -154,12 +158,15 @@ class BoundedProcessError(AgentExecutionError):
     def record(self) -> dict[str, object]:
         """Return the failure as a JSON-ready record for run evidence."""
 
-        return {
+        record = {
             "reason": self.reason,
             "withheld_stdout_bytes": self.stdout_bytes,
             "withheld_stderr_bytes": self.stderr_bytes,
             "cleanup": self.cleanup.record(),
         }
+        if self.stdout_sha256 is not None:
+            record["withheld_stdout_sha256"] = self.stdout_sha256
+        return record
 
 
 class ProcessRunner(Protocol):
@@ -190,6 +197,7 @@ class BoundedProcessRunner:
         timeout_seconds: float,
         max_output_bytes: int,
         cancel_event: Event | None = None,
+        failure_stdout_observer: Callable[[bytes], None] | None = None,
     ) -> ProcessResult:
         """Execute a child with strict time and combined-output limits."""
         if timeout_seconds <= 0 or max_output_bytes <= 0:
@@ -224,11 +232,17 @@ class BoundedProcessRunner:
         if reason is None and cleanup.residual:
             reason = REASON_RESIDUE
         if reason is not None:
+            if failure_stdout_observer is not None:
+                try:
+                    failure_stdout_observer(bytes(exchange.stdout))
+                except Exception:
+                    reason = "agent failure output observation failed"
             raise BoundedProcessError(
                 reason,
                 cleanup=cleanup,
                 stdout_bytes=len(exchange.stdout),
                 stderr_bytes=len(exchange.stderr),
+                stdout_sha256=hashlib.sha256(exchange.stdout).hexdigest(),
             )
         return ProcessResult(
             process.returncode,
