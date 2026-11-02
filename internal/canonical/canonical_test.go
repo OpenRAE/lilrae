@@ -124,17 +124,6 @@ func TestRFC8785RejectsNonFiniteFloats(t *testing.T) {
 	}
 }
 
-func TestRFC8785ReportsATransformError(t *testing.T) {
-	// The library rejects nesting deeper than 10000 levels.
-	var v any = []any{}
-	for range 10001 {
-		v = []any{v}
-	}
-	if _, err := RFC8785(v); !errors.Is(err, errTransform) {
-		t.Errorf("RFC8785 error = %v, want %v", err, errTransform)
-	}
-}
-
 func TestDecodeStrictNumbers(t *testing.T) {
 	tests := []struct {
 		in   string
@@ -190,4 +179,54 @@ func TestDecodeStrictErrorsHoldNoInput(t *testing.T) {
 			t.Errorf("DecodeStrict error = %v, want an error without the input", err)
 		}
 	}
+}
+
+func TestEncodersBoundTraversal(t *testing.T) {
+	cycle := map[string]any{}
+	cycle["self"] = cycle
+	sliceCycle := make([]any, 1)
+	sliceCycle[0] = sliceCycle
+	var deep any
+	for range maxContainerDepth + 1 {
+		deep = []any{deep}
+	}
+	for _, encode := range []func(any) ([]byte, error){SortedCompactJSON, SortedCompactUTF8JSON, RFC8785} {
+		for _, value := range []any{cycle, sliceCycle, deep} {
+			if out, err := encode(value); !errors.Is(err, errDepth) || out != nil {
+				t.Fatalf("deep or cyclic value returned bytes or an unsafe error: %v", err)
+			}
+		}
+		shared := []any{true}
+		if _, err := encode([]any{shared, shared}); err != nil {
+			t.Fatalf("repeated noncyclic child rejected: %v", err)
+		}
+	}
+}
+
+func TestEncoderContainerDepthBoundary(t *testing.T) {
+	for _, object := range []bool{false, true} {
+		var atLimit any
+		for range maxContainerDepth {
+			atLimit = wrapContainer(atLimit, object)
+		}
+		for _, encode := range []func(any) ([]byte, error){SortedCompactJSON, SortedCompactUTF8JSON, RFC8785} {
+			if _, err := encode(atLimit); err != nil {
+				t.Fatalf("value at the depth limit rejected: %v", err)
+			}
+			if _, err := encode(map[string]any{"child": atLimit}); !errors.Is(err, errDepth) {
+				t.Fatalf("object above the depth limit returned %v", err)
+			}
+			if _, err := encode([]any{atLimit}); !errors.Is(err, errDepth) {
+				t.Fatalf("array above the depth limit returned %v", err)
+			}
+		}
+	}
+}
+
+// wrapContainer gives the depth test both object and array trees.
+func wrapContainer(value any, object bool) any {
+	if object {
+		return map[string]any{"child": value}
+	}
+	return []any{value}
 }

@@ -12,25 +12,31 @@ import (
 )
 
 // SortedCompactJSON returns the bytes of the sorted-compact-json scheme: the
-// output of Python's json.dumps(v, sort_keys=True, separators=(",", ":")).
+// output of Python's json.dumps(v, sort_keys=True, separators=(',', ':')).
 // It sorts member names by code point, escapes each character outside U+0020
 // to U+007E, writes floats as Python does, and writes NaN, Infinity, and
 // -Infinity for the non-finite floats.
 func SortedCompactJSON(v any) ([]byte, error) {
+	if err := checkDepth(v, 0); err != nil {
+		return nil, err
+	}
 	return pythonForm{ascii: true, nonFinite: true}.append(nil, v)
 }
 
 // SortedCompactUTF8JSON returns the output of Python's json.dumps(v,
-// sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+// sort_keys=True, separators=(',', ':'), ensure_ascii=False,
 // allow_nan=False): the form of SortedCompactJSON with raw UTF-8 text, and
 // with no text for a non-finite float. The runtime-evidence-json vectors
 // define its bytes.
 func SortedCompactUTF8JSON(v any) ([]byte, error) {
+	if err := checkDepth(v, 0); err != nil {
+		return nil, err
+	}
 	return pythonForm{}.append(nil, v)
 }
 
 // pythonForm is one form of Python's json.dumps with sort_keys=True and
-// separators=(",", ":").
+// separators=(',', ':').
 type pythonForm struct {
 	// ascii escapes each character outside U+0020 to U+007E, as
 	// ensure_ascii=True does. Otherwise only control characters are escaped.
