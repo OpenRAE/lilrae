@@ -1052,8 +1052,8 @@ requires-dist = [
     { name = "pytest-split", marker = "extra == 'dev'", specifier = ">=0.11.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6.0" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "raes", specifier = ">=10.2.0,<11" },
-    { name = "raes-env-packs", specifier = ">=7.0.0,<8" },
+    { name = "raes", specifier = ">=10.2.0,<10.4" },
+    { name = "raes-env-packs", specifier = ">=7.2.0,<8" },
     { name = "rfc8785", specifier = ">=0.1.4,<0.2.0" },
     { name = "rich", specifier = ">=13.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.0" },
@@ -1950,7 +1950,7 @@ wheels = [
 
 [[package]]
 name = "raes-env-packs"
-version = "7.0.0"
+version = "7.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1959,9 +1959,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "raes" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/31/06/cc87fda82f7ead13b6a3547d2b37cd30fce74da5dbc83a08a8c6dfe973f7/raes_env_packs-7.0.0.tar.gz", hash = "sha256:f014fd14836036232466cb6bd513dcab7b5bc803dbfca8d5d73c12c94f252e53", size = 3287646, upload-time = "2026-10-31T01:24:02.673Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/df/fe/537331016d6713e4d8ef6180db7844a46637317b8621885d509883502883/raes_env_packs-7.2.0.tar.gz", hash = "sha256:ee779522898e7f3543f753feb92683e64f38dd582fc8725b4b2ef6462140ca2e", size = 3320479, upload-time = "2026-11-01T08:06:18.468Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/37/eb/f4400714644d543419ea7a1f9b2dc3f2bbfd92a7037bf47ca926b0b79874/raes_env_packs-7.0.0-py3-none-any.whl", hash = "sha256:fdaad82d52baf1968b4f6df6d4e4e7d07611fc18ace0feffb74c93ab7e0c8e8a", size = 3543504, upload-time = "2026-10-31T01:24:00.847Z" },
+    { url = "https://files.pythonhosted.org/packages/3a/bb/985bca53b7148ed41a80808f45acf7f3734df9a8f4e6b3d2d220bc08241b/raes_env_packs-7.2.0-py3-none-any.whl", hash = "sha256:c8f262ea0c4a00efeb7a400b924e38c0d45196e1d3694a81ad6954a3e527ac65", size = 3555430, upload-time = "2026-11-01T08:06:16.543Z" },
 ]
 
 [[package]]

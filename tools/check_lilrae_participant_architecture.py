@@ -12,6 +12,32 @@ import sys
 
 
 COMPONENTS = {
+    "src/aptl/backends/participant_tools/delivery.py": frozenset(
+        {
+            "__future__",
+            "aptl.backends.participant_tools.session",
+            "aptl.backends.participant_tools.transport",
+            "aptl.core.agent_errors",
+            "aptl.core.mcp_results",
+            "aptl.core.participant_tools.contracts",
+            "collections.abc",
+            "concurrent.futures",
+            "dataclasses",
+            "raes_contracts.canonical",
+            "raes_contracts.contracts",
+            "raes_contracts.participant_binding",
+            "raes_contracts.participant_native_execution",
+            "raes_contracts.runtime_state",
+            "raes_contracts.satisfiability",
+            "raes_processor.models",
+            "raes_runtime.control_plane",
+            "raes_runtime.control_plane_security",
+            "raes_runtime.participant_crossing_mediation",
+            "threading",
+            "typing",
+            "uuid",
+        }
+    ),
     "src/aptl/core/participant_tools/model.py": frozenset(
         {
             "dataclasses",

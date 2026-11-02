@@ -1,0 +1,187 @@
+{
+  "servers": {
+    "aptl-red": {
+      "server_id": "aptl-red",
+      "artifact_ref": "mcp/mcp-red/build/index.js",
+      "credential_aliases": [],
+      "tool_names": [
+        "kali_info",
+        "kali_run_command",
+        "kali_interactive_session",
+        "kali_background_session",
+        "kali_session_command",
+        "kali_list_sessions",
+        "kali_close_session",
+        "kali_get_session_output",
+        "kali_close_all_sessions"
+      ],
+      "services": [
+        {
+          "node": "kali",
+          "port": 22,
+          "environment": "APTL_HP_KALI_SSH_PROXY_2023",
+          "endpoint_node": "aptl-operator-ssh-kali",
+          "endpoint_port": 2023
+        }
+      ]
+    },
+    "aptl-indexer": {
+      "server_id": "aptl-indexer",
+      "artifact_ref": "mcp/mcp-indexer/build/index.js",
+      "credential_aliases": [
+        "INDEXER_USERNAME",
+        "INDEXER_PASSWORD",
+        "API_USERNAME",
+        "API_PASSWORD"
+      ],
+      "tool_names": [
+        "indexer_query",
+        "indexer_create_rule",
+        "indexer_restart_manager",
+        "indexer_get_rule_file"
+      ],
+      "services": [
+        {
+          "node": "wazuh-indexer",
+          "port": 9200,
+          "environment": "APTL_HP_WAZUH_INDEXER_9200"
+        },
+        {
+          "node": "wazuh-manager",
+          "port": 55000,
+          "environment": "APTL_HP_WAZUH_MANAGER_55000"
+        }
+      ]
+    },
+    "aptl-wazuh": {
+      "server_id": "aptl-wazuh",
+      "artifact_ref": "mcp/mcp-wazuh/build/index.js",
+      "credential_aliases": [
+        "INDEXER_USERNAME",
+        "INDEXER_PASSWORD",
+        "API_USERNAME",
+        "API_PASSWORD"
+      ],
+      "tool_names": [
+        "wazuh_query_alerts",
+        "wazuh_query_logs",
+        "wazuh_create_detection_rule"
+      ],
+      "services": [
+        {
+          "node": "wazuh-indexer",
+          "port": 9200,
+          "environment": "APTL_HP_WAZUH_INDEXER_9200"
+        },
+        {
+          "node": "wazuh-manager",
+          "port": 55000,
+          "environment": "APTL_HP_WAZUH_MANAGER_55000"
+        }
+      ]
+    },
+    "aptl-network": {
+      "server_id": "aptl-network",
+      "artifact_ref": "mcp/mcp-network/build/index.js",
+      "credential_aliases": [
+        "INDEXER_USERNAME",
+        "INDEXER_PASSWORD"
+      ],
+      "tool_names": [
+        "network_query_ids_alerts",
+        "network_query_dns_events",
+        "network_query_network_flows",
+        "network_query_web_attacks"
+      ],
+      "services": [
+        {
+          "node": "wazuh-indexer",
+          "port": 9200,
+          "environment": "APTL_HP_WAZUH_INDEXER_9200"
+        },
+        {
+          "node": "suricata",
+          "port": null,
+          "environment": null
+        }
+      ]
+    },
+    "aptl-soar": {
+      "server_id": "aptl-soar",
+      "artifact_ref": "mcp/mcp-soar/build/index.js",
+      "credential_aliases": [
+        "SHUFFLE_API_KEY"
+      ],
+      "tool_names": [
+        "soar_list_workflows",
+        "soar_get_workflow",
+        "soar_execute_workflow",
+        "soar_list_executions",
+        "soar_search_workflows"
+      ],
+      "services": [
+        {
+          "node": "shuffle-frontend",
+          "port": 443,
+          "environment": "APTL_HP_SHUFFLE_FRONTEND_443"
+        }
+      ]
+    },
+    "aptl-threatintel": {
+      "server_id": "aptl-threatintel",
+      "artifact_ref": "mcp/mcp-threatintel/build/index.js",
+      "credential_aliases": [
+        "MISP_API_KEY"
+      ],
+      "tool_names": [
+        "threatintel_search_iocs",
+        "threatintel_get_events",
+        "threatintel_add_indicator",
+        "threatintel_correlate_observable"
+      ],
+      "services": [
+        {
+          "node": "misp",
+          "port": 443,
+          "environment": "APTL_HP_MISP_443"
+        }
+      ]
+    }
+  },
+  "profiles": {
+    "red": {
+      "servers": [
+        "aptl-red"
+      ],
+      "bookmarks": [
+        "aptl-guide",
+        "kali-desktop"
+      ]
+    },
+    "guided-blue": {
+      "servers": [
+        "aptl-indexer",
+        "aptl-wazuh"
+      ],
+      "bookmarks": [
+        "aptl-guide",
+        "soc-wazuh"
+      ]
+    },
+    "blue": {
+      "servers": [
+        "aptl-indexer",
+        "aptl-network",
+        "aptl-soar",
+        "aptl-threatintel",
+        "aptl-wazuh"
+      ],
+      "bookmarks": [
+        "aptl-guide",
+        "soc-wazuh",
+        "soc-misp",
+        "soc-shuffle"
+      ]
+    }
+  }
+}

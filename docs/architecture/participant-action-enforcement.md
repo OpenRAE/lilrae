@@ -80,8 +80,10 @@ The same interface accepts automated harnesses and management-owned interactive 
 Controller choice does not change the authored participant's identity.
 
 The current RAES hosted-tool composition supports v1 autonomous execution.
-The locked dependency pair is RAES 10.2.0 and environment packs 7.0.0.
-The supported ranges are RAES `>=10.2.0,<11` and packs `>=7.0.0,<8`.
+The locked dependency pair is RAES 10.2.0 and environment packs 7.2.0.
+The supported ranges are RAES `>=10.2.0,<10.4` and packs `>=7.2.0,<8`.
+RAES 10.4 removes public imports still used by environment packs 7.2.0.
+The upper bound keeps the released pair compatible.
 This retains the integration branch's TheHive/Cortex removal under ADR-063.
 Tool-action support requires the newer RAES lower bound.
 The bounded-participant authored freeze is unchanged.
@@ -97,6 +99,35 @@ The adapter refuses these combinations before dispatch and preserves their diagn
 Finite abstract participants and existing bounded action paths do not require tools or this composition.
 Mixed-backend claims require their own admitted mappings and time semantics.
 The adapter does not infer equivalence from a shared transport.
+
+### Tools during delivered turns
+
+LilRAE's existing participant delivery path also admits tools through
+`RuntimeControlPlane.admit_participant_action` on the run's existing runtime.
+It starts each participant's episode once before the first turn.
+Each participant must declare exactly one action contract and its observation
+boundary. The installed role profile selects the permitted servers and tools.
+The contract records a tool call and its outcome; it does not interpret command
+arguments or classify native effects.
+
+Each turn gets fresh credentials through its private MCP configuration.
+The shared carrier and common MCP client enforce admission before the handler.
+The participant runtime's native callback releases that handler, waits for its
+outcome, and lets RAES commit the behavior history before returning the result.
+Raw arguments and output are absent from that history. Client output uses the
+existing result redactor.
+
+This composition permits at most 16 sequential calls per turn. The crossing
+policy reserves a stable history interval for those calls and their decisions;
+authored control transitions retain their own order and validation.
+Duplicate, foreign, parallel, and closed-turn requests are refused.
+A lost outcome is recorded as unknown, stops further tool calls in the turn,
+and fails the delivery. Native effects are never retried to repair history.
+The final snapshot retains both participants' accepted action histories through
+the existing run archive path.
+
+This path uses neither the RAES inject pipeline nor a RAES delivery invocation.
+It does not add manual-session, shared-time action, or resource-governance support.
 
 ## Data flow and transport
 

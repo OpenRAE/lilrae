@@ -111,8 +111,8 @@ filename default.
 ## Staged asset contract
 
 `participant-profiles/guided-purple-v1/asset-lock.json` locks the profile
-documents, scenario, Compose model, released MCP builds and dependency locks,
-and every required OCI image identity. Qualification fails if any contained
+documents, scenario, Compose model, workbench policy and catalog, released MCP
+builds and dependency locks, and every required OCI image identity. Qualification fails if any contained
 asset digest drifts.
 
 After staging, the profile must complete without downloads, image pulls, image

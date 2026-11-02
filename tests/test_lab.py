@@ -177,6 +177,7 @@ def _admitted_start_fixture(bundle_root: Path):
     return SimpleNamespace(
         bundle=project_tree_bundle(bundle_root, bundle_root / "fixture.sdl.yaml"),
         runtime_materialization_failure=None,
+        mcp_server_ids=(),
     )
 
 
@@ -4826,39 +4827,31 @@ class TestStartupClassificationWiring:
 
     # -- mcp_config_sync (capability) ----------------------------------
 
-    def test_product_neutral_start_skips_mcp_config_sync(self, tmp_path, mocker):
+    def test_product_neutral_start_clears_previous_mcp_selection(self, tmp_path, mocker):
         from aptl.core.lab import _step_sync_mcp_config
+        from aptl.core.scenario_bundle import ScenarioSourceKind
 
         ctx = self._ctx(tmp_path, selected_profiles=set())
-        ctx.admitted_surface = object()
+        ctx.admitted_surface = SimpleNamespace(selected_profiles=(), source_kind=ScenarioSourceKind.PROJECT_TREE)
+        ctx.admitted_start = SimpleNamespace(mcp_server_ids=())
+        mocker.patch("aptl.core.lab._runtime_mcp_host_ports", return_value=[])
         sync = mocker.patch("aptl.core.lab._sync_mcp_config_keys")
-
+        mocker.patch("aptl.core.lab._persist_mcp_run_admission")
         assert _step_sync_mcp_config(ctx) is None
+        assert sync.call_args.kwargs["server_ids"] == ()
 
-        sync.assert_not_called()
-        assert ctx.diagnostics == []
-
-    def test_mcp_config_sync_exception_emits_capability_warning(self, tmp_path, mocker):
+    def test_mcp_config_sync_failure_blocks_readiness(self, tmp_path, mocker):
         from aptl.core.lab import _step_sync_mcp_config
-        from aptl.core.lab_types import DiagnosticImpact, DiagnosticSeverity
 
         ctx = self._ctx(tmp_path)
         mocker.patch(
             "aptl.core.lab._sync_mcp_config_keys",
             side_effect=RuntimeError("MISP_API_KEY mismatch"),
         )
-
         result = _step_sync_mcp_config(ctx)
-        assert result is None
-
-        assert len(ctx.diagnostics) == 1
-        diag = ctx.diagnostics[0]
-        assert diag.step == "mcp_config_sync"
-        assert diag.impact is DiagnosticImpact.CAPABILITY
-        assert diag.severity is DiagnosticSeverity.WARNING
-        # Exception text contains a sensitive-looking key name —
-        # diagnostic message must not echo the raw exception payload.
-        assert "MISP_API_KEY" not in diag.message
+        assert result is not None
+        assert not result.success
+        assert "MISP_API_KEY" not in result.error
 
     def test_mcp_config_sync_clean_emits_no_diagnostic(self, tmp_path, mocker):
         from aptl.core.lab import _step_sync_mcp_config
@@ -4925,7 +4918,7 @@ class TestStartupClassificationWiring:
         assert _step_sync_mcp_config(ctx) is None
 
         runtime.assert_called_once_with(
-            ctx.project_dir, ctx.backend, active_profiles=None
+            ctx.project_dir, ctx.backend, active_profiles=None, server_ids=None
         )
         assert sync.call_args.args[1] == [live]
         assert ctx.diagnostics == []
