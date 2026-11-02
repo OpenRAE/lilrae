@@ -144,7 +144,8 @@ def _windows_open_relative_handle(
         None,
         _WIN_FILE_ATTRIBUTE_NORMAL,
         _WIN_SHARE_ALL,
-        _WIN_OPEN_IF if create else 1,  # NT FILE_OPEN opens an existing object only.
+        # NT FILE_OPEN opens an existing object only.
+        _WIN_OPEN_IF if create else 1,
         options,
         None,
         0,
