@@ -106,7 +106,9 @@ flowchart LR
    package and its external test package can declare tests with the same
    name, and `go test` runs both under that name, so the check rejects a
    selected test whose name both declare. A selected test keeps its package
-   when the check compares it with the base revision.
+   when the check compares it with the base revision. A passing test also
+   needs a successful test process on the head revision; a failure in
+   `TestMain` after the test passes still fails the gate.
 11. **Bug label.** A pull request that changes Go production code for an issue
    with the `bug` label must add or change a regression test for that issue.
    A separate step reads the label with a read-only token and prints it. It

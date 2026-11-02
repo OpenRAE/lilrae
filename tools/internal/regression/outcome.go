@@ -46,6 +46,8 @@ type testRun struct {
 	// buildOutput holds the first lines of the build output.
 	buildOutput []string
 	outcome     outcome
+	// processFailed reports that the go command exited with a nonzero status.
+	processFailed bool
 }
 
 // event holds the fields of a test2json event that the check reads.

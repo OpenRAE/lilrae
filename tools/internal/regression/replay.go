@@ -255,6 +255,12 @@ func judge(t Test, revision string, want outcome, run testRun) []Finding {
 		return []Finding{{Location: t.File, Message: fmt.Sprintf("%s: the test %s on the %s revision; it must %s there",
 			t.Name, run.outcome, revision, verb(want))}}
 	}
+	// A test that passes in a package whose test binary then fails, for
+	// example in TestMain, does not pass.
+	if want == passed && run.processFailed {
+		return []Finding{{Location: t.File, Message: fmt.Sprintf("%s: the test passed, but the go test command failed on the %s revision; it must pass there",
+			t.Name, revision)}}
+	}
 	return nil
 }
 
@@ -310,6 +316,7 @@ func goTest(ctx context.Context, moduleDir, pkg, name string) (testRun, error) {
 	if err != nil {
 		return testRun{}, err
 	}
+	run.processFailed = runErr != nil
 	if runErr != nil && run.outcome == notRun && !run.buildFailed {
 		run.buildFailed = true
 		for line := range strings.Lines(stderr.String()) {
