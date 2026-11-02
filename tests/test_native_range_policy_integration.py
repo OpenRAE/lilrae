@@ -70,9 +70,7 @@ def test_native_range_packets_and_owned_restart():
     client, peer, target = prefix + "-client", prefix + "-peer", prefix + "-target"
     policy = None
     listener = socket.socket()
-    listener.bind(("0.0.0.0", 0))
-    listener.listen()
-    host_port = listener.getsockname()[1]
+    host_listener = socket.socket()
     try:
         segment = uuid.uuid4().hex[:4]
         run(
@@ -169,6 +167,12 @@ Server(('::',8081),Handler).serve_forever()
             "198.18.0.1",
         )
         host_address = json.loads(route.stdout)[0]["prefsrc"]
+        # Bind only the two exact addresses exercised by the host-access probes.
+        listener.bind((gateway, 0))
+        listener.listen()
+        host_port = listener.getsockname()[1]
+        host_listener.bind((host_address, host_port))
+        host_listener.listen()
         assert probe(client, host_address, host_port), (
             "host interface fixture must answer before enforcement"
         )
@@ -333,6 +337,7 @@ Server(('::',8081),Handler).serve_forever()
         assert not probe(client, gateway, int(published))
     finally:
         listener.close()
+        host_listener.close()
         for name in (client, peer, target):
             run("docker", "rm", "-f", name, check=False)
         if policy is not None:
