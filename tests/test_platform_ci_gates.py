@@ -129,6 +129,74 @@ def test_go_cutover_requires_at_least_the_dev_checks() -> None:
     )
 
 
+@pytest.mark.parametrize("directory", ["/", "/tools", "/tools/lint", "/tools/gates"])
+def test_dependabot_updates_each_cutover_go_module(directory: str) -> None:
+    updates = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())["updates"]
+    entries = [
+        entry for entry in updates
+        if entry["package-ecosystem"] == "gomod"
+        and entry.get("target-branch") == "go-cutover"
+        and directory in entry.get("directories", [entry.get("directory")])
+    ]
+    assert len(entries) == 1, f"expected one cutover updater for {directory}"
+    assert entries[0]["schedule"]["interval"] == "weekly"
+    assert entries[0].get("open-pull-requests-limit", 5) > 0
+    assert any(
+        entry["package-ecosystem"] == "gomod"
+        and entry.get("directory") == "/web/caddy-build"
+        and entry.get("target-branch") == "dev"
+        for entry in updates
+    )
+
+
+def test_cutover_dispatch_has_only_trusted_schedule_authority() -> None:
+    workflow = yaml.safe_load(WORKFLOW.read_text())
+    job = workflow["jobs"]["dispatch-go-cutover"]
+    assert job["if"] == (
+        "github.event_name == 'schedule' && "
+        "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)"
+    )
+    assert workflow[True]["schedule"] == [{"cron": "17 3 * * 1"}]
+    assert "workflow_dispatch" in workflow[True]
+    assert "needs" not in job
+    assert job["permissions"] == {"actions": "write"}
+    assert "write" not in workflow["permissions"].values()
+    assert job["runs-on"] == "ubuntu-latest"
+    assert len(job["steps"]) == 1
+    step = job["steps"][0]
+    assert "uses" not in step  # No checkout or third-party action with write authority.
+    assert step["env"] == {
+        "GH_TOKEN": "${{ github.token }}",
+        "GH_REPO": "${{ github.repository }}",
+    }
+    assert job["env"] == {"TARGET_BRANCH": "go-cutover"}
+
+
+@pytest.mark.parametrize("status", [0, 17])
+def test_cutover_dispatch_targets_child_and_propagates_api_failure(tmp_path, status):
+    job = _jobs()["dispatch-go-cutover"]
+    step = job["steps"][0]
+    log = tmp_path / "dispatch-args"
+    _stub(
+        tmp_path,
+        "gh",
+        'test "$GH_TOKEN" = fixture-token || exit 91\n'
+        'test "$GH_REPO" = fixture-owner/fixture-repo || exit 92\n'
+        'printf "%s\\n" "$@" > "$DISPATCH_LOG"\n'
+        f"exit {status}",
+    )
+    result = _shell(
+        step["run"], tmp_path,
+        GH_TOKEN="fixture-token", GH_REPO="fixture-owner/fixture-repo",
+        DISPATCH_LOG=str(log), **job["env"],
+    )
+    assert result.returncode == status
+    assert log.read_text().splitlines() == [
+        "workflow", "run", "checks.yml", "--ref", "go-cutover"
+    ]
+    assert "fixture-token" not in result.stdout + result.stderr + log.read_text()
+
+
 def test_combined_python_coverage_refuses_a_missing_group(tmp_path: Path) -> None:
     script = _run_step("python-tests", "Combine complete worker coverage")
     log = tmp_path / "combine.log"
