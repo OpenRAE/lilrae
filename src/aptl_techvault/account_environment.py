@@ -50,7 +50,7 @@ def techvault_account_environment() -> tuple[AccountCredentialFixture, ...]:
     )
 
 
-def techvault_environment_grants() -> tuple[EnvironmentGrant, ...]:
+def techvault_environment_grants(pack_id: str) -> tuple[EnvironmentGrant, ...]:
     """Authorize only each SOC service's required startup credentials."""
 
     wazuh = ("INDEXER_USERNAME", "INDEXER_PASSWORD", "API_USERNAME", "API_PASSWORD")
@@ -62,7 +62,7 @@ def techvault_environment_grants() -> tuple[EnvironmentGrant, ...]:
     }
     return tuple(
         EnvironmentGrant(
-            pack="techvault",
+            pack=pack_id,
             consumer=consumer,
             variable=name,
             source={"kind": "project-env-file", "variable": name},
