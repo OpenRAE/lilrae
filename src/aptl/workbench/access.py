@@ -62,6 +62,7 @@ class SeatAccessRecord(_PrivateRecord):
     host_key_fingerprint: Fingerprint
     observed_at: datetime
     lifecycle_state: SeatLifecycleState
+    mcp_server_ids: tuple[str, ...] = ()
 
     @field_validator("guest_project")
     @classmethod
@@ -148,7 +149,7 @@ def authorize_server(
         or any(getattr(record, field) != getattr(grant, field) for field in identity)
     ):
         raise WorkbenchConfigurationError("MCP caller is not authorized")
-    for server in profile_for(grant.profile).servers:
+    for server in profile_for(grant.profile, server_ids=record.mcp_server_ids).servers:
         if server.server_id == server_id:
             return server
     raise WorkbenchConfigurationError("MCP server is not authorized")
