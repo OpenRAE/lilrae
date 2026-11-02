@@ -212,6 +212,8 @@ def test_native_capture_namespace_stays_in_range():
     "service",
     [
         {"privileged": True},
+        {"pid": "host"},
+        {"ipc": "host"},
         {"devices": ["/dev/kvm"]},
         {"cap_add": ["SYS_ADMIN"]},
         {"volumes": [{"source": "/run/docker.sock"}]},

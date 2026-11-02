@@ -13,7 +13,12 @@ def validate_native_services(
     for name, service in services.items():
         if not isinstance(service, dict):
             raise ValueError("native service must be a mapping")
-        if service.get("privileged") or service.get("devices"):
+        if (
+            service.get("privileged")
+            or service.get("devices")
+            or service.get("pid") == "host"
+            or service.get("ipc") == "host"
+        ):
             raise ValueError("native service exposes host devices")
         if _HOST_CAPABILITIES.intersection(service.get("cap_add", ())):
             raise ValueError("native service exposes host capabilities")

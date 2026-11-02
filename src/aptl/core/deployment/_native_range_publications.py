@@ -11,6 +11,7 @@ from aptl.core.deployment._compose_resource_ownership import (
 )
 from aptl.core.deployment._operator_access_endpoints import OPERATOR_ACCESS_IMAGE
 from aptl.core.lab_types import LabResult
+from aptl.core.ephemeral_containers import remove_container_command
 from aptl.core.deployment.errors import BackendTimeoutError
 
 _PREFIX = "lilrae-publication-"
@@ -72,12 +73,15 @@ def publication_bindings(backend, container_name: str) -> dict | None:
         if labels.get(_TARGET) != native:
             continue
         _validate_relay_target(relay, attached, addresses)
-        for key, entries in (
-            relay.get("NetworkSettings", {}).get("Ports") or {}
-        ).items():
-            result.setdefault(key, [])
-            result[key] = list(result[key] or []) + list(entries or [])
+        _append_publication_ports(result, relay)
     return result
+
+
+def _append_publication_ports(result: dict, relay: dict) -> None:
+    """Merge only the daemon's effective bindings from a verified relay."""
+    ports = relay.get("NetworkSettings", {}).get("Ports") or {}
+    for key, entries in ports.items():
+        result[key] = list(result.get(key) or []) + list(entries or [])
 
 
 def _validate_relay_target(relay, attached, addresses) -> None:
@@ -281,7 +285,7 @@ def _record_publication(
             )
         )
     except OwnershipConflictError:
-        backend._run(["docker", "rm", relay_id], timeout=60)
+        backend._run(remove_container_command(relay_id), timeout=60)
         return LabResult(
             success=False, error="Native publication relay ownership failed."
         )

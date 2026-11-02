@@ -153,12 +153,7 @@ class ComposeRealizationMixin(
         if failure is not None:
             return failure
 
-        observation_context = observation_context or DeploymentObservationContext()
-        attempt_id = observation_context.attempt_id or self._resource_attempt_id
-        ownership = self._ensure_resource_ownership()
-        self._ensure_resource_ownership(
-            attempt_id=attempt_id or ownership.new_attempt_id()
-        )
+        observation_context = self._bind_realization_attempt(observation_context)
         failure = self._realization_preflight(realization, substrate_digests)
         if failure is not None:
             result = failure
@@ -178,6 +173,16 @@ class ComposeRealizationMixin(
 
             result = realize_publications(self, realization) or result
         return result
+
+    def _bind_realization_attempt(self, observation_context):
+        """Bind workspace ownership and selected attempt before preflight."""
+        observation_context = observation_context or DeploymentObservationContext()
+        attempt_id = observation_context.attempt_id or self._resource_attempt_id
+        ownership = self._ensure_resource_ownership()
+        self._ensure_resource_ownership(
+            attempt_id=attempt_id or ownership.new_attempt_id()
+        )
+        return observation_context
 
     def _realization_preflight(
         self,

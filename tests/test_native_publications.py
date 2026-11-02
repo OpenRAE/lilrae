@@ -120,3 +120,35 @@ def test_existing_proxy_relays_udp_without_changing_the_payload(monkeypatch):
         assert client.recv(4096) == b"publication-fixture"
         responder.join(timeout=5)
         assert not responder.is_alive()
+
+
+def test_failed_receipt_removes_only_the_created_relay_and_its_volumes():
+    from aptl.core.deployment._native_range_publications import _record_publication
+
+    commands = []
+
+    def refused(_):
+        raise OwnershipConflictError("receipt write failed")
+
+    ownership = SimpleNamespace(
+        record=refused,
+        container_name=lambda _: "relay-fixture",
+        workspace_id="fixture",
+        project_name="range-fixture",
+    )
+    backend = SimpleNamespace(
+        _resource_attempt_id="attempt-fixture",
+        _ownership_daemon_id=lambda: "daemon-fixture",
+        _run=lambda argv, **kw: commands.append(argv),
+    )
+    result = _record_publication(
+        backend,
+        ownership,
+        "relay-fixture",
+        SimpleNamespace(address="provision.node.fixture"),
+        "created-id",
+    )
+    assert not result.success
+    assert len(commands) == 1
+    assert commands[0][-1] == "created-id"
+    assert any(flag in commands[0] for flag in ("-v", "--volumes"))
