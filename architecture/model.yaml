@@ -105,6 +105,14 @@ components:
     layer: foundation
     responsibility: Gives the SHA-256 digest spellings.
     packages: [internal/digest]
+  - name: clock
+    layer: foundation
+    responsibility: Reads the host clock and writes the UTC text forms.
+    packages: [internal/clock]
+  - name: deadline-wait
+    layer: foundation
+    responsibility: Waits for a condition until a deadline.
+    packages: [internal/wait]
   - name: conformance-suite
     layer: tools
     responsibility: Runs the black-box contract cases against an installed lilrae binary.

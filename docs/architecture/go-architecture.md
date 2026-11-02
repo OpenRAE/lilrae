@@ -19,6 +19,8 @@ flowchart TB
     subgraph layer_foundation[foundation]
         component_canonical_forms[canonical-forms]
         component_digest[digest]
+        component_clock[clock]
+        component_deadline_wait[deadline-wait]
     end
     subgraph layer_tools[tools]
         component_regressioncheck_command[regressioncheck-command]

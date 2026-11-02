@@ -173,6 +173,7 @@ capability in Go.
 
 ## Preflights
 
+- [Issue #1606 Clock and Deadline Waits Design](issue-1606-clock-wait-design.md)
 - [Issue #1604 Canonical Forms and Digests Design](issue-1604-canonical-digest-design.md)
 - [Issue #1557 Go Foundation Preflight](issue-1557-go-foundation-preflight.md)
 - [Issue #1557 Go Foundation Design](issue-1557-go-foundation-design.md)
