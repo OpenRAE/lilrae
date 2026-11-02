@@ -167,6 +167,8 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 ## Preflights
 
 - [Issue #1552 Go Architecture Preflight](issue-1552-go-architecture-preflight.md)
+- [Issue #1553 Go Toolchain Preflight](issue-1553-go-toolchain-preflight.md)
+- [Issue #1553 Go Toolchain Design](issue-1553-go-toolchain-design.md)
 - [Issue #1510 Code Quality Architecture Preflight](issue-1510-code-quality-preflight.md)
 - [Issue #1510 Code Quality Architecture Design](issue-1510-code-quality-design.md)
 - [Issue #1465 Released Structural Factorial Experiment Tuple](issue-1465-released-experiment-tuple-preflight.md)

@@ -55,7 +55,8 @@ and the required passages of the
 ### Language, module, and layout
 
 - Use the latest stable Go release. `go.mod` sets the language version and the
-  toolchain, and CI reads both from it.
+  toolchain, and CI reads both from it. The root `go.mod` ignores
+  `node_modules`, so package patterns such as `./...` find only Go code.
 - The module path is `github.com/OpenRAE/lilrae`. Release Please sets the
   product version. The product version is not a Go module version, and the
   adapter API has its own version (see Scenario adapter API).
@@ -71,7 +72,8 @@ and the required passages of the
   product module. Their `tool` directives pin the tools, and their `go.sum`
   files hold the checksums. golangci-lint has a module of its own, because a
   shared module changed the versions of its dependencies, including the library
-  that loads its configuration.
+  that loads its configuration. The fixture tests of the CI gates also have a
+  module of their own (Mutation testing).
 
 ### Layers
 
@@ -169,7 +171,7 @@ checklist for the other rules.
 A linter covers part of a rule in some rows. Review covers the rest. A
 suppression is permitted only for a verified false positive, and its comment
 names the linter and says why the finding is false. CI also runs `go vet`,
-`go mod tidy -diff`, and `go fix -diff`. Vale checks doc comments against the
+`go mod tidy -diff`, and `go fix -diff`. Vale checks Go comments against the
 documentation styles. Comments explain why the code is as it is. They do not
 record review history.
 
@@ -232,32 +234,48 @@ record review history.
 
 ### Mutation testing
 
-- Gremlins mutates the changed lines of each pull request and runs the tests of
-  the affected packages. A scheduled run of the Checks workflow mutates the
-  whole module.
+- Gremlins mutates the changed lines of the Go production code of each pull
+  request. It runs the tests of the package of each mutant. A scheduled run of
+  the Checks workflow mutates each whole module.
+- Gremlins sets the timeout of each mutant from the test time of the whole
+  module. The fixture tests of the CI gates are slow, so they are in a separate
+  module.
 - Efficacy is killed mutants divided by killed and lived mutants. Mutant
   coverage is killed and lived mutants divided by killed, lived, and uncovered
-  mutants. Each has a threshold. Mutants that do not compile do not count.
-- The first thresholds come from a measurement on the first packages. A
-  threshold can only go up.
-- When Go production code changed, a tool error or an empty result fails the
-  job. When no Go production code changed, the job reports that no relevant
-  input changed.
+  mutants. Mutants that do not compile and mutants that time out count in
+  neither value. The job reports the mutants that time out.
+- `tools/mutation-thresholds.json` holds the threshold of each value. The first
+  thresholds come from a measurement on the first packages. The check fails
+  when a pull request lowers a threshold.
+- When Go production code changed, a tool error or a change where each mutant
+  timed out fails the job. Changed lines that hold no mutant pass, and the job
+  names the changed files. When no Go production code changed, the job reports
+  that no relevant input changed.
 
 ### Regression tests
 
-- A regression test carries the comment `// regression: #<issue>` above its
-  function. Tests for new behavior carry no such comment.
+- A regression test carries the line `regression: #<issue>` in the doc comment
+  of its test function. Tests for new behavior carry no such line. The check
+  rejects a malformed `regression:` line and a line that is not on a test
+  function.
 - The regression test check runs on each pull request, whatever its
-  Conventional Commit type. It runs each regression test that the pull request
-  adds or changes on the base revision with the head test files. Each test must
-  compile and fail there, and it must pass on the head revision.
-- A compile error, a missing dependency, no matching test, a skipped test, or
-  an infrastructure failure is not the required failure. A regression test
-  reproduces the bug through the API that the base revision has.
-- A pull request for an issue with the `bug` label must add a regression test
-  for that issue, or the check fails. The check reads the issue number from the
-  branch name (`<issue>-<topic>`).
+  Conventional Commit type. It reads the issue number from the branch name
+  (`<issue>-<topic>`).
+- The check replays each regression test for that issue that the pull request
+  adds or changes. It runs the test on the base revision with the head test
+  files and test data of the package. The test must compile and fail there, and
+  it must pass on the head revision. A regression test for another issue is not
+  replayed, because the base revision already has its fix.
+- A compile error, a missing dependency, no matching test, a skipped test, a
+  test that does not finish, or an infrastructure failure is not the required
+  failure. A regression test reproduces the bug through the API that the base
+  revision has.
+- A pull request that changes Go production code for an issue with the `bug`
+  label must add or change a regression test for that issue, or the check
+  fails.
+- A branch name without an issue number, for example a Dependabot or a
+  promotion branch, has no replay. The check still validates the
+  `regression:` lines of the changed test files.
 
 ### Dependencies
 
@@ -370,6 +388,8 @@ components.
   Docker adapter is its only importer.
 - go-arch-lint and Gremlins are smaller projects than the core toolchain.
   Pinned versions and the model keep a replacement local to `tools/`.
+- Gremlins has no suppression for an equivalent mutant. On a small change, one
+  equivalent mutant can fail the mutation gate.
 
 ## References
 

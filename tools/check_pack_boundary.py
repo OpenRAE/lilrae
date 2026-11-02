@@ -12,7 +12,9 @@ the owners and their facts without a fixed string list:
 
 It scans the generic paths in :data:`COVERED` and reports each match by path
 and fact kind, never by value. #1273 covers the participant desktop, the rule
-tools, and the account providers, including the generic core directory.
+tools, and the account providers, including the generic core directory. #1553
+adds the Go source of the ADR-065 layout, where a pack identifier is also a
+finding.
 
 Usage: ``python tools/check_pack_boundary.py [root] [--pack-directory ID=PATH]``
 """
@@ -35,6 +37,12 @@ COVERED = (
     "appliance/guest/**/*",
     "mcp/*/docker-lab-config.json",
     "src/aptl/**/*",
+    "*.go",
+    "cmd/**/*.go",
+    "internal/**/*.go",
+    "adapter/**/*.go",
+    "conformance/**/*.go",
+    "tools/**/*.go",
 )
 _CORE_PACKAGE = "aptl"
 _MIN_SECRET_LENGTH = 6
@@ -163,7 +171,7 @@ def findings(
         for line in lines:
             digest = "sha256:" + hashlib.sha256(line.encode()).hexdigest()
             for fact, kind in lowered.items():
-                if kind == "pack identifier" and not relative.startswith("src/aptl/"):
+                if kind == "pack identifier" and not _checks_identifiers(relative):
                     continue
                 if fact not in line.lower():
                     continue
@@ -173,6 +181,11 @@ def findings(
         kinds = sorted(kinds)
         results.extend((str(path.relative_to(root)), kind) for kind in kinds)
     return results
+
+
+def _checks_identifiers(relative: str) -> bool:
+    """Generic Python and Go code must not name an owner pack or its modules."""
+    return relative.startswith("src/aptl/") or relative.endswith(".go")
 
 
 def ownership_exceptions(root: Path) -> dict[tuple[str, str, str], int]:

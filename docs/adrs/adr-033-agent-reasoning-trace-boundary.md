@@ -297,7 +297,7 @@ agent CLI ships.
   remote `close` event has fired (or a bounded
   `TIMEOUTS.REMOTE_CLOSE_AWAIT` has elapsed with a logged
   `[SSH] remote close timeout` warning). The kali wrapper's EXIT trap
-  — which kills tcpdump and flushes the `script(1)` typescript—runs
+  (it stops tcpdump and flushes the `script(1)` typescript) runs
   on remote channel close, so awaiting that event before the
   `docker cp` harvest eliminates the truncation race. The
   `dockerCpWithRetry` helper that previously masked the window with a
