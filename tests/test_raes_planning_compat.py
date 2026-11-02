@@ -5,7 +5,7 @@ from textwrap import dedent
 from types import SimpleNamespace
 
 from raes.parser import parse_sdl
-from raes_contracts.explicitness import ExplicitnessClass, ExplicitnessProvenance
+from raes.explicitness import ExplicitnessClass, ExplicitnessProvenance
 from raes_contracts.planning import (
     RealizationAuthorityMode,
     RealizationResolutionSource,

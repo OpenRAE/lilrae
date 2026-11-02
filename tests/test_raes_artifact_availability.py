@@ -322,11 +322,11 @@ def _pack_requirement(digest: str = _DIGEST, *, route=None):
     """An EXACT content requirement routed through APTL's env-pack copy route."""
 
     from raes.artifact_requirements import (
+        ArtifactIdentity,
         ArtifactRequirement,
         ArtifactSatisfactionRoute,
     )
-    from raes_contracts.artifact_identity import ArtifactIdentity
-    from raes_contracts.explicitness import ExplicitnessClass
+    from raes.explicitness import ExplicitnessClass
 
     from aptl.backends.raes_artifact_mechanisms import env_pack_copy_profile
 

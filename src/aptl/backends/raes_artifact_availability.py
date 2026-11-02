@@ -30,7 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
-from raes_contracts.explicitness import ExplicitnessClass
+from raes.explicitness import ExplicitnessClass
 from raes.nodes import NodeType
 from raes_contracts.addressing import render_compiled_address
 from raes_contracts.contracts import (
@@ -61,8 +61,7 @@ from aptl.backends.raes_substrate import resolve_substrate
 _CONTEXT_ROOT = "containers"
 
 if TYPE_CHECKING:
-    from raes.artifact_requirements import ArtifactRequirement
-    from raes_contracts.artifact_identity import ArtifactIdentity
+    from raes.artifact_requirements import ArtifactIdentity, ArtifactRequirement
     from raes_processor.semantics.realization import CompiledRealizationRequirement
 
 

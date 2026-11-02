@@ -8,9 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from raes_contracts.contracts import ParticipantDecisionSurfaceSelectionV2Model
-from raes_contracts.contracts.participant_action_admission import (
-    ParticipantActionAdmissionRequest,
-)
+from raes_contracts.participant_binding import ParticipantActionAdmissionRequest
 from raes_contracts.participant_binding_v2 import (
     ParticipantDecisionSurfaceBindingResolversV2,
 )

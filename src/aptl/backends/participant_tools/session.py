@@ -39,7 +39,7 @@ _REFUSED = "Participant tool call refused."
 _UNKNOWN = "Participant tool outcome is unknown."
 
 
-def _detached_json(value: object) -> tuple[object, bytes]:
+def detach_tool_json(value: object) -> tuple[object, bytes]:
     """Bound and detach a value in the canonical JSON domain."""
     data = rfc8785.dumps(value)
     if len(data) > MAX_TOOL_FRAME:
@@ -47,7 +47,7 @@ def _detached_json(value: object) -> tuple[object, bytes]:
     return json.loads(data), data
 
 
-def _result_failed(result: dict[str, object]) -> bool:
+def tool_result_failed(result: dict[str, object]) -> bool:
     """Read the common handlers' explicit result, never infer effects from prose."""
     content = result.get("content")
     if not isinstance(content, list) or not content:
@@ -127,8 +127,8 @@ class LilraeToolSession:
     ) -> LilraeToolCall:
         """Resolve exact arguments and consume authority before native effects."""
         try:
-            detached, data = _detached_json(arguments)
-            effective, _ = _detached_json(
+            detached, data = detach_tool_json(arguments)
+            effective, _ = detach_tool_json(
                 configuration if configuration is not None else {}
             )
             if not isinstance(effective, dict):
@@ -213,10 +213,10 @@ class LilraeToolSession:
             try:
                 if not self._live():
                     raise ValueError("session closed")
-                detached, _ = _detached_json(result)
+                detached, _ = detach_tool_json(result)
                 if not isinstance(detached, dict):
                     raise ValueError("invalid result")
-                failed = _result_failed(detached)
+                failed = tool_result_failed(detached)
                 safe = redact_mcp_result(
                     detached, call.binding.server_id, call.binding.tool_name
                 )
@@ -265,7 +265,7 @@ class LilraeToolSession:
     ) -> dict[str, object]:
         """In-process carrier for trusted controllers and native adapters."""
         try:
-            detached, _ = _detached_json(arguments)
+            detached, _ = detach_tool_json(arguments)
         except Exception:
             raise AgentExecutionError(_REFUSED) from None
         call = self.begin(server, tool, detached, call_id, configuration=configuration)

@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING
 
 from raes_contracts.contracts import ParticipantActionResultModel
 from raes_contracts.diagnostics import Diagnostic, Severity
-from raes_contracts.participant_binding import ParticipantNativeActionExecution
-from raes_contracts.contracts.participant_action_admission import (
+from raes_contracts.participant_binding import (
     ParticipantActionAdmissionRequest,
+    ParticipantNativeActionExecution,
 )
 from raes_contracts.planning import RuntimeDomain
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot

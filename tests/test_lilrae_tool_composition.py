@@ -5,9 +5,7 @@ from threading import Event
 from unittest.mock import Mock
 
 import pytest
-from raes_contracts.contracts.participant_action_admission import (
-    ParticipantActionAdmissionRequest,
-)
+from raes_contracts.participant_binding import ParticipantActionAdmissionRequest
 from raes_contracts.participant_tool_actions import ParticipantToolActionRefusal
 from raes_processor.compiler import compile_runtime_model
 from raes_runtime.participant_invocation_tool_actions import (

@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from raes_contracts.contracts import ExperimentRunModel
-from raes_contracts.canonical import canonical_contract_digest
+from raes_contracts.satisfiability import canonical_contract_digest
 
 from aptl.core.archival.context import TerminalAttemptContext
 from aptl.core.archival.discovery_index import DiscoveryIndex, IndexEntry

@@ -19,9 +19,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from raes.artifact_requirements import ArtifactRequirement, ArtifactSatisfactionRoute
-from raes_contracts.artifact_identity import ArtifactIdentity
-from raes_contracts.explicitness import ExplicitnessClass, ExplicitnessProvenance
+from raes.artifact_requirements import (
+    ArtifactIdentity,
+    ArtifactRequirement,
+    ArtifactSatisfactionRoute,
+)
+from raes.explicitness import ExplicitnessClass, ExplicitnessProvenance
 from raes_contracts.contracts import (
     ArtifactAvailabilityContext,
     ArtifactRequirementAvailability,

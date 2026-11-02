@@ -15,9 +15,8 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 import zipfile
 
-from raes_contracts.contracts.plan_projection import runtime_plan_digest
-from raes_contracts.canonical import jsonable_fallback
-from pydantic_core import to_jsonable_python
+from raes_contracts.plan_projection import runtime_plan_digest
+from raes_contracts.realization_preparation import jsonable_fallback, to_jsonable_python
 from raes_contracts.runtime_state import RuntimeSnapshotEnvelope
 
 from aptl.core.evidence.adapters.sources import CallableWindowedSource, SourceResult

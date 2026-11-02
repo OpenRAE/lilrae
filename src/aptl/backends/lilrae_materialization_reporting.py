@@ -20,9 +20,9 @@ from raes_contracts.materialization_inventory import (
     RuntimeInventoryEvidence,
     RuntimeInventoryReport,
 )
-from raes_contracts.contracts.plan_projection import runtime_plan_digest
+from raes_contracts.plan_projection import runtime_plan_digest
 from raes_contracts.planning import ProvisioningPlan, OrchestrationPlan, EvaluationPlan
-from raes_contracts.contracts.realization_preparation import preparation_snapshot_digest
+from raes_contracts.realization_preparation import preparation_snapshot_digest
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotEntry
 from raes_processor.compiler import materialization_differences
 from raes_processor.semantics.realization_concerns import (

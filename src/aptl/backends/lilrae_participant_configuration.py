@@ -11,7 +11,7 @@ from raes_contracts.contracts import (
     ParticipantConfigurationResultModel,
     ParticipantImplementationManifestModel,
 )
-from raes_contracts.canonical import canonical_contract_digest
+from raes_contracts.satisfiability import canonical_contract_digest
 
 from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor, OpenCodeOptions
 

@@ -6,9 +6,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from raes_contracts.contracts import ParticipantActionResultModel
-from raes_contracts.contracts.participant_action_admission import (
-    ParticipantActionAdmissionRequest,
-)
+from raes_contracts.participant_binding import ParticipantActionAdmissionRequest
 from raes_contracts.participant_native_execution import ParticipantNativeActionExecution
 from raes_contracts.participant_episode import ParticipantEpisodeExecutionState
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot

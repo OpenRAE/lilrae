@@ -10,10 +10,8 @@ from typing import TYPE_CHECKING, Any
 from raes_contracts.participant_behavior import (
     iter_participant_behavior_snapshot_violations,
 )
-from raes_contracts.contracts.participant_action_admission import (
-    ParticipantActionAdmissionRequest,
-)
-from raes_contracts.participant_episode_snapshot import (
+from raes_contracts.participant_binding import ParticipantActionAdmissionRequest
+from raes_contracts.participant_episode import (
     iter_participant_episode_snapshot_violations,
 )
 from raes_contracts.runtime_state import OperationState, RuntimeSnapshot

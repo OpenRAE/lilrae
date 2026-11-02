@@ -8,8 +8,8 @@ from raes_contracts.contracts import (
     ParticipantImplementationManifestModel,
     ParticipantImplementationSelectionModel,
 )
-from raes_contracts.canonical import canonical_contract_digest
-from raes_contracts.contracts.participant_configuration import (
+from raes_contracts.satisfiability import canonical_contract_digest
+from raes_contracts.participant_configuration import (
     validate_participant_configuration_selection,
 )
 from aptl.core.participant_tools.contracts import LilraeToolBinding

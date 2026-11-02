@@ -18,11 +18,9 @@ from raes_contracts.contracts import (
 )
 from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.participant_binding import (
+    ParticipantActionAdmissionRequest,
     ParticipantActionApplyResult,
     ParticipantNativeActionExecution,
-)
-from raes_contracts.contracts.participant_action_admission import (
-    ParticipantActionAdmissionRequest,
 )
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 
@@ -72,6 +70,7 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         self.deployment_backend = deployment_backend
         self.action_specs = dict(action_specs or DEFAULT_PARTICIPANT_ACTIONS)
         self.plan_authority = plan_authority
+        self.delivery_tools = None
         self._behavior_history: dict[str, list[dict[str, object]]] = {}
         self._selection_provider: ParticipantSelectionProvider | None = None
         self._pending_selections: dict[
@@ -429,6 +428,9 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         episode_id: str,
     ) -> ParticipantNativeActionExecution:
         """Dispatch one already-admitted action to its closed APTL realization."""
+
+        if self.delivery_tools is not None:
+            return self.delivery_tools.execute(request, snapshot, episode_id)
 
         if request.execution_scope_ref is not None:
             return self.autonomous_execution.execute(request, snapshot, episode_id)
