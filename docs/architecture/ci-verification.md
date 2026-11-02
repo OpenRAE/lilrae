@@ -46,6 +46,12 @@ This check uses the shared isolated SSH fixture; it does not qualify a full
 TechVault SOC deployment. The generic installed-wheel smoke scenario remains
 a separate installation and realization check.
 
+The controlled HTTPS service in `tests/test_mcp_transport_processes.py` binds
+only to loopback and explicitly requires TLS 1.2 or newer before wrapping its
+listening socket. Its ephemeral certificate and existing MCP client policy
+remain test fixtures. The indexer process test verifies that the real SSH and
+MCP path can still query this service with the protocol floor enforced.
+
 The planner builds authored field prefixes once per compatibility application.
 Each requirement queries that operation's index.
 The index preserves exact fields, descendants, collection entries, and explicit empty declarations.
