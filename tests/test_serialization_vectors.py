@@ -493,14 +493,25 @@ def _matches(result: object, expect: object) -> bool:
     ids=[f"{scheme}/{case_id}" for scheme, case_id, _case in _cases()],
 )
 def test_vector(scheme: str, case_id: str, case: dict[str, object]) -> None:
-    case_input = bytes.fromhex(case["input_hex"]) if "input_hex" in case else _decode(case["input"])
-    expect = case["expect"]
+    problem = None
     try:
-        result = SCHEMES[scheme](case_input)
-    except Rejected as rejection:
-        result = {"reject": rejection.stage}
+        case_input = bytes.fromhex(case["input_hex"]) if "input_hex" in case else _decode(case["input"])
+        expect = case["expect"]
+        try:
+            result = SCHEMES[scheme](case_input)
+        except Rejected as rejection:
+            result = {"reject": rejection.stage}
+        matches = _matches(result, expect)
+    except Exception as exc:
+        # Unexpected errors still fail the test, without exposing inputs in
+        # exception messages, tracebacks, or pytest's local-variable display.
+        problem = type(exc).__name__
+    if problem is not None:
+        # Leave the handler first so pytest cannot print the original error
+        # as the context of its own failure.
+        pytest.fail(f"{scheme}/{case_id}: {problem} while evaluating the vector", pytrace=False)
     # Compare without an assertion diff: a vector can hold a synthetic secret.
-    if not _matches(result, expect):
+    if not matches:
         pytest.fail(f"{scheme}/{case_id}: the owner result differs from the vector", pytrace=False)
 
 
@@ -523,3 +534,41 @@ def test_number_tags_decode_exactly() -> None:
     assert _decode({"$int": "9007199254740993"}) == 9007199254740993
     assert math.copysign(1.0, _decode({"$float": "-0.0"})) == -1.0
     assert math.isnan(_decode({"$float": "nan"}))
+
+
+def test_vector_failures_do_not_disclose_values(pytester: pytest.Pytester) -> None:
+    """Malformed inputs and owner failures report IDs without vector values."""
+
+    pytester.syspathinsert(str(ROOT))
+    pytester.makepyfile(
+        test_vector_privacy="""
+import pytest
+from tests import test_serialization_vectors as vectors
+
+CANARY = "VECTOR_PRIVACY_CANARY_1555"
+
+@pytest.mark.parametrize("encoding", ["integer", "hex", "owner", "comparison"])
+def test_private_vector(encoding, monkeypatch):
+    case = {"input": {"$int": CANARY}, "expect": {"text": "unused"}}
+    scheme = "rfc8785"
+    if encoding == "hex":
+        case = {"input_hex": CANARY, "expect": {"text": "unused"}}
+    elif encoding == "owner":
+        def owner(_):
+            raise ValueError(CANARY)
+        monkeypatch.setitem(vectors.SCHEMES, "private-owner", owner)
+        scheme = "private-owner"
+        case = {"input": CANARY, "expect": {"text": "unused"}}
+    elif encoding == "comparison":
+        case = {"input": CANARY, "expect": {"hex": "00"}}
+    vectors.test_vector(scheme, "privacy-case", case)
+"""
+    )
+
+    result = pytester.runpytest("test_vector_privacy.py", "-q", "--tb=short", "--showlocals")
+
+    result.assert_outcomes(failed=4)
+    output = result.stdout.str() + result.stderr.str()
+    if "VECTOR_PRIVACY_CANARY_1555" in output:
+        pytest.fail("the vector failure output disclosed a value", pytrace=False)
+    assert "privacy-case" in output

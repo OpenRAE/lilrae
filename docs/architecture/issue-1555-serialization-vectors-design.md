@@ -41,7 +41,10 @@ model change.
    test compares the owner result and the expectation as JSON text, so a
    change from a boolean or a float to an integer fails. A malformed case or
    a different owner result names the scheme or file and the case ID; it
-   prints no input and no expected bytes.
+   prints no input and no expected bytes. Input decoding, owner calls, and
+   result comparison also convert unexpected exceptions to a case-only
+   failure. A nested pytest probe checks that tracebacks and local-variable
+   output cannot disclose the vector value.
 5. **Inventory.** `docs/reference/serialization-schemes.md` lists each scheme:
    its owner, input domain, byte form, hash and digest spelling, the records
    and fields that store or compare its output, and its vector file. It also
