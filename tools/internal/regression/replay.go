@@ -87,7 +87,7 @@ func removeWorktree(ctx context.Context, root, tree string) error {
 }
 
 // overlay makes the test files and the test data of dir in tree equal to
-// those of the head revision.
+// those of the head revision, with the target of each test data link.
 func overlay(ctx context.Context, root, head string, tree *os.Root, dir string) error {
 	if err := removeTestFiles(tree, dir); err != nil {
 		return err
@@ -96,17 +96,80 @@ func overlay(ctx context.Context, root, head string, tree *os.Root, dir string) 
 	if err != nil {
 		return err
 	}
+	var links []git.Entry
 	for _, file := range files {
 		rel := relative(dir, file.Path)
 		isTestFile := !strings.Contains(rel, "/") && strings.HasSuffix(rel, "_test.go")
-		if !isTestFile && !strings.HasPrefix(rel, "testdata/") {
+		// A testdata entry without a slash is a symlink to the test data.
+		if !isTestFile && rel != "testdata" && !strings.HasPrefix(rel, "testdata/") {
 			continue
 		}
 		if err := writeEntry(ctx, root, head, tree, file); err != nil {
 			return err
 		}
+		if file.Mode == "120000" && !isTestFile {
+			links = append(links, file)
+		}
+	}
+	return overlayLinkTargets(ctx, root, head, tree, dir, links)
+}
+
+// overlayLinkTargets makes the target of each link equal to the head
+// revision, and then the target of each link in a target, because the files
+// that a link names are test data too. Each link is followed once, so a
+// cycle of links ends.
+func overlayLinkTargets(ctx context.Context, root, head string, tree *os.Root, dir string, links []git.Entry) error {
+	followed := map[string]bool{}
+	for len(links) > 0 {
+		link := links[0]
+		links = links[1:]
+		if followed[link.Path] {
+			continue
+		}
+		followed[link.Path] = true
+		found, err := overlayLinkTarget(ctx, root, head, tree, dir, link)
+		if err != nil {
+			return err
+		}
+		links = append(links, found...)
 	}
 	return nil
+}
+
+// overlayLinkTarget makes the target of link equal to the head revision and
+// returns the links in the target. The target can be a file or a directory,
+// and an entry that the overlay wrote before can be in it, so the target is
+// written again. A target outside the repository is in no revision, so it
+// stays.
+func overlayLinkTarget(ctx context.Context, root, head string, tree *os.Root, dir string, link git.Entry) ([]git.Entry, error) {
+	raw, err := git.Show(ctx, root, head, link.Path)
+	if err != nil {
+		return nil, err
+	}
+	target := path.Join(path.Dir(link.Path), string(raw))
+	if path.IsAbs(string(raw)) || !filepath.IsLocal(filepath.FromSlash(target)) {
+		return nil, nil
+	}
+	if target == "." || target == dir || strings.HasPrefix(dir, target+"/") {
+		return nil, fmt.Errorf("the test data link %s names a directory that holds its package", link.Path)
+	}
+	if err = tree.RemoveAll(filepath.FromSlash(target)); err != nil {
+		return nil, fmt.Errorf("remove the base target of %s: %w", link.Path, err)
+	}
+	entries, err := git.Files(ctx, root, head, target)
+	if err != nil {
+		return nil, err
+	}
+	var links []git.Entry
+	for _, entry := range entries {
+		if err := writeEntry(ctx, root, head, tree, entry); err != nil {
+			return nil, err
+		}
+		if entry.Mode == "120000" {
+			links = append(links, entry)
+		}
+	}
+	return links, nil
 }
 
 // removeTestFiles removes the test files and the test data of dir from tree.
@@ -142,6 +205,10 @@ func writeEntry(ctx context.Context, root, head string, tree *os.Root, entry git
 	}
 	switch entry.Mode {
 	case "120000":
+		// The target of an earlier link can hold this link already.
+		if err = tree.RemoveAll(name); err != nil {
+			return fmt.Errorf("replace %s in the base worktree: %w", entry.Path, err)
+		}
 		err = tree.Symlink(string(data), name)
 	case "100755":
 		err = tree.WriteFile(name, data, 0o700)

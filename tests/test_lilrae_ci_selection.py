@@ -113,6 +113,7 @@ def test_go_changes_select_the_go_and_docs_lanes_and_the_coverage_closure():
         "internal/core/value.go",
         "cmd/lilrae/main.go",
         "tools/internal/regression/check.go",
+        "architecture/model.yaml",
         "tools/gates/testdata/lint.txtar",
         "tools/lint/go.sum",
         "tools/mutation-thresholds.json",

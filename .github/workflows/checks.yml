@@ -1390,6 +1390,61 @@ jobs:
           [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
           bash tools/ci/go-gates.sh regression "$BASE_SHA" "$ISSUE" "$BUG"
 
+  go-architecture:
+    name: Go architecture
+    runs-on: ubuntu-latest
+    needs: [changes]
+    # ADR-065: the model also covers web/caddy-build and the design notes,
+    # which routing does not send to the Go lane, so this job always runs.
+    if: always()
+    permissions:
+      contents: read
+    concurrency:
+      group: checks-go-architecture-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}-single
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    env:
+      GOWORK: "off"
+      GOTOOLCHAIN: local
+    steps:
+      - name: Validate check selection
+        env:
+          ROUTING_RESULT: ${{ needs.changes.result }}
+        run: test "$ROUTING_RESULT" = success
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      # ADR-065: the branch name gives the issue of the design record. A pull
+      # request from a protected branch of this repository is a promotion: its
+      # changes passed this check in their own pull requests.
+      - name: Check the architecture model and the design record
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [[ "$EVENT_NAME" != pull_request ]]; then
+            bash tools/ci/go-gates.sh architecture
+            exit 0
+          fi
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          issue=0
+          if [[ "$HEAD_REF" =~ ^([1-9][0-9]{0,8})- ]]; then
+            issue=${BASH_REMATCH[1]}
+          fi
+          promotion=false
+          if [[ "$HEAD_REPO" == "$REPOSITORY" && "$HEAD_REF" =~ ^(main|dev|go-cutover)$ ]]; then
+            promotion=true
+          fi
+          echo "Issue: $issue (0 is none). Promotion: $promotion." | tee -a "$GITHUB_STEP_SUMMARY"
+          bash tools/ci/go-gates.sh architecture "$BASE_SHA" "$issue" "$promotion"
+
   go-vuln:
     name: Go vulnerability scan
     runs-on: ubuntu-latest

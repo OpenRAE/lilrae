@@ -88,25 +88,15 @@ linters:
 
   settings:
     depguard:
+      # architecture/model.yaml permits the third-party modules of each
+      # component. These rules ban standard-library packages only.
       rules:
         all:
           deny:
-            - pkg: github.com/stretchr/testify
-              desc: Use the testing package and go-cmp. ADR-065 forbids assertion libraries.
-            - pkg: gotest.tools
-              desc: Use the testing package and go-cmp. ADR-065 forbids assertion libraries.
-            - pkg: github.com/pkg/errors
-              desc: Use the errors package and fmt.Errorf with %w.
-            - pkg: gopkg.in/yaml.v2
-              desc: Use go.yaml.in/yaml/v3 (ADR-065).
-            - pkg: gopkg.in/yaml.v3
-              desc: Use go.yaml.in/yaml/v3 (ADR-065).
             - pkg: io/ioutil
               desc: Use the io and os packages.
             - pkg: log$
               desc: Use log/slog with an explicit logger (ADR-065).
-            - pkg: github.com/google/uuid
-              desc: Use the standard uuid package (ADR-065).
     errcheck:
       check-type-assertions: true
       check-blank: true

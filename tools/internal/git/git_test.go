@@ -35,6 +35,7 @@ func newRepo(t *testing.T) (r *gittest.Repo, base, head string) {
 		"a/edit.go":    "package a // edited\n",
 		"a/new.go":     "package a\n",
 		"a/b/deep.txt": "deep\n",
+		"a/bc.txt":     "sibling\n",
 		"other.txt":    "other\n",
 		"a/gone.go":    "",
 	})
@@ -91,6 +92,27 @@ func TestChangedFiles(t *testing.T) {
 	}
 }
 
+func TestTrackedFiles(t *testing.T) {
+	t.Parallel()
+	r, _, _ := newRepo(t)
+	if err := os.WriteFile(filepath.Join(r.Dir, "a", "untracked.go"), []byte("package a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := git.TrackedFiles(t.Context(), r.Dir, "*.go", "other.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{"a/edit.go", "a/keep.go", "a/link.go", "a/new.go", "a/renamed.go", "other.txt"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("TrackedFiles(*.go, other.txt) mismatch (-want +got):\n%s", diff)
+	}
+	if _, err := git.TrackedFiles(t.Context(), filepath.Join(r.Dir, "missing")); err == nil {
+		t.Error("TrackedFiles(missing directory) returned no error")
+	}
+}
+
 func TestFiles(t *testing.T) {
 	t.Parallel()
 	r, _, head := newRepo(t)
@@ -103,6 +125,7 @@ func TestFiles(t *testing.T) {
 
 	want := []git.Entry{
 		{Path: "a/b/deep.txt", Mode: "100644"},
+		{Path: "a/bc.txt", Mode: "100644"},
 		{Path: "a/edit.go", Mode: "100644"},
 		{Path: "a/keep.go", Mode: "100644"},
 		{Path: "a/link.go", Mode: "120000"},
@@ -112,6 +135,18 @@ func TestFiles(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Files(a) mismatch (-want +got):\n%s", diff)
+	}
+	// A file path gives the file, and a directory does not match a sibling
+	// whose name starts with it.
+	for p, want := range map[string][]git.Entry{
+		"a/edit.go": {{Path: "a/edit.go", Mode: "100644"}},
+		"a/b":       {{Path: "a/b/deep.txt", Mode: "100644"}},
+		"a/missing": nil,
+	} {
+		got, err := git.Files(t.Context(), dir, head, p)
+		if diff := cmp.Diff(want, got); err != nil || diff != "" {
+			t.Errorf("Files(%s) = %v (-want +got):\n%s", p, err, diff)
+		}
 	}
 }
 

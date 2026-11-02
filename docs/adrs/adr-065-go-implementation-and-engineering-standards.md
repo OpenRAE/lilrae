@@ -109,15 +109,19 @@ Rules:
   needs a model change. The model also lists the third-party modules that each
   component can use, the public API packages, and a fix-it message for each
   rule.
-- A compiler in `tools/` validates the model and generates the go-arch-lint
-  configuration from it. The compiler rejects unknown keys, a package that has
-  no component or two components, an unknown dependency, and a stale
-  reference. Do not edit the generated configuration.
-- go-arch-lint checks the whole repository: commands, helpers, tools, tests,
-  and generated code, for each supported operating system and build tag. Each
-  import resolves to its module, so a module permission is never a global
-  exemption. The compiler maps each finding to its rule and prints the fix-it
-  message.
+- A checker in `tools/` validates the model and checks the whole repository
+  against it: commands, helpers, tools, tests, and generated code. It reads the
+  imports of each tracked Go file with the Go parser, so each operating system
+  and build tag is in scope, and it resolves each import to its module with
+  `golang.org/x/mod`. A module permission is never a global exemption. It
+  rejects unknown keys, a package that has no component or two components, an
+  unknown dependency, a stale reference, and a local module replacement that
+  the model does not cover. Each finding prints its rule and the fix-it message
+  of the model.
+- The checker runs no project code, and the model is its only policy input. The
+  checker does not use go-arch-lint (#1583): its dependency graph fails the
+  vulnerability gates, and it has no layers, rule IDs, fix-it messages, or
+  stale-entry check.
 - The Go code starts with zero findings. The checks have no baseline.
 - The pack-ownership check (`.gc/pack-ownership.json`) stays a separate check.
 - The architecture diagrams in the documentation come from the model.
@@ -135,7 +139,9 @@ Rules:
   design is part of the reviewed change.
 - CI fails when the code differs from the model or from the design of the pull
   request.
-- Go port 02b builds the compiler and the checks.
+- `tools/cmd/archcheck` runs the design check, the pull request check, and the
+  whole repository check (Go port 02b, #1583). `docs/CODING_STANDARDS.md` gives
+  the commands.
 
 ### Style and lint
 
@@ -163,7 +169,7 @@ checklist for the other rules.
 | Interfaces stay small and functions return concrete types | iface, interfacebloat, ireturn |
 | Current idioms (`any`, `min`, `max`, `slices`, `maps`, range over integers) | modernize, revive `use-any`, intrange, copyloopvar |
 | HTTP requests carry a context, and response bodies are closed | noctx, bodyclose |
-| Tests use no assertion library, and helpers call `t.Helper()` | depguard, thelper, usetesting |
+| Tests use no assertion library, and helpers call `t.Helper()` | the architecture model (permitted modules), thelper, usetesting |
 | Security checks | gosec, govulncheck |
 | Cognitive complexity is 15 or less | gocognit |
 | A suppression names its linter and its reason | nolintlint |
@@ -210,8 +216,9 @@ record review history.
 - The vectors of Go port 04 define each persisted byte form, digest, and
   identifier. One function implements each scheme. Ordinary JSON encoding is
   not canonical encoding.
-- Use `os.Root` for contained file access. Replace a file atomically: write a
-  temporary file in the same root, sync it, and rename it.
+- Use `os.Root` for contained file access. Replace a file atomically with
+  `github.com/google/renameio/v2` inside the root (`WithRoot`). renameio
+  exports no function on Windows, where a file cannot be replaced atomically.
 - Time values are `time.Time` in UTC. Their text forms follow the vectors.
 
 ### Tests
@@ -298,13 +305,15 @@ components.
 | BLAKE3 | `lukechampine.com/blake3` |
 | UUID | `uuid` |
 | File locks | `github.com/gofrs/flock` |
+| Atomic file replacement | `github.com/google/renameio/v2` |
 | Concurrency | `golang.org/x/sync/errgroup` |
 | Terminal | `golang.org/x/term` |
 | Telemetry | `go.opentelemetry.io/otel` |
 | Web API | `github.com/oapi-codegen/oapi-codegen/v2`, from a checked-in OpenAPI document |
 | Shell parsing | `mvdan.cc/sh/v3` |
 | Tests | `github.com/google/go-cmp`, `github.com/rogpeppe/go-internal/testscript` |
-| Lint, architecture, and mutation | golangci-lint v2, go-arch-lint, Gremlins |
+| Lint and mutation | golangci-lint v2, Gremlins |
+| Architecture check | Go parser, `golang.org/x/mod`, `go.yaml.in/yaml/v3` |
 | Release | GoReleaser |
 
 ### Docker access
@@ -386,8 +395,8 @@ components.
 
 - The Docker Engine client is earlier than v1, so its API can change. The
   Docker adapter is its only importer.
-- go-arch-lint and Gremlins are smaller projects than the core toolchain.
-  Pinned versions and the model keep a replacement local to `tools/`.
+- Gremlins is a smaller project than the core toolchain. A pinned version
+  keeps a replacement local to `tools/`.
 - Gremlins has no suppression for an equivalent mutant. On a small change, one
   equivalent mutant can fail the mutation gate.
 
@@ -396,7 +405,6 @@ components.
 - [Google Go Style Guide](https://google.github.io/styleguide/go/)
 - [Go 1.27 release notes](https://go.dev/doc/go1.27)
 - [golangci-lint linters](https://golangci-lint.run/docs/linters/)
-- [go-arch-lint configuration](https://github.com/fe3dback/go-arch-lint/blob/master/docs/syntax/README.md)
 - [Gremlins](https://gremlins.dev/)
 - [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)
 - [Issue #1552](https://github.com/OpenRAE/lilrae/issues/1552)

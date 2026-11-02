@@ -121,18 +121,21 @@ modules: the tracked `go.mod` files, except `web/caddy-build` and test data.
 | Go tests + coverage | `go test -race -shuffle=on` with coverage, and the gate fixtures of `tools/gates`. |
 | Go mutation tests | Gremlins on the changed production lines, or on each whole module for a scheduled or manual run. `tools/mutation-thresholds.json` holds the thresholds. |
 | Go regression tests | The replay of each regression test for the issue of the pull request. |
+| Go architecture | `archcheck` checks the repository and the generated diagram against `architecture/model.yaml`, and the change against the design record of the issue of the pull request. |
 | Go vulnerability scan | govulncheck on the packages and the tool dependencies of each module. |
 | OSV-scanner (Go modules) | OSV on each first-party `go.mod`, and a fixture module with a known vulnerability that must fail. |
 
 - The `go` lane of `tools/ci/select_checks.py` selects these jobs. Go source also
   selects the docs lane, because Vale checks Go comments.
+- The Go architecture job runs whatever the routing selects. The model also
+  covers `web/caddy-build` and the design notes, which are not in the `go` lane.
 - SonarCloud needs current coverage from each stack. The `go` lane and the
   Python, MCP, and web lanes select each other, and the SonarCloud job reads the
   Go profiles with repository paths.
 - The Trivy filesystem scan reads each `go.mod`. It also proves with the same
   fixture module that it fails on a vulnerable Go module.
 - The Go jobs set `GOWORK=off` and `GOTOOLCHAIN=local`.
-- The `go-cutover` protection requires the six Go jobs.
+- The `go-cutover` protection requires the seven Go jobs.
 - GitHub runs a schedule and Dependabot from the default branch, which has no Go
   code before Go port 31. Until then, a manual Checks run on `go-cutover` runs the
   full mutation and scans.

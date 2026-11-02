@@ -9,6 +9,7 @@
 #   tools/ci/go-gates.sh osv
 #   tools/ci/go-gates.sh mutation [BASE]
 #   tools/ci/go-gates.sh regression BASE ISSUE BUG
+#   tools/ci/go-gates.sh architecture [BASE ISSUE PROMOTION]
 #
 # The modules are the go.mod files that Git tracks in the repository of the
 # current directory, except web/caddy-build, which has its own checks, and
@@ -27,7 +28,7 @@ mutation_workers=2
 mutation_timeout_coefficient=10
 
 usage() {
-    sed -n '4,11s/^# //p' "${BASH_SOURCE[0]}" >&2
+    sed -n '4,12s/^# //p' "${BASH_SOURCE[0]}" >&2
     exit 2
 }
 
@@ -159,14 +160,38 @@ regression() {
     go run -C "$home/tools" ./cmd/regressioncheck "${args[@]}"
 }
 
+# architecture checks the repository against architecture/model.yaml and the
+# generated diagram. With BASE, ISSUE, and PROMOTION, it also checks the change
+# from BASE to HEAD against the design record of ISSUE, unless PROMOTION is
+# true. It runs each check and fails when one fails.
+architecture() {
+    local archcheck=(go run -C "$home/tools" ./cmd/archcheck) args status=0
+    if (($# == 0)); then
+        "${archcheck[@]}" check -repo "$repo" || status=1
+    else
+        args=(-repo "$repo" -base "$1" -issue "$2")
+        if [[ "$3" == true ]]; then
+            args+=(-promotion)
+        fi
+        "${archcheck[@]}" pr "${args[@]}" || status=1
+    fi
+    "${archcheck[@]}" diagram -repo "$repo" || status=1
+    return "$status"
+}
+
 gate=${1:-}
 case $gate in
-    modules | lint | test | vuln | osv | mutation | regression) ;;
+    modules | lint | test | vuln | osv | mutation | regression | architecture) ;;
     *) usage ;;
 esac
 if [[ "$gate" == regression ]]; then
     (($# == 4)) || usage
     regression "$2" "$3" "$4"
+    exit 0
+fi
+if [[ "$gate" == architecture ]]; then
+    (($# == 1 || $# == 4)) || usage
+    architecture "${@:2}"
     exit 0
 fi
 list=$(module_list)

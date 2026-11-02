@@ -32,6 +32,15 @@ run_go_tests() {
     done
 }
 
+# run_pytest runs pytest with the plugin in tools/pytest-plugins that stops a
+# run without a test file, because pytest then runs the whole suite. pytest
+# parses its own options, so the value of an option never counts as a target.
+run_pytest() {
+    local plugins
+    plugins="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/pytest-plugins"
+    PYTHONPATH="$plugins${PYTHONPATH:+:$PYTHONPATH}" uv run "${uv_test_env[@]}" pytest -p require_test_targets "$@"
+}
+
 if (($#)); then
     go_tests=()
     pytest_args=()
@@ -41,11 +50,13 @@ if (($#)); then
             *) pytest_args+=("$arg") ;;
         esac
     done
+    # pytest runs first, so a run that the plugin stops runs no Go test.
+    # Go tests take no extra arguments.
+    if ((${#pytest_args[@]})); then
+        run_pytest "${pytest_args[@]}"
+    fi
     if ((${#go_tests[@]})); then
         run_go_tests "${go_tests[@]}"
-    fi
-    if ((${#pytest_args[@]})); then
-        exec uv run "${uv_test_env[@]}" pytest "${pytest_args[@]}"
     fi
     exit 0
 fi
@@ -63,7 +74,7 @@ add_path() {
     local path=$1
     [[ -n "$path" && -f "$path" ]] || return 0
     case "$path" in
-        tests/test_*.py|tests/**/test_*.py|mcp/*/tests/*.test.ts|mcp/*/tests/**/*.test.ts|web/tests/*.test.ts|web/tests/**/*.test.ts)
+        tests/test_*.py|tests/**/test_*.py|mcp/*/tests/*.test.ts|web/tests/*.test.ts)
             ;;
         web/caddy-build/*|*/testdata/*)
             return 0
@@ -108,7 +119,7 @@ for path in "${test_paths[@]}"; do
         *_test.go)
             go_test_files+=("$path")
             ;;
-        tests/*.py|tests/**/*.py)
+        tests/*.py)
             python_tests+=("$path")
             ;;
         mcp/*/tests/*)
@@ -128,7 +139,7 @@ if ((${#go_test_files[@]})); then
 fi
 
 if ((${#python_tests[@]})); then
-    uv run "${uv_test_env[@]}" pytest "${python_tests[@]}"
+    run_pytest "${python_tests[@]}"
 fi
 
 for package in "${!vitest_packages[@]}"; do
