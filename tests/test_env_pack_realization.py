@@ -22,16 +22,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tests.techvault_pack import realize_techvault_pack
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture(scope="module")
-def techvault_realization(tmp_path_factory):
-    """Run the released pack's filesystem-backed planner once per module."""
+def techvault_realization(released_techvault_realization):
+    """Run the released pack's filesystem-backed planner once per test session."""
 
-    return realize_techvault_pack(tmp_path_factory.mktemp("techvault-realization"))
+    return released_techvault_realization
 
 
 @pytest.mark.integration
@@ -44,7 +43,7 @@ def test_techvault_pack_realizes_without_provisioner_diagnostics(
 
     codes = sorted({d.code for d in realization.diagnostics})
     assert codes == [], f"unexpected realization diagnostics: {codes}"
-    assert len(realization.nodes) >= 25
+    assert len(realization.nodes) >= 21
     assert {"soc", "enterprise", "wazuh"} <= set(realization.profiles)
     evidence = realization.pack_interaction_evidence(sorted(realization.profiles))
     assert evidence["pack"]["pack_id"] == "techvault"
@@ -52,7 +51,7 @@ def test_techvault_pack_realizes_without_provisioner_diagnostics(
     # The adapter ships inside the one distribution, so host-observed
     # provenance names it. What the seam still proves is that the provenance
     # comes from installed metadata rather than the provider's own claim.
-    assert evidence["provider"]["distribution"] == "aptl-labs"
+    assert evidence["provider"]["distribution"] == "lilrae"
     assert evidence["provider"]["entry_point"] == "techvault.aptl"
     assert evidence["provider"]["mapping_digest"].startswith("sha256:")
 
@@ -106,21 +105,6 @@ def test_owned_fixture_pack_realizes_through_the_pack_path(tmp_path):
     assert evidence["pack"]["set_digest"] == bundle.pack_identity.set_digest
     assert evidence["provider"]["provider_id"] == "aptl.core.unprofiled-default"
     assert evidence["provider"]["entry_point"] == ""
-
-
-@pytest.mark.integration
-def test_real_pack_cassandra_has_bounded_heap(techvault_realization):
-    """The guest must not size Cassandra's heap from all available VM RAM."""
-    from aptl.core.deployment._compose_node_generation import render_realization_compose
-
-    realization = techvault_realization
-    spec = realization.deployment_spec(sorted(realization.profiles))
-    service = render_realization_compose(spec)["services"]["thehive-cassandra"]
-
-    assert service.get("environment", {}).get("MAX_HEAP_SIZE") == "512M"
-    assert service["environment"]["HEAP_NEWSIZE"] == "128M"
-    node = next(node for node in realization.nodes if node.name == "thehive-cassandra")
-    assert "runtime-environment" in node.backend_selected_concerns
 
 
 @pytest.mark.integration
@@ -225,28 +209,24 @@ def test_generated_compose_covers_image_nodes_networks_and_ordering(
                 external_dependencies.add(dependency)
     assert external_dependencies == set()
 
-    # The backend-neutral release no longer authors a Cortex initializer node.
-    # The generated model must not resurrect the removed implementation detail.
-    assert "cortex-initializer" not in services
-    assert "cortex-initializer" not in services["thehive"].get("depends_on", {})
+    # The released 7.0.0 pack declares no case-management or analyzer node.
+    assert not {"thehive", "thehive-cassandra", "thehive-es", "cortex"} & set(services)
 
-    # The released pack leaves TheHive's runtime environment open. APTL's
-    # selected connector binding therefore includes and reports its minimum
-    # backing artifact; it is not inferred when that concern is closed.
+    # The released pack leaves MISP's runtime environment open. APTL's selected
+    # cache binding therefore includes and reports its minimum backing artifact;
+    # it is not inferred when that concern is closed.
     artifact = next(
         item
         for item in realization.generated_artifacts
-        if item.name == "cortex-service-credentials"
+        if item.name == "misp-cache-credential"
     )
-    assert artifact.address == "backend.generated-artifact.cortex-service-credentials"
+    assert artifact.address == "backend.generated-artifact.misp-cache-credential"
     assert [output.name for output in artifact.outputs] == [
-        "initializer-api-key",
-        "connector-api-key",
+        "cache-password",
+        "cache-server-config",
     ]
-    assert artifact.environment_consumers[0].target_address == (
-        "provision.node.thehive"
-    )
-    assert artifact.environment_consumers[0].environment_variable == "TH_CORTEX_KEYS"
+    assert artifact.environment_consumers[0].target_address == "provision.node.misp"
+    assert artifact.environment_consumers[0].environment_variable == "REDIS_PASSWORD"
     assert artifact.details() in realization.details()["generated_artifacts"]
 
 

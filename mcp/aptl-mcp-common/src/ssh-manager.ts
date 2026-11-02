@@ -1,11 +1,12 @@
 
-import { Client } from 'ssh2';
+import { Client, type ClientChannel } from 'ssh2';
 import { readFile } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import { createPtyTeeWriter } from './runs.js';
 import {
   SSHError,
+  CommandTimeoutError,
   require_,
   ensure,
   TIMEOUTS,
@@ -18,10 +19,39 @@ import {
   SessionConnectOptions,
 } from './ssh-contracts.js';
 import { PersistentSession } from './ssh-session.js';
+import { knownToolFailure, toolAbortSignal } from './lilrae-tool-outcome.js';
+
+const SHUTTING_DOWN = 'SSH manager is shutting down';
+
+interface ActiveExec {
+  sessionId: string;
+  runId?: string;
+  ready: Promise<void>;
+  stop: () => void;
+}
 
 interface ConnectionInfo {
   client: Client;
   connected: boolean;
+}
+
+// Stops a one-shot exec whose timer fired (#1290); otherwise the remote
+// command keeps running and streaming output nobody reads. TERM, which
+// timeout(1) also sends, lets a wrapper that handles it finish its records. A
+// server may refuse the RFC 4254 signal request (OpenSSH does for a
+// ForceCommand session such as the Kali capture broker's), so the channel is
+// closed as well. ssh2 throws from both calls once its connection is torn down,
+// and a timer callback must not throw.
+function stopTimedOutCommand(channel: ClientChannel | undefined): void {
+  if (channel === undefined) {
+    return;
+  }
+  try {
+    channel.signal('TERM');
+    channel.close();
+  } catch (err) {
+    console.error('[SSH] could not stop a timed-out command:', err);
+  }
 }
 
 export class SSHConnectionManager {
@@ -39,6 +69,121 @@ export class SSHConnectionManager {
   // every loser of the race.
   private readonly pendingConnections: Map<string, Promise<Client>> = new Map();
 
+  // Harvest hook injected by createMCPServer. The manager cannot resolve the
+  // capture container itself (that is lab config), so the server passes a
+  // best-effort harvest it can call when a session's remote side closes on its
+  // own. Undefined when captures are not configured.
+  private harvestHook: ((sessionId: string, runId: string | undefined) => Promise<boolean>) | undefined;
+
+  /**
+   * Register the per-session capture harvest. Called once at server setup.
+   * Without it, a remote-closed session is not harvested here and relies on
+   * the shutdown sweep.
+   */
+  public setHarvestHook(
+    hook: (sessionId: string, runId: string | undefined) => Promise<boolean>,
+  ): void {
+    this.harvestHook = hook;
+  }
+
+  private readonly harvests = new Map<string, Promise<boolean>>();
+  private readonly activeExecs = new Map<string, ActiveExec>();
+  private stopping = false;
+  private shutdownResult: Promise<boolean> | undefined;
+
+  /** All close paths share one copy and retain failures until shutdown. */
+  public harvestSession(
+    sessionId: string,
+    runId?: string,
+    harvest = this.harvestHook,
+  ): Promise<boolean> {
+    const key = JSON.stringify([runId ?? null, sessionId]);
+    const existing = this.harvests.get(key);
+    if (existing) return existing;
+    if (!harvest) return Promise.resolve(true);
+    const result = Promise.resolve().then(() => harvest(sessionId, runId)).catch((err) => {
+      console.error('[captures] harvest failed:', err);
+      return false;
+    });
+    this.harvests.set(key, result);
+    return result;
+  }
+
+  private async harvestRemoteClose(session: PersistentSession): Promise<void> {
+    await this.harvestSession(session.getSessionId(), session.getBoundRunId());
+  }
+
+  /** Stop admission, drain startup, finalize each owned broker session, then harvest. */
+  public shutdown(finalize: (sessionId: string, runId?: string) => Promise<boolean>): Promise<boolean> {
+    this.stopping = true;
+    this.shutdownResult ??= this.finishShutdown(finalize);
+    return this.shutdownResult;
+  }
+
+  private async finishShutdown(finalize: (sessionId: string, runId?: string) => Promise<boolean>): Promise<boolean> {
+    await Promise.allSettled([...this.pendingSessions.values(), ...this.pendingConnections.values()]);
+    await Promise.allSettled([...this.activeExecs.values()].map((exec) => exec.ready));
+    const bindings = [
+      ...[...this.sessions.values()].map((session) => ({
+        sessionId: session.getSessionId(), runId: session.getBoundRunId(),
+      })),
+      ...this.activeExecs.values(),
+    ];
+    const finalized = await Promise.all(bindings.map(async ({ sessionId, runId }) => {
+      try {
+        return await finalize(sessionId, runId);
+      } catch (err) {
+        console.error('[captures] session finalization failed:', err);
+        return false;
+      }
+    }));
+    let clean = finalized.every(Boolean);
+    for (const exec of this.activeExecs.values()) exec.stop();
+    try {
+      await this.disconnectAll();
+    } catch (err) {
+      console.error('[SSH] shutdown teardown failed:', err);
+      clean = false;
+    }
+    // Include bindings removed by close events and failures from earlier remote closes.
+    await Promise.all(bindings.map(({ sessionId, runId }) => this.harvestSession(sessionId, runId)));
+    return (await Promise.all(this.harvests.values())).every(Boolean) && clean;
+  }
+
+  /**
+   * Wire a session's end-of-life listeners. A remote close or error harvests
+   * the session before dropping it from the sessions map, so a session
+   * that dies mid-game is still copied into the run store.
+   */
+  private attachSessionLifecycle(sessionId: string, session: PersistentSession): void {
+    session.on('closed', () => {
+      void this.harvestRemoteClose(session).finally(() => this.sessions.delete(sessionId));
+    });
+    session.on('error', (error) => {
+      console.error(`[SSH] Session ${sessionId} error:`, error);
+      void this.harvestRemoteClose(session).finally(() => this.sessions.delete(sessionId));
+    });
+    session.on('timeout', () => {
+      console.error(`[SSH] Session ${sessionId} timed out`);
+    });
+  }
+
+  private trackExec(sessionId: string, runId?: string): { active: ActiveExec; ready: () => void } {
+    let ready!: () => void;
+    const active: ActiveExec = {
+      sessionId, runId,
+      ready: new Promise<void>((resolve) => { ready = resolve; }),
+      stop: () => {},
+    };
+    this.activeExecs.set(sessionId, active);
+    return { active, ready };
+  }
+
+  private async harvestClosedExec(sessionId: string, runId?: string): Promise<void> {
+    await this.harvestSession(sessionId, runId);
+    this.activeExecs.delete(sessionId);
+  }
+
   /**
    * Execute a command on a target host via SSH.
    *
@@ -50,6 +195,11 @@ export class SSHConnectionManager {
    * session path writes (codex pre-push cycle 1 finding-3). The
    * caller can read back the session id from the returned envelope
    * so it can trigger a per-exec capture harvest.
+   *
+   * When the timeout fires, the remote command is sent TERM and its
+   * channel is closed before the promise rejects (#1290). The rejection is a
+   * CommandTimeoutError that names the session and run ids; its channelClosed
+   * settles once the channel has closed (#1319).
    */
   public async executeCommand(
     host: string,
@@ -59,8 +209,8 @@ export class SSHConnectionManager {
     port: number = 22,
     timeout: number = TIMEOUTS.DEFAULT_COMMAND,
     options: { sessionId?: string } = {},
-  ): Promise<CommandResult & { sessionId: string }> {
-    const client = await this.getConnection(host, username, privateKeyPath, port);
+  ): Promise<CommandResult & { sessionId: string; runId?: string }> {
+    require_(!this.stopping, SHUTTING_DOWN);
     const sessionId =
       options.sessionId ??
       // crypto.randomBytes for the unique-id suffix (SonarCloud
@@ -70,51 +220,101 @@ export class SSHConnectionManager {
       // the hotspot.
       `exec-${Date.now()}-${randomBytes(4).toString('hex')}`;
     const shellEnv = aptlShellEnv(sessionId);
-    const ptyTee = createPtyTeeWriter(sessionId);
+    require_(!this.activeExecs.has(sessionId) && !this.sessions.has(sessionId) && !this.pendingSessions.has(sessionId), `Session with ID '${sessionId}' already exists`);
+    const { active, ready } = this.trackExec(sessionId, shellEnv.APTL_RUN_ID);
+    let client: Client;
+    try {
+      client = await this.getConnection(host, username, privateKeyPath, port);
+      toolAbortSignal()?.throwIfAborted();
+    } catch (err) {
+      this.activeExecs.delete(sessionId);
+      ready();
+      throw err;
+    }
 
+    const ptyTee = createPtyTeeWriter(sessionId);
     return new Promise((resolve, reject) => {
-      let stdout = '';
-      let stderr = '';
+      const output = { stdout: '', stderr: '' };
       let hasTimedOut = false;
+      let channel: ClientChannel | undefined;
+      let markClosed: () => void = () => {};
+      const closed = new Promise<void>((settle) => {
+        markClosed = settle;
+      });
+
+      // Every chunk still reaches the capture tee, but output that arrives
+      // after the timer fired is not buffered for a result nobody reads.
+      const collect = (key: keyof typeof output, data: Buffer): void => {
+        if (!hasTimedOut) {
+          output[key] += data.toString();
+        }
+      };
 
       const timeoutId = setTimeout(() => {
         hasTimedOut = true;
-        reject(new SSHError(`Command timeout after ${timeout}ms: ${redactCommand(command)}`));
+        ready();
+        stopTimedOutCommand(channel);
+        reject(new CommandTimeoutError(
+          `Command timeout after ${timeout}ms: ${redactCommand(command)}`,
+          sessionId,
+          shellEnv.APTL_RUN_ID,
+          closed,
+        ));
       }, timeout);
 
-      client.exec(command, { env: shellEnv }, (err, stream) => {
-        if (err) {
-          clearTimeout(timeoutId);
-          reject(new SSHError(`Failed to execute command: ${err.message}`, err));
-          return;
-        }
+      active.stop = () => stopTimedOutCommand(channel);
+      try {
+        client.exec(command, { env: shellEnv }, (err, stream) => {
+          ready();
+          if (err) {
+            clearTimeout(timeoutId);
+            markClosed();
+            this.activeExecs.delete(sessionId);
+            reject(new SSHError(`Failed to execute command: ${err.message}`, err));
+            return;
+          }
+          channel = stream;
 
-        stream.on('close', (code: number | null, signal: string | null) => {
-          clearTimeout(timeoutId);
-          if (!hasTimedOut) {
-            // One-shot exec has no session-level mode; the wrapping always
-            // emits a real exit code so the effective mode is 'normal'.
-            resolve({ stdout, stderr, code, signal, sessionId, mode: 'normal' });
+          stream.on('close', (code: number | null, signal: string | null) => {
+            void this.harvestClosedExec(sessionId, shellEnv.APTL_RUN_ID);
+            clearTimeout(timeoutId);
+            markClosed();
+            if (!hasTimedOut) {
+              // One-shot exec has no session-level mode; the wrapping always
+              // emits a real exit code so the effective mode is 'normal'.
+              resolve({ ...output, code, signal, sessionId, runId: shellEnv.APTL_RUN_ID, mode: 'normal' });
+            }
+          });
+
+          stream.on('data', (data: Buffer) => {
+            ptyTee('out', data);
+            collect('stdout', data);
+          });
+
+          stream.stderr.on('data', (data: Buffer) => {
+            ptyTee('err', data);
+            collect('stderr', data);
+          });
+
+          stream.on('error', (error: Error) => {
+            clearTimeout(timeoutId);
+            if (!hasTimedOut) {
+              reject(new SSHError(`Stream error: ${error.message}`, error));
+            }
+          });
+
+          if (hasTimedOut) {
+            // The server opened the channel after the timer fired.
+            stopTimedOutCommand(stream);
           }
         });
-
-        stream.on('data', (data: Buffer) => {
-          ptyTee('out', data);
-          stdout += data.toString();
-        });
-
-        stream.stderr.on('data', (data: Buffer) => {
-          ptyTee('err', data);
-          stderr += data.toString();
-        });
-
-        stream.on('error', (error: Error) => {
-          clearTimeout(timeoutId);
-          if (!hasTimedOut) {
-            reject(new SSHError(`Stream error: ${error.message}`, error));
-          }
-        });
-      });
+      } catch (err) {
+        clearTimeout(timeoutId);
+        ready();
+        markClosed();
+        this.activeExecs.delete(sessionId);
+        reject(err);
+      }
     });
   }
 
@@ -158,7 +358,7 @@ export class SSHConnectionManager {
       })
       .catch(err => {
         this.pendingConnections.delete(connectionKey);
-        throw err;
+        throw knownToolFailure(err);
       });
     this.pendingConnections.set(connectionKey, creating);
     return creating;
@@ -232,6 +432,7 @@ export class SSHConnectionManager {
     privateKeyPath: string,
     options: SessionConnectOptions = {}
   ): Promise<PersistentSession> {
+    require_(!this.stopping, SHUTTING_DOWN);
     // Reserve the id SYNCHRONOUSLY (before any await) so a concurrent
     // createSession with the same id cannot pass the precondition and
     // overwrite this entry between getConnection() and session.initialize().
@@ -243,6 +444,7 @@ export class SSHConnectionManager {
     const creation = (async (): Promise<PersistentSession> => {
       const port = options.port ?? 22;
       const client = await this.getConnection(target, username, privateKeyPath, port);
+      toolAbortSignal()?.throwIfAborted();
       const session = new PersistentSession(sessionId, target, username, type, client, options);
 
       // Attach ownership-transfer listeners BEFORE the initialize() await so a
@@ -251,18 +453,14 @@ export class SSHConnectionManager {
       // when cleanup detected a postcondition violation. 'timeout' is
       // informational — close() runs next from the timer callback and emits
       // 'closed' or 'error' itself. (Codex cycle 3 findings 3 + 4.)
-      session.on('closed', () => {
-        this.sessions.delete(sessionId);
-      });
-      session.on('error', (error) => {
-        console.error(`[SSH] Session ${sessionId} error:`, error);
-        this.sessions.delete(sessionId);
-      });
-      session.on('timeout', () => {
-        console.error(`[SSH] Session ${sessionId} timed out`);
-      });
+      this.attachSessionLifecycle(sessionId, session);
 
-      await session.initialize();
+      try {
+        await session.initialize();
+      } catch (err) {
+        if (this.harvestHook) await this.harvestSession(sessionId, session.getBoundRunId());
+        throw err;
+      }
       this.sessions.set(sessionId, session);
       return session;
     })();
@@ -316,6 +514,7 @@ export class SSHConnectionManager {
     // handles both shapes via the standard rejection path.
     try {
       await session.close();
+      if (this.harvestHook) await this.harvestSession(sessionId, session.getBoundRunId());
       // 'closed' listener installed in createSession already removed the
       // session synchronously; this delete + ensure is a belt-and-braces
       // postcondition check from the manager-side.
@@ -326,6 +525,7 @@ export class SSHConnectionManager {
       // Cleanup failed. Drop the broken session from the manager so subsequent
       // calls don't see it, then propagate so the MCP handler envelope reports
       // the failure to the caller.
+      if (this.harvestHook) await this.harvestSession(sessionId, session.getBoundRunId());
       this.sessions.delete(sessionId);
       throw err;
     }
@@ -340,6 +540,8 @@ export class SSHConnectionManager {
     timeout?: number,
     raw?: boolean
   ): Promise<CommandResult> {
+    require_(!this.stopping, SHUTTING_DOWN);
+    toolAbortSignal()?.throwIfAborted();
     const session = this.sessions.get(sessionId);
     require_(session !== undefined, `Session '${sessionId}' not found`);
 
@@ -347,13 +549,21 @@ export class SSHConnectionManager {
   }
 
   /**
-   * Get buffered output from a background session
+   * Get buffered output from a background session, with the number of the
+   * oldest chunks the buffer limit dropped since the buffer was last cleared
+   * (#967).
    */
-  public getSessionOutput(sessionId: string, lines?: number, clear?: boolean): string[] {
+  public getSessionOutput(
+    sessionId: string,
+    lines?: number,
+    clear?: boolean,
+  ): { chunks: string[]; droppedChunks: number } {
     const session = this.sessions.get(sessionId);
     require_(session !== undefined, `Session '${sessionId}' not found`);
 
-    return session.getBufferedOutput(lines, clear);
+    // Read the count first: a clearing read resets it.
+    const droppedChunks = session.getDroppedChunkCount();
+    return { chunks: session.getBufferedOutput(lines, clear), droppedChunks };
   }
 
   /**
@@ -422,6 +632,7 @@ export class SSHConnectionManager {
     const sessionPromises: Array<Promise<TeardownResult>> = Array.from(this.sessions.values()).map(async (session) => {
       try {
         await session.close();
+        if (this.harvestHook) await this.harvestSession(session.getSessionId(), session.getBoundRunId());
         return { ok: true as const };
       } catch (err) {
         return { ok: false as const, error: err };

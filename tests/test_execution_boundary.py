@@ -227,7 +227,7 @@ def test_sysctl_check_uses_selected_daemon_boundary_not_ambient_mode(
         host_kernel="6.8.0-test",
     )
     sysctl = mocker.patch(
-        "aptl.core.lab.check_max_map_count",
+        "aptl.core.lab.check_scenario_max_map_count",
         return_value=SysReqResult(
             passed=True, current_value=0, required_value=262144, applicable=False
         ),
@@ -243,7 +243,7 @@ def test_sysctl_check_uses_selected_daemon_boundary_not_ambient_mode(
     )
 
     assert lab._step_check_sysreqs(ctx) is None
-    sysctl.assert_called_once_with(selected_mode=hostenv.DOCKER_UNKNOWN)
+    sysctl.assert_called_once_with(None, selected_mode=hostenv.DOCKER_UNKNOWN)
 
 
 def test_remote_backend_never_uses_cli_host_bridge_addresses(mocker) -> None:

@@ -3,18 +3,18 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "aptl-labs"
-version = "7.0.0"
+name = "lilrae"
+version = "8.2.0"
 description = "Advanced Purple Team Lab CLI"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14,<3.15"
 license = { text = "MIT" }
 authors = [{ name = "Brad Edwards" }]
 keywords = ["purple-team", "security", "cyber-range", "wazuh", "kali", "mcp", "raes"]
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Security",
     "Intended Audience :: Developers",
 ]
@@ -30,14 +30,19 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.33.0",
     "opentelemetry-semantic-conventions>=0.54b0",
     "cryptography>=50.0.0",
-    "raes==6.0.1",
-    "raes-env-packs==6.2.1",
+    "raes>=10.2.0,<11",
+    "raes-env-packs>=7.0.0,<8",
     "mcp>=2,<3",
     "rfc8785>=0.1.4,<0.2.0",
     "packaging>=24.2",
+    # Framing for the cooperative native Docker creation recorder.
+    "h11>=0.16.0,<1",
     # Imported directly by aptl.core.experiment.resolver; previously satisfied
     # only transitively through the upstream SDL distribution.
     "blake3>=1.0.8,<2",
+    # Imported by aptl.core.host_keys on every CLI start; raes 7 supplied it
+    # only transitively.
+    "asyncssh>=2.17.0",
 ]
 
 [project.urls]
@@ -46,8 +51,12 @@ Repository = "https://github.com/OpenRAE/lilrae"
 Issues = "https://github.com/OpenRAE/lilrae/issues"
 
 [project.scripts]
-aptl = "aptl.cli.main:app"
-aptl-misp-suricata-sync = "aptl.services.misp_suricata_sync.main:main"
+lilrae = "aptl.cli.main:app"
+lilrae-misp-suricata-sync = "aptl.services.misp_suricata_sync.main:main"
+# Deprecated aliases: they print a notice to stderr and are removed in 10.0.0
+# (ADR-062 successor clause for #1402; removal tracked by #1403).
+aptl = "aptl.cli.main:legacy_main"
+aptl-misp-suricata-sync = "aptl.services.misp_suricata_sync.main:legacy_main"
 
 [project.optional-dependencies]
 s3 = [
@@ -64,7 +73,6 @@ web = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
     "sse-starlette>=2.0.0",
-    "asyncssh>=2.17.0",
 ]
 dev = [
     "pytest>=8.0.0",
@@ -82,6 +90,11 @@ dev = [
     # toolchain (`python -m build --no-isolation`). CI installs
     # requirements/dev.txt, so those tests run there rather than skip.
     "build>=1.2.0",
+    "pytest-cov>=7.1.0",
+    "pytest-split>=0.11.0",
+    # tools/check_architecture.py builds its static import graph with grimp;
+    # its tests run in the dev environment.
+    "grimp>=3.18",
 ]
 docs = [
     "mkdocs-material>=9.5.0",
@@ -99,6 +112,11 @@ ci = [
     "pip-audit>=2.7.0",
     "build>=1.2.0",
     "cyclonedx-bom>=6.0.0",
+    "coverage>=7.10.6",
+    # The ADR-064 conventions check and the complexity gate run these locked
+    # versions through `uv run --frozen --only-group ci`.
+    "grimp>=3.18",
+    "ruff>=0.15.0",
 ]
 
 # The PEP 517 build backend, locked like everything else. `--require-hashes`
@@ -151,6 +169,10 @@ build = [
 "techvault.aptl" = "aptl_techvault.verification:verifier"
 "techvault-participant-study.aptl" = "aptl_techvault.study:verifier"
 
+[project.entry-points."aptl.participant_desktop"]
+"techvault" = "aptl_techvault.participant_desktop:provider"
+"techvault-participant-study" = "aptl_techvault.study:participant_desktop"
+
 [project.entry-points."aptl.participant_mcp_smoke_plans"]
 "techvault-full.techvault" = "aptl_techvault.participant_smoke:FULL_TECHVAULT_SMOKE_OPERATIONS"
 "guided-purple.techvault-attacker-target" = "aptl_techvault.participant_smoke:PARTICIPANT_SMOKE_OPERATIONS"
@@ -160,8 +182,8 @@ packages = ["src/aptl", "src/aptl_techvault"]
 
 # Bundle the git-tracked lab-asset tree (docker-compose.yml, config/,
 # containers/, web/, scripts/, and the source that container images
-# build from) into the wheel under aptl/_labdata/ so `pipx install aptl-labs`
-# + `aptl lab init` runs a lab without a git clone (issue #659 / DEP-008).
+# build from) into the wheel under aptl/_labdata/ so `pipx install lilrae`
+# + `lilrae lab init` runs a lab without a git clone (issue #659 / DEP-008).
 # The hook ships only git-tracked files, which keeps generated secrets and
 # local state out of the distribution. See hatch_build.py.
 [tool.hatch.build.targets.wheel.hooks.custom]
@@ -171,6 +193,8 @@ path = "hatch_build.py"
 # Lint only the Python control-plane source. Tests, generated files, and
 # the (TypeScript) MCP / web trees are out of scope for this check.
 src = ["src"]
+# The standalone capture image uses Debian 13's Python, not the CLI interpreter.
+per-file-target-version = { "containers/kali-capture/broker.py" = "py313" }
 
 [tool.ruff.lint]
 # Intentionally narrow: this is a *complexity* gate, not a style linter —
@@ -185,20 +209,101 @@ select = ["C901"]
 # threshold (15); ratchet down over time as the backlog shrinks.
 max-complexity = 15
 
+[tool.ruff.lint.flake8-tidy-imports]
+# Optional extras (`s3`, `parquet`). Enrolled code imports them only inside
+# the function that uses them (ADR-064). TID253 and PLC0415 read this list
+# only when tools/check_architecture.py selects them.
+banned-module-level-imports = ["boto3", "pyarrow"]
+
 # [tool.ruff.lint.per-file-ignores] intentionally absent: the complexity
 # backlog is empty. Every function under `src/` is now gated at
 # max-complexity 15 with no carve-outs (issue #286). If a future change must
 # temporarily exempt a file, add the table back and record the offender in
 # ADR-010's backlog with its measured score.
 
+[tool.lilrae.architecture]
+# ADR-064 conventions check (tools/check_architecture.py). The check covers
+# only the enrolled packages and modules. A refactor issue adds the code that
+# it completes. Participant tool boundaries are enrolled by issue #1418.
+enrolled = ["aptl.core.participant_binding", "aptl.core.participant_tools", "aptl.core.agent_errors", "aptl.core.mcp_results", "aptl.backends.participant_tools"]
+# Core modules that scenario adapter plugins may import (#1515 adds them).
+extension-api = []
+# Ruff rules for enrolled code. UP042 is not selected: replacing a str-mixin
+# Enum with StrEnum changes the str() and format() output of its members.
+ruff-select = ["ANN", "DTZ", "F", "FAST002", "PLC0415", "SLF001", "TID253", "UP"]
+ruff-ignore = ["UP042"]
+
+# The layer of each module comes from its most specific entry. A refactor
+# that moves or adds code updates this map. Only the root package module
+# `aptl`, which holds the version, has no layer.
+[tool.lilrae.architecture.layers]
+entry = [
+    "aptl.api",
+    "aptl.cli",
+    "aptl.services",
+    "aptl.workbench.bootstrap",
+]
+application = [
+    "aptl.appliance",
+    "aptl.core._doctor_common",
+    "aptl.core._doctor_runtime",
+    "aptl.core._participant_desktop_endpoints",
+    "aptl.core._participant_desktop_files",
+    "aptl.core._participant_desktop_tls",
+    "aptl.core._port_bindings",
+    "aptl.core.appliance_boundary_inventory",
+    "aptl.core.collectors",
+    "aptl.core.continuity",
+    "aptl.core.doctor",
+    "aptl.core.execution",
+    "aptl.core.execution_boundary",
+    "aptl.core.exporter",
+    "aptl.core.flags",
+    "aptl.core.health",
+    "aptl.core.host_ports",
+    "aptl.core.hostenv",
+    "aptl.core.kill",
+    "aptl.core.lab",
+    "aptl.core.lifecycle_cleanup",
+    "aptl.core.lifecycle_enforce",
+    "aptl.core.mcp_ingress",
+    "aptl.core.participant_desktop",
+    "aptl.core.participant_hosts",
+    "aptl.core.snapshot",
+    "aptl.core.sysreqs",
+    "aptl.validation",
+    "aptl.workbench",
+]
+core = [
+    "aptl._asset_manifest",
+    "aptl.core",
+    "aptl.runtime_authority",
+]
+foundation = ["aptl.utils"]
+# Scenario adapter plugins. Each entry is one plugin.
+plugins = ["aptl_techvault"]
+
+# One entry for each external system. An adapter imports no other adapter.
+[tool.lilrae.architecture.layers.adapters]
+deployment = [
+    "aptl.core.certs",
+    "aptl.core.credentials",
+    "aptl.core.deployment",
+    "aptl.core.ephemeral_containers",
+    "aptl.core.services",
+    "aptl.core.suricata_seed",
+]
+raes = ["aptl.backends"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
+    "live_lab: operator-authorized checks against an existing lab (APTL_SMOKE=1)",
     "fuzz: property-based fuzz tests (run with: pytest -m fuzz)",
     "integration: tests that spawn subprocesses or read/write the filesystem; runnable by default but selectable via `pytest -m integration` or `pytest -m 'not integration'`",
 ]
-addopts = "-m 'not fuzz'"
+addopts = "-m 'not fuzz and not live_lab'"
 
 [tool.coverage.run]
 # Both top-level packages the wheel ships. `aptl_techvault` is a scenario

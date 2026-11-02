@@ -24,7 +24,7 @@ and staged dependencies. It requires the hardware fixture named in the
 16 GiB of memory, and 100 GiB of disk.
 
 For the developer preview only, you need Docker, Python 3.12 or newer, `pipx`,
-Node.js 20 or newer for the MCP servers, and an MCP-capable agent.
+Node.js 22.23.4+, 24.22.1+, or 26.12.1+ for the MCP servers, and an MCP-capable agent.
 
 On native Linux Docker Engine only, raise the memory-map limit that OpenSearch
 needs:
@@ -59,13 +59,13 @@ explicit inputs from that checkout:
 
 ```bash
 APTL_SOURCE=/absolute/path/to/aptl-checkout
-aptl lab init workshop
+lilrae lab init workshop
 cp -R "$APTL_SOURCE/scenarios" workshop/scenarios
 mkdir -p workshop/participant-profiles
 cp -R "$APTL_SOURCE/participant-profiles/guided-purple-v1" workshop/participant-profiles/
 cp workshop/participant-profiles/guided-purple-v1/aptl.json workshop/aptl.json
 cd workshop
-aptl lab start --scenario-path scenarios/techvault-attacker-target.sdl.yaml --yes
+lilrae lab start --scenario-path scenarios/techvault-attacker-target.sdl.yaml --yes
 ```
 
 A developer start may build or pull missing assets. The participant appliance
@@ -76,7 +76,7 @@ failure.
 ## 2. Verify the range is up [2]
 
 ```bash
-aptl lab status
+lilrae lab status
 docker exec aptl-wazuh-manager /var/ossec/bin/agent_control -l | grep -c Active
 ```
 
@@ -112,8 +112,7 @@ configuration, and switch to the `guided-blue` workbench:
 ```
 
 Confirm the exact indexer and Wazuh tool inventories. Network IDS, threat
-intelligence, case management, SOAR, and reverse-engineering MCPs must be
-absent. Never keep red and guided-blue MCPs in one process environment or
+intelligence, SOAR, and reverse-engineering MCPs must be absent. Never keep red and guided-blue MCPs in one process environment or
 client config.
 
 ## 4. Confirm the agent can reach Kali [3, 5]
@@ -226,13 +225,13 @@ agentic purple.
   loop.
 
 The full `techvault-operational` research stack is a separate follow-on. Its
-enterprise, web, MISP, TheHive, Cortex, Shuffle, and Suricata exercises are not
+enterprise, web, MISP, Shuffle, and Suricata exercises are not
 required participant-profile operations.
 
 ## Developer-preview clean reset
 
 ```bash
-aptl lab stop -v
+lilrae lab stop -v
 ```
 
 This is the clean inner reset measured by the participant profile. Disposable

@@ -54,8 +54,8 @@ The participant path is deliberately small:
    projection; and
 7. bind the attack, detection, and investigation to one run record.
 
-SMB enumeration, web SQL injection, MISP, TheHive, Cortex, Shuffle, Suricata,
-and the wider enterprise are optional research or facilitator material. They
+SMB enumeration, web SQL injection, MISP, Shuffle, Suricata, and the wider
+enterprise are optional research or facilitator material. They
 are not part of version 1 qualification.
 
 ## Derived runtime and participant surfaces
@@ -81,12 +81,32 @@ The participant profile composes the workbench contracts introduced by #821:
 
 The profile derives these surfaces from the workbench registry rather than
 copying them. The full `blue` workbench remains unchanged for research use.
-Case management, network IDS, SOAR, threat intelligence, and their bookmarks
-must be absent from a guided-purple participant session.
+Network IDS, SOAR, threat intelligence, and their bookmarks must be absent
+from a guided-purple participant session.
 
 Each enabled MCP qualification starts the real server, checks its exact
 workbench tool inventory, invokes a bounded backend operation, and validates
 the semantic result. Process health or tool discovery alone is insufficient.
+
+## Participant desktop
+
+The installed `aptl.participant_desktop` provider selects console, credential,
+guide and hostname references for the admitted pack. Core resolves those
+references against its SDL and the owned running resources. Set
+`LILRAE_PARTICIPANT_DESKTOP_ACCOUNT` to the existing participant account to
+publish its desktop. The guest units set this account for seat delivery.
+
+The account's `~/.config/aptl/desktop/` directory is private (`0700`), and its
+files are participant-owned (`0600`). `credentials.html` contains only authored
+`secret_fixture` logins; `guide.html` shows escaped guide text without scripts
+or remote resources. `consoles.txt` holds the resolved console URLs. The
+management handoff publishes `run-ready` after startup succeeds. A new admitted
+start, failed start, stop or reset withdraws the previous surface and marker.
+
+The Wazuh and indexer rule tools require the caller's single XML filename.
+They validate its shape and length before authentication. Replacement requires
+an explicit boolean `params.overwrite`; the generic tools hold no scenario
+filename default.
 
 ## Staged asset contract
 
@@ -123,7 +143,7 @@ hardware fixture, derived and actual runtime matrices, exact workbench/MCP/
 browser surfaces, readiness results, denied-egress counters, measurements,
 run record, and snapshot.
 
-`aptl lab qualify-profile --report <path> --public-key <path> --run-id <id>`
+`lilrae lab qualify-profile --report <path> --public-key <path> --run-id <id>`
 verifies the report's Ed25519 attestation against the qualification pipeline's
 trusted public key, verifies the content digests and correlation of its run
 record and range snapshot, re-derives the expected surface, evaluates every
@@ -143,7 +163,7 @@ report.
 ## Full research stack
 
 The packaged full TechVault scenario includes the enterprise, Suricata, MISP,
-TheHive, Cortex, Shuffle, and other systems. Its generated delivery profile
+Shuffle, and other systems. Its generated delivery profile
 declares a 32 GiB memory minimum. Its readiness or resource results are not
 evidence for `guided-purple`.
 

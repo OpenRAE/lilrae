@@ -7,12 +7,20 @@ Export is read-only over the run archive (ADR-050 "Export and projections are
 read-only after sealing"): the checksum manifest travels *inside* the archive as
 a synthetic member and is never written back into the source run directory,
 which for a sealed attempt is immutable.
+
+An archive carries restricted run evidence, so export creates a missing output
+directory with mode 0700 and the archive with mode 0600, whatever the umask.
+``lilrae runs export-bundle`` shares the default ``./exports`` directory and
+refuses a parent with group or other permission bits (issue #1282).
 """
 
+import errno
 import hashlib
 import io
 import json
+import os
 import tarfile
+import tempfile
 from pathlib import Path
 
 from aptl.core.archival.legacy_manifest import summarize_manifest
@@ -24,6 +32,33 @@ try:
     import boto3 as boto3
 except ImportError:
     boto3 = None  # type: ignore[assignment]
+
+#: Owner-only modes for the output directory export creates and for the archive.
+_EXPORT_DIR_MODE = 0o700
+_EXPORT_FILE_MODE = 0o600
+
+
+def _ensure_output_dir(output_dir: Path) -> None:
+    """Create a missing output directory owner-only; keep an existing one as is.
+
+    ``mkdir`` applies the umask to its mode, so the mode is set again afterwards,
+    as the evidence-bundle writer does for its own parent. An existing directory,
+    such as one named with ``--output-dir``, keeps the mode its owner chose.
+    """
+    if output_dir.is_dir():
+        return
+    output_dir.mkdir(mode=_EXPORT_DIR_MODE, parents=True, exist_ok=True)
+    output_dir.chmod(_EXPORT_DIR_MODE)
+
+
+def _restrict_open_archive(fd: int) -> None:
+    """Set mode 0600 on the temporary archive, independent of the umask.
+
+    ``mkstemp`` creates an owner-only file but still applies the process umask.
+    On Windows ``os.fchmod`` only sets the read-only flag, and there are no
+    group or other permission bits to drop.
+    """
+    os.fchmod(fd, _EXPORT_FILE_MODE)
 
 
 def _sha256_file(path: Path) -> str:
@@ -64,12 +99,35 @@ def _member_checksums(run_path: Path, members: list[str] | None) -> dict[str, st
     return {member: _sha256_file(run_path / member) for member in members}
 
 
+def _add_archive_members(
+    tar: tarfile.TarFile,
+    run_path: Path,
+    run_id: str,
+    members: list[str] | None,
+    checksums_bytes: bytes,
+) -> None:
+    """Add run evidence and its synthetic checksum manifest to the archive."""
+    if members is None:
+        tar.add(run_path, arcname=run_id)
+    else:
+        for member in members:
+            tar.add(run_path / member, arcname=f"{run_id}/{member}")
+    info = tarfile.TarInfo(name=f"{run_id}/checksums.sha256")
+    info.size = len(checksums_bytes)
+    info.mode = 0o600
+    tar.addfile(info, io.BytesIO(checksums_bytes))
+
+
 def export_local(
     store: "LocalRunStore",
     run_id: str,
     output_dir: Path,
 ) -> Path:
     """Export a run as a tar.gz archive with SHA-256 checksums.
+
+    The archive is written with mode 0600 and atomically replaces any previous
+    archive. A missing ``output_dir`` is created with mode 0700; an existing one
+    keeps its mode.
 
     Args:
         store: The run store containing the run data.
@@ -81,6 +139,8 @@ def export_local(
 
     Raises:
         FileNotFoundError: If the run directory does not exist.
+        OSError: If a symlink sits at the archive path, or the archive
+            cannot be written.
     """
     from aptl.core.runstore import LocalRunStore
 
@@ -88,7 +148,7 @@ def export_local(
     if not run_path.exists():
         raise FileNotFoundError(f"Run directory not found: {run_path}")
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    _ensure_output_dir(output_dir)
 
     # A sealed run is packaged as EXACTLY its verified seal inventory: the seal is
     # verified (marker shape/identity, manifest digest, and every inventory
@@ -107,16 +167,29 @@ def export_local(
     archive_name = f"{run_id}.tar.gz"
     archive_path = output_dir / archive_name
 
-    with tarfile.open(archive_path, "w:gz") as tar:
-        if members is None:
-            tar.add(run_path, arcname=run_id)
-        else:
-            for member in members:
-                tar.add(run_path / member, arcname=f"{run_id}/{member}")
-        info = tarfile.TarInfo(name=f"{run_id}/checksums.sha256")
-        info.size = len(checksums_bytes)
-        info.mode = 0o600
-        tar.addfile(info, io.BytesIO(checksums_bytes))
+    if archive_path.is_symlink():
+        raise OSError(
+            errno.ELOOP, "export archive must not be a symlink", str(archive_path)
+        )
+
+    # Never write new evidence into an older archive's inode: readers that
+    # opened a legacy 0644 file retain access even after its mode is tightened.
+    fd, candidate_name = tempfile.mkstemp(
+        prefix=f".{archive_name}.", suffix=".tmp", dir=output_dir
+    )
+    candidate = Path(candidate_name)
+    try:
+        with os.fdopen(fd, "wb") as raw:
+            _restrict_open_archive(raw.fileno())
+            # Naming the candidate preserves tarfile's self-exclusion when a
+            # legacy run is exported into a directory under its own run tree.
+            with tarfile.open(name=candidate, fileobj=raw, mode="w:gz") as tar:
+                _add_archive_members(tar, run_path, run_id, members, checksums_bytes)
+        # A destination symlink introduced after the check is replaced, never
+        # followed. Close the candidate first so replacement works on Windows.
+        os.replace(candidate, archive_path)
+    finally:
+        candidate.unlink(missing_ok=True)
 
     log.info("Exported run %s to %s (%d files)", run_id, archive_path, len(checksums))
     return archive_path
@@ -151,7 +224,8 @@ def export_s3(
     if boto3 is None:
         raise ImportError(
             "boto3 is required for S3 export. "
-            "Install it with: pip install aptl[s3]"
+            "Install it with: pipx inject lilrae boto3 "
+            '(source checkout: pip install -e ".[s3]")'
         )
 
     # Create local archive first

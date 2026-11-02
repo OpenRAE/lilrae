@@ -1,9 +1,11 @@
+import { knownToolFailure, markToolFailure } from '../lilrae-tool-outcome.js';
 
 
-import { SSHConnectionManager, SessionMetadata, SSHError } from '../ssh.js';
+import { SSHConnectionManager, SessionMetadata, SSHError, CommandTimeoutError } from '../ssh.js';
 import { LabConfig, getTargetCredentials } from '../config.js';
 import { ShellType } from '../shells.js';
-import { harvestSession } from '../captures.js';
+import { maybeHarvest } from './session-capture.js';
+import { harvestOnceClosed } from './timeout-harvest.js';
 
 /** Fallback message when a caught value is not an Error (SonarCloud S1192 —
  * the literal otherwise repeats in every handler's catch block). */
@@ -27,65 +29,10 @@ export function errorMessage(error: unknown): string {
  */
 function assertSessionIdContract(value: unknown): asserts value is string {
   if (typeof value !== 'string' || value.length === 0) {
-    throw new SSHError(`invalid session_id: must be a non-empty string`);
+    throw knownToolFailure(new SSHError(`invalid session_id: must be a non-empty string`));
   }
   if (value.includes('..')) {
-    throw new SSHError(`invalid session_id (contains '..'): ${JSON.stringify(value)}`);
-  }
-}
-
-/**
- * OBS-003 / ADR-033 / ADR-041: resolve the docker container the
- * close_session / close_all_sessions handlers harvest per-session captures
- * from, into `.aptl/runs/<run_id>/kali-side/<session_id>/` on the host.
- *
- * Per ADR-041 the capture sink may be owned by a dedicated sidecar that the
- * workload container does not mount (so a sudo-capable agent cannot read or
- * tamper with evidence). When `capture_container_name` is set, harvest targets
- * it (e.g. `aptl-kali-capture`); otherwise it falls back to the workload's own
- * `container_name`.
- *
- * Returns `undefined` when the lab is configured for an API-only target (no
- * container) or when the configKey is missing — those MCP servers don't ship
- * captures and harvest is a no-op.
- */
-export function resolveCaptureContainer(labConfig: LabConfig): string | undefined {
-  const key = labConfig.server.configKey;
-  if (!key || !labConfig.containers) return undefined;
-  const container = labConfig.containers[key];
-  if (!container) return undefined;
-  return container.capture_container_name ?? container.container_name;
-}
-
-/**
- * Run capture harvest for the named session, best-effort. Returns
- * `true` when harvest completed cleanly (or there was nothing to
- * harvest because the MCP isn't configured for captures), `false`
- * when the per-session Kali-side subtree was missing or harvest
- * otherwise failed — callers surface that as `harvest_warning` in
- * the tool result so the anomaly is visible to the tool caller
- * rather than just buried in MCP stderr (codex pre-push cycle 3
- * finding-2). Never throws.
- *
- * When `runId` is supplied, harvest uses it instead of re-reading
- * the active trace context at close time. Persistent sessions
- * capture their `run_id` at construction time and pass it here, so
- * a scenario rotation during a long-running session does not
- * cause the harvest to look under the wrong run dir (codex
- * pre-push cycle 3 finding-6).
- */
-async function maybeHarvest(
-  labConfig: LabConfig,
-  sessionId: string,
-  runId?: string,
-): Promise<boolean> {
-  const containerName = resolveCaptureContainer(labConfig);
-  if (!containerName) return true;
-  try {
-    return await harvestSession({ containerName, runId }, sessionId);
-  } catch (err) {
-    console.error('[captures] harvest threw:', err);
-    return false;
+    throw knownToolFailure(new SSHError(`invalid session_id (contains '..'): ${JSON.stringify(value)}`));
   }
 }
 
@@ -225,7 +172,7 @@ const baseHandlers: Record<string, ToolHandler> = {
       // captures out of the docker named volume now that the stream
       // has closed. Best-effort; failure logs to stderr and never
       // turns into a tool error.
-      await maybeHarvest(labConfig, result.sessionId);
+      await sshManager.harvestSession(result.sessionId, result.runId, () => maybeHarvest(labConfig, result.sessionId, result.runId));
 
       return {
         content: [
@@ -242,6 +189,10 @@ const baseHandlers: Record<string, ToolHandler> = {
         ],
       };
     } catch (error) {
+      markToolFailure(error);
+      if (error instanceof CommandTimeoutError) {
+        await harvestOnceClosed(error, (sessionId, runId) => sshManager.harvestSession(sessionId, runId, () => maybeHarvest(labConfig, sessionId, runId)));
+      }
       return {
         content: [
           {
@@ -298,6 +249,7 @@ const baseHandlers: Record<string, ToolHandler> = {
         ],
       };
     } catch (error) {
+      markToolFailure(error);
       return {
         content: [
           {
@@ -354,6 +306,7 @@ const baseHandlers: Record<string, ToolHandler> = {
         ],
       };
     } catch (error) {
+      markToolFailure(error);
       return {
         content: [
           {
@@ -396,6 +349,7 @@ const baseHandlers: Record<string, ToolHandler> = {
         ],
       };
     } catch (error) {
+      markToolFailure(error);
       return {
         content: [
           {
@@ -439,6 +393,7 @@ const baseHandlers: Record<string, ToolHandler> = {
         ],
       };
     } catch (error) {
+      markToolFailure(error);
       return {
         content: [
           {
@@ -473,7 +428,7 @@ const baseHandlers: Record<string, ToolHandler> = {
       // failure can't leave the session stuck in the manager.
       let harvestWarning: string | undefined;
       if (closed) {
-        const ok = await maybeHarvest(labConfig, session_id, boundRunId);
+        const ok = await sshManager.harvestSession(session_id, boundRunId, () => maybeHarvest(labConfig, session_id, boundRunId));
         if (!ok) {
           // Surface the anomaly to the tool caller, not just MCP
           // stderr (codex pre-push cycle 3 finding-2).
@@ -497,6 +452,7 @@ const baseHandlers: Record<string, ToolHandler> = {
         ],
       };
     } catch (error) {
+      markToolFailure(error);
       return {
         content: [
           {
@@ -522,7 +478,7 @@ const baseHandlers: Record<string, ToolHandler> = {
       // bypassed. The handler's catch block converts the thrown SSHError
       // into the standard error envelope, matching session_command and
       // close_session.
-      const output = sshManager.getSessionOutput(session_id, lines, clear);
+      const { chunks, droppedChunks } = sshManager.getSessionOutput(session_id, lines, clear);
 
       return {
         content: [
@@ -531,14 +487,19 @@ const baseHandlers: Record<string, ToolHandler> = {
             text: JSON.stringify({
               success: true,
               session_id,
-              output: output.join(''),
-              lines_returned: output.length,
-              buffer_cleared: clear
+              output: chunks.join(''),
+              lines_returned: chunks.length,
+              buffer_cleared: clear,
+              // #967: the buffer keeps only the newest output. Name the
+              // oldest chunks it dropped instead of returning a silently
+              // shortened buffer.
+              ...(droppedChunks > 0 ? { truncated: true, dropped_chunks: droppedChunks } : {}),
             }, null, 2),
           },
         ],
       };
     } catch (error) {
+      markToolFailure(error);
       return {
         content: [
           {
@@ -574,7 +535,7 @@ const baseHandlers: Record<string, ToolHandler> = {
       // sequential is fine and keeps stderr ordering deterministic.
       const harvestWarnings: string[] = [];
       for (const { sessionId, runId } of sessionBindings) {
-        const ok = await maybeHarvest(labConfig, sessionId, runId);
+        const ok = await sshManager.harvestSession(sessionId, runId, () => maybeHarvest(labConfig, sessionId, runId));
         if (!ok) {
           harvestWarnings.push(sessionId);
         }
@@ -600,6 +561,7 @@ const baseHandlers: Record<string, ToolHandler> = {
         ],
       };
     } catch (error) {
+      markToolFailure(error);
       return {
         content: [
           {

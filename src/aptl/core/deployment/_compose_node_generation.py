@@ -43,9 +43,11 @@ from aptl.core.deployment._compose_stateful_constants import (
 )
 from aptl.core.deployment._wazuh_identity import wazuh_cluster_identity
 from aptl.core.deployment.realization import (
+    DeploymentCompanionRealization,
     DeploymentImageRealization,
     DeploymentNodeRealization,
     DeploymentRealizationSpec,
+    companion_container_name,
 )
 from aptl.runtime_authority import DeploymentDockerAuthorityAdmission
 
@@ -126,7 +128,65 @@ def _render_services(
                 docker_authority_admission=admissions.get(node.address),
                 network_aliases=canonical_aliases.get(node.service_name, ()),
             )
+            for companion in node.backend_companions:
+                services[companion.image.service_name] = _render_companion(
+                    node, companion, services[node.service_name]
+                )
     return services
+
+
+#: Every companion runs with no capabilities, no privilege escalation, and a
+#: read-only root filesystem; it receives no authority beyond its owner's
+#: network namespace and its declared writable scratch paths.
+_COMPANION_HARDENING: dict[str, object] = {
+    "read_only": True,
+    "cap_drop": ["ALL"],
+    "security_opt": ["no-new-privileges:true"],
+}
+
+
+def companion_compose_contract(
+    node: DeploymentNodeRealization, companion: DeploymentCompanionRealization
+) -> dict[str, object]:
+    """Return the exact authority fields one companion service may carry."""
+
+    return {
+        "network_mode": f"service:{node.service_name}",
+        "tmpfs": list(companion.tmpfs),
+        **_COMPANION_HARDENING,
+    }
+
+
+def _render_companion(
+    node: DeploymentNodeRealization,
+    companion: DeploymentCompanionRealization,
+    owner: dict[str, object],
+) -> dict[str, object]:
+    """Render one companion that joins its owner's network namespace.
+
+    ``service:`` (not ``container:``) lets Compose order the companion after
+    its owner and recreate it with the owner. The labels name the owner; they
+    never carry ``aptl.node.address``, so node lookups cannot mistake the
+    companion for the SDL node.
+    """
+
+    service: dict[str, object] = {
+        "image": companion.image.image_ref,
+        "container_name": companion_container_name(
+            str(owner["container_name"]), companion.role
+        ),
+        "labels": {
+            "aptl.companion.of": node.address,
+            "aptl.companion.role": companion.role,
+        },
+        **companion_compose_contract(node, companion),
+    }
+    if companion.environment:
+        service["environment"] = dict(companion.environment)
+    for field in ("profiles", "restart"):
+        if field in owner:
+            service[field] = owner[field]
+    return service
 
 
 def _render_service(

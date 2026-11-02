@@ -2,7 +2,7 @@
 
 import json
 
-from aptl.workbench.mcp_results import redact_mcp_result
+from aptl.core.mcp_results import redact_mcp_result
 
 
 def result(value):

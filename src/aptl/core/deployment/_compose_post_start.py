@@ -76,7 +76,11 @@ class ComposeRealizationPostStartMixin(ComposeRuntimeOrchestrationObservationMix
                 realize_application_providers(self, realization.nodes)
             ),
             lambda: self._scenario_runtime_step(realization),
-            lambda: _failure_result(realize_forwarding_agents(self, realization.nodes)),
+            lambda: _failure_result(
+                realize_forwarding_agents(
+                    self, realization.nodes, realization.accounts
+                )
+            ),
             # After providers: an application provider starts the process that
             # binds its declared listener, so waiting any earlier waits for a
             # service nothing has started yet.
@@ -121,6 +125,14 @@ class ComposeRealizationPostStartMixin(ComposeRuntimeOrchestrationObservationMix
             for node in realization.nodes
             if node.container_name and not runtime_expects_completion(node.runtime)
         ]
+        # A backend companion serves part of its owner's declared surface, so
+        # the owner is not realized until its companions are healthy too.
+        ongoing.extend(
+            name
+            for node in realization.nodes
+            if node.container_name
+            for name in node.companion_containers()
+        )
         return wait_for_realized_health(
             self,
             ongoing,

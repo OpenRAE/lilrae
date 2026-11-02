@@ -579,22 +579,27 @@ def test_environment_probe_missing_config_fails_closed():
 # --------------------------------------------------------------------------- #
 
 
-def test_restart_policy_is_disclosed_from_daemon_state():
-    runtime = _runtime(operational_policy={"restart": "always"})
-    backend = _Backend({_CONTAINER: _inspect(restart="always")})
+@pytest.mark.parametrize("policy", ["always", "on-failure"])
+def test_restart_policy_is_disclosed_from_daemon_state(policy):
+    runtime = _runtime(operational_policy={"restart": policy.replace("-", "_")})
+    backend = _Backend({_CONTAINER: _inspect(restart=policy)})
 
     codes, _provenance, observations = _gate(runtime, backend, "runtime-restart-policy")
 
     assert codes == []
     assert (
         observations[_ADDRESS].concerns[CONCERN_PAYLOAD_PATH["runtime-restart-policy"]]
-        == "always"
+        == policy.replace("-", "_")
     )
 
 
-def test_restart_policy_mismatch_is_rejected():
-    runtime = _runtime(operational_policy={"restart": "always"})
-    backend = _Backend({_CONTAINER: _inspect(restart="unless-stopped")})
+@pytest.mark.parametrize(
+    ("expected", "observed"),
+    [("always", "unless-stopped"), ("on_failure", "no")],
+)
+def test_restart_policy_mismatch_is_rejected(expected, observed):
+    runtime = _runtime(operational_policy={"restart": expected})
+    backend = _Backend({_CONTAINER: _inspect(restart=observed)})
 
     codes, _provenance, _observations = _gate(
         runtime, backend, "runtime-restart-policy"
@@ -1125,7 +1130,8 @@ def test_wazuh_software_component_rejects_wrong_guest_version():
     assert _SOFTWARE_PATH not in observations[_ADDRESS].concerns
 
 
-def test_declared_package_is_disclosed_only_after_guest_query_matches():
+@pytest.mark.parametrize("explicitness", [ExplicitnessClass.EXACT, ExplicitnessClass.CONSTRAINED])
+def test_declared_package_is_disclosed_only_after_guest_query_matches(explicitness):
     runtime = _runtime(packages=[{"manager": "apt", "name": "curl", "version": "*"}])
     query = (
         "dpkg-query",
@@ -1137,7 +1143,7 @@ def test_declared_package_is_disclosed_only_after_guest_query_matches():
         exec_results={_CONTAINER: {query: (0, "ii \tcurl\t8.10.1-1\tamd64\t\n")}},
     )
 
-    codes, _provenance, observations = _gate(runtime, backend, "runtime-packages")
+    codes, _provenance, observations = _gate(runtime, backend, "runtime-packages", explicitness=explicitness)
 
     assert codes == []
     assert _PACKAGES_PATH in observations[_ADDRESS].concerns
@@ -1217,11 +1223,12 @@ def test_declared_package_with_no_provider_is_still_rejected():
     assert _PACKAGES_PATH not in observations[_ADDRESS].concerns
 
 
-def test_missing_declared_package_is_omitted_and_rejected():
+@pytest.mark.parametrize("explicitness", [ExplicitnessClass.EXACT, ExplicitnessClass.CONSTRAINED])
+def test_missing_declared_package_is_omitted_and_rejected(explicitness):
     runtime = _runtime(packages=[{"manager": "apt", "name": "curl", "version": "*"}])
     backend = _Backend({_CONTAINER: _inspect()})
 
-    codes, _provenance, observations = _gate(runtime, backend, "runtime-packages")
+    codes, _provenance, observations = _gate(runtime, backend, "runtime-packages", explicitness=explicitness)
 
     assert _PACKAGES_PATH not in observations[_ADDRESS].concerns
     assert _GATE_REJECT in codes
@@ -1372,7 +1379,8 @@ def test_mismatched_systemd_unit_state_is_omitted_and_rejected():
     assert _GATE_REJECT in codes
 
 
-def test_local_identity_is_disclosed_only_after_guest_account_readback():
+@pytest.mark.parametrize("explicitness", [ExplicitnessClass.EXACT, ExplicitnessClass.CONSTRAINED])
+def test_local_identity_is_disclosed_only_after_guest_account_readback(explicitness):
     runtime = _runtime(
         local_identity={
             "groups": [{"name": "analyst"}],
@@ -1400,7 +1408,7 @@ def test_local_identity_is_disclosed_only_after_guest_account_readback():
         },
     )
 
-    codes, _provenance, observations = _gate(runtime, backend, "runtime-local-identity")
+    codes, _provenance, observations = _gate(runtime, backend, "runtime-local-identity", explicitness=explicitness)
 
     assert codes == []
     assert (
@@ -1447,7 +1455,8 @@ def test_local_identity_observes_backend_selected_primary_group_and_membership()
     )
 
 
-def test_local_identity_group_mismatch_is_omitted_and_rejected():
+@pytest.mark.parametrize("explicitness", [ExplicitnessClass.EXACT, ExplicitnessClass.CONSTRAINED])
+def test_local_identity_group_mismatch_is_omitted_and_rejected(explicitness):
     runtime = _runtime(
         local_identity={
             "groups": [{"name": "analyst"}],
@@ -1475,7 +1484,7 @@ def test_local_identity_group_mismatch_is_omitted_and_rejected():
         },
     )
 
-    codes, _provenance, observations = _gate(runtime, backend, "runtime-local-identity")
+    codes, _provenance, observations = _gate(runtime, backend, "runtime-local-identity", explicitness=explicitness)
 
     assert (
         CONCERN_PAYLOAD_PATH["runtime-local-identity"]

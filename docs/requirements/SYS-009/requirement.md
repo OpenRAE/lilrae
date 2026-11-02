@@ -22,6 +22,12 @@ A security training lab that has poor code quality or leaks credentials undermin
 ## Traceability
 
 - IMPLEMENTS → CONFIG `eslint.config.js` (Root ESLint flat config: per-function TypeScript complexity gate (issue #286))
-- IMPLEMENTS → CONFIG `.pre-commit-ci.yaml` (Python and TypeScript complexity gates run by CI)
+- IMPLEMENTS → CONFIG `.pre-commit-ci.yaml` (Python and TypeScript complexity gates and the ADR-064 architecture check run by CI)
 - IMPLEMENTS → CONFIG `.github/workflows/checks.yml` (Continuous Python and TypeScript tests, pre-commit, and security checks)
 - DOCUMENTS → ADR `ADR-010` (ADR-010 SonarCloud quality: TypeScript complexity gate section + backlog)
+- IMPLEMENTS → CODE `tools/check_architecture.py` (ADR-064 layer, cycle, private-import, Typer, and Ruff checks for enrolled code)
+- IMPLEMENTS → CONFIG `pyproject.toml` (ADR-064 layer map, enrolled scope, and Ruff rules in [tool.lilrae.architecture])
+- TESTS → TEST `tests/test_check_architecture.py` (Activation and rejection of the ADR-064 checks on fixture trees)
+- TESTS → TEST `tests/test_sonar_project_properties.py` (SonarCloud ignore entries name existing files)
+- DOCUMENTS → ADR `ADR-064` (ADR-064 layered architecture and code conventions)
+- IMPLEMENTS → GITHUB_ISSUE `1510` (Record the target architecture and code conventions for the code quality refactor)

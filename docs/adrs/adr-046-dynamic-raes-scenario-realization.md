@@ -2,7 +2,7 @@
 
 ## Status
 
-accepted (amended 2026-07-31)
+accepted (amended 2026-10-31)
 
 ## Date
 
@@ -10,7 +10,7 @@ accepted (amended 2026-07-31)
 
 ## Last Updated
 
-2026-07-31
+2026-10-31
 
 ## Context
 
@@ -707,6 +707,117 @@ live gate proves users, groups, memberships, and declared attributes by querying
 the target through `DeploymentBackend` after `aptl lab stop -v && aptl lab
 start`.
 
+## Declared Fixture Credential Addendum
+
+Issue #1273 adopts raes-env-packs 6.3.1. That release declares each SOC console
+login as an SDL account with one authored `secret_fixture` credential binding.
+An authored fixture is scenario content: the SDL already carries the value, and
+the participant or attacker meets exactly that value. It is not a credential
+the backend generates, so the account addendum's no-plaintext rule applies to
+it as follows.
+
+- The account gate lowers one primary `secret_fixture` binding into
+  `DeploymentAccountRealization.credential`. The value is excluded from `repr`,
+  equality and `details()`, so evidence, snapshots, run records and logs name
+  only the `credential_id`. An `operator_secret` binding, several bindings, or a
+  mismatched auth method is refused, never substituted.
+- The account provider comes from the backend implementation that realizes the
+  node (`account_provider` on the implementation profile or base), not from the
+  node or service name. Samba AD sets a declared fixture through its stdin
+  `setpassword` path. Each application provider (OpenSearch security, Wazuh
+  API, MISP, TheHive, Cortex, Shuffle) sets or verifies the value inside the
+  serving container with every value on stdin, then proves it by
+  authenticating with it.
+- When the product's image accepts its bootstrap principal only through its
+  environment, the value reaches that environment through the startup adapter's
+  account reference (`AccountCredentialFixture`). Core resolves the reference
+  against the admitted SDL; the adapter holds no value.
+- Lab state persists no rendered credential. The participant desktop receives
+  the declared logins only in the participant account's private `0600` files.
+
+The manifest therefore advertises `credential_bindings` and `auth_method`.
+
+## Credential-Bearing Apply Result Addendum
+
+RAES gives a plan with account credential bindings a closed result contract
+(RAES `specs/sdl/account-credential-bindings.md`, section 6). RAES checks each
+returned entry against the submitted operation, and every returned value must
+equal the plan's. raes 7.0.0 compares the whole payload and keeps the plan's
+entry. raes 8.0.0 (OpenRAE/rae#1640) exempts an observed value at an admitted
+concern path from that comparison and keeps a safe projection of the observed
+value. The provisioner's snapshot follows that contract:
+
+- Each entry status names what the backend did with its operation: `applied`,
+  or `unchanged` for an unchanged operation. The evaluator reads both, and the
+  RAES default `ready`, as a realized node.
+- An unobserved concern that the plan admits at that address (an open,
+  constrained or exact authority, or a planned constraint) is still omitted, as
+  the Runtime Service and SEM-218 Execution Addendum requires. If the plan has
+  a value at that path and the snapshot omits it, the entry differs from the
+  plan and RAES refuses the whole result. A credential-bearing start therefore
+  fails unless the snapshot retains every admitted concern that has a plan value.
+  Materialization plans retain compiler-generated null and empty-string values
+  as absence when the concern's observation contract accepts them, without
+  claiming an observation. An invalid absence, such as a null capability policy,
+  is omitted so readback waits for a valid observation. Other plans omit an
+  unobserved concern even when its plan value is `null`.
+  RAES's authority check names some of these gaps, but not one whose plan value
+  is empty or `null`. So when that check reports nothing, realization readback
+  waits for any such omitted concern within its deadline. A concern still
+  omitted then fails the start with `aptl.provisioner.admitted-concern-unobserved`,
+  which names the address and concern kind.
+- An entry carries no `backend_evidence`, because the contract admits no
+  backend evidence key in an entry. The run outcome still carries the
+  source-image evidence.
+- A plan without account credential bindings keeps unobserved concerns omitted,
+  apart from compiler absence values retained for materialization. It keeps
+  source-image evidence in its entries unless materialization reporting requires
+  portable payloads; the run outcome retains that evidence in either case.
+
+### Exception to the #692 rule
+
+The Runtime Service and SEM-218 Execution Addendum says that APTL must not read
+a concern back from the plan, and that an unobserved concern does not fall back
+to the plan. It allows a plan value only in a non-concern field that the RAES
+reconciliation contract requires. This addendum makes one narrow exception at
+concern paths:
+
+- It applies only to a plan with account credential bindings and realization
+  authority.
+- It covers only a concern path that the plan closes, or that has no authority
+  at that address. RAES reads no observation there. Its closed-concern check
+  gives the same result whether the value is absent or equal to the plan, and
+  the closed result contract requires the plan's value.
+- There the snapshot keeps the plan's value. That value claims no
+  observation: it gets no observation disclosure and no realization
+  provenance.
+- An observed value always replaces the plan's. A closed concern observed with
+  a different value is still refused.
+
+Every other concern path, and every other plan, keeps the #692 rule.
+
+## Owner-Declared Image Content Addendum
+
+A bind mount keeps the host owner and mode. An image node can need a declared
+file with a different owner. Issue #1273 added an installer for this case.
+Issue #1422 adds a second installer for images that run as a non-root user.
+
+- The node's selected entrypoint names the installer. The content mounts read
+  the entrypoint and stage each file that the node inventory gives an owner.
+- `OWNED_CONTENT_INSTALLER` runs as root. It installs each file with its
+  declared owner, group, and mode.
+- `OWNED_CONTENT_IMAGE_USER_INSTALLER` runs as the image user. It installs each
+  file with its declared mode. It refuses an owner or group that is not the
+  current user or group. It never runs the image as root.
+- The image-user installer reads a staged copy at mode `0644`. The copy is in
+  an owner-only `0700` host directory, which protects it from other host users.
+- When the image entrypoint rewrites a declared file after start, the profile
+  runs the image entrypoint steps itself. Declared content then writes the file
+  last. The profile pins the image digest, so these steps do not change.
+
+The [issue #1422 design](../architecture/issue-1422-wazuh-dashboard-owned-config-design.md)
+records the threats, controls, and data flows.
+
 ## TechVault Operational Standup Addendum
 
 Issue #689 makes `scenarios/techvault-operational.sdl.yaml` the honest dynamic
@@ -1366,6 +1477,38 @@ extended with APTL mirrors.
   manifest, a `check_parity_manifest`-style gate check, or a
   represented/deferred contract) as a condition of the static or live
   validation gate.
+
+## Descendant recording and attestation addendum
+
+Issues #1128 and #1130 add cooperative creation recording on the existing Docker daemon.
+The maintainer selected recording without another authority enforcement policy.
+The host daemon and its configuration remain unchanged.
+Raw Docker authority remains host-root-equivalent.
+The recorder cannot prove complete coverage against a hostile holder that bypasses it.
+
+The deployment provider records native creation responses before returning them to holders.
+Canonical socket delegation preserves the recorded parent chain.
+Immutable creation records supplement `WorkspaceOwnership` and `ResourceReceipt`.
+Recorded native IDs authorize revalidated child observations, deadlines, and cleanup.
+Names, images, topology, and ordinary labels do not authorize adoption.
+Uncertain creation or inspection remains an explicit recording gap.
+
+RAES 8.1.0 owns portable membership admission, materialization archives, and SEM-218 provenance.
+The provisioner submits materialized SDL through the negotiated descendant and materialization contracts.
+It uses the original source, run scope, operation, predecessor, and attempt bindings.
+Later inventory refresh is read-only and uses `RuntimeManager.refresh_inventory()`.
+The final returned snapshot includes accepted later observations.
+The backend never edits the runtime-owned ledger or executable plan.
+
+The [owned descendant design](../architecture/issue-1130-owned-descendant-reporting-design.md) defines the recording boundary, data flows, and recovery behavior.
+Mutable native lifecycle records remain separate from sealed run evidence.
+The public native-evidence handoff retains immutable runtime state cuts and
+original materialization/archive bytes for restricted experiment collectors.
+Native observation and verified cleanup records remain backend-owned evidence.
+They neither grant resource authority nor replace runtime-derived provenance.
+The existing collector source and sealing interfaces retain those original bytes;
+participant-visible or byte-redacting bindings cannot consume the protected handoff.
+ADR-055's independent operator-grant policy remains proposed and outside this delivery.
 
 ## References
 

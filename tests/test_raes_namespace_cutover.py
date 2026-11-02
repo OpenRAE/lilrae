@@ -8,6 +8,7 @@ import tomllib
 from pathlib import Path
 
 import raes
+from packaging.specifiers import SpecifierSet
 
 PROJECT_ROOT = Path(__file__).parents[1]
 LEGACY_IMPORT_ROOTS = frozenset(
@@ -21,6 +22,12 @@ LEGACY_IMPORT_ROOTS = frozenset(
         "aces_sdl",
     }
 )
+REMOVED_RAES_BACKEND_ROOTS = frozenset(
+    {
+        "raes_backend_libvirt",
+        "raes_reference_backend",
+    }
+)
 IDENTITY_LEDGER = (
     PROJECT_ROOT
     / "docs"
@@ -31,21 +38,25 @@ IDENTITY_LEDGER = (
 KNOWN_PRIVATE_RAES_IMPORTS: set[tuple[str, str, str]] = set()
 
 
-def test_project_depends_on_exact_raes_release() -> None:
-    """The qualified backend and semantic freeze use the same RAES release."""
+def test_project_depends_on_the_raes_major_range() -> None:
+    """lilrae declares the minimum qualified RAES release and its major range.
+
+    The installed release must satisfy that range, so a non-breaking RAES
+    release installs without a lilrae change.
+    """
 
     project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
 
-    assert "raes==6.0.1" in project["project"]["dependencies"]
+    assert "raes>=10.2.0,<11" in project["project"]["dependencies"]
     assert all(
         not dependency.startswith("aces-sdl")
         for dependency in project["project"]["dependencies"]
     )
-    assert raes.__version__ == "6.0.1"
+    assert raes.__version__ in SpecifierSet(">=10.2.0,<11")
 
 
-def test_runtime_and_tests_do_not_import_removed_aces_packages() -> None:
-    """RAES 3.1 ships no compatibility aliases for the old Python packages."""
+def _source_and_test_imports_of(import_roots: frozenset[str]) -> list[str]:
+    """Return ``path:line:roots`` for every source or test import of the roots."""
 
     offenders: list[str] = []
     for root in (PROJECT_ROOT / "src", PROJECT_ROOT / "tests"):
@@ -58,14 +69,25 @@ def test_runtime_and_tests_do_not_import_removed_aces_packages() -> None:
                     imported = {node.module.split(".", 1)[0]}
                 else:
                     continue
-                legacy = sorted(imported & LEGACY_IMPORT_ROOTS)
-                if legacy:
+                matched = sorted(imported & import_roots)
+                if matched:
                     offenders.append(
                         f"{path.relative_to(PROJECT_ROOT)}:{node.lineno}:"
-                        + ",".join(legacy)
+                        + ",".join(matched)
                     )
+    return offenders
 
-    assert offenders == []
+
+def test_runtime_and_tests_do_not_import_removed_aces_packages() -> None:
+    """RAES 3.1 ships no compatibility aliases for the old Python packages."""
+
+    assert _source_and_test_imports_of(LEGACY_IMPORT_ROOTS) == []
+
+
+def test_runtime_and_tests_do_not_import_raes_concrete_backends() -> None:
+    """The release after RAES 7.0.0 removes its concrete backends (#1406)."""
+
+    assert _source_and_test_imports_of(REMOVED_RAES_BACKEND_ROOTS) == []
 
 
 def test_no_private_raes_imports_or_manifest_fallback_remain() -> None:
@@ -100,9 +122,7 @@ def test_no_private_raes_imports_or_manifest_fallback_remain() -> None:
             row["surface_id"]: row for row in csv.DictReader(stream, delimiter="\t")
         }
 
-    assert all(
-        not surface_id.startswith("raes-private-") for surface_id in rows
-    )
+    assert all(not surface_id.startswith("raes-private-") for surface_id in rows)
 
     manifest = (
         PROJECT_ROOT / "src" / "aptl" / "backends" / "raes_manifest.py"

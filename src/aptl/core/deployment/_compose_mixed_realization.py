@@ -14,6 +14,7 @@ from aptl.core.deployment._compose_base_container_realization import (
 from aptl.core.deployment._compose_runtime_orchestration import (
     realization_has_docker_authority,
 )
+from aptl.core.deployment._companion_realization import with_companion_services
 from aptl.core.deployment.realization import DeploymentRealizationSpec
 from aptl.core.deployment.observation import DeploymentObservationContext
 from aptl.core.lab_types import LabResult
@@ -135,8 +136,6 @@ class ComposeMixedRealizationMixin:
         compose_files: tuple[Path, ...] | None = None
         failure = self._validate_stateful_realization(realization)
         if failure is None:
-            failure = self._validate_stateful_compose_capability(realization)
-        if failure is None:
             failure = self._realize_stateful_prerequisites(
                 realization,
                 realization_root,
@@ -241,7 +240,7 @@ class ComposeMixedRealizationMixin:
                 build=build and not self._offline_staged,
                 compose_files=compose_files,
                 exclude_services=excluded_services,
-                only_services=services,
+                only_services=with_companion_services(realization, services),
                 scenario_root=scenario_root,
             )
             result = None if started.success else started

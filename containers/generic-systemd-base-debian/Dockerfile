@@ -9,7 +9,10 @@
 # `writable-cgroups`. The retired recipe booted this substrate `degraded`:
 # holding CAP_SYS_ADMIN made systemd attempt host operations
 # (dev-hugepages.mount, sys-fs-fuse-connections.mount, logind) that then failed.
-FROM debian:13@sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5
+# The official Python 3.14 image is Debian 13 (trixie) plus CPython 3.14 under
+# /usr/local. The APTL runtime closure requires Python 3.14 (RAES 9), which
+# Debian 13 does not package (issue #1407).
+FROM python:3.14-slim@sha256:c3e521df8b2b498a7a682e7e18676771cb80c6b75b8699af886b2d554ce40151
 # gnupg: debian:12 ships gpgv (verify-only) but not the full gpg binary
 # apt-key needs for some bookworm InRelease signature paths — without it,
 # a materialized node's own first `apt-get update` intermittently fails
@@ -23,10 +26,14 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
     && apt-get clean \
     && find /var/lib/apt/lists -mindepth 1 -delete
 COPY requirements/runtime.txt /tmp/aptl-runtime-requirements.txt
-RUN python3 -m venv /opt/aptl/venv \
+# The venv carries the locked pip. The base image's own pip is unpinned and
+# unused after that, so remove it together with its vendored certifi.
+RUN /usr/local/bin/python3.14 -m venv /opt/aptl/venv \
     && /opt/aptl/venv/bin/pip install --require-hashes \
         -r /tmp/aptl-runtime-requirements.txt \
-    && rm /tmp/aptl-runtime-requirements.txt
+    && /opt/aptl/venv/bin/python -c "import pip._vendor.msgpack as m; assert m.Unpacker.__module__ == 'pip._vendor.msgpack.fallback'" \
+    && rm /tmp/aptl-runtime-requirements.txt \
+    && /usr/local/bin/python3.14 -m pip uninstall --yes pip
 ENV PATH="/opt/aptl/venv/bin:${PATH}"
 # Ship no private keys; each container generates its own at boot (issue #1193).
 COPY containers/_host-identity /tmp/aptl-host-identity

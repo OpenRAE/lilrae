@@ -1,8 +1,8 @@
-"""`aptl lab init` command (DEP-008, issue #659).
+"""`lilrae lab init` command (DEP-008, issue #659).
 
 Kept in its own module so ``aptl/cli/lab.py`` stays the focused lifecycle
 facade (and under the file-size gate). Registered onto the ``lab`` Typer app
-by :func:`register`, so the command remains ``aptl lab init`` with no UX
+by :func:`register`, so the command remains ``lilrae lab init`` with no UX
 change.
 """
 
@@ -29,9 +29,9 @@ def init(
 
     Copies the bundled lab assets (docker-compose.yml, scenarios, config,
     containers, web, scripts, and the source that container images build
-    from) and writes a default aptl.json, so a `pipx install aptl-labs`
+    from) and writes a default aptl.json, so a `pipx install lilrae`
     can run a lab without cloning the repository (DEP-008). After it
-    finishes, run `aptl lab start` from the initialized directory.
+    finishes, run `lilrae lab start` from the initialized directory.
     """
     try:
         result = materialize(directory, force=force)
@@ -58,7 +58,8 @@ def init(
         )
     typer.echo("\nNext steps:")
     typer.echo(f"    cd {result.target_dir}")
-    typer.echo("    aptl lab start")
+    typer.echo("    Select scenario.identity and its source in aptl.json.")
+    typer.echo("    lilrae lab start")
 
 
 def register(app: typer.Typer) -> None:

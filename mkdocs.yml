@@ -90,6 +90,17 @@ nav:
     - Coding Standards: CODING_STANDARDS.md
   - Architecture:
     - Overview: architecture/index.md
+    - "Issue #1584 Go Cutover Branch Preflight": architecture/issue-1584-go-cutover-preflight.md
+    - "Issue #1510 Code Quality Architecture Preflight": architecture/issue-1510-code-quality-preflight.md
+    - "Issue #1510 Code Quality Architecture Design": architecture/issue-1510-code-quality-design.md
+    - "Issue #1372 Capture Spec Version Preflight": architecture/issue-1372-capture-spec-version-preflight.md
+    - "Issue #1372 Capture Spec Version Design": architecture/issue-1372-capture-spec-version-design.md
+    - "Issue #1121 Pack Boundary Preflight": architecture/issue-1121-pack-boundary-preflight.md
+    - Pack Boundary: architecture/pack-boundary-design.md
+    - Configuration Migration: reference/configuration-migration.md
+    - "Issue #1130 Runtime Realization Attestation Preflight": architecture/issue-1130-runtime-realization-attestation-preflight.md
+    - "Owned Descendant Reporting Design": architecture/issue-1130-owned-descendant-reporting-design.md
+    - "Issue #1413 Configured Pack Source Preflight": architecture/issue-1413-configured-pack-source-preflight.md
     - Networking: architecture/networking.md
     - Enterprise Infrastructure: architecture/enterprise-infrastructure.md
     - DEP-008 Self-Contained Lab Assets Preflight: architecture/dep-008-self-contained-lab-assets-preflight.md
@@ -102,6 +113,8 @@ nav:
     - "Issue #821 In-Appliance Participant Workbench Preflight": architecture/issue-821-participant-workbench-preflight.md
     - "Issue #823 Versioned Disposable Lab Appliance Preflight": architecture/issue-823-versioned-disposable-appliance-preflight.md
     - "Issue #1022 Appliance Seat Delivery Preflight": architecture/issue-1022-appliance-seat-delivery-preflight.md
+    - "Issue #1127 Seat Component Protection Preflight": architecture/issue-1127-seat-component-protection-preflight.md
+    - "Issue #1127 Seat Component Protection Design": architecture/issue-1127-seat-component-protection-design.md
     - "Issue #1186 Seat Privilege Preflight": architecture/issue-1186-seat-privilege-preflight.md
     - "Issue #845 RAES Hard-Rename Preflight": architecture/issue-845-raes-hard-rename-preflight.md
     - "Issue #934 APTL-To-LilRAE Rename Boundary Preflight": architecture/issue-934-rename-boundary-preflight.md
@@ -116,6 +129,7 @@ nav:
     - "Issue #949 Orborus Control Authority Preflight": architecture/issue-949-orborus-control-authority-preflight.md
     - "Issue #974 Shuffle Worker Docker And Image Realization Preflight": architecture/issue-974-shuffle-worker-docker-images-preflight.md
     - "Issue #951 Fresh Env-Pack Start Preflight": architecture/issue-951-fresh-env-pack-start-preflight.md
+    - "Issue #952 Failed-Start Recovery Preflight": architecture/issue-952-start-failure-recovery-preflight.md
     - "Issue #964 Backend Resource Ownership Preflight": architecture/issue-964-backend-resource-ownership-preflight.md
     - "Issue #969 Platform Safety Gates Preflight": architecture/issue-969-platform-safety-gates-preflight.md
     - "Issue #985 Owned Lab Fixture Preflight": architecture/issue-985-owned-lab-fixture-preflight.md
@@ -239,6 +253,8 @@ nav:
     - ADR-060 VM-Only Seat Containment: adrs/adr-060-vm-only-seat-containment.md
     - ADR-061 Browser Desktop for VM Seats: adrs/adr-061-gateless-vm-seat-access.md
     - ADR-062 LilRAE Name and Naming Convention: adrs/adr-062-lilrae-name-and-naming-convention.md
+    - ADR-063 Remove TheHive and Cortex: adrs/adr-063-remove-thehive-and-cortex.md
+    - ADR-064 Layered Architecture and Code Conventions: adrs/adr-064-layered-architecture-and-code-conventions.md
 
 extra:
   social:

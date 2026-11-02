@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from aptl.core.deployment._compose_base_substrate import BaseContainerSpec
     from aptl.core.deployment.realization import (
         DeploymentNetworkRealization,
-        DeploymentSpawnImageRequirement,
     )
 
 _DOCKER_TIMEOUT = 30
@@ -81,11 +80,22 @@ class ComposeResourceResolutionMixin:
         )
         if not candidates:
             raise OwnershipConflictError("container ownership is unrecorded")
+        native_id = self._verified_container_id(ownership, candidates)
+        if native_id is None:
+            raise OwnershipConflictError("container ownership is absent or ambiguous")
+        return native_id
+
+    def _verified_container_id(
+        self, ownership: WorkspaceOwnership, candidates: tuple[ResourceReceipt, ...]
+    ) -> str | None:
+        """Return the one recorded container that still verifies, or ``None``."""
+
         # Docker can briefly return an empty/failed inspect during a busy
         # first boot even though the immutable receipt and container still
         # exist. Repeat only that inconclusive read of the same native IDs.
         # A changed identity, label or semantic binding raises immediately;
         # retries never grant authority from a mutable name or missing receipt.
+        verified: tuple[str, ...] = ()
         for attempt, delay in enumerate((0, *_CONTAINER_INSPECT_RETRY_DELAYS)):
             if delay:
                 time.sleep(delay)
@@ -99,16 +109,19 @@ class ComposeResourceResolutionMixin:
                 if attempt == len(_CONTAINER_INSPECT_RETRY_DELAYS):
                     raise
                 continue
-            if len(verified) == 1:
-                return verified[0]
-            if len(verified) > 1:
+            if verified:
                 break
-        raise OwnershipConflictError("container ownership is absent or ambiguous")
+        if len(verified) > 1:
+            raise OwnershipConflictError("container ownership is absent or ambiguous")
+        return verified[0] if verified else None
 
     def _container_receipt_is_current(
         self, ownership: WorkspaceOwnership, receipt: ResourceReceipt
     ) -> bool:
         """Verify one recorded container against its current daemon object."""
+
+        if receipt.managed_by == "child":
+            return self._recorded_child_is_current(receipt)
 
         info = self._raw_container_inspect(receipt.native_id)
         if not info:
@@ -117,11 +130,7 @@ class ComposeResourceResolutionMixin:
             raise OwnershipConflictError("container native identity changed")
         config = info.get("Config")
         labels = config.get("Labels") if isinstance(config, dict) else None
-        isolated_child = bool(
-            receipt.managed_by == "child"
-            and getattr(self, "_attempt_isolated_docker_daemon", False)
-        )
-        if not isolated_child and not self._workspace_labels_match(ownership, labels):
+        if not self._workspace_labels_match(ownership, labels):
             raise OwnershipConflictError("container ownership labels changed")
         observed_name = str(info.get("Name", "")).removeprefix("/")
         if observed_name != receipt.external_name:
@@ -222,66 +231,6 @@ class ComposeResourceResolutionMixin:
         if not isinstance(info, dict):
             raise OwnershipConflictError("volume ownership is uninspectable")
         return info
-
-    def _remove_owned_containers(self, managed_by: str) -> list[str]:
-        """Remove recorded containers by verified native ID."""
-
-        try:
-            ownership = self._ensure_resource_ownership()
-            receipts = tuple(
-                receipt
-                for receipt in ownership.receipts("container")
-                if receipt.managed_by == managed_by
-            )
-            failures = []
-            for receipt in receipts:
-                if not self._raw_container_inspect(receipt.native_id):
-                    continue
-                native_id = self._resolve_owned_container_id(receipt.native_id)
-                if self._run(remove_container_command(native_id), timeout=60).returncode:
-                    failures.append("failed to remove receipt-owned container")
-            return failures
-        except (OwnershipConflictError, OSError):
-            return ["failed to establish container cleanup authority"]
-
-    def _remove_owned_volumes(self) -> list[str]:
-        """Remove only receipt-owned volumes that still verify on this daemon."""
-
-        try:
-            ownership = self._ensure_resource_ownership()
-            failures = []
-            for receipt in ownership.receipts("volume"):
-                if self._raw_volume_inspect(receipt.native_id):
-                    volume = self._resolve_owned_volume_name(receipt.native_id)
-                    if self._run(
-                        ["docker", "volume", "rm", volume], timeout=_DOCKER_TIMEOUT
-                    ).returncode:
-                        failures.append("failed to remove receipt-owned volume")
-                        continue
-                if self._raw_volume_inspect(receipt.native_id):
-                    failures.append("failed to verify receipt-owned volume removal")
-                    continue
-                ownership.retire_deleted_volume(receipt)
-            return failures
-        except (OwnershipConflictError, BackendTimeoutError, OSError):
-            return ["failed to establish volume cleanup authority"]
-
-    def _prepare_owned_cleanup(self) -> None:
-        """Verify cleanup authority, allowing a provably empty new namespace."""
-
-        ownership = self._ensure_resource_ownership()
-        daemon_id = self._docker_daemon_id or self._current_docker_daemon_id()
-        if daemon_id:
-            self._docker_daemon_id = daemon_id
-            self._verify_compose_namespace_is_owned(ownership, daemon_id)
-        elif any(
-            (
-                self._scoped_compose_container_ids(),
-                self._scoped_compose_network_ids(),
-                self._scoped_compose_volume_names(),
-            )
-        ):
-            raise OwnershipConflictError("backend daemon identity is unavailable")
 
     def _owned_base_container_id(
         self,
@@ -440,48 +389,3 @@ class ComposeResourceResolutionMixin:
                 managed_by="direct",
             )
         )
-
-    def _record_isolated_child_receipts(
-        self,
-        container_ids: tuple[str, ...],
-        requirement: DeploymentSpawnImageRequirement,
-    ) -> None:
-        """Bind children from an attempt-dedicated daemon to native IDs."""
-
-        ownership = self._ensure_resource_ownership()
-        daemon_id = self._ownership_daemon_id()
-        attempt_id = self._resource_attempt_id
-        if attempt_id is None:
-            raise OwnershipConflictError("backend attempt identity is unavailable")
-        for native_id in container_ids:
-            info = self._raw_container_inspect(native_id)
-            external_name = str(info.get("Name", "")).removeprefix("/")
-            if info.get("Id") != native_id or not external_name:
-                raise OwnershipConflictError("spawned-child native identity changed")
-            ownership.record(
-                ResourceReceipt(
-                    kind="container",
-                    native_id=native_id,
-                    external_name=external_name,
-                    semantic_name=requirement.template_id,
-                    node_address=requirement.node_address,
-                    workspace_id=ownership.workspace_id,
-                    project_name=ownership.project_name,
-                    daemon_id=daemon_id,
-                    attempt_id=attempt_id,
-                    managed_by="child",
-                )
-            )
-
-    def _remove_owned_attempt_containers(self, attempt_id: str) -> None:
-        """Best-effort rollback of IDs recorded for one failed attempt."""
-
-        ownership = self._ensure_resource_ownership()
-        for receipt in ownership.receipts("container"):
-            if receipt.attempt_id != attempt_id:
-                continue
-            try:
-                native_id = self._resolve_owned_container_id(receipt.native_id)
-                self._run(remove_container_command(native_id), timeout=60)
-            except (OwnershipConflictError, OSError):
-                continue

@@ -25,7 +25,6 @@ import pytest
 import yaml
 
 from aptl.core.deployment._compose_port_realization import compose_port_entry
-from tests.techvault_pack import realize_techvault_pack
 
 # Compose variable references (``${VAR}`` / ``${VAR:-default}``) can appear in a
 # port mapping — published host ports are parameterized so `aptl lab start` can
@@ -53,10 +52,8 @@ MANAGEMENT_SURFACES = [
     ("wazuh.indexer", 9200),
     ("wazuh.dashboard", 443),
     ("misp", 8443),
-    ("thehive", 9000),
     ("shuffle-frontend", 3443),
     ("shuffle-frontend", 3001),
-    ("cortex", 9001),
     ("aptl-otel-collector", 4317),
     ("aptl-otel-collector", 4318),
     ("aptl-tempo", 3200),
@@ -66,15 +63,10 @@ MANAGEMENT_SURFACES = [
     # exposed host becomes an open, known-cred relay (issue #668). The in-range
     # phishing path (kali -> victims) uses the docker networks, not these host
     # publishes, so loopback binding does not reduce attack realism.
-    ("mailserver", 25),
-    ("mailserver", 143),
-    ("mailserver", 587),
-    ("mailserver", 993),
     # The web API and UI are the operator's own control plane (ADR-039).
     ("aptl-web-api", 8400),
     ("aptl-web-ui", 3000),
     # The reverse-engineering workstation is defender tooling, not a target.
-    ("reverse", 2027),
 ]
 
 # The same boundary on the pinned TechVault pack's rendered publications. Its
@@ -87,10 +79,8 @@ RENDERED_MANAGEMENT_SURFACES = [
     ("wazuh-indexer", 9200),
     ("wazuh-dashboard", 443),
     ("misp", 8443),
-    ("thehive", 9000),
     ("shuffle-frontend", 3443),
     ("shuffle-frontend", 3001),
-    ("cortex", 9001),
 ]
 
 # Each checked model's fixture name, with the surfaces classified on it.
@@ -139,7 +129,7 @@ def compose() -> dict:
 
 
 @pytest.fixture(scope="module")
-def rendered(tmp_path_factory) -> dict:
+def rendered(released_techvault_realization) -> dict:
     """Every node publication the realization carries for the pinned TechVault pack.
 
     `aptl lab start` writes an image node's publications into the Compose port
@@ -147,9 +137,9 @@ def rendered(tmp_path_factory) -> dict:
     render these declarations, so each node is checked here whichever way it
     starts. Backend apparatus outside the realization, such as the
     operator-access relays, is checked in ``tests/test_operator_access.py``.
-    The pack is realized once per module, without Docker.
+    The pack is realized once per test session, without Docker.
     """
-    realization = realize_techvault_pack(tmp_path_factory.mktemp("rendered-techvault"))
+    realization = released_techvault_realization
     spec = realization.deployment_spec(sorted(realization.profiles))
     return {
         "services": {

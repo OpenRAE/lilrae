@@ -88,9 +88,57 @@ class ComposeSeedAttributionMixin:
         if inspect.returncode == 0:
             self._verify_existing_project_volume(logical_volume, volume, inspect.stdout)
         else:
+            self._retire_absent_volume_receipt(
+                logical_volume, volume, ownership=ownership, inspect=inspect
+            )
             self._create_project_volume(
                 logical_volume, volume, ownership=ownership, attempt_id=attempt_id
             )
+
+    def _retire_absent_volume_receipt(
+        self,
+        logical_volume: str,
+        volume: str,
+        *,
+        ownership: WorkspaceOwnership,
+        inspect: "subprocess.CompletedProcess[str]",
+    ) -> None:
+        """Retire the receipt of a volume removed outside ``stop -v``.
+
+        Volume names are reused across attempts, and only ``stop -v`` retires
+        their receipts. A receipt left for a volume that was deleted another
+        way would conflict with this attempt's receipt after the new volume
+        exists. Docker must report the volume as absent; any other inspect
+        failure keeps the receipt and refuses before creation.
+        """
+
+        try:
+            if not any(
+                receipt.native_id == volume for receipt in ownership.receipts("volume")
+            ):
+                return
+            # Absence proves nothing about a receipt recorded on another daemon.
+            receipts = tuple(
+                receipt
+                for receipt in ownership.candidates(
+                    volume, kind="volume", daemon_id=self._ownership_daemon_id()
+                )
+                if receipt.native_id == volume
+            )
+            if "no such volume" not in (inspect.stderr or "").lower():
+                log.error(
+                    "Inspect of receipt-owned volume %s failed (exit %s)%s",
+                    logical_volume,
+                    inspect.returncode,
+                    redacted_stderr_hint(inspect.stderr),
+                )
+                raise OwnershipConflictError("recorded volume absence is unproven")
+            for receipt in receipts:
+                ownership.retire_deleted_volume(receipt)
+        except OwnershipConflictError as exc:
+            raise BackendSeedError(
+                f"Named volume '{logical_volume}' has an unverifiable ownership receipt"
+            ) from exc
 
     def _verify_existing_project_volume(
         self, logical_volume: str, volume: str, raw_labels: str
@@ -108,7 +156,7 @@ class ComposeSeedAttributionMixin:
         log.error(
             "Named volume %s exists without Compose project attribution. "
             "Remove it with `docker volume rm %s` (seeded content is "
-            "recreated from checked-in sources) and rerun `aptl lab start`.",
+            "recreated from checked-in sources) and rerun `lilrae lab start`.",
             volume,
             volume,
         )

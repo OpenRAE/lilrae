@@ -1,7 +1,7 @@
 # Participant workbench
 
 The optional workbench uses the same packaged **full TechVault** deployment as
-normal local `aptl lab start`. It requires neither a VM nor appliance metadata
+normal local `lilrae lab start`. It requires neither a VM nor appliance metadata
 for local use. [ADR-059](../adrs/adr-059-canonical-techvault-delivery-and-host-mcp-access.md)
 extends ADR-049 with authenticated host CLI access; appliance delivery retains
 its signed boundary and qualification gates.
@@ -11,7 +11,7 @@ workbench access to its own exact acquired pack identity.
 | Role | MCP servers | Browser surfaces |
 | --- | --- | --- |
 | `red` | `aptl-red` | Packaged guide and captured Kali command terminal |
-| `blue` | `aptl-indexer`, `aptl-wazuh`, `aptl-network`, `aptl-threatintel`, `aptl-casemgmt`, `aptl-soar` | Guide, Wazuh, TheHive, MISP, Shuffle |
+| `blue` | `aptl-indexer`, `aptl-wazuh`, `aptl-network`, `aptl-threatintel`, `aptl-soar` | Guide, Wazuh, MISP, Shuffle |
 
 `guided-blue` remains available for the historical guided fixture. It is not
 the full-TechVault delivery profile. The Kali surface is a command terminal

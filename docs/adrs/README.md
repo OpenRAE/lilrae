@@ -29,9 +29,9 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [005](adr-005-docker-compose-profiles.md) | Docker Compose Profiles for Selective Deployment | accepted | 2025-09-01 |
 | [006](adr-006-four-network-segmentation.md) | Four-Network Segmentation Architecture | accepted | 2026-02-07 |
 | [007](adr-007-python-cli-control-plane.md) | Python CLI as Primary Control Plane | accepted | 2026-02-07 |
-| [008](adr-008-soc-stack-integration.md) | Integrated SOC Stack (MISP, TheHive, Cortex, Shuffle, Suricata) | accepted | 2026-02-22 |
+| [008](adr-008-soc-stack-integration.md) | Integrated SOC Stack (MISP, TheHive, Cortex, Shuffle, Suricata) | superseded in part by ADR-063 | 2026-02-22 |
 | [009](adr-009-scenario-engine.md) | Scenario Engine with YAML Specs and Run Archive Collectors | accepted | 2026-03-02 |
-| [010](adr-010-sonarcloud-quality.md) | SonarCloud for Continuous Code Quality | accepted | 2026-03-07 |
+| [010](adr-010-sonarcloud-quality.md) | SonarCloud for Continuous Code Quality | superseded in part by ADR-064 | 2026-03-07 |
 | [011](adr-011-web-ui.md) | Notebook-Style Web UI (SvelteKit + FastAPI) | proposed | 2026-03-20 |
 | [012](adr-012-opentelemetry-integration.md) | OpenTelemetry Integration | accepted | 2026-03-21 |
 | [013](adr-013-deployment-abstraction.md) | Deployment Backend Abstraction Layer | accepted | 2026-03-22 |
@@ -62,7 +62,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [038](adr-038-docs-style-lint-and-published-site.md) | Documentation Style Lint and Published Docs Site | accepted | 2026-06-11 |
 | [039](adr-039-web-control-plane-authentication.md) | Web Control Plane Authentication and Loopback Exposure | accepted | 2026-06-14 |
 | [040](adr-040-terminal-ssh-host-key-verification-boundary.md) | Terminal SSH Host-Key Verification Boundary | accepted | 2026-06-13 |
-| [041](adr-041-kali-capture-sidecar-ownership-boundary.md) | Kali Capture Sidecar Ownership Boundary (PTY-typescript residual superseded by ADR-042) | accepted (amended) | 2026-06-20 |
+| [041](adr-041-kali-capture-sidecar-ownership-boundary.md) | Kali Capture Sidecar Ownership Boundary (PTY-typescript residual superseded by ADR-042; audit and process-accounting ownership withdrawn by the #1328 update) | accepted (amended) | 2026-06-20 |
 | [042](adr-042-sidecar-owned-pty-master.md) | Sidecar-Owned PTY Master for Kali Transcript Authenticity | accepted | 2026-06-20 |
 | [043](adr-043-suricata-runtime-config-ownership-boundary.md) | Suricata Runtime Config Ownership Boundary | accepted | 2026-06-20 |
 | [044](adr-044-raes-aligned-run-reproducibility-record.md) | RAES-Aligned Run Reproducibility Record | accepted | 2026-06-25 |
@@ -83,4 +83,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [059](adr-059-canonical-techvault-delivery-and-host-mcp-access.md) | Canonical TechVault Delivery and Host MCP Access | superseded in part by ADR-060 and ADR-061 | 2026-09-17 |
 | [060](adr-060-vm-only-seat-containment.md) | VM-Only Seat Containment | superseded in part by ADR-061 | 2026-09-20 |
 | [061](adr-061-gateless-vm-seat-access.md) | Browser Desktop for VM Seats | accepted | 2026-09-30 |
-| [062](adr-062-lilrae-name-and-naming-convention.md) | LilRAE Name and Naming Convention for New Code | accepted | 2026-10-05 |
+| [062](adr-062-lilrae-name-and-naming-convention.md) | LilRAE Name and Naming Convention for New Code | superseded in part by ADR-064 | 2026-10-05 |
+| [063](adr-063-remove-thehive-and-cortex.md) | Remove TheHive and Cortex from the TechVault SOC Stack | accepted | 2026-10-30 |
+| [064](adr-064-layered-architecture-and-code-conventions.md) | Layered Architecture and Code Conventions | accepted | 2026-10-31 |
+| [065](adr-065-executable-participant-action-boundaries.md) | Executable Participant Action Boundaries | proposed | 2026-10-31 |

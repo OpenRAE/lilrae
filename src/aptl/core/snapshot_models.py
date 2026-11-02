@@ -109,7 +109,7 @@ class RangeSnapshot(object):
         """Convert to a JSON-serializable dictionary.
 
         Sensitive fields (service credentials, API tokens, etc.) are
-        redacted at this boundary so every caller — `aptl lab status
+        redacted at this boundary so every caller — `lilrae lab status
         --json`, `--output`, future archive writers — gets the same safe
         shape. See ADR-012 § Security Guardrail.
         """

@@ -37,7 +37,7 @@ The range spans four Docker networks:
 
 | Zone | CIDR | What lives there |
 |---|---|---|
-| Security | 172.20.0.0/24 | Wazuh (manager, indexer, dashboard), Suricata, MISP, TheHive, Cortex, Shuffle SOAR, observability, reverse-engineering host |
+| Security | 172.20.0.0/24 | Wazuh (manager, indexer, dashboard), Suricata, MISP, Shuffle SOAR, observability, reverse-engineering host |
 | DMZ | 172.20.1.0/24 | Vulnerable webapp, mail server, DNS |
 | Internal | 172.20.2.0/24 | Samba AD DC, PostgreSQL, Samba file share, victim host, developer workstation |
 | Red Team | 172.20.4.0/24 | Kali attack platform and capture sidecar |
@@ -54,8 +54,7 @@ Wazuh SIEM (manager, OpenSearch indexer, and dashboard) with active response;
 Suricata IDS running passively, with prevention driven through Wazuh active
 response per [ADR-019](../adrs/adr-019-suricata-ids-only-prevention-via-wazuh-ar.md);
 MISP threat intelligence (with its MariaDB and Redis backends plus a Suricata
-IOC sync); TheHive case management (backed by Cassandra and Elasticsearch)
-alongside Cortex; Shuffle SOAR (backend, frontend, orborus, and OpenSearch); and
+IOC sync); Shuffle SOAR (backend, frontend, orborus, and OpenSearch); and
 an OpenTelemetry collector feeding Tempo and Grafana. Eight monitored hosts --
 the web app, domain controller, DNS, file share, victim, workstation, database,
 and Suricata -- each run their own enrolled Wazuh agent and keep their
@@ -75,8 +74,6 @@ and then reconfigure it.
 | 443 | Wazuh dashboard |
 | 8080 | TechVault web app |
 | 8443 | MISP UI |
-| 9000 | TheHive UI |
-| 9001 | Cortex UI |
 | 9200 | Wazuh indexer (OpenSearch API) |
 | 55000 | Wazuh manager API |
 | 3443, 3001 | Shuffle SOAR UI |
@@ -131,7 +128,7 @@ by the scenario's realization scopes. TechVault's native evidence paths do not
 require OTel, so its normal startup omits that optional stack.
 
 From a matching source checkout, select a research fixture with
-`aptl lab start --scenario-path scenarios/<fixture-id>.sdl.yaml`. See
+`lilrae lab start --scenario-path scenarios/<fixture-id>.sdl.yaml`. See
 [Curated RAES Variants](../sdl/techvault-curated-variants.md) for the full
 authoring and proof detail.
 

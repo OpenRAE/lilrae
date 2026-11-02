@@ -9,6 +9,144 @@ This file is maintained by [release-please](https://github.com/googleapis/releas
 from Conventional Commit messages; release sections are generated on release,
 not hand-edited in PRs.
 
+## [8.2.0](https://github.com/OpenRAE/lilrae/compare/v8.1.0...v8.2.0) (2026-10-28)
+
+
+### Features
+
+* acquire packs from configured release directories ([634de21](https://github.com/OpenRAE/lilrae/commit/634de217e850bee8bdc3447f0db577ef26c661af))
+* acquire packs from configured release directories ([d9904be](https://github.com/OpenRAE/lilrae/commit/d9904be0dc10439369bfd8af18c783ec086e784a))
+* enforce explicit pack boundaries and host requirements ([7da81b9](https://github.com/OpenRAE/lilrae/commit/7da81b900ec97b450de544f4960984f88b737f4b))
+* enforce explicit pack boundaries and host requirements ([abfc588](https://github.com/OpenRAE/lilrae/commit/abfc5883533bf493989b089153ed9ad4a388f99d))
+* rename the CLI to lilrae and deprecate aptl until 10.0.0 ([d7a5328](https://github.com/OpenRAE/lilrae/commit/d7a5328e2f0fa789c8a2043ffc498a968c0fc2fb))
+* rename the CLI to lilrae and deprecate aptl until 10.0.0 ([20c54fa](https://github.com/OpenRAE/lilrae/commit/20c54fa4a3aa0a14a25279b8b05a059647c83ffd))
+* resolve participant desktops through pack adapters ([48c501b](https://github.com/OpenRAE/lilrae/commit/48c501badc93dd2a9fd7112450246f5f66bc6f58))
+* resolve participant desktops through pack adapters ([c5b9051](https://github.com/OpenRAE/lilrae/commit/c5b90519ec22ecf5e115fe44795d8d9dbcb82f23))
+* support independently released family adapters ([49c30f8](https://github.com/OpenRAE/lilrae/commit/49c30f8672ee623bb8e43eedaddbde344b6fe846))
+* support independently released family adapters ([8b8ae97](https://github.com/OpenRAE/lilrae/commit/8b8ae9744a68e34f02d0d920e54c5deddf5a0fef))
+
+
+### Bug Fixes
+
+* align admission ordering and shipped profile contracts ([81572d0](https://github.com/OpenRAE/lilrae/commit/81572d0622ea21eada7d5b5ed222620576d38668))
+* align the clean-install test and docs prose with lilrae ([bec9f81](https://github.com/OpenRAE/lilrae/commit/bec9f81edee49c3b8c9809e6fb438faa35444677))
+* **api:** keep relaying terminal input after a malformed websocket frame ([6bfaa51](https://github.com/OpenRAE/lilrae/commit/6bfaa5198335a464fcdbf7bdeb7a5d438c4bb67e))
+* backport Caddy JOSE security protections ([6397d7a](https://github.com/OpenRAE/lilrae/commit/6397d7a96d54840eaa8ade9cdc930f08ae2ae1c6))
+* backport Caddy JOSE security protections ([67475c7](https://github.com/OpenRAE/lilrae/commit/67475c7d893a7658cc823cffd954e8b5a67159ca))
+* **deps:** upgrade certifi to 2026.10.19 for GHSA-6q48-6c7w-9gw2 ([d8ed018](https://github.com/OpenRAE/lilrae/commit/d8ed018eaf28081672460e3fe08d5ac598f4f88d))
+* **deps:** upgrade the MCP SDK to 1.32.1 and hono to 4.13.13 in every MCP server ([807e83d](https://github.com/OpenRAE/lilrae/commit/807e83d86ea5d4b05476e149f11b7515a1d544b5))
+* hand off runtime ownership for evidence and participant phases ([34bdae2](https://github.com/OpenRAE/lilrae/commit/34bdae24cbd5aafcb3ea5005d2724af602a62995))
+* install wazuh dashboard config as the image user ([dd93c5d](https://github.com/OpenRAE/lilrae/commit/dd93c5d14c71dfa4728398e85d1676e6e2f723f1))
+* install Wazuh Dashboard config as the image user ([889e5a1](https://github.com/OpenRAE/lilrae/commit/889e5a175c7c35f5c08238620f806088bba9abaf))
+* make JSON escape bounds explicit ([23b7c55](https://github.com/OpenRAE/lilrae/commit/23b7c5506b514924dd08b4001df8ad90e4084ba0))
+* **mcp:** bound the shutdown trace flush so sigterm does not wait out export retries ([191f7bb](https://github.com/OpenRAE/lilrae/commit/191f7bba03c9503c399bde0e64714aabd47aa002))
+* **mcp:** harvest a timed-out run_command's captures once its channel closes ([a57e1c2](https://github.com/OpenRAE/lilrae/commit/a57e1c2f91134556cb5e0fb1b421180e8ca2c606))
+* **mcp:** resolve the lab config path with fileURLToPath so servers start from a path with spaces ([9a2e22a](https://github.com/OpenRAE/lilrae/commit/9a2e22ae205a6c9bd58fb468e8c8083881fa2dbb))
+* patch exposed Node.js runtimes ([cad3c6e](https://github.com/OpenRAE/lilrae/commit/cad3c6efc84975aa0f912c06675ebc3defe10e76))
+* patch exposed Node.js runtimes ([5261bce](https://github.com/OpenRAE/lilrae/commit/5261bce52f391f6d69e6b5f2d22153b919cbd683))
+* preserve npm dependency replacements in image layers ([2e63165](https://github.com/OpenRAE/lilrae/commit/2e63165c436b0f6d05e34e383e6543f9130e6f4a))
+* preserve system temporary directory aliases during pack staging ([137169c](https://github.com/OpenRAE/lilrae/commit/137169cebb8ae5d3edc1cc1aded8260d9f513818))
+* **raes:** keep backend evidence out of credential-bearing entries ([d5d57dd](https://github.com/OpenRAE/lilrae/commit/d5d57ddbd85c6bf2351b2e2c01e6b351ae9c1058))
+* **raes:** meet the closed credential result contract ([3a8364c](https://github.com/OpenRAE/lilrae/commit/3a8364cb38d0dfdf3f7f1af751784a8768a6605e))
+* **raes:** meet the closed credential result contract ([b0a2c3b](https://github.com/OpenRAE/lilrae/commit/b0a2c3bb1fabcd3bffb07804ad872a271b0e94bf))
+* re-inspect a restarting node during network reconciliation ([84cd6d0](https://github.com/OpenRAE/lilrae/commit/84cd6d05de5be46ddd280a9a43c945c752250e01))
+* re-inspect a restarting node during network reconciliation ([8904018](https://github.com/OpenRAE/lilrae/commit/890401828ac2901c3e23d3c4b388acb663f03625))
+* read Cortex migration readiness in the declared administrator's session ([a008c26](https://github.com/OpenRAE/lilrae/commit/a008c2637efe146e76669da049323d2b9464389d))
+* read Cortex migration readiness in the declared administrator's session ([4cf33dc](https://github.com/OpenRAE/lilrae/commit/4cf33dc69914afbbfc36cd1ecd21f4415d72b798))
+* reconcile Node runtime files with inventory ([6afed17](https://github.com/OpenRAE/lilrae/commit/6afed1773ee02a59374503203505f10d7ef5da34))
+* recover Shuffle backend after OpenSearch timeouts ([a9fafb6](https://github.com/OpenRAE/lilrae/commit/a9fafb69e3c14fce9c3bbb205526e0c2f4e02876))
+* recover Shuffle backend after OpenSearch timeouts ([688fb34](https://github.com/OpenRAE/lilrae/commit/688fb343308285f68f257856ce77f666f81a86a7))
+* refresh participant profile dependency lock digests ([7f7fa9b](https://github.com/OpenRAE/lilrae/commit/7f7fa9b677b20bb038d002d918563b823bf78530))
+* refresh participant profile dependency lock digests for the MCP SDK upgrade ([3b0767d](https://github.com/OpenRAE/lilrae/commit/3b0767dd23680a5c94286e935c4b3e29c3728626))
+* refuse an unset dashboard indexer login ([29ce4c0](https://github.com/OpenRAE/lilrae/commit/29ce4c0c9449c56d08c7d4f27f3f37fabaa6efa6))
+* release runtime manager ownership before the backend retry ([f1d754a](https://github.com/OpenRAE/lilrae/commit/f1d754a918c7f605b3984e8540b18c79b3c7b4eb))
+* release runtime manager ownership before the backend retry ([58f66ba](https://github.com/OpenRAE/lilrae/commit/58f66bab7ed5d1a36fdc2a6bb6501c8dd2521738))
+* remove unused planning observation import ([1f9d231](https://github.com/OpenRAE/lilrae/commit/1f9d23107bfa438895a53155206a47a3a0093728))
+* repair artifact validation and security scan failures ([4309924](https://github.com/OpenRAE/lilrae/commit/43099248bd8102e3a3d1f1b7944c999113b4081a))
+* repair hosted compatibility and dependency checks ([9a5bd90](https://github.com/OpenRAE/lilrae/commit/9a5bd90b56fd292b03e0b03d21d1d315ca3cb8f0))
+* resolve promotion check failures ([9dbbd03](https://github.com/OpenRAE/lilrae/commit/9dbbd032df6d7e1148004909e5de0111e7e6cf77))
+* resolve security gates and preserve resumed runtime state ([5f7b952](https://github.com/OpenRAE/lilrae/commit/5f7b952297b4003334c8b6df65d8d7e3242f8cba))
+* restore transcript finalization scope ([f5bba93](https://github.com/OpenRAE/lilrae/commit/f5bba936e79d63b10d299cc1103ccc0379ddf4e4))
+* **scripts:** judge only this run's outcome in the wazuh active-response test scripts ([87e9f2b](https://github.com/OpenRAE/lilrae/commit/87e9f2bad805dba67594aa7d7155a2c94b22022a))
+* **seat:** emit the bounded seat error from aptl seat status and open-kiosk ([cd4604b](https://github.com/OpenRAE/lilrae/commit/cd4604b847a6c7b35cb4760d8c901b5b4998a5c8))
+* **seat:** request the pull token from the registry's advertised realm ([e87ddc0](https://github.com/OpenRAE/lilrae/commit/e87ddc09f0ff120b7ee7d08022af89997584cbeb))
+* share the project-dir help text and cover the alias launchers in unit tests ([3517e2c](https://github.com/OpenRAE/lilrae/commit/3517e2c3af0f986778d89fd81ede3248f4075f56))
+* simplify migration and startup validation ([ce4389f](https://github.com/OpenRAE/lilrae/commit/ce4389fe1db286886d7ef6e21f0e6da332bc5481))
+* update virtualenv to address activation prompt vulnerability ([7973657](https://github.com/OpenRAE/lilrae/commit/797365789dbb59025a56924dc28dd44caea2f68f))
+* update vulnerable dependencies and bundled image packages ([6365fdd](https://github.com/OpenRAE/lilrae/commit/6365fddf20c718accfbaa80b14de38e38389a23c))
+* use minimum certificate name selection (Sonar cycle 2) ([8777fe5](https://github.com/OpenRAE/lilrae/commit/8777fe5a248a55f29c3235234bda600cbbc52d08))
+* use scoped type parameters in participant desktop validation ([2ae2e70](https://github.com/OpenRAE/lilrae/commit/2ae2e70b0cd0343c6defdc10272c36721b228214))
+* verify desktop TLS and resolve Sonar findings (cycle 1) ([8f859ce](https://github.com/OpenRAE/lilrae/commit/8f859ce97b7ea43ca90a95a7f0615dd39b0ac6b5))
+
+
+### Performance Improvements
+
+* give Python verification margin with three balanced groups ([981801a](https://github.com/OpenRAE/lilrae/commit/981801a3c342e1507f729dd1db74c4c0f67a4129))
+* reduce CI cycle time and prune redundant tests ([7aae474](https://github.com/OpenRAE/lilrae/commit/7aae474cbef7e89b24c748e760c60059f9200ad8))
+* reduce CI cycle time and prune redundant tests ([378f530](https://github.com/OpenRAE/lilrae/commit/378f530866794ca63a435525a55b7cd2aec38967))
+* remove repeated acquisition from startup and pack tests ([ef9fa93](https://github.com/OpenRAE/lilrae/commit/ef9fa93294f723e123cf68c4655806507cd76428))
+* split retained Python cases and combine complete coverage ([667f34d](https://github.com/OpenRAE/lilrae/commit/667f34d009c3d7e7fd099d730a3e6b2ba9f0d99e))
+* trial bounded worker coverage and consolidate scenario checks ([519e8d6](https://github.com/OpenRAE/lilrae/commit/519e8d6bae4544b06665c830ee4591424e2cd75d))
+
+
+### Documentation
+
+* add issue 1424 architecture notes to the tracked-file ledger ([c8842f5](https://github.com/OpenRAE/lilrae/commit/c8842f5a4c3e8d5a39314129c823277df9dd04ce))
+* add the issue 1406 preflight to the tracked file inventory ([9d4cd1e](https://github.com/OpenRAE/lilrae/commit/9d4cd1e88a9fbd4900d403bd50816a3379f2a776))
+* **adr:** record that the kali capture sidecar no longer owns audit or process accounting ([56446c9](https://github.com/OpenRAE/lilrae/commit/56446c905f960c1d12c9eb1d8bce79f8a9898f39))
+* describe image verification after base synchronization ([4ff3b90](https://github.com/OpenRAE/lilrae/commit/4ff3b902ae29aec9162dc566057f506fb8aa5502))
+* inventory issue 1422 docs in pack terminology note ([afc5498](https://github.com/OpenRAE/lilrae/commit/afc5498678b58c571a8d1f4797c32019961bbace))
+* reconcile configured pack source inventories ([0f51cd5](https://github.com/OpenRAE/lilrae/commit/0f51cd5fe9e6f06cbaae76ad69bfd8d90c8022e1))
+* satisfy prose lint for Node preflight ([ad4b7c6](https://github.com/OpenRAE/lilrae/commit/ad4b7c6a363cf66fba38b874ddac3b08eb6bce9e))
+
+## [8.1.0](https://github.com/OpenRAE/lilrae/compare/v8.0.0...v8.1.0) (2026-10-17)
+
+
+### Features
+
+* resolve declared node sources to trusted images ([7e0f3c7](https://github.com/OpenRAE/lilrae/commit/7e0f3c70a49e190bacd7e90a1e47db895210f28d))
+* resolve declared node sources to trusted images ([4780f34](https://github.com/OpenRAE/lilrae/commit/4780f3442a0af6e95413d5497e3704bf020eb8b5))
+
+
+### Bug Fixes
+
+* **cli:** reject invalid deployment settings before lifecycle state reads ([f2ec060](https://github.com/OpenRAE/lilrae/commit/f2ec0601a32066fa6f47e34e9b3bcde03f8d1a60))
+* **cli:** report an invalid aptl.json instead of a traceback ([aaeaa13](https://github.com/OpenRAE/lilrae/commit/aaeaa13059d153fa32ba1a0b970caebbba70eeea))
+* **deployment:** explain how to recover from a retained index whose mapping drifted ([d80e0c2](https://github.com/OpenRAE/lilrae/commit/d80e0c2e7e64044ce52b41f2c4896d8ab0c43034))
+* **deployment:** preserve daemon errors during container membership checks ([ec64ebe](https://github.com/OpenRAE/lilrae/commit/ec64ebe3067cc655fc0f60afc6f724f30d16d47d))
+* **deployment:** refuse a Kali shell during capture whichever name or ID selects it ([096d32d](https://github.com/OpenRAE/lilrae/commit/096d32d13f98c63583703cb488b8c85dbe22bc9c))
+* **deployment:** report unrecorded container names as not part of this lab ([18218c3](https://github.com/OpenRAE/lilrae/commit/18218c396e48d9f1deb73312fed8d50dff1e6dd7))
+* keep failed cleanup retry guidance non-destructive ([2a97f5e](https://github.com/OpenRAE/lilrae/commit/2a97f5efc1b2594db0e06d7e67a24fb629fcbf91))
+* **mcp:** validate tool arguments against each tool's schema before dispatch ([7e689d0](https://github.com/OpenRAE/lilrae/commit/7e689d098cc93fe8e21dcf7afdcc8e54b3d27956))
+* preserve legacy PostgreSQL source and reconcile inventories ([4d2ac68](https://github.com/OpenRAE/lilrae/commit/4d2ac684b6e142ee82d9e8b9577ef487409347db))
+* preserve volumes and complete failed-start recovery ([fc26779](https://github.com/OpenRAE/lilrae/commit/fc2677975ff370f174d928ff5dae87043bad86b6))
+* preserve volumes and complete failed-start recovery ([322735d](https://github.com/OpenRAE/lilrae/commit/322735d9b0066ed98a0f1fa047ebf5261ab99a4f))
+* require container absence before using completion image proof ([e2353a6](https://github.com/OpenRAE/lilrae/commit/e2353a637942bbc6ae238c3c545ef7879776243e))
+* resolve quality findings and qualify clean-start recovery ([e5e8cc7](https://github.com/OpenRAE/lilrae/commit/e5e8cc7e52eda284d84a976bca464d5566c34fcd))
+* **runs:** exclude in-flight archives from recursive exports ([561a862](https://github.com/OpenRAE/lilrae/commit/561a8628bde30d9f10e05898ed45b3db1303fb6c))
+* **runs:** replace exports atomically and update dependency hints ([6f15bb0](https://github.com/OpenRAE/lilrae/commit/6f15bb05af91c5fdd6cd782dd46c1d9e2b79d763))
+* **runs:** write local exports owner-only so export-bundle accepts the default directory ([95060f6](https://github.com/OpenRAE/lilrae/commit/95060f6621388ea923573f033bd8965b94bd1fb4))
+
+
+### Documentation
+
+* register failed-start recovery architecture guidance ([4eddcd9](https://github.com/OpenRAE/lilrae/commit/4eddcd9bbadc0e054bb74b78c9bcd72f7f79cd6b))
+* use neutral workflow terminology in recovery guidance ([4285e8e](https://github.com/OpenRAE/lilrae/commit/4285e8ea1c6f2c731ccef05eb3e7e1afb9862459))
+
+## [8.0.0](https://github.com/OpenRAE/lilrae/compare/v7.0.0...v8.0.0) (2026-10-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* a base-container variable that used to be filled from an exported shell variable or a same-named .env key now needs an environment grant in aptl.json, and a value-less plain or unknown variable is delivered empty instead of being omitted.
+
+### Bug Fixes
+
+* bind operational secrets explicitly ([#1269](https://github.com/OpenRAE/lilrae/issues/1269)) ([9af7448](https://github.com/OpenRAE/lilrae/commit/9af7448a3198efab63c96cb7e23cafa248246ecc))
+* join main's release history into dev so promotions merge cleanly ([#1376](https://github.com/OpenRAE/lilrae/issues/1376)) ([78a1864](https://github.com/OpenRAE/lilrae/commit/78a1864eef7fd1bbca991a8c0181832e432d088b))
+* merge main's release history into dev ([#1377](https://github.com/OpenRAE/lilrae/issues/1377)) ([9cab8c0](https://github.com/OpenRAE/lilrae/commit/9cab8c0cd14d34ad67e610a1504cf99a3dc01bb1))
+* merge main's release history into dev ([#1378](https://github.com/OpenRAE/lilrae/issues/1378)) ([7ab7629](https://github.com/OpenRAE/lilrae/commit/7ab76295c5b1db149535844af2c7aa886e23c34e))
+
 ## [7.0.0](https://github.com/OpenRAE/lilrae/compare/v6.0.0...v7.0.0) (2026-10-13)
 
 

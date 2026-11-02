@@ -1,17 +1,20 @@
 """Compose binding of trusted appliance policy to observed workload anchors."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 from aptl.core.appliance_boundary import (
     ApplianceBoundaryBinding,
     ApplianceBoundaryPolicy,
 )
+from aptl.appliance.policy import full_techvault_boundary_policy
 from aptl.core.deployment.docker_compose import DockerComposeBackend
 from aptl.core.deployment.realization import (
     DeploymentImageRealization,
+    DeploymentNetworkRealization,
     DeploymentNodeRealization,
     DeploymentRealizationSpec,
 )
+from aptl.core.deployment._compose_resource_ownership import OwnershipConflictError
 from aptl.core.lab_types import LabResult
 
 
@@ -215,6 +218,117 @@ def test_appliance_installs_deny_baseline_before_anchor_workloads(tmp_path) -> N
     assert baseline.crossings == ()
     assert baseline.egress_ports == ()
     backend.host_list_lab_containers.assert_not_called()
+
+
+def test_protected_seat_uses_receipt_owned_range_networks_before_workloads(
+    tmp_path,
+) -> None:
+    backend = DockerComposeBackend(tmp_path, project_name="seat")
+    backend.configure_appliance_boundary(full_techvault_boundary_policy(), _binding())
+    realization = DeploymentRealizationSpec(
+        profiles=(),
+        nodes=(),
+        networks=(
+            DeploymentNetworkRealization(name="orchard"),
+            DeploymentNetworkRealization(name="quartz"),
+        ),
+    )
+    native = {"orchard": "native-orchard", "quartz": "native-quartz"}
+    backend._resolve_owned_network_id = MagicMock(side_effect=native.__getitem__)
+    backend.host_inspect_network = MagicMock(
+        side_effect=lambda network_id: {
+            "id": network_id,
+            "name": network_id,
+            "bridge": "br-" + network_id.removeprefix("native-")[:7],
+            "subnets": [
+                "10.60.1.0/24" if network_id.endswith("orchard") else "10.60.2.0/24"
+            ],
+            "gateway": ("10.60.1.1" if network_id.endswith("orchard") else "10.60.2.1"),
+            "labels": {},
+        }
+    )
+    backend.realize_boundary = MagicMock(return_value=LabResult(success=True))
+
+    result = backend._realize_seat_protection_boundary(realization)
+
+    assert result is None
+    spec = backend.realize_boundary.call_args.args[0]
+    assert spec.authority == "seat-protection"
+    assert {network.name for network in spec.networks} == {"orchard", "quartz"}
+    assert backend._resolve_owned_network_id.call_args_list == [
+        call("orchard"),
+        call("quartz"),
+    ]
+
+
+def test_protected_seat_refuses_unrecorded_network_without_mutation(tmp_path) -> None:
+    backend = DockerComposeBackend(tmp_path, project_name="seat")
+    backend.configure_appliance_boundary(full_techvault_boundary_policy(), _binding())
+    realization = DeploymentRealizationSpec(
+        profiles=(),
+        nodes=(),
+        networks=(DeploymentNetworkRealization(name="orchard"),),
+    )
+    backend._resolve_owned_network_id = MagicMock(
+        side_effect=OwnershipConflictError("network ownership is unrecorded")
+    )
+    backend.realize_boundary = MagicMock()
+
+    result = backend._realize_seat_protection_boundary(realization)
+
+    assert result is not None
+    assert result.success is False
+    backend.realize_boundary.assert_not_called()
+
+
+def test_protected_seat_binds_actual_runtime_plan_before_enforcement(tmp_path) -> None:
+    backend = DockerComposeBackend(tmp_path, project_name="seat")
+    backend.configure_appliance_boundary(
+        full_techvault_boundary_policy(),
+        _binding().model_copy(
+            update={
+                "participant_routes_digest": "sha256:" + "1" * 64,
+                "raes_plan_digest": None,
+            }
+        ),
+    )
+    realization = DeploymentRealizationSpec(
+        profiles=(),
+        nodes=(),
+        networks=(DeploymentNetworkRealization(name="orchard"),),
+        raes_plan_digest="sha256:" + "2" * 64,
+    )
+
+    result = backend._bind_appliance_realization(realization)
+
+    assert result is None
+    _policy_value, binding = backend._appliance_boundary
+    assert binding.participant_routes_digest == "sha256:" + "1" * 64
+    assert binding.raes_plan_digest == "sha256:" + "2" * 64
+    assert binding.raes_boundary_required is False
+
+
+def test_protected_seat_refuses_missing_runtime_plan_identity(tmp_path) -> None:
+    backend = DockerComposeBackend(tmp_path, project_name="seat")
+    backend.configure_appliance_boundary(
+        full_techvault_boundary_policy(),
+        _binding().model_copy(
+            update={
+                "participant_routes_digest": "sha256:" + "1" * 64,
+                "raes_plan_digest": None,
+            }
+        ),
+    )
+    realization = DeploymentRealizationSpec(
+        profiles=(),
+        nodes=(),
+        networks=(DeploymentNetworkRealization(name="orchard"),),
+    )
+
+    result = backend._bind_appliance_realization(realization)
+
+    assert result is not None
+    assert result.success is False
 
 
 def test_full_boundary_precedes_service_index_and_general_start(tmp_path) -> None:

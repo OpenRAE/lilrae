@@ -53,7 +53,7 @@ from aptl.core.execution.bridges import (
     stochastic_controls_from_trial,
     validate_result_summaries,
 )
-from aptl.core.experiment.trial_plan_models import PlannedTrial, TrialPlan
+from aptl.core.experiment.trial_plan_models import CaptureSpecPin, PlannedTrial, TrialPlan
 from aptl.core.runstore import LocalRunStore
 
 _JSON_MEDIA_TYPE = "application/json"
@@ -123,16 +123,52 @@ class AdmittedExperiment:
 
     Assembled by the caller from admission output: the immutable plan, the
     re-resolved task, the sealed scenario snapshot reference, the apparatus
-    projection, and participant provenance. The executor consumes these; it never
-    re-admits or re-resolves them itself.
+    projection, the admitted capture spec pins
+    (:attr:`AdmissionResult.capture_spec_pins
+    <aptl.core.experiment.admission.AdmissionResult.capture_spec_pins>`), and
+    participant provenance. The executor consumes these; it never re-admits or
+    re-resolves them itself. Recovery must receive the same pins: the plan
+    keeps no capture spec versions to rebuild them from.
     """
 
     plan: TrialPlan
     task: ExperimentTaskModel
     scenario_snapshot_ref: ExperimentScenarioSnapshotReferenceModel
     apparatus_context: ExperimentApparatusContextModel
+    capture_spec_pins: tuple[CaptureSpecPin, ...]
     participant_provenance: ParticipantImplementationProvenanceModel | None = None
     run_version: str = "1.0.0"
+
+    def __post_init__(self) -> None:
+        # Snapshot as immutable string pairs so a later caller mutation cannot
+        # change an attempt's pins, then reject a handoff that does not pin
+        # exactly the capture specs the plan references — before any workload.
+        pins = tuple(CaptureSpecPin(*pin) for pin in self.capture_spec_pins)
+        object.__setattr__(self, "capture_spec_pins", pins)
+        _validate_capture_spec_pins(self.plan, pins)
+
+
+def _validate_capture_spec_pins(plan: TrialPlan, pins: tuple[CaptureSpecPin, ...]) -> None:
+    """Require one pin for each capture spec the plan references, and no other."""
+    # NamedTuple does not validate its fields: a reconstructed pin without its
+    # admitted version must not reach a workload.
+    if not all(isinstance(field, str) and field for pin in pins for field in pin):
+        raise ValueError("each admitted pin needs a non-empty capture spec id and version")
+    pinned_ids = [pin.capture_spec_id for pin in pins]
+    if len(set(pinned_ids)) != len(pinned_ids):
+        raise ValueError("admitted capture spec pins must name each capture spec once")
+    if _LIFECYCLE_CAPTURE_SPEC in pinned_ids:
+        raise ValueError(
+            f"capture spec {_LIFECYCLE_CAPTURE_SPEC!r} is reserved for the executor lifecycle record"
+        )
+    referenced = {ref for trial in plan.trials for ref in trial.capture_spec_refs}
+    referenced.update(binding.capture_spec_id for binding in plan.capture_bindings)
+    if set(pinned_ids) != referenced:
+        raise ValueError(
+            "admitted capture spec pins must match the plan's capture specs: "
+            f"unpinned {sorted(referenced - set(pinned_ids))}, "
+            f"unreferenced {sorted(set(pinned_ids) - referenced)}"
+        )
 
 
 Workload = Callable[[TrialExecutionContext], TrialOutcome]
@@ -281,11 +317,54 @@ def acquisition_record_specs(
     )
 
 
+def _check_records_against_pins(
+    acquisition: AcquisitionResult, capture_spec_pins: tuple[CaptureSpecPin, ...]
+) -> None:
+    """Reject an acquisition record whose capture spec is unpinned or differently versioned.
+
+    A record may omit the version (RAES resolves it against the run pin); a
+    record that supplies one must agree with the admitted pin.
+    """
+    pinned_versions = dict(capture_spec_pins)
+    for record in acquisition.records:
+        ref = record.capture_spec_ref
+        if ref.ref_id not in pinned_versions:
+            raise ValueError(
+                f"evidence record {record.evidence_record_id!r} names capture spec "
+                f"{ref.ref_id!r}, which is not an admitted capture spec"
+            )
+        if ref.ref_version is not None and ref.ref_version != pinned_versions[ref.ref_id]:
+            raise ValueError(
+                f"evidence record {record.evidence_record_id!r} pins capture spec "
+                f"{ref.ref_id!r} at version {ref.ref_version!r}, but admission "
+                f"resolved {pinned_versions[ref.ref_id]!r}"
+            )
+
+
 def build_traceability(
-    lifecycle: _LifecycleEvidence, acquisition: AcquisitionResult, attempt_id: str
+    lifecycle: _LifecycleEvidence,
+    acquisition: AcquisitionResult,
+    attempt_id: str,
+    capture_spec_pins: tuple[CaptureSpecPin, ...],
 ) -> ExperimentRunTraceabilityModel:
-    """Compose the run traceability naming the lifecycle + acquisition records."""
-    capture_spec_refs = [lifecycle.record.capture_spec_ref]
+    """Compose the run traceability naming the lifecycle + acquisition records.
+
+    The run pins the lifecycle capture spec plus every admitted capture spec
+    at its admitted version — the admitted intent, also for a capture that
+    produced no record (#1372). ``evidence_record_refs`` name only the records
+    that exist; :func:`_check_records_against_pins` has already checked them.
+    """
+    capture_spec_refs = [
+        lifecycle.record.capture_spec_ref,
+        *(
+            ExperimentCaptureSpecReferenceModel(
+                ref_kind="capture-spec",
+                ref_id=pin.capture_spec_id,
+                ref_version=pin.spec_version,
+            )
+            for pin in capture_spec_pins
+        ),
+    ]
     evidence_record_refs = [
         ExperimentEvidenceRecordReferenceModel(
             ref_kind="evidence-record",
@@ -293,11 +372,7 @@ def build_traceability(
             ref_version=lifecycle.record.record_version,
         )
     ]
-    seen_specs = {lifecycle.record.capture_spec_ref.ref_id}
     for record in acquisition.records:
-        if record.capture_spec_ref.ref_id not in seen_specs:
-            capture_spec_refs.append(record.capture_spec_ref)
-            seen_specs.add(record.capture_spec_ref.ref_id)
         evidence_record_refs.append(
             ExperimentEvidenceRecordReferenceModel(
                 ref_kind="evidence-record",
@@ -358,6 +433,8 @@ def assemble_context(
     started_at = inputs.started_at
     ended_at = inputs.ended_at
 
+    # Before the first write: a disagreeing record must not leave a partial attempt.
+    _check_records_against_pins(acquisition, admitted.capture_spec_pins)
     lifecycle = write_lifecycle_evidence(
         store,
         attempt_id=attempt_id,
@@ -380,7 +457,9 @@ def assemble_context(
         *sealed_artifacts_from_acquisition(acquisition),
         *acquisition_record_specs(acquisition),
     )
-    traceability = build_traceability(lifecycle, acquisition, attempt_id)
+    traceability = build_traceability(
+        lifecycle, acquisition, attempt_id, admitted.capture_spec_pins
+    )
     result_summaries = build_result_summaries(outcome, resolution, lifecycle)
     deviations = outcome.deviations if outcome else ()
 

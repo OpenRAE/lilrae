@@ -57,6 +57,12 @@ the volume is mounted. This is wired through the existing capture-container
 configuration path (`capture_container_name` in the MCP lab config; see
 `resolveCaptureContainer`), so no second harvester is introduced.
 
+> **Update (2026-10-30, #1242):** the harvest targets only a declared capture
+> sidecar. It never falls back to the workload container. Lab start supplies the
+> workspace-scoped sidecar name in `LILRAE_MCP_CAPTURE_CONTAINER`. If that name
+> is not set or not valid, the harvest records
+> `aptl.capture-harvest.container-unresolved` and runs no `docker cp`.
+
 The Kali ForceCommand wrapper remains the single SSH session ingress point, but
 it stops writing capture files directly. Its responsibility becomes:
 
@@ -80,6 +86,34 @@ the Kali workload service to the sidecar wherever Docker permits. Kali keeps
 only capabilities required by red-team tooling, such as `NET_RAW` and
 `NET_ADMIN`; it must not retain capabilities whose only purpose is starting,
 stopping, or reconfiguring the capture subsystems.
+
+> **Update (2026-10-12, #1328):** the shipped sidecar runs neither auditd nor
+> process accounting. It does not own `_audit/audit.log` or
+> `_proc-acct/pacct`, does not start `auditd` or `accton`, and is granted none
+> of `AUDIT_CONTROL`, `AUDIT_WRITE`, or `SYS_PACCT` (see the `kali-capture`
+> service in `docker-compose.capture.yml`). The harvest no longer copies the
+> global `_audit` / `_proc-acct` directories (#1242, recorded in ADR-042). The
+> `_audit` and `_proc-acct` items in the list above, and the assignment of
+> `auditd`, `accton`, and those three capabilities to the sidecar, record the
+> 2026-06-20 design and are not current. The same applies wherever else this
+> ADR names auditd or process accounting as a sidecar-owned writer, a harvest
+> source, a test expectation, or a tamper-resistant witness.
+
+> **Update (2026-10-28, #1495):** the sidecar is granted `AUDIT_WRITE` again,
+> for a reason the 2026-06-20 design did not cover; it still runs no auditd.
+> Debian's sshd writes a kernel audit login record when it allocates a PTY for
+> an outer session, and drops the connection when the write is refused. Without
+> the capability, every participant session that requested a PTY failed to
+> open, while sessions without one worked. `AUDIT_CONTROL` and `SYS_PACCT` stay
+> withdrawn, and the 2026-10-12 update still holds for the audit and accounting
+> writers.
+
+> **Update (2026-10-29, #1407):** the sidecar is granted `KILL`. At lab stop,
+> `broker.py quiesce` runs as root and sends SIGTERM to each open broker
+> session. Those sessions run as uid `kali`, so the kernel refuses the signal
+> without the capability. A participant session that stayed open until lab
+> stop then made quiesce fail, and the run lost its required transcript. The
+> capability applies only to processes in the sidecar's own PID namespace.
 
 ## RPC Contract
 
@@ -155,6 +189,9 @@ typescript/timing artifacts from a wrapper-to-sidecar byte stream. Do not leave
   MCP lab config that `resolveCaptureContainer` returns in preference to the
   workload `container_name`. No second harvester is introduced; `docker cp`
   reads the same volume from whichever container mounts it.
+  Update (2026-10-30, #1242): `resolveCaptureContainer` returns only
+  `capture_container_name`. The workload `container_name` is not a harvest
+  target, and the MCP lab config no longer has that field.
 
 ## Maintainability
 
@@ -164,6 +201,8 @@ Implementations must build on the existing incumbents:
   point and the existing Bash id fallback contract.
 - `containers/kali/audit/aptl.rules`: the canonical audit rule set. Copy or
   mount this into the sidecar; do not duplicate rule text.
+  Update (2026-10-12, #1328): the shipped sidecar runs no auditd, so its
+  image neither copies nor mounts this rule set.
 - `mcp/aptl-mcp-common/src/ssh.ts`: `APTL_SESSION_ID`, `APTL_RUN_ID`, bound
   run id, remote-close await, and best-effort PTY tee semantics.
 - `mcp/aptl-mcp-common/src/tools/handlers.ts`: close-session and close-all
@@ -171,6 +210,8 @@ Implementations must build on the existing incumbents:
 - `mcp/aptl-mcp-common/src/captures.ts`: docker-copy harvest, global
   `_audit` / `_proc-acct` collection, destination chmod repair, and
   fail-loud missing-source behavior.
+  Update (2026-10-12, #1328): since #1242 the harvest collects no global
+  `_audit` / `_proc-acct` directories.
 - `src/aptl/core/runstore.py` and `mcp/aptl-mcp-common/src/runs.ts`: per-run
   directory and id contracts.
 - ADR-033 non-contamination: do not reintroduce Wazuh, rsyslog, SIEM dispatch,
@@ -228,6 +269,10 @@ because the sidecar produces them from kernel sources the workload does not
 feed. It does **not** make the Kali-side PTY *typescript* tamper-proof for the
 workload's own session.
 
+Update (2026-10-12, #1328): auditd and process accounting are no longer
+among these witnesses, because the shipped sidecar produces neither (see the
+update at the end of the Decision).
+
 The reason is fundamental: a shell transcript is generated by the shell, which
 runs in the Kali container. Any capture of it that the workload can feed or
 write (here, `script(1)` to a wrapper FIFO to `aptl-capture-client` to the
@@ -273,6 +318,8 @@ scope for this boundary. It would be its own ADR if pursued.
   authenticity" below); the authoritative keystroke/output record is the
   MCP-side PTY tee, and the tamper-resistant Kali-side witnesses are the
   sidecar-produced pcap, auditd, and process-accounting streams.
+  Update (2026-10-12, #1328): the shipped sidecar produces no auditd or
+  process-accounting stream (see the update at the end of the Decision).
 
 ### Risks
 

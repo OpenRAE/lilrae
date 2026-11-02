@@ -4,7 +4,7 @@ The operational counterpart to the static gate in
 ``aptl.validation.techvault_gate``. Where the static gate parses, locks,
 compiles, conformance-checks, and *interprets* a scenario without ever
 starting Docker, this gate boots the full lab through APTL's **public** start
-path (``aptl lab stop -v`` cleanup followed by ``orchestrate_lab_start``) and
+path (``lilrae lab stop -v`` cleanup followed by ``orchestrate_lab_start``) and
 proves the running range is realized from the interpreted RAES model — not from
 a TechVault preset — then captures operational and provenance evidence in a run
 archive.
@@ -16,7 +16,7 @@ never a hardcoded branch (ADR-035). The next scenario in APTL's
 
 The gate is inherently integration / live-run work: it requires Docker, the SOC
 stack's resources, real ``.env`` secrets, and minutes-long startup. It is wired
-behind an explicit guard (``aptl lab validate-live`` and the
+behind an explicit guard (``lilrae lab validate-live`` and the
 ``APTL_LIVE_GATE``-gated integration test), never a fast CI / pre-commit gate,
 and its cleanup is **data-destroying** and must run only against an isolated,
 project-scoped lab.
@@ -118,7 +118,7 @@ def validate_live_deployment(
     from aptl.validation import _live_gate_checks as checks
 
     opts = options or LiveGateOptions()
-    # Resolve the scenario the same env-pack-aware way `aptl lab start` does: an
+    # Resolve the scenario the same env-pack-aware way `lilrae lab start` does: an
     # explicit path uses the project tree, otherwise the configured env-pack is
     # staged and its SDL is the scenario. Issue #875 moved TechVault into the
     # `raes-env-packs` pack, so the in-tree DEFAULT_RAES_SCENARIO path no longer
@@ -301,6 +301,7 @@ def _semantic_checks(
             deadline_monotonic=deadline_monotonic,
         ),
         observations={"containers": containers},
+        trial=ctx.bundle.trial,
     )
     report = verify_scenario(context)
     # Keep the validated report itself. Its checks drive the gate's taxonomy
@@ -428,6 +429,17 @@ def _verification_identities(
 
     import hashlib
 
+    if bundle.trial is not None:
+        target = bundle.trial.target
+        return (
+            ScenarioIdentity(
+                target.family_id,
+                target.family_digest,
+                bundle.source_kind.value,
+                target.pack.pack_version,
+            ),
+            target.backend,
+        )
     pack = bundle.pack_identity
     content = (
         scenario_path.read_bytes()

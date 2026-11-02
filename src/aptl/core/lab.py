@@ -25,7 +25,9 @@ import icontract
 import yaml
 
 from aptl.core.certs import ensure_ssl_certs
+from aptl.core.helper_images import PINNED_HELPER_IMAGES, SURICATA_SEEDER_IMAGE
 from aptl.core.soc_ca import ensure_soc_certs
+from aptl.core.deployment._misp_server_tls import stage_misp_server_tls
 from aptl.core.config import AptlConfig, DeploymentConfig, find_config, load_config
 from aptl.core.contracts import (
     backend_is_initialized,
@@ -51,7 +53,6 @@ from aptl.core.env import (
 # Re-export the lifecycle DTO types from the leaf module (#266 + ADR-030).
 # The leaf has no back-edges, so this is a normal top-level import.
 from aptl.core.lab_types import (
-    STOP_RECOVERY_ROUTES,
     DiagnosticImpact as DiagnosticImpact,
     DiagnosticSeverity as DiagnosticSeverity,
     LabResetResult as LabResetResult,
@@ -64,8 +65,16 @@ from aptl.core.lab_types import (
 )
 from aptl.core.lifecycle_guard import (
     LifecycleLockUnavailableError,
+    lifecycle_recovery_command,
     lifecycle_mutation_lock,
+    stop_recovery_routes,
 )
+from aptl.core.deployment.errors import (
+    BackendObservationError,
+    BackendSeedError,
+    BackendTimeoutError,
+)
+
 from aptl.core.lifecycle_policy import LifecycleBusyError
 from aptl.core.services import (
     test_ssh_connection,
@@ -100,7 +109,7 @@ from aptl.core.ssh import (
 )
 from aptl.core.sysreqs import (
     check_docker_buildx,
-    check_max_map_count,
+    check_scenario_max_map_count,
     docker_mode_for_containment,
 )
 from aptl.utils.logging import get_logger
@@ -126,6 +135,14 @@ if TYPE_CHECKING:
     from aptl.core.snapshot import RangeSnapshot
 
 log = get_logger("lab")
+
+_START_OPERATION_ERRORS = (
+    OSError,
+    ValueError,
+    BackendObservationError,
+    BackendSeedError,
+    BackendTimeoutError,
+)
 
 ProgressCallback = Callable[[str], None]
 
@@ -167,15 +184,15 @@ class StartSelection:
 
 
 _STALE_NETWORK_RECOVERY_HINT = (
-    "Run `aptl lab stop` and retry, or `aptl lab stop -v` if you need a clean lab."
+    "Run `lilrae lab stop` and retry, or `lilrae lab stop -v` if you need a clean lab."
 )
 # The deployment backend names the refused index and its container (#990).
 _UNOWNED_SEARCH_INDEX_RECOVERY_HINT = (
-    "Back up the index first; `aptl lab stop` keeps every lab volume. Only if "
-    "its data is disposable, run `aptl lab stop --volumes`, a destructive reset "
+    "Back up the index first; `lilrae lab stop` keeps every lab volume. Only if "
+    "its data is disposable, run `lilrae lab stop --volumes`, a destructive reset "
     "that permanently deletes every lab volume. Recovery steps: "
     "https://openrae.github.io/lilrae/troubleshooting/"
-    "#aptl-lab-start-reports-an-unowned-search-index"
+    "#lilrae-lab-start-reports-an-unowned-search-index"
 )
 _WAZUH_MANAGER_SERVICE = "wazuh.manager"
 _WAZUH_MANAGER_CONTAINER = "aptl-wazuh-manager"
@@ -226,7 +243,6 @@ def start_raes_scenario(
     scenario_path: Path | None = None,
     *,
     run_target: AcesRunTarget | None = None,
-    before_backend_retry: Callable[[], None] | None = None,
     admitted: "AdmittedScenarioStart | None" = None,
 ) -> AcesStartOutcome | LabResult:
     """Lazy RAES handoff import for the public lab-start path.
@@ -234,8 +250,6 @@ def start_raes_scenario(
     ``run_target`` (resolved once per lab-start run, REP-001 / GAP 4) is
     threaded into the RAES handoff so orchestration persists workflow artifacts
     under the same run directory the run record is written to.
-    ``before_backend_retry`` lets the lifecycle prepare SOC dependencies while
-    the backend retains and reapplies the already admitted execution plan.
     ``admitted`` is the execution `_step_load_config` already admitted, so the
     handoff applies it instead of planning the scenario a second time (#951).
     """
@@ -252,7 +266,6 @@ def start_raes_scenario(
         backend,
         scenario_path=scenario_path,
         run_target=run_target,
-        before_backend_retry=before_backend_retry,
         admitted=admitted,
     )
 
@@ -355,6 +368,7 @@ def admit_start_surface(
     *,
     bundle: ScenarioBundle | None = None,
     startup_selection: ScenarioStartupSelection | None = None,
+    run_id: str | None = None,
 ) -> tuple["AdmittedScenarioStart", "AdmittedStartSurface"]:
     """Lazy RAES import for the one admitted execution lab start reuses."""
 
@@ -369,6 +383,7 @@ def admit_start_surface(
         scenario_path=scenario_path,
         bundle=bundle,
         startup_selection=startup_selection,
+        run_id=run_id,
     )
 
 
@@ -378,8 +393,9 @@ WAZUH_IMAGE_VERSION = "4.12.0"
 # Suricata service's own image is reused so the seed step adds no new
 # supply-chain surface; it is already pulled for the `suricata` service.
 # A test pins this to the `suricata` service's `image:` in
-# docker-compose.yml so the two cannot drift.
-SURICATA_IMAGE = "jasonish/suricata:7.0"
+# docker-compose.yml so the two cannot drift. Its digest is pinned in
+# ``aptl.core.helper_images``.
+SURICATA_IMAGE = SURICATA_SEEDER_IMAGE
 
 # All known Docker Compose profiles. Used as fallback when config is
 # unavailable (e.g. stop_lab, kill switch).  Keep in sync with
@@ -424,6 +440,32 @@ def _get_backend(
         project_dir=project_dir,
         offline_staged=offline_staged,
     )
+
+
+def _configured_backend(
+    project_dir: Path,
+    config: AptlConfig | None,
+    *,
+    command: str,
+    offline_staged: bool = False,
+) -> tuple[Optional["DeploymentBackend"], LabResult | None]:
+    """Create the configured backend, or the refusal that names its bad settings.
+
+    ``aptl.json`` can load and still hold deployment settings that only the
+    backend constructor checks, such as an ssh-compose block without
+    ``ssh_host``. ``command`` names the blocked ``lilrae lab`` command.
+    """
+
+    try:
+        return _get_backend(project_dir, config, offline_staged=offline_staged), None
+    except ValueError as exc:
+        # The refusal carries the reason to the caller, which reports it.
+        return None, LabResult(
+            success=False,
+            error=f"[lifecycle-invalid-configuration] Lab {command} blocked: "
+            f"invalid deployment settings in aptl.json: {exc}. "
+            "Repair aptl.json and retry.",
+        )
 
 
 def build_compose_command(
@@ -519,12 +561,11 @@ def _stop_lab_owned(
 ) -> LabResult:
     """Run teardown while the caller owns the project lifecycle lock."""
 
-    config, profiles, failure = _stop_recovery_configuration(search_dir, backend)
+    _, backend, profiles, failure = _stop_recovery_configuration(search_dir, backend)
     if failure is not None:
         return failure
     assert profiles is not None
-    if backend is None:
-        backend = _get_backend(search_dir, config)
+    assert backend is not None
     return _tear_down_owned(
         search_dir, backend, profiles, remove_volumes=remove_volumes
     )
@@ -541,11 +582,14 @@ def _tear_down_owned(
     """Stop the project and, when its volumes go, finish pending host cleanup.
 
     ``retry_command`` is the command a cleanup failure names for the retry.
-    ``None`` names ``aptl lab stop -v --yes``.
+    ``None`` names ``lilrae lab stop -v --yes``.
     """
 
     capture_failure = _finalize_required_transcript_capture(search_dir, backend)
     stop_result = backend.stop(profiles, remove_volumes=remove_volumes)
+    from aptl.core.participant_desktop import withdraw_participant_desktop
+
+    desktop_withdrawn = withdraw_participant_desktop(search_dir)
     result = stop_result
     if remove_volumes:
         cleanup_failure = _run_pending_host_cleanup(
@@ -555,11 +599,13 @@ def _tear_down_owned(
             result = cleanup_failure
     if result is stop_result and capture_failure is not None:
         result = capture_failure
+    if not desktop_withdrawn and result.success:
+        return LabResult(success=False, error="Participant desktop withdrawal failed")
     return result
 
 
 #: The command a failed reset names for the retry (#1218).
-_RESET_RETRY_COMMAND = "aptl lab reset --yes"
+_RESET_RETRY_COMMAND = "lilrae lab reset --yes"
 
 #: Why a reset refuses when the recorded workspace scope can't be read (#1218).
 _RESET_WORKSPACE_STATE_UNREADABLE = (
@@ -576,7 +622,7 @@ def reset_lab(
     """Return the lab to a clean, stopped state (#1218).
 
     Inside the lifecycle lock it counts the project, then runs the same
-    project-scoped teardown as ``aptl lab stop -v``: the project's containers,
+    project-scoped teardown as ``lilrae lab stop -v``: the project's containers,
     networks and volumes go, and every pending host-side cleanup record runs
     (``aptl.core.lifecycle_cleanup``). Other host files, such as ``aptl.json``,
     ``.env``, SSH keys, certificates and run records, stay. Repeating it is
@@ -598,7 +644,7 @@ def _reset_lab_owned(
 ) -> LabResetResult:
     """Count the project, then reset it while the caller holds the lock."""
 
-    config, profiles, failure = _stop_recovery_configuration(
+    config, selected, profiles, failure = _stop_recovery_configuration(
         project_root, backend, command="reset"
     )
     if failure is not None:
@@ -609,7 +655,7 @@ def _reset_lab_owned(
         return LabResetResult(
             LabResult(success=False, error=_RESET_WORKSPACE_STATE_UNREADABLE)
         )
-    selected = backend or _get_backend(project_root, config)
+    assert selected is not None
     counts = _reset_counts(selected) if recorded else (0, 0)
     result = _tear_down_owned(
         project_root,
@@ -666,10 +712,17 @@ def _stop_recovery_configuration(
     backend: Optional["DeploymentBackend"],
     *,
     command: str = "stop",
-) -> tuple[AptlConfig | None, list[str] | None, LabResult | None]:
-    """Resolve safe teardown profiles and any blocking recovery failure.
+) -> tuple[
+    AptlConfig | None,
+    Optional["DeploymentBackend"],
+    list[str] | None,
+    LabResult | None,
+]:
+    """Resolve the backend, safe teardown profiles and any recovery failure.
 
-    ``command`` names the blocked ``aptl lab`` command in the failure text.
+    ``command`` names the blocked ``lilrae lab`` command in the failure text.
+    Validate deployment settings before reading platform-specific recovery
+    state, so an unusable config is reported even where those reads cannot run.
     """
 
     configured_profiles: list[str] = []
@@ -685,25 +738,23 @@ def _stop_recovery_configuration(
             if backend is None:
                 failure = LabResult(
                     success=False,
-                    error=(
-                        f"[lifecycle-invalid-configuration] Lab {command} blocked: "
-                        "invalid configuration; refusing to guess the deployment "
-                        "project identity. Repair aptl.json and retry."
-                    ),
+                    error=f"[lifecycle-invalid-configuration] Lab {command} blocked: "
+                    "invalid configuration; refusing to guess the deployment "
+                    "project identity. Repair aptl.json and retry.",
                 )
+    if failure is None and backend is None:
+        backend, failure = _configured_backend(search_dir, config, command=command)
     profiles: list[str] | None = None
     if failure is None:
         try:
             from aptl.core.operator_group_state import load_admitted_operator_groups
 
             admitted_groups = list(load_admitted_operator_groups(search_dir))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             failure = LabResult(
                 success=False,
-                error=(
-                    f"[lifecycle-state-invalid] Lab {command} blocked: invalid "
-                    "operator-group recovery state."
-                ),
+                error=f"[lifecycle-state-invalid] Lab {command} blocked: invalid "
+                "operator-group recovery state.",
             )
         else:
             profiles = (
@@ -711,7 +762,7 @@ def _stop_recovery_configuration(
             )
             if "otel" not in profiles:
                 profiles = [*profiles, "otel"]
-    return config, profiles, failure
+    return config, backend, profiles, failure
 
 
 def _run_pending_host_cleanup(
@@ -726,7 +777,7 @@ def _run_pending_host_cleanup(
     retained volumes, and says what remains pending. After verified teardown
     every pending action runs, including on a repeat reset whose Docker
     resources were already gone. A failure names ``retry_command``, or
-    ``aptl lab stop -v --yes`` when it is ``None``.
+    ``lilrae lab stop -v --yes`` when it is ``None``.
     """
 
     from aptl.core.lifecycle_cleanup import (
@@ -787,7 +838,11 @@ def _finalize_required_transcript_capture(
     )
     if failed and state is not None:
         try:
-            mark_transcript_finalization_failed(project_dir=project_dir, state=state)
+            mark_transcript_finalization_failed(
+                project_dir=project_dir,
+                state=state,
+                result=None if result is False else result,
+            )
         except Exception:
             log.error("Required transcript finalization failure could not be recorded")
     return (
@@ -816,7 +871,7 @@ def _lifecycle_busy_result(action: str) -> LabResult:
         success=False,
         error=(
             "[lifecycle-owner-busy] Another lab lifecycle operation is active. "
-            f"Wait for it to finish before retrying `aptl lab {action}`."
+            f"Wait for it to finish before retrying `lilrae lab {action}`."
         ),
         outcome=StartupOutcome.FAILED,
     )
@@ -883,6 +938,7 @@ def clean_boot_lab(
         LabResult — the boot outcome on success, or a fatal ``FAILED``
         result carrying the redacted cleanup error when teardown fails.
     """
+    after_start: list[Callable[[], LabResult | None]] = []
     try:
         with lifecycle_mutation_lock(project_dir) as project_root:
             result = _clean_boot_lab_owned(
@@ -894,12 +950,13 @@ def clean_boot_lab(
                 progress=progress,
                 appliance=appliance,
                 teardown_on_failure=teardown_on_failure,
+                after_start=after_start,
             )
     except LifecycleBusyError:
         result = _lifecycle_busy_result("start --clean")
     except LifecycleLockUnavailableError:
         result = _lifecycle_lock_unavailable_result()
-    return result
+    return _supervise_started_lab(result, after_start)
 
 
 def _clean_boot_lab_owned(
@@ -912,6 +969,7 @@ def _clean_boot_lab_owned(
     progress: ProgressCallback | None,
     appliance: ApplianceStartOptions | None,
     teardown_on_failure: bool = False,
+    after_start: list[Callable[[], LabResult | None]] | None = None,
 ) -> LabResult:
     """Clean and restart the lab while the caller owns lifecycle mutation."""
 
@@ -925,9 +983,7 @@ def _clean_boot_lab_owned(
         # LilRAE does not support rootless Docker (#1053), so --clean asks the
         # daemon its teardown would use before it removes any container or
         # volume, not only once the start path runs.
-        preflight_failure = _clean_boot_rootless_refusal(
-            project_root, selected_backend
-        )
+        preflight_failure = _clean_boot_rootless_refusal(project_root, selected_backend)
     if preflight_failure is not None:
         return preflight_failure
     if progress is not None:
@@ -946,6 +1002,21 @@ def _clean_boot_lab_owned(
             outcome=StartupOutcome.FAILED,
         )
     appliance_kwargs = {"appliance": appliance} if appliance is not None else {}
+    if (
+        after_start is not None
+        and appliance is not None
+        and appliance.access_request is not None
+    ):
+        # The outer clean-boot owner must also be released before supervision.
+        return _orchestrate_lab_start_owned(
+            project_root,
+            skip_seed=skip_seed,
+            scenario_path=scenario_path,
+            progress=progress,
+            teardown_on_failure=teardown_on_failure,
+            after_start=after_start,
+            **appliance_kwargs,
+        )
     return orchestrate_lab_start(
         project_root,
         skip_seed=skip_seed,
@@ -966,7 +1037,9 @@ def _preflight_clean_appliance_boundary(
     if appliance is None or appliance.launch_descriptor is None:
         return None, backend
     if not appliance.offline_staged:
-        return LabResult(success=False, error="Appliance launch requires offline staging."), backend
+        return LabResult(
+            success=False, error="Appliance launch requires offline staging."
+        ), backend
     from aptl.appliance.seat.launch_descriptor import verify_seat_launch
 
     try:
@@ -977,9 +1050,7 @@ def _preflight_clean_appliance_boundary(
         if config_path is None:
             raise ValueError("appliance project configuration is unavailable")
         config = load_config(config_path)
-        selected = backend or _get_backend(
-            project_root, config, offline_staged=True
-        )
+        selected = backend or _get_backend(project_root, config, offline_staged=True)
         ctx = _LabStartContext(
             project_dir=project_root,
             skip_seed=False,
@@ -1002,8 +1073,15 @@ def _preflight_clean_appliance_boundary(
         endpoint = selected.revalidate_local_docker_socket()
         if not endpoint.success:
             raise ValueError("appliance guest Docker endpoint changed")
-    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError):
-        return LabResult(success=False, error="Verified appliance launch preflight failed."), backend
+    except (
+        OSError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        ValueError,
+    ):
+        return LabResult(
+            success=False, error="Verified appliance launch preflight failed."
+        ), backend
     return None, selected
 
 
@@ -1015,17 +1093,18 @@ def _clean_boot_rootless_refusal(
     Asks the daemon the teardown would use: the caller's backend or the
     verified appliance backend when there is one, otherwise the backend
     :func:`stop_lab` builds from ``aptl.json``, or from the defaults when there
-    is no ``aptl.json``. An ``aptl.json`` that does not load is left to
-    :func:`stop_lab`, which refuses it before any teardown.
+    is no ``aptl.json``. An ``aptl.json`` that does not load, or whose
+    deployment settings the backend rejects, is left to :func:`stop_lab`,
+    which refuses it before any teardown.
     """
 
     if backend is None:
         config_path = find_config(project_root)
         try:
             config = load_config(config_path) if config_path is not None else None
-        except (FileNotFoundError, ValueError):
+            backend = _get_backend(project_root, config)
+        except FileNotFoundError, ValueError:
             return None
-        backend = _get_backend(project_root, config)
     return _rootless_daemon_refusal(backend)
 
 
@@ -1054,14 +1133,12 @@ def lab_status(
             try:
                 config = load_config(config_path)
                 backend = _get_backend(config_path.parent, config)
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 return LabStatus(
                     running=False,
-                    error=(
-                        "[lifecycle-invalid-configuration] Lab status blocked: "
-                        "invalid configuration; refusing to guess the deployment "
-                        "project identity."
-                    ),
+                    error="[lifecycle-invalid-configuration] Lab status blocked: "
+                    "invalid configuration; refusing to guess the deployment "
+                    "project identity.",
                 )
 
     return backend.status()
@@ -1289,6 +1366,9 @@ class _LabStartContext(object):
     diagnostics: list[StartupDiagnostic] = field(default_factory=list)
     # REP-001: the exact RAES apply outcome and terminal range snapshot.
     raes_outcome: AcesStartOutcome | None = None
+    # The run's one RAES runtime, kept for a failed apply too, so the start
+    # always closes it (OpenRAE/rae#1660).
+    run_runtime: object | None = None
     snapshot: RangeSnapshot | None = None
     # The checked, post-mutation project inventory used by both the terminal
     # startup decision and the persisted range snapshot.
@@ -1580,14 +1660,21 @@ def _select_start_source(ctx: _LabStartContext) -> StartStageResult:
         )
     try:
         config = load_config(config_path)
+        ctx.backend, failure = _configured_backend(
+            ctx.project_dir,
+            config,
+            command="start",
+            offline_staged=ctx.offline_staged,
+        )
+        if failure is not None:
+            return StartStageResult(error=failure.error)
         bundle = resolve_scenario_bundle(ctx.project_dir, ctx.scenario_path, config)
         provider_selection = select_scenario_startup(bundle)
     except (OSError, ValueError, EnvPackError, ScenarioStartupProviderError) as exc:
-        error = (
-            "Scenario startup adapter selection failed."
-            if isinstance(exc, ScenarioStartupProviderError)
-            else f"Scenario selection failed: {redact(str(exc))}"
-        )
+        if isinstance(exc, ScenarioStartupProviderError):
+            error = "Scenario startup adapter selection failed."
+        else:
+            error = f"Scenario selection failed: {redact(str(exc))}"
         return StartStageResult(error=error)
     return StartStageResult(
         value=StartSelection(
@@ -1668,22 +1755,33 @@ def _step_load_config(ctx: _LabStartContext) -> LabResult | None:
             log.exception("Failed to load config")
             result = LabResult(success=False, error=f"Failed to load config: {exc}")
         if result is None:
-            ctx.backend = _get_backend(
-                ctx.project_dir,
-                ctx.config,
-                offline_staged=ctx.offline_staged,
-            )
-            result = _configure_verified_appliance_launch(ctx)
-            ctx.execution_boundary = (
-                bind_execution_boundary(
-                    ctx.backend,
-                    seat_guest=ctx.appliance_launch_descriptor is not None,
-                )
-                if result is None
-                else observe_execution_boundary(ctx.backend)
-            )
+            result = _bind_start_backend(ctx)
         if result is None:
             result = _load_admitted_start_surface(ctx)
+    return result
+
+
+def _bind_start_backend(ctx: _LabStartContext) -> LabResult | None:
+    """Create the configured backend and bind the start's execution boundary."""
+
+    if ctx.backend is None:
+        ctx.backend, result = _configured_backend(
+            ctx.project_dir,
+            ctx.config,
+            command="start",
+            offline_staged=ctx.offline_staged,
+        )
+        if result is not None:
+            return result
+    result = _configure_verified_appliance_launch(ctx)
+    ctx.execution_boundary = (
+        bind_execution_boundary(
+            ctx.backend,
+            seat_guest=ctx.appliance_launch_descriptor is not None,
+        )
+        if result is None
+        else observe_execution_boundary(ctx.backend)
+    )
     return result
 
 
@@ -1709,6 +1807,13 @@ def _step_reject_preexisting_range(ctx: _LabStartContext) -> LabResult | None:
         )
     if not presence.present:
         ctx.range_was_absent = True
+        from aptl.core.participant_desktop import withdraw_participant_desktop
+
+        if not withdraw_participant_desktop(ctx.project_dir):
+            return LabResult(
+                success=False,
+                error="Previous participant desktop could not be withdrawn",
+            )
         return None
     log.warning(
         "Lab start blocked by project runtime residue (containers=%d networks=%d)",
@@ -1718,14 +1823,18 @@ def _step_reject_preexisting_range(ctx: _LabStartContext) -> LabResult | None:
     # Name the residue and the same recovery routes a failed start prints (#952).
     present = describe_project_runtime(presence.container_count, presence.network_count)
     routes = "; ".join(
-        f"`{command}` {effect}" for command, effect in STOP_RECOVERY_ROUTES
+        f"`{command}` {effect}"
+        for command, effect in stop_recovery_routes(ctx.project_dir)
+    )
+    clean_command = lifecycle_recovery_command(
+        "lilrae lab start --clean", ctx.project_dir
     )
     return LabResult(
         success=False,
         error=(
             "[lifecycle-range-present] An APTL range already exists for this "
             f"deployment project: {present}. {routes}. Run one and retry, or use "
-            "`aptl lab start --clean` for an explicit volume-reset boot."
+            f"`{clean_command}` for an explicit volume-reset boot."
         ),
     )
 
@@ -1797,10 +1906,7 @@ def _configure_verified_appliance_launch(
             success=False,
             error="Appliance access channel inputs are incomplete.",
         )
-    if (
-        not ctx.offline_staged
-        or ctx.backend is None
-    ):
+    if not ctx.offline_staged or ctx.backend is None:
         result = LabResult(
             success=False,
             error="Appliance launch inputs are incomplete.",
@@ -1823,7 +1929,16 @@ def _configure_verified_appliance_launch(
             binding = ApplianceBoundaryBinding(
                 policy_digest=descriptor.boundary_policy_digest,
                 payload_digest=descriptor.image_digest,
-                raes_plan_digest=descriptor.participant_routes_digest,
+                participant_routes_digest=(
+                    descriptor.participant_routes_digest
+                    if boundary_policy.seat_component_protection
+                    else None
+                ),
+                raes_plan_digest=(
+                    None
+                    if boundary_policy.seat_component_protection
+                    else descriptor.participant_routes_digest
+                ),
                 raes_boundary_required=boundary_policy.internal_zone_isolation,
                 boundary_helper_image=descriptor.boundary_helper_image,
                 egress_proxy_image=descriptor.egress_proxy_image,
@@ -1931,11 +2046,13 @@ def _load_admitted_start_surface(
             if ctx.start_selection is not None
             else {}
         )
+        ctx.run_store, ctx.run_id = _resolve_run_target(ctx)
         admitted, surface = admit_start_surface(
             ctx.project_dir,
             ctx.config,
             ctx.backend,
             scenario_path=ctx.scenario_path,
+            run_id=ctx.run_id,
             **admission_kwargs,
         )
     except AdmissionRejection as exc:
@@ -1950,10 +2067,8 @@ def _load_admitted_start_surface(
     except (EnvPackError, SDLError, OSError, TypeError, ValueError) as exc:
         failure = LabResult(
             success=False,
-            error=(
-                "RAES scenario admission failed before artifact preparation: "
-                f"{redact(str(exc))}"
-            ),
+            error="RAES scenario admission failed before artifact preparation: "
+            f"{redact(str(exc))}",
         )
     ctx.admission_seconds = monotonic() - admission_started
     if failure is None and admitted is not None:
@@ -1986,7 +2101,7 @@ def _prepare_scenario_startup(
         if plan is None:
             return None
         return _bind_scenario_startup_environment(ctx, plan)
-    except (OSError, ValueError, ScenarioStartupProviderError):
+    except OSError, ValueError, ScenarioStartupProviderError:
         log.warning("Scenario startup adapter preparation failed")
         return LabResult(
             success=False,
@@ -2140,12 +2255,15 @@ def _step_check_sysreqs(ctx: _LabStartContext) -> LabResult | None:
     selected_mode = docker_mode_for_containment(
         boundary.host_containment if boundary is not None else None
     )
-    sysreq_result = check_max_map_count(selected_mode=selected_mode)
+    startup = ctx.start_selection.startup if ctx.start_selection is not None else None
+    minimum = startup.minimum_max_map_count if startup is not None else None
+    sysreq_result = check_scenario_max_map_count(minimum, selected_mode=selected_mode)
     if not sysreq_result.passed:
         log.error(
             "vm.max_map_count too low (%d < %d). "
-            "Run: sudo sysctl -w vm.max_map_count=262144",
+            "Run: sudo sysctl -w vm.max_map_count=%d",
             sysreq_result.current_value,
+            sysreq_result.required_value,
             sysreq_result.required_value,
         )
         return LabResult(
@@ -2153,10 +2271,15 @@ def _step_check_sysreqs(ctx: _LabStartContext) -> LabResult | None:
             error=(
                 f"vm.max_map_count too low ({sysreq_result.current_value} < "
                 f"{sysreq_result.required_value}). "
-                "Run: sudo sysctl -w vm.max_map_count=262144"
+                f"Run: sudo sysctl -w vm.max_map_count={sysreq_result.required_value}"
             ),
         )
 
+    if startup is not None:
+        from aptl.backends.scenario_startup import StartupCapability
+
+        if StartupCapability.HOST_TOOLS not in startup.lifecycle_capabilities:
+            return None
     buildx_result = check_docker_buildx()
     if buildx_result.passed:
         return None
@@ -2223,7 +2346,7 @@ def _step_sync_credentials(ctx: _LabStartContext) -> LabResult | None:
     # `_check_bind_mounts` only inspects the local tree, so preflight
     # would pass and compose would then fail. Rather than silently ship a
     # broken (or placeholder-credentialled) remote lab, refuse: the
-    # render must run on the deployment host (e.g. `aptl lab start` over
+    # render must run on the deployment host (e.g. `lilrae lab start` over
     # SSH on that host). Routing generated-artifact materialization
     # through the deployment backend is the proper fix and is tracked
     # separately. See ADR-028 § Non-Goals.
@@ -2235,9 +2358,9 @@ def _step_sync_credentials(ctx: _LabStartContext) -> LabResult | None:
             success=False,
             error=(
                 "Credentialized service config is rendered to .aptl/config/ "
-                "on the host running `aptl lab start`, but the configured "
+                "on the host running `lilrae lab start`, but the configured "
                 "deployment backend targets a remote Docker daemon, so the "
-                "remote bind mounts would not see it. Run `aptl lab start` on "
+                "remote bind mounts would not see it. Run `lilrae lab start` on "
                 "the deployment host instead, or switch deployment.provider "
                 "to the local Docker Compose backend."
             ),
@@ -2292,9 +2415,9 @@ def _step_seed_suricata_volumes(
             success=False,
             error=(
                 "Suricata runtime volumes are seeded from checked-in source "
-                "on the host running `aptl lab start`, but the configured "
+                "on the host running `lilrae lab start`, but the configured "
                 "deployment backend targets a remote Docker daemon, so the "
-                "host source would not be visible to it. Run `aptl lab start` "
+                "host source would not be visible to it. Run `lilrae lab start` "
                 "on the deployment host instead, or switch deployment.provider "
                 "to the local Docker Compose backend."
             ),
@@ -2320,23 +2443,25 @@ def _seed_suricata_volumes_local(ctx: _LabStartContext) -> LabResult | None:
 
     # ctx.backend is narrowed to the local Compose backend by the caller's guard.
     assert ctx.backend is not None
-    # Pull the seeder image up front. Both the ownership repair and the seed
-    # container implicitly pull it via `docker run`, and on a fresh host a
-    # failed/slow implicit pull can surface as an opaque `exit 125` from the
-    # seeder with no docker stderr in the redacted log path — pulling here
-    # keeps registry failures at a stage the user can reason about (a
-    # `Failed to pull ...` warning) instead of a bare seed-exit code.
-    pull_warnings = list(ctx.backend.pull_images([SURICATA_IMAGE]))
+    # Point the seeder tag at its pinned digest up front. Both the ownership
+    # repair and the seed container run the tag via `docker run`, so a failure
+    # here stops the step with a `Failed to pull ...` warning rather than an
+    # opaque `exit 125`, and never falls back to whatever the tag names.
+    pull_warnings = list(
+        ctx.backend.pull_images([PINNED_HELPER_IMAGES[SURICATA_IMAGE]])
+    )
     for pull_warning in pull_warnings:
         log.warning(pull_warning)
     result: LabResult | None = None
-    if ctx.offline_staged and pull_warnings:
+    if pull_warnings:
+        failure = (
+            "Offline staged Suricata image verification failed"
+            if ctx.offline_staged
+            else "Pinned Suricata seeder image is unavailable"
+        )
         result = LabResult(
             success=False,
-            error=(
-                "Offline staged Suricata image verification failed: "
-                f"{'; '.join(pull_warnings)}"
-            ),
+            error=f"{failure}: {'; '.join(pull_warnings)}",
         )
     if result is None:
         ownership = ensure_suricata_config_source_ownership(
@@ -2388,6 +2513,7 @@ def _step_generate_certs(ctx: _LabStartContext) -> LabResult | None:
     cert_result = ensure_ssl_certs(
         ctx.project_dir,
         project=None if ctx.backend is None else ctx.backend._ephemeral_project(),
+        pull_images=None if ctx.backend is None else ctx.backend.pull_images,
     )
     if cert_result.success:
         return None
@@ -2430,7 +2556,7 @@ def _step_generate_soc_certs(ctx: _LabStartContext) -> LabResult | None:
         return None
     result: LabResult | None = None
     # Generated artifacts land under config/soc_certs/ on the host running
-    # `aptl lab start`. With the SSH-remote backend the Docker daemon is
+    # `lilrae lab start`. With the SSH-remote backend the Docker daemon is
     # on another host whose bind mounts cannot see them — same shape as
     # `_step_sync_credentials` (ADR-028).
     from aptl.core.deployment import SSHComposeBackend
@@ -2440,9 +2566,9 @@ def _step_generate_soc_certs(ctx: _LabStartContext) -> LabResult | None:
             success=False,
             error=(
                 "SOC stack lab CA is generated under config/soc_certs/ on "
-                "the host running `aptl lab start`, but the configured "
+                "the host running `lilrae lab start`, but the configured "
                 "deployment backend targets a remote Docker daemon, so the "
-                "remote bind mounts would not see it. Run `aptl lab start` "
+                "remote bind mounts would not see it. Run `lilrae lab start` "
                 "on the deployment host instead, or switch "
                 "deployment.provider to the local Docker Compose backend."
             ),
@@ -2455,6 +2581,10 @@ def _step_generate_soc_certs(ctx: _LabStartContext) -> LabResult | None:
                 success=False,
                 error=(f"SOC certificate generation failed: {cert_result.error}"),
             )
+        elif (tls_error := stage_misp_server_tls(ctx.project_dir)) is not None:
+            # The root Compose file's misp-web runs as uid 101 and reads this
+            # staged copy; the 0600 SOC CA key stays where it is.
+            result = LabResult(success=False, error=tls_error)
     return result
 
 
@@ -2539,43 +2669,6 @@ def _step_pull_images(ctx: _LabStartContext) -> LabResult | None:
     return None
 
 
-def _prepare_raes_backend_retry(ctx: _LabStartContext) -> None:
-    """Wait once, then invoke the admitted adapter's bounded repair hook."""
-
-    log.warning(
-        "Initial backend apply failed with a retryable outcome. Waiting 60s "
-        "and retrying the admitted plan..."
-    )
-    import time
-
-    time.sleep(60)
-    from aptl.backends.scenario_startup import (
-        StartupHook,
-        StartupHookContext,
-        run_startup_hook,
-    )
-
-    assert ctx.backend is not None
-    run_startup_hook(
-        ctx.start_selection.provider_selection if ctx.start_selection else None,
-        StartupHook.BEFORE_BACKEND_RETRY,
-        StartupHookContext(ctx.backend),
-    )
-
-
-def _backend_retry_callback(ctx: _LabStartContext) -> Callable[[], None] | None:
-    """Return generic retry preparation only for an admitted adapter hook."""
-
-    from aptl.backends.scenario_startup import ScenarioStartupPlan, StartupHook
-
-    plan = ctx.scenario_startup
-    if isinstance(plan, ScenarioStartupPlan) and (
-        StartupHook.BEFORE_BACKEND_RETRY in plan.startup_hooks
-    ):
-        return partial(_prepare_raes_backend_retry, ctx)
-    return None
-
-
 @_runtime_require(
     lambda ctx: config_is_loaded(ctx.config),
     description="config_is_loaded(ctx.config)",
@@ -2602,7 +2695,6 @@ def _step_start_containers(ctx: _LabStartContext) -> LabResult | None:
         scenario_path=ctx.scenario_path,
         admitted=ctx.admitted_start,
         run_target=AcesRunTarget(run_store=ctx.run_store, run_id=ctx.run_id),
-        before_backend_retry=_backend_retry_callback(ctx),
     )
     return _interpret_start_outcome(ctx, outcome)
 
@@ -2614,14 +2706,14 @@ def _persist_start_recovery(ctx: _LabStartContext) -> LabResult | None:
         from aptl.core.operator_group_state import persist_admitted_operator_groups
 
         persist_admitted_operator_groups(ctx.project_dir, ctx.selected_profiles)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return LabResult(
             success=False,
             error="Could not persist admitted operator groups for recovery.",
         )
     try:
         _persist_cleanup_actions(ctx)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return LabResult(
             success=False,
             error="Could not persist pending lab cleanup records for recovery.",
@@ -2670,6 +2762,10 @@ def _persist_cleanup_actions(ctx: _LabStartContext) -> None:
             )
     if pack_reset and "entry_point" not in provenance:
         raise ValueError("missing reset authority provenance")
+    if selection is not None and selection.trial is not None:
+        from aptl.backends.scenario_family import encode_family_target
+
+        provenance["family_target"] = encode_family_target(selection.trial.target)
     actions = [ACTION_CLEAR_WAZUH_ENROLLMENT_BASELINE]
     if pack_reset:
         actions.append(ACTION_PACK_RESET)
@@ -2692,6 +2788,8 @@ def _interpret_start_outcome(
             disclosed_execution_boundary(ctx.backend) or ctx.execution_boundary
         )
 
+    if isinstance(outcome, AcesStartOutcome):
+        ctx.run_runtime = outcome.runtime_manager
     result: LabResult | None
     if isinstance(outcome, AcesStartOutcome) and outcome.lab_result.success:
         # Store the RAES start outcome for the run record step (REP-001).
@@ -2944,10 +3042,8 @@ def _step_capture_snapshot(ctx: _LabStartContext) -> LabResult | None:
             impact=DiagnosticImpact.TELEMETRY,
             severity=DiagnosticSeverity.WARNING,
             message="Range snapshot capture failed; run inventory will be incomplete",
-            operator_action=(
-                "Inspect lab logs; re-run `aptl lab status -j` to capture "
-                "inventory manually once the deployment backend is reachable"
-            ),
+            operator_action="Inspect lab logs; re-run `lilrae lab status -j` to capture "
+            "inventory manually once the deployment backend is reachable",
         )
         return None
     # Store snapshot for run record step (REP-001).
@@ -3078,7 +3174,11 @@ def _activate_required_transcript(
             run_id=ctx.run_id,
             capture_selection=capture_selection,
         )
-        authority = activate(plan_id=plan.plan_id, run_id=ctx.run_id)
+        authority = activate(
+            plan_id=plan.plan_id,
+            run_id=ctx.run_id,
+            binding_id=binding.registration_id,
+        )
     except Exception:
         log.error("Required transcript apparatus activation failed")
         authority = None
@@ -3117,10 +3217,8 @@ def _step_write_run_record(ctx: _LabStartContext) -> LabResult | None:
             impact=DiagnosticImpact.TELEMETRY,
             severity=DiagnosticSeverity.WARNING,
             message="Run reproducibility record could not be written; run archive will lack REP-001 record",
-            operator_action=(
-                "Inspect lab logs; the lab is running but the run archive "
-                "will be missing its reproducibility record"
-            ),
+            operator_action="Inspect lab logs; the lab is running but the run archive "
+            "will be missing its reproducibility record",
         )
     return None
 
@@ -3133,23 +3231,34 @@ def _resolve_run_target(ctx: _LabStartContext) -> tuple[object, str]:
     filesystem-safe ``run_<UTC timestamp>`` id under the configured run store
     base dir. The minted id is shaped to pass ``runstore._validate_id``.
     Resolved once and cached on ctx so orchestration, the run record, and the
-    public ``aptl runs`` commands all address the same archive.
+    public ``lilrae runs`` commands all address the same archive.
     """
     from datetime import datetime, timezone
 
     from aptl.core.runstore import LocalRunStore, resolve_active_run_dir
+    from uuid import uuid4
+
+    if ctx.run_store is not None and ctx.run_id is not None:
+        return ctx.run_store, ctx.run_id
 
     state_dir = ctx.project_dir / ".aptl"
     active_run_dir = resolve_active_run_dir(state_dir)
     if active_run_dir is not None:
-        return LocalRunStore(active_run_dir.parent), active_run_dir.name
+        ctx.run_store, ctx.run_id = (
+            LocalRunStore(active_run_dir.parent),
+            active_run_dir.name,
+        )
+        return ctx.run_store, ctx.run_id
     configured_path = Path(
         getattr(getattr(ctx.config, "run_storage", None), "local_path", "./runs")
     )
     if not configured_path.is_absolute():
         configured_path = ctx.project_dir / configured_path
-    run_id = datetime.now(timezone.utc).strftime("run_%Y%m%dT%H%M%SZ")
-    return LocalRunStore(configured_path), run_id
+    run_id = (
+        datetime.now(timezone.utc).strftime("run_%Y%m%dT%H%M%SZ_") + uuid4().hex[:12]
+    )
+    ctx.run_store, ctx.run_id = LocalRunStore(configured_path), run_id
+    return ctx.run_store, ctx.run_id
 
 
 def _resolve_raes_snapshot(outcome: object) -> object:
@@ -3440,7 +3549,7 @@ def _step_build_mcps(ctx: _LabStartContext) -> LabResult | None:
             impact=DiagnosticImpact.CAPABILITY,
             severity=DiagnosticSeverity.WARNING,
             message="MCP build could not run; see lab logs",
-            operator_action=("Inspect mcp/build-all-mcps.sh permissions and tooling"),
+            operator_action="Inspect mcp/build-all-mcps.sh permissions and tooling",
         )
     return None
 
@@ -3671,7 +3780,7 @@ def _execute_seed_soc_script(
             impact=DiagnosticImpact.CAPABILITY,
             severity=DiagnosticSeverity.WARNING,
             message="SOC seeding could not run; see lab logs",
-            operator_action=("Inspect the selected scenario seed assets and tooling"),
+            operator_action="Inspect the selected scenario seed assets and tooling",
         )
 
 
@@ -3824,6 +3933,7 @@ def _refresh_required_native_evidence(
                 execution_plan=execution_plan,
                 snapshot=final_snapshot,
                 evidence_records=evidence_records,
+                runtime_manager=getattr(ctx.raes_outcome, "runtime_manager", None),
             )
         except Exception:
             log.error("Required native scenario evidence evaluation failed")
@@ -3854,11 +3964,27 @@ def _native_evaluation_failure(refresh: object) -> str:
     )
 
 
+def _step_publish_participant_desktop(ctx: _LabStartContext) -> LabResult | None:
+    """Publish the admitted pack's participant desktop surface (issue #1273)."""
+
+    from aptl.core.participant_desktop import start_participant_desktop
+
+    failure = start_participant_desktop(
+        ctx.project_dir, ctx.admitted_start, ctx.backend
+    )
+    if failure is None:
+        return None
+    return LabResult(
+        success=False,
+        error=f"Participant desktop could not be published: {failure}",
+    )
+
+
 def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
     """Refresh local MCP client env keys after SOC seeding."""
     # `.mcp.json` is the canonical config Claude Code, Cursor, and Cline
-    # read to spawn MCP servers. Seed-prime writes API keys (TheHive
-    # provisioned, MISP/Shuffle defaults) to `.env`. If the user has a
+    # read to spawn MCP servers. Seed-prime writes API keys (MISP/Shuffle
+    # defaults) to `.env`. If the user has a
     # local `.mcp.json`, surface those keys into per-server env blocks
     # so the MCPs authenticate without manual rewiring after a fresh
     # `lab stop -v` + `lab start`.
@@ -3916,25 +4042,25 @@ def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
             step="mcp_config_sync",
             impact=DiagnosticImpact.CAPABILITY,
             severity=DiagnosticSeverity.WARNING,
-            message=(
-                "MCP client config not refreshed; MCP servers may not "
-                "authenticate without manual key wiring"
-            ),
-            operator_action=(
-                "Inspect .mcp.json env blocks against .env after a fresh lab start"
-            ),
+            message="MCP client config not refreshed; MCP servers may not "
+            "authenticate without manual key wiring",
+            operator_action="Inspect .mcp.json env blocks against .env after a fresh lab start",
         )
     if os.environ.get("APTL_SEAT_DESKTOP_HANDOFF") == "1":
         try:
             subprocess.run(
-                ["/usr/bin/python3", "/opt/aptl/desktop/desktop-handoff.py",
-                 str(ctx.project_dir), str(ctx.run_id or "")],
+                [
+                    "/usr/bin/python3",
+                    "/opt/aptl/desktop/desktop-handoff.py",
+                    str(ctx.project_dir),
+                    str(ctx.run_id or ""),
+                ],
                 check=True,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-        except (OSError, subprocess.CalledProcessError):
+        except OSError, subprocess.CalledProcessError:
             return LabResult(
                 success=False,
                 error="Seat desktop MCP handoff failed.",
@@ -4005,8 +4131,8 @@ _TERMINAL_CONTAINER_OBSERVATION_FAILED = (
     "Terminal project-container state could not be observed"
 )
 _TERMINAL_CONTAINER_RECOVERY_ACTION = (
-    "Inspect the deployment backend, then run `aptl lab stop` or "
-    "`aptl lab start --clean` before retrying"
+    "Inspect the deployment backend, then run `lilrae lab stop` or "
+    "`lilrae lab start --clean` before retrying"
 )
 
 
@@ -4123,8 +4249,8 @@ def _step_attest_project_containers(ctx: _LabStartContext) -> LabResult | None:
                 "project container(s)"
             ),
             operator_action=(
-                "Inspect the named container state, then run `aptl lab stop` or "
-                "`aptl lab start --clean` before retrying"
+                "Inspect the named container state, then run `lilrae lab stop` or "
+                "`lilrae lab start --clean` before retrying"
             ),
         )
         result = LabResult(
@@ -4161,6 +4287,7 @@ _LAB_START_STEPS = (
     _step_build_mcps,
     _step_seed_soc,
     _step_acquire_required_native_evidence,
+    _step_publish_participant_desktop,
     _step_sync_mcp_config,
     _step_execute_participant_injects,
     _step_attest_project_containers,
@@ -4227,6 +4354,11 @@ def _selected_start_steps(
         for step in _LAB_START_STEPS
         if step not in _OPTIONAL_START_STEPS
         or _OPTIONAL_START_CAPABILITIES.get(step) in capabilities
+        or (
+            step is _step_check_sysreqs
+            and isinstance(plan, ScenarioStartupPlan)
+            and plan.minimum_max_map_count is not None
+        )
         or (step in _OPTIONAL_START_HOOKS and "stack_environment" in hooks)
     )
 
@@ -4259,6 +4391,7 @@ _LAB_START_PROGRESS_MESSAGES = {
     "_step_acquire_required_native_evidence": (
         "Collecting required native scenario evidence."
     ),
+    "_step_publish_participant_desktop": "Publishing the participant desktop.",
     "_step_sync_mcp_config": "Refreshing MCP client configuration.",
     "_step_execute_participant_injects": (
         "Delivering the SDL-authored participant sequence."
@@ -4346,9 +4479,7 @@ def _run_start_stage(
     )
 
 
-def _account_for_failed_start(
-    ctx: _LabStartContext, result: LabResult
-) -> LabResult:
+def _account_for_failed_start(ctx: _LabStartContext, result: LabResult) -> LabResult:
     """Name what a failed start left in the project, removing it on request.
 
     Only a start that found the project empty can have created what remains,
@@ -4358,11 +4489,16 @@ def _account_for_failed_start(
     is observed again to confirm that no containers or networks remain.
     """
 
-    if not ctx.range_was_absent or ctx.backend is None:
+    if not ctx.range_was_absent:
+        return result
+    from aptl.core.participant_desktop import withdraw_participant_desktop
+
+    withdraw_participant_desktop(ctx.project_dir)
+    if ctx.backend is None:
         return result
     residue = _observed_start_residue(ctx.backend)
     if residue is not None and ctx.teardown_on_failure:
-        residue = _tear_down_failed_start(ctx, residue)
+        residue = _tear_down_failed_start(ctx, residue, result.diagnostics)
     result.residue = residue
     return result
 
@@ -4374,7 +4510,11 @@ def _observed_start_residue(backend: "DeploymentBackend") -> StartResidue | None
     empty project, because the operator still has to check and recover.
     """
 
-    presence = backend.observe_project_runtime()
+    try:
+        presence = backend.observe_project_runtime()
+    except _START_OPERATION_ERRORS:
+        log.error("Failed-start runtime observation is unavailable")
+        return StartResidue(container_count=None, network_count=None)
     if presence.error:
         return StartResidue(container_count=None, network_count=None)
     if not presence.present:
@@ -4386,7 +4526,7 @@ def _observed_start_residue(backend: "DeploymentBackend") -> StartResidue | None
 
 
 def _tear_down_failed_start(
-    ctx: _LabStartContext, residue: StartResidue
+    ctx: _LabStartContext, residue: StartResidue, diagnostics: list[StartupDiagnostic]
 ) -> StartResidue:
     """Run the project-scoped stop, keeping volumes, and observe what remains.
 
@@ -4398,10 +4538,22 @@ def _tear_down_failed_start(
 
     assert ctx.backend is not None
     log.warning("Lab start failed; stopping the project for --teardown-on-failure")
-    stop = _stop_lab_owned(False, ctx.project_dir, ctx.backend)
+    try:
+        stop = _stop_lab_owned(False, ctx.project_dir, ctx.backend)
+    except _START_OPERATION_ERRORS:
+        stop = LabResult(success=False, error="Failed-start cleanup did not complete.")
     if not stop.success:
-        log.error(
-            "Teardown after the failed start reported a failure: %s", redact(stop.error)
+        log.error("Teardown after the failed start reported a failure")
+        retry_command = stop_recovery_routes(ctx.project_dir)[0][0]
+        diagnostics.append(
+            StartupDiagnostic(
+                step="failed_start_cleanup",
+                component="lab",
+                impact=DiagnosticImpact.READINESS,
+                severity=DiagnosticSeverity.ERROR,
+                message="Failed-start cleanup reported a failure.",
+                operator_action=f"Run `{retry_command}` to retry cleanup without removing volumes.",
+            )
         )
     remaining = _observed_start_residue(ctx.backend)
     if remaining is None:
@@ -4449,11 +4601,20 @@ def orchestrate_lab_start(
         return _lifecycle_busy_result("start")
     except LifecycleLockUnavailableError:
         return _lifecycle_lock_unavailable_result()
+    return _supervise_started_lab(result, after_start)
+
+
+def _supervise_started_lab(
+    result: LabResult, after_start: list[Callable[[], LabResult | None]]
+) -> LabResult:
+    """Enter long-lived supervision only after the outer startup owner exits."""
     if result.success:
         for supervise in after_start:
             failure = supervise()
             if failure is not None:
                 failure.admission_seconds = result.admission_seconds
+                failure.execution_boundary = result.execution_boundary
+                failure.diagnostics = [*result.diagnostics, *failure.diagnostics]
                 return failure
     return result
 
@@ -4503,6 +4664,34 @@ def _orchestrate_lab_start_owned(
         progress=progress,
         teardown_on_failure=teardown_on_failure,
     )
+    try:
+        return _run_lab_start_steps(ctx, after_start)
+    finally:
+        _close_run_runtime(ctx)
+
+
+def _close_run_runtime(ctx: _LabStartContext) -> None:
+    """Close the run's one RAES runtime once the start has finished with it.
+
+    The runtime applied the plan, delivered participant turns, and evaluated
+    later evidence (OpenRAE/rae#1660). Closing drains it and releases its
+    claim; a close failure is logged and never replaces the start result.
+    """
+
+    runtime = ctx.run_runtime
+    if runtime is None:
+        return
+    try:
+        runtime.close()
+    except (RuntimeError, TimeoutError) as exc:
+        log.warning("The run's RAES runtime did not close cleanly: %s", exc)
+
+
+def _run_lab_start_steps(
+    ctx: _LabStartContext,
+    after_start: list[Callable[[], LabResult | None]] | None,
+) -> LabResult:
+    """Run the admitted start steps in order; the first failure ends the start."""
 
     for step in _LAB_START_STEPS:
         # Admission happens at _step_load_config. Select optional stages only
@@ -4514,6 +4703,11 @@ def _orchestrate_lab_start_owned(
             _emit_progress(ctx, progress_message)
         try:
             stage = _run_start_stage(ctx, step)
+        except _START_OPERATION_ERRORS:
+            log.error("Operational failure in startup step %s", step.__name__)
+            stage = StartStageResult(
+                error=f"Lab startup operation failed at step '{step.__name__}'."
+            )
         except icontract.ViolationError:
             # ADR-031 § Decision: a contract breach inside a step is a
             # fatal state bug. The raw `icontract.ViolationError` string
@@ -4528,9 +4722,7 @@ def _orchestrate_lab_start_owned(
                 ctx,
                 LabResult(
                     success=False,
-                    error=(
-                        f"Lab orchestration contract violated at step '{step.__name__}'"
-                    ),
+                    error=f"Lab orchestration contract violated at step '{step.__name__}'",
                     outcome=StartupOutcome.FAILED,
                     diagnostics=list(ctx.diagnostics),
                     execution_boundary=ctx.execution_boundary,
@@ -4555,16 +4747,18 @@ def _orchestrate_lab_start_owned(
                 ),
             )
 
-    if after_start is not None:
-        # The long-lived access supervisor must not own startup's mutation
-        # lock: its dispatcher observes the lab under the shared lock.
-        after_start.append(lambda: _publish_appliance_guest_readiness(ctx))
-        readiness_failure = None
-    else:
-        readiness_failure = _publish_appliance_guest_readiness(ctx)
+    readiness_failure = _publish_appliance_guest_readiness(ctx)
     if readiness_failure is not None:
         readiness_failure.admission_seconds = ctx.admission_seconds
-        return readiness_failure
+        readiness_failure.execution_boundary = ctx.execution_boundary
+        readiness_failure.diagnostics = [
+            *ctx.diagnostics,
+            *readiness_failure.diagnostics,
+        ]
+        return _account_for_failed_start(ctx, readiness_failure)
+    if after_start is not None and ctx.appliance_access_request is not None:
+        # Access supervision is long-lived and uses shared observation locks.
+        after_start.append(lambda: _serve_appliance_guest_access(ctx))
     outcome = derive_startup_outcome(ctx.diagnostics, fatal=False)
     if outcome is StartupOutcome.READY:
         log.info("APTL lab started successfully!")
@@ -4614,26 +4808,14 @@ def _publish_appliance_guest_readiness(
             ctx.appliance_access_device,
             ctx.appliance_access_output_dir,
         )
-        if any(access_values):
-            if (
-                not all(access_values)
-                or ctx.appliance_launch_descriptor is None
-                or ctx.run_id is None
-            ):
-                raise ValueError("appliance access channel is incomplete")
-            from aptl.appliance.access_service import serve_appliance_access
-
-            serve_appliance_access(
-                request_path=cast(Path, ctx.appliance_access_request),
-                descriptor_path=ctx.appliance_launch_descriptor,
-                device_path=cast(Path, ctx.appliance_access_device),
-                output_dir=cast(Path, ctx.appliance_access_output_dir),
-                run_id=ctx.run_id,
-                project_dir=ctx.project_dir,
-                observe_boundary=lambda: observe(deployment),
-            )
+        if any(access_values) and (
+            not all(access_values)
+            or ctx.appliance_launch_descriptor is None
+            or ctx.run_id is None
+        ):
+            raise ValueError("appliance access channel is incomplete")
     except Exception:
-        log.exception("Appliance guest readiness publication failed")
+        log.error("Appliance guest readiness publication failed")
         return LabResult(
             success=False,
             error="Appliance guest readiness publication failed.",
@@ -4641,8 +4823,31 @@ def _publish_appliance_guest_readiness(
     return None
 
 
+def _serve_appliance_guest_access(ctx: _LabStartContext) -> LabResult | None:
+    """Supervise an already-ready seat outside startup's mutation ownership."""
+    from aptl.appliance.access_service import serve_appliance_access
+
+    assert ctx.backend is not None and ctx.admitted_start is not None
+    try:
+        deployment = ctx.admitted_start.realization.deployment_spec(
+            sorted(ctx.selected_profiles)
+        )
+        serve_appliance_access(
+            request_path=cast(Path, ctx.appliance_access_request),
+            descriptor_path=cast(Path, ctx.appliance_launch_descriptor),
+            device_path=cast(Path, ctx.appliance_access_device),
+            output_dir=cast(Path, ctx.appliance_access_output_dir),
+            run_id=cast(str, ctx.run_id),
+            project_dir=ctx.project_dir,
+            observe_boundary=lambda: ctx.backend.observe_appliance_boundary(deployment),
+        )
+    except Exception:
+        log.error("Appliance access supervision failed")
+        return LabResult(success=False, error="Appliance access supervision failed.")
+    return None
+
+
 _MCP_SERVER_KEYS = {
-    "aptl-casemgmt": ("THEHIVE_API_KEY",),
     "aptl-threatintel": ("MISP_API_KEY",),
     "aptl-soar": ("SHUFFLE_API_KEY",),
 }

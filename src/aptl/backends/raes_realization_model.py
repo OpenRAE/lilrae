@@ -14,6 +14,7 @@ from aptl.core.deployment.realization import (
     DeploymentAclRealization,
     DeploymentContentRealization,
     DeploymentCaptureApparatus,
+    DeploymentCompanionRealization,
     DeploymentGeneratedArtifactRealization,
     DeploymentImageRealization,
     DeploymentNetworkAttachment,
@@ -73,10 +74,14 @@ class NodeRealization(object):
     backend_run_capabilities: tuple[str, ...] = ()
     backend_provider_kind: str = ""
     backend_provider_parameters: tuple[tuple[str, str], ...] = ()
+    backend_account_provider: str = ""
     # Generated prerequisites selected under the same OPEN authority as this
     # node's backend runtime additions. They are promoted into the realization's
     # top-level artifact collection so deployment and reporting see them.
     backend_generated_artifacts: tuple[DeploymentGeneratedArtifactRealization, ...] = ()
+    # Backend-owned containers selected with the image; they join this node's
+    # network namespace and never carry an SDL identity of their own.
+    backend_companions: tuple[DeploymentCompanionRealization, ...] = ()
 
     def service_names(self) -> tuple[str, ...]:
         """Return the declared service names, for profile/alias matching."""
@@ -130,6 +135,14 @@ def _optional_node_details(node: NodeRealization) -> dict[str, object]:
             list(node.backend_selected_concerns) or None,
         ),
         ("backend_base_image_ref", node.backend_base_image_ref),
+        (
+            "backend_companions",
+            [
+                {"role": companion.role, "image": companion.image.details()}
+                for companion in node.backend_companions
+            ]
+            or None,
+        ),
         ("backend_run_capabilities", list(node.backend_run_capabilities) or None),
         (
             "backend_provider",
@@ -233,6 +246,7 @@ class AptlRealization(object):
     networks: tuple[NetworkRealization, ...]
     placements: tuple[PlacementRealization, ...]
     diagnostics: tuple[Diagnostic, ...]
+    raes_plan_digest: str | None = None
     acls: tuple[DeploymentAclRealization, ...] = ()
     generated_artifacts: tuple[DeploymentGeneratedArtifactRealization, ...] = ()
     persistent_volumes: tuple[DeploymentPersistentVolumeRealization, ...] = ()
@@ -260,6 +274,7 @@ class AptlRealization(object):
         return DeploymentRealizationSpec(
             profiles=tuple(profiles),
             nodes=nodes,
+            raes_plan_digest=self.raes_plan_digest,
             realization_authority=self.realization_authority,
             networks=tuple(
                 DeploymentNetworkRealization(
@@ -390,5 +405,7 @@ def _deployment_node_realization(
         backend_run_capabilities=node.backend_run_capabilities,
         backend_provider_kind=node.backend_provider_kind,
         backend_provider_parameters=node.backend_provider_parameters,
+        backend_account_provider=node.backend_account_provider,
         profiles=node.profiles,
+        backend_companions=node.backend_companions,
     )

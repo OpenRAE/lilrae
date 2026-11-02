@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
 from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.planning import PlannedResource, ProvisioningPlan
+from raes_contracts.plan_projection import runtime_plan_digest
 
 from aptl.backends.raes_diagnostics import (
     PROVISIONING_ADDRESS,
@@ -53,6 +55,8 @@ from aptl.backends.raes_realization_values import (
 )
 from aptl.core.config import AptlConfig
 from aptl.core.deployment.realization import DeploymentGeneratedArtifactRealization
+from aptl.core.deployment._misp_server_tls import MISP_SERVER_TLS_PROFILE
+from aptl.core.deployment._compose_stateful_constants import SOC_CERT_PROFILE
 from aptl.core.scenario_bundle import ScenarioBundle
 from aptl.utils.redaction import redact
 
@@ -94,7 +98,7 @@ def interpret_provisioning_plan(
     # the bundle root. The two roots coincide only for an in-tree scenario.
     profile_index = _load_profile_index(content_root, diagnostics)
     if profile_index is None:
-        return _empty_realization(diagnostics)
+        return _empty_realization(diagnostics, plan=plan)
 
     payload_resources = _payload_resources(plan, diagnostics)
     nodes, networks, profiles = _realize_nodes_and_networks(
@@ -150,7 +154,9 @@ def interpret_provisioning_plan(
         nodes,
         diagnostics,
     )
-    if bundle.pack_identity is None and not _all_nodes_base_container_materialized(nodes):
+    if bundle.pack_identity is None and not _all_nodes_base_container_materialized(
+        nodes
+    ):
         _append_profile_diagnostics(profiles, config, diagnostics)
 
     return AptlRealization(
@@ -159,6 +165,7 @@ def interpret_provisioning_plan(
         networks=tuple(sorted(networks, key=lambda item: item.address)),
         placements=tuple(sorted(placements, key=lambda item: item.address)),
         diagnostics=tuple(diagnostics),
+        raes_plan_digest=runtime_plan_digest(plan),
         acls=tuple(acls),
         generated_artifacts=tuple(
             sorted(generated_artifacts, key=lambda item: item.address)
@@ -286,7 +293,9 @@ def _all_nodes_base_container_materialized(nodes: list[NodeRealization]) -> bool
     return bool(os_nodes) and all(_is_materializable_node(node) for node in os_nodes)
 
 
-def _empty_realization(diagnostics: list[Diagnostic]) -> AptlRealization:
+def _empty_realization(
+    diagnostics: list[Diagnostic], *, plan: ProvisioningPlan
+) -> AptlRealization:
     """Build an empty realization that carries validation diagnostics."""
 
     return AptlRealization(
@@ -295,6 +304,7 @@ def _empty_realization(diagnostics: list[Diagnostic]) -> AptlRealization:
         networks=(),
         placements=(),
         diagnostics=tuple(diagnostics),
+        raes_plan_digest=runtime_plan_digest(plan),
     )
 
 
@@ -310,6 +320,9 @@ def _merge_backend_generated_artifacts(
     for candidate in (
         artifact for node in nodes for artifact in node.backend_generated_artifacts
     ):
+        candidate = _bind_backend_artifact_source(candidate, authored, diagnostics)
+        if candidate is None:
+            continue
         candidate = _canonical_ordering_dependencies(candidate, by_name)
         existing = by_name.get(candidate.name)
         if existing is None:
@@ -326,6 +339,37 @@ def _merge_backend_generated_artifacts(
             )
         )
     return merged
+
+
+def _bind_backend_artifact_source(
+    candidate: DeploymentGeneratedArtifactRealization,
+    authored: list[DeploymentGeneratedArtifactRealization],
+    diagnostics: list[Diagnostic],
+) -> DeploymentGeneratedArtifactRealization | None:
+    """Bind TLS delivery to one admitted producer covering its consumers."""
+    if candidate.provenance != MISP_SERVER_TLS_PROFILE:
+        return candidate
+    targets = {consumer.target_address for consumer in candidate.consumers}
+    sources = [
+        source
+        for source in authored
+        if source.provenance == SOC_CERT_PROFILE
+        and targets
+        and targets <= {consumer.target_address for consumer in source.consumers}
+    ]
+    if len(sources) == 1:
+        return cast(
+            DeploymentGeneratedArtifactRealization,
+            replace(candidate, ordering_dependencies=(sources[0].address,)),
+        )
+    diagnostics.append(
+        diagnostic(
+            "aptl.provisioner.backend-artifact-source-ambiguous",
+            candidate.address,
+            "A backend TLS delivery requires one admitted certificate producer.",
+        )
+    )
+    return None
 
 
 def _canonical_ordering_dependencies(

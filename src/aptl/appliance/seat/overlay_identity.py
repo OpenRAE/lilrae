@@ -14,6 +14,8 @@ from typing import Literal
 import rfc8785
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from aptl.utils.deterministic_archive import open_nofollow
+
 
 class ApplianceBootstrapError(RuntimeError):
     """Per-overlay identity could not be established safely."""
@@ -54,11 +56,7 @@ def _read_existing(path: Path) -> OverlayIdentity:
             raise ApplianceBootstrapError("overlay identity must not be a symlink")
         if stat.S_IMODE(info.st_mode) != 0o600:
             raise ApplianceBootstrapError("overlay identity must be owner-only")
-        flags = os.O_RDONLY | os.O_CLOEXEC
-        if hasattr(os, "O_NOFOLLOW"):
-            flags |= os.O_NOFOLLOW
-        fd = os.open(path, flags)
-        with os.fdopen(fd, "rb") as handle:
+        with open_nofollow(path) as handle:
             payload = handle.read()
         return OverlayIdentity.model_validate_json(payload)
     except ApplianceBootstrapError:

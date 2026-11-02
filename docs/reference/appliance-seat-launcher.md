@@ -8,9 +8,11 @@ host MCP grant. Scenario services keep their own authentication.
 On new images, the operator selects the guest `aptl` account's privilege mode
 at seat load time. This does not change the host Unix account that launched
 the seat.
-Additional isolation and controlled egress between workloads inside a guest are
-not promised; that work is tracked in #1127. The signed boundary policy the image
-carries identifies this contract explicitly.
+Protected V3 images also default-deny ordinary range workloads from LilRAE's
+guest-host management/control, evidence custody, Docker authority, and platform
+credentials. This guard does not segment workloads from each other or add
+controlled egress. The signed boundary policy identifies V2 VM-only seats and
+V3 protected seats explicitly.
 
 **Seats have no default outbound network controls.** The guest uses user-mode
 NAT and can initiate ordinary internet and LAN connections, including HTTP,
@@ -27,7 +29,7 @@ from the guest. This does not separate workloads inside the VM.
 ## Security boundary
 
 The seat is the preferred path when AI agents will operate the range or when
-multiple users share a physical host. Direct `aptl lab start` places the
+multiple users share a physical host. Direct `lilrae lab start` places the
 intentionally vulnerable workloads, MCP tooling, and Docker-authorized control
 components on the selected host Docker engine. A seat instead places that
 rootful Docker daemon and the entire range inside a dedicated disposable VM;
@@ -38,7 +40,7 @@ host or another seat.
 The launcher starts QEMU in a rootless network namespace owned by the seat's
 Unix account. `slirp4netns` gives that namespace outbound connectivity without
 publishing its Guacamole listener on the ordinary host network. Other local
-accounts cannot enter the namespace. `aptl seat open-kiosk` launches
+accounts cannot enter the namespace. `lilrae seat open-kiosk` launches
 the browser in that namespace without adding an APTL login. Processes under
 the same Unix account share access to that account's seat. Guacamole, guacd,
 PostgreSQL, and xrdp have no separate host port mappings. The gateway's xrdp
@@ -53,15 +55,18 @@ unnecessary QEMU devices and host mappings, run seats on a dedicated and
 rebuildable host, keep unrelated secrets and workloads off it, restrict the
 surrounding network, and monitor active sessions.
 
-Inside one seat, all TechVault workloads share the guest boundary. A compromise
-may affect other containers, credentials, or evidence in that same VM. Reset
-destroys the overlay and revokes the previous generation; it does not turn a
+Inside one seat, all TechVault workloads share the guest kernel. V3 blocks
+ordinary range-to-guest-host access and rejects unadmitted authority, protected
+mounts, and platform credentials, but it does not contain a guest kernel/root
+compromise or an admitted Docker-authority holder. A compromise may still
+affect other range containers and scenario content in that VM. Reset destroys
+the overlay and revokes the previous generation; it does not turn a
 known-compromised physical host back into a trusted one.
 
 The [one-host KVM acceptance record](../reviews/1162-seat-acceptance.md) is
 evidence for the exact signed image and operations it exercised. It does not
 record a complete host OS/kernel/QEMU version profile or satisfy the independent
-machine qualification for every supported seat. `aptl lab start` inside the
+machine qualification for every supported seat. `lilrae lab start` inside the
 guest can report its selected Docker endpoint, but only the launcher can
 observe the outer host and qualify that seat generation. A signed image, a VM
 label, or passing unit tests do not replace fresh host and guest observations.
@@ -96,7 +101,7 @@ created privately below that user's own `$XDG_STATE_HOME` or home directory.
 ## Choose desktop privileges and start a seat
 
 ```bash
-aptl seat start --desktop-mode event
+lilrae seat start --desktop-mode event
 ```
 
 New signed seat images require an explicit mode. In `event` mode, the guest
@@ -111,8 +116,8 @@ host owner, then run the rescue command as a host administrator with
 `virt-rescue` installed:
 
 ```bash
-aptl seat stop --seat-root /home/seat-user/.local/state/aptl/seat
-sudo aptl seat rescue --seat-root /home/seat-user/.local/state/aptl/seat
+lilrae seat stop --seat-root /home/seat-user/.local/state/aptl/seat
+sudo lilrae seat rescue --seat-root /home/seat-user/.local/state/aptl/seat
 ```
 
 The command holds the seat lifecycle lock, refuses a running VM, and opens the
@@ -130,7 +135,7 @@ password; first boot receives it on a private VM channel before xrdp starts.
 Administrative users run Docker through sudo; they are not in the Docker group.
 
 ```bash
-aptl seat start --desktop-mode administrative
+lilrae seat start --desktop-mode administrative
 ```
 
 Automation can supply a private file owned by the launching host user, with no
@@ -140,18 +145,18 @@ password is never placed in a command argument, environment variable, launch
 descriptor, or host seat record.
 
 ```bash
-aptl seat start --desktop-mode administrative --sudo-password-file /private/path/password
+lilrae seat start --desktop-mode administrative --sudo-password-file /private/path/password
 ```
 
-The mode is bound to the seat's launch generation. `aptl seat stop` and a warm
-`aptl seat start` retain it without asking for the password again. To change
+The mode is bound to the seat's launch generation. `lilrae seat stop` and a warm
+`lilrae seat start` retain it without asking for the password again. To change
 the mode or password, reset the seat, which destroys its overlay, then start
 it again with the desired mode and a fresh password choice:
 
 ```bash
-aptl seat stop
-aptl seat reset --desktop-mode event
-aptl seat start
+lilrae seat stop
+lilrae seat reset --desktop-mode event
+lilrae seat start
 ```
 
 Older selected image digests keep their existing privilege behavior and do
@@ -172,8 +177,8 @@ closed. Cosign's transparency-log checks remain enabled.
 To select an alternate image, provide its independently obtained public key:
 
 ```bash
-aptl seat start --image ghcr.io/your-org/your-seat:stable --public-key publisher.pub
-aptl seat start --image ghcr.io/your-org/your-seat@sha256:<digest> --public-key publisher.pub --yes
+lilrae seat start --image ghcr.io/your-org/your-seat:stable --public-key publisher.pub
+lilrae seat start --image ghcr.io/your-org/your-seat@sha256:<digest> --public-key publisher.pub --yes
 ```
 
 Selection precedence is `--image` / `APTL_SEAT_IMAGE`, `seat.image` in
@@ -187,6 +192,27 @@ have one participant port and do not create a host MCP key, expiring grant, or
 Claude/Codex configuration on the physical host. Claude runs in the guest;
 provider sign-in belongs to its user and is never copied into the image.
 Older selected image digests retain their own signed access contract.
+
+### Participant desktop
+
+The admitted scenario pack decides what the desktop shows. Its adapter names
+the consoles, the logins, the guide and the hostnames the browser must resolve,
+as references to the pack's SDL (`aptl.participant_desktop`). Lab start resolves
+each reference against the admitted SDL and the running lab:
+
+- A console URL is the authored canonical URL, or the realized published port
+  under the name that the console's certificate covers.
+- A login is only an authored `secret_fixture` credential from the SDL.
+- A hostname maps to the address of the node's own container.
+
+The guest sets `LILRAE_PARTICIPANT_DESKTOP_ACCOUNT=aptl`. Lab start writes the
+logins, the guide and the console list into that account's
+`~/.config/aptl/desktop` directory. The directory is `0700` and each file is
+`0600`. Lab start keeps only the hostname list, which has no secret, in
+`.aptl/participant-desktop/hosts.json`. The desktop handoff applies the list to
+`/etc/hosts` with the shared publisher, and the session browser opens the
+logins, the guide and the consoles after the lab is ready. A lab without that
+variable publishes no desktop.
 
 State defaults to the current user's private roots: `$XDG_STATE_HOME/aptl/seat`
 for the seat and `$XDG_CACHE_HOME/aptl/appliance` for the image cache, or the
@@ -205,11 +231,11 @@ another image. Explicit updates ask for permission to download, reset the
 stopped seat and remove the superseded cached image:
 
 ```bash
-aptl seat stop
-aptl seat update
-aptl seat start
+lilrae seat stop
+lilrae seat update
+lilrae seat start
 # Automated replacement, with the same verification and admission checks:
-aptl seat update --yes
+lilrae seat update --yes
 ```
 
 A running VM refuses replacement. Download, signature or host-admission failure
@@ -222,8 +248,8 @@ before use. A pinned reference remains pinned until explicitly changed.
 List cached images or confirm removal of entries no reference selects:
 
 ```bash
-aptl seat images
-aptl seat images --prune
+lilrae seat images
+lilrae seat images --prune
 ```
 
 `seat update --to sha256:<disk-digest>` selects a previously verified disk only
@@ -237,7 +263,7 @@ Stage a seat with one repeated typed mapping for every endpoint the image
 publishes:
 
 ```bash
-aptl seat stage \
+lilrae seat stage \
   --seat-id seat-01 \
   --mapping participant,tcp,127.0.0.1,18080,127.0.0.1,8080
 ```
@@ -267,16 +293,16 @@ file. Guacamole supplies its internal session identity automatically and opens
 the one xrdp connection created in this VM's overlay:
 
 ```bash
-aptl seat open-kiosk
+lilrae seat open-kiosk
 ```
 
 The command opens `http://127.0.0.1:<selected-port>/` inside the seat user's
 network namespace; pasting that URL into an ordinary host browser cannot
-reach it. `aptl seat start` reports the selected mapping without a credential.
+reach it. `lilrae seat start` reports the selected mapping without a credential.
 The participant signs in
 to Claude inside the guest if that provider requires it. Wazuh and other
 scenario applications continue to show their own sign-in where applicable.
-Inside the desktop, `aptl lab info` reports the live scenario ports and
+Inside the desktop, `lilrae lab info` reports the live scenario ports and
 credential-file locations. The customer portal is
 `http://172.20.1.20:8080/login`; MISP uses its authored browser origin
 `https://misp.techvault.local/`. The seat resolves that origin to the live
@@ -288,7 +314,7 @@ sign-in.
 Inspect coarse health (no credentials):
 
 ```bash
-aptl seat status
+lilrae seat status
 ```
 
 ## Reset and recovery
@@ -297,19 +323,19 @@ Security reset destroys the overlay and recreates a fresh one over the same
 image. It is not a reboot, logout, or in-guest repair.
 
 ```bash
-aptl seat reset --seat-id seat-01
+lilrae seat reset --seat-id seat-01
 ```
 
 Instructor recovery performs reset then start:
 
 ```bash
-aptl seat recover --seat-id seat-01
+lilrae seat recover --seat-id seat-01
 ```
 
 After a physical-host reboot, reconcile persisted seat metadata before reuse:
 
 ```bash
-aptl seat reconcile
+lilrae seat reconcile
 ```
 
 When reconciliation reports `host-reboot-detected` or `vm-not-running`, run
@@ -345,14 +371,13 @@ source, image archive, expanded guest and compressed output together.
 The build refuses to proceed without read/write access to `/dev/kvm`; join the
 `kvm` group and start a new login session if necessary.
 On hosts with root-only kernel files in `/boot`, set
-`APTL_SEAT_LIBGUESTFS_SUDO=1` for the bake and qualification commands; this
-uses sudo only for libguestfs image operations.
+`APTL_SEAT_LIBGUESTFS_SUDO=1` for the bake and privilege-qualification
+commands; this uses sudo only for libguestfs image operations.
 Capacity admission uses the disk's declared virtual size, not its compressed
 size. The default is 128 GiB; `APTL_SEAT_DISK_GIB` selects another capacity.
 
 ```bash
 APTL_SEAT_BUILD_ROOT="$PWD/build/seat-cut" scripts/appliance/build-seat-image.sh
-scripts/appliance/qualify-seat-image.sh build/seat-cut/out/seat-disk.qcow2
 ```
 
 The build downloads a digest-pinned Ubuntu base, builds project and Guacamole
@@ -361,11 +386,9 @@ installs the hash-locked desktop and Claude runtime offline. It sanitizes and
 scans the guest and writes its launch config.
 `scripts/appliance/seat-base-image.env` holds the base pin. Every participant
 boot loads local image bytes and starts the normal admitted lab without pulling
-containers. The qualification script exercises real Docker, range and semantic
-MCP operations in a disposable VM; also exercise the actual `aptl seat` path,
-scenario web services, cleanup, clean-range startup, stop and reset before
-publishing. Check the Guacamole-to-xrdp desktop and browser reopening on the
-published immutable reference before promoting its public tag.
+containers. The retired disk smoke that disabled first boot is not
+qualification evidence. Publish immutable content without moving the public
+channel, then qualify that exact signed reference through the normal launcher.
 Record source, disk and config hashes with the observed results. The build
 writes `seat-build.json` binding those bytes to the source commit. Dirty builds
 are diagnostic artifacts and cannot be published; changed output bytes also
@@ -386,7 +409,23 @@ The script pushes the disk/config by content key, checks anonymous access, signs
 the immutable manifest and verifies its signature. Its output is the immutable
 reference. `APTL_SEAT_IMAGE_TAG` optionally adds an immutable human-readable tag.
 Test the immutable reference with a fresh CLI and empty private cache before
-promoting. The privilege qualifier starts real seats in event mode and both
+promoting:
+
+```bash
+scripts/appliance/qualify-seat-image.sh \
+  ghcr.io/owner/seat@sha256:<published-manifest-digest>
+```
+
+This qualifier uses the real first-boot and readiness channels, fresh boundary
+evidence, a warm restart, reset, and a second clean start. It never substitutes
+a qualification service. Record the installed TechVault attack, detection,
+Shuffle, repair, and retest results against that same digest, plus the
+Guacamole-to-xrdp desktop and browser reopening. Issue #1127 still names a
+TheHive step, but ADR-063 directs TheHive/Cortex removal; the record must name
+the exact admitted pack and disclose that conflict instead of claiming a result
+that was not run.
+
+The privilege qualifier starts real seats in event mode and both
 administrative password modes, checks guest sudo/PAM and Docker group access
 on each stopped overlay, and verifies a warm restart without a new password:
 

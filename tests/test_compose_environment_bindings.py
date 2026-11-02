@@ -1004,6 +1004,18 @@ def test_compose_never_fills_a_variable_that_placed_content_names(
     error = backend._effective_compose_model_error(command, realization, tmp_path)
     assert error is None
 
+    # An admitted content bind never authorizes an unrelated host bind.
+    unexpected = json.loads(readback.stdout)
+    unexpected["services"]["app"]["volumes"].append(
+        {"type": "bind", "source": "/", "target": "/foreign-host", "read_only": False}
+    )
+    monkeypatch.setattr(backend, "_run", lambda *_args, **_kwargs: subprocess.CompletedProcess(
+        [], 0, json.dumps(unexpected), ""
+    ))
+    assert "undeclared runtime authority" in backend._effective_compose_model_error(
+        command, realization, tmp_path
+    )
+
 
 def _capture_model(root: Path) -> tuple[Path, DeploymentRealizationSpec]:
     """Write the Kali capture model for key outputs under a `$` directory.
@@ -1200,13 +1212,14 @@ _TECHVAULT_SOURCED = {
         "DASHBOARD_PASSWORD",
     },
     "misp": {"ADMIN_KEY"},
+    "shuffle-backend": {"SHUFFLE_DEFAULT_USERNAME", "SHUFFLE_DEFAULT_PASSWORD"},
 }
 
 
 def test_the_released_techvault_pack_binds_from_its_own_adapter(
     techvault, tmp_path, monkeypatch
 ):
-    """Every value-less Wazuh and MISP variable has an adapter source."""
+    """Every value-less Wazuh, MISP and Shuffle variable has an adapter source."""
 
     names = sorted(set().union(*_TECHVAULT_SOURCED.values()))
     (tmp_path / ".env").write_text(
@@ -1251,7 +1264,8 @@ def test_the_released_techvault_readback_records_no_adapter_value_or_digest(
     """After start, evidence names no adapter value and commits to none.
 
     The readback sees each service with its adapter values in place. The six
-    Wazuh ``secret_fixture`` names are left out of the disclosed environment,
+    Wazuh and Shuffle ``secret_fixture`` names are left out of the disclosed
+    environment,
     MISP's ``operator_secret`` ``ADMIN_KEY`` is disclosed by presence, and every
     commitment left is the one RAES derives from the scenario's own value.
     """
@@ -1279,7 +1293,12 @@ def test_the_released_techvault_readback_records_no_adapter_value_or_digest(
     assert {
         service: {r["name"] for r in records} & _TECHVAULT_SOURCED[service]
         for service, records in disclosed.items()
-    } == {"wazuh-manager": set(), "wazuh-dashboard": set(), "misp": {"ADMIN_KEY"}}
+    } == {
+        "wazuh-manager": set(),
+        "wazuh-dashboard": set(),
+        "misp": {"ADMIN_KEY"},
+        "shuffle-backend": set(),
+    }
     admin_key = next(r for r in disclosed["misp"] if r["name"] == "ADMIN_KEY")
     assert admin_key["value_present"] is True
     assert "value_commitment" not in admin_key

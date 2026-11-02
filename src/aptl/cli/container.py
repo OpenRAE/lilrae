@@ -1,7 +1,7 @@
 """CLI commands for container operations.
 
-Implements ``aptl container list``, ``aptl container shell``, and
-``aptl container logs`` (CLI-004). Each command resolves the project's
+Implements ``lilrae container list``, ``lilrae container shell``, and
+``lilrae container logs`` (CLI-004). Each command resolves the project's
 ``aptl.json``, instantiates the configured deployment backend, and
 delegates to the backend's container_* methods so local Docker Compose
 and SSH-remote deployments behave identically.
@@ -14,7 +14,11 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from aptl.cli._common import resolve_config_for_cli
+from aptl.cli._common import (
+    PROJECT_DIR_HELP,
+    exit_on_invalid_deployment_settings,
+    resolve_config_for_cli,
+)
 from aptl.core.deployment import DeploymentBackend, get_backend
 from aptl.utils.logging import get_logger
 
@@ -28,7 +32,7 @@ _PROJECT_DIR_OPTION = typer.Option(
     Path("."),
     "--project-dir",
     "-d",
-    help="Path to the APTL project directory.",
+    help=PROJECT_DIR_HELP,
 )
 
 
@@ -39,14 +43,16 @@ def _resolve_backend(project_dir: Path) -> DeploymentBackend:
     compose runs in the directory that actually owns ``aptl.json``.
     """
     config, project_root = resolve_config_for_cli(project_dir)
-    return get_backend(config, project_root)
+    with exit_on_invalid_deployment_settings():
+        backend = get_backend(config, project_root)
+    return backend
 
 
 def _ensure_project_container(backend: DeploymentBackend, name: str) -> None:
     """Reject container names that aren't part of this lab's compose project.
 
     Defense-in-depth against typos and against shared-daemon scenarios
-    where the docker host has containers from other projects: ``aptl
+    where the docker host has containers from other projects: ``lilrae
     container shell`` / ``logs`` should never `exec`/`logs` into a
     non-APTL container even if the user types its name. Uses the
     backend's typed ``container_exists`` check (one ``docker inspect``
@@ -55,7 +61,7 @@ def _ensure_project_container(backend: DeploymentBackend, name: str) -> None:
     if not backend.container_exists(name):
         typer.echo(
             f"container {name!r} is not part of this lab's compose project. "
-            f"Run `aptl container list` to see valid names.",
+            f"Run `lilrae container list` to see valid names.",
             err=True,
         )
         raise typer.Exit(code=1)

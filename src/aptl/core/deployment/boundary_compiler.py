@@ -13,12 +13,59 @@ from aptl.core.deployment.boundary import (
     PlatformBoundaryBootstrapSpec,
     PlatformBoundarySpec,
     PlatformCrossing,
+    SeatPermittedFlow,
+    SeatProtectedComponent,
+    SeatProtectionBoundarySpec,
 )
 from aptl.core.deployment.realization import DeploymentRealizationSpec
 
 
 class BoundaryCompileError(ValueError):
     """A desired boundary could not be bound without widening it."""
+
+
+def compile_seat_protection_boundary(
+    policy: ApplianceBoundaryPolicy,
+    realization: DeploymentRealizationSpec,
+    *,
+    policy_digest: str,
+    networks: Sequence[BoundaryNetwork],
+    owner: str,
+) -> SeatProtectionBoundarySpec:
+    """Bind v3 input protection to every admitted range network."""
+
+    if not policy.seat_component_protection:
+        raise BoundaryCompileError("protected-seat policy is required")
+    expected = {item.name for item in realization.networks}
+    observed = {item.name for item in networks}
+    if not expected or expected != observed or len(observed) != len(networks):
+        raise BoundaryCompileError("protected-seat network binding is incomplete")
+    return SeatProtectionBoundarySpec(
+        owner=owner,
+        policy_digest=policy_digest,
+        networks=tuple(sorted(networks, key=lambda item: item.name)),
+        protected_components=tuple(
+            SeatProtectedComponent(
+                component_class=item.component_class,
+                probe_identity=item.probe_identity,
+                protocol=item.protocol,
+                port=item.port,
+                purpose=item.purpose,
+            )
+            for item in policy.protected_components
+        ),
+        permitted_flows=tuple(
+            SeatPermittedFlow(
+                source=item.source,
+                destination=item.destination,
+                protocol=item.protocol,
+                ports=tuple(item.ports),
+                purpose=item.purpose,
+                probe_identity=item.probe_identity,
+            )
+            for item in policy.permitted_host_flows
+        ),
+    )
 
 
 def compile_raes_boundary(

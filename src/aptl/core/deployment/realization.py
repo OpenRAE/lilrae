@@ -7,6 +7,11 @@ from typing import TYPE_CHECKING, Literal
 
 from aptl.runtime_authority import DeploymentDockerAuthorityAdmission
 from aptl.core.scenario_bundle import PackIdentity
+from aptl.core.deployment._companion_realization import (
+    DeploymentCompanionRealization,
+    companion_container_name,
+)
+from aptl.core.deployment._realization_access import DeploymentCaptureApparatus
 from aptl.core.deployment._realization_primitives import (
     AclAction as _AclAction,
     AclDirection as _AclDirection,
@@ -111,9 +116,21 @@ class DeploymentNodeRealization(object):
     backend_run_capabilities: tuple[str, ...] = ()
     backend_provider_kind: str = ""
     backend_provider_parameters: tuple[tuple[str, str], ...] = ()
+    backend_account_provider: str = ""
     # The pack/backend seam resolves serving membership once; renderers reuse
     # the DTO rather than infer it from component names.
     profiles: tuple[str, ...] = ()
+    # Backend-owned containers that share this node's network namespace.
+    backend_companions: tuple[DeploymentCompanionRealization, ...] = ()
+
+    def companion_containers(self) -> tuple[str, ...]:
+        """Return the semantic container names of this node's companions."""
+
+        owner = self.container_name or f"aptl-{self.name}"
+        return tuple(
+            companion_container_name(owner, companion.role)
+            for companion in self.backend_companions
+        )
 
 
 ContentSourceKind = Literal[
@@ -218,14 +235,30 @@ class DeploymentServiceSearchIndexSchemaRealization(object):
 
 
 @dataclass(frozen=True)
+class DeclaredAccountCredential(object):
+    """One authored ``secret_fixture`` credential an SDL account declares.
+
+    The value is scenario content the SDL already carries, so the backend may
+    hold it while it realizes the account (ADR-046 Declared Fixture Credential
+    Addendum). It is excluded from ``repr``, equality and every ``details()``
+    projection, so evidence, run records and logs name only ``credential_id``.
+    """
+
+    credential_id: str
+    value: str = field(repr=False, compare=False)
+
+
+@dataclass(frozen=True)
 class DeploymentAccountRealization(object):
     """One account-placement identity lowered from a RAES account resource.
 
-    Carries non-secret identity only (ADR-046 addendum): no password material
-    crosses this record. The concrete credential is generated inside the target
-    provider boundary; this record is realization evidence proving the declared
-    account maps to a node whose backend provider actually creates and
-    reconciles it.
+    Its evidence projection is non-secret identity only (ADR-046 addendum).
+    A credential the backend mints is generated inside the target provider
+    boundary and never crosses this record. A credential the scenario authors
+    as ``secret_fixture`` is scenario content: ``credential`` carries it to the
+    provider, outside ``repr`` and ``details()``. This record is realization
+    evidence proving the declared account maps to a node whose backend
+    provider actually creates and reconciles it.
 
     ``password_strength`` is the authored credential class (RAES
     ``PasswordStrength``), carried because it is a declared fact about the
@@ -250,6 +283,8 @@ class DeploymentAccountRealization(object):
     mail: str = ""
     disabled: bool | None = None
     password_strength: str = ""
+    auth_method: str = "password"
+    credential: DeclaredAccountCredential | None = None
 
     def details(self) -> dict[str, object]:
         return {
@@ -261,6 +296,10 @@ class DeploymentAccountRealization(object):
             "mail": self.mail,
             "disabled": self.disabled,
             "password_strength": self.password_strength,
+            "auth_method": self.auth_method,
+            "credential_id": (
+                self.credential.credential_id if self.credential is not None else None
+            ),
         }
 
 
@@ -398,61 +437,13 @@ class DeploymentPersistentVolumeRealization(object):
 
 
 @dataclass(frozen=True)
-class DeploymentCaptureApparatus(object):
-    """One scope-admitted backend observer that deployment must realize."""
-
-    apparatus_id: str
-    service_name: str
-    container_name: str
-    target_refs: tuple[str, ...]
-    governing_scopes: tuple[str, ...]
-    environment_visible: bool
-    observer_effects: tuple[str, ...]
-
-    def details(self) -> dict[str, object]:
-        return {
-            "apparatus_id": self.apparatus_id,
-            "service_name": self.service_name,
-            "container_name": self.container_name,
-            "target_refs": list(self.target_refs),
-            "governing_scopes": list(self.governing_scopes),
-            "environment_visible": self.environment_visible,
-            "observer_effects": list(self.observer_effects),
-        }
-
-
-@dataclass(frozen=True)
-class DeploymentOperatorAccess(object):
-    """One declared operator interactive access the backend must make reachable.
-
-    A scenario declares that a participant reaches a node interactively
-    (``agents.<agent>.interactive_access.<id>``). That is an in-world fact; how
-    an operator on the host actually reaches an internal node is the backend's
-    choice under open realization, and the backend must make it true or refuse
-    admission (issue #1006).
-    """
-
-    access_id: str
-    agent: str
-    target_node: str
-    channel: str
-
-    def details(self) -> dict[str, object]:
-        return {
-            "access_id": self.access_id,
-            "agent": self.agent,
-            "target_node": self.target_node,
-            "channel": self.channel,
-        }
-
-
-@dataclass(frozen=True)
 class DeploymentRealizationSpec(object):
     """Portable input for typed deployment backend realization."""
 
     profiles: tuple[str, ...]
     nodes: tuple[DeploymentNodeRealization, ...]
     networks: tuple[DeploymentNetworkRealization, ...]
+    raes_plan_digest: str | None = None
     docker_authority_admissions: tuple[DeploymentDockerAuthorityAdmission, ...] = ()
     acls: tuple[DeploymentAclRealization, ...] = ()
     images: tuple[DeploymentImageRealization, ...] = ()

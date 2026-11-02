@@ -51,7 +51,7 @@ only after evidence and scope admission.
 From a development checkout, select a fixture explicitly:
 
 ```bash
-aptl lab start --scenario-path scenarios/techvault-attacker-target.sdl.yaml
+lilrae lab start --scenario-path scenarios/techvault-attacker-target.sdl.yaml
 ```
 
 The static realization proof for these variants lives in
@@ -69,7 +69,7 @@ profile set, not to the full TechVault live gate. The recorded live-boot evidenc
 and reproduction commands live in the
 [curated live validation gate](../raes/techvault-curated-live-validation-gate.md).
 
-Because `aptl lab start` boots with `docker compose --profile <selected>`, which
+Because `lilrae lab start` boots with `docker compose --profile <selected>`, which
 activates every service in a selected profile rather than only the declared RAES
 nodes, the provisioner validates that the selected profile set is a valid Compose
 project before starting the backend. When an activated service has a `depends_on`

@@ -15,9 +15,11 @@ from aptl.core.deployment._compose_spawn_image_realization import (
 from aptl.core.deployment._docker_image_identity import (
     LOCAL_IMAGE_PRESENT,
     DockerPlatform,
+    selected_container_image_digest,
     is_exact_image_reference,
     local_image_state,
 )
+from aptl.core.deployment._companion_realization import companion_images
 from aptl.core.deployment.realization import (
     DeploymentImageRealization,
     DeploymentRealizationSpec,
@@ -29,7 +31,7 @@ from aptl.core.lab_types import LabResult
 # single component build step (the AD image's package install) alone measured
 # ~745s, so the whole cold build exceeds ~800s — and a modest local dev machine
 # (the lab's primary target) can be markedly slower still. The prior 600s cap
-# failed a clean `aptl lab start` on a fresh machine (BackendTimeoutError mid
+# failed a clean `lilrae lab start` on a fresh machine (BackendTimeoutError mid
 # `docker build`). This is set generously so a legitimately slow cold build or a
 # large base-image pull never trips it; a docker op that genuinely exceeds this
 # is a broken environment, not a too-tight timeout. Inspect/tag ops finish in
@@ -59,6 +61,19 @@ _ImageOverrideDumper.add_representer(
 )
 
 
+def image_override_text(images: tuple[DeploymentImageRealization, ...]) -> str:
+    """Render the same merge features for preflight and the persisted model."""
+    services = {
+        image.service_name: {"image": image.image_ref, "build": _ResetValue()}
+        for image in images
+    }
+    return yaml.dump(
+        compose_literal({"services": services}),
+        Dumper=_ImageOverrideDumper,
+        sort_keys=True,
+    )
+
+
 class ComposeRealizationImageMixin:
     """Realize typed scenario image operations through Docker Compose."""
 
@@ -78,10 +93,12 @@ class ComposeRealizationImageMixin:
         realization_root = realization_root or scenario_root
         if not realization.images:
             return None, None
-        exact = any(is_exact_image_reference(i.image_ref) for i in realization.images)
+        # A node's backend companions are obtained and verified like its image.
+        images = (*realization.images, *companion_images(realization))
+        exact = any(is_exact_image_reference(i.image_ref) for i in images)
         # A cached pin must also run on the daemon's platform, as a child must.
         platform, failure = _daemon_platform(self) if exact else (None, None)
-        for image in realization.images:
+        for image in images:
             if failure is not None:
                 break
             failure = (
@@ -91,7 +108,7 @@ class ComposeRealizationImageMixin:
             )
         if failure is not None:
             return failure, None
-        override_path = self._write_image_override(realization.images, realization_root)
+        override_path = self._write_image_override(images, realization_root)
         base = base_compose_file(realization, scenario_root, realization_root)
         return None, (base, override_path)
 
@@ -183,7 +200,10 @@ class ComposeRealizationImageMixin:
         digest = inspect.stdout.strip()
         return digest if digest.startswith(_SHA256_PREFIX) else None
 
-    def container_image_digest(self, container_name: str) -> str | None:
+    def container_image_digest(
+        self, container_name: str, *, expected_ref: str | None = None,
+        expected_config_id: str | None = None,
+    ) -> str | None:
         """Return the manifest digest of the image backing one container.
 
         This is the read-after-write half of artifact realization: it reports
@@ -193,24 +213,16 @@ class ComposeRealizationImageMixin:
         disclosure rather than an assumed match.
         """
 
-        resolver = getattr(self, "_resolve_owned_container_id", None)
-        native_id = resolver(container_name) if callable(resolver) else container_name
-        container = self._run(
-            [
-                "docker",
-                "inspect",
-                "--format",
-                "{{.Image}}",
-                native_id,
-            ],
-            timeout=_IMAGE_REALIZATION_TIMEOUT,
-        )
-        if container.returncode != 0:
-            return None
-        image_id = container.stdout.strip()
-        if not image_id:
-            return None
-        return self._image_manifest_digest(image_id)
+        image_id = self.container_image_config_id(container_name)
+        digest = None
+        if image_id and (expected_config_id is None or image_id == expected_config_id):
+            digest = (
+                self._image_manifest_digest(image_id) if expected_ref is None
+                else selected_container_image_digest(
+                    self._run, image_id, expected_ref, timeout=_IMAGE_REALIZATION_TIMEOUT
+                )
+            )
+        return digest
 
     def substrate_image_identity(self, image_ref: str) -> tuple[str, str] | None:
         """Return the ``(config-id digest, media_type)`` of a locally present ref.
@@ -436,16 +448,8 @@ class ComposeRealizationImageMixin:
 
         override_path = scenario_root / _IMAGE_OVERRIDE_RELATIVE_PATH
         override_path.parent.mkdir(parents=True, exist_ok=True)
-        services = {
-            image.service_name: {"image": image.image_ref, "build": _ResetValue()}
-            for image in images
-        }
         override_path.write_text(
-            yaml.dump(
-                compose_literal({"services": services}),
-                Dumper=_ImageOverrideDumper,
-                sort_keys=True,
-            ),
+            image_override_text(images),
             encoding="utf-8",
             newline="\n",
         )

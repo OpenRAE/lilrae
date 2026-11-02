@@ -2,7 +2,7 @@
 
 The evidence bundle exporter packages a run's research evidence into a portable,
 self-describing archive that a third party can validate without importing APTL
-internals. It is the EXP-008 counterpart to the legacy `aptl runs export`
+internals. It is the EXP-008 counterpart to the legacy `lilrae runs export`
 convenience tarball: instead of scanning the run directory, it packages a
 verified artifact closure with a machine-readable inventory, the exact published
 RAES schemas, and optional loss-accounted projections.
@@ -16,22 +16,36 @@ redaction boundary. Redaction happens upstream at the persistence boundary
 
 ```bash
 # Local, offline bundle with the JSONL and Parquet projections.
-aptl runs export-bundle <run_id> -o ./exports -p jsonl -p parquet
+lilrae runs export-bundle <run_id> -o ./exports -p jsonl -p parquet
 
 # Canonical artifacts only (no projections).
-aptl runs export-bundle <run_id> -o ./exports
+lilrae runs export-bundle <run_id> -o ./exports
 ```
 
 Options:
 
 - `--projection / -p` selects a derived projection: `jsonl`, `parquet`, or
   `ocsf`. Repeat the flag for more than one. Parquet requires the optional
-  `pyarrow` dependency (`pip install aptl[parquet]`); without it, the bundle
-  records a `projection-unavailable` limitation instead of failing.
-- `--output-dir / -o` is the destination directory. It must be outside the run
-  tree, and the exporter never overwrites an existing bundle.
+  `pyarrow` dependency of the `parquet` extra (`pipx inject lilrae pyarrow`
+  for a pipx install, or `pip install -e ".[parquet]"` in a source checkout);
+  without it, the bundle records a `projection-unavailable` limitation instead
+  of failing.
+- `--output-dir / -o` is the destination directory, `./exports` by default. It
+  must be outside the run tree, and the exporter never overwrites an existing
+  bundle. Because a bundle carries restricted evidence, an existing directory
+  must be a real directory, not a symlink, that the current user owns and that
+  grants no group or other permissions; otherwise the command fails and writes
+  nothing. A missing directory is created with mode 0700. `lilrae runs export`
+  creates a missing output directory, including its default `./exports`, with
+  mode 0700 as well, so the two commands can share it. To reuse a directory
+  with wider permissions, such as one that an earlier release of
+  `lilrae runs export` created, run `chmod 700` on it first.
 - `--verify / --no-verify` controls the local self-verification pass that runs
   after the archive is written (on by default).
+
+Plain `lilrae runs export` archives have mode 0600. Exporting again replaces
+the archive atomically; readers of an older archive keep access only to the
+older bytes.
 
 The command reports the bundle path, the reproducible root identity, the member
 count, the seal state, and any disclosed limitations.
@@ -39,15 +53,19 @@ count, the seal state, and any disclosed limitations.
 ## Verify a bundle
 
 ```bash
-aptl runs verify-bundle ./exports/<run_id>.evidence-bundle.tar
+lilrae runs verify-bundle ./exports/<run_id>.evidence-bundle.tar
 ```
 
 Verification streams the archive, enforces its own resource bounds, recomputes
-every member digest and size against the inventory, recomputes the reproducible
-root identity, and, when a seal claims to be verified, checks that the seal
-binds that root. The verifier depends only on the standard library and the JSON
-canonicalization library, so a third party can lift it out of the tree and run
-it anywhere.
+every member digest and size against the inventory, and recomputes the
+reproducible root identity. It does not compare a seal with that root. A bundle
+carries no attestation material that a third party could authenticate, so the
+verifier fails every bundle whose seal scope is `verified`, whatever root the
+seal names, with the issue `seal claims 'verified' but carries no verifiable
+attestation material`. The exporter writes only `unsealed` bundles; see
+[Seal state and partial runs](#seal-state-and-partial-runs). The verifier
+depends only on the standard library and the JSON canonicalization library, so
+a third party can lift it out of the tree and run it anywhere.
 
 ## Bundle layout
 

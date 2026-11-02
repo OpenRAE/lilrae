@@ -1,65 +1,147 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { createServer, type Socket } from 'node:net';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-// Mock all dependencies — use function() form so they work with `new`
-vi.mock('@modelcontextprotocol/sdk/server/index.js', () => ({
-  Server: vi.fn(function () {
-    return {
-      setRequestHandler: vi.fn(),
-      connect: vi.fn().mockResolvedValue(undefined)
-    };
-  })
+// The real SDK server runs below; only its stdio transport and the backends
+// are replaced. `start()` connects to the in-memory end the test hands over,
+// and every SSH or HTTP operation lands on a spy.
+const fakes = vi.hoisted(() => ({
+  serverTransport: undefined as unknown,
+  ssh: {
+    executeCommand: vi.fn(),
+    createSession: vi.fn(),
+    executeInSession: vi.fn(),
+    getSessionOutput: vi.fn(),
+    getSessionRunId: vi.fn(),
+    closeSession: vi.fn(),
+    listSessions: vi.fn(),
+    disconnectAll: vi.fn(),
+    setHarvestHook: vi.fn(),
+    harvestSession: vi.fn(async (_id, _run, harvest) => harvest()),
+    shutdown: vi.fn().mockResolvedValue(true),
+  },
+  http: { makeRequest: vi.fn() },
 }));
 
 vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
-  StdioServerTransport: vi.fn(function () { return {}; })
+  StdioServerTransport: vi.fn(function () { return fakes.serverTransport; })
 }));
 
-vi.mock('../src/ssh.js', () => ({
-  SSHConnectionManager: vi.fn(function () { return {}; })
+vi.mock('../src/ssh.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/ssh.js')>()),
+  SSHConnectionManager: vi.fn(function () { return fakes.ssh; })
 }));
 
-vi.mock('../src/tools/definitions.js', () => ({
-  generateToolDefinitions: vi.fn().mockReturnValue([])
+vi.mock('../src/http.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/http.js')>()),
+  HTTPClient: vi.fn(function () { return fakes.http; })
 }));
 
-vi.mock('../src/tools/handlers.js', () => ({
-  generateToolHandlers: vi.fn().mockReturnValue({})
+vi.mock('../src/captures.js', () => ({
+  harvestSession: vi.fn().mockResolvedValue(true),
+  finalizeCaptureSession: vi.fn().mockResolvedValue(true),
 }));
+
+vi.mock('../src/telemetry.js', () => ({
+  initTracing: vi.fn(),
+  shutdownTracing: vi.fn().mockResolvedValue(undefined),
+  getTracer: vi.fn(),
+  recordToolResultSize: vi.fn(),
+  traceToolCall: vi.fn(async (_n: unknown, _s: unknown, _a: unknown, fn: () => unknown) => fn())
+}));
+
+const mockConfig = {
+  server: {
+    name: 'test-server',
+    version: '1.0.0',
+    description: 'Test Server - Description',
+    toolPrefix: 'test',
+    targetName: 'Test Container',
+    configKey: 'test-container',
+    envPrefix: 'APTL_TEST'
+  },
+  lab: {
+    name: 'test-lab',
+    network_subnet: '172.20.0.0/16'
+  },
+  containers: {
+    'test-container': {
+      container_name: 'test',
+      container_ip: 'localhost',
+      ssh_key: '/path/to/key',
+      ssh_user: 'testuser',
+      ssh_port: 22,
+      enabled: true
+    }
+  }
+};
+
+const apiConfig = {
+  server: { ...mockConfig.server, name: 'wazuh-server', toolPrefix: 'wazuh', targetName: 'Wazuh' },
+  lab: mockConfig.lab,
+  api: {
+    baseUrl: 'https://wazuh.example:55000',
+    auth: { type: 'basic', username: 'api-user', password: 'api-password' }
+  }
+};
+
+const queryConfig = {
+  ...apiConfig,
+  queries: {
+    query_alerts: {
+      url: 'https://indexer.example:9200/wazuh-alerts-*/_search',
+      method: 'POST',
+      body: { size: 1 },
+      description: 'Search recent alerts'
+    }
+  }
+};
+
+// The shape of mcp-wazuh's `create_detection_rule` query: the rules file
+// name is a path parameter and the rules XML is a raw string body.
+const ruleFileConfig = {
+  ...apiConfig,
+  queries: {
+    create_detection_rule: {
+      url: 'https://wazuh.example:55000/rules/files/{filename}',
+      method: 'PUT',
+      path_param_patterns: { filename: '[A-Za-z0-9][A-Za-z0-9_.-]*\\.xml' },
+      description: 'Upload a custom Wazuh rules file'
+    }
+  }
+};
+
+const RULE_XML = [
+  '<group name="custom,">',
+  '  <rule id="100100" level="10">',
+  '    <if_sid>5710</if_sid>',
+  '    <description>SSH login for "admin" from $(id)</description>',
+  '  </rule>',
+  '</group>',
+].join('\n');
+
+// Neither branch of the API tools' `body: anyOf [object, string]` admits the
+// value, so Ajv reports both branches and the anyOf itself.
+const BODY_TYPE_VIOLATION = 'arguments/body must be object; arguments/body must be string; '
+  + 'arguments/body must match a schema in anyOf';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('createMCPServer', () => {
   let createMCPServer: any;
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    fakes.ssh.disconnectAll.mockResolvedValue(undefined);
     const module = await import('../src/server.js');
     createMCPServer = module.createMCPServer;
   });
-
-  const mockConfig = {
-    server: {
-      name: 'test-server',
-      version: '1.0.0',
-      description: 'Test Server - Description',
-      toolPrefix: 'test',
-      targetName: 'Test Container',
-      configKey: 'test-container',
-      envPrefix: 'APTL_TEST'
-    },
-    lab: {
-      name: 'test-lab',
-      network_subnet: '172.20.0.0/16'
-    },
-    containers: {
-      'test-container': {
-        container_name: 'test',
-        container_ip: 'localhost',
-        ssh_key: '/path/to/key',
-        ssh_user: 'testuser',
-        ssh_port: 22,
-        enabled: true
-      }
-    }
-  };
 
   it('creates server with valid config', () => {
     const server = createMCPServer(mockConfig);
@@ -102,5 +184,605 @@ describe('createMCPServer', () => {
 
     const server = createMCPServer(kaliConfig);
     expect(server).toBeDefined();
+  });
+});
+
+// Shell text an agent sends during a scenario. Quotes, pipes, a loop, a here
+// document and non-ASCII text must reach the target unchanged.
+const SCENARIO_COMMAND = [
+  'for u in aptl-a aptl-b; do ssh -o BatchMode=yes -o ConnectTimeout=5 "$u"@172.20.2.20 true 2>/dev/null || true; done',
+  "curl -s 'http://172.20.1.20/login.php?user=admin%27--' | grep -c \"Welcome\"",
+  "cat <<'EOF' > /tmp/notes.txt\nrésumé de $(id -un) \\ \"quoted\"\nEOF",
+].join('\n');
+
+/**
+ * Snapshot the process listeners that start() installs once per server, and
+ * return a function that drops the ones a test added.
+ */
+function snapshotShutdownListeners(): () => void {
+  const signals = ['SIGINT', 'SIGTERM'] as const;
+  const before = new Map(signals.map((signal) => [signal, process.listeners(signal)]));
+  const stdinBefore = process.stdin.listeners('end');
+  return () => {
+    for (const signal of signals) {
+      process.listeners(signal)
+        .filter((listener) => !before.get(signal)?.includes(listener))
+        .forEach((listener) => process.removeListener(signal, listener));
+    }
+    process.stdin.listeners('end')
+      .filter((listener) => !stdinBefore.includes(listener))
+      .forEach((listener) => process.stdin.removeListener('end', listener as () => void));
+  };
+}
+
+describe('tool arguments over an MCP transport', () => {
+  let createMCPServer: any;
+  let traceToolCall: any;
+  const clients: Client[] = [];
+  let restoreListeners: () => void;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ createMCPServer } = await import('../src/server.js'));
+    ({ traceToolCall } = await import('../src/telemetry.js'));
+    restoreListeners = snapshotShutdownListeners();
+  });
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    await Promise.all(clients.splice(0).map((client) => client.close()));
+    // start() installs shutdown handlers once per server; drop this test's.
+    restoreListeners();
+  });
+
+  async function connect(config: object, options: object = {}): Promise<Client> {
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    fakes.serverTransport = serverTransport;
+    await createMCPServer(config, options).start();
+    const client = new Client({ name: 'argument-validation-test', version: '1.0.0' });
+    await client.connect(clientTransport);
+    clients.push(client);
+    return client;
+  }
+
+  function payload(result: Awaited<ReturnType<Client['callTool']>>) {
+    const [block] = result.content as { type: string; text: string }[];
+    return JSON.parse(block.text);
+  }
+
+  function backendOperations(): number {
+    // setHarvestHook is wired once at server creation, not per tool call, so it
+    // is not a backend operation these assertions count.
+    const perCall = Object.entries(fakes.ssh)
+      .filter(([name]) => name !== 'setHarvestHook')
+      .map(([, operation]) => operation);
+    return [...perCall, fakes.http.makeRequest]
+      .reduce((count, operation) => count + operation.mock.calls.length, 0);
+  }
+
+  async function withAdmission(permit: boolean, exercise: (frames: any[], disconnect: () => void) => Promise<void>) {
+    const directory = await mkdtemp(join(tmpdir(), 'lilrae-admission-test-'));
+    const path = join(directory, 'actions.sock');
+    const frames: any[] = [];
+    const sockets = new Set<Socket>();
+    const broker = createServer((socket) => {
+      sockets.add(socket);
+      let buffered = '';
+      let ordinal = 0;
+      socket.on('data', (data) => {
+        buffered += data.toString();
+        while (buffered.includes('\n')) {
+          const index = buffered.indexOf('\n');
+          const frame = JSON.parse(buffered.slice(0, index));
+          buffered = buffered.slice(index + 1);
+          frames.push(frame);
+          if (ordinal++ === 0) socket.write(JSON.stringify({ accepted: permit }) + '\n');
+          else socket.write(JSON.stringify(frame.uncertain
+            ? { accepted: false }
+            : { accepted: true, result: { content: [{ type: 'text', text: '{"success":true,"admitted":true}' }] } }) + '\n');
+        }
+      });
+      socket.on('error', () => {});
+    });
+    await new Promise<void>((resolve) => broker.listen(path, resolve));
+    vi.stubEnv('LILRAE_TOOL_SOCKET', path);
+    vi.stubEnv('LILRAE_TOOL_TOKEN', 'a'.repeat(64));
+    vi.stubEnv('LILRAE_TOOL_TIMEOUT_MS', '30000');
+    try { await exercise(frames, () => { for (const socket of sockets) socket.destroy(); }); }
+    finally {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => broker.close(() => resolve()));
+      await rm(directory, { recursive: true });
+    }
+  }
+
+  it.each([
+    [mockConfig, 'test_run_command', { command: 'id' }],
+    [apiConfig, 'wazuh_api_call', { endpoint: '/agents', method: 'GET' }],
+  ])('refuses participant effects before SSH or API dispatch', async (config, tool, args) => {
+    await withAdmission(false, async (frames) => {
+      const client = await connect(config);
+      const result = await client.callTool({ name: tool, arguments: args });
+      expect(result.isError).toBe(true);
+      expect(backendOperations()).toBe(0);
+      expect(frames).toHaveLength(1);
+      expect(frames[0].arguments).toEqual(args);
+    });
+  });
+
+  it('validates schema before requesting participant admission', async () => {
+    await withAdmission(true, async (frames) => {
+      const client = await connect(mockConfig);
+      expect((await client.callTool({ name: 'test_run_command', arguments: {} })).isError).toBe(true);
+      expect(frames).toHaveLength(0);
+      expect(backendOperations()).toBe(0);
+    });
+  });
+
+  it('does not echo untrusted tool names or schema property names on participant calls', async () => {
+    await withAdmission(true, async (frames) => {
+      const client = await connect(mockConfig);
+      for (const call of [
+        { name: 'private-tool-canary', arguments: {} },
+        { name: 'test_run_command', arguments: { command: 'id', 'private-property-canary': 'value' } },
+      ]) {
+        const result = await client.callTool(call);
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result)).not.toContain('canary');
+      }
+      expect(frames).toHaveLength(0);
+      expect(backendOperations()).toBe(0);
+    });
+  });
+
+  it('keeps participant hook failures out of stderr payloads', async () => {
+    fakes.ssh.executeCommand.mockResolvedValue({ code: 0, stdout: '', stderr: '' });
+    await withAdmission(true, async () => {
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const client = await connect(mockConfig, {
+        postToolHook: async () => { throw new Error('private-hook-canary'); },
+      });
+      await client.callTool({ name: 'test_run_command', arguments: { command: 'id' } });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(errors.mock.calls.some((args) => args.includes('Hook failed.'))).toBe(true);
+      expect(JSON.stringify(errors.mock.calls)).not.toContain('private-hook-canary');
+      errors.mockRestore();
+    });
+  });
+
+  it('delivers only the result returned with the outcome receipt', async () => {
+    fakes.ssh.executeCommand.mockResolvedValue({ code: 0, stdout: 'native', stderr: '' });
+    await withAdmission(true, async (frames) => {
+      const client = await connect(mockConfig);
+      const result = await client.callTool({ name: 'test_run_command', arguments: { command: 'id' } });
+      expect(payload(result)).toEqual({ success: true, admitted: true });
+      expect(fakes.ssh.executeCommand).toHaveBeenCalledTimes(1);
+      expect(frames).toHaveLength(2);
+      expect(frames[1].uncertain).toBe(false);
+    });
+  });
+
+  it('reports caught native exceptions as unknown instead of a settled failure', async () => {
+    fakes.ssh.executeCommand.mockRejectedValue(new Error('private-canary'));
+    await withAdmission(true, async (frames) => {
+      const client = await connect(mockConfig);
+      const result = await client.callTool({ name: 'test_run_command', arguments: { command: 'id' } });
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result)).not.toContain('private-canary');
+      expect(frames[1].uncertain).toBe(true);
+    });
+  });
+
+  it('preserves known query, session, and completed HTTP failures', async () => {
+    const { SSHConnectionManager: ActualSSH } = await vi.importActual<typeof import('../src/ssh.js')>('../src/ssh.js');
+    const { HTTPClient: ActualHTTP } = await vi.importActual<typeof import('../src/http.js')>('../src/http.js');
+    const ssh = new ActualSSH();
+    fakes.ssh.executeInSession.mockImplementation(ssh.executeInSession.bind(ssh));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"message":"rejected"}', { status: 409 })));
+    const http = new ActualHTTP(apiConfig.api);
+    fakes.http.makeRequest.mockImplementation(http.makeRequest.bind(http));
+    try {
+      for (const [config, call] of [
+        [ruleFileConfig, { name: 'wazuh_create_detection_rule', arguments: { body: RULE_XML } }],
+        [mockConfig, { name: 'test_session_command', arguments: { session_id: 'missing', command: 'id' } }],
+        [apiConfig, { name: 'wazuh_api_call', arguments: { endpoint: '/agents' } }],
+      ] as const) {
+        await withAdmission(true, async (frames) => {
+          const client = await connect(config);
+          await client.callTool(call);
+          expect(frames).toHaveLength(2);
+          expect(frames[1].uncertain).toBe(false);
+          expect(payload(frames[1].result).success).toBe(false);
+        });
+      }
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it.each(['timeout', 'disconnect', 'pending cleanup'])(
+    'bounds a pending native call and requests cleanup after %s', async (cause) => {
+    await withAdmission(true, async (frames, disconnect) => {
+      fakes.ssh.executeCommand.mockImplementation(() => {
+        if (cause === 'disconnect') disconnect();
+        return new Promise(() => {});
+      });
+      if (cause === 'pending cleanup') {
+        fakes.ssh.disconnectAll.mockImplementation(() => new Promise(() => {}));
+      }
+      vi.stubEnv('LILRAE_TOOL_TIMEOUT_MS', '30');
+      const client = await connect(mockConfig);
+      const result = await client.callTool({ name: 'test_run_command', arguments: { command: 'id' } });
+      expect(result.isError).toBe(true);
+      expect(fakes.ssh.disconnectAll).toHaveBeenCalledTimes(1);
+      expect(frames).toHaveLength(1);
+    });
+  }, 5000);
+
+  it('uses the admitted configuration even if its caller changes the original', async () => {
+    fakes.ssh.executeCommand.mockResolvedValue({ code: 0, stdout: '', stderr: '' });
+    await withAdmission(true, async (frames) => {
+      const config = structuredClone(mockConfig);
+      const client = await connect(config);
+      config.containers!['test-container'].container_ip = 'changed-target.invalid';
+      await client.callTool({ name: 'test_run_command', arguments: { command: SCENARIO_COMMAND } });
+      expect(frames[0].configuration).toEqual(mockConfig);
+      expect(fakes.ssh.executeCommand).toHaveBeenCalledWith(
+        'localhost', 'testuser', '/path/to/key', SCENARIO_COMMAND, 22,
+      );
+    });
+  });
+
+  it('refuses incomplete participant transport configuration at startup', async () => {
+    vi.stubEnv('LILRAE_TOOL_TOKEN', 'a'.repeat(64));
+    expect(() => createMCPServer(mockConfig)).toThrow('Participant tool');
+  });
+
+  it.each([
+    ['a missing required argument', mockConfig, 'test_run_command', {},
+      "arguments must have required property 'command'"],
+    ['a wrong argument type', mockConfig, 'test_run_command', { command: ['id'] },
+      'arguments/command must be string'],
+    ['an argument the schema does not list', mockConfig, 'test_interactive_session', { timeout: 5000 },
+      'arguments must NOT have additional property "timeout"'],
+    ['a command timeout past the Node timer limit', mockConfig, 'test_session_command',
+      { session_id: 's1', command: 'msfconsole -q', raw: true, timeout: 2_147_483_648 },
+      'arguments/timeout must be <= 2147483647'],
+    ['a zero session timeout', mockConfig, 'test_background_session', { timeout_ms: 0 },
+      'arguments/timeout_ms must be >= 1'],
+    ['a negative line count', mockConfig, 'test_get_session_output', { session_id: 's1', lines: -5 },
+      'arguments/lines must be >= 1'],
+    ['a session id outside the id pattern', mockConfig, 'test_close_session', { session_id: '-s1' },
+      'arguments/session_id must match pattern "^[A-Za-z0-9_][A-Za-z0-9._-]*$"'],
+    ['an over-long session id', mockConfig, 'test_close_session', { session_id: 's'.repeat(129) },
+      'arguments/session_id must NOT have more than 128 characters'],
+    ['a string for a boolean flag', mockConfig, 'test_background_session', { raw: 'true' },
+      'arguments/raw must be boolean'],
+    ['an absolute endpoint URL', apiConfig, 'wazuh_api_call', { endpoint: 'https://attacker.example/agents' },
+      'arguments/endpoint must match pattern "^/"'],
+    ['an HTTP method outside the enum', apiConfig, 'wazuh_api_call', { endpoint: '/agents', method: 'PATCH' },
+      'arguments/method must be equal to one of the allowed values'],
+    ['a query parameter string instead of an object', queryConfig, 'wazuh_query_alerts', { params: 'size=1' },
+      'arguments/params must be object'],
+    ['a number for an API request body', apiConfig, 'wazuh_api_call', { endpoint: '/agents', method: 'POST', body: 42 },
+      BODY_TYPE_VIOLATION],
+    ['a list for a raw rules body', ruleFileConfig, 'wazuh_create_detection_rule',
+      { params: { filename: 'custom_rules.xml' }, body: [RULE_XML] }, BODY_TYPE_VIOLATION],
+    ['a null query body', queryConfig, 'wazuh_query_alerts', { body: null }, BODY_TYPE_VIOLATION],
+  ])('refuses %s before any trace span, hook or backend operation', async (_label, config, tool, args, violation) => {
+    const hook = vi.fn();
+    const client = await connect(config, { postToolHook: hook });
+
+    const result = await client.callTool({ name: tool, arguments: args });
+
+    expect(result.isError).toBe(true);
+    expect(payload(result)).toEqual({ success: false, error: `Invalid arguments for ${tool}: ${violation}` });
+    expect(backendOperations()).toBe(0);
+    expect(traceToolCall).not.toHaveBeenCalled();
+    expect(hook).not.toHaveBeenCalled();
+  });
+
+  it('returns the same redacted error for the same invalid call', async () => {
+    const client = await connect(mockConfig);
+    const args = {
+      session_id: 's1',
+      command: 'sshpass -p hunter2 ssh root@172.20.2.20',
+      timeout: -1,
+      password: 'hunter2',
+    };
+
+    const first = await client.callTool({ name: 'test_session_command', arguments: args });
+    const second = await client.callTool({ name: 'test_session_command', arguments: args });
+
+    expect(payload(first)).toEqual({
+      success: false,
+      error: 'Invalid arguments for test_session_command: '
+        + 'arguments must NOT have additional property "password"; arguments/timeout must be >= 1',
+    });
+    expect(second).toEqual(first);
+    expect(JSON.stringify(first)).not.toContain('hunter2');
+    expect(JSON.stringify(first)).not.toContain('172.20.2.20');
+    expect(backendOperations()).toBe(0);
+  });
+
+  it('dispatches a scenario shell command to the target unchanged', async () => {
+    fakes.ssh.executeCommand.mockResolvedValue({
+      stdout: 'done', stderr: '', code: 0, signal: null, sessionId: 'exec-1', mode: 'normal',
+    });
+    const client = await connect(mockConfig);
+
+    const result = await client.callTool({ name: 'test_run_command', arguments: { command: SCENARIO_COMMAND } });
+
+    expect(result.isError).not.toBe(true);
+    expect(payload(result)).toMatchObject({ success: true, command: SCENARIO_COMMAND });
+    expect(fakes.ssh.executeCommand).toHaveBeenCalledTimes(1);
+    expect(fakes.ssh.executeCommand).toHaveBeenCalledWith('localhost', 'testuser', '/path/to/key', SCENARIO_COMMAND, 22);
+    expect(traceToolCall).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispatches a raw session command whose timeout is the Node timer limit', async () => {
+    fakes.ssh.executeInSession.mockResolvedValue({ stdout: '', stderr: '', code: 0, signal: null, mode: 'raw' });
+    const client = await connect(mockConfig);
+
+    const result = await client.callTool({
+      name: 'test_session_command',
+      arguments: { session_id: 'msf-1', command: 'msfconsole -q', raw: true, timeout: 2_147_483_647 },
+    });
+
+    expect(payload(result)).toMatchObject({ success: true, session_mode: 'raw' });
+    expect(fakes.ssh.executeInSession).toHaveBeenCalledWith('msf-1', 'msfconsole -q', 2_147_483_647, true);
+  });
+
+  it('dispatches a call that omits its arguments when the schema requires none', async () => {
+    fakes.ssh.listSessions.mockReturnValue([]);
+    const client = await connect(mockConfig);
+
+    const result = await client.callTool({ name: 'test_list_sessions' });
+
+    expect(payload(result)).toEqual({ success: true, sessions: [], total_sessions: 0 });
+    expect(fakes.ssh.listSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispatches API calls whose free-form params, body and headers stay open', async () => {
+    fakes.http.makeRequest.mockResolvedValue({ status: 200, data: { hits: [] } });
+    const client = await connect(apiConfig);
+
+    const result = await client.callTool({
+      name: 'wazuh_api_call',
+      arguments: {
+        endpoint: '/agents',
+        method: 'POST',
+        params: { limit: 1, select: 'id' },
+        body: { query: { match_all: {} } },
+        headers: { 'X-Request-Id': 'r-1' },
+        response_type: 'text',
+      },
+    });
+
+    expect(payload(result)).toMatchObject({ success: true, status: 200 });
+    expect(fakes.http.makeRequest).toHaveBeenCalledWith('/agents', 'POST', {
+      params: { limit: 1, select: 'id' },
+      body: { query: { match_all: {} } },
+      headers: { 'X-Request-Id': 'r-1' },
+      responseType: 'text',
+    });
+  });
+
+  it('dispatches a predefined query with an object body', async () => {
+    fakes.http.makeRequest.mockResolvedValue({ status: 200, data: { hits: [] } });
+    const client = await connect(queryConfig);
+
+    const result = await client.callTool({
+      name: 'wazuh_query_alerts',
+      arguments: { body: { query: { match: { 'rule.id': '5710' } } } },
+    });
+
+    expect(payload(result)).toMatchObject({ success: true, status: 200 });
+    expect(fakes.http.makeRequest).toHaveBeenCalledWith(
+      'https://indexer.example:9200/wazuh-alerts-*/_search',
+      'POST',
+      { params: {}, body: { size: 1, query: { match: { 'rule.id': '5710' } } }, responseType: 'json' },
+    );
+  });
+
+  it.each([
+    ['the API call tool', apiConfig, 'wazuh_api_call',
+      { endpoint: '/rules/files/custom_rules.xml', method: 'PUT', params: { overwrite: true }, body: RULE_XML },
+      '/rules/files/custom_rules.xml'],
+    ['a predefined query', ruleFileConfig, 'wazuh_create_detection_rule',
+      { params: { filename: 'custom_rules.xml', overwrite: true }, body: RULE_XML },
+      'https://wazuh.example:55000/rules/files/custom_rules.xml'],
+  ])('dispatches a raw-string body through %s unchanged', async (_label, config, tool, args, url) => {
+    fakes.http.makeRequest.mockResolvedValue({ status: 200, data: { error: 0 } });
+    const client = await connect(config);
+
+    const result = await client.callTool({ name: tool, arguments: args });
+
+    expect(result.isError).not.toBe(true);
+    expect(payload(result)).toMatchObject({ success: true, status: 200 });
+    expect(fakes.http.makeRequest).toHaveBeenCalledTimes(1);
+    expect(fakes.http.makeRequest).toHaveBeenCalledWith(
+      url,
+      'PUT',
+      { params: { overwrite: true }, body: RULE_XML, responseType: 'json' },
+    );
+  });
+
+  it('advertises the closed schemas it enforces', async () => {
+    const client = await connect({ ...mockConfig, api: apiConfig.api });
+
+    const { tools } = await client.listTools();
+
+    expect(tools.map((tool) => tool.name)).toContain('test_api_call');
+    expect(tools).toHaveLength(11);
+    for (const tool of tools) {
+      expect(tool.inputSchema.additionalProperties).toBe(false);
+    }
+  });
+
+  it('keeps the unknown-field rule a tool schema states itself', async () => {
+    const definitions = await import('../src/tools/definitions.js');
+    vi.spyOn(definitions, 'generateToolDefinitions').mockReturnValue([{
+      name: 'test_info',
+      description: 'Open schema',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: true },
+    }]);
+    const client = await connect(mockConfig);
+
+    const { tools } = await client.listTools();
+    const result = await client.callTool({ name: 'test_info', arguments: { verbose: true } });
+
+    expect(tools[0].inputSchema.additionalProperties).toBe(true);
+    expect(result.isError).not.toBe(true);
+    expect(payload(result)).toMatchObject({ target_name: 'Test Container' });
+  });
+
+  it('refuses a handler that no advertised schema covers', async () => {
+    const definitions = await import('../src/tools/definitions.js');
+    vi.spyOn(definitions, 'generateToolDefinitions').mockReturnValue([]);
+    const client = await connect(mockConfig);
+
+    await expect(
+      client.callTool({ name: 'test_run_command', arguments: { command: 'id' } }),
+    ).rejects.toThrow('Unknown tool: test_run_command');
+    expect(backendOperations()).toBe(0);
+  });
+
+  it('stops at creation when a tool schema cannot be compiled', async () => {
+    const definitions = await import('../src/tools/definitions.js');
+    vi.spyOn(definitions, 'generateToolDefinitions').mockReturnValue([{
+      name: 'test_info',
+      description: 'Broken schema',
+      inputSchema: { type: 'object', properties: { verbose: { type: 'flag' } } },
+    }] as any);
+
+    expect(() => createMCPServer(mockConfig)).toThrow('Cannot compile the input schema of test_info');
+  });
+
+  // Over the default budget of 4000 tokens (16000 characters).
+  const LONG_OUTPUT = Array.from({ length: 1000 }, (_, index) => `entry ${index} ${'v'.repeat(30)}`).join('\n');
+
+  it('cuts long command output and keeps the run_command envelope valid', async () => {
+    fakes.ssh.executeCommand.mockResolvedValue({
+      stdout: LONG_OUTPUT, stderr: '', code: 0, signal: null, sessionId: 'exec-7', mode: 'normal',
+    });
+    const client = await connect(mockConfig);
+
+    const result = await client.callTool({ name: 'test_run_command', arguments: { command: 'ls -la /srv/data' } });
+    const body = payload(result);
+
+    expect((result.content as { text: string }[])[0].text.length).toBeLessThanOrEqual(16000);
+    expect(body).toMatchObject({ success: true, command: 'ls -la /srv/data' });
+    expect(body.output).toMatchObject({ code: 0, signal: null, sessionId: 'exec-7', mode: 'normal' });
+    expect(body.output.stdout.length).toBeGreaterThan(8000);
+    expect(LONG_OUTPUT.startsWith(`${body.output.stdout}\n`)).toBe(true);
+    expect(body._truncated.total_characters).toBe(LONG_OUTPUT.length);
+  });
+
+  it('cuts long session output and keeps exit_code and session_mode', async () => {
+    fakes.ssh.executeInSession.mockResolvedValue({
+      stdout: LONG_OUTPUT, stderr: '', code: 3, signal: null, mode: 'normal',
+    });
+    const client = await connect(mockConfig);
+
+    const result = await client.callTool({
+      name: 'test_session_command',
+      arguments: { session_id: 'sess-1', command: 'cat notes.txt' },
+    });
+    const body = payload(result);
+
+    expect(body).toMatchObject({ success: true, exit_code: 3, session_mode: 'normal' });
+    expect(LONG_OUTPUT.startsWith(body.output)).toBe(true);
+  });
+
+  it.each([
+    ['returns a whole rule file when the query budget is null', null, true],
+    ['cuts a rule file when the query sets no budget', undefined, false],
+  ])('%s', async (_label, budget, whole) => {
+    const ruleFile = LONG_OUTPUT.split('\n').map((line) => `<!-- ${line} -->`).join('\n');
+    fakes.http.makeRequest.mockResolvedValue({ status: 200, data: ruleFile });
+    const client = await connect({
+      ...apiConfig,
+      queries: {
+        get_rule_file: {
+          url: 'https://wazuh.example:55000/rules/files/{filename}',
+          method: 'GET',
+          response_type: 'text',
+          description: 'Fetch a rule file',
+          ...(budget === undefined ? {} : { max_result_tokens: budget }),
+        },
+      },
+    });
+
+    const result = await client.callTool({
+      name: 'wazuh_get_rule_file',
+      arguments: { params: { filename: 'custom_rules.xml' } },
+    });
+    const body = payload(result);
+
+    expect(body.data === ruleFile).toBe(whole);
+    expect(ruleFile.startsWith(body.data)).toBe(true);
+    expect('_truncated' in body).toBe(!whole);
+  });
+});
+
+
+describe('gracefulShutdown capture harvest', () => {
+  let createMCPServer: any;
+  let harvestSession: any;
+  let restoreListeners: () => void;
+  let exitSpy: any;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ createMCPServer } = await import('../src/server.js'));
+    ({ harvestSession } = await import('../src/captures.js'));
+    (harvestSession as any).mockResolvedValue(true);
+    restoreListeners = snapshotShutdownListeners();
+    // gracefulShutdown ends with process.exit; keep it from killing the runner.
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(((): never => undefined as never));
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+    restoreListeners();
+  });
+
+  async function startServer(): Promise<void> {
+    const [, serverTransport] = InMemoryTransport.createLinkedPair();
+    fakes.serverTransport = serverTransport;
+    await createMCPServer(mockConfig).start();
+  }
+
+  it('uses manager shutdown to drain and harvest before exit', async () => {
+    fakes.ssh.shutdown.mockResolvedValue(true);
+    await startServer();
+    process.emit('SIGTERM');
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(0));
+    expect(fakes.ssh.shutdown).toHaveBeenCalledOnce();
+    expect(fakes.ssh.shutdown).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('exits non-zero for any retained harvest or teardown failure', async () => {
+    fakes.ssh.shutdown.mockResolvedValue(false);
+    await startServer();
+    process.emit('SIGTERM');
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(1));
+  });
+
+  it('starts one shutdown when the MCP client closes stdin', async () => {
+    fakes.ssh.shutdown.mockResolvedValue(true);
+    await startServer();
+    process.stdin.emit('end');
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(0));
+    process.emit('SIGTERM');
+    expect(fakes.ssh.shutdown).toHaveBeenCalledOnce();
+  });
+
+  it('does not run two shutdown sweeps for repeated signals', async () => {
+    fakes.ssh.shutdown.mockResolvedValue(true);
+    await startServer();
+    process.emit('SIGTERM');
+    process.emit('SIGINT');
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(0));
+    expect(fakes.ssh.shutdown).toHaveBeenCalledOnce();
   });
 });

@@ -54,27 +54,56 @@ export function initTracing(serverName: string): void {
 }
 
 /**
- * Force-flush and shutdown the TracerProvider.
+ * Time allowed for the final flush and the provider shutdown together.
  *
- * Flush/shutdown errors are caught and logged — tracing teardown
- * must never crash the host process (e.g. when the Collector is
- * unreachable).
+ * The SIGTERM handler awaits shutdownTracing() before it closes SSH
+ * sessions. Against an endpoint that does not answer, the OTLP exporter
+ * retries for up to its 10 s export timeout, so an unbounded flush held
+ * that teardown for 8-10 s whenever no collector was running. A reachable
+ * collector accepts the last batch well inside this bound.
+ */
+const SHUTDOWN_EXPORT_BUDGET_MS = 500;
+
+/**
+ * Resolve true once `work` settles (fulfilled or rejected), or false if the
+ * `deadline` (a performance.now() timestamp) passes first.
+ */
+async function settlesBefore(work: () => Promise<unknown>, deadline: number): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  const expired = new Promise<boolean>(resolve => {
+    timer = setTimeout(resolve, Math.max(0, deadline - performance.now()), false);
+  });
+  // A rejection means the export failed or the Collector is unreachable:
+  // tracing teardown must never crash the host process.
+  const settled = Promise.resolve().then(work).then(() => true, () => true);
+  try {
+    return await Promise.race([settled, expired]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Force-flush and shutdown the TracerProvider within
+ * SHUTDOWN_EXPORT_BUDGET_MS.
+ *
+ * Flush/shutdown errors are swallowed. When the budget runs out, the
+ * pending export is abandoned with a log line instead of delaying the
+ * caller's own teardown.
  */
 export async function shutdownTracing(): Promise<void> {
-  if (provider !== null) {
-    try {
-      await provider.forceFlush();
-    } catch {
-      // Collector may be unreachable — not fatal
-    }
-    try {
-      await provider.shutdown();
-    } catch {
-      // Best-effort shutdown
-    }
-    provider = null;
-    console.error('[OTel] Tracing shut down');
+  if (provider === null) return;
+  const closing = provider;
+  provider = null;
+  const deadline = performance.now() + SHUTDOWN_EXPORT_BUDGET_MS;
+  const flushed = await settlesBefore(() => closing.forceFlush(), deadline);
+  const closed = await settlesBefore(() => closing.shutdown(), deadline);
+  if (!flushed || !closed) {
+    console.error(
+      `[OTel] Trace export did not finish within ${SHUTDOWN_EXPORT_BUDGET_MS} ms; pending spans may be lost`,
+    );
   }
+  console.error('[OTel] Tracing shut down');
 }
 
 /**
@@ -237,4 +266,20 @@ export async function traceToolCall<T>(
       }
     },
   );
+}
+
+/**
+ * Record a tool result's size and whether it was truncated on the active span.
+ * Only counts are recorded, never the result content.
+ */
+export function recordToolResultSize(size: {
+  originalChars: number;
+  returnedChars: number;
+  truncated: boolean;
+}): void {
+  trace.getActiveSpan()?.setAttributes({
+    'aptl.tool.response_original_chars': size.originalChars,
+    'aptl.tool.response_chars': size.returnedChars,
+    'aptl.tool.response_truncated': size.truncated,
+  });
 }

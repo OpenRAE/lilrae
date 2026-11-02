@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from aptl.appliance.seat.errors import SeatLauncherError
 from aptl.appliance.seat.models import SeatRecord
+from aptl.utils.deterministic_archive import open_nofollow
 
 
 def _ensure_seat_root(seat_root: Path) -> None:
@@ -43,10 +44,13 @@ def load_seat_record(seat_root: Path) -> SeatRecord | None:
     """Load persisted seat metadata when present and valid."""
 
     path = seat_state_path(seat_root)
-    if not path.exists():
-        return None
+    # Python 3.14's Path.exists() returns False for an unreadable seat root,
+    # so only a missing path counts as no record. Other errors propagate.
     try:
         info = path.stat(follow_symlinks=False)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    try:
         if stat.S_ISLNK(info.st_mode):
             raise SeatLauncherError(
                 "corrupt-seat-state", "seat state must not be a symlink"
@@ -55,11 +59,7 @@ def load_seat_record(seat_root: Path) -> SeatRecord | None:
             raise SeatLauncherError(
                 "corrupt-seat-state", "seat state must be owner-only"
             )
-        flags = os.O_RDONLY | os.O_CLOEXEC
-        if hasattr(os, "O_NOFOLLOW"):
-            flags |= os.O_NOFOLLOW
-        fd = os.open(path, flags)
-        with os.fdopen(fd, "rb") as handle:
+        with open_nofollow(path) as handle:
             payload = handle.read()
         return SeatRecord.model_validate_json(payload)
     except SeatLauncherError:

@@ -10,7 +10,7 @@ exact concern.
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -33,6 +33,10 @@ from aptl.backends._raes_backend_generated_artifacts import (
     selected_generated_artifacts as _selected_generated_artifacts,
 )
 from aptl.backends.raes_diagnostics import diagnostic
+from aptl.core.deployment._companion_realization import (
+    DeploymentCompanionRealization,
+    companion_service_name,
+)
 from aptl.core.deployment.realization import (
     DeploymentGeneratedArtifactRealization,
     DeploymentImageRealization,
@@ -55,6 +59,8 @@ class BackendNodeImplementation:
     runtime: RuntimeConfiguration
     selected_concerns: tuple[str, ...]
     generated_artifacts: tuple[DeploymentGeneratedArtifactRealization, ...] = ()
+    account_provider: str = ""
+    companions: tuple[DeploymentCompanionRealization, ...] = ()
 
 
 def select_backend_node_implementation(
@@ -115,19 +121,75 @@ def _admit_backend_implementation(
         else:
             additions = _resolved_authored_settings(additions, original)
             selected_runtime = _selected_runtime(payload, additions)
-            if selected_runtime is None:
+            companions = (
+                _selected_companions(profile, resource, service_name, selected_runtime)
+                if selected_runtime is not None
+                else None
+            )
+            if selected_runtime is None or companions is None:
                 diagnostics.append(_implementation_invalid(resource.address))
             else:
-                selected = _implementation_result(
-                    resource=resource,
-                    service_name=service_name,
-                    profile=profile,
-                    base=base,
-                    selected_runtime=selected_runtime,
-                    additions=additions,
-                    component_root=component_root,
+                selected = replace(
+                    _implementation_result(
+                        resource=resource,
+                        service_name=service_name,
+                        profile=profile,
+                        base=base,
+                        selected_runtime=selected_runtime,
+                        additions=additions,
+                        component_root=component_root,
+                    ),
+                    companions=companions,
                 )
     return selected
+
+
+def _selected_companions(
+    profile: BackendImplementationProfile | None,
+    resource: PlannedResource,
+    service_name: str,
+    runtime: RuntimeConfiguration,
+) -> tuple[DeploymentCompanionRealization, ...] | None:
+    """Resolve each profile companion against the owner's selected runtime.
+
+    An inherited variable must be a non-empty plain value of the owner. A
+    missing or classified value returns ``None`` so admission fails closed
+    rather than starting a companion with an image default.
+    """
+
+    plain = {
+        str(item.name): str(item.value)
+        for item in runtime.environment
+        if getattr(item.value_classification, "value", item.value_classification)
+        == "plain"
+        and item.value
+    }
+    companions = []
+    for companion in getattr(profile, "companions", ()):
+        inherited = tuple(
+            (name, plain.get(name, "")) for name in companion.inherited_environment
+        )
+        if any(not value for _, value in inherited):
+            return None
+        companions.append(
+            DeploymentCompanionRealization(
+                role=companion.role,
+                image=DeploymentImageRealization(
+                    address=resource.address,
+                    service_name=companion_service_name(service_name, companion.role),
+                    source_name=companion.source_name,
+                    source_version=companion.source_version,
+                    image_ref=companion.image_ref,
+                    mode="pull",
+                    policy_rule="backend-open-profile",
+                    provenance={"backend_profile": 1},
+                    provenance_refs=companion.provenance_refs,
+                ),
+                environment=(*companion.environment, *inherited),
+                tmpfs=companion.tmpfs,
+            )
+        )
+    return tuple(companions)
 
 
 def _runtime_additions(
@@ -236,6 +298,10 @@ def _implementation_result(
         base_run_capabilities=tuple(getattr(base, "run_capabilities", ())),
         provider_kind=str(getattr(base, "provider_kind", "")),
         provider_parameters=tuple(getattr(base, "provider_parameters", ())),
+        account_provider=str(
+            getattr(profile, "account_provider", "")
+            or getattr(base, "account_provider", "")
+        ),
         runtime=selected_runtime,
         selected_concerns=("compute-substrate", *sorted(additions)),
         generated_artifacts=_selected_generated_artifacts(

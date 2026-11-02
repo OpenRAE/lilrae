@@ -41,7 +41,9 @@ def test_first_selection_requires_the_manifest_launch_config(
         manifest_digest=_digest(b"manifest"),
         token=None,
     )
-    monkeypatch.setattr("aptl.appliance.seat.image_trust.verify_remote_image", lambda *a: None)
+    monkeypatch.setattr(
+        "aptl.appliance.seat.image_trust.verify_remote_image", lambda *a: None
+    )
     monkeypatch.setattr(seat_image, "resolve_disk_descriptor", lambda _ref: descriptor)
     monkeypatch.setattr(
         seat_image,
@@ -123,11 +125,11 @@ def test_guest_services_use_verified_launch_policy(
     (tmp_path / "boundary-policy.json").write_bytes(policy_bytes)
     observed = []
     monkeypatch.setattr(
-        guest_services, "serve_proxy_bindings", lambda bindings: observed.extend(bindings)
+        guest_services,
+        "serve_proxy_bindings",
+        lambda bindings: observed.extend(bindings),
     )
-    monkeypatch.setattr(
-        sys, "argv", ["guest-services", "proxy"]
-    )
+    monkeypatch.setattr(sys, "argv", ["guest-services", "proxy"])
     monkeypatch.setattr(guest_services, "_LAUNCH_DESCRIPTOR", path)
     guest_services.main()
     assert {binding.listen_port for binding in observed} == {8080}
@@ -141,7 +143,10 @@ def test_readiness_calls_the_current_guest_access_contract(
 ) -> None:
     from aptl.appliance import access_service
     from aptl.appliance.seat import readiness
-    from aptl.core.lab import _publish_appliance_guest_readiness
+    from aptl.core.lab import (
+        _publish_appliance_guest_readiness,
+        _serve_appliance_guest_access,
+    )
 
     observed: list[object] = []
     backend = SimpleNamespace(observe_appliance_boundary=lambda deployment: deployment)
@@ -163,13 +168,21 @@ def test_readiness_calls_the_current_guest_access_contract(
     monkeypatch.setattr(readiness, "publish_guest_readiness", lambda *_a: None)
 
     def access(
-        *, request_path, descriptor_path, device_path, output_dir,
-        run_id, project_dir, observe_boundary,
+        *,
+        request_path,
+        descriptor_path,
+        device_path,
+        output_dir,
+        run_id,
+        project_dir,
+        observe_boundary,
     ):
         observed.append(observe_boundary())
 
     monkeypatch.setattr(access_service, "serve_appliance_access", access)
     assert _publish_appliance_guest_readiness(context) is None
+    assert observed == []
+    assert _serve_appliance_guest_access(context) is None
     assert observed == [[]]
 
 
@@ -213,9 +226,7 @@ def test_project_archive_excludes_untracked_local_configuration(
     (config / "tracked.txt").write_text("release input")
     (config / "local-credentials.txt").write_text("local-only")
     subprocess.run(["git", "init", "-q", str(project)], check=True)
-    subprocess.run(
-        ["git", "add", "config/tracked.txt"], cwd=project, check=True
-    )
+    subprocess.run(["git", "add", "config/tracked.txt"], cwd=project, check=True)
     output = tmp_path / "project.tar"
 
     archive_project(project, output)
@@ -224,12 +235,17 @@ def test_project_archive_excludes_untracked_local_configuration(
         assert archive.getnames() == ["config/tracked.txt"]
 
 
-def test_release_smoke_uses_the_same_home_as_first_boot() -> None:
-    guest = Path(__file__).resolve().parents[1] / "appliance/guest"
-    first_boot = (guest / "aptl-appliance-first-boot.service").read_text()
-    release_smoke = (guest / "seat-qualification-smoke.service").read_text()
-    assert "Environment=HOME=/var/lib/aptl" in first_boot.splitlines()
-    assert "Environment=HOME=/var/lib/aptl" in release_smoke.splitlines()
+def test_protected_seat_qualification_uses_real_signed_first_boot() -> None:
+    root = Path(__file__).resolve().parents[1]
+    qualify = (root / "scripts/appliance/qualify-seat-image.sh").read_text()
+
+    assert "@sha256:[a-f0-9]{64}" in qualify
+    assert "seat start" in qualify
+    assert "seat status" in qualify
+    assert "seat reset" in qualify
+    assert "--desktop-mode event" in qualify
+    assert "systemctl disable aptl-appliance-first-boot.service" not in qualify
+    assert "seat-qualification-smoke" not in qualify
 
 
 def test_first_boot_can_install_scenario_browser_ca_certificates() -> None:
@@ -246,6 +262,7 @@ def test_first_boot_can_install_scenario_browser_ca_certificates() -> None:
 
 def test_archive_rejects_tracked_credential_alias(tmp_path):
     from aptl.utils.pathsafe import PathContainmentError
+
     project = tmp_path / "project"
     (project / "assets").mkdir(parents=True)
     (project / ".env").write_text("fixture-credential")
@@ -262,6 +279,7 @@ def test_archive_rejects_tracked_credential_alias(tmp_path):
 def test_common_package_rejects_nested_links(tmp_path, directory, flatten):
     from functools import partial
     from aptl.utils.mcp_packaging import flatten_common_dependencies
+
     project = tmp_path / "project"
     common = project / "mcp/aptl-mcp-common"
     common.mkdir(parents=True)
@@ -276,9 +294,11 @@ def test_common_package_rejects_nested_links(tmp_path, directory, flatten):
         target.write_text("fixture-secret")
     (common / "innocent").symlink_to(target, target_is_directory=directory)
     from aptl.utils.pathsafe import PathContainmentError
+
     archive = tmp_path / "project.tar"
     operation = (
-        partial(flatten_common_dependencies, project) if flatten
+        partial(flatten_common_dependencies, project)
+        if flatten
         else partial(archive_project, project, archive)
     )
     with pytest.raises((ValueError, PathContainmentError)):

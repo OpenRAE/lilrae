@@ -22,6 +22,9 @@ import {
 export class PersistentSession extends EventEmitter {
   private shell: ClientChannel | null = null;
   private outputBuffer: string[] = [];
+  // #967: chunks the BUFFER_LIMITS trim dropped since the buffer was last
+  // cleared, so a read can say that its output is incomplete.
+  private droppedChunks = 0;
   private commandQueue: CommandRequest[] = [];
   private currentCommand: CommandRequest | null = null;
   private readonly sessionInfo: SessionMetadata;
@@ -359,6 +362,7 @@ export class PersistentSession extends EventEmitter {
     if (this.sessionInfo.type === 'background') {
       this.outputBuffer.push(data);
       if (this.outputBuffer.length > BUFFER_LIMITS.MAX_SIZE) {
+        this.droppedChunks += this.outputBuffer.length - BUFFER_LIMITS.TRIM_TO;
         this.outputBuffer = this.outputBuffer.slice(-BUFFER_LIMITS.TRIM_TO);
       }
     }
@@ -441,6 +445,11 @@ export class PersistentSession extends EventEmitter {
     return this.boundRunId;
   }
 
+  /** The session's stable id, for a harvest keyed by it. */
+  getSessionId(): string {
+    return this.sessionInfo.sessionId;
+  }
+
   /**
    * OBS-003 testing aid: resolve when the per-session PTY tee has
    * flushed every chunk handed to it so far (or it failed and was
@@ -469,8 +478,17 @@ export class PersistentSession extends EventEmitter {
     const result = lines ? this.outputBuffer.slice(-lines) : [...this.outputBuffer];
     if (clear) {
       this.outputBuffer = [];
+      this.droppedChunks = 0;
     }
     return result;
+  }
+
+  /**
+   * #967: how many of the oldest chunks the buffer limit dropped since the
+   * buffer was last cleared. A clearing read resets it, so read it first.
+   */
+  getDroppedChunkCount(): number {
+    return this.droppedChunks;
   }
 
   private startKeepAlive(): void {

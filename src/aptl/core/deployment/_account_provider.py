@@ -1,23 +1,8 @@
-"""Provider-agnostic account realization logic (issue #577, ADR-046 addendum).
+"""Resolve account providers, validate batches, and build Samba commands.
 
-Pure functions — no I/O. Three responsibilities:
-
-* resolve the account-materializer binding for a resolved backend service;
-* validate a whole account batch *before* any mutation (fail closed); and
-* build the ``samba-tool`` argv lists the Compose account mixin runs through
-  ``container_exec``.
-
-User creation uses ``samba-tool user create <name> --random-password`` so the
-secret is generated inside the target boundary. The one exception is
-``samba_user_setpassword``: a scenario that declares a ``weak`` or ``medium``
-account is declaring a credential an attacker is meant to obtain, so the
-backend mints one of that class and sets it explicitly (issue #1006). It
-travels as a discrete argv token inside the target, never through a shell. Identity values (username,
-group, mail, SPN) travel as discrete argv tokens, never interpolated into a
-shell string; the validation below additionally rejects control characters and
-leading dashes so an untrusted value cannot become an option or shell syntax
-(ADR-046 addendum §"Provider validation is defense in depth").
-"""
+The entire batch is validated before mutation. Bounded identity tokens travel
+as discrete arguments; credentials travel on stdin. Providers are selected by
+the resolved backend implementation, never by a scenario name (ADR-046)."""
 
 from __future__ import annotations
 
@@ -31,6 +16,17 @@ from aptl.core.deployment.realization import (
 )
 
 SAMBA_AD = "samba-ad"
+#: Application account providers. Each one realizes the ``secret_fixture``
+#: credential an SDL account declares for one product image, then proves it by
+#: an authenticated read-after-write. The implementation profile that runs the
+#: image names its provider; nothing here reads a scenario node name.
+OPENSEARCH_SECURITY = "opensearch-security"
+WAZUH_API = "wazuh-api"
+MISP = "misp"
+SHUFFLE = "shuffle"
+APPLICATION_ACCOUNT_PROVIDERS = frozenset(
+    {OPENSEARCH_SECURITY, WAZUH_API, MISP, SHUFFLE}
+)
 
 # Provider-native identity grammars. These reject the list separator (`,`) that
 # ``samba-tool group addmembers`` would otherwise expand into several principals,
@@ -43,11 +39,15 @@ _GROUP_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]*$")
 _MAIL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._%+-]*@[A-Za-z0-9][A-Za-z0-9.-]*$")
 _SPN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:-]*$")
 
-# Code-owned binding: backend service name -> account provider kind. Adding a
-# new account-capable service is one entry here (ADR-046 §Extensibility), never
-# a scenario-name branch. This is the single source of truth the interpret-time
-# gate (``raes_account_realization``) and the realize-time materializer share.
-_PROVIDER_BINDINGS: Mapping[str, str] = {"ad": SAMBA_AD}
+#: Providers that can realize an ``auth_method: key`` credential.
+KEY_AUTH_PROVIDERS = frozenset({MISP})
+#: Providers that cannot mint a credential, so the SDL must declare one.
+REQUIRES_DECLARED_CREDENTIAL = APPLICATION_ACCOUNT_PROVIDERS
+_KNOWN_PROVIDERS = frozenset({SAMBA_AD, *APPLICATION_ACCOUNT_PROVIDERS})
+
+# Application principals are often mail-shaped (``admin@example.test``) and
+# carry no group, SPN or mail attribute, so they use one bounded token grammar.
+_APPLICATION_USERNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@+-]*$")
 
 # Bound on a single identity token. Usernames, group names, mail, and SPNs are
 # RAES-owned and short; this is a defensive cap against an unbounded value
@@ -55,18 +55,29 @@ _PROVIDER_BINDINGS: Mapping[str, str] = {"ad": SAMBA_AD}
 _MAX_IDENTIFIER_LEN = 256
 
 
-def resolve_account_provider(service_name: str | None) -> str | None:
-    """Return the account provider kind bound to a backend service, or None."""
+#: Account providers of services in APTL's own Compose model, used by the
+#: project-tree route where a node binds to that model instead of a selected
+#: implementation profile. The keys are backend service names APTL ships, not
+#: scenario node names; a node with no Compose binding never matches.
+_COMPOSE_SERVICE_PROVIDERS: Mapping[str, str] = {"ad": SAMBA_AD}
 
-    if service_name is None:
-        return None
-    return _PROVIDER_BINDINGS.get(service_name)
+
+def compose_service_account_provider(service_name: str | None) -> str:
+    """Return the account provider of one APTL Compose service, or ``""``."""
+
+    return _COMPOSE_SERVICE_PROVIDERS.get(service_name or "", "")
 
 
-def account_provider_services() -> frozenset[str]:
-    """Return the set of backend services with a registered account provider."""
+def known_account_provider(provider: str | None) -> bool:
+    """Return whether ``provider`` names an account provider this backend has.
 
-    return frozenset(_PROVIDER_BINDINGS)
+    The provider comes from the backend implementation selected for the target
+    node (ADR-046 §Extensibility): adding an account-capable image is one
+    implementation-profile field and one provider here, never a scenario-name
+    branch.
+    """
+
+    return provider in _KNOWN_PROVIDERS
 
 
 @dataclass(frozen=True)
@@ -108,7 +119,7 @@ def plan_account_targets(
             errors.append(resolved)
             continue
         container_name, provider = resolved
-        field_error = _validate_account_fields(account)
+        field_error = _validate_account_fields(account, provider)
         if field_error is not None:
             errors.append(field_error)
             continue
@@ -157,8 +168,11 @@ def _resolve_target(
     """Resolve one account to ``(container_name, provider)`` or a plan error."""
 
     node = by_address.get(account.target_address, _MISSING_NODE)
-    provider = resolve_account_provider(
-        node.service_name if isinstance(node, DeploymentNodeRealization) else None
+    provider = (
+        node.backend_account_provider
+        if isinstance(node, DeploymentNodeRealization)
+        and known_account_provider(node.backend_account_provider)
+        else None
     )
     reason = _target_reason(node, provider)
     if reason is not None:
@@ -179,17 +193,21 @@ def _target_reason(
             "target-node-has-no-container",
             isinstance(node, DeploymentNodeRealization) and node.container_name is None,
         ),
-        ("no-account-provider-for-service", provider is None),
+        ("no-account-provider-for-node", provider is None),
     )
     return next((reason for reason, failed in checks if failed), None)
 
 
 def _validate_account_fields(
     account: DeploymentAccountRealization,
+    provider: str,
 ) -> AccountPlanError | None:
     """Reject provider-unsafe identity values before any mutation."""
 
-    reason = _field_error_reason(account)
+    if provider in APPLICATION_ACCOUNT_PROVIDERS:
+        reason = _application_field_error_reason(account)
+    else:
+        reason = _field_error_reason(account)
     return AccountPlanError(account.address, reason) if reason is not None else None
 
 
@@ -201,6 +219,31 @@ def _field_error_reason(account: DeploymentAccountRealization) -> str | None:
         ("invalid-group", all(_matches(_GROUP_RE, g) for g in account.groups)),
         ("invalid-mail", not account.mail or _matches(_MAIL_RE, account.mail)),
         ("invalid-spn", not account.spn or _matches(_SPN_RE, account.spn)),
+    )
+    return next((reason for reason, ok in checks if not ok), None)
+
+
+def _application_field_error_reason(
+    account: DeploymentAccountRealization,
+) -> str | None:
+    """Refuse an application account the provider cannot apply faithfully.
+
+    An application provider realizes one enabled principal and its declared
+    credential. It has no directory groups, SPNs or mail attribute to set and
+    cannot disable a principal, so a declaration of one is refused rather than
+    silently dropped. RAES's default ``disabled: false`` is the enabled state.
+    """
+
+    checks = (
+        (
+            "invalid-username",
+            _matches(_APPLICATION_USERNAME_RE, account.username),
+        ),
+        (
+            "account-attribute-unsupported",
+            not (account.groups or account.spn or account.mail)
+            and account.disabled is not True,
+        ),
     )
     return next((reason for reason, ok in checks if not ok), None)
 
@@ -249,12 +292,32 @@ def _same_declaration(
 ) -> bool:
     """Whether two same-principal declarations request identical non-name state."""
 
-    return (a.groups, a.spn, a.mail, a.disabled) == (
+    return (
+        a.groups,
+        a.spn,
+        a.mail,
+        a.disabled,
+        a.password_strength,
+        a.auth_method,
+        _credential_declaration(a),
+    ) == (
         b.groups,
         b.spn,
         b.mail,
         b.disabled,
+        b.password_strength,
+        b.auth_method,
+        _credential_declaration(b),
     )
+
+
+def _credential_declaration(
+    account: DeploymentAccountRealization,
+) -> tuple[str, str] | None:
+    """Compare source and value explicitly; credential equality omits secrets."""
+
+    credential = account.credential
+    return (credential.credential_id, credential.value) if credential else None
 
 
 def dedupe_groups(
@@ -288,13 +351,7 @@ def samba_domain_info() -> list[str]:
 
 
 def samba_provisioning_complete_probe() -> list[str]:
-    """Probe the marker proving the AD baseline provisioner has finished.
-
-    Gating account realization on this (in addition to ``domain info``) makes the
-    provisioner-complete ordering explicit: the backend must not observe an
-    account as absent and create it while the service-owned provisioner is still
-    installing that same account with its designed fixture credential.
-    """
+    """Require image provisioning to finish before reconciling declared accounts."""
 
     return ["test", "-f", _SAMBA_PROVISIONED_MARKER]
 
@@ -339,15 +396,7 @@ def samba_user_create(user: str, *, mail: str = "") -> list[str]:
 
 
 def samba_domain_relax_password_policy() -> list[str]:
-    """Argv to let the domain hold the weak credentials the scenario declares.
-
-    Samba's default domain policy (complexity on, minimum length 7) refuses the
-    weak passwords a scenario declares as its credential-guessing surface, so
-    `samba-tool user setpassword` fails and the declared account is realized
-    with something stronger than declared. Relaxing the policy is backend
-    apparatus that exists to make the authored environment true; it is scoped to
-    the range's own throwaway domain (issue #1006).
-    """
+    """Allow declared weak credentials in the throwaway domain (issue #1006)."""
 
     return [
         "samba-tool",
@@ -362,16 +411,7 @@ def samba_domain_relax_password_policy() -> list[str]:
 
 
 def samba_user_setpassword(user: str) -> list[str]:
-    """Argv to set one account's password, with the secret read from stdin.
-
-    `samba-tool user setpassword` prompts for the password when
-    `--newpassword` is absent, so the value travels on stdin and never reaches
-    a command line. It used to be a `--newpassword=<secret>` token: a discrete
-    argv element, which keeps it out of shell syntax but not out of
-    `/proc/<pid>/cmdline` — world-readable on the host through
-    `docker exec ...` and readable by any process inside the container. That
-    defeated the mode-0600 disclosure this same path writes (issue #1105).
-    """
+    """Set a password through the native stdin prompt, never argv or /proc."""
 
     return ["samba-tool", "user", "setpassword", user]
 
@@ -383,17 +423,10 @@ def samba_setpassword_input(password: str) -> str:
 
 
 def samba_user_authenticate(realm: str = "") -> list[str]:
-    """Argv proving the realized credential authenticates, secret on stdin.
+    """Prove authentication through smbclient's stdin credential file.
 
-    A zero exit from `setpassword` says the directory accepted the write, not
-    that the account is usable with that credential. This is the
-    read-after-write for a credential: list shares as the user itself.
-
-    The identity and its secret arrive through smbclient's authentication
-    file, which `/dev/stdin` makes a pipe, so neither the `user%password`
-    principal nor any other form of the secret enters a command line
-    (issue #1105).
-    """
+    The password never enters argv; a successful password write alone is not proof
+    that the account can authenticate (issue #1105)."""
 
     cmd = ["smbclient", "-L", "localhost", "-A", "/dev/stdin"]
     if realm:

@@ -10,8 +10,11 @@ from threading import Event
 from unittest.mock import MagicMock
 
 import pytest
+import typer
 import yaml
 
+from aptl.backends._raes_observation_helpers import safe_inspect
+from aptl.cli.continuity import _validate_continuity_targets
 from aptl.core.deployment._compose_owner_labels import complete_owner_labels
 from aptl.core.deployment._compose_resource_ownership import (
     OwnershipConflictError,
@@ -20,6 +23,8 @@ from aptl.core.deployment._compose_resource_ownership import (
     write_compose_ownership_override,
 )
 from aptl.core.deployment.docker_compose import DockerComposeBackend
+from aptl.core.deployment.errors import BackendTimeoutError
+from aptl.core.deployment.observation import DeploymentObservationContext
 from aptl.core.deployment.realization import DeploymentNetworkRealization
 from aptl.core.lab_types import LabResult
 from aptl.runtime_authority import DeploymentSpawnImageRequirement
@@ -234,6 +239,93 @@ def test_shared_volume_creation_waits_for_ownership_receipt(tmp_path: Path) -> N
     assert len(ownership.receipts("volume")) == 1
 
 
+def _seed_backend_with_stale_receipt(tmp_path: Path, inspect_stderr: str):
+    """Leave a receipt from an earlier attempt whose volume no longer exists."""
+
+    backend = DockerComposeBackend(tmp_path)
+    ownership = backend._ensure_resource_ownership(attempt_id="run-old")
+    backend._docker_daemon_id = "daemon-a"
+    volume = f"{ownership.project_name}_shared"
+    ownership.record(
+        ResourceReceipt(
+            kind="volume",
+            native_id=volume,
+            external_name=volume,
+            semantic_name="shared",
+            node_address="shared",
+            workspace_id=ownership.workspace_id,
+            project_name=ownership.project_name,
+            daemon_id="daemon-a",
+            attempt_id="run-old",
+            managed_by="direct",
+        )
+    )
+    backend._resource_attempt_id = "run-new"
+    state: dict[str, object] = {}
+    creates = []
+
+    def run(command, *, timeout):
+        if command[:3] == ["docker", "volume", "inspect"]:
+            labels = state.get("labels")
+            if labels is None:
+                return subprocess.CompletedProcess(command, 1, "", inspect_stderr)
+            return subprocess.CompletedProcess(command, 0, json.dumps(labels), "")
+        assert command[:3] == ["docker", "volume", "create"]
+        creates.append(command)
+        state["labels"] = {
+            command[index + 1].split("=", 1)[0]: command[index + 1].split("=", 1)[1]
+            for index, value in enumerate(command)
+            if value == "--label"
+        }
+        return subprocess.CompletedProcess(command, 0, volume + "\n", "")
+
+    backend._run = run
+    backend._raw_volume_inspect = lambda _name: (
+        {"Name": volume, "Labels": state["labels"]} if "labels" in state else {}
+    )
+    return backend, ownership, creates
+
+
+def test_seed_volume_retires_a_receipt_whose_volume_was_removed(
+    tmp_path: Path,
+) -> None:
+    """A volume deleted outside ``stop -v`` does not block the next start (#1407).
+
+    Volume names are reused across attempts. Before this fix the new attempt
+    created the volume and then failed to record it, which left the new
+    volume orphaned and the lab unstartable.
+    """
+
+    backend, ownership, creates = _seed_backend_with_stale_receipt(
+        tmp_path, "Error response from daemon: get x: no such volume"
+    )
+
+    backend._ensure_labeled_project_volume("shared")
+
+    assert len(creates) == 1
+    (receipt,) = ownership.receipts("volume")
+    assert receipt.attempt_id == "run-new"
+
+
+def test_seed_volume_keeps_a_receipt_when_absence_is_not_proven(
+    tmp_path: Path,
+) -> None:
+    """A daemon error is not proof that the recorded volume is gone."""
+
+    from aptl.core.deployment.errors import BackendSeedError
+
+    backend, ownership, creates = _seed_backend_with_stale_receipt(
+        tmp_path, "Cannot connect to the Docker daemon"
+    )
+
+    with pytest.raises(BackendSeedError):
+        backend._ensure_labeled_project_volume("shared")
+
+    assert creates == []
+    (receipt,) = ownership.receipts("volume")
+    assert receipt.attempt_id == "run-old"
+
+
 def test_compose_preflight_ignores_retired_network_identity(tmp_path: Path) -> None:
     """A restarted network is accepted only through its one live native ID."""
 
@@ -344,6 +436,7 @@ def test_container_action_uses_recorded_id_and_rejects_replacement(
 
 def test_cleanup_targets_only_receipt_owned_native_ids(tmp_path: Path) -> None:
     backend = DockerComposeBackend(tmp_path, project_name="aptl")
+    backend._current_docker_daemon_id = lambda: "daemon-a"
     ownership = backend._ensure_resource_ownership(attempt_id="run-a")
     external = ownership.container_name("aptl-victim")
     ownership.record(
@@ -378,8 +471,103 @@ def test_cleanup_targets_only_receipt_owned_native_ids(tmp_path: Path) -> None:
     assert backend.remove_generic_materializer_containers() == []
     # ``-v`` removes the container's anonymous volumes with it; receipt-owned
     # named volumes are untouched by it and retired separately.
-    assert backend._run.call_args.args[0] == ["docker", "rm", "-f", "-v", _ID_A]
-    assert all("--filter" not in call.args[0] for call in backend._run.call_args_list)
+    commands = [call.args[0] for call in backend._run.call_args_list]
+    assert ["docker", "rm", "-f", "-v", _ID_A] in commands
+    assert all(cmd[-1] == _ID_A for cmd in commands if cmd[:2] == ["docker", "rm"])
+
+
+@pytest.mark.parametrize("remove_volumes", [False, True])
+@pytest.mark.parametrize("managed_by", ["direct", "compose"])
+def test_stop_applies_volume_policy_to_receipt_owned_nodes(
+    tmp_path: Path, managed_by: str, remove_volumes: bool
+) -> None:
+    """Exercise stop's fallback removal with anonymous node data (#952)."""
+    from aptl.core.deployment._compose_stop import stop_compose_lab
+    from aptl.core.deployment.backend_host_inventory import ProjectRuntimePresence
+
+    backend = DockerComposeBackend(tmp_path)
+    ownership = backend._ensure_resource_ownership(attempt_id="run-a")
+    external = ownership.container_name("victim")
+    ownership.record(
+        ResourceReceipt(
+            kind="container",
+            native_id=_ID_A,
+            external_name=external,
+            semantic_name="victim",
+            node_address="provision.node.victim",
+            workspace_id=ownership.workspace_id,
+            project_name=ownership.project_name,
+            daemon_id="daemon-a",
+            attempt_id="run-a",
+            managed_by=managed_by,
+        )
+    )
+    backend._docker_daemon_id = "daemon-a"
+    containers = {_ID_A, _ID_B}
+    volumes = {"named-data", "anonymous-data", "foreign-data"}
+    info = {
+        "Id": _ID_A,
+        "Name": f"/{external}",
+        "Config": {
+            "Labels": {
+                "aptl.workspace.id": ownership.workspace_id,
+                "aptl.lifecycle.project": ownership.project_name,
+            }
+        },
+    }
+    backend._raw_container_inspect = lambda native_id: (
+        info if native_id in containers else {}
+    )
+
+    def run(cmd, *, timeout=None):
+        if cmd[:3] == ["docker", "container", "ls"]:
+            return subprocess.CompletedProcess(
+                cmd,
+                0,
+                "\n".join(
+                    item
+                    for item in containers
+                    if item == cmd[cmd.index("--filter") + 1].removeprefix("id=")
+                ),
+                "",
+            )
+        if cmd[:2] == ["docker", "rm"]:
+            assert cmd[-1] == _ID_A
+            containers.remove(_ID_A)
+            if "-v" in cmd:
+                volumes.remove("anonymous-data")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        assert "down" in cmd
+        return subprocess.CompletedProcess(cmd, 1, "", "")
+
+    backend._run = run
+    backend._current_docker_daemon_id = lambda: "daemon-a"
+    backend._build_command = lambda *args, **kwargs: ["docker", "compose", "down"]
+    backend.remove_stranded_helpers = lambda: []
+    backend.remove_project_networks = lambda: []
+    backend.observe_project_runtime = lambda: ProjectRuntimePresence(
+        container_count=int(_ID_A in containers)
+    )
+
+    def remove_named():
+        volumes.remove("named-data")
+        return []
+
+    backend._remove_owned_volumes = remove_named
+
+    result = stop_compose_lab(backend, [], remove_volumes=remove_volumes, timeout=30)
+
+    assert result.success
+    assert containers == {_ID_B}
+    assert volumes == (
+        {"foreign-data"}
+        if remove_volumes
+        else {
+            "named-data",
+            "anonymous-data",
+            "foreign-data",
+        }
+    )
 
 
 def test_workspace_state_contains_no_project_path_or_secret(tmp_path: Path) -> None:
@@ -545,10 +733,14 @@ def test_network_creation_records_native_id_and_cleanup_uses_only_that_id(
     )
     backend._run.reset_mock()
     backend._run.return_value = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+    backend._current_docker_daemon_id = lambda: "daemon-a"
 
     assert backend.remove_project_networks() == []
-    assert backend._run.call_args.args[0] == ["docker", "network", "rm", _ID_A]
-    assert all("--filter" not in call.args[0] for call in backend._run.call_args_list)
+    commands = [call.args[0] for call in backend._run.call_args_list]
+    assert ["docker", "network", "rm", _ID_A] in commands
+    assert all(
+        cmd[-1] == _ID_A for cmd in commands if cmd[:3] == ["docker", "network", "rm"]
+    )
 
 
 def test_network_namespace_discovery_uses_full_receipted_native_ids(
@@ -650,7 +842,12 @@ def test_container_namespace_discovery_uses_full_receipted_native_ids(
     assert "--no-trunc" in container_list
 
 
-def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "outcome", ["removed", "foreign-label", "remove-failed", "still-present"]
+)
+def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(
+    tmp_path: Path, outcome: str
+) -> None:
     backend = DockerComposeBackend(tmp_path, project_name="aptl")
     ownership = backend._ensure_resource_ownership(attempt_id="run-a")
     backend._docker_daemon_id = "daemon-a"
@@ -672,7 +869,13 @@ def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(tmp_path: Path) 
         [
             {
                 "Name": volume,
-                "Labels": {"com.docker.compose.project": ownership.project_name},
+                "Labels": {
+                    "com.docker.compose.project": (
+                        "foreign"
+                        if outcome == "foreign-label"
+                        else ownership.project_name
+                    )
+                },
             }
         ]
     )
@@ -681,8 +884,14 @@ def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(tmp_path: Path) 
 
     def fake_run(argv, **_kwargs):
         nonlocal present
+        if argv[:3] == ["docker", "volume", "ls"]:
+            return subprocess.CompletedProcess(
+                argv, 0, stdout=volume if present else "", stderr=""
+            )
         if argv[:3] == ["docker", "volume", "rm"]:
-            present = False
+            if outcome == "remove-failed":
+                return subprocess.CompletedProcess(argv, 1, stdout="", stderr="")
+            present = outcome == "still-present"
         inspect_cmd = argv[:3] == ["docker", "volume", "inspect"]
         stdout = inspected if inspect_cmd and present else ""
         return subprocess.CompletedProcess(
@@ -690,12 +899,26 @@ def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(tmp_path: Path) 
         )
 
     backend._run = MagicMock(side_effect=fake_run)
+    backend._current_docker_daemon_id = lambda: "daemon-a"
 
-    assert backend._remove_owned_volumes() == []
+    failures = backend._remove_owned_volumes()
+    expected_failures = {
+        "removed": [],
+        "foreign-label": ["failed to establish volume cleanup authority"],
+        "remove-failed": ["failed to remove receipt-owned volume"],
+        "still-present": ["failed to verify receipt-owned volume removal"],
+    }
+    assert failures == expected_failures[outcome]
     commands = [call.args[0] for call in backend._run.call_args_list]
-    assert ["docker", "volume", "rm", volume] in commands
-    assert all("ls" not in command for command in commands)
-    assert ownership.receipts("volume") == ()
+    assert (["docker", "volume", "rm", volume] in commands) == (
+        outcome != "foreign-label"
+    )
+    assert all(
+        command[command.index("--filter") + 1] == f"name={volume}"
+        for command in commands
+        if command[:3] == ["docker", "volume", "ls"]
+    )
+    assert bool(ownership.receipts("volume")) == (outcome != "removed")
 
 
 def test_clean_volume_cleanup_retires_already_absent_receipt(tmp_path: Path) -> None:
@@ -716,8 +939,14 @@ def test_clean_volume_cleanup_retires_already_absent_receipt(tmp_path: Path) -> 
     )
     ownership.record(receipt)
     backend._run = MagicMock(
-        return_value=subprocess.CompletedProcess([], 1, stdout="", stderr="")
+        side_effect=lambda argv, **_: subprocess.CompletedProcess(
+            argv,
+            0 if argv[:3] == ["docker", "volume", "ls"] else 1,
+            stdout="",
+            stderr="",
+        )
     )
+    backend._current_docker_daemon_id = lambda: "daemon-a"
 
     assert backend._remove_owned_volumes() == []
     assert ownership.receipts("volume") == ()
@@ -726,17 +955,15 @@ def test_clean_volume_cleanup_retires_already_absent_receipt(tmp_path: Path) -> 
     assert ownership.receipts("volume")[0].attempt_id == "run-b"
 
 
-def test_receipted_container_resolution_retries_only_inconclusive_inspect(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    backend = DockerComposeBackend(tmp_path, project_name="aptl")
-    ownership = backend._ensure_resource_ownership(attempt_id="run-a")
-    backend._docker_daemon_id = "daemon-a"
-    external_name = ownership.container_name("worker")
+def _record_worker(
+    ownership: WorkspaceOwnership, native_id: str, external_name: str
+) -> dict[str, object]:
+    """Record one ``worker`` container and return its current inspect payload."""
+
     ownership.record(
         ResourceReceipt(
             kind="container",
-            native_id=_ID_A,
+            native_id=native_id,
             external_name=external_name,
             semantic_name="worker",
             node_address="provision.node.worker",
@@ -746,16 +973,36 @@ def test_receipted_container_resolution_retries_only_inconclusive_inspect(
             attempt_id="run-a",
         )
     )
-    current = {
-        "Id": _ID_A,
+    return {
+        "Id": native_id,
         "Name": f"/{external_name}",
         "Config": {
             "Labels": {
                 "aptl.workspace.id": ownership.workspace_id,
                 "aptl.lifecycle.project": ownership.project_name,
+                "com.docker.compose.project": ownership.project_name,
             }
         },
     }
+
+
+def _backend_recording_worker(
+    tmp_path: Path,
+) -> tuple[DockerComposeBackend, dict[str, object]]:
+    """Return a backend on daemon-a that records one ``worker`` container."""
+
+    backend = DockerComposeBackend(tmp_path, project_name="aptl")
+    ownership = backend._ensure_resource_ownership(attempt_id="run-a")
+    backend._docker_daemon_id = "daemon-a"
+    return backend, _record_worker(
+        ownership, _ID_A, ownership.container_name("worker")
+    )
+
+
+def test_receipted_container_resolution_retries_only_inconclusive_inspect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    backend, current = _backend_recording_worker(tmp_path)
     sleeps: list[float] = []
     monkeypatch.setattr(
         "aptl.core.deployment._compose_resource_resolution.time.sleep",
@@ -778,6 +1025,153 @@ def test_receipted_container_resolution_retries_only_inconclusive_inspect(
         backend._resolve_owned_container_id("worker")
     assert sleeps == []
     assert backend._raw_container_inspect.call_count == 1
+
+
+def test_container_membership_never_creates_the_workspace_scope(
+    tmp_path: Path,
+) -> None:
+    backend = DockerComposeBackend(tmp_path, project_name="aptl")
+    backend._run = MagicMock(side_effect=AssertionError("no Docker command expected"))
+
+    assert backend.container_exists("aptl-victim") is False
+    assert WorkspaceOwnership.load(tmp_path, "aptl") is None
+
+
+@pytest.mark.parametrize("successful_inspects", [0, 1])
+@pytest.mark.parametrize(
+    ("daemon_state", "match"),
+    [
+        ("unreachable", "daemon identity is unavailable"),
+        ("timeout", "daemon identity is unavailable"),
+        ("changed", "daemon identity changed"),
+    ],
+)
+def test_container_membership_does_not_hide_a_daemon_failure(
+    tmp_path: Path,
+    successful_inspects: int,
+    daemon_state: str,
+    match: str,
+) -> None:
+    """A lost daemon is not absence, including after the receipt verified."""
+
+    backend, current = _backend_recording_worker(tmp_path)
+    inspect_count = 0
+
+    def docker(argv, **_kwargs):
+        nonlocal inspect_count
+        if argv == ["docker", "inspect", _ID_A]:
+            inspect_count += 1
+            if inspect_count <= successful_inspects:
+                return subprocess.CompletedProcess(
+                    argv, 0, stdout=json.dumps([current]), stderr=""
+                )
+            return subprocess.CompletedProcess(
+                argv, 1, stdout="", stderr="Cannot connect to the Docker daemon"
+            )
+        assert argv == ["docker", "info", "--format", "{{.ID}}"]
+        if daemon_state == "timeout":
+            raise BackendTimeoutError("daemon probe timed out")
+        return subprocess.CompletedProcess(
+            argv,
+            0 if daemon_state == "changed" else 1,
+            stdout="daemon-b\n" if daemon_state == "changed" else "",
+            stderr="",
+        )
+
+    backend._run = MagicMock(side_effect=docker)
+
+    with pytest.raises(OwnershipConflictError, match=match):
+        backend.container_exists("worker")
+    assert inspect_count == successful_inspects + 1
+
+
+def test_container_membership_confirms_absence_on_the_recorded_daemon(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    backend, _current = _backend_recording_worker(tmp_path)
+    monkeypatch.setattr(
+        "aptl.core.deployment._compose_resource_resolution.time.sleep",
+        lambda _seconds: None,
+    )
+
+    def docker(argv, **_kwargs):
+        if argv == ["docker", "inspect", _ID_A]:
+            return subprocess.CompletedProcess(
+                argv, 1, stdout="", stderr=f"Error: No such object: {_ID_A}"
+            )
+        assert argv == ["docker", "info", "--format", "{{.ID}}"]
+        return subprocess.CompletedProcess(argv, 0, stdout="daemon-a\n", stderr="")
+
+    backend._run = MagicMock(side_effect=docker)
+
+    assert backend.container_exists("worker") is False
+
+
+@pytest.mark.parametrize("selector", ["unrecorded", "worker"])
+def test_names_without_a_live_receipt_are_not_members_and_stay_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, selector: str
+) -> None:
+    """No receipt names ``unrecorded``; ``worker``'s recorded container is gone."""
+
+    backend, _current = _backend_recording_worker(tmp_path)
+    monkeypatch.setattr(
+        "aptl.core.deployment._compose_resource_resolution.time.sleep",
+        lambda _seconds: None,
+    )
+    backend._raw_container_inspect = MagicMock(return_value={})
+
+    assert backend.container_exists(selector) is False
+    with pytest.raises(OwnershipConflictError, match="container ownership"):
+        backend._resolve_owned_container_id(selector)
+
+
+@pytest.mark.parametrize(
+    ("daemon_id", "change", "match"),
+    [
+        ("daemon-b", {}, "daemon identity changed"),
+        ("daemon-a", {"Id": _ID_B}, "native identity changed"),
+        ("daemon-a", {"Config": {"Labels": {}}}, "labels changed"),
+        ("daemon-a", {"Name": "/foreign"}, "semantic binding changed"),
+    ],
+)
+def test_container_membership_still_raises_when_a_recorded_container_changed(
+    tmp_path: Path, daemon_id: str, change: dict[str, object], match: str
+) -> None:
+    backend, current = _backend_recording_worker(tmp_path)
+    backend._docker_daemon_id = daemon_id
+    backend._raw_container_inspect = MagicMock(return_value={**current, **change})
+
+    with pytest.raises(OwnershipConflictError, match=match):
+        backend.container_exists("worker")
+
+
+def test_container_membership_refuses_an_ambiguous_selector(tmp_path: Path) -> None:
+    backend, current = _backend_recording_worker(tmp_path)
+    ownership = backend._resource_ownership
+    twin = _record_worker(ownership, _ID_B, ownership.container_name("worker-twin"))
+    backend._raw_container_inspect = MagicMock(
+        side_effect={_ID_A: current, _ID_B: twin}.get
+    )
+
+    with pytest.raises(OwnershipConflictError, match="ambiguous"):
+        backend.container_exists("worker")
+
+
+def test_membership_callers_read_an_unrecorded_name_as_absent(tmp_path: Path) -> None:
+    backend, _current = _backend_recording_worker(tmp_path)
+    backend._run = MagicMock(side_effect=AssertionError("no Docker command expected"))
+
+    assert safe_inspect(backend, "unrecorded") == {}
+    assert backend._retire_completed_autoremove_node(
+        "unrecorded",
+        "",
+        DeploymentObservationContext(),
+        require_image_digest=False,
+        require_image_config_id=False,
+    ) == "container 'unrecorded' is not owned by this Compose project"
+    with pytest.raises(typer.Exit) as refused:
+        _validate_continuity_targets(backend, ["unrecorded"], explicit=True)
+    assert refused.value.exit_code == 2
 
 
 def test_compose_override_labels_networks_and_volumes_and_plans_exact_names(
@@ -960,16 +1354,10 @@ def test_network_reuse_inspects_the_verified_id_not_the_name(tmp_path: Path) -> 
     "failing_stage",
     ["container", "network", "volume"],
 )
-def test_a_failed_capture_rolls_the_whole_attempt_back(
+def test_a_failed_capture_removes_runtime_but_preserves_volumes(
     tmp_path: Path, failing_stage: str
 ) -> None:
-    """Whatever stage fails, nothing this attempt created may be left behind.
-
-    The rollback used to remove only receipted containers, so the object whose
-    receipt failed — and every network and volume created alongside it — stayed
-    on the daemon with no receipt. The next preflight read that as a foreign
-    namespace and the workspace could neither start nor clean up (issue #1105).
-    """
+    """Compensation still removes unreceipted runtime, but retains data (#952)."""
     from aptl.core.deployment._compose_owned_start import _OwnedStartScope
 
     backend = DockerComposeBackend(tmp_path, project_name="aptl")
@@ -1006,12 +1394,10 @@ def test_a_failed_capture_rolls_the_whole_attempt_back(
     assert not result.success
     [rollback] = [c.args[0] for c in backend._run.call_args_list]
     assert "down" in rollback
-    # Volumes and orphans included: an unreceipted network or volume is exactly
-    # what a container-only rollback used to strand.
-    assert "--volumes" in rollback
+    assert "--volumes" not in rollback
     assert "--remove-orphans" in rollback
     backend._remove_owned_attempt_containers.assert_called_once_with(
-        "attempt-under-test"
+        "attempt-under-test", remove_volumes=False
     )
 
 
@@ -1039,12 +1425,13 @@ def test_a_successful_capture_rolls_nothing_back(tmp_path: Path) -> None:
 
 
 def test_a_failed_compose_up_receipts_and_rolls_back_partial_runtime(
-    tmp_path: Path,
+    tmp_path: Path, caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A non-zero Compose up must not strand unreceipted runtime objects."""
     from aptl.core.deployment._compose_owned_start import _OwnedStartScope
 
     backend = DockerComposeBackend(tmp_path, project_name="aptl")
+    (tmp_path / "docker-compose.yml").write_text("services: {}\n")
     scope = _OwnedStartScope(
         ownership=backend._ensure_resource_ownership(),
         attempt_id="attempt-under-test",
@@ -1074,7 +1461,8 @@ def test_a_failed_compose_up_receipts_and_rolls_back_partial_runtime(
     )
 
     assert not result.success
-    assert result.error == "service failed"
+    assert result.error == "Compose start failed."
+    assert "service failed" not in caplog.text
     backend._capture_started_resources.assert_called_once_with(scope, ["core"])
     backend._roll_back_started_project.assert_called_once_with(
         scope, ["core"], remove_volumes=False

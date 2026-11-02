@@ -20,7 +20,7 @@ from aptl.core.lab_types import LabResult
 #: ``raes`` -> ``raes`` with the RAES migration - MUST bump this tag. Leaving it
 #: pinned would pair a cached older helper with newer APTL code and fail every
 #: boundary mutation closed on hosts that already built the previous image.
-DEFAULT_BOUNDARY_HELPER_IMAGE = "aptl-network-boundary-helper:5"
+DEFAULT_BOUNDARY_HELPER_IMAGE = "aptl-network-boundary-helper:6"
 _BOUNDARY_TIMEOUT = 30
 
 
@@ -149,7 +149,7 @@ def _boundary_observation_result(
     try:
         if error is None:
             receipt = json.loads(observation.stdout)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         error = "Boundary policy observation was invalid."
     expected_families = [] if action == "cleanup" else ["bridge", "inet"]
     expected = {
@@ -157,7 +157,7 @@ def _boundary_observation_result(
         "owner": policy.owner,
         "enforcement_digest": policy.digest(),
         "families": expected_families,
-        "default_deny": policy.authority == "platform",
+        "default_deny": policy.authority in {"platform", "seat-protection"},
     }
     if error is None and receipt != expected:
         error = "Boundary policy readback did not match desired state."

@@ -8,7 +8,7 @@
 > The pack declares the `labadmin` user, `sshd`, `rsyslog` and a Wazuh agent
 > that forwards `/var/log/secure` and `/var/log/messages` to the manager. The
 > node publishes no host port, so the `-p 2022` command below does not reach
-> it. From the host, use `aptl container shell aptl-victim`.
+> it. From the host, use `lilrae container shell aptl-victim`.
 
 The victim container serves as a target system for red team activities and security testing. It provides a Rocky Linux 9 environment with SSH access, Wazuh agent integration, and Falco runtime security monitoring.
 
@@ -16,7 +16,7 @@ The victim container serves as a target system for red team activities and secur
 
 - **Base Image**: rockylinux:9
 - **User**: `labadmin` with sudo privileges (NOPASSWD)
-- **SSH**: Key-based authentication only (port 22, lab-internal; no host port is published; use `aptl container shell aptl-victim` from the host)
+- **SSH**: Key-based authentication only (port 22, lab-internal; no host port is published; use `lilrae container shell aptl-victim` from the host)
 - **IP Address**: 172.20.2.20 (aptl-internal network)
 
 See [containers/victim/Dockerfile](https://github.com/OpenRAE/lilrae/blob/main/containers/victim/Dockerfile) for complete build configuration.

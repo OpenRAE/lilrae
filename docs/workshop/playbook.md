@@ -33,7 +33,7 @@ Set the frame and the hook.
 
 - Introduce yourself and the plan: a whirlwind tour of security by doing it.
 - The hook: in the next hour you attack a company, then catch yourself doing it.
-- Safety: this is an isolated range. `aptl lab stop -v` performs the clean
+- Safety: this is an isolated range. `lilrae lab stop -v` performs the clean
   inner reset measured by this profile; an appliance release may additionally
   offer disposable-seat replacement.
 - The agenda in one line: range, agents, attacks, defense, do both, purple.
@@ -48,7 +48,7 @@ Explain what a range is, why they exist, and what you learn from one.
   range gives real repetitions at no risk.
 - What you learn: which attacks are noisy versus quiet, whether detections
   work, and how analysts (and now agents) actually operate.
-- Show `aptl lab status` and name the parts: a monitored victim, Wazuh, and an
+- Show `lilrae lab status` and name the parts: a monitored victim, Wazuh, and an
   attacker box.
 
 ## 3. Agents in cyber (about 5 min)
@@ -175,7 +175,6 @@ Let students explore within the bounded profile.
 - Two-person purple: one student drives red, one drives blue, and they race the
   loop.
 
-SMB enumeration, web SQL injection, MISP, TheHive, Cortex, Shuffle, and
-Suricata exercises belong to the full `techvault-operational` research stack.
+SMB enumeration, web SQL injection, MISP, Shuffle, and Suricata exercises belong to the full `techvault-operational` research stack.
 They are optional follow-on material, not a fallback required to complete this
 profile.

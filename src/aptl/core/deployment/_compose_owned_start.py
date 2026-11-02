@@ -119,9 +119,13 @@ class ComposeOwnedStartMixin:
     ) -> LabResult:
         """Preflight, run, and receipt one Compose up operation."""
 
-        refused = self._compose_substrate_daemon_refusal(
-            compose_files, profiles, exclude_services, only_services
-        )
+        from aptl.core.deployment._lilrae_compose_capabilities import compose_capability_refusal
+
+        refused = compose_capability_refusal(self._run, compose_files)
+        if refused is None:
+            refused = self._compose_substrate_daemon_refusal(
+                compose_files, profiles, exclude_services, only_services
+            )
         prepared = (
             refused if refused is not None else self._prepare_owned_start(compose_files)
         )
@@ -137,7 +141,7 @@ class ComposeOwnedStartMixin:
         )
         result = self._run(command)
         if result.returncode != 0:
-            log.error("Lab start failed: %s", result.stderr)
+            log.error("Compose start failed")
             # Compose can create or replace a subset of the project before a
             # service failure makes ``up`` return non-zero. Capture that exact
             # attempt while its owner tuple is still known, then remove the
@@ -151,7 +155,7 @@ class ComposeOwnedStartMixin:
                     profiles,
                     remove_volumes=False,
                 )
-            return LabResult(success=False, error=result.stderr)
+            return LabResult(success=False, error="Compose start failed.")
         return self._capture_started_resources(prepared, profiles)
 
     def _compose_substrate_daemon_refusal(
@@ -282,14 +286,15 @@ class ComposeOwnedStartMixin:
                 daemon_id=scope.daemon_id,
                 attempt_id=scope.attempt_id,
             )
-        except OwnershipConflictError as exc:
-            log.exception("Compose post-start ownership capture failed: %s", exc)
-            self._roll_back_started_project(scope, profiles)
+        except OwnershipConflictError:
+            log.error("Compose post-start ownership capture failed")
+            self._roll_back_started_project(scope, profiles, remove_volumes=False)
             return LabResult(
                 success=False,
                 error=(
                     "Backend resource ownership could not be verified after "
-                    "Compose start."
+                    "Compose start. Runtime compensation was attempted with volumes "
+                    "retained; repair ownership before retrying cleanup or start."
                 ),
             )
         log.info("Lab started successfully")
@@ -300,9 +305,9 @@ class ComposeOwnedStartMixin:
         scope: _OwnedStartScope,
         profiles: list[str],
         *,
-        remove_volumes: bool = True,
+        remove_volumes: bool = False,
     ) -> None:
-        """Undo everything this attempt started, receipted or not."""
+        """Compensate attempted runtime without implicitly destroying node data."""
 
         try:
             command = [
@@ -322,7 +327,9 @@ class ComposeOwnedStartMixin:
         # Receipted containers may include directly-run resources Compose does
         # not know about, so this still runs — now as the remainder, not the
         # whole rollback.
-        self._remove_owned_attempt_containers(scope.attempt_id)
+        self._remove_owned_attempt_containers(
+            scope.attempt_id, remove_volumes=remove_volumes
+        )
 
     def _start_preflight(self, profiles: list[str]) -> LabResult | None:
         """Run observability configuration and ownership checks before start."""

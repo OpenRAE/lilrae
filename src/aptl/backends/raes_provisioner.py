@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from raes_backend_protocols.capabilities import BackendManifest
 from raes_contracts.diagnostics import Diagnostic
-from raes_contracts.planning import ProvisioningPlan
+from raes_contracts.planning import ChangeAction, ProvisioningPlan
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 
 from aptl.backends._raes_apply_reporting import (
     bounded_apply_details as _bounded_apply_details,
+    closed_credential_result,
     with_artifact_satisfactions,
+    source_image_evidence,
 )
 
 from aptl.backends.raes_diagnostics import (
@@ -21,6 +24,7 @@ from aptl.backends.raes_diagnostics import (
     has_error,
 )
 from aptl.backends._raes_provisioner_start import ProvisionerStartMixin
+from aptl.backends.lilrae_apparatus_reporting import LilraeApparatusReportingMixin
 from aptl.backends._raes_provisioning_helpers import (
     availability_substrate_digests,
     compose_validity_diagnostics,
@@ -46,6 +50,7 @@ from aptl.core.deployment.observation import DeploymentObservationContext
 from aptl.utils.logging import get_logger
 
 if TYPE_CHECKING:
+    from aptl.backends.lilrae_apparatus_reporting import PreparedCaptureResource
     from raes_contracts.contracts import ArtifactAvailabilityContext
 
     from aptl.core.deployment.backend import DeploymentBackend
@@ -61,7 +66,7 @@ _REALIZATION_READBACK_INTERVAL_SECONDS = 2.0
 
 
 @dataclass
-class AptlProvisioner(ProvisionerStartMixin):
+class AptlProvisioner(LilraeApparatusReportingMixin, ProvisionerStartMixin):
     """Provisioning component of APTL's ``full-remote-control-plane`` target."""
 
     project_dir: Path
@@ -93,28 +98,34 @@ class AptlProvisioner(ProvisionerStartMixin):
     planning_compatibility: ResolvedPlanningCompatibility | None = field(
         default=None, repr=False
     )
+    reporting_manifest: BackendManifest | None = field(default=None, repr=False)
+    _lilrae_apparatus_resources: tuple[PreparedCaptureResource, ...] = field(
+        default=(), init=False, repr=False
+    )
+    _lilrae_deployment_spec: DeploymentRealizationSpec | None = field(
+        default=None, init=False, repr=False
+    )
     _cached_plan: object | None = field(default=None, init=False, repr=False)
     _cached_realization: AptlRealization | None = field(
         default=None, init=False, repr=False
     )
     _attempt_id: str | None = field(default=None, init=False, repr=False)
+    last_source_image_evidence: dict[str, object] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     def bind_attempt_id(self, attempt_id: str | None) -> None:
         """Bind the one already-resolved lab-start attempt to deployment."""
 
         self._attempt_id = attempt_id
+        self.last_source_image_evidence = {}
 
     def validate(self, plan: object) -> list[Diagnostic]:
         """Validate that the RAES provisioning plan is APTL-realizable."""
 
-        if not isinstance(plan, ProvisioningPlan):
-            return [
-                diagnostic(
-                    "aptl.provisioner.invalid-plan",
-                    PROVISIONING_ADDRESS,
-                    "APTL provisioner expected a RAES ProvisioningPlan.",
-                )
-            ]
+        diagnostics = self._invalid_plan_diagnostics(plan)
+        if diagnostics:
+            return diagnostics
 
         return [
             *self.realize_plan(plan).diagnostics,
@@ -144,33 +155,105 @@ class AptlProvisioner(ProvisionerStartMixin):
             snapshot if isinstance(snapshot, RuntimeSnapshot) else RuntimeSnapshot()
         )
         diagnostics = self._invalid_plan_diagnostics(plan)
-        result = ApplyResult(
+        if isinstance(plan, ProvisioningPlan):
+            diagnostics.extend(self._materialization_run_diagnostics(plan))
+        if not isinstance(plan, ProvisioningPlan) or has_error(diagnostics):
+            result = ApplyResult(
+                success=False,
+                snapshot=working_snapshot,
+                diagnostics=diagnostics,
+            )
+        else:
+            apparatus_failure = self._prepare_lilrae_apparatus(plan, working_snapshot)
+            if apparatus_failure is not None:
+                diagnostics.append(apparatus_failure)
+                result = ApplyResult(False, working_snapshot, diagnostics=diagnostics)
+            else:
+                result = self._apply_realized_plan(plan, working_snapshot)
+        return self._record_apply_result(plan, working_snapshot, result)
+
+    def _materialization_run_diagnostics(
+        self, plan: ProvisioningPlan
+    ) -> list[Diagnostic]:
+        """Bind the admitted run, or refuse a plan for a different run."""
+
+        source = plan.materialization_source
+        if source is not None and self._attempt_id is None:
+            self.bind_attempt_id(source.run_id)
+        if source is None or self._attempt_id == source.run_id:
+            return []
+        return [
+            diagnostic(
+                "lilrae.provisioner.run-identity-mismatch",
+                PROVISIONING_ADDRESS,
+                "Native ownership and the admitted plan identify different runs.",
+            )
+        ]
+
+    def _prepare_lilrae_apparatus(
+        self, plan: ProvisioningPlan, working_snapshot: RuntimeSnapshot
+    ) -> Diagnostic | None:
+        """Prepare capture apparatus resources, or return why they are invalid."""
+
+        from aptl.backends.lilrae_apparatus_reporting import (
+            prepare_apparatus_resources,
+        )
+        from aptl.backends.raes_manifest import create_aptl_manifest
+
+        self._lilrae_apparatus_resources = ()
+        if plan.materialization_source is None:
+            return None
+        try:
+            self._lilrae_apparatus_resources = prepare_apparatus_resources(
+                plan,
+                working_snapshot,
+                self.reporting_manifest or create_aptl_manifest(),
+                self.capture_plan.apparatus,
+            )
+        except TypeError, ValueError:
+            return diagnostic(
+                "lilrae.apparatus.scope-invalid",
+                PROVISIONING_ADDRESS,
+                "Capture apparatus exceeds its admitted scope or has no valid description.",
+            )
+        return None
+
+    def _apply_realized_plan(
+        self, plan: ProvisioningPlan, working_snapshot: RuntimeSnapshot
+    ) -> ApplyResult:
+        """Realize a valid plan and apply it when realization has no errors."""
+
+        realization = self.realize_plan(plan)
+        diagnostics = list(realization.diagnostics)
+        if not has_error(diagnostics):
+            return self._apply_valid_plan(
+                plan,
+                working_snapshot,
+                diagnostics,
+                realization,
+            )
+        return ApplyResult(
             success=False,
             snapshot=working_snapshot,
             diagnostics=diagnostics,
+            details=_bounded_apply_details(
+                {"realization": realization.details()}, realization
+            ),
         )
-        if isinstance(plan, ProvisioningPlan):
-            realization = self.realize_plan(plan)
-            diagnostics = list(realization.diagnostics)
-            if not has_error(diagnostics):
-                result = self._apply_valid_plan(
-                    plan,
-                    working_snapshot,
-                    diagnostics,
-                    realization,
-                )
-            else:
-                result = ApplyResult(
-                    success=False,
-                    snapshot=working_snapshot,
-                    diagnostics=diagnostics,
-                    details=_bounded_apply_details(
-                        {"realization": realization.details()}, realization
-                    ),
-                )
+
+    def _record_apply_result(
+        self, plan: object, working_snapshot: RuntimeSnapshot, result: ApplyResult
+    ) -> ApplyResult:
+        """Record apply evidence and close the result for credential plans."""
+
         self.last_failure_diagnostics = (
             () if result.success else tuple(result.diagnostics)
         )
+        self.last_source_image_evidence = source_image_evidence(result.details)
+        if isinstance(plan, ProvisioningPlan):
+            if result.success and plan.materialization_source is not None:
+                result = self._report_inventory(plan, working_snapshot, result)
+            result = closed_credential_result(plan, result)
         return result
 
     @staticmethod
@@ -211,7 +294,7 @@ class AptlProvisioner(ProvisionerStartMixin):
                 snapshot, diagnostics, selected_profiles, realization
             )
         try:
-            return realization.deployment_spec(
+            spec = realization.deployment_spec(
                 selected_profiles,
                 startup_selection=self.startup_selection,
                 capture_apparatus=tuple(
@@ -226,7 +309,9 @@ class AptlProvisioner(ProvisionerStartMixin):
                     )
                     for item in self.capture_plan.apparatus
                 ),
-            ), None
+            )
+            self._lilrae_deployment_spec = spec
+            return spec, None
         # Lowering reports an unrealizable graph by raising with a stable code
         # in the message. RAES's backend-call boundary turns any ValueError or
         # TypeError out of apply into the fixed text "Backend could not
@@ -327,7 +412,7 @@ class AptlProvisioner(ProvisionerStartMixin):
         <selected>``, which activates every service in each selected profile,
         not just the declared RAES nodes. If an activated service depends on a
         service the selection excludes, Compose rejects the project at ``up``
-        time. Catch that here so ``aptl lab start`` fails fast with an APTL
+        time. Catch that here so ``lilrae lab start`` fails fast with an APTL
         diagnostic instead of a raw Compose "undefined service" error.
         """
         return compose_validity_diagnostics(self.bundle.root, selected_profiles)
@@ -337,8 +422,32 @@ class AptlProvisioner(ProvisionerStartMixin):
 
         if plan is self._cached_plan and self._cached_realization is not None:
             return self._cached_realization
+        from aptl.backends.lilrae_apparatus_reporting import apparatus_node_name
+
+        capture_addresses = {
+            "provision.node." + apparatus_node_name(item)
+            for item in self.capture_plan.apparatus
+            if item.container_name and item.environment_visible
+        }
+        scenario_plan = (
+            replace(
+                plan,
+                resources={
+                    key: value
+                    for key, value in plan.resources.items()
+                    if key not in capture_addresses
+                },
+                operations=[
+                    operation
+                    for operation in plan.operations
+                    if operation.address not in capture_addresses
+                ],
+            )
+            if capture_addresses
+            else plan
+        )
         realization = interpret_provisioning_plan(
-            plan=plan,
+            plan=scenario_plan,
             config=self.config,
             bundle=self.bundle,
             component_root=self.project_dir,
@@ -354,6 +463,12 @@ class AptlProvisioner(ProvisionerStartMixin):
     @staticmethod
     def _invalid_plan_diagnostics(plan: object) -> list[Diagnostic]:
         if isinstance(plan, ProvisioningPlan):
+            if any(operation.action is ChangeAction.DELETE for operation in plan.operations):
+                return [diagnostic(
+                    "lilrae.provisioner.delete-scope-unavailable", PROVISIONING_ADDRESS,
+                    "Native deletion requires an installed receipt-bound trial cleanup owner; "
+                    "lab start cannot execute a delete plan.",
+                )]
             return []
         return [
             diagnostic(

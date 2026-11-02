@@ -47,9 +47,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       - name: Build sdist + wheel
         # Release tooling comes from the hashed CI export so the artifact that
@@ -99,7 +99,7 @@ jobs:
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
           set -euo pipefail
-          cp "$BUNDLE" "dist/aptl-labs-${TAG}.intoto.jsonl"
+          cp "$BUNDLE" "dist/lilrae-${TAG}.intoto.jsonl"
           gh release upload "$TAG" dist/* sbom/* --clobber
 
   backmerge:
@@ -118,14 +118,26 @@ jobs:
         # release-please committed the version bump + CHANGELOG.md to main, so
         # main is now ahead of dev. Auto-open a back-merge PR so dev stays
         # current. It's opened by GITHUB_TOKEN, so dev's required checks won't
-        # run on it — admin-merge it (one click).
+        # run on it — admin-merge it with a merge commit, never a squash: a
+        # squash leaves the release commit out of dev's history (#1375).
+        #
+        # TAG goes through the environment, so no workflow expression is parsed
+        # as shell. Only "dev already contains main" ends without a PR; any
+        # other failure (auth, network, API) fails the job.
+        env:
+          TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
           set -euo pipefail
-          if [ "$(gh pr list --base dev --head main --state open --json number --jq 'length')" != "0" ]; then
+          open_prs="$(gh pr list --base dev --head main --state open --json number --jq 'length')"
+          if [ "$open_prs" != "0" ]; then
             echo "back-merge PR main->dev already open; nothing to do."
             exit 0
           fi
+          ahead="$(gh api "repos/${GH_REPO}/compare/dev...main" --jq '.ahead_by')"
+          if [ "$ahead" = "0" ]; then
+            echo "dev already contains main; no back-merge needed."
+            exit 0
+          fi
           gh pr create --base dev --head main \
-            --title "chore: back-merge ${{ needs.release-please.outputs.tag_name }} into dev" \
-            --body "Automated back-merge of the release commit (version bump + CHANGELOG.md) from \`main\` into \`dev\` so dev stays current after the release. Admin-merge it — dev's required checks don't run on a bot-opened PR." \
-            || echo "no back-merge needed (dev already up to date with main)."
+            --title "chore: back-merge ${TAG} into dev" \
+            --body "Automated back-merge of the release commit (version bump + CHANGELOG.md) from \`main\` into \`dev\` so dev stays current after the release. Admin-merge it with \"Create a merge commit\" — dev's required checks don't run on a bot-opened PR. Do not squash: a squash leaves the release commit out of dev's history, and the next promotion can conflict (#1375)."

@@ -23,11 +23,13 @@ Contract points enforced here (RAES ADR-088 / OpenRAE/rae#1011, APTL preflight):
 - **Proof is fresh native readback.** Success requires a new ``_mapping`` query
   after any mutation, projected to the declared portable semantics, whose
   canonical digest equals the declared digest. A create/PUT response, the stored
-  marker, or container health is never accepted as proof.
+  marker, or container health is never accepted as proof. An adopted index
+  that fails its product's native mapping is not changed or deleted either,
+  and the realization error names it the same way.
 
 The native index name is an adapter/configuration concern (ADR-088 keeps native
-ids out of the portable SDL): ``cortex_6`` is the Cortex 3.1.8 product job-index
-name, known to this backend adapter, not authored in the scenario.
+ids out of the portable SDL). This backend adapter knows each product index
+name; the scenario never authors it.
 """
 
 from __future__ import annotations
@@ -40,7 +42,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from aptl.backends import raes_service_index_schema as sis
-from aptl.core import assets
 
 if TYPE_CHECKING:
     from aptl.core.deployment.realization import (
@@ -51,13 +52,7 @@ if TYPE_CHECKING:
 # ``content.<id>`` identity) to the concrete native index name. This is the one
 # place a product-native id lives (ADR-088); it is not the forbidden
 # content-id-to-*schema* table — the field schema is authored in the SDL.
-_NATIVE_INDEX_NAMES: dict[str, str] = {
-    # Cortex 3.1.8 key-auth job index on thehive-es (was scripts/cortex-index-init.sh).
-    "cortex-job-index-schema": "cortex_6",
-}
-
-_CORTEX_CONTENT_NAME = "cortex-job-index-schema"
-_CORTEX_MAPPING_RELPATH = "config/cortex/index-mapping.json"
+_NATIVE_INDEX_NAMES: dict[str, str] = {}
 
 # Native index names are embedded into a stdin shell script, so they must be a
 # conservative, injection-safe token before use.
@@ -108,6 +103,10 @@ class ServiceIndexMaterializationResult:
 
     On success carries only safe portable evidence (the projected field map, the
     digest, and the readback strength) — never the raw native response.
+    ``adopted`` is true when the index already existed with this content's
+    ownership marker, so this attempt read it back instead of creating it.
+    ``created`` is true when this attempt found no index, so it created the
+    index or tried to.
     """
 
     ok: bool
@@ -117,6 +116,8 @@ class ServiceIndexMaterializationResult:
     projection: dict[str, str] = field(default_factory=dict)
     field_schema_digest: str = ""
     readback_strength: str = "daemon-observed"
+    adopted: bool = False
+    created: bool = False
 
     def evidence(self) -> dict[str, object]:
         return {
@@ -247,60 +248,18 @@ def _check_ownership(body: str, index: str, address: str) -> None:
         raise _MaterializationFailure(UNOWNED_COLLISION)
 
 
-def _desired_native_mapping(
-    content_name: str,
-    address: str,
-    fields: Mapping[str, str],
-    digest: str,
-) -> dict[str, object]:
-    """Build the portable mapping plus any required product-native shape."""
-
-    portable_body = sis.desired_native_mapping(
-        fields, owner_address=address, field_schema_digest=digest
-    )
-    if content_name != _CORTEX_CONTENT_NAME:
-        return portable_body
-
-    native = _load_cortex_native_mapping()
-    mappings = portable_body["mappings"]
-    assert isinstance(mappings, dict)
-    meta = mappings["_meta"]
-    # Round-trip through JSON to produce a mutable deep copy without exposing
-    # the source asset to caller mutation.
-    result = json.loads(json.dumps(native))
-    result_mappings = result["mappings"]
-    result_mappings["_meta"] = meta
-    return result
-
-
-def _load_cortex_native_mapping() -> dict[str, Any]:
-    """Load and minimally validate Cortex 3.1.8's checked-in native mapping."""
-
-    try:
-        source, _from_bundle = assets.resolve_asset_source()
-        payload = json.loads(
-            (source / _CORTEX_MAPPING_RELPATH).read_text(encoding="utf-8")
-        )
-        mappings = payload.get("mappings")
-        properties = mappings.get("properties") if isinstance(mappings, dict) else None
-        if not isinstance(properties, dict) or not properties:
-            raise ValueError("mapping has no properties")
-    except (OSError, TypeError, ValueError) as exc:
-        raise _MaterializationFailure("native-product-schema-unavailable") from exc
-    return payload
-
-
 def _create_index(
     run_script: RunScript,
     index: str,
-    content_name: str,
     address: str,
     fields: Mapping[str, str],
     digest: str,
 ) -> None:
     """Create ``index`` with the declared portable schema, raising on failure."""
 
-    mapping_body = _desired_native_mapping(content_name, address, fields, digest)
+    mapping_body = sis.desired_native_mapping(
+        fields, owner_address=address, field_schema_digest=digest
+    )
     result = _exec_script(
         run_script,
         _render_put_index_script(
@@ -314,20 +273,23 @@ def _create_index(
 def _ensure_index_exists(
     run_script: RunScript,
     index: str,
-    content_name: str,
     address: str,
     fields: Mapping[str, str],
     digest: str,
     probe: _ExecResult,
-) -> None:
-    """Ensure ``index`` exists and is owned by ``address``, creating it if absent."""
+) -> bool:
+    """Ensure ``index`` exists and is owned by ``address``, creating it if absent.
+
+    Returns True when an existing owned index was adopted, False when created.
+    """
 
     if probe.http_code == 200:
         _check_ownership(probe.body, index, address)
-    elif probe.http_code == 404:
-        _create_index(run_script, index, content_name, address, fields, digest)
-    else:
-        raise _MaterializationFailure("native-unexpected-status")
+        return True
+    if probe.http_code == 404:
+        _create_index(run_script, index, address, fields, digest)
+        return False
+    raise _MaterializationFailure("native-unexpected-status")
 
 
 def _parse_readback_properties(result: _ExecResult, index: str) -> Mapping[str, Any]:
@@ -346,26 +308,9 @@ def _parse_readback_properties(result: _ExecResult, index: str) -> Mapping[str, 
     return properties
 
 
-def _verify_native_product_contract(
-    content_name: str, properties: Mapping[str, Any]
-) -> None:
-    """Reject a portable projection that is not executable by its product."""
-
-    if content_name != _CORTEX_CONTENT_NAME:
-        return
-    expected_mapping = _load_cortex_native_mapping()["mappings"]
-    expected_properties = expected_mapping["properties"]
-    if any(
-        properties.get(name) != expected
-        for name, expected in expected_properties.items()
-    ):
-        raise _MaterializationFailure("native-product-contract-mismatch")
-
-
 def _read_and_verify_schema(
     run_script: RunScript,
     index: str,
-    content_name: str,
     fields: Mapping[str, str],
     digest: str,
 ) -> dict[str, str]:
@@ -373,7 +318,6 @@ def _read_and_verify_schema(
 
     result = _exec_script(run_script, _render_get_mapping_script(index))
     properties = _parse_readback_properties(result, index)
-    _verify_native_product_contract(content_name, properties)
     ok, projection, reason = sis.verify_readback(
         properties, fields, declared_digest=digest
     )
@@ -422,6 +366,7 @@ def materialize_search_index_schema(
             ok=False, address=address, content_name=content_name, reason=reason
         )
 
+    adopted = created = False
     try:
         probe = _wait_for_native_api(
             run_script,
@@ -433,15 +378,19 @@ def materialize_search_index_schema(
         )
         # 1. Existence + ownership check (reject-unowned-collision), then 2. a
         # fresh native readback (proof) — always after any mutation.
-        _ensure_index_exists(
-            run_script, index, content_name, address, fields, digest, probe
+        created = probe.http_code == 404
+        adopted = _ensure_index_exists(
+            run_script, index, address, fields, digest, probe
         )
-        projection = _read_and_verify_schema(
-            run_script, index, content_name, fields, digest
-        )
+        projection = _read_and_verify_schema(run_script, index, fields, digest)
     except _MaterializationFailure as failure:
         return ServiceIndexMaterializationResult(
-            ok=False, address=address, content_name=content_name, reason=failure.reason
+            ok=False,
+            address=address,
+            content_name=content_name,
+            reason=failure.reason,
+            adopted=adopted,
+            created=created,
         )
 
     return ServiceIndexMaterializationResult(
@@ -450,4 +399,6 @@ def materialize_search_index_schema(
         content_name=content_name,
         projection=projection,
         field_schema_digest=digest,
+        adopted=adopted,
+        created=created,
     )

@@ -48,6 +48,7 @@ from aptl.core.deployment._compose_seed_execution import ComposeSeedExecutionMix
 from aptl.core.deployment._compose_stop import stop_compose_lab
 from aptl.core.deployment._docker_endpoint_binding import DockerEndpointBindingMixin
 from aptl.core.deployment.errors import BackendTimeoutError
+from aptl.core.deployment._cleanup_budget import cleanup_command_timeout
 from aptl.core.lab_types import LabResult, LabStatus
 from aptl.utils.logging import get_logger
 
@@ -109,7 +110,11 @@ def _timed_out_operation(cmd: list[str], timeout: int | None) -> BackendTimeoutE
     return BackendTimeoutError(f"{operation} timed out after {timeout}s")
 
 
+from aptl.core.deployment.lilrae_compose_recording import ComposeDockerRecordingMixin
+
+
 class DockerComposeBackend(
+    ComposeDockerRecordingMixin,
     ComposeOwnedStartMixin,
     ComposeDirectNetworkMixin,
     ComposeReceiptCaptureMixin,
@@ -153,6 +158,8 @@ class DockerComposeBackend(
         self._project_name = self._logical_project_name
         self._resource_ownership: WorkspaceOwnership | None = None
         self._resource_attempt_id: str | None = None
+        self._recording_sockets: dict[str, str] = {}
+        self._recording_session = None
         # Concurrent node materialization can share a named volume. Serialize
         # its creation and receipt publication within this backend instance.
         self._project_volume_lock = threading.Lock()
@@ -331,6 +338,7 @@ class DockerComposeBackend(
         callers don't depend on ``subprocess`` as an implementation
         detail.
         """
+        timeout = cleanup_command_timeout(timeout)
         kwargs = self._command_kwargs(cmd, streaming=False, timeout=timeout)
         try:
             return subprocess.run(cmd, **kwargs)

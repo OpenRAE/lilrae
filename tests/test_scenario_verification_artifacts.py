@@ -5,13 +5,14 @@ environment rather than the checkout.
 
 First, the code boundary: the wheel registers the entry points a scenario owns,
 they resolve into the scenario's own top-level package, and the *framework*
-package carries no scenario knowledge — in either the importable copy or the
+package carries no unreviewed scenario knowledge. Exact compatibility exceptions
+use the source revision's ownership ledger in both the importable copy and the
 bundled ``_labdata/src`` copy, since ``ASSET_ROOTS`` ships ``src`` twice over.
 
 Second, the install: one install of one distribution is enough for semantic
 verification to reach a verdict. That is the point of the adapter shipping with
 the backend, and it is what an operator on the packaged path (DEP-008,
-``pipx install aptl-labs``, no git clone) actually gets.
+``pipx install lilrae``, no git clone) actually gets.
 
 Every compatibility context is derived from the pack ``env_pack_bundle()``
 admits (#879). A digest copied into this file would let the test agree with a
@@ -22,9 +23,11 @@ passing suite.
 from __future__ import annotations
 
 import json
+from importlib import metadata
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 import zipfile
 
 import pytest
@@ -87,6 +90,11 @@ def _build_wheel(output: Path) -> Path:
     wheels = sorted(output.glob("*.whl"))
     assert len(wheels) == 1
     return wheels[0]
+
+
+@pytest.fixture(scope="module")
+def built_wheel(tmp_path_factory):
+    return _build_wheel(tmp_path_factory.mktemp("verifier-wheel"))
 
 
 def _members(wheel: Path) -> dict[str, bytes]:
@@ -182,12 +190,13 @@ def context(scenario=ADMITTED, operations=None, containers=()):
 
 
 @pytest.mark.integration
-def test_the_wheel_keeps_scenario_knowledge_out_of_the_framework_package(
+def test_the_wheel_has_only_reviewed_compatibility_exceptions_in_the_framework(
+    built_wheel: Path,
     tmp_path: Path,
 ) -> None:
     """The adapter ships in the wheel; the framework package stays scenario-free."""
 
-    members = _members(_build_wheel(tmp_path / "dist"))
+    members = _members(built_wheel)
 
     entry_points = b"\n".join(
         content
@@ -200,6 +209,7 @@ def test_the_wheel_keeps_scenario_knowledge_out_of_the_framework_package(
         b"aptl.scenario_capture",
         b"aptl.scenario_planning_compatibility",
         b"aptl.scenario_runtime_parameters",
+        b"aptl.participant_desktop",
         b"aptl.participant_mcp_smoke_plans",
     ):
         assert group in entry_points
@@ -223,9 +233,52 @@ def test_the_wheel_keeps_scenario_knowledge_out_of_the_framework_package(
     offenders = [marker for marker in ANSWER_KEY_MARKERS if marker in framework]
     assert not offenders, f"scenario knowledge in the framework package: {offenders}"
 
+    # Apply the same ownership policy to importable code and bundled runtime
+    # assets, so moving a literal into a copied script cannot evade the gate.
+    from tests.test_pack_boundary_policy import _check
+
+    check = _check()
+    # The artifact job installs dependencies without installing the checkout.
+    # Discover the owners from the wheel under test, rather than whichever
+    # project distribution happens to be installed in the runner environment.
+    installed = tmp_path / "wheel-metadata"
+    for name, content in members.items():
+        if ".dist-info/" in name:
+            destination = installed / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content)
+    check.metadata = SimpleNamespace(
+        distributions=lambda: metadata.distributions(path=[str(installed)])
+    )
+    assert {"techvault", "techvault-participant-study"} <= check.owner_packs()
+    facts = {}
+    for pack_id in sorted(check.owner_packs()):
+        facts.update(check.pack_facts(pack_id))
+    assert facts
+    imported, bundled = tmp_path / "imported", tmp_path / "bundled"
+    for name, content in members.items():
+        if name.startswith("aptl/_labdata/"):
+            destination = bundled / name.removeprefix("aptl/_labdata/")
+        elif name.startswith("aptl/") and name.endswith(".py"):
+            destination = imported / "src" / name
+        else:
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(content)
+    # The source-revision ledger governs these exact wheel bytes as it governs
+    # source. It is review evidence, not runtime configuration to ship to labs.
+    ledger = (REPO_ROOT / ".gc/pack-ownership.json").read_bytes()
+    for root in (imported, bundled):
+        policy = root / ".gc/pack-ownership.json"
+        policy.parent.mkdir(parents=True, exist_ok=True)
+        policy.write_bytes(ledger)
+    assert check.findings(imported, facts) == []
+    assert check.findings(bundled, facts) == []
+
 
 @pytest.mark.integration
 def test_one_install_reaches_a_verdict_and_records_its_provenance(
+    built_wheel: Path,
     tmp_path: Path,
 ) -> None:
     """A single install of a single distribution is enough (#879).
@@ -236,7 +289,7 @@ def test_one_install_reaches_a_verdict_and_records_its_provenance(
     """
 
     header = _admitted_context(tmp_path)
-    venv = _clean_install(tmp_path, _build_wheel(tmp_path / "dist"))
+    venv = _clean_install(tmp_path, built_wheel)
 
     _run(
         venv,
@@ -251,7 +304,7 @@ report = verify_scenario(
 )
 assert report.status is VerificationStatus.PASSED, report.diagnostics
 assert report.plugin_id == "techvault"
-assert report.distribution == "aptl-labs"
+assert report.distribution == "lilrae"
 assert report.distribution_version, "the version comes from installed metadata"
 assert report.entry_point == "techvault.aptl"
 """,
@@ -286,6 +339,7 @@ assert report.status is VerificationStatus.BLOCKED
 
 @pytest.mark.integration
 def test_an_unknown_scenario_blocks_rather_than_borrowing_an_adapter(
+    built_wheel: Path,
     tmp_path: Path,
 ) -> None:
     """Shipping adapters must not hand an unrelated scenario a verdict.
@@ -296,7 +350,7 @@ def test_an_unknown_scenario_blocks_rather_than_borrowing_an_adapter(
     """
 
     header = _admitted_context(tmp_path)
-    venv = _clean_install(tmp_path, _build_wheel(tmp_path / "dist"))
+    venv = _clean_install(tmp_path, built_wheel)
 
     _run(
         venv,

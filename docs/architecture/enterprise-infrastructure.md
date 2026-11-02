@@ -1,6 +1,6 @@
 # Minimum Viable Enterprise + Agentic SOC
 
-> **Status**: Design document. Phases 1-3 are implemented. Phase 4 and the Windows VM (172.20.3.0/24 Endpoints subnet) are not yet implemented. Network topology, container IPs, and SOC tooling described below reflect the current running lab. The Endpoints subnet and Caldera remain planned.
+> **Status**: Design document. Phases 1-3 are implemented. Phase 4 and the Windows VM (172.20.3.0/24 Endpoints subnet) are not yet implemented. Network topology, container IPs, and SOC tooling described below reflect the current running lab, with one exception: [ADR-063](../adrs/adr-063-remove-thehive-and-cortex.md) removed TheHive, Cortex, and `mcp-casemgmt`, so their sections are historical. The Endpoints subnet and Caldera remain planned.
 
 ## Where We Started
 

@@ -19,6 +19,15 @@ _ACTIONS = frozenset({"allow", "deny"})
 _PROTOCOLS = frozenset({"any", "tcp", "udp", "icmp"})
 _DIRECTIONS = frozenset({"in", "out", "inout"})
 _ZONES = frozenset({"participant", "management", "egress"})
+_PROTECTED_COMPONENTS = frozenset(
+    {
+        "management-control",
+        "evidence-capture",
+        "evidence-store",
+        "docker-authority",
+        "credentials",
+    }
+)
 
 
 def _canonical(policy: Mapping[str, object]) -> str:
@@ -56,6 +65,8 @@ def validate_policy(policy: object) -> dict[str, object]:
         return _validate_raes(policy)
     if authority == "platform":
         return _validate_platform(policy)
+    if authority == "seat-protection":
+        return _validate_seat_protection(policy)
     raise ValueError("policy authority is invalid")
 
 
@@ -68,7 +79,15 @@ def _validate_common(policy: Mapping[str, object], fields: set[str]) -> None:
 
 
 def _validate_network(network: object) -> dict[str, object]:
-    fields = {"name", "bridge", "ipv4_cidr", "ipv6_cidr", "labels"}
+    fields = {
+        "name",
+        "bridge",
+        "ipv4_cidr",
+        "ipv6_cidr",
+        "ipv4_gateway",
+        "ipv6_gateway",
+        "labels",
+    }
     if not isinstance(network, dict) or set(network) != fields:
         raise ValueError("network is invalid")
     name = network["name"]
@@ -89,6 +108,21 @@ def _validate_network(network: object) -> dict[str, object]:
                 raise ValueError("network CIDR is invalid")
             if ipaddress.ip_network(value, strict=False).version != version:
                 raise ValueError("network CIDR family is invalid")
+    for key, cidr_key, version in (
+        ("ipv4_gateway", "ipv4_cidr", 4),
+        ("ipv6_gateway", "ipv6_cidr", 6),
+    ):
+        gateway = network[key]
+        cidr = network[cidr_key]
+        if gateway is not None:
+            if (
+                not isinstance(gateway, str)
+                or not isinstance(cidr, str)
+                or ipaddress.ip_address(gateway).version != version
+                or ipaddress.ip_address(gateway)
+                not in ipaddress.ip_network(cidr, strict=False)
+            ):
+                raise ValueError("network gateway is invalid")
     _validate_labels(labels)
     return network
 
@@ -355,6 +389,131 @@ def _validate_platform(policy: dict[str, object]) -> dict[str, object]:
     for crossing in crossings:
         _validate_platform_crossing(crossing, zones)
     return policy
+
+
+def _validate_seat_protection(policy: dict[str, object]) -> dict[str, object]:
+    """Validate the closed input-only protected-seat authority."""
+
+    _validate_common(
+        policy,
+        {
+            "authority",
+            "owner",
+            "policy_digest",
+            "networks",
+            "protected_components",
+            "permitted_flows",
+            "default_deny",
+        },
+    )
+    digest = policy["policy_digest"]
+    if not isinstance(digest, str) or not _DIGEST.fullmatch(digest):
+        raise ValueError("protected-seat policy digest is invalid")
+    if policy["default_deny"] is not True:
+        raise ValueError("protected-seat policy must be default deny")
+    networks = policy["networks"]
+    components = policy["protected_components"]
+    flows = policy["permitted_flows"]
+    if not all(isinstance(value, list) for value in (networks, components, flows)):
+        raise ValueError("protected-seat policy collections must be lists")
+    if not networks:
+        raise ValueError("protected-seat network binding is required")
+    network_index = _validated_network_index(networks, authority="protected-seat")
+    bridges = [str(network["bridge"]) for network in network_index.values()]
+    if len(bridges) != len(set(bridges)) or any(
+        network["ipv4_cidr"] is None and network["ipv6_cidr"] is None
+        for network in network_index.values()
+    ):
+        raise ValueError("protected-seat network identity is invalid")
+    if any(
+        (network["ipv4_cidr"] is not None and network["ipv4_gateway"] is None)
+        or (network["ipv6_cidr"] is not None and network["ipv6_gateway"] is None)
+        for network in network_index.values()
+    ):
+        raise ValueError("protected-seat network gateway is missing")
+    classes: set[str] = set()
+    probe_ids: set[str] = set()
+    for component in components:
+        _validate_protected_component(component, classes, probe_ids)
+    if classes != _PROTECTED_COMPONENTS:
+        raise ValueError("protected component classes are incomplete")
+    for flow in flows:
+        _validate_permitted_host_flow(flow, classes, probe_ids)
+    return policy
+
+
+def _validate_protected_component(
+    component: object,
+    classes: set[str],
+    probe_ids: set[str],
+) -> None:
+    fields = {"component_class", "probe_identity", "protocol", "port", "purpose"}
+    if not isinstance(component, dict) or set(component) != fields:
+        raise ValueError("protected component is invalid")
+    component_class = component["component_class"]
+    probe_identity = component["probe_identity"]
+    protocol = component["protocol"]
+    port = component["port"]
+    purpose = component["purpose"]
+    if (
+        not isinstance(component_class, str)
+        or component_class not in _PROTECTED_COMPONENTS
+        or component_class in classes
+        or not isinstance(probe_identity, str)
+        or not _TOKEN.fullmatch(probe_identity)
+        or probe_identity in probe_ids
+        or not isinstance(protocol, str)
+        or protocol not in {"tcp", "udp"}
+        or not isinstance(port, int)
+        or isinstance(port, bool)
+        or not 0 < port <= 65535
+        or not isinstance(purpose, str)
+        or not purpose
+    ):
+        raise ValueError("protected component semantics are invalid")
+    classes.add(component_class)
+    probe_ids.add(probe_identity)
+
+
+def _validate_permitted_host_flow(
+    flow: object,
+    classes: set[str],
+    probe_ids: set[str],
+) -> None:
+    fields = {
+        "source",
+        "destination",
+        "protocol",
+        "ports",
+        "purpose",
+        "probe_identity",
+    }
+    if not isinstance(flow, dict) or set(flow) != fields:
+        raise ValueError("protected-seat flow is invalid")
+    source = flow["source"]
+    destination = flow["destination"]
+    protocol = flow["protocol"]
+    purpose = flow["purpose"]
+    probe_identity = flow["probe_identity"]
+    ports = flow["ports"]
+    if (
+        source != "ordinary-range-workload"
+        or not isinstance(destination, str)
+        or destination not in classes
+        or not isinstance(protocol, str)
+        or protocol not in {"tcp", "udp"}
+        or not isinstance(purpose, str)
+        or not purpose
+        or not isinstance(probe_identity, str)
+        or not _TOKEN.fullmatch(probe_identity)
+        or probe_identity in probe_ids
+        or not isinstance(ports, list)
+        or ports != sorted(ports)
+        or len(ports) != len(set(ports))
+    ):
+        raise ValueError("protected-seat flow semantics are invalid")
+    _validate_ports(ports, protocol, required=True)
+    probe_ids.add(probe_identity)
 
 
 def _validated_platform_networks(
@@ -847,6 +1006,72 @@ def _platform_table(
     return lines
 
 
+def _seat_protection_table(
+    policy: Mapping[str, object], family: str, table_name: str
+) -> list[str]:
+    """Render only guest-host input protection; never range forwarding."""
+
+    owner = str(policy["owner"])
+    digest = _digest(policy)
+    networks = _network_index(policy)
+    ingress = "ibrname" if family == "bridge" else "iifname"
+    lines = [
+        f"table {family} {table_name} {{",
+        (
+            "  comment "
+            + _quoted(
+                f"aptl-owner={_owner_marker(owner)},authority=seat-protection,digest={digest}"
+            )
+        ),
+        "  chain host_input {",
+        "    type filter hook input priority -300; policy accept;",
+    ]
+    ordered_networks = sorted(networks.values(), key=lambda item: str(item["bridge"]))
+    bridges = [str(item["bridge"]) for item in ordered_networks]
+    for bridge in bridges:
+        lines.append(
+            f"    {ingress} {_quoted(bridge)} ct state established,related accept "
+            + "comment "
+            + _quoted(_rule_marker(f"seat-protection/reply/{bridge}"))
+        )
+    flows = policy["permitted_flows"]
+    assert isinstance(flows, list)
+    for flow in flows:
+        if not isinstance(flow, Mapping):
+            continue
+        ports = flow["ports"]
+        assert isinstance(ports, list)
+        rendered_ports = (
+            str(ports[0])
+            if len(ports) == 1
+            else "{ " + ", ".join(str(port) for port in ports) + " }"
+        )
+        for network in ordered_networks:
+            bridge = str(network["bridge"])
+            for address_family, gateway in (
+                ("ip", network["ipv4_gateway"]),
+                ("ip6", network["ipv6_gateway"]),
+            ):
+                if gateway is None:
+                    continue
+                identity = (
+                    f"seat-protection/{flow['probe_identity']}/{bridge}/"
+                    f"{address_family}"
+                )
+                lines.append(
+                    f"    {ingress} {_quoted(bridge)} {address_family} "
+                    f"daddr {gateway} {flow['protocol']} dport {rendered_ports} "
+                    "accept comment " + _quoted(_rule_marker(identity))
+                )
+    for bridge in bridges:
+        lines.append(
+            f"    {ingress} {_quoted(bridge)} drop comment "
+            + _quoted(_rule_marker(f"seat-protection/default/{bridge}"))
+        )
+    lines.extend(["  }", "}"])
+    return lines
+
+
 def render_ruleset(
     raw_policy: object,
     *,
@@ -861,7 +1086,11 @@ def render_ruleset(
     for family in ("inet", "bridge"):
         if family in existing_families:
             lines.append(f"delete table {family} {table_name}")
-    renderer = _raes_table if authority == "raes" else _platform_table
+    renderer = {
+        "raes": _raes_table,
+        "platform": _platform_table,
+        "seat-protection": _seat_protection_table,
+    }[authority]
     lines.extend(renderer(policy, "inet", table_name))
     lines.extend(renderer(policy, "bridge", table_name))
     return "\n".join(lines) + "\n"
@@ -914,6 +1143,8 @@ def _expected_chains(
     policy: Mapping[str, object],
     family: str,
 ) -> dict[str, tuple[str | None, int | None, str | None]]:
+    if policy["authority"] == "seat-protection":
+        return {"host_input": ("input", -300, "accept")}
     if policy["authority"] == "platform":
         expected = {"forward": ("forward", -300, "accept")}
         if family == "inet":
@@ -940,7 +1171,11 @@ def _expected_rule_comments(
     family: str,
     table_name: str,
 ) -> list[str]:
-    renderer = _raes_table if policy["authority"] == "raes" else _platform_table
+    renderer = {
+        "raes": _raes_table,
+        "platform": _platform_table,
+        "seat-protection": _seat_protection_table,
+    }[str(policy["authority"])]
     comments: list[str] = []
     for line in renderer(policy, family, table_name):
         if not line.startswith("    ") or " comment " not in line:
@@ -951,6 +1186,132 @@ def _expected_rule_comments(
             raise RuntimeError("boundary expected rule identity was invalid")
         comments.append(value)
     return sorted(comments)
+
+
+def _seat_interface_match(family: str, bridge: str) -> dict[str, object]:
+    key = "ibrname" if family == "bridge" else "iifname"
+    return {
+        "match": {
+            "op": "==",
+            "left": {"meta": {"key": key}},
+            "right": bridge,
+        }
+    }
+
+
+def _expected_seat_rules(
+    policy: Mapping[str, object],
+    family: str,
+) -> list[tuple[str, list[dict[str, object]]]]:
+    networks = _network_index(policy)
+    ordered_networks = sorted(networks.values(), key=lambda item: str(item["bridge"]))
+    bridges = [str(item["bridge"]) for item in ordered_networks]
+    expected: list[tuple[str, list[dict[str, object]]]] = []
+    for bridge in bridges:
+        interface_match = _seat_interface_match(family, bridge)
+        expected.append(
+            (
+                _rule_marker(f"seat-protection/reply/{bridge}"),
+                [
+                    interface_match,
+                    {
+                        "match": {
+                            "op": "in",
+                            "left": {"ct": {"key": "state"}},
+                            "right": {"set": ["established", "related"]},
+                        }
+                    },
+                    {"accept": None},
+                ],
+            )
+        )
+    flows = policy["permitted_flows"]
+    assert isinstance(flows, list)
+    for flow in flows:
+        if not isinstance(flow, Mapping):
+            continue
+        ports = flow["ports"]
+        assert isinstance(ports, list)
+        right: object = ports[0] if len(ports) == 1 else {"set": ports}
+        for network in ordered_networks:
+            bridge = str(network["bridge"])
+            for address_family, gateway in (
+                ("ip", network["ipv4_gateway"]),
+                ("ip6", network["ipv6_gateway"]),
+            ):
+                if gateway is None:
+                    continue
+                identity = (
+                    f"seat-protection/{flow['probe_identity']}/{bridge}/"
+                    f"{address_family}"
+                )
+                expected.append(
+                    (
+                        _rule_marker(identity),
+                        [
+                            _seat_interface_match(family, bridge),
+                            {
+                                "match": {
+                                    "op": "==",
+                                    "left": {
+                                        "payload": {
+                                            "protocol": address_family,
+                                            "field": "daddr",
+                                        }
+                                    },
+                                    "right": gateway,
+                                }
+                            },
+                            {
+                                "match": {
+                                    "op": "==",
+                                    "left": {
+                                        "payload": {
+                                            "protocol": flow["protocol"],
+                                            "field": "dport",
+                                        }
+                                    },
+                                    "right": right,
+                                }
+                            },
+                            {"accept": None},
+                        ],
+                    )
+                )
+    for bridge in bridges:
+        expected.append(
+            (
+                _rule_marker(f"seat-protection/default/{bridge}"),
+                [_seat_interface_match(family, bridge), {"drop": None}],
+            )
+        )
+    return expected
+
+
+def _verify_seat_rules(
+    policy: Mapping[str, object],
+    family: str,
+    table_name: str,
+    rules: Sequence[Mapping[str, object]],
+) -> bool:
+    expected = _expected_seat_rules(policy, family)
+    observed: list[tuple[str, list[object]]] = []
+    comments: set[str] = set()
+    for rule in rules:
+        comment = rule.get("comment")
+        expressions = rule.get("expr")
+        if (
+            not isinstance(comment, str)
+            or comment in comments
+            or rule.get("family") != family
+            or rule.get("table") != table_name
+            or rule.get("chain") != "host_input"
+            or not isinstance(expressions, list)
+        ):
+            return False
+        comments.add(comment)
+        observed.append((comment, expressions))
+    return observed == expected
 
 
 def _verify_observed_family(
@@ -964,6 +1325,7 @@ def _verify_observed_family(
         return False
     chains: dict[str, tuple[str | None, int | None, str | None]] = {}
     comments: list[str] = []
+    rules: list[Mapping[str, object]] = []
     for item in nftables:
         if not isinstance(item, dict):
             continue
@@ -977,11 +1339,14 @@ def _verify_observed_family(
         rule = item.get("rule")
         if isinstance(rule, dict) and isinstance(rule.get("comment"), str):
             comments.append(str(rule["comment"]))
+            rules.append(rule)
         elif isinstance(rule, dict):
             return False
-    return chains == _expected_chains(policy, family) and sorted(
-        comments
-    ) == _expected_rule_comments(policy, family, table_name)
+    if chains != _expected_chains(policy, family):
+        return False
+    if policy["authority"] == "seat-protection":
+        return _verify_seat_rules(policy, family, table_name, rules)
+    return sorted(comments) == _expected_rule_comments(policy, family, table_name)
 
 
 def _owned_families(policy: Mapping[str, object]) -> tuple[str, ...]:
@@ -1009,8 +1374,15 @@ def _receipt(
         "owner": policy["owner"],
         "enforcement_digest": _digest(policy),
         "families": list(families),
-        "default_deny": policy["authority"] == "platform",
+        "default_deny": policy["authority"] in {"platform", "seat-protection"},
     }
+
+
+def _expected_table_comment(policy: Mapping[str, object]) -> str:
+    return (
+        f"aptl-owner={_owner_marker(str(policy['owner']))},"
+        f"authority={policy['authority']},digest={_digest(policy)}"
+    )
 
 
 def _apply(policy: dict[str, object]) -> dict[str, object]:
@@ -1020,6 +1392,14 @@ def _apply(policy: dict[str, object]) -> dict[str, object]:
     observed = _owned_families(policy)
     if observed != ("bridge", "inet"):
         raise RuntimeError("boundary tables were not observed")
+    if any(
+        _table_comment(
+            family, _table_name(str(policy["owner"]), str(policy["authority"]))
+        )
+        != _expected_table_comment(policy)
+        for family in observed
+    ):
+        raise RuntimeError("boundary table readback did not match")
     if not all(_verify_observed_family(policy, family) for family in observed):
         raise RuntimeError("boundary rule readback did not match")
     return _receipt(policy, observed)
@@ -1040,11 +1420,9 @@ def _observe(policy: dict[str, object]) -> dict[str, object]:
     families = _owned_families(policy)
     if families != ("bridge", "inet"):
         raise RuntimeError("boundary tables are incomplete")
-    digest = _digest(policy)
     table_name = _table_name(str(policy["owner"]), str(policy["authority"]))
     for family in families:
-        comment = _table_comment(family, table_name) or ""
-        if f"digest={digest}" not in comment:
+        if _table_comment(family, table_name) != _expected_table_comment(policy):
             raise RuntimeError("boundary policy digest mismatch")
         if not _verify_observed_family(policy, family):
             raise RuntimeError("boundary rule readback did not match")

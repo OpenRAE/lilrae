@@ -25,7 +25,7 @@ if test ! -f "$images_loaded"; then
     chmod 0600 "$marker"
     mv "$marker" "$images_loaded"
 else
-    /usr/local/bin/aptl kill --containers --project-dir /opt/aptl/project
+    /usr/local/bin/lilrae kill --containers --project-dir /opt/aptl/project
 fi
 
 # The desktop account and Guacamole connection are configured in this overlay.
@@ -40,7 +40,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-/usr/local/bin/aptl lab start \
+/usr/local/bin/lilrae lab start \
     --project-dir /opt/aptl/project \
     --offline-staged \
     --appliance-launch-descriptor /run/aptl-launch/appliance-launch.json \

@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import replace
 from importlib import metadata
 from pathlib import Path, PurePosixPath
 import re
@@ -13,11 +11,30 @@ from aptl.core.deployment.realization import valid_environment_variable_name
 from aptl.core.scenario_bundle import PackIdentity, ScenarioBundle
 from aptl.utils.logging import get_logger
 from aptl.backends._scenario_environment import (
+    AccountCredentialFixture,
     EnvironmentAlias,
     ScenarioEnvironmentFixture,
     ScenarioStartupProviderError,
+    references_accounts,
+    resolved_environment_fixtures,
     validated_aliases as _validated_aliases,
     validated_environment_fixtures,
+)
+
+from aptl.backends._scenario_startup_hooks import (
+    StartupCapability,
+    StartupHook,
+    StartupHookContext,
+    StartupPreparationPhase,
+)
+
+from aptl.backends._scenario_startup_model import (
+    ContainerEnvironmentBinding,
+    McpServerCredentials,
+    ScenarioStartupPlan,
+    ScenarioStartupProvider,
+    ScenarioStartupSelection,
+    StartupProviderProvenance,
 )
 
 log = get_logger("scenario-startup")
@@ -29,106 +46,7 @@ DOCKER_TRANSPORT_KEYS = frozenset(
 )
 
 
-class StartupCapability(str, Enum):
-    """Fixed optional lab mechanics an exact scenario adapter may request."""
 
-    SSH = "ssh"
-    HOST_TOOLS = "host_tools"
-    MCP = "mcp"
-    NATIVE_EVIDENCE = "native_evidence"
-
-
-class StartupHook(str, Enum):
-    """Fixed lifecycle hook slots an admitted adapter may implement."""
-
-    STACK_ENVIRONMENT = "stack_environment"
-    BEFORE_BACKEND_RETRY = "before_backend_retry"
-    RESET = "reset"
-
-
-class StartupPreparationPhase(str, Enum):
-    """Core-owned ordered preparation slots available to an adapter."""
-
-    ENVIRONMENT = "environment"
-    PRE_START_CONFIGURATION = "pre_start_configuration"
-    PRE_START_STORAGE = "pre_start_storage"
-    PRE_START_TRUST = "pre_start_trust"
-    PRE_START_SERVICE_TRUST = "pre_start_service_trust"
-    PRE_START_ARTIFACTS = "pre_start_artifacts"
-    POST_START_READINESS = "post_start_readiness"
-    POST_START_CONFIGURATION = "post_start_configuration"
-
-
-@dataclass(frozen=True)
-class StartupHookContext:
-    """Narrow runtime authority passed to a selected startup hook."""
-
-    backend: object | None
-    preparation_phase: StartupPreparationPhase | None = None
-    operation: Callable[[], object] | None = field(
-        default=None, repr=False, compare=False
-    )
-    project_dir: Path | None = None
-
-    def run_operation(self) -> object:
-        """Run the single core operation delegated for this fixed phase."""
-
-        if self.operation is None:
-            raise ScenarioStartupProviderError("provider-hook-operation-unavailable")
-        return self.operation()
-
-
-@dataclass(frozen=True, order=True)
-class ContainerEnvironmentBinding:
-    """Expose one receipt-resolved semantic container to a seed subprocess."""
-
-    variable: str
-    semantic_name: str
-
-
-@dataclass(frozen=True)
-class McpServerCredentials:
-    """One client server's explicitly authorized dynamic environment keys."""
-
-    server_id: str
-    environment_keys: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class ScenarioStartupPlan:
-    """Validated scenario-specific work executed by the generic lifecycle."""
-
-    seed_script: str
-    required_profiles: tuple[str, ...]
-    activation_profiles: tuple[str, ...]
-    environment_aliases: tuple[EnvironmentAlias, ...] = ()
-    environment_fixtures: tuple[ScenarioEnvironmentFixture, ...] = ()
-    container_environment: tuple[ContainerEnvironmentBinding, ...] = ()
-    lifecycle_capabilities: frozenset[StartupCapability] = frozenset()
-    startup_hooks: frozenset[StartupHook] = frozenset()
-    seed_environment_keys: tuple[str, ...] = ()
-    mcp_build_script: str | None = None
-    mcp_server_keys: tuple[McpServerCredentials, ...] = ()
-    native_mcp_ingress: bool = False
-
-
-@dataclass(frozen=True)
-class ScenarioStartupSelection:
-    """The exact provider and validated plan selected for one admission."""
-
-    identity: PackIdentity | None
-    provider: object | None = field(repr=False, compare=False)
-    plan: ScenarioStartupPlan | None
-    provenance: StartupProviderProvenance | None = None
-
-
-@dataclass(frozen=True)
-class StartupProviderProvenance:
-    """Installed distribution identity used to rediscover a reset hook."""
-
-    distribution: str
-    distribution_version: str
-    entry_point: str
 
 
 def _entry_points() -> list[metadata.EntryPoint]:
@@ -211,6 +129,23 @@ def _safe_relative_script(value: object) -> str:
     if path.is_absolute():
         raise ScenarioStartupProviderError("provider-result-invalid")
     return str(path)
+
+
+def _account_resolved_fixtures(value: object, bundle: ScenarioBundle | None) -> object:
+    """Resolve account-referenced fixtures against the admitted SDL once."""
+
+    if not references_accounts(value):
+        return value
+    if bundle is None:
+        raise ScenarioStartupProviderError("provider-result-invalid")
+    from aptl.backends.raes_declared_credentials import scenario_accounts
+
+    accounts = (
+        bundle.trial.scenario.accounts
+        if bundle.trial
+        else scenario_accounts(bundle.sdl_path)
+    )
+    return resolved_environment_fixtures(value, accounts)
 
 
 def _validated_environment_fixtures(
@@ -305,7 +240,18 @@ def _validated_mcp_keys(value: object) -> tuple[McpServerCredentials, ...]:
     return value
 
 
-def _validated_plan(value: object) -> ScenarioStartupPlan:
+def _validated_minimum_max_map_count(value: object) -> int | None:
+    """Accept an omitted demand or a bounded positive kernel setting."""
+    if value is None:
+        return None
+    if type(value) is not int or not 1 <= value <= 2**31 - 1:
+        raise ScenarioStartupProviderError("provider-result-invalid")
+    return value
+
+
+def _validated_plan(
+    value: object, bundle: ScenarioBundle | None = None
+) -> ScenarioStartupPlan:
     """Normalize one adapter plan and reject malformed profile sets."""
 
     if not isinstance(value, ScenarioStartupPlan):
@@ -328,13 +274,14 @@ def _validated_plan(value: object) -> ScenarioStartupPlan:
         and not isinstance(value.mcp_build_script, str)
     ):
         raise ScenarioStartupProviderError("provider-result-invalid")
+    minimum = _validated_minimum_max_map_count(value.minimum_max_map_count)
     return ScenarioStartupPlan(
         seed_script=_safe_relative_script(value.seed_script),
         required_profiles=tuple(profiles),
         activation_profiles=tuple(activation),
         environment_aliases=_validated_aliases(value.environment_aliases),
         environment_fixtures=_validated_environment_fixtures(
-            value.environment_fixtures
+            _account_resolved_fixtures(value.environment_fixtures, bundle)
         ),
         container_environment=_validated_container_environment(
             value.container_environment
@@ -349,11 +296,47 @@ def _validated_plan(value: object) -> ScenarioStartupPlan:
         ),
         mcp_server_keys=tuple(mcp_keys),
         native_mcp_ingress=value.native_mcp_ingress,
+        minimum_max_map_count=minimum,
     )
 
 
 def select_scenario_startup(bundle: ScenarioBundle) -> ScenarioStartupSelection:
     """Select one exact adapter once for all stages of an admitted start."""
+
+    identity = bundle.pack_identity
+    if bundle.trial is not None:
+        from aptl.backends.scenario_family import (
+            resolve_family_contribution,
+            encode_family_target,
+        )
+
+        try:
+            selected, plan = resolve_family_contribution(
+                ENTRY_POINT_GROUP,
+                bundle.trial,
+                bundle,
+                lambda value: _validated_plan(value, bundle),
+            )
+            _validate_hook_methods(selected.provider, plan)
+        except ValueError as exc:
+            raise ScenarioStartupProviderError(str(exc)) from None
+        return ScenarioStartupSelection(
+            identity,
+            selected.provider,
+            plan,
+            StartupProviderProvenance(
+                selected.distribution,
+                selected.distribution_version,
+                selected.entry_point,
+                encode_family_target(bundle.trial.target),
+            ),
+            bundle.trial,
+        )
+    return _select_installed_startup(bundle)
+
+
+def _select_installed_startup(bundle: ScenarioBundle) -> ScenarioStartupSelection:
+    """Select a content-qualified legacy startup plan without family input."""
 
     identity = bundle.pack_identity
     if identity is None:
@@ -374,7 +357,7 @@ def select_scenario_startup(bundle: ScenarioBundle) -> ScenarioStartupSelection:
         return ScenarioStartupSelection(identity, None, None)
     try:
         entry_point, provider = compatible[0]
-        plan = _validated_plan(provider.resolve(bundle))
+        plan = _validated_plan(provider.resolve(bundle), bundle)
         _validate_hook_methods(provider, plan)
         return ScenarioStartupSelection(
             identity,
@@ -398,7 +381,6 @@ def _validate_hook_methods(provider: object, plan: ScenarioStartupPlan) -> None:
 
     methods = {
         StartupHook.STACK_ENVIRONMENT: "prepare_stack_environment",
-        StartupHook.BEFORE_BACKEND_RETRY: "before_backend_retry",
         StartupHook.RESET: "reset",
     }
     if any(
@@ -423,11 +405,23 @@ def run_startup_hook(
         return None
     method = {
         StartupHook.STACK_ENVIRONMENT: "prepare_stack_environment",
-        StartupHook.BEFORE_BACKEND_RETRY: "before_backend_retry",
         StartupHook.RESET: "reset",
     }.get(hook)
     if method is None:
         return None
+    if selection.trial is not None:
+        from types import SimpleNamespace
+        from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+
+        nodes = tuple(
+            SimpleNamespace(name=name) for name in selection.trial.scenario.nodes
+        )
+        context = replace(
+            context,
+            backend=AdmittedRuntimeOperations(context.backend, nodes),
+            project_dir=None,
+            trial=selection.trial,
+        )
     try:
         return getattr(selection.provider, method)(context)
     except Exception as exc:
@@ -472,12 +466,14 @@ __all__ = [
     "ENTRY_POINT_GROUP",
     "EXTENSION_API_VERSION",
     "ContainerEnvironmentBinding",
+    "AccountCredentialFixture",
     "EnvironmentAlias",
     "ScenarioEnvironmentFixture",
     "McpServerCredentials",
     "ScenarioRuntimeSelection",
     "ScenarioStartupPlan",
     "ScenarioStartupSelection",
+    "ScenarioStartupProvider",
     "StartupProviderProvenance",
     "ScenarioStartupProviderError",
     "StartupCapability",

@@ -14,6 +14,7 @@ import threading
 from pathlib import Path
 from typing import Callable
 
+from aptl.cli._command_alias import warn_deprecated_command
 from aptl.services.misp_suricata_sync.config import ServiceConfig
 from aptl.services.misp_suricata_sync.misp_client import MispClient
 from aptl.services.misp_suricata_sync.rule_writer import write_if_changed
@@ -185,6 +186,12 @@ def main() -> int:
     run_loop(cfg, stop=stop, client=client, reloader=reloader)
     log.info("misp-suricata-sync exiting cleanly")
     return 0
+
+
+def legacy_main() -> int:
+    """Run the deprecated ``aptl-misp-suricata-sync`` alias of :func:`main`."""
+    warn_deprecated_command("aptl-misp-suricata-sync", "lilrae-misp-suricata-sync")
+    return main()
 
 
 if __name__ == "__main__":

@@ -452,7 +452,7 @@ def _base_node_realization(environment=None, **fields):
         profiles=(),
         nodes=(node,),
         networks=(),
-        pack_identity=PackIdentity("techvault", "0.1.1", "sha256:" + "0" * 64),
+        pack_identity=PackIdentity("techvault", "6.5.1", "sha256:" + "0" * 64),
         **fields,
     )
 

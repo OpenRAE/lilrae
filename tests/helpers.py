@@ -18,57 +18,49 @@ from aptl.validation.mcp_protocol import exchange_jsonrpc
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-try:
-    PROJECT_ENV = load_dotenv(Path(PROJECT_ROOT) / ".env")
-except (OSError, ValueError):
-    PROJECT_ENV = {}
+# Credential placeholders are inert during import and collection. The live_lab
+# fixture fills them only after explicit selection and APTL_SMOKE=1.
+LIVE_CREDENTIAL_NAMES = {
+    "INDEXER_USER": "INDEXER_USERNAME",
+    "INDEXER_PASS": "INDEXER_PASSWORD",
+    "API_USER": "API_USERNAME",
+    "API_PASS": "API_PASSWORD",
+    "MISP_API_KEY": "MISP_API_KEY",
+    "SHUFFLE_API_KEY": "SHUFFLE_API_KEY",
+}
 
 
-def _credential(name: str, fallback: str = "") -> str:
-    """Prefer the process environment, then the generated project .env."""
-    return os.getenv(name, PROJECT_ENV.get(name, fallback))
+def live_credentials():
+    """Read credentials only while an explicitly authorized live test executes."""
+    if os.getenv("APTL_SMOKE") != "1":
+        raise RuntimeError("live lab credentials require APTL_SMOKE=1")
+    project_env = load_dotenv(Path(PROJECT_ROOT) / ".env")
+    return {
+        name: os.getenv(variable, project_env.get(variable, ""))
+        for name, variable in LIVE_CREDENTIAL_NAMES.items()
+    }
+
 
 INDEXER_URL = os.getenv("APTL_INDEXER_URL", "https://localhost:9200")
-INDEXER_USER = _credential("INDEXER_USERNAME", "admin")
-INDEXER_PASS = _credential("INDEXER_PASSWORD", "SecretPassword")
-API_USER = _credential("API_USERNAME", "wazuh-wui")
-API_PASS = _credential("API_PASSWORD", "WazuhPass123!")
+INDEXER_USER = ""
+INDEXER_PASS = ""
+API_USER = ""
+API_PASS = ""
 SSH_KEY = os.path.expanduser(os.getenv("APTL_SSH_KEY", "~/.ssh/aptl_lab_key"))
 
 MISP_URL = os.getenv("MISP_URL", "https://localhost:8443")
-MISP_API_KEY = _credential(
-    "MISP_API_KEY", "JHxBbGPnAtyut0FTwkeuhVFnbMksGRCRwsE0V9Xw",
-)
-# SEC-006 / ADR-034: TheHive and Shuffle's host-facing surfaces moved
-# to HTTPS with lab-CA-signed certs. Tests default to the verified
-# endpoints and to the lab CA bundle materialized by `aptl lab start`.
-THEHIVE_URL = os.getenv("THEHIVE_URL", "https://localhost:9000")
+MISP_API_KEY = ""
+# SEC-006 / ADR-034: Shuffle's host-facing surface moved to HTTPS with
+# lab-CA-signed certs. Tests default to the verified endpoints and to the lab
+# CA bundle materialized by `aptl lab start`.
 LAB_CA_PATH = os.getenv(
     "APTL_LAB_CA_PATH",
     os.path.join(PROJECT_ROOT, "config", "soc_certs", "lab-ca.pem"),
 )
 
 
-def _provision_thehive_key() -> str:
-    """Auto-provision a TheHive API key via login + key renewal."""
-    script = os.path.join(PROJECT_ROOT, "scripts", "thehive-apikey.sh")
-    if os.path.isfile(script):
-        try:
-            result = subprocess.run(
-                [script], capture_output=True, text=True, timeout=120,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return result.stdout.strip()
-        except (subprocess.TimeoutExpired, OSError):
-            pass
-    return ""
-
-
-THEHIVE_API_KEY = _credential("THEHIVE_API_KEY") or _provision_thehive_key()
 SHUFFLE_URL = os.getenv("SHUFFLE_URL", "https://localhost:3443")
-SHUFFLE_API_KEY = _credential(
-    "SHUFFLE_API_KEY", "31a211c4-ea5c-4a49-b022-5e2434e758a7",
-)
+SHUFFLE_API_KEY = ""
 
 # Kali's DMZ network IP (the one that appears in Wazuh alerts from webapp attacks)
 KALI_DMZ_IP = "172.20.1.30"
@@ -83,10 +75,7 @@ AD_IP = "172.20.2.10"
 DB_IP = "172.20.2.11"
 VICTIM_IP = "172.20.2.20"
 
-LIVE_LAB = pytest.mark.skipif(
-    os.getenv("APTL_SMOKE", "0") != "1",
-    reason="Set APTL_SMOKE=1 to run live smoke tests",
-)
+LIVE_LAB = pytest.mark.live_lab
 
 # ---------------------------------------------------------------------------
 # MCP server configurations
@@ -115,7 +104,6 @@ CUSTOM_MCP_SERVERS = [
     "mcp-wazuh",
     "mcp-network",
     "mcp-threatintel",
-    "mcp-casemgmt",
     "mcp-soar",
 ]
 
@@ -209,19 +197,6 @@ def mcp_server_cmd(name: str) -> tuple[list[str], dict]:
                 ),
             ],
             "env": {"MISP_API_KEY": MISP_API_KEY},
-        },
-        "thehive": {
-            "cmd": [
-                node_bin,
-                os.path.join(
-                    PROJECT_ROOT,
-                    "mcp",
-                    "mcp-casemgmt",
-                    "build",
-                    "index.js",
-                ),
-            ],
-            "env": {"THEHIVE_API_KEY": THEHIVE_API_KEY},
         },
     }
 
@@ -397,17 +372,14 @@ def container_running(name: str) -> bool:
 
 
 def curl_indexer(path: str = "", body: dict | None = None) -> dict:
-    """Query the Wazuh Indexer API via curl."""
+    """Query the indexer without exposing credentials in process arguments."""
+    from aptl.utils.curl_safe import basic_auth_header
+
     url = f"{INDEXER_URL}/{path}" if path else INDEXER_URL
-    cmd = [
-        "curl", "-ks", "-f", url,
-        "-u", f"{INDEXER_USER}:{INDEXER_PASS}",
-    ]
-    if body is not None:
-        cmd += ["-H", "Content-Type: application/json", "-d", json.dumps(body)]
-    result = run_cmd(cmd, timeout=40)
-    assert result.returncode == 0, f"curl failed: {result.stderr}"
-    return json.loads(result.stdout)
+    return curl_json(
+        url, auth_header=basic_auth_header(INDEXER_USER, INDEXER_PASS),
+        body=body, insecure=True, timeout=40,
+    )
 
 
 def curl_json(
@@ -420,38 +392,20 @@ def curl_json(
     insecure: bool = False,
     ca_cert_path: str | None = None,
 ) -> dict:
-    """Make an HTTP request via curl and return parsed JSON.
+    """Use the production secret-safe curl boundary for live test requests."""
+    from aptl.utils.curl_safe import curl_json as safe_json
 
-    SEC-006 / ADR-034: SOC stack callers should pass
-    ``ca_cert_path=LAB_CA_PATH`` to verify against the lab-managed CA.
-    ``insecure=True`` remains for Wazuh inter-component traffic
-    (SEC-004 territory) and for fallback when the lab CA bundle is
-    unavailable. Mutually exclusive — ``insecure`` wins when both set.
-    """
-    lab_ca_urls = (MISP_URL, THEHIVE_URL, SHUFFLE_URL)
-    if (
-        not insecure
-        and ca_cert_path is None
-        and any(url == base or url.startswith(f"{base}/") for base in lab_ca_urls)
-        and os.path.isfile(LAB_CA_PATH)
+    if not insecure and ca_cert_path is None and any(
+        url == base or url.startswith(f"{base}/")
+        for base in (MISP_URL, SHUFFLE_URL)
     ):
         ca_cert_path = LAB_CA_PATH
-
-    cmd = ["curl", "-sf", url]
-    if insecure:
-        cmd.insert(1, "-k")
-    elif ca_cert_path:
-        cmd[1:1] = ["--cacert", ca_cert_path]
-    if method != "GET":
-        cmd += ["-X", method]
-    if auth_header:
-        cmd += ["-H", f"Authorization: {auth_header}"]
-    cmd += ["-H", "Content-Type: application/json"]
-    if body is not None:
-        cmd += ["-d", json.dumps(body)]
-    result = run_cmd(cmd, timeout=timeout)
-    assert result.returncode == 0, f"curl {url} failed: {result.stderr}"
-    return json.loads(result.stdout)
+    result = safe_json(
+        url, auth_header=auth_header, method=method, body=body,
+        timeout=timeout, insecure=insecure, ca_cert_path=ca_cert_path,
+    )
+    assert result is not None, "live request failed at the curl boundary"
+    return result
 
 
 def ssh_cmd(

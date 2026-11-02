@@ -10,6 +10,16 @@ package, behind the entry points APTL discovers it through.
 | `aptl.scenario_startup` | `techvault` | content-qualified startup and native log-producer realization |
 | `aptl.scenario_verifiers` | `techvault.aptl` | the semantic answer key: is the declared defensive stack realized, does the attacker reach its peers |
 | `aptl.participant_mcp_smoke_plans` | `guided-purple.techvault-attacker-target` | the exact MCP operations that qualify a participant |
+| `aptl.participant_desktop` | `techvault` | the consoles, logins, guide and hostnames the participant desktop shows, as SDL references |
+
+## Declared SOC logins
+
+The pack declares every SOC console login as an SDL account with an authored
+`secret_fixture` credential. `account_environment.py` maps each backend
+variable, such as `INDEXER_PASSWORD`, to the account credential it carries.
+`participant_desktop.py` names the consoles and logins the desktop shows. Neither
+module holds a value: core reads each username and secret from the admitted SDL,
+so a pack change to a login reaches the lab without an adapter edit.
 
 ## Why it lives here
 
@@ -18,21 +28,17 @@ This is an adapter, not portable content. It names `aptl-kali`,
 that is what an answer key for one scenario on one backend is made of. Hand it to
 another backend and it means nothing.
 
-That is also why it belongs to the backend rather than to the scenario author. An
-author cannot write the adapter for a backend they have never seen, and many
-backends are private, so they never could. A scenario declares the capability
-profile it needs and a backend declares conformance to it; the adapter answers
-the separate question of whether the scenario's expectations actually held.
+The adapter currently ships inside the `lilrae` distribution. Its bundled
+location is a delivery choice. An independently released adapter can own the
+same behavior through the [public family contract](../../docs/reference/family-adapters.md).
+RPT owns its TechVault-family implementation and qualification evidence.
+LilRAE retains generic admission, lifecycle, capture and verification machinery.
 
-It ships inside the `aptl-labs` distribution and releases with it, so `pipx
-install aptl-labs` gives an operator every extension surface TechVault owns with
-nothing further to install. The materialization boundary is in the code, not
-the packaging: generic materialization consumes the admitted RAES model
-without branching on TechVault names, while runtime parameters, startup
-behavior and verification are reached through installed entry-point metadata.
-Native evidence is an older built-in adapter under
-`aptl.core.evidence.adapters`, with registrations still declared in APTL core;
-this is not yet complete package-level scenario isolation.
+The bundled adapter keeps its existing exact-release qualification. It does
+not automatically qualify an RPT family or its admitted variations. Family
+trials select providers that explicitly declare the public family API and the
+exact family/release/backend target. Bundled legacy providers cannot satisfy
+that qualification or mask a missing family capability.
 
 ## Customer database
 
@@ -79,7 +85,7 @@ whole:
 | Dimension | This release |
 | --- | --- |
 | Extension API | `2` |
-| Scenario | `techvault`, source `env-pack`, pack version `0.1.1`, content digest `sha256:df00ea2a26…` |
+| Scenario | `techvault`, source `env-pack`, pack version `6.5.1`, content digest `sha256:a1abd4a382…` |
 | Backend | RAES target `aptl` `0.1.0`, profile `full-remote-control-plane` |
 | Transport | `docker-compose` and `ssh-compose` |
 

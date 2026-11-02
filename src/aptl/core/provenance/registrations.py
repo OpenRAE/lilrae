@@ -8,7 +8,7 @@ module free of owner imports.
 
 Every built-in is policy-required in the default profile. That is deliberate:
 requiring a provider does not assert it must succeed, it asserts that its
-outcome must be STATED. A plain ``aptl lab start`` has no admitted experiment
+outcome must be STATED. A plain ``lilrae lab start`` has no admitted experiment
 plan and no installed participants, so those two providers report
 ``UNAVAILABLE`` and appear as declared limitations — which is the honest
 record, and exactly what "missing/denied provenance is explicit" requires.

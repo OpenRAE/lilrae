@@ -148,7 +148,14 @@ def select_backend_profiles(
     """Select profiles from legacy config or an admitted pack vocabulary."""
     if admitted_operator_groups is not None:
         admitted = set(admitted_operator_groups)
+        selected = config.containers.profiles
+        if selected is not None:
+            if set(selected) - admitted:
+                raise ValueError("operator group selection is not admitted")
+            admitted.intersection_update(selected)
         return sorted(profile for profile in plan_profiles if profile in admitted)
+    if config.containers.profiles is None:
+        return sorted(plan_profiles)
     selected = [
         profile
         for profile in public_start_profiles(config)
@@ -264,14 +271,8 @@ def _service_selected(service_def: object, selected_profiles: set[str]) -> bool:
 def _is_one_shot(service_def: Mapping[str, object]) -> bool:
     """Return whether Compose marks a service as a non-steady-state task.
 
-    ADR-088 (issue #889) retired the env-pack-declared TechVault operational
-    scenario's only one-shot (the Cortex Elasticsearch index initializer,
-    replaced by the native service-search-index-schema materializer), but the
-    legacy in-tree ``docker-compose.yml`` still declares a real
-    ``cortex-index-init`` one-shot service (``restart: "no"``) that
-    ``scripts/cortex-apikey.sh`` and the static gate's steady-state parity
-    checks (``test_techvault_static_gate.py``) still depend on. This stays until
-    that legacy stack is retired too.
+    A one-shot service (``restart: "no"``) runs to completion, so it is not
+    part of the steady-state topology.
     """
     return str(service_def.get("restart", "")).lower() in {"no", "false"}
 

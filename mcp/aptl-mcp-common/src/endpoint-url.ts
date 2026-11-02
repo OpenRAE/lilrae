@@ -1,3 +1,4 @@
+import { knownToolFailure } from './lilrae-tool-outcome.js';
 /**
  * Endpoint URL resolution and validation for MCP API clients.
  *
@@ -12,10 +13,10 @@ export function isAbsoluteOrProtocolRelative(endpoint: string): boolean {
 /** Reject caller-controlled absolute or relative paths for the generic API tool. */
 export function assertPathOnlyEndpoint(endpoint: string): void {
   if (isAbsoluteOrProtocolRelative(endpoint)) {
-    throw new Error('endpoint must be a path starting with /, not an absolute URL');
+    throw knownToolFailure(new Error('endpoint must be a path starting with /, not an absolute URL'));
   }
   if (!endpoint.startsWith('/')) {
-    throw new Error('endpoint must be a path starting with /');
+    throw knownToolFailure(new Error('endpoint must be a path starting with /'));
   }
 }
 
@@ -26,7 +27,7 @@ export function assertPathOnlyEndpoint(endpoint: string): void {
 export function resolveApiRequestUrl(endpoint: string, baseUrl: string): string {
   if (!baseUrl) {
     if (!isAbsoluteOrProtocolRelative(endpoint)) {
-      throw new Error('endpoint must be an absolute URL when API baseUrl is not configured');
+      throw knownToolFailure(new Error('endpoint must be an absolute URL when API baseUrl is not configured'));
     }
     return endpoint.startsWith('//') ? `https:${endpoint}` : endpoint;
   }
@@ -37,22 +38,22 @@ export function resolveApiRequestUrl(endpoint: string, baseUrl: string): string 
     const absolute = endpoint.startsWith('//') ? `https:${endpoint}` : endpoint;
     const parsed = new URL(absolute);
     if (parsed.origin !== configuredOrigin) {
-      throw new Error(
+      throw knownToolFailure(new Error(
         `endpoint origin ${parsed.origin} does not match configured API origin ${configuredOrigin}`,
-      );
+      ));
     }
     return absolute;
   }
 
   if (!endpoint.startsWith('/')) {
-    throw new Error('endpoint must be a path starting with /');
+    throw knownToolFailure(new Error('endpoint must be a path starting with /'));
   }
 
   const resolved = new URL(endpoint, baseUrl);
   if (resolved.origin !== configuredOrigin) {
-    throw new Error(
+    throw knownToolFailure(new Error(
       `resolved URL origin ${resolved.origin} does not match configured API origin ${configuredOrigin}`,
-    );
+    ));
   }
   return resolved.href;
 }

@@ -6,7 +6,6 @@ import json
 import time
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
-from typing import cast
 
 from aptl.core.evidence.adapters.sources import SourceResult
 from aptl_techvault.evidence.techvault_transcript import (
@@ -21,8 +20,7 @@ from aptl_techvault.evidence.techvault_readiness import (
 )
 from aptl.core.evidence.outcomes import CollectorStatus
 
-CORTEX_ANALYZER_ID = "TechVaultScenarioContext_1_0"
-CORTEX_OBSERVABLE = "172.20.1.30"  # NOSONAR S1313: admitted synthetic lab IP
+SQLI_PROBE_SOURCE_IP = "172.20.1.30"  # NOSONAR S1313: admitted synthetic lab IP
 SURICATA_SQLI_SID = 1000010
 WAZUH_SQLI_RULE_ID = "303020"
 _MAX_NATIVE_JSON_BYTES = 2 * 1024 * 1024
@@ -43,136 +41,6 @@ def _failure(status: CollectorStatus = CollectorStatus.MID_RUN_LOSS) -> SourceRe
     """Build a source result that retains no unvalidated native payload."""
 
     return SourceResult(status=status)
-
-
-class CortexEnrichmentSource:
-    """Validate one fresh Cortex/TheHive native readback as exact JSON."""
-
-    def __init__(
-        self,
-        query: Callable[[str, str], Mapping[str, object] | None],
-    ) -> None:
-        """Bind the trusted native Cortex query owner."""
-
-        self._query = query
-
-    def fetch(self, start_iso: str, end_iso: str) -> SourceResult:
-        payload = self._query(start_iso, end_iso)
-        if payload is None:
-            return _failure(CollectorStatus.SOURCE_UNAVAILABLE)
-        if not _valid_cortex_payload(payload, start_iso, end_iso):
-            return _failure()
-        return _cortex_result(payload)
-
-
-def _cortex_result(payload: Mapping[str, object]) -> SourceResult:
-    """Project a validated Cortex response into the portable source result."""
-
-    analyzers = cast(Sequence[object], payload["analyzers"])
-    report = cast(Mapping[str, object], payload["report"])
-    connector = cast(Mapping[str, object], payload["connector"])
-    safe = {
-        "enabled_analyzers": sorted(
-            str(item["id"])
-            for item in analyzers
-            if isinstance(item, Mapping) and item.get("enabled") is True
-        ),
-        "report": {
-            key: report[key]
-            for key in (
-                "analyzer_id",
-                "observable",
-                "status",
-                "started_at",
-                "finished_at",
-                "scenario_role",
-            )
-            if key in report
-        },
-        "thehive_connector": {
-            "name": connector["name"],
-            "status": connector["status"],
-        },
-    }
-    if _bounded_json(safe) is None:
-        return _failure(CollectorStatus.TRUNCATION)
-    return SourceResult(
-        status=CollectorStatus.OK,
-        records=[safe],
-        source_min_time=str(report["started_at"]),
-        source_max_time=str(report["finished_at"]),
-        source_pipeline={
-            "source_refs": [
-                {
-                    "ref_kind": "other",
-                    "ref_id": (
-                        "nodes.cortex.runtime.platform_applications.cortex-enrichment"
-                    ),
-                },
-                {
-                    "ref_kind": "other",
-                    "ref_id": (
-                        "nodes.thehive.runtime.platform_applications."
-                        "thehive-case-management"
-                    ),
-                },
-            ]
-        },
-    )
-
-
-def _valid_cortex_payload(
-    payload: Mapping[str, object], start_iso: str, end_iso: str
-) -> bool:
-    """Validate the exact analyzer, report, connector, and temporal contract."""
-
-    analyzers = payload.get("analyzers")
-    report = payload.get("report")
-    connector = payload.get("connector")
-    if (
-        not isinstance(analyzers, Sequence)
-        or isinstance(analyzers, str | bytes)
-        or not isinstance(report, Mapping)
-        or not isinstance(connector, Mapping)
-    ):
-        return False
-    return (
-        _valid_analyzers(analyzers)
-        and _valid_cortex_report(report, start_iso, end_iso)
-        and _valid_connector(connector)
-        and _bounded_json(payload) is not None
-    )
-
-
-def _valid_analyzers(analyzers: Sequence[object]) -> bool:
-    """Require exactly one enabled analyzer with the admitted identity."""
-
-    required = [
-        item
-        for item in analyzers
-        if isinstance(item, Mapping) and item.get("id") == CORTEX_ANALYZER_ID
-    ]
-    return len(required) == 1 and required[0].get("enabled") is True
-
-
-def _valid_cortex_report(
-    report: Mapping[str, object], start_iso: str, end_iso: str
-) -> bool:
-    """Validate the report identity, outcome, and bounded time window."""
-
-    return (
-        report.get("analyzer_id") == CORTEX_ANALYZER_ID
-        and report.get("observable") == CORTEX_OBSERVABLE
-        and str(report.get("status", "")).lower() in {"success", "succeeded"}
-        and _inside_window(report.get("started_at"), start_iso, end_iso)
-        and _inside_window(report.get("finished_at"), start_iso, end_iso)
-    )
-
-
-def _valid_connector(connector: Mapping[str, object]) -> bool:
-    """Require one named healthy TheHive-to-Cortex connector."""
-
-    return connector.get("status") == "OK" and bool(connector.get("name"))
 
 
 class SuricataWazuhSqliSource:
@@ -289,7 +157,7 @@ def _valid_trigger(trigger: Mapping[str, object], start_iso: str, end_iso: str) 
         bool(trigger.get("trigger_id"))
         and trigger.get("method") == "POST"
         and trigger.get("path") == "/login"
-        and trigger.get("source_ip") == CORTEX_OBSERVABLE
+        and trigger.get("source_ip") == SQLI_PROBE_SOURCE_IP
         and bool(trigger.get("destination_ip"))
         and trigger.get("contains_union_select") is True
         and _inside_window(trigger.get("triggered_at"), start_iso, end_iso)
@@ -428,10 +296,8 @@ def _inside_window(value: object, start_iso: str, end_iso: str) -> bool:
 
 
 __all__ = (
-    "CORTEX_ANALYZER_ID",
-    "CORTEX_OBSERVABLE",
-    "CortexEnrichmentSource",
     "RedteamSessionTranscriptSource",
+    "SQLI_PROBE_SOURCE_IP",
     "SuricataRuleReadinessSource",
     "SuricataWazuhSqliSource",
     "TECHVAULT_LOCAL_SIDS",

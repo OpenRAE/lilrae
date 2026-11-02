@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write the self-description a baked seat image carries.
 
-`aptl seat start` reads this blob before it downloads the disk, so it states
+`lilrae seat start` reads this blob before it downloads the disk, so it states
 what the host must provide and the boundary contract the guest runs under. It
 is produced by the bake, from the same source that produced the disk, which is
 why the two cannot describe different things.
@@ -71,16 +71,16 @@ def main() -> int:
         raise SystemExit("seat disk has no usable virtual size")
 
     config = {
-        "schema_version": "aptl.seat-image/v2",
+        "schema_version": "aptl.seat-image/v3",
         "desktop_privilege_contract": "aptl.desktop-privileges/v1",
         "resources": {**RESOURCES, "disk_bytes": virtual_size},
         "boundary": full_techvault_boundary_policy().model_dump(mode="json"),
         "binding": {
-            "boundary_helper_image": image_digest("aptl-network-boundary-helper:5"),
+            "boundary_helper_image": image_digest("aptl-network-boundary-helper:6"),
             "egress_proxy_image": image_digest("aptl-appliance-egress-proxy:1"),
             # The guest's participant routes are whatever this disk contains,
             # so the disk's own digest is what the launch is bound to.
-            "raes_plan_digest": file_digest(arguments.disk),
+            "participant_routes_digest": file_digest(arguments.disk),
         },
         "description": arguments.description,
     }

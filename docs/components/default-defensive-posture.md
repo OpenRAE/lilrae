@@ -40,13 +40,13 @@ Every section in this document is tagged with one of three banners:
   wired but **disabled, empty, or absent**. Blue *enables, configures,
   or populates* these per iteration to raise the posture. Examples:
   Wazuh active-response blocks (all `<disabled>yes</disabled>`), MISP
-  IOC store (empty), `zzz_purple_loop.xml` (absent until blue authors
-  it).
+  IOC store (empty), and blue-authored rules files (absent until blue
+  writes one).
 - **BASELINE ENABLED**: a *defensive tool* that **is on at first
   boot** and produces output (alerts, logs, traces). Blue does **not**
   need to enable these; they fire on their own. What blue *does*
   control is the downstream coupling: which baseline detections feed
-  enforcement (active-response) or workflow (Shuffle → TheHive).
+  enforcement (active-response) or workflow (Shuffle).
   Examples: Wazuh detection rules, Suricata IDS alerting.
 
 If you can't tell whether a surface is `WEAKNESS BY DESIGN`,
@@ -95,7 +95,7 @@ blue graduates IOCs).
 - `misp/misp-iocs.rules` ships **empty** (header `ioc_count=0`).
   Hash-list sidecars `misp-md5.list`, `misp-sha1.list`,
   `misp-sha256.list` ship empty too. These checked-in files are baseline
-  seeds; `aptl lab start` seeds them into the `aptl_suricata_misp_rules` named
+  seeds; `lilrae lab start` seeds them into the `aptl_suricata_misp_rules` named
   volume (ADR-043, mounted at `/var/lib/suricata/rules/misp`), and the sync
   service writes generated runtime state there.
 
@@ -139,8 +139,7 @@ contract*, not a misconfiguration.
 first boot—they generate alerts on matching events. What is **not**
 coupled at first boot is the *downstream response*: every
 `<active-response>` block ships `<disabled>yes</disabled>` (see next
-section), and `zzz_purple_loop.xml` (the hot file where blue authors
-custom child rules) ships absent.
+section), and no blue-authored rules file exists until blue writes one.
 
 **Default state**
 
@@ -151,7 +150,7 @@ custom child rules) ships absent.
   ([`config/wazuh_cluster/wazuh_manager.conf:345-346`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf)):
   - `ruleset/rules`: bundled Wazuh ruleset (read-only).
   - `etc/rules`: APTL custom rules **and** the hot directory where
-    blue authors `zzz_purple_loop.xml` at runtime.
+    blue writes its own rules files at runtime.
 
 | Custom file | Catches | Severity range |
 |---|---|---|
@@ -172,34 +171,36 @@ per-run experimental record under `.aptl/runs/<run_id>/`.
   [`postgresql_decoders.xml` and `samba_decoders.xml`](https://github.com/OpenRAE/env-packs/tree/main/packs/techvault/assets/content),
   which the pack installs under `/var/ossec/etc/decoders/`.
   (`kali_decoders.xml` deleted under ADR-033.)
-- **`zzz_purple_loop.xml` ships absent from the repo by design.** It
-  only appears under `.aptl/loop/run-*/iter-NN/` (runtime artifacts
-  produced by purple-loop runs). The mechanism is: blue authors XML
-  via the `mcp-indexer` MCP server's `create_rule` tool, which PUTs
-  to `/rules/files/zzz_purple_loop.xml` on the Wazuh Manager API
-  (auth via `wazuh-jwt`, `overwrite=true`); blue then triggers the
-  matching `restart_manager` tool which hits `/manager/restart`—
-  the manager is unavailable for ~30-90 s while daemons cycle, then
-  the new rules take effect. See
-  [`mcp/mcp-indexer/docker-lab-config.json:49-72`](https://github.com/OpenRAE/lilrae/blob/main/mcp/mcp-indexer/docker-lab-config.json).
-  The filename's `zzz_` prefix guarantees it loads after
-  `webapp_rules.xml` (which provides the 302xxx parent rule IDs that
-  purple-loop children typically `<if_sid>` into).
+- **No blue-authored rules file ships.** Blue writes one at runtime
+  with the `create_rule` tool of the `mcp-indexer` MCP server, or the
+  `create_detection_rule` tool of the `mcp-wazuh` MCP server. Both tools
+  PUT to `/rules/files/{filename}` on the Wazuh Manager API (auth via
+  `wazuh-jwt`). The caller names the file in `params.filename`. The name
+  must end in `.xml` and contain only letters, digits, `_`, `.` or `-`;
+  the tools refuse any other name before they send a request. An upload
+  replaces the whole file, and the API refuses an existing file unless
+  the caller sets `params.overwrite` to `true`. Then blue calls the
+  `restart_manager` tool, which hits `/manager/restart`. The manager
+  is unavailable for ~30-90 s while daemons cycle, then the new rules
+  take effect. See
+  [`mcp/mcp-indexer/docker-lab-config.json`](https://github.com/OpenRAE/lilrae/blob/main/mcp/mcp-indexer/docker-lab-config.json).
+  The manager loads rules files in name order. A file whose child rules
+  `<if_sid>` into the 302xxx parents in `webapp_rules.xml` must have a
+  name that sorts after `webapp_rules.xml`.
 
 **Why it ships this way**
 
 Detection content is part of the lab's static surface—rules don't
 move during a run, and the Wazuh manager would have to restart to
 pick up changes. What *is* dynamic is whether their detections lead
-to enforcement (active-response) or to incident workflow (Shuffle →
-TheHive). Both of those are wired but disabled at first boot.
+to enforcement (active-response) or to incident workflow (Shuffle).
+Both of those are wired but disabled at first boot.
 
 **What blue would do to raise it**
 
-- Author `zzz_purple_loop.xml` via the `mcp-indexer` MCP server's
-  `create_rule` tool, then call `restart_manager` to apply. The
-  ~30-90 s manager downtime is the cost of a rule update during a
-  purple-loop iteration.
+- Write a rules file with the `mcp-indexer` MCP server's `create_rule`
+  tool, then call `restart_manager` to apply it. The ~30-90 s manager
+  downtime is the cost of a rule update during an iteration.
 - Add custom rules to `etc/rules/` (manager image rebuild + `lab
   start`) and reference them from `<active-response>` blocks (see
   next section) to couple detection to enforcement.
@@ -212,7 +213,7 @@ TheHive). Both of those are wired but disabled at first boot.
 | Hot rule directory | [`config/wazuh_cluster/wazuh_manager.conf:345-346`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf) |
 | Custom rule files | `*_rules.xml` in the acquired [`techvault` environment pack](https://github.com/OpenRAE/env-packs/tree/main/packs/techvault/assets/content) |
 | Custom decoders | `*_decoders.xml` in the acquired [`techvault` environment pack](https://github.com/OpenRAE/env-packs/tree/main/packs/techvault/assets/content) |
-| Purple-loop hot file (runtime-only) | not shipped; written under `.aptl/loop/run-*/iter-NN/zzz_purple_loop.xml` |
+| Blue-authored rules files (runtime-only) | not shipped; written by the caller through `create_rule` |
 
 ---
 
@@ -267,9 +268,9 @@ kali's own IPs and wedging the purple loop.
 - Delete the `<disabled>yes</disabled>` line on a chosen
   `<active-response>` block per iteration.
 - Author additional blocks pointing at custom rule IDs (for example, new
-  rule IDs in `zzz_purple_loop.xml`).
+  rule IDs in a blue-authored rules file).
 - Update the kali whitelist if red ever moves out of the seeded IPs;
-  re-running `aptl lab stop -v && aptl lab start` re-renders agent
+  re-running `lilrae lab stop -v && lilrae lab start` re-renders agent
   carve-outs.
 
 **Source of truth**
@@ -287,25 +288,31 @@ kali's own IPs and wedging the purple loop.
 ## MISP IOCs
 
 **Tag:** `STARTING POSTURE` for the `aptl:enforce` graduation lane.
-The MISP store itself ships **empty at first lab boot**, but a prime
-research scenario seed exists out-of-band—see below.
+The MISP image ships empty. With the bundled TechVault adapter and
+all required profiles selected, `lilrae lab start` seeds one curated
+event. The seed does not graduate its indicators to enforcement
+(see below).
 
 **Default state**
 
-- The MISP container starts with upstream image defaults. **At first
-  `aptl lab start`, no APTL-side IOCs are loaded**: there are no
-  pre-existing events, no `aptl:enforce`-tagged attributes, no
-  graduated indicators.
-- An optional seed script
-  ([`scripts/seed-misp.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-misp.sh)) creates an
-  "APTL Lab - Known Threat Actors" event with kali-IP indicators and
-  injection-pattern signatures. It is **not run automatically by
-  `aptl lab start`**—it must be invoked explicitly (or via
-  [`scripts/seed-prime.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh), which is
-  the prime-scenario master seed). The seed script is idempotent.
+- The MISP container starts with upstream image defaults. On a fresh lab, the
+  scenario seed below adds one event; there are no
+  `aptl:enforce`-tagged attributes and no graduated indicators.
+- [`scripts/seed-misp.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-misp.sh)
+  creates an "APTL Lab - Known Threat Actors" event with kali-IP
+  indicators and injection-pattern signatures. **`lilrae lab start`
+  runs it when all required profiles are selected:** `wazuh`,
+  `enterprise`, `victim`, `kali`, `fileshare`, and `soc`. The bundled
+  TechVault adapter selects
+  [`scripts/seed-prime.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh),
+  the prime-scenario master seed, which runs `seed-misp.sh`. If `soc`
+  is absent or any required profile is missing, startup skips the seed.
+  Either script can also be run by hand. The seed script is idempotent.
   IOCs created by `seed-misp.sh` are **not tagged `aptl:enforce`** at
   seed time—graduation to enforcement is still blue's per-iteration
   decision.
+- `--skip-seed` skips seeding. On a fresh, unseeded lab, this leaves
+  MISP empty. Existing events, indicators, and tags are preserved.
 - The `aptl-misp-suricata-sync` daemon
   ([`src/aptl/services/misp_suricata_sync/main.py`](https://github.com/OpenRAE/lilrae/blob/main/src/aptl/services/misp_suricata_sync/main.py))
   runs continuously and polls MISP for attributes tagged
@@ -326,9 +333,9 @@ research scenario seed exists out-of-band—see below.
 does not by itself trigger enforcement. Blue must add the
 `aptl:enforce` tag to graduate it. This separates
 "intelligence-curation" (which seed scripts can prime) from
-"enforcement" (which the default posture leaves empty). At first
-boot, and even after the optional seed runs, the enforcement lane
-has zero graduated indicators on purpose.
+"enforcement" (which the default posture leaves empty). On a fresh
+lab, the seed leaves the enforcement lane with zero graduated
+indicators on purpose.
 
 **What blue would do to raise it**
 
@@ -369,43 +376,49 @@ has zero graduated indicators on purpose.
   Until that file is written, Wazuh's `<integration>` block is wired
   but inert.
 - The seed flow runs in two scripts:
-  1. [`scripts/seed-shuffle.sh:265-266`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-shuffle.sh)
-     creates the `APTL Alert to Case` workflow inside the running
+  1. [`scripts/seed-shuffle.sh:240-245`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-shuffle.sh)
+     creates the `APTL Alert Enrichment` workflow inside the running
      Shuffle instance via Shuffle's REST API and writes its webhook
      URL to a **host-side staging file** at
      `/tmp/aptl_shuffle_webhook_url`. **This step alone is not enough
      — the Wazuh `custom-shuffle` forwarder reads from inside the
      manager container, not the host.**
-  2. [`scripts/seed-prime.sh:165-169`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh)
+  2. [`scripts/seed-prime.sh:210-227`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh)
      reads the host staging file and `docker exec`s the URL into the
      Wazuh manager container at
      `/var/ossec/etc/shuffle_webhook_url`. **This step is what
      activates the Wazuh→Shuffle forwarder.**
   Both scripts are idempotent.
-- **Neither script is run by `aptl lab start`.** Until an operator
-  runs `seed-prime.sh` (or runs `seed-shuffle.sh` followed by the
-  manual `docker exec` to copy the URL into the manager), the
-  Wazuh→Shuffle forwarder no-ops.
+- **`lilrae lab start` runs both** in its SOC seeding step when the
+  [required TechVault profiles](#misp-iocs) are selected and
+  `--skip-seed` is absent. The bundled TechVault adapter selects
+  `seed-prime.sh`, which runs `seed-shuffle.sh` and then copies the URL.
+- `--skip-seed` preserves existing workflows and the webhook URL.
+  On a fresh, unseeded lab started with `--skip-seed`, the
+  Wazuh→Shuffle forwarder no-ops until an operator runs
+  `seed-prime.sh` (or `seed-shuffle.sh` followed by the manual
+  `docker exec` that copies the URL into the manager). On a previously
+  seeded lab, the forwarder can remain active.
 
 **Why it ships this way**
 
 The integration boundary (Wazuh's `<integration>` block, the
 `custom-shuffle` forwarder, the webhook-file gate) is in source
-control. The workflow *content* is created by an explicit seed step
-so iteration runbooks can choose whether to prime the prime-scenario
-defaults or start fresh. The `custom-shuffle` script's silent-exit
-behaviour means a freshly started lab has no half-wired forwarder
-firing into a missing webhook.
+control. The workflow *content* is created by the scenario seed step.
+Iteration runbooks can leave a fresh lab unseeded with `--skip-seed`.
+The `custom-shuffle` script's silent-exit behaviour avoids sending
+alerts to a missing webhook while the lab is unseeded.
 
 **What blue would do to raise it**
 
-- Run `scripts/seed-prime.sh` for the full prime-scenario seed
+- If automatic seeding was skipped, run `scripts/seed-prime.sh` once
+  all required services are running for the full prime-scenario seed
   (recommended—handles both the Shuffle-side workflow creation and
   the Wazuh-side webhook-URL copy in one shot). Running
-  `seed-shuffle.sh` alone leaves the Wazuh forwarder still inert.
+  `seed-shuffle.sh` alone does not copy the webhook URL into Wazuh.
 - Author additional Shuffle workflows that consume Wazuh alerts,
-  query MISP for context, enrich TheHive cases, or trigger automated
-  containment outside the Wazuh AR path. Workflow content lives in
+  query MISP for context, or trigger automated containment outside the
+  Wazuh AR path. Workflow content lives in
   Shuffle's own DB; check exports into `scripts/seed-*.sh` patterns
   if a workflow becomes part of the permanent baseline.
 - Lower the `<level>` threshold in the manager `<integration>` block
@@ -419,39 +432,6 @@ firing into a missing webhook.
 | Forwarder script (gated by webhook file) | `custom-shuffle` in the acquired TechVault pack's [`wazuh-integrations.tar`](https://github.com/OpenRAE/env-packs/blob/main/packs/techvault/assets/content/wazuh-integrations.tar) |
 | Workflow seed script | [`scripts/seed-shuffle.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-shuffle.sh) |
 | Prime master seed | [`scripts/seed-prime.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh) |
-
----
-
-## TheHive case templates
-
-**Tag:** `STARTING POSTURE`
-
-**Default state**
-
-- TheHive starts with **upstream defaults**—no APTL-side seeded case
-  templates, observable types, or custom case fields.
-- Case structure is driven by what `APTL Alert to Case` (Shuffle
-  workflow) posts: title from the Wazuh rule, observables from the
-  alert payload, severity from `level`.
-
-**Why it ships this way**
-
-Case workflow design is part of blue's per-iteration content. A
-prescriptive template would steer the experiment.
-
-**What blue would do to raise it**
-
-- Define case templates in TheHive (categories, severity ladder,
-  required observable fields) per scenario.
-- Customize the Shuffle workflow that creates cases to populate those
-  fields from Wazuh + MISP.
-
-**Source of truth**
-
-| Surface | File |
-|---|---|
-| Wazuh→Shuffle→TheHive integration | [`config/wazuh_cluster/wazuh_manager.conf:316-320`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf) |
-| Case templates | none in repo; configured in TheHive UI per iteration |
 
 ---
 
@@ -693,13 +673,13 @@ When mode lands as a real SDL feature, the intended contract is:
 - `red` runs—full WEAKNESS-BY-DESIGN baseline; STARTING POSTURE
   surfaces stay disabled. Red exploits; defenders observe.
 - `blue` runs—same baseline, plus blue-side MCP surfaces
-  (`aptl-wazuh`, `aptl-threatintel`, `aptl-casemgmt`, `aptl-soar`,
-  `aptl-network`, `aptl-indexer`) so blue can enable, configure, and
+  (`aptl-wazuh`, `aptl-threatintel`, `aptl-soar`, `aptl-network`,
+  `aptl-indexer`) so blue can enable, configure, and
   graduate STARTING POSTURE surfaces.
 - `purple` runs—both red and blue MCP surfaces exposed. Each
   iteration alternates: red attacks under the current posture; blue
-  raises the posture (enables AR, adds an IOC, authors a
-  `zzz_purple_loop.xml` rule); red attacks again.
+  raises the posture (enables AR, adds an IOC, writes a rules
+  file); red attacks again.
 
 **Until #263 is resolved, the per-run posture is whatever this
 document describes**—the same baseline regardless of any `mode:`
@@ -716,7 +696,7 @@ ADR-021's in-band `aptl-firewall-drop` whitelist. See
 [ADR-024](../adrs/adr-024-orchestrator-side-purple-continuity-carve-out.md)
 for the full design.
 
-The audit is invoked manually today via `aptl lab continuity-audit`. The
+The audit is invoked manually today via `lilrae lab continuity-audit`. The
 behavioral contract:
 
 - runs **unconditionally** today—APTL is the purple-team lab and every

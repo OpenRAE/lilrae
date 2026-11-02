@@ -14,11 +14,13 @@ from aptl_techvault.evidence.transcript_parsing import (
     FinalizedTranscriptCollector,
     binding_from_projection,
 )
-from aptl_techvault.runtime_parameters import TECHVAULT_PACK_SET_DIGEST
+from aptl_techvault.runtime_parameters import (
+    TECHVAULT_PACK_SET_DIGEST,
+    TECHVAULT_PACK_VERSION,
+)
 
 _NATIVE_REGISTRATIONS = frozenset(
     {
-        "aptl.collector.cortex-enrichment",
         "aptl.collector.misp-authenticated-api-readiness",
         "aptl.collector.suricata-rule-readiness",
         "aptl.collector.suricata-wazuh-sqli",
@@ -33,7 +35,6 @@ class TechVaultPropositionInterpreter:
 
     capability_ids = frozenset(
         {
-            "cortex-enrichment-readback",
             "misp-authenticated-api-readiness",
             "suricata-local-rule-readiness",
             "wazuh-agent-readiness",
@@ -59,7 +60,6 @@ class TechVaultCaptureRuntimeAdapter:
                 environment.get("INDEXER_USERNAME", ""),
                 environment.get("INDEXER_PASSWORD", ""),
             ),
-            thehive_api_key=environment.get("THEHIVE_API_KEY", ""),
         )
         return owner.sources()
 
@@ -95,7 +95,7 @@ class TechVaultCaptureProvider:
     provider_id = "techvault-aptl-capture"
     extension_api_version = EXTENSION_API_VERSION
     supported_pack_id = "techvault"
-    supported_pack_versions = ("0.1.1",)
+    supported_pack_versions = (TECHVAULT_PACK_VERSION,)
     supported_pack_set_digests = (TECHVAULT_PACK_SET_DIGEST,)
     backend_target_name = "aptl"
     backend_target_versions = ("0.1.0",)
@@ -110,7 +110,6 @@ class TechVaultCaptureProvider:
             runtime_environment_keys=(
                 "INDEXER_USERNAME",
                 "INDEXER_PASSWORD",
-                "THEHIVE_API_KEY",
             ),
             transcript_registration_id=_TRANSCRIPT_REGISTRATION,
             runtime_adapter=TechVaultCaptureRuntimeAdapter(),

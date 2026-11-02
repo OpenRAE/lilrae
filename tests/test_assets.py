@@ -55,7 +55,8 @@ def test_materialize_default_config_is_valid(fake_bundle: Path, tmp_path: Path) 
     materialize(target)
     config = load_config(target / "aptl.json")
     assert config.lab.name == "aptl"
-    assert "kali" in config.containers.enabled_profiles()
+    assert config.containers.profiles is None
+    assert config.scenario.identity is None
     assert config.experiment.participant_credential_sources.model_dump() == {
         "claude": None,
         "codex": None,

@@ -1,4 +1,4 @@
-"""Main entry point for the APTL CLI."""
+"""Main entry point for the LilRAE CLI (``lilrae``, formerly ``aptl``)."""
 
 from typing import Optional
 
@@ -17,10 +17,11 @@ from aptl.cli import (
     seat,
     web,
 )
+from aptl.cli._command_alias import warn_deprecated_command
 
 app = typer.Typer(
-    name="aptl",
-    help="Advanced Purple Team Lab CLI",
+    name="lilrae",
+    help="LilRAE CLI",
     no_args_is_help=True,
 )
 
@@ -39,7 +40,7 @@ app.command("doctor")(doctor.doctor)
 def _version_callback(value: bool) -> None:
     """Print the installed version and exit when ``--version`` is passed."""
     if value:
-        typer.echo(f"aptl {aptl.__version__}")
+        typer.echo(f"lilrae {aptl.__version__}")
         raise typer.Exit()
 
 
@@ -54,4 +55,15 @@ def main(
         is_eager=True,
     ),
 ) -> None:
-    """Advanced Purple Team Lab CLI."""
+    """LilRAE CLI."""
+
+
+def legacy_main() -> None:
+    """Run the deprecated ``aptl`` alias of the ``lilrae`` command.
+
+    The notice goes to stderr before Typer parses anything, so it also covers
+    ``--help``, ``--version``, and usage errors. ``prog_name`` keeps help and
+    usage stdout identical to ``lilrae``.
+    """
+    warn_deprecated_command("aptl", "lilrae")
+    app(prog_name="lilrae")
