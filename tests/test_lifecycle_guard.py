@@ -274,6 +274,49 @@ def test_windows_lock_walk_rejects_a_reparse_directory_by_handle(
     assert not (tmp_path / ".aptl").exists()
 
 
+@pytest.mark.parametrize("state", ["absent", "owned", "malformed", "reparse"])
+def test_windows_trial_fence_uses_existing_handles_only(tmp_path, monkeypatch, state):
+    import aptl.core.lifecycle_guard as guard
+    from aptl.core.trial_ownership import require_trial_owner
+
+    opened, closed = [], []
+    monkeypatch.setattr(guard, "_windows_open_root_handle", lambda root: 10)
+    monkeypatch.setattr(guard, "_windows_close_handle", closed.append)
+
+    def open_relative(parent, component, *, directory, create):
+        assert not create
+        opened.append((component, directory))
+        if not directory and state == "absent":
+            raise FileNotFoundError
+        return parent + 1
+
+    def reject_reparse(handle):
+        if handle == 12 and state == "reparse":
+            raise OSError("reparse")
+
+    def to_fd(handle):
+        assert handle == 13
+        data = tmp_path / "sample-fence"
+        data.write_bytes(b"a" * 64 if state == "owned" else b"invalid")
+        return os.open(data, os.O_RDONLY)
+
+    monkeypatch.setattr(guard, "_windows_open_relative_handle", open_relative)
+    monkeypatch.setattr(guard, "_windows_reject_reparse_point", reject_reparse)
+    monkeypatch.setattr(guard, "_windows_handle_to_fd", to_fd)
+    reader = guard._windows_trial_fence_owner
+    if state == "absent":
+        require_trial_owner(tmp_path, reader=reader)
+    elif state == "owned":
+        with pytest.raises(guard.LifecycleBusyError):
+            require_trial_owner(tmp_path, reader=reader)
+        require_trial_owner(tmp_path, b"a" * 64, reader=reader)
+    else:
+        with pytest.raises(OSError if state == "reparse" else ValueError):
+            require_trial_owner(tmp_path, reader=reader)
+    assert opened[:2] == [(".aptl", True), ("lifecycle", True)]
+    assert closed[-3:] == [12, 11, 10]
+
+
 @pytest.mark.skipif(os.name != "nt", reason="requires Windows junction semantics")
 def test_windows_lock_rejects_a_junctioned_state_directory(tmp_path: Path) -> None:
     from aptl.core.lifecycle_guard import (

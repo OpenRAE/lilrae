@@ -121,7 +121,8 @@ def test_real_runtime_preserves_outcome_partial_evidence_and_cleanup(tmp_path, o
         result = finish(handler, request)
         assert result.cleanup_receipt.trial_outcome == outcome
         assert result.cleanup_receipt.cleanup_status == "succeeded"
-        assert result.evidence and result.cleanup_evidence
+        assert result.evidence
+        assert result.cleanup_evidence
         assert services.events[:3] == ["configure", "capture", "cleanup"]
         assert not (tmp_path / TRIAL_FENCE).exists()
         assert not (daemon_root(handler) / TRIAL_FENCE).exists()
@@ -177,13 +178,22 @@ def test_installed_limits_are_checked_before_effects(tmp_path, limit):
         assert not (tmp_path / TRIAL_FENCE).exists()
 
 
+def test_trial_serving_refuses_unsupported_platform_before_effects(tmp_path, monkeypatch):
+    with serving(tmp_path) as (handler, request, *_):
+        monkeypatch.setattr("aptl.backends.trial_serving.os", SimpleNamespace(name="nt"))
+        with pytest.raises(ValueError, match="trial-serving-posix-required"):
+            handler.execute_trial(request)
+        assert handler.runtime_unit.calls == 0
+        assert not (tmp_path / TRIAL_FENCE).exists()
+
+
 def test_pending_work_excludes_unrelated_lifecycle_and_other_projects(tmp_path):
     with serving(tmp_path, pending=True) as (handler, request, *_):
         with pytest.raises(TrialPending):
             handler.execute_trial(request)
         with pytest.raises(LifecycleBusyError):
             with lifecycle_mutation_lock(tmp_path):
-                pytest.fail("unresolved trial must exclude ordinary lifecycle")
+                pass
         other = tmp_path / "other-project"
         other.mkdir()
         # An independently composed worker uses the same daemon state root.
@@ -210,7 +220,7 @@ def test_cleanup_failure_retains_evidence_and_fences_on_reentry(tmp_path):
         assert services.events.count("configure") == 1
         with pytest.raises(LifecycleBusyError):
             with lifecycle_mutation_lock(tmp_path):
-                pytest.fail("cleanup failure cannot release the project")
+                pass
 
 
 def test_worker_callback_shares_lock_and_unrelated_thread_is_excluded(tmp_path):

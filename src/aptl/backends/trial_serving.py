@@ -151,6 +151,8 @@ class LilraeTrialUnit:
             return self._execute_owned(request, daemon_root, project, daemon)
 
     def _admit(self, request: TrialUnitRequest) -> None:
+        if os.name != "posix":
+            raise ValueError("trial-serving-posix-required")
         count = sum(
             len(plan.operations)
             for plan in (

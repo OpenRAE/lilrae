@@ -1,6 +1,7 @@
 """Durable exclusion while a RAES trial has unresolved native effects."""
 
 from pathlib import Path
+from collections.abc import Callable
 
 from aptl.core.lifecycle_policy import LifecycleBusyError
 from aptl.utils.pathsafe import (
@@ -22,14 +23,21 @@ def trial_fence_owner(root: Path) -> bytes | None:
         if exc.reason == REASON_NOT_FOUND:
             return None
         raise
-    if len(owner) != 64 or any(c not in b"0123456789abcdef" for c in owner):
-        raise ValueError("trial ownership state is invalid")
     return owner
 
 
-def require_trial_owner(root: Path, owner: bytes | None = None) -> None:
+def require_trial_owner(
+    root: Path,
+    owner: bytes | None = None,
+    *,
+    reader: Callable[[Path], bytes | None] = trial_fence_owner,
+) -> None:
     """Refuse unrelated lifecycle work until the admitted runtime reconciles."""
-    retained = trial_fence_owner(root)
+    retained = reader(root)
+    if retained is not None and (
+        len(retained) != 64 or any(c not in b"0123456789abcdef" for c in retained)
+    ):
+        raise ValueError("trial ownership state is invalid")
     if retained is not None and retained != owner:
         raise LifecycleBusyError("an unresolved trial owns this placement")
 

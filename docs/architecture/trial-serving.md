@@ -14,6 +14,9 @@ and a trusted shared local placement-state directory. Every worker serving the
 same daemon must use that directory. A daemon identity hash selects the lock
 namespace; independent daemons have independent namespaces. This is the fixed
 single-VM placement boundary, not a distributed allocator.
+Trial serving requires the approved POSIX host for descriptor-relative native
+state. Ordinary Windows lifecycle commands retain their handle-relative lock
+and fence checks; the Windows primitives live in `core._lifecycle_windows`.
 
 Before dispatch, reconstruct the request, enforce the installed operation and
 attempt-time limits, and check exact cleanup identity. Acquire the daemon and

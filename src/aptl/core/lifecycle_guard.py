@@ -18,9 +18,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
 
+from aptl.core._lifecycle_windows import (
+    _windows_close_handle,
+    _windows_handle_to_fd,
+    _windows_open_relative_handle,
+    _windows_open_root_handle,
+    _windows_reject_reparse_point,
+)
 from aptl.core.config import find_config
 from aptl.core.lifecycle_policy import LifecycleBusyError
-from aptl.core.trial_ownership import require_trial_owner
+from aptl.core.trial_ownership import TRIAL_FENCE, require_trial_owner, trial_fence_owner
 from aptl.utils.pathsafe import PathContainmentError, open_dir_contained_nofollow
 
 # Platform-specific import.
@@ -39,19 +46,6 @@ except ModuleNotFoundError:
 
 _LIFECYCLE_DIR = ".aptl/lifecycle"
 _LOCK_FILE = ".lock"
-_WIN_DIRECTORY_ACCESS = 0x00100187
-_WIN_FILE_ACCESS = 0x00100183
-_WIN_SHARE_ALL = 0x00000007
-_WIN_OPEN_EXISTING = 3
-_WIN_OPEN_IF = 3
-_WIN_ROOT_OPEN_FLAGS = 0x02200000
-_WIN_OBJECT_CASE_INSENSITIVE = 0x00000040
-_WIN_SYNC_OPEN_REPARSE = 0x00200020
-_WIN_DIRECTORY_OBJECT = 0x00000001
-_WIN_FILE_OBJECT = 0x00000040
-_WIN_FILE_ATTRIBUTE_NORMAL = 0x00000080
-_WIN_FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400
-_WIN_FILE_ATTRIBUTE_TAG_INFO = 9
 
 
 class LifecycleLockUnavailableError(RuntimeError):
@@ -89,8 +83,8 @@ class _HeldLifecycleLock:
 
 _HELD_LOCKS: dict[tuple[str, int], _HeldLifecycleLock] = {}
 _HELD_LOCKS_GUARD = threading.Lock()
-_DELEGATED_LOCKS: ContextVar[dict[str, tuple[tuple[str, int], _HeldLifecycleLock]]] = (
-    ContextVar("lifecycle_locks", default={})
+_DELEGATED_LOCKS: ContextVar[dict[str, tuple[tuple[str, int], _HeldLifecycleLock]] | None] = (
+    ContextVar("lifecycle_locks", default=None)
 )
 
 
@@ -131,7 +125,7 @@ def placement_mutation_lock(
     """Lock an exact placement-state root, without discovering a config owner."""
     root = root.resolve()
     key = (str(root), threading.get_ident())
-    delegated = _DELEGATED_LOCKS.get().get(str(root))
+    delegated = (_DELEGATED_LOCKS.get() or {}).get(str(root))
     reused = False
     if delegated is not None:
         with _HELD_LOCKS_GUARD:
@@ -151,12 +145,16 @@ def placement_mutation_lock(
     try:
         if not reused:
             try:
-                require_trial_owner(root, trial_owner)
+                require_trial_owner(
+                    root,
+                    trial_owner,
+                    reader=_windows_trial_fence_owner if os.name == "nt" else trial_fence_owner,
+                )
             except (PathContainmentError, OSError, ValueError) as exc:
                 raise LifecycleLockUnavailableError("safe trial ownership is unavailable") from exc
         with _HELD_LOCKS_GUARD:
             held = _HELD_LOCKS[key]
-        token = _DELEGATED_LOCKS.set({**_DELEGATED_LOCKS.get(), str(root): (key, held)})
+        token = _DELEGATED_LOCKS.set({**(_DELEGATED_LOCKS.get() or {}), str(root): (key, held)})
         yield root
     finally:
         if token is not None:
@@ -281,194 +279,38 @@ def _open_windows_lock_fd(project_dir: Path) -> int:
     return fd
 
 
-def _windows_open_root_handle(project_dir: Path) -> int:
-    """Open the trusted project root itself, exposing any root reparse point."""
-
-    import ctypes
-    from ctypes import wintypes
-
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    create_file = kernel32.CreateFileW
-    create_file.argtypes = (
-        wintypes.LPCWSTR,
-        wintypes.DWORD,
-        wintypes.DWORD,
-        wintypes.LPVOID,
-        wintypes.DWORD,
-        wintypes.DWORD,
-        wintypes.HANDLE,
-    )
-    create_file.restype = wintypes.HANDLE
-
-    handle = create_file(
-        str(project_dir),
-        _WIN_DIRECTORY_ACCESS,
-        _WIN_SHARE_ALL,
-        None,
-        _WIN_OPEN_EXISTING,
-        _WIN_ROOT_OPEN_FLAGS,
-        None,
-    )
-    invalid_handle = ctypes.c_void_p(-1).value
-    if handle in (None, invalid_handle):
-        raise ctypes.WinError(ctypes.get_last_error())
-    return int(handle)
-
-
-def _windows_open_relative_handle(
-    parent_handle: int, component: str, *, directory: bool
-) -> int:
-    """Open or create one child relative to an already-validated directory."""
-
-    import ctypes
-    from ctypes import wintypes
-
-    class UnicodeString(ctypes.Structure):
-        """Windows UNICODE_STRING used by descriptor-relative opens."""
-
-        _fields_ = [
-            ("Length", wintypes.USHORT),
-            ("MaximumLength", wintypes.USHORT),
-            ("Buffer", wintypes.LPWSTR),
-        ]
-
-    class ObjectAttributes(ctypes.Structure):
-        """Windows OBJECT_ATTRIBUTES binding for a relative child name."""
-
-        _fields_ = [
-            ("Length", wintypes.ULONG),
-            ("RootDirectory", wintypes.HANDLE),
-            ("ObjectName", ctypes.POINTER(UnicodeString)),
-            ("Attributes", wintypes.ULONG),
-            ("SecurityDescriptor", wintypes.LPVOID),
-            ("SecurityQualityOfService", wintypes.LPVOID),
-        ]
-
-    class IoStatusValue(ctypes.Union):
-        """Status-or-pointer union embedded in IO_STATUS_BLOCK."""
-
-        _fields_ = [("Status", ctypes.c_long), ("Pointer", wintypes.LPVOID)]
-
-    class IoStatusBlock(ctypes.Structure):
-        """Windows IO_STATUS_BLOCK returned by NtCreateFile."""
-
-        _anonymous_ = ("value",)
-        _fields_ = [("value", IoStatusValue), ("Information", ctypes.c_size_t)]
-
-    name_buffer = ctypes.create_unicode_buffer(component)
-    name_bytes = component.encode("utf-16-le")
-    object_name = UnicodeString(
-        Length=len(name_bytes),
-        MaximumLength=len(name_bytes) + 2,
-        Buffer=ctypes.cast(name_buffer, wintypes.LPWSTR),
-    )
-    attributes = ObjectAttributes(
-        Length=ctypes.sizeof(ObjectAttributes),
-        RootDirectory=wintypes.HANDLE(parent_handle),
-        ObjectName=ctypes.pointer(object_name),
-        Attributes=_WIN_OBJECT_CASE_INSENSITIVE,
-        SecurityDescriptor=None,
-        SecurityQualityOfService=None,
-    )
-    io_status = IoStatusBlock()
-    handle = wintypes.HANDLE()
-
-    ntdll = ctypes.WinDLL("ntdll")
-    nt_create_file = ntdll.NtCreateFile
-    nt_create_file.argtypes = (
-        ctypes.POINTER(wintypes.HANDLE),
-        wintypes.DWORD,
-        ctypes.POINTER(ObjectAttributes),
-        ctypes.POINTER(IoStatusBlock),
-        wintypes.LPVOID,
-        wintypes.ULONG,
-        wintypes.ULONG,
-        wintypes.ULONG,
-        wintypes.ULONG,
-        wintypes.LPVOID,
-        wintypes.ULONG,
-    )
-    nt_create_file.restype = ctypes.c_long
-    object_type = _WIN_DIRECTORY_OBJECT if directory else _WIN_FILE_OBJECT
-    options = _WIN_SYNC_OPEN_REPARSE | object_type
-    desired_access = _WIN_DIRECTORY_ACCESS if directory else _WIN_FILE_ACCESS
-    status = nt_create_file(
-        ctypes.byref(handle),
-        desired_access,
-        ctypes.byref(attributes),
-        ctypes.byref(io_status),
-        None,
-        _WIN_FILE_ATTRIBUTE_NORMAL,
-        _WIN_SHARE_ALL,
-        _WIN_OPEN_IF,
-        options,
-        None,
-        0,
-    )
-    if status < 0:
-        rtl_status_to_error = ntdll.RtlNtStatusToDosError
-        rtl_status_to_error.argtypes = (ctypes.c_long,)
-        rtl_status_to_error.restype = wintypes.ULONG
-        raise ctypes.WinError(rtl_status_to_error(status))
-    return int(handle.value)
-
-
-def _windows_reject_reparse_point(handle: int) -> None:
-    """Reject symlinks, junctions, and every other Windows reparse object."""
-
-    import ctypes
-    from ctypes import wintypes
-
-    class FileAttributeTagInfo(ctypes.Structure):
-        """Windows FILE_ATTRIBUTE_TAG_INFO response structure."""
-
-        _fields_ = [
-            ("FileAttributes", wintypes.DWORD),
-            ("ReparseTag", wintypes.DWORD),
-        ]
-
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    get_info = kernel32.GetFileInformationByHandleEx
-    get_info.argtypes = (
-        wintypes.HANDLE,
-        ctypes.c_int,
-        wintypes.LPVOID,
-        wintypes.DWORD,
-    )
-    get_info.restype = wintypes.BOOL
-    info = FileAttributeTagInfo()
-    if not get_info(
-        wintypes.HANDLE(handle),
-        _WIN_FILE_ATTRIBUTE_TAG_INFO,
-        ctypes.byref(info),
-        ctypes.sizeof(info),
-    ):
-        raise ctypes.WinError(ctypes.get_last_error())
-    if info.FileAttributes & _WIN_FILE_ATTRIBUTE_REPARSE_POINT:
-        raise OSError("lifecycle lock path contains a reparse point")
-
-
-def _windows_handle_to_fd(handle: int) -> int:
-    """Transfer an owned Windows file handle to a Python descriptor."""
-
-    if msvcrt is None:
-        raise OSError("Windows descriptor support is unavailable")
-    flags = os.O_RDWR | getattr(os, "O_BINARY", 0)
-    return msvcrt.open_osfhandle(handle, flags)
-
-
-def _windows_close_handle(handle: int) -> None:
-    """Close a raw Windows handle that was not transferred to a descriptor."""
-
-    import ctypes
-    from ctypes import wintypes
-
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    close_handle = kernel32.CloseHandle
-    close_handle.argtypes = (wintypes.HANDLE,)
-    close_handle.restype = wintypes.BOOL
-    if not close_handle(wintypes.HANDLE(handle)):
-        raise ctypes.WinError(ctypes.get_last_error())
+def _windows_trial_fence_owner(project_dir: Path) -> bytes | None:
+    """Read an existing fence through the same no-reparse Windows handles."""
+    handles: list[int] = []
+    leaf: int | None = None
+    try:
+        parent = _windows_open_root_handle(project_dir)
+        handles.append(parent)
+        _windows_reject_reparse_point(parent)
+        for component in TRIAL_FENCE.parts[:-1]:
+            parent = _windows_open_relative_handle(
+                parent, component, directory=True, create=False
+            )
+            handles.append(parent)
+            _windows_reject_reparse_point(parent)
+        try:
+            leaf = _windows_open_relative_handle(
+                parent, TRIAL_FENCE.name, directory=False, create=False
+            )
+        except FileNotFoundError:
+            return None
+        _windows_reject_reparse_point(leaf)
+        fd = _windows_handle_to_fd(leaf)
+        leaf = None
+        try:
+            return os.read(fd, 65)
+        finally:
+            os.close(fd)
+    finally:
+        if leaf is not None:
+            _windows_close_handle(leaf)
+        for handle in reversed(handles):
+            _windows_close_handle(handle)
 
 
 def _try_lock(fd: int, *, shared: bool = False) -> None:
