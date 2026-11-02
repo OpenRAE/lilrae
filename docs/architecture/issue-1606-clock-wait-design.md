@@ -43,10 +43,16 @@ record.
    the deadline. It returns the time that the wait took, and `ErrTimeout` or
    the error of the context when the probe did not report ready. A caller
    acts on a timeout, so `ErrTimeout` is a sentinel.
-4. **The probe owns its attempt.** The probe gets the context of the caller
-   and reports ready or not ready. It bounds its own attempt and handles its
-   own errors, as a Python check does, so a slow probe at the deadline can
-   end after it.
+4. **The probe gets the remaining budget.** The wait derives one probe
+   context with the wait deadline, capped by any earlier caller deadline.
+   Every attempt gets that same deadline, so a retry cannot restart the
+   budget. A blocking probe uses its context for cancellation and derives
+   its remaining time from the context deadline. The caller's context still
+   controls cancellation of the wait. The final probe is invoked at the wait
+   deadline even though its remaining budget is zero; it can report an
+   immediately available result. Cancellation is cooperative: a probe that
+   ignores its context can finish after the deadline. The wait starts no
+   additional goroutine to abandon such a probe.
 5. **Tests.** The clock tests read the `utc-now` and `continuity-now`
    vectors. The wait tests run in `testing/synctest`, so the fake clock
    proves the call times, the last call at the deadline, and the
@@ -56,11 +62,11 @@ record.
 
 ```text
 host clock -> clock.System.Now -> caller -> clock.ISO / clock.ISOZ -> record
-caller probe <- wait.Until (timer) -> elapsed, ErrTimeout, or context error
+caller probe <- wait.Until (timer, bounded probe context) -> elapsed, ErrTimeout, or context error
 ```
 
 | Threat | Mitigation |
 | --- | --- |
 | A stored timestamp changes its text, so a record no longer matches. | The vectors fix each text form. |
-| A wait runs past its deadline, or forever. | The loop never sleeps past the deadline and stops on the context. |
+| A blocking probe receives no budget, or a retry restarts it. | Every probe receives the same bounded context deadline and uses its remaining budget for blocking operations. The wait never sleeps past the deadline and stops on caller cancellation. |
 | A busy loop uses the CPU. | `Until` rejects an interval that is not positive. |
