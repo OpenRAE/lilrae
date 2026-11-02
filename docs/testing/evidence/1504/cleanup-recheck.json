@@ -1,0 +1,12 @@
+{
+  "name_filter": "name=test-1504; firewall rules use name~^test-1504",
+  "project": "prod-mgau4w",
+  "queried_at": "2026-11-02T08:13:42.375744+00:00",
+  "remaining": {
+    "disks": [],
+    "firewalls": [],
+    "instances": [],
+    "networks": [],
+    "subnets": []
+  }
+}

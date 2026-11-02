@@ -60,6 +60,7 @@ def test_materialize_default_config_is_valid(fake_bundle: Path, tmp_path: Path) 
     assert config.experiment.participant_credential_sources.model_dump() == {
         "claude": None,
         "codex": None,
+        "opencode": None,
     }
 
 
