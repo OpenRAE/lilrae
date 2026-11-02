@@ -28,6 +28,7 @@ from typing import Protocol
 from raes_contracts.associated_artifacts import (
     AssociatedArtifactManifestModel,
     AssociatedArtifactValidationLimits,
+    ExperimentArtifactParent,
     load_associated_artifact_manifest_json,
     validate_associated_artifact_manifest,
 )
@@ -249,7 +250,7 @@ def build_associated_artifact_source(
 
     validation_diagnostics = validate_associated_artifact_manifest(
         manifest,
-        parent=spec,
+        parent=ExperimentArtifactParent(spec),
         artifact_readers=readers,
         limits=AssociatedArtifactValidationLimits(
             max_artifacts=policy.max_reference_count,

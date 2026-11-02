@@ -6,7 +6,6 @@ import dataclasses
 from collections.abc import Mapping
 from copy import deepcopy
 
-from raes_contracts.apparatus import RealizationVerificationScope
 from raes_contracts.diagnostics import Diagnostic, Severity
 from raes_contracts.planning import (
     ChangeAction,
@@ -15,17 +14,14 @@ from raes_contracts.planning import (
     RuntimeDomain,
 )
 from raes_contracts.runtime_state import (
-    RealizationObservationDisclosure,
     RuntimeSnapshot,
     SnapshotEntry,
 )
-from raes_contracts.vocabulary import ObservationStrength
 from raes_processor.semantics.realization import CONCERN_PAYLOAD_PATH
 from raes_processor.semantics.realization_concerns import realization_concern_descriptor
 from raes_runtime.backend_account_credentials import plan_has_account_credentials
 
 from aptl.backends.raes_observation import ObservedResource
-from aptl.backends.raes_planning_compat import DAEMON_READBACK_RUNTIME_CONCERNS
 from aptl.utils.logging import get_logger
 from aptl.utils.redaction import redact
 
@@ -46,20 +42,9 @@ SUPPORTED_RESOURCE_TYPES = frozenset(
     }
 )
 
-_GUEST_READBACK_RUNTIME_CONCERNS = frozenset(
-    {
-        "process-resource-limits",
-        "runtime-dependency-manifests",
-        "runtime-filesystem-inventory",
-        "runtime-local-identity",
-        "runtime-packages",
-        "runtime-service-manager-units",
-    }
-)
-_RUNTIME_READBACK_CONCERNS = (
-    DAEMON_READBACK_RUNTIME_CONCERNS
-    | _GUEST_READBACK_RUNTIME_CONCERNS
-    | {"forwarding-agents"}
+_RUNTIME_READBACK_CONCERNS = frozenset(
+    kind for kind, path in CONCERN_PAYLOAD_PATH.items()
+    if path[:3] == ("spec", "node", "runtime")
 )
 # The realization concerns snapshot assembly reports for each resource type.
 _CONCERN_KINDS: dict[str, tuple[str, ...]] = {
@@ -220,7 +205,9 @@ def snapshot_after_apply(
             profile_bindings=resource.profile_bindings,
             status=_entry_status(actions.get(address)),
         )
-    observations_disclosure = _realization_observation_disclosures(observations)
+    from aptl.backends._raes_operational_observation import runtime_observation_disclosures
+
+    observations_disclosure = runtime_observation_disclosures(observations)
     updated = snapshot.with_entries(entries)
     if observations_disclosure:
         updated = dataclasses.replace(
@@ -231,46 +218,6 @@ def snapshot_after_apply(
             ),
         )
     return updated
-
-
-def _realization_observation_disclosures(
-    observations: Mapping[str, ObservedResource],
-) -> tuple[RealizationObservationDisclosure, ...]:
-    """Disclose how APTL corroborated each realized ``configuration``-scope concern.
-
-    RAES's runtime gate accepts a concern with a non-null
-    verification scope only when the returned snapshot carries a matching
-    observation disclosure whose scope and strength the backend manifest also
-    declares. Disclose only a concern present in the actual observation map;
-    absence therefore still fails closed instead of turning a capability claim
-    into evidence.
-    """
-
-    disclosures: list[RealizationObservationDisclosure] = []
-    for address, observed in observations.items():
-        node_name = address.removeprefix("provision.node.")
-        for kinds, strength in (
-            (
-                DAEMON_READBACK_RUNTIME_CONCERNS | {"forwarding-agents"},
-                ObservationStrength.DAEMON_OBSERVED,
-            ),
-            (_GUEST_READBACK_RUNTIME_CONCERNS, ObservationStrength.GUEST_OBSERVED),
-        ):
-            for kind in sorted(kinds):
-                path = CONCERN_PAYLOAD_PATH[kind]
-                if path not in observed.concerns:
-                    continue
-                disclosures.append(
-                    RealizationObservationDisclosure(
-                        address=address,
-                        field_path=f"nodes.{node_name}." + ".".join(path[2:]),
-                        domain="runtime-realization",
-                        requirement_kind=kind,
-                        verification_scope=RealizationVerificationScope.CONFIGURATION,
-                        observation_strength=strength,
-                    )
-                )
-    return tuple(disclosures)
 
 
 def _entry_status(action: ChangeAction | None) -> str:

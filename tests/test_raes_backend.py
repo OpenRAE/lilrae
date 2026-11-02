@@ -583,7 +583,7 @@ def _patch_runtime(mocker, manager_cls):
             artifact_availability=options.artifact_availability,
         )
 
-    mocker.patch("aptl.backends.raes_planning_compat.plan_for_target", _plan)
+    mocker.patch("aptl.backends.raes_runtime.plan_for_target", _plan)
     return manager_cls
 
 
@@ -683,7 +683,7 @@ def test_manifest_realization_support_matches_exercised_concerns():
         APTL_PROCESS_RESOURCE_LIMITS,
         create_aptl_manifest,
     )
-    from aptl.backends.raes_planning_compat import DAEMON_READBACK_RUNTIME_CONCERNS
+    from aptl.backends._raes_manifest_realization import DAEMON_READBACK_RUNTIME_CONCERNS
 
     (support,) = create_aptl_manifest().realization_support
 
@@ -695,6 +695,8 @@ def test_manifest_realization_support_matches_exercised_concerns():
         {
             *DAEMON_READBACK_RUNTIME_CONCERNS,
             "declared-capability-match",
+            "process-resource-limits",
+            "runtime-software-components",
             "forwarding-agents",
             "runtime-dependency-manifests",
             "runtime-filesystem-inventory",
@@ -705,6 +707,8 @@ def test_manifest_realization_support_matches_exercised_concerns():
         }
     )
     for kind in (
+        "forwarding-agents",
+        "runtime-software-components",
         "runtime-dependency-manifests",
         "runtime-filesystem-inventory",
         "runtime-local-identity",
@@ -755,7 +759,7 @@ def test_manifest_realization_support_matches_exercised_concerns():
 
 def test_derived_realization_fixture_exercises_manifest_constrained_claim():
     """The retained constrained claim has a compiled runtime requirement."""
-    from raes.explicitness import ExplicitnessClass
+    from raes_contracts.explicitness import ExplicitnessClass
 
     execution_plan = _execution_plan_with_derived_realization_requirements()
 
@@ -991,10 +995,8 @@ def test_aptl_target_passes_full_remote_control_plane_conformance():
 
 
 def test_participant_runtime_lifecycle_updates_control_plane_snapshot(tmp_path):
-    from raes_contracts.participant_episode import (
-        ParticipantEpisodeTerminalReason,
-        iter_participant_episode_snapshot_violations,
-    )
+    from raes_contracts.participant_episode import ParticipantEpisodeTerminalReason
+    from raes_contracts.participant_episode_snapshot import iter_participant_episode_snapshot_violations
     from raes_contracts.runtime_state import OperationState
     from raes_runtime.control_plane import RuntimeControlPlane
 
@@ -1601,7 +1603,7 @@ def _participant_admission_request(
         ParticipantImplementationManifestModel,
         ParticipantImplementationSelectionModel,
     )
-    from raes_contracts.participant_binding import ParticipantActionAdmissionRequest
+    from raes_contracts.contracts.participant_action_admission import ParticipantActionAdmissionRequest
 
     manifest = ParticipantImplementationManifestModel.model_validate(
         {
@@ -2094,7 +2096,7 @@ def _start_with_owning_managers(mocker, realize_results):
     """
 
     from aptl.backends import raes
-    from aptl.backends.raes_planning_compat import AptlRuntimeManager
+    from aptl.backends.raes_runtime import AptlRuntimeManager
 
     apply_spy = mocker.spy(AptlRuntimeManager, "apply")
     backend = _RealizedBackend(
@@ -2116,7 +2118,7 @@ def _start_with_owning_managers(mocker, realize_results):
 def test_admission_plans_without_a_runtime_owner():
     """Planning acts on no backend, so it takes no runtime claim (rae#1660)."""
     from aptl.backends import raes
-    from aptl.backends.raes_planning_compat import AptlRuntimeManager
+    from aptl.backends.raes_runtime import AptlRuntimeManager
 
     admitted = raes.admit_raes_scenario(
         PROJECT_ROOT,
@@ -4599,7 +4601,7 @@ def test_apply_provisioning_discloses_author_declared_provenance(tmp_path):
     below: the two values must be distinguishable, which is exactly what RAES
     #760 fixed upstream.
     """
-    from raes.explicitness import ExplicitnessProvenance
+    from raes_contracts.explicitness import ExplicitnessProvenance
 
     backend = _RealizedBackend(containers=("vm",), platform="linux")
 
@@ -4628,7 +4630,7 @@ def test_apply_provisioning_discloses_processor_derived_provenance(tmp_path):
     unreachable at the runtime gate, so this test is the regression guard on the
     dependency floor.
     """
-    from raes.explicitness import ExplicitnessClass, ExplicitnessProvenance
+    from raes_contracts.explicitness import ExplicitnessClass, ExplicitnessProvenance
 
     backend = _RealizedBackend(containers=("vm",), platform="linux")
 

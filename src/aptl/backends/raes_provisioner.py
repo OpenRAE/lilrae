@@ -36,9 +36,6 @@ from aptl.backends.raes_realization import (
     interpret_provisioning_plan,
 )
 from aptl.backends.raes_profiles import select_backend_profiles
-from aptl.backends.scenario_planning_compatibility import (
-    ResolvedPlanningCompatibility,
-)
 from aptl.backends.scenario_startup import ScenarioStartupSelection
 from aptl.core.config import AptlConfig
 from aptl.core.experiment.capture_plan import CapturePlan, empty_capture_plan
@@ -95,9 +92,6 @@ class AptlProvisioner(LilraeApparatusReportingMixin, ProvisionerStartMixin):
         default_factory=OperatorAccessDecision
     )
     startup_selection: ScenarioStartupSelection | None = field(default=None, repr=False)
-    planning_compatibility: ResolvedPlanningCompatibility | None = field(
-        default=None, repr=False
-    )
     reporting_manifest: BackendManifest | None = field(default=None, repr=False)
     _lilrae_apparatus_resources: tuple[PreparedCaptureResource, ...] = field(
         default=(), init=False, repr=False

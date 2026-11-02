@@ -38,19 +38,18 @@ IDENTITY_LEDGER = (
 KNOWN_PRIVATE_RAES_IMPORTS: set[tuple[str, str, str]] = set()
 
 
-def test_project_depends_on_the_raes_major_range() -> None:
-    """The installed RAES release must satisfy the qualified pack combination."""
+def test_project_pins_the_qualified_raes_release() -> None:
+    """The installed RAES release must match the qualified pack combination."""
 
     project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
 
-    assert "raes>=10.2.0,<10.4" in project["project"]["dependencies"]
+    assert "raes==10.5.0" in project["project"]["dependencies"]
     assert all(
         not dependency.startswith("aces-sdl")
         for dependency in project["project"]["dependencies"]
     )
-    supported = SpecifierSet(">=10.2.0,<10.4")
+    supported = SpecifierSet("==10.5.0")
     assert raes.__version__ in supported
-    assert "10.4.0" not in supported
 
 
 def _source_and_test_imports_of(import_roots: frozenset[str]) -> list[str]:

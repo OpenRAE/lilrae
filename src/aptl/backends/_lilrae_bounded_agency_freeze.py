@@ -18,6 +18,8 @@ BOUNDED_PARTICIPANT_AGENCY_COMPILED_SHA256S = frozenset(
     {
         # raes 10.0.0
         "31539407a07892bd106d502b95aea256c97ed107eef411c45b298ca3a3c2a3a5",
+        # raes 10.5.0 adds only an empty descriptor_profile_bindings field.
+        "eface167c3a5e49932f03daf23aa39011c6cb88b8634258926d6044b9c12b446",
     }
 )
 

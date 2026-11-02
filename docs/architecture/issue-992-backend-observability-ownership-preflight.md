@@ -363,6 +363,11 @@ later scenario can otherwise inherit stale authority.
 
 ## Compatibility Cutover Guardrail
 
+The [#1017 retirement preflight](issue-1017-techvault-bridge-retirement-preflight.md)
+records the current release assessment and removal boundaries. The release
+numbers and temporary permissions below describe the original bridge; they do
+not authorize extending it or certify a later release for its removal.
+
 OpenRAE/env-packs#338 has merged. `raes-env-packs==6.0.0` removes the three
 observability nodes and the obsolete schema-readback requirement and carries
 the four contracts above; it moves atomically with `raes==4.1.0`,

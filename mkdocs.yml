@@ -135,6 +135,8 @@ nav:
     - "Issue #985 Owned Lab Fixture Preflight": architecture/issue-985-owned-lab-fixture-preflight.md
     - "Issue #993 Boot Realization Regressions Preflight": architecture/issue-993-boot-realization-regressions-preflight.md
     - "Issue #992 Backend Observability Ownership Preflight": architecture/issue-992-backend-observability-ownership-preflight.md
+    - "Issue #1017 TechVault Bridge Retirement Preflight": architecture/issue-1017-techvault-bridge-retirement-preflight.md
+    - "Issue #1017 Native Runtime Attestation Design": architecture/issue-1017-native-runtime-attestation-design.md
     - LilRAE Readiness Review:
       - Assessment: reviews/962-lilrae-readiness/README.md
       - Migration Inventory: reviews/962-lilrae-readiness/migration-inventory.md
@@ -255,6 +257,7 @@ nav:
     - ADR-062 LilRAE Name and Naming Convention: adrs/adr-062-lilrae-name-and-naming-convention.md
     - ADR-063 Remove TheHive and Cortex: adrs/adr-063-remove-thehive-and-cortex.md
     - ADR-064 Layered Architecture and Code Conventions: adrs/adr-064-layered-architecture-and-code-conventions.md
+    - ADR-066 Runtime Readback Reports Realized State: adrs/adr-066-runtime-readback-reports-realized-state.md
 
 extra:
   social:
