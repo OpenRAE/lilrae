@@ -814,11 +814,25 @@ def test_expected_transcript_sessions_reject_symlinked_census_entry(tmp_path):
         )
 
 
+@pytest.mark.parametrize(
+    "gap",
+    [
+        None,
+        "ssh-failure",
+        "session-limit",
+        "invalid-identity",
+        "during-quiesce",
+        "after-quiesce",
+        "all-missing",
+        "accepted-limitation",
+    ],
+)
 @pytest.mark.parametrize("collapse_retained", [False, True])
 def test_finalize_transcript_quiesces_broker_persists_evidence_and_marks_complete(
     tmp_path,
     monkeypatch,
     collapse_retained,
+    gap,
 ):
     import base64
     import hashlib
@@ -838,6 +852,7 @@ def test_finalize_transcript_quiesces_broker_persists_evidence_and_marks_complet
         _binding("aptl.collector.redteam-session-transcript", "transcript"),
         redaction_required=True,
         redaction_policy="redact_secrets",
+        accepted_limitation="partial-window" if gap == "accepted-limitation" else None,
     )
     plan = SimpleNamespace(
         plan_id="capture-plan-test",
@@ -892,19 +907,34 @@ def test_finalize_transcript_quiesces_broker_persists_evidence_and_marks_complet
     census = store.get_run_path("run-1") / "mcp-side/sessions"
     census.mkdir(parents=True)
     (census / "session-1.jsonl").write_text("")
+    if gap:
+        exported["expected_session_ids"].append(gap)
+        if gap not in {"during-quiesce", "after-quiesce"}:
+            (census / f"{gap}.jsonl").write_text("")
+    if gap == "all-missing":
+        exported["accepted_session_ids"] = []
+        exported["sessions"] = []
     observed_expected = None
 
     lifecycle = []
 
     def quiesce_capture_apparatus():
         lifecycle.append("quiesce")
+        if gap in {"during-quiesce", "after-quiesce"}:
+            (census / f"{gap}.jsonl").write_text("")
         return True
 
     def export_capture_apparatus(*, expected_session_ids):
         nonlocal observed_expected
         lifecycle.append("export")
         observed_expected = expected_session_ids
-        return exported
+        from aptl.core.deployment.docker_compose import DockerComposeBackend
+
+        apparatus = DockerComposeBackend(tmp_path)
+        apparatus._export_capture_payload = lambda: exported
+        return apparatus.export_capture_apparatus(
+            expected_session_ids=expected_session_ids
+        )
 
     backend = SimpleNamespace(
         quiesce_capture_apparatus=quiesce_capture_apparatus,
@@ -940,6 +970,29 @@ def test_finalize_transcript_quiesces_broker_persists_evidence_and_marks_complet
             == []
         )
         assert load_active_transcript_authorities(tmp_path)
+        return
+
+    if gap:
+        assert result.disposition is AcquisitionDisposition.INVALIDATED
+        assert result.reports[0].status is CollectorStatus.MID_RUN_LOSS
+        assert len(result.records) == 1
+        record = result.records[0]
+        assert record.raw_content.loss_disclosure
+        retained = store.read_run_json("run-1", record.raw_content.content_uri)
+        report = retained["reconciliation"]
+        assert len(report["census_refs"]) == 2
+        assert (
+            "capture-" + hashlib.sha256(gap.encode()).hexdigest()
+            in report["missing_refs"]
+        )
+        assert report["missing_count"] == (2 if gap == "all-missing" else 1)
+        assert len(retained["transcript_entries"]) == (0 if gap == "all-missing" else 1)
+        if gap != "all-missing":
+            assert retained["transcript_entries"][0]["frames"][0]["data"] == "whoami"
+        assert "hunter2" not in json.dumps(retained)
+        assert load_active_transcript_authorities(tmp_path)
+        assert not (tmp_path / ".aptl/capture-finalized/run-1.json").exists()
+        assert result.diagnostics
         return
 
     assert result.disposition is AcquisitionDisposition.SEALED_READY
@@ -1211,7 +1264,9 @@ def test_lab_stop_records_transcript_backend_timeouts(
         return SimpleNamespace(returncode=0, stdout="{}")
 
     monkeypatch.setattr(backend, "container_exec", container_exec)
-    monkeypatch.setattr(lab, "_expected_transcript_store", lambda _project: store.base_dir)
+    monkeypatch.setattr(
+        lab, "_expected_transcript_store", lambda _project: store.base_dir
+    )
 
     result = lab._finalize_required_transcript_capture(tmp_path, backend)
 

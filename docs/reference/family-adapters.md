@@ -51,10 +51,14 @@ They cannot satisfy family trial qualification.
 
 ## Sealed trial handoff
 
-Supply `trial=FamilyTrialInput(plan, plan_entry_id, family)` to `admit_raes_scenario` in `aptl.backends.raes`.
+Pass `run=ScenarioAdmissionRun(trial=FamilyTrialInput(plan, plan_entry_id, family))` to `admit_raes_scenario` in `aptl.backends.raes`.
+Import `ScenarioAdmissionRun` from `aptl.backends.raes_start_model`.
 The `plan` is a sealed RAES admitted trial plan.
 The `family` is its semantically validated RAES `ExpandedScenario`.
 The bundle must name the same validated pack release and authored source.
+To hand off an already instantiated snapshot, supply its canonical bytes as `FamilyTrialInput(..., snapshot=snapshot_bytes)`.
+Core requires these bytes to match the snapshot derived from the sealed entry.
+It rejects a mismatch before provider callbacks or backend preparation.
 Use `source=ScenarioAdmissionSource(bundle, startup_selection)` to reuse a preselected source.
 Import `ScenarioAdmissionSource` from `aptl.backends.raes_start_model`.
 Omit the startup selection for a family trial; core selects and pins its providers.
@@ -74,7 +78,7 @@ The trial exposes:
 - `provenance`: a detached RAES trial provenance model, including coordinate, selections, bindings, and sealed plan identity.
 - `participant_configuration_results`: detached RAES participant configuration results of the sealed entry.
 - `identity()`: a bounded projection of family, snapshot, plan, entry, and run identities.
-- `evidence()`: the qualification target, `identity()`, provider identities, and participant configuration digests.
+- `evidence()`: the qualification target, `identity()`, provider identities, selection digests, and participant configuration digests.
 
 Snapshot and provenance values are runtime inputs.
 Do not log them or put them in repository metadata.
@@ -88,7 +92,18 @@ LilRAE does not merge generated values into an already sealed snapshot.
 Additional parameters on sealed trial admission cause `family-trial-parameter-collision`.
 Retry reuses the existing `AdmittedScenarioStart`; it does not regenerate parameters or select a new trial.
 Pass `AcesRunTarget(store, trial.provenance.run_id)` to `start_raes_scenario`.
-A different or missing archive run identity stops execution before apply.
+Omit this target to use the configured local run store with the entry's preallocated run ID.
+A different explicit archive run identity stops execution before apply.
+Planning also adopts the sealed entry ID as its instantiation ID.
+Core writes the exact snapshot to `trial/instantiated-snapshot.json` before apply.
+Core writes safe identity and selection joins to `trial/identity.json`.
+Both artifacts are private, immutable, and subject to the existing run seal.
+Snapshot values can be sensitive; keep this local archive within the approved data boundary.
+Archive conflicts, unsafe paths, sealed runs, and storage failures stop apply.
+Start requires protected `LocalRunStore` storage for family snapshots.
+Between trials, execute the previous trial's declared cleanup before starting the next one.
+Each new admission uses only its instantiated node and inventory sets.
+Core requires native readback for requested facts; unsupported or unobserved required facts do not count as verified.
 The existing reproducibility record retains safe family, trial, and selected-provider identities.
 
 ## Supported imports and callbacks

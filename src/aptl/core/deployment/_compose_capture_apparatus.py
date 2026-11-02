@@ -274,11 +274,11 @@ class ComposeCaptureApparatusMixin:
         *,
         expected_session_ids: Sequence[str],
     ) -> dict[str, object] | None:
-        """Export only when broker custody matches the owner-supplied census.
+        """Export broker custody contained in the owner-supplied census.
 
         Returns ``None`` for an unsafe census or an unreadable export, and
         raises :class:`CaptureReconciliationError` when the broker accepted a
-        different set of sessions than the census names.
+        session outside the census. Census-only gaps remain in the export.
         """
 
         expected = tuple(expected_session_ids)
@@ -293,7 +293,7 @@ class ComposeCaptureApparatusMixin:
             and all(isinstance(value, str) for value in accepted)
             and len(accepted) == len(set(accepted))
         )
-        if well_formed and set(accepted) != set(expected):
+        if well_formed and set(accepted) - set(expected):
             raise CaptureReconciliationError(
                 census=len(expected),
                 accepted=len(accepted),

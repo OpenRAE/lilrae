@@ -7,6 +7,9 @@ nodes:
     resources:
       ram: 1 gib
       cpu: 1
+    source:
+      name: redis
+      version: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   sensor-9:
     type: compute
     os: linux
@@ -14,9 +17,18 @@ nodes:
       ram: 1 gib
       cpu: 1
     runtime:
-      scheduled_jobs:
-      - scheduled_job_id: sweep
-      - scheduled_job_id: prune
+      service_listeners:
+      - service_listener_id: active
+        address: 0.0.0.0
+        port: 6379
+        protocol: tcp
+      - service_listener_id: unused
+        address: 0.0.0.0
+        port: 6380
+        protocol: tcp
+    source:
+      name: redis
+      version: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 infrastructure:
   gateway:
     count: 1
@@ -91,5 +103,30 @@ variation_points:
         kind: node-presence
         present: true
         inventory:
-          nodes.runtime.scheduled_jobs:
-          - nodes.sensor-9.runtime.scheduled_jobs.sweep
+          nodes.runtime.service_listeners:
+          - nodes.sensor-9.runtime.service_listeners.active
+  logging:
+    kind: parameter
+    target:
+      kind: variable
+      variable: verbosity
+    domain:
+      kind: enum
+      values:
+      - notice
+      - debug
+variables:
+  verbosity:
+    type: string
+    default: notice
+    allowed_values:
+    - notice
+    - debug
+content:
+  logging-config:
+    type: file
+    target: gateway
+    path: /etc/redis/logging.conf
+    text: 'loglevel ${verbosity}
+
+      '
