@@ -8,9 +8,11 @@ host MCP grant. Scenario services keep their own authentication.
 On new images, the operator selects the guest `aptl` account's privilege mode
 at seat load time. This does not change the host Unix account that launched
 the seat.
-Additional isolation and controlled egress between workloads inside a guest are
-not promised; that work is tracked in #1127. The signed boundary policy the image
-carries identifies this contract explicitly.
+Protected V3 images also default-deny ordinary range workloads from LilRAE's
+guest-host management/control, evidence custody, Docker authority, and platform
+credentials. This guard does not segment workloads from each other or add
+controlled egress. The signed boundary policy identifies V2 VM-only seats and
+V3 protected seats explicitly.
 
 **Seats have no default outbound network controls.** The guest uses user-mode
 NAT and can initiate ordinary internet and LAN connections, including HTTP,
@@ -53,9 +55,12 @@ unnecessary QEMU devices and host mappings, run seats on a dedicated and
 rebuildable host, keep unrelated secrets and workloads off it, restrict the
 surrounding network, and monitor active sessions.
 
-Inside one seat, all TechVault workloads share the guest boundary. A compromise
-may affect other containers, credentials, or evidence in that same VM. Reset
-destroys the overlay and revokes the previous generation; it does not turn a
+Inside one seat, all TechVault workloads share the guest kernel. V3 blocks
+ordinary range-to-guest-host access and rejects unadmitted authority, protected
+mounts, and platform credentials, but it does not contain a guest kernel/root
+compromise or an admitted Docker-authority holder. A compromise may still
+affect other range containers and scenario content in that VM. Reset destroys
+the overlay and revokes the previous generation; it does not turn a
 known-compromised physical host back into a trusted one.
 
 The [one-host KVM acceptance record](../reviews/1162-seat-acceptance.md) is
@@ -366,14 +371,13 @@ source, image archive, expanded guest and compressed output together.
 The build refuses to proceed without read/write access to `/dev/kvm`; join the
 `kvm` group and start a new login session if necessary.
 On hosts with root-only kernel files in `/boot`, set
-`APTL_SEAT_LIBGUESTFS_SUDO=1` for the bake and qualification commands; this
-uses sudo only for libguestfs image operations.
+`APTL_SEAT_LIBGUESTFS_SUDO=1` for the bake and privilege-qualification
+commands; this uses sudo only for libguestfs image operations.
 Capacity admission uses the disk's declared virtual size, not its compressed
 size. The default is 128 GiB; `APTL_SEAT_DISK_GIB` selects another capacity.
 
 ```bash
 APTL_SEAT_BUILD_ROOT="$PWD/build/seat-cut" scripts/appliance/build-seat-image.sh
-scripts/appliance/qualify-seat-image.sh build/seat-cut/out/seat-disk.qcow2
 ```
 
 The build downloads a digest-pinned Ubuntu base, builds project and Guacamole
@@ -382,11 +386,9 @@ installs the hash-locked desktop and Claude runtime offline. It sanitizes and
 scans the guest and writes its launch config.
 `scripts/appliance/seat-base-image.env` holds the base pin. Every participant
 boot loads local image bytes and starts the normal admitted lab without pulling
-containers. The qualification script exercises real Docker, range and semantic
-MCP operations in a disposable VM; also exercise the actual `lilrae seat` path,
-scenario web services, cleanup, clean-range startup, stop and reset before
-publishing. Check the Guacamole-to-xrdp desktop and browser reopening on the
-published immutable reference before promoting its public tag.
+containers. The retired disk smoke that disabled first boot is not
+qualification evidence. Publish immutable content without moving the public
+channel, then qualify that exact signed reference through the normal launcher.
 Record source, disk and config hashes with the observed results. The build
 writes `seat-build.json` binding those bytes to the source commit. Dirty builds
 are diagnostic artifacts and cannot be published; changed output bytes also
@@ -407,7 +409,23 @@ The script pushes the disk/config by content key, checks anonymous access, signs
 the immutable manifest and verifies its signature. Its output is the immutable
 reference. `APTL_SEAT_IMAGE_TAG` optionally adds an immutable human-readable tag.
 Test the immutable reference with a fresh CLI and empty private cache before
-promoting. The privilege qualifier starts real seats in event mode and both
+promoting:
+
+```bash
+scripts/appliance/qualify-seat-image.sh \
+  ghcr.io/owner/seat@sha256:<published-manifest-digest>
+```
+
+This qualifier uses the real first-boot and readiness channels, fresh boundary
+evidence, a warm restart, reset, and a second clean start. It never substitutes
+a qualification service. Record the installed TechVault attack, detection,
+Shuffle, repair, and retest results against that same digest, plus the
+Guacamole-to-xrdp desktop and browser reopening. Issue #1127 still names a
+TheHive step, but ADR-063 directs TheHive/Cortex removal; the record must name
+the exact admitted pack and disclose that conflict instead of claiming a result
+that was not run.
+
+The privilege qualifier starts real seats in event mode and both
 administrative password modes, checks guest sudo/PAM and Docker group access
 on each stopped overlay, and verifies a warm restart without a new password:
 

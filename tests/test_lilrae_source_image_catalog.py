@@ -53,7 +53,6 @@ def test_catalog_selects_existing_immutable_image_with_provenance(tmp_path):
         ("wazuh-manager", "4"),
         ("wazuh-indexer", "4"),
         ("wazuh-dashboard", "4"),
-        ("thehive", "5"),
         ("opensearch", "2"),
     ],
 )
@@ -65,6 +64,22 @@ def test_released_kit_selector_resolves_to_a_reviewed_pin(tmp_path, name, versio
     assert image.provenance_refs
     assert image.source_name == name
     assert image.source_version == version
+
+
+def test_roundcube_selector_resolves_to_the_patched_lookup(tmp_path):
+    """Roundcube 1.6.11 carried PHP 8.4.15, vulnerable to php2shell (#1407).
+
+    The supported selector stays ``roundcube / 1``. Only the reviewed image
+    and the record of the lookup that produced it change.
+    """
+
+    image, diagnostics = _resolve(tmp_path, "roundcube", "1")
+    assert not diagnostics
+    assert image.image_ref.startswith("roundcube/roundcubemail@sha256:")
+    assert image.provenance_refs[:2] == (
+        "docker://roundcube/roundcubemail:1.6.20-apache",
+        "resolved:2026-10-25",
+    )
 
 
 @pytest.mark.parametrize("name,version", [("postgresql", "17"), ("gitea", "1")])
@@ -122,23 +137,6 @@ def test_catalog_runtime_facts_constrain_new_source_records(tmp_path, name, vers
             [
                 {"datastore_service_id": "a", "engine": "cassandra", "version": "5"},
                 {"datastore_service_id": "b", "engine": "redis", "version": "7"},
-            ],
-        ),
-        (
-            "thehive",
-            "5",
-            "platform_applications",
-            [
-                {
-                    "platform_application_id": "a",
-                    "product": "TheHive",
-                    "version": "5.4",
-                },
-                {
-                    "platform_application_id": "b",
-                    "product": "Cortex",
-                    "version": "3.1.8",
-                },
             ],
         ),
         (
@@ -283,7 +281,7 @@ def test_contradictory_runtime_fails_instead_of_selecting_another_product(tmp_pa
         }
     )
     image, diagnostics = _resolve(
-        tmp_path, "cassandra", "4.1", runtime=runtime.model_dump(mode="json")
+        tmp_path, "cassandra", "5", runtime=runtime.model_dump(mode="json")
     )
     assert image is None
     assert any("incompatible-source" in d.message for d in diagnostics)
@@ -291,7 +289,7 @@ def test_contradictory_runtime_fails_instead_of_selecting_another_product(tmp_pa
 
 def test_declared_os_must_be_supported_by_selected_catalog_record(tmp_path):
     image, diagnostics = _resolve(
-        tmp_path, "cassandra", "4.1", os="windows", os_version="2022"
+        tmp_path, "cassandra", "5", os="windows", os_version="2022"
     )
     assert image is None
     assert any("incompatible-source" in d.message for d in diagnostics)
@@ -399,7 +397,7 @@ def test_released_linux_kit_inventory_has_complete_catalog_coverage(tmp_path):
         (
             Path(__file__).parent
             / "fixtures"
-            / "lilrae_source_image_inventory_v6_3_1.json"
+            / "lilrae_source_image_inventory_v7_0_0.json"
         ).read_text()
     )
     missing = set()

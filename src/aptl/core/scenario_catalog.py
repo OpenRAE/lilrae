@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from aptl.backends._raes_scenario_resolution import resolve_scenario_bundle
 from aptl.core.config import AptlConfig, find_config, load_config
+from aptl.core.lifecycle_guard import canonical_lifecycle_project_root
 from aptl.core.scenario_bundle import (
     EnvPackError,
     PackIdentity,
@@ -112,9 +113,33 @@ class ResolvedScenario:
     maturity: str
 
 
+_NO_PROJECT_CONFIG = (
+    "No aptl.json was found in {searched}. Run `lilrae lab init <directory>`, "
+    "then run the command there or pass `--project-dir`."
+)
+
+
 def _config(project_dir: Path) -> AptlConfig:  # NOSONAR
+    """Load the project's aptl.json, or say that the directory has none."""
+
     config_path = find_config(project_dir)
-    return load_config(config_path) if config_path is not None else AptlConfig()
+    if config_path is None:
+        raise ValueError(_NO_PROJECT_CONFIG.format(searched=project_dir.resolve()))
+    return load_config(config_path)
+
+
+def _start_config(project_dir: Path) -> AptlConfig:
+    """Load the aptl.json a lab start uses: the nearest at or above ``project_dir``.
+
+    The start resolves its project through the lifecycle root, so a scenario
+    check made before it must read the same file.
+    """
+
+    root = canonical_lifecycle_project_root(project_dir)
+    if find_config(root) is None:
+        # Without a config, the root is the resolved ``project_dir`` itself.
+        raise ValueError(_NO_PROJECT_CONFIG.format(searched=f"{root} or its parents"))
+    return _config(root)
 
 
 def _known_text(value: object) -> str:  # NOSONAR
@@ -134,11 +159,9 @@ def _entry_from_projection(raw: dict[str, object]) -> ScenarioCatalogEntry:  # N
     )
 
 
-def load_scenario_catalog(
-    project_dir: Path, *, config: AptlConfig | None = None
-) -> ScenarioCatalog:
+def load_scenario_catalog(project_dir: Path) -> ScenarioCatalog:
     """Stage the configured pack once and project env-packs' catalog read model."""
-    selected = config or _config(project_dir)
+    selected = _config(project_dir)
     if selected.scenario.source != "env-pack":
         raise ValueError("scenario catalog requires an acquired env-pack source")
     if selected.scenario.identity is None:
@@ -190,7 +213,7 @@ def resolve_scenario_selection(
         return None
     if scenario_id:
         validate_scenario_identity(scenario_id)
-        selected = _config(project_dir).scenario
+        selected = _start_config(project_dir).scenario
         available = (selected.identity or "none") if selected.source == "env-pack" else "none"
         if scenario_id != available:
             raise ValueError(

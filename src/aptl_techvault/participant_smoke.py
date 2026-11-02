@@ -179,13 +179,6 @@ FULL_TECHVAULT_SMOKE_OPERATIONS = (
         _successful_json,
     ),
     McpSmokeOperation(
-        "mcp.blue.case-investigation",
-        "aptl-casemgmt",
-        "cases_list_cases",
-        {},
-        _successful_json,
-    ),
-    McpSmokeOperation(
         "mcp.blue.threat-investigation",
         "aptl-threatintel",
         "threatintel_search_iocs",

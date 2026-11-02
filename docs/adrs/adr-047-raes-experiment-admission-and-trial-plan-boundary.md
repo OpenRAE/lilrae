@@ -8,6 +8,19 @@ accepted
 
 2026-07-19
 
+## Released-contract successor boundary (issue #1465)
+
+For adoption under [issue #1465's preflight](../architecture/issue-1465-released-experiment-tuple-preflight.md),
+released RAE structural compilation, sealed public trial plans/entries,
+participant selections and the shared experiment runtime supersede the local
+trial-plan projection, allocation/seed/identity algorithms and experiment loop
+described below. A LilRAE wrapper retains bounded authorized resolution,
+apparatus admission, backend integration and persistence; it must not become a
+second compiler or runtime controller. Public identities are preserved, with
+attempt lineage reconciled against ADR-050 and the released producer contracts.
+This is an adoption guardrail, not a claim that the migration has shipped.
+All parser, security, no-mutation and storage boundaries remain applicable.
+
 ## Context
 
 EXP-002 makes APTL the execution apparatus for experiments authored through

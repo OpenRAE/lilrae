@@ -1,7 +1,7 @@
 """Data collectors for experiment runs.
 
-Each collector gathers data from one source (Wazuh, Suricata, TheHive,
-MISP, Shuffle, Docker containers, MCP traces) and returns structured
+Each collector gathers data from one source (Wazuh, Suricata, MISP,
+Shuffle, Docker containers, MCP traces) and returns structured
 results. All collectors are fault-tolerant: they return empty results
 when a service is unavailable and never raise.
 
@@ -35,8 +35,8 @@ if TYPE_CHECKING:
 log = get_logger("collectors")
 
 # 120s timeout for SOC-tool collection calls — these scrape large
-# windows of historical data (Wazuh scroll, MISP rest-search, TheHive
-# query) and the default 30s is too aggressive. Pass this constant
+# windows of historical data (Wazuh scroll, MISP rest-search) and the
+# default 30s is too aggressive. Pass this constant
 # explicitly at every call site so the choice is visible.
 _COLLECTOR_HTTP_TIMEOUT = 120
 
@@ -138,56 +138,6 @@ def collect_suricata_eve(
 
     log.info("Collected %d Suricata EVE entries", len(records))
     return records
-
-
-def collect_thehive_cases(
-    start_iso: str,
-    end_iso: str,
-    url: str = "https://localhost:9000",
-    api_key: str = "",
-    ca_cert_path: str | None = None,
-) -> list[dict[str, Any]]:
-    """Query TheHive API for cases/alerts created during the run.
-
-    SEC-006: defaults to HTTPS verified against the lab-managed CA. An
-    explicit ``ca_cert_path`` (or ``APTL_LAB_CA_PATH`` env override)
-    selects a different CA bundle.
-    """
-    if not api_key:
-        log.info("No TheHive API key, skipping case collection")
-        return []
-
-    query_body = {
-        "query": [
-            {
-                "_name": "listCase",
-            },
-            {
-                "_name": "filter",
-                "_and": [
-                    {"_gte": {"_field": "_createdAt", "_value": start_iso}},
-                    {"_lte": {"_field": "_createdAt", "_value": end_iso}},
-                ],
-            },
-        ],
-    }
-
-    data = _curl_json(
-        f"{url}/api/v1/query",
-        auth_header=f"Bearer {api_key}",
-        body=query_body,
-        insecure=False,
-        ca_cert_path=_resolve_lab_ca_path(ca_cert_path),
-        timeout=_COLLECTOR_HTTP_TIMEOUT,
-    )
-
-    if data is None:
-        log.warning("Failed to query TheHive cases")
-        return []
-
-    cases = data if isinstance(data, list) else []
-    log.info("Collected %d TheHive cases", len(cases))
-    return cases
 
 
 def collect_misp_events(

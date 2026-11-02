@@ -15,10 +15,8 @@ from aptl.backends._raes_wazuh_dashboard_implementation_catalog import (
     WAZUH_DASHBOARD_PROFILE,
 )
 from aptl.core.deployment._account_provider import (
-    CORTEX,
     MISP,
     OPENSEARCH_SECURITY,
-    THEHIVE,
     WAZUH_API,
 )
 from aptl.core.deployment._compose_content_mounts import OWNED_CONTENT_INSTALLER
@@ -27,8 +25,14 @@ from aptl.core.deployment._misp_cache_credential import (
     MISP_CACHE_RUNTIME_CONFIG_DIR,
     MISP_CACHE_RUNTIME_CONFIG_PATH,
 )
+from aptl.core.deployment._misp_fastcgi_loopback import (
+    MISP_FASTCGI_LOOPBACK_LISTEN,
+    MISP_FASTCGI_STATUS_LISTEN,
+)
+from aptl.core.deployment._misp_server_tls import MISP_WEB_COMPANION_ROLE
 from aptl.backends._raes_backend_implementation_types import (
     BackendBaseSelection,
+    BackendCompanionContainer,
     BackendImplementationProfile,
     SemanticRuntimeSelector,
     environment as _environment,
@@ -145,16 +149,52 @@ BACKEND_IMPLEMENTATION_PROFILES = (
         },
     ),
     BackendImplementationProfile(
-        profile_id="misp-2.5.44",
+        profile_id="misp-2.5.50",
         account_provider=MISP,
         selector=SemanticRuntimeSelector(
-            "platform_applications", "product", "MISP", "2.5.44"
+            "platform_applications", "product", "MISP", "2.5.50"
         ),
         source_name="ghcr.io/misp/misp-docker/misp-core",
-        source_version="2.5.44",
+        source_version="2.5.50",
+        # PHP 8.4.27 (php8.4-fpm 8.4.27-1~deb13u1) fixes CVE-2026-109618 and
+        # CVE-2026-109619 (issue #1407).
         image_ref=(
             "ghcr.io/misp/misp-docker/misp-core@sha256:"
-            "0eaa4e423d5cd965b7b76aa5665e81d5c05a35bc46a4ffec2ca52e0cfe627e86"
+            "ae32e751870fc7dab8bea3a6d16c41a9045f20d724e243c3125c1910e109c848"
+        ),
+        provenance_refs=(
+            "docker://ghcr.io/misp/misp-docker/misp-core:v2.5.50",
+            "resolved:2026-10-25",
+        ),
+        # From misp-docker v2.5.46 the core image runs php-fpm only; the web
+        # tier is this companion. It joins the node's network namespace, binds
+        # the declared 443 listener as uid 101, and reaches FastCGI on loopback.
+        companions=(
+            BackendCompanionContainer(
+                role=MISP_WEB_COMPANION_ROLE,
+                source_name="ghcr.io/misp/misp-docker/misp-nginx",
+                source_version="2.5.50",
+                image_ref=(
+                    "ghcr.io/misp/misp-docker/misp-nginx@sha256:"
+                    "10d8a3af27f49ade99e8f4a8f75802f5d5c565eb38635ac110da9dfb84534c7e"
+                ),
+                provenance_refs=(
+                    "docker://ghcr.io/misp/misp-docker/misp-nginx:v2.5.50",
+                    "resolved:2026-10-25",
+                ),
+                environment=(
+                    ("NGINX_INTERNAL_HTTPS_PORT", "443"),
+                    ("NGINX_INTERNAL_HTTP_PORT", "80"),
+                    ("FASTCGI_LISTEN", MISP_FASTCGI_LOOPBACK_LISTEN),
+                    ("FASTCGI_LISTEN_STATUS", MISP_FASTCGI_STATUS_LISTEN),
+                ),
+                inherited_environment=("BASE_URL",),
+                tmpfs=(
+                    "/etc/nginx/conf.d:mode=0755,uid=101,gid=101",
+                    "/var/cache/nginx:mode=0755,uid=101,gid=101",
+                    "/tmp:mode=1777",
+                ),
+            ),
         ),
         runtime_selections={
             "runtime-environment": _environment(
@@ -290,112 +330,6 @@ BACKEND_IMPLEMENTATION_PROFILES = (
             ],
         },
     ),
-    BackendImplementationProfile(
-        profile_id="thehive-5.4",
-        account_provider=THEHIVE,
-        selector=SemanticRuntimeSelector(
-            "platform_applications", "product", "TheHive", "5.4"
-        ),
-        source_name="strangebee/thehive",
-        source_version="5.4",
-        image_ref=(
-            "strangebee/thehive@sha256:"
-            "ba3212a89be79de6ec8e6e66b84f3c0801c3b8d726aacc767ad6257030df7a13"
-        ),
-        runtime_selections={
-            "runtime-environment": _environment(
-                _variable("JVM_OPTS", _HALF_GIB_JVM_OPTIONS),
-                _variable(
-                    "TH_SECRET",
-                    "aptl-thehive-lab-secret-key-2024-purple",
-                    classification="secret_fixture",
-                ),
-                {
-                    "name": "TH_CORTEX_KEYS",
-                    "value_from": {
-                        "generated_artifact": "cortex-service-credentials",
-                        "output": "connector-api-key",
-                    },
-                    "value_classification": "redacted",
-                    "provenance": "runtime",
-                },
-            ),
-            "runtime-container-command": [
-                "--cql-hostnames",
-                "thehive-cassandra",
-                "--index-backend",
-                "elasticsearch",
-                "--es-hostnames",
-                "thehive-es",
-                "--cortex-proto",
-                "http",
-                "--cortex-hostnames",
-                "cortex",
-                "--cortex-port",
-                "9001",
-            ],
-            "published-ports": [_port(9000, 9000)],
-        },
-    ),
-    BackendImplementationProfile(
-        profile_id="cassandra-4.1",
-        selector=SemanticRuntimeSelector(
-            "datastore_services", "engine", "cassandra", "4.1"
-        ),
-        source_name="cassandra",
-        source_version="4.1",
-        image_ref=(
-            "cassandra@sha256:"
-            "d25e8ee78d648fade002d0d176b7e8c953c69164b9f316ccbccf62f524c9dfbf"
-        ),
-        runtime_selections={
-            # Retain the working local lab's budget inside a full-stack guest;
-            # image defaults otherwise size a multi-GiB heap from the VM RAM.
-            "runtime-environment": _environment(
-                _variable("MAX_HEAP_SIZE", "512M"),
-                _variable("HEAP_NEWSIZE", "128M"),
-            )
-        },
-    ),
-    BackendImplementationProfile(
-        profile_id="elasticsearch-7.17.28",
-        selector=SemanticRuntimeSelector(
-            "datastore_services", "engine", "elasticsearch", "7.17.28"
-        ),
-        source_name="docker.elastic.co/elasticsearch/elasticsearch",
-        source_version="7.17.28",
-        image_ref=(
-            "docker.elastic.co/elasticsearch/elasticsearch@sha256:"
-            "f2ce8a4c644a35762e6e115c9a373c5cd20df03c2dd75cb0a570011934cdffd1"
-        ),
-        runtime_selections={
-            "runtime-environment": _environment(
-                _variable("discovery.type", "single-node"),
-                _variable("xpack.security.enabled", "false"),
-                _variable("cluster.routing.allocation.disk.threshold_enabled", "false"),
-                _variable("ES_JAVA_OPTS", _HALF_GIB_JVM_OPTIONS),
-            )
-        },
-    ),
-    BackendImplementationProfile(
-        profile_id="cortex-3.1.8",
-        account_provider=CORTEX,
-        selector=SemanticRuntimeSelector(
-            "platform_applications", "product", "Cortex", "3.1.8"
-        ),
-        source_name="thehiveproject/cortex",
-        source_version="3.1.8",
-        image_ref=(
-            "thehiveproject/cortex@sha256:"
-            "ae8b3d72eb5de785513bc33492d93278c32b79d9ff89401463c3a9c577e0bc0b"
-        ),
-        runtime_selections={
-            "runtime-environment": _environment(
-                _variable("job_directory", "/opt/cortex/jobs")
-            ),
-            "published-ports": [_port(9001, 9001)],
-        },
-    ),
     *SHUFFLE_APPLICATION_PROFILES,
     BackendImplementationProfile(
         profile_id="shuffle-opensearch-2.14",
@@ -433,7 +367,6 @@ _SOURCE_ALIASES = {
     "wazuh-manager-4.12": (("wazuh-manager", "4"),),
     "wazuh-indexer-4.12": (("wazuh-indexer", "4"),),
     "wazuh-dashboard-4.12": (("wazuh-dashboard", "4"),),
-    "thehive-5.4": (("thehive", "5"),),
     "shuffle-opensearch-2.14": (("opensearch", "2"),),
 }
 BACKEND_IMPLEMENTATION_PROFILES = tuple(

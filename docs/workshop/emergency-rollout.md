@@ -76,7 +76,6 @@ Expected workshop MCPs:
 - `wazuh` for SIEM query helpers;
 - `network` for Suricata/network alert queries;
 - `threatintel` for MISP;
-- `cases` for TheHive;
 - `soar` for Shuffle.
 
 Do not register an MCP for a disabled service. A broken MCP entry is worse than
@@ -105,7 +104,6 @@ smoke must call real backend operations, not only list tools:
 - `wazuh_query_alerts` returns HTTP 200;
 - `network_query_ids_alerts` returns HTTP 200;
 - `threatintel_search_iocs` returns HTTP 200;
-- `cases_list_cases` returns HTTP 200;
 - `soar_list_workflows` returns HTTP 200.
 
 Run one complete walkthrough through the agent and MCPs before students arrive.
@@ -180,8 +178,8 @@ post-event fixes.
   with Docker installed, not a hand-curated container workaround.
 - A connected MCP process is not enough. The proof must call a backend API or
   command for every MCP students will use.
-- Persist service API keys in `.env` before registering SOC MCPs. TheHive keys
-  can become stale; renewal must be safe and repeatable.
+- Persist service API keys in `.env` before registering SOC MCPs. Renewal of a
+  stale key must be safe and repeatable.
 - Count Wazuh agents as a range, not a fixed number. Startup timing and enabled
   services can make 7 to 9 active agents normal.
 - Quota requests are total desired quota values. Requesting the current value

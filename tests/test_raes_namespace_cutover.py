@@ -8,6 +8,7 @@ import tomllib
 from pathlib import Path
 
 import raes
+from packaging.specifiers import SpecifierSet
 
 PROJECT_ROOT = Path(__file__).parents[1]
 LEGACY_IMPORT_ROOTS = frozenset(
@@ -37,17 +38,19 @@ IDENTITY_LEDGER = (
 KNOWN_PRIVATE_RAES_IMPORTS: set[tuple[str, str, str]] = set()
 
 
-def test_project_depends_on_exact_raes_release() -> None:
-    """The qualified backend and semantic freeze use the same RAES release."""
+def test_project_depends_on_the_raes_major_range() -> None:
+    """The installed RAES release must satisfy the qualified pack combination."""
 
     project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
 
-    assert "raes==7.0.0" in project["project"]["dependencies"]
+    assert "raes>=10.2.0,<10.4" in project["project"]["dependencies"]
     assert all(
         not dependency.startswith("aces-sdl")
         for dependency in project["project"]["dependencies"]
     )
-    assert raes.__version__ == "7.0.0"
+    supported = SpecifierSet(">=10.2.0,<10.4")
+    assert raes.__version__ in supported
+    assert "10.4.0" not in supported
 
 
 def _source_and_test_imports_of(import_roots: frozenset[str]) -> list[str]:
@@ -117,9 +120,7 @@ def test_no_private_raes_imports_or_manifest_fallback_remain() -> None:
             row["surface_id"]: row for row in csv.DictReader(stream, delimiter="\t")
         }
 
-    assert all(
-        not surface_id.startswith("raes-private-") for surface_id in rows
-    )
+    assert all(not surface_id.startswith("raes-private-") for surface_id in rows)
 
     manifest = (
         PROJECT_ROOT / "src" / "aptl" / "backends" / "raes_manifest.py"

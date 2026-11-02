@@ -308,15 +308,11 @@ def test_trial_rejects_substituted_source_and_broken_seal(family_input):
         admit_family_trial(bundle, BACKEND, request)
 
 
-def test_family_discovery_requires_all_seams_from_one_distribution(
-    monkeypatch, family_input
-):
+def _install_family_entries(monkeypatch, trial, requires=None):
+    """Install one fake adapter distribution that supplies every family capability."""
+
     from aptl.backends import scenario_family as contract
 
-    bundle, family, plan = family_input()
-    trial = contract.admit_family_trial(
-        bundle, BACKEND, contract.FamilyTrialInput(plan, "entry-a", family)
-    )
     entries = []
     for group, selector, version, method in contract.family_capabilities(trial.target):
         provider = _provider(trial.target)
@@ -328,7 +324,9 @@ def test_family_discovery_requires_all_seams_from_one_distribution(
                 group=group,
                 name=selector,
                 load=lambda p=provider: p,
-                dist=SimpleNamespace(name="example-adapter", version="1.0"),
+                dist=SimpleNamespace(
+                    name="example-adapter", version="1.0", requires=requires
+                ),
             )
         )
     monkeypatch.setattr(
@@ -336,11 +334,81 @@ def test_family_discovery_requires_all_seams_from_one_distribution(
         "entry_points",
         lambda **kw: [e for e in entries if e.group == kw["group"]],
     )
+    return entries
+
+
+def test_family_discovery_requires_all_seams_from_one_distribution(
+    monkeypatch, family_input
+):
+    from aptl.backends import scenario_family as contract
+
+    bundle, family, plan = family_input()
+    trial = contract.admit_family_trial(
+        bundle, BACKEND, contract.FamilyTrialInput(plan, "entry-a", family)
+    )
+    entries = _install_family_entries(monkeypatch, trial)
     selections = contract.require_family_capabilities(trial)
     assert len(selections) == 6
     assert {selection.distribution for selection in selections} == {"example-adapter"}
     entries.pop()
     with pytest.raises(ValueError, match="^family-provider-missing$"):
+        contract.require_family_capabilities(trial)
+
+
+@pytest.mark.parametrize(
+    "adapter_requires",
+    [
+        ["lilrae>=999"],
+        ["raes-env-packs<6"],
+        ["raes_env_packs>=7.0.0,<8", "raes<10"],
+    ],
+)
+def test_family_qualification_rejects_an_excluded_installed_release(
+    monkeypatch, family_input, adapter_requires
+):
+    from aptl.backends import scenario_family as contract
+
+    bundle, family, plan = family_input()
+    trial = contract.admit_family_trial(
+        bundle, BACKEND, contract.FamilyTrialInput(plan, "entry-a", family)
+    )
+    _install_family_entries(monkeypatch, trial, requires=adapter_requires)
+
+    with pytest.raises(ValueError, match="^family-package-versions-inconsistent$"):
+        contract.require_family_capabilities(trial)
+
+
+def test_family_qualification_checks_the_host_declarations(monkeypatch, family_input):
+    from importlib import metadata
+
+    from aptl.backends import scenario_family as contract
+
+    bundle, family, plan = family_input()
+    trial = contract.admit_family_trial(
+        bundle, BACKEND, contract.FamilyTrialInput(plan, "entry-a", family)
+    )
+    _install_family_entries(
+        monkeypatch,
+        trial,
+        requires=["lilrae", "requests>=999", 'raes>=999; extra == "legacy"'],
+    )
+    assert len(contract.require_family_capabilities(trial)) == 6
+
+    declared = metadata.requires
+    monkeypatch.setattr(
+        contract.metadata,
+        "requires",
+        lambda name: ["raes>=999"] if name == "lilrae" else declared(name),
+    )
+    with pytest.raises(ValueError, match="^family-package-versions-inconsistent$"):
+        contract.require_family_capabilities(trial)
+
+    def missing(name):
+        raise metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(contract.metadata, "requires", declared)
+    monkeypatch.setattr(contract.metadata, "version", missing)
+    with pytest.raises(ValueError, match="^family-package-versions-inconsistent$"):
         contract.require_family_capabilities(trial)
 
 
@@ -354,7 +422,7 @@ def test_family_discovery_rejects_duplicates_and_load_failures(monkeypatch):
     entry = SimpleNamespace(
         name="example-family.aptl",
         load=lambda: provider,
-        dist=SimpleNamespace(name="example-adapter", version="1.0"),
+        dist=SimpleNamespace(name="example-adapter", version="1.0", requires=None),
     )
     monkeypatch.setattr(contract.metadata, "entry_points", lambda **kw: [entry, entry])
     with pytest.raises(ValueError, match="^family-provider-ambiguous$"):
@@ -439,7 +507,7 @@ def test_existing_serving_and_capture_seams_deliver_family_trial(
     entry = SimpleNamespace(
         name="example-family.aptl",
         load=lambda: provider,
-        dist=SimpleNamespace(name="example-adapter", version="1.0"),
+        dist=SimpleNamespace(name="example-adapter", version="1.0", requires=None),
     )
     monkeypatch.setattr(family_contract.metadata, "entry_points", lambda **kw: [entry])
     serving = resolve_pack_backend_interaction(
@@ -459,7 +527,10 @@ def test_family_admission_rejects_missing_capability_before_backend(
 ):
     from aptl.backends import scenario_family as contract
     from aptl.backends.raes import admit_raes_scenario
-    from aptl.backends.raes_start_model import ScenarioAdmissionSource
+    from aptl.backends.raes_start_model import (
+        ScenarioAdmissionRun,
+        ScenarioAdmissionSource,
+    )
     from aptl.core.config import AptlConfig
 
     bundle, family, plan = family_input()
@@ -470,15 +541,11 @@ def test_family_admission_rejects_missing_capability_before_backend(
     )
     config, backend = AptlConfig(), object()
     source = ScenarioAdmissionSource(bundle)
-    request = contract.FamilyTrialInput(plan, "entry-a", family)
+    run = ScenarioAdmissionRun(
+        trial=contract.FamilyTrialInput(plan, "entry-a", family)
+    )
     with pytest.raises(ValueError, match="^family-provider-missing$"):
-        admit_raes_scenario(
-            bundle.root,
-            config,
-            backend,
-            source=source,
-            trial=request,
-        )
+        admit_raes_scenario(bundle.root, config, backend, source=source, run=run)
 
 
 def test_startup_planning_and_verifier_receive_same_trial(monkeypatch, family_input):
@@ -542,7 +609,7 @@ def test_startup_planning_and_verifier_receive_same_trial(monkeypatch, family_in
             SimpleNamespace(
                 name=selector,
                 load=lambda: provider,
-                dist=SimpleNamespace(name="example-adapter", version="1.0"),
+                dist=SimpleNamespace(name="example-adapter", version="1.0", requires=None),
             )
         ]
 
@@ -727,7 +794,7 @@ def test_family_reset_requires_recorded_installation_or_explicit_upgrade(
     provider.supported_reset_action_versions = supported
     entry = SimpleNamespace(
         name=PACK.pack_id, load=lambda: provider,
-        dist=SimpleNamespace(name="example-adapter", version=installed_version),
+        dist=SimpleNamespace(name="example-adapter", version=installed_version, requires=None),
     )
     monkeypatch.setattr(contract.metadata, "entry_points", lambda **kw: [entry])
     provenance = StartupProviderProvenance(
@@ -763,7 +830,7 @@ def test_family_runtime_parameters_are_copied_before_sealing(monkeypatch, family
     provider.resolve = lambda bundle: bindings
     entry = SimpleNamespace(
         name=PACK.pack_id, load=lambda: provider,
-        dist=SimpleNamespace(name="example-adapter", version="1.0"),
+        dist=SimpleNamespace(name="example-adapter", version="1.0", requires=None),
     )
     monkeypatch.setattr(contract.metadata, "entry_points", lambda **kw: [entry])
     values = resolve_family_runtime_parameters(bundle, trial.target)
@@ -837,7 +904,7 @@ def test_family_capture_resume_rejects_installation_drift(monkeypatch, family_in
     entry = SimpleNamespace(
         name="example-family.aptl",
         load=lambda: provider,
-        dist=SimpleNamespace(name="example-adapter", version="1.0"),
+        dist=SimpleNamespace(name="example-adapter", version="1.0", requires=None),
     )
     monkeypatch.setattr(contract.metadata, "entry_points", lambda **kw: [entry])
     context = ScenarioCaptureResumeContext(trial.target, trial.identity())
@@ -998,7 +1065,7 @@ def test_family_start_rejects_wrong_archive_run_before_apply(monkeypatch, family
     )
     monkeypatch.setattr(
         raes,
-        "_apply_with_backend_retry",
+        "_run_execution_plan",
         lambda *args: pytest.fail("must not apply with the wrong run identity"),
     )
     outcome = raes.start_raes_scenario(
@@ -1103,7 +1170,7 @@ def test_retained_payload_validator_uses_recorded_family_installation(tmp_path):
     (tmp_path / "payload.json").write_text("{}")
     calls = []
     expected = SimpleNamespace(
-        dist=SimpleNamespace(name="example-adapter", version="1.0"),
+        dist=SimpleNamespace(name="example-adapter", version="1.0", requires=None),
         load=lambda: lambda payload: calls.append("expected"),
     )
     bundled = SimpleNamespace(

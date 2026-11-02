@@ -468,13 +468,13 @@ def test_helpers_finish_a_graceful_shutdown_only_after_the_child_exits(
 
 
 def test_shutdown_grace_covers_the_mcp_server_teardown_bounds() -> None:
-    """The long grace period outlasts the common MCP server's SIGTERM path.
+    """The long grace period outlasts the MCP server's SSH teardown and trace flush.
 
-    The server flushes its traces, bounded by the OTLP exporter's default
-    10 s timeout, then ``disconnectAll`` waits up to ``REMOTE_CLOSE_AWAIT``
-    for the sessions' remote close and up to ``SESSION_CLOSE`` for the
-    connections. If either SSH bound grows, this fails until the grace period
-    is resized with it.
+    ``disconnectAll`` waits up to ``REMOTE_CLOSE_AWAIT`` for the sessions'
+    remote close and up to ``SESSION_CLOSE`` for the connections. The trace
+    flush is bounded inside the OTLP exporter's default 10 s timeout. If either
+    SSH bound grows, this fails until the grace period is resized with it.
+    Capture finalization and harvest are outside this bound (ADR-042).
     """
 
     contracts = (_REPO / "mcp/aptl-mcp-common/src/ssh-contracts.ts").read_text(

@@ -292,7 +292,6 @@ def _static_provisioning_realization(
     )
     execution_plan = plan_aptl_scenario(
         target=target,
-        bundle=bundle,
         scenario=static_scenario,
         options=AptlPlanningOptions(artifact_availability=availability),
     )

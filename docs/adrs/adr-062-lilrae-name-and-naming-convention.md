@@ -2,7 +2,13 @@
 
 ## Status
 
-accepted
+superseded in part by ADR-064
+
+[ADR-064](adr-064-layered-architecture-and-code-conventions.md) supersedes
+the naming convention for module and package names inside `src/`. These names
+state their responsibility and have no product prefix. The LilRAE name, the
+retained identities, and the convention for other new top-level identities
+stay in force.
 
 ## Date
 
@@ -159,6 +165,10 @@ put it in the generated entry. Removing the aliases is a breaking change in
 10.0.0 under #1403.
 
 ### Naming convention for new code
+
+> **Update (ADR-064, 2026-10-31):** Module and package names inside `src/`
+> state their responsibility and have no `lilrae` or `aptl` prefix. The rule
+> below stays for the other new top-level identities.
 
 Use `lilrae` as the naming convention for new code going forward. A new
 top-level identity, such as a new module, package, service, environment

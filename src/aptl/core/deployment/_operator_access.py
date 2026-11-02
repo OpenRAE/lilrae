@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from aptl.core.deployment._compose_resource_ownership import WorkspaceOwnership
-    from aptl.core.deployment.realization import DeploymentOperatorAccess
+    from aptl.core.deployment._realization_access import DeploymentOperatorAccess
 
 OPERATOR_ACCESS_NETWORK_SUFFIX = "aptl-operator-access"
 

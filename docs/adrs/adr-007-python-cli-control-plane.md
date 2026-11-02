@@ -161,3 +161,11 @@ validate containment at the core-module boundary, then perform I/O.
 - The `subprocess.run()` calls to `docker compose` are a fragile interface—changes to Docker Compose's CLI, output format, or exit codes can break the orchestration. The NDJSON parsing bug (v4.5.0) was an example.
 - Credential synchronization uses regex to modify Wazuh configuration XML files. A polynomial backtracking (ReDoS) vulnerability was found and fixed in v4.6.5. XML manipulation via regex remains fragile.
 - The startup sequence is serial. Its later steps could potentially be parallelized for faster startup, but the dependency ordering makes this non-trivial.
+
+## Python 3.14 dependency boundary
+
+The RAES 9.2.0 and environment-packs 6.5.0 dependencies require Python 3.14.
+The CLI, development environment, CI, and release jobs now use that interpreter.
+Package metadata limits support to Python `>=3.14,<3.15`, matching the qualified dependencies.
+This supersedes the earlier Python minimum for the application control plane.
+Guest workload interpreter versions remain part of their own declared images.

@@ -25,6 +25,8 @@ Do not import host version constants to make compatibility declarations.
 Distribution versions, callable APIs, family APIs, and persisted schemas have separate meanings.
 Declare a host dependency range that includes the first release with the required public API.
 The host version number alone does not qualify pack content.
+Family admission compares the installed `lilrae`, `raes`, and `raes-env-packs` versions with the host and adapter requirements.
+An excluded or missing release stops admission with `family-package-versions-inconsistent`.
 
 Each provider declares `qualified_family_targets` as a nonempty tuple of `QualifiedFamilyTarget` values.
 Import this type from `aptl.backends.scenario_family`.
@@ -49,10 +51,14 @@ They cannot satisfy family trial qualification.
 
 ## Sealed trial handoff
 
-Supply `trial=FamilyTrialInput(plan, plan_entry_id, family)` to `admit_raes_scenario` in `aptl.backends.raes`.
+Pass `run=ScenarioAdmissionRun(trial=FamilyTrialInput(plan, plan_entry_id, family))` to `admit_raes_scenario` in `aptl.backends.raes`.
+Import `ScenarioAdmissionRun` from `aptl.backends.raes_start_model`.
 The `plan` is a sealed RAES admitted trial plan.
 The `family` is its semantically validated RAES `ExpandedScenario`.
 The bundle must name the same validated pack release and authored source.
+To hand off an already instantiated snapshot, supply its canonical bytes as `FamilyTrialInput(..., snapshot=snapshot_bytes)`.
+Core requires these bytes to match the snapshot derived from the sealed entry.
+It rejects a mismatch before provider callbacks or backend preparation.
 Use `source=ScenarioAdmissionSource(bundle, startup_selection)` to reuse a preselected source.
 Import `ScenarioAdmissionSource` from `aptl.backends.raes_start_model`.
 Omit the startup selection for a family trial; core selects and pins its providers.
@@ -70,7 +76,9 @@ The trial exposes:
 - `snapshot_digest`: the owner-derived canonical snapshot digest.
 - `scenario`: a fresh, detached instantiated model on each access.
 - `provenance`: a detached RAES trial provenance model, including coordinate, selections, bindings, and sealed plan identity.
+- `participant_configuration_results`: detached RAES participant configuration results of the sealed entry.
 - `identity()`: a bounded projection of family, snapshot, plan, entry, and run identities.
+- `evidence()`: the qualification target, `identity()`, provider identities, selection digests, and participant configuration digests.
 
 Snapshot and provenance values are runtime inputs.
 Do not log them or put them in repository metadata.
@@ -84,7 +92,18 @@ LilRAE does not merge generated values into an already sealed snapshot.
 Additional parameters on sealed trial admission cause `family-trial-parameter-collision`.
 Retry reuses the existing `AdmittedScenarioStart`; it does not regenerate parameters or select a new trial.
 Pass `AcesRunTarget(store, trial.provenance.run_id)` to `start_raes_scenario`.
-A different or missing archive run identity stops execution before apply.
+Omit this target to use the configured local run store with the entry's preallocated run ID.
+A different explicit archive run identity stops execution before apply.
+Planning also adopts the sealed entry ID as its instantiation ID.
+Core writes the exact snapshot to `trial/instantiated-snapshot.json` before apply.
+Core writes safe identity and selection joins to `trial/identity.json`.
+Both artifacts are private, immutable, and subject to the existing run seal.
+Snapshot values can be sensitive; keep this local archive within the approved data boundary.
+Archive conflicts, unsafe paths, sealed runs, and storage failures stop apply.
+Start requires protected `LocalRunStore` storage for family snapshots.
+Between trials, execute the previous trial's declared cleanup before starting the next one.
+Each new admission uses only its instantiated node and inventory sets.
+Core requires native readback for requested facts; unsupported or unobserved required facts do not count as verified.
 The existing reproducibility record retains safe family, trial, and selected-provider identities.
 
 ## Supported imports and callbacks
@@ -159,6 +178,33 @@ Optional participant desktop and MCP smoke interfaces remain in `aptl.backends.p
 Their published DTOs support independent adapter packages.
 Install the required adapter and auxiliary entries together; do not merge registrations from unrelated installed providers.
 
+## Supported release tuple
+
+This tuple is qualified for structural factorial compilation and family admission.
+Experiment repositories can pin it.
+
+| Distribution | Version |
+| --- | --- |
+| `lilrae` | 9.0.0 |
+| `raes` | 10.0.0 |
+| `raes-env-packs` | 7.0.0 |
+| CPython | 3.14 |
+
+The tuple supports the `factorial-treatments-v1` design profile.
+The qualified route has these steps:
+
+1. Stage the pack with `env_pack_bundle` from `aptl.core.scenario_bundle`.
+2. Load its experiments with `load_pack_experiments` from `raes_env_packs`.
+3. Join each experiment with trusted apparatus through `PackExperiment.compilation_request`.
+4. Compile the request with `compile_admitted_trial_plan` from `raes_processor.trial_compiler`.
+5. Admit each sealed entry with `admit_family_trial`, then call `require_family_capabilities`.
+
+Both functions come from `aptl.backends.scenario_family`.
+The admission `family` is `PackExperiment.family`.
+`admit_raes_scenario` performs step 5 when it receives `trial=FamilyTrialInput(plan, plan_entry_id, family)`.
+This tuple does not qualify execution of a compiled plan on the LilRAE backend.
+It also does not qualify run and study record production.
+
 ## Compatibility evidence
 
 `tests/fixtures/family_adapter` is the public import and packaging example.
@@ -166,6 +212,12 @@ The targeted contract test builds and installs both wheels locally without a pac
 It runs outside the source tree with actual entry-point metadata.
 It exercises two snapshots under one target with two independently versioned adapter releases.
 It rejects unsupported family API versions.
+`tests/fixtures/structural_family` is an independent structural factorial pack and adapter.
+Its installed-wheel test compiles the pack through the public env-packs and RAES APIs.
+The compilation uses the family owner's apparatus manifests, not the LilRAE backend manifest.
+It admits every entry and checks the retained participant configurations and trial identities.
+It rejects an unsupported design profile, an unsupported backend profile, and an excluded host release.
+The CI installed-artifact job runs both installed-wheel tests.
 Other tests cover atomic release matching, malformed providers, missing capabilities, detached inputs, binding collisions, bounded authority, and restart drift.
 This evidence qualifies the generic contract; the RPT owner supplies qualification evidence for its released family and adapter.
 

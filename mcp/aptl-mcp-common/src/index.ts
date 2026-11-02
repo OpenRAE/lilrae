@@ -18,6 +18,8 @@ export { expandTilde } from './utils.js';
 export { createMCPServer } from './server.js';
 export type { CreateMCPServerOptions, PostToolHook, PostToolHookInfo } from './server.js';
 export { initTracing, shutdownTracing, getTracer, traceToolCall } from './telemetry.js';
+export { boundToolResult, DEFAULT_MAX_TOOL_RESULT_TOKENS, toolResultBudgets } from './tool-output-cap.js';
+export type { BoundedToolResult, ResultBudget, ToolResult } from './tool-output-cap.js';
 export {
   redact,
   REDACTED,

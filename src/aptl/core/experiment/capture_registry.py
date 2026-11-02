@@ -35,9 +35,12 @@ roots").
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from enum import Enum
+
+import rfc8785
 
 from raes_backend_protocols.capabilities import (
     ObservationCapabilities,
@@ -52,7 +55,6 @@ from aptl.core.experiment._capture_matching import (
     registration_covers,
     window_kinds_by_ref,
 )
-from aptl.core.experiment.trial_plan import compute_source_set_digest
 
 #: Versioned identity of the registry declaration shape itself. A change to
 #: the fields a registration declares, or to how the observation projection or
@@ -231,7 +233,8 @@ class CollectorRegistration:
         verify the registration has not silently changed (preflight: "Runtime
         verifies the pinned registration and digest and never re-matches").
         """
-        return compute_source_set_digest(self.declaration_projection())
+        canonical = rfc8785.dumps(self.declaration_projection())
+        return f"sha256:{hashlib.sha256(canonical).hexdigest()}"
 
 
 @dataclass(frozen=True)

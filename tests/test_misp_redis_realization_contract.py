@@ -7,9 +7,14 @@ from importlib.metadata import version
 from pathlib import Path
 import re
 
+from packaging.specifiers import SpecifierSet
 import pytest
+import yaml
 from raes.parser import parse_sdl_file
 
+from aptl.backends._raes_backend_implementation_catalog import (
+    BACKEND_IMPLEMENTATION_PROFILES,
+)
 from aptl.core.deployment._compose_stateful_artifact_helpers import (
     read_generated_output,
 )
@@ -48,7 +53,7 @@ def _enum(value: object) -> object:
 def test_released_pack_authors_the_misp_and_cache_contract(tmp_path: Path) -> None:
     """The released pack retains OpenRAE/env-packs#280's MISP contract."""
 
-    assert version("raes-env-packs") == "6.3.3"
+    assert version("raes-env-packs") in SpecifierSet(">=7.0.0,<8")
     scenario = parse_sdl_file(techvault_scenario_path(tmp_path))
 
     application = scenario.nodes["misp"].runtime.platform_applications[0]
@@ -194,6 +199,39 @@ def test_the_certificate_covers_the_authored_host(realization):
     misp = next(cert for cert in certs if cert.name == "misp")
     assert "misp.techvault.local" in misp.sans
     assert "misp" in misp.sans
+
+
+def _misp_profile():
+    return next(
+        profile
+        for profile in BACKEND_IMPLEMENTATION_PROFILES
+        if profile.source_name == "ghcr.io/misp/misp-docker/misp-core"
+    )
+
+
+def test_the_released_misp_version_selects_its_pinned_image(realization):
+    """The pack's MISP version selects the one reviewed MISP pin (#1407).
+
+    MISP 2.5.44 images carry PHP that is vulnerable to CVE-2026-109618 and
+    CVE-2026-109619, so the pack moved to 2.5.50. The selector matches the
+    declared version exactly; a stale profile leaves MISP unselectable.
+    """
+
+    misp = next(node for node in realization.nodes if node.name == "misp")
+    profile = _misp_profile()
+
+    assert profile.selector is not None
+    assert profile.selector.version == profile.source_version == "2.5.50"
+    assert profile.profile_id == "misp-2.5.50"
+    assert misp.image.image_ref == profile.image_ref
+
+
+def test_compose_runs_the_same_misp_image_the_catalog_selects():
+    """The Compose service and the catalog cannot pin different MISP images."""
+
+    compose = yaml.safe_load((PROJECT_ROOT / "docker-compose.yml").read_text())
+
+    assert compose["services"]["misp"]["image"] == _misp_profile().image_ref
 
 
 def test_unrelated_https_settings_do_not_expand_certificate_identity():
@@ -364,7 +402,27 @@ def test_the_leaf_is_staged_under_the_names_the_image_reads(tmp_path):
     root = tmp_path / ".aptl/realization/misp-server-tls"
     assert (root / "cert.pem").read_text(encoding="utf-8") == "CERTIFICATE\n"
     assert (root / "key.pem").read_text(encoding="utf-8") == "PRIVATE KEY\n"
-    assert (root / "key.pem").stat().st_mode & 0o777 == 0o600
+    # nginx in the web companion runs as uid 101 (#1407): the key is readable
+    # across the bind mount, and the owner-only root keeps other users out.
+    assert (root / "key.pem").stat().st_mode & 0o777 == 0o644
+    assert root.stat().st_mode & 0o777 == 0o700
+
+
+def test_an_owner_only_copy_from_an_earlier_start_becomes_readable(tmp_path):
+    """Unchanged bytes do not excuse a stale mode (#1407).
+
+    Copies staged before the web companion existed are 0600, which uid 101
+    cannot read. Restaging the same leaf must still widen the copy.
+    """
+
+    _stage_bundle(tmp_path, "CERTIFICATE\n", "PRIVATE KEY\n")
+    assert realize_misp_server_tls(_tls_artifact(), tmp_path) is None
+    key = tmp_path / ".aptl/realization/misp-server-tls/key.pem"
+    key.chmod(0o600)
+
+    assert realize_misp_server_tls(_tls_artifact(), tmp_path) is None
+
+    assert key.stat().st_mode & 0o777 == 0o644
 
 
 def test_a_rotated_leaf_replaces_the_staged_copy(tmp_path):

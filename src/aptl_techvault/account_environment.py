@@ -36,29 +36,7 @@ _ACCOUNT_VARIABLES = (
             ("SHUFFLE_DEFAULT_PASSWORD", "secret"),
         ),
     ),
-    (
-        "thehive-administrator",
-        "thehive-administrator-primary",
-        (("THEHIVE_ADMIN_USER", "username"), ("THEHIVE_ADMIN_PASS", "secret")),
-    ),
-    (
-        "cortex-administrator",
-        "cortex-administrator-primary",
-        (
-            ("CORTEX_SUPERADMIN_USER", "username"),
-            ("CORTEX_SUPERADMIN_PASSWORD", "secret"),
-        ),
-    ),
 )
-
-#: Variables the seed scripts read to act as the declared console administrators.
-SEED_ADMINISTRATOR_KEYS = (
-    "THEHIVE_ADMIN_USER",
-    "THEHIVE_ADMIN_PASS",
-    "CORTEX_SUPERADMIN_USER",
-    "CORTEX_SUPERADMIN_PASSWORD",
-)
-
 
 def techvault_account_environment() -> tuple[AccountCredentialFixture, ...]:
     """Return each backend variable as a reference to its declared credential."""
@@ -70,4 +48,4 @@ def techvault_account_environment() -> tuple[AccountCredentialFixture, ...]:
     )
 
 
-__all__ = ("SEED_ADMINISTRATOR_KEYS", "techvault_account_environment")
+__all__ = ("techvault_account_environment",)

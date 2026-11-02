@@ -46,6 +46,24 @@ those definitions to one realized project and can contain credentials. Keep it
 private and let APTL update managed entries; do not turn it into checked-in
 documentation or a shared template.
 
+Each server limits the size of one tool result to `server.maxToolResultTokens`
+in its `docker-lab-config.json`, estimated at 4 characters per token (default
+4000). A predefined query can set its own `max_result_tokens`. The value `null`
+returns the whole result. The indexer `get_rule_file` query uses `null`,
+because `create_rule` replaces the whole rule file. A cut read would delete
+rules when the agent writes the file back.
+
+A larger result that is a JSON object stays valid JSON. Whole records are
+dropped from the end of its largest array. When not even one record fits, or
+the object has no array, long strings such as command output are cut at a line
+boundary. The short fields beside them, such as exit codes, stay. A tail at
+the end of the object gives the counts, for example `"_truncated":
+{"returned": 12, "total": 40, "note": "28 more results; refine your query"}`.
+Other text is cut at a line boundary with a size tail. The tool span records
+the original and returned sizes and whether the result was truncated. Neither
+the tail nor the log repeats result content. The post-tool hook receives the
+result that the client receives.
+
 The optional reverse-engineering server demonstrates the artifact-versus-
 availability distinction: APTL builds it with the other server artifacts, but
 does not add it to the default client configuration when the scenario has no

@@ -35,15 +35,15 @@ log = get_logger("realization-health")
 # and manager APIs 120s each to come up, and a realized scenario waits on the
 # whole selected topology at once (indexer, manager, dashboard, and the victim
 # services) rather than one service. The budget must cover the slowest observed
-# *first-boot* path, not just a warm restart: on a fresh machine TheHive's
-# initial Cassandra schema + Elasticsearch index creation and MISP's first-boot
-# database load run well past 300s (observed ~8 minutes on a loaded host while
-# every other service was already healthy — issue #677). Timing out early is
-# not fail-safe here: the timeout hands control to the admitted-plan retry,
-# whose `compose up` recreates services mid-initialization and can tear
-# Cassandra's commit log. 900s keeps a generous margin over that observed
-# worst case; a genuinely stuck service still fails closed, just after the
-# budget rather than before it.
+# *first-boot* path, not just a warm restart: on a fresh machine MISP's
+# first-boot database load ran well past 300s (observed ~8 minutes on a loaded
+# host while every other service was already healthy — issue #677, measured
+# when the stack still included TheHive). Timing out early is not fail-safe
+# here: the timeout hands control to the admitted-plan retry, whose
+# `compose up` recreates services mid-initialization and can corrupt a
+# datastore. 900s keeps a generous margin over that observed worst case; a
+# genuinely stuck service still fails closed, just after the budget rather
+# than before it.
 REALIZATION_HEALTH_TIMEOUT = 900
 REALIZATION_HEALTH_INTERVAL = 5
 

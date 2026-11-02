@@ -21,6 +21,15 @@ Extends DSL-008. APTL on origin/main already realizes ACES SDL onto real Docker 
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/_raes_runtime_target.py` (Installed participant and shared-time components)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/_raes_participant_legacy.py` (Explicitly admitted legacy probe execution)
+- TESTS → TEST `tests/test_raes_planning_compat.py` (Planning compatibility before participant admission)
+
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/lilrae_participant_execution.py` (Exact autonomous native bindings under RAES admission and settlement)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/_lilrae_participant_capabilities.py` (Installed autonomous capability declarations)
+- TESTS → TEST `tests/test_lilrae_concurrent_participants.py` (Concurrent admission, peer isolation and terminal outcomes)
+- TESTS → TEST `tests/test_lilrae_participant_cancellation.py` (Owned process cancellation and peer preservation)
+
 - IMPLEMENTS → CODE_FILE `src/aptl/cli/lab.py` (aptl lab CLI surface for participant runtime)
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/_live_gate_checks.py` (Live gate checks supporting participant-action conformance)
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/curated_live_proof.py` (Curated live proof driver for participant runtime)
@@ -43,3 +52,23 @@ Extends DSL-008. APTL on origin/main already realizes ACES SDL onto real Docker 
 - IMPLEMENTS → DOCUMENTATION `docs/raes/techvault-curated-live-validation-gate/techvault-attacker-target/participant-action.json`
 - IMPLEMENTS → DOCUMENTATION `docs/raes/techvault-curated-live-validation-gate/techvault-attacker-target/result.json`
 - IMPLEMENTS → DOCUMENTATION `docs/raes/techvault-curated-live-validation-gate/techvault-attacker-target/snapshot.json`
+- IMPLEMENTS → CODE_FILE `src/aptl/core/participant_tools/model.py` (Executable action invariants)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/participant_binding.py` (Validated installed participant bindings)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/participant_tools/session.py` (Exact installed mapping and invocation admission)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/participant_tools/transport.py` (Bounded authenticated carrier)
+- IMPLEMENTS → CODE_FILE `mcp/aptl-mcp-common/src/lilrae-tool-admission.ts` (Pre-handler dispatch and outcome receipt)
+- IMPLEMENTS → CODE_FILE `mcp/aptl-mcp-common/src/server.ts` (Shared red and blue MCP enforcement)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/participant_tools/contracts.py` (Controller interfaces and exact installed bindings)
+- IMPLEMENTS → CODE_FILE `tools/check_architecture.py` (Enrolled transitive layers and conventions)
+- IMPLEMENTS → CODE_FILE `tools/check_lilrae_participant_architecture.py` (Executable dependency ownership check)
+- IMPLEMENTS → DOCUMENTATION `docs/architecture/participant-action-enforcement.md` (Composition controls and qualification boundaries)
+- IMPLEMENTS → DOCUMENTATION `docs/adrs/adr-065-executable-participant-action-boundaries.md` (Executable architecture decision)
+- TESTS → TEST `tests/test_lilrae_participant_action_model.py` (Finite state exploration and negative controls)
+- TESTS → TEST `tests/test_lilrae_participant_architecture.py` (Component dependency controls and mutations)
+- TESTS → TEST `tests/test_lilrae_participant_tools.py` (Exact mapping, refusal, replay, and redaction)
+- TESTS → TEST `tests/test_lilrae_tool_transport.py` (Local carrier failure and cleanup)
+- TESTS → TEST `tests/test_lilrae_tool_model_fuzz.py` (Generated independent participant traces)
+- TESTS → TEST `tests/test_lilrae_tool_composition.py` (Released unsupported composition refusals)
+- TESTS → TEST `tests/test_lilrae_tool_runtime.py` (Real scheduler settlement and peer history)
+- TESTS → TEST `tests/test_lilrae_mcp_runtime_integration.py` (Real MCP clients through common SSH/API handlers and RAES)
+- IMPLEMENTS → GITHUB_ISSUE `1418` (Participant MCP action admission)

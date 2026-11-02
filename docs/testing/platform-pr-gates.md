@@ -7,7 +7,9 @@ vulnerability scan**, **Clean-install lab boot and teardown (DEP-008)**,
 **OSV-scanner (uv.lock)**, and **RAES scenario validation gate** contexts. Other established required quality and governance checks remain in
 the branch rule. The exact context names are recorded in
 `.github/branch-protection-baseline.json`; the live GitHub branch settings are
-the enforcement authority.
+the enforcement authority. Pull requests to `go-cutover` require the same
+contexts as `dev` while the Go port is in progress; see
+[CI verification](../architecture/ci-verification.md#go-cutover-branch).
 
 The dependency job fails on known Python findings in the generated CLI/runtime,
 API/web, and CI/build exports and on high or critical production dependency

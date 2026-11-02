@@ -47,6 +47,7 @@ class DeploymentDockerAuthorityAdmission:
     image_template_ids: tuple[str, ...] = ()
     allowed_mount_targets: tuple[str, ...] = ()
     allowed_networks: tuple[str, ...] = ()
+    execution_timeout_seconds: int = 0
 
 
 def bind_source_exposes_docker_socket(source: object) -> bool:
@@ -93,6 +94,7 @@ def has_undeclared_runtime_mounts(
     *,
     allowed_targets: set[str],
     docker_authority_admitted: bool,
+    docker_socket_source: str = DOCKER_SOCKET_PATH,
 ) -> bool:
     """Whether observed bind/tmpfs state exceeds an admitted target set."""
 
@@ -111,7 +113,7 @@ def has_undeclared_runtime_mounts(
         )
         if exposes_socket:
             canonical = bool(
-                realized.get("Source") == DOCKER_SOCKET_PATH
+                realized.get("Source") == docker_socket_source
                 and realized.get("Destination") == DOCKER_SOCKET_PATH
                 and realized.get("RW") is True
             )

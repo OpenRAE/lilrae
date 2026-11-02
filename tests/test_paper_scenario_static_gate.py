@@ -26,6 +26,7 @@ from unittest.mock import MagicMock
 
 from raes_processor.compiler import compile_runtime_model
 from raes_runtime.manager import RuntimeManager
+from raes_contracts.run_scope import PlanScope
 from raes import parse_sdl_file
 
 from aptl.backends.raes import create_aptl_runtime_target
@@ -70,7 +71,9 @@ def paper_plan():
         backend=MagicMock(),
         bundle=_bundle(),
     )
-    return scenario, model, RuntimeManager(target).plan(scenario), config
+    with RuntimeManager(target) as manager:
+        plan = manager.plan(scenario, run_scope=PlanScope(target_name=target.name, run_id="paper-static-gate"))
+    return scenario, model, plan, config
 
 
 def _assert_paper_capture_rejected_and_truth_unresolved(plan) -> None:

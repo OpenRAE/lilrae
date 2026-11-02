@@ -59,15 +59,6 @@ _MCP_RUNTIME_ENVIRONMENT = {
             "OTEL_EXPORTER_OTLP_ENDPOINT",
         }
     ),
-    "aptl-casemgmt": frozenset(
-        {
-            "APTL_HP_THEHIVE_9000",
-            "APTL_MCP_ADMITTED_RUN_ID",
-            "APTL_MCP_RUN_STORE_BASE",
-            "APTL_STATE_DIR",
-            "OTEL_EXPORTER_OTLP_ENDPOINT",
-        }
-    ),
     "aptl-indexer": frozenset(
         {
             "APTL_HP_WAZUH_INDEXER_9200",
@@ -246,13 +237,14 @@ def _render_runtime_profile_config(
     source_config: Path,
     output_dir: Path,
     node_executable: Path,
+    server_ids: tuple[str, ...] | None = None,
 ) -> tuple[Path, tuple[str, ...]]:
     """Render one private MCP config containing only a role's admitted tools."""
 
     source_servers = _load_source_servers(source_config)
     servers: dict[str, object] = {}
     allowed: list[str] = []
-    for server in profile_for(profile).servers:
+    for server in profile_for(profile, server_ids=server_ids).servers:
         server_id, rendered, tools = _render_profile_server(
             server, source_servers, project_dir, node_executable
         )

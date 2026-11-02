@@ -220,9 +220,14 @@ def _materialized_profile_project(tmp_path: Path) -> Path:
         project / "scenarios" / "techvault-attacker-target.sdl.yaml",
     )
     shutil.copy2(PROJECT_ROOT / "docker-compose.yml", project / "docker-compose.yml")
-    workbench_profile = Path("src/aptl/workbench/profiles.py")
-    (project / workbench_profile).parent.mkdir(parents=True)
-    shutil.copy2(PROJECT_ROOT / workbench_profile, project / workbench_profile)
+    for source in (
+        "src/aptl/workbench/profiles.py",
+        "src/aptl/core/mcp_policy.py",
+        "src/aptl/core/participant_mcp_policy.json",
+    ):
+        target = project / source
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(PROJECT_ROOT / source, target)
     for package in ("mcp-red", "mcp-indexer", "mcp-wazuh"):
         for filename in (
             "package-lock.json",

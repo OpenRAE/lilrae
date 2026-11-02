@@ -116,8 +116,8 @@ def test_pr_title_lint_gates_main_as_well_as_dev() -> None:
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     # `on:` parses to Python True under YAML 1.1.
     branches = workflow[True]["pull_request"]["branches"]
-    assert set(branches) == {"main", "dev"}, (
-        f"pr-title-lint must gate both branches, got {branches}. Exempting `main` "
+    assert {"main", "dev"} <= set(branches), (
+        f"pr-title-lint must gate main and dev, got {branches}. Exempting `main` "
         "leaves promotion PRs with no title validation at all."
     )
 
@@ -149,7 +149,7 @@ def test_substantive_checks_stay_enabled_for_promotions() -> None:
     """Promotion title handling must not bypass the repository's real gates."""
     workflow = yaml.safe_load(CHECKS_WORKFLOW.read_text(encoding="utf-8"))
     branches = workflow[True]["pull_request"]["branches"]
-    assert set(branches) == {"main", "dev"}
+    assert {"main", "dev"} <= set(branches)
 
     expected_jobs = {
         "pre-commit",

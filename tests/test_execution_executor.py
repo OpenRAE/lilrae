@@ -125,6 +125,7 @@ def _admitted() -> AdmittedExperiment:
         task=_minimal_task(),
         scenario_snapshot_ref=run.scenario_snapshot_ref,
         apparatus_context=run.apparatus_context,
+        capture_spec_pins=(),
         participant_provenance=run.participant_implementation_provenance,
     )
 
@@ -170,14 +171,8 @@ class TestProductionSealPath:
         )
         ExperimentRunModel.model_validate(manifest)
 
-    def test_execute_seals_every_trial_once(self, tmp_path):
-        store = _store(tmp_path)
-        executor = ExperimentExecutor(
-            store=store, clock=_CLOCK, collectors={}, workload=_completed_workload
-        )
-        results = executor.execute(_admitted())
-        assert len(results) == 1
-        assert all(not r.idempotent for r in results)
+    def test_archival_executor_does_not_schedule_an_experiment(self):
+        assert not hasattr(ExperimentExecutor, "execute")
 
     def test_dangling_evaluator_evidence_reference_is_rejected(self, tmp_path):
         """A summary citing an artifact that was never sealed fails the seal."""

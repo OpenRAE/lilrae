@@ -197,15 +197,15 @@ def test_interpreter_lowers_generated_environment_consumers(tmp_path: Path) -> N
     _write_compose(tmp_path)
     artifact = _resource(
         "generated-artifact",
-        "cortex-service-credentials",
+        "misp-cache-credential",
         {
             "generator": "rendered_config",
             "lifecycle": "reuse_valid",
-            "provenance": "techvault:cortex-service-credentials/v1",
+            "provenance": "techvault:misp-cache-credential/v2",
             "outputs": [
                 {
-                    "name": "connector-api-key",
-                    "path": "cortex/connector-api-key",
+                    "name": "cache-password",
+                    "path": "cache-password",
                     "sensitivity": "secret",
                 }
             ],
@@ -215,8 +215,8 @@ def test_interpreter_lowers_generated_environment_consumers(tmp_path: Path) -> N
                     "node": "wazuh-indexer",
                     "target_address": "provision.node.wazuh-indexer",
                     "delivery_mode": "environment",
-                    "output": "connector-api-key",
-                    "environment_variable": "TH_CORTEX_KEYS",
+                    "output": "cache-password",
+                    "environment_variable": "REDIS_PASSWORD",
                 }
             ],
         },
@@ -231,8 +231,8 @@ def test_interpreter_lowers_generated_environment_consumers(tmp_path: Path) -> N
     assert [item.code for item in realization.diagnostics] == []
     generated = realization.generated_artifacts[0]
     assert generated.consumers == ()
-    assert generated.environment_consumers[0].environment_variable == "TH_CORTEX_KEYS"
-    assert generated.environment_consumers[0].output_name == "connector-api-key"
+    assert generated.environment_consumers[0].environment_variable == "REDIS_PASSWORD"
+    assert generated.environment_consumers[0].output_name == "cache-password"
 
 
 def test_interpreter_rejects_environment_consumer_name_injection(
@@ -241,15 +241,15 @@ def test_interpreter_rejects_environment_consumer_name_injection(
     _write_compose(tmp_path)
     artifact = _resource(
         "generated-artifact",
-        "cortex-service-credentials",
+        "misp-cache-credential",
         {
             "generator": "rendered_config",
             "lifecycle": "reuse_valid",
-            "provenance": "techvault:cortex-service-credentials/v1",
+            "provenance": "techvault:misp-cache-credential/v2",
             "outputs": [
                 {
-                    "name": "connector-api-key",
-                    "path": "cortex/connector-api-key",
+                    "name": "cache-password",
+                    "path": "cache-password",
                     "sensitivity": "secret",
                 }
             ],
@@ -259,7 +259,7 @@ def test_interpreter_rejects_environment_consumer_name_injection(
                     "node": "wazuh-indexer",
                     "target_address": "provision.node.wazuh-indexer",
                     "delivery_mode": "environment",
-                    "output": "connector-api-key",
+                    "output": "cache-password",
                     "environment_variable": "SAFE\nINJECTED",
                 }
             ],

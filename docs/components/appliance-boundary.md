@@ -1,11 +1,11 @@
 # Appliance Network Boundary
 
-> Current delivery scope: [ADR-060](../adrs/adr-060-vm-only-seat-containment.md)
-> narrows the optional seat to VM-only containment. The V1 internal-zone and
-> controlled-egress design below is historical architecture for the deferred
-> [issue #1127](https://github.com/OpenRAE/lilrae/issues/1127); it is not
-> enforced or claimed by a current V2 seat. The current host and guest limits
-> are in the [execution-profile guide](../getting-started/prerequisites.md#tested-execution-profiles-and-limits).
+> Current delivery scope: protected seats use
+> `aptl.appliance-boundary/v3`. They retain the outer VM boundary from
+> [ADR-060](../adrs/adr-060-vm-only-seat-containment.md) and add default-deny
+> protection for guest-host seat components. V2 still means VM-only. The V1
+> three-zone and controlled-egress sections are retained as historical design,
+> not as a claim made by V3.
 
 The appliance boundary is the reusable materialization surface for
 [ADR-049](../adrs/adr-049-sealed-disposable-lab-appliance.md). It is not a
@@ -15,15 +15,52 @@ authorities without merging them:
 - The admitted RAES provisioning plan owns scenario networks, node
   attachments, ACL owners, rule order, direction, endpoints, protocol, ports,
   and action.
-- The signed appliance policy owns the participant, management, and egress
-  networks and workloads, fixed platform crossings, external authorities,
-  guest publications, and Docker authority constraints.
+- The signed V3 appliance policy owns protected component classes, reviewed
+  range-to-guest-host exceptions, guest publications, and Docker-authority
+  constraints. It does not own range networks or workloads.
 
 The effective result is the intersection of these authorities. A policy
 conflict or an observation gap fails the boundary gate; neither authority
 wins through implicit precedence.
 
-## Materialization
+## Protected Seat Materialization
+
+V3 protects five closed component classes: management and control, evidence
+capture, evidence storage, guest Docker authority, and platform credentials.
+The canonical TechVault policy grants no range-to-guest-host flow. A later
+exception must name its source class, destination component, transport, ports,
+purpose, and unique probe identity in the signed policy.
+
+After the admitted range networks exist, but before any range workload starts,
+the compiler resolves every network through its append-only native resource
+receipt. The network helper installs separate IPv4 and IPv6 input-hook rules
+for those exact bridges. Established replies to host-initiated management are
+allowed; signed exceptions are allowed; all other bridge-to-guest-host traffic
+is dropped. The helper adds no forward, output, NAT, or egress rules, so the
+admitted range topology and range-to-range traffic are unchanged.
+
+Fresh Docker inspection is also required. Every receipt-owned range workload
+must be inspectable and must not use privileged mode, host networking, the host
+PID namespace, an unadmitted Docker endpoint, protected capture/run storage, or
+platform launch credentials. Device counts are recorded; exact devices,
+capabilities, namespaces, and general mounts remain governed by the admitted
+RAES runtime contract and its effective-model check. Exact RAES
+Docker-authority admission remains necessary for an authority holder; labels
+alone never authorize it.
+
+The gate requires both independent kernel read-back and active coverage. For
+every owned range network and observed address family it proves a
+host-initiated connection and established reply, then proves each component
+probe target ready and unreachable from a receipt-owned range namespace.
+Missing, duplicate, unexpected, stale, or failed coverage is fatal.
+
+V3 does not isolate range workloads from each other, restrict range egress,
+prevent denial of service, or survive guest-root/kernel compromise. The
+capture sidecar and an admitted Docker authority holder retain the authority
+their explicit contracts require. The outer host, hypervisor, and other seats
+remain ADR-060 concerns.
+
+## Historical V1 Materialization
 
 RAES ACLs pass through `AptlRealization`, `DeploymentRealizationSpec`, and the
 typed `DeploymentBackend` boundary. The Docker backend binds each RAES
@@ -60,7 +97,7 @@ changed, or extra owned rule is fatal.
 to all remaining declared networks before they start. There is no temporary
 Docker default-bridge or package-install egress window.
 
-## Participant Workbench
+## Historical V1 Participant Workbench
 
 The [participant workbench](participant-workbench.md) remains the source of
 the closed workbench launch contracts. The boundary does not copy that
@@ -82,7 +119,7 @@ therefore validates the shared workbench policy version and observed placement,
 but it does not duplicate the participant profile's capability inventory,
 resource budgets, or readiness suite.
 
-## Controlled Egress
+## Historical V1 Controlled Egress
 
 External access uses the dedicated egress anchor. Management can reach the
 egress service only through a declared fixed crossing. The egress firewall
@@ -110,15 +147,15 @@ version rather than a port-only exception.
 
 ## Qualification And Start Gate
 
-Image qualification and every appliance start call the same boundary gate
-with a different phase value. The gate requires:
+Image qualification and every appliance start call the same boundary gate.
+For V3 the gate requires:
 
 - the exact signed policy, payload, and RAES plan digests;
 - the current boot identity and selected guest Docker daemon identity;
 - a fresh authenticated outer-host observation supplied by the launcher;
-- separate RAES and platform enforcement observations;
-- at least one successful allowed-flow probe and one successful denied-flow
-  probe;
+- the separate RAES and seat-protection enforcement observations that the
+  admitted realization requires;
+- exact per-network, per-family positive and negative probe coverage;
 - an exact Docker authority-holder inventory with no privileged, host PID,
   host network, device, or unapproved daemon access; and
 - only the signed participant and recovery publications on the physical host.
@@ -128,16 +165,17 @@ evidence, stale boot identity, an incomplete scan, an unapproved listener,
 rule drift, a failed probe, or an unknown Docker authority holder is fatal.
 The participant surface receives only coarse readiness.
 
-Appliance mode also binds the helper and egress-proxy images by full
-`name@sha256` references. A missing signed helper fails readiness; the backend
-does not build or substitute a mutable local tag. Developer-local RAES runs
-may build the checked-in helper, but that path is not appliance evidence.
+Appliance mode also binds the helper image by full `name@sha256` reference. A
+missing signed helper fails readiness; the backend does not build or substitute
+a mutable local tag. Developer-local RAES runs may build the checked-in helper,
+but that path is not appliance evidence.
 
-Issue #823 supplies the signed payload, policy file, packaged helper images,
-and image-qualification invocation. Issue #824 supplies the authenticated
-physical-host observation and invokes the same gate during seat launch. Those
-issues consume this boundary contract; they do not define its policy,
-enforcement semantics, or verdict rules.
+The signed image uses `aptl.seat-image/v3`, boundary policy generation 4, and
+network-helper wire tag 6. An older V2 image or observation cannot satisfy this
+gate. Qualification accepts only an immutable signed image digest and runs the
+normal launcher, first-boot service, readiness channel, clean start, warm
+restart, reset, and second clean start. The retired smoke service that disabled
+first boot is not qualification evidence.
 
 ## Host MCP policy extension
 

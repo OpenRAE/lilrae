@@ -27,7 +27,6 @@ _PROJECT_DOCKERFILE_PATH_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
 _ALLOWED_DIGEST_SOURCE_NAMES = frozenset(
     {
         "cassandra",
-        "docker.elastic.co/elasticsearch/elasticsearch",
         "ghcr.io/docker-mailserver/docker-mailserver",
         "ghcr.io/misp/misp-docker/misp-core",
         "ghcr.io/shuffle/shuffle-backend",
@@ -41,8 +40,6 @@ _ALLOWED_DIGEST_SOURCE_NAMES = frozenset(
         "otel/opentelemetry-collector-contrib",
         "postgres",
         "redis",
-        "strangebee/thehive",
-        "thehiveproject/cortex",
         "wazuh/wazuh-dashboard",
         "wazuh/wazuh-indexer",
         "wazuh/wazuh-manager",

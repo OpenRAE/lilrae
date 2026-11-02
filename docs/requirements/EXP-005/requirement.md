@@ -21,6 +21,11 @@ Parameterized experiments are essential, but prompt templating and provider beha
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/lilrae_participant_configuration.py` (Typed OpenCode targets and committed prompt delivery)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/lilrae_participant_workload.py` (Trial configuration equality before native dispatch)
+- TESTS → TEST `tests/test_lilrae_participant_configuration.py` (Model domain and exact prompt commitment)
+- TESTS → TEST `tests/test_lilrae_participant_workload.py` (Independent prompt variants and fresh trial contexts)
+
 - DOCUMENTS → GITHUB_ISSUE `#441` (EXP-005: Safe experimental parameter binding and provenance)
 - IMPLEMENTS → CODE_FILE `src/aptl/core/experiment/bindings.py` (Canonical experiment parameter binding)
 - IMPLEMENTS → CODE_FILE `src/aptl/core/experiment/admission.py` (Experiment admission integration)

@@ -13,7 +13,8 @@ from fastapi.testclient import TestClient
 
 from aptl.core.runstore import LocalRunStore
 from aptl.core.session import ScenarioSession
-from aptl.workbench.runtime import WorkbenchPaths
+from aptl.workbench.runtime import GuestRuntimeBinding, WorkbenchPaths
+from aptl.workbench.profiles import profile_for
 
 
 def _runtime_paths(payload_root: Path, generated_config_dir: Path) -> WorkbenchPaths:
@@ -35,7 +36,6 @@ def test_profiles_expose_exactly_the_allowed_mcp_servers() -> None:
         "aptl-wazuh",
     )
     assert profile_for(ProfileId.BLUE).server_ids == (
-        "aptl-casemgmt",
         "aptl-indexer",
         "aptl-network",
         "aptl-soar",
@@ -57,13 +57,6 @@ def test_profiles_expose_exactly_the_allowed_mcp_servers() -> None:
         server.server_id: server.tool_names
         for server in profile_for(ProfileId.BLUE).servers
     } == {
-        "aptl-casemgmt": (
-            "cases_list_cases",
-            "cases_create_case",
-            "cases_add_observable",
-            "cases_update_case",
-            "cases_create_alert",
-        ),
         "aptl-indexer": (
             "indexer_query",
             "indexer_create_rule",
@@ -126,7 +119,6 @@ def test_profile_renderer_keeps_credentials_out_of_client_config(
         "mcp/mcp-wazuh/build/index.js",
         "mcp/mcp-network/build/index.js",
         "mcp/mcp-threatintel/build/index.js",
-        "mcp/mcp-casemgmt/build/index.js",
         "mcp/mcp-soar/build/index.js",
     ):
         target = payload_root / entrypoint
@@ -146,7 +138,6 @@ def test_profile_renderer_keeps_credentials_out_of_client_config(
             "API_USERNAME",
             "API_PASSWORD",
             "MISP_API_KEY",
-            "THEHIVE_API_KEY",
             "SHUFFLE_API_KEY",
         },
     )
@@ -154,7 +145,6 @@ def test_profile_renderer_keeps_credentials_out_of_client_config(
     rendered = config_path.read_text(encoding="utf-8")
     parsed = json.loads(rendered)
     assert set(parsed["mcpServers"]) == {
-        "aptl-casemgmt",
         "aptl-indexer",
         "aptl-network",
         "aptl-soar",
@@ -191,7 +181,6 @@ def test_profile_renderer_rejects_missing_required_credential_alias(
             "INDEXER_PASSWORD",
             "API_USERNAME",
             "API_PASSWORD",
-            "THEHIVE_API_KEY",
             "SHUFFLE_API_KEY",
         },
     }
@@ -243,6 +232,7 @@ def test_profile_switch_closes_the_previous_runtime_and_records_the_active_trace
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(payload_root, tmp_path / "generated"),
         credential_broker=credentials,
         model="claude-sonnet-4-5-20250929",
@@ -277,6 +267,7 @@ def test_profile_runtime_fails_closed_without_an_active_scenario(
         ScenarioSession(tmp_path / "state"),
         _FakeAdapter(),
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -301,6 +292,7 @@ def test_runtime_creates_its_managed_config_parent_on_fresh_state(
         session_manager,
         _FakeAdapter(),
         LocalRunStore(tmp_path / "state" / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             generated,
@@ -327,6 +319,7 @@ def test_failed_agent_start_revokes_credentials_and_removes_generated_config(
         session_manager,
         _FailingAdapter(),
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -355,6 +348,7 @@ def test_runtime_rejects_a_profile_with_an_unexpected_mcp_tool_inventory(
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -384,6 +378,7 @@ def test_runtime_keeps_a_rejected_agent_until_failed_cleanup_is_retried(
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -427,6 +422,7 @@ def test_runtime_validates_a_switch_target_before_closing_the_active_profile(
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -457,6 +453,7 @@ def test_profile_switch_waits_for_an_active_agent_turn(tmp_path: Path) -> None:
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -501,6 +498,7 @@ def test_browser_workbench_is_a_separate_authenticated_profile_surface(
         session_manager,
         _FakeAdapter(),
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -671,6 +669,7 @@ def _send_one_message(tmp_path: Path, adapter: object) -> tuple[object, str]:
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -837,7 +836,6 @@ def _payload_with_all_artifacts(payload_root: Path) -> Path:
         "wazuh",
         "network",
         "threatintel",
-        "casemgmt",
         "soar",
     ):
         artifact = payload_root / "mcp" / f"mcp-{profile}" / "build" / "index.js"

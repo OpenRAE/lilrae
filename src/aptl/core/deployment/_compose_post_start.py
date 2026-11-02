@@ -125,6 +125,14 @@ class ComposeRealizationPostStartMixin(ComposeRuntimeOrchestrationObservationMix
             for node in realization.nodes
             if node.container_name and not runtime_expects_completion(node.runtime)
         ]
+        # A backend companion serves part of its owner's declared surface, so
+        # the owner is not realized until its companions are healthy too.
+        ongoing.extend(
+            name
+            for node in realization.nodes
+            if node.container_name
+            for name in node.companion_containers()
+        )
         return wait_for_realized_health(
             self,
             ongoing,

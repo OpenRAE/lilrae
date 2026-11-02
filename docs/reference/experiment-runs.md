@@ -2,6 +2,24 @@
 
 The experiment run system captures data from each scenario execution for reproducibility and post-run analysis.
 
+RAES owns experiment admission, dispatch, replacement and resume. Integrators
+serve an already admitted `TrialUnitRequest` through
+`aptl.backends.trial_serving.LilraeTrialUnit`, supplying the request's RAES runtime
+unit, `DeclaredCleanup`, selected Docker backend, and a shared local placement
+state root. Every worker using the same daemon must use the same state root.
+The adapter preserves the admitted entry, run and attempt identities; it does
+not create an experiment plan or schedule a batch.
+
+The adapter holds the project lifecycle lock and a daemon lock during delivery.
+It rejects preexisting containers, networks or volumes. Pending execution,
+interruption or failed cleanup leaves durable ownership fences that block
+unrelated lab mutation and subsequent trials, including after restart. Reconcile
+the same attempt through its original RAES ledger; deleting fences or starting
+a second runtime is not recovery. A `fresh-range-required` outcome requires a
+new approved placement rather than reuse of the old one. Cancellation and
+deadlines use RAES's stop and observation path, preserving partial evidence
+before declared cleanup. See [trial serving](../architecture/trial-serving.md).
+
 For a portable, third-party-verifiable evidence archive built from a run's verified artifact closure, see [Portable Evidence Bundle Export](evidence-bundle-export.md) (`lilrae runs export-bundle`).
 
 ## Clean State Between Runs
@@ -89,7 +107,7 @@ capture that writes them ran.
 | `live-gate/manifest.json` | `src/aptl/validation/_live_gate_checks.py` | `lilrae lab validate-live` records its check outcomes |
 | `mcp-side/tool-calls.jsonl`, `mcp-side/ocsf.jsonl` | `mcp/mcp-red/src/capture.ts`, `mcp/mcp-red/src/logger.ts` | Each red MCP tool call, plus an OCSF record for each command it runs |
 | `mcp-side/sessions/` | `createPtyTeeWriter` in `mcp/aptl-mcp-common/src/runs.ts` | Each SSH session or one-shot command an MCP server runs, appended as output arrives |
-| `kali-side/<session_id>/` | `harvestSession` in `mcp/aptl-mcp-common/src/captures.ts` | An MCP server whose lab config names a container (the shipped red and reverse configs do) finishes a `<prefix>_run_command` call, or closes a session through `<prefix>_close_session` or `<prefix>_close_all_sessions`. The harvest copies `<run_id>/sessions/<session_id>/` under `/var/log/aptl/captures` from the server's capture container, or from its workload container when it has none. For the red server, `lilrae lab start` names this workspace's capture sidecar in `LILRAE_MCP_CAPTURE_CONTAINER`. The sidecar's capture broker writes `frames.jsonl` and `metadata.json` there. When the copy fails, the directory holds `capture-harvest-failure.json` instead, which names the failure (see [Kali Red Team](../components/kali-redteam.md#mcp-integration)). Only the capture sidecar writes under that path, so the reverse server, which names only its workload container, gets the failure record |
+| `kali-side/<session_id>/` | `harvestSession` in `mcp/aptl-mcp-common/src/captures.ts` | An MCP server whose lab config names a capture container (the shipped red config does) finishes a `<prefix>_run_command` call, closes a session through `<prefix>_close_session` or `<prefix>_close_all_sessions`, sees the remote side of a session close, or shuts down with a session open. For the red server, `lilrae lab start` names this workspace's capture sidecar in `LILRAE_MCP_CAPTURE_CONTAINER`. The sidecar's capture broker writes `frames.jsonl` and `metadata.json` under `/var/log/aptl/captures/<run_id>/sessions/<session_id>/`. The harvest copies that directory after the broker confirms `metadata.json`. When the harvest fails, the directory holds `capture-harvest-failure.json` instead, which names the failure (see [Kali Red Team](../components/kali-redteam.md#mcp-integration)). A server that names no capture container does not harvest |
 
 Only the execution controller (`src/aptl/core/execution/`) produces terminal
 attempts. A run that `lilrae lab start` created never holds `seal.json`, so it

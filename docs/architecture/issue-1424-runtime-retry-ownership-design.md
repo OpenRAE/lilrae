@@ -1,5 +1,7 @@
 # Issue #1424: Runtime Retry Ownership Design
 
+> **Superseded (issue #1407).** RAES 9.0.0 keeps one runtime for the whole run (OpenRAE/rae#1660). After a failed apply, its backend effects are unknown, and RAES refuses another apply. A failed apply now ends the start, and the automatic retry and its `before_backend_retry` hook are removed.
+
 This design makes the automatic backend retry own its runtime target. It
 refines the [preflight](issue-1424-runtime-retry-preflight.md).
 [ADR-046](../adrs/adr-046-dynamic-raes-scenario-realization.md) stays the

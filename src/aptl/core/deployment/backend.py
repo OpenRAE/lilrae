@@ -28,6 +28,7 @@ from aptl.core.deployment.realization import (
 )
 from aptl.core.deployment.boundary import BoundaryEnforcementSpec
 from aptl.core.deployment.observation import DeploymentObservationContext
+from aptl.core.deployment.lilrae_recorded_inventory import RecordedInventorySnapshot
 from aptl.core.appliance_boundary import (
     ApplianceBoundaryBinding,
     ApplianceBoundaryPolicy,
@@ -51,6 +52,16 @@ class DeploymentBackend(HostInventoryBackend, ContainerOpsBackend, Protocol):
     operations (``container_list``, ``container_logs``, ``container_exec``,
     ``container_inspect``, ...) from :class:`ContainerOpsBackend`.
     """
+
+    def runtime_descendant_inventory(
+        self, attempt_id: str
+    ) -> RecordedInventorySnapshot:
+        """Read verified cooperative creation/lifecycle facts for one attempt."""
+        ...
+
+    def recorded_docker_source(self, container_name: str) -> str | None:
+        """Return a live verified recorder binding, without granting new authority."""
+        ...
 
     def docker_transport_environment(self) -> dict[str, str]:
         """Return only Docker transport settings used by this backend."""
@@ -176,7 +187,9 @@ class DeploymentBackend(HostInventoryBackend, ContainerOpsBackend, Protocol):
         Each image is inspected on the selected daemon first. An image already
         present is used as is, as Compose itself would use it, so a warm start
         needs no registry (#953). Only an absent image is pulled, and
-        offline-staged mode never pulls.
+        offline-staged mode never pulls. A ``name:tag@sha256:…`` reference
+        makes the tag resolve to that digest; offline-staged mode verifies the
+        staged tag.
 
         Args:
             images: List of image references to make available.

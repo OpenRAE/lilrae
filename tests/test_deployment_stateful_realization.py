@@ -204,40 +204,42 @@ def _rendered_config_spec() -> DeploymentRealizationSpec:
     )
 
 
-def _cortex_credentials_spec() -> DeploymentRealizationSpec:
+def _cache_credential_spec() -> DeploymentRealizationSpec:
+    """A generated credential delivered to two services as environment values."""
+
     artifact = DeploymentGeneratedArtifactRealization(
-        address="provision.generated-artifact.cortex-service-credentials",
-        name="cortex-service-credentials",
+        address="provision.generated-artifact.misp-cache-credential",
+        name="misp-cache-credential",
         generator="rendered_config",
         lifecycle="reuse_valid",
-        provenance="techvault:cortex-service-credentials/v1",
+        provenance="techvault:misp-cache-credential/v2",
         outputs=(
             DeploymentGeneratedArtifactOutput(
-                name="initializer-api-key",
-                path="cortex/initializer-api-key",
+                name="cache-password",
+                path="cache-password",
                 sensitivity="secret",
             ),
             DeploymentGeneratedArtifactOutput(
-                name="connector-api-key",
-                path="cortex/connector-api-key",
+                name="cache-server-config",
+                path="redis.conf",
                 sensitivity="secret",
             ),
         ),
         consumers=(),
         environment_consumers=(
             DeploymentGeneratedArtifactEnvironmentConsumer(
-                target_address="provision.node.thehive",
-                node_name="thehive",
-                service_name="thehive",
-                output_name="connector-api-key",
-                environment_variable="TH_CORTEX_KEYS",
+                target_address="provision.node.misp",
+                node_name="misp",
+                service_name="misp",
+                output_name="cache-password",
+                environment_variable="REDIS_PASSWORD",
             ),
             DeploymentGeneratedArtifactEnvironmentConsumer(
-                target_address="provision.node.cortex-initializer",
-                node_name="cortex-initializer",
-                service_name="cortex-initializer",
-                output_name="initializer-api-key",
-                environment_variable="CORTEX_ADMIN_KEY",
+                target_address="provision.node.misp-worker",
+                node_name="misp-worker",
+                service_name="misp-worker",
+                output_name="cache-password",
+                environment_variable="WORKER_REDIS_PASSWORD",
             ),
         ),
     )
@@ -245,37 +247,37 @@ def _cortex_credentials_spec() -> DeploymentRealizationSpec:
         profiles=("soc",),
         nodes=(
             DeploymentNodeRealization(
-                address="provision.node.thehive",
-                name="thehive",
-                service_name="thehive",
-                container_name="aptl-thehive",
+                address="provision.node.misp",
+                name="misp",
+                service_name="misp",
+                container_name="aptl-misp",
                 networks=(),
             ),
             DeploymentNodeRealization(
-                address="provision.node.cortex-initializer",
-                name="cortex-initializer",
-                service_name="cortex-initializer",
-                container_name="aptl-cortex-initializer",
+                address="provision.node.misp-worker",
+                name="misp-worker",
+                service_name="misp-worker",
+                container_name="aptl-misp-worker",
                 networks=(),
             ),
         ),
         networks=(),
         images=(
             DeploymentImageRealization(
-                address="provision.node.thehive",
-                service_name="thehive",
-                source_name="thehive",
+                address="provision.node.misp",
+                service_name="misp",
+                source_name="misp",
                 source_version="1",
-                image_ref="thehive@sha256:" + "a" * 64,
+                image_ref="misp@sha256:" + "a" * 64,
                 mode="pull",
                 policy_rule="exact-artifact",
             ),
             DeploymentImageRealization(
-                address="provision.node.cortex-initializer",
-                service_name="cortex-initializer",
-                source_name="cortex",
+                address="provision.node.misp-worker",
+                service_name="misp-worker",
+                source_name="misp-worker",
                 source_version="1",
-                image_ref="cortex@sha256:" + "b" * 64,
+                image_ref="misp-worker@sha256:" + "b" * 64,
                 mode="pull",
                 policy_rule="exact-artifact",
             ),
@@ -284,67 +286,11 @@ def _cortex_credentials_spec() -> DeploymentRealizationSpec:
     )
 
 
-def test_cortex_credentials_are_generated_distinctly_and_reused(tmp_path: Path) -> None:
-    backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
-    backend._docker_daemon_id = "test-daemon"
-    artifact = _cortex_credentials_spec().generated_artifacts[0]
-
-    assert (
-        backend._realize_one_generated_artifact(artifact, tmp_path, _EMPTY_REALIZATION)
-        is None
-    )
-    root = tmp_path / ".aptl/realization/cortex-service-credentials"
-    initializer = (root / "cortex/initializer-api-key").read_text().strip()
-    connector = (root / "cortex/connector-api-key").read_text().strip()
-    assert len(initializer) >= 32
-    assert len(connector) >= 32
-    assert initializer != connector
-    assert (root.stat().st_mode & 0o777) == 0o700
-    assert ((root / "cortex/connector-api-key").stat().st_mode & 0o777) == 0o600
-
-    assert (
-        backend._realize_one_generated_artifact(artifact, tmp_path, _EMPTY_REALIZATION)
-        is None
-    )
-    assert (root / "cortex/initializer-api-key").read_text().strip() == initializer
-    assert (root / "cortex/connector-api-key").read_text().strip() == connector
-
-
-@pytest.mark.parametrize("rewrite", ["  {key}\n", "{key}\r\n"], ids=["padded", "crlf"])
-def test_a_padded_cortex_key_is_regenerated_rather_than_reused(
-    tmp_path: Path, rewrite: str
-) -> None:
-    """Delivery keeps padding, so a reused padded key would reach TheHive (#966)."""
-
-    backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
-    backend._docker_daemon_id = "test-daemon"
-    artifact = _cortex_credentials_spec().generated_artifacts[0]
-    root = tmp_path / ".aptl/realization/cortex-service-credentials"
-    key_file = root / "cortex/connector-api-key"
-    assert (
-        backend._realize_one_generated_artifact(artifact, tmp_path, _EMPTY_REALIZATION)
-        is None
-    )
-    old_key = key_file.read_bytes().removesuffix(b"\n").decode()
-    key_file.write_bytes(rewrite.format(key=old_key).encode())
-
-    assert (
-        backend._realize_one_generated_artifact(artifact, tmp_path, _EMPTY_REALIZATION)
-        is None
-    )
-
-    new_key = key_file.read_bytes().removesuffix(b"\n").decode()
-    assert re.fullmatch(r"[A-Za-z0-9_-]{43,128}", new_key)
-    assert new_key != old_key
-    env_file = artifact_environment_file_path(tmp_path, artifact, "thehive")
-    assert env_file.read_text(encoding="utf-8") == f"TH_CORTEX_KEYS='{new_key}'\n"
-
-
-def test_cortex_credentials_bind_only_declared_environment_names(
+def test_generated_credentials_bind_only_declared_environment_names(
     tmp_path: Path,
 ) -> None:
     backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
-    spec = _cortex_credentials_spec()
+    spec = _cache_credential_spec()
     artifact = spec.generated_artifacts[0]
     assert (
         backend._realize_one_generated_artifact(artifact, tmp_path, _EMPTY_REALIZATION)
@@ -353,19 +299,19 @@ def test_cortex_credentials_bind_only_declared_environment_names(
 
     payload = stateful_override_payload(tmp_path, "aptl-test", spec)
 
-    thehive_env_files = payload["services"]["thehive"]["env_file"]
-    assert len(thehive_env_files) == 1
-    text = Path(thehive_env_files[0]).read_text()
-    assert text.startswith("TH_CORTEX_KEYS=")
-    assert "CORTEX_ADMIN_KEY" not in text
-    assert payload["services"]["cortex-initializer"]["env_file"]
+    misp_env_files = payload["services"]["misp"]["env_file"]
+    assert len(misp_env_files) == 1
+    text = Path(misp_env_files[0]).read_text()
+    assert text.startswith("REDIS_PASSWORD=")
+    assert "WORKER_REDIS_PASSWORD" not in text
+    assert payload["services"]["misp-worker"]["env_file"]
 
 
 def test_generated_environment_file_rejects_variable_name_injection(
     tmp_path: Path,
 ) -> None:
     backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
-    spec = _cortex_credentials_spec()
+    spec = _cache_credential_spec()
     artifact = spec.generated_artifacts[0]
     injected = replace(
         artifact.environment_consumers[0],
@@ -393,14 +339,14 @@ def test_base_container_generated_environment_uses_the_declared_output(
     from aptl.backends.raes_base_substrate import BaseContainerSpec
 
     backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
-    spec = _cortex_credentials_spec()
+    spec = _cache_credential_spec()
     artifact = spec.generated_artifacts[0]
     consumer = replace(
         artifact.environment_consumers[0],
         target_address="provision.node.kali",
         node_name="kali",
         service_name="kali",
-        environment_variable="CORTEX_KEY",
+        environment_variable="CACHE_KEY",
     )
     artifact = replace(artifact, environment_consumers=(consumer,))
     realization = replace(spec, generated_artifacts=(artifact,))
@@ -421,21 +367,18 @@ def test_base_container_generated_environment_uses_the_declared_output(
             container_name="aptl-kali",
             image_ref="debian:13-slim",
             runs_services=True,
-            environment_names=("CORTEX_KEY",),
-            # The node declares CORTEX_KEY with value_from (#965).
-            environment_generated=("CORTEX_KEY",),
+            environment_names=("CACHE_KEY",),
+            # The node declares CACHE_KEY with value_from (#965).
+            environment_generated=("CACHE_KEY",),
         ),
     )
     body = Path(argv[1]).read_text()
     expected = (
-        (
-            tmp_path
-            / ".aptl/realization/cortex-service-credentials/cortex/connector-api-key"
-        )
+        (tmp_path / ".aptl/realization/misp-cache-credential/cache-password")
         .read_text()
         .strip()
     )
-    assert body == f"CORTEX_KEY={expected}\n"
+    assert body == f"CACHE_KEY={expected}\n"
 
 
 def test_base_environment_file_rejects_variable_name_injection(tmp_path: Path) -> None:
@@ -485,7 +428,7 @@ def test_base_container_environment_binding_rejects_variable_name_injection(
     tmp_path: Path,
 ) -> None:
     backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
-    spec = _cortex_credentials_spec()
+    spec = _cache_credential_spec()
     artifact = spec.generated_artifacts[0]
     consumer = replace(
         artifact.environment_consumers[0],
@@ -509,12 +452,12 @@ def test_base_container_environment_binding_rejects_variable_name_injection(
     assert backend._base_container_generated_environment == {}
 
 
-def _write_cortex_outputs(root: Path, **values: str):
-    """Place generated Cortex outputs, as the generator would, and return them."""
+def _write_cache_outputs(root: Path, **values: str):
+    """Place generated credential outputs, as the generator would, and return them."""
 
-    artifact = _cortex_credentials_spec().generated_artifacts[0]
+    artifact = _cache_credential_spec().generated_artifacts[0]
     source_root = artifact_source_path(root, artifact)
-    source_root.joinpath("cortex").mkdir(parents=True, exist_ok=True)
+    source_root.mkdir(parents=True, exist_ok=True)
     sources = {}
     for output in artifact.outputs:
         source = source_root / output.path
@@ -541,20 +484,20 @@ def test_a_generated_value_compose_would_misread_is_refused_and_unwritten(
     would escape the closing quote and run the value into the next line.
     """
 
-    artifact, sources = _write_cortex_outputs(tmp_path, connector_api_key=value)
+    artifact, sources = _write_cache_outputs(tmp_path, cache_password=value)
 
     with pytest.raises(
         EnvironmentDeliveryRefused,
-        match=f"cannot carry TH_CORTEX_KEYS exactly: {problem}",
+        match=f"cannot carry REDIS_PASSWORD exactly: {problem}",
     ) as excinfo:
         write_artifact_environment_files(
             artifact,
             tmp_path,
-            {"thehive": [("TH_CORTEX_KEYS", sources["connector-api-key"])]},
+            {"misp": [("REDIS_PASSWORD", sources["cache-password"])]},
         )
 
     assert value not in str(excinfo.value)
-    assert not artifact_environment_file_path(tmp_path, artifact, "thehive").exists()
+    assert not artifact_environment_file_path(tmp_path, artifact, "misp").exists()
 
 
 @pytest.mark.parametrize(
@@ -565,16 +508,16 @@ def test_a_generated_value_compose_would_misread_is_refused_and_unwritten(
 def test_generated_values_are_single_quoted_and_never_trimmed(
     tmp_path: Path, value: str
 ) -> None:
-    artifact, sources = _write_cortex_outputs(tmp_path, connector_api_key=value)
+    artifact, sources = _write_cache_outputs(tmp_path, cache_password=value)
 
     write_artifact_environment_files(
         artifact,
         tmp_path,
-        {"thehive": [("TH_CORTEX_KEYS", sources["connector-api-key"])]},
+        {"misp": [("REDIS_PASSWORD", sources["cache-password"])]},
     )
 
-    target = artifact_environment_file_path(tmp_path, artifact, "thehive")
-    assert target.read_text(encoding="utf-8") == f"TH_CORTEX_KEYS='{value}'\n"
+    target = artifact_environment_file_path(tmp_path, artifact, "misp")
+    assert target.read_text(encoding="utf-8") == f"REDIS_PASSWORD='{value}'\n"
 
 
 def test_a_refused_service_leaves_every_env_file_of_the_set_unchanged(
@@ -582,45 +525,43 @@ def test_a_refused_service_leaves_every_env_file_of_the_set_unchanged(
 ) -> None:
     """The whole set is built and checked before any file is replaced."""
 
-    artifact, sources = _write_cortex_outputs(
-        tmp_path, connector_api_key="fine", initializer_api_key="it's"
+    artifact, sources = _write_cache_outputs(
+        tmp_path, cache_password="fine", cache_server_config="it's"
     )
-    existing = artifact_environment_file_path(tmp_path, artifact, "thehive")
+    existing = artifact_environment_file_path(tmp_path, artifact, "misp")
     existing.parent.mkdir(parents=True)
-    existing.write_text("TH_CORTEX_KEYS='previous'\n", encoding="utf-8")
+    existing.write_text("REDIS_PASSWORD='previous'\n", encoding="utf-8")
 
     with pytest.raises(EnvironmentDeliveryRefused):
         write_artifact_environment_files(
             artifact,
             tmp_path,
             {
-                "thehive": [("TH_CORTEX_KEYS", sources["connector-api-key"])],
-                "cortex-initializer": [
-                    ("CORTEX_ADMIN_KEY", sources["initializer-api-key"])
+                "misp": [("REDIS_PASSWORD", sources["cache-password"])],
+                "misp-worker": [
+                    ("WORKER_REDIS_PASSWORD", sources["cache-server-config"])
                 ],
             },
         )
 
-    assert existing.read_text(encoding="utf-8") == "TH_CORTEX_KEYS='previous'\n"
+    assert existing.read_text(encoding="utf-8") == "REDIS_PASSWORD='previous'\n"
 
 
 def test_a_base_container_consumer_gets_no_compose_env_file(tmp_path: Path) -> None:
     """A non-Compose consumer takes its value through Docker's env file instead."""
 
     backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
-    spec = _cortex_credentials_spec()
-    without_thehive_image = replace(spec, images=spec.images[1:])
+    spec = _cache_credential_spec()
+    without_misp_image = replace(spec, images=spec.images[1:])
     artifact = spec.generated_artifacts[0]
 
     failure = backend._realize_one_generated_artifact(
-        artifact, tmp_path, without_thehive_image
+        artifact, tmp_path, without_misp_image
     )
 
     assert failure is None
-    assert not artifact_environment_file_path(tmp_path, artifact, "thehive").exists()
-    assert artifact_environment_file_path(
-        tmp_path, artifact, "cortex-initializer"
-    ).is_file()
+    assert not artifact_environment_file_path(tmp_path, artifact, "misp").exists()
+    assert artifact_environment_file_path(tmp_path, artifact, "misp-worker").is_file()
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX symlinks")
@@ -630,11 +571,11 @@ def test_a_symlinked_generated_output_is_refused_not_read(
 ) -> None:
     """A link planted at an output path never delivers its target as a value."""
 
-    artifact, sources = _write_cortex_outputs(tmp_path)
+    artifact, sources = _write_cache_outputs(tmp_path)
     outside = tmp_path / "outside-secret"
     outside.write_text("host-secret\n", encoding="utf-8")
-    sources["connector-api-key"].unlink()
-    sources["connector-api-key"].symlink_to(outside)
+    sources["cache-password"].unlink()
+    sources["cache-password"].symlink_to(outside)
     consumer = artifact.environment_consumers[0]
 
     if compose:
@@ -651,7 +592,7 @@ def test_a_symlinked_generated_output_is_refused_not_read(
     assert failure is not None
     assert failure.error.endswith("environment delivery failed.")
     assert "host-secret" not in failure.error
-    assert not artifact_environment_file_path(tmp_path, artifact, "thehive").exists()
+    assert not artifact_environment_file_path(tmp_path, artifact, "misp").exists()
 
 
 @pytest.mark.parametrize(
@@ -668,7 +609,7 @@ def test_base_container_generated_values_follow_the_docker_env_file_rules(
 ) -> None:
     """The early check and the env-file writer apply the same rules."""
 
-    artifact, _sources = _write_cortex_outputs(tmp_path, connector_api_key=value)
+    artifact, _sources = _write_cache_outputs(tmp_path, cache_password=value)
     bindings: dict[str, dict[str, str]] = {}
 
     failure = base_container_environment_bindings(
@@ -677,7 +618,7 @@ def test_base_container_generated_values_follow_the_docker_env_file_rules(
 
     if named is None:
         assert failure is None
-        assert bindings == {"provision.node.thehive": {"TH_CORTEX_KEYS": bound}}
+        assert bindings == {"provision.node.misp": {"REDIS_PASSWORD": bound}}
     else:
         assert named in failure.error
         assert value not in failure.error
@@ -688,10 +629,10 @@ def test_generated_environment_file_refuses_a_symlinked_target_and_says_why(
     tmp_path: Path,
 ) -> None:
     backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
-    artifact = _cortex_credentials_spec().generated_artifacts[0]
+    artifact = _cache_credential_spec().generated_artifacts[0]
     outside = tmp_path / "outside.env"
     outside.write_text("keep\n", encoding="utf-8")
-    planted = artifact_environment_file_path(tmp_path, artifact, "thehive")
+    planted = artifact_environment_file_path(tmp_path, artifact, "misp")
     planted.parent.mkdir(parents=True)
     planted.symlink_to(outside)
 
@@ -739,20 +680,20 @@ def test_compose_reads_the_generated_env_file_back_exactly(tmp_path: Path) -> No
 
     if not _compose_ready():
         pytest.skip("requires the Docker Compose CLI")
-    artifact = _cortex_credentials_spec().generated_artifacts[0]
+    artifact = _cache_credential_spec().generated_artifacts[0]
     bindings = []
     for variable, value in _COMPOSE_EXACT_VALUES.items():
         source = tmp_path / f"{variable}.out"
         source.write_text(f"{value}\n", encoding="utf-8")
         bindings.append((variable, source))
-    write_artifact_environment_files(artifact, tmp_path, {"thehive": bindings})
-    env_file = artifact_environment_file_path(tmp_path, artifact, "thehive")
+    write_artifact_environment_files(artifact, tmp_path, {"misp": bindings})
+    env_file = artifact_environment_file_path(tmp_path, artifact, "misp")
     compose_file = tmp_path / "compose.yml"
     compose_file.write_text(
         yaml.safe_dump(
             {
                 "services": {
-                    "thehive": {"image": "lilrae-env:none", "env_file": [str(env_file)]}
+                    "misp": {"image": "lilrae-env:none", "env_file": [str(env_file)]}
                 }
             }
         ),
@@ -771,7 +712,7 @@ def test_compose_reads_the_generated_env_file_back_exactly(tmp_path: Path) -> No
     # `config` prints a literal "$" as "$$" so its output is not re-interpolated.
     environment = {
         name: value.replace("$$", "$")
-        for name, value in services["thehive"]["environment"].items()
+        for name, value in services["misp"]["environment"].items()
     }
     assert environment == _COMPOSE_EXACT_VALUES
 
@@ -1001,6 +942,61 @@ def test_certificate_materialization_rejects_symlinked_output_before_docker(
     assert result is not None
     assert result.success is False
     assert "containment" in result.error.lower()
+
+
+@pytest.mark.parametrize("offline_staged", [False, True], ids=["online", "offline"])
+@pytest.mark.parametrize("available", [True, False], ids=["held", "missing"])
+def test_certificate_artifact_realizes_generator_pin_before_running(
+    tmp_path: Path, mocker, offline_staged: bool, available: bool
+) -> None:
+    """Pack-owned certificates use the pin and stop before generation on failure."""
+    from aptl.core.helper_images import CERT_GENERATOR_IMAGE, PINNED_HELPER_IMAGES
+
+    backend = DockerComposeBackend(tmp_path, project_name="aptl-test")
+    backend._offline_staged = offline_staged
+    mocker.patch("aptl.core.certs.hostenv.needs_host_ownership_fix", return_value=False)
+    commands = []
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        if command[:3] == ["docker", "image", "inspect"] or command[:2] == [
+            "docker",
+            "pull",
+        ]:
+            return subprocess.CompletedProcess(
+                command, 0 if available else 1, "", "registry unavailable"
+            )
+        if "run" in command:
+            _write_certificate_bundle(tmp_path)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    mocker.patch.object(backend, "_run", side_effect=run)
+    spec = _spec()
+    artifact = replace(spec.generated_artifacts[0], outputs=_certificate_outputs())
+    result = backend._realize_certificate_bundle(artifact, tmp_path, spec)
+
+    pinned = PINNED_HELPER_IMAGES[CERT_GENERATOR_IMAGE]
+    expected = [
+        [
+            "docker",
+            "image",
+            "inspect",
+            CERT_GENERATOR_IMAGE if offline_staged else pinned,
+        ]
+    ]
+    if available:
+        if not offline_staged:
+            expected.append(["docker", "tag", pinned, CERT_GENERATOR_IMAGE])
+        assert commands[: len(expected)] == expected
+        assert "run" in commands[len(expected)]
+        assert result is None
+    else:
+        if not offline_staged:
+            expected.append(["docker", "pull", pinned])
+        assert commands == expected
+        assert result is not None
+        assert result.success is False
+        assert not (tmp_path / "config/wazuh_indexer_ssl_certs").exists()
 
 
 def test_missing_declared_certificate_output_blocks_before_image_side_effect(
@@ -2233,7 +2229,9 @@ def test_a_generator_failure_stops_base_container_placement(
         "provision.node.workstation": {"STALE_SECRET": "must-not-survive"}
     }
     _stub_ssh_generator(monkeypatch, error="no entropy source")
-    consumer = _base_container_consumer("workstation", selected=("target-authorized-keys",))
+    consumer = _base_container_consumer(
+        "workstation", selected=("target-authorized-keys",)
+    )
     realization = DeploymentRealizationSpec(
         profiles=(),
         nodes=(),
@@ -2263,7 +2261,9 @@ def test_a_declared_output_that_never_materialized_stops_base_container_placemen
             None
         ),  # reports success, writes nothing
     )
-    consumer = _base_container_consumer("workstation", selected=("target-authorized-keys",))
+    consumer = _base_container_consumer(
+        "workstation", selected=("target-authorized-keys",)
+    )
     realization = DeploymentRealizationSpec(
         profiles=(),
         nodes=(),
@@ -2285,7 +2285,9 @@ def test_a_declared_output_that_never_materialized_stops_base_container_placemen
 # -- SOC certificate bundle and flag-signing keys (issue #875) ---------------
 
 
-def _soc_artifact(paths=("lab-ca.pem", "misp/server.pem", "thehive/keystore.p12")):
+def _soc_artifact(
+    paths=("lab-ca.pem", "misp/server.pem", "shuffle-frontend/server.pem"),
+):
     return DeploymentGeneratedArtifactRealization(
         address="provision.generated-artifact.soc-certs",
         name="soc-certs",
@@ -2346,7 +2348,7 @@ def test_the_soc_service_set_is_derived_from_the_declared_bundle_outputs(
     )
 
     # Root-level CA output names no service; each first path segment does.
-    assert requested == [("misp", "thehive")]
+    assert requested == [("misp", "shuffle-frontend")]
 
 
 def test_a_soc_bundle_missing_a_declared_output_fails_closed(
@@ -2364,7 +2366,7 @@ def test_a_soc_bundle_missing_a_declared_output_fails_closed(
 
     assert result is not None
     assert result.success is False
-    assert "thehive/keystore.p12" in result.error
+    assert "shuffle-frontend/server.pem" in result.error
 
 
 def test_a_failed_soc_generator_fails_closed(tmp_path: Path, monkeypatch) -> None:
@@ -2557,7 +2559,9 @@ def test_an_in_tree_scenario_binds_its_declared_image_content(tmp_path: Path) ->
         _content_override_spec(tmp_path), tmp_path, tmp_path
     )
     document = yaml.safe_load(path.read_text())
-    assert document["services"]["tempo"]["volumes"][0]["target"] == "/etc/tempo/tempo.yaml"
+    assert (
+        document["services"]["tempo"]["volumes"][0]["target"] == "/etc/tempo/tempo.yaml"
+    )
 
 
 def test_no_image_node_content_means_no_override_file(tmp_path: Path) -> None:
