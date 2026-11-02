@@ -115,6 +115,6 @@ def realization_support_with_readers(
     }
     return (replace(
         declaration,
-        supported_exact_requirement_kinds=declaration.supported_exact_requirement_kinds | sources.keys(),
+        supported_exact_requirement_kinds=declaration.supported_exact_requirement_kinds | frozenset(sources),
         observation_capabilities=capabilities,
     ),)

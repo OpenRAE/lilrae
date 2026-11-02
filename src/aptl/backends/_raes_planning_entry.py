@@ -64,7 +64,7 @@ def plan_aptl_scenario(
     scenario: object,
     options: AptlPlanningOptions | None = None,
 ) -> ExecutionPlan:
-    """Compile and plan through APTL's temporary TechVault compatibility seam."""
+    """Compile and plan through the public RAES contracts."""
 
     # Planning needs no runtime owner; the one runtime for the run is created
     # for apply (OpenRAE/rae#1660).
