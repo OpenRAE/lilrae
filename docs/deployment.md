@@ -183,13 +183,28 @@ for a grant that matches no value-less secret. Logs and errors name each source,
 such as `grant:process-environment:LAB_DB_PASSWORD`, and never its value.
 `aptl.json` stores only these names.
 
+Startup adapters also declare explicit `environment_grants` in their startup
+plan, using the same pack, consumer, variable and source contract. An adapter
+grant can read only a `project-env-file` key supplied by that plan's fixtures
+or aliases. Declaring a fixture or alias alone grants no node access to it.
+The adapter selection must match the admitted pack's full identity. Each start
+captures its selected sources once; a later start refreshes them and a failed
+preflight discards the previous bindings. A generated `value_from` must match
+its artifact, output and consuming node on both container routes; another
+output with the same target variable cannot satisfy it.
+
 The run's evidence holds no grant or startup-adapter value and no digest of
 one. After the start, APTL reads back a value-less `operator_secret` or
 `redacted` variable by presence only. It leaves a value-less `secret_fixture`
 out of the realized environment that it records, because RAES would record
 that value as an unsalted SHA-256 digest, which a guessed value can be checked
 against. A value that the scenario authors is recorded as RAES's digest of
-that value, as before.
+that value, as before. Generated values likewise disclose no value commitment;
+their declared artifact and consumer identify the source.
+Use `redacted` for generated operational credentials under exact environment
+authority. Other generated classifications require OPEN environment authority,
+because their required readback would otherwise disclose a secret digest;
+the preflight refuses them before mutation.
 
 Docker Compose's `com.docker.compose.config-hash` label also fingerprints the
 resolved service environment. APTL omits it from container inventory and status.

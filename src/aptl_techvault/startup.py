@@ -34,6 +34,7 @@ from aptl_techvault.runtime_parameters import (
 )
 from aptl_techvault.account_environment import (
     techvault_account_environment,
+    techvault_environment_grants,
 )
 
 
@@ -67,8 +68,8 @@ class TechVaultStartupProvider:
 
         return context.run_operation()
 
-    @staticmethod
-    def resolve(bundle: ScenarioBundle) -> ScenarioStartupPlan:
+    @classmethod
+    def resolve(cls, bundle: ScenarioBundle) -> ScenarioStartupPlan:
         return ScenarioStartupPlan(
             minimum_max_map_count=262144,
             seed_script="scripts/seed-prime.sh",
@@ -85,6 +86,7 @@ class TechVaultStartupProvider:
                 EnvironmentAlias(target="ADMIN_KEY", source="MISP_API_KEY"),
             ),
             environment_fixtures=techvault_account_environment(),
+            environment_grants=techvault_environment_grants(cls.supported_pack_id),
             container_environment=(
                 ContainerEnvironmentBinding("MISP_CONTAINER", "aptl-misp"),
                 ContainerEnvironmentBinding(
