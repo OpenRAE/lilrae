@@ -8,6 +8,7 @@
 #   tools/ci/go-gates.sh vuln
 #   tools/ci/go-gates.sh osv
 #   tools/ci/go-gates.sh mutation [BASE]
+#   tools/ci/go-gates.sh fuzz [FUZZTIME]
 #   tools/ci/go-gates.sh regression BASE ISSUE BUG
 #   tools/ci/go-gates.sh architecture [BASE ISSUE PROMOTION]
 #
@@ -159,6 +160,27 @@ mutation() {
     go run -C "$home/tools" ./cmd/mutationcheck "${args[@]}" -- "${targets[@]}"
 }
 
+# fuzz runs each fuzz test of each package with production code for FUZZTIME,
+# a value of go test -fuzztime (30s by default). go test -fuzz takes one fuzz
+# test of one package at a time. A package whose tests do not build fails the
+# gate.
+fuzz() {
+    local time=${1:-30s} dir pkgs pkg list target
+    for dir in "${modules[@]}"; do
+        cd -- "$repo/$dir"
+        pkgs=$(production_packages)
+        for pkg in $pkgs; do
+            list=$(go test -list '^Fuzz' "$pkg")
+            while IFS= read -r target; do
+                if [[ "$target" == Fuzz* ]]; then
+                    echo "== $pkg $target"
+                    go test -run='^$' -fuzz="^${target}\$" -fuzztime="$time" "$pkg"
+                fi
+            done <<<"$list"
+        done
+    done
+}
+
 regression() {
     local base=$1 issue=$2 bug=$3 args
     args=(-repo "$repo" -base "$base" -issue "$issue")
@@ -189,7 +211,7 @@ architecture() {
 
 gate=${1:-}
 case $gate in
-    modules | lint | test | vuln | osv | mutation | regression | architecture) ;;
+    modules | lint | test | vuln | osv | mutation | fuzz | regression | architecture) ;;
     *) usage ;;
 esac
 if [[ "$gate" == regression ]]; then
@@ -221,5 +243,6 @@ case $gate in
     vuln) vuln ;;
     osv) osv ;;
     mutation) mutation "${2:-}" ;;
+    fuzz) fuzz "${2:-}" ;;
     *) usage ;;
 esac

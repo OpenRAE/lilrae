@@ -394,6 +394,17 @@
       "expect": {
         "hex": "7b226e6663223a22c3a9222c226e6664223a2265cc81227d"
       }
+    },
+    {
+      "id": "integer-below-safe-range",
+      "input": {
+        "n": {
+          "$int": "-9007199254740992"
+        }
+      },
+      "expect": {
+        "reject": "serialize"
+      }
     }
   ]
 }

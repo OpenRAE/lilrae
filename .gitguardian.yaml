@@ -46,3 +46,10 @@ secret:
       match: "31a211c4-ea5c-4a49-b022-5e2434e758a7"
     - name: techvault-misp-fixture-api-key
       match: "JHxBbGPnAtyut0FTwkeuhVFnbMksGRCRwsE0V9Xw"
+    # Deterministic serialization vectors: base64 of counting bytes and 0xfe
+    # bytes, supplied by a patched random source in the Python owner test.
+    # These values are public test data and never provision a live seat.
+    - name: overlay-identity-vector-counting
+      match: "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8"
+    - name: overlay-identity-vector-high-bytes
+      match: "_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v4"

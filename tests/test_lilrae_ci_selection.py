@@ -141,10 +141,12 @@ def test_go_changes_select_the_go_and_docs_lanes_and_the_coverage_closure():
     vectors = select(["conformance/testdata/vectors/rfc8785.json"])
     assert vectors["python"]
     assert not vectors["lab"]
-    # A Python test reads the scheme inventory, so a change to it runs that test.
-    schemes = select(["docs/reference/serialization-schemes.md"])
-    assert schemes["python"]
-    assert schemes["docs"]
+    # Python tests read the scheme and RAES consumer inventories, so a change
+    # to either runs those tests.
+    for path in ("docs/reference/serialization-schemes.md", "docs/architecture/raes-consumer-inventory.md"):
+        lanes = select([path])
+        assert lanes["python"], path
+        assert lanes["docs"], path
     # Python changes need current Go coverage for the project-wide analysis.
     assert select(["src/aptl/core/lab.py"])["go"]
     # The Caddy build keeps its own module and its web checks.
