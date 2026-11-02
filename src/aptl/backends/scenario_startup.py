@@ -278,9 +278,9 @@ def _validated_plan(
         _account_resolved_fixtures(value.environment_fixtures, bundle)
     )
     supplied = {item.name for item in fixtures} | {item.target for item in aliases}
-    identity = bundle.pack_identity if bundle is not None else None
+    identity = getattr(bundle, "pack_identity", None)
     grants = validated_adapter_grants(
-        value.environment_grants, supplied, identity.pack_id if identity else None
+        value.environment_grants, supplied, getattr(identity, "pack_id", None)
     )
     return ScenarioStartupPlan(
         seed_script=_safe_relative_script(value.seed_script),

@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from raes.runtime_configuration import GeneratedArtifactValueSource
     from aptl.core.deployment.realization import (
+        DeploymentGeneratedArtifactEnvironmentConsumer,
+        DeploymentGeneratedArtifactRealization,
         DeploymentNodeRealization,
         DeploymentRealizationSpec,
     )
@@ -36,12 +39,23 @@ def generated_environment_names(
         if len(candidates) != 1:
             continue
         artifact, consumer = candidates[0]
-        if (
-            artifact.name == reference.generated_artifact
-            and consumer.output_name == reference.output
-            and consumer.node_name == node.name
-            and consumer.service_name == (node.service_name or node.name)
-            and any(output.name == reference.output for output in artifact.outputs)
-        ):
+        if _matches_generated_source(node, artifact, consumer, reference):
             bound.add(variable.name)
     return frozenset(bound)
+
+
+def _matches_generated_source(
+    node: DeploymentNodeRealization,
+    artifact: DeploymentGeneratedArtifactRealization,
+    consumer: DeploymentGeneratedArtifactEnvironmentConsumer,
+    reference: GeneratedArtifactValueSource,
+) -> bool:
+    """Match the declared source and consumer without reading its value."""
+
+    return (
+        artifact.name == reference.generated_artifact
+        and consumer.output_name == reference.output
+        and consumer.node_name == node.name
+        and consumer.service_name == (node.service_name or node.name)
+        and any(output.name == reference.output for output in artifact.outputs)
+    )

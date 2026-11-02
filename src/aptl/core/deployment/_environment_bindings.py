@@ -412,7 +412,7 @@ def unbound_environment_error(
     for node in realization.nodes:
         if node.address not in addresses or node.runtime is None:
             continue
-        bound = {name: "" for name in generated_environment_names(realization, node)}
+        bound = dict.fromkeys(generated_environment_names(realization, node), "")
         try:
             for binding in bind_environment(
                 context,
@@ -451,12 +451,7 @@ def unsupported_fixture_binding_error(
         declared = declared_environment(node.runtime)
         for variable in getattr(node.runtime, "environment", ()):
             classification = _classification(variable)
-            if (
-                variable.name in declared.sourced and classification == "secret_fixture"
-            ) or (
-                variable.name in declared.generated
-                and classification not in {"operator_secret", "redacted"}
-            ):
+            if _requires_open_environment(declared, variable.name, classification):
                 return (
                     f"Environment binding refused for node {node.name}: "
                     f"{variable.name} needs open runtime-environment authority "
@@ -464,6 +459,17 @@ def unsupported_fixture_binding_error(
                     "authority requires a value-free readback."
                 )
     return None
+
+
+def _requires_open_environment(
+    declared: DeclaredEnvironment, name: str, classification: str
+) -> bool:
+    """Whether exact readback would disclose a non-authored value's digest."""
+
+    return (name in declared.sourced and classification == "secret_fixture") or (
+        name in declared.generated
+        and classification not in {"operator_secret", "redacted"}
+    )
 
 
 def warn_unused_grants(

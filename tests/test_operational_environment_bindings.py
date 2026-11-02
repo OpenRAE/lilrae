@@ -113,7 +113,8 @@ def test_adapter_binding_captures_its_source_and_refreshes_between_runs(
     # A failed later run clears both the adapter and delivery snapshots.
     (tmp_path / ".env").write_text("")
     result = backend._environment_binding_preflight(graph)
-    assert result is not None and "has no value" in result.error
+    assert result is not None
+    assert "has no value" in result.error
     assert backend._environment_binding_context is None
     assert backend._compose_environment is None
 
