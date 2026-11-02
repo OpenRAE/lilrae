@@ -331,7 +331,7 @@ func nestedModuleExclusions(tree fs.FS) ([]string, error) {
 	var expressions []string
 	err := fs.WalkDir(tree, ".", func(name string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			return walkErr
+			return fmt.Errorf("walk module directory %s: %w", name, walkErr)
 		}
 		if !entry.IsDir() || name == "." {
 			return nil
@@ -341,12 +341,15 @@ func nestedModuleExclusions(tree fs.FS) ([]string, error) {
 			return nil
 		}
 		if err != nil {
-			return err
+			return fmt.Errorf("inspect nested module %s: %w", name, err)
 		}
 		// pflag reads a comma-separated list, so encode commas in the regexp.
 		expression := strings.ReplaceAll(regexp.QuoteMeta(name), ",", `\x2c`)
 		expressions = append(expressions, "^"+expression+"/")
 		return fs.SkipDir
 	})
-	return expressions, err
+	if err != nil {
+		return nil, fmt.Errorf("find nested module boundaries: %w", err)
+	}
+	return expressions, nil
 }
