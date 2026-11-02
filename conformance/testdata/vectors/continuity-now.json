@@ -1,0 +1,46 @@
+{
+  "corpus": 1,
+  "scheme": "continuity-now",
+  "version": "current",
+  "owner": "aptl.core.continuity._utc_now_iso",
+  "cases": [
+    {
+      "id": "whole-second",
+      "input": "2026-03-24T02:00:00+00:00",
+      "note": "isoformat omits a zero fraction",
+      "expect": {
+        "text": "2026-03-24T02:00:00+00:00"
+      }
+    },
+    {
+      "id": "microseconds",
+      "input": "2026-03-24T02:00:00.123456+00:00",
+      "expect": {
+        "text": "2026-03-24T02:00:00.123456+00:00"
+      }
+    },
+    {
+      "id": "trailing-zero-microseconds",
+      "input": "2026-03-24T02:00:00.120000+00:00",
+      "note": "isoformat keeps six digits",
+      "expect": {
+        "text": "2026-03-24T02:00:00.120000+00:00"
+      }
+    },
+    {
+      "id": "milliseconds-only",
+      "input": "2026-03-24T02:00:00.001000+00:00",
+      "expect": {
+        "text": "2026-03-24T02:00:00.001000+00:00"
+      }
+    },
+    {
+      "id": "other-offset-instant",
+      "input": "2026-03-24T04:00:00+02:00",
+      "note": "the producer converts to UTC",
+      "expect": {
+        "text": "2026-03-24T02:00:00+00:00"
+      }
+    }
+  ]
+}

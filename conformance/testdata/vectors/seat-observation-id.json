@@ -1,0 +1,83 @@
+{
+  "corpus": 1,
+  "scheme": "seat-observation-id",
+  "version": "current",
+  "owner": "aptl.appliance.seat.observation.observation_id_for",
+  "cases": [
+    {
+      "id": "one-listener",
+      "input": {
+        "observation_id": "observation-1",
+        "policy_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "payload_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "boot_id": "boot-1",
+        "complete": true,
+        "listeners": [
+          {
+            "audience": "participant",
+            "address": "127.0.0.1",
+            "port": 8443,
+            "protocol": "tcp"
+          }
+        ],
+        "forbidden_reachability_passed": true
+      },
+      "expect": {
+        "text": "sha256:efb61ee47f863aa040cf39b31398474c9ac67fb789836e3ae8637ca3bfccb119"
+      }
+    },
+    {
+      "id": "incomplete",
+      "input": {
+        "observation_id": "observation-2",
+        "policy_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "payload_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "boot_id": "boot-1",
+        "complete": false,
+        "listeners": [
+          {
+            "audience": "participant",
+            "address": "127.0.0.1",
+            "port": 8443,
+            "protocol": "tcp"
+          }
+        ],
+        "forbidden_reachability_passed": true
+      },
+      "expect": {
+        "text": "sha256:efb61ee47f863aa040cf39b31398474c9ac67fb789836e3ae8637ca3bfccb119"
+      },
+      "note": "The identifier ignores the observation_id and complete fields, so it equals one-listener."
+    },
+    {
+      "id": "mapped-listener",
+      "input": {
+        "observation_id": "observation-3",
+        "policy_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "payload_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "boot_id": "boot-é",
+        "complete": true,
+        "listeners": [
+          {
+            "audience": "host-mcp",
+            "address": "127.0.0.1",
+            "port": 9000,
+            "protocol": "tcp",
+            "guest_address": "127.0.0.1",
+            "guest_port": 9001
+          },
+          {
+            "audience": "recovery",
+            "address": "::1",
+            "port": 22,
+            "protocol": "tcp"
+          }
+        ],
+        "forbidden_reachability_passed": false
+      },
+      "expect": {
+        "text": "sha256:7f991417c63c5699312ea7a6a6474de9959e577e3a63644129c4b14e7ce9c9d4"
+      }
+    }
+  ]
+}

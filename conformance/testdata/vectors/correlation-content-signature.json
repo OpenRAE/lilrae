@@ -1,0 +1,53 @@
+{
+  "corpus": 1,
+  "scheme": "correlation-content-signature",
+  "version": "current",
+  "owner": "aptl.core.correlation._extract._content_signature",
+  "cases": [
+    {
+      "id": "default-separators",
+      "input": {
+        "b": [
+          2,
+          1
+        ],
+        "a": "x"
+      },
+      "note": "default separators, sorted keys, and lists in order",
+      "expect": {
+        "text": "{\"a\": \"x\", \"b\": [2, 1]}"
+      }
+    },
+    {
+      "id": "non-ascii",
+      "input": {
+        "k": "é😀"
+      },
+      "expect": {
+        "text": "{\"k\": \"\\u00e9\\ud83d\\ude00\"}"
+      }
+    },
+    {
+      "id": "float-one",
+      "input": {
+        "n": {
+          "$float": "1.0"
+        }
+      },
+      "expect": {
+        "text": "{\"n\": 1.0}"
+      }
+    },
+    {
+      "id": "nan-written",
+      "input": {
+        "n": {
+          "$float": "nan"
+        }
+      },
+      "expect": {
+        "text": "{\"n\": NaN}"
+      }
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "corpus": 1,
+  "scheme": "seat-image-names",
+  "version": "current",
+  "owner": "aptl.appliance.seat.image_selection._selection_path and image_trust.configure_trust",
+  "cases": [
+    {
+      "id": "tag",
+      "input": {
+        "reference": "registry.example/seats/ubuntu:24.04",
+        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAA6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=\n-----END PUBLIC KEY-----\n"
+      },
+      "expect": {
+        "value": {
+          "selection": "refs/529a291e8e8c0f8a11aec3b699a855b0.json",
+          "trust_key": "trust/44d820a50e77ce42ffb593290bcd4e405238b5ed3a9482d01fbbfc67b84f4aa6.pub"
+        }
+      },
+      "note": "A synthetic key from a fixed seed."
+    },
+    {
+      "id": "digest",
+      "input": {
+        "reference": "registry.example/seats/ubuntu@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAA6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=\n-----END PUBLIC KEY-----\n"
+      },
+      "expect": {
+        "value": {
+          "selection": "refs/b8789b1e604ce25c27d1bd0034208e49.json",
+          "trust_key": "trust/44d820a50e77ce42ffb593290bcd4e405238b5ed3a9482d01fbbfc67b84f4aa6.pub"
+        }
+      }
+    }
+  ]
+}

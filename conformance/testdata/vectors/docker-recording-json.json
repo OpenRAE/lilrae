@@ -1,0 +1,51 @@
+{
+  "corpus": 1,
+  "scheme": "docker-recording-json",
+  "version": "current",
+  "owner": "aptl.core.deployment.lilrae_docker_recording._encode and recording_digest",
+  "cases": [
+    {
+      "id": "sorted-nested",
+      "input": {
+        "kind": "container",
+        "labels": {
+          "b": "2",
+          "a": "1"
+        }
+      },
+      "expect": {
+        "value": {
+          "hex": "7b226b696e64223a22636f6e7461696e6572222c226c6162656c73223a7b2261223a2231222c2262223a2232227d7d0a",
+          "digest": "sha256:82d7e1ac2c5e793833658ca4b5e7acb5fb31ab6d7fe83e29d751f1c3fd4d991e"
+        }
+      }
+    },
+    {
+      "id": "non-ascii-escaped",
+      "input": {
+        "name": "é😀"
+      },
+      "expect": {
+        "value": {
+          "hex": "7b226e616d65223a225c75303065395c75643833645c7564653030227d0a",
+          "digest": "sha256:3cfbf2fb531a401fc9ac033cd948c7d05b94a9f865ffe7fa02fabce8a61c5d0f"
+        }
+      },
+      "note": "ensure_ascii is true, so the line escapes non-ASCII text."
+    },
+    {
+      "id": "float",
+      "input": {
+        "value": {
+          "$float": "1.0"
+        }
+      },
+      "expect": {
+        "value": {
+          "hex": "7b2276616c7565223a312e307d0a",
+          "digest": "sha256:4157e155c9158b65e7f45c225b3b9510c5a73618c306e534dc12d6ddb7fc89c7"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "corpus": 1,
+  "scheme": "guest-recovery-status",
+  "version": "current",
+  "owner": "aptl.appliance.guest_surfaces._RECOVERY_STATUS",
+  "cases": [
+    {
+      "id": "constant",
+      "input": {},
+      "expect": {
+        "hex": "7b22737461747573223a22617661696c61626c65227d"
+      }
+    }
+  ]
+}

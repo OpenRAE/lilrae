@@ -1,0 +1,77 @@
+{
+  "corpus": 1,
+  "scheme": "compose-ownership-override",
+  "version": "current",
+  "owner": "aptl.core.deployment._compose_ownership_override.write_compose_ownership_override",
+  "cases": [
+    {
+      "id": "service-network-volume",
+      "input": {
+        "logical": "aptl",
+        "workspace_id": "0123456789abcdef0123456789abcdef",
+        "attempt_id": "run-a",
+        "compose_files": [
+          "services:\n  web:\n    image: example.invalid/web:1\n    networks: [dmz]\n    volumes: [data:/data]\nnetworks:\n  dmz: {}\nvolumes:\n  data: {}\n"
+        ]
+      },
+      "expect": {
+        "value": {
+          "path": ".aptl/lifecycle/compose-ownership/a42230414f031ee6.yml",
+          "hex": "6e6574776f726b733a0a2020646d7a3a0a202020206c6162656c733a202669643030310a2020202020206170746c2e617474656d70742e69643a2072756e2d610a2020202020206170746c2e6c6966656379636c652e70726f6a6563743a206170746c2d773031323334353637383961620a2020202020206170746c2e776f726b73706163652e69643a2030313233343536373839616263646566303132333435363738396162636465660a73657276696365733a0a20207765623a0a20202020636f6e7461696e65725f6e616d653a206170746c2d773031323334353637383961622d7765620a202020206c6162656c733a202a69643030310a766f6c756d65733a0a2020646174613a0a202020206c6162656c733a202a69643030310a",
+          "expected": {
+            "container": [
+              "aptl-w0123456789ab-web"
+            ],
+            "network": [
+              "aptl-w0123456789ab_dmz"
+            ],
+            "volume": [
+              "aptl-w0123456789ab_data"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "default-network",
+      "input": {
+        "logical": "lab_2",
+        "workspace_id": "fedcba9876543210fedcba9876543210",
+        "attempt_id": "attempt-0123456789abcdef0123456789abcdef",
+        "compose_files": [
+          "services:\n  db:\n    image: example.invalid/db:1\n"
+        ]
+      },
+      "expect": {
+        "value": {
+          "path": ".aptl/lifecycle/compose-ownership/a950d441104e77c3.yml",
+          "hex": "6e6574776f726b733a0a202064656661756c743a0a202020206c6162656c733a202669643030310a2020202020206170746c2e617474656d70742e69643a20617474656d70742d30313233343536373839616263646566303132333435363738396162636465660a2020202020206170746c2e6c6966656379636c652e70726f6a6563743a206c61625f322d776665646362613938373635340a2020202020206170746c2e776f726b73706163652e69643a2066656463626139383736353433323130666564636261393837363534333231300a73657276696365733a0a202064623a0a20202020636f6e7461696e65725f6e616d653a206170746c2d776665646362613938373635342d64620a202020206c6162656c733a202a69643030310a",
+          "expected": {
+            "container": [
+              "aptl-wfedcba987654-db"
+            ],
+            "network": [
+              "lab_2-wfedcba987654_default"
+            ],
+            "volume": []
+          }
+        }
+      },
+      "note": "A service without networks joins the default network."
+    },
+    {
+      "id": "invalid-project-name",
+      "input": {
+        "logical": "lab-é",
+        "workspace_id": "fedcba9876543210fedcba9876543210",
+        "attempt_id": "run-a",
+        "compose_files": [
+          "services:\n  db:\n    image: example.invalid/db:1\n"
+        ]
+      },
+      "expect": {
+        "reject": "validate"
+      }
+    }
+  ]
+}

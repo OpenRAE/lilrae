@@ -1,0 +1,53 @@
+{
+  "corpus": 1,
+  "scheme": "trial-id-and-seed",
+  "version": "current",
+  "owner": "aptl.core.experiment.trial_plan._derive_planned_trial_id and _derive_seed",
+  "cases": [
+    {
+      "id": "flat",
+      "input": {
+        "source_set_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "condition_id": null,
+        "replication_ordinal": 1,
+        "control_id": "seed"
+      },
+      "expect": {
+        "value": {
+          "planned_trial_id": "trial-04cda0dcb085b3e5bd82559637509f236524df7d5aa141f2770b3792b1b0f495",
+          "seed": "f270b0e51081da5b1755f037607f0484d01a75b44deef4e672d2bc0aabec32bb"
+        }
+      }
+    },
+    {
+      "id": "condition",
+      "input": {
+        "source_set_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "condition_id": "control",
+        "replication_ordinal": 2,
+        "control_id": "seed"
+      },
+      "expect": {
+        "value": {
+          "planned_trial_id": "trial-d8c025e55b7b9e6f5f1b298fea501b5dcfe4e5e1646e8e53acfce7af5e27e7db",
+          "seed": "1cd30dfae5c1de916fce0bf2235e1602302ec2f9cc729a0779497a4f07aa7ec7"
+        }
+      }
+    },
+    {
+      "id": "non-ascii",
+      "input": {
+        "source_set_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "condition_id": "condición",
+        "replication_ordinal": 10,
+        "control_id": "sémilla"
+      },
+      "expect": {
+        "value": {
+          "planned_trial_id": "trial-d55c50e1d5af2308283677805906e0e27ca36bcaa121e67f73980088ed0c9feb",
+          "seed": "ca5b2987d59d4a4d38362053f9917c6509b5234eb82c685a7d7d992af2e2dc12"
+        }
+      }
+    }
+  ]
+}

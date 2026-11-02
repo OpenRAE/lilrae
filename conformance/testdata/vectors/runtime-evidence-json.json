@@ -1,0 +1,78 @@
+{
+  "corpus": 1,
+  "scheme": "runtime-evidence-json",
+  "version": "current",
+  "owner": "aptl.backends.lilrae_runtime_evidence._json_bytes",
+  "cases": [
+    {
+      "id": "sorted-nested",
+      "input": {
+        "b": [
+          3,
+          {
+            "z": 1,
+            "a": 2
+          }
+        ],
+        "a": "x"
+      },
+      "expect": {
+        "hex": "7b2261223a2278222c2262223a5b332c7b2261223a322c227a223a317d5d7d"
+      }
+    },
+    {
+      "id": "non-ascii-raw",
+      "input": {
+        "name": "é😀"
+      },
+      "expect": {
+        "hex": "7b226e616d65223a22c3a9f09f9880227d"
+      },
+      "note": "ensure_ascii is false, so the bytes hold raw UTF-8."
+    },
+    {
+      "id": "markup",
+      "input": {
+        "html": "<a href=\"x\">&amp;</a>"
+      },
+      "expect": {
+        "hex": "7b2268746d6c223a223c6120687265663d5c22785c223e26616d703b3c2f613e227d"
+      }
+    },
+    {
+      "id": "float",
+      "input": {
+        "value": {
+          "$float": "1.0"
+        }
+      },
+      "expect": {
+        "hex": "7b2276616c7565223a312e307d"
+      },
+      "note": "Python writes 1.0 for a float."
+    },
+    {
+      "id": "large-int",
+      "input": {
+        "value": {
+          "$int": "9007199254740993"
+        }
+      },
+      "expect": {
+        "hex": "7b2276616c7565223a393030373139393235343734303939337d"
+      }
+    },
+    {
+      "id": "nan",
+      "input": {
+        "value": {
+          "$float": "nan"
+        }
+      },
+      "expect": {
+        "reject": "serialize"
+      },
+      "note": "allow_nan is false."
+    }
+  ]
+}

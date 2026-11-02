@@ -1,0 +1,40 @@
+{
+  "corpus": 1,
+  "scheme": "parquet-canonical-json",
+  "version": "current",
+  "owner": "aptl.core.evidence_bundle.projections.parquet._canonical_json",
+  "cases": [
+    {
+      "id": "ascii-refs",
+      "input": [
+        {
+          "ref_kind": "measurement-channel",
+          "ref_id": "channel-1",
+          "ref_version": "1"
+        }
+      ],
+      "expect": {
+        "text": "[{\"ref_id\":\"channel-1\",\"ref_kind\":\"measurement-channel\",\"ref_version\":\"1\"}]"
+      }
+    },
+    {
+      "id": "empty",
+      "input": [],
+      "expect": {
+        "text": "[]"
+      }
+    },
+    {
+      "id": "non-ascii-ref",
+      "input": [
+        {
+          "ref_id": "capteur-é"
+        }
+      ],
+      "note": "the current code decodes the RFC 8785 bytes as ASCII and fails (#1598); the vector changes when go-cutover takes the fix",
+      "expect": {
+        "reject": "serialize"
+      }
+    }
+  ]
+}

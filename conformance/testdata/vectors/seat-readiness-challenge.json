@@ -1,0 +1,22 @@
+{
+  "corpus": 1,
+  "scheme": "seat-readiness-challenge",
+  "version": "current",
+  "owner": "aptl.appliance.seat.readiness.publish_readiness_challenge",
+  "cases": [
+    {
+      "id": "fixture",
+      "input": {
+        "seat_id": "seat-01",
+        "instance_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "generation": 2,
+        "launch_descriptor_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "nonce": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "expect": {
+        "hex": "7b2267656e65726174696f6e223a322c22696e7374616e63655f6964223a226161616161616161616161616161616161616161616161616161616161616161222c226c61756e63685f64657363726970746f725f646967657374223a227368613235363a62626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c226e6f6e6365223a2263636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363222c22736368656d615f76657273696f6e223a226170746c2e67756573742d72656164696e6573732d6368616c6c656e67652f7631222c22736561745f6964223a22736561742d3031227d"
+      },
+      "note": "The owner draws the nonce at random; the vector fixes it."
+    }
+  ]
+}

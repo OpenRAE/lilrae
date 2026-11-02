@@ -1,0 +1,35 @@
+{
+  "corpus": 1,
+  "scheme": "capture-plan",
+  "version": "current",
+  "owner": "aptl.core.experiment.capture_plan.admit_capture_demands",
+  "cases": [
+    {
+      "id": "empty-none",
+      "input": {
+        "source_identity": "none"
+      },
+      "expect": {
+        "value": {
+          "canonical_hex": "7b22617070617261747573223a5b5d2c2262696e64696e6773223a5b5d2c22736368656d615f76657273696f6e223a226170746c2d636170747572652d706c616e2f7631222c22736f757263655f6964656e74697479223a226e6f6e65227d",
+          "plan_digest": "sha256:c6bc3db7df7808d6909ec31d102ca6e13470d04f7979680ae704ac634ce0cdd8",
+          "plan_id": "capture-plan-c6bc3db7df7808d6909ec31d102ca6e13470d04f7979680ae704ac634ce0cdd8"
+        }
+      },
+      "note": "The plan of a scenario without capture obligations."
+    },
+    {
+      "id": "empty-source",
+      "input": {
+        "source_identity": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "expect": {
+        "value": {
+          "canonical_hex": "7b22617070617261747573223a5b5d2c2262696e64696e6773223a5b5d2c22736368656d615f76657273696f6e223a226170746c2d636170747572652d706c616e2f7631222c22736f757263655f6964656e74697479223a227368613235363a66666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666227d",
+          "plan_digest": "sha256:4ab00c85e6340c4b074fc4aa27d65b9feb895d3e0470bf6273089ae77319a51b",
+          "plan_id": "capture-plan-4ab00c85e6340c4b074fc4aa27d65b9feb895d3e0470bf6273089ae77319a51b"
+        }
+      }
+    }
+  ]
+}

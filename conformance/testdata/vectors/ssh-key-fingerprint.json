@@ -1,0 +1,36 @@
+{
+  "corpus": 1,
+  "scheme": "ssh-key-fingerprint",
+  "version": "current",
+  "owner": "aptl.workbench.dispatch.key_fingerprint",
+  "cases": [
+    {
+      "id": "ed25519",
+      "input": {
+        "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAOhB7/zzhC+HXDdGOdLwJln5NYwm6UNXx3chmQSVTG4"
+      },
+      "expect": {
+        "text": "SHA256:lbmsoA0yIEcEiVDRnMWuzm+nV+3ZEEpVIURqFoeSspg"
+      },
+      "note": "A synthetic key from a fixed seed."
+    },
+    {
+      "id": "with-comment",
+      "input": {
+        "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAOhB7/zzhC+HXDdGOdLwJln5NYwm6UNXx3chmQSVTG4 operator@example"
+      },
+      "expect": {
+        "text": "SHA256:lbmsoA0yIEcEiVDRnMWuzm+nV+3ZEEpVIURqFoeSspg"
+      }
+    },
+    {
+      "id": "invalid",
+      "input": {
+        "public_key": "ssh-ed25519 AAAA"
+      },
+      "expect": {
+        "reject": "validate"
+      }
+    }
+  ]
+}

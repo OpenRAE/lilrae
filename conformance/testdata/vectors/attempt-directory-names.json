@@ -1,0 +1,32 @@
+{
+  "corpus": 1,
+  "scheme": "attempt-directory-names",
+  "version": "current",
+  "owner": "aptl.core.deployment.lilrae_docker_recording.RecordingStore and lilrae_native_evidence._directory",
+  "cases": [
+    {
+      "id": "simple",
+      "input": {
+        "attempt_id": "attempt-0123456789abcdef0123456789abcdef"
+      },
+      "expect": {
+        "value": {
+          "docker_recording": ".aptl/lifecycle/lilrae-docker-recording-v1/5fbd6196da00ff1adb24315a4962929440910639c56dce72a0266c5fb0fcba5f",
+          "native_evidence": ".aptl/lifecycle/lilrae-native-evidence-v1/5fbd6196da00ff1adb24315a4962929440910639c56dce72a0266c5fb0fcba5f"
+        }
+      }
+    },
+    {
+      "id": "run-id",
+      "input": {
+        "attempt_id": "run-20261101T000000Z"
+      },
+      "expect": {
+        "value": {
+          "docker_recording": ".aptl/lifecycle/lilrae-docker-recording-v1/01c87a4f2d55955306476254d2100a830a1f8a08b95065f58ab66a1835a5c72f",
+          "native_evidence": ".aptl/lifecycle/lilrae-native-evidence-v1/01c87a4f2d55955306476254d2100a830a1f8a08b95065f58ab66a1835a5c72f"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "corpus": 1,
+  "scheme": "sha256-bytes",
+  "version": "current",
+  "owner": "hashlib.sha256 of raw file bytes (file, blob, and archive checksums)",
+  "cases": [
+    {
+      "id": "empty",
+      "input_hex": "",
+      "expect": {
+        "text": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "lf",
+      "input_hex": "0a",
+      "expect": {
+        "text": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+      }
+    },
+    {
+      "id": "crlf",
+      "input_hex": "0d0a",
+      "expect": {
+        "text": "7eb70257593da06f682a3ddda54a9d260d4fc514f645237f5ca74b08f8da61a6"
+      }
+    },
+    {
+      "id": "invalid-utf8",
+      "input_hex": "c328ff",
+      "expect": {
+        "text": "7260da181cc952b2a568e214a50e99a75448e8d5c5f01d46da0dae0eae99409c"
+      }
+    },
+    {
+      "id": "bom",
+      "input_hex": "efbbbf7b7d",
+      "expect": {
+        "text": "aa25e978046d680ef8740d837e6de5bc1e2a2dc6089dbda1012544b538d53f65"
+      }
+    }
+  ]
+}

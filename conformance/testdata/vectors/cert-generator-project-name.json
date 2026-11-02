@@ -1,0 +1,36 @@
+{
+  "corpus": 1,
+  "scheme": "cert-generator-project-name",
+  "version": "current",
+  "owner": "aptl.core.certs._cert_generator_project_name",
+  "cases": [
+    {
+      "id": "simple",
+      "input": {
+        "project_dir": "/srv/labs/proj"
+      },
+      "expect": {
+        "text": "aptl-certs-d4929ab19344"
+      },
+      "note": "The owner resolves the path; the input has no symlink."
+    },
+    {
+      "id": "non-ascii",
+      "input": {
+        "project_dir": "/srv/labs/projé"
+      },
+      "expect": {
+        "text": "aptl-certs-a3435aaa78e0"
+      }
+    },
+    {
+      "id": "root",
+      "input": {
+        "project_dir": "/"
+      },
+      "expect": {
+        "text": "aptl-certs-8a5edab28263"
+      }
+    }
+  ]
+}

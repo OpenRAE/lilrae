@@ -1,0 +1,166 @@
+{
+  "corpus": 1,
+  "scheme": "correlation-projection",
+  "version": "current",
+  "owner": "aptl.core.correlation.models.CorrelationProjection",
+  "cases": [
+    {
+      "id": "run-and-action",
+      "input": {
+        "run_id": "run-1",
+        "nodes": [
+          {
+            "ref": "run-1",
+            "ref_kind": "attempt-run"
+          },
+          {
+            "ref": "action-1",
+            "ref_kind": "action"
+          }
+        ],
+        "edges": [
+          {
+            "source_ref": "run-1",
+            "target_ref": "action-1",
+            "association_method": "explicit_identifier",
+            "rule_id": null,
+            "clock_context_ref": null,
+            "confidence_or_status": null,
+            "disclosure_refs": []
+          }
+        ],
+        "clock_contexts": [
+          {
+            "source_kind": "host",
+            "source_id": "host-clock",
+            "timestamp_domain": "utc",
+            "clock_source": "system",
+            "synchronization_status": "unknown",
+            "measured_offset": null,
+            "uncertainty": null,
+            "measurement_time": "2026-03-24T02:00:00Z",
+            "observer_effect_ref": null
+          }
+        ],
+        "disclosures": []
+      },
+      "expect": {
+        "value": {
+          "bytes_hex": "7b22636c6f636b5f636f6e7465787473223a5b7b22636c6f636b5f736f75726365223a2273797374656d222c226d656173757265645f6f6666736574223a6e756c6c2c226d6561737572656d656e745f74696d65223a22323032362d30332d32345430323a30303a30305a222c226f627365727665725f6566666563745f726566223a6e756c6c2c22736f757263655f6964223a22686f73742d636c6f636b222c22736f757263655f6b696e64223a22686f7374222c2273796e6368726f6e697a6174696f6e5f737461747573223a22756e6b6e6f776e222c2274696d657374616d705f646f6d61696e223a22757463222c22756e6365727461696e7479223a6e756c6c7d5d2c22646973636c6f7375726573223a5b5d2c226564676573223a5b7b226173736f63696174696f6e5f6d6574686f64223a226578706c696369745f6964656e746966696572222c22636c6f636b5f636f6e746578745f726566223a6e756c6c2c22636f6e666964656e63655f6f725f737461747573223a6e756c6c2c22646973636c6f737572655f72656673223a5b5d2c2272756c655f6964223a6e756c6c2c22736f757263655f726566223a2272756e2d31222c227461726765745f726566223a22616374696f6e2d31227d5d2c226e6f646573223a5b7b22726566223a22616374696f6e2d31222c227265665f6b696e64223a22616374696f6e227d2c7b22726566223a2272756e2d31222c227265665f6b696e64223a22617474656d70742d72756e227d5d2c2272756e5f6964223a2272756e2d31222c22736368656d615f76657273696f6e223a226170746c2d636f7272656c6174696f6e2f7631227d",
+          "digest": "sha256:5355b890e3614ea33a09e0d9d4226e6d401bfdfb13dbb1a7f14b4e5952ced80e"
+        }
+      }
+    },
+    {
+      "id": "no-edges",
+      "input": {
+        "run_id": "run-1",
+        "nodes": [
+          {
+            "ref": "run-1",
+            "ref_kind": "attempt-run"
+          },
+          {
+            "ref": "action-1",
+            "ref_kind": "action"
+          }
+        ],
+        "edges": [],
+        "clock_contexts": [
+          {
+            "source_kind": "host",
+            "source_id": "host-clock",
+            "timestamp_domain": "utc",
+            "clock_source": "system",
+            "synchronization_status": "unknown",
+            "measured_offset": null,
+            "uncertainty": null,
+            "measurement_time": "2026-03-24T02:00:00Z",
+            "observer_effect_ref": null
+          }
+        ],
+        "disclosures": []
+      },
+      "expect": {
+        "value": {
+          "bytes_hex": "7b22636c6f636b5f636f6e7465787473223a5b7b22636c6f636b5f736f75726365223a2273797374656d222c226d656173757265645f6f6666736574223a6e756c6c2c226d6561737572656d656e745f74696d65223a22323032362d30332d32345430323a30303a30305a222c226f627365727665725f6566666563745f726566223a6e756c6c2c22736f757263655f6964223a22686f73742d636c6f636b222c22736f757263655f6b696e64223a22686f7374222c2273796e6368726f6e697a6174696f6e5f737461747573223a22756e6b6e6f776e222c2274696d657374616d705f646f6d61696e223a22757463222c22756e6365727461696e7479223a6e756c6c7d5d2c22646973636c6f7375726573223a5b5d2c226564676573223a5b5d2c226e6f646573223a5b7b22726566223a22616374696f6e2d31222c227265665f6b696e64223a22616374696f6e227d2c7b22726566223a2272756e2d31222c227265665f6b696e64223a22617474656d70742d72756e227d5d2c2272756e5f6964223a2272756e2d31222c22736368656d615f76657273696f6e223a226170746c2d636f7272656c6174696f6e2f7631227d",
+          "digest": "sha256:5b8ced2971834158f92d565fb77a7f92e57dadb17dae836027f93ac3051474f9"
+        }
+      }
+    },
+    {
+      "id": "dangling-edge",
+      "input": {
+        "run_id": "run-1",
+        "nodes": [
+          {
+            "ref": "run-1",
+            "ref_kind": "attempt-run"
+          },
+          {
+            "ref": "action-1",
+            "ref_kind": "action"
+          }
+        ],
+        "edges": [
+          {
+            "source_ref": "run-1",
+            "target_ref": "missing-node",
+            "association_method": "explicit_identifier",
+            "rule_id": null,
+            "clock_context_ref": null,
+            "confidence_or_status": null,
+            "disclosure_refs": []
+          }
+        ],
+        "clock_contexts": [
+          {
+            "source_kind": "host",
+            "source_id": "host-clock",
+            "timestamp_domain": "utc",
+            "clock_source": "system",
+            "synchronization_status": "unknown",
+            "measured_offset": null,
+            "uncertainty": null,
+            "measurement_time": "2026-03-24T02:00:00Z",
+            "observer_effect_ref": null
+          }
+        ],
+        "disclosures": []
+      },
+      "expect": {
+        "reject": "validate"
+      }
+    },
+    {
+      "id": "unknown-ref-kind",
+      "input": {
+        "run_id": "run-1",
+        "nodes": [
+          {
+            "ref": "run-1",
+            "ref_kind": "run"
+          }
+        ],
+        "edges": [],
+        "clock_contexts": [
+          {
+            "source_kind": "host",
+            "source_id": "host-clock",
+            "timestamp_domain": "utc",
+            "clock_source": "system",
+            "synchronization_status": "unknown",
+            "measured_offset": null,
+            "uncertainty": null,
+            "measurement_time": "2026-03-24T02:00:00Z",
+            "observer_effect_ref": null
+          }
+        ],
+        "disclosures": []
+      },
+      "expect": {
+        "reject": "validate"
+      }
+    }
+  ]
+}

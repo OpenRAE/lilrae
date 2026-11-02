@@ -1,0 +1,67 @@
+{
+  "corpus": 1,
+  "scheme": "apparatus-mapping-digest",
+  "version": "current",
+  "owner": "aptl.backends.raes_participant_apparatus.canonical_mapping_digest",
+  "cases": [
+    {
+      "id": "simple",
+      "input": {
+        "b": 1,
+        "a": "x"
+      },
+      "expect": {
+        "text": "sha256:cdab067e9f3beb32d1252cfd63e492592fecbf591b0d08cadb24bb17f3864246"
+      }
+    },
+    {
+      "id": "non-ascii",
+      "input": {
+        "k": "é😀"
+      },
+      "expect": {
+        "text": "sha256:42d2df3d760c124e559ec0cb0816563de9ed7ee19465169d23424db3c74d8a13"
+      }
+    },
+    {
+      "id": "float-one",
+      "input": {
+        "n": {
+          "$float": "1.0"
+        }
+      },
+      "expect": {
+        "text": "sha256:2bfd14f43d17fc7cea24e0917a8879b4b2f880b8baeec1b9d90fbaad655e71bd"
+      }
+    },
+    {
+      "id": "large-integer",
+      "input": {
+        "n": {
+          "$int": "9007199254740993"
+        }
+      },
+      "expect": {
+        "reject": "serialize"
+      }
+    },
+    {
+      "id": "nan",
+      "input": {
+        "n": {
+          "$float": "nan"
+        }
+      },
+      "expect": {
+        "reject": "serialize"
+      }
+    },
+    {
+      "id": "empty",
+      "input": {},
+      "expect": {
+        "text": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      }
+    }
+  ]
+}

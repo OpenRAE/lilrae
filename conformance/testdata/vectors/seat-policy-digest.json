@@ -1,0 +1,114 @@
+{
+  "corpus": 1,
+  "scheme": "seat-policy-digest",
+  "version": "aptl.appliance-boundary/v1",
+  "owner": "aptl.appliance.seat.lifecycle._canonical_policy_digest",
+  "cases": [
+    {
+      "id": "default-deny-policy",
+      "input": {
+        "schema_version": "aptl.appliance-boundary/v1",
+        "policy_id": "default",
+        "generation": 1,
+        "workbench_policy_version": "participant-workbench-profile/v1",
+        "default_deny": true,
+        "platform_networks": {
+          "participant": "org.aptl.network=participant",
+          "management": "org.aptl.network=management",
+          "egress": "org.aptl.network=egress"
+        },
+        "platform_anchors": {
+          "participant": "org.aptl.appliance.zone=participant",
+          "management": "org.aptl.appliance.zone=management",
+          "egress": "org.aptl.appliance.zone=egress"
+        },
+        "fixed_crossings": [],
+        "egress_authorities": [],
+        "egress_proxy_limits": {
+          "max_connections": 32,
+          "max_header_bytes": 4096,
+          "header_timeout_seconds": 5,
+          "connect_timeout_seconds": 10,
+          "idle_timeout_seconds": 60
+        },
+        "guest_publications": [
+          {
+            "audience": "participant",
+            "address": "127.0.0.1",
+            "port": 443,
+            "protocol": "tcp"
+          },
+          {
+            "audience": "recovery",
+            "address": "127.0.0.1",
+            "port": 9443,
+            "protocol": "tcp"
+          }
+        ],
+        "host_mcp_contract": null,
+        "docker_authority": {
+          "allowed_holder_labels": [],
+          "require_guest_daemon": true
+        },
+        "protected_components": [],
+        "permitted_host_flows": []
+      },
+      "expect": {
+        "text": "sha256:11916b6e7070a701d286af02e080cbd953deb7cd480f3af8d00d6943eb50353e"
+      }
+    },
+    {
+      "id": "next-generation",
+      "input": {
+        "schema_version": "aptl.appliance-boundary/v1",
+        "policy_id": "default",
+        "generation": 2,
+        "workbench_policy_version": "participant-workbench-profile/v1",
+        "default_deny": true,
+        "platform_networks": {
+          "participant": "org.aptl.network=participant",
+          "management": "org.aptl.network=management",
+          "egress": "org.aptl.network=egress"
+        },
+        "platform_anchors": {
+          "participant": "org.aptl.appliance.zone=participant",
+          "management": "org.aptl.appliance.zone=management",
+          "egress": "org.aptl.appliance.zone=egress"
+        },
+        "fixed_crossings": [],
+        "egress_authorities": [],
+        "egress_proxy_limits": {
+          "max_connections": 32,
+          "max_header_bytes": 4096,
+          "header_timeout_seconds": 5,
+          "connect_timeout_seconds": 10,
+          "idle_timeout_seconds": 60
+        },
+        "guest_publications": [
+          {
+            "audience": "participant",
+            "address": "127.0.0.1",
+            "port": 443,
+            "protocol": "tcp"
+          },
+          {
+            "audience": "recovery",
+            "address": "127.0.0.1",
+            "port": 9443,
+            "protocol": "tcp"
+          }
+        ],
+        "host_mcp_contract": null,
+        "docker_authority": {
+          "allowed_holder_labels": [],
+          "require_guest_daemon": true
+        },
+        "protected_components": [],
+        "permitted_host_flows": []
+      },
+      "expect": {
+        "text": "sha256:908be1b676439c14d13c88b139ca8919737dd9736b4731392540330592a74c05"
+      }
+    }
+  ]
+}

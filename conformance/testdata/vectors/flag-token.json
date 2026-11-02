@@ -1,0 +1,59 @@
+{
+  "corpus": 1,
+  "scheme": "flag-token",
+  "version": "aptl:v1",
+  "owner": "aptl.core.flags.verify_token",
+  "cases": [
+    {
+      "id": "valid",
+      "input": {
+        "token": "aptl:v1:host-1:user:nonce-1:3b788b87bb820683a86fd2475477f22d",
+        "key": "aptl-flag-key-2024"
+      },
+      "note": "the signature is MD5 of key:hostname:level:nonce, with the shipped default key",
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "tampered-level",
+      "input": {
+        "token": "aptl:v1:host-1:root:nonce-1:3b788b87bb820683a86fd2475477f22d",
+        "key": "aptl-flag-key-2024"
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "other-key",
+      "input": {
+        "token": "aptl:v1:host-1:user:nonce-1:3b788b87bb820683a86fd2475477f22d",
+        "key": "other"
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "wrong-version",
+      "input": {
+        "token": "aptl:v2:host-1:user:nonce-1:3b788b87bb820683a86fd2475477f22d",
+        "key": "aptl-flag-key-2024"
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "too-few-fields",
+      "input": {
+        "token": "aptl:v1:host-1:user",
+        "key": "aptl-flag-key-2024"
+      },
+      "expect": {
+        "value": false
+      }
+    }
+  ]
+}

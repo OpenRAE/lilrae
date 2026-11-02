@@ -1,0 +1,206 @@
+{
+  "corpus": 1,
+  "scheme": "egress-proxy-policy",
+  "version": "current",
+  "owner": "aptl.core.appliance_boundary.render_egress_proxy_policy",
+  "cases": [
+    {
+      "id": "one-authority",
+      "input": {
+        "schema_version": "aptl.appliance-boundary/v1",
+        "policy_id": "participant-default",
+        "generation": 4,
+        "workbench_policy_version": "participant-workbench-profile/v1",
+        "default_deny": true,
+        "platform_networks": {
+          "participant": "org.aptl.appliance.network=participant",
+          "management": "org.aptl.appliance.network=management",
+          "egress": "org.aptl.appliance.network=egress"
+        },
+        "platform_anchors": {
+          "participant": "org.aptl.appliance.zone=participant",
+          "management": "org.aptl.appliance.zone=management",
+          "egress": "org.aptl.appliance.zone=egress"
+        },
+        "fixed_crossings": [
+          {
+            "source": "management",
+            "destination": "egress",
+            "protocol": "tcp",
+            "ports": [
+              3128
+            ],
+            "purpose": "model-provider-proxy"
+          }
+        ],
+        "egress_authorities": [
+          {
+            "source": "egress",
+            "authority": "api.example.test",
+            "protocol": "tcp",
+            "port": 443,
+            "purpose": "model-provider",
+            "resolution": "proxy-resolved-all-global",
+            "failure_disposition": "deny"
+          }
+        ],
+        "egress_proxy_limits": {
+          "max_connections": 32,
+          "max_header_bytes": 4096,
+          "header_timeout_seconds": 5,
+          "connect_timeout_seconds": 10,
+          "idle_timeout_seconds": 60
+        },
+        "guest_publications": [
+          {
+            "audience": "participant",
+            "address": "127.0.0.1",
+            "port": 443,
+            "protocol": "tcp"
+          }
+        ],
+        "docker_authority": {
+          "allowed_holder_labels": [
+            "org.aptl.appliance.role=deployment-authority"
+          ],
+          "require_guest_daemon": true
+        }
+      },
+      "expect": {
+        "hex": "7b22617574686f726974696573223a5b7b22617574686f72697479223a226170692e6578616d706c652e74657374222c22706f7274223a3434337d5d2c226c696d697473223a7b22636f6e6e6563745f74696d656f75745f7365636f6e6473223a31302c226865616465725f74696d656f75745f7365636f6e6473223a352c2269646c655f74696d656f75745f7365636f6e6473223a36302c226d61785f636f6e6e656374696f6e73223a33322c226d61785f6865616465725f6279746573223a343039367d7d"
+      }
+    },
+    {
+      "id": "sorted",
+      "input": {
+        "schema_version": "aptl.appliance-boundary/v1",
+        "policy_id": "participant-default",
+        "generation": 4,
+        "workbench_policy_version": "participant-workbench-profile/v1",
+        "default_deny": true,
+        "platform_networks": {
+          "participant": "org.aptl.appliance.network=participant",
+          "management": "org.aptl.appliance.network=management",
+          "egress": "org.aptl.appliance.network=egress"
+        },
+        "platform_anchors": {
+          "participant": "org.aptl.appliance.zone=participant",
+          "management": "org.aptl.appliance.zone=management",
+          "egress": "org.aptl.appliance.zone=egress"
+        },
+        "fixed_crossings": [
+          {
+            "source": "management",
+            "destination": "egress",
+            "protocol": "tcp",
+            "ports": [
+              3128
+            ],
+            "purpose": "model-provider-proxy"
+          }
+        ],
+        "egress_authorities": [
+          {
+            "source": "egress",
+            "authority": "b.example.test",
+            "protocol": "tcp",
+            "port": 8443,
+            "purpose": "model-provider",
+            "resolution": "proxy-resolved-all-global",
+            "failure_disposition": "deny"
+          },
+          {
+            "source": "egress",
+            "authority": "api.example.test",
+            "protocol": "tcp",
+            "port": 443,
+            "purpose": "model-provider",
+            "resolution": "proxy-resolved-all-global",
+            "failure_disposition": "deny"
+          }
+        ],
+        "egress_proxy_limits": {
+          "max_connections": 32,
+          "max_header_bytes": 4096,
+          "header_timeout_seconds": 5,
+          "connect_timeout_seconds": 10,
+          "idle_timeout_seconds": 60
+        },
+        "guest_publications": [
+          {
+            "audience": "participant",
+            "address": "127.0.0.1",
+            "port": 443,
+            "protocol": "tcp"
+          }
+        ],
+        "docker_authority": {
+          "allowed_holder_labels": [
+            "org.aptl.appliance.role=deployment-authority"
+          ],
+          "require_guest_daemon": true
+        }
+      },
+      "expect": {
+        "hex": "7b22617574686f726974696573223a5b7b22617574686f72697479223a226170692e6578616d706c652e74657374222c22706f7274223a3434337d2c7b22617574686f72697479223a22622e6578616d706c652e74657374222c22706f7274223a383434337d5d2c226c696d697473223a7b22636f6e6e6563745f74696d656f75745f7365636f6e6473223a31302c226865616465725f74696d656f75745f7365636f6e6473223a352c2269646c655f74696d656f75745f7365636f6e6473223a36302c226d61785f636f6e6e656374696f6e73223a33322c226d61785f6865616465725f6279746573223a343039367d7d"
+      },
+      "note": "The projection sorts the authority and port pairs."
+    },
+    {
+      "id": "no-authority",
+      "input": {
+        "schema_version": "aptl.appliance-boundary/v1",
+        "policy_id": "participant-default",
+        "generation": 4,
+        "workbench_policy_version": "participant-workbench-profile/v1",
+        "default_deny": true,
+        "platform_networks": {
+          "participant": "org.aptl.appliance.network=participant",
+          "management": "org.aptl.appliance.network=management",
+          "egress": "org.aptl.appliance.network=egress"
+        },
+        "platform_anchors": {
+          "participant": "org.aptl.appliance.zone=participant",
+          "management": "org.aptl.appliance.zone=management",
+          "egress": "org.aptl.appliance.zone=egress"
+        },
+        "fixed_crossings": [
+          {
+            "source": "management",
+            "destination": "egress",
+            "protocol": "tcp",
+            "ports": [
+              3128
+            ],
+            "purpose": "model-provider-proxy"
+          }
+        ],
+        "egress_authorities": [],
+        "egress_proxy_limits": {
+          "max_connections": 32,
+          "max_header_bytes": 4096,
+          "header_timeout_seconds": 5,
+          "connect_timeout_seconds": 10,
+          "idle_timeout_seconds": 60
+        },
+        "guest_publications": [
+          {
+            "audience": "participant",
+            "address": "127.0.0.1",
+            "port": 443,
+            "protocol": "tcp"
+          }
+        ],
+        "docker_authority": {
+          "allowed_holder_labels": [
+            "org.aptl.appliance.role=deployment-authority"
+          ],
+          "require_guest_daemon": true
+        }
+      },
+      "expect": {
+        "reject": "validate"
+      }
+    }
+  ]
+}

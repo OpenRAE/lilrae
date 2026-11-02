@@ -213,9 +213,13 @@ record review history.
   JSON Schema validation uses the dialect of the owner, for example draft
   2020-12 for MCP tool schemas, with no coercion and no inserted defaults.
 - Validate after decoding, and reject an input before any change.
-- The vectors of Go port 04 define each persisted byte form, digest, and
-  identifier. One function implements each scheme. Ordinary JSON encoding is
-  not canonical encoding.
+- The vectors of Go port 04 define each digest and identifier. They also
+  define each byte form that a record, evidence, or another program stores,
+  compares, hashes, signs, or verifies. A local file that only the same
+  installation parses has no vector, and a value that each run makes again
+  has no vector. The serialization inventory gives the reason for each.
+  One function implements each scheme. Ordinary JSON encoding is not
+  canonical encoding.
 - Use `os.Root` for contained file access. Replace a file atomically with
   `github.com/google/renameio/v2` inside the root (`WithRoot`). renameio
   exports no function on Windows, where a file cannot be replaced atomically.

@@ -1,0 +1,74 @@
+{
+  "corpus": 1,
+  "scheme": "family-target-encoding",
+  "version": "current",
+  "owner": "aptl.backends.scenario_family.encode_family_target",
+  "cases": [
+    {
+      "id": "simple",
+      "input": {
+        "pack": {
+          "pack_id": "techvault",
+          "pack_version": "1.0.0",
+          "set_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "family_id": "family.one",
+        "family_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "backend": {
+          "target_name": "docker-compose",
+          "target_version": "1",
+          "profile": "default",
+          "provider": "lilrae",
+          "transport": "local"
+        }
+      },
+      "expect": {
+        "text": "{\"backend\":{\"profile\":\"default\",\"provider\":\"lilrae\",\"target_name\":\"docker-compose\",\"target_version\":\"1\",\"transport\":\"local\"},\"family_api_version\":\"1\",\"family_digest\":\"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"family_id\":\"family.one\",\"pack\":{\"pack_id\":\"techvault\",\"pack_version\":\"1.0.0\",\"set_digest\":\"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}}"
+      }
+    },
+    {
+      "id": "empty-provider",
+      "input": {
+        "pack": {
+          "pack_id": "techvault",
+          "pack_version": "1.0.0",
+          "set_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "family_id": "family.one",
+        "family_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "backend": {
+          "target_name": "docker-compose",
+          "target_version": "1",
+          "profile": "default",
+          "provider": "",
+          "transport": ""
+        }
+      },
+      "expect": {
+        "text": "{\"backend\":{\"profile\":\"default\",\"provider\":\"\",\"target_name\":\"docker-compose\",\"target_version\":\"1\",\"transport\":\"\"},\"family_api_version\":\"1\",\"family_digest\":\"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"family_id\":\"family.one\",\"pack\":{\"pack_id\":\"techvault\",\"pack_version\":\"1.0.0\",\"set_digest\":\"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}}"
+      }
+    },
+    {
+      "id": "bad-digest",
+      "input": {
+        "pack": {
+          "pack_id": "techvault",
+          "pack_version": "1.0.0",
+          "set_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "family_id": "family.one",
+        "family_digest": "sha256:xyz",
+        "backend": {
+          "target_name": "docker-compose",
+          "target_version": "1",
+          "profile": "default",
+          "provider": "lilrae",
+          "transport": "local"
+        }
+      },
+      "expect": {
+        "reject": "validate"
+      }
+    }
+  ]
+}

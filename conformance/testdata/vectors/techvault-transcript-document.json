@@ -1,0 +1,136 @@
+{
+  "corpus": 1,
+  "scheme": "techvault-transcript-document",
+  "version": "current",
+  "owner": "aptl_techvault.evidence.techvault_transcript._transcript_result",
+  "cases": [
+    {
+      "id": "one-session",
+      "input": {
+        "start": "2026-11-01T00:00:00Z",
+        "end": "2026-11-01T00:10:00Z",
+        "sessions": [
+          {
+            "session_id": "session-1",
+            "started_at": "2026-11-01T00:00:00Z",
+            "finished_at": "2026-11-01T00:00:05Z",
+            "close_reason": "exit",
+            "final_chain_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "frames": [
+              {
+                "sequence": 1,
+                "timestamp": "2026-11-01T00:00:01Z",
+                "direction": "input",
+                "data_hex": "6c730a"
+              },
+              {
+                "sequence": 2,
+                "timestamp": "2026-11-01T00:00:02Z",
+                "direction": "output",
+                "data_hex": "666c61672e74787420c3a90a"
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "status": "ok",
+          "chunks_hex": [
+            "7b22736368656d615f76657273696f6e223a226170746c2d746563687661756c742d7472616e7363726970742f7632222c227472616e7363726970745f656e7472696573223a5b7b22636c6f73655f726561736f6e223a2265786974222c2266696e69736865645f6174223a22323032362d31312d30315430303a30303a30355a222c226672616d6573223a5b7b2264617461223a226c735c6e222c22646972656374696f6e223a22696e707574222c2273657175656e6365223a312c2274696d657374616d70223a22323032362d31312d30315430303a30303a30315a227d2c7b2264617461223a22666c61672e747874205c75303065395c6e222c22646972656374696f6e223a226f7574707574222c2273657175656e6365223a322c2274696d657374616d70223a22323032362d31312d30315430303a30303a30325a227d5d2c22736f757263655f636861696e5f646967657374223a227368613235363a63636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363222c22737461727465645f6174223a22323032362d31312d30315430303a30303a30305a222c227465726d696e616c5f726566223a227465726d696e616c2d35653230663862663763386230656139633932373338613336623138343639323837356232373661643331303463336563666163663362393134353465626531227d5d7d"
+          ],
+          "source_pipeline": {
+            "source_refs": [
+              {
+                "ref_kind": "apparatus-context",
+                "ref_id": "apparatus.capture.kali-session-capture"
+              }
+            ],
+            "custody": "sidecar-owned-pty-master-sha256-chain",
+            "session_count": 1,
+            "frame_count": 2
+          }
+        }
+      }
+    },
+    {
+      "id": "two-sessions-sorted",
+      "input": {
+        "start": "2026-11-01T00:00:00Z",
+        "end": "2026-11-01T00:10:00Z",
+        "sessions": [
+          {
+            "session_id": "session-b",
+            "started_at": "2026-11-01T00:00:03Z",
+            "finished_at": "2026-11-01T00:00:04Z",
+            "close_reason": "exit",
+            "final_chain_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "frames": [
+              {
+                "sequence": 1,
+                "timestamp": "2026-11-01T00:00:01Z",
+                "direction": "input",
+                "data_hex": "69640a"
+              }
+            ]
+          },
+          {
+            "session_id": "session-a",
+            "started_at": "2026-11-01T00:00:01Z",
+            "finished_at": "2026-11-01T00:00:02Z",
+            "close_reason": "timeout",
+            "final_chain_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "frames": []
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "status": "ok",
+          "chunks_hex": [
+            "7b22736368656d615f76657273696f6e223a226170746c2d746563687661756c742d7472616e7363726970742f7632222c227472616e7363726970745f656e7472696573223a5b7b22636c6f73655f726561736f6e223a2274696d656f7574222c2266696e69736865645f6174223a22323032362d31312d30315430303a30303a30325a222c226672616d6573223a5b5d2c22736f757263655f636861696e5f646967657374223a227368613235363a63636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363222c22737461727465645f6174223a22323032362d31312d30315430303a30303a30315a222c227465726d696e616c5f726566223a227465726d696e616c2d31313261316431313462646336386231396463656139663736336138613162383265303164626431393032663662346661306334393462383739383638663437227d2c7b22636c6f73655f726561736f6e223a2265786974222c2266696e69736865645f6174223a22323032362d31312d30315430303a30303a30345a222c226672616d6573223a5b7b2264617461223a2269645c6e222c22646972656374696f6e223a22696e707574222c2273657175656e6365223a312c2274696d657374616d70223a22323032362d31312d30315430303a30303a30315a227d5d2c22736f757263655f636861696e5f646967657374223a227368613235363a63636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363222c22737461727465645f6174223a22323032362d31312d30315430303a30303a30335a222c227465726d696e616c5f726566223a227465726d696e616c2d65343438613432666338626435636339656632653762646437636332306566353863663433653130373163316532653761333439636666633532353666663639227d5d7d"
+          ],
+          "source_pipeline": {
+            "source_refs": [
+              {
+                "ref_kind": "apparatus-context",
+                "ref_id": "apparatus.capture.kali-session-capture"
+              }
+            ],
+            "custody": "sidecar-owned-pty-master-sha256-chain",
+            "session_count": 2,
+            "frame_count": 1
+          }
+        }
+      },
+      "note": "The document orders the sessions by start time."
+    },
+    {
+      "id": "no-sessions",
+      "input": {
+        "start": "2026-11-01T00:00:00Z",
+        "end": "2026-11-01T00:10:00Z",
+        "sessions": []
+      },
+      "expect": {
+        "value": {
+          "status": "empty-ok",
+          "chunks_hex": [
+            "7b22736368656d615f76657273696f6e223a226170746c2d746563687661756c742d7472616e7363726970742f7632222c227472616e7363726970745f656e7472696573223a5b5d7d"
+          ],
+          "source_pipeline": {
+            "source_refs": [
+              {
+                "ref_kind": "apparatus-context",
+                "ref_id": "apparatus.capture.kali-session-capture"
+              }
+            ],
+            "custody": "sidecar-owned-pty-master-sha256-chain",
+            "session_count": 0,
+            "frame_count": 0
+          }
+        }
+      }
+    }
+  ]
+}

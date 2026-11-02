@@ -1,0 +1,50 @@
+{
+  "corpus": 1,
+  "scheme": "experiment-yaml-preflight",
+  "version": "PyYAML 6.0.3",
+  "owner": "aptl.core.experiment.spec_loading._yaml_duplicate_key_preflight",
+  "cases": [
+    {
+      "id": "single-document",
+      "input": "a: 1\nb: [1, 2]\n",
+      "expect": {
+        "text": "accepted"
+      }
+    },
+    {
+      "id": "duplicate-keys",
+      "input": "a: 1\na: 2\n",
+      "expect": {
+        "reject": "parse"
+      }
+    },
+    {
+      "id": "nested-duplicate-keys",
+      "input": "a:\n  b: 1\n  b: 2\n",
+      "expect": {
+        "reject": "parse"
+      }
+    },
+    {
+      "id": "multiple-documents",
+      "input": "a: 1\n---\nb: 2\n",
+      "expect": {
+        "reject": "parse"
+      }
+    },
+    {
+      "id": "merge-key",
+      "input": "base: &b {x: 1}\nderived:\n  <<: *b\n  y: 2\n",
+      "expect": {
+        "reject": "parse"
+      }
+    },
+    {
+      "id": "custom-tag",
+      "input": "a: !custom x\n",
+      "expect": {
+        "reject": "parse"
+      }
+    }
+  ]
+}

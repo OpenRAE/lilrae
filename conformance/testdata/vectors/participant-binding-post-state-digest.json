@@ -1,0 +1,45 @@
+{
+  "corpus": 1,
+  "scheme": "participant-binding-post-state-digest",
+  "version": "current",
+  "owner": "aptl.backends.raes_participant_support.binding_post_state_digest",
+  "cases": [
+    {
+      "id": "simple",
+      "input": {
+        "participant_address": "participant.red",
+        "action_contract_address": "actions.scan",
+        "observation_boundary_address": "boundaries.shell",
+        "action_instance_id": "action-1"
+      },
+      "expect": {
+        "text": "sha256:f184c13703690a1e7579ff5776b80900fef23dc3c25110ab37f2d3fe4b25fdb2"
+      }
+    },
+    {
+      "id": "non-ascii",
+      "input": {
+        "participant_address": "participant.é",
+        "action_contract_address": "actions.😀",
+        "observation_boundary_address": "boundaries.ü",
+        "action_instance_id": "action-é"
+      },
+      "expect": {
+        "text": "sha256:853e9031f3ad9b54f411c72ba51418ca5b1b6c3c56a508ee791c8ddd71009ca7"
+      }
+    },
+    {
+      "id": "separator-in-field",
+      "input": {
+        "participant_address": "a|b",
+        "action_contract_address": "c",
+        "observation_boundary_address": "d",
+        "action_instance_id": "e"
+      },
+      "expect": {
+        "text": "sha256:2d4b7507de8bf3f1c304248f357c3de417fa87257fb68e22f1afe1da51c504a2"
+      },
+      "note": "The fields join with |, which a field can hold."
+    }
+  ]
+}

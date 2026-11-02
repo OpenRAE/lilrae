@@ -1,0 +1,34 @@
+{
+  "corpus": 1,
+  "scheme": "compose-environment-file-names",
+  "version": "current",
+  "owner": "aptl.core.deployment._compose_environment.sourced_environment_file and _compose_artifact_paths.artifact_environment_file_path",
+  "cases": [
+    {
+      "id": "simple",
+      "input": {
+        "service_name": "wazuh.manager",
+        "artifact_address": "artifacts.agent-env"
+      },
+      "expect": {
+        "value": {
+          "sourced": ".aptl/realization/sourced-environment/3e4c68115f739331c9b6.env",
+          "generated": ".aptl/realization/generated-environment/90858d8fb1e9da1538ef/3e4c68115f739331c9b6.env"
+        }
+      }
+    },
+    {
+      "id": "non-ascii",
+      "input": {
+        "service_name": "service-é",
+        "artifact_address": "artifacts.😀"
+      },
+      "expect": {
+        "value": {
+          "sourced": ".aptl/realization/sourced-environment/dbd7bd434042e09ef0db.env",
+          "generated": ".aptl/realization/generated-environment/8e7c106daf5daf504df8/dbd7bd434042e09ef0db.env"
+        }
+      }
+    }
+  ]
+}

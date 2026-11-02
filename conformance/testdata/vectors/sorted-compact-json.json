@@ -1,0 +1,155 @@
+{
+  "corpus": 1,
+  "scheme": "sorted-compact-json",
+  "version": "current",
+  "owner": "json.dumps(sort_keys=True, separators=(',', ':')) encoded as UTF-8",
+  "cases": [
+    {
+      "id": "ascii-sorted",
+      "input": {
+        "b": 1,
+        "a": [
+          1,
+          2
+        ],
+        "c": {
+          "z": null,
+          "y": true
+        }
+      },
+      "expect": {
+        "hex": "7b2261223a5b312c325d2c2262223a312c2263223a7b2279223a747275652c227a223a6e756c6c7d7d"
+      }
+    },
+    {
+      "id": "non-ascii-escaped",
+      "input": {
+        "ké": "vé€"
+      },
+      "note": "ensure_ascii escapes non-ASCII characters",
+      "expect": {
+        "hex": "7b226b5c7530306539223a22765c75303065395c7532306163227d"
+      }
+    },
+    {
+      "id": "supplementary-plane",
+      "input": {
+        "e": "😀"
+      },
+      "note": "a supplementary character is a surrogate pair escape",
+      "expect": {
+        "hex": "7b2265223a225c75643833645c7564653030227d"
+      }
+    },
+    {
+      "id": "html-characters-raw",
+      "input": {
+        "h": "<a href='x'>&</a>"
+      },
+      "note": "Python does not escape <, >, and &",
+      "expect": {
+        "hex": "7b2268223a223c6120687265663d2778273e263c2f613e227d"
+      }
+    },
+    {
+      "id": "float-one",
+      "input": {
+        "n": {
+          "$float": "1.0"
+        }
+      },
+      "note": "json.dumps writes 1.0",
+      "expect": {
+        "hex": "7b226e223a312e307d"
+      }
+    },
+    {
+      "id": "negative-zero",
+      "input": {
+        "n": {
+          "$float": "-0.0"
+        }
+      },
+      "expect": {
+        "hex": "7b226e223a2d302e307d"
+      }
+    },
+    {
+      "id": "float-exponent",
+      "input": {
+        "big": {
+          "$float": "1e21"
+        },
+        "small": {
+          "$float": "1e-7"
+        },
+        "repr": {
+          "$float": "0.1"
+        }
+      },
+      "expect": {
+        "hex": "7b22626967223a31652b32312c2272657072223a302e312c22736d616c6c223a31652d30377d"
+      }
+    },
+    {
+      "id": "integer-large",
+      "input": {
+        "n": {
+          "$int": "123456789012345678901234567890"
+        }
+      },
+      "expect": {
+        "hex": "7b226e223a3132333435363738393031323334353637383930313233343536373839307d"
+      }
+    },
+    {
+      "id": "nan-written",
+      "input": {
+        "n": {
+          "$float": "nan"
+        }
+      },
+      "note": "allow_nan writes NaN, which is not JSON",
+      "expect": {
+        "hex": "7b226e223a4e614e7d"
+      }
+    },
+    {
+      "id": "infinity-written",
+      "input": {
+        "n": {
+          "$float": "inf"
+        },
+        "m": {
+          "$float": "-inf"
+        }
+      },
+      "expect": {
+        "hex": "7b226d223a2d496e66696e6974792c226e223a496e66696e6974797d"
+      }
+    },
+    {
+      "id": "key-order-code-point",
+      "input": {
+        "דּ": 1,
+        "😀": 2,
+        "a": 3
+      },
+      "note": "sort_keys orders by code point, not UTF-16",
+      "expect": {
+        "hex": "7b2261223a332c225c7566623333223a312c225c75643833645c7564653030223a327d"
+      }
+    },
+    {
+      "id": "empty-and-nested",
+      "input": {
+        "a": {},
+        "b": [],
+        "c": ""
+      },
+      "expect": {
+        "hex": "7b2261223a7b7d2c2262223a5b5d2c2263223a22227d"
+      }
+    }
+  ]
+}

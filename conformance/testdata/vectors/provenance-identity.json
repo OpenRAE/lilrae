@@ -1,0 +1,81 @@
+{
+  "corpus": 1,
+  "scheme": "provenance-identity",
+  "version": "current",
+  "owner": "aptl.core.provenance.identity.derive_identity",
+  "cases": [
+    {
+      "id": "simple",
+      "input": {
+        "domain": "apparatus",
+        "payload": {
+          "a": 1,
+          "b": "x"
+        }
+      },
+      "expect": {
+        "text": "sha256:bd1ccc8e5beac1d1412d9546e8e247e694452aab737ad4b8e5b5bbddac34b041"
+      }
+    },
+    {
+      "id": "other-domain",
+      "input": {
+        "domain": "detection-content",
+        "payload": {
+          "a": 1,
+          "b": "x"
+        }
+      },
+      "note": "the domain separates equal payloads",
+      "expect": {
+        "text": "sha256:e5d6e1f4d234dc0adffc539e8512490d210806d0781b3a15abeda17829aa5ead"
+      }
+    },
+    {
+      "id": "non-ascii",
+      "input": {
+        "domain": "apparatus",
+        "payload": {
+          "name": "capteur-é-😀"
+        }
+      },
+      "expect": {
+        "text": "sha256:2cc16e8636d474223a4d883c3ffd090d90ef82624b6f0bc14492efc484c3b633"
+      }
+    },
+    {
+      "id": "empty-payload",
+      "input": {
+        "domain": "apparatus",
+        "payload": {}
+      },
+      "expect": {
+        "text": "sha256:52eb36b441fc51b89c87df22069f403e8b869936051f5bc0562ba3dedf573086"
+      }
+    },
+    {
+      "id": "unsafe-domain",
+      "input": {
+        "domain": "Bad Domain!",
+        "payload": {}
+      },
+      "expect": {
+        "reject": "serialize"
+      }
+    },
+    {
+      "id": "non-finite",
+      "input": {
+        "domain": "apparatus",
+        "payload": {
+          "n": {
+            "$float": "nan"
+          }
+        }
+      },
+      "expect": {
+        "reject": "serialize"
+      }
+    }
+  ]
+}

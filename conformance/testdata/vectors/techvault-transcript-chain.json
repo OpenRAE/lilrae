@@ -1,0 +1,55 @@
+{
+  "corpus": 1,
+  "scheme": "techvault-transcript-chain",
+  "version": "current",
+  "owner": "aptl_techvault.evidence.techvault_transcript._transcript_chain",
+  "cases": [
+    {
+      "id": "no-frames",
+      "input": {
+        "frames": []
+      },
+      "expect": {
+        "text": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "id": "one-frame",
+      "input": {
+        "frames": [
+          {
+            "sequence": 1,
+            "timestamp": "2026-11-01T00:00:00Z",
+            "direction": "out",
+            "data_hex": "6c730a"
+          }
+        ]
+      },
+      "expect": {
+        "text": "sha256:5b8e871a9cf83f05a9ab4e2537a0c8ca2835f1f44e718dd73d1f6def55bfe8cd"
+      }
+    },
+    {
+      "id": "two-frames",
+      "input": {
+        "frames": [
+          {
+            "sequence": 1,
+            "timestamp": "2026-11-01T00:00:00Z",
+            "direction": "in",
+            "data_hex": "6c730a"
+          },
+          {
+            "sequence": 2,
+            "timestamp": "2026-11-01T00:00:01Z",
+            "direction": "out",
+            "data_hex": "c3a90a"
+          }
+        ]
+      },
+      "expect": {
+        "text": "sha256:26fa8af412b81294589bff67266f6a8a26110de90ee940540e2882db5c620950"
+      }
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "corpus": 1,
+  "scheme": "techvault-misp-readiness",
+  "version": "current",
+  "owner": "aptl_techvault.evidence.techvault_misp_readiness._readiness_document",
+  "cases": [
+    {
+      "id": "ready",
+      "input": {
+        "payload": {
+          "canonical_url": "https://misp.techvault.local",
+          "certificate_verified": true,
+          "api_write_read_ok": true,
+          "api_correlation_id": "aptl-readiness-0f1e",
+          "database_identity": "misp",
+          "database_role": "misp",
+          "database_role_access_ok": true,
+          "cache_authenticated": true,
+          "cache_persistence_policy": "no",
+          "cache_eviction_policy": "noeviction"
+        },
+        "admitted": {
+          "canonical_url": "https://misp.techvault.local",
+          "database_identity": "misp",
+          "database_role": "misp",
+          "cache_persistence_policy": "no",
+          "cache_eviction_policy": "noeviction"
+        }
+      },
+      "expect": {
+        "value": "7b226170695f636f7272656c6174696f6e5f6964223a226170746c2d72656164696e6573732d30663165222c226170695f77726974655f726561645f6f6b223a747275652c2263616368655f61757468656e74696361746564223a747275652c2263616368655f6576696374696f6e5f706f6c696379223a226e6f6576696374696f6e222c2263616368655f70657273697374656e63655f706f6c696379223a226e6f222c2263616e6f6e6963616c5f75726c223a2268747470733a2f2f6d6973702e746563687661756c742e6c6f63616c222c2263657274696669636174655f7665726966696564223a747275652c2264617461626173655f6964656e74697479223a226d697370222c2264617461626173655f726f6c65223a226d697370222c2264617461626173655f726f6c655f6163636573735f6f6b223a747275652c226d6973705f61757468656e746963617465645f6170695f7265616479223a747275657d"
+      }
+    },
+    {
+      "id": "certificate-not-verified",
+      "input": {
+        "payload": {
+          "canonical_url": "https://misp.techvault.local",
+          "certificate_verified": false,
+          "api_write_read_ok": true,
+          "api_correlation_id": "aptl-readiness-0f1e",
+          "database_identity": "misp",
+          "database_role": "misp",
+          "database_role_access_ok": true,
+          "cache_authenticated": true,
+          "cache_persistence_policy": "no",
+          "cache_eviction_policy": "noeviction"
+        },
+        "admitted": {
+          "canonical_url": "https://misp.techvault.local",
+          "database_identity": "misp",
+          "database_role": "misp",
+          "cache_persistence_policy": "no",
+          "cache_eviction_policy": "noeviction"
+        }
+      },
+      "expect": {
+        "value": null
+      },
+      "note": "A false required fact gives no document."
+    },
+    {
+      "id": "admitted-mismatch",
+      "input": {
+        "payload": {
+          "canonical_url": "https://misp.techvault.local",
+          "certificate_verified": true,
+          "api_write_read_ok": true,
+          "api_correlation_id": "aptl-readiness-0f1e",
+          "database_identity": "misp",
+          "database_role": "misp",
+          "database_role_access_ok": true,
+          "cache_authenticated": true,
+          "cache_persistence_policy": "no",
+          "cache_eviction_policy": "allkeys-lru"
+        },
+        "admitted": {
+          "canonical_url": "https://misp.techvault.local",
+          "database_identity": "misp",
+          "database_role": "misp",
+          "cache_persistence_policy": "no",
+          "cache_eviction_policy": "noeviction"
+        }
+      },
+      "expect": {
+        "value": null
+      }
+    }
+  ]
+}

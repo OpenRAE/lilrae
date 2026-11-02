@@ -1,0 +1,62 @@
+{
+  "corpus": 1,
+  "scheme": "live-gate-alert-summary",
+  "version": "current",
+  "owner": "aptl.validation._live_gate_probes._matched_alert_summary",
+  "cases": [
+    {
+      "id": "full",
+      "input": {
+        "rule": {
+          "id": "100200"
+        },
+        "@timestamp": "2026-11-01T00:00:00Z",
+        "data": {
+          "srcip": "10.0.0.5"
+        },
+        "agent": {
+          "name": "web"
+        }
+      },
+      "expect": {
+        "value": {
+          "rule_id": "100200",
+          "event_time": "2026-11-01T00:00:00Z",
+          "source_identity": "10.0.0.5",
+          "sha256": "42b206bb578e3ff1d0848edb54c53b100b5d19bacf47b0b528142dc4dda2e72e"
+        }
+      }
+    },
+    {
+      "id": "agent-only",
+      "input": {
+        "rule": {
+          "id": 5715
+        },
+        "agent": {
+          "name": "agent-é"
+        }
+      },
+      "expect": {
+        "value": {
+          "rule_id": "5715",
+          "event_time": "unknown",
+          "source_identity": "agent-é",
+          "sha256": "3434c60814c957616314c31b3022b10b8eb93068a40d65d285c9a924c66a158c"
+        }
+      }
+    },
+    {
+      "id": "empty",
+      "input": {},
+      "expect": {
+        "value": {
+          "rule_id": "unknown",
+          "event_time": "unknown",
+          "source_identity": "unknown",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "corpus": 1,
+  "scheme": "seat-overlay-identity",
+  "version": "current",
+  "owner": "aptl.appliance.seat.overlay_identity._new_identity and _persist_create_once",
+  "cases": [
+    {
+      "id": "counting",
+      "input": {
+        "identity_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "credential_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+      },
+      "expect": {
+        "value": {
+          "identity": {
+            "schema_version": "aptl.overlay-identity/v1",
+            "instance_id": "sha256:630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd",
+            "bootstrap_credential": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8"
+          },
+          "file_hex": "7b22626f6f7473747261705f63726564656e7469616c223a22494345694979516c4a69636f4b536f724c4330754c7a41784d6a4d304e5459334f446b364f7a7739506a38222c22696e7374616e63655f6964223a227368613235363a36333064636432393636633433333636393131323534343862626232356234666634313261343963373332646232633861626331623835383162643731306464222c22736368656d615f76657273696f6e223a226170746c2e6f7665726c61792d6964656e746974792f7631227d"
+        }
+      }
+    },
+    {
+      "id": "high-bytes",
+      "input": {
+        "identity_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "credential_hex": "fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"
+      },
+      "expect": {
+        "value": {
+          "identity": {
+            "schema_version": "aptl.overlay-identity/v1",
+            "instance_id": "sha256:af9613760f72635fbdb44a5a0a63c39f12af30f950a6ee5c971be188e89c4051",
+            "bootstrap_credential": "_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v4"
+          },
+          "file_hex": "7b22626f6f7473747261705f63726564656e7469616c223a225f76372d5f76372d5f76372d5f76372d5f76372d5f76372d5f76372d5f76372d5f76372d5f76372d5f7634222c22696e7374616e63655f6964223a227368613235363a61663936313337363066373236333566626462343461356130613633633339663132616633306639353061366565356339373162653138386538396334303531222c22736368656d615f76657273696f6e223a226170746c2e6f7665726c61792d6964656e746974792f7631227d"
+        }
+      }
+    }
+  ]
+}

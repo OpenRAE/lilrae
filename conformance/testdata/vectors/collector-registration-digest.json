@@ -1,0 +1,107 @@
+{
+  "corpus": 1,
+  "scheme": "collector-registration-digest",
+  "version": "aptl-collector-registry/v2",
+  "owner": "aptl.core.experiment.capture_registry.CollectorRegistration.effective_config_digest",
+  "cases": [
+    {
+      "id": "registration",
+      "input": {
+        "registration_id": "aptl.observation.wazuh-alerts",
+        "implementation_version": "1.0.0",
+        "contract_version": "1",
+        "channel_kind": "alert-stream",
+        "capture_kind": "event-stream",
+        "capture_scope": "range",
+        "window_kinds": [
+          "trial",
+          "attempt"
+        ],
+        "media_types": [
+          "application/x-ndjson"
+        ],
+        "required_artifact_roles": [
+          "events"
+        ],
+        "supported_sensitivities": [
+          "internal"
+        ],
+        "supports_redaction": true,
+        "integrity_modes": [
+          "sha256"
+        ],
+        "sealing_modes": [
+          "none"
+        ],
+        "supports_chain_of_custody": false,
+        "supports_retention": true,
+        "supports_loss_disclosure": true,
+        "visibility_class": "participant-visible",
+        "limits": {
+          "max_bytes": 1048576,
+          "max_artifact_count": 4,
+          "max_duration_s": 3600
+        },
+        "redaction_policies": [
+          "default"
+        ],
+        "retention_policies": [
+          "run"
+        ]
+      },
+      "expect": {
+        "text": "sha256:0d3ba7258a441a9da1bc21e0681d39df283548fd799fd3749cab458b9d514105"
+      }
+    },
+    {
+      "id": "set-order-ignored",
+      "input": {
+        "registration_id": "aptl.observation.wazuh-alerts",
+        "implementation_version": "1.0.0",
+        "contract_version": "1",
+        "channel_kind": "alert-stream",
+        "capture_kind": "event-stream",
+        "capture_scope": "range",
+        "window_kinds": [
+          "attempt",
+          "trial"
+        ],
+        "media_types": [
+          "application/x-ndjson"
+        ],
+        "required_artifact_roles": [
+          "events"
+        ],
+        "supported_sensitivities": [
+          "internal"
+        ],
+        "supports_redaction": true,
+        "integrity_modes": [
+          "sha256"
+        ],
+        "sealing_modes": [
+          "none"
+        ],
+        "supports_chain_of_custody": false,
+        "supports_retention": true,
+        "supports_loss_disclosure": true,
+        "visibility_class": "participant-visible",
+        "limits": {
+          "max_bytes": 1048576,
+          "max_artifact_count": 4,
+          "max_duration_s": 3600
+        },
+        "redaction_policies": [
+          "default"
+        ],
+        "retention_policies": [
+          "run"
+        ]
+      },
+      "note": "sets are sorted before hashing",
+      "expect": {
+        "text": "sha256:0d3ba7258a441a9da1bc21e0681d39df283548fd799fd3749cab458b9d514105"
+      }
+    }
+  ]
+}

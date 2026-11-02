@@ -1,0 +1,108 @@
+{
+  "corpus": 1,
+  "scheme": "participant-shared-state-records",
+  "version": "current",
+  "owner": "aptl.backends.raes_participant_actions._shared_state_records",
+  "cases": [
+    {
+      "id": "success",
+      "input": {
+        "participant_address": "participant.red",
+        "action_instance_id": "action-1",
+        "success": true,
+        "spec": {
+          "target_refs": [
+            "tcp:10.0.0.5:22",
+            "web"
+          ],
+          "actor_provenance": "participant",
+          "source_container": "kali"
+        }
+      },
+      "expect": {
+        "value": {
+          "tcp:10.0.0.5:22": {
+            "state_address": "tcp:10.0.0.5:22",
+            "state_scope": "participant.red",
+            "state_kind": "network-service",
+            "ordering_basis": "participant-action-observation",
+            "conflict_policy": "single-writer-observation",
+            "provenance": "participant",
+            "digest": "sha256:dd7830fe76b4f669661b6f92173eacfaaf504aa944608275bc36174c2121ec3c",
+            "accesses": [
+              {
+                "state_address": "tcp:10.0.0.5:22",
+                "access_kind": "read",
+                "read_digest": "sha256:dd7830fe76b4f669661b6f92173eacfaaf504aa944608275bc36174c2121ec3c",
+                "operation_ref": "container_exec:kali"
+              }
+            ],
+            "evidence_refs": [
+              "action-1"
+            ]
+          },
+          "web": {
+            "state_address": "web",
+            "state_scope": "participant.red",
+            "state_kind": "container",
+            "ordering_basis": "participant-action-observation",
+            "conflict_policy": "single-writer-observation",
+            "provenance": "participant",
+            "digest": "sha256:967cf6a6bcd6866316ba8267f30f30cf2e6e75cc280fd25cf21fce1845f3b0e4",
+            "accesses": [
+              {
+                "state_address": "web",
+                "access_kind": "read",
+                "read_digest": "sha256:967cf6a6bcd6866316ba8267f30f30cf2e6e75cc280fd25cf21fce1845f3b0e4",
+                "operation_ref": "container_exec:kali"
+              }
+            ],
+            "evidence_refs": [
+              "action-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "failure",
+      "input": {
+        "participant_address": "participant.é",
+        "action_instance_id": "action-é",
+        "success": false,
+        "spec": {
+          "target_refs": [
+            "db"
+          ],
+          "actor_provenance": "participant",
+          "source_container": "kali"
+        }
+      },
+      "expect": {
+        "value": {
+          "db": {
+            "state_address": "db",
+            "state_scope": "participant.é",
+            "state_kind": "container",
+            "ordering_basis": "participant-action-observation",
+            "conflict_policy": "single-writer-observation",
+            "provenance": "participant",
+            "digest": "sha256:0a0dc4457a71db2cf6ad023cb74b16a11f89389980e34c3731f04a51ae0eaf20",
+            "accesses": [
+              {
+                "state_address": "db",
+                "access_kind": "read",
+                "read_digest": "sha256:0a0dc4457a71db2cf6ad023cb74b16a11f89389980e34c3731f04a51ae0eaf20",
+                "operation_ref": "container_exec:kali"
+              }
+            ],
+            "evidence_refs": [
+              "action-é"
+            ]
+          }
+        }
+      },
+      "note": "The digest input spells the result as True or False."
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "corpus": 1,
+  "scheme": "participant-session-id",
+  "version": "current",
+  "owner": "aptl.backends._raes_participant_execution._ParticipantDeliveryExecutor._session_id",
+  "cases": [
+    {
+      "id": "simple",
+      "input": {
+        "run_id": "run-1",
+        "participant_address": "participant.red"
+      },
+      "expect": {
+        "text": "bbb94ca6-6f92-5500-8dc3-c584b9ea9898"
+      }
+    },
+    {
+      "id": "non-ascii",
+      "input": {
+        "run_id": "run-é",
+        "participant_address": "participant.😀"
+      },
+      "expect": {
+        "text": "92198aa3-f573-5c0d-b442-e4b4b86a24dc"
+      }
+    }
+  ]
+}

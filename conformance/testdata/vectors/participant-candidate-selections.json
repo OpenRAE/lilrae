@@ -1,0 +1,138 @@
+{
+  "corpus": 1,
+  "scheme": "participant-candidate-selections",
+  "version": "current",
+  "owner": "aptl.backends.raes_participant_candidates.candidate_selections",
+  "cases": [
+    {
+      "id": "finite-domain",
+      "input": {
+        "delivery_ref": "participant-deliveries.red.1",
+        "participant_view_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "participant_view": {
+          "surface_id": "participant-surfaces.red.1",
+          "decision_epoch": 1,
+          "episode_id": "episode-1",
+          "action_entries": [
+            {
+              "action_contract_address": "participant.action-contract.scan",
+              "selection_shape_ref": "shapes.scan"
+            }
+          ]
+        },
+        "completed": [],
+        "argument_definitions": {
+          "participant.action-contract.scan": [
+            {
+              "name": "port",
+              "value_type": "integer",
+              "minimum": 22,
+              "maximum": 23
+            },
+            {
+              "name": "verbose",
+              "value_type": "boolean"
+            },
+            {
+              "name": "note",
+              "omission": "omit"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "value": [
+          {
+            "surface_id": "participant-surfaces.red.1",
+            "decision_epoch": 1,
+            "participant_view_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "delivery_ref": "participant-deliveries.red.1",
+            "action_contract_address": "participant.action-contract.scan",
+            "argument_shape_ref": "shapes.scan",
+            "proposal_ref": "participant-proposals.episode-1.epoch-1.participant-action-contract-scan.arguments-4e4d463e20740e1a",
+            "arguments": {
+              "port": 22,
+              "verbose": false
+            }
+          },
+          {
+            "surface_id": "participant-surfaces.red.1",
+            "decision_epoch": 1,
+            "participant_view_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "delivery_ref": "participant-deliveries.red.1",
+            "action_contract_address": "participant.action-contract.scan",
+            "argument_shape_ref": "shapes.scan",
+            "proposal_ref": "participant-proposals.episode-1.epoch-1.participant-action-contract-scan.arguments-a7af7f4ecde2e4a7",
+            "arguments": {
+              "port": 22,
+              "verbose": true
+            }
+          },
+          {
+            "surface_id": "participant-surfaces.red.1",
+            "decision_epoch": 1,
+            "participant_view_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "delivery_ref": "participant-deliveries.red.1",
+            "action_contract_address": "participant.action-contract.scan",
+            "argument_shape_ref": "shapes.scan",
+            "proposal_ref": "participant-proposals.episode-1.epoch-1.participant-action-contract-scan.arguments-d2b23228662fa295",
+            "arguments": {
+              "port": 23,
+              "verbose": false
+            }
+          },
+          {
+            "surface_id": "participant-surfaces.red.1",
+            "decision_epoch": 1,
+            "participant_view_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "delivery_ref": "participant-deliveries.red.1",
+            "action_contract_address": "participant.action-contract.scan",
+            "argument_shape_ref": "shapes.scan",
+            "proposal_ref": "participant-proposals.episode-1.epoch-1.participant-action-contract-scan.arguments-6f7b16157dcdc576",
+            "arguments": {
+              "port": 23,
+              "verbose": true
+            }
+          }
+        ]
+      },
+      "note": "Each argument variant gets a proposal reference that ends in the first 16 hex digits of the SHA-256 of RFC 8785 of its arguments."
+    },
+    {
+      "id": "no-arguments",
+      "input": {
+        "delivery_ref": "participant-deliveries.red.1",
+        "participant_view_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "participant_view": {
+          "surface_id": "participant-surfaces.red.1",
+          "decision_epoch": 1,
+          "episode_id": "episode-1",
+          "action_entries": [
+            {
+              "action_contract_address": "participant.action-contract.scan",
+              "selection_shape_ref": "shapes.scan"
+            }
+          ]
+        },
+        "completed": [],
+        "argument_definitions": {
+          "participant.action-contract.scan": []
+        }
+      },
+      "expect": {
+        "value": [
+          {
+            "surface_id": "participant-surfaces.red.1",
+            "decision_epoch": 1,
+            "participant_view_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "delivery_ref": "participant-deliveries.red.1",
+            "action_contract_address": "participant.action-contract.scan",
+            "argument_shape_ref": "shapes.scan",
+            "proposal_ref": "participant-proposals.episode-1.epoch-1.participant-action-contract-scan.arguments-44136fa355b3678a",
+            "arguments": {}
+          }
+        ]
+      }
+    }
+  ]
+}

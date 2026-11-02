@@ -1,0 +1,50 @@
+{
+  "corpus": 1,
+  "scheme": "bundle-jsonl-projection",
+  "version": "current",
+  "owner": "aptl.core.evidence_bundle.projections.jsonl.JsonlProjection.project",
+  "cases": [
+    {
+      "id": "two-records",
+      "input": {
+        "records": [
+          {
+            "evidence_record_id": "rec-b",
+            "value": "é",
+            "absent_or_null": null
+          },
+          {
+            "evidence_record_id": "rec-a",
+            "nested": {
+              "z": 1,
+              "a": 2
+            }
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "path": "projections/jsonl/evidence-records.jsonl",
+          "digest": "sha256:15a466b1fc4cd87905f65099f7f82d00b6f51312adda4f50cea90d84b025bb72",
+          "size": 120,
+          "content_hex": "7b2265766964656e63655f7265636f72645f6964223a227265632d61222c226e6573746564223a7b2261223a322c227a223a317d7d0a7b22616273656e745f6f725f6e756c6c223a6e756c6c2c2265766964656e63655f7265636f72645f6964223a227265632d62222c2276616c7565223a22c3a9227d0a"
+        }
+      },
+      "note": "The rows follow the record ID order, and a null member stays."
+    },
+    {
+      "id": "no-records",
+      "input": {
+        "records": []
+      },
+      "expect": {
+        "value": {
+          "members": [],
+          "limitations": [
+            "aptl.evidence-bundle.projection-ineligible"
+          ]
+        }
+      }
+    }
+  ]
+}
