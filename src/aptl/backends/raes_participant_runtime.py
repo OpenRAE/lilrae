@@ -429,11 +429,13 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
     ) -> ParticipantNativeActionExecution:
         """Dispatch one already-admitted action to its closed APTL realization."""
 
-        if self.delivery_tools is not None:
-            return self.delivery_tools.execute(request, snapshot, episode_id)
-
-        if request.execution_scope_ref is not None:
-            return self.autonomous_execution.execute(request, snapshot, episode_id)
+        if self.delivery_tools is not None or request.execution_scope_ref is not None:
+            executor = (
+                self.delivery_tools
+                if self.delivery_tools is not None
+                else self.autonomous_execution
+            )
+            return executor.execute(request, snapshot, episode_id)
 
         if (
             self.plan_authority is not None

@@ -17,7 +17,10 @@ from aptl.backends._raes_participant_execution import (
     _participant_crossing_evidence,
 )
 from aptl.backends._raes_participant_planning import build_participant_delivery_plan
-from aptl.backends.participant_tools.delivery import DeliveryToolSession
+from aptl.backends.participant_tools.delivery import (
+    DeliveryToolSession,
+    DeliveryActionAuthority,
+)
 from aptl.backends.raes_manifest import create_aptl_manifest
 from aptl.backends.raes_participant_runtime import AptlParticipantRuntime
 from aptl.backends.raes_planning_compat import AptlRuntimeManager
@@ -123,8 +126,9 @@ def session_for(manager, runtime, target, plan, role):
         runtime=runtime,
         behavior=plan.participant_behaviors[turn.participant_address],
         turn=turn,
-        identity=identity,
-        crossing_evidence=_participant_crossing_evidence(turn),
+        authority=DeliveryActionAuthority(
+            identity, _participant_crossing_evidence(turn)
+        ),
         tools={
             server.server_id: server.tool_names
             for server in profile_for(turn.profile).servers

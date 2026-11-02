@@ -280,7 +280,11 @@ def bind_participant_delivery_capture(
         ):
             raise ValueError("participant delivery evidence is not admitted")
         turns.append(replace(turn, capture_binding=binding))
-    return replace(plan, turns=tuple(turns))
+    return ParticipantDeliveryPlan(
+        turns=tuple(turns),
+        behavior_specifications=plan.behavior_specifications,
+        participant_behaviors=plan.participant_behaviors,
+    )
 
 
 def _control_transition(behavior: object, address: str) -> object:

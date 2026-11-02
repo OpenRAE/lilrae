@@ -159,6 +159,14 @@ def _apparatus(
     return manifest, selection
 
 
+@dataclass(frozen=True)
+class DeliveryActionAuthority:
+    """Management-owned identity and crossing evidence for one delivered turn."""
+
+    identity: ControlPlaneIdentity
+    crossing_evidence: ParticipantCrossingEvidence
+
+
 class DeliveryToolSession:
     """One delivered turn, one live participant episode, and no parallel actions.
 
@@ -176,8 +184,7 @@ class DeliveryToolSession:
         runtime: DeliveryRuntime,
         behavior: ParticipantBehaviorRuntime,
         turn: DeliveryTurn,
-        identity: ControlPlaneIdentity,
-        crossing_evidence: ParticipantCrossingEvidence,
+        authority: DeliveryActionAuthority,
         tools: Mapping[str, tuple[str, ...]],
         timeout_seconds: float = 600.0,
     ) -> None:
@@ -193,8 +200,8 @@ class DeliveryToolSession:
         self.runtime = runtime
         self.behavior = behavior
         self.turn = turn
-        self.identity = identity
-        self.crossing_evidence = crossing_evidence
+        self.identity = authority.identity
+        self.crossing_evidence = authority.crossing_evidence
         self.timeout_seconds = timeout_seconds
         self.manifest, self.selection = _apparatus(turn)
         self._tools = {server: frozenset(names) for server, names in tools.items()}
@@ -228,6 +235,7 @@ class DeliveryToolSession:
     ) -> DeliveryToolCall:
         """Ask RAES to admit the exact profile call before returning dispatch."""
         detach_tool_json(arguments)
+        detach_tool_json(dict(configuration) if configuration is not None else {})
         if not isinstance(call_id, str) or not 1 <= len(call_id) <= 128:
             raise AgentExecutionError(_REFUSED)
         with self._lock:

@@ -13,14 +13,11 @@ from raes_contracts.runtime_state import OperationState
 from raes_runtime.control_plane import RuntimeControlPlane
 from raes_runtime.control_plane_security import (
     ControlPlaneIdentity,
-    ControlPlaneRole,
-    ParticipantControlSubjectBinding,
 )
 from raes_runtime.participant_control_intents import (
     ParticipantExternalDirectionControlIntent,
     ParticipantProposalControlIntent,
 )
-from raes_runtime.participant_crossing_mediation import ParticipantCrossingEvidence
 
 from aptl.backends._raes_participant_evidence import (
     _ParticipantDeliveryCollector,
@@ -36,7 +33,14 @@ from aptl.backends._raes_participant_transport import (
     _which_executable,
     _read_private_config,
 )
-from aptl.backends.participant_tools.delivery import DeliveryToolSession
+from aptl.backends.participant_tools.delivery import (
+    DeliveryActionAuthority,
+    DeliveryToolSession,
+)
+from aptl.backends._raes_participant_crossing import (
+    _participant_control_identity,
+    _participant_crossing_evidence,
+)
 from aptl.core.correlation.clock import SystemClockProvider
 from aptl.core.evidence.coordinator import acquire_evidence
 from aptl.core.evidence.outcomes import AcquisitionDisposition
@@ -203,7 +207,9 @@ class _ParticipantDeliveryExecutor:
             ],
         )
 
-    def _initialize_episode(self, turn, identity) -> None:
+    def _initialize_episode(
+        self, turn: ParticipantInjectTurn, identity: ControlPlaneIdentity
+    ) -> None:
         """Start one episode before this participant's first delivered turn."""
         if turn.participant_address in self.initialized_participants:
             return
@@ -225,7 +231,13 @@ class _ParticipantDeliveryExecutor:
             )
         self.initialized_participants.add(turn.participant_address)
 
-    def _acquire_with_tools(self, sequence, binding, collector, trial):
+    def _acquire_with_tools(
+        self,
+        sequence: int,
+        binding: object,
+        collector: _ParticipantDeliveryCollector,
+        trial: _ControlledTurn,
+    ) -> object:
         """Attach a fresh carrier to each server for this exact turn."""
         document = json.loads(_read_private_config(trial.config_path))
         servers = document["mcpServers"]
@@ -244,8 +256,9 @@ class _ParticipantDeliveryExecutor:
             runtime=runtime,
             behavior=behavior,
             turn=trial.turn,
-            identity=trial.identity,
-            crossing_evidence=_participant_crossing_evidence(trial.turn),
+            authority=DeliveryActionAuthority(
+                trial.identity, _participant_crossing_evidence(trial.turn)
+            ),
             tools={
                 server.server_id: server.tool_names
                 for server in profile_for(trial.turn.profile).servers
@@ -365,25 +378,6 @@ def execute_participant_delivery_plan(
     return _ParticipantDeliveryExecutor(plan, context).execute()
 
 
-def _participant_control_identity(
-    turn: ParticipantInjectTurn,
-    target: object,
-) -> ControlPlaneIdentity:
-    """Build the least-privilege identity for one participant subject."""
-
-    return ControlPlaneIdentity(
-        identity="aptl-participant-delivery-controller",
-        roles=frozenset({ControlPlaneRole.OPERATOR}),
-        target_name=str(getattr(target, "name", "")),
-        participant_control_subjects=(
-            ParticipantControlSubjectBinding(
-                turn.participant_address,
-                turn.controller_address,
-            ),
-        ),
-    )
-
-
 def _control_intent_fields(
     turn: ParticipantInjectTurn,
     *,
@@ -433,39 +427,6 @@ def _require_control_success(
         or occurrence.get("disposition") != "accepted"
     ):
         raise AgentExecutionError("participant delivery control operation was rejected")
-
-
-def _participant_crossing_evidence(
-    turn: ParticipantInjectTurn,
-) -> ParticipantCrossingEvidence:
-    """Project one delivery's authored API-423 evidence coordinates."""
-
-    provenance_refs = (
-        turn.source_item_ref,
-        turn.inject_address,
-        turn.event_address,
-        turn.script_address,
-        turn.story_address,
-        turn.temporal_constraint_address,
-    )
-    marking_refs = (
-        turn.exposure_policy_ref,
-        turn.visibility_basis_ref,
-        turn.disclosure_basis_ref,
-    )
-    return ParticipantCrossingEvidence(
-        audience_scope_ref=turn.audience_scope_ref,
-        required_evidence_refs=list(turn.evidence_requirement_addresses),
-        provenance_refs=list(dict.fromkeys(provenance_refs)),
-        evidence_refs=list(
-            turn.control_evidence_addresses or turn.evidence_requirement_addresses
-        ),
-        object_marking_refs=list(dict.fromkeys(marking_refs)),
-        authorization_scope=turn.controller_address,
-        loss_and_limitations=[
-            f"failure-disposition:{turn.failure_disposition}",
-        ],
-    )
 
 
 def _deliver_controlled_turn(trial: _ControlledTurn) -> None:
