@@ -230,6 +230,7 @@ def test_delivery_turns_install_live_carriers_and_keep_one_episode(
     )
 
     manager, runtime, target, plan = delivery_runtime()
+    plan = replace(plan, mcp_server_ids=("aptl-red", "aptl-wazuh"))
     plan = bind_participant_delivery_capture(
         plan,
         SimpleNamespace(
