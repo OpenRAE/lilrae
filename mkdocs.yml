@@ -107,6 +107,7 @@ nav:
     - "Issue #1557 Go Foundation Design": architecture/issue-1557-go-foundation-design.md
     - "Issue #1604 Canonical Forms and Digests Design": architecture/issue-1604-canonical-digest-design.md
     - "Issue #1606 Clock and Deadline Waits Design": architecture/issue-1606-clock-wait-design.md
+    - "Issue #1605 Contained Files Design": architecture/issue-1605-securefile-design.md
     - "Issue #1510 Code Quality Architecture Preflight": architecture/issue-1510-code-quality-preflight.md
     - "Issue #1510 Code Quality Architecture Design": architecture/issue-1510-code-quality-design.md
     - "Issue #1372 Capture Spec Version Preflight": architecture/issue-1372-capture-spec-version-preflight.md
@@ -274,6 +275,7 @@ nav:
     - ADR-063 Remove TheHive and Cortex: adrs/adr-063-remove-thehive-and-cortex.md
     - ADR-064 Layered Architecture and Code Conventions: adrs/adr-064-layered-architecture-and-code-conventions.md
     - ADR-065 Go Implementation, Architecture Model, and Engineering Standards: adrs/adr-065-go-implementation-and-engineering-standards.md
+    - ADR-066 Descriptor Walk for Contained Files on Unix: adrs/adr-066-descriptor-walk-for-contained-files.md
 
 extra:
   social:

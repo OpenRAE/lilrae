@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -232,12 +231,12 @@ func mutate(ctx context.Context, cfg Config, root, module, base string) (counts 
 		args = append(args, "--diff", base)
 	}
 	moduleDir := filepath.Join(root, filepath.FromSlash(module))
-	exclusions, err := nestedModuleExclusions(os.DirFS(moduleDir))
+	rules, err := exclusions(moduleDir)
 	if err != nil {
-		return Counts{}, nil, fmt.Errorf("find nested modules of %s: %w", module, err)
+		return Counts{}, nil, err
 	}
-	for _, expression := range exclusions {
-		args = append(args, "--exclude-files", expression)
+	for _, rule := range rules {
+		args = append(args, "--exclude-files", rule)
 	}
 	// G204 is a false positive: the program comes from the configuration, no
 	// shell runs, and the arguments are fixed or a full commit name.
@@ -322,34 +321,4 @@ func evaluate(counts Counts, thresholds Thresholds, open []Mutant) []Finding {
 		findings = append(findings, Finding{Location: fmt.Sprintf("%s:%d:%d", m.File, m.Line, m.Column), Message: m.Status + " " + m.Type})
 	}
 	return findings
-}
-
-// nestedModuleExclusions keeps the mutation scope equal to the coverage scope.
-// Gremlins walks nested modules, but go test does not test their packages.
-// Each nested production module has its own mutation run.
-func nestedModuleExclusions(tree fs.FS) ([]string, error) {
-	var expressions []string
-	err := fs.WalkDir(tree, ".", func(name string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return fmt.Errorf("walk module directory %s: %w", name, walkErr)
-		}
-		if !entry.IsDir() || name == "." {
-			return nil
-		}
-		_, err := fs.Stat(tree, path.Join(name, "go.mod"))
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("inspect nested module %s: %w", name, err)
-		}
-		// pflag reads a comma-separated list, so encode commas in the regexp.
-		expression := strings.ReplaceAll(regexp.QuoteMeta(name), ",", `\x2c`)
-		expressions = append(expressions, "^"+expression+"/")
-		return fs.SkipDir
-	})
-	if err != nil {
-		return nil, fmt.Errorf("find nested module boundaries: %w", err)
-	}
-	return expressions, nil
 }

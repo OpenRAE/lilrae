@@ -4,17 +4,18 @@
 # Usage:
 #   tools/ci/go-gates.sh modules
 #   tools/ci/go-gates.sh lint
-#   tools/ci/go-gates.sh test COVERAGE_DIR
+#   tools/ci/go-gates.sh test COVERAGE_DIR [MODULE...]
 #   tools/ci/go-gates.sh vuln
 #   tools/ci/go-gates.sh osv
-#   tools/ci/go-gates.sh mutation [BASE]
+#   tools/ci/go-gates.sh mutation [BASE [MODULE...]]
 #   tools/ci/go-gates.sh fuzz [FUZZTIME]
 #   tools/ci/go-gates.sh regression BASE ISSUE BUG
 #   tools/ci/go-gates.sh architecture [BASE ISSUE PROMOTION]
 #
 # The modules are the go.mod files that Git tracks in the repository of the
 # current directory, except web/caddy-build, which has its own checks, and
-# test data. The pinned tools, the lint configuration, and the mutation
+# test data. A MODULE list limits the test and mutation gates to those
+# modules. The pinned tools, the lint configuration, and the mutation
 # thresholds come from the repository that holds this script.
 set -euo pipefail
 
@@ -78,10 +79,13 @@ lint() {
 }
 
 test_modules() {
-    local out dir pkgs name module prefix
+    local out dir pkgs name module prefix selected=("${@:2}")
+    if ((${#selected[@]} == 0)); then
+        selected=("${modules[@]}")
+    fi
     mkdir -p -- "$1"
     out=$(cd -- "$1" && pwd)
-    for dir in "${modules[@]}"; do
+    for dir in "${selected[@]}"; do
         echo "== $dir"
         cd -- "$repo/$dir"
         pkgs=$(packages)
@@ -142,11 +146,14 @@ osv() {
 }
 
 mutation() {
-    local base=${1:-} dir pkgs targets=() args=()
+    local base=${1:-} dir pkgs targets=() args=() selected=("${@:2}")
+    if ((${#selected[@]} == 0)); then
+        selected=("${modules[@]}")
+    fi
     build_tool tools github.com/go-gremlins/gremlins/cmd/gremlins
     # A module with test files only, such as the conformance suite, has no
     # mutant, and its tests can need an installed binary.
-    for dir in "${modules[@]}"; do
+    for dir in "${selected[@]}"; do
         pkgs=$(cd -- "$repo/$dir" && production_packages)
         if [[ -n "$pkgs" ]]; then
             targets+=("$dir")
@@ -237,12 +244,12 @@ case $gate in
     modules) printf '%s\n' "${modules[@]}" ;;
     lint) lint ;;
     test)
-        (($# == 2)) || usage
-        test_modules "$2"
+        (($# >= 2)) || usage
+        test_modules "${@:2}"
         ;;
     vuln) vuln ;;
     osv) osv ;;
-    mutation) mutation "${2:-}" ;;
+    mutation) mutation "${@:2}" ;;
     fuzz) fuzz "${2:-}" ;;
     *) usage ;;
 esac

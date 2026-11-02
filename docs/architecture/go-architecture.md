@@ -21,6 +21,7 @@ flowchart TB
         component_digest[digest]
         component_clock[clock]
         component_deadline_wait[deadline-wait]
+        component_secure_file[secure-file]
     end
     subgraph layer_tools[tools]
         component_regressioncheck_command[regressioncheck-command]

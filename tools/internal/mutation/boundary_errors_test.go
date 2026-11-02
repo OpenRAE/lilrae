@@ -35,7 +35,7 @@ func TestModuleDiscoveryFailsClosed(t *testing.T) {
 				FS:     fstest.MapFS{"sub/input.txt": {}},
 				denied: denied,
 			}
-			exclusions, err := nestedModuleExclusions(tree)
+			exclusions, err := exclusionsIn(tree, ".")
 			if !errors.Is(err, fs.ErrPermission) || exclusions != nil {
 				t.Fatalf("module discovery returned %v, %v; want no exclusions and a permission error", exclusions, err)
 			}

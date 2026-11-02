@@ -113,6 +113,11 @@ components:
     layer: foundation
     responsibility: Waits for a condition until a deadline.
     packages: [internal/wait]
+  - name: secure-file
+    layer: foundation
+    responsibility: Opens, writes, and removes files below a trusted directory without following links, with final file modes.
+    packages: [internal/securefile]
+    modules: [golang.org/x/sys]
   - name: conformance-suite
     layer: tools
     responsibility: Runs the black-box contract cases against an installed lilrae binary.
