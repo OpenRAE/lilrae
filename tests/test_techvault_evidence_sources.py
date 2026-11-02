@@ -216,6 +216,7 @@ def test_transcript_parser_rejects_accepted_ledger_without_matching_sessions():
     from aptl.core.experiment.capture_registry import CaptureLimits
     from aptl_techvault.evidence.transcript_parsing import transcript_sessions
 
+    limits = CaptureLimits(max_bytes=10000, max_artifact_count=10, max_duration_s=60)
     with pytest.raises(ValueError, match="broker ledger"):
         transcript_sessions(
             {
@@ -223,7 +224,7 @@ def test_transcript_parser_rejects_accepted_ledger_without_matching_sessions():
                 "accepted_session_ids": ["session-1"],
                 "sessions": [],
             },
-            CaptureLimits(max_bytes=10000, max_artifact_count=10, max_duration_s=60),
+            limits,
         )
 
 

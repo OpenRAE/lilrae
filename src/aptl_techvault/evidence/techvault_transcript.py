@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 
 from aptl.core.evidence.adapters.sources import SourceResult
@@ -83,10 +83,13 @@ class RedteamSessionTranscriptSource:
         }
         # The coordinator persists content first, then turns dropped_count into
         # MID_RUN_LOSS with a mandatory disclosure. No failure bytes are discarded.
-        return replace(
-            result,
+        return SourceResult(
             status=CollectorStatus.OK,
             dropped_count=len(missing),
+            media_type=result.media_type,
+            source_min_time=result.source_min_time,
+            source_max_time=result.source_max_time,
+            source_pipeline=result.source_pipeline,
             chunks=(
                 json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(),
             ),
@@ -303,20 +306,9 @@ def _validate_reconciliation(report: object, entry_count: int) -> None:
         "reason",
     }:
         raise ValueError("invalid transcript reconciliation")
-    groups = []
-    for name in ("census", "accepted", "missing"):
-        ids = report[f"{name}_refs"]
-        if (
-            not isinstance(ids, list)
-            or not all(
-                isinstance(item, str) and re.fullmatch(r"capture-[0-9a-f]{64}", item)
-                for item in ids
-            )
-            or len(set(ids)) != len(ids)
-            or report[f"{name}_count"] != len(ids)
-        ):
-            raise ValueError("invalid transcript reconciliation identities")
-        groups.append(set(ids))
+    groups = [
+        _reconciliation_refs(report, name) for name in ("census", "accepted", "missing")
+    ]
     census, accepted, missing = groups
     if (
         not missing
@@ -326,6 +318,22 @@ def _validate_reconciliation(report: object, entry_count: int) -> None:
         or report["reason"] != "no broker record; cause unknown"
     ):
         raise ValueError("invalid transcript reconciliation partition")
+
+
+def _reconciliation_refs(report: dict[str, object], name: str) -> set[str]:
+    """Validate one bounded identity-reference group and its count."""
+    ids = report[f"{name}_refs"]
+    if (
+        not isinstance(ids, list)
+        or not all(
+            isinstance(item, str) and re.fullmatch(r"capture-[0-9a-f]{64}", item)
+            for item in ids
+        )
+        or len(set(ids)) != len(ids)
+        or report[f"{name}_count"] != len(ids)
+    ):
+        raise ValueError("invalid transcript reconciliation identities")
+    return set(ids)
 
 
 def _retained_entries(payload: object) -> list[object]:
@@ -439,7 +447,7 @@ def _inside_window(value: object, start_iso: str, end_iso: str) -> bool:
         instant = datetime.fromisoformat(str(value).replace("Z", _UTC_OFFSET))
         start = datetime.fromisoformat(start_iso.replace("Z", _UTC_OFFSET))
         end = datetime.fromisoformat(end_iso.replace("Z", _UTC_OFFSET))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False
     try:
         return start <= instant <= end
