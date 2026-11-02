@@ -476,6 +476,22 @@ func TestCheckReplaysAPackageAtTheModuleRootWithSymlinksAndScripts(t *testing.T)
 	}
 }
 
+// regression: #1554
+func TestCheckRejectsAPassingTestWhoseTestBinaryFails(t *testing.T) {
+	t.Parallel()
+	r := newRepo(t)
+	base := r.Commit(map[string]string{"go.mod": goMod, "calc/calc.go": valueSource("1")})
+	r.Commit(map[string]string{
+		"calc/calc.go":      valueSource("2"),
+		"calc/calc_test.go": valueTest("// regression: #7\n", ""),
+		"calc/main_test.go": "package calc\n\nimport (\n\t\"os\"\n\t\"testing\"\n)\n\nfunc TestMain(m *testing.M) {\n\tm.Run()\n\tos.Exit(1)\n}\n",
+	})
+
+	report := r.check(base, 7, false)
+
+	requireOneFinding(t, report, "TestValue: the test passed, but the go test command failed on the head revision; it must pass there")
+}
+
 func TestCheckQuotesAtMostFiveLinesOfBuildOutput(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
