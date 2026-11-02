@@ -236,7 +236,7 @@ credential boundary is introduced.
 
 References: Python 3.14 documentation,
 [dataclasses](https://docs.python.org/3.14/library/dataclasses.html), section
-`replace`, explains reconstruction at dispatch. Installed RAES 10.2.0 public
+`replace`, explains reconstruction at dispatch. The RAES public
 `trial_unit`, `experiment_records` and `RuntimeControlPlane.experiment_records`
 contracts define result and portable reporting boundaries.
 
@@ -264,8 +264,7 @@ It does not invent an end time or cleanup receipt. The injected archive owns
 persistence of these records. Without an archive, callers can inspect the bundle
 through `report_trial_outcomes`; the RAES ledger remains authoritative.
 
-An unsuccessful native call can remain indeterminate under RAES 10.2.0
-supervision. Participant failure does not establish scope-complete cessation.
+An unsuccessful native call can remain indeterminate under RAES supervision. Participant failure does not establish scope-complete cessation.
 The adapter retains fences and never converts that uncertainty into terminal
 failure or success. Reporting failures also retain fences. Native `stop` and
 `continue` policy observations remain separate from task evaluation. Attempt

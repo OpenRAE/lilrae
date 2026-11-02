@@ -214,7 +214,7 @@ def test_successful_actions_do_not_advance_a_stepped_clock_or_evaluate_a_trial(
 
 
 def test_second_native_action_requires_shared_clock_progression():
-    from aptl.backends.raes_planning_compat import AptlRuntimeManager
+    from aptl.backends.raes_runtime import AptlRuntimeManager
     from tests.test_lilrae_concurrent_participants import bindings, scenario, target_for
 
     calls = []
