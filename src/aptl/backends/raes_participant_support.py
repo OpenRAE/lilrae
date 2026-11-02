@@ -16,7 +16,8 @@ from raes_contracts.participant_episode import (
     ParticipantEpisodeHistoryEventType,
     ParticipantEpisodeTerminalReason,
 )
-from raes_contracts.runtime_state import RuntimeSnapshot, SnapshotEntry
+from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotEntry
+from raes_contracts.diagnostics import Diagnostic
 
 
 def utc_now() -> str:
@@ -99,3 +100,23 @@ def build_snapshot(
             for address, records in shared_state_history.items()
         }
     return baseline.with_entries(dict(entries), **updates)
+
+
+def selection_failure(
+    snapshot: RuntimeSnapshot,
+    participant_address: str,
+    message: str,
+) -> ApplyResult:
+    """Build failure for the bounded participant workflow."""
+    return ApplyResult(
+        success=False,
+        snapshot=snapshot,
+        diagnostics=[
+            Diagnostic(
+                code="aptl.participant-runtime.selection-failed",
+                domain="participant",
+                address=participant_address,
+                message=message,
+            )
+        ],
+    )

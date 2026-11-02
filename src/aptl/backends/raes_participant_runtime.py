@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from aptl.backends._raes_participant_legacy import model_legacy_action
+from aptl.backends.raes_participant_support import selection_failure
 
 from collections.abc import Mapping
 from datetime import datetime, timezone
@@ -16,7 +17,6 @@ from raes_contracts.contracts import (
     ParticipantDecisionSurfaceSelectionV2Model,
     ParticipantTemporalRuntimeContextModel,
 )
-from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.participant_binding import (
     ParticipantActionAdmissionRequest,
     ParticipantActionApplyResult,
@@ -70,6 +70,7 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         self.deployment_backend = deployment_backend
         self.action_specs = dict(action_specs or DEFAULT_PARTICIPANT_ACTIONS)
         self.plan_authority = plan_authority
+        self.delivery_tools = None
         self._behavior_history: dict[str, list[dict[str, object]]] = {}
         self._selection_provider: ParticipantSelectionProvider | None = None
         self._pending_selections: dict[
@@ -168,7 +169,7 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
                     "participant provider selected outside the delivered candidate set"
                 )
         if failure is not None:
-            return _selection_failure(
+            return selection_failure(
                 snapshot,
                 request.participant_address,
                 failure,
@@ -428,8 +429,13 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
     ) -> ParticipantNativeActionExecution:
         """Dispatch one already-admitted action to its closed APTL realization."""
 
-        if request.execution_scope_ref is not None:
-            return self.autonomous_execution.execute(request, snapshot, episode_id)
+        if self.delivery_tools is not None or request.execution_scope_ref is not None:
+            executor = (
+                self.delivery_tools
+                if self.delivery_tools is not None
+                else self.autonomous_execution
+            )
+            return executor.execute(request, snapshot, episode_id)
 
         if (
             self.plan_authority is not None
@@ -462,26 +468,6 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
             snapshot,
             episode_id=episode_id,
         )
-
-
-def _selection_failure(
-    snapshot: RuntimeSnapshot,
-    participant_address: str,
-    message: str,
-) -> ApplyResult:
-    """Build failure for the bounded participant workflow."""
-    return ApplyResult(
-        success=False,
-        snapshot=snapshot,
-        diagnostics=[
-            Diagnostic(
-                code="aptl.participant-runtime.selection-failed",
-                domain="participant",
-                address=participant_address,
-                message=message,
-            )
-        ],
-    )
 
 
 def _elapsed_seconds(initialized_at: str) -> float:

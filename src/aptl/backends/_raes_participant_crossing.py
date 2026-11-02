@@ -9,16 +9,25 @@ from collections.abc import Mapping
 from raes_contracts.contracts.participant_crossing import (
     ParticipantCrossingGateDisposition,
     ParticipantCrossingPolicyReferenceModel,
+    ParticipantCrossingSubjectKind,
 )
 from raes_runtime.participant_crossing_mediation import (
     ParticipantCrossingIntent,
     ParticipantCrossingPolicyResolution,
     ParticipantCrossingSemanticGates,
     ParticipantCrossingValidationContext,
+    ParticipantCrossingEvidence,
+)
+
+from raes_runtime.control_plane_security import (
+    ControlPlaneIdentity,
+    ControlPlaneRole,
+    ParticipantControlSubjectBinding,
 )
 
 from aptl.backends._raes_participant_models import ParticipantInjectTurn
 from aptl.workbench.process import AgentExecutionError
+from aptl.core.participant_tools.contracts import MAX_TOOL_ACTIONS
 
 
 class _ParticipantDeliveryCrossingPolicyResolver:
@@ -33,6 +42,29 @@ class _ParticipantDeliveryCrossingPolicyResolver:
         """Compile stable participant crossing policies for this sequence."""
 
         self._policies = _delivery_crossing_policies(turns)
+        self._actions = {
+            participant: frozenset(
+                getattr(specification, "action_contract_addresses", ())
+            )
+            for specification in behavior_specifications.values()
+            for participant in specification.participant_addresses
+        }
+        for participant, policy in tuple(self._policies.items()):
+            if self._actions.get(participant):
+                turn_count = sum(
+                    turn.participant_address == participant for turn in turns
+                )
+                # Each action retains three behavior records and two crossing
+                # records. Each turn also retains two controls and their four
+                # crossing records. Control ordinals and history ordinals are
+                # distinct; freeze one sufficient interval before any record.
+                self._policies[participant] = policy.model_copy(
+                    update={
+                        "valid_from_order": 0,
+                        "valid_until_order": policy.valid_until_order
+                        + turn_count * (5 * MAX_TOOL_ACTIONS + 6),
+                    }
+                )
         self._subjects: list[object] = []
         behavior_evidence, behavior_authority = _participant_behavior_policy_refs(
             turns,
@@ -74,6 +106,13 @@ class _ParticipantDeliveryCrossingPolicyResolver:
         policy = self._policies.get(intent.participant_address)
         if policy is None:
             raise ValueError("participant delivery crossing policy is unavailable")
+        if (
+            intent.subject.subject_kind
+            == ParticipantCrossingSubjectKind.PARTICIPANT_ACTION_ADMISSION
+            and intent.action_or_projection_ref
+            not in self._actions.get(intent.participant_address, ())
+        ):
+            raise ValueError("participant delivery action is not authored")
         if intent.subject not in self._subjects:
             self._subjects.append(intent.subject)
         return ParticipantCrossingPolicyResolution(
@@ -236,3 +275,55 @@ def participant_runtime_options(
         ),
         "enforce_final_sink_flow_control": False,
     }
+
+
+def _participant_control_identity(
+    turn: ParticipantInjectTurn,
+    target: object,
+) -> ControlPlaneIdentity:
+    """Build the least-privilege identity for one participant subject."""
+
+    return ControlPlaneIdentity(
+        identity="aptl-participant-delivery-controller",
+        roles=frozenset({ControlPlaneRole.OPERATOR}),
+        target_name=str(getattr(target, "name", "")),
+        participant_control_subjects=(
+            ParticipantControlSubjectBinding(
+                turn.participant_address,
+                turn.controller_address,
+            ),
+        ),
+    )
+
+
+def _participant_crossing_evidence(
+    turn: ParticipantInjectTurn,
+) -> ParticipantCrossingEvidence:
+    """Project one delivery's authored API-423 evidence coordinates."""
+
+    provenance_refs = (
+        turn.source_item_ref,
+        turn.inject_address,
+        turn.event_address,
+        turn.script_address,
+        turn.story_address,
+        turn.temporal_constraint_address,
+    )
+    marking_refs = (
+        turn.exposure_policy_ref,
+        turn.visibility_basis_ref,
+        turn.disclosure_basis_ref,
+    )
+    return ParticipantCrossingEvidence(
+        audience_scope_ref=turn.audience_scope_ref,
+        required_evidence_refs=list(turn.evidence_requirement_addresses),
+        provenance_refs=list(dict.fromkeys(provenance_refs)),
+        evidence_refs=list(
+            turn.control_evidence_addresses or turn.evidence_requirement_addresses
+        ),
+        object_marking_refs=list(dict.fromkeys(marking_refs)),
+        authorization_scope=turn.controller_address,
+        loss_and_limitations=[
+            f"failure-disposition:{turn.failure_disposition}",
+        ],
+    )

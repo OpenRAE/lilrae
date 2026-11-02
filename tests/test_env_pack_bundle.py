@@ -120,9 +120,9 @@ def test_env_pack_bundle_stages_and_validates_the_bundled_techvault_pack(
     assert bundle.identity == "techvault"
     assert bundle.pack_identity == PackIdentity(
         pack_id="techvault",
-        pack_version="6.5.1",
+        pack_version="7.2.0",
         set_digest=(
-            "sha256:a1abd4a382e048e4f74ce343c1b544626fe0633739dfe473c79f1b5fa3aded2f"
+            "sha256:3a7706c8b20bd1a052017f67a77f5316ea8b16530015baa48278f3f64f52c600"
         ),
     )
     # The bundle roots at the staged copy, never at the installed package.

@@ -43,6 +43,18 @@ def participant_delivery_manifest_options(
         return supported_contract_versions, participant_runtime, {}
     runtime = replace(
         participant_runtime,
+        constraints={
+            **participant_runtime.constraints,
+            "delivery_tool_actions": (
+                "LilRAE-run deliveries only; one authored action contract per participant; "
+                "at most 16 sequential MCP calls per turn"
+            ),
+            "delivery_tool_semantics": (
+                "records calls and outcomes; does not interpret arguments "
+                "or classify native effects"
+            ),
+            "delivery_tool_recovery": "unknown effects stop further tool calls in the turn; no native retries",
+        },
         supported_behavior_features=(
             participant_runtime.supported_behavior_features
             | {
