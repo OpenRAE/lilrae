@@ -4564,6 +4564,40 @@ class TestStartupClassificationWiring:
         ctx.run_id = run_id
         return ctx, run_store, run_id
 
+    @pytest.mark.parametrize(
+        "failed,impact,expected",
+        [
+            (False, None, "success"),
+            (True, None, "failed"),
+            (False, "telemetry", "partial"),
+            (False, "readiness", "partial"),
+        ],
+    )
+    def test_startup_record_uses_observed_health(
+        self, tmp_path, failed, impact, expected
+    ):
+        from aptl.core.lab import _write_run_record
+        from aptl.core.lab_types import (
+            DiagnosticImpact,
+            DiagnosticSeverity,
+            LabResult,
+            StartupDiagnostic,
+        )
+
+        ctx, store, run_id = self._run_record_ctx(tmp_path)
+        ctx.raes_outcome.lab_result = LabResult(success=not failed)
+        if impact:
+            ctx.diagnostics.append(
+                StartupDiagnostic(
+                    step="capture",
+                    impact=DiagnosticImpact(impact),
+                    severity=DiagnosticSeverity.WARNING,
+                    message="bounded failure",
+                )
+            )
+        _write_run_record(ctx)
+        assert store.get_run_manifest(run_id)["outcome"] == expected
+
     def test_write_run_record_references_existing_orchestration_evidence(
         self, tmp_path
     ):
