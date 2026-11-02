@@ -18,6 +18,7 @@ from aptl.backends._scenario_startup_hooks import (
 from aptl.backends.scenario_family import AdmittedFamilyTrial
 from aptl.backends.scenario_runtime_hooks import ScenarioRuntimeOperations
 from aptl.core.scenario_bundle import PackIdentity, ScenarioBundle
+from aptl.core._credential_sources import EnvironmentGrant
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -91,6 +92,7 @@ class ScenarioStartupPlan:
     mcp_server_keys: tuple[McpServerCredentials, ...] = ()
     native_mcp_ingress: bool = False
     minimum_max_map_count: int | None = None
+    environment_grants: tuple[EnvironmentGrant, ...] = ()
 
 
 @dataclass(frozen=True)
