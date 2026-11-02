@@ -20,14 +20,13 @@ from __future__ import annotations
 import json
 
 from raes.artifact_requirements import (
-    ArtifactIdentity,
     ArtifactLockedInput,
     ArtifactMaterializationSpecification,
-    ArtifactMechanismProfile,
     ArtifactRequirement,
     ArtifactSatisfactionRoute,
 )
-from raes.explicitness import ExplicitnessClass, ExplicitnessProvenance
+from raes_contracts.artifact_identity import ArtifactIdentity, ArtifactMechanismProfile
+from raes_contracts.explicitness import ExplicitnessClass, ExplicitnessProvenance
 from raes_contracts.contracts import (
     ArtifactAvailabilityContext,
     ArtifactRequirementAvailability,

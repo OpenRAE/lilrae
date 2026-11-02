@@ -13,6 +13,8 @@ from raes_contracts.realization_envelope import (
 from raes_contracts.realization_observation import (
     RealizationObservation,
     RealizationObservationDisclosure,
+)
+from raes_contracts.realization_operational_observation import (
     bind_compute_substrate_observations,
     bind_operating_system_observations,
 )

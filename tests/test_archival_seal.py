@@ -13,7 +13,7 @@ import json
 
 import pytest
 from raes_contracts.contracts import ExperimentRunModel
-from raes_contracts.satisfiability import canonical_contract_digest
+from raes_contracts.canonical import canonical_contract_digest
 
 from tests.archival_fixtures import completed_context
 from aptl.core.archival.coordinator import finalize_terminal_attempt

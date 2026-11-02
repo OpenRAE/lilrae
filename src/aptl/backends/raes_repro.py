@@ -22,10 +22,8 @@ from raes_contracts.account_credentials import (
 from raes_contracts.participant_autonomous_state import (
     require_participant_autonomous_runtime_snapshot,
 )
-from raes_contracts.realization_preparation import (
-    jsonable_fallback,
-    to_jsonable_python,
-)
+from raes_contracts.canonical import jsonable_fallback
+from pydantic_core import to_jsonable_python
 from raes_contracts.runtime_state import RuntimeSnapshotEnvelope
 
 from aptl.backends.raes_manifest import create_aptl_manifest

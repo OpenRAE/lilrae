@@ -11,7 +11,9 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from hashlib import sha256
 
-from raes_contracts.participant_binding import ParticipantActionAdmissionRequest
+from raes_contracts.contracts.participant_action_admission import (
+    ParticipantActionAdmissionRequest,
+)
 from raes_contracts.participant_episode import (
     ParticipantEpisodeHistoryEventType,
     ParticipantEpisodeTerminalReason,

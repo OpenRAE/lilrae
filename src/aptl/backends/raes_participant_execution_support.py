@@ -8,9 +8,9 @@ from collections.abc import Mapping
 from typing import Any
 
 from raes_contracts.contracts import ParticipantActionResultModel
-from raes_contracts.participant_binding import (
+from raes_contracts.participant_binding import ParticipantNativeActionExecution
+from raes_contracts.contracts.participant_action_admission import (
     ParticipantActionAdmissionRequest,
-    ParticipantNativeActionExecution,
 )
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 

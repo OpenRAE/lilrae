@@ -14,6 +14,8 @@ from raes_operations.run_artifacts import RunMaterializationArchive, is_valid_ru
 from raes_contracts.materialization import (
     MATERIALIZATION_MAX_BYTES,
     MaterializationSubmission,
+)
+from raes_contracts.contracts.materialization_attestation import (
     require_materialization_records,
 )
 

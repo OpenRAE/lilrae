@@ -18,9 +18,11 @@ from raes_contracts.contracts import (
 )
 from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.participant_binding import (
-    ParticipantActionAdmissionRequest,
     ParticipantActionApplyResult,
     ParticipantNativeActionExecution,
+)
+from raes_contracts.contracts.participant_action_admission import (
+    ParticipantActionAdmissionRequest,
 )
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 
