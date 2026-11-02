@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from aptl.core.correlation.clock import ClockProvider, SystemClockProvider
 from aptl.core.evidence.coordinator import AcquisitionResult, acquire_evidence
-from aptl.core.evidence.outcomes import AcquisitionDisposition
+from aptl.core.evidence.outcomes import AcquisitionDisposition, capture_diagnostic
 from aptl.core.experiment.capture_registry import CaptureBinding
 from aptl.core.runstore import LocalRunStore
 from aptl.utils.logging import get_logger
@@ -336,10 +336,26 @@ def finalize_active_transcript_authority(
         scope=scope,
         clock=active_clock,
     )
-    if result.disposition is AcquisitionDisposition.SEALED_READY:
+    if result.records:
         result = qualify_retained_transcript(
             result, runtime_adapter, payload, binding, store_base, run_id
         )
+    if result.records and isinstance(payload, Mapping):
+        expected = set(payload.get("expected_session_ids", ()))
+        accepted = {item["session_id"] for item in payload.get("sessions", ())}
+        if expected - accepted:
+            result = replace(
+                result,
+                disposition=AcquisitionDisposition.INVALIDATED,
+                diagnostics=(
+                    *result.diagnostics,
+                    capture_diagnostic(
+                        "aptl.experiment-capture.mid-run-loss",
+                        "transcript",
+                        f"transcript census has {len(expected - accepted)} sessions without broker records",
+                    ),
+                ),
+            )
     if export_failure is not None:
         result = replace(
             result, diagnostics=(*result.diagnostics, export_failure.diagnostic())
