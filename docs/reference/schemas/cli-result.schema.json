@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openrae.github.io/lilrae/reference/schemas/cli-result.schema.json",
+  "title": "LilRAE CLI action result",
+  "description": "The envelope of the JSON result of lilrae doctor, lab start, lab stop, and lab reset. ok is true exactly when the exit status is 0. A new field keeps schema_version; removing or retyping a field raises it.",
+  "type": "object",
+  "required": ["command", "schema_version", "ok"],
+  "properties": {
+    "command": {"type": "string"},
+    "schema_version": {"const": 1},
+    "ok": {"type": "boolean"}
+  }
+}

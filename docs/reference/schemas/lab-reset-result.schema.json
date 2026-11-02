@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openrae.github.io/lilrae/reference/schemas/lab-reset-result.schema.json",
+  "title": "lilrae lab reset --json result",
+  "description": "The containers and networks of the workspace-scoped project that the reset removes, counted before it, or null when they could not be counted, and the error of a failed reset.",
+  "$ref": "cli-result.schema.json",
+  "required": ["containers_found", "networks_found", "error"],
+  "properties": {
+    "command": {"const": "lab reset"},
+    "containers_found": {"anyOf": [{"type": "null"}, {"type": "integer", "minimum": 0}]},
+    "networks_found": {"anyOf": [{"type": "null"}, {"type": "integer", "minimum": 0}]},
+    "error": {"type": ["string", "null"]}
+  }
+}

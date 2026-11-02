@@ -36,3 +36,4 @@ PyPI publication (#651, #656) installs the `aptl` CLI but not the lab assets, so
 - TESTS → TEST `tests/test_platform_ci_gates.py` (Installed-wheel smoke isolation and teardown workflow regression)
 - TESTS → TEST `tests/test_assert_project_teardown.py` (Effective workspace resource cleanup regression)
 - IMPLEMENTS → CONFIG `.github/workflows/checks.yml` (clean-install-lab-boot and fresh-start-preflight CI gates: build the wheel, install it clean, init, boot, tear down)
+- TESTS → TEST `conformance/testdata/cases/lab-init.txtar` (Black-box lab init materialization, conflict refusal, and --force)

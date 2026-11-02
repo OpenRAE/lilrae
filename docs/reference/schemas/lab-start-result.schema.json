@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openrae.github.io/lilrae/reference/schemas/lab-start-result.schema.json",
+  "title": "lilrae lab start --json result",
+  "description": "The outcome, the error, the execution boundary, the admission time, each diagnostic, the published host ports, and the residue of a failed start. A start that ends degraded_usable or degraded_unusable still exits with status 0. A failed start reports no ports.",
+  "$ref": "cli-result.schema.json",
+  "required": [
+    "outcome", "error", "execution_boundary", "admission_seconds", "diagnostics",
+    "published_ports", "published_ports_observed", "residue"
+  ],
+  "properties": {
+    "command": {"const": "lab start"},
+    "outcome": {"enum": ["ready", "degraded_usable", "degraded_unusable", "failed"]},
+    "error": {"type": ["string", "null"]},
+    "execution_boundary": {"anyOf": [{"type": "null"}, {"$ref": "execution-boundary.schema.json"}]},
+    "admission_seconds": {"anyOf": [{"type": "null"}, {"type": "number", "minimum": 0}]},
+    "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}},
+    "published_ports": {"type": "array", "items": {"$ref": "#/$defs/port"}},
+    "published_ports_observed": {"type": "boolean"},
+    "residue": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/residue"}]}
+  },
+  "$defs": {
+    "diagnostic": {
+      "type": "object",
+      "required": ["step", "component", "impact", "severity", "message", "operator_action"],
+      "properties": {
+        "step": {"type": "string"},
+        "component": {"type": "string"},
+        "impact": {"enum": ["cosmetic", "telemetry", "capability", "readiness"]},
+        "severity": {"enum": ["info", "warning", "error"]},
+        "message": {"type": "string"},
+        "operator_action": {"type": "string"}
+      }
+    },
+    "port": {
+      "type": "object",
+      "required": ["service", "default_port", "host_port", "protocols", "host_ip", "remapped"],
+      "properties": {
+        "service": {"type": "string", "minLength": 1},
+        "default_port": {"$ref": "#/$defs/port_number"},
+        "host_port": {"$ref": "#/$defs/port_number"},
+        "protocols": {"type": "array", "items": {"type": "string"}},
+        "host_ip": {"type": ["string", "null"]},
+        "remapped": {"type": "boolean"}
+      }
+    },
+    "port_number": {"type": "integer", "minimum": 0, "maximum": 65535},
+    "residue": {
+      "type": "object",
+      "required": ["container_count", "network_count", "teardown_requested", "torn_down"],
+      "properties": {
+        "container_count": {"anyOf": [{"type": "null"}, {"type": "integer", "minimum": 0}]},
+        "network_count": {"anyOf": [{"type": "null"}, {"type": "integer", "minimum": 0}]},
+        "teardown_requested": {"type": "boolean"},
+        "torn_down": {"type": "boolean"}
+      }
+    }
+  }
+}

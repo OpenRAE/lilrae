@@ -131,6 +131,7 @@ def test_the_plugin_stops_a_run_without_a_test_file(pytester: pytest.Pytester) -
         ("--ignore", "test_a.py"),
         ("--deselect", "test_a.py::test_a"),
         ("-k", "test_a"),
+        ("--rootdir", str(pytester.path)),
         (str(pytester.path),),
         ("missing.py",),
     )

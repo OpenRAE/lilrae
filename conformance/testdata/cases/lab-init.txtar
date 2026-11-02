@@ -1,0 +1,34 @@
+# lilrae lab init materializes the lab assets of the installed release and a
+# default aptl.json. It refuses to overwrite lab assets without --force, and it
+# keeps the other files of the directory.
+lilrae lab init proj
+stdout 'Initialized lab project in proj'
+exists proj/aptl.json
+exists proj/docker-compose.yml
+exists proj/config
+schema aptl-config.schema.json proj/aptl.json
+
+# A second init finds the lab assets and changes nothing.
+cp proj/aptl.json before.json
+! lilrae lab init proj
+status 1
+stderr '--force'
+cmp proj/aptl.json before.json
+
+# --force overwrites the lab assets.
+lilrae lab init proj --force
+stdout 'Initialized lab project in proj'
+
+# A directory with other files is initialized, and its files stay.
+lilrae lab init other
+exists other/keep.txt
+exists other/aptl.json
+
+# The directory is required.
+! lilrae lab init
+status 2
+! stdout .
+stderr 'Usage:'
+
+-- other/keep.txt --
+keep

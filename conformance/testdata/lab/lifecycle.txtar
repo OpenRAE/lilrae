@@ -1,0 +1,48 @@
+# The lab cases start the product-neutral scenario that
+# LILRAE_CONFORMANCE_SCENARIO names, on a Docker daemon that only the lab uses,
+# and check the JSON results of start, status, stop, and reset, the range
+# snapshot, and the run record. The reset at the end returns the lab to a
+# clean, stopped state. When an assertion fails before it, the cleanup stops
+# the lab and removes its volumes.
+lilrae lab init proj
+cd proj
+cleanup lab stop --project-dir $WORK/proj --volumes --yes
+mkdir scenarios
+cp $LILRAE_CONFORMANCE_SCENARIO scenarios/scenario.sdl.yaml
+
+lilrae lab start --json --scenario-path scenarios/scenario.sdl.yaml
+jq stdout 'envelope("lab start"; $status)'
+cp stdout start.json
+schema lab-start-result.schema.json start.json
+jq start.json 'has("outcome") and .outcome != "failed"'
+jq start.json 'has("error") and .error == null'
+jq start.json 'has("residue") and .residue == null'
+stderr '\[lab start\]'
+
+lilrae lab status --json
+cp stdout status.json
+schema range-snapshot.schema.json status.json
+lilrae lab status --output snapshot.json
+schema range-snapshot.schema.json snapshot.json
+
+# The start wrote its run record as manifest.json in its run directory.
+lilrae runs list
+stdout '1 run\(s\) shown \(of 1 total\)'
+exec sh -c 'cp runs/*/manifest.json run-record.json'
+schema run-record.schema.json run-record.json
+
+lilrae container list
+stdout .
+
+lilrae lab stop --json
+jq stdout 'envelope("lab stop"; $status)'
+cp stdout stop.json
+schema lab-stop-result.schema.json stop.json
+jq stop.json '.volumes == false'
+jq stop.json 'has("error") and .error == null'
+
+lilrae lab reset --json --yes
+jq stdout 'envelope("lab reset"; $status)'
+cp stdout reset.json
+schema lab-reset-result.schema.json reset.json
+jq reset.json 'has("error") and .error == null'

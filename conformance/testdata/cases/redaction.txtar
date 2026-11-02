@@ -1,0 +1,34 @@
+# A credential in an input never reaches standard output or standard error.
+# The JSON results redact their free-form text, and errors do not echo input
+# values. The canary is the kv_password input of
+# tests/fixtures/redaction_parity_corpus.json.
+env DOCKER_HOST=tcp://admin:password=hunter2@127.0.0.1:9
+lilrae lab init proj
+cd proj
+
+! lilrae doctor --json
+! stdout hunter2
+! stderr hunter2
+! lilrae lab start --json
+! stdout hunter2
+! stderr hunter2
+! lilrae lab stop --json
+! stdout hunter2
+! stderr hunter2
+! lilrae lab reset --json --yes
+! stdout hunter2
+! stderr hunter2
+! lilrae lab status --json
+! stdout hunter2
+! stderr hunter2
+
+cp $WORK/credential.json aptl.json
+! lilrae config validate
+! stdout hunter2
+! stderr hunter2
+! lilrae config show --json
+! stdout hunter2
+! stderr hunter2
+
+-- credential.json --
+{"lab": {"name": ["password=hunter2"]}, "deployment": {"ssh_port": "password=hunter2"}}

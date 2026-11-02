@@ -97,6 +97,8 @@ nav:
     - "Issue #1552 Go Architecture Preflight": architecture/issue-1552-go-architecture-preflight.md
     - "Issue #1553 Go Toolchain Preflight": architecture/issue-1553-go-toolchain-preflight.md
     - "Issue #1553 Go Toolchain Design": architecture/issue-1553-go-toolchain-design.md
+    - "Issue #1554 Conformance Preflight": architecture/issue-1554-conformance-preflight.md
+    - "Issue #1554 Conformance Design": architecture/issue-1554-conformance-design.md
     - "Issue #1510 Code Quality Architecture Preflight": architecture/issue-1510-code-quality-preflight.md
     - "Issue #1510 Code Quality Architecture Design": architecture/issue-1510-code-quality-design.md
     - "Issue #1372 Capture Spec Version Preflight": architecture/issue-1372-capture-spec-version-preflight.md
@@ -191,6 +193,7 @@ nav:
     - TechVault OSINT Readiness: reference/techvault-osint-readiness.md
     - Experiment Runs: reference/experiment-runs.md
     - Portable Evidence Bundle Export: reference/evidence-bundle-export.md
+    - Conformance Inventory: reference/conformance-inventory.md
     - SOC Feature Spec: specs/soc-feature-spec.md
     - Web GUI Design Specification: specs/web-gui-design.md
     - Web GUI Design Preflight Guardrails: specs/web-gui-design-preflight.md

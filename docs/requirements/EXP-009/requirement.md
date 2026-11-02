@@ -34,3 +34,4 @@ The principal output of a scientific instrument is trustworthy evidence with dur
 - TESTS → TEST `tests/test_archival_terminal_states.py` (Terminal-state fixture coverage: every terminal cause seals a conformant record)
 - TESTS → TEST `tests/test_archival_seal.py` (Atomic seal commit, immutability, idempotency/conflict, inventory tamper detection)
 - TESTS → TEST `tests/test_execution_executor.py` (Production-path integration: executor reaches sealing across every terminal cause + recovery)
+- TESTS → TEST `conformance/testdata/cases/runs.txtar` (Black-box run store reads of current and legacy run manifests)

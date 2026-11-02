@@ -105,6 +105,10 @@ access locations as unverified. Service names use hyphens, so
 as `wazuh-dashboard`. A failed start reports an empty list, because its text
 output has no access summary.
 
+The [conformance inventory](conformance-inventory.md) maps each contract to the
+case that checks it, and `docs/reference/schemas/` publishes the JSON Schemas of
+these results.
+
 `lilrae lab status --json` keeps its existing output, the redacted range
 snapshot with `timestamp`, `software`, `containers`, `wazuh_rules`, `networks`,
 `config_hashes`, `services`, and `ssh`. It exits with status 1 when the

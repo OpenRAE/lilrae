@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openrae.github.io/lilrae/reference/schemas/doctor-result.schema.json",
+  "title": "lilrae doctor --json result",
+  "description": "The number of checks per status, and each check with its fix. The exit status is 0 exactly when no check failed.",
+  "$ref": "cli-result.schema.json",
+  "required": ["counts", "checks"],
+  "properties": {
+    "command": {"const": "doctor"},
+    "counts": {
+      "type": "object",
+      "required": ["pass", "warn", "fail", "skip"],
+      "properties": {
+        "pass": {"$ref": "#/$defs/count"},
+        "warn": {"$ref": "#/$defs/count"},
+        "fail": {"$ref": "#/$defs/count"},
+        "skip": {"$ref": "#/$defs/count"}
+      }
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "status", "summary", "fix"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "status": {"enum": ["pass", "warn", "fail", "skip"]},
+          "summary": {"type": "string"},
+          "fix": {"type": "string"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "count": {"type": "integer", "minimum": 0}
+  }
+}

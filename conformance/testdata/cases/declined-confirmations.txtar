@@ -1,0 +1,23 @@
+# Declining the confirmation of --clean, --volumes, or lab reset prints
+# Aborted., changes nothing, and exits with status 0.
+env DOCKER_HOST=unix://$WORK/no-daemon.sock
+lilrae lab init proj
+cd proj
+
+stdin $WORK/no.txt
+lilrae lab reset
+stdout 'Aborted\.'
+! exists .aptl
+
+stdin $WORK/no.txt
+lilrae lab stop --volumes
+stdout 'Aborted\.'
+! exists .aptl
+
+stdin $WORK/no.txt
+lilrae lab start --clean
+stdout 'Aborted\.'
+! exists .aptl
+
+-- no.txt --
+n
