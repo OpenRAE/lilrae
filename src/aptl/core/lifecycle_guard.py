@@ -13,12 +13,14 @@ import os
 import shlex
 import threading
 from contextlib import contextmanager
-from dataclasses import dataclass
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
 
 from aptl.core.config import find_config
 from aptl.core.lifecycle_policy import LifecycleBusyError
+from aptl.core.trial_ownership import require_trial_owner
 from aptl.utils.pathsafe import PathContainmentError, open_dir_contained_nofollow
 
 # Platform-specific import.
@@ -82,10 +84,14 @@ class _HeldLifecycleLock:
 
     fd: int
     depth: int
+    pid: int = field(default_factory=os.getpid)
 
 
 _HELD_LOCKS: dict[tuple[str, int], _HeldLifecycleLock] = {}
 _HELD_LOCKS_GUARD = threading.Lock()
+_DELEGATED_LOCKS: ContextVar[dict[str, tuple[tuple[str, int], _HeldLifecycleLock]]] = (
+    ContextVar("lifecycle_locks", default={})
+)
 
 
 def canonical_lifecycle_project_root(project_dir: Path) -> Path:
@@ -99,27 +105,62 @@ def canonical_lifecycle_project_root(project_dir: Path) -> Path:
 
 
 @contextmanager
-def lifecycle_mutation_lock(project_dir: Path) -> Iterator[Path]:
+def lifecycle_mutation_lock(
+    project_dir: Path, *, trial_owner: bytes | None = None
+) -> Iterator[Path]:
     """Hold the project lifecycle owner lock, reentrant in the current thread.
 
-    A different thread or process receives :class:`LifecycleBusyError`
-    immediately. The lock file is created below the trusted project directory
+    An unrelated thread or process receives :class:`LifecycleBusyError`
+    immediately. Related worker callbacks inherit the live context. The lock
+    file is created below the trusted project directory
     through descriptor-relative, no-follow path handling. POSIX locks are
     forced to owner-only permissions; Windows creation inherits the project's
     ACL while rejecting every reparse-point component by handle.
     """
 
-    root = canonical_lifecycle_project_root(project_dir)
+    with placement_mutation_lock(
+        canonical_lifecycle_project_root(project_dir), trial_owner=trial_owner
+    ) as root:
+        yield root
+
+
+@contextmanager
+def placement_mutation_lock(
+    root: Path, *, trial_owner: bytes | None = None
+) -> Iterator[Path]:
+    """Lock an exact placement-state root, without discovering a config owner."""
+    root = root.resolve()
     key = (str(root), threading.get_ident())
-    reused = _increment_reentrant_lock(key)
+    delegated = _DELEGATED_LOCKS.get().get(str(root))
+    reused = False
+    if delegated is not None:
+        with _HELD_LOCKS_GUARD:
+            if (
+                _HELD_LOCKS.get(delegated[0]) is delegated[1]
+                and delegated[1].pid == os.getpid()
+            ):
+                key = delegated[0]
+                delegated[1].depth += 1
+                reused = True
     if not reused:
         fd = _acquire_lock_fd(root)
         with _HELD_LOCKS_GUARD:
             _HELD_LOCKS[key] = _HeldLifecycleLock(fd=fd, depth=1)
 
+    token = None
     try:
+        if not reused:
+            try:
+                require_trial_owner(root, trial_owner)
+            except (PathContainmentError, OSError, ValueError) as exc:
+                raise LifecycleLockUnavailableError("safe trial ownership is unavailable") from exc
+        with _HELD_LOCKS_GUARD:
+            held = _HELD_LOCKS[key]
+        token = _DELEGATED_LOCKS.set({**_DELEGATED_LOCKS.get(), str(root): (key, held)})
         yield root
     finally:
+        if token is not None:
+            _DELEGATED_LOCKS.reset(token)
         _release_lock(key)
 
 
@@ -139,16 +180,6 @@ def lifecycle_observation_lock(project_dir: Path) -> Iterator[Path]:
     finally:
         _unlock(fd)
         os.close(fd)
-
-
-def _increment_reentrant_lock(key: tuple[str, int]) -> bool:
-    """Increment and report an existing same-thread ownership record."""
-
-    with _HELD_LOCKS_GUARD:
-        held = _HELD_LOCKS.get(key)
-        if held is not None:
-            held.depth += 1
-    return held is not None
 
 
 def _acquire_lock_fd(root: Path, *, shared: bool = False) -> int:

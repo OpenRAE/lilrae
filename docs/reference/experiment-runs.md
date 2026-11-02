@@ -2,6 +2,24 @@
 
 The experiment run system captures data from each scenario execution for reproducibility and post-run analysis.
 
+RAES owns experiment admission, dispatch, replacement and resume. Integrators
+serve an already admitted `TrialUnitRequest` through
+`aptl.backends.trial_serving.LilraeTrialUnit`, supplying the request's RAES runtime
+unit, `DeclaredCleanup`, selected Docker backend, and a shared local placement
+state root. Every worker using the same daemon must use the same state root.
+The adapter preserves the admitted entry, run and attempt identities; it does
+not create an experiment plan or schedule a batch.
+
+The adapter holds the project lifecycle lock and a daemon lock during delivery.
+It rejects preexisting containers, networks or volumes. Pending execution,
+interruption or failed cleanup leaves durable ownership fences that block
+unrelated lab mutation and subsequent trials, including after restart. Reconcile
+the same attempt through its original RAES ledger; deleting fences or starting
+a second runtime is not recovery. A `fresh-range-required` outcome requires a
+new approved placement rather than reuse of the old one. Cancellation and
+deadlines use RAES's stop and observation path, preserving partial evidence
+before declared cleanup. See [trial serving](../architecture/trial-serving.md).
+
 For a portable, third-party-verifiable evidence archive built from a run's verified artifact closure, see [Portable Evidence Bundle Export](evidence-bundle-export.md) (`lilrae runs export-bundle`).
 
 ## Clean State Between Runs
