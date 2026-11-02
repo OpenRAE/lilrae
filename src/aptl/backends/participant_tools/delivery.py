@@ -236,19 +236,9 @@ class DeliveryToolSession:
         """Ask RAES to admit the exact profile call before returning dispatch."""
         detach_tool_json(arguments)
         detach_tool_json(dict(configuration) if configuration is not None else {})
-        if not isinstance(call_id, str) or not 1 <= len(call_id) <= 128:
-            raise AgentExecutionError(_REFUSED)
         with self._lock:
-            key = (server, call_id)
-            if (
-                self.cancellation.is_set()
-                or self._active is not None
-                or len(self._seen) >= MAX_TOOL_ACTIONS
-                or key in self._seen
-                or tool not in self._tools.get(server, ())
-            ):
-                raise AgentExecutionError(_REFUSED)
-            self._seen.add(key)
+            self._require_available(server, tool, call_id)
+            self._seen.add((server, call_id))
             request = ParticipantActionAdmissionRequest(
                 participant_address=self.turn.participant_address,
                 action_contract_address=self.behavior.action_contract_addresses[0],
@@ -264,6 +254,19 @@ class DeliveryToolSession:
             self.unknown(call)
             raise AgentExecutionError(_REFUSED)
         return call
+
+    def _require_available(self, server: str, tool: str, call_id: str) -> None:
+        """Check the profile, replay identity and budgets while the caller holds the lock."""
+        if not isinstance(call_id, str) or not 1 <= len(call_id) <= 128:
+            raise AgentExecutionError(_REFUSED)
+        if (
+            self.cancellation.is_set()
+            or self._active is not None
+            or len(self._seen) >= MAX_TOOL_ACTIONS
+            or (server, call_id) in self._seen
+            or tool not in self._tools.get(server, ())
+        ):
+            raise AgentExecutionError(_REFUSED)
 
     def _submit(self, call: DeliveryToolCall) -> None:
         """Submit through RAES's incumbent action and crossing owners."""
