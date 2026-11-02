@@ -1,0 +1,81 @@
+# Native Docker range network policy
+
+The native Docker deployment boundary owns a separate `native-range` nftables
+policy. Scenario ACLs remain independent. Every admitted bridge is covered before
+workloads start; network topology and internal flags remain authored.
+
+```mermaid
+flowchart LR
+  Operator -->|exact IP, protocol, port grants| Compiler
+  Inventory -->|receipt-owned bridges| Compiler
+  Compiler -->|closed policy| Helper
+  Helper -->|atomic transaction| Kernel
+  Kernel -->|full rule readback| Evidence
+  Evidence --> Startup
+```
+
+The policy blocks host input on every range bridge, preserves replies to host
+initiated connections, allows forwarding between admitted bridges, and permits
+external forwarding only to exact operator destinations and transport ports.
+IPv6 is subject to the same default deny. A separate authority prevents authored
+ACL accepts from overriding the floor. Native Docker must bind direct nodes to
+admitted networks at creation, including during provisioning. Builds and image
+pulls run through the operator plane; they create no participant network grants.
+
+Applying and observing the policy precedes workload creation. A failure stops
+startup. Restart replaces only the owner table, atomically. Cleanup runs only
+after owned workloads are absent. Evidence reports applied policy rather than
+claiming that native Docker provides VM isolation.
+
+## Operator configuration
+
+Native Docker starts deny external traffic unless the operator adds exact
+IP-address grants to `deployment.range_egress_allowances` in `aptl.json`:
+
+```json
+{
+  "deployment": {
+    "range_egress_allowances": [
+      {"destination": "192.0.2.53", "protocol": "udp", "port": 53},
+      {"destination": "192.0.2.80", "protocol": "tcp", "port": 443}
+    ]
+  }
+}
+```
+
+These documentation addresses must be replaced with the operator's actual
+resolver and mirror addresses. Hostnames, CIDRs, wildcard destinations and
+port ranges are refused. Redirects and DNS results receive no additional grant.
+A workload requiring a different exact destination fails normally; LilRAE does
+not substitute a mirror or widen the policy. DNS forwarding uses the same
+network boundary as other traffic. In-range service discovery remains available.
+
+Native Docker refuses host-root-equivalent socket authorities, privileged
+Compose services, host devices and host networking before starting workloads.
+These would let participants bypass host firewall policy. Such a scenario needs
+an isolated runtime rather than an unrestricted native host socket. VM seat
+policy remains independent and this change makes no VM containment claim.
+
+Compose first creates stopped resources, captures ownership, and installs the
+policy across all project bridges before starting processes. Direct nodes attach
+to an admitted network at creation; they never receive the default bridge as a
+provisioning exception. Kernel support is checked before deployment. Apply or
+readback failure prevents a successful start; failed Compose preparation rolls
+back only the prepared project. Teardown retains filtering until owned networks
+and workloads have been removed, then removes only this owner's policy tables.
+
+The execution-boundary report includes `range_egress_policy`,
+`range_host_access_policy`, and `range_policy_digest`. The values remain
+`unverified` unless the native policy has a verified readback receipt for the
+bound daemon. Policy evidence does not establish VM containment.
+
+## Verification
+
+`tests/test_native_range_policy.py` covers input validation, full bridge coverage,
+partial apply/readback failure and owned-table replacement. The Docker CI step
+runs `tests/test_native_range_policy_integration.py` against disposable bridges.
+It proves blocked host access and external traffic, allowed in-range traffic,
+exact external TCP/UDP grants, redirects, IPv6, DNS and absent socket authority.
+A mutation that keeps a rule's identity but changes its verdict must fail
+readback. Repeat apply and cleanup exercise ownership without flushing Docker
+or another lab's rules.

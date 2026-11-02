@@ -149,6 +149,7 @@ class DockerComposeBackend(
         offline_staged: bool = False,
         docker_socket_path: Path | None = None,
         environment_grants: Sequence[EnvironmentGrant] = (),
+        range_egress_allowances: Sequence[object] = (),
     ) -> None:
         if docker_socket_path is not None and not docker_socket_path.is_absolute():
             raise ValueError("managed Docker socket must be absolute")
@@ -173,6 +174,7 @@ class DockerComposeBackend(
             ]
             | None
         ) = None
+        self._range_egress_allowances = tuple(range_egress_allowances)
         self._boundary_receipts: dict[str, dict[str, object]] = {}
         self._boundary_specs: dict[str, object] = {}
         self._boundary_helper_image = DEFAULT_BOUNDARY_HELPER_IMAGE
@@ -391,7 +393,7 @@ class DockerComposeBackend(
         """
         try:
             self._prepare_owned_cleanup()
-        except (BackendTimeoutError, OwnershipConflictError, OSError):
+        except BackendTimeoutError, OwnershipConflictError, OSError:
             return LabResult(
                 success=False,
                 error="Backend resource ownership conflict before Compose cleanup.",
@@ -437,7 +439,7 @@ class DockerComposeBackend(
         """
         try:
             self._prepare_owned_cleanup()
-        except (BackendTimeoutError, OwnershipConflictError, OSError):
+        except BackendTimeoutError, OwnershipConflictError, OSError:
             return (
                 False,
                 "Backend resource ownership conflict before emergency cleanup.",

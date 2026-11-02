@@ -90,7 +90,10 @@ class ContainerSettings(BaseModel):
         if value is not None and (
             len(value) > 128
             or len(set(value)) != len(value)
-            or any(not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}", item) for item in value)
+            or any(
+                not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}", item)
+                for item in value
+            )
         ):
             raise ValueError("invalid operator group selection")
         return value
@@ -205,6 +208,25 @@ class ScenarioSourceConfig(BaseModel):
         return cleaned
 
 
+class RangeEgressAllowance(BaseModel):
+    """Operator-declared exact external destination and transport port."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    destination: str
+    protocol: Literal["tcp", "udp"]
+    port: int = Field(ge=1, le=65535)
+
+    @field_validator("destination")
+    @classmethod
+    def validate_destination(cls, value: str) -> str:
+        from ipaddress import ip_address
+
+        address = ip_address(value)
+        if address.is_loopback or address.is_multicast or address.is_unspecified:
+            raise ValueError("egress destination must be an exact unicast IP address")
+        return str(address)
+
+
 class DeploymentConfig(BaseModel):
     """Configuration for deployment backend selection.
 
@@ -216,6 +238,8 @@ class DeploymentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     # "docker-compose" or "ssh-compose"
+    range_egress_allowances: list[RangeEgressAllowance] = Field(default_factory=list)
+
     provider: str = "docker-compose"
     project_name: str = "aptl"
 
@@ -259,6 +283,7 @@ class DeploymentConfig(BaseModel):
         """Validate the identity used by Compose and destructive label queries."""
 
         return validate_compose_project_name(value)
+
 
 _TIME_PATTERN = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 _WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")

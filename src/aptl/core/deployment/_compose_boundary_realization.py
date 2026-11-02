@@ -15,6 +15,8 @@ from aptl.core.deployment._compose_boundary import (
 from aptl.core.deployment._compose_resource_ownership import OwnershipConflictError
 from aptl.core.deployment.boundary import (
     AcesBoundarySpec,
+    NativeRangeBoundarySpec,
+    NativeRangeAllowance,
     BoundaryEnforcementSpec,
     BoundaryNetwork,
     BoundaryWorkload,
@@ -27,6 +29,7 @@ from aptl.core.deployment.boundary_compiler import (
     compile_platform_boundary,
     compile_seat_protection_boundary,
 )
+from aptl.core.deployment.errors import BackendTimeoutError
 from aptl.core.deployment.realization import DeploymentRealizationSpec
 from aptl.core.lab_types import LabResult
 
@@ -192,7 +195,8 @@ class ComposeBoundaryRealizationMixin:
             "source_digest": source_digest,
             "enforcement_digest": policy.digest(),
             "families": ("bridge", "inet"),
-            "default_deny": policy.authority in {"platform", "seat-protection"},
+            "default_deny": policy.authority
+            in {"platform", "seat-protection", "native-range"},
             "network_coverage": (
                 tuple(
                     f"{network.name}/{family}"
@@ -237,6 +241,7 @@ class ComposeBoundaryRealizationMixin:
         """Install the platform deny floor before any scenario node can run."""
 
         stages = (
+            lambda: self._realize_native_range_boundary(realization),
             lambda: self._bind_appliance_realization(realization),
             self._realize_platform_baseline,
             lambda: self._realize_seat_protection_boundary(realization),
@@ -246,6 +251,81 @@ class ComposeBoundaryRealizationMixin:
             if failure is not None:
                 return failure
         return self._realize_raes_boundary(realization)
+
+    def _native_range_preflight(
+        self, realization: DeploymentRealizationSpec | None = None
+    ) -> LabResult | None:
+        """Refuse unavailable kernel enforcement before deployment mutation."""
+        from aptl.core.execution_boundary import revalidate_execution_boundary
+        from aptl.core.deployment._compose_boundary import _ensure_helper, _run_helper
+
+        if getattr(self, "_appliance_boundary", None) is not None:
+            return None
+        observed = revalidate_execution_boundary(self)
+        if observed.host_containment != "native-docker":
+            return None
+        if realization is not None and (
+            realization.docker_authority_admissions
+            or any(
+                "SYS_ADMIN" in node.backend_run_capabilities
+                for node in realization.nodes
+            )
+        ):
+            return LabResult(
+                success=False,
+                error="Native Docker range policy cannot contain a host-root-equivalent Docker socket authority; use an isolated runtime.",
+            )
+        policy = NativeRangeBoundarySpec(
+            self._project_name,
+            (BoundaryNetwork(name="preflight", bridge="lilrae-check"),),
+        )
+        failure = _ensure_helper(self, self._boundary_helper_image)
+        if failure is not None:
+            return failure
+        try:
+            result = _run_helper(
+                self,
+                "check",
+                policy.canonical_json(),
+                self._boundary_helper_image,
+                self._offline_staged,
+            )
+        except OSError, RuntimeError, BackendTimeoutError:
+            result = None
+        if result is None or result.returncode != 0:
+            return LabResult(
+                success=False,
+                error="Native Docker range policy requires host nftables bridge/inet hooks, fib matching and NET_ADMIN; kernel policy check failed before deployment.",
+            )
+        return None
+
+    def _realize_native_range_boundary(
+        self, realization: DeploymentRealizationSpec
+    ) -> LabResult | None:
+        """Install native default deny before starting any scenario workload."""
+        from aptl.core.execution_boundary import revalidate_execution_boundary
+
+        if getattr(self, "_appliance_boundary", None) is not None:
+            return None
+        observed = revalidate_execution_boundary(self)
+        if observed.host_containment != "native-docker":
+            return None
+        try:
+            policy = NativeRangeBoundarySpec(
+                owner=self._project_name,
+                networks=self._boundary_network_observations(realization),
+                allowances=tuple(
+                    NativeRangeAllowance(a.destination, a.protocol, a.port)
+                    for a in self._range_egress_allowances
+                ),
+            )
+        except ValueError, OwnershipConflictError:
+            return LabResult(
+                success=False,
+                error="Native Docker policy requires every receipt-owned range bridge to be observable.",
+            )
+        result = self.realize_boundary(policy)
+        return None if result.success else result
 
     def _bind_appliance_realization(
         self,

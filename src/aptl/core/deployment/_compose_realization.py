@@ -159,9 +159,7 @@ class ComposeRealizationMixin(
         self._ensure_resource_ownership(
             attempt_id=attempt_id or ownership.new_attempt_id()
         )
-        failure = self._realization_preflight(
-            realization, substrate_digests
-        )
+        failure = self._realization_preflight(realization, substrate_digests)
         if failure is not None:
             result = failure
         elif not _needs_compose(realization):
@@ -182,7 +180,9 @@ class ComposeRealizationMixin(
     ) -> LabResult | None:
         """Run ordered backend preflights before any scenario mutation."""
 
-        failure = self._environment_binding_preflight(realization)
+        failure = self._native_range_preflight(realization)
+        if failure is None:
+            failure = self._environment_binding_preflight(realization)
         if failure is None:
             failure = self._validate_stateful_realization(realization)
         if failure is None:
@@ -210,7 +210,9 @@ class ComposeRealizationMixin(
         if not _needs_compose(realization) or not realization.images:
             return None
         return compose_capability_refusal(
-            self._run, (), documents=(image_override_text(realization.images),),
+            self._run,
+            (),
+            documents=(image_override_text(realization.images),),
         )
 
     def _realize_networks_and_boundaries(

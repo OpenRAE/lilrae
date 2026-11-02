@@ -238,6 +238,10 @@ jobs:
         run: |
           docker info > /dev/null
           python -m pytest -q -m integration tests/test_mixed_realization_integration.py
+      - name: Native Docker range egress and host protection
+        run: |
+          docker info > /dev/null
+          python -m pytest -q -m integration tests/test_native_range_policy_integration.py
       - name: Linux CLI and init smoke
         run: |
           lilrae --help
