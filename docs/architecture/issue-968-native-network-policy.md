@@ -79,3 +79,9 @@ exact external TCP/UDP grants, redirects, IPv6, DNS and absent socket authority.
 A mutation that keeps a rule's identity but changes its verdict must fail
 readback. Repeat apply and cleanup exercise ownership without flushing Docker
 or another lab's rules.
+
+The Debian service substrate includes the smoke scenario's declared curl and
+OpenSSH packages in its existing build-time package closure. Their runtime
+materialization still reads back package and service state; no package download
+exception is granted to a participant. Other runtime dependencies require
+operator grants or a prepared image containing the exact declared dependency.

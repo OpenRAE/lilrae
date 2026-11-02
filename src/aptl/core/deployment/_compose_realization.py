@@ -180,9 +180,7 @@ class ComposeRealizationMixin(
     ) -> LabResult | None:
         """Run ordered backend preflights before any scenario mutation."""
 
-        failure = self._native_range_preflight(realization)
-        if failure is None:
-            failure = self._environment_binding_preflight(realization)
+        failure = self._environment_binding_preflight(realization)
         if failure is None:
             failure = self._validate_stateful_realization(realization)
         if failure is None:
@@ -197,6 +195,8 @@ class ComposeRealizationMixin(
             failure = self._runtime_orchestration_preflight(realization)
         if failure is None:
             failure = self._compose_feature_preflight(realization)
+        if failure is None:
+            failure = self._native_range_preflight(realization)
         if failure is None:
             failure = self._prepare_docker_recording(realization)
         if failure is None:

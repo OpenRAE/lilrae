@@ -21,7 +21,8 @@ def validate_native_services(
         for mount in service.get("volumes", []):
             source = mount.get("source", "") if isinstance(mount, dict) else str(mount)
             if (
-                "docker.sock" in source
+                source.endswith(".sock")
+                or "docker.sock" in source
                 or source.rstrip("/") in _HOST_PATHS
                 or source == "/"
             ):

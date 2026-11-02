@@ -110,7 +110,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/redirect':
             self.send_response(302)
-            self.send_header('Location', 'http://' + self.connection.getsockname()[0] + ':8081/')
+            self.send_header('Location', 'http://' + self.connection.getsockname()[0].removeprefix('::ffff:') + ':8081/')
         else:
             self.send_response(200)
         self.end_headers()
@@ -154,6 +154,24 @@ Server(('::',8081),Handler).serve_forever()
 
         external = address(target, outside)
         internal = address(peer, inside)
+        route = run(
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "host",
+            "--entrypoint",
+            "ip",
+            IMAGE,
+            "-j",
+            "route",
+            "get",
+            "198.18.0.1",
+        )
+        host_address = json.loads(route.stdout)[0]["prefsrc"]
+        assert probe(client, host_address, host_port), (
+            "host interface fixture must answer before enforcement"
+        )
         external6 = json.loads(run("docker", "inspect", target).stdout)[0][
             "NetworkSettings"
         ]["Networks"][outside]["GlobalIPv6Address"]
@@ -202,6 +220,7 @@ Server(('::',8081),Handler).serve_forever()
         assert not dns_probe()
         assert not probe(client, external6, 8080)
         assert not probe(client, gateway, host_port)
+        assert not probe(client, host_address, host_port)
         assert not probe(client, gateway, 2375)
         assert probe(client, internal, 8080)
         # External DNS, direct IP and IPv6 cannot acquire an implicit grant.

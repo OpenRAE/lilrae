@@ -128,13 +128,14 @@ class ComposeOwnedStartMixin:
             refused = self._compose_substrate_daemon_refusal(
                 compose_files, profiles, exclude_services, only_services
             )
-        if refused is None:
-            refused = self._native_range_preflight()
         prepared = (
             refused if refused is not None else self._prepare_owned_start(compose_files)
         )
         if isinstance(prepared, LabResult):
             return prepared
+        native_refusal = self._native_range_preflight()
+        if native_refusal is not None:
+            return native_refusal
         command = self._owned_up_command(
             profiles,
             scope=prepared,
