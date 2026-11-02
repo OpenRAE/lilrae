@@ -427,7 +427,8 @@ def test_factorial_reporting_uses_shared_producer(tmp_path, case):
             result = finish(unit, request)
             seen.add(request.run_id)
             assert result.cleanup_receipt.run_id == request.run_id
-            assert result.evidence and result.cleanup_evidence
+            assert result.evidence
+            assert result.cleanup_evidence
         metadata = {}
         if case == "invalidation":
             metadata = {
@@ -665,7 +666,8 @@ def test_failure_reporting_per_factorial_entry(tmp_path, entry_index, case):
             "partial" if case == "missing-evidence" else "complete"
         )
         assert attempt.cleanup_status == "succeeded"
-        assert result.evidence and result.cleanup_evidence
+        assert result.evidence
+        assert result.cleanup_evidence
         assert attempt.evidence_record_refs
         if action_status:
             history = result.execution_snapshot.participant_behavior_history

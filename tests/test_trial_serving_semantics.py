@@ -268,10 +268,12 @@ def test_native_failure_without_effect_proof_remains_indeterminate():
             is OperationState.INDETERMINATE
         )
         record = runtime._store.load_records()[receipt.operation_id]
-        assert record.invocation.consumed and record.invocation.reserved
+        assert record.invocation.consumed
+        assert record.invocation.reserved
         from raes_contracts.errors import ConflictError
 
+        plan = ProvisioningPlan()
         with pytest.raises(
             ConflictError, match="indeterminate operation requires resolution"
         ):
-            runtime.submit_provisioning(ProvisioningPlan())
+            runtime.submit_provisioning(plan)
