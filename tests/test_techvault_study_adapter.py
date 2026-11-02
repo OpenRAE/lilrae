@@ -4,7 +4,7 @@ from importlib import metadata
 from pathlib import Path
 
 from aptl.backends.scenario_runtime_parameters import resolve_runtime_parameters
-from aptl.core.scenario_bundle import PackIdentity, ScenarioBundle, ScenarioSourceKind
+from aptl.core.scenario_bundle import PackIdentity, ScenarioBundle, ScenarioSourceKind, env_pack_bundle
 from aptl_techvault.runtime_parameters import STUDY_PACK_SET_DIGEST
 from aptl_techvault.study import PACK_ID, PACK_VERSION
 
@@ -46,8 +46,10 @@ def test_study_pack_has_exact_installed_adapter_claims() -> None:
             assert provider.supported_pack_set_digests == (STUDY_PACK_SET_DIGEST,)
 
 
-def test_study_runtime_parameters_reject_other_digest() -> None:
-    parameters = resolve_runtime_parameters(_bundle(STUDY_PACK_SET_DIGEST))
+def test_study_runtime_parameters_reject_other_digest(tmp_path: Path) -> None:
+    bundle = env_pack_bundle(tmp_path, PACK_ID)
+    assert bundle.pack_identity.set_digest == STUDY_PACK_SET_DIGEST
+    parameters = resolve_runtime_parameters(bundle)
     assert parameters is not None
     assert len(parameters) == 10
     assert resolve_runtime_parameters(_bundle("sha256:" + "0" * 64)) is None

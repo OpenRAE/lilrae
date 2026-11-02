@@ -44,6 +44,7 @@ The public lab-stop path removed the deployment and volumes and reported `ok: tr
 The final candidate is also tested through installed-wheel automation.
 Later failure-metadata changes are verified by the offline installed tests below.
 The delivery branch later merged `dev`, which updates LilRAE to 9.0.0 and RAES to 10.5.0.
+The final dependency synchronization raises the RAES floor to 10.6.0.
 Installed-wheel qualification uses those current dependencies and their public module paths.
 The historical smoke artifacts retain their original 8.2.0 and 10.2.0 identities.
 This lifecycle result is not a scientific experiment result.
