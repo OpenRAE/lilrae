@@ -189,6 +189,12 @@ class DockerComposeBackend(
         self._docker_socket_path: str | None = None
         self._docker_socket_host: str | None = None
 
+    def node_publication_bindings(self, container_name: str) -> dict | None:
+        """Read actual bindings, including ownership-verified byte relays."""
+        from aptl.core.deployment._native_range_publications import publication_bindings
+
+        return publication_bindings(self, container_name)
+
     @property
     def project_dir(self) -> Path:
         return self._project_dir

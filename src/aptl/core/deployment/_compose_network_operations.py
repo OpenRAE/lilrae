@@ -149,29 +149,9 @@ class ComposeNetworkOperationsMixin:
         ):
             failures.append("Failed to establish network cleanup authority")
         if not failures:
-            from aptl.core.deployment._compose_boundary import _run_helper
-            from aptl.core.deployment.boundary import (
-                BoundaryNetwork,
-                NativeRangeBoundarySpec,
+            from aptl.core.deployment._compose_native_boundary import (
+                cleanup_native_policy,
             )
-            from aptl.core.execution_boundary import revalidate_execution_boundary
 
-            observed = revalidate_execution_boundary(self)
-            if observed.host_containment == "native-docker":
-                policy = NativeRangeBoundarySpec(
-                    self._project_name,
-                    (BoundaryNetwork(name="cleanup", bridge="lilrae-cleanup"),),
-                )
-                result = _run_helper(
-                    self,
-                    "cleanup",
-                    policy.canonical_json(),
-                    self._boundary_helper_image,
-                    self._offline_staged,
-                )
-                if result.returncode != 0:
-                    failures.append("Native range policy cleanup failed")
-                else:
-                    self._boundary_receipts.pop("native-range", None)
-                    self._boundary_specs.pop("native-range", None)
+            failures.extend(cleanup_native_policy(self))
         return failures

@@ -18,15 +18,20 @@ def validate_native_services(
         if _HOST_CAPABILITIES.intersection(service.get("cap_add", ())):
             raise ValueError("native service exposes host capabilities")
         _validate_namespace(name, services, resolve_owned_container)
-        for mount in service.get("volumes", []):
-            source = mount.get("source", "") if isinstance(mount, dict) else str(mount)
-            if (
-                source.endswith(".sock")
-                or "docker.sock" in source
-                or source.rstrip("/") in _HOST_PATHS
-                or source == "/"
-            ):
-                raise ValueError("native service exposes host authority")
+        _validate_mounts(service)
+
+
+def _validate_mounts(service: dict) -> None:
+    """Reject host authority paths from native service mounts."""
+    for mount in service.get("volumes", []):
+        source = mount.get("source", "") if isinstance(mount, dict) else str(mount)
+        if (
+            source.endswith(".sock")
+            or "docker.sock" in source
+            or source.rstrip("/") in _HOST_PATHS
+            or source == "/"
+        ):
+            raise ValueError("native service exposes host authority")
 
 
 def _validate_namespace(
@@ -34,6 +39,7 @@ def _validate_namespace(
     services: Mapping[str, object],
     resolve_owned_container: Callable[[str], str],
 ) -> None:
+    """Resolve service joins and require receipt-owned container joins."""
     seen: set[str] = set()
     while name not in seen:
         seen.add(name)

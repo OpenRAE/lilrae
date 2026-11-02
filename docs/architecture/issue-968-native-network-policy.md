@@ -85,3 +85,18 @@ OpenSSH packages in its existing build-time package closure. Their runtime
 materialization still reads back package and service state; no package download
 exception is granted to a participant. Other runtime dependencies require
 operator grants or a prepared image containing the exact declared dependency.
+
+## Publications on internal-only nodes
+
+Docker drops effective port publications when a node has only internal networks.
+LilRAE reuses its existing byte relay for these TCP or UDP publications. The node
+keeps exactly its authored links. The receipt-owned relay joins the target
+network and the owned operator-access network, which is covered by the native
+policy before the relay starts. A relay receives no credential or Docker socket.
+
+Publication evidence checks the live relay image, process state, target address,
+shared network, forwarding configuration and effective Docker port bindings.
+Labels alone cannot prove a target. The boot gate also connects through the
+exact loopback binding and reads the target service's greeting. Teardown uses
+resource receipts to remove relays and their network before removing the owned
+policy; it does not rely on a list of scenario container names.

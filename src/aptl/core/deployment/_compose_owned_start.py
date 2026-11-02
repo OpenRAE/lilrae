@@ -144,6 +144,10 @@ class ComposeOwnedStartMixin:
             only_services=only_services,
             scenario_root=scenario_root,
         )
+        return self._execute_owned_compose_up(prepared, profiles, command)
+
+    def _execute_owned_compose_up(self, prepared, profiles, command) -> LabResult:
+        """Apply the native floor, run Compose, and capture or compensate."""
         floor_failure = self._native_compose_floor(prepared, profiles, command)
         if floor_failure is not None:
             return floor_failure
@@ -169,74 +173,63 @@ class ComposeOwnedStartMixin:
     def _native_compose_floor(
         self, scope: _OwnedStartScope, profiles: list[str], up_command: list[str]
     ) -> LabResult | None:
-        """Create stopped containers, then protect every owned Compose bridge."""
-        import json
-        from aptl.core.execution_boundary import revalidate_execution_boundary
-        from aptl.core.deployment.boundary import (
-            NativeRangeAllowance,
-            NativeRangeBoundarySpec,
+        """Create stopped containers before protecting every owned bridge."""
+        from aptl.core.deployment._compose_native_boundary import uses_native_policy
+        from aptl.core.deployment._native_range_publications import (
+            refresh_native_policy,
         )
 
-        observed = revalidate_execution_boundary(self)
-        if (
-            observed.host_containment != "native-docker"
-            or self._appliance_boundary is not None
-        ):
+        if not uses_native_policy(self):
             return None
-        config_command = self._build_command(
+        failure = self._native_compose_model_refusal(scope, profiles)
+        if failure is not None:
+            return failure
+        failure = self._create_native_compose_resources(scope, profiles, up_command)
+        if failure is None:
+            failure = refresh_native_policy(self, required=True)
+        if failure is not None:
+            self._roll_back_started_project(scope, profiles, remove_volumes=False)
+        return failure
+
+    def _native_compose_model_refusal(self, scope, profiles) -> LabResult | None:
+        """Refuse Compose namespace and mount paths that bypass filtering."""
+        import json
+        from aptl.core.deployment._native_range_model import validate_native_services
+
+        command = self._build_command(
             "config", profiles, compose_files=scope.compose_files
         )
-        config = self._run([*config_command, "--format", "json"])
+        result = self._run([*command, "--format", "json"])
         try:
-            model = json.loads(config.stdout) if config.returncode == 0 else {}
-            services = model["services"]
-            from aptl.core.deployment._native_range_model import (
-                validate_native_services,
+            model = json.loads(result.stdout) if result.returncode == 0 else {}
+            validate_native_services(
+                model["services"], self._resolve_owned_container_id
             )
-
-            validate_native_services(services, self._resolve_owned_container_id)
-        except ValueError, KeyError, TypeError, AttributeError:
+        except ValueError, KeyError, TypeError, AttributeError, OwnershipConflictError:
             return LabResult(
                 success=False,
-                error="Native Docker range policy requires bridge networking without privileged devices or host authority mounts.",
+                error=(
+                    "Native Docker range policy requires bridge networking without "
+                    "privileged devices or host authority mounts."
+                ),
             )
-        # Compose creates networks and dormant containers before any process can
-        # run. Applying the floor after `up` would leave a startup escape window.
+        return None
+
+    def _create_native_compose_resources(
+        self, scope, profiles, up_command
+    ) -> LabResult | None:
+        """Create and receipt dormant resources without running participants."""
         create = list(up_command)
         create[create.index("up")] = "create"
         create = [part for part in create if part != "-d"]
-        created = self._run(create)
-        if created.returncode != 0:
-            self._roll_back_started_project(scope, profiles, remove_volumes=False)
+        result = self._run(create)
+        if result.returncode != 0:
             return LabResult(
                 success=False,
                 error="Native range stopped-container preparation failed.",
             )
         captured = self._capture_started_resources(scope, profiles, report_start=False)
-        if not captured.success:
-            return captured
-        try:
-            for name in self.host_list_lab_networks(self._project_name):
-                self._resolve_owned_network_id(name)
-            networks = self._project_boundary_network_observations()
-            policy = NativeRangeBoundarySpec(
-                self._project_name,
-                networks,
-                tuple(
-                    NativeRangeAllowance(a.destination, a.protocol, a.port)
-                    for a in self._range_egress_allowances
-                ),
-            )
-            applied = self.realize_boundary(policy)
-        except ValueError, OwnershipConflictError:
-            applied = LabResult(
-                success=False,
-                error="Native Compose bridge ownership could not be established.",
-            )
-        if not applied.success:
-            self._roll_back_started_project(scope, profiles, remove_volumes=False)
-            return applied
-        return None
+        return None if captured.success else captured
 
     def _compose_substrate_daemon_refusal(
         self,

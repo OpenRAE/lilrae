@@ -311,7 +311,7 @@ def test_native_boundary_binds_all_observed_networks_before_start(
         "revalidate_execution_boundary",
         lambda _: SimpleNamespace(host_containment="native-docker"),
     )
-    backend._boundary_network_observations = lambda _: policy.networks
+    backend._project_boundary_network_observations = lambda: policy.networks
     backend._range_egress_allowances = policy.allowances
     backend.realize_boundary = MagicMock(
         return_value=LabResult(
