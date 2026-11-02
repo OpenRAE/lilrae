@@ -11,8 +11,17 @@ The existing purpose-specific entry points remain the discovery interfaces.
 The public contract owners retain their existing result types and validation.
 Family API `1` adds an explicit family qualification and trial context.
 Legacy providers retain their existing API and absence behavior outside family trials.
-A family trial requires all six capabilities before realization.
-These capabilities are serving, runtime parameters, startup, capture, planning compatibility, and verification.
+A family trial requires all five capabilities before realization.
+These capabilities are serving, runtime parameters, startup, capture, and verification.
+[ADR-065](../adrs/adr-065-runtime-readback-reports-realized-state.md) removed planning compatibility.
+Core no longer reads that entry-point group, and no adapter can change a compiled plan.
+
+The startup provider owns product readback for its pack.
+It declares `observed_runtime_concerns`, a map from each concern kind that it reads to the source that it uses.
+Its `observe_runtime` result contains one `ConcernReading` for each realized concern of one node.
+Core accepts a reading only for a declared kind, with the declared source and a valid RAES value.
+Core and the adapter can read different members of one kind, and core merges them by member identity.
+Both must use one source for that kind, or admission fails.
 
 `QualifiedFamilyTarget` binds one pack release, family reference, and backend identity.
 Pack version and content digest form one pair.
@@ -84,6 +93,8 @@ Trial evidence records participant configuration digests, not configuration valu
 Existing environment, path, capture, and backend validators remain mandatory.
 Provider failures produce bounded codes without exception payloads.
 Tests cover rejected admission before backend effects and credential canaries.
+A reading that has an undeclared kind, a different source, or an invalid value drops the adapter result for that node.
+Readings pass through the RAES projection, so protected values become presence markers or commitments.
 
 Capture uses the existing registry, source results, collector protocol, and outcome types.
 Public supporting functions retain their current validation owners.
