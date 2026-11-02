@@ -207,7 +207,6 @@ def test_the_wheel_has_only_reviewed_compatibility_exceptions_in_the_framework(
         b"aptl.scenario_verifiers",
         b"aptl.pack_backend_interactions",
         b"aptl.scenario_capture",
-        b"aptl.scenario_planning_compatibility",
         b"aptl.scenario_runtime_parameters",
         b"aptl.participant_desktop",
         b"aptl.participant_mcp_smoke_plans",

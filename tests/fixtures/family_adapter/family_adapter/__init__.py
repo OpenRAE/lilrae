@@ -9,7 +9,8 @@ from aptl.backends.pack_interaction import (
 )
 from aptl.backends.scenario_capture import ScenarioCaptureContribution
 from aptl.backends.scenario_startup import ScenarioStartupPlan
-from aptl.backends.scenario_planning_compatibility import PlanningCompatibilityDecision
+from aptl.core.runtime_readback import ConcernReading
+from raes_contracts.vocabulary import ObservationStrength
 from aptl.core.evidence.adapters.sources import SourceResult
 from aptl.core.evidence.outcomes import CollectorStatus
 from aptl.core.experiment.capture_registry import (
@@ -55,6 +56,8 @@ class Parameters(Provider):
 
 
 class Startup(Provider):
+    observed_runtime_concerns = {"runtime-filesystem-inventory": ObservationStrength.GUEST_OBSERVED}
+
     def resolve(self, bundle):
         SEEN.append(bundle.trial.identity())
         return ScenarioStartupPlan("scripts/seed.sh", ("lab",), ("lab",))
@@ -62,6 +65,18 @@ class Startup(Provider):
     def realize_runtime(self, operations, nodes, *, trial):
         SEEN.append(trial.identity())
         return []
+
+    def observe_runtime(self, operations, node, *, trial):
+        path = trial.scenario.content["payload"].path
+        native = operations.container_exec(node.container_name, ["test", "-f", path], timeout=30)
+        if native.returncode != 0:
+            return {}
+        return {
+            ("spec", "node", "runtime", "filesystem_inventory"): ConcernReading(
+                "runtime-filesystem-inventory", [{"path": path, "entry_type": "file"}],
+                ObservationStrength.GUEST_OBSERVED,
+            )
+        }
 
 
 class NativeSource:
@@ -135,11 +150,6 @@ class Capture(Provider):
         return ScenarioCaptureContribution((), runtime_adapter=CaptureRuntime())
 
 
-class Planning(Provider):
-    def resolve(self, context):
-        SEEN.append(context.trial.identity())
-        return PlanningCompatibilityDecision()
-
 
 class Verifier(Provider):
     extension_api_version = "2"
@@ -159,4 +169,4 @@ class Verifier(Provider):
 
 
 serving, parameters, startup = Serving(), Parameters(), Startup()
-capture, planning, verifier = Capture(), Planning(), Verifier()
+capture, verifier = Capture(), Verifier()

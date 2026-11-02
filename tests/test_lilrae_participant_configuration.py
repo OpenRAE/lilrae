@@ -5,11 +5,8 @@ from tests.opencode_fixture import synthetic_options
 import hashlib
 
 import pytest
-from raes_contracts.participant_configuration import (
-    ConfigurationOverrideModel,
-    realize_participant_configuration,
-)
-from raes_contracts.satisfiability import canonical_contract_digest
+from raes_contracts.contracts.participant_configuration import ConfigurationOverrideModel, realize_participant_configuration
+from raes_contracts.canonical import canonical_contract_digest
 
 
 def configuration(

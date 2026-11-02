@@ -15,7 +15,7 @@ from raes_contracts.contracts import (
     ParticipantImplementationManifestModel,
     ParticipantImplementationSelectionModel,
 )
-from raes_contracts.satisfiability import canonical_contract_digest
+from raes_contracts.canonical import canonical_contract_digest
 
 from aptl.backends.raes_participant_apparatus_models import (
     ParticipantApparatus,

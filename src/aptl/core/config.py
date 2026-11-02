@@ -21,6 +21,7 @@ from aptl.core._credential_sources import (
     EnvironmentGrant,
     ProcessEnvironmentCredentialSource,
 )
+from aptl.core.mcp_policy import McpPolicy
 from aptl.utils.logging import get_logger
 
 log = get_logger("config")
@@ -443,6 +444,7 @@ class AptlConfig(BaseModel):
     lifecycle_policy: LabLifecyclePolicyConfig | None = None
     experiment: ExperimentSettings = ExperimentSettings()
     seat: SeatSettings = SeatSettings()
+    mcp: McpPolicy = McpPolicy()
 
 
 def load_config(path: Path) -> AptlConfig:

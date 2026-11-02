@@ -201,6 +201,8 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 - [Issue #1002 Wazuh API TLS Warm-Up](issue-1002-wazuh-api-tls-warmup-preflight.md)
 - [Issue #1000 Partial Boot And Manual Release QA](issue-1000-manual-release-qa-preflight.md)
 - [Issue #992 Backend Observability Ownership](issue-992-backend-observability-ownership-preflight.md)
+- [Issue #1017 TechVault Bridge Retirement](issue-1017-techvault-bridge-retirement-preflight.md)
+- [Issue #1017 Native Runtime Attestation Design](issue-1017-native-runtime-attestation-design.md)
 - [Issue #974 Shuffle Worker Docker And Image Realization](issue-974-shuffle-worker-docker-images-preflight.md)
 - [Issue #934 APTL-To-LilRAE Rename Boundary](issue-934-rename-boundary-preflight.md)
 - [Issue #592 Scenario-Pack Terminology](issue-592-scenario-pack-terminology-preflight.md)

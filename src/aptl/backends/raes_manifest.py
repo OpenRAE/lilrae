@@ -24,9 +24,11 @@ behavior-history contracts. It does not declare the deprecated SDL scoring chain
 
 from __future__ import annotations
 
+from raes_contracts.vocabulary import ObservationStrength
+
 from typing import TYPE_CHECKING
 
-from aptl.backends._raes_manifest_realization import APTL_REALIZATION_SUPPORT
+from aptl.backends._raes_manifest_realization import realization_support_with_readers
 from aptl.backends._raes_manifest_resources import (
     APTL_PROCESS_RESOURCE_LIMITS as APTL_PROCESS_RESOURCE_LIMITS,
 )
@@ -334,6 +336,7 @@ def create_aptl_manifest(
     autonomous_bindings: tuple[LilraeParticipantBinding, ...] = (),
     realization_preparation: bool = False,
     cleanup: CleanupCapabilities | None = None,
+    runtime_concern_sources: dict[str, ObservationStrength] | None = None,
 ) -> BackendManifest:
     """Return APTL's canonical full remote-control-plane backend manifest.
 
@@ -388,7 +391,7 @@ def create_aptl_manifest(
         version=APTL_RAES_TARGET_VERSION,
         supported_contract_versions=supported_contract_versions,
         compatible_processors=_COMPATIBLE_PROCESSORS,
-        realization_support=APTL_REALIZATION_SUPPORT,
+        realization_support=realization_support_with_readers(runtime_concern_sources or {}),
         realization_envelope=_REALIZATION_ENVELOPE,
         concept_bindings=_CONCEPT_BINDINGS,
         provisioner=_PROVISIONER,

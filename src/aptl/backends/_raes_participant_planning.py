@@ -284,6 +284,7 @@ def bind_participant_delivery_capture(
         turns=tuple(turns),
         behavior_specifications=plan.behavior_specifications,
         participant_behaviors=plan.participant_behaviors,
+        mcp_server_ids=plan.mcp_server_ids,
     )
 
 

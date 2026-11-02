@@ -15,7 +15,7 @@ from raes_backend_protocols.manifest import backend_manifest_v2_model
 from raes_backend_stubs.stubs import create_stub_target
 from raes_processor.compiler import compile_runtime_model
 from raes_runtime.registry import ReferenceTimeRuntime
-from aptl.backends.raes_planning_compat import AptlRuntimeManager as RuntimeManager
+from aptl.backends.raes_runtime import AptlRuntimeManager as RuntimeManager
 
 from aptl.backends.raes_manifest import create_aptl_manifest
 from aptl.backends.raes_participant_runtime import AptlParticipantRuntime

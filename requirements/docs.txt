@@ -590,15 +590,15 @@ pyyaml-env-tag==1.1 \
     --hash=sha256:17109e1a528561e32f026364712fee1264bc2ea6715120891174ed1b980d2e04 \
     --hash=sha256:2eb38b75a2d21ee0475d6d97ec19c63287a7e140231e4214969d0eac923cd7ff
     # via mkdocs
-raes==10.2.0 \
-    --hash=sha256:b28205ef0a8f033c34fc2eb2e2e7f5cb1d599859486cf7a06a7271a8f4241a63 \
-    --hash=sha256:f8209874f44ad77c3ded6ed3c9057c0d425dacd52953fada76848671fd444631
+raes==10.5.0 \
+    --hash=sha256:4546e11a67135523506be9039fa831d4bfb97c51127923b8bbbf312f7a780173 \
+    --hash=sha256:69eda71a0fdfe80f5cb4ea2d18c2bfc211cb292100cc56d8a128a530939bfd3f
     # via
     #   lilrae
     #   raes-env-packs
-raes-env-packs==7.2.0 \
-    --hash=sha256:c8f262ea0c4a00efeb7a400b924e38c0d45196e1d3694a81ad6954a3e527ac65 \
-    --hash=sha256:ee779522898e7f3543f753feb92683e64f38dd582fc8725b4b2ef6462140ca2e
+raes-env-packs==7.2.1 \
+    --hash=sha256:11de7c1e6ff0b481b322e1a6f47a4159a57f29f10fbf814381d11985f9c9ddc2 \
+    --hash=sha256:683acfa76ad844be326300a1547b12c4b199adfbeaffafe1a3ae81679a17e88e
     # via lilrae
 referencing==0.37.0 \
     --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231 \

@@ -64,7 +64,7 @@ def _bundle(*, digest: str = TECHVAULT_PACK_SET_DIGEST) -> ScenarioBundle:
         root=pack_root,
         sdl_path=pack_root / "sdl/techvault.sdl.yaml",
         source_kind=ScenarioSourceKind.ENV_PACK,
-        pack_identity=PackIdentity("techvault", "7.2.0", digest),
+        pack_identity=PackIdentity("techvault", "7.2.1", digest),
     )
 
 
@@ -108,7 +108,7 @@ def _startup_spec(
         nodes=nodes,
         networks=(),
         images=images,
-        pack_identity=PackIdentity("techvault", "7.2.0", digest),
+        pack_identity=PackIdentity("techvault", "7.2.1", digest),
     )
 
 
@@ -480,22 +480,26 @@ def test_runtime_hook_only_runs_for_the_qualified_pack(monkeypatch) -> None:
 
 def test_runtime_observation_only_runs_for_the_qualified_pack(monkeypatch) -> None:
     from raes_processor.semantics.realization import CONCERN_PAYLOAD_PATH
+    from raes_contracts.vocabulary import ObservationStrength
+    from aptl.core.runtime_readback import ConcernReading
 
     from aptl_techvault.startup import provider
 
     path = CONCERN_PAYLOAD_PATH["runtime-container-autoremove"]
+    reading = ConcernReading("runtime-container-autoremove", False, ObservationStrength.DAEMON_OBSERVED)
+    monkeypatch.setattr(provider, "observed_runtime_concerns", {reading.kind: reading.source})
     calls = []
     monkeypatch.setattr(
         provider,
         "observe_runtime",
-        lambda backend, node: calls.append((backend, node)) or {path: False},
+        lambda backend, node: calls.append((backend, node)) or {path: reading},
     )
     backend = object()
     node = object()
 
     assert observe_scenario_runtime_concerns(
         _bundle().pack_identity, backend, node
-    ) == {path: False}
+    ) == {path: reading}
     assert (
         observe_scenario_runtime_concerns(
             _bundle(digest="sha256:" + "0" * 64).pack_identity, backend, node

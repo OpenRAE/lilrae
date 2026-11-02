@@ -1,10 +1,7 @@
-"""Apply bounded installed planning compatibility pending OpenRAE/rae#1285."""
+"""Public RAES planning and one native-evidence runtime owner."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
-from threading import RLock
 
 from raes_contracts.artifact_requirements import ArtifactAvailabilityContext
 from raes_contracts.realization_profiles import PlanProfileAuthority
@@ -21,95 +18,6 @@ from raes_runtime.manager import RuntimeManager as _RaesRuntimeManager
 from raes_runtime.registry import RuntimeTarget
 
 from aptl.core.scenario_bundle import ScenarioBundle
-from aptl.backends.identity import (
-    APTL_RAES_TARGET_NAME,
-    APTL_RAES_TARGET_PROFILE,
-    APTL_RAES_TARGET_VERSION,
-    BackendIdentity,
-)
-from aptl.backends.scenario_planning_compatibility import (
-    PlanningCompatibilityDecision,
-    PERMITTED_DAEMON_READBACK_CONCERNS,
-    ResolvedPlanningCompatibility,
-    ScenarioPlanningCompatibilityContext,
-)
-from aptl.backends.scenario_planning_compatibility_discovery import (
-    resolve_scenario_planning_compatibility,
-)
-from aptl.backends._raes_planning_adjustment import apply_planning_compatibility
-
-_RAES_LIMIT_OVERRIDE_LOCK = RLock()
-
-# Backend-manifest realization claims remain a core capability declaration.
-# An adapter decision chooses which of these claims one pack release needs
-# rewritten during planning; it cannot add a capability the manifest lacks.
-DAEMON_READBACK_RUNTIME_CONCERNS = PERMITTED_DAEMON_READBACK_CONCERNS
-
-
-def resolve_target_planning_compatibility(
-    bundle: ScenarioBundle | None, config: object
-) -> ResolvedPlanningCompatibility | None:
-    """Resolve compatibility once while constructing the admitted target."""
-
-    identity = bundle.pack_identity if isinstance(bundle, ScenarioBundle) else None
-    if identity is None:
-        return None
-    deployment = getattr(config, "deployment", None)
-    return resolve_scenario_planning_compatibility(
-        ScenarioPlanningCompatibilityContext(
-            pack=identity,
-            backend=bundle.trial.target.backend
-            if bundle.trial
-            else BackendIdentity(
-                APTL_RAES_TARGET_NAME,
-                APTL_RAES_TARGET_VERSION,
-                APTL_RAES_TARGET_PROFILE,
-                transport=str(getattr(deployment, "provider", "") or ""),
-            ),
-            trial=bundle.trial,
-        )
-    )
-
-
-@contextmanager
-def _runtime_value_limits(
-    decision: PlanningCompatibilityDecision | None,
-) -> Iterator[None]:
-    """Temporarily apply an admitted finite node budget."""
-
-    if decision is None or decision.runtime_max_nodes is None:
-        yield
-        return
-
-    from raes_runtime import backend_input_contracts, backend_snapshot_contracts
-
-    with _RAES_LIMIT_OVERRIDE_LOCK:
-        input_limits = backend_input_contracts.RUNTIME_SNAPSHOT_VALUE_LIMITS
-        snapshot_limits = backend_snapshot_contracts._VALUE_LIMITS
-        widened_input = input_limits.model_copy(
-            update={
-                "max_nodes": max(input_limits.max_nodes, decision.runtime_max_nodes)
-            }
-        )
-        widened_snapshot = snapshot_limits.model_copy(
-            update={
-                "max_nodes": max(snapshot_limits.max_nodes, decision.runtime_max_nodes)
-            }
-        )
-        backend_input_contracts.RUNTIME_SNAPSHOT_VALUE_LIMITS = widened_input
-        backend_snapshot_contracts._VALUE_LIMITS = widened_snapshot
-        try:
-            yield
-        finally:
-            backend_input_contracts.RUNTIME_SNAPSHOT_VALUE_LIMITS = input_limits
-            backend_snapshot_contracts._VALUE_LIMITS = snapshot_limits
-
-
-def target_planning_compatibility(target: RuntimeTarget) -> object | None:
-    """Return the compatibility decision resolved when the target was admitted."""
-
-    selection = getattr(target.provisioner, "planning_compatibility", None)
-    return selection.decision if selection is not None else None
 
 
 def plan_for_target(
@@ -117,7 +25,7 @@ def plan_for_target(
     scenario: object,
     options: AptlPlanningOptions,
 ) -> ExecutionPlan:
-    """Compile once, adjust the identified pack, then invoke the RAES planner once.
+    """Compile and plan once without changing the compiler output.
 
     Planning reads the target's manifest and profile context but acts on no
     backend, so it needs no runtime owner. The one runtime for the run is
@@ -136,9 +44,6 @@ def plan_for_target(
         parameters=dict(parameters) if parameters is not None else None,
         profile=options.profile,
         profile_authority=options.profile_authority,
-    )
-    model = apply_planning_compatibility(
-        model, target_planning_compatibility(target), scenario=scenario
     )
     scope = PlanScope(
         target_name=target.name,
@@ -166,7 +71,7 @@ def plan_for_target(
 
 
 class AptlRuntimeManager(_RaesRuntimeManager):
-    """RAES runtime manager with APTL's removable TechVault compile adapter."""
+    """One RAES runtime owner with native materialization evidence capture."""
 
     # One instance is the run's only runtime owner (OpenRAE/rae#1660).
 
@@ -181,7 +86,6 @@ class AptlRuntimeManager(_RaesRuntimeManager):
         super().__init__(target, run_scope=run_scope, **options)
         self._lilrae_run_id = run_scope.removeprefix("run:")
         self._aptl_bundle = bundle or getattr(target.provisioner, "bundle", None)
-        self._aptl_planning_compatibility = target_planning_compatibility(target)
         self.native_evidence = None
         from aptl.backends.lilrae_materialization_archive import (
             LilraeMaterializationArchive,
@@ -197,10 +101,9 @@ class AptlRuntimeManager(_RaesRuntimeManager):
             )
 
     def apply(self, execution_plan: ExecutionPlan) -> ApplyResult:
-        """Apply with a finite node budget for the exact released large plan."""
+        """Apply with the released limits and retain native evidence."""
 
-        with _runtime_value_limits(getattr(self, "_aptl_planning_compatibility", None)):
-            result = super().apply(execution_plan)
+        result = super().apply(execution_plan)
         if self.native_evidence is not None:
             self.native_evidence.capture(
                 execution_plan, result.snapshot, phase="initial", success=result.success
@@ -273,11 +176,8 @@ from aptl.backends._raes_planning_entry import (
 )
 
 __all__ = [
-    "AptlRuntimeManager",
-    "plan_for_target",
     "AptlPlanningOptions",
-    "DAEMON_READBACK_RUNTIME_CONCERNS",
-    "apply_planning_compatibility",
+    "AptlRuntimeManager",
     "plan_aptl_scenario",
-    "resolve_target_planning_compatibility",
+    "plan_for_target",
 ]
