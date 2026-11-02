@@ -9,6 +9,8 @@ anchors to the engine's checkout.
 from __future__ import annotations
 
 from pathlib import Path
+
+from raes import Scenario
 from unittest.mock import MagicMock
 
 from aptl.backends.raes import create_aptl_runtime_target
@@ -107,7 +109,7 @@ def test_the_public_start_path_resolves_a_bundle(monkeypatch, tmp_path):
         seen["bundle"] = kwargs.get("bundle")
         raise RuntimeError("stop after capture")
 
-    monkeypatch.setattr(raes, "parse_sdl_file", lambda path: object())
+    monkeypatch.setattr(raes, "parse_sdl_file", lambda path: Scenario(name="test", version="1.0"))
     monkeypatch.setattr(raes, "create_aptl_runtime_target", _capture)
 
     config = AptlConfig()

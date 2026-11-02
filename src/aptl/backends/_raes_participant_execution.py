@@ -261,7 +261,7 @@ class _ParticipantDeliveryExecutor:
             ),
             tools={
                 server.server_id: server.tool_names
-                for server in profile_for(trial.turn.profile).servers
+                for server in profile_for(trial.turn.profile, server_ids=self.plan.mcp_server_ids).servers
             },
         )
         with session.transport() as carrier:
@@ -288,6 +288,7 @@ class _ParticipantDeliveryExecutor:
                 source_config=self.source_config,
                 output_dir=self.root,
                 node_executable=self.node_executable,
+                server_ids=self.plan.mcp_server_ids,
             )
             self.profiles[profile] = configured
         return configured
