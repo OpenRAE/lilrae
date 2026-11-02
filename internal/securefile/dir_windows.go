@@ -139,7 +139,7 @@ func (h dirHandle) openFile(op, path string, parts []string) (file *os.File, err
 	defer func() { err = errors.Join(err, parent.close()) }()
 	file, err = openForMetadata(op, path, parent.root, leaf, windows.FILE_GENERIC_READ)
 	if err != nil {
-		return nil, componentError(op, path, parent.root, leaf, err)
+		return nil, err
 	}
 	if err = checkOpened(op, path, parent.root, leaf, file); err != nil {
 		return nil, errors.Join(err, failure(op, path, file.Close()))
