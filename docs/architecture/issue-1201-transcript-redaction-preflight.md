@@ -35,6 +35,26 @@ payload is a versioned projection, not a second source of custody truth.
 
 ## Required incumbent gates
 
+### Missing broker sessions (issue #1502)
+
+Retain validated broker sessions when their identities are a subset of the
+independent MCP census. Include a reconciliation report in the same retained
+JSON artifact, listing SHA-256 references to census, accepted and missing identities and counts.
+These references avoid retaining raw session IDs or weakening shared redaction.
+A missing identity means only "no broker record; cause unknown"; tee content
+does not establish whether SSH failed, admission was refused, or shutdown raced
+with session creation. The report passes through the existing redaction and
+content-addressed run-store path with the transcripts and travels with exports.
+
+Use the existing dropped-count persistence path to retain this artifact with
+mandatory loss disclosure and a `MID_RUN_LOSS` report. Required transcript gaps
+invalidate finalization even if a binding accepts other limitations: no
+`SEALED_READY`, `EMPTY_OK`, or successful-finalization marker. All-missing
+captures retain the gap report, never a successful empty transcript. Broker-only
+identities, ledger/session disagreement, and invalid custody still fail closed.
+Readback qualification checks the accepted transcript/frame counts and the
+reconciliation report against the full source census before returning.
+
 | Layer | Incumbent and required behavior |
 | --- | --- |
 | Authority and input | `raes_evidence_acquisition.py` quiesces the broker, reads the independent MCP census through no-follow paths, reconciles the broker authority/run/plan/binding, and resolves the exact installed `ScenarioCaptureContribution`. `_compose_capture_apparatus.py` reconciles accepted IDs. `transcript_parsing.py` enforces binding pin, export shape and limits; `techvault_transcript.py` enforces census, order, time, UTF-8, loss, and chain. Preserve these checks before projection. |

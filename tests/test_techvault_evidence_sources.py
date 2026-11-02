@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from aptl_techvault.evidence.techvault import (
     RedteamSessionTranscriptSource,
     SuricataRuleReadinessSource,
@@ -170,7 +172,7 @@ def test_transcript_source_rejects_bypass_or_forged_chain():
         }
     )
     bypass = RedteamSessionTranscriptSource(
-        lambda: ["session-1", "direct-exec"], lambda: [_session()]
+        lambda: ["direct-exec"], lambda: [_session()]
     )
     tampered = RedteamSessionTranscriptSource(lambda: ["session-1"], lambda: [forged])
 
@@ -198,5 +200,43 @@ def test_transcript_source_withholds_cross_direction_secret_context():
     assert result.status is CollectorStatus.OK
     entry = json.loads(b"".join(result.chunks))["transcript_entries"][0]
     assert [frame["data"] for frame in entry["frames"]] == [
-        "[REDACTED]", "[REDACTED]",
+        "[REDACTED]",
+        "[REDACTED]",
     ]
+
+
+def test_transcript_empty_census_is_legitimate_empty():
+    result = RedteamSessionTranscriptSource(lambda: [], lambda: []).fetch(_START, _END)
+    assert result.status is CollectorStatus.EMPTY_OK
+    assert result.dropped_count == 0
+    assert "reconciliation" not in json.loads(result.chunks[0])
+
+
+def test_transcript_parser_rejects_accepted_ledger_without_matching_sessions():
+    from aptl.core.experiment.capture_registry import CaptureLimits
+    from aptl_techvault.evidence.transcript_parsing import transcript_sessions
+
+    with pytest.raises(ValueError, match="broker ledger"):
+        transcript_sessions(
+            {
+                "expected_session_ids": ["session-1"],
+                "accepted_session_ids": ["session-1"],
+                "sessions": [],
+            },
+            CaptureLimits(max_bytes=10000, max_artifact_count=10, max_duration_s=60),
+        )
+
+
+def test_portable_transcript_validator_rejects_contradictory_gap_report():
+    from aptl_techvault.evidence.techvault_transcript import (
+        validate_retained_transcript,
+    )
+
+    result = RedteamSessionTranscriptSource(
+        lambda: ["session-1", "missing"], lambda: [_session()]
+    ).fetch(_START, _END)
+    retained = json.loads(result.chunks[0])
+    validate_retained_transcript(retained, expected_entries=1, expected_frames=2)
+    retained["reconciliation"]["missing_count"] = 0
+    with pytest.raises(ValueError, match="reconciliation"):
+        validate_retained_transcript(retained)
