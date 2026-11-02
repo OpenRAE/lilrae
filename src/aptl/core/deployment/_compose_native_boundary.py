@@ -1,11 +1,18 @@
 """Native Docker kernel-policy preflight, application and owned cleanup."""
 
+from __future__ import annotations
+from typing import TYPE_CHECKING
+from aptl.core.deployment.realization import DeploymentRealizationSpec
+
+if TYPE_CHECKING:
+    from aptl.core.deployment.docker_compose import DockerComposeBackend
+
 from aptl.core.deployment.boundary import BoundaryNetwork, NativeRangeBoundarySpec
 from aptl.core.deployment.errors import BackendTimeoutError
 from aptl.core.lab_types import LabResult
 
 
-def uses_native_policy(backend) -> bool:
+def uses_native_policy(backend: DockerComposeBackend) -> bool:
     """Keep native policy distinct from signed VM guest policy."""
     from aptl.core.execution_boundary import revalidate_execution_boundary
 
@@ -15,7 +22,7 @@ def uses_native_policy(backend) -> bool:
     )
 
 
-def _kernel_check(backend) -> LabResult | None:
+def _kernel_check(backend: DockerComposeBackend) -> LabResult | None:
     """Dry-run native syntax on the selected host without installing rules."""
     from aptl.core.deployment._compose_boundary import _ensure_helper, _run_helper
 
@@ -53,7 +60,9 @@ def _kernel_check(backend) -> LabResult | None:
 class ComposeNativeBoundaryMixin:
     """Enforce native range policy before participant workload creation."""
 
-    def _native_range_preflight(self, realization=None) -> LabResult | None:
+    def _native_range_preflight(
+        self, realization: DeploymentRealizationSpec | None = None
+    ) -> LabResult | None:
         """Check host capability after semantic admission, before deployment."""
         if not uses_native_policy(self):
             return None
@@ -70,7 +79,7 @@ class ComposeNativeBoundaryMixin:
             )
         return _kernel_check(self)
 
-    def _realize_native_range_boundary(self, realization) -> LabResult | None:
+    def _realize_native_range_boundary(self) -> LabResult | None:
         """Protect every owned range and apparatus bridge before startup."""
         from aptl.core.deployment._native_range_publications import (
             refresh_native_policy,
@@ -81,7 +90,7 @@ class ComposeNativeBoundaryMixin:
         return refresh_native_policy(self, required=True)
 
 
-def cleanup_native_policy(backend) -> list[str]:
+def cleanup_native_policy(backend: DockerComposeBackend) -> list[str]:
     """Remove only the owner's tables after owned network removal succeeded."""
     from aptl.core.deployment._compose_boundary import _run_helper
     from aptl.core.execution_boundary import revalidate_execution_boundary

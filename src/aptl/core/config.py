@@ -26,6 +26,28 @@ from aptl.core._credential_sources import (
 from aptl.core.mcp_policy import McpPolicy
 from aptl.utils.logging import get_logger
 
+__all__ = [
+    "AptlConfig",
+    "ContainerSettings",
+    "DeploymentConfig",
+    "EnvironmentGrant",
+    "ExperimentSettings",
+    "InstalledParticipantCredentialSources",
+    "InstalledParticipantModels",
+    "LabLifecyclePolicyConfig",
+    "LabSettings",
+    "LifecycleScheduleEntry",
+    "McpPolicy",
+    "ProcessEnvironmentCredentialSource",
+    "RunStorageConfig",
+    "ScenarioSourceConfig",
+    "SeatSettings",
+    "find_config",
+    "load_config",
+    "validate_compose_project_name",
+    "validate_installed_participant_model_id",
+]
+
 log = get_logger("config")
 
 _NAME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")

@@ -189,7 +189,7 @@ class DockerComposeBackend(
         self._docker_socket_path: str | None = None
         self._docker_socket_host: str | None = None
 
-    def node_publication_bindings(self, container_name: str) -> dict | None:
+    def node_publication_bindings(self, container_name: str) -> dict[str, Any] | None:
         """Read actual bindings, including ownership-verified byte relays."""
         from aptl.core.deployment._native_range_publications import publication_bindings
 

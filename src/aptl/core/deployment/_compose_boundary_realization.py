@@ -239,7 +239,7 @@ class ComposeBoundaryRealizationMixin(ComposeNativeBoundaryMixin):
         """Install the platform deny floor before any scenario node can run."""
 
         stages = (
-            lambda: self._realize_native_range_boundary(realization),
+            self._realize_native_range_boundary,
             lambda: self._bind_appliance_realization(realization),
             self._realize_platform_baseline,
             lambda: self._realize_seat_protection_boundary(realization),

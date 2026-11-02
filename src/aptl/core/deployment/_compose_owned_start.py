@@ -146,7 +146,9 @@ class ComposeOwnedStartMixin:
         )
         return self._execute_owned_compose_up(prepared, profiles, command)
 
-    def _execute_owned_compose_up(self, prepared, profiles, command) -> LabResult:
+    def _execute_owned_compose_up(
+        self, prepared: _OwnedStartScope, profiles: list[str], command: list[str]
+    ) -> LabResult:
         """Apply the native floor, run Compose, and capture or compensate."""
         floor_failure = self._native_compose_floor(prepared, profiles, command)
         if floor_failure is not None:
@@ -191,7 +193,9 @@ class ComposeOwnedStartMixin:
             self._roll_back_started_project(scope, profiles, remove_volumes=False)
         return failure
 
-    def _native_compose_model_refusal(self, scope, profiles) -> LabResult | None:
+    def _native_compose_model_refusal(
+        self, scope: _OwnedStartScope, profiles: list[str]
+    ) -> LabResult | None:
         """Refuse Compose namespace and mount paths that bypass filtering."""
         import json
         from aptl.core.deployment._native_range_model import validate_native_services
@@ -208,15 +212,13 @@ class ComposeOwnedStartMixin:
         except ValueError, KeyError, TypeError, AttributeError, OwnershipConflictError:
             return LabResult(
                 success=False,
-                error=(
-                    "Native Docker range policy requires bridge networking without "
-                    "privileged devices or host authority mounts."
-                ),
+                error="Native Docker range policy requires bridge networking without "
+                "privileged devices or host authority mounts.",
             )
         return None
 
     def _create_native_compose_resources(
-        self, scope, profiles, up_command
+        self, scope: _OwnedStartScope, profiles: list[str], up_command: list[str]
     ) -> LabResult | None:
         """Create and receipt dormant resources without running participants."""
         create = list(up_command)

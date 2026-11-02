@@ -320,7 +320,7 @@ def test_native_boundary_binds_all_observed_networks_before_start(
             success=success, error=None if success else "mutation failed"
         )
     )
-    result = backend._realize_native_range_boundary(object())
+    result = backend._realize_native_range_boundary()
     assert (result is None) is success
     applied = backend.realize_boundary.call_args.args[0]
     assert applied.networks == policy.networks

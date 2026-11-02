@@ -174,16 +174,6 @@ class ComposeRealizationMixin(
             result = realize_publications(self, realization) or result
         return result
 
-    def _bind_realization_attempt(self, observation_context):
-        """Bind workspace ownership and selected attempt before preflight."""
-        observation_context = observation_context or DeploymentObservationContext()
-        attempt_id = observation_context.attempt_id or self._resource_attempt_id
-        ownership = self._ensure_resource_ownership()
-        self._ensure_resource_ownership(
-            attempt_id=attempt_id or ownership.new_attempt_id()
-        )
-        return observation_context
-
     def _realization_preflight(
         self,
         realization: DeploymentRealizationSpec,
@@ -210,7 +200,9 @@ class ComposeRealizationMixin(
         return None
 
     def _runtime_substrate_preflight(
-        self, realization, substrate_digests
+        self,
+        realization: DeploymentRealizationSpec,
+        substrate_digests: Mapping[str, str] | None,
     ) -> LabResult | None:
         """Bind verified image identities before runtime authority preflight."""
         self._realization_substrate_digests = dict(substrate_digests or {})

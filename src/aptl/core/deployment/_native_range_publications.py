@@ -3,6 +3,17 @@
 from __future__ import annotations
 
 import hashlib
+from typing import TYPE_CHECKING, Any
+
+from aptl.core.deployment.realization import (
+    DeploymentNodeRealization,
+    DeploymentPublishedPort,
+    DeploymentRealizationSpec,
+)
+from aptl.core.deployment._compose_resource_ownership import WorkspaceOwnership
+
+if TYPE_CHECKING:
+    from aptl.core.deployment.docker_compose import DockerComposeBackend
 
 from aptl.core.deployment.boundary import NativeRangeAllowance, NativeRangeBoundarySpec
 from aptl.core.deployment._compose_resource_ownership import (
@@ -18,7 +29,9 @@ _PREFIX = "lilrae-publication-"
 _TARGET = "lilrae.publication.target"
 
 
-def refresh_native_policy(backend, *, required: bool = False) -> LabResult | None:
+def refresh_native_policy(
+    backend: DockerComposeBackend, *, required: bool = False
+) -> LabResult | None:
     """Cover newly owned apparatus bridges before starting their processes."""
     if not required and "native-range" not in getattr(
         backend, "_boundary_receipts", {}
@@ -44,7 +57,9 @@ def refresh_native_policy(backend, *, required: bool = False) -> LabResult | Non
     return None if result.success else result
 
 
-def publication_bindings(backend, container_name: str) -> dict | None:
+def publication_bindings(
+    backend: DockerComposeBackend, container_name: str
+) -> dict[str, Any] | None:
     """Read real node/relay bindings, verifying ownership and the relay target."""
     if (
         "native-range" not in getattr(backend, "_boundary_receipts", {})
@@ -77,14 +92,16 @@ def publication_bindings(backend, container_name: str) -> dict | None:
     return result
 
 
-def _append_publication_ports(result: dict, relay: dict) -> None:
+def _append_publication_ports(result: dict[str, Any], relay: dict[str, Any]) -> None:
     """Merge only the daemon's effective bindings from a verified relay."""
     ports = relay.get("NetworkSettings", {}).get("Ports") or {}
     for key, entries in ports.items():
         result[key] = list(result.get(key) or []) + list(entries or [])
 
 
-def _validate_relay_target(relay, attached, addresses) -> None:
+def _validate_relay_target(
+    relay: dict[str, Any], attached: dict[str, Any], addresses: set[str]
+) -> None:
     """Verify the relay process, image, network and exact forwarding target."""
     config = relay.get("Config", {})
     labels = config.get("Labels") or {}
@@ -109,7 +126,9 @@ def _validate_relay_target(relay, attached, addresses) -> None:
         raise OwnershipConflictError("native publication target readback mismatch")
 
 
-def _binding_present(port, observed) -> bool:
+def _binding_present(
+    port: DeploymentPublishedPort, observed: dict[str, Any] | None
+) -> bool:
     """Require a real host address and exact or allocated host port."""
     entries = (observed or {}).get(f"{port.container_port}/{port.protocol}") or ()
     return any(
@@ -120,7 +139,9 @@ def _binding_present(port, observed) -> bool:
     )
 
 
-def realize_publications(backend, realization) -> LabResult | None:
+def realize_publications(
+    backend: DockerComposeBackend, realization: DeploymentRealizationSpec
+) -> LabResult | None:
     """Use the existing byte relay when Docker drops an internal publication."""
     try:
         return _realize_publications(backend, realization)
@@ -138,7 +159,9 @@ def realize_publications(backend, realization) -> LabResult | None:
         )
 
 
-def _realize_publications(backend, realization) -> LabResult | None:
+def _realize_publications(
+    backend: DockerComposeBackend, realization: DeploymentRealizationSpec
+) -> LabResult | None:
     """Resolve absent bindings and apply only their owned apparatus."""
     if "native-range" not in getattr(backend, "_boundary_receipts", {}):
         return None
@@ -151,7 +174,9 @@ def _realize_publications(backend, realization) -> LabResult | None:
     return failure
 
 
-def _pending_publications(backend, realization) -> list:
+def _pending_publications(
+    backend: DockerComposeBackend, realization: DeploymentRealizationSpec
+) -> list[tuple[DeploymentNodeRealization, DeploymentPublishedPort]]:
     """Select only declarations Docker did not effectively publish."""
     pending = []
     for node in realization.nodes:
@@ -165,7 +190,9 @@ def _pending_publications(backend, realization) -> list:
     return pending
 
 
-def _prepare_publication_network(backend) -> tuple:
+def _prepare_publication_network(
+    backend: DockerComposeBackend,
+) -> tuple[str | None, LabResult | None]:
     """Build existing apparatus and protect its bridge before any process."""
     failures = backend.ensure_generic_base_image(OPERATOR_ACCESS_IMAGE)
     if failures:
@@ -173,14 +200,18 @@ def _prepare_publication_network(backend) -> tuple:
             success=False, error="Native publication relay image was unavailable."
         )
     network, failures = backend._ensure_operator_access_network()
-    if failures:
+    if failures or network is None:
         return None, LabResult(
             success=False, error="Native publication network was unavailable."
         )
     return network, refresh_native_policy(backend)
 
 
-def _create_publications(backend, pending, network) -> LabResult | None:
+def _create_publications(
+    backend: DockerComposeBackend,
+    pending: list[tuple[DeploymentNodeRealization, DeploymentPublishedPort]],
+    network: str,
+) -> LabResult | None:
     """Stop at the first publication whose ownership or readback fails."""
     for node, port in pending:
         failure = _create_publication(backend, node, port, network)
@@ -189,7 +220,9 @@ def _create_publications(backend, pending, network) -> LabResult | None:
     return None
 
 
-def _publication_target(backend, node) -> tuple:
+def _publication_target(
+    backend: DockerComposeBackend, node: DeploymentNodeRealization
+) -> tuple[str, str, str]:
     """Bind the relay to the actual owned node address, never a new link."""
     native = backend._resolve_owned_container_id(node.container_name)
     attached = (
@@ -204,7 +237,12 @@ def _publication_target(backend, node) -> tuple:
     return native, network, address
 
 
-def _create_publication(backend, node, port, network) -> LabResult | None:
+def _create_publication(
+    backend: DockerComposeBackend,
+    node: DeploymentNodeRealization,
+    port: DeploymentPublishedPort,
+    network: str,
+) -> LabResult | None:
     """Create dormant apparatus, receipt it, then connect and start it."""
     native, target_network, target = _publication_target(backend, node)
     identity = f"{node.address}/{port.container_port}/{port.protocol}"
@@ -227,7 +265,13 @@ def _create_publication(backend, node, port, network) -> LabResult | None:
 
 
 def _publication_command(
-    backend, ownership, semantic, native, target, port, network
+    backend: DockerComposeBackend,
+    ownership: WorkspaceOwnership,
+    semantic: str,
+    native: str,
+    target: str,
+    port: DeploymentPublishedPort,
+    network: str,
 ) -> list[str]:
     """Reuse the existing credential-free relay with minimum capabilities."""
     labels = {
@@ -266,7 +310,11 @@ def _publication_command(
 
 
 def _record_publication(
-    backend, ownership, semantic, node, relay_id
+    backend: DockerComposeBackend,
+    ownership: WorkspaceOwnership,
+    semantic: str,
+    node: DeploymentNodeRealization,
+    relay_id: str,
 ) -> LabResult | None:
     """Record exact container ownership or remove the just-created object."""
     try:
@@ -293,7 +341,11 @@ def _record_publication(
 
 
 def _activate_publication(
-    backend, native, target_network, relay_id, port
+    backend: DockerComposeBackend,
+    native: str,
+    target_network: str,
+    relay_id: str,
+    port: DeploymentPublishedPort,
 ) -> LabResult | None:
     """Start only after receipt capture, and require effective readback."""
     connected = backend._run(

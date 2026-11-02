@@ -152,3 +152,80 @@ def test_failed_receipt_removes_only_the_created_relay_and_its_volumes():
     assert len(commands) == 1
     assert commands[0][-1] == "created-id"
     assert any(flag in commands[0] for flag in ("-v", "--volumes"))
+
+
+@pytest.mark.parametrize(
+    "failure_stage", ["ok", "create", "receipt", "connect", "start", "readback"]
+)
+def test_publication_requires_policy_receipt_connection_and_effective_readback(
+    monkeypatch, failure_stage
+):
+    from subprocess import CompletedProcess
+    from aptl.core.deployment import _native_range_publications as publications
+    from aptl.core.deployment.realization import DeploymentPublishedPort
+
+    events = []
+    records = []
+    port = DeploymentPublishedPort(container_port=2022, host_port=32022)
+    node = SimpleNamespace(
+        address="provision.node.fixture", container_name="node", published_ports=(port,)
+    )
+
+    def record(receipt):
+        events.append("receipt")
+        if failure_stage == "receipt":
+            raise OwnershipConflictError("receipt failed")
+        records.append(receipt)
+
+    ownership = SimpleNamespace(
+        record=record,
+        container_name=lambda _: "relay-fixture",
+        labels=lambda **kw: {"owner": "fixture"},
+        workspace_id="fixture",
+        project_name="range-fixture",
+    )
+
+    def command(argv, **kwargs):
+        step = argv[2] if argv[1] == "network" else argv[1]
+        events.append(step)
+        if step == "create":
+            assert "floor" in events
+            assert "--read-only" in argv and "--cap-drop=ALL" in argv
+            assert "APTL_PROXY_TARGET_HOST=10.77.0.2" in argv
+        if step == "start":
+            assert len(records) == 1
+            assert "connect" in events
+        return CompletedProcess(argv, int(step == failure_stage), "relay-id", "")
+
+    backend = SimpleNamespace(
+        _boundary_receipts={"native-range": {}},
+        _project_name="range-fixture",
+        _resource_attempt_id="attempt-fixture",
+        _ensure_resource_ownership=lambda: ownership,
+        _resolve_owned_container_id=lambda _: "node-id",
+        _ownership_daemon_id=lambda: "daemon-fixture",
+        container_inspect=lambda _: {
+            "NetworkSettings": {"Networks": {"range": {"IPAddress": "10.77.0.2"}}}
+        },
+        _remove_existing_relay=lambda _: None,
+        _run=command,
+        ensure_generic_base_image=lambda _: [],
+        _ensure_operator_access_network=lambda: ("apparatus", []),
+    )
+
+    def bindings(*args):
+        if "start" in events and failure_stage != "readback":
+            return {"2022/tcp": [{"HostIp": "127.0.0.1", "HostPort": "32022"}]}
+        return {}
+
+    def floor(*args, **kwargs):
+        events.append("floor")
+
+    monkeypatch.setattr(publications, "publication_bindings", bindings)
+    monkeypatch.setattr(publications, "refresh_native_policy", floor)
+    result = publications.realize_publications(backend, SimpleNamespace(nodes=(node,)))
+    assert (result is None) is (failure_stage == "ok")
+    if failure_stage in {"create", "receipt", "connect"}:
+        assert "start" not in events
+    if failure_stage == "receipt":
+        assert "rm" in events

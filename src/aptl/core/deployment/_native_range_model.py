@@ -1,6 +1,7 @@
 """Reject native Compose paths that bypass the range bridge policy."""
 
 from collections.abc import Callable, Mapping
+from typing import Any
 
 _HOST_PATHS = {"/", "/run", "/var/run", "/proc", "/sys", "/dev"}
 _HOST_CAPABILITIES = {"ALL", "SYS_ADMIN", "SYS_MODULE", "SYS_RAWIO"}
@@ -26,7 +27,7 @@ def validate_native_services(
         _validate_mounts(service)
 
 
-def _validate_mounts(service: dict) -> None:
+def _validate_mounts(service: dict[str, Any]) -> None:
     """Reject host authority paths from native service mounts."""
     for mount in service.get("volumes", []):
         source = mount.get("source", "") if isinstance(mount, dict) else str(mount)
