@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -225,6 +227,9 @@ def admit_raes_scenario(
     scenario, parameters, capture_plan = prepare_admission_scenario(
         bundle, parameters, capture_selection, parser=parse_sdl_file
     )
+    from aptl.core.mcp_policy import select_scenario_servers
+
+    mcp_server_ids = select_scenario_servers(scenario, config.mcp)
     # A runtime authority is joined and bound before any artifact probe, so
     # every image fact and later mutation targets the same exact local daemon.
     prepare_runtime_orchestration_for_scenario(scenario, backend)
@@ -291,6 +296,7 @@ def admit_raes_scenario(
     participant_delivery_plan = bind_admitted_participant_runtime(
         target, execution_plan, bundle, config, realization, scenario, capture_plan
     )
+    participant_delivery_plan = replace(participant_delivery_plan, mcp_server_ids=mcp_server_ids)
     return AdmittedScenarioStart(
         bundle=bundle,
         target=target,
@@ -302,6 +308,7 @@ def admit_raes_scenario(
         capture_selection=capture_selection,
         scenario=scenario,
         participant_delivery_plan=participant_delivery_plan,
+        mcp_server_ids=mcp_server_ids,
     )
 
 

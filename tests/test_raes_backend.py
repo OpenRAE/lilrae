@@ -3,6 +3,8 @@
 import inspect
 import subprocess
 from pathlib import Path
+
+from raes import Scenario
 from unittest.mock import ANY, MagicMock
 
 import pytest
@@ -1526,7 +1528,7 @@ def test_start_helper_returns_specs_from_compiled_scenario(mocker):
 
     expected = {"participant.behavior.paper-agent": MagicMock()}
     model = object()
-    scenario = object()
+    scenario = Scenario(name="test", version="1.0")
     provisioning_plan = object()
     bundle = _bundle(Path(__file__).resolve().parents[1])
     config = AptlConfig(lab={"name": "test"})
@@ -1756,7 +1758,7 @@ def test_start_raes_scenario_uses_parser_runtime_manager_and_backend(
             "aptl-otel-collector": ["otel"],
         },
     )
-    scenario = object()
+    scenario = Scenario(name="test", version="1.0")
     parser = mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=scenario)
     calls: dict[str, object] = {}
 
@@ -1794,7 +1796,7 @@ def test_start_raes_scenario_uses_selected_scenario_path(mocker, tmp_path):
     from aptl.backends import raes
 
     _write_compose(tmp_path, {"wazuh.manager": ["wazuh"]})
-    scenario = object()
+    scenario = Scenario(name="test", version="1.0")
     parser = mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=scenario)
 
     class FakeRuntimeManager(_FakeRuntimeManager):
@@ -1824,7 +1826,7 @@ def test_admission_preserves_valid_plan_when_backend_cannot_materialize(
     from aptl.backends import raes
 
     _write_compose(tmp_path, {"victim": ["victim"]})
-    scenario = object()
+    scenario = Scenario(name="test", version="1.0")
     mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=scenario)
     materialization_modes: list[bool] = []
 
@@ -1874,7 +1876,7 @@ def test_start_raes_scenario_passes_runtime_parameters_to_raes_planner(
     from aptl.backends import raes_pack_interaction
 
     _write_compose(tmp_path, {"aptl-victim": ["victim"]})
-    scenario = object()
+    scenario = Scenario(name="test", version="1.0")
     mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=scenario)
     calls: dict[str, object] = {}
     interaction_resolver = mocker.spy(
@@ -1912,7 +1914,7 @@ def test_start_raes_scenario_threads_resolved_run_target(mocker, tmp_path):
     from aptl.backends.raes_start_model import AcesRunTarget, AcesStartOutcome
 
     _write_compose(tmp_path, {"aptl-victim": ["victim"]})
-    scenario = object()
+    scenario = Scenario(name="test", version="1.0")
     mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=scenario)
 
     class FakeRuntimeManager(_FakeRuntimeManager):
@@ -1959,7 +1961,7 @@ def test_start_raes_scenario_uses_planned_runtime_model_for_participant_actions(
     from aptl.backends import raes
 
     _write_compose(tmp_path, {"aptl-victim": ["victim"]})
-    scenario = object()
+    scenario = Scenario(name="test", version="1.0")
     planned_model = object()
     mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=scenario)
 
@@ -2045,7 +2047,7 @@ def test_a_failed_apply_ends_the_start_without_a_second_apply(mocker, tmp_path):
     from aptl.backends import raes
 
     _write_compose(tmp_path, {"aptl-soc": ["soc"]})
-    scenario = object()
+    scenario = Scenario(name="test", version="1.0")
     mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=scenario)
     calls = {"plan": 0, "apply": 0}
 
@@ -2332,7 +2334,7 @@ def test_start_raes_scenario_submits_orchestration_for_workflow_scenario(
     from aptl.backends.raes_orchestrator import AptlOrchestrator
 
     _write_compose(tmp_path, {"victim": ["victim"]})
-    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=object())
+    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
     orchestration = _workflow_orchestration_plan()
     assert (
         orchestration.actionable_operations
@@ -2365,7 +2367,7 @@ def test_start_raes_scenario_fails_when_provisioning_backend_fails(mocker, tmp_p
     from aptl.backends import raes
 
     _write_compose(tmp_path, {"victim": ["victim"]})
-    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=object())
+    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
 
     class FakeRuntimeManager(_FakeRuntimeManager):
         def plan(self, parsed_scenario, *, parameters=None, artifact_availability=None):
@@ -2390,7 +2392,7 @@ def test_start_raes_scenario_fails_when_orchestration_fails(mocker, tmp_path):
     from aptl.backends import raes
 
     _write_compose(tmp_path, {"victim": ["victim"]})
-    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=object())
+    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
     # A workflow op with no compiled result_contract makes AptlOrchestrator.start
     # fail closed, which the runtime-manager apply reports as a failed phase.
     bad_orchestration = OrchestrationPlan(
@@ -2443,7 +2445,7 @@ def test_start_raes_scenario_submits_evaluation_for_objective_scenario(
     from aptl.backends.raes_evaluator import AptlEvaluator
 
     _write_compose(tmp_path, {"victim": ["victim"]})
-    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=object())
+    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
     compiled = _workflow_and_evaluation_execution_plan()
     orchestration = compiled.orchestration
     evaluation = compiled.evaluation
@@ -2477,7 +2479,7 @@ def test_start_raes_scenario_drives_workflows_after_registration(mocker, tmp_pat
     from aptl.backends.raes_orchestrator import AptlOrchestrator
 
     _write_compose(tmp_path, {"victim": ["victim"]})
-    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=object())
+    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
     orchestration = _workflow_orchestration_plan()
     drive_calls: list[dict[str, object]] = []
 
@@ -2594,7 +2596,7 @@ def test_start_raes_scenario_fails_closed_on_evaluator_plan_error(mocker, tmp_pa
     from aptl.backends import raes
 
     _write_compose(tmp_path, {"victim": ["victim"]})
-    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=object())
+    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
 
     evaluator_error = Diagnostic(
         code="evaluator.unsupported-section",
@@ -2630,7 +2632,7 @@ def test_start_raes_scenario_fails_closed_on_provisioning_plan_error(mocker, tmp
     from aptl.backends import raes
 
     _write_compose(tmp_path, {"victim": ["victim"]})
-    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=object())
+    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
 
     provisioning_error = Diagnostic(
         code="provisioning.ordering.cycle",

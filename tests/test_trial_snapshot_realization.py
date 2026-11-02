@@ -198,3 +198,17 @@ def test_start_contains_storage_failures_before_apply(
     assert not result.lab_result.success
     assert "family-trial-archive-failed" in result.lab_result.error
     assert "sensitive details" not in result.lab_result.error
+
+
+def test_mcp_selection_reads_the_admitted_trial_instead_of_source(trial_bundle):
+    from aptl.backends._raes_admission_helpers import prepare_admission_scenario
+    from aptl.core.mcp_policy import McpPolicy, select_scenario_servers
+
+    bundle, _, _ = trial_bundle
+    scenario, parameters, _ = prepare_admission_scenario(
+        bundle, None, None,
+        parser=lambda _: pytest.fail("must not reparse the unselected source"),
+    )
+    assert parameters is None
+    assert scenario == bundle.trial.scenario
+    assert select_scenario_servers(scenario, McpPolicy()) == ()
