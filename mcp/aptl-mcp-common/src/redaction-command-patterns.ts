@@ -1,62 +1,6 @@
 /** Credential patterns for shell redaction; mirror Python's pattern module. */
 export const REDACTED = '[REDACTED]';
 
-
-// `-p` / `-p=value` / `-p<value>` short-flag handling for credential
-// tools. The leading token of the command line determines whether `-p`
-// could carry a password (hydra, medusa, sshpass, crackmapexec, nxc, …)
-// — but wrappers like `proxychains4 hydra …` or `sudo hydra …` shift
-// that token. Detect both: if the command line contains any known
-// credential-taking-`-p` tool token before the `-p`, redact the value
-// even if numeric (numeric passwords are common). For unknown leading
-// tools, only redact non-numeric `-p` values so port numbers
-// (`nmap -p 22`) stay visible.
-//
-// Known tools whose short `-p` is a password value:
-export const CREDENTIAL_SHORT_P_TOOLS: ReadonlySet<string> = new Set([
-  'hydra',
-  'medusa',
-  'patator',
-  'crowbar',
-  'sshpass',
-  'crackmapexec',
-  'cme',
-  'nxc',
-  'wfuzz',
-  'mysql',
-  'mysqladmin',
-  'mariadb',
-  'redis-cli',
-  'evil-winrm',
-  'bloodhound-python',
-  'bloodhound.py',
-  'kerbrute',
-  'impacket-psexec',
-  'impacket-smbexec',
-  'impacket-wmiexec',
-  'impacket-secretsdump',
-  'psexec.py',
-  'smbexec.py',
-  'wmiexec.py',
-  'secretsdump.py',
-  'getuserspns.py',
-  'getnpusers.py',
-  'ntlmrelayx.py',
-]);
-
-// Tools whose `-w <value>` is a password (LDAP simple-bind). Distinct
-// from wordlist-`-w` for hydra/wfuzz; per-segment detection picks the
-// right meaning.
-export const LDAP_PASSWORD_TOOLS: ReadonlySet<string> = new Set([
-  'ldapsearch',
-  'ldapmodify',
-  'ldapadd',
-  'ldapdelete',
-  'ldappasswd',
-  'ldapwhoami',
-  'ldapcompare',
-]);
-
 // Per-segment tool detection. Originally a single big alternation
 // regex; Sonar S5843 flagged the long tool list as over the
 // regex-complexity threshold (~34). Split into smaller batches; a
