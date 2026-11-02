@@ -1,0 +1,37 @@
+{
+  "source": "https://openrouter.ai/api/v1/models/liquid/lfm-2.5-2.6b:free/endpoints",
+  "retrieved_at": "2026-11-02T08:12:55.661354+00:00",
+  "purpose": "Post-smoke unauthenticated catalog recheck; original pre-invocation response was not retained. No generation request.",
+  "endpoints": [
+    {
+      "model_id": "liquid/lfm-2.5-2.6b:free",
+      "provider_name": "Liquid",
+      "tag": "liquid/fp8",
+      "pricing": {
+        "prompt": "0",
+        "completion": "0",
+        "discount": 0
+      },
+      "supported_parameters": [
+        "reasoning",
+        "include_reasoning",
+        "max_tokens",
+        "temperature",
+        "stop",
+        "frequency_penalty",
+        "presence_penalty",
+        "seed",
+        "top_k",
+        "min_p",
+        "repetition_penalty",
+        "response_format",
+        "structured_outputs",
+        "tools",
+        "tool_choice",
+        "logprobs",
+        "top_logprobs",
+        "max_completion_tokens"
+      ]
+    }
+  ]
+}

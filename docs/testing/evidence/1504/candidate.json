@@ -1,0 +1,64 @@
+{
+  "filename": "lilrae-8.2.0-py3-none-any.whl",
+  "offline_reconstruction_from_tested_wheel": {
+    "config": {
+      "autoupdate": false,
+      "compaction": {
+        "auto": false,
+        "prune": false
+      },
+      "enabled_providers": [
+        "openrouter"
+      ],
+      "instructions": [],
+      "mcp": {},
+      "model": "openrouter/liquid/lfm-2.5-2.6b:free",
+      "permission": {
+        "*": "deny"
+      },
+      "plugin": [],
+      "provider": {
+        "openrouter": {
+          "models": {
+            "liquid/lfm-2.5-2.6b:free": {
+              "options": {
+                "provider": {
+                  "allow_fallbacks": false,
+                  "only": [
+                    "liquid/fp8"
+                  ],
+                  "order": [
+                    "liquid/fp8"
+                  ],
+                  "require_parameters": true
+                }
+              }
+            }
+          },
+          "options": {
+            "apiKey": "{env:OPENROUTER_API_KEY}",
+            "baseURL": "https://openrouter.ai/api/v1"
+          },
+          "whitelist": [
+            "liquid/lfm-2.5-2.6b:free"
+          ]
+        }
+      },
+      "share": "disabled",
+      "small_model": "openrouter/liquid/lfm-2.5-2.6b:free",
+      "snapshot": false
+    },
+    "output_cap": "16"
+  },
+  "pinned_executable_sha256": "7df4e4136301f16589b0f30bf91a61380fca5f8ef22dd36570f5ebe1d4ec802c",
+  "sha256": "fa6a9c61230f26ff6a9dbf825e3fc60ec5669fe9b1e2d9c3a6a9228f9b657847",
+  "source_files_sha256": {
+    "aptl/backends/lilrae_participant_configuration.py": "3f3db8a82b37c6ff0260439a2aa6c379778689e0f7cd6467235a3e0f2b240962",
+    "aptl/core/opencode.py": "e3bd63b4f5704b794e6f2df43f0c2c1f9c6c4b78718b973713c14222b0ba53db",
+    "aptl/workbench/lilrae_opencode.py": "e3aa8ca0f060e903ef6902be8103ad9f62f877b7e90e9f1831efeeb7dbeb4e9e",
+    "aptl/workbench/opencode_bootstrap.py": "fb3730f45287d1da37ca046d7d6b73a93a4169db9cc277646d046b84393533bf",
+    "aptl/workbench/opencode_configuration.py": "8bbb326c632ac8d2111dc7435f004955f4369b2827aad7a247cb09ef4809f559",
+    "aptl/workbench/opencode_events.py": "eeb9e1b447efc851a7707735e2718332a59ab516821b02e0cbfb9a4c265aa3c7",
+    "aptl/workbench/process.py": "a0006b2bae8d0d7b3d9b4ff7f23c7d411c5c7cf7eeba4ad70c25ccf199bcf9d4"
+  }
+}

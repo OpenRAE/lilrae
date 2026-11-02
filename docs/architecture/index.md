@@ -3,6 +3,8 @@
 - [Issue #1418 Participant MCP Action Admission](issue-1418-participant-tool-admission-preflight.md)
 - [Participant action and control architecture assessment](participant-tool-admission.md)
 - [Participant action enforcement](participant-action-enforcement.md)
+- [Issue #1504 Managed OpenCode participants](issue-1504-managed-opencode-preflight.md)
+- [Managed OpenCode design](managed-opencode.md)
 
 ## Network Topology
 

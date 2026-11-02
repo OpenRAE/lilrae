@@ -80,6 +80,7 @@ nav:
     - CLI: reference/cli.md
     - MCP: reference/mcp.md
     - Web: reference/web.md
+    - Managed OpenCode: reference/opencode-participants.md
   - Operations:
     - Deployment: deployment.md
     - Troubleshooting: troubleshooting/index.md

@@ -14,16 +14,24 @@ from raes_contracts.contracts import (
 from raes_contracts.canonical import canonical_contract_digest
 
 from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor, OpenCodeOptions
+from aptl.core.opencode import OpenCodeBuild, OpenRouterRoute, SUPPORTED_OPENCODE_BUILD
 
 _TARGETS = {
     "model": "string",
     "prompt_ref": "string",
     "prompt_sha256": "string",
     "timeout_seconds": "integer",
+    "gateway_endpoint": "string",
+    "serving_provider": "string",
+    "max_output_tokens": "integer",
 }
 
 
-def opencode_manifest(*, version: str) -> ParticipantImplementationManifestModel:
+def opencode_manifest(
+    *,
+    version: str,
+    build: OpenCodeBuild = SUPPORTED_OPENCODE_BUILD,
+) -> ParticipantImplementationManifestModel:
     """Describe the installed harness, without claiming a provider model identity."""
     contracts = [
         "participant-episode-state-envelope-v1",
@@ -72,6 +80,8 @@ def opencode_manifest(*, version: str) -> ParticipantImplementationManifestModel
                 "exposure_policy_kinds": ["task-statement", "observation-stream"],
             },
             "constraints": {
+                "opencode_version": build.version,
+                "opencode_executable_sha256": build.executable_sha256,
                 "model_identity": "requested provider/model identifier; provider resolution is not attested",
                 "prompt_commitment": "sha256 of exact UTF-8 stdin bytes",
             },
@@ -80,7 +90,7 @@ def opencode_manifest(*, version: str) -> ParticipantImplementationManifestModel
                     "contract_id": "participant-implementation-manifest/v1",
                     "contract_version": "1",
                     "validator_id": "lilrae-opencode",
-                    "validator_version": "1",
+                    "validator_version": "2",
                 },
                 "targets": {
                     name: {
@@ -108,6 +118,26 @@ def _values(configuration: ParticipantConfigurationModel) -> dict[str, object]:
     return values
 
 
+def _validate_prompt_commitment(values: dict[str, object]) -> None:
+    """Require a prompt artifact reference and an exact byte commitment."""
+    if not isinstance(values["prompt_ref"], str) or not values["prompt_ref"].strip():
+        raise ValueError("participant prompt reference is invalid")
+    if not isinstance(values["prompt_sha256"], str) or not re.fullmatch(
+        r"[0-9a-f]{64}", values["prompt_sha256"]
+    ):
+        raise ValueError("participant prompt commitment is invalid")
+
+
+def _validate_request_limits(values: dict[str, object]) -> None:
+    """Bound integer request controls before native launch."""
+    timeout = values["timeout_seconds"]
+    tokens = values["max_output_tokens"]
+    if type(tokens) is not int or not 1 <= tokens <= 32768:
+        raise ValueError("participant output token limit is invalid")
+    if type(timeout) is not int or not 1 <= timeout <= 3600:
+        raise ValueError("participant timeout must be between 1 and 3600 seconds")
+
+
 @dataclass(frozen=True)
 class OpenCodeConfigurationValidator:
     """Validate against an operator-admitted model domain, never a study catalog."""
@@ -117,27 +147,27 @@ class OpenCodeConfigurationValidator:
     def validate_and_normalize(
         self, configuration: ParticipantConfigurationModel
     ) -> ParticipantConfigurationModel:
+        """Validate route, prompt commitment, model selection, and request bounds."""
         values = _values(configuration)
         if values["model"] not in self.supported_models:
             raise ValueError("participant model is not admitted")
-        if (
-            not isinstance(values["prompt_ref"], str)
-            or not values["prompt_ref"].strip()
+        if not isinstance(values["model"], str) or not values["model"].startswith(
+            "openrouter/"
         ):
-            raise ValueError("participant prompt reference is invalid")
-        if not isinstance(values["prompt_sha256"], str) or not re.fullmatch(
-            r"[0-9a-f]{64}", values["prompt_sha256"]
-        ):
-            raise ValueError("participant prompt commitment is invalid")
-        timeout = values["timeout_seconds"]
-        if type(timeout) is not int or not 1 <= timeout <= 3600:
-            raise ValueError("participant timeout must be between 1 and 3600 seconds")
+            raise ValueError("participant model must select OpenRouter")
+        OpenRouterRoute(
+            endpoint=values["gateway_endpoint"],
+            serving_provider=values["serving_provider"],
+        )
+        _validate_prompt_commitment(values)
+        _validate_request_limits(values)
         return configuration
 
 
 def _validate_configuration_result(
     configuration: ParticipantConfigurationResultModel,
     manifest: ParticipantImplementationManifestModel,
+    build: OpenCodeBuild,
 ) -> None:
     """Verify the configuration's owner, target types, and committed identity."""
     if (
@@ -145,7 +175,7 @@ def _validate_configuration_result(
         or configuration.configuration.implementation_identity != manifest.identity
         or configuration.configuration_digest
         != canonical_contract_digest(configuration.configuration)
-        or manifest != opencode_manifest(version=manifest.identity.version)
+        or manifest != opencode_manifest(version=manifest.identity.version, build=build)
         or configuration.configuration.owner != manifest.configuration_registry.owner
         or configuration.configuration.manifest_version != manifest.schema_version
     ):
@@ -167,8 +197,16 @@ def configured_opencode_executor(
     options: OpenCodeOptions,
 ) -> LilraeOpenCodeExecutor:
     """Verify the sealed result and artifact commitment before constructing a harness."""
-    _validate_configuration_result(configuration, manifest)
+    _validate_configuration_result(configuration, manifest, options.build)
     values = _values(configuration.configuration)
+    if options.route != OpenRouterRoute(
+        endpoint=values["gateway_endpoint"], serving_provider=values["serving_provider"]
+    ):
+        raise ValueError("participant route differs from its admitted configuration")
+    if options.max_output_tokens != values["max_output_tokens"]:
+        raise ValueError(
+            "participant token limit differs from its admitted configuration"
+        )
     if (
         prompt_ref != values["prompt_ref"]
         or hashlib.sha256(prompt.encode("utf-8")).hexdigest() != values["prompt_sha256"]
