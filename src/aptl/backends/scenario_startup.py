@@ -19,6 +19,7 @@ from aptl.backends._scenario_environment import (
     resolved_environment_fixtures,
     validated_aliases as _validated_aliases,
     validated_environment_fixtures,
+    validated_adapter_grants,
 )
 
 from aptl.backends._scenario_startup_hooks import (
@@ -44,9 +45,6 @@ EXTENSION_API_VERSION = "1"
 DOCKER_TRANSPORT_KEYS = frozenset(
     ("DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DOCKER_SSH_IDENTITY")
 )
-
-
-
 
 
 def _entry_points() -> list[metadata.EntryPoint]:
@@ -275,14 +273,21 @@ def _validated_plan(
     ):
         raise ScenarioStartupProviderError("provider-result-invalid")
     minimum = _validated_minimum_max_map_count(value.minimum_max_map_count)
+    aliases = _validated_aliases(value.environment_aliases)
+    fixtures = _validated_environment_fixtures(
+        _account_resolved_fixtures(value.environment_fixtures, bundle)
+    )
+    supplied = {item.name for item in fixtures} | {item.target for item in aliases}
+    identity = getattr(bundle, "pack_identity", None)
+    grants = validated_adapter_grants(
+        value.environment_grants, supplied, getattr(identity, "pack_id", None)
+    )
     return ScenarioStartupPlan(
         seed_script=_safe_relative_script(value.seed_script),
         required_profiles=tuple(profiles),
         activation_profiles=tuple(activation),
-        environment_aliases=_validated_aliases(value.environment_aliases),
-        environment_fixtures=_validated_environment_fixtures(
-            _account_resolved_fixtures(value.environment_fixtures, bundle)
-        ),
+        environment_aliases=aliases,
+        environment_fixtures=fixtures,
         container_environment=_validated_container_environment(
             value.container_environment
         ),
@@ -297,6 +302,7 @@ def _validated_plan(
         mcp_server_keys=tuple(mcp_keys),
         native_mcp_ingress=value.native_mcp_ingress,
         minimum_max_map_count=minimum,
+        environment_grants=grants,
     )
 
 

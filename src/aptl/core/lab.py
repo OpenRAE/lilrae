@@ -3339,12 +3339,26 @@ def _write_run_record(ctx: _LabStartContext) -> None:
     final_snapshot = _resolve_raes_snapshot(outcome)
     now_str = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
+    # This legacy manifest describes startup health, not a scientific verdict.
+    startup = outcome.lab_result
+    health = derive_startup_outcome(
+        [*ctx.diagnostics, *startup.diagnostics], fatal=not startup.success
+    )
+    record_outcome = "failed"
+    if startup.success:
+        record_outcome = (
+            "success"
+            if health is StartupOutcome.READY
+            and startup.outcome is StartupOutcome.READY
+            else "partial"
+        )
+
     inputs = RunRecordInputs(
         run_id=run_id,
         backend_name="aptl",
         started_at=snapshot.timestamp,
         finished_at=now_str,
-        outcome="success",
+        outcome=record_outcome,
         final_snapshot=final_snapshot,
         realization_details=_safe_dict(getattr(outcome, "realization_details", {})),
         selected_profiles=_safe_list(getattr(outcome, "selected_profiles", [])),

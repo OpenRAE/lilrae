@@ -274,9 +274,10 @@ def main(argv: list[str]) -> int:
         else:
             publish(Path(argv[1]), target, document_owner=owner)
     except (OSError, ValueError) as exc:
-        reason = (
-            str(exc) if isinstance(exc, HostsPublicationError) else type(exc).__name__
-        )
+        if isinstance(exc, HostsPublicationError):
+            reason = str(exc)
+        else:
+            reason = type(exc).__name__
         print(f"participant hosts not published: {reason}", file=sys.stderr)
         return 1
     return 0

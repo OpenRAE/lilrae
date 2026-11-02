@@ -59,6 +59,23 @@ It does not survive the operation or change scenario authority.
 
 ## Data flows and security
 
+Redaction keeps the existing Python and TypeScript public entry points.
+Each delegates command parsing to an internal shell helper, which consumes
+shared pattern definitions within its language:
+
+```text
+redaction -> command helpers -> credential patterns
+redaction -------------------> credential patterns
+```
+
+Pattern modules never import the recursive redactor or command helpers.
+The recursive entry points retain depth and scan limits, JSON handling,
+key classification, and the experiment opt-out boundary.
+Moving code between these modules must preserve pattern order and output.
+The shared golden corpus checks Python and TypeScript parity; focused
+redaction, fuzz, and consumer tests check credential masking and bounded work.
+CI rebuilds and tests every MCP consumer of the common module.
+
 ```text
 Contributor changes [untrusted input]
   -> Git checkout and changed-path selector [read-only runner token]
