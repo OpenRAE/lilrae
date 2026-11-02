@@ -124,8 +124,10 @@ defines.
    directory. Another module can be replaced with a module version, which
    `go.sum` verifies, or with a vendored directory. Test data, another
    first-party module, or a directory outside the repository cannot supply
-   the code of a module path. The model must give a fix-it message for each
-   rule that the checker knows.
+   the code of a module path. Only relative replacement paths are joined to
+   the module directory. An absolute path must keep its root, so it cannot
+   look like a permitted directory in the repository. The model must give a
+   fix-it message for each rule that the checker knows.
 6. **Compilation.** The checker evaluates the model directly, so no analyzer
    configuration is generated. The generated artifact is the diagram, and CI
    compares it with the model. The issue text records this change.

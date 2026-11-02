@@ -9,11 +9,53 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
+
+// attributeInfo models a reparse tag that Go does not classify as a symlink.
+type attributeInfo struct {
+	fs.FileInfo
+
+	attributes syscall.Win32FileAttributeData
+}
+
+func (i attributeInfo) Sys() any { return &i.attributes }
+
+func TestRegularInfoRefusesEveryReparseAttribute(t *testing.T) {
+	root, _ := newTree(t)
+	writeFile(t, root, "f", "data")
+	info, err := os.Stat(filepath.Join(root, "f"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := attributeInfo{FileInfo: info}
+	if err := regularInfo("open", "f", entry); err != nil {
+		t.Fatalf("ordinary regular file = %v, want nil", err)
+	}
+	entry.attributes.FileAttributes = windows.FILE_ATTRIBUTE_REPARSE_POINT
+	wantReason(t, regularInfo("open", "f", entry), ReasonSymlink)
+}
+
+func TestNativeOpenRefusesALinkBeforeAnyPathCheck(t *testing.T) {
+	root, _ := newTree(t)
+	writeFile(t, root, "target", "secret")
+	symlink(t, root, "target", "link")
+	parent, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeOnCleanup(t, parent)
+	file, err := openEntry("open", "link", parent, "link", windows.FILE_GENERIC_READ)
+	if file != nil {
+		closeOnCleanup(t, file)
+		t.Fatal("native open returned a link target before any path check")
+	}
+	wantReason(t, err, ReasonSymlink)
+}
 
 func TestRestrictToOwnerSetsAProtectedReadOnlyList(t *testing.T) {
 	root, d := newTree(t)

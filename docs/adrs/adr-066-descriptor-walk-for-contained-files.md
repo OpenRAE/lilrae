@@ -37,9 +37,20 @@ On Linux and macOS, `internal/securefile` walks directory descriptors with
   it, and publishes it with `linkat` for a create-once write or `renameat`
   for a replacement. Then it syncs the directory.
 
-On Windows, `internal/securefile` uses `os.Root`, and it refuses a link: the
-entry that `Lstat` reports must be the file that it opened (`os.SameFile`).
-Windows has no execute-only directory.
+On Windows, `internal/securefile` keeps `os.Root` where its containment contract
+suffices, with parent-relative no-follow handle operations for the stricter
+contract. Every untrusted component must be opened without reparse processing,
+then checked through that handle before use, including junctions and other
+reparse points. Reuse `golang.org/x/sys/windows` and the package's native
+metadata boundary; keep these details inside `internal/securefile`.
+
+The #1605 architecture preflight corrects the earlier prescription of a
+following open plus `Lstat`/`os.SameFile`: an entry can change from a link to
+its target between those calls and pass the identity check. That sequence
+does not establish no-follow access. [Go's Root contract](https://pkg.go.dev/os#Root)
+permits internal links; Windows offers no-follow opens through
+[`NtCreateFile` with `FILE_OPEN_REPARSE_POINT`](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ntcreatefile).
+This corrects the mechanism without lowering the original protection.
 
 This record supersedes the `os.Root` and renameio clause of ADR-065 for
 `internal/securefile` on Linux and macOS. Other code keeps that clause.
@@ -60,3 +71,7 @@ This record supersedes the `os.Root` and renameio clause of ADR-065 for
 
 - A wrong flag or a missed check weakens containment. Tests on Linux, macOS,
   and Windows, and fuzz tests of the walk, check each rule.
+- Handle identity checks supplement no-follow opens; they cannot replace
+  them. Static trees and cross-compilation do not qualify races or Windows
+  reparse handling. The [#1605 design](../architecture/issue-1605-securefile-design.md)
+  separates visibility, create-once publication, durability and ACL contracts.

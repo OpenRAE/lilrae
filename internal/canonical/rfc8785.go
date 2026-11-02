@@ -23,6 +23,9 @@ var (
 // integer outside ±(2^53 - 1) and each non-finite float, as the Python
 // rfc8785 library does.
 func RFC8785(v any) ([]byte, error) {
+	if err := checkDepth(v, 0); err != nil {
+		return nil, err
+	}
 	text, err := appendJSON(nil, v)
 	if err != nil {
 		return nil, err

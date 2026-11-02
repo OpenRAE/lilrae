@@ -116,7 +116,7 @@ type change struct {
 	findings []Finding
 }
 
-// readChange reads the change from [Config.Base] to HEAD.
+// readChange reads the change from the configured base to HEAD.
 func readChange(ctx context.Context, root string, cfg Config, thresholds Thresholds) (c change, err error) {
 	base, err := git.ResolveCommit(ctx, root, cfg.Base)
 	if err != nil {

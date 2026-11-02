@@ -29,7 +29,11 @@ import (
 // An exclusion matches the slash-separated path relative to dir, which is
 // the path that Gremlins walks.
 func exclusions(dir string) ([]string, error) {
-	fsys := os.DirFS(dir)
+	return exclusionsIn(os.DirFS(dir), dir)
+}
+
+// exclusionsIn permits discovery errors to be tested at each filesystem boundary.
+func exclusionsIn(fsys fs.FS, dir string) ([]string, error) {
 	var rules []string
 	err := fs.WalkDir(fsys, ".", func(name string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -58,7 +62,7 @@ func exclusion(fsys fs.FS, dir, name string, d fs.DirEntry) (string, error) {
 		nested, err := isModule(fsys, name)
 		// The go command ignores each file below an ignored directory.
 		if nested || golayout.Ignored(path.Join(name, "file.go")) {
-			return "^" + regexp.QuoteMeta(name) + "/", fs.SkipDir
+			return "^" + literalPattern(name) + "/", fs.SkipDir
 		}
 		return "", err
 	}
@@ -72,7 +76,12 @@ func exclusion(fsys fs.FS, dir, name string, d fs.DirEntry) (string, error) {
 	if match {
 		return "", nil
 	}
-	return "^" + regexp.QuoteMeta(name) + "$", nil
+	return "^" + literalPattern(name) + "$", nil
+}
+
+// literalPattern preserves a literal path through the CSV flag parser.
+func literalPattern(name string) string {
+	return strings.ReplaceAll(regexp.QuoteMeta(name), ",", `\x2c`)
 }
 
 // isModule reports whether the directory name of fsys holds a go.mod file.
