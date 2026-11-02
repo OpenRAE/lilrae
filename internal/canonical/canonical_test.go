@@ -202,3 +202,27 @@ func TestEncodersBoundTraversal(t *testing.T) {
 		}
 	}
 }
+
+func TestEncoderContainerDepthBoundary(t *testing.T) {
+	for _, object := range []bool{false, true} {
+		var atLimit any = nil
+		for range maxContainerDepth {
+			if object {
+				atLimit = map[string]any{"child": atLimit}
+			} else {
+				atLimit = []any{atLimit}
+			}
+		}
+		for _, encode := range []func(any) ([]byte, error){SortedCompactJSON, SortedCompactUTF8JSON, RFC8785} {
+			if _, err := encode(atLimit); err != nil {
+				t.Fatalf("value at the depth limit rejected: %v", err)
+			}
+			if _, err := encode(map[string]any{"child": atLimit}); !errors.Is(err, errDepth) {
+				t.Fatalf("object above the depth limit returned %v", err)
+			}
+			if _, err := encode([]any{atLimit}); !errors.Is(err, errDepth) {
+				t.Fatalf("array above the depth limit returned %v", err)
+			}
+		}
+	}
+}

@@ -21,7 +21,6 @@ packages:
 model_changes:
   - component:canonical-forms
   - component:digest
-  - component:conformance-suite
 ---
 
 # Issue #1604: Canonical forms and digests design
