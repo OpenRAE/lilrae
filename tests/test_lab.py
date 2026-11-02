@@ -4849,7 +4849,8 @@ class TestStartupClassificationWiring:
             side_effect=RuntimeError("MISP_API_KEY mismatch"),
         )
         result = _step_sync_mcp_config(ctx)
-        assert result is not None and not result.success
+        assert result is not None
+        assert not result.success
         assert "MISP_API_KEY" not in result.error
 
     def test_mcp_config_sync_clean_emits_no_diagnostic(self, tmp_path, mocker):

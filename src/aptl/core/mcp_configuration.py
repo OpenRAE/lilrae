@@ -18,6 +18,7 @@ from aptl.core.mcp_policy import (
 def _bind_endpoints(
     server_id: str, environment: dict[str, JsonValue], ports: Mapping[str, str]
 ) -> None:
+    """Replace endpoint bindings using this run's owned publications."""
     # No endpoint from a previous run is an authority for this run.
     for variable in tuple(environment):
         if variable.startswith("APTL_HP_"):
@@ -36,6 +37,7 @@ def _bind_endpoints(
 def _bind_credentials(
     server_id: str, environment: dict[str, JsonValue], credentials: Mapping[str, str]
 ) -> None:
+    """Bind only the selected server's required credential aliases."""
     aliases = {
         alias
         for role in ("red", "blue")

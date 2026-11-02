@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 from collections.abc import Callable, Collection, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from threading import RLock
 from typing import Protocol
@@ -110,8 +110,9 @@ class _ActiveProfile:
 class GuestRuntimeBinding:
     """Trusted guest admission and matching configuration renderer."""
 
-    admit_run: Callable[[], str]
-    config_renderer: Callable[[ProfileId, str], Path]
+    admit_run: Callable[[], str] | None = None
+    config_renderer: Callable[[ProfileId, str], Path] | None = None
+    profile_resolver: Callable[[ProfileId, str], WorkbenchProfile] | None = None
 
 
 class WorkbenchRuntime:
@@ -127,9 +128,8 @@ class WorkbenchRuntime:
         credential_broker: SessionCredentialBroker,
         model: str,
         guest_binding: GuestRuntimeBinding | None = None,
-        profile_resolver: Callable[[ProfileId, str], WorkbenchProfile] | None = None,
     ) -> None:
-        self._profile_resolver = profile_resolver
+        self._profile_resolver = guest_binding.profile_resolver if guest_binding else None
         self._admit_run = guest_binding.admit_run if guest_binding else None
         self._config_renderer = guest_binding.config_renderer if guest_binding else None
         self._session_manager = session_manager
@@ -190,6 +190,9 @@ class WorkbenchRuntime:
             if self._config_renderer is not None:
                 config_path = self._config_renderer(selected.profile_id, run_id)
             else:
+                selected = replace(
+                    selected, runtime_environment=configured_runtime_environment(self._payload_root, run_id)
+                )
                 config_path = render_profile_config(
                     profile=selected,
                     payload_root=self._payload_root,
@@ -198,7 +201,6 @@ class WorkbenchRuntime:
                     node_executable=self._node_executable,
                     run_id=run_id,
                     credential_aliases=selected.credential_aliases,
-                    runtime_environment=configured_runtime_environment(self._payload_root, run_id),
                 )
         except Exception:
             self._credential_broker.destroy(selected.profile_id, run_id)

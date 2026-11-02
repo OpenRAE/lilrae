@@ -29,7 +29,7 @@
     "asset_lock_schema": "aptl.participant-asset-lock/v1",
     "qualification_report_schema": "aptl.participant-qualification/v1",
     "asset_lock_ref": "participant-profiles/guided-purple-v1/asset-lock.json",
-    "asset_lock_sha256": "3b4b5d023ca9c9968e10ed317e1b707a33dc7da510cc72c7b60c67568e9a9a44",
+    "asset_lock_sha256": "d776144b6a75d8f7ce1d988fc9cbf44fad95b670dd21a9afcbfb2ef9025bbc74",
     "qualification_report_ref": "release/qualification/guided-purple-v1.json"
   },
   "budgets": {

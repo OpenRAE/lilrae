@@ -48,19 +48,24 @@ class WorkbenchProfile:
     servers: tuple[ServerProfile, ...]
     bookmark_refs: tuple[str, ...]
     policy_version: str = "participant-workbench-profile/v1"
+    runtime_environment: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = ()
 
     @property
     def server_ids(self) -> tuple[str, ...]:
+        """Return the selected server identities in operator order."""
         return tuple(server.server_id for server in self.servers)
 
     @property
     def credential_aliases(self) -> tuple[str, ...]:
+        """Return only credential aliases required by selected servers."""
         return tuple(
             sorted({alias for s in self.servers for alias in s.credential_aliases})
         )
 
 
 class _PolicyValue(BaseModel):
+    """Strict immutable values read from operator-owned policy data."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
@@ -75,6 +80,8 @@ class ServiceBinding(_PolicyValue):
 
 
 class _Server(_PolicyValue):
+    """One catalog server and the services needed to admit it."""
+
     server_id: str
     artifact_ref: str
     credential_aliases: tuple[str, ...]
@@ -82,17 +89,22 @@ class _Server(_PolicyValue):
     services: tuple[ServiceBinding, ...]
 
     def profile(self) -> ServerProfile:
+        """Project the admitted launch contract without service-selection data."""
         return ServerProfile(
             self.server_id, self.artifact_ref, self.credential_aliases, self.tool_names
         )
 
 
 class _Role(_PolicyValue):
+    """Operator ceiling for a participant role and its browser references."""
+
     servers: tuple[str, ...]
     bookmarks: tuple[str, ...]
 
 
 class _Catalog(_PolicyValue):
+    """Shipped operator server definitions and role ceilings."""
+
     servers: dict[str, _Server]
     profiles: dict[ProfileId, _Role]
 
@@ -111,6 +123,7 @@ class McpPolicy(_PolicyValue):
 
     @model_validator(mode="after")
     def validate_ceiling(self) -> McpPolicy:
+        """Reject unknown servers and requirements outside the operator ceiling."""
         if (set(self.allowed_servers) | set(self.required_servers)) - set(
             SERVER_IDS
         ) or set(self.required_servers) - set(self.allowed_servers):
@@ -205,19 +218,23 @@ def configured_server_ids(project_dir: Path, run_id: str) -> tuple[str, ...]:
 
 def configured_runtime_environment(
     project_dir: Path, run_id: str
-) -> dict[str, dict[str, str]]:
+) -> tuple[tuple[str, tuple[tuple[str, str], ...]], ...]:
     """Copy only selected, non-secret endpoint bindings into an agent launch."""
     selected = configured_server_ids(project_dir, run_id)
     if not selected:
-        return {}
+        return ()
     document = json.loads((project_dir / ".mcp.json").read_text())
-    return {
-        name: {
-            binding.environment: document["mcpServers"][name]["env"][
-                binding.environment
-            ]
-            for binding in service_bindings(name)
-            if binding.environment is not None
-        }
+    return tuple(
+        (
+            name,
+            tuple(
+                (
+                    binding.environment,
+                    document["mcpServers"][name]["env"][binding.environment],
+                )
+                for binding in service_bindings(name)
+                if binding.environment is not None
+            ),
+        )
         for name in selected
-    }
+    )

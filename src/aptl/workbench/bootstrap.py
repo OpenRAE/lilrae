@@ -230,8 +230,10 @@ def create_local_workbench_app(
         ),
         credential_broker=_BrowserProviderBroker(secret_source),
         model=settings.model,
-        profile_resolver=lambda role, run_id: profile_for(role, server_ids=read_private_binding(binding_path).access.mcp_server_ids),
         guest_binding=GuestRuntimeBinding(
+            profile_resolver=lambda role, run_id: profile_for(
+                role, server_ids=read_private_binding(binding_path).access.mcp_server_ids
+            ),
             admit_run=admit_run,
             config_renderer=lambda profile, run_id: render_guest_workbench_config(
                 binding_path=binding_path,

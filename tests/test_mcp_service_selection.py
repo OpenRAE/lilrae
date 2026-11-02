@@ -50,10 +50,9 @@ def test_operator_ceiling_and_required_server_fail_before_deployment(techvault):
     policy = McpPolicy(allowed_servers=("aptl-indexer",))
     assert select_scenario_servers(techvault, policy) == ("aptl-indexer",)
     techvault.nodes.pop("misp")
+    required = McpPolicy(required_servers=("aptl-threatintel",))
     with pytest.raises(WorkbenchConfigurationError, match="no declared service"):
-        select_scenario_servers(
-            techvault, McpPolicy(required_servers=("aptl-threatintel",))
-        )
+        select_scenario_servers(techvault, required)
     with pytest.raises(ValueError, match="invalid operator MCP policy"):
         AptlConfig(mcp={"allowed_servers": ["unapproved-pack-server"]})
     with pytest.raises(ValueError, match="invalid operator MCP policy"):
@@ -116,8 +115,9 @@ def test_present_absent_present_rebuilds_discovery_endpoints_and_tools(
             ).tool_names
         else:
             assert profile.credential_aliases == ()
+            caller = grant(profile="blue")
             with pytest.raises(ValueError, match="not authorized"):
-                authorize_server(record, grant(profile="blue"), "aptl-threatintel")
+                authorize_server(record, caller, "aptl-threatintel")
         assert config != previous_config
         previous_config = deepcopy(config)
 
@@ -140,8 +140,9 @@ def test_selected_endpoint_readiness_failure_keeps_previous_config_private(tmp_p
 
 
 def test_guest_record_without_selection_grants_no_legacy_authority():
+    record, caller = access_record(mcp_server_ids=()), grant()
     with pytest.raises(ValueError, match="not authorized"):
-        authorize_server(access_record(mcp_server_ids=()), grant(), "aptl-red")
+        authorize_server(record, caller, "aptl-red")
 
 
 def test_fresh_workbench_sessions_do_not_retain_selected_out_tools(tmp_path):
@@ -225,13 +226,11 @@ def test_required_absent_service_rejects_before_runtime_admission(
         "prepare_runtime_orchestration_for_scenario",
         lambda *args: pytest.fail("runtime must not be admitted"),
     )
+    config = AptlConfig(mcp={"required_servers": ["aptl-threatintel"]})
+    backend = object()
+    source = ScenarioAdmissionSource(bundle=bundle)
     with pytest.raises(WorkbenchConfigurationError, match="no declared service"):
-        raes.admit_raes_scenario(
-            tmp_path,
-            AptlConfig(mcp={"required_servers": ["aptl-threatintel"]}),
-            object(),
-            source=ScenarioAdmissionSource(bundle=bundle),
-        )
+        raes.admit_raes_scenario(tmp_path, config, backend, source=source)
 
 
 def test_empty_selection_clears_old_config_even_without_credentials(tmp_path):

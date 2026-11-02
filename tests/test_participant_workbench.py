@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from aptl.core.runstore import LocalRunStore
 from aptl.core.session import ScenarioSession
-from aptl.workbench.runtime import WorkbenchPaths
+from aptl.workbench.runtime import GuestRuntimeBinding, WorkbenchPaths
 from aptl.workbench.profiles import profile_for
 
 
@@ -232,7 +232,7 @@ def test_profile_switch_closes_the_previous_runtime_and_records_the_active_trace
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
-        profile_resolver=lambda role, run_id: profile_for(role),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(payload_root, tmp_path / "generated"),
         credential_broker=credentials,
         model="claude-sonnet-4-5-20250929",
@@ -267,7 +267,7 @@ def test_profile_runtime_fails_closed_without_an_active_scenario(
         ScenarioSession(tmp_path / "state"),
         _FakeAdapter(),
         LocalRunStore(tmp_path / "runs"),
-        profile_resolver=lambda role, run_id: profile_for(role),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -292,7 +292,7 @@ def test_runtime_creates_its_managed_config_parent_on_fresh_state(
         session_manager,
         _FakeAdapter(),
         LocalRunStore(tmp_path / "state" / "runs"),
-        profile_resolver=lambda role, run_id: profile_for(role),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             generated,
@@ -319,7 +319,7 @@ def test_failed_agent_start_revokes_credentials_and_removes_generated_config(
         session_manager,
         _FailingAdapter(),
         LocalRunStore(tmp_path / "runs"),
-        profile_resolver=lambda role, run_id: profile_for(role),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -348,7 +348,7 @@ def test_runtime_rejects_a_profile_with_an_unexpected_mcp_tool_inventory(
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
-        profile_resolver=lambda role, run_id: profile_for(role),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -378,7 +378,7 @@ def test_runtime_keeps_a_rejected_agent_until_failed_cleanup_is_retried(
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
-        profile_resolver=lambda role, run_id: profile_for(role),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -422,7 +422,7 @@ def test_runtime_validates_a_switch_target_before_closing_the_active_profile(
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
-        profile_resolver=lambda role, run_id: profile_for(role),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -453,7 +453,7 @@ def test_profile_switch_waits_for_an_active_agent_turn(tmp_path: Path) -> None:
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
-        profile_resolver=lambda role, run_id: profile_for(role),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -498,7 +498,7 @@ def test_browser_workbench_is_a_separate_authenticated_profile_surface(
         session_manager,
         _FakeAdapter(),
         LocalRunStore(tmp_path / "runs"),
-        profile_resolver=lambda role, run_id: profile_for(role),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -669,7 +669,7 @@ def _send_one_message(tmp_path: Path, adapter: object) -> tuple[object, str]:
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
-        profile_resolver=lambda role, run_id: profile_for(role),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",

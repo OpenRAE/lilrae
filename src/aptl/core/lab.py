@@ -135,6 +135,7 @@ if TYPE_CHECKING:
     from aptl.core.snapshot import RangeSnapshot
 
 log = get_logger("lab")
+_STATE_DIR_NAME = ".aptl"
 
 _START_OPERATION_ERRORS = (
     OSError,
@@ -3241,7 +3242,7 @@ def _resolve_run_target(ctx: _LabStartContext) -> tuple[object, str]:
     if ctx.run_store is not None and ctx.run_id is not None:
         return ctx.run_store, ctx.run_id
 
-    state_dir = ctx.project_dir / ".aptl"
+    state_dir = ctx.project_dir / _STATE_DIR_NAME
     active_run_dir = resolve_active_run_dir(state_dir)
     if active_run_dir is not None:
         ctx.run_store, ctx.run_id = (
@@ -3995,24 +3996,35 @@ def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
             if ctx.admitted_surface is not None
             else None
         )
+        server_ids = (
+            ctx.admitted_start.mcp_server_ids
+            if ctx.admitted_start is not None
+            else None
+        )
         runtime_ports = (
             _runtime_mcp_host_ports(
-                ctx.project_dir, ctx.backend, active_profiles=active_profiles,
-                server_ids=(ctx.admitted_start.mcp_server_ids if ctx.admitted_start is not None else None),
+                ctx.project_dir,
+                ctx.backend,
+                active_profiles=active_profiles,
+                server_ids=server_ids,
             )
             if ctx.backend is not None
             else []
         )
         ports_by_variable = {
             getattr(port, "env_var", None): port
-            for port in (runtime_ports if ctx.admitted_start is not None else [*ctx.resolved_ports, *runtime_ports])
+            for port in (
+                runtime_ports
+                if ctx.admitted_start is not None
+                else [*ctx.resolved_ports, *runtime_ports]
+            )
             if getattr(port, "env_var", None)
         }
         _sync_mcp_config_keys(
             ctx.project_dir,
             list(ports_by_variable.values()),
             server_keys=_mcp_startup_policy(ctx),
-            server_ids=(ctx.admitted_start.mcp_server_ids if ctx.admitted_start is not None else None),
+            server_ids=server_ids,
             run_id=ctx.run_id,
         )
         if ctx.admitted_start is not None:
@@ -4039,7 +4051,9 @@ def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
         # Exception text may include API key names — keep it in the log
         # only (existing redaction). Diagnostic stays narrow.
         log.exception("MCP config sync failed")
-        return LabResult(success=False, error="Selected MCP service configuration is unavailable.")
+        return LabResult(
+            success=False, error="Selected MCP service configuration is unavailable."
+        )
     if os.environ.get("APTL_SEAT_DESKTOP_HANDOFF") == "1":
         try:
             subprocess.run(
@@ -4078,18 +4092,27 @@ def _persist_mcp_run_admission(ctx: _LabStartContext) -> None:
         pack=admitted.bundle.pack_identity,
         server_ids=admitted.mcp_server_ids,
         container_aliases=tuple(
-            tuple(sorted({
-                alias
-                for name in (node.name, node.container_name, *node.backend_services)
-                if name
-                for alias in normalized_identifier_aliases(name)
-            }))
+            tuple(
+                sorted(
+                    {
+                        alias
+                        for name in (
+                            node.name,
+                            node.container_name,
+                            *node.backend_services,
+                        )
+                        if name
+                        for alias in normalized_identifier_aliases(name)
+                    }
+                )
+            )
             for node in admitted.realization.nodes
         ),
     )
     _atomic_write(
-        ctx.project_dir / ".aptl" / "mcp-admission.json",
-        (admission.model_dump_json() + "\n").encode(), mode=0o600,
+        ctx.project_dir / _STATE_DIR_NAME / "mcp-admission.json",
+        (admission.model_dump_json() + "\n").encode(),
+        mode=0o600,
     )
 
 
@@ -4927,7 +4950,10 @@ def _resolved_host_port_env(resolved_ports: list[object]) -> dict[str, str]:
 
 
 def _runtime_mcp_host_ports(
-    project_dir: Path, backend: object, *, active_profiles: set[str] | None = None,
+    project_dir: Path,
+    backend: object,
+    *,
+    active_profiles: set[str] | None = None,
     server_ids: tuple[str, ...] | None = None,
 ) -> list[object]:
     """Map MCP port variables to receipt-owned live publications.
@@ -4961,7 +4987,16 @@ def _runtime_mcp_host_ports(
             for server_id in server_ids
             for binding in service_bindings(server_id)
             if binding.environment is not None
-            and (port := bindings.get((binding.endpoint_node or binding.node, binding.endpoint_port or binding.port, "tcp"))) is not None
+            and (
+                port := bindings.get(
+                    (
+                        binding.endpoint_node or binding.node,
+                        binding.endpoint_port or binding.port,
+                        "tcp",
+                    )
+                )
+            )
+            is not None
         ]
     for spec in host_ports.published_port_specs(project_dir, active_profiles):
         if spec.env_var is None:
@@ -5079,7 +5114,7 @@ def _sync_native_mcp_ingress(
                 managed.setdefault("env", {}).update(
                     APTL_MCP_ADMITTED_RUN_ID=run_id,
                     APTL_MCP_RUN_STORE_BASE=run_store_base,
-                    APTL_STATE_DIR=str(project_dir / ".aptl"),
+                    APTL_STATE_DIR=str(project_dir / _STATE_DIR_NAME),
                 )
     path.write_text(json.dumps(cfg, indent=2) + "\n")
     path.chmod(0o600)
@@ -5122,7 +5157,9 @@ def _sync_mcp_config_keys(
     if server_ids is not None:
         from aptl.core.mcp_configuration import select_run_configuration
 
-        template = json.loads(example_path.read_text()) if example_path.exists() else cfg
+        template = (
+            json.loads(example_path.read_text()) if example_path.exists() else cfg
+        )
         cfg = select_run_configuration(
             cfg, template, server_ids, _resolved_host_port_env(resolved_ports), env_vals
         )
@@ -5132,8 +5169,10 @@ def _sync_mcp_config_keys(
         for name in server_ids:
             cfg["mcpServers"][name]["env"].update(
                 APTL_MCP_ADMITTED_RUN_ID=run_id,
-                APTL_MCP_RUN_STORE_BASE=str(_expected_transcript_store(project_dir).resolve()),
-                APTL_STATE_DIR=str(project_dir / ".aptl"),
+                APTL_MCP_RUN_STORE_BASE=str(
+                    _expected_transcript_store(project_dir).resolve()
+                ),
+                APTL_STATE_DIR=str(project_dir / _STATE_DIR_NAME),
             )
     updated = _refresh_mcp_server_keys(cfg, env_vals, server_keys)
     updated += _inject_mcp_server_ports(

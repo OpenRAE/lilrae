@@ -18,7 +18,18 @@ from aptl.core.mcp_policy import (
 
 from aptl.utils.pathsafe import PathContainmentError, create_exclusive_nofollow
 
+__all__ = [
+    "ProfileId",
+    "ServerProfile",
+    "WorkbenchProfile",
+    "WorkbenchConfigurationError",
+    "profile_for",
+    "render_profile_config",
+    "verify_profile_tool_inventory",
+]
+
 _TRACE_ID_RE = re.compile(r"^[a-f0-9]{32}$")
+
 
 def _validate_run_id(run_id: str) -> str:
     """Return a canonical active trace identifier or reject the input."""
@@ -53,10 +64,13 @@ def _validate_artifacts(profile: WorkbenchProfile, payload_root: Path) -> None:
 
 
 def verify_profile_tool_inventory(
-    profile: ProfileId | str | WorkbenchProfile, inventory: Mapping[str, Collection[str]]
+    profile: ProfileId | str | WorkbenchProfile,
+    inventory: Mapping[str, Collection[str]],
 ) -> None:
     """Reject a launched profile unless every server reports its exact tools/list set."""
-    selected = profile if isinstance(profile, WorkbenchProfile) else profile_for(profile)
+    selected = (
+        profile if isinstance(profile, WorkbenchProfile) else profile_for(profile)
+    )
     expected = {
         server.server_id: frozenset(server.tool_names) for server in selected.servers
     }
@@ -78,14 +92,15 @@ def render_profile_config(
     node_executable: Path,
     run_id: str,
     credential_aliases: Collection[str],
-    runtime_environment: Mapping[str, Mapping[str, str]] | None = None,
 ) -> Path:
     """Render one private, standard Claude Code MCP config for an active run.
 
     Secret values stay with the management-owned credential broker. The
     client expands only the selected aliases into the stdio server processes.
     """
-    selected = profile if isinstance(profile, WorkbenchProfile) else profile_for(profile)
+    selected = (
+        profile if isinstance(profile, WorkbenchProfile) else profile_for(profile)
+    )
     active_run_id = _validate_run_id(run_id)
     _validate_aliases(selected, credential_aliases)
     _validate_artifacts(selected, payload_root)
@@ -105,13 +120,12 @@ def render_profile_config(
                 "command": str(node),
                 "args": [str((payload / server.artifact_ref).resolve())],
                 "env": {
-                    **((runtime_environment or {}).get(server.server_id, {})),
+                    **dict(
+                        dict(selected.runtime_environment).get(server.server_id, ())
+                    ),
                     "APTL_MCP_DISABLE_DOTENV": "1",
                     "APTL_STATE_DIR": str(canonical_state_dir),
-                    **{
-                        alias: f"${{{alias}}}"
-                        for alias in server.credential_aliases
-                    },
+                    **{alias: f"${{{alias}}}" for alias in server.credential_aliases},
                 },
             }
             for server in selected.servers
