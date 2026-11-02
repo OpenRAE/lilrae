@@ -40,14 +40,21 @@ def planning_run_scope(
     selected = requested or PlanScope()
     trial = bundle.trial if isinstance(bundle, ScenarioBundle) else None
     run_id = selected.run_id
+    instantiation_id = selected.instantiation_id
     if trial is not None:
         if run_id is not None and run_id != trial.provenance.run_id:
             raise ValueError("family-run-identity-mismatch")
         run_id = trial.provenance.run_id
+        if (
+            instantiation_id is not None
+            and instantiation_id != trial.provenance.plan_entry_id
+        ):
+            raise ValueError("family-entry-identity-mismatch")
+        instantiation_id = trial.provenance.plan_entry_id
     return PlanScope(
         target_name=selected.target_name,
         run_id=run_id or (uuid4().hex if required else None),
-        instantiation_id=selected.instantiation_id,
+        instantiation_id=instantiation_id,
     )
 
 

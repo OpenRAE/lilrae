@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from aptl.appliance.seat.errors import SeatLauncherError
 from aptl.appliance.seat.models import SeatRecord
+from aptl.utils.deterministic_archive import open_nofollow
 
 
 def _ensure_seat_root(seat_root: Path) -> None:
@@ -58,11 +59,7 @@ def load_seat_record(seat_root: Path) -> SeatRecord | None:
             raise SeatLauncherError(
                 "corrupt-seat-state", "seat state must be owner-only"
             )
-        flags = os.O_RDONLY | os.O_CLOEXEC
-        if hasattr(os, "O_NOFOLLOW"):
-            flags |= os.O_NOFOLLOW
-        fd = os.open(path, flags)
-        with os.fdopen(fd, "rb") as handle:
+        with open_nofollow(path) as handle:
             payload = handle.read()
         return SeatRecord.model_validate_json(payload)
     except SeatLauncherError:

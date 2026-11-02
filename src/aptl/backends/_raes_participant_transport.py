@@ -237,13 +237,14 @@ def _render_runtime_profile_config(
     source_config: Path,
     output_dir: Path,
     node_executable: Path,
+    server_ids: tuple[str, ...] | None = None,
 ) -> tuple[Path, tuple[str, ...]]:
     """Render one private MCP config containing only a role's admitted tools."""
 
     source_servers = _load_source_servers(source_config)
     servers: dict[str, object] = {}
     allowed: list[str] = []
-    for server in profile_for(profile).servers:
+    for server in profile_for(profile, server_ids=server_ids).servers:
         server_id, rendered, tools = _render_profile_server(
             server, source_servers, project_dir, node_executable
         )

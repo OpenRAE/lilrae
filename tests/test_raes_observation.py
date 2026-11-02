@@ -125,7 +125,7 @@ def test_techvault_order_alignment_uses_declared_operation_not_typed_resource():
                     concerns={path: normalized},
                 )
             },
-            pack_identity=PackIdentity(pack_id, "6.5.1", digest),
+            pack_identity=PackIdentity(pack_id, "7.2.0", digest),
         )
 
         observed = result[address].concerns[path]

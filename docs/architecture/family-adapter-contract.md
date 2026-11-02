@@ -27,6 +27,7 @@ The host and adapter requirements on the release set must include each installed
 
 The caller supplies a sealed RAES trial plan, entry ID, and expanded family.
 Core compares the family with the validated bundle source.
+Core admits an import-free source through RAES family admission before it compares semantic identity.
 RAES reconstructs the sealed plan and instantiates its selected entry.
 Core retains the resulting canonical snapshot and provenance.
 Core also retains the entry's sealed participant configurations from the plan copy that RAES verified.
@@ -40,6 +41,16 @@ Container operations stay within the admitted node set.
 Inspection excludes container environment values.
 Native capture records use the sealed entry identity, separate from the capture-plan identity.
 Archive run identity must match the sealed trial before apply.
+The caller can supply canonical instantiated snapshot bytes with the sealed entry.
+Admission compares those bytes with the snapshot that RAES derives from the sealed plan.
+A mismatch stops admission before adapter callbacks or backend preparation.
+Planning adopts both the entry's preallocated run ID and its entry ID.
+An explicit conflicting run or instantiation ID stops planning.
+Start uses the configured local run store when the caller supplies no archive target.
+Before apply, core retains the exact snapshot in `trial/instantiated-snapshot.json`.
+It retains safe family, plan, entry, selection-digest, and provider joins in `trial/identity.json`.
+Snapshot storage uses private permissions, contained paths, immutable publication, and the existing run seal lock.
+An archive conflict or write failure stops apply.
 Runtime parameters cannot overwrite a sealed trial binding.
 A failed apply ends the start; core does not apply the plan again.
 
@@ -55,6 +66,7 @@ flowchart LR
     T[(Canonical trial snapshot)]
     S[Capability selection]
     R[Existing realization and capture]
+    E[(Protected run archive)]
   end
   U[Caller: sealed trial plan] -->|Plan and entry identity| P
   B -->|Validated source and release identity| P
@@ -64,6 +76,8 @@ flowchart LR
   A -->|Atomic qualification and typed results| S
   T -->|Detached trial context| S
   S -->|Validated selections| R
+  T -->|Exact snapshot bytes and safe lineage| E
+  E -->|Retained input before apply| R
 ```
 
 The existing lifecycle state remains admission, preparation, realization, observation, and finalization.
@@ -80,6 +94,14 @@ The release-set check prevents an install without dependency resolution from mix
 RAES validation prevents altered selections from acquiring trial authority.
 Detached snapshots prevent callback changes to the admitted scenario.
 Snapshot values remain absent from automatic representations and safe identity projections.
+The private snapshot can contain sensitive trial values.
+Core does not redact these bytes, because redaction would change the admitted input.
+Ordinary evidence contains selection identities and digests, not selection values.
+The env-pack renderer and startup operations consume only the instantiated node and inventory sets.
+Each trial starts from a new admitted model after the previous trial's declared cleanup.
+The execution caller owns cleanup between trials; admission does not stop another run's resources.
+Requested facts require native readback at the declared observation scope.
+Unsupported or unobserved facts retain the existing planning and runtime refusal behavior.
 Trial evidence records participant configuration digests, not configuration values.
 Existing environment, path, capture, and backend validators remain mandatory.
 Provider failures produce bounded codes without exception payloads.

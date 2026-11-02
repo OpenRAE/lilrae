@@ -21,7 +21,7 @@ RUN set -eu; \
         python3 -m aptl_techvault.build_cache \
         > /opt/aptl/npm-cache-input-identity.json
 
-FROM node:22.23.4-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
+FROM node:22.23.4-trixie-slim@sha256:2117f713a417f3aff682ac8f5bc2ebbdf1beed51f36e67ab1e0fd3866b6d2d8f
 RUN test "$(node --version)" = "v22.23.4" \
     && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \

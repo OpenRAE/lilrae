@@ -135,6 +135,7 @@ if TYPE_CHECKING:
     from aptl.core.snapshot import RangeSnapshot
 
 log = get_logger("lab")
+_STATE_DIR_NAME = ".aptl"
 
 _START_OPERATION_ERRORS = (
     OSError,
@@ -3241,7 +3242,7 @@ def _resolve_run_target(ctx: _LabStartContext) -> tuple[object, str]:
     if ctx.run_store is not None and ctx.run_id is not None:
         return ctx.run_store, ctx.run_id
 
-    state_dir = ctx.project_dir / ".aptl"
+    state_dir = ctx.project_dir / _STATE_DIR_NAME
     active_run_dir = resolve_active_run_dir(state_dir)
     if active_run_dir is not None:
         ctx.run_store, ctx.run_id = (
@@ -3989,32 +3990,45 @@ def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
     # so the MCPs authenticate without manual rewiring after a fresh
     # `lab stop -v` + `lab start`.
     log.info("Step 14: Syncing MCP client config with seeded API keys...")
-    if ctx.admitted_surface is not None and not ctx.selected_profiles:
-        log.debug("No adapter profiles selected, skipping MCP client configuration")
-        return None
     try:
         active_profiles = (
             set(ctx.admitted_surface.selected_profiles)
             if ctx.admitted_surface is not None
             else None
         )
+        server_ids = (
+            ctx.admitted_start.mcp_server_ids
+            if ctx.admitted_start is not None
+            else None
+        )
         runtime_ports = (
             _runtime_mcp_host_ports(
-                ctx.project_dir, ctx.backend, active_profiles=active_profiles
+                ctx.project_dir,
+                ctx.backend,
+                active_profiles=active_profiles,
+                server_ids=server_ids,
             )
             if ctx.backend is not None
             else []
         )
         ports_by_variable = {
             getattr(port, "env_var", None): port
-            for port in [*ctx.resolved_ports, *runtime_ports]
+            for port in (
+                runtime_ports
+                if ctx.admitted_start is not None
+                else [*ctx.resolved_ports, *runtime_ports]
+            )
             if getattr(port, "env_var", None)
         }
         _sync_mcp_config_keys(
             ctx.project_dir,
             list(ports_by_variable.values()),
             server_keys=_mcp_startup_policy(ctx),
+            server_ids=server_ids,
+            run_id=ctx.run_id,
         )
+        if ctx.admitted_start is not None:
+            _persist_mcp_run_admission(ctx)
         from aptl.backends.scenario_startup import ScenarioStartupPlan
         from aptl.core.scenario_bundle import ScenarioSourceKind
 
@@ -4036,15 +4050,9 @@ def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
     except Exception:
         # Exception text may include API key names — keep it in the log
         # only (existing redaction). Diagnostic stays narrow.
-        log.exception("MCP config sync skipped")
-        _emit_diagnostic(
-            ctx,
-            step="mcp_config_sync",
-            impact=DiagnosticImpact.CAPABILITY,
-            severity=DiagnosticSeverity.WARNING,
-            message="MCP client config not refreshed; MCP servers may not "
-            "authenticate without manual key wiring",
-            operator_action="Inspect .mcp.json env blocks against .env after a fresh lab start",
+        log.exception("MCP config sync failed")
+        return LabResult(
+            success=False, error="Selected MCP service configuration is unavailable."
         )
     if os.environ.get("APTL_SEAT_DESKTOP_HANDOFF") == "1":
         try:
@@ -4066,6 +4074,46 @@ def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
                 error="Seat desktop MCP handoff failed.",
             )
     return None
+
+
+def _persist_mcp_run_admission(ctx: _LabStartContext) -> None:
+    """Keep guest discovery on the same exact trial as startup."""
+    from aptl.backends.raes_profiles import normalized_identifier_aliases
+    from aptl.core._soc_ca_io import _atomic_write
+    from aptl.core.mcp_policy import McpRunAdmission
+
+    admitted = ctx.admitted_start
+    if admitted is None or admitted.bundle.pack_identity is None:
+        return
+    if admitted.realization is None or not ctx.run_id:
+        raise ValueError("MCP deployment admission is unavailable")
+    admission = McpRunAdmission(
+        run_id=ctx.run_id,
+        pack=admitted.bundle.pack_identity,
+        server_ids=admitted.mcp_server_ids,
+        container_aliases=tuple(
+            tuple(
+                sorted(
+                    {
+                        alias
+                        for name in (
+                            node.name,
+                            node.container_name,
+                            *node.backend_services,
+                        )
+                        if name
+                        for alias in normalized_identifier_aliases(name)
+                    }
+                )
+            )
+            for node in admitted.realization.nodes
+        ),
+    )
+    _atomic_write(
+        ctx.project_dir / _STATE_DIR_NAME / "mcp-admission.json",
+        (admission.model_dump_json() + "\n").encode(),
+        mode=0o600,
+    )
 
 
 def _step_execute_participant_injects(ctx: _LabStartContext) -> LabResult | None:
@@ -4902,7 +4950,11 @@ def _resolved_host_port_env(resolved_ports: list[object]) -> dict[str, str]:
 
 
 def _runtime_mcp_host_ports(
-    project_dir: Path, backend: object, *, active_profiles: set[str] | None = None
+    project_dir: Path,
+    backend: object,
+    *,
+    active_profiles: set[str] | None = None,
+    server_ids: tuple[str, ...] | None = None,
 ) -> list[object]:
     """Map MCP port variables to receipt-owned live publications.
 
@@ -4919,6 +4971,33 @@ def _runtime_mcp_host_ports(
 
     bindings = port_bindings.project_port_bindings(backend)
     resolved: dict[str, object | None] = {}
+    if server_ids is not None:
+        from aptl.core.mcp_policy import service_bindings
+
+        return [
+            host_ports.ResolvedPort(
+                service=binding.endpoint_node or binding.node,
+                env_var=binding.environment,
+                default_port=binding.endpoint_port or binding.port,
+                resolved_port=port,
+                protos=("tcp",),
+                host_ip="127.0.0.1",
+                remapped=port != (binding.endpoint_port or binding.port),
+            )
+            for server_id in server_ids
+            for binding in service_bindings(server_id)
+            if binding.environment is not None
+            and (
+                port := bindings.get(
+                    (
+                        binding.endpoint_node or binding.node,
+                        binding.endpoint_port or binding.port,
+                        "tcp",
+                    )
+                )
+            )
+            is not None
+        ]
     for spec in host_ports.published_port_specs(project_dir, active_profiles):
         if spec.env_var is None:
             continue
@@ -5035,7 +5114,7 @@ def _sync_native_mcp_ingress(
                 managed.setdefault("env", {}).update(
                     APTL_MCP_ADMITTED_RUN_ID=run_id,
                     APTL_MCP_RUN_STORE_BASE=run_store_base,
-                    APTL_STATE_DIR=str(project_dir / ".aptl"),
+                    APTL_STATE_DIR=str(project_dir / _STATE_DIR_NAME),
                 )
     path.write_text(json.dumps(cfg, indent=2) + "\n")
     path.chmod(0o600)
@@ -5046,14 +5125,14 @@ def _sync_mcp_config_keys(
     resolved_ports: list[object],
     *,
     server_keys: Mapping[str, tuple[str, ...]] | None = None,
+    server_ids: tuple[str, ...] | None = None,
+    run_id: str | None = None,
 ) -> None:
     """Create or update `.mcp.json` with dynamic API keys and resolved ports.
 
-    A fresh lab copies the shipped example so its seven enabled custom MCPs
-    are client-ready without a manual configuration step. Existing client
-    configuration is preserved: only the known dynamic credential entries are
-    refreshed after seed-prime, and each server's ``${APTL_HP_*}`` host ports
-    are injected with the run's resolved (possibly remapped) values.
+    An admitted start intersects the operator catalog with declared services,
+    removes selected-out entries, and replaces endpoints from live observations.
+    Callers without an admission retain the legacy credential-refresh behavior.
     """
     import json
 
@@ -5061,31 +5140,50 @@ def _sync_mcp_config_keys(
     example_path = project_dir / ".mcp.json.example"
     env_path = project_dir / ".env"
     source_path = mcp_path if mcp_path.exists() else example_path
-    if not source_path.exists() or not env_path.exists():
-        log.debug(
-            "MCP sync: missing client template/config or %s, skipping",
-            env_path.name,
-        )
+    if not source_path.exists():
+        if server_ids:
+            raise ValueError("selected MCP configuration inputs are unavailable")
         return
-
-    # Use the canonical .env parser so quoted values, `export` prefixes,
-    # and trailing comments are handled identically to lab startup.
     try:
         env_vals = load_dotenv(env_path)
     except FileNotFoundError:
-        log.debug("MCP sync: %s vanished between checks; skipping", env_path.name)
-        return
+        if server_ids:
+            raise ValueError("selected MCP credential inputs are unavailable") from None
+        if server_ids is None:
+            return
+        env_vals = {}
 
     cfg = json.loads(source_path.read_text())
+    if server_ids is not None:
+        from aptl.core.mcp_configuration import select_run_configuration
+
+        template = (
+            json.loads(example_path.read_text()) if example_path.exists() else cfg
+        )
+        cfg = select_run_configuration(
+            cfg, template, server_ids, _resolved_host_port_env(resolved_ports), env_vals
+        )
+    if server_ids:
+        if not run_id:
+            raise ValueError("MCP run identity is unavailable")
+        for name in server_ids:
+            cfg["mcpServers"][name]["env"].update(
+                APTL_MCP_ADMITTED_RUN_ID=run_id,
+                APTL_MCP_RUN_STORE_BASE=str(
+                    _expected_transcript_store(project_dir).resolve()
+                ),
+                APTL_STATE_DIR=str(project_dir / _STATE_DIR_NAME),
+            )
     updated = _refresh_mcp_server_keys(cfg, env_vals, server_keys)
     updated += _inject_mcp_server_ports(
         cfg, project_dir, _resolved_host_port_env(resolved_ports)
     )
 
     created = source_path == example_path
-    if updated or created:
-        mcp_path.write_text(json.dumps(cfg, indent=2) + "\n")
-        mcp_path.chmod(0o600)
+    if updated or created or server_ids is not None:
+        from aptl.core._soc_ca_io import _atomic_write
+
+        _atomic_write(mcp_path, (json.dumps(cfg, indent=2) + "\n").encode(), mode=0o600)
         action = "created" if created else "refreshed"
         details = f" ({', '.join(updated)})" if updated else ""
         log.info("MCP sync: %s %s%s", action, mcp_path.name, details)
