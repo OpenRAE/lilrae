@@ -24,9 +24,12 @@ from aptl.core.scenario_bundle import ScenarioBundle
 
 if TYPE_CHECKING:
     from aptl.core.deployment.backend import DeploymentBackend
+    from aptl.backends.raes_participant_actions import ParticipantActionSpec
 
 
-def _participant_actions(selected: RuntimeTargetOptions) -> dict:
+def _participant_actions(
+    selected: RuntimeTargetOptions,
+) -> dict[str, ParticipantActionSpec]:
     """Build the existing participant action registry with admitted overrides."""
 
     actions = dict(DEFAULT_PARTICIPANT_ACTIONS)

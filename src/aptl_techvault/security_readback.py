@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aptl.backends.raes_realization_model import NodeRealization
+
 import re
 import xml.etree.ElementTree as ET
 
@@ -29,7 +35,9 @@ def _agent_roster(backend: ReadbackBackend, container: str) -> list[dict[str, ob
     return roster
 
 
-def _wazuh_state(backend, node):
+def _wazuh_state(
+    backend: ReadbackBackend, node: NodeRealization
+) -> tuple[re.Match[str], str, ET.Element]:
     """Read the native Wazuh version, process status and parsed listener configuration."""
 
     info = output(
@@ -45,7 +53,9 @@ def _wazuh_state(backend, node):
     return version, status, root
 
 
-def _wazuh_components(backend, node, row, status):
+def _wazuh_components(
+    backend: ReadbackBackend, node: NodeRealization, row: dict[str, object], status: str
+) -> None:
     """Read enabled manager components from native running processes."""
 
     for component in row["components"]:
@@ -61,7 +71,9 @@ def _wazuh_components(backend, node, row, status):
         component["enabled"] = running
 
 
-def _wazuh_content(backend, node, row):
+def _wazuh_content(
+    backend: ReadbackBackend, node: NodeRealization, row: dict[str, object]
+) -> dict[str, str]:
     """Read declared native rule files and require Wazuh parser acceptance."""
 
     native_files = {}
@@ -76,7 +88,7 @@ def _wazuh_content(backend, node, row):
     return native_files
 
 
-def _wazuh_rule_groups(document, rule):
+def _wazuh_rule_groups(document: ET.Element, rule: ET.Element) -> list[str]:
     """Read the native group membership of one Wazuh detection rule."""
 
     groups = set()
@@ -87,7 +99,9 @@ def _wazuh_rule_groups(document, rule):
     return sorted(groups)
 
 
-def _wazuh_definition(definition, row, native_files):
+def _wazuh_definition(
+    definition: dict[str, object], row: dict[str, object], native_files: dict[str, str]
+) -> None:
     """Read one selected native Wazuh detection definition."""
 
     content = next(
@@ -110,7 +124,9 @@ def _wazuh_definition(definition, row, native_files):
     definition["enabled"] = True
 
 
-def _wazuh_agents(backend, node, row):
+def _wazuh_agents(
+    backend: ReadbackBackend, node: NodeRealization, row: dict[str, object]
+) -> None:
     """Require every selected agent in the live Wazuh roster."""
 
     roster = _agent_roster(backend, node.container_name)
@@ -124,7 +140,12 @@ def _wazuh_agents(backend, node, row):
         )
 
 
-def _wazuh_listener(backend, node, root, listener):
+def _wazuh_listener(
+    backend: ReadbackBackend,
+    node: NodeRealization,
+    root: ET.Element,
+    listener: dict[str, object],
+) -> None:
     """Read the native authentication and transport for one Wazuh listener."""
 
     role = listener["role"]
@@ -201,7 +222,7 @@ def _suricata_config(backend: ReadbackBackend, container: str) -> dict[str, obje
     return dict(as_mapping(yaml.safe_load(output(backend, container, ["cat", path]))))
 
 
-def _suricata_protocols(row, config):
+def _suricata_protocols(row: dict[str, object], config: Mapping[str, object]) -> None:
     """Corroborate enabled native application-layer protocols."""
 
     protocols = (
@@ -216,7 +237,7 @@ def _suricata_protocols(row, config):
         )
 
 
-def _suricata_networks(row, config):
+def _suricata_networks(row: dict[str, object], config: Mapping[str, object]) -> None:
     """Read native network selector values."""
 
     groups = (
@@ -231,7 +252,12 @@ def _suricata_networks(row, config):
         ]
 
 
-def _suricata_rules(backend, node, row, config):
+def _suricata_rules(
+    backend: ReadbackBackend,
+    node: NodeRealization,
+    row: dict[str, object],
+    config: Mapping[str, object],
+) -> None:
     """Read accepted native rule sources and rule counts."""
 
     for source in row["rule_sources"]:
@@ -246,7 +272,7 @@ def _suricata_rules(backend, node, row, config):
             )
 
 
-def _suricata_outputs(row, config):
+def _suricata_outputs(row: dict[str, object], config: Mapping[str, object]) -> None:
     """Read native output paths, event types and enabled state."""
 
     outputs = {}
@@ -273,7 +299,12 @@ def _suricata_outputs(row, config):
         )
 
 
-def _suricata_controls(backend, node, row, config):
+def _suricata_controls(
+    backend: ReadbackBackend,
+    node: NodeRealization,
+    row: dict[str, object],
+    config: Mapping[str, object],
+) -> None:
     """Corroborate native enabled control sockets."""
 
     for channel in row["control_channels"]:
@@ -328,7 +359,7 @@ def network_sensors(backend: ReadbackBackend, node: object) -> list[dict[str, ob
     return result
 
 
-def _docker_control_socket(mount):
+def _docker_control_socket(mount: Mapping[str, object]) -> bool:
     """Recognize native read-write access to the host Docker control socket."""
 
     return (
@@ -339,7 +370,9 @@ def _docker_control_socket(mount):
     )
 
 
-def _orborus_environment(backend, node):
+def _orborus_environment(
+    backend: ReadbackBackend, node: NodeRealization
+) -> dict[str, str]:
     """Read only selected native orchestration settings and its control mount."""
 
     info = as_mapping(backend.container_inspect(node.container_name))
@@ -363,7 +396,11 @@ def _orborus_environment(backend, node):
     return environment
 
 
-def _orborus_template(backend, template, environment):
+def _orborus_template(
+    backend: ReadbackBackend,
+    template: dict[str, object],
+    environment: Mapping[str, str],
+) -> None:
     """Corroborate the native workload image selection and pinned local image."""
 
     if template["template_id"] == "shuffle-worker":

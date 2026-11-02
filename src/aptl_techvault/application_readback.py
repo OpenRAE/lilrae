@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aptl.backends.raes_realization_model import NodeRealization
+    from raes.runtime_platform_application import RuntimePlatformApplication
+
 from urllib.parse import urlsplit
 
 from aptl_techvault.readback_support import (
@@ -48,7 +54,9 @@ def _port(node: object, service: str) -> int:
     return ports[0]
 
 
-def _flask_routes(backend, node, row):
+def _flask_routes(
+    backend: ReadbackBackend, node: NodeRealization, row: dict[str, object]
+) -> None:
     """Read live Flask route methods and authentication guards."""
 
     observed = json_output(
@@ -63,7 +71,13 @@ def _flask_routes(backend, node, row):
         route["auth_required"] = native["auth_required"]
 
 
-def _http_authentication(backend, node, row, route, port):
+def _http_authentication(
+    backend: ReadbackBackend,
+    node: NodeRealization,
+    row: dict[str, object],
+    route: dict[str, object],
+    port: int,
+) -> bool:
     """Read unauthenticated HTTP status and recognized login redirects."""
 
     require(
@@ -105,7 +119,9 @@ def _http_authentication(backend, node, row, route, port):
     return int(status) >= 300
 
 
-def _http_routes(backend, node, row):
+def _http_routes(
+    backend: ReadbackBackend, node: NodeRealization, row: dict[str, object]
+) -> None:
     """Read HTTP authentication and corroborate a configured reverse proxy."""
 
     require(row["protocol"] in {"http", "https"})
@@ -133,7 +149,11 @@ def applications(backend: ReadbackBackend, node: object) -> list[dict[str, objec
     return result
 
 
-def _misp_platform(backend, node, application):
+def _misp_platform(
+    backend: ReadbackBackend,
+    node: NodeRealization,
+    application: RuntimePlatformApplication,
+) -> tuple[dict[str, object], str]:
     """Corroborate the product identity and read its configured upstreams."""
 
     row = application.model_dump(mode="json", by_alias=True)
@@ -180,7 +200,11 @@ def _misp_platform(backend, node, application):
     return row, dependencies
 
 
-def _wazuh_dashboard_platform(backend, node, application):
+def _wazuh_dashboard_platform(
+    backend: ReadbackBackend,
+    node: NodeRealization,
+    application: RuntimePlatformApplication,
+) -> tuple[dict[str, object], str]:
     """Corroborate the product identity and read its configured upstreams."""
 
     row = application.model_dump(mode="json", by_alias=True)
@@ -206,7 +230,11 @@ def _wazuh_dashboard_platform(backend, node, application):
     return row, dependencies
 
 
-def _shuffle_platform(backend, node, application):
+def _shuffle_platform(
+    backend: ReadbackBackend,
+    node: NodeRealization,
+    application: RuntimePlatformApplication,
+) -> tuple[dict[str, object], str]:
     """Corroborate the product identity and read its configured upstreams."""
 
     row = application.model_dump(mode="json", by_alias=True)
@@ -282,7 +310,11 @@ echo json_encode(['users'=>$users,'keys'=>$keys]);
 """
 
 
-def _misp_principal(principal, users, keys):
+def _misp_principal(
+    principal: dict[str, object],
+    users: list[dict[str, object]],
+    keys: list[dict[str, object]],
+) -> tuple[dict[str, object], bool]:
     """Resolve a native MISP user or live read-only API key to its owner."""
 
     if principal["kind"] == "user":
@@ -306,7 +338,11 @@ def _misp_principal(principal, users, keys):
     return matching[0], principal["kind"] == "api_key"
 
 
-def _misp_grant_principal(row, grant, observed_principals):
+def _misp_grant_principal(
+    row: dict[str, object],
+    grant: dict[str, object],
+    observed_principals: dict[str, tuple[dict[str, object], bool]],
+) -> tuple[dict[str, object], bool]:
     """Bind one logical authorization role to its observed native principal."""
 
     mappings = [
@@ -321,7 +357,9 @@ def _misp_grant_principal(row, grant, observed_principals):
     return observed_principals[mappings[0]["users"][0]]
 
 
-def _misp_grant(principal, read_only_key, grant):
+def _misp_grant(
+    principal: dict[str, object], read_only_key: bool, grant: dict[str, object]
+) -> None:
     """Check effective MISP permissions, including a key restriction on its owner."""
 
     require(grant["effect"] == "allow" and grant["resource_kind"] == "app_resource")
@@ -354,7 +392,9 @@ def _misp_grant(principal, read_only_key, grant):
         )
 
 
-def _misp_authorization(backend, node, row):
+def _misp_authorization(
+    backend: ReadbackBackend, node: NodeRealization, row: dict[str, object]
+) -> None:
     """Read only native authorization metadata, keeping credentials inside the guest."""
 
     require(

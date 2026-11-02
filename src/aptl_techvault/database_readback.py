@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aptl.backends.raes_realization_model import NodeRealization
+    from raes.runtime_database import RuntimeDatabaseService
+
 from copy import deepcopy
 
 from aptl_techvault.readback_support import (
@@ -60,7 +67,14 @@ def _mariadb(backend: ReadbackBackend, container: str, sql: str) -> str:
     )
 
 
-def _database_schema(backend, container, engine, query, database, schema):
+def _database_schema(
+    backend: ReadbackBackend,
+    container: str,
+    engine: str,
+    query: Callable[[ReadbackBackend, str, str], str],
+    database: dict[str, object],
+    schema: dict[str, object],
+) -> None:
     """Read the selected schema's native table catalog."""
 
     name = database["name"]
@@ -83,7 +97,13 @@ def _database_schema(backend, container, engine, query, database, schema):
         table["name"] = next(item for item in observed if item == table["name"])
 
 
-def _database_catalogs(backend, container, engine, query, row):
+def _database_catalogs(
+    backend: ReadbackBackend,
+    container: str,
+    engine: str,
+    query: Callable[[ReadbackBackend, str, str], str],
+    row: dict[str, object],
+) -> None:
     """Read selected native databases, schemas and table names."""
 
     for database in row["databases"]:
@@ -104,7 +124,13 @@ def _database_catalogs(backend, container, engine, query, row):
             _database_schema(backend, container, engine, query, database, schema)
 
 
-def _database_roles(backend, container, engine, query, row):
+def _database_roles(
+    backend: ReadbackBackend,
+    container: str,
+    engine: str,
+    query: Callable[[ReadbackBackend, str, str], str],
+    row: dict[str, object],
+) -> None:
     """Corroborate native role presence and its login capability."""
 
     for role in row["roles"]:
@@ -128,7 +154,13 @@ def _database_roles(backend, container, engine, query, row):
             )
 
 
-def _database_grants(backend, container, engine, query, row):
+def _database_grants(
+    backend: ReadbackBackend,
+    container: str,
+    engine: str,
+    query: Callable[[ReadbackBackend, str, str], str],
+    row: dict[str, object],
+) -> None:
     """Corroborate selected MariaDB database privileges without grant authority."""
 
     for grant in row["grants"]:
@@ -157,7 +189,9 @@ def _database_grants(backend, container, engine, query, row):
         )
 
 
-def _database_listeners(row, actual_port, actual_address):
+def _database_listeners(
+    row: dict[str, object], actual_port: str, actual_address: str
+) -> None:
     """Read the effective native listener port and admitted address."""
 
     for listener in row["listeners"]:
@@ -170,7 +204,9 @@ def _database_listeners(row, actual_port, actual_address):
         listener["port"] = int(actual_port)
 
 
-def _database_service(backend, node, service):
+def _database_service(
+    backend: ReadbackBackend, node: NodeRealization, service: RuntimeDatabaseService
+) -> dict[str, object]:
     """Read one database service through its native SQL owner."""
 
     engine = value(service.engine)
