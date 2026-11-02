@@ -48,11 +48,34 @@ from tests.structural_family_fixture import (
 from tests.test_declared_cleanup import NativeOwner
 
 
-def runtime_inputs(tmp_path):
+def runtime_inputs(
+    tmp_path,
+    *,
+    on_timeout=None,
+    content_reporting=False,
+    native_policy=None,
+    native_bindings=(),
+):
     root = build_pack(tmp_path / "pack")
+    if content_reporting:
+        from tests.structural_family_fixture import write_content_manifest
+
+        path = root / "experiments/alert-capture.capture.json"
+        spec = json.loads(path.read_text())
+        for window in spec["capture_windows"]:
+            window["starts_at"] = "2026-01-01T00:00:00Z"
+            window["ends_at"] = "2099-01-01T00:00:00Z"
+        path.write_text(json.dumps(spec))
+        write_content_manifest(root)
     (experiment,) = load_pack_experiments(root)
     context = _apparatus_context(experiment, FIXTURE)
+    if native_policy:
+        from tests.trial_reporting_fixture import add_native_context
+
+        add_native_context(context, native_bindings)
     authority = context["execution_authority"].model_dump(mode="json")
+    if on_timeout is not None:
+        authority["on_timeout"] = on_timeout
     authority["cleanup"]["clean_state"]["verification_probe_refs"] = [
         "native-absence:range"
     ]
@@ -94,6 +117,10 @@ def runtime_inputs(tmp_path):
     family_payload = yaml.safe_load(
         (root / "sdl/structural-fixture.sdl.yaml").read_text()
     )
+    if native_policy:
+        from tests.trial_reporting_fixture import add_native_scenario
+
+        add_native_scenario(family_payload, native_policy)
     for node in family_payload["nodes"].values():
         node.update(os_distribution="ubuntu", os_version="22.04", architecture="x86_64")
         node.pop("runtime", None)
@@ -206,14 +233,19 @@ class Provisioner:
         )
 
 
-def target_for(manifest):
+def target_for(manifest, *, native_bindings=()):
+    from raes_runtime.registry import ReferenceTimeRuntime
+
     return RuntimeTarget(
         name=manifest.name,
         manifest=manifest,
         provisioner=Provisioner(manifest),
         orchestrator=AptlOrchestrator(),
         evaluator=AptlEvaluator(),
-        participant_runtime=AptlParticipantRuntime(deployment_backend=None),
+        participant_runtime=AptlParticipantRuntime(
+            deployment_backend=None, autonomous_bindings=native_bindings
+        ),
+        time_runtime=ReferenceTimeRuntime() if manifest.has_time else None,
     )
 
 
