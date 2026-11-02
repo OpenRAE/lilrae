@@ -189,6 +189,7 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 - [Issue #1413 Configured Pack Source](issue-1413-configured-pack-source-preflight.md)
 - [Issue #955 Generic Systemd Substrate Privilege](issue-955-systemd-substrate-privilege-preflight.md)
 - [Issue #958 Execution Boundary](issue-958-execution-boundary-preflight.md)
+- [Native Docker Range Network Policy](issue-968-native-network-policy.md)
 - [Issue #601 Participant Demonstration](issue-601-participant-demonstration-preflight.md)
 - [Issue #851 First-Time User Documentation](issue-851-first-time-user-docs-preflight.md)
 - [Issue #880 TechVault Env-Pack Consumption](issue-880-techvault-env-pack-consumption-preflight.md)
