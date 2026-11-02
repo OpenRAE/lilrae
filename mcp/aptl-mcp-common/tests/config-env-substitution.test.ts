@@ -9,7 +9,7 @@ import {
   parseDotEnv,
   loadLabConfig,
 } from '../src/config.js';
-import { resolveCaptureContainer } from '../src/tools/handlers.js';
+import { resolveCaptureContainer } from '../src/tools/session-capture.js';
 
 describe('native Kali capture ingress', () => {
   it('uses port 22 at the guest-admitted address and rejects malformed addresses', async () => {

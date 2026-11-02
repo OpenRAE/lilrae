@@ -22,7 +22,6 @@ ROLES = {
         "aptl-indexer",
         "aptl-network",
         "aptl-threatintel",
-        "aptl-casemgmt",
         "aptl-soar",
     ),
 }

@@ -32,13 +32,6 @@ class NativeEvidenceCapability:
 
 
 NATIVE_EVIDENCE_CAPABILITIES = {
-    "cortex-enrichment-readback": NativeEvidenceCapability(
-        predicate_property="cortex-enrichment-ready",
-        semantic_ref="urn:raes:observable:cortex-enrichment-ready",
-        evidence_channel="api_response",
-        evidence_kind="observation",
-        record_channel_ref="participant-observation",
-    ),
     "misp-authenticated-api-readiness": NativeEvidenceCapability(
         predicate_property="misp-authenticated-api-ready",
         semantic_ref="urn:techvault:observable:misp-authenticated-api-ready",

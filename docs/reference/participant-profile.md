@@ -54,8 +54,8 @@ The participant path is deliberately small:
    projection; and
 7. bind the attack, detection, and investigation to one run record.
 
-SMB enumeration, web SQL injection, MISP, TheHive, Cortex, Shuffle, Suricata,
-and the wider enterprise are optional research or facilitator material. They
+SMB enumeration, web SQL injection, MISP, Shuffle, Suricata, and the wider
+enterprise are optional research or facilitator material. They
 are not part of version 1 qualification.
 
 ## Derived runtime and participant surfaces
@@ -81,8 +81,8 @@ The participant profile composes the workbench contracts introduced by #821:
 
 The profile derives these surfaces from the workbench registry rather than
 copying them. The full `blue` workbench remains unchanged for research use.
-Case management, network IDS, SOAR, threat intelligence, and their bookmarks
-must be absent from a guided-purple participant session.
+Network IDS, SOAR, threat intelligence, and their bookmarks must be absent
+from a guided-purple participant session.
 
 Each enabled MCP qualification starts the real server, checks its exact
 workbench tool inventory, invokes a bounded backend operation, and validates
@@ -163,7 +163,7 @@ report.
 ## Full research stack
 
 The packaged full TechVault scenario includes the enterprise, Suricata, MISP,
-TheHive, Cortex, Shuffle, and other systems. Its generated delivery profile
+Shuffle, and other systems. Its generated delivery profile
 declares a 32 GiB memory minimum. Its readiness or resource results are not
 evidence for `guided-purple`.
 

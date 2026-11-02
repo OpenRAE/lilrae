@@ -11,8 +11,10 @@ from aptl.core.appliance_boundary_inventory import (
     DockerAuthorityHolder,
     GuestBoundaryObservation,
     HostBoundaryObservation,
+    RangeWorkloadObservation,
     qualify_appliance_boundary,
 )
+from aptl.appliance.policy import full_techvault_boundary_policy
 
 
 POLICY_DIGEST = "sha256:" + "1" * 64
@@ -186,6 +188,7 @@ def test_required_raes_authority_cannot_be_omitted() -> None:
 
     assert result.passed is False
     assert result.findings == (
+        "boundary.guest-raes-requirement-mismatch",
         "boundary.guest-raes-enforcement-missing",
         "boundary.guest-raes-positive-probe-failed",
         "boundary.guest-raes-negative-probe-failed",
@@ -255,3 +258,179 @@ def test_docker_authority_must_be_guest_scoped_and_least_privileged() -> None:
         "boundary.guest-docker-daemon-mismatch",
         "boundary.guest-docker-authority-overprivileged",
     )
+
+
+def _protected_binding() -> ApplianceBoundaryBinding:
+    return ApplianceBoundaryBinding(
+        policy_digest=POLICY_DIGEST,
+        payload_digest=PAYLOAD_DIGEST,
+        participant_routes_digest="sha256:" + "3" * 64,
+        raes_plan_digest="sha256:" + "4" * 64,
+        raes_boundary_required=False,
+        boundary_helper_image="example.test/aptl-boundary@sha256:" + "5" * 64,
+        egress_proxy_image="example.test/aptl-egress@sha256:" + "6" * 64,
+        boot_id="boot-42",
+        guest_daemon_id="daemon-42",
+        host_observation_id="host-42",
+    )
+
+
+def _protected_host() -> HostBoundaryObservation:
+    return HostBoundaryObservation(
+        observation_id="host-42",
+        policy_digest=POLICY_DIGEST,
+        payload_digest=PAYLOAD_DIGEST,
+        boot_id="boot-42",
+        complete=True,
+        listeners=(
+            BoundaryEndpoint(
+                audience="participant",
+                address="127.0.0.1",
+                port=8080,
+                protocol="tcp",
+            ),
+        ),
+        forbidden_reachability_passed=True,
+    )
+
+
+def _protected_guest() -> GuestBoundaryObservation:
+    policy = full_techvault_boundary_policy()
+    coverage = ("orchard/ipv4", "quartz/ipv4", "quartz/ipv6")
+    probes = []
+    for source in coverage:
+        network, family = source.split("/")
+        probes.append(
+            BoundaryProbeObservation(
+                identity=f"seat-protection/{source}/host-reply",
+                authority="seat-protection",
+                source="guest-host",
+                destination="ordinary-range-workload",
+                source_network=network,
+                address_family=family,
+                protocol="tcp",
+                port=43100,
+                expectation="reachable",
+                target_ready=True,
+                passed=True,
+            )
+        )
+        probes.extend(
+            BoundaryProbeObservation(
+                identity=f"seat-protection/{source}/{component.probe_identity}",
+                authority="seat-protection",
+                source="ordinary-range-workload",
+                destination=component.component_class,
+                source_network=network,
+                address_family=family,
+                protocol=component.protocol,
+                port=component.port,
+                expectation="blocked",
+                target_ready=True,
+                passed=True,
+            )
+            for component in policy.protected_components
+        )
+    return GuestBoundaryObservation(
+        policy_digest=POLICY_DIGEST,
+        raes_plan_digest="sha256:" + "4" * 64,
+        boot_id="boot-42",
+        guest_daemon_id="daemon-42",
+        workbench_policy_version="participant-workbench-profile/v1",
+        enforcements=(
+            BoundaryEnforcementObservation(
+                authority="seat-protection",
+                source_digest=POLICY_DIGEST,
+                enforcement_digest="sha256:" + "7" * 64,
+                families=("bridge", "inet"),
+                default_deny_observed=True,
+                network_coverage=coverage,
+            ),
+        ),
+        observation_complete=True,
+        probes=tuple(probes),
+        docker_authority_holders=(),
+        range_workloads=(
+            RangeWorkloadObservation(
+                identity="native-kali",
+                networks=("orchard",),
+                receipt_bound=True,
+                inspect_complete=True,
+                privileged=False,
+                host_pid_namespace=False,
+                host_network_namespace=False,
+                device_count=0,
+                unapproved_docker_authority=False,
+                protected_mount=False,
+                credential_exposure=False,
+            ),
+        ),
+    )
+
+
+def test_protected_seat_requires_complete_component_and_network_coverage() -> None:
+    result = qualify_appliance_boundary(
+        full_techvault_boundary_policy(),
+        _protected_binding(),
+        _protected_host(),
+        _protected_guest(),
+    )
+
+    assert result.passed is True
+    assert result.findings == ()
+    assert result.inventory["policy"]["containment"] == "seat-components"
+
+    missing = _protected_guest().model_copy(
+        update={"probes": _protected_guest().probes[:-1]}
+    )
+    failed = qualify_appliance_boundary(
+        full_techvault_boundary_policy(),
+        _protected_binding(),
+        _protected_host(),
+        missing,
+    )
+    assert "boundary.guest-seat-protection-probe-coverage" in failed.findings
+
+
+def test_protected_seat_rejects_unbound_or_dangerous_range_runtime() -> None:
+    dangerous = (
+        _protected_guest()
+        .range_workloads[0]
+        .model_copy(
+            update={
+                "receipt_bound": False,
+                "host_network_namespace": True,
+                "protected_mount": True,
+                "credential_exposure": True,
+            }
+        )
+    )
+    guest = _protected_guest().model_copy(update={"range_workloads": (dangerous,)})
+
+    result = qualify_appliance_boundary(
+        full_techvault_boundary_policy(),
+        _protected_binding(),
+        _protected_host(),
+        guest,
+    )
+
+    assert "boundary.guest-range-observation-incomplete" in result.findings
+    assert "boundary.guest-range-runtime-unapproved" in result.findings
+    assert "boundary.guest-evidence-custody-exposed" in result.findings
+    assert "boundary.guest-platform-credential-exposed" in result.findings
+
+
+def test_protected_seat_rejects_duplicate_native_workload_identity() -> None:
+    workload = _protected_guest().range_workloads[0]
+    guest = _protected_guest().model_copy(
+        update={"range_workloads": (workload, workload)}
+    )
+
+    result = qualify_appliance_boundary(
+        full_techvault_boundary_policy(),
+        _protected_binding(),
+        _protected_host(),
+        guest,
+    )
+
+    assert "boundary.guest-range-observation-incomplete" in result.findings

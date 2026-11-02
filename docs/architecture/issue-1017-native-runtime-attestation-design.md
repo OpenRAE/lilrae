@@ -3,7 +3,7 @@
 This design replaces the temporary TechVault observation and plan-limit bridge.
 LilRAE plans the authored SDL without change.
 LilRAE reports each realized runtime concern from a native readback, with the source that it used.
-[ADR-065](../adrs/adr-065-runtime-readback-reports-realized-state.md) records the decisions.
+[ADR-066](../adrs/adr-066-runtime-readback-reports-realized-state.md) records the decisions.
 The [preflight](issue-1017-techvault-bridge-retirement-preflight.md) records the boundaries and the release assessment.
 
 ## Problem

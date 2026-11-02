@@ -11,10 +11,16 @@ from aptl.appliance.guest_observation import (
     _LiveContainer,
     _ProbePath,
     _authority_holders,
+    _is_platform_credential_mount,
+    _is_protected_mount,
+    _live_containers,
     _probe_command,
     _probe_path,
     _read_guest_boot_id,
+    _receipt_owned_containers,
     _raes_probe_paths,
+    _range_workload_observations,
+    _seat_protection_probes,
     _start_listener,
     collect_guest_observation,
 )
@@ -25,7 +31,13 @@ from aptl.core.deployment.boundary import (
     BoundaryNetwork,
 )
 from aptl.core.deployment.boundary_compiler import compile_platform_boundary
-from aptl.core.deployment.realization import DeploymentAclRealization
+from aptl.core.deployment.boundary_compiler import compile_seat_protection_boundary
+from aptl.core.deployment.realization import (
+    DeploymentAclRealization,
+    DeploymentNetworkRealization,
+    DeploymentRealizationSpec,
+)
+from aptl.appliance.policy import full_techvault_boundary_policy
 from aptl.core.ephemeral_containers import EphemeralContainer
 from tests.test_compose_platform_boundary import _binding, _inspect, _network, _policy
 
@@ -188,6 +200,65 @@ def test_guest_boot_identity_has_a_portable_fallback() -> None:
     assert first.startswith("sha256:")
 
 
+def test_live_container_observation_keeps_both_address_families() -> None:
+    backend = _Backend()
+    original = backend.container_inspect
+
+    def inspect(container):
+        payload = original(container)
+        networks = payload["NetworkSettings"]["Networks"]
+        first = next(iter(networks.values()))
+        first["GlobalIPv6Address"] = "2001:db8:44::10"
+        return payload
+
+    backend.container_inspect = inspect
+
+    containers = _live_containers(backend)
+
+    assert "2001:db8:44::10" in containers[0].addresses
+
+
+def test_live_container_observation_keeps_addressless_authority_holders() -> None:
+    backend = _Backend()
+    backend._rows = [
+        {"id": "management", "name": "aptl-management", "state": "running"}
+    ]
+    original = backend.container_inspect
+
+    def inspect(container):
+        payload = original(container)
+        payload["NetworkSettings"] = {"Networks": {}}
+        payload["HostConfig"]["NetworkMode"] = "host"
+        return payload
+
+    backend.container_inspect = inspect
+
+    containers = _live_containers(backend)
+
+    assert len(containers) == 1
+    assert containers[0].addresses == ()
+
+
+def test_probe_sources_are_resolved_only_from_native_receipts() -> None:
+    backend = _Backend()
+    backend._resolve_owned_container_id = lambda selector: {
+        "owned": "owned-id",
+    }[selector]
+    owned = _LiveContainer("owned-id", "owned", ("10.44.1.10",), {})
+    unowned = _LiveContainer("unowned-id", "unowned", ("10.44.1.11",), {})
+    realization = SimpleNamespace(
+        nodes=(
+            SimpleNamespace(
+                name="owned",
+                container_name="owned",
+                service_name="owned",
+            ),
+        )
+    )
+
+    assert _receipt_owned_containers(backend, realization, (unowned, owned)) == (owned,)
+
+
 def test_probe_command_joins_only_the_observed_container_namespace() -> None:
     command = _probe_command(
         image="example.test/helper@sha256:" + "a" * 64,
@@ -321,6 +392,284 @@ def test_raes_probe_paths_cover_allow_and_default_deny_node_rules() -> None:
     assert all(path.destination.name == "peer" for path in paths)
 
 
+def test_seat_probes_cover_each_network_family_and_protected_component() -> None:
+    policy = full_techvault_boundary_policy()
+    realization = DeploymentRealizationSpec(
+        profiles=(),
+        nodes=(),
+        networks=(DeploymentNetworkRealization(name="orchard"),),
+    )
+    spec = compile_seat_protection_boundary(
+        policy,
+        realization,
+        policy_digest="sha256:" + "a" * 64,
+        networks=(
+            BoundaryNetwork(
+                name="orchard",
+                bridge="br-orchard",
+                ipv4_cidr="10.44.1.0/24",
+                ipv6_cidr="2001:db8:44::/64",
+                ipv4_gateway="10.44.1.1",
+                ipv6_gateway="2001:db8:44::1",
+            ),
+        ),
+        owner="seat",
+    )
+    source = _LiveContainer(
+        "kali-id",
+        "kali",
+        ("10.44.1.10", "2001:db8:44::10"),
+        {},
+    )
+
+    def reply(_backend, *, image, source, network, family, address):
+        del image, source, address
+        return BoundaryProbeObservation(
+            identity=f"seat-protection/{network}/{family}/host-reply",
+            authority="seat-protection",
+            source="guest-host",
+            destination="ordinary-range-workload",
+            source_network=network,
+            address_family=family,
+            protocol="tcp",
+            port=43100,
+            expectation="reachable",
+            target_ready=True,
+            passed=True,
+        )
+
+    def component(_backend, probe):
+        target = probe.target
+        return BoundaryProbeObservation(
+            identity=(
+                f"seat-protection/{probe.network}/{probe.family}/"
+                f"{target.probe_identity}"
+            ),
+            authority="seat-protection",
+            source="ordinary-range-workload",
+            destination=target.component_class,
+            source_network=probe.network,
+            address_family=probe.family,
+            protocol=target.protocol,
+            port=probe.port,
+            expectation="blocked",
+            target_ready=True,
+            passed=True,
+        )
+
+    with (
+        patch("aptl.appliance.guest_observation._probe_host_reply", side_effect=reply),
+        patch(
+            "aptl.appliance.guest_observation._probe_host_component",
+            side_effect=component,
+        ),
+    ):
+        probes = _seat_protection_probes(
+            _Backend(),
+            spec,
+            (source,),
+            image="example.test/helper@sha256:" + "a" * 64,
+        )
+
+    assert len(probes) == 12
+    assert {probe.address_family for probe in probes} == {"ipv4", "ipv6"}
+    assert sum(probe.expectation == "reachable" for probe in probes) == 2
+    assert sum(probe.expectation == "blocked" for probe in probes) == 10
+
+
+def test_seat_probes_cover_every_port_in_a_permitted_flow() -> None:
+    payload = full_techvault_boundary_policy().model_dump(mode="json")
+    payload["permitted_host_flows"] = [
+        {
+            "source": "ordinary-range-workload",
+            "destination": "management-control",
+            "protocol": "tcp",
+            "ports": [8443, 8444],
+            "purpose": "reviewed management flow",
+            "probe_identity": "reviewed-management",
+        }
+    ]
+    policy = type(full_techvault_boundary_policy()).model_validate(payload)
+    realization = DeploymentRealizationSpec(
+        profiles=(),
+        nodes=(),
+        networks=(DeploymentNetworkRealization(name="orchard"),),
+    )
+    spec = compile_seat_protection_boundary(
+        policy,
+        realization,
+        policy_digest="sha256:" + "a" * 64,
+        networks=(
+            BoundaryNetwork(
+                name="orchard",
+                bridge="br-orchard",
+                ipv4_cidr="10.44.1.0/24",
+                ipv4_gateway="10.44.1.1",
+            ),
+        ),
+        owner="seat",
+    )
+    source = _LiveContainer("kali-id", "kali", ("10.44.1.10",), {})
+
+    def reply(_backend, *, image, source, network, family, address):
+        del image, source, address
+        return BoundaryProbeObservation(
+            identity=f"seat-protection/{network}/{family}/host-reply",
+            authority="seat-protection",
+            source="guest-host",
+            destination="ordinary-range-workload",
+            source_network=network,
+            address_family=family,
+            protocol="tcp",
+            port=43100,
+            expectation="reachable",
+            target_ready=True,
+            passed=True,
+        )
+
+    def component(_backend, probe):
+        target = probe.target
+        protected = hasattr(target, "component_class")
+        identity = target.probe_identity
+        if not protected:
+            identity = f"{identity}/port-{probe.port}"
+        return BoundaryProbeObservation(
+            identity=f"seat-protection/{probe.network}/{probe.family}/{identity}",
+            authority="seat-protection",
+            source="ordinary-range-workload",
+            destination=(target.component_class if protected else target.destination),
+            source_network=probe.network,
+            address_family=probe.family,
+            protocol=target.protocol,
+            port=probe.port,
+            expectation="blocked" if protected else "reachable",
+            target_ready=True,
+            passed=True,
+        )
+
+    with (
+        patch("aptl.appliance.guest_observation._probe_host_reply", side_effect=reply),
+        patch(
+            "aptl.appliance.guest_observation._probe_host_component",
+            side_effect=component,
+        ),
+    ):
+        probes = _seat_protection_probes(
+            _Backend(),
+            spec,
+            (source,),
+            image="example.test/helper@sha256:" + "a" * 64,
+        )
+
+    allowed = [probe for probe in probes if probe.expectation == "reachable"][1:]
+    assert [(probe.identity, probe.port) for probe in allowed] == [
+        ("seat-protection/orchard/ipv4/reviewed-management/port-8443", 8443),
+        ("seat-protection/orchard/ipv4/reviewed-management/port-8444", 8444),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("/opt/aptl/project", True),
+        ("/opt/aptl/project/.aptl/runs", True),
+        ("/opt/aptl/project/.aptl/runs/run-1", True),
+        ("/var/log/aptl", True),
+        ("/opt/aptl/project-safe", False),
+        ("/var/log/aptl-captures", False),
+    ],
+)
+def test_protected_mount_detection_uses_path_containment(
+    source: str, expected: bool
+) -> None:
+    assert (
+        _is_protected_mount(
+            {"Type": "bind", "Source": source, "Destination": "/workspace"}
+        )
+        is expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("/run", True),
+        ("/run/aptl-launch", True),
+        ("/run/aptl-launch/readiness-challenge.json", True),
+        ("/tmp/appliance-launch.json", True),
+        ("/run/aptl-launcher", False),
+        ("/tmp/appliance-launch.json.backup", False),
+    ],
+)
+def test_credential_mount_detection_uses_path_containment(
+    source: str, expected: bool
+) -> None:
+    assert (
+        _is_platform_credential_mount(
+            {"Type": "bind", "Source": source, "Destination": "/inputs"}
+        )
+        is expected
+    )
+
+
+def test_range_workload_observation_uses_receipts_and_detects_protected_state() -> None:
+    backend = _Backend()
+    backend._resolve_owned_container_id = lambda _selector: "kali-id"
+    container = _LiveContainer(
+        "kali-id",
+        "kali",
+        ("10.44.1.10",),
+        {
+            "Config": {
+                "Env": ["LILRAE_APPLIANCE_TOKEN=not-recorded"],
+                "Labels": {},
+            },
+            "HostConfig": {
+                "Privileged": False,
+                "PidMode": "",
+                "NetworkMode": "host",
+                "Devices": [],
+            },
+            "Mounts": [
+                {
+                    "Type": "volume",
+                    "Name": "kali_captures",
+                    "Source": "/var/lib/docker/volumes/kali_captures/_data",
+                    "Destination": "/captures",
+                }
+            ],
+            "NetworkSettings": {"Networks": {"orchard": {}}},
+        },
+    )
+    realization = SimpleNamespace(
+        nodes=(
+            SimpleNamespace(
+                address="provision.node.kali",
+                name="kali",
+                container_name="kali",
+                service_name="kali",
+                networks=("orchard",),
+            ),
+        ),
+        docker_authority_admissions=(),
+    )
+
+    observations = _range_workload_observations(
+        backend=backend,
+        realization=realization,
+        containers=(container,),
+        holders=(),
+    )
+
+    assert len(observations) == 1
+    observed = observations[0]
+    assert observed.receipt_bound is True
+    assert observed.inspect_complete is True
+    assert observed.host_network_namespace is True
+    assert observed.protected_mount is True
+    assert observed.credential_exposure is True
+
+
 def test_docker_authority_holders_are_bound_to_admitted_live_container() -> None:
     policy = _policy().model_copy(
         update={
@@ -343,6 +692,14 @@ def test_docker_authority_holders_are_bound_to_admitted_live_container() -> None
                 "PidMode": "",
                 "NetworkMode": "seat_management",
             },
+            "Mounts": [
+                {
+                    "Type": "bind",
+                    "Source": "/var/run/docker.sock",
+                    "Destination": "/var/run/docker.sock",
+                    "RW": True,
+                }
+            ],
         },
     )
     realization = SimpleNamespace(
@@ -357,8 +714,11 @@ def test_docker_authority_holders_are_bound_to_admitted_live_container() -> None
             SimpleNamespace(node_address="provision.node.management"),
         ),
     )
+    backend = _Backend()
+    backend._resolve_owned_container_id = lambda _selector: "management-id"
 
     holders = _authority_holders(
+        backend=backend,
         realization=realization,
         policy=policy,
         containers=(container,),
@@ -370,37 +730,63 @@ def test_docker_authority_holders_are_bound_to_admitted_live_container() -> None
     assert holders[0].label_selector == "org.aptl.zone=management"
     assert holders[0].device_count == 1
 
+    protected = _authority_holders(
+        backend=backend,
+        realization=realization,
+        policy=full_techvault_boundary_policy(),
+        containers=(container,),
+        daemon_id="daemon-42",
+    )
+    assert protected[0].label_selector == "raes.docker-authority=admitted"
+
 
 def test_unmodeled_docker_socket_holder_is_observed_and_requires_policy_label() -> None:
     policy = _policy()
     container = _LiveContainer(
-        "web-id", "aptl-web-api", ("172.20.0.40",),
+        "web-id",
+        "aptl-web-api",
+        ("172.20.0.40",),
         {
             "Config": {"Labels": {"aptl.web.control-plane": "true"}},
             "HostConfig": {"Devices": [], "Privileged": False},
-            "Mounts": [{
-                "Type": "bind", "Source": "/var/run/docker.sock",
-                "Destination": "/var/run/docker.sock", "RW": True,
-            }],
+            "Mounts": [
+                {
+                    "Type": "bind",
+                    "Source": "/var/run/docker.sock",
+                    "Destination": "/var/run/docker.sock",
+                    "RW": True,
+                }
+            ],
         },
     )
     realization = SimpleNamespace(nodes=(), docker_authority_admissions=())
+    backend = _Backend()
 
     unapproved = _authority_holders(
-        realization=realization, policy=policy,
-        containers=(container,), daemon_id="daemon-42",
+        backend=backend,
+        realization=realization,
+        policy=policy,
+        containers=(container,),
+        daemon_id="daemon-42",
     )
     assert len(unapproved) == 1
     assert unapproved[0].label_selector == "org.aptl.unapproved=holder"
 
-    approved_policy = policy.model_copy(update={
-        "docker_authority": policy.docker_authority.model_copy(update={
-            "allowed_holder_labels": ("aptl.web.control-plane=true",),
-        }),
-    })
+    approved_policy = policy.model_copy(
+        update={
+            "docker_authority": policy.docker_authority.model_copy(
+                update={
+                    "allowed_holder_labels": ("aptl.web.control-plane=true",),
+                }
+            ),
+        }
+    )
     approved = _authority_holders(
-        realization=realization, policy=approved_policy,
-        containers=(container,), daemon_id="daemon-42",
+        backend=backend,
+        realization=realization,
+        policy=approved_policy,
+        containers=(container,),
+        daemon_id="daemon-42",
     )
     assert approved[0].label_selector == "aptl.web.control-plane=true"
 

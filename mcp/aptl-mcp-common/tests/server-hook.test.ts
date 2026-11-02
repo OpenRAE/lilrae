@@ -21,7 +21,7 @@ vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
 }));
 
 vi.mock('../src/ssh.js', () => ({
-  SSHConnectionManager: vi.fn(function () { return {}; }),
+  SSHConnectionManager: vi.fn(function () { return { setHarvestHook: vi.fn() }; }),
 }));
 
 vi.mock('../src/telemetry.js', () => ({

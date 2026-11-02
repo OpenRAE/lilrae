@@ -6,14 +6,14 @@ type: FUNCTIONAL
 priority: MUST
 wave: 4
 created_at: 2026-03-20T06:12:24.962267Z
-updated_at: 2026-03-20T06:18:11.649759Z
+updated_at: 2026-10-31T00:00:00.000000Z
 ---
 
 # SCN-004: Automated SOC Tool Data Collectors
 
 ## Statement
 
-The system shall automatically collect data from all SOC tools within the run's time window on scenario stop: Wazuh alerts from the Indexer API, Suricata events, TheHive cases, MISP events, and Shuffle workflow executions. Collectors shall be fault-tolerant and use a 120-second HTTP timeout.
+The system shall automatically collect data from all SOC tools within the run's time window on scenario stop: Wazuh alerts from the Indexer API, Suricata events, MISP events, and Shuffle workflow executions. Collectors shall be fault-tolerant and use a 120-second HTTP timeout.
 
 ## Rationale
 

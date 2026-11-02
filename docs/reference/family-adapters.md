@@ -172,7 +172,7 @@ Experiment repositories can pin it.
 | --- | --- |
 | `lilrae` | 9.0.0 |
 | `raes` | 10.0.0 |
-| `raes-env-packs` | 6.5.1 |
+| `raes-env-packs` | 7.0.0 |
 | CPython | 3.14 |
 
 The tuple supports the `factorial-treatments-v1` design profile.

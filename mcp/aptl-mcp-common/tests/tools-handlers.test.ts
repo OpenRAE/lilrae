@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { generateToolHandlers, resolveCaptureContainer, errorMessage } from '../src/tools/handlers.js';
+import { generateToolHandlers, errorMessage } from '../src/tools/handlers.js';
+import { resolveCaptureContainer } from '../src/tools/session-capture.js';
 import { CommandTimeoutError } from '../src/ssh.js';
 import { harvestSession } from '../src/captures.js';
 
@@ -250,7 +251,7 @@ describe('handler error paths return a failure envelope', () => {
   it('reports a nonzero remote command exit as unsuccessful', async () => {
     const context = {
       ...throwingCtx,
-      sshManager: { executeCommand: vi.fn().mockResolvedValue({
+      sshManager: { harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(), executeCommand: vi.fn().mockResolvedValue({
         stdout: 'session could not start', stderr: '', code: 254,
       }) } as any,
     };
@@ -309,6 +310,7 @@ describe('#1319: run_command harvests a timed-out exec session', () => {
       closeChannel = settle;
     });
     const sshManager = {
+      harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(),
       executeCommand: vi.fn(async () => {
         throw new CommandTimeoutError(timeoutEnvelope.error, sessionId, 'run-1319', channelClosed);
       }),
@@ -443,7 +445,7 @@ describe('#1242: a declared empty capture binding still reaches the harvester', 
       },
     },
   }) as any;
-  const sshManager = { getSessionRunId: vi.fn(() => 'run-1242'), closeSession: vi.fn(async () => true) } as any;
+  const sshManager = { harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(), getSessionRunId: vi.fn(() => 'run-1242'), closeSession: vi.fn(async () => true) } as any;
 
   beforeEach(() => {
     vi.mocked(harvestSession).mockClear();
@@ -499,6 +501,7 @@ describe('close_session / close_all_sessions harvest behaviour', () => {
       configKey: 'test-container',
     });
     const sshManager = {
+      harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(),
       getSessionRunId: vi.fn(() => undefined),
       closeSession: vi.fn(async () => true),
     } as any;
@@ -519,6 +522,7 @@ describe('close_session / close_all_sessions harvest behaviour', () => {
       configKey: 'test-container',
     });
     const sshManager = {
+      harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(),
       getSessionRunId: vi.fn(() => undefined),
       closeSession: vi.fn(async () => false),
     } as any;
@@ -589,6 +593,7 @@ describe('close_session / close_all_sessions harvest behaviour', () => {
       configKey: 'test-container',
     });
     const sshManager = {
+      harvestSession: async (_id: string, _run: unknown, harvest: () => Promise<boolean>) => harvest(),
       listSessions: vi.fn(() => [
         { sessionId: 'sess-a' },
         { sessionId: 'sess-b' },

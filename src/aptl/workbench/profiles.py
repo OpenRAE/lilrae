@@ -127,18 +127,6 @@ _BLUE = WorkbenchProfile(
     profile_id=ProfileId.BLUE,
     servers=(
         ServerProfile(
-            "aptl-casemgmt",
-            "mcp/mcp-casemgmt/build/index.js",
-            ("THEHIVE_API_KEY",),
-            (
-                "cases_list_cases",
-                "cases_create_case",
-                "cases_add_observable",
-                "cases_update_case",
-                "cases_create_alert",
-            ),
-        ),
-        ServerProfile(
             "aptl-indexer",
             "mcp/mcp-indexer/build/index.js",
             (
@@ -204,7 +192,7 @@ _BLUE = WorkbenchProfile(
             ),
         ),
     ),
-    bookmark_refs=("aptl-guide", "soc-wazuh", "soc-thehive", "soc-misp", "soc-shuffle"),
+    bookmark_refs=("aptl-guide", "soc-wazuh", "soc-misp", "soc-shuffle"),
 )
 
 _PROFILES = {

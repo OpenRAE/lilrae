@@ -360,7 +360,7 @@ def test_family_discovery_requires_all_seams_from_one_distribution(
     [
         ["lilrae>=999"],
         ["raes-env-packs<6"],
-        ["raes_env_packs>=6.5.1,<7", "raes<10"],
+        ["raes_env_packs>=7.0.0,<8", "raes<10"],
     ],
 )
 def test_family_qualification_rejects_an_excluded_installed_release(

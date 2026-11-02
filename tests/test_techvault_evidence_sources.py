@@ -1,9 +1,8 @@
-"""Exact validation for the four released TechVault evidence sources."""
+"""Exact validation for the released TechVault evidence sources."""
 
 import json
 
 from aptl_techvault.evidence.techvault import (
-    CortexEnrichmentSource,
     RedteamSessionTranscriptSource,
     SuricataRuleReadinessSource,
     SuricataWazuhSqliSource,
@@ -19,44 +18,6 @@ _TRIGGERED = "2026-09-14T10:00:05Z"
 _FINISHED = "2026-09-14T10:00:10Z"
 _END = "2026-09-14T10:01:00Z"
 _DIGEST = "sha256:" + "a" * 64
-
-
-def _cortex_payload():
-    return {
-        "analyzers": [
-            {"id": "Other_1_0", "enabled": False},
-            {"id": "TechVaultScenarioContext_1_0", "enabled": True},
-        ],
-        "report": {
-            "analyzer_id": "TechVaultScenarioContext_1_0",
-            "observable": "172.20.1.30",
-            "status": "Success",
-            "started_at": _TRIGGERED,
-            "finished_at": _FINISHED,
-            "scenario_role": "attacker",
-            "summary": {"taxonomies": []},
-        },
-        "connector": {"name": "techvault-cortex", "status": "OK"},
-    }
-
-
-def test_cortex_source_requires_exact_fresh_analyzer_report_and_connector():
-    source = CortexEnrichmentSource(lambda _start, _end: _cortex_payload())
-
-    result = source.fetch(_START, _END)
-
-    assert result.status is CollectorStatus.OK
-    assert result.records[0]["enabled_analyzers"] == ["TechVaultScenarioContext_1_0"]
-    assert "summary" not in result.records[0]["report"]
-    assert "source_refs" in result.source_pipeline
-
-
-def test_cortex_source_rejects_stale_or_partial_readback():
-    payload = _cortex_payload()
-    payload["connector"] = {"name": "techvault-cortex", "status": "ERROR"}
-    source = CortexEnrichmentSource(lambda _start, _end: payload)
-
-    assert source.fetch(_START, _END).status is CollectorStatus.MID_RUN_LOSS
 
 
 def _readiness_payload():

@@ -2,9 +2,9 @@
 typed :class:`DeploymentServiceSearchIndexSchemaRealization` instead of being
 rejected as an item-less dataset (issue #889).
 
-The TechVault 6.0 pack no longer authors this retired Cortex initializer. These
-tests retain APTL's generic lowering contract with the exact public planned
-resource shape; RAES owns the independent compiler coverage for that shape.
+No released pack authors this content today. These tests retain APTL's
+generic lowering contract with the exact public planned resource shape; RAES
+owns the independent compiler coverage for that shape.
 """
 
 from __future__ import annotations
@@ -21,17 +21,17 @@ from aptl.core.deployment.realization import (
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
-def _cortex_content_resource(tmp_path: Path):
+def _search_content_resource(tmp_path: Path):
     del tmp_path
     return PlannedResource(
-        address="provision.content.cortex-job-index-schema",
+        address="provision.content.example-index-schema",
         domain=RuntimeDomain.PROVISIONING,
         resource_type="content-placement",
         payload={
-            "name": "cortex-job-index-schema",
-            "content_name": "cortex-job-index-schema",
-            "target_node": "thehive-es",
-            "target_address": "provision.node.thehive-es",
+            "name": "example-index-schema",
+            "content_name": "example-index-schema",
+            "target_node": "search",
+            "target_address": "provision.node.search",
             "spec": {
                 "type": "dataset",
                 "items": [],
@@ -39,7 +39,7 @@ def _cortex_content_resource(tmp_path: Path):
                 "tags": [],
             },
             "service_materialization": {
-                "target_service_address": "provision.node.thehive-es.service.elasticsearch",
+                "target_service_address": "provision.node.search.service.elasticsearch",
                 "interface_profile": "service-search-index-schema",
                 "profile_version": "1",
                 "content_type": "dataset",
@@ -60,12 +60,12 @@ def _cortex_content_resource(tmp_path: Path):
 
 
 def test_search_index_schema_content_lowers_to_typed_realization(tmp_path) -> None:
-    resource = _cortex_content_resource(tmp_path)
+    resource = _search_content_resource(tmp_path)
 
     realization, diagnostics = resolve_content_placement(
         resource=resource,
         payload=resource.payload,
-        target_address="provision.node.thehive-es",
+        target_address="provision.node.search",
         target_service=None,
         project_dir=PROJECT_ROOT,
     )
@@ -73,10 +73,10 @@ def test_search_index_schema_content_lowers_to_typed_realization(tmp_path) -> No
     assert diagnostics == []
     assert isinstance(realization, DeploymentServiceSearchIndexSchemaRealization)
     assert realization.address == resource.address
-    assert realization.target_address == "provision.node.thehive-es"
+    assert realization.target_address == "provision.node.search"
     assert (
         realization.target_service_address
-        == "provision.node.thehive-es.service.elasticsearch"
+        == "provision.node.search.service.elasticsearch"
     )
     assert realization.field_semantics_map() == {
         "key": "exact-token",
@@ -92,7 +92,7 @@ def test_search_index_schema_content_lowers_to_typed_realization(tmp_path) -> No
 
 
 def test_non_projectable_field_semantic_fails_closed(tmp_path) -> None:
-    resource = _cortex_content_resource(tmp_path)
+    resource = _search_content_resource(tmp_path)
     payload = dict(resource.payload)
     binding = dict(payload["service_materialization"])
     binding["field_semantics"] = {
@@ -103,7 +103,7 @@ def test_non_projectable_field_semantic_fails_closed(tmp_path) -> None:
     realization, diagnostics = resolve_content_placement(
         resource=resource,
         payload=payload,
-        target_address="provision.node.thehive-es",
+        target_address="provision.node.search",
         target_service=None,
         project_dir=PROJECT_ROOT,
     )

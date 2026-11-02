@@ -255,8 +255,8 @@ control authority:
   because anything that holds the socket can create further containers.
 
 The root `docker-compose.yml`, which explicit project-tree scenarios start as
-written, also declares the socket for `shuffle-backend`, `shuffle-orborus` and
-`cortex` in the `soc` profile, and for `aptl-web-api` in the `web` profile. No
+written, also declares the socket for `shuffle-backend` and `shuffle-orborus` in the
+`soc` profile, and for `aptl-web-api` in the `web` profile. No
 in-tree scenario selects the `soc` profile, and the check above refuses those
 binds unless the scenario admits them. The web API container uses the socket
 for the browser's lifecycle controls; it runs as the project owner and joins

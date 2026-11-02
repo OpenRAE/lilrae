@@ -39,10 +39,6 @@ from aptl.core.deployment._compose_stateful_model import (
 )
 from aptl.core.deployment._compose_stateful_override import write_stateful_override
 from aptl.core.deployment._realization_primitives import EnvironmentDeliveryRefused
-from aptl.core.deployment._cortex_service_credentials import (
-    CORTEX_SERVICE_CREDENTIALS_PROFILE,
-    realize_cortex_service_credentials,
-)
 from aptl.core.deployment._misp_cache_credential import (
     MISP_CACHE_CREDENTIAL_PROFILE,
     realize_misp_cache_credential,
@@ -204,11 +200,6 @@ class ComposeStatefulRealizationMixin(ComposeStatefulReadinessMixin):
         result: LabResult | None
         if artifact.provenance == FLAG_SIGNING_PROFILE_V2:
             result = self._realize_flag_signing_keys(artifact, scenario_root)
-        elif artifact.provenance == CORTEX_SERVICE_CREDENTIALS_PROFILE:
-            error = realize_cortex_service_credentials(artifact, scenario_root)
-            result = (
-                LabResult(success=False, error=error) if error is not None else None
-            )
         elif artifact.provenance == MISP_CACHE_CREDENTIAL_PROFILE:
             error = realize_misp_cache_credential(artifact, scenario_root)
             result = (
@@ -376,6 +367,7 @@ class ComposeStatefulRealizationMixin(ComposeStatefulReadinessMixin):
             scenario_root,
             run_command=self._run_certificate_command,
             project=self._ephemeral_project(),
+            pull_images=self.pull_images,
         )
         return _certificate_bundle_failure(artifact, scenario_root, result)
 

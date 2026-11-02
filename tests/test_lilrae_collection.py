@@ -14,5 +14,5 @@ def test_helper_collection_neither_reads_dotenv_nor_provisions_keys(monkeypatch)
     monkeypatch.setattr(env, "load_dotenv", forbidden)
     monkeypatch.setattr(subprocess, "run", forbidden)
     namespace = runpy.run_path(str(Path(__file__).with_name("helpers.py")))
-    assert namespace["THEHIVE_API_KEY"] == ""
+    assert namespace["SHUFFLE_API_KEY"] == ""
     assert namespace["MISP_API_KEY"] == ""

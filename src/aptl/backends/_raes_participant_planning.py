@@ -48,6 +48,7 @@ def build_participant_delivery_plan(
     return ParticipantDeliveryPlan(
         _ordered_participant_turns(turns),
         behavior_specifications=dict(runtime_model.behavior_specifications),
+        participant_behaviors=dict(getattr(runtime_model, "participant_behaviors", {})),
     )
 
 
@@ -279,7 +280,11 @@ def bind_participant_delivery_capture(
         ):
             raise ValueError("participant delivery evidence is not admitted")
         turns.append(replace(turn, capture_binding=binding))
-    return ParticipantDeliveryPlan(tuple(turns), plan.behavior_specifications)
+    return ParticipantDeliveryPlan(
+        turns=tuple(turns),
+        behavior_specifications=plan.behavior_specifications,
+        participant_behaviors=plan.participant_behaviors,
+    )
 
 
 def _control_transition(behavior: object, address: str) -> object:

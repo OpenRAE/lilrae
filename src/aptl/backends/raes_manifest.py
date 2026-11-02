@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 
 from raes_backend_protocols.capabilities import (
     BackendManifest,
+    CleanupCapabilities,
     EvaluatorCapabilities,
     OrchestratorCapabilities,
     ParticipantFeatureSupport,
@@ -56,6 +57,7 @@ from raes_contracts.contracts import (
 )
 from raes_contracts.realization_envelope import BackendRealizationEnvelopeModel
 from aptl.backends.identity import APTL_RAES_TARGET_NAME, APTL_RAES_TARGET_VERSION
+from aptl.backends.cleanup import CLEANUP_CAPABILITIES
 from aptl.backends.raes_operating_systems import APTL_OPERATING_SYSTEMS
 from aptl.backends.raes_realization_envelope import build_aptl_realization_envelope
 from raes_contracts.vocabulary import (
@@ -331,6 +333,7 @@ def create_aptl_manifest(
     participant_inject_delivery: bool = False,
     autonomous_bindings: tuple[LilraeParticipantBinding, ...] = (),
     realization_preparation: bool = False,
+    cleanup: CleanupCapabilities | None = None,
 ) -> BackendManifest:
     """Return APTL's canonical full remote-control-plane backend manifest.
 
@@ -375,6 +378,11 @@ def create_aptl_manifest(
         supported_contract_versions = supported_contract_versions | {
             "backend-realization-preparation-v1"
         }
+    if cleanup is not None:
+        if cleanup != CLEANUP_CAPABILITIES:
+            raise ValueError("cleanup capabilities exceed the installed implementation")
+        supported_contract_versions = supported_contract_versions | cleanup.supported_contract_versions
+        capability_options["cleanup"] = cleanup
     return BackendManifest(
         name=APTL_RAES_TARGET_NAME,
         version=APTL_RAES_TARGET_VERSION,

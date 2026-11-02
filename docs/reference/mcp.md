@@ -14,7 +14,6 @@ resolved ports, and transport settings.
 
 | Artifact | Generated client entry | Tool prefix | Default client config | Target |
 | --- | --- | --- | --- | --- |
-| `mcp-casemgmt` | `aptl-casemgmt` | `cases` | yes | TheHive cases, observables, and analyzers |
 | `mcp-indexer` | `aptl-indexer` | `indexer` | yes | Wazuh Indexer search and index operations |
 | `mcp-network` | `aptl-network` | `network` | yes | Network IDS observations exposed through the lab APIs |
 | `mcp-red` | `aptl-red` | `kali` | yes | Kali information, commands, and bounded sessions |

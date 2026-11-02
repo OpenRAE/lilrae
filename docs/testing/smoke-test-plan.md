@@ -109,7 +109,7 @@ opening a SOC UI, import these public roots into the test browser or its
 operating-system trust store:
 
 - `config/wazuh_indexer_ssl_certs/root-ca.pem` for Wazuh;
-- `config/soc_certs/lab-ca.pem` for MISP, Shuffle, and TheHive.
+- `config/soc_certs/lab-ca.pem` for MISP and Shuffle.
 
 The Wazuh dashboard certificate names `wazuh.dashboard`, not `localhost`.
 Configure a temporary browser or operating-system resolver entry mapping
@@ -138,8 +138,8 @@ The browser must have a route to that in-range address. Docker Desktop hosts
 may not expose the bridge address directly; use a browser in an environment
 with a route to the scenario network and the same canonical origin, or record
 `QA-MISP` as `FAIL`. Do not count a successful API call or the broken loopback
-login page as a browser result. For Shuffle and TheHive, use each service's
-actual loopback publication from `qa-start-status.json`. Confirm a valid
+login page as a browser result. For Shuffle, use the service's actual loopback
+publication from `qa-start-status.json`. Confirm a valid
 hostname and chain to the path-specific root before recording any UI result.
 
 Do not click through a certificate warning, disable certificate validation, or
@@ -249,23 +249,13 @@ flow, or alert identifier.
 ### QA-SOAR: Real-alert Shuffle playbook
 
 In Shuffle, create or inspect a playbook that accepts the exact alert produced
-by `QA-DETECT` and performs an observable downstream action, such as creating or
-updating its TheHive case. Run it with that alert's real id, source, and rule
+by `QA-DETECT` and performs an observable downstream action, such as the MISP
+lookup of its source IP. Run it with that alert's real id, source, and rule
 data (not a dummy or synthetic smoke payload), and monitor it to completion.
 
 Expected: the execution reaches `FINISHED`, its input can be tied to the real
 Wazuh alert, and the downstream action is visible. Capture the workflow id,
 execution id, input alert id, terminal state, and downstream object id.
-
-### QA-CASE: TheHive case and Cortex analyzer
-
-In TheHive, create or open the case produced from the `QA-DETECT` alert, add a
-relevant observable such as the recorded source IP, and run an available Cortex
-analyzer on it.
-
-Expected: the case retains the alert relationship, the observable is present,
-and the analyzer job completes with a visible result. Capture the case id,
-alert id, observable type/value, analyzer name, job id, and terminal result.
 
 ### QA-MISP: Seeded threat intelligence and round trip
 
@@ -314,14 +304,6 @@ and leaves `$exec.rule.id` and the other alert fields empty.
 Expected: the live Shuffle target returns the same workflow and a terminal
 successful execution. Capture the tool names, workflow id, execution id, alert
 id, and terminal state.
-
-### QA-MCP-CASE: `mcp-casemgmt`
-
-Use the case-management tools to list the `QA-CASE` case and, if needed, add a
-second harmless observable to prove a target-backed write.
-
-Expected: the live TheHive target returns the case and reflects the operation.
-Capture the tool names, case id, and bounded result.
 
 ### QA-MCP-TI: `mcp-threatintel`
 
@@ -464,13 +446,11 @@ does not widen the cleanup scope.
 | QA-DETECT | | | | | |
 | QA-SURICATA | | | | | |
 | QA-SOAR | | | | | |
-| QA-CASE | | | | | |
 | QA-MISP | | | | | |
 | QA-MCP-RED | | | | | |
 | QA-MCP-WAZUH | | | | | |
 | QA-MCP-INDEXER | | | | | |
 | QA-MCP-SOAR | | | | | |
-| QA-MCP-CASE | | | | | |
 | QA-MCP-TI | | | | | |
 | QA-MCP-NET | | | | | |
 | QA-MCP-REVERSE | | | | | |
@@ -487,13 +467,11 @@ does not widen the cleanup scope.
 | QA-DETECT | | | | | |
 | QA-SURICATA | | | | | |
 | QA-SOAR | | | | | |
-| QA-CASE | | | | | |
 | QA-MISP | | | | | |
 | QA-MCP-RED | | | | | |
 | QA-MCP-WAZUH | | | | | |
 | QA-MCP-INDEXER | | | | | |
 | QA-MCP-SOAR | | | | | |
-| QA-MCP-CASE | | | | | |
 | QA-MCP-TI | | | | | |
 | QA-MCP-NET | | | | | |
 | QA-MCP-REVERSE | | | | | |

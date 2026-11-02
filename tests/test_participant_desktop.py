@@ -389,15 +389,11 @@ def test_the_techvault_provider_supplies_every_field():
 
     assert [item.label for item in spec.consoles] == [
         "Wazuh",
-        "TheHive",
-        "Cortex",
         "Shuffle",
         "MISP",
     ]
     assert {item.account for item in spec.credentials} == {
         "wazuh-indexer-admin",
-        "thehive-administrator",
-        "cortex-administrator",
         "shuffle-administrator",
         "misp-administrator",
     }

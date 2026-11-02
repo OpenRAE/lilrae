@@ -61,6 +61,7 @@ class ParticipantDeliveryPlan:
 
     turns: tuple[ParticipantInjectTurn, ...] = ()
     behavior_specifications: Mapping[str, object] | None = None
+    participant_behaviors: Mapping[str, object] | None = None
 
 
 @dataclass(frozen=True)

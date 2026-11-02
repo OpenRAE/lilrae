@@ -302,13 +302,16 @@ class GuestAdmission:
         expected = {
             "policy_digest": descriptor.boundary_policy_digest,
             "payload_digest": descriptor.image_digest,
-            "raes_plan_digest": descriptor.participant_routes_digest,
+            (
+                "participant_routes_digest"
+                if policy.seat_component_protection
+                else "raes_plan_digest"
+            ): descriptor.participant_routes_digest,
             "boundary_helper_image": descriptor.boundary_helper_image,
             "egress_proxy_image": descriptor.egress_proxy_image,
             "host_observation_id": descriptor.host_observation_id,
             "guest_boot_id": self.binding.access.guest_boot_id,
             "guest_daemon_id": self.binding.access.guest_daemon_id,
-            "raes_boundary_required": policy.internal_zone_isolation,
         }
         if any(
             getattr(observed.binding, key) != value for key, value in expected.items()

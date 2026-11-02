@@ -11,9 +11,8 @@
 #
 # It is idempotent and safe to re-run. `lilrae lab start` runs the realization
 # (with the certs.py self-heal for a root-owned cert directory) and then
-# scripts/seed-prime.sh, which seeds the SOC content: MISP, Shuffle, and the
-# TheHive and Cortex API keys. The released env-pack owns Shuffle's runtime
-# contract. The verification below is the source of truth.
+# scripts/seed-prime.sh, which seeds the SOC content: MISP and Shuffle. The
+# released env-pack owns Shuffle's runtime contract. The verification below is the source of truth.
 # =============================================================================
 set -uo pipefail
 

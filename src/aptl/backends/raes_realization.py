@@ -11,6 +11,7 @@ import yaml
 
 from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.planning import PlannedResource, ProvisioningPlan
+from raes_contracts.plan_projection import runtime_plan_digest
 
 from aptl.backends.raes_diagnostics import (
     PROVISIONING_ADDRESS,
@@ -97,7 +98,7 @@ def interpret_provisioning_plan(
     # the bundle root. The two roots coincide only for an in-tree scenario.
     profile_index = _load_profile_index(content_root, diagnostics)
     if profile_index is None:
-        return _empty_realization(diagnostics)
+        return _empty_realization(diagnostics, plan=plan)
 
     payload_resources = _payload_resources(plan, diagnostics)
     nodes, networks, profiles = _realize_nodes_and_networks(
@@ -153,7 +154,9 @@ def interpret_provisioning_plan(
         nodes,
         diagnostics,
     )
-    if bundle.pack_identity is None and not _all_nodes_base_container_materialized(nodes):
+    if bundle.pack_identity is None and not _all_nodes_base_container_materialized(
+        nodes
+    ):
         _append_profile_diagnostics(profiles, config, diagnostics)
 
     return AptlRealization(
@@ -162,6 +165,7 @@ def interpret_provisioning_plan(
         networks=tuple(sorted(networks, key=lambda item: item.address)),
         placements=tuple(sorted(placements, key=lambda item: item.address)),
         diagnostics=tuple(diagnostics),
+        raes_plan_digest=runtime_plan_digest(plan),
         acls=tuple(acls),
         generated_artifacts=tuple(
             sorted(generated_artifacts, key=lambda item: item.address)
@@ -289,7 +293,9 @@ def _all_nodes_base_container_materialized(nodes: list[NodeRealization]) -> bool
     return bool(os_nodes) and all(_is_materializable_node(node) for node in os_nodes)
 
 
-def _empty_realization(diagnostics: list[Diagnostic]) -> AptlRealization:
+def _empty_realization(
+    diagnostics: list[Diagnostic], *, plan: ProvisioningPlan
+) -> AptlRealization:
     """Build an empty realization that carries validation diagnostics."""
 
     return AptlRealization(
@@ -298,6 +304,7 @@ def _empty_realization(diagnostics: list[Diagnostic]) -> AptlRealization:
         networks=(),
         placements=(),
         diagnostics=tuple(diagnostics),
+        raes_plan_digest=runtime_plan_digest(plan),
     )
 
 
@@ -344,7 +351,8 @@ def _bind_backend_artifact_source(
         return candidate
     targets = {consumer.target_address for consumer in candidate.consumers}
     sources = [
-        source for source in authored
+        source
+        for source in authored
         if source.provenance == SOC_CERT_PROFILE
         and targets
         and targets <= {consumer.target_address for consumer in source.consumers}
@@ -354,11 +362,13 @@ def _bind_backend_artifact_source(
             DeploymentGeneratedArtifactRealization,
             replace(candidate, ordering_dependencies=(sources[0].address,)),
         )
-    diagnostics.append(diagnostic(
-        "aptl.provisioner.backend-artifact-source-ambiguous",
-        candidate.address,
-        "A backend TLS delivery requires one admitted certificate producer.",
-    ))
+    diagnostics.append(
+        diagnostic(
+            "aptl.provisioner.backend-artifact-source-ambiguous",
+            candidate.address,
+            "A backend TLS delivery requires one admitted certificate producer.",
+        )
+    )
     return None
 
 

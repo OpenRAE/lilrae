@@ -21,7 +21,6 @@ from aptl_techvault.runtime_parameters import (
 
 _NATIVE_REGISTRATIONS = frozenset(
     {
-        "aptl.collector.cortex-enrichment",
         "aptl.collector.misp-authenticated-api-readiness",
         "aptl.collector.suricata-rule-readiness",
         "aptl.collector.suricata-wazuh-sqli",
@@ -36,7 +35,6 @@ class TechVaultPropositionInterpreter:
 
     capability_ids = frozenset(
         {
-            "cortex-enrichment-readback",
             "misp-authenticated-api-readiness",
             "suricata-local-rule-readiness",
             "wazuh-agent-readiness",
@@ -62,7 +60,6 @@ class TechVaultCaptureRuntimeAdapter:
                 environment.get("INDEXER_USERNAME", ""),
                 environment.get("INDEXER_PASSWORD", ""),
             ),
-            thehive_api_key=environment.get("THEHIVE_API_KEY", ""),
         )
         return owner.sources()
 
@@ -113,7 +110,6 @@ class TechVaultCaptureProvider:
             runtime_environment_keys=(
                 "INDEXER_USERNAME",
                 "INDEXER_PASSWORD",
-                "THEHIVE_API_KEY",
             ),
             transcript_registration_id=_TRANSCRIPT_REGISTRATION,
             runtime_adapter=TechVaultCaptureRuntimeAdapter(),

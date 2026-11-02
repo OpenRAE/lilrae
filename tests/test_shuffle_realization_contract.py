@@ -31,7 +31,7 @@ def _enum_value(value: object) -> object:
 def test_released_pack_supplies_shuffle_semantics_and_leaves_mechanics_open(
     released_techvault_scenario,
 ) -> None:
-    assert version("raes-env-packs") in SpecifierSet(">=6.5.1,<7")
+    assert version("raes-env-packs") in SpecifierSet(">=7.0.0,<8")
     scenario = released_techvault_scenario
     backend = scenario.nodes["shuffle-backend"].runtime
     opensearch = scenario.nodes["shuffle-opensearch"].runtime

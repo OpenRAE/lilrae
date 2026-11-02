@@ -213,6 +213,29 @@ def test_node_artifact_builds_assert_the_effective_version() -> None:
     assert not missing, f"Node artifact builds lack effective-version checks: {missing}"
 
 
+_PATCH_BUNDLE_CALL = re.compile(
+    r'patch_bundle (?P<package>\S+) "\$\{(?P<version>\w+)\}" "\$\{(?P<digest>\w+)\}"'
+)
+
+
+def test_npm_bundle_replacements_are_integrity_pinned() -> None:
+    """Each replaced npm dependency is fetched by version and checked by sha512."""
+
+    text = (REPO_ROOT / "containers/generic-systemd-node22-base/Dockerfile").read_text(encoding="utf-8")
+    defaults = {match["name"]: match["default"] for match in _GLOBAL_ARG.finditer(text)}
+    calls = list(_PATCH_BUNDLE_CALL.finditer(text))
+
+    assert calls, "no npm bundle replacements discovered"
+    assert 'sha512sum -c -' in text.split("patch_bundle() {", 1)[1].split("}; \\", 1)[0]
+    unpinned = [
+        call["package"]
+        for call in calls
+        if not re.fullmatch(r"\d+\.\d+\.\d+", defaults.get(call["version"], ""))
+        or not re.fullmatch(r"[0-9a-f]{128}", defaults.get(call["digest"], ""))
+    ]
+    assert not unpinned, f"npm bundle replacements lack a version or sha512 pin: {unpinned}"
+
+
 def test_setup_node_uses_supported_patch_releases() -> None:
     """Major-only setup-node selectors can silently remain below a security floor."""
 

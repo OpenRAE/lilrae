@@ -1,4 +1,4 @@
-# CI-only dependency freshness and whole-tree complexity checks.
+# CI-only dependency freshness, whole-tree complexity, and ADR-064 checks.
 # Tests and prose lint have dedicated jobs in .github/workflows/checks.yml.
 # Run explicitly: pre-commit run --config .pre-commit-ci.yaml --all-files
 fail_fast: true
@@ -83,17 +83,24 @@ repos:
     files: ^(uv\.lock|pyproject\.toml)$
 - repo: local
   hooks:
+  # Ruff and grimp come from uv.lock with hashes (ci dependency group).
   - id: ruff-complexity
     name: Python complexity gate (ruff C901)
-    entry: ruff
-    args:
-    - check
-    - src/
+    entry: uv run --frozen --only-group ci ruff check src/
     language: python
     additional_dependencies:
-    - ruff>=0.15.0
+    - uv==0.11.8
     pass_filenames: false
-    files: ^(src/.*\.py|pyproject\.toml)$
+    files: ^(src/.*\.py|pyproject\.toml|uv\.lock)$
+  # Checks the whole enrolled scope on every run (ADR-064).
+  - id: architecture
+    name: ADR-064 layers and conventions for enrolled code
+    entry: uv run --frozen --only-group ci python tools/check_architecture.py
+    language: python
+    additional_dependencies:
+    - uv==0.11.8
+    pass_filenames: false
+    always_run: true
   - id: ts-complexity
     name: TypeScript complexity gate (ESLint complexity)
     entry: eslint

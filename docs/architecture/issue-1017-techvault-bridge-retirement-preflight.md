@@ -61,7 +61,7 @@ the public family contract, including `scenario_planning_compatibility_discovery
 result validation, registrations, documentation and installed adapter
 qualification. Do not delete only the TechVault entry point and break every
 family, or retain operative policy fields as a future extension mechanism.
-[ADR-065](../adrs/adr-065-runtime-readback-reports-realized-state.md) deletes
+[ADR-066](../adrs/adr-066-runtime-readback-reports-realized-state.md) deletes
 the seam in that consistent form. Core no longer reads the group, so an
 installed decision has no effect and RAES judges the unchanged plan.
 

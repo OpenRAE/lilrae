@@ -7,7 +7,7 @@
       "asset_id": "narrative",
       "kind": "project-file",
       "source": "participant-profiles/guided-purple-v1/narrative.json",
-      "sha256": "a1d971348cbf22f97c3f7957ccb1387bef6de7a5f5bd9c031863a7f6959ef8af"
+      "sha256": "592062f843f5fc849e1dff9130eef22f6f8ae7a4b0022dc68fc952bf4133c938"
     },
     {
       "asset_id": "readiness",
@@ -37,13 +37,13 @@
       "asset_id": "workbench-registry",
       "kind": "project-file",
       "source": "src/aptl/workbench/profiles.py",
-      "sha256": "c52c5ab26d211b42e584a7c890400afdda8a0338622ec40449b4d8e0c60d0734"
+      "sha256": "c8b737b6b9f868c611aeb816da20bc92fb420b0cef1df24da46a277ac5eacdc9"
     },
     {
       "asset_id": "compose-model",
       "kind": "project-file",
       "source": "docker-compose.yml",
-      "sha256": "e377bfae3f6630a8310c945b3dee610dd24ce7c9fd5049a83b15284c1f320b94"
+      "sha256": "bf40ff69bdf0bfa358de4c2ef84ad7f72f8991c9be6a800a160cacf9cad7110c"
     },
     {
       "asset_id": "mcp-red-build",
