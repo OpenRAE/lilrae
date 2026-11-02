@@ -3,6 +3,7 @@
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
+from typing import cast
 
 from raes_contracts.contracts import (
     ParticipantConfigurationResultModel,
@@ -55,7 +56,8 @@ def managed_opencode_executor(
     active = None
     try:
         lease = broker.prepare_named("opencode", run_id, ("OPENROUTER_API_KEY",))
-        prepared_options: OpenCodeOptions = replace(options, environment=lease)
+        # replace preserves the input's concrete dataclass type.
+        prepared_options = cast(OpenCodeOptions, replace(options, environment=lease))
         active = configured_opencode_executor(
             options=prepared_options,
             configuration=request.configuration,
