@@ -32,8 +32,10 @@ _AUTHORIZATION_RE = re.compile(
 # character — `access_token=...` matches neither `\btoken\b` nor
 # `\baccess_token\b`. Use alphanumeric-only boundaries so `_`, `-`, and
 # punctuation all count as separators.
-_KEY_LB = r"(?<![a-zA-Z0-9])"  # left boundary
-_KEY_RB = r"(?![a-zA-Z0-9])"  # right boundary
+# Left boundary.
+_KEY_LB = r"(?<![a-zA-Z0-9])"
+# Right boundary.
+_KEY_RB = r"(?![a-zA-Z0-9])"
 # Capture leading and trailing quotes as separate groups so the
 # replacement preserves them (otherwise wrapping `'<value>'` /
 # `"<value>"` loses the closing quote, corrupting downstream
@@ -86,6 +88,7 @@ _QUOTED_OPTION_TOKEN_RE = re.compile(r"""(['"])(-[A-Za-z][\w-]*)\1""")
 
 
 def _redact_authorization(match: "re.Match[str]") -> str:
+    """Mask an authorization value while preserving its optional scheme."""
     prefix, scheme = match.group(1), match.group(2)
     if scheme:
         return f"{prefix}{scheme} {REDACTED}"
@@ -161,12 +164,14 @@ _BASIC_AUTH_SHORT_TOOLS_REGEXES: tuple["re.Pattern[str]", ...] = (
         re.IGNORECASE,
     ),
     re.compile(
-        r"(^|[\s|;&])(?:[\w./-]+/)?(mysql|mysqladmin|mariadb|redis-cli|psql|ldapsearch|bloodhound-python|bloodhound\.py)(?:\s|$)",
+        r"(^|[\s|;&])(?:[\w./-]+/)?(mysql|mysqladmin|mariadb|redis-cli|psql|ldapsearch|"
+        r"bloodhound-python|bloodhound\.py)(?:\s|$)",
         re.IGNORECASE,
     ),
     re.compile(
         r"(^|[\s|;&])(?:[\w./-]+/)?"
-        r"(impacket-[\w-]+|psexec\.py|smbexec\.py|wmiexec\.py|secretsdump\.py|getuserspns\.py|getnpusers\.py|ntlmrelayx\.py)(?:\s|$)",
+        r"(impacket-[\w-]+|psexec\.py|smbexec\.py|wmiexec\.py|secretsdump\.py|getuserspns\.py|"
+        r"getnpusers\.py|ntlmrelayx\.py)(?:\s|$)",
         re.IGNORECASE,
     ),
 )
