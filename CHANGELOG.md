@@ -9,6 +9,112 @@ This file is maintained by [release-please](https://github.com/googleapis/releas
 from Conventional Commit messages; release sections are generated on release,
 not hand-edited in PRs.
 
+## [9.0.0](https://github.com/OpenRAE/lilrae/compare/v8.2.0...v9.0.0) (2026-11-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove TheHive and Cortex from the TechVault stack
+* adopt the raes 10 structural factorial release tuple
+
+### Features
+
+* adopt the raes 10 structural factorial release tuple ([ced9ee4](https://github.com/OpenRAE/lilrae/commit/ced9ee4e78816b50609b79b7a558ad550b5b89ba))
+* **appliance:** protect seat components ([9aad0a0](https://github.com/OpenRAE/lilrae/commit/9aad0a02e3d4ec760d4f20d3e35454a4f74883ff))
+* **appliance:** protect seat components ([089bb45](https://github.com/OpenRAE/lilrae/commit/089bb459b56c6c8035025a4bcbfaf1e6062c3b32))
+* **cleanup:** execute receipt-bound declared cleanup ([d5e4e32](https://github.com/OpenRAE/lilrae/commit/d5e4e32712943f1b0f9201d618a5d0d18cc72f02))
+* **cleanup:** execute receipt-bound declared cleanup ([3d76109](https://github.com/OpenRAE/lilrae/commit/3d76109e051b1b2f8e2f9546149263f277ac42c3))
+* **participants:** admit red and blue MCP actions through RAES ([cef2a65](https://github.com/OpenRAE/lilrae/commit/cef2a6561a920615502d978d8d246bc238ffdc35))
+* **participants:** admit red and blue MCP actions through RAES ([9895691](https://github.com/OpenRAE/lilrae/commit/9895691970bfb295d086426f660916705116a35e))
+* **participants:** run concurrent parameterized participants through RAES ([0eab82d](https://github.com/OpenRAE/lilrae/commit/0eab82dc1d911b3b29ab39defd27fe2c250867c7))
+* **participants:** support concurrent parameterized execution through RAES ([449877f](https://github.com/OpenRAE/lilrae/commit/449877fea03006534f502026b4905dd900187c8b))
+* realize sealed trial snapshots with their run identity ([ca8bd5d](https://github.com/OpenRAE/lilrae/commit/ca8bd5d04d970b2f5d8e25c50502dbc194e00d5d))
+* realize sealed trial snapshots with their run identity ([096f420](https://github.com/OpenRAE/lilrae/commit/096f4204b1a18c4b5e6383ed8ceca91858e3fed7))
+* remove TheHive and Cortex from the TechVault stack ([ee67194](https://github.com/OpenRAE/lilrae/commit/ee67194f53f5d2964f7216fa737115c0979a3b8b))
+* **runtime:** record owned descendants and expose native realization evidence ([bd13dea](https://github.com/OpenRAE/lilrae/commit/bd13dea3399c9e885229eb8335631fd14265abb0))
+* **runtime:** record owned descendants and expose native realization evidence ([2742346](https://github.com/OpenRAE/lilrae/commit/274234628ff6d57e5f67b1c7c4fe528314349117))
+* serve RAES trials with isolated placement and verified cleanup ([#1631](https://github.com/OpenRAE/lilrae/issues/1631)) ([3ff8e42](https://github.com/OpenRAE/lilrae/commit/3ff8e427ba7d7e0e62f587b22da44d76c45d12c4))
+
+
+### Bug Fixes
+
+* **capture:** bind the Kali transcript broker to the selected adapter's registration ([c9f8329](https://github.com/OpenRAE/lilrae/commit/c9f8329f3db2863a2c6f62240e506ad3af42d338))
+* **capture:** defer teardown until session custody updates complete ([d649cfc](https://github.com/OpenRAE/lilrae/commit/d649cfc5061d7c43ad6655223af1a1d1fa38b3ed))
+* **capture:** finish a hung-up PTY session so quiesce does not time out ([28797c6](https://github.com/OpenRAE/lilrae/commit/28797c65db741a5cd3ab641bf50a86879de54178))
+* **capture:** finish a hung-up PTY session so quiesce does not time out ([aa71cf7](https://github.com/OpenRAE/lilrae/commit/aa71cf743d57bb5c32a4adced71f7cf864f76232))
+* **capture:** grant the capture sshd AUDIT_WRITE so PTY sessions open ([5c680f5](https://github.com/OpenRAE/lilrae/commit/5c680f59ef89d9e6692897174067ef64272c016a))
+* **capture:** name the step that loses a required transcript at lab stop ([9077b6b](https://github.com/OpenRAE/lilrae/commit/9077b6b200c5fc1d40ce48fdc0fdccf0c0996859))
+* **capture:** preserve broker compatibility with Debian Python ([3fee7bd](https://github.com/OpenRAE/lilrae/commit/3fee7bd95abfbc977ce6921e040e169ff5520656))
+* **capture:** preserve transcript timeout diagnostics at lab stop ([1894d66](https://github.com/OpenRAE/lilrae/commit/1894d66e71ddb8266f23561ec870cca6aa52b534))
+* **cleanup:** reuse canonical container removal policy ([5ea2ab7](https://github.com/OpenRAE/lilrae/commit/5ea2ab7973b7f91f84a1f4aab93088d73f6c12e2))
+* **cli:** name the resolved directory when no aptl.json is found ([e5bd53d](https://github.com/OpenRAE/lilrae/commit/e5bd53d824074e3623031d7b5ab613ece8502e1d))
+* **cli:** say no aptl.json was found instead of an unknown scenario ([ab48986](https://github.com/OpenRAE/lilrae/commit/ab489869903298a0d3ea69e4b78c465153a5c00e))
+* decode the Parquet canonical JSON as UTF-8 ([3098cea](https://github.com/OpenRAE/lilrae/commit/3098ceaa744513268091cc6389102980bbec6e87))
+* decode the Parquet canonical JSON as UTF-8 ([bac1739](https://github.com/OpenRAE/lilrae/commit/bac17398ac34fafe89a34ae6d75c1e7be2ddd505)), closes [#1598](https://github.com/OpenRAE/lilrae/issues/1598)
+* **deployment:** pin backend-owned certificate generator images ([72c2702](https://github.com/OpenRAE/lilrae/commit/72c270265357100f51f822e7c2b4fd2c80c1e4b8))
+* **deployment:** pin the certificate generator and Suricata seeder images by digest ([5ba0382](https://github.com/OpenRAE/lilrae/commit/5ba038267a73017c7aa2d11efdb455a65727943a))
+* **deployment:** simplify Suricata ownership failure reporting ([bf14110](https://github.com/OpenRAE/lilrae/commit/bf14110bd3cc9c4ae876afa182ff6ee460a6297d))
+* **deps:** require patched Hono Node adapter across MCP packages ([3d9e924](https://github.com/OpenRAE/lilrae/commit/3d9e9243ef9c962fb8cf13c9cffbbb1d1b5819cc))
+* **execution:** pin admitted capture spec versions in run traceability ([271275b](https://github.com/OpenRAE/lilrae/commit/271275bf3b3957f16b4b70f889b65975d1208ff0))
+* **execution:** pin admitted capture spec versions in run traceability ([36d66cc](https://github.com/OpenRAE/lilrae/commit/36d66cc0261b8ae2515c81f68bb7c2f742c17482))
+* keep the family seam import-light and inventory the new pack docs ([cfdc63e](https://github.com/OpenRAE/lilrae/commit/cfdc63e0b33c964be916809417a1acdd71aa1f25))
+* **mcp:** address Sonar smells in the harvest path (Boolean, ??=) ([d1f1774](https://github.com/OpenRAE/lilrae/commit/d1f1774a2f1aa5a42252ca2e534e931174a99e39))
+* **mcp:** bound oversized tool results at a record boundary ([2e2cb19](https://github.com/OpenRAE/lilrae/commit/2e2cb191560d7f4cb3f90b6f6cacec04e0c23052))
+* **mcp:** bound oversized tool results at a record boundary ([d416eec](https://github.com/OpenRAE/lilrae/commit/d416eec2536e51d2d4acce73345153d6e479eb5e))
+* **mcp:** copy a capture session once, after the broker confirms its metadata ([cfa3bbd](https://github.com/OpenRAE/lilrae/commit/cfa3bbdd270cf7fb3f1d007f5eb101a1823c41c2))
+* **mcp:** copy a capture session once, after the broker confirms its metadata ([89a925a](https://github.com/OpenRAE/lilrae/commit/89a925ac752f32792ddc507c504ca2629dd107b6))
+* **mcp:** cut at a line boundary rather than return zero records ([28a31d8](https://github.com/OpenRAE/lilrae/commit/28a31d8b994d5e5c77ff8e50ea626cfcb403f88b))
+* **mcp:** finalize and harvest every owned session at shutdown ([b1551d0](https://github.com/OpenRAE/lilrae/commit/b1551d0ef5e8371cb515ebf9458a51415825b999))
+* **mcp:** harvest captures only from a declared capture sidecar ([338236c](https://github.com/OpenRAE/lilrae/commit/338236ccc5aa545754c9a3ff3cb672331fc9d10b))
+* **mcp:** harvest captures only from a declared capture sidecar ([6036d9c](https://github.com/OpenRAE/lilrae/commit/6036d9c5e45d30ab2d617e53b359d6c0a4bf37af))
+* **mcp:** harvest sessions still open at shutdown and on remote close ([9442d87](https://github.com/OpenRAE/lilrae/commit/9442d87f3ea682a9ab5d3d8625a88d05c579695a))
+* **mcp:** harvest sessions still open at shutdown and on remote close ([a4038fb](https://github.com/OpenRAE/lilrae/commit/a4038fbb9b5434f868ba7b91dd96063c163271c8))
+* **mcp:** keep cut tool results valid JSON and readable by the hook ([bc16044](https://github.com/OpenRAE/lilrae/commit/bc160442b6ef3e31f5f7d5b9def0f799f7f16b34))
+* **mcp:** re-pin the participant asset lock for the mcp-red config ([e14e4ba](https://github.com/OpenRAE/lilrae/commit/e14e4ba11a428109bc07932f13d537e441b6d0aa))
+* **mcp:** report the HTTP status of a failed API call ([d81670c](https://github.com/OpenRAE/lilrae/commit/d81670c93affffc1c0f6b0f3be6e1c12ba15cac4))
+* **mcp:** return the redacted API error message of a failed call ([0a3b13c](https://github.com/OpenRAE/lilrae/commit/0a3b13c4bdc89112ea39abf2d452a14467f1c093))
+* **mcp:** wait for session metadata when harvesting at teardown ([5549b59](https://github.com/OpenRAE/lilrae/commit/5549b59d94f10e7614a4a592506f22cbcac9bf94))
+* migrate the example SDLs to raes 10, document expired-seat recovery, and clear Sonar S1110 ([699138c](https://github.com/OpenRAE/lilrae/commit/699138cc03c999e4a897eaaf90dce72ea7ab0084))
+* **node22-base:** patch npm's bundled glob and minimatch for CVE-2026-118773 and CVE-2026-118764 ([e720320](https://github.com/OpenRAE/lilrae/commit/e720320d94722763848bc10ccf58ef65a08605db))
+* **packs:** qualify delivery adapters against environment packs 7.2 ([a6f1e20](https://github.com/OpenRAE/lilrae/commit/a6f1e204f4973c236d85fcbc6fa1dbc39bc7d33e))
+* **participants:** admit tool actions during delivered turns ([5b07656](https://github.com/OpenRAE/lilrae/commit/5b076560ce0598872ca8b953c8788c7de1883cf0))
+* **participants:** admit tool actions during delivered turns ([ae9df1d](https://github.com/OpenRAE/lilrae/commit/ae9df1dfba665eaba723c7e15ab383763db6fc3e))
+* **participants:** preserve portable imports and update CI contracts ([bb47a65](https://github.com/OpenRAE/lilrae/commit/bb47a65faa3003d2ca1b013c7735ae950d2a245b))
+* **participants:** read raes 9 view relations and re-pin the compiled freeze ([c819ace](https://github.com/OpenRAE/lilrae/commit/c819ace3362adfa186fe2834508b0b558d67a6e0))
+* **profiles:** refresh digests for patched MCP dependency locks ([c5f32cf](https://github.com/OpenRAE/lilrae/commit/c5f32cf71db4dab54a59e80ddf71baa4ec686af5))
+* **provisioner:** record an invalid capture apparatus failure ([d60c9a4](https://github.com/OpenRAE/lilrae/commit/d60c9a4c4123af2f8e2282dfdf915dd25856f589))
+* **raes:** name an admitted concern that readback never observed ([71ce7e8](https://github.com/OpenRAE/lilrae/commit/71ce7e828dc70c84ac45ec6399996821f54f0a5d))
+* **raes:** validate retained absence before settling credential readback ([8594d14](https://github.com/OpenRAE/lilrae/commit/8594d14d915d173102578a0a7887789c6fb5256f))
+* re-pin the mcp-red build and sync CI test deps locally ([61521bc](https://github.com/OpenRAE/lilrae/commit/61521bc247321ec2e9ba0cd9188f2e3cff84abf6))
+* **recording:** keep recorder sockets in a private unpredictable directory ([e860952](https://github.com/OpenRAE/lilrae/commit/e86095219ec608ced12ff9759ff86c2417e71e5e))
+* refuse a FIFO leaf without blocking in the contained read ([eda4cb5](https://github.com/OpenRAE/lilrae/commit/eda4cb55bd1227b3b8683ae38d41a29061be678f))
+* refuse a FIFO leaf without blocking in the contained read ([96bbd75](https://github.com/OpenRAE/lilrae/commit/96bbd751802b9f5dd81db12080b84b866396d02e)), closes [#1615](https://github.com/OpenRAE/lilrae/issues/1615)
+* refuse a FIFO without blocking in the no-follow regular-file readers ([0f92b20](https://github.com/OpenRAE/lilrae/commit/0f92b20757b7f21fa3651579e993279a1900fc9e))
+* refuse a FIFO without blocking in the no-follow regular-file readers ([14c1708](https://github.com/OpenRAE/lilrae/commit/14c1708cf7fe5bc8ccc310da6f44d2af5f0f356b)), closes [#1618](https://github.com/OpenRAE/lilrae/issues/1618)
+* retain accepted transcripts with missing-session disclosures ([df2f4e3](https://github.com/OpenRAE/lilrae/commit/df2f4e31388762760a5ef17df7375945c9b52970))
+* **runstore:** create run store directories and files owner-only ([a22cce3](https://github.com/OpenRAE/lilrae/commit/a22cce343ce2e32395864c80f1220fe9b600e23c))
+* **runtime:** qualify reporting consumers and preserve portable inventory ([a6c3de9](https://github.com/OpenRAE/lilrae/commit/a6c3de95901d8ca03c3a37cb8454e0d8cd7a5838))
+* **runtime:** serialize materialization origins against supplied typed values ([00a6c22](https://github.com/OpenRAE/lilrae/commit/00a6c2243519075ffd419bc0545ad9d063783f69))
+* **security:** re-pin MISP and Roundcube images for the php2shell PHP CVEs ([6b79634](https://github.com/OpenRAE/lilrae/commit/6b79634e7f14c080304d4a28ae43a404dd3f823a))
+* **security:** remove the unpinned base-image pip and its vendored certifi ([056f61b](https://github.com/OpenRAE/lilrae/commit/056f61b5b1f343c18b1665380d43597f317316ed))
+* **security:** replace npm's bundled glob and minimatch in the node22 substrate ([887ee55](https://github.com/OpenRAE/lilrae/commit/887ee558c09a56394ab14b60cf47df1ce61c9a4f))
+* select MCP servers from admitted scenario services ([449a5ac](https://github.com/OpenRAE/lilrae/commit/449a5acd0cdf1c8d524967cadd108947f96c6525))
+* **soc-ca:** keep exception text out of failure logs and name the inner failing phase ([15e2b11](https://github.com/OpenRAE/lilrae/commit/15e2b11bb4c4ecba006285b0cb3ed40a5bb180d8))
+
+
+### Documentation
+
+* **architecture:** use neutral workflow term ([e1f8f58](https://github.com/OpenRAE/lilrae/commit/e1f8f58ee3e308eefaf9699de1056ac01eca95be))
+* clarify seed profile requirements and preserved lab state ([f9c9dda](https://github.com/OpenRAE/lilrae/commit/f9c9ddab3f34e5166338f3ff583dfdbb7a2c84de))
+* inventory TechVault SOC dependency decisions ([156038c](https://github.com/OpenRAE/lilrae/commit/156038cf5dcbc4e4a4b53a4a4e3f007e48f5ebec))
+* inventory the TheHive and Cortex removal docs ([2d63c06](https://github.com/OpenRAE/lilrae/commit/2d63c06ad9b5ca1177cd836efdf5293aca5f96f7))
+* preserve WIP participant tool admission design for [#1418](https://github.com/OpenRAE/lilrae/issues/1418) ([9ae37a5](https://github.com/OpenRAE/lilrae/commit/9ae37a5f095c32fd40902238f806ec069ca93859))
+* **raes:** align source image guide with materialization reporting ([9dcaf50](https://github.com/OpenRAE/lilrae/commit/9dcaf50b5cb142173679c29ac6cdf8d5c64d6b1f))
+* **raes:** clarify retained absence and source evidence contracts ([0392859](https://github.com/OpenRAE/lilrae/commit/039285999867e3cb6e0052806e332a30a0d01c77))
+* record the decision to remove TheHive and Cortex (ADR-063) ([214faaa](https://github.com/OpenRAE/lilrae/commit/214faaa3d0137e293510696dea37c0cafde5a743))
+* record the decision to remove TheHive and Cortex (ADR-063) ([5424808](https://github.com/OpenRAE/lilrae/commit/542480812e644a610eec66fc84058565eee4fa41))
+* state that lab start runs the MISP and Shuffle seeds ([27f9312](https://github.com/OpenRAE/lilrae/commit/27f9312294cccdeb2d1730bab85eb88f46f64ef9))
+
 ## [8.2.0](https://github.com/OpenRAE/lilrae/compare/v8.1.0...v8.2.0) (2026-10-28)
 
 
