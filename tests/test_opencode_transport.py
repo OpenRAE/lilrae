@@ -238,8 +238,8 @@ from aptl.core.opencode import OpenRouterRoute
 from aptl.backends.lilrae_participant_configuration import opencode_manifest, OpenCodeConfigurationValidator
 from aptl.workbench.opencode_bootstrap import managed_opencode_executor
 from aptl.workbench.process import AgentExecutionError
-from raes_contracts.participant_configuration import ConfigurationOverrideModel, realize_participant_configuration
-from raes_contracts.satisfiability import canonical_contract_digest
+from raes_contracts.contracts.participant_configuration import ConfigurationOverrideModel, realize_participant_configuration
+from raes_contracts.canonical import canonical_contract_digest
 project=AptlConfig.model_validate_json(pathlib.Path(sys.argv[5]).read_bytes())
 model=project.experiment.participant_models.model_for('opencode')
 source=project.experiment.participant_credential_sources.source_for('opencode')
@@ -300,11 +300,11 @@ def test_pinned_launchers_execute_both_roles_through_shared_runtime(
     tmp_path, opencode_binary
 ):
     from dataclasses import replace
-    from raes_contracts.participant_configuration import (
+    from raes_contracts.contracts.participant_configuration import (
         ConfigurationOverrideModel,
         realize_participant_configuration,
     )
-    from raes_contracts.satisfiability import canonical_contract_digest
+    from raes_contracts.canonical import canonical_contract_digest
     import hashlib
 
     from aptl.backends.lilrae_participant_configuration import (

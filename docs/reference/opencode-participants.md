@@ -28,7 +28,7 @@ Pass that absolute path to `OpenCodeOptions.executable`.
 | Identity | Supported value |
 | --- | --- |
 | Python | 3.14 |
-| RAES | At least 10.2.0, below 10.4 |
+| RAES | 10.5.0, pinned by the current package |
 | OpenCode | 1.19.5, Linux x86_64 baseline build |
 | Executable SHA-256 | `7df4e4136301f16589b0f30bf91a61380fca5f8ef22dd36570f5ebe1d4ec802c` |
 | Adapter manifest | `lilrae-opencode`, independently versioned by its publisher |

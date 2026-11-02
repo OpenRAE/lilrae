@@ -27,11 +27,11 @@ from aptl.workbench.process import BoundedProcessRunner
 from aptl.backends.participant_tools.transport import LilraeToolTransport
 from aptl.workbench.profiles import ProfileId, profile_for
 from raes_contracts.canonical import canonical_json_digest
-from raes_contracts.participant_configuration import (
+from raes_contracts.contracts.participant_configuration import (
     ConfigurationOverrideModel,
     realize_participant_configuration,
 )
-from raes_contracts.satisfiability import canonical_contract_digest
+from raes_contracts.canonical import canonical_contract_digest
 from tests.lilrae_tool_fixture import tool_scenario, tool_bindings
 from tests.test_lilrae_concurrent_participants import manager_for
 
