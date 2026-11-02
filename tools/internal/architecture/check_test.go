@@ -95,6 +95,20 @@ func TestCheckRules(t *testing.T) {
 			want:  []string{`[undeclared-replacement] go.mod:10: the module "example.com/dep" is replaced with the directory "../dep", which is not a vendored directory`},
 		},
 		{
+			// An absolute path must not become the relative vendored path.
+			name:  "absolute replacement that resembles a vendored directory",
+			files: map[string]string{"go.mod": "module example.com/app\n\ngo 1.27.0\n\nrequire (\n\texample.com/dep v1.0.0\n\texample.com/check v1.0.0\n)\n\nreplace example.com/dep => /third_party/dep\n"},
+			want:  []string{`[undeclared-replacement] go.mod:10: the module "example.com/dep" is replaced with the directory "/third_party/dep", which is not a vendored directory`},
+		},
+		{
+			name: "absolute replacement that resembles a first-party directory",
+			files: map[string]string{
+				"go.mod":     "module example.com/app\n\ngo 1.27.0\n\nrequire (\n\texample.com/dep v1.0.0\n\texample.com/check v1.0.0\n)\n\nreplace example.com/app/sub => /sub\n",
+				"sub/go.mod": "module example.com/app/sub\n\ngo 1.27.0\n",
+			},
+			want: []string{`[undeclared-replacement] go.mod:10: the first-party module "example.com/app/sub" is replaced with something other than its directory "sub"`},
+		},
+		{
 			// The build would use the code of example.com/app/sub for
 			// example.com/dep, which the model checks as a module.
 			name: "replacement with another first-party module",

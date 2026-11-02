@@ -17,6 +17,9 @@ import (
 // to U+007E, writes floats as Python does, and writes NaN, Infinity, and
 // -Infinity for the non-finite floats.
 func SortedCompactJSON(v any) ([]byte, error) {
+	if err := checkDepth(v, 0); err != nil {
+		return nil, err
+	}
 	return pythonForm{ascii: true, nonFinite: true}.append(nil, v)
 }
 
@@ -26,6 +29,9 @@ func SortedCompactJSON(v any) ([]byte, error) {
 // with no text for a non-finite float. The runtime-evidence-json vectors
 // define its bytes.
 func SortedCompactUTF8JSON(v any) ([]byte, error) {
+	if err := checkDepth(v, 0); err != nil {
+		return nil, err
+	}
 	return pythonForm{}.append(nil, v)
 }
 

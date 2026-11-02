@@ -393,7 +393,7 @@ func TestCheckPassesTheSettingsAndAddsTheCountsOfEachModule(t *testing.T) {
 		t.Fatal(err)
 	}
 	for line := range strings.SplitSeq(strings.TrimSpace(string(args)), "\n") {
-		if !strings.HasSuffix(line, " --workers 3 --timeout-coefficient 7 .") || strings.Contains(line, "--diff") {
+		if !strings.Contains(line, " --workers 3 --timeout-coefficient 7 ") || strings.Contains(line, "--diff") {
 			t.Errorf("Gremlins arguments = %q, want --workers 3 --timeout-coefficient 7 and no --diff for a full run", line)
 		}
 	}
@@ -409,5 +409,23 @@ func TestCheckDoesNotMutateADeletedFile(t *testing.T) {
 
 	if len(report.Changed) != 0 || len(report.Mutated) != 0 {
 		t.Errorf("Check() changed %q and mutated %q, want neither: a deleted file has no line to mutate", report.Changed, report.Mutated)
+	}
+}
+
+// TestCheckKeepsNestedModulesOutOfParentCoverage checks the module boundary
+// when the product module and a nested tool module both have changed code.
+func TestCheckKeepsNestedModulesOutOfParentCoverage(t *testing.T) {
+	t.Parallel()
+	r := gittest.New(t)
+	base := r.Commit(map[string]string{"go.mod": goMod, "sub/go.mod": "module example.com/fixture/sub\n\ngo 1.27.0\n"})
+	r.Commit(map[string]string{
+		"calc/calc.go":          adultSource("// Adult checks the age.\n"),
+		"calc/calc_test.go":     strongTest,
+		"sub/calc/calc.go":      adultSource("// Adult checks the age.\n"),
+		"sub/calc/calc_test.go": strongTest,
+	})
+	report := check(t, mutation.Config{Repo: r.Dir, Base: base, Modules: []string{".", "sub"}, Gremlins: gremlins(t), Thresholds: thresholdsFile(t)})
+	if report.Counts.NotCovered != 0 || report.Counts.Killed == 0 || len(report.Findings) != 0 {
+		t.Fatalf("Counts = %+v, findings = %v; want covered and killed mutants in both modules", report.Counts, report.Findings)
 	}
 }

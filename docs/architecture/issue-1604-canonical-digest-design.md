@@ -10,9 +10,18 @@ packages:
       - github.com/google/go-cmp
   - path: internal/digest
     component: digest
+  - path: tools/internal/mutation
+    component: mutation-check
+    imports:
+      - github.com/OpenRAE/lilrae/tools/internal/git
+      - github.com/OpenRAE/lilrae/tools/internal/golayout
+    test_imports:
+      - github.com/google/go-cmp
+      - github.com/OpenRAE/lilrae/tools/internal/gittest
 model_changes:
   - component:canonical-forms
   - component:digest
+  - component:conformance-suite
 ---
 
 # Issue #1604: Canonical forms and digests design
@@ -81,7 +90,11 @@ design record.
    `$float` tags stay in the tests. Fuzz tests check that strict decoding
    never panics, that a decoded value survives a round trip through
    `SortedCompactJSON` and `SortedCompactUTF8JSON`, and that `RFC8785`
-   returns its own input when it reads its own output.
+   is stable on its canonical byte output. Re-decoding that output through
+   the Python-shaped value model is not always a valid idempotence check:
+   a large float can become integer text outside the RFC encoder's integer
+   domain. Check byte stability with the JCS transform in that case; do not
+   discard every second-encoding error as an acceptable fuzz result.
    `tools/ci/go-gates.sh fuzz` runs each fuzz test for a bounded time in CI.
 
 ## Data flows and threat model
@@ -93,7 +106,115 @@ corpus files ----------> Go tests -----------> pass or fail with the case ID
 
 | Threat | Mitigation |
 | --- | --- |
-| Two values encode to the same bytes, or one value to two forms, so a digest matches the wrong record. | One function for each scheme, exact vectors, and fuzzed round trips. Integers and floats stay distinct. |
-| A crafted input exhausts memory or the stack. | `jsontext` and `jcs` limit the nesting. The callers limit the input size. |
-| Invalid UTF-8 or a duplicate name makes two readers see different values. | The decoder and the encoders reject both. |
+| A caller selects the wrong form or changes a projection, so a digest identifies the wrong record. | Named schemes and exact vectors. Python forms preserve integer/float spelling and signed float zero; RFC 8785 intentionally merges some spellings, including `1`/`1.0` and signed zero. Canonicalization is not an injective encoding of Go types. |
+| A crafted input exhausts memory or the stack. | Bound encoder traversal before calling JCS, as well as decoder nesting. The callers limit input size and projected output size. |
+| Invalid Unicode or a duplicate name makes two readers see different values. | Strict decoding rejects duplicates, including escaped aliases at every level. Encoders validate string values and keys; maps cannot retain duplicate names for later detection. |
 | An error or a log prints a secret. | Errors name the rule, not the value. |
+
+## Repository guardrails
+
+The existing [foundation preflight](issue-1557-go-foundation-preflight.md)
+supplies the shared security rules. These are the passages specific to 06a;
+they do not authorize porting its consumers in this issue.
+
+| Layer / canonical incumbent | Required boundary |
+| --- | --- |
+| Authentication and request shapes: `src/aptl/api/{deps,session,schemas}.py`, `api/middleware/bff.py`, MCP common `src/server.ts` | Existing token/session, Host/Origin, capability and closed argument-schema gates remain before application calls. These packages add no entry point. A digest does not authenticate a request or authorize access. |
+| Configuration and environment: `core/config.py:AptlConfig`, `core/_credential_sources.py:EnvironmentGrant`, `core/env.py`, deployment `_environment_bindings.py` and `_compose_environment.py` | Owners validate exact descriptor, grant and environment shapes before projecting values. Hash the credential descriptor, never resolve its variable to a secret. Foundation accepts explicit values and reads no environment or configuration. |
+| Syntax versus semantic admission: `utils/strict_json.py`, ADR-025/065, RAES public models, `core/experiment/{spec_loading,resolver,policy}.py` | `DecodeStrict` validates generic JSON syntax only. A later typed reader must still enforce exact field names, unknown-field rejection, required/null/zero rules and semantic validation before effects. Do not marshal the generic map back to JSON merely to validate a DTO, or copy RAES schemas into foundation. |
+| Errors and observability: ADR-029/065, `utils/{redaction,logging}.py`, MCP redaction and telemetry, existing CLI/API/MCP error presentation | Return safe rule/offset metadata without raw parser errors, offending keys, tokens, values or partial output. Wrapping an unsafe cause with `%w` still leaks it. Add no exception hierarchy without a caller that branches on it. Foundation does not log or export spans; entry owners retain error envelopes and redaction. |
+| OS and persistence: `utils/pathsafe.py`, `core/runstore.py`, `core/runstore_internals.py`, evidence content store and archival/bundle owners | Production functions perform no file, process or network I/O, so they need no argv, temporary files, environment binding or file permissions. Later owners supply contained reads, size limits, redaction, locks and atomic publication. A hash neither redacts low-entropy secrets nor supplies a MAC/signature. Do not hash a redacted substitute when the owner's contract requires original bytes. |
+| Architecture and delivery: `architecture/model.yaml`, root `go.mod`/`go.sum`, `.golangci.yml`, `.gc/pack-ownership.json`, `.ground-control.yaml`, `.gc/plan-rules.md` | Keep `canonical-forms` and `digest` as separate foundation components. JCS belongs only to canonical; SHA-256 uses `crypto/sha256` and `encoding/hex`. Neither component needs a dependency on the other, product packages, tools, plugins or scenario facts. Retain the existing machine-readable design record and generated diagram. |
+
+Reuse `docs/reference/serialization-schemes.md`, the corpus contract in the
+[#1555 design](issue-1555-serialization-vectors-design.md), and
+`tests/test_serialization_vectors.py` with `tests/serialization_owner_schemes.py`.
+They define the owner, framing, options, expected bytes and rejection stage;
+the Go tests must not invent a second corpus schema or regenerate expectations
+with the Go encoder. Check corpus version, scheme, closed fields and nonempty
+cases. Type tags stay test-only, even when an ordinary caller map happens to
+contain `$int` or `$float` keys.
+
+## Encoding limits and compatibility edges
+
+- **Bound the whole traversal.** Each encoder permits at most 10000 nested containers. The JCS depth check runs after the Go value
+  has been serialized. It cannot protect that traversal, and it does not
+  protect either Python encoder. Bound container depth during every encoder
+  traversal, including cyclic maps/slices, with a documented limit aligned
+  with the JSON libraries. Reject safely instead of panicking, recovering a
+  stack overflow, or accepting unbounded recursion. A depth bound can reject
+  cycles without a general object-identity framework. Permit repeated,
+  noncyclic children. Check huge integer magnitude before expensive decimal
+  conversion; checking the resulting string length alone does not bound that
+  work. Input/output byte budgets belong to the consuming boundary, not a
+  product-wide settings schema here.
+- **Keep the number domains separate.** Preserve arbitrary integers for the
+  Python forms and strict reader within the stated digit limit. Do not pass
+  them through `float64`, including in tests. RFC rejects unsafe *integer*
+  inputs but accepts finite binary64 floats whose magnitude exceeds that
+  range. Preserve the sign of `-0.0`; integer `-0` decodes to integer zero.
+  Python exponent cutovers, exponent padding, subnormals, underflow and
+  shortest-round-trip ties need independent byte evidence, not an assumption
+  that Go's default float formatting is Python's. `1e400` rejection is the
+  explicit strictness decision above, not evidence of Python parity; retain
+  the #1610 compatibility dependency when reconciling its vector.
+- **Validate Unicode without rewriting it.** Do not normalize strings,
+  HTML-escape markup, replace invalid UTF-8/surrogates with U+FFFD, or use Go
+  map iteration order as canonical order. Test escaped duplicate names and
+  malformed surrogate escapes as well as invalid raw UTF-8. The strict Go
+  reader rejects malformed Unicode even where Python accepts an escaped
+  lone surrogate; record this as ADR-065 strictness, not an encoding repair.
+  Outputs have no BOM or final LF. Owners add their own framing where their
+  vectors require it.
+- **Keep values stable during a call.** No input map, slice or `*big.Int` is
+  mutated by these functions. Callers must not mutate shared inputs
+  concurrently. No reflection-based DTO serializer, custom marshal hook or
+  `Stringer` fallback expands the explicit value model. Define nil containers
+  consistently with empty JSON containers; `nil` itself represents null and
+  a nil `*big.Int` remains an error.
+
+The extension seam is owner composition: project and validate a value, choose
+one named encoder, add the owner's explicit domain/framing, then hash bytes
+and choose the stored spelling. The existing private Python writer shares
+escape/number mechanics between its fixed forms. Add another named generic
+form only when an owner and vectors require it; no public options bag, scheme
+registry, algorithm negotiation or domain-aware `HashMapping` helper.
+
+## Verification boundary and non-goals
+
+`tools/ci/go-gates.sh fuzz [FUZZTIME]` already discovers fuzz targets, and
+`.github/workflows/checks.yml` runs it with `30s` per target. Reuse that
+parameter and `tools/ci/select_checks.py`; ordinary seed execution alone does
+not satisfy the bounded fuzz acceptance criterion. Fuzz round trips do not
+replace exact vectors. Include direct encoder evidence for cycles/depth,
+arbitrary float inputs and map-order independence; byte-only strict-reader
+fuzzing cannot construct cycles or non-finite compatibility values. Compare
+float sign bits explicitly because ordinary equality loses signed zero.
+Failure diagnostics and saved fuzz inputs must contain synthetic data only.
+
+Use the existing mutation gate and `tools/mutation-thresholds.json` without
+lowering thresholds or adding suppressions. The required pre-code gate is
+`go run -C tools ./cmd/archcheck design -base origin/go-cutover
+docs/architecture/issue-1604-canonical-digest-design.md`. A pass now validates
+the current record; since code already exists in this checkout, it does not
+prove that the check preceded implementation. CI owns whole-repository
+architecture/diagram checks, race/shuffle, full suites and mutation evidence;
+local tests stay targeted through `tools/run-targeted-tests.sh`.
+
+Non-goals are caller migrations, YAML, new digest algorithms, digest parsing
+or normalization, domain projections/identities, DTOs, validation policy,
+redaction implementation, persistence, authentication and workflow changes.
+The UTF-8 sorted form shares generic encoding mechanics and is justified by
+its existing owner vectors; the runtime-evidence concept remains outside.
+This preflight changes guidance only and is not an implementation plan or a
+claim that the issue's delivery gates have passed.
+
+## Mutation module boundary
+
+Gremlins v0.6.0 walks nested modules, but the Go coverage run excludes them.
+The mutation gate excludes each nested module directory from its parent run.
+It finds these directories from go.mod files and quotes their paths as regular expressions.
+Each nested production module keeps its own mutation run and thresholds.
+This prevents false uncovered mutants without removing any module from verification.
+A two-module fixture must fail before this repair and pass afterwards.
+The gate still receives fixed argument arrays and no secrets.

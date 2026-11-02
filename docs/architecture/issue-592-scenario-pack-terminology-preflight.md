@@ -32,6 +32,8 @@ cross-repository catalog abstraction.
 
 ## Repository documentation inventory
 
+- `docs/architecture/issue-1556-raes-go-boundary-preflight.md` and `docs/architecture/raes-consumer-inventory.md`: Keep RAES and env-packs ownership distinct from LilRAE consumers.
+
 - `docs/architecture/issue-954-runtime-docs-and-test-authority-preflight.md`: candidate runtime and test authority boundaries.
 
 The repository-scoped terminology inventory at this preflight has these
