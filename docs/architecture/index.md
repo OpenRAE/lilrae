@@ -201,6 +201,8 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 - [Issue #992 Backend Observability Ownership](issue-992-backend-observability-ownership-preflight.md)
 - [Issue #1017 TechVault Bridge Retirement](issue-1017-techvault-bridge-retirement-preflight.md)
 - [Issue #1017 Native Runtime Attestation Design](issue-1017-native-runtime-attestation-design.md)
+- [Issue #1603 Released RAES Dependencies](issue-1603-raes-11-module-locations-preflight.md)
+- [Issue #1603 Released Module Adoption Design](issue-1603-released-module-design.md)
 - [Issue #974 Shuffle Worker Docker And Image Realization](issue-974-shuffle-worker-docker-images-preflight.md)
 - [Issue #934 APTL-To-LilRAE Rename Boundary](issue-934-rename-boundary-preflight.md)
 - [Issue #592 Scenario-Pack Terminology](issue-592-scenario-pack-terminology-preflight.md)

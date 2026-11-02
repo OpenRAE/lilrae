@@ -80,10 +80,10 @@ The same interface accepts automated harnesses and management-owned interactive 
 Controller choice does not change the authored participant's identity.
 
 The current RAES hosted-tool composition supports v1 autonomous execution.
-The locked dependency pair is RAES 10.2.0 and environment packs 7.2.0.
-The supported ranges are RAES `>=10.2.0,<10.4` and packs `>=7.2.0,<8`.
-RAES 10.4 removes public imports still used by environment packs 7.2.0.
-The upper bound keeps the released pair compatible.
+The locked dependency pair is RAES 10.6.0 and environment packs 7.2.2.
+The supported ranges are RAES `>=10.6.0,<11` and packs `>=7.2.2,<8`.
+Both releases use the public contract modules after the RAES import reorganization.
+The major-version bounds require qualification before another major release.
 This retains the integration branch's TheHive/Cortex removal under ADR-063.
 Tool-action support requires the newer RAES lower bound.
 The bounded-participant authored freeze is unchanged.
