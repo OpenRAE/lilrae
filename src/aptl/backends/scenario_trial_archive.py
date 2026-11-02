@@ -42,11 +42,13 @@ def _publish_snapshot(store: LocalRunStore, run_id: str, snapshot: bytes) -> Non
     except FileExistsError:
         with open_contained_nofollow(store.base_dir, path) as handle:
             info = os.fstat(handle.fileno())
-            identical = (
-                stat.S_ISREG(info.st_mode)
-                and stat.S_IMODE(info.st_mode) == 0o600
-                and info.st_size == len(snapshot)
-                and handle.read(len(snapshot) + 1) == snapshot
+            protected = all(
+                (
+                    stat.S_ISREG(info.st_mode),
+                    stat.S_IMODE(info.st_mode) == 0o600,
+                    info.st_size == len(snapshot),
+                )
             )
+            identical = protected and handle.read(len(snapshot) + 1) == snapshot
         if not identical:
             raise ValueError("family-trial-archive-conflict") from None

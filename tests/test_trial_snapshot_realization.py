@@ -13,7 +13,8 @@ from aptl.backends._raes_start_run import admitted_run_target
 from aptl.backends.scenario_family import FamilyTrialInput, admit_family_trial
 from aptl.core.config import AptlConfig
 from aptl.core.runstore import LocalRunStore
-from tests.test_family_adapter_contract import BACKEND, family_input  # noqa: F401
+from tests.test_family_adapter_contract import BACKEND
+from tests.test_family_adapter_contract import family_input as family_input
 
 
 @pytest.fixture
@@ -86,6 +87,10 @@ def test_archive_preserves_exact_bytes_and_safe_selection_joins(tmp_path, trial_
         for item in trial.provenance.selections
     ]
     assert "/opt/b" not in json.dumps(evidence)
+    snapshot.chmod(0o640)
+    with pytest.raises(ValueError, match="^family-trial-archive-conflict$"):
+        archive_family_trial(store, trial)
+    snapshot.chmod(0o600)
     snapshot.write_bytes(b"conflicting bytes")
     with pytest.raises(ValueError, match="^family-trial-archive-conflict$"):
         archive_family_trial(store, trial)
