@@ -37,7 +37,7 @@
       "asset_id": "workbench-registry",
       "kind": "project-file",
       "source": "src/aptl/workbench/profiles.py",
-      "sha256": "c8b737b6b9f868c611aeb816da20bc92fb420b0cef1df24da46a277ac5eacdc9"
+      "sha256": "0c5c38017e9045b09729f0200e80c182031b9b01d14de27779afd532086fff8d"
     },
     {
       "asset_id": "compose-model",
@@ -143,6 +143,18 @@
       "services": [
         "wazuh.dashboard"
       ]
+    },
+    {
+      "asset_id": "workbench-policy",
+      "kind": "project-file",
+      "source": "src/aptl/core/mcp_policy.py",
+      "sha256": "78a88ced9d941d484663bff0e684c2514468ec1bbe49e11882d3795b667bfa04"
+    },
+    {
+      "asset_id": "workbench-catalog",
+      "kind": "project-file",
+      "source": "src/aptl/core/participant_mcp_policy.json",
+      "sha256": "ad109a685e54ad6cddd6bd6bae06a67ed8b82d995651eb0960d7353c0d08328b"
     }
   ]
 }
