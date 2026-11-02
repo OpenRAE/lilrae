@@ -13,7 +13,7 @@ updated_at: 2026-03-27T04:20:57.390224Z
 
 ## Statement
 
-The platform shall provide a scenario runtime engine that takes a scenario specification (DSL-001) and autonomously drives it through steps with scheduling, pacing, event handling, and state management, replacing the current imperative Python lifecycle code. The engine shall evaluate objectives in real time by executing their validation logic (Wazuh alert queries, command output checks, file existence checks) against live data as the scenario progresses, updating objective completion state and scores incrementally.
+The platform shall provide a scenario runtime engine that takes a scenario specification (DSL-001) and autonomously drives it through steps with scheduling, pacing, event handling, and state management, replacing imperative lifecycle code. The engine shall evaluate objectives in real time by executing their validation logic (Wazuh alert queries, command output checks, file existence checks) against live data as the scenario progresses, updating objective completion state and scores incrementally.
 
 ## Rationale
 

@@ -34,6 +34,40 @@ When an issue completes the refactor of a package or a module:
 3. Run `uv run --frozen --only-group ci python tools/check_architecture.py`.
 4. Fix each finding in the code. Do not change the layer map to hide a finding.
 
+## Go Code
+
+[ADR-065](adrs/adr-065-go-implementation-and-engineering-standards.md) defines
+the architecture, the architecture model, the design step, the style, and the
+gates of the Go implementation. Apply it to all Go code. ADR-064 stays in force
+for the Python code until Go port 31 removes that code.
+
+Before you write code, record the design and run the design check. The tools
+enforce each style rule that a tool can check. Review checks the rules in this
+list:
+
+1. A name is clear and in proportion to its scope. It does not repeat its
+   package name, and a getter has no `Get` prefix.
+2. A package has one responsibility. Split a package by responsibility, not by
+   size.
+3. An interface belongs to the package that uses it. Add an interface only for
+   a second implementation or a test double that a test needs now.
+4. An error message adds information that the caller does not have. A function
+   returns an error or handles it. It does not log the error and also return
+   it.
+5. Each goroutine has a clear owner and end. Prefer synchronous functions, and
+   let the caller add concurrency.
+6. Use the least mechanism that does the job. Do not add generality, options,
+   or reflection that no caller needs. Use the standard library or a selected
+   module before custom code.
+7. A doc comment states behavior and contract, not implementation steps. A
+   public API package has examples.
+8. A test checks behavior through the API of its package. A failure message
+   gives the input, the result, and the expected result. Do not export a name
+   only for a test.
+9. The zero value of a type is useful where that is possible. Do not use a
+   pointer to an interface.
+10. External output matches its conformance cases. A port adds no behavior.
+
 ## Implementation And Verification
 
 Reuse existing libraries, configuration, validators, and runtime boundaries.

@@ -13,11 +13,11 @@ updated_at: 2026-09-20T00:00:00Z
 
 ## Statement
 
-Pull requests to `dev` shall require the existing pre-commit, Python test, MCP
+Pull requests to `dev` shall require the existing pre-commit, control-plane test, MCP
 test, platform dependency audit, and clean-install lab boot checks. The audit
 shall fail for actionable vulnerabilities in shipped CLI/API and MCP
 dependencies while intentionally vulnerable target assets remain advisory.
-The installed-wheel check shall start one supported small lab scenario, verify
+The installed-distribution check shall start one supported small lab scenario, verify
 a native container effect, stop the lab, and prove project-scoped cleanup.
 The supported profile and any temporary platform vulnerability exception shall
 be documented with its affected component and reason.

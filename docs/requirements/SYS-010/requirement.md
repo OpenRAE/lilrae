@@ -13,7 +13,7 @@ updated_at: 2026-03-21T06:50:33.807675Z
 
 ## Statement
 
-The system shall provide an interactive workbench web UI (SvelteKit frontend + FastAPI backend) that unifies scenario execution, terminal access, and container management in a scrollable document-style interface, visually distinct from enterprise SOC dashboards. SIEM integration is limited to automated objective validation (checking whether expected alerts fired for a scenario step), not open-ended query building.
+The system shall provide an interactive workbench web UI (a browser frontend and a backend API) that unifies scenario execution, terminal access, and container management in a scrollable document-style interface, visually distinct from enterprise SOC dashboards. SIEM integration is limited to automated objective validation (checking whether expected alerts fired for a scenario step), not open-ended query building.
 
 ## Rationale
 

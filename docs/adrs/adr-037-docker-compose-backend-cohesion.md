@@ -2,7 +2,12 @@
 
 ## Status
 
-accepted
+superseded in part by ADR-065
+
+[ADR-065](adr-065-go-implementation-and-engineering-standards.md) replaces the Python runner and backend class with the Go
+deployment boundary. The guardrails stay: one runner for local and SSH
+transports, project scoping, typed backend methods, and no command
+passthrough.
 
 ## Date
 

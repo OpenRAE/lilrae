@@ -13,7 +13,7 @@ updated_at: 2026-06-23T04:30:19.228396Z
 
 ## Statement
 
-The platform shall provide a web GUI that implements the approved design specification (UI-007), is served by `aptl web serve` (the built assets mounted by the FastAPI application rather than dev-served), exposes authenticated API endpoints under `src/aptl/api/` with a CSRF/origin-safe proxy, and ships with vitest coverage in `web/tests/` and pytest coverage in `tests/`. DET-003 (Live SIEM Query Execution) shall be delivered as a line item of this implementation.
+The platform shall provide a web GUI that implements the approved design specification (UI-007), is served by `lilrae web serve` (one process serves the built assets and the API, not a development server), exposes authenticated API endpoints with CSRF and origin checks, and ships with tests for the frontend and for the API. DET-003 (Live SIEM Query Execution) shall be delivered as a line item of this implementation.
 
 ## Rationale
 
