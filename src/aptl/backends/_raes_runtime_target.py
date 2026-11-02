@@ -26,6 +26,15 @@ if TYPE_CHECKING:
     from aptl.core.deployment.backend import DeploymentBackend
 
 
+def _participant_actions(selected: RuntimeTargetOptions) -> dict:
+    """Build the existing participant action registry with admitted overrides."""
+
+    actions = dict(DEFAULT_PARTICIPANT_ACTIONS)
+    if selected.participant_action_specs:
+        actions.update(selected.participant_action_specs)
+    return actions
+
+
 def create_aptl_runtime_target(
     *,
     project_dir: Path,
@@ -61,9 +70,7 @@ def create_aptl_runtime_target(
         startup_selection=startup,
     )
     orchestrator = AptlOrchestrator()
-    action_specs = dict(DEFAULT_PARTICIPANT_ACTIONS)
-    if selected.participant_action_specs:
-        action_specs.update(selected.participant_action_specs)
+    action_specs = _participant_actions(selected)
     participant_runtime = AptlParticipantRuntime(
         deployment_backend=backend,
         action_specs=action_specs,

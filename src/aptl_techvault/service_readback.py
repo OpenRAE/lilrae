@@ -9,6 +9,8 @@ from aptl_techvault.readback_support import ReadbackBackend, output, require, va
 
 
 def _samba(backend: ReadbackBackend, container: str) -> configparser.ConfigParser:
+    """Read Samba's complete effective configuration through its native parser."""
+
     text = output(backend, container, ["testparm", "-s", "-v", "--suppress-prompt"])
     result = configparser.ConfigParser(interpolation=None, strict=True)
     result.read_string(text)

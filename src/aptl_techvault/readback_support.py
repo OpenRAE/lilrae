@@ -51,7 +51,7 @@ def json_output(backend: ReadbackBackend, container: str, argv: list[str]) -> ob
 def identifier(value: str) -> str:
     """Admit SQL identifiers before they enter a native query."""
 
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
+    if not re.fullmatch(r"[A-Za-z_]\w*", value, flags=re.ASCII):
         raise ReadbackUnavailable("native-identifier-unsupported")
     return value
 

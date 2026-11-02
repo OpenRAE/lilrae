@@ -237,7 +237,7 @@ def observe_scenario_runtime_concerns(
                 or sources.get(reading.kind) != reading.source
                 or not validate_realization_value(reading.value).conformant
             ):
-                return {}
+                raise ValueError("runtime-reading-invalid")
             project_realization_concern(reading.kind, reading.value, observed=True)
     except (TypeError, ValueError):
         return {}

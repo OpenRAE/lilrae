@@ -15,7 +15,7 @@ from aptl_techvault.application_readback import (
     platform_applications,
 )
 from aptl_techvault.database_readback import database_services, datastore_services
-from aptl_techvault.readback_support import ReadbackBackend, ReadbackUnavailable
+from aptl_techvault.readback_support import ReadbackBackend
 from aptl_techvault.security_readback import (
     network_detection_engines,
     network_sensors,
@@ -75,7 +75,6 @@ def observe_runtime(
                     kind, disclosed, OBSERVED_RUNTIME_CONCERNS[kind]
                 )
         except (
-            ReadbackUnavailable,
             ValueError,
             TypeError,
             KeyError,

@@ -150,6 +150,8 @@ def test_adapter_native_value_varies_without_any_release_key():
                 "SHOW server_version": "16.1",
                 "SHOW port": "5432",
                 "SHOW listen_addresses": "0.0.0.0",
+                "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename": "records",
+                "SELECT rolname || '|' || rolcanlogin FROM pg_roles WHERE rolname = 'app'": "app|true",
             }
             if "FROM pg_database" in sql:
                 text = current["database"]
@@ -178,7 +180,22 @@ def test_adapter_native_value_varies_without_any_release_key():
                         "database_service_id": "selected-db",
                         "engine": "postgresql",
                         "version": "16.1",
-                        "databases": [{"database_id": "data", "name": name}],
+                        "databases": [
+                            {
+                                "database_id": "data",
+                                "name": name,
+                                "schemas": [
+                                    {
+                                        "schema_id": "public",
+                                        "name": "public",
+                                        "tables": [
+                                            {"table_id": "records", "name": "records"},
+                                        ],
+                                    },
+                                ],
+                            }
+                        ],
+                        "roles": [{"role_id": "app", "name": "app", "can_login": True}],
                     }
                 ]
             }
@@ -242,12 +259,11 @@ def test_product_capability_requires_the_admitted_reader():
         target.observation_capabilities[kind].observation_strength
         is ObservationStrength.GUEST_OBSERVED
     )
+    rejected_input_1 = SimpleNamespace(
+        observed_runtime_concerns={
+            "runtime-environment": ObservationStrength.GUEST_OBSERVED
+        },
+        observe_runtime=lambda *_: {},
+    )
     with pytest.raises(ValueError, match="source-conflict"):
-        adapter_runtime_concern_sources(
-            SimpleNamespace(
-                observed_runtime_concerns={
-                    "runtime-environment": ObservationStrength.GUEST_OBSERVED
-                },
-                observe_runtime=lambda *_: {},
-            )
-        )
+        adapter_runtime_concern_sources(rejected_input_1)

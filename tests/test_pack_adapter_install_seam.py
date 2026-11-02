@@ -139,8 +139,9 @@ def test_stale_capture_claim_is_incompatible_not_malformed(monkeypatch):
     capture = _CaptureProvider()
     capture.supported_pack_versions = ("0.9.0",)
     monkeypatch.setattr("aptl.backends.scenario_capture_discovery._entry_points", lambda: [_EntryPoint(capture)])
+    rejected_input_1 = ScenarioCaptureContext(PACK, BACKEND)
     with pytest.raises(ScenarioCaptureProviderError, match="provider-missing"):
-        resolve_scenario_capture(ScenarioCaptureContext(PACK, BACKEND))
+        resolve_scenario_capture(rejected_input_1)
 
 
 def test_pack_provider_defines_safe_operator_groups(monkeypatch) -> None:

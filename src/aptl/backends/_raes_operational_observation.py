@@ -10,8 +10,14 @@ from raes_contracts.realization_envelope import (
     ObservationStrength,
     RealizationConcern,
 )
-from raes_contracts.realization_observation import RealizationObservation, RealizationObservationDisclosure
-from raes_contracts.realization_operational_observation import bind_compute_substrate_observations, bind_operating_system_observations
+from raes_contracts.realization_observation import (
+    RealizationObservation,
+    RealizationObservationDisclosure,
+)
+from raes_contracts.realization_operational_observation import (
+    bind_compute_substrate_observations,
+    bind_operating_system_observations,
+)
 from raes_contracts.realization_observation_demand import (
     compute_substrate_collection_addresses,
 )
@@ -78,17 +84,22 @@ def runtime_observation_disclosures(
     for address, observed in observations.items():
         for path in observed.concerns:
             kind = kinds.get(path)
-            source = observed.concern_sources.get(path, CORE_RUNTIME_CONCERN_SOURCES.get(kind))
+            source = observed.concern_sources.get(
+                path, CORE_RUNTIME_CONCERN_SOURCES.get(kind)
+            )
             if source is None:
                 continue
-            result.append(RealizationObservationDisclosure(
-                address=address,
-                field_path=f"nodes.{address.removeprefix('provision.node.')}." + ".".join(path[2:]),
-                domain="runtime-realization",
-                requirement_kind=kind,
-                verification_scope=RealizationVerificationScope.CONFIGURATION,
-                observation_strength=source,
-            ))
+            result.append(
+                RealizationObservationDisclosure(
+                    address=address,
+                    field_path=f"nodes.{address.removeprefix('provision.node.')}."
+                    + ".".join(path[2:]),
+                    domain="runtime-realization",
+                    requirement_kind=kind,
+                    verification_scope=RealizationVerificationScope.CONFIGURATION,
+                    observation_strength=source,
+                )
+            )
     return tuple(result)
 
 
@@ -186,7 +197,10 @@ def _bind_runtime_observations(
         authority
         for authority in plan.realization_authority
         if authority.requirement_kind in CORE_RUNTIME_CONCERN_SOURCES
-        or any(CONCERN_PAYLOAD_PATH.get(authority.requirement_kind) in item.concern_sources for item in observations.values())
+        or any(
+            CONCERN_PAYLOAD_PATH.get(authority.requirement_kind) in item.concern_sources
+            for item in observations.values()
+        )
     )
     replaced = {
         (
@@ -221,7 +235,8 @@ def _bind_runtime_observations(
                     requirement_kind=authority.requirement_kind,
                     verification_scope=RealizationVerificationScope.CONFIGURATION,
                     observation_strength=observed.concern_sources.get(
-                        path, CORE_RUNTIME_CONCERN_SOURCES.get(authority.requirement_kind)
+                        path,
+                        CORE_RUNTIME_CONCERN_SOURCES.get(authority.requirement_kind),
                     ),
                 )
             )

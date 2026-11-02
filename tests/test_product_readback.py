@@ -12,7 +12,7 @@ from aptl_techvault.application_readback import (
     app_authorizations,
     platform_applications,
 )
-from aptl_techvault.database_readback import datastore_services
+from aptl_techvault.database_readback import database_services, datastore_services
 from aptl_techvault.readback_support import ReadbackUnavailable
 from aptl_techvault.service_readback import (
     dns_services,
@@ -32,7 +32,8 @@ class NativeBackend:
         self.query = query
 
     def container_exec(self, name, cmd, *, timeout=None):
-        assert name == "selected-container" and timeout == 30
+        assert name == "selected-container"
+        assert timeout == 30
         return CompletedProcess(cmd, 0, self.query(cmd), "")
 
 
@@ -123,8 +124,9 @@ def test_dns_zone_requires_live_primary_status():
         dns_services(NativeBackend(query), selected)[0]["zones"][0]["kind"] == "primary"
     )
     state["status"] = "type: secondary"
+    rejected_input_1 = NativeBackend(query)
     with pytest.raises(ReadbackUnavailable):
-        dns_services(NativeBackend(query), selected)
+        dns_services(rejected_input_1, selected)
 
 
 def test_search_partition_counts_come_from_cluster_metadata():
@@ -171,10 +173,9 @@ def test_search_partition_counts_come_from_cluster_metadata():
         result[0]["partitions"][0]["replica_count"],
     ) == (3, 2)
     del responses["/_cluster/state/metadata"]["metadata"]["indices"]["events"]
+    rejected_input_2 = NativeBackend(lambda cmd: json.dumps(responses[cmd[-1]]))
     with pytest.raises(ReadbackUnavailable):
-        datastore_services(
-            NativeBackend(lambda cmd: json.dumps(responses[cmd[-1]])), selected
-        )
+        datastore_services(rejected_input_2, selected)
 
 
 def test_application_authentication_is_observed_instead_of_echoed():
@@ -197,8 +198,9 @@ def test_application_authentication_is_observed_instead_of_echoed():
     observed = [{"path": "/account", "methods": ["GET"], "auth_required": False}]
     result = applications(NativeBackend(lambda _: json.dumps(observed)), selected)
     assert result[0]["routes"][0]["auth_required"] is False
+    rejected_input_3 = NativeBackend(lambda _: "[]")
     with pytest.raises(ReadbackUnavailable):
-        applications(NativeBackend(lambda _: "[]"), selected)
+        applications(rejected_input_3, selected)
 
 
 @pytest.mark.parametrize(
@@ -226,8 +228,9 @@ def test_http_authentication_uses_the_native_response(response, expected):
     selected.services = [SimpleNamespace(name="web", port=443)]
     result = applications(NativeBackend(lambda _: response), selected)
     assert result[0]["routes"][0]["auth_required"] is expected
+    rejected_input_4 = NativeBackend(lambda _: "302\nhttps://localhost/moved")
     with pytest.raises(ReadbackUnavailable):
-        applications(NativeBackend(lambda _: "302\nhttps://localhost/moved"), selected)
+        applications(rejected_input_4, selected)
 
 
 def test_component_manifests_are_read_independently_of_the_wazuh_agent():
@@ -256,8 +259,9 @@ def test_component_manifests_are_read_independently_of_the_wazuh_agent():
     result = software_components(NativeBackend(lambda _: json.dumps(native)), selected)
     assert [item["component_id"] for item in result] == ["library"]
     native["version"] = "9.0.0"
+    rejected_input_5 = NativeBackend(lambda _: json.dumps(native))
     with pytest.raises(ReadbackUnavailable):
-        software_components(NativeBackend(lambda _: json.dumps(native)), selected)
+        software_components(rejected_input_5, selected)
 
 
 def test_orchestration_observes_daemon_configuration_and_local_image_presence():
@@ -354,8 +358,9 @@ def test_suricata_observes_output_types_and_rejects_missing_rule_source():
     result = network_detection_engines(NativeBackend(query), selected)[0]
     assert result["output_streams"][0]["event_types"] == ["dns", "http"]
     config["rule-files"] = []
+    rejected_input_6 = NativeBackend(query)
     with pytest.raises(ReadbackUnavailable):
-        network_detection_engines(NativeBackend(query), selected)
+        network_detection_engines(rejected_input_6, selected)
 
 
 def test_wazuh_observes_nested_agent_roster_and_running_components():
@@ -403,8 +408,9 @@ def test_wazuh_observes_nested_agent_roster_and_running_components():
         is False
     )
     state["status"] = "disconnected"
+    rejected_input_7 = NativeBackend(query)
     with pytest.raises(ReadbackUnavailable):
-        security_monitoring_managers(NativeBackend(query), selected)
+        security_monitoring_managers(rejected_input_7, selected)
 
 
 def test_misp_cache_endpoint_requires_native_corroboration():
@@ -435,8 +441,9 @@ def test_misp_cache_endpoint_requires_native_corroboration():
 
     assert platform_applications(NativeBackend(query), selected)
     state["cache"] = "unrelated-cache"
+    rejected_input_8 = NativeBackend(query)
     with pytest.raises(ReadbackUnavailable):
-        platform_applications(NativeBackend(query), selected)
+        platform_applications(rejected_input_8, selected)
 
 
 def test_misp_read_only_api_key_restricts_its_administrator_owner():
@@ -478,5 +485,178 @@ def test_misp_read_only_api_key_restricts_its_administrator_owner():
     }
     assert app_authorizations(NativeBackend(lambda _: json.dumps(native)), selected)
     native["keys"][0]["read_only"] = "0"
+    rejected_input_9 = NativeBackend(lambda _: json.dumps(native))
     with pytest.raises(ReadbackUnavailable):
-        app_authorizations(NativeBackend(lambda _: json.dumps(native)), selected)
+        app_authorizations(rejected_input_9, selected)
+
+
+def test_mariadb_catalogs_and_grants_require_native_facts():
+    selected = node(
+        database_services=[
+            {
+                "database_service_id": "store",
+                "engine": "mariadb",
+                "version": "11.4",
+                "listeners": [{"address": "0.0.0.0", "port": 3306}],
+                "databases": [
+                    {
+                        "database_id": "data",
+                        "name": "world",
+                        "schemas": [
+                            {
+                                "schema_id": "schema",
+                                "name": "world",
+                                "tables": [{"table_id": "events", "name": "events"}],
+                            },
+                        ],
+                    }
+                ],
+                "roles": [{"role_id": "reader", "name": "reader", "can_login": True}],
+                "grants": [
+                    {
+                        "grantee_role_ref": "reader",
+                        "object_type": "database",
+                        "object_ref": "data",
+                        "privileges": ["ALL"],
+                        "with_grant_option": False,
+                    }
+                ],
+            }
+        ]
+    )
+    grants = "SHOW GRANTS FOR 'reader'@'%'"
+    tables = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'world' ORDER BY table_name"
+    responses = {
+        "SELECT VERSION()": "11.4.5",
+        "SELECT @@port": "3306",
+        "SELECT @@bind_address": "0.0.0.0",
+        "SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'world'": "world",
+        tables: "events",
+        "SELECT user FROM mysql.user WHERE user = 'reader'": "reader",
+        grants: "GRANT ALL PRIVILEGES ON `world`.* TO 'reader'@'%'",
+    }
+    backend = NativeBackend(lambda cmd: responses[cmd[-1]])
+    result = database_services(backend, selected)[0]
+    assert result["protocol"] == "mysql"
+    assert result["version"] == "11.4"
+    responses[grants] += " WITH GRANT OPTION"
+    with pytest.raises(ReadbackUnavailable):
+        database_services(backend, selected)
+    responses[grants] = responses[grants].removesuffix(" WITH GRANT OPTION")
+    responses[tables] = "unrelated_table"
+    with pytest.raises(ReadbackUnavailable):
+        database_services(backend, selected)
+
+
+def test_wazuh_reads_rule_content_and_each_native_listener_role():
+    selected = node(
+        security_monitoring_managers=[
+            {
+                "security_monitoring_manager_id": "manager",
+                "implementation": "wazuh",
+                "version": "4.12.0",
+                "components": [
+                    {
+                        "component_id": "forwarder",
+                        "kind": "indexer_forwarder",
+                        "name": "filebeat",
+                    }
+                ],
+                "content_sets": [
+                    {
+                        "content_id": "rules",
+                        "kind": "rule_corpus",
+                        "format": "wazuh_rule_xml",
+                        "file_count": 1,
+                        "file_refs": ["/var/ossec/etc/rules/local.xml"],
+                    }
+                ],
+                "detection_definitions": [
+                    {
+                        "definition_id": "rule",
+                        "engine": "wazuh",
+                        "definition_kind": "rule",
+                        "native_id": "123",
+                        "content_set_ref": "rules",
+                        "level": 3,
+                    }
+                ],
+                "listeners": [
+                    {"listener_id": role, "role": role}
+                    for role in (
+                        "syslog_ingestion",
+                        "agent_event_ingestion",
+                        "agent_enrollment",
+                        "api",
+                    )
+                ],
+            }
+        ]
+    )
+    state = {
+        "config": "<ossec_config><remote><connection>syslog</connection><protocol>udp</protocol></remote>"
+        "<remote><connection>secure</connection><protocol>tcp</protocol></remote>"
+        "<auth><disabled>no</disabled></auth></ossec_config>"
+    }
+
+    def query(cmd):
+        replies = {
+            "info": 'WAZUH_VERSION="v4.12.0"',
+            "status": "",
+            "filebeat": "123",
+            "-t": "",
+            "-lj": "[]",
+            "https://127.0.0.1:55000/": "401",
+            "/var/ossec/etc/ossec.conf": state["config"],
+            "/var/ossec/etc/rules/local.xml": '<group name="observed,"><rule id="123" level="12">'
+            "<description>Native detection</description><group>ioc,</group></rule></group>",
+        }
+        return replies[cmd[-1]]
+
+    backend = NativeBackend(query)
+    result = security_monitoring_managers(backend, selected)[0]
+    assert result["components"][0]["enabled"] is True
+    assert result["detection_definitions"][0]["level"] == 12
+    assert result["detection_definitions"][0]["name"] == "Native detection"
+    assert result["detection_definitions"][0]["groups"] == ["ioc", "observed"]
+    assert [
+        (item["auth_required"], item["tls_enabled"]) for item in result["listeners"]
+    ] == [
+        (False, False),
+        (True, False),
+        (True, True),
+        (True, True),
+    ]
+    state["config"] = state["config"].replace("<disabled>no", "<disabled>yes")
+    with pytest.raises(ReadbackUnavailable):
+        security_monitoring_managers(backend, selected)
+
+
+@pytest.mark.parametrize(
+    "component_id,version,response",
+    [
+        ("nodejs", "22", "v22.1.0"),
+        ("shuffle-frontend", "unversioned", "<html>Shuffle</html>"),
+        ("shuffle-orborus", "unversioned", ""),
+    ],
+)
+def test_executable_component_readback_requires_native_success(
+    component_id, version, response
+):
+    selected = node(
+        software_components=[
+            {
+                "component_id": component_id,
+                "name": component_id,
+                "version": version,
+                "component_type": "application",
+            }
+        ]
+    )
+    backend = NativeBackend(lambda _: response)
+    assert software_components(backend, selected)[0]["version"] == version
+    backend.container_exec = lambda name, cmd, timeout: CompletedProcess(
+        cmd, 1, "", "private failure"
+    )
+    with pytest.raises(ReadbackUnavailable):
+        software_components(backend, selected)

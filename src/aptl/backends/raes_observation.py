@@ -124,7 +124,10 @@ def observe_realization(
     }
     observe_catalog_images(backend, realization, observations, observation_context)
     _add_adapter_runtime_observations(
-        backend, realization, observations, startup_selection,
+        backend,
+        realization,
+        observations,
+        startup_selection,
     )
     return observations
 
@@ -197,27 +200,36 @@ def _add_adapter_runtime_observations(
         if observed is None or not observed.realized:
             continue
         readings = observe_scenario_runtime_concerns(
-            realization.pack_identity, backend, node, selection=startup_selection,
+            realization.pack_identity,
+            backend,
+            node,
+            selection=startup_selection,
         )
         for path, reading in readings.items():
             native = reading.value
             if path in observed.concerns:
                 core_value = observed.concerns[path]
-                if reading.kind == "runtime-software-components" and isinstance(core_value, list) and isinstance(native, list):
-                    core_ids = {item.get("component_id") for item in core_value}
-                    adapter_ids = {item.get("component_id") for item in native}
-                    if not core_ids.intersection(adapter_ids):
-                        native = [*core_value, *native]
-                    else:
-                        native = None
-                elif core_value != native:
-                    native = None
+                native = _combined_runtime_value(reading.kind, core_value, native)
                 if native is None:
                     observed.concerns.pop(path, None)
                     observed.concern_sources.pop(path, None)
                     continue
             observed.concerns[path] = native
             observed.concern_sources[path] = reading.source
+
+
+def _combined_runtime_value(kind: str, core_value: object, native: object) -> object:
+    """Merge disjoint component owners and reject conflicting observations."""
+
+    if (
+        kind == "runtime-software-components"
+        and isinstance(core_value, list)
+        and isinstance(native, list)
+    ):
+        core_ids = {item.get("component_id") for item in core_value}
+        adapter_ids = {item.get("component_id") for item in native}
+        return None if core_ids.intersection(adapter_ids) else [*core_value, *native]
+    return native if core_value == native else None
 
 
 def observation_evidence(

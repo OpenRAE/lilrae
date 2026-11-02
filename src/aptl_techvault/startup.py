@@ -21,11 +21,9 @@ from aptl.backends.scenario_service_policy import (
     ServiceFileMount,
     ServiceContainerNameEnvironment,
 )
-from raes_processor.semantics.realization import CONCERN_PAYLOAD_PATH
 from aptl.core.scenario_bundle import ScenarioBundle
 from aptl_techvault.log_sources import realize_log_sources
 from aptl_techvault.database import realize_database
-from aptl_techvault.redis_acl_observation import observe_redis_app_authorizations
 from aptl_techvault.runtime_readback import OBSERVED_RUNTIME_CONCERNS, observe_runtime
 from aptl_techvault.runtime_parameters import (
     TECHVAULT_PACK_SET_DIGEST,
