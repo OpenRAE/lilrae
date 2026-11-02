@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from raes_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDomain
-from raes_contracts.plan_projection import runtime_plan_digest
+from raes_contracts.contracts.plan_projection import runtime_plan_digest
 
 from aptl.backends.raes_realization import interpret_provisioning_plan
 from aptl.core.config import AptlConfig

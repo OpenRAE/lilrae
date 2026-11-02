@@ -23,7 +23,7 @@ from aptl.backends.participant_tools.delivery import (
 )
 from aptl.backends.raes_manifest import create_aptl_manifest
 from aptl.backends.raes_participant_runtime import AptlParticipantRuntime
-from aptl.backends.raes_planning_compat import AptlRuntimeManager
+from aptl.backends.raes_runtime import AptlRuntimeManager
 from aptl.core.agent_errors import AgentExecutionError
 from aptl.workbench.profiles import profile_for
 from tests.lilrae_concurrent_fixture import scenario

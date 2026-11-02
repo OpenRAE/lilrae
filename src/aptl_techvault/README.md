@@ -85,7 +85,7 @@ whole:
 | Dimension | This release |
 | --- | --- |
 | Extension API | `2` |
-| Scenario | `techvault`, source `env-pack`, pack version `7.2.0`, content digest `sha256:3a7706c8b2…` |
+| Scenario | `techvault`, source `env-pack`, pack version `7.2.1`, content digest `sha256:27b268a772…` |
 | Backend | RAES target `aptl` `0.1.0`, profile `full-remote-control-plane` |
 | Transport | `docker-compose` and `ssh-compose` |
 

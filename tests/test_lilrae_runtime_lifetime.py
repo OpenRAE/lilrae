@@ -15,7 +15,7 @@ from raes_processor.models.time_model import (
     CompiledTimeModel,
     CompiledTimeProgressionPolicy,
 )
-from aptl.backends.raes_planning_compat import AptlRuntimeManager
+from aptl.backends.raes_runtime import AptlRuntimeManager
 from tests.test_raes_native_evidence_truth import (
     _plan,
     _record,
