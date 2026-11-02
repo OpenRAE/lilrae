@@ -118,6 +118,11 @@ components:
     responsibility: Opens, writes, and removes files below a trusted directory without following links, with final file modes.
     packages: [internal/securefile]
     modules: [golang.org/x/sys]
+  - name: process
+    layer: foundation
+    responsibility: Runs an argument array with bounded pipes, a deadline, and cleanup of its owned process group.
+    packages: [internal/process]
+    modules: [golang.org/x/sys]
   - name: conformance-suite
     layer: tools
     responsibility: Runs the black-box contract cases against an installed lilrae binary.

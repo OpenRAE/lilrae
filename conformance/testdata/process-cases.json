@@ -1,0 +1,9 @@
+[
+  {"id":"binary-stdin-eof","mode":"echo","input":"hello\u0000world\n","limit":64,"stdout":"hello\u0000world\n","stderr":"","exit_code":0},
+  {"id":"literal-arguments","mode":"args","args":["a b","$HOME;*","","雪\\\""],"limit":128,"stdout":"a b\n$HOME;*\n\n雪\\\"\n","stderr":"","exit_code":0},
+  {"id":"exact-combined-limit","mode":"output","args":["abcd","efgh"],"limit":8,"stdout":"abcd","stderr":"efgh","exit_code":0},
+  {"id":"combined-overflow","mode":"output","args":["abcde","fghi"],"limit":8,"failure":"overflow"},
+  {"id":"nonzero-is-result","mode":"exit","args":["7"],"limit":8,"stdout":"","stderr":"","exit_code":7},
+  {"id":"blocked-input-deadline","mode":"sleep","input_size":1048576,"timeout_ms":300,"limit":8,"failure":"timeout"},
+  {"id":"duplex-full-pipes","mode":"duplex","input_size":1048576,"limit":1048576,"stdout_size":1048576,"stderr":"","exit_code":0}
+]
