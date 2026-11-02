@@ -1,25 +1,17 @@
 """Explicit sources for declared runtime environment variables (issue #965).
 
-A matching name is not authority to read a value. Each variable a node declares
-is delivered from one source that names that node:
+A matching name grants no access. Each declared variable has an explicit source:
 
-- ``generated``: the generated-artifact output its ``value_from`` names;
-- ``authored``: the value the scenario wrote down, delivered exactly. A
-  declaration with no value is delivered empty, which is what RAES's runtime
-  projection expects of a value-less ``plain`` or ``unknown`` variable;
-- ``grant:<kind>:<variable>``: an operator grant in ``aptl.json`` for this pack,
-  node and variable, read from the exact source it names;
-- ``startup-adapter:project-env-file:<variable>``: a value explicitly granted
-  to this consumer by the admitted pack's identity-bound startup adapter.
+- ``generated``: the node-bound artifact output named by ``value_from``;
+- ``authored``: the exact scenario value, or empty for a value-less setting;
+- ``grant:<kind>:<variable>``: the configured pack/node/variable source;
+- ``startup-adapter:project-env-file:<variable>``: the identity-bound adapter's
+  explicit grant to this consumer.
 
-Only a value-less ``operator_secret``, ``redacted`` or ``secret_fixture`` takes a
-grant or adapter value. RAES expects the first two to be present, and APTL's
-startup adapters supply the third. APTL's own process environment is read only
-for a grant that names a ``process-environment`` variable, and only once, when
-the start is checked; ``.env`` is read only for a grant or an adapter value. A
-variable whose source is missing or empty, or whose value its env file cannot
-carry, fails the start before any mutation. Errors and logs name the node, the
-variable and the source identity, never a value.
+Only value-less ``operator_secret``, ``redacted`` and ``secret_fixture`` entries
+take external values. Preflight snapshots selected sources once and refuses
+missing, empty or unrepresentable values before mutation. Diagnostics identify
+the consumer and source, never the value. See ``docs/deployment.md`` for details.
 """
 
 from __future__ import annotations
