@@ -110,7 +110,9 @@ def _secret(name: str, classification: str = "operator_secret") -> dict[str, str
     return {"name": name, "value_classification": classification}
 
 
-def _realization(*nodes, adapter_names=(), pack=_PACK) -> DeploymentRealizationSpec:
+def _realization(
+    *nodes, adapter_names=(), adapter_grants=None, pack=_PACK
+) -> DeploymentRealizationSpec:
     images = tuple(
         DeploymentImageRealization(
             address=node.address,
@@ -126,6 +128,18 @@ def _realization(*nodes, adapter_names=(), pack=_PACK) -> DeploymentRealizationS
     plan = SimpleNamespace(
         environment_fixtures=tuple(SimpleNamespace(name=n) for n in adapter_names),
         environment_aliases=(),
+        environment_grants=adapter_grants
+        if adapter_grants is not None
+        else tuple(
+            EnvironmentGrant(
+                pack=pack.pack_id,
+                consumer=node.name,
+                variable=name,
+                source={"kind": "project-env-file", "variable": name},
+            )
+            for node in nodes
+            for name in adapter_names
+        ),
     )
     return DeploymentRealizationSpec(
         profiles=(),

@@ -9,8 +9,8 @@ is delivered from one source that names that node:
   projection expects of a value-less ``plain`` or ``unknown`` variable;
 - ``grant:<kind>:<variable>``: an operator grant in ``aptl.json`` for this pack,
   node and variable, read from the exact source it names;
-- ``startup-adapter:project-env-file:<variable>``: a value that the admitted
-  pack's identity-bound startup adapter declares and writes to ``.env``.
+- ``startup-adapter:project-env-file:<variable>``: a value explicitly granted
+  to this consumer by the admitted pack's identity-bound startup adapter.
 
 Only a value-less ``operator_secret``, ``redacted`` or ``secret_fixture`` takes a
 grant or adapter value. RAES expects the first two to be present, and APTL's
@@ -33,6 +33,9 @@ from typing import TYPE_CHECKING
 from raes_contracts.planning import RealizationAuthorityMode
 
 from aptl.core.config import EnvironmentGrant
+from aptl.core.deployment._generated_environment_bindings import (
+    generated_environment_names,
+)
 from aptl.core.deployment._realization_primitives import (
     EnvironmentDeliveryRefused,
     environment_file_line,
@@ -92,15 +95,15 @@ class EnvironmentBindingContext:
     """The run-scoped facts every binding decision is made from.
 
     ``pack_id`` is the admitted pack's identity; a project-tree scenario has
-    none, so no grant can apply to it. ``adapter_names`` are the variables the
-    admitted pack's own startup adapter supplies through ``.env``.
+    none, so no grant can apply to it. ``adapter_grants`` explicitly bind the
+    admitted pack's startup values to individual consumers through ``.env``.
     ``project_environment`` is ``None`` when ``.env`` cannot be read, which
     matters only to a variable that needs it. ``process_environment`` holds
     just the grant sources, read once when the start is checked.
     """
 
     pack_id: str | None = None
-    adapter_names: frozenset[str] = frozenset()
+    adapter_grants: tuple[EnvironmentGrant, ...] = ()
     grants: tuple[EnvironmentGrant, ...] = ()
     project_environment: Mapping[str, str] | None = field(
         default_factory=dict, repr=False
@@ -206,9 +209,17 @@ def out_of_band_binding(
     if grant is not None:
         value = _source_value(context, grant.source.kind, grant.source.variable)
         return _sourced(name, f"grant:{grant.source_identity}", value)
-    if name in context.adapter_names:
-        value = _source_value(context, "project-env-file", name)
-        return _sourced(name, _ADAPTER_SOURCE + name, value)
+    adapter = next(
+        (
+            g
+            for g in context.adapter_grants
+            if g.key == (context.pack_id, consumer, name)
+        ),
+        None,
+    )
+    if adapter is not None:
+        value = _source_value(context, adapter.source.kind, adapter.source.variable)
+        return _sourced(name, _ADAPTER_SOURCE + adapter.source.variable, value)
     pack = context.pack_id or "this scenario (it has no pack identity)"
     raise EnvironmentBindingError(f"{name} has no environment grant for pack {pack}")
 
@@ -317,32 +328,47 @@ def binding_context(
 
     pack = realization.pack_identity
     pack_id = pack.pack_id if pack is not None else None
+    used = sourced_names(realization, frozenset(n.address for n in realization.nodes))
+    applicable = tuple(
+        g for g in grants if g.pack == pack_id and (g.consumer, g.variable) in used
+    )
+    adapters = _adapter_grants(realization)
     named = {
         grant.source.variable
-        for grant in grants
-        if grant.pack == pack_id and grant.source.kind == "process-environment"
+        for grant in applicable
+        if grant.source.kind == "process-environment"
+    }
+    project_names = {
+        g.source.variable
+        for g in (*applicable, *adapters)
+        if g.source.kind == "project-env-file" and (g.consumer, g.variable) in used
     }
     return EnvironmentBindingContext(
         pack_id=pack_id,
-        adapter_names=_adapter_names(realization),
+        adapter_grants=adapters,
         grants=tuple(grants),
-        project_environment=_project_environment(project_dir),
+        project_environment=_project_environment(project_dir, project_names),
         process_environment={v: os.environ[v] for v in named if v in os.environ},
     )
 
 
-def _project_environment(project_dir: Path) -> Mapping[str, str] | None:
+def _project_environment(
+    project_dir: Path, names: set[str]
+) -> Mapping[str, str] | None:
     """Return the project's ``.env`` values, or ``None`` when it cannot be read."""
 
     env_file = project_dir / ".env"
     try:
-        return load_dotenv(env_file) if env_file.is_file() else {}
-    except (OSError, ValueError):
+        values = load_dotenv(env_file) if names and env_file.is_file() else {}
+        return {name: values[name] for name in names if name in values}
+    except OSError, ValueError:
         return None
 
 
-def _adapter_names(realization: "DeploymentRealizationSpec") -> frozenset[str]:
-    """Return the variables the admitted pack's own startup adapter supplies.
+def _adapter_grants(
+    realization: "DeploymentRealizationSpec",
+) -> tuple[EnvironmentGrant, ...]:
+    """Return explicit consumer grants from the admitted pack's own adapter.
 
     The adapter is selected for one exact pack identity; a selection made for
     any other identity supplies nothing here.
@@ -350,35 +376,43 @@ def _adapter_names(realization: "DeploymentRealizationSpec") -> frozenset[str]:
 
     selection = realization.startup_selection
     plan = getattr(selection, "plan", None)
-    if plan is None or selection.identity != realization.pack_identity:
-        return frozenset()
+    if (
+        plan is None
+        or realization.pack_identity is None
+        or selection.identity != realization.pack_identity
+    ):
+        return ()
     fixtures = {item.name for item in getattr(plan, "environment_fixtures", ())}
     aliases = {item.target for item in getattr(plan, "environment_aliases", ())}
-    return frozenset(fixtures | aliases)
+    return tuple(
+        grant
+        for grant in getattr(plan, "environment_grants", ())
+        if grant.pack == realization.pack_identity.pack_id
+        and grant.source.kind == "project-env-file"
+        and grant.source.variable in fixtures | aliases
+    )
 
 
 def unbound_environment_error(
     context: EnvironmentBindingContext,
     realization: "DeploymentRealizationSpec",
     addresses: frozenset[str],
+    *,
+    compose: bool = False,
 ) -> str | None:
     """Return why a node's declared environment cannot be bound, before mutation.
 
     Generated values do not exist yet, so a ``value_from`` variable only needs
     an artifact that binds it to this node; its value is read and checked when
-    the artifact is generated. Every other value must survive Docker's env
-    file now.
+    the artifact is generated. Generic-container values must survive Docker's
+    env file now. Compose checks its sourced env-file values separately;
+    authored Compose values are carried by the YAML model.
     """
 
     for node in realization.nodes:
         if node.address not in addresses or node.runtime is None:
             continue
-        bound = {
-            consumer.environment_variable: ""
-            for artifact in realization.generated_artifacts
-            for consumer in artifact.environment_consumers
-            if consumer.target_address == node.address
-        }
+        bound = {name: "" for name in generated_environment_names(realization, node)}
         try:
             for binding in bind_environment(
                 context,
@@ -386,7 +420,7 @@ def unbound_environment_error(
                 declared=declared_environment(node.runtime),
                 generated=bound,
             ):
-                if binding.source != GENERATED_SOURCE:
+                if binding.source != GENERATED_SOURCE and not compose:
                     environment_file_line(binding.name, binding.value)
         except (EnvironmentBindingError, EnvironmentDeliveryRefused) as exc:
             return f"Environment binding refused for node {node.name}: {exc}."
@@ -416,15 +450,18 @@ def unsupported_fixture_binding_error(
             continue
         declared = declared_environment(node.runtime)
         for variable in getattr(node.runtime, "environment", ()):
+            classification = _classification(variable)
             if (
-                variable.name in declared.sourced
-                and _classification(variable) == "secret_fixture"
+                variable.name in declared.sourced and classification == "secret_fixture"
+            ) or (
+                variable.name in declared.generated
+                and classification not in {"operator_secret", "redacted"}
             ):
                 return (
                     f"Environment binding refused for node {node.name}: "
                     f"{variable.name} needs open runtime-environment authority "
-                    "for an external secret_fixture value; exact or unspecified "
-                    "authority requires the fixture to be empty."
+                    f"for an external {classification} value; exact or unspecified "
+                    "authority requires a value-free readback."
                 )
     return None
 

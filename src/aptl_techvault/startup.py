@@ -34,6 +34,7 @@ from aptl_techvault.runtime_parameters import (
 )
 from aptl_techvault.account_environment import (
     techvault_account_environment,
+    techvault_environment_grants,
 )
 
 
@@ -85,6 +86,7 @@ class TechVaultStartupProvider:
                 EnvironmentAlias(target="ADMIN_KEY", source="MISP_API_KEY"),
             ),
             environment_fixtures=techvault_account_environment(),
+            environment_grants=techvault_environment_grants(),
             container_environment=(
                 ContainerEnvironmentBinding("MISP_CONTAINER", "aptl-misp"),
                 ContainerEnvironmentBinding(
