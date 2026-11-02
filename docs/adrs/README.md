@@ -87,3 +87,4 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [063](adr-063-remove-thehive-and-cortex.md) | Remove TheHive and Cortex from the TechVault SOC Stack | accepted | 2026-10-30 |
 | [064](adr-064-layered-architecture-and-code-conventions.md) | Layered Architecture and Code Conventions | accepted | 2026-10-31 |
 | [065](adr-065-executable-participant-action-boundaries.md) | Executable Participant Action Boundaries | proposed | 2026-10-31 |
+| [066](adr-066-runtime-readback-reports-realized-state.md) | Runtime Readback Reports Realized State | accepted | 2026-10-31 |

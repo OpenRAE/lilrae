@@ -75,7 +75,7 @@ _PROPOSITION_RESOURCE_TYPES = frozenset({"proposition", "assertion"})
 if TYPE_CHECKING:
     from raes_processor.models import ExecutionPlan
     from raes_runtime.registry import RuntimeTarget
-    from aptl.backends.raes_planning_compat import AptlRuntimeManager
+    from aptl.backends.raes_runtime import AptlRuntimeManager
 
 
 @dataclass

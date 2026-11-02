@@ -30,8 +30,8 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.33.0",
     "opentelemetry-semantic-conventions>=0.54b0",
     "cryptography>=50.0.0",
-    "raes>=10.2.0,<10.4",
-    "raes-env-packs>=7.2.0,<8",
+    "raes==10.5.0",
+    "raes-env-packs>=7.2.1,<8",
     "mcp>=2,<3",
     "rfc8785>=0.1.4,<0.2.0",
     "packaging>=24.2",
@@ -152,10 +152,6 @@ build = [
 
 [project.entry-points."aptl.evidence_payload"]
 "aptl.collector.redteam-session-transcript" = "aptl_techvault.evidence.techvault_transcript:validate_retained_transcript"
-
-[project.entry-points."aptl.scenario_planning_compatibility"]
-"techvault.aptl" = "aptl_techvault.planning_compatibility:provider"
-"techvault-participant-study.aptl" = "aptl_techvault.study:planning_compatibility"
 
 [project.entry-points."aptl.scenario_runtime_parameters"]
 "techvault" = "aptl_techvault.runtime_parameters:provider"

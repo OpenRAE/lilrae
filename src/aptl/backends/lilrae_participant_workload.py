@@ -9,7 +9,7 @@ from raes_runtime.registry import RuntimeTarget
 from raes_contracts.runtime_state import RuntimeSnapshot
 
 from aptl.backends.raes_participant_runtime import AptlParticipantRuntime
-from aptl.backends.raes_planning_compat import AptlRuntimeManager
+from aptl.backends.raes_runtime import AptlRuntimeManager
 from aptl.core.execution.assembly import (
     TrialExecutionContext,
     TrialOutcome,

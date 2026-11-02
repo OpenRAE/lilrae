@@ -1,4 +1,4 @@
-"""Inputs and entry point for one adjusted RAES planning operation."""
+"""Inputs and entry point for one RAES planning operation."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class AptlPlanningOptions:
-    """Optional inputs to one APTL-adjusted RAES planning operation."""
+    """Optional inputs to one RAES planning operation."""
 
     snapshot: RuntimeSnapshot | None = None
     parameters: Mapping[str, object] | None = None
@@ -64,10 +64,10 @@ def plan_aptl_scenario(
     scenario: object,
     options: AptlPlanningOptions | None = None,
 ) -> ExecutionPlan:
-    """Compile and plan through APTL's temporary TechVault compatibility seam."""
+    """Compile and plan through the public RAES contracts."""
 
     # Planning needs no runtime owner; the one runtime for the run is created
     # for apply (OpenRAE/rae#1660).
-    from aptl.backends.raes_planning_compat import plan_for_target
+    from aptl.backends.raes_runtime import plan_for_target
 
     return plan_for_target(target, scenario, options or AptlPlanningOptions())
