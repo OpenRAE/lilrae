@@ -25,6 +25,7 @@ COMPONENTS = {
             "dataclasses",
             "raes_contracts.canonical",
             "raes_contracts.contracts",
+            "raes_contracts.contracts.participant_action_admission",
             "raes_contracts.participant_binding",
             "raes_contracts.participant_native_execution",
             "raes_contracts.runtime_state",

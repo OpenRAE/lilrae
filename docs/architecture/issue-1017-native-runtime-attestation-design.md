@@ -20,6 +20,11 @@ A reported member still needs independent native evidence.
 
 The materialization archive and native creation receipts retain their existing owners.
 The retirement does not remove these records or replace the live runtime.
+RAES 10.5.0 also uses owner-provided associated-artifact parent wrappers.
+Experiment admission passes those wrappers without relaxing identity checks.
+The unchanged bounded participant freeze has a new compiled digest solely because
+the compiler adds an empty `descriptor_profile_bindings` field.
+Its source digest, action registry and all other compiled fields stay unchanged.
 
 ## Native values and provenance
 
