@@ -45,6 +45,7 @@ class FamilyTrialInput:
     plan: AdmittedTrialPlanModel = field(repr=False)
     plan_entry_id: str
     family: ExpandedScenario = field(repr=False)
+    snapshot: bytes | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -139,6 +140,13 @@ class AdmittedFamilyTrial:
             "target": asdict(self.target),
             "trial": self.identity(),
             "providers": [asdict(item) for item in self.providers],
+            "selections": [
+                {
+                    "variation_point_id": item.variation_point_id,
+                    "record_digest": item.record_digest,
+                }
+                for item in self.provenance.selections
+            ],
             "participant_configurations": [
                 {
                     "participant_address": item.participant_address,
@@ -156,13 +164,16 @@ def admit_family_trial(
     """Bind a sealed trial to this acquired source through public RAES gates."""
 
     from raes import canonical_instantiated_sdl_bytes, canonical_instantiated_sdl_digest
-    from raes import canonical_sdl_digest, parse_sdl_file
+    from raes import canonical_sdl_digest, parse_sdl_file, admit_scenario_family
+    from raes.scenario import Scenario
     from raes_processor.trial_realization import instantiate_admitted_trial_entry
 
     try:
         family = request.family.model_copy(deep=True)
         plan = request.plan.model_copy(deep=True)
         source = parse_sdl_file(bundle.sdl_path)
+        if isinstance(source, Scenario):
+            source = admit_scenario_family(source)
         family_digest = canonical_sdl_digest(family).value
         if (
             bundle.pack_identity is None
@@ -183,7 +194,12 @@ def admit_family_trial(
         ):
             raise ValueError
         snapshot = canonical_instantiated_sdl_bytes(scenario)
-        if len(snapshot) > 16 * 1024 * 1024:
+        if len(snapshot) > 16 * 1024 * 1024 or (
+            request.snapshot is not None
+            and (
+                not isinstance(request.snapshot, bytes) or request.snapshot != snapshot
+            )
+        ):
             raise ValueError
         return AdmittedFamilyTrial(
             QualifiedFamilyTarget(

@@ -75,6 +75,7 @@ from aptl.backends.raes_orchestrator import AptlOrchestrator as AptlOrchestrator
 from aptl.backends import raes_participant_delivery as participant_delivery
 from aptl.backends.raes_participant_runtime import AptlParticipantRuntime
 from aptl.backends.raes_provisioner import AptlProvisioner
+from aptl.backends.scenario_trial_archive import archive_family_trial
 from aptl.backends.raes_start_model import (
     AcesRunTarget,
     AcesStartOutcome,
@@ -162,6 +163,8 @@ def start_raes_scenario(
             )
         resolved_scenario = admitted.bundle.sdl_path
         run_target = admitted_run_target(admitted, run_target, project_dir, config)
+        if admitted.bundle.trial is not None:
+            archive_family_trial(run_target.run_store, admitted.bundle.trial)
         return _run_execution_plan(
             admitted.target,
             admitted.execution_plan,
@@ -409,6 +412,8 @@ def _apply_execution_plan(
     reporting_options = materialization_reporting_options(
         execution_plan, run_store=run_store, run_id=run_id
     )
+    if run_id is not None:
+        reporting_options.setdefault("run_scope", f"run:{run_id}")
     if isinstance(target.provisioner, AptlProvisioner):
         target.provisioner.bind_attempt_id(run_id)
     manager = RuntimeManager(
