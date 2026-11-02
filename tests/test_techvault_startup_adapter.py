@@ -64,7 +64,7 @@ def _bundle(*, digest: str = TECHVAULT_PACK_SET_DIGEST) -> ScenarioBundle:
         root=pack_root,
         sdl_path=pack_root / "sdl/techvault.sdl.yaml",
         source_kind=ScenarioSourceKind.ENV_PACK,
-        pack_identity=PackIdentity("techvault", "6.5.1", digest),
+        pack_identity=PackIdentity("techvault", "7.2.0", digest),
     )
 
 
@@ -108,7 +108,7 @@ def _startup_spec(
         nodes=nodes,
         networks=(),
         images=images,
-        pack_identity=PackIdentity("techvault", "6.5.1", digest),
+        pack_identity=PackIdentity("techvault", "7.2.0", digest),
     )
 
 

@@ -101,7 +101,7 @@ def _bundle(tmp_path: Path, *, pack_id: str = "techvault") -> ScenarioBundle:
         source_kind=ScenarioSourceKind.ENV_PACK,
         pack_identity=PackIdentity(
             pack_id=pack_id,
-            pack_version="6.5.1",
+            pack_version="7.2.0",
             set_digest=TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST,
         ),
     )

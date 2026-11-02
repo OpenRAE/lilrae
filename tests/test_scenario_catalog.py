@@ -142,7 +142,7 @@ def test_repository_catalog_projects_validated_pack_identity(repository_catalog)
         "techvault-participant-study"
     ]
     assert catalog.pack_identity.pack_id == "techvault-participant-study"
-    assert catalog.pack_identity.pack_version == "6.5.1"
+    assert catalog.pack_identity.pack_version == "7.2.0"
     assert catalog.pack_identity.set_digest.startswith("sha256:")
     assert catalog.maturity == "built"
     assert not hasattr(catalog.scenarios[0], "path")

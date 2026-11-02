@@ -29,7 +29,7 @@ from aptl.utils.pathsafe import PathContainmentError
 def _capture_selection(runtime_adapter: object | None = None):
     selection = resolve_scenario_capture(
         ScenarioCaptureContext(
-            PackIdentity("techvault", "6.5.1", TECHVAULT_PACK_SET_DIGEST),
+            PackIdentity("techvault", "7.2.0", TECHVAULT_PACK_SET_DIGEST),
             BackendIdentity("aptl", "0.1.0", "full-remote-control-plane"),
         )
     )
