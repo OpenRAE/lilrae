@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 import re
 import shutil
+import stat
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from email.message import Message
 from pathlib import Path
 from typing import Protocol
+
+from aptl.utils.deterministic_archive import hash_file_nofollow
 
 _DIGEST = re.compile(r"^sha256:([a-f0-9]{64})$")
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$")
@@ -97,20 +99,23 @@ def _open_request(request: urllib.request.Request) -> DownloadResponse:
     return opener.open(request, timeout=60)
 
 
-def _file_identity(path: Path) -> tuple[str, int]:
-    """Stream the SHA-256 identity and size of one regular file."""
+def _open_regular_output(partial: Path, flags: int) -> int:
+    """Open the partial artifact for writing, and refuse a file that is not regular.
 
-    digest = hashlib.sha256()
-    size = 0
-    flags = os.O_RDONLY | os.O_CLOEXEC
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    descriptor = os.open(path, flags)
-    with os.fdopen(descriptor, "rb") as handle:
-        for payload in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(payload)
-            size += len(payload)
-    return f"sha256:{digest.hexdigest()}", size
+    ``O_NONBLOCK`` keeps a FIFO that replaced the partial file after its check
+    from blocking the open (#1618). A regular file goes back to blocking mode.
+    """
+    nonblock = getattr(os, "O_NONBLOCK", 0)
+    descriptor = os.open(partial, flags | nonblock, 0o600)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ApplianceDownloadError("partial artifact is unsafe")
+        if nonblock:
+            os.set_blocking(descriptor, True)
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return descriptor
 
 
 def _header(headers: object, name: str) -> str | None:
@@ -268,7 +273,7 @@ def stage_https_artifact(
     destination = destination_dir / filename
     if destination.exists() or destination.is_symlink():
         try:
-            actual_digest, actual_size = _file_identity(destination)
+            actual_digest, actual_size = hash_file_nofollow(destination)
         except OSError as exc:
             raise ApplianceDownloadError("cached artifact is unsafe") from exc
         if (actual_digest, actual_size) != (sha256, size_bytes):
@@ -293,7 +298,7 @@ def stage_https_artifact(
             output_flags |= os.O_NOFOLLOW
         with open_request(request) as response:
             _admit_response(response, offset=offset, expected_size=size_bytes)
-            descriptor = os.open(partial, output_flags, 0o600)
+            descriptor = _open_regular_output(partial, output_flags)
             with os.fdopen(descriptor, "ab" if offset else "wb") as output:
                 written = offset
                 while payload := response.read(1024 * 1024):
@@ -305,7 +310,7 @@ def stage_https_artifact(
                     output.write(payload)
                 output.flush()
                 os.fsync(output.fileno())
-        actual_digest, actual_size = _file_identity(partial)
+        actual_digest, actual_size = hash_file_nofollow(partial)
         if (actual_digest, actual_size) != (sha256, size_bytes):
             raise ApplianceDownloadError("downloaded artifact identity does not match")
         partial.chmod(0o444)
