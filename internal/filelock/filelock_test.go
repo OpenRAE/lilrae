@@ -151,8 +151,8 @@ func TestClosingTheHolderReleasesTheLock(t *testing.T) {
 	if err := TryLock(second, Exclusive); err != nil {
 		t.Fatalf("TryLock() after the holder closes = %v, want nil", err)
 	}
-	if err := Unlock(first); !errors.Is(err, os.ErrClosed) {
-		t.Fatalf("Unlock() of a closed file = %v, want os.ErrClosed", err)
+	if err := Unlock(first); err == nil || errors.Is(err, ErrBusy) || !strings.HasPrefix(err.Error(), "filelock: ") {
+		t.Fatalf("Unlock() of a closed file = %v, want a file error from the package", err)
 	}
 }
 

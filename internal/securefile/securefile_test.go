@@ -415,7 +415,12 @@ func TestOpenLockFile(t *testing.T) {
 	}
 	mkdir(t, root, "dir.lock")
 	_, err = d.OpenLockFile("dir.lock")
-	wantReason(t, err, ReasonOpenFailed)
+	want := ReasonOpenFailed
+	if runtime.GOOS == "windows" {
+		// The native opener can open a directory; the handle check refuses it.
+		want = ReasonNotRegularFile
+	}
+	wantReason(t, err, want)
 	_, err = d.OpenLockFile("../x.lock")
 	wantReason(t, err, ReasonTraversal)
 }
