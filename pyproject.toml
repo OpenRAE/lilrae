@@ -21,7 +21,7 @@ classifiers = [
 # Version is managed by release-please, which rewrites this string on release.
 dependencies = [
     "typer>=0.12.0",
-    "pydantic>=2.0.0",
+    "pydantic>=2.12.0",
     "rich>=13.0.0",
     "PyYAML>=6.0",
     "icontract>=2.6.0,<3.0",
@@ -221,7 +221,7 @@ banned-module-level-imports = ["boto3", "pyarrow"]
 # ADR-064 conventions check (tools/check_architecture.py). The check covers
 # only the enrolled packages and modules. A refactor issue adds the code that
 # it completes. Participant tool boundaries are enrolled by issue #1418.
-enrolled = ["aptl.core.participant_requests", "aptl.core.participant_binding", "aptl.core.participant_tools", "aptl.core.agent_errors", "aptl.core.mcp_results", "aptl.backends.participant_tools", "aptl.core.trial_readiness", "aptl.core.readiness_record", "aptl.core.readiness_observer", "aptl.utils.probe_execution", "aptl.backends.installed_readiness", "aptl.core.placement_readiness"]
+enrolled = ["aptl.core.provider_observation", "aptl.core.opencode", "aptl.core.trial_participants", "aptl.core.participant_requests", "aptl.core.participant_binding", "aptl.core.participant_tools", "aptl.core.agent_errors", "aptl.core.mcp_results", "aptl.backends.participant_tools", "aptl.core.trial_readiness", "aptl.core.readiness_record", "aptl.core.readiness_observer", "aptl.utils.probe_execution", "aptl.backends.installed_readiness", "aptl.core.placement_readiness"]
 # Core modules that scenario adapter plugins may import (#1515 adds them).
 extension-api = []
 # Ruff rules for enrolled code. UP042 is not selected: replacing a str-mixin
@@ -239,6 +239,7 @@ entry = [
     "aptl.services",
     "aptl.workbench.bootstrap",
     "aptl.workbench.opencode_bootstrap",
+    "aptl.workbench.trial_participants",
     "aptl.backends.installed_readiness",
 ]
 application = [

@@ -113,10 +113,37 @@ An expanded request without this binding fails before provider work.
 Existing native adapters apply its explicit profile and exact prompt prefix.
 They verify the executable pin before provider work.
 The configured OpenCode factory accepts the published manifest with the request's configuration and `prompt_ref`.
-It requires an explicit process deadline for this path.
-The managed credential-source context forwards that deadline and retains its existing credential boundary.
+It requires an explicit invocation timeout for this path.
+The managed credential-source context forwards that limit and retains its existing credential boundary.
 Existing validator-version-2 configurations keep their original checks.
-Issue #1420 owns automatic trial-start assembly and broader actual-request evidence.
+`aptl.workbench.trial_participants.prepare_trial_participants()` prepares all roles from one sealed `TrialUnitRequest`.
+It also receives the instantiated scenario, retained `TrialAttemptDecision`, pinned experiment model, trusted owners and approved resolved content.
+The factory checks plan, entry, run, attempt, snapshot and authoring identities before credential acquisition.
+`managed_trial_participants()` acquires fresh executors and applies their exact model, route, profile and prompt.
+Its required `invocation_timeouts` mapping supplies each role's installed action limit, separately from the original attempt deadline.
+The trial application uses the shortest admitted action timeout for each role and validates these limits before placement or credential acquisition.
+Each trial also requires a configured evidence sink before placement or credential acquisition.
+Each sealed OpenCode request profile must include `assistant_turn_limit` with an explicit `set` or `locked` count.
+The count bounds native assistant turns per invocation; experiment logical steps retain their separate meaning.
+An absent native turn limit fails trial preparation rather than inheriting a default.
+`ManagedTrialParticipantApplication` installs those executors through `LilraeTrialUnit.participants` before RAE advances the trial.
+The serving unit refuses a published complete OpenCode configuration without that installed application.
+It preserves the same executors across pending deliveries and releases them after verified terminal cleanup.
+The already admitted native bindings retain their action, tool and exposure authority.
+`aptl.core.trial_participants.PendingTrialParticipant` carries the sealed configuration for an admitted binding before credential acquisition.
+It refuses dispatch until the trial application installs its managed executor.
+It requires an operator-supplied cancellation-and-drain callback before releasing credential leases.
+The original attempt deadline remains shared across invocations.
+The logical horizon comes from the pinned episode control and is enforced against the declared stepped clock.
+The native assistant-turn ceiling comes from the sealed request profile; the two counters remain distinct.
+The new factory requires native delivery evidence for successful invocations.
+Existing manually configured executors keep optional native history when the source is present.
+The invocation evidence exposes `native_history` and exact trial/configuration coordinates through its existing sink.
+Native observations contain prompt agreement, recorded model, native identifiers, timings, token categories and estimated cost.
+They exclude raw chat, reasoning, tools and credentials.
+`native_history.unavailable_fields` names missing control, provider-generation, served-identity and billing observations.
+`native_history.require_fields()` refuses a capture claim that this source cannot satisfy.
+Native history must not be described as an HTTP request log.
 The older `prompt_ref` and `prompt_sha256` controls commit stdin only.
 They do not establish SDL asset scope or the full effective request.
 Harness instructions, tool schemas, history, auxiliary requests and native retries remain separate limitations.
@@ -132,6 +159,11 @@ Changed bytes, stale descriptors, missing slots and peer configurations fail.
 The returned strings preserve the exact bytes and declared slot order.
 `prepare_request()` concatenates those strings without adding separators.
 Authors include any required separators in their pinned content.
+An explicitly pinned empty asset can represent an absent playbook in a fixed slot set.
+It is not an implicit default.
+Profiles can declare exact `unresolved_placeholders` tokens from the producer's template vocabulary.
+Their presence in verified content fails preparation and reconstructed-request validation before dispatch.
+An empty declaration means the producer declares no template tokens; ordinary braces remain literal authored content.
 The immutable request retains each descriptor and ordered content string.
 Reconstruction rechecks their selected asset pins, checksums and exact composition.
 Replacing a prompt and its supplied hash cannot replace the selected content commitment.
@@ -152,3 +184,23 @@ Shared Python and TypeScript parity tests preserve safe numeric usage while reda
 Immutable run-store tests preserve manifest and configuration identity.
 
 See the [architecture](../architecture/participant-request-manifests.md) for trust boundaries and [request qualification](../testing/participant-request-1419-qualification.md) for installed compatibility evidence.
+
+## Actual provider observation
+
+Sealed trial execution also requires `request_observation` in invocation evidence.
+The approved local plugin observes serialized provider requests and checks the safe controls and authored-prefix commitment before forwarding.
+It records ordered content hashes without retaining message text, reasoning, tool capabilities or credentials.
+Each call has a sequence number, state, timing, controls and available generation/model/provider/usage/cost response metadata.
+The invocation supplies exact action, participant, run, attempt, entry and configuration joins.
+Native step usage and provider-call usage are separate sources; do not sum both.
+Use the standard Pydantic `TypeAdapter(OpenCodeInvocationEvidence).dump_json(record)` to serialize the complete typed handoff.
+`request_observation.require_fields()` rejects unavailable required observations.
+Provider claims do not establish an immutable model snapshot or billed cost.
+Missing plugins, changed controls and mismatched authored prefixes fail before provider forwarding.
+Failed and interrupted calls retain safe partial membership.
+
+Nullable response fields carry `missing_value_reason`: the provider did not report a usable value, or it was not safe to retain.
+Required observation is qualified on Linux and refuses unsupported platforms before launch.
+The journal is bounded to 16 MiB with 128 KiB records; serialized requests are bounded to 1 MiB.
+Exceeding a bound fails capture or forwarding rather than silently truncating a successful record.
+Use provider-call token reports for completed-call accounting; native estimates or placeholder zeros cannot replace missing provider usage.

@@ -326,7 +326,7 @@ scenario=Scenario.model_validate(trusted['scenario'])
 owner=ParticipantRequestOwner(catalog=RequestCatalog.model_validate_json(json.dumps(trusted['catalog'])),scenario=scenario,context_domains={'brief':{'control_context_assets.brief-terse':control_context_asset_reference(scenario.control_context_assets['brief-terse'])}})
 data['profile']=RequestProfile.model_validate_json(json.dumps(data['profile']))
 request=ParticipantRequest(**data)
-options=OpenCodeOptions(executable=Path(sys.argv[2]),work_root=Path(sys.argv[3]),request=request,request_binding=ParticipantRequestBinding(owner,'agents.operator'),environment={'OPENROUTER_API_KEY':'private-fixture-key'},route=OpenRouterRoute(endpoint=request.profile.gateway_endpoint,serving_provider=request.profile.serving_provider))
+options=OpenCodeOptions(executable=Path(sys.argv[2]),work_root=Path(sys.argv[3]),request_observation_required=True,request=request,request_binding=ParticipantRequestBinding(owner,'agents.operator'),environment={'OPENROUTER_API_KEY':'private-fixture-key'},route=OpenRouterRoute(endpoint=request.profile.gateway_endpoint,serving_provider=request.profile.serving_provider))
 from threading import Event
 active=LilraeOpenCodeExecutor(options=options,model=request.profile.model,prompt=request.prompt,timeout_seconds=90,configuration_result=request.configuration_result)
 from aptl.workbench.process import AgentExecutionError
@@ -340,6 +340,11 @@ else:
     except AgentExecutionError as exc:
         assert 'private-fixture-key' not in str(exc)
     assert active.last_evidence.status == 'failed'
+from pydantic import TypeAdapter
+serialized=TypeAdapter(type(active.last_evidence)).dump_json(active.last_evidence)
+assert b'private-fixture-key' not in serialized
+assert active.last_evidence.request_observation.status == ('observed' if sys.argv[4] == '200' else 'partial')
+assert len(active.last_evidence.request_observation.calls) == 1
 assert active.last_evidence.served_model is None
 assert active.last_evidence.served_provider is None
 """

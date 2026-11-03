@@ -67,7 +67,8 @@ Codex locks its model provider and reasoning setting through native configuratio
 Its named provider uses the admitted OpenAI endpoint and the isolated credential key.
 OpenCode applies its admitted provider restriction, generation limit, reasoning and sampling through its native configuration.
 Required omissions remain omissions in native request construction.
-Issue #1420 owns automatic trial-start assembly and broader actual-request evidence.
+The [trial factory](trial-participant-configuration.md) owns sealed trial-start assembly and native delivery observations.
+Native request construction tests remain distinct from the native history source and its explicit missing fields.
 Legacy configurations retain their existing delivery checks.
 
 ## Identity and limitations

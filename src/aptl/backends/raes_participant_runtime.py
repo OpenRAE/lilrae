@@ -245,7 +245,9 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
                 "participant selection is outside the active episode",
             ),
             (
-                not isinstance(initialized_at, str)
+                self.autonomous_execution.trial_bounds.time_exhausted()
+                if self.autonomous_execution.trial_bounds is not None
+                else not isinstance(initialized_at, str)
                 or _elapsed_seconds(initialized_at) > MAX_PARTICIPANT_EPISODE_SECONDS,
                 "participant episode time budget is exhausted",
             ),
