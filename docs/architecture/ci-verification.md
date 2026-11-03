@@ -1,5 +1,10 @@
 # CI verification
 
+The ordinary Python shards also qualify the packaged provider observer module.
+Those jobs install the same pinned Node version as the native transport job.
+The observer probes resolve that executable before starting their minimal child environment and pass its absolute path.
+They do not add ambient PATH entries to the provider process.
+
 Issue #1468 replaces repeated verification with checks selected by changed inputs.
 The target is five minutes for Python coverage and ten minutes for ordinary PR checks.
 Runner queue time is reported separately.

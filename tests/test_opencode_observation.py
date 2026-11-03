@@ -167,7 +167,9 @@ def synthetic_journal(work):
         "turn-limit",
     ],
 )
-def test_plugin_observes_actual_fetch_and_never_keeps_secret_content(tmp_path, case):
+def test_plugin_observes_actual_fetch_and_never_keeps_secret_content(tmp_path, case, monkeypatch):
+    import os
+    import shutil
     import subprocess
     from aptl.core.opencode import OpenRouterRoute
     from aptl.workbench.opencode_configuration import (
@@ -179,6 +181,11 @@ def test_plugin_observes_actual_fetch_and_never_keeps_secret_content(tmp_path, c
         read_request_observations,
     )
 
+    node = shutil.which("node")
+    assert node is not None, "observer qualification requires the pinned Node toolchain"
+    node = os.path.abspath(node)
+    # The provider uses a fixed system PATH, without the runner's Node tools.
+    monkeypatch.setattr(os, "defpath", str(tmp_path / "no-executables"))
     config = render_opencode_config(
         "openrouter/test/model",
         OpenRouterRoute(
@@ -234,7 +241,7 @@ console.log(JSON.stringify({forwarded,refused}));
 """
     (tmp_path / "probe.mjs").write_text(script)
     result = subprocess.run(
-        ["node", str(tmp_path / "probe.mjs"), case],
+        [node, str(tmp_path / "probe.mjs"), case],
         cwd=tmp_path,
         env=environment,
         capture_output=True,
