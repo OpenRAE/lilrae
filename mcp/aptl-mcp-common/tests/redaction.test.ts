@@ -929,6 +929,11 @@ describe('numeric model limits and usage', () => {
     }
     const declaration = { target_id: name, value_type: 'integer', allowed_value_kinds: ['literal'], sensitivity: 'internal' };
     expect(redact({ [name]: declaration })).toEqual({ [name]: declaration });
+    const withDefault = { ...declaration, default: { kind: 'literal', value: 0 } };
+    expect(redact({ [name]: withDefault })).toEqual({ [name]: withDefault });
+    for (const fallback of [null, [], { kind: 'literal', value: 'private-credential' }, { kind: 'literal', value: true }, { kind: 'environment', value: 0 }]) {
+      expect(redact({ [name]: { ...declaration, default: fallback } })).toEqual({ [name]: '[REDACTED]' });
+    }
     expect(redact({ [name]: { ...declaration, api_key: 'private-credential' } })).toEqual({ [name]: '[REDACTED]' });
   });
 });

@@ -122,19 +122,28 @@ function isSensitiveKey(name: string): boolean {
   return SENSITIVE_TOKENS.some((token) => lower.includes(token));
 }
 
+function publicCount(value: unknown): boolean {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function safeCountDefault(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  return item.kind === 'literal' && publicCount(item.value);
+}
+
 function safeModelCount(name: string, value: unknown): boolean {
   if (!['max_output_tokens', 'input_tokens', 'output_tokens'].includes(name)) return false;
-  if (value === null || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)) return true;
+  if (value === null || publicCount(value)) return true;
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
   const allowed = ['target_id', 'value_type', 'allowed_value_kinds', 'sensitivity', 'aliases', 'default'];
-  const fallback = item.default as Record<string, unknown> | undefined;
   return Object.keys(item).every((key) => allowed.includes(key))
     && item.target_id === name && item.value_type === 'integer'
     && Array.isArray(item.allowed_value_kinds) && item.allowed_value_kinds.length === 1 && item.allowed_value_kinds[0] === 'literal'
     && ['public', 'internal'].includes(item.sensitivity as string)
-    && (fallback === undefined || (fallback !== null && typeof fallback === 'object' && fallback.kind === 'literal'
-      && typeof fallback.value === 'number' && Number.isSafeInteger(fallback.value) && fallback.value >= 0));
+    && safeCountDefault(item.default);
 }
 
 // Inline-secret patterns for plain-text strings (command lines, HTTP
