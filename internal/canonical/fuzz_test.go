@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/gowebpki/jcs"
 )
 
 // addSeeds adds the seed inputs of the fuzz tests.
@@ -69,14 +70,13 @@ func FuzzRFC8785(f *testing.F) {
 		if err != nil {
 			return
 		}
-		back, err := DecodeStrict(out)
+		_, err = DecodeStrict(out)
 		if err != nil {
 			t.Fatalf("DecodeStrict rejected the RFC 8785 form: %v", err)
 		}
-		again, err := RFC8785(back)
+		again, err := jcs.Transform(out)
 		if err != nil {
-			// An integer form of a large float is outside the integer range.
-			return
+			t.Fatalf("JCS rejected canonical output: %v", err)
 		}
 		if !bytes.Equal(out, again) {
 			t.Fatal("the RFC 8785 form is not stable")

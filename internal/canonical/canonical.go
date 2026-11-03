@@ -2,7 +2,7 @@
 // store, hash, and sign, and it decodes strict JSON.
 //
 // The encoders take, and DecodeStrict returns, a JSON value as nil, bool,
-// string, int, int64, *big.Int, float64, []any, or map[string]any. An integer
+// string, int, int64, a big integer pointer, float64, []any, or map[string]any. An integer
 // and a float are different values, as in Python: 1 and 1.0 encode
 // differently. Each function implements one scheme of the serialization
 // vectors in conformance/testdata/vectors. An error names the rule that the
@@ -18,6 +18,11 @@ import (
 // maxIntegerDigits is the longest integer, in decimal digits, that Python
 // converts to or from text by default (sys.get_int_max_str_digits).
 const maxIntegerDigits = 4300
+
+// maxContainerDepth matches the nesting bound of the JSON libraries.
+const maxContainerDepth = 10000
+
+var errDepth = errors.New("canonical: container nesting exceeds 10000 levels")
 
 var (
 	errInvalidUTF8     = errors.New("canonical: a string is not valid UTF-8")
@@ -38,11 +43,11 @@ func integerText(n *big.Int) (string, error) {
 	if n == nil {
 		return "", errNilInteger
 	}
-	text := n.Text(10)
-	if tooManyDigits(text) {
+	limit := new(big.Int).Exp(big.NewInt(10), big.NewInt(maxIntegerDigits), nil)
+	if n.CmpAbs(limit) >= 0 {
 		return "", errIntegerTooLong
 	}
-	return text, nil
+	return n.Text(10), nil
 }
 
 // appendArray writes items as a JSON array with no white space, with each
@@ -59,4 +64,31 @@ func appendArray(b []byte, items []any, appendValue func([]byte, any) ([]byte, e
 		}
 	}
 	return append(b, ']'), nil
+}
+
+// checkDepth bounds traversal before an encoder allocates output.
+func checkDepth(v any, depth int) error {
+	switch v.(type) {
+	case []any, map[string]any:
+		if depth >= maxContainerDepth {
+			return errDepth
+		}
+	default:
+		return nil
+	}
+	switch v := v.(type) {
+	case []any:
+		for _, child := range v {
+			if err := checkDepth(child, depth+1); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		for _, child := range v {
+			if err := checkDepth(child, depth+1); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

@@ -16,20 +16,23 @@ var (
 
 // Until calls ready until it returns true, the timeout passes, or ctx ends.
 // It calls ready at once and then once each interval. It never sleeps past
-// the deadline, so the last call runs at the deadline. ready gets ctx and
-// bounds its own attempt. Until returns the time that the wait took, and
-// ErrTimeout or the error of ctx when ready did not return true.
+// the deadline, so the last call runs at the deadline. ready gets a context
+// bounded by the wait deadline and any earlier deadline of ctx. It uses that
+// context to bound its own attempt. Until returns the time that the wait took,
+// and ErrTimeout or the error of ctx when ready did not return true.
 func Until(ctx context.Context, timeout, interval time.Duration, ready func(context.Context) bool) (time.Duration, error) {
 	if interval <= 0 {
 		return 0, errInterval
 	}
 	start := time.Now()
 	deadline := start.Add(timeout)
+	probeCtx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
 	for {
 		if err := ctx.Err(); err != nil {
 			return time.Since(start), err
 		}
-		if ready(ctx) {
+		if ready(probeCtx) {
 			return time.Since(start), nil
 		}
 		now := time.Now()

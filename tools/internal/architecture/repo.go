@@ -173,7 +173,12 @@ func (r *repository) readModule(name string) (*goModule, error) {
 	for _, rep := range f.Replace {
 		r := replacement{module: rep.Old.Path, line: rep.Syntax.Start.Line}
 		if modfile.IsDirectoryPath(rep.New.Path) {
-			r.dir = path.Join(mod.dir, filepath.ToSlash(rep.New.Path))
+			r.dir = filepath.ToSlash(rep.New.Path)
+			// Directory paths are relative only when they start with . or
+			// ..; joining an absolute path would discard its root.
+			if strings.HasPrefix(r.dir, ".") {
+				r.dir = path.Join(mod.dir, r.dir)
+			}
 		}
 		mod.replacements = append(mod.replacements, r)
 	}

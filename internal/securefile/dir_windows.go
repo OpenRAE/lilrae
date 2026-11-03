@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -58,11 +59,32 @@ func (h dirHandle) walkParent(op, path string, parts []string, rule dirRule) (di
 // entry is a link or is not the directory that the open reached. Modes do
 // not apply on Windows, so each rule from ruleCreate on only creates a
 // missing directory.
-func openDir(op, path string, parent *os.Root, name string, rule dirRule) (dirHandle, error) {
+func openDir(op, path string, parent *os.Root, name string, rule dirRule) (result dirHandle, err error) {
 	if rule >= ruleCreate {
-		if err := parent.Mkdir(name, privateDirMode); err != nil && !errors.Is(err, fs.ErrExist) {
-			return dirHandle{}, componentError(op, path, parent, name, err)
+		if mkdirErr := parent.Mkdir(name, privateDirMode); mkdirErr != nil && !errors.Is(mkdirErr, fs.ErrExist) {
+			return dirHandle{}, componentError(op, path, parent, name, mkdirErr)
 		}
+	}
+	// Hold a no-follow handle until the new Root has been tied to that object.
+	// A following open followed only by Lstat can accept a link-to-target swap.
+	entry, err := openEntry(op, path, parent, name, 0)
+	if err != nil {
+		return dirHandle{}, err
+	}
+	defer func() {
+		closeErr := failure(op, path, entry.Close())
+		if closeErr != nil && result.root != nil {
+			closeErr = errors.Join(closeErr, result.close())
+			result = dirHandle{}
+		}
+		err = errors.Join(err, closeErr)
+	}()
+	verified, err := entry.Stat()
+	if err != nil {
+		return dirHandle{}, failure(op, path, err)
+	}
+	if !verified.IsDir() {
+		return dirHandle{}, &Error{Op: op, Path: path, Reason: ReasonNotFound, Err: syscall.ENOTDIR}
 	}
 	sub, err := parent.OpenRoot(name)
 	if err != nil {
@@ -70,6 +92,9 @@ func openDir(op, path string, parent *os.Root, name string, rule dirRule) (dirHa
 	}
 	d := dirHandle{root: sub}
 	opened, err := sub.Stat(".")
+	if err == nil && !os.SameFile(verified, opened) {
+		err = &Error{Op: op, Path: path, Reason: ReasonSymlink}
+	}
 	if err == nil {
 		err = sameEntry(op, path, parent, name, opened)
 	}
@@ -95,7 +120,9 @@ func sameEntry(op, path string, parent *os.Root, name string, opened fs.FileInfo
 // isLink reports whether an entry is a link or another reparse point, for
 // example a junction.
 func isLink(entry fs.FileInfo) bool {
-	return entry.Mode()&(fs.ModeSymlink|fs.ModeIrregular) != 0
+	attrs, ok := entry.Sys().(*syscall.Win32FileAttributeData)
+	return entry.Mode()&(fs.ModeSymlink|fs.ModeIrregular) != 0 ||
+		(ok && attrs.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0)
 }
 
 // componentError reports why name could not be opened under parent.
@@ -110,9 +137,9 @@ func (h dirHandle) openFile(op, path string, parts []string) (file *os.File, err
 		return nil, err
 	}
 	defer func() { err = errors.Join(err, parent.close()) }()
-	file, err = parent.root.OpenFile(leaf, os.O_RDONLY, 0)
+	file, err = openForMetadata(op, path, parent.root, leaf, windows.FILE_GENERIC_READ)
 	if err != nil {
-		return nil, componentError(op, path, parent.root, leaf, err)
+		return nil, err
 	}
 	if err = checkOpened(op, path, parent.root, leaf, file); err != nil {
 		return nil, errors.Join(err, failure(op, path, file.Close()))
@@ -287,6 +314,23 @@ func (h dirHandle) withMetadata(op, path string, parts []string, access uint32, 
 // follows no reparse point, and it refuses a link and a file that is not
 // regular.
 func openForMetadata(op, path string, parent *os.Root, leaf string, access uint32) (file *os.File, err error) {
+	file, err = openEntry(op, path, parent, leaf, access)
+	if err != nil {
+		return nil, err
+	}
+	info, err := file.Stat()
+	if err == nil {
+		err = regularInfo(op, path, info)
+	}
+	if err != nil {
+		return nil, errors.Join(failure(op, path, err), failure(op, path, file.Close()))
+	}
+	return file, nil
+}
+
+// openEntry opens one entry relative to its retained parent without reparse
+// processing. It rejects every reparse point through the opened handle.
+func openEntry(op, path string, parent *os.Root, leaf string, access uint32) (file *os.File, err error) {
 	dir, err := parent.Open(".")
 	if err != nil {
 		return nil, failure(op, path, err)
@@ -312,8 +356,8 @@ func openForMetadata(op, path string, parent *os.Root, leaf string, access uint3
 	}
 	file = os.NewFile(uintptr(handle), leaf)
 	info, err := file.Stat()
-	if err == nil {
-		err = regularInfo(op, path, info)
+	if err == nil && isLink(info) {
+		err = &Error{Op: op, Path: path, Reason: ReasonSymlink}
 	}
 	if err != nil {
 		return nil, errors.Join(failure(op, path, err), failure(op, path, file.Close()))
