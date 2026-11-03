@@ -27,6 +27,7 @@ A fully ceased pre-dispatch refusal releases only fences newly claimed by that i
 Existing ownership and unconfirmed probes retain their fences.
 Required mutation stays in the existing RAES provisioning path.
 The native provisioner requires prepared readiness and held placement fences before applying effects.
+Deletion plans still reach the existing cleanup policy when execution readiness fails.
 The orchestration, evaluation, and participant adapters require live readiness before their effects.
 The provisioner checks live readiness when its complete admitted resource set is present.
 Live checks run after provisioning, against the exact selected target.
@@ -164,6 +165,10 @@ Move consumer imports to the current contract and processor owners.
 Do not restore retired compatibility modules or alter public plan values.
 Use the existing Pydantic serializer with the public canonical fallback for runtime values.
 The existing lock and hashed requirements retain the tested dependency closure.
+The bounded participant freeze is requalified against its prior complete model.
+Only twelve absent architecture and OS-distribution values change from empty strings to null.
+The source digest and all action and authority values stay unchanged.
+The regression reverses those twelve values and recovers the prior approved model digest.
 
 Verification includes the native control-only admission regression and affected
 binding, artifact, plan-projection, capture, and cleanup consumers.

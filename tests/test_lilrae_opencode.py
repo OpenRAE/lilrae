@@ -65,12 +65,11 @@ def test_readiness_checks_selected_build_and_approved_provider(
     from aptl.utils.probe_execution import bounded_probe_commands
     from tests.test_provider_readiness import ProviderRunner
 
-    with bounded_probe_commands(ProviderRunner(None if available else "transport"), 65536):
+    with bounded_probe_commands(
+        ProviderRunner(None if available else "transport"), 65536
+    ):
         assert executor.check_readiness("1.19.5") is passes
-    assert calls[0][0] == ("/usr/bin/true", "--version") or calls[0][0] == (
-        "/bin/true",
-        "--version",
-    )
+    assert calls[0][0] == (str(Path("/bin/true").resolve()), "--version")
     assert calls[0][1]["stdin"] == b""
     assert calls[0][1]["max_output_bytes"] == 4096
     assert "private selected task" not in repr(calls)

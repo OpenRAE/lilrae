@@ -148,7 +148,12 @@ class AptlProvisioner(NativeReadinessMixin, LilraeApparatusReportingMixin, Provi
 
     def apply(self, plan: object, snapshot: object) -> ApplyResult:
         """Apply a RAES provisioning plan via APTL's deployment backend."""
-        if self.readiness is not None:
+        cleanup_only = (
+            isinstance(plan, ProvisioningPlan)
+            and bool(plan.operations)
+            and all(operation.action is ChangeAction.DELETE for operation in plan.operations)
+        )
+        if self.readiness is not None and not cleanup_only:
             self.readiness.require_provisioning()
 
         working_snapshot = (

@@ -585,3 +585,45 @@ def test_native_control_readiness_uses_the_installed_owners(
             assert gate.execution_ready is (failure is None)
         finally:
             gate.close()
+
+
+def test_native_deletion_reaches_cleanup_policy_after_readiness_refusal(
+    tmp_path, installed
+):
+    from raes_contracts.planning import ChangeAction
+    from raes_contracts.runtime_state import RuntimeSnapshot
+
+    from tests.test_raes_backend import _plan_for_nodes
+
+    native, _transport = installed
+    plan = _plan_for_nodes("victim")
+    deletion = replace(
+        plan,
+        operations=[replace(op, action=ChangeAction.DELETE) for op in plan.operations],
+    )
+    observed = []
+
+    class Refusal:
+        def require_provisioning(self):
+            pytest.fail(
+                "execution readiness must not prevent cleanup policy evaluation"
+            )
+
+        def after_provisioning(self, supplied, result):
+            observed.append(supplied)
+            return result
+
+    provisioner = AptlProvisioner(
+        tmp_path,
+        AptlConfig(),
+        native.backend,
+        project_tree_bundle(tmp_path, tmp_path / "scenario.sdl.yaml"),
+        readiness=Refusal(),
+    )
+    result = provisioner.apply(deletion, RuntimeSnapshot())
+    assert not result.success
+    assert any(
+        item.code == "lilrae.provisioner.delete-scope-unavailable"
+        for item in result.diagnostics
+    )
+    assert observed == [deletion]
