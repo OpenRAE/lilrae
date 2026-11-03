@@ -67,7 +67,7 @@ func openDir(op, path string, parent *os.Root, name string, rule dirRule) (resul
 	}
 	// Hold a no-follow handle until the new Root has been tied to that object.
 	// A following open followed only by Lstat can accept a link-to-target swap.
-	entry, err := openEntry(op, path, parent, name, 0)
+	entry, err := openEntry(op, path, parent, name, 0, windows.FILE_OPEN)
 	if err != nil {
 		return dirHandle{}, err
 	}
@@ -169,14 +169,11 @@ func (h dirHandle) openLockFile(op, path string, parts []string) (file *os.File,
 		return nil, err
 	}
 	defer func() { err = errors.Join(err, parent.close()) }()
-	// O_EXCL creates a new file and never follows a link. An existing file
-	// opens without O_CREATE, so that a dangling link creates nothing.
-	file, err = parent.root.OpenFile(leaf, os.O_RDWR|os.O_CREATE|os.O_EXCL, privateFileMode)
-	if errors.Is(err, fs.ErrExist) {
-		file, err = parent.root.OpenFile(leaf, os.O_RDWR, 0)
-	}
+	// FILE_OPEN_IF creates a missing entry without truncating an existing one.
+	// The native opener rejects reparse points through the opened handle.
+	file, err = openEntry(op, path, parent.root, leaf, windows.FILE_GENERIC_READ|windows.FILE_GENERIC_WRITE, windows.FILE_OPEN_IF)
 	if err != nil {
-		return nil, componentError(op, path, parent.root, leaf, err)
+		return nil, err
 	}
 	if err := checkOpened(op, path, parent.root, leaf, file); err != nil {
 		return nil, errors.Join(err, failure(op, path, file.Close()))
@@ -314,7 +311,7 @@ func (h dirHandle) withMetadata(op, path string, parts []string, access uint32, 
 // follows no reparse point, and it refuses a link and a file that is not
 // regular.
 func openForMetadata(op, path string, parent *os.Root, leaf string, access uint32) (file *os.File, err error) {
-	file, err = openEntry(op, path, parent, leaf, access)
+	file, err = openEntry(op, path, parent, leaf, access, windows.FILE_OPEN)
 	if err != nil {
 		return nil, err
 	}
@@ -328,9 +325,10 @@ func openForMetadata(op, path string, parent *os.Root, leaf string, access uint3
 	return file, nil
 }
 
-// openEntry opens one entry relative to its retained parent without reparse
-// processing. It rejects every reparse point through the opened handle.
-func openEntry(op, path string, parent *os.Root, leaf string, access uint32) (file *os.File, err error) {
+// openEntry opens or creates one entry relative to its retained parent,
+// according to disposition, without reparse processing. It rejects every
+// reparse point through the opened handle.
+func openEntry(op, path string, parent *os.Root, leaf string, access, disposition uint32) (file *os.File, err error) {
 	dir, err := parent.Open(".")
 	if err != nil {
 		return nil, failure(op, path, err)
@@ -349,7 +347,7 @@ func openEntry(op, path string, parent *os.Root, leaf string, access uint32) (fi
 	var handle windows.Handle
 	var status windows.IO_STATUS_BLOCK
 	err = windows.NtCreateFile(&handle, access|windows.FILE_READ_ATTRIBUTES|windows.SYNCHRONIZE, &attrs, &status, nil, 0,
-		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, windows.FILE_OPEN,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, disposition,
 		windows.FILE_OPEN_REPARSE_POINT|windows.FILE_SYNCHRONOUS_IO_NONALERT, 0, 0)
 	if err != nil {
 		return nil, componentError(op, path, parent, leaf, ntError(err))

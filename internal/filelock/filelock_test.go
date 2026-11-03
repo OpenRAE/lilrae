@@ -2,12 +2,15 @@ package filelock
 
 import (
 	"bufio"
+	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -39,7 +42,7 @@ func openFile(t *testing.T, root *os.Root, flag int) *os.File {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := file.Close(); err != nil {
+		if err := file.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
 			t.Error(err)
 		}
 	})
@@ -95,6 +98,62 @@ func TestLockStopsAtTheTimeout(t *testing.T) {
 			t.Fatalf("Lock() of a held lock = %v, want an error of the package that matches wait.ErrTimeout", err)
 		}
 	})
+}
+
+func TestLockRefusesACancelledContextWithoutTakingTheLock(t *testing.T) {
+	first, second := openTwice(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := Lock(ctx, first, Exclusive, time.Second); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Lock() with a cancelled context = %v, want context.Canceled", err)
+	}
+	if err := TryLock(second, Exclusive); err != nil {
+		t.Fatalf("TryLock() after the cancelled call = %v, want no held lock", err)
+	}
+}
+
+func TestLockStopsWhenTheContextIsCancelled(t *testing.T) {
+	first, second := openTwice(t)
+	synctest.Test(t, func(t *testing.T) {
+		if err := TryLock(first, Exclusive); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			cancel()
+		}()
+		start := time.Now()
+		if err := Lock(ctx, second, Exclusive, time.Second); !errors.Is(err, context.Canceled) {
+			t.Fatalf("Lock() = %v, want context.Canceled", err)
+		}
+		if waited := time.Since(start); waited != 50*time.Millisecond {
+			t.Errorf("Lock() took %v, want cancellation at 50ms", waited)
+		}
+		if err := Unlock(first); err != nil {
+			t.Fatal(err)
+		}
+		if err := TryLock(second, Exclusive); err != nil {
+			t.Fatalf("TryLock() after cancellation and release = %v, want nil", err)
+		}
+	})
+}
+
+func TestClosingTheHolderReleasesTheLock(t *testing.T) {
+	first, second := openTwice(t)
+	if err := TryLock(first, Exclusive); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := TryLock(second, Exclusive); err != nil {
+		t.Fatalf("TryLock() after the holder closes = %v, want nil", err)
+	}
+	if err := Unlock(first); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("Unlock() of a closed file = %v, want os.ErrClosed", err)
+	}
 }
 
 func TestLockReturnsAnErrorOtherThanBusyAtOnce(t *testing.T) {
@@ -182,6 +241,12 @@ func TestAGoLockAndAPythonLockExcludeEachOther(t *testing.T) {
 	if startErr := cmd.Start(); startErr != nil {
 		t.Fatal(startErr)
 	}
+	release := sync.OnceValue(func() error { return errors.Join(stdin.Close(), cmd.Wait()) })
+	t.Cleanup(func() {
+		if err := release(); err != nil {
+			t.Error(err)
+		}
+	})
 	line, err := bufio.NewReader(stdout).ReadString('\n')
 	if err != nil || strings.TrimSpace(line) != "locked" {
 		t.Fatalf("the Python holder printed %q, %v, want locked", line, err)
@@ -189,16 +254,22 @@ func TestAGoLockAndAPythonLockExcludeEachOther(t *testing.T) {
 	if err := TryLock(second, Exclusive); !errors.Is(err, ErrBusy) {
 		t.Errorf("TryLock() while Python holds the lock = %v, want ErrBusy", err)
 	}
-	if err := errors.Join(stdin.Close(), cmd.Wait()); err != nil {
+	if err := release(); err != nil {
 		t.Fatal(err)
 	}
 
 	// A Go holder keeps the Python lock out.
+	if _, err := second.Seek(71, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
 	if err := TryLock(second, Exclusive); err != nil {
 		t.Fatalf("TryLock() after the Python holder ended = %v, want nil", err)
 	}
 	if got := runPython(t, path); got != "busy" {
 		t.Errorf("Python while Go holds the lock printed %q, want busy", got)
+	}
+	if _, err := second.Seek(19, io.SeekStart); err != nil {
+		t.Fatal(err)
 	}
 	if err := Unlock(second); err != nil {
 		t.Fatal(err)

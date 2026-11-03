@@ -53,12 +53,22 @@ its design record.
 6. **The lock file.** `securefile.Dir.OpenLockFile` creates each missing
    directory with the mode `0700`, and it opens or creates the lock file for
    reading and writing without following a link. It refuses a file that is
-   not regular, and it sets the mode `0600`, as the lifecycle guard does.
+   not regular. On Unix it sets the mode `0600`, as the lifecycle guard does.
+   Windows reuses the parent-relative `NtCreateFile` helper with
+   `FILE_OPEN_IF` and `FILE_OPEN_REPARSE_POINT`. Existing metadata and
+   directory opens keep `FILE_OPEN`; all reject reparse points through the
+   opened handle. A following open followed by a path check cannot establish
+   this guarantee (ADR-066). Windows modes do not establish a private ACL.
 7. **Tests.** Tests take real locks on Linux, macOS, and Windows: two opens
    exclude each other, a shared lock excludes an exclusive lock on Unix, and
    `Lock` waits and times out in `testing/synctest`. A test runs a Python
    child that holds the lock of a Python caller, and a Go lock must not get
-   it, and the reverse. The Go product tests job installs Python for it.
+   it, and the reverse. Tests also cover cancellation before and during a
+   wait, release on close, failed unlocks, and the Windows byte range after
+   seeking. The Python child has cleanup even when an assertion fails. The
+   Go product tests job installs Python for it. Native Windows tests exercise
+   both create and open dispositions against links before any path check,
+   including a dangling link whose target must stay absent.
 
 ## Data flows and threat model
 
