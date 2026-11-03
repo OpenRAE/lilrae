@@ -23,6 +23,7 @@ flowchart TB
         component_deadline_wait[deadline-wait]
         component_host_http[host-http]
         component_secure_file[secure-file]
+        component_file_lock[file-lock]
     end
     subgraph layer_tools[tools]
         component_regressioncheck_command[regressioncheck-command]
@@ -61,5 +62,6 @@ flowchart TB
     component_architecture_check -. test .-> component_git_test_support
     component_git -. test .-> component_git_test_support
     component_git_test_support -. test .-> component_git
+    component_file_lock --> component_deadline_wait
 ```
 <!-- End of the generated diagram. -->

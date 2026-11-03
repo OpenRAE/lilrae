@@ -144,6 +144,31 @@ func TestCreatedFilesAndDirectoriesArePrivate(t *testing.T) {
 	}
 }
 
+func TestOpenLockFileIsPrivate(t *testing.T) {
+	root, d := newTree(t)
+	writeFile(t, root, "locks/old.lock", "")
+	chmodPath(t, root, "locks/old.lock", 0o644)
+	for _, name := range []string{"locks/old.lock", "new/dir/new.lock"} {
+		file, err := d.OpenLockFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := file.Close(); err != nil {
+			t.Error(err)
+		}
+	}
+	for name, want := range map[string]fs.FileMode{"locks/old.lock": 0o600, "new": 0o700, "new/dir": 0o700, "new/dir/new.lock": 0o600} {
+		if got := modeOf(t, root, name); got != want {
+			t.Errorf("%s has the mode %v, want %v", name, got, want)
+		}
+	}
+	if err := unix.Mkfifo(filepath.Join(root, "locks", "fifo.lock"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := d.OpenLockFile("locks/fifo.lock")
+	wantReason(t, err, ReasonNotRegularFile)
+}
+
 func TestReplaceSetsTheExactMode(t *testing.T) {
 	root, d := newTree(t)
 	for _, perm := range []fs.FileMode{0o640, 0o600, 0o644, 0o400} {

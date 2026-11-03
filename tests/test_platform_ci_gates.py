@@ -519,6 +519,8 @@ def test_go_product_tests_and_mutation_run_on_macos_and_windows() -> None:
     assert job["steps"][1]["with"]["fetch-depth"] == 0
     runs = [step.get("run", "") for step in job["steps"]]
     assert 'bash tools/ci/go-gates.sh test "$RUNNER_TEMP/go-coverage" .' in runs
+    # The lock tests of #1609 run a Python child on each platform.
+    assert any(step.get("uses", "").startswith("actions/setup-python@") for step in job["steps"])
     mutation = [
         step
         for step in job["steps"]

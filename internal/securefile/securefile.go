@@ -206,6 +206,19 @@ func (d *Dir) subdir(op, name string, rule dirRule) (*Dir, error) {
 	return &Dir{h: h}, nil
 }
 
+// OpenLockFile opens the lock file name for reading and writing, and first
+// creates it with the mode 0600 and each missing directory with the mode
+// 0700. It refuses a link and a file that is not regular. On Linux and macOS
+// it sets the mode 0600, as core/lifecycle_guard.py does. The caller locks the
+// file with the filelock package and closes it.
+func (d *Dir) OpenLockFile(name string) (*os.File, error) {
+	parts, err := components("open lock file", name)
+	if err != nil {
+		return nil, err
+	}
+	return d.h.openLockFile("open lock file", name, parts)
+}
+
 // CreateOnce creates the file name with the content data and the mode 0600,
 // and first creates each missing directory with the mode 0700. The file
 // appears complete or not at all. When name exists, CreateOnce returns an

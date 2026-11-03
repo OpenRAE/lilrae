@@ -49,12 +49,20 @@ func TestNativeOpenRefusesALinkBeforeAnyPathCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	closeOnCleanup(t, parent)
-	file, err := openEntry("open", "link", parent, "link", windows.FILE_GENERIC_READ)
-	if file != nil {
-		closeOnCleanup(t, file)
-		t.Fatal("native open returned a link target before any path check")
+	symlink(t, root, "missing", "dangling")
+	for _, leaf := range []string{"link", "dangling"} {
+		for _, disposition := range []uint32{windows.FILE_OPEN, windows.FILE_OPEN_IF} {
+			file, err := openEntry("open", leaf, parent, leaf, windows.FILE_GENERIC_READ|windows.FILE_GENERIC_WRITE, disposition)
+			if file != nil {
+				closeOnCleanup(t, file)
+				t.Fatal("native open returned a link target before any path check")
+			}
+			wantReason(t, err, ReasonSymlink)
+		}
 	}
-	wantReason(t, err, ReasonSymlink)
+	if _, err := os.Stat(filepath.Join(root, "missing")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("dangling link target = %v, want it to remain absent", err)
+	}
 }
 
 func TestRestrictToOwnerSetsAProtectedReadOnlyList(t *testing.T) {
@@ -198,6 +206,8 @@ func TestRefusesAJunction(t *testing.T) {
 	_, err = d.ReadFile("junction/f")
 	wantReason(t, err, ReasonSymlink)
 	_, err = d.Subdir("junction")
+	wantReason(t, err, ReasonSymlink)
+	_, err = d.OpenLockFile("junction/f")
 	wantReason(t, err, ReasonSymlink)
 	wantReason(t, d.RemoveAll("junction"), ReasonSymlink)
 	if got := readFile(t, root, "real/f"); got != "data" {
