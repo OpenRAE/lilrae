@@ -118,6 +118,12 @@ components:
     responsibility: Opens, writes, and removes files below a trusted directory without following links, with final file modes.
     packages: [internal/securefile]
     modules: [golang.org/x/sys]
+  - name: file-lock
+    layer: foundation
+    responsibility: Takes shared and exclusive locks on an open file with the lock primitive of the Python callers.
+    packages: [internal/filelock]
+    uses: [deadline-wait]
+    modules: [golang.org/x/sys]
   - name: conformance-suite
     layer: tools
     responsibility: Runs the black-box contract cases against an installed lilrae binary.
