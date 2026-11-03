@@ -9,6 +9,32 @@ This file is maintained by [release-please](https://github.com/googleapis/releas
 from Conventional Commit messages; release sections are generated on release,
 not hand-edited in PRs.
 
+## [9.1.0](https://github.com/OpenRAE/lilrae/compare/v9.0.0...v9.1.0) (2026-11-03)
+
+
+### Features
+
+* check required resources before trial execution ([#1648](https://github.com/OpenRAE/lilrae/issues/1648)) ([0290dee](https://github.com/OpenRAE/lilrae/commit/0290deee68fbb273087e6af4853a29bd4919d8cb))
+* **participants:** run pinned OpenCode through managed runtime ([#1638](https://github.com/OpenRAE/lilrae/issues/1638)) ([22e5638](https://github.com/OpenRAE/lilrae/commit/22e5638ecd795274bc1f3b5c5254918f7846272e))
+* publish participant request manifests ([#1644](https://github.com/OpenRAE/lilrae/issues/1644)) ([ece3505](https://github.com/OpenRAE/lilrae/commit/ece3505c919e374409e3bd0518e2b5dcf0563b8f))
+
+
+### Bug Fixes
+
+* adopt RAES 10.6 and restore dependency floors ([#1640](https://github.com/OpenRAE/lilrae/issues/1640)) ([fda6382](https://github.com/OpenRAE/lilrae/commit/fda638221fcd2d65172e56ea33214f0bfc826b44))
+* bind runtime credentials to explicit consumers ([#1639](https://github.com/OpenRAE/lilrae/issues/1639)) ([6d175cd](https://github.com/OpenRAE/lilrae/commit/6d175cd2d1d925c472a1922a3038f176522369c9))
+* complete native reader type annotations ([9d024e3](https://github.com/OpenRAE/lilrae/commit/9d024e3c217a5cae0b67760280d02287631c4ffc))
+* deny native Docker range egress and host access ([#1641](https://github.com/OpenRAE/lilrae/issues/1641)) ([c545a2f](https://github.com/OpenRAE/lilrae/commit/c545a2f94fd65d208b6d571226a1f5064b257678))
+* **participants:** declare and qualify scoped tool affordances ([#1647](https://github.com/OpenRAE/lilrae/issues/1647)) ([ff7b71c](https://github.com/OpenRAE/lilrae/commit/ff7b71c1c3b2f7c61694eabb968b0e3d55ca40d0))
+* reject JSON numbers that overflow to infinity in strict decoding ([#1611](https://github.com/OpenRAE/lilrae/issues/1611)) ([884e488](https://github.com/OpenRAE/lilrae/commit/884e488d36f18615d1d485fc1417366708298d28))
+* report trial outcomes with RAES failure semantics ([#1637](https://github.com/OpenRAE/lilrae/issues/1637)) ([5f95813](https://github.com/OpenRAE/lilrae/commit/5f95813d98983841030ea1b97d0f643a4122d2d7))
+* retire the TechVault planning and observation bridge ([cd57a95](https://github.com/OpenRAE/lilrae/commit/cd57a959ad86b9af857ced8ef12d07045972911c))
+
+
+### Documentation
+
+* record that SonarCloud analyzes go-cutover like dev ([#1588](https://github.com/OpenRAE/lilrae/issues/1588)) ([a655116](https://github.com/OpenRAE/lilrae/commit/a655116845c9e8436b7b89ef6e57932381bb8e8c)), closes [#1584](https://github.com/OpenRAE/lilrae/issues/1584)
+
 ## [9.0.0](https://github.com/OpenRAE/lilrae/compare/v8.2.0...v9.0.0) (2026-11-02)
 
 
