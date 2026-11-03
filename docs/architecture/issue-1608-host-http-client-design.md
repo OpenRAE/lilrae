@@ -146,6 +146,7 @@ The client starts no goroutine to abandon such a reader.
 | [crypto/x509](https://pkg.go.dev/crypto/x509) | Go 1.27.3, CertPool | Explicit system trust and copied caller roots. |
 | [httptrace](https://pkg.go.dev/net/http/httptrace) | Go 1.27.3, ClientTrace | Typed handshake-phase evidence. |
 | [curl errors](https://curl.se/libcurl/c/libcurl-errors.html) | libcurl, codes 6, 7, 28, 35, 52, 56, 60 | Compatibility distinctions and absent native exit codes. |
+| [Sonar analysis scope](https://docs.sonarsource.com/sonarqube-cloud/managing-your-projects/project-analysis/setting-analysis-scope/setting-initial-scope) | SonarQube Cloud, Initial scope | Explicit source and test roots, with disjoint file patterns. |
 | [ASD-STE100](https://www.asd-ste100.org/assets/files/ASD-STE100_ISSUE9.pdf) | Issue 9, sections 1, 5, 6 | Technical terms, short sentences, and one subject per sentence. |
 
 The model and generated component diagram describe package dependencies.
@@ -153,5 +154,8 @@ The data flow and threat table describe the network boundary and its controls.
 No new ADR is needed: these choices implement ADR-065 and the accepted foundation boundary.
 No deployment diagram changes: this package creates no service or deployment resource.
 The architecture model and existing CI gates provide the policy checks.
+The Sonar configuration includes `internal/` as source and test scope.
+File patterns separate product tests from production files.
+The scope contract test checks every Go file below that directory.
 CI owns whole-repository architecture checks and the 100% mutation gate.
 Local verification uses only the affected package and changed documents.
