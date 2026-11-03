@@ -45,6 +45,9 @@ enter the agent environment. Users of the **host** Claude Code or Codex CLI keep
 provider authentication in their own host account. Browser agent use is not
 required for the guide, terminal or service browser routes.
 
+Autonomous experiment participants can select [managed OpenCode](../reference/opencode-participants.md) through their installed runtime bindings.
+That selection uses the shared RAES runtime and does not change the browser agent adapter.
+
 ## MCP authority and capture
 
 Generated browser agent configs invoke the fixed APTL dispatcher. Host client

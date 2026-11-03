@@ -13,6 +13,7 @@ from aptl.core.deployment._compose_resource_ownership import (
 )
 from aptl.core.deployment.errors import BackendSeedError, BackendTimeoutError
 from aptl.core.ephemeral_containers import remove_container_command
+from aptl.core.deployment.observation import DeploymentObservationContext
 
 if TYPE_CHECKING:
     import subprocess
@@ -29,6 +30,18 @@ _CONTAINER_INSPECT_RETRY_DELAYS = (0.2, 0.5, 1.0)
 
 class ComposeResourceResolutionMixin:
     """Resolve daemon-native resources only through durable receipts."""
+
+    def _bind_realization_attempt(
+        self, observation_context: DeploymentObservationContext | None
+    ) -> DeploymentObservationContext:
+        """Bind workspace ownership and selected attempt before preflight."""
+        observation_context = observation_context or DeploymentObservationContext()
+        attempt_id = observation_context.attempt_id or self._resource_attempt_id
+        ownership = self._ensure_resource_ownership()
+        self._ensure_resource_ownership(
+            attempt_id=attempt_id or ownership.new_attempt_id()
+        )
+        return observation_context
 
     def _load_resource_ownership(self) -> WorkspaceOwnership | None:
         """Load an existing workspace scope without publishing new state."""

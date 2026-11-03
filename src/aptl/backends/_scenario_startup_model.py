@@ -18,8 +18,12 @@ from aptl.backends._scenario_startup_hooks import (
 from aptl.backends.scenario_family import AdmittedFamilyTrial
 from aptl.backends.scenario_runtime_hooks import ScenarioRuntimeOperations
 from aptl.core.scenario_bundle import PackIdentity, ScenarioBundle
+from aptl.core._credential_sources import EnvironmentGrant
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from raes_contracts.vocabulary import ObservationStrength
+    from aptl.core.runtime_readback import ConcernReading
     from aptl.backends.scenario_startup_policy import ScenarioComposeStartupPolicy
     from aptl.backends.scenario_service_policy import ScenarioComposeServicePolicy
     from aptl.backends.raes_realization_model import NodeRealization
@@ -27,6 +31,8 @@ if TYPE_CHECKING:
 
 class ScenarioStartupProvider(Protocol):
     """Public family startup, fixed hooks, realization and observation surface."""
+
+    observed_runtime_concerns: Mapping[str, ObservationStrength]
 
     def resolve(self, bundle: ScenarioBundle) -> ScenarioStartupPlan: ...
     def prepare_stack_environment(self, context: StartupHookContext) -> object: ...
@@ -46,7 +52,7 @@ class ScenarioStartupProvider(Protocol):
         node: object,
         *,
         trial: AdmittedFamilyTrial,
-    ) -> dict[tuple[str, ...], object]: ...
+    ) -> dict[tuple[str, ...], ConcernReading]: ...
 
 
 @dataclass(frozen=True, order=True)
@@ -86,6 +92,7 @@ class ScenarioStartupPlan:
     mcp_server_keys: tuple[McpServerCredentials, ...] = ()
     native_mcp_ingress: bool = False
     minimum_max_map_count: int | None = None
+    environment_grants: tuple[EnvironmentGrant, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -11,7 +11,7 @@ import yaml
 
 from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.planning import PlannedResource, ProvisioningPlan
-from raes_contracts.plan_projection import runtime_plan_digest
+from raes_contracts.contracts.plan_projection import runtime_plan_digest
 
 from aptl.backends.raes_diagnostics import (
     PROVISIONING_ADDRESS,

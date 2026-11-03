@@ -107,7 +107,7 @@ def render_guest_workbench_config(
     grant = grants[0]
     record = binding.access.model_copy(update={"observed_at": datetime.now(UTC)})
     servers = {}
-    for server in profile_for(profile).servers:
+    for server in profile_for(profile, server_ids=record.mcp_server_ids).servers:
         authorize_server(record, grant, server.server_id)
         servers[server.server_id] = {
             "command": str(executable),
@@ -169,6 +169,9 @@ def create_local_workbench_app(
     )
     if initial_grant is None:
         raise WorkbenchConfigurationError("browser grant is missing")
+    admitted_profile = profile_for(initial_grant.profile, server_ids=binding.access.mcp_server_ids)
+    if not admitted_profile.servers:
+        raise WorkbenchConfigurationError("browser role has no declared MCP service")
     gate = GuestAdmission(
         binding_path,
         grant_id,
@@ -176,7 +179,7 @@ def create_local_workbench_app(
         DispatchSelector(
             binding.access.instance_id,
             binding.access.generation,
-            profile_for(initial_grant.profile).servers[0].server_id,
+            admitted_profile.servers[0].server_id,
         ),
     )
 
@@ -228,6 +231,9 @@ def create_local_workbench_app(
         credential_broker=_BrowserProviderBroker(secret_source),
         model=settings.model,
         guest_binding=GuestRuntimeBinding(
+            profile_resolver=lambda role, run_id: profile_for(
+                role, server_ids=read_private_binding(binding_path).access.mcp_server_ids
+            ),
             admit_run=admit_run,
             config_renderer=lambda profile, run_id: render_guest_workbench_config(
                 binding_path=binding_path,

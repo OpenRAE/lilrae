@@ -10,6 +10,7 @@ from raes_processor.semantics.realization import (
 )
 
 if TYPE_CHECKING:
+    from aptl.core.runtime_readback import ConcernReading
     from aptl.backends.scenario_startup import (
         ScenarioStartupSelection,
         StartupHookContext,
@@ -206,7 +207,7 @@ def observe_scenario_runtime_concerns(
     node: object,
     *,
     selection: ScenarioStartupSelection | None = None,
-) -> dict[tuple[str, ...], object]:
+) -> dict[tuple[str, ...], ConcernReading]:
     """Return validated concern observations from the admitted provider."""
 
     from aptl.backends import scenario_startup as contract
@@ -219,18 +220,30 @@ def observe_scenario_runtime_concerns(
     observed = invoke_runtime_observer(
         provider, identity, backend, node, trial=selection.trial if selection else None
     )
+    from aptl.core.runtime_readback import ConcernReading
+    from aptl.backends._raes_runtime_capabilities import adapter_runtime_concern_sources
+    from raes_contracts.realization_structure import validate_realization_value
+
     kinds_by_path = {path: kind for kind, path in CONCERN_PAYLOAD_PATH.items()}
-    if not isinstance(observed, dict) or any(
-        not isinstance(path, tuple) or path not in kinds_by_path or value is None
-        for path, value in observed.items()
-    ):
+    if not isinstance(observed, dict) or len(observed) > 128:
         return {}
     try:
-        for path, value in observed.items():
-            project_realization_concern(kinds_by_path[path], value, observed=True)
+        sources = adapter_runtime_concern_sources(provider)
+        for path, reading in observed.items():
+            if (
+                not isinstance(reading, ConcernReading)
+                or path not in kinds_by_path
+                or kinds_by_path[path] != reading.kind
+                or sources.get(reading.kind) != reading.source
+                or not validate_realization_value(reading.value).conformant
+            ):
+                raise ValueError("runtime-reading-invalid")
+            project_realization_concern(reading.kind, reading.value, observed=True)
     except (TypeError, ValueError):
         return {}
-    return observed
+    from copy import deepcopy
+
+    return deepcopy(observed)
 
 
 __all__ = [

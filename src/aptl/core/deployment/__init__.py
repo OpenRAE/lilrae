@@ -92,6 +92,7 @@ def get_backend(
             project_name=project_name,
             offline_staged=offline_staged,
             environment_grants=config.deployment.environment_grants,
+            range_egress_allowances=config.deployment.range_egress_allowances,
         )
 
     if provider == "ssh-compose":

@@ -48,6 +48,7 @@ from aptl.core.deployment._compose_seed_execution import ComposeSeedExecutionMix
 from aptl.core.deployment._compose_stop import stop_compose_lab
 from aptl.core.deployment._docker_endpoint_binding import DockerEndpointBindingMixin
 from aptl.core.deployment.errors import BackendTimeoutError
+from aptl.core.deployment._cleanup_budget import cleanup_command_timeout
 from aptl.core.lab_types import LabResult, LabStatus
 from aptl.utils.logging import get_logger
 
@@ -148,6 +149,7 @@ class DockerComposeBackend(
         offline_staged: bool = False,
         docker_socket_path: Path | None = None,
         environment_grants: Sequence[EnvironmentGrant] = (),
+        range_egress_allowances: Sequence[object] = (),
     ) -> None:
         if docker_socket_path is not None and not docker_socket_path.is_absolute():
             raise ValueError("managed Docker socket must be absolute")
@@ -172,6 +174,7 @@ class DockerComposeBackend(
             ]
             | None
         ) = None
+        self._range_egress_allowances = tuple(range_egress_allowances)
         self._boundary_receipts: dict[str, dict[str, object]] = {}
         self._boundary_specs: dict[str, object] = {}
         self._boundary_helper_image = DEFAULT_BOUNDARY_HELPER_IMAGE
@@ -185,6 +188,12 @@ class DockerComposeBackend(
         self._docker_host_override: str | None = None
         self._docker_socket_path: str | None = None
         self._docker_socket_host: str | None = None
+
+    def node_publication_bindings(self, container_name: str) -> dict[str, Any] | None:
+        """Read actual bindings, including ownership-verified byte relays."""
+        from aptl.core.deployment._native_range_publications import publication_bindings
+
+        return publication_bindings(self, container_name)
 
     @property
     def project_dir(self) -> Path:
@@ -337,6 +346,7 @@ class DockerComposeBackend(
         callers don't depend on ``subprocess`` as an implementation
         detail.
         """
+        timeout = cleanup_command_timeout(timeout)
         kwargs = self._command_kwargs(cmd, streaming=False, timeout=timeout)
         try:
             return subprocess.run(cmd, **kwargs)
@@ -389,7 +399,7 @@ class DockerComposeBackend(
         """
         try:
             self._prepare_owned_cleanup()
-        except (BackendTimeoutError, OwnershipConflictError, OSError):
+        except BackendTimeoutError, OwnershipConflictError, OSError:
             return LabResult(
                 success=False,
                 error="Backend resource ownership conflict before Compose cleanup.",
@@ -435,7 +445,7 @@ class DockerComposeBackend(
         """
         try:
             self._prepare_owned_cleanup()
-        except (BackendTimeoutError, OwnershipConflictError, OSError):
+        except BackendTimeoutError, OwnershipConflictError, OSError:
             return (
                 False,
                 "Backend resource ownership conflict before emergency cleanup.",

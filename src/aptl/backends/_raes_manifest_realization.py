@@ -10,7 +10,15 @@ from raes_contracts.vocabulary import ObservationStrength
 
 from aptl.backends._raes_manifest_resources import APTL_PROCESS_RESOURCE_LIMITS
 from aptl.backends.raes_artifact_mechanisms import aptl_artifact_mechanisms
-from aptl.backends.raes_planning_compat import DAEMON_READBACK_RUNTIME_CONCERNS
+from dataclasses import replace
+from collections.abc import Mapping
+
+from aptl.backends._raes_runtime_capabilities import CORE_RUNTIME_CONCERN_SOURCES
+
+DAEMON_READBACK_RUNTIME_CONCERNS = frozenset(
+    kind for kind, source in CORE_RUNTIME_CONCERN_SOURCES.items()
+    if source is ObservationStrength.DAEMON_OBSERVED
+)
 
 
 # What APTL realizes from a provisioning plan, and how. APTL matches declared
@@ -56,19 +64,11 @@ APTL_REALIZATION_SUPPORT = (
         # materializer and reads back through the service's native interface, so
         # it is declared on the exact branch alongside the existing
         # node/content declared-capability-match kind.
-        supported_exact_requirement_kinds=frozenset(
-            {
-                *DAEMON_READBACK_RUNTIME_CONCERNS,
-                "declared-capability-match",
-                "forwarding-agents",
-                "runtime-dependency-manifests",
-                "runtime-filesystem-inventory",
-                "runtime-local-identity",
-                "runtime-packages",
-                "runtime-service-manager-units",
-                "service-search-index-schema-materialization",
-            }
-        ),
+        supported_exact_requirement_kinds=frozenset({
+            *CORE_RUNTIME_CONCERN_SOURCES,
+            "declared-capability-match",
+            "service-search-index-schema-materialization",
+        }),
         disclosure_kinds=frozenset(
             {"backend-manifest-v2", "operation-status-v1", "runtime-snapshot-v1"}
         ),
@@ -81,40 +81,12 @@ APTL_REALIZATION_SUPPORT = (
             **{
                 kind: RealizationObservationCapability(
                     verification_scope=RealizationVerificationScope.CONFIGURATION,
-                    observation_strength=ObservationStrength.DAEMON_OBSERVED,
+                    observation_strength=source,
                 )
-                for kind in sorted(DAEMON_READBACK_RUNTIME_CONCERNS)
+                for kind, source in CORE_RUNTIME_CONCERN_SOURCES.items()
             },
             "operating-system": RealizationObservationCapability(
                 verification_scope=RealizationVerificationScope.PRESENCE,
-                observation_strength=ObservationStrength.GUEST_OBSERVED,
-            ),
-            "forwarding-agents": RealizationObservationCapability(
-                verification_scope=RealizationVerificationScope.CONFIGURATION,
-                observation_strength=ObservationStrength.DAEMON_OBSERVED,
-            ),
-            "runtime-filesystem-inventory": RealizationObservationCapability(
-                verification_scope=RealizationVerificationScope.CONFIGURATION,
-                observation_strength=ObservationStrength.GUEST_OBSERVED,
-            ),
-            "runtime-local-identity": RealizationObservationCapability(
-                verification_scope=RealizationVerificationScope.CONFIGURATION,
-                observation_strength=ObservationStrength.GUEST_OBSERVED,
-            ),
-            "runtime-dependency-manifests": RealizationObservationCapability(
-                verification_scope=RealizationVerificationScope.CONFIGURATION,
-                observation_strength=ObservationStrength.GUEST_OBSERVED,
-            ),
-            "runtime-packages": RealizationObservationCapability(
-                verification_scope=RealizationVerificationScope.CONFIGURATION,
-                observation_strength=ObservationStrength.GUEST_OBSERVED,
-            ),
-            "runtime-service-manager-units": RealizationObservationCapability(
-                verification_scope=RealizationVerificationScope.CONFIGURATION,
-                observation_strength=ObservationStrength.GUEST_OBSERVED,
-            ),
-            "process-resource-limits": RealizationObservationCapability(
-                verification_scope=RealizationVerificationScope.CONFIGURATION,
                 observation_strength=ObservationStrength.GUEST_OBSERVED,
             ),
         },
@@ -123,3 +95,26 @@ APTL_REALIZATION_SUPPORT = (
         constraints={},
     ),
 )
+
+
+def realization_support_with_readers(
+    sources: Mapping[str, ObservationStrength],
+) -> tuple[RealizationSupportDeclaration, ...]:
+    """Project admitted adapter readers without changing compiler authority."""
+
+    declaration = APTL_REALIZATION_SUPPORT[0]
+    capabilities = {
+        **declaration.observation_capabilities,
+        **{
+            kind: RealizationObservationCapability(
+                verification_scope=RealizationVerificationScope.CONFIGURATION,
+                observation_strength=source,
+            )
+            for kind, source in sources.items()
+        },
+    }
+    return (replace(
+        declaration,
+        supported_exact_requirement_kinds=declaration.supported_exact_requirement_kinds | frozenset(sources),
+        observation_capabilities=capabilities,
+    ),)

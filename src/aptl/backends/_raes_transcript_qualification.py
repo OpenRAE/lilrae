@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -40,9 +41,32 @@ def qualify_retained_transcript(
         if retained_digest != f"sha256:{record.raw_content.content_checksum.value}":
             raise ValueError("retained transcript checksum mismatch")
         sessions = payload["sessions"]  # type: ignore[index]
+        retained = json.loads(body)
+        expected = set(payload["expected_session_ids"])
+        accepted = {item["session_id"] for item in sessions}
+        missing = expected - accepted
+        if missing and retained.get("reconciliation") != {
+            "census_refs": sorted(
+                "capture-" + hashlib.sha256(item.encode("utf-8")).hexdigest()
+                for item in expected
+            ),
+            "accepted_refs": sorted(
+                "capture-" + hashlib.sha256(item.encode("utf-8")).hexdigest()
+                for item in accepted
+            ),
+            "missing_refs": sorted(
+                "capture-" + hashlib.sha256(item.encode("utf-8")).hexdigest()
+                for item in missing
+            ),
+            "census_count": len(expected),
+            "accepted_count": len(accepted),
+            "missing_count": len(missing),
+            "reason": "no broker record; cause unknown",
+        }:
+            raise ValueError("retained reconciliation disagrees with source")
         validator(
-            json.loads(body),
-            expected_entries=len(payload["expected_session_ids"]),  # type: ignore[index]
+            retained,
+            expected_entries=len(sessions),  # type: ignore[index]
             expected_frames=sum(len(item["frames"]) for item in sessions),
         )
     except (KeyError, TypeError, ValueError, SourceMissing, SourceRejected):

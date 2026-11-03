@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 
+from aptl.core._credential_sources import EnvironmentGrant
 from aptl.core.deployment.realization import valid_environment_variable_name
 
 
@@ -75,8 +76,12 @@ def resolved_environment_fixtures(
                 accounts, AccountCredentialReference(item.account, item.credential_id)
             )
         except DeclaredCredentialError:
-            raise ScenarioStartupProviderError("fixture-credential-unresolved") from None
-        resolved.append(ScenarioEnvironmentFixture(item.name, credential.part(item.part)))
+            raise ScenarioStartupProviderError(
+                "fixture-credential-unresolved"
+            ) from None
+        resolved.append(
+            ScenarioEnvironmentFixture(item.name, credential.part(item.part))
+        )
     return tuple(resolved)
 
 
@@ -125,6 +130,25 @@ def validated_environment_fixtures(
         for item in value
     )
     if len(names) != len(set(names)) or not valid_names or not valid_values:
+        raise ScenarioStartupProviderError("provider-result-invalid")
+    return value
+
+
+def validated_adapter_grants(
+    value: object, supplied: Collection[str], pack_id: str | None
+) -> tuple[EnvironmentGrant, ...]:
+    """Limit adapter grants to explicit consumers of the plan's own sources."""
+
+    if not isinstance(value, tuple) or any(
+        not isinstance(item, EnvironmentGrant) for item in value
+    ):
+        raise ScenarioStartupProviderError("provider-result-invalid")
+    if len({item.key for item in value}) != len(value) or any(
+        item.pack != pack_id
+        or item.source.kind != "project-env-file"
+        or item.source.variable not in supplied
+        for item in value
+    ):
         raise ScenarioStartupProviderError("provider-result-invalid")
     return value
 

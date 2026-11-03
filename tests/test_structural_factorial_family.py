@@ -41,8 +41,8 @@ BACKEND = BackendIdentity(
     APTL_RAES_TARGET_NAME,
     APTL_RAES_TARGET_VERSION,
     APTL_RAES_TARGET_PROFILE,
-    provider="docker",
-    transport="docker",
+    provider="docker-compose",
+    transport="docker-compose",
 )
 MODELS = {"lite": "small-model", "full": "large-model"}
 
@@ -149,6 +149,25 @@ def test_an_altered_sealed_configuration_is_rejected(compiled):
 
     with pytest.raises(ValueError, match="^family-trial-invalid$"):
         admit_family_trial(bundle, BACKEND, request)
+
+
+def test_authored_realization_uses_the_public_family_admission_phase(tmp_path):
+    """A raw Scenario and its admitted family can have different semantic bytes."""
+
+    source = build_pack(tmp_path / "source")
+    path = source / "sdl/structural-fixture.sdl.yaml"
+    authored = yaml.safe_load(path.read_text())
+    authored["realization"] = {"default": "open"}
+    path.write_text(yaml.safe_dump(authored, sort_keys=False))
+    write_content_manifest(source)
+    bundle = env_pack_bundle(tmp_path / "staging", PACK_NAME, source_pack=source)
+    (experiment,) = load_pack_experiments(bundle.root)
+    plan = compile_plan(experiment)
+    entry_id = next(iter(plan.entries))
+    trial = admit_family_trial(
+        bundle, BACKEND, FamilyTrialInput(plan, entry_id, experiment.family)
+    )
+    assert trial.provenance.plan_entry_id == entry_id
 
 
 def test_an_unsupported_factorial_profile_is_rejected_before_compilation(tmp_path):

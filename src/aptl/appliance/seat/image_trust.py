@@ -21,6 +21,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 from aptl.appliance.seat.image_disk_cache import SeatImageError, _cache_entry
+from aptl.utils.deterministic_archive import open_nofollow
 
 _DEFAULT_REPOSITORY = "ghcr.io/brad-edwards/aptl-seat"
 _MAX_BYTES = 256 * 1024
@@ -52,10 +53,7 @@ def _read_regular(path: Path, maximum: int = _MAX_BYTES) -> bytes:
     """Read a bounded regular trust file without following a final symlink."""
 
     try:
-        flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
-        with os.fdopen(os.open(path, flags), "rb") as handle:
-            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
-                raise OSError("not regular")
+        with open_nofollow(path) as handle:
             payload = handle.read(maximum + 1)
         if not payload or len(payload) > maximum:
             raise ValueError("invalid size")

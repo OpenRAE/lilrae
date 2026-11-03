@@ -28,12 +28,14 @@ if TYPE_CHECKING:
 def observe_published_ports(
     info: Mapping[str, Any],
     runtime: RuntimeConfiguration,
+    *,
+    observed_bindings: Mapping[str, Any] | None = None,
 ) -> object | None:
     """Disclose declared host ports only when all daemon bindings agree."""
 
     network = runtime.network
     declared_ports = tuple(network.published_ports) if network is not None else ()
-    bindings = _port_bindings(info)
+    bindings = _port_bindings(info) if observed_bindings is None else observed_bindings
     if _has_undeclared_ports(bindings, declared_ports) or not declared_ports:
         return None
     disclosed = [

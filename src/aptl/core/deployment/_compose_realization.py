@@ -153,15 +153,8 @@ class ComposeRealizationMixin(
         if failure is not None:
             return failure
 
-        observation_context = observation_context or DeploymentObservationContext()
-        attempt_id = observation_context.attempt_id or self._resource_attempt_id
-        ownership = self._ensure_resource_ownership()
-        self._ensure_resource_ownership(
-            attempt_id=attempt_id or ownership.new_attempt_id()
-        )
-        failure = self._realization_preflight(
-            realization, substrate_digests
-        )
+        observation_context = self._bind_realization_attempt(observation_context)
+        failure = self._realization_preflight(realization, substrate_digests)
         if failure is not None:
             result = failure
         elif not _needs_compose(realization):
@@ -173,6 +166,12 @@ class ComposeRealizationMixin(
                 scenario_root=scenario_root,
                 observation_context=observation_context,
             )
+        if result.success:
+            from aptl.core.deployment._native_range_publications import (
+                realize_publications,
+            )
+
+            result = realize_publications(self, realization) or result
         return result
 
     def _realization_preflight(
@@ -182,26 +181,32 @@ class ComposeRealizationMixin(
     ) -> LabResult | None:
         """Run ordered backend preflights before any scenario mutation."""
 
-        failure = self._environment_binding_preflight(realization)
-        if failure is None:
-            failure = self._validate_stateful_realization(realization)
-        if failure is None:
-            failure = self._capture_apparatus_preflight(realization)
-        if failure is None:
-            failure = self._traffic_mirror_preflight(realization)
-        if failure is None:
-            failure = self._observability_preflight(realization)
-        if failure is None:
-            # Request-scoped: base start consumes the already-verified identity.
-            self._realization_substrate_digests = dict(substrate_digests or {})
-            failure = self._runtime_orchestration_preflight(realization)
-        if failure is None:
-            failure = self._compose_feature_preflight(realization)
-        if failure is None:
-            failure = self._prepare_docker_recording(realization)
-        if failure is None:
-            failure = self._start_backend_observability(realization.profiles)
-        return failure
+        stages = (
+            lambda: self._environment_binding_preflight(realization),
+            lambda: self._validate_stateful_realization(realization),
+            lambda: self._capture_apparatus_preflight(realization),
+            lambda: self._traffic_mirror_preflight(realization),
+            lambda: self._observability_preflight(realization),
+            lambda: self._runtime_substrate_preflight(realization, substrate_digests),
+            lambda: self._compose_feature_preflight(realization),
+            lambda: self._native_range_preflight(realization),
+            lambda: self._prepare_docker_recording(realization),
+            lambda: self._start_backend_observability(realization.profiles),
+        )
+        for stage in stages:
+            failure = stage()
+            if failure is not None:
+                return failure
+        return None
+
+    def _runtime_substrate_preflight(
+        self,
+        realization: DeploymentRealizationSpec,
+        substrate_digests: Mapping[str, str] | None,
+    ) -> LabResult | None:
+        """Bind verified image identities before runtime authority preflight."""
+        self._realization_substrate_digests = dict(substrate_digests or {})
+        return self._runtime_orchestration_preflight(realization)
 
     def _compose_feature_preflight(
         self, realization: DeploymentRealizationSpec
@@ -210,7 +215,9 @@ class ComposeRealizationMixin(
         if not _needs_compose(realization) or not realization.images:
             return None
         return compose_capability_refusal(
-            self._run, (), documents=(image_override_text(realization.images),),
+            self._run,
+            (),
+            documents=(image_override_text(realization.images),),
         )
 
     def _realize_networks_and_boundaries(
