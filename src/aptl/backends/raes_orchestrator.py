@@ -27,12 +27,11 @@ workflow address.
 
 from __future__ import annotations
 
-from raes_backend_protocols.capabilities import BackendManifest
-
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from raes_backend_protocols.capabilities import BackendManifest
 from raes_contracts.diagnostics import Diagnostic, Severity
 from raes_contracts.planning import ChangeAction, OrchestrationPlan, RuntimeDomain
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotEntry
@@ -44,6 +43,7 @@ from raes_contracts.workflow import (
 )
 
 from aptl.core.runtime.workflow_engine import WorkflowEngine
+from aptl.core.trial_readiness import TrialReadinessGate
 from aptl.utils.redaction import redact
 
 if TYPE_CHECKING:
@@ -131,9 +131,12 @@ class AptlOrchestrator(object):
         default_factory=dict, init=False
     )
     reporting_manifest: BackendManifest | None = field(default=None, repr=False)
+    readiness: TrialReadinessGate | None = field(default=None, repr=False)
 
     def start(self, plan: object, snapshot: object) -> ApplyResult:
         """Load a RAES orchestration plan and register its workflows."""
+        if self.readiness is not None:
+            self.readiness.require_live()
         working_snapshot = (
             snapshot if isinstance(snapshot, RuntimeSnapshot) else RuntimeSnapshot()
         )
@@ -235,7 +238,9 @@ class AptlOrchestrator(object):
             if state.workflow_status != WorkflowStatus.PENDING:
                 continue
             try:
-                self._engine.drive(address, payload, objective_outcomes=resolved_outcomes)
+                self._engine.drive(
+                    address, payload, objective_outcomes=resolved_outcomes
+                )
             except ValueError as exc:
                 diagnostics.append(
                     _orchestration_diagnostic(
@@ -273,7 +278,9 @@ class AptlOrchestrator(object):
 
     def stop(self, snapshot: object) -> ApplyResult:
         """Stop orchestration and clear orchestration state."""
-        working_snapshot = snapshot if isinstance(snapshot, RuntimeSnapshot) else RuntimeSnapshot()
+        working_snapshot = (
+            snapshot if isinstance(snapshot, RuntimeSnapshot) else RuntimeSnapshot()
+        )
         retained_entries = {
             address: entry
             for address, entry in working_snapshot.entries.items()

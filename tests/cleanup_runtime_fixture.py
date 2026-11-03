@@ -6,11 +6,12 @@ LilRAE scheduling loop is used.
 
 import hashlib
 import json
-import yaml
+from dataclasses import replace
 
+import yaml
 from raes import admit_scenario_family, parse_sdl
 from raes.canonical import canonical_sdl_digest
-
+from raes_contracts.canonical import canonical_json_digest
 from raes_contracts.contracts import ExperimentBackendReferenceModel
 from raes_contracts.planning import ChangeAction, RuntimeDomain
 from raes_contracts.realization_observation import (
@@ -23,6 +24,7 @@ from raes_env_packs import load_pack_experiments
 from raes_processor.trial_compiler import compile_admitted_trial_plan
 from raes_processor.trial_realization import (
     TrialRealizationInputs,
+    instantiate_admitted_trial_entry,
     realize_admitted_trial_entry,
 )
 from raes_runtime.registry import RuntimeTarget
@@ -33,6 +35,11 @@ from raes_runtime.runtime_trial_services import (
 )
 
 from aptl.backends.cleanup import DeclaredCleanup
+from aptl.backends.raes_artifact_availability import artifact_availability_for_scenario
+from aptl.backends.raes_artifact_mechanisms import (
+    aptl_artifact_mechanisms,
+    exact_artifact_profile,
+)
 from aptl.backends.raes_evaluator import AptlEvaluator
 from aptl.backends.raes_orchestrator import AptlOrchestrator
 from aptl.backends.raes_participant_runtime import AptlParticipantRuntime
@@ -41,9 +48,9 @@ from aptl.core.correlation.clock import FixedClockProvider
 from aptl.core.runstore import LocalRunStore
 from tests.structural_family_fixture import (
     FIXTURE,
-    build_pack,
     _apparatus_context,
     _manifest_ref,
+    build_pack,
 )
 from tests.test_declared_cleanup import NativeOwner
 
@@ -55,6 +62,10 @@ def runtime_inputs(
     content_reporting=False,
     native_policy=None,
     native_bindings=(),
+    control_only=False,
+    required_artifact=False,
+    native_runtime=False,
+    apparatus_transform=None,
 ):
     root = build_pack(tmp_path / "pack")
     if content_reporting:
@@ -73,6 +84,8 @@ def runtime_inputs(
         from tests.trial_reporting_fixture import add_native_context
 
         add_native_context(context, native_bindings)
+    if apparatus_transform is not None:
+        context = apparatus_transform(context)
     authority = context["execution_authority"].model_dump(mode="json")
     if on_timeout is not None:
         authority["on_timeout"] = on_timeout
@@ -90,12 +103,17 @@ def runtime_inputs(
     )
     backend = context["apparatus_manifests"][backend_key]
     payload = backend.model_dump(mode="json")
-    payload["realization_support"][0]["observation_capabilities"][
-        "compute-substrate"
-    ] = {
-        "verification_scope": "presence",
-        "observation_strength": "guest-observed",
-    }
+    if required_artifact:
+        payload["realization_support"][0]["artifact_mechanisms"] = [
+            aptl_artifact_mechanisms()[0].model_dump(mode="json")
+        ]
+    if not native_runtime:
+        payload["realization_support"][0]["observation_capabilities"][
+            "compute-substrate"
+        ] = {
+            "verification_scope": "presence",
+            "observation_strength": "guest-observed",
+        }
     payload["capabilities"]["cleanup"]["supported_verification_methods"] = [
         "native-absence"
     ]
@@ -124,6 +142,39 @@ def runtime_inputs(
     for node in family_payload["nodes"].values():
         node.update(os_distribution="ubuntu", os_version="22.04", architecture="x86_64")
         node.pop("runtime", None)
+        if native_runtime:
+            node.pop("source", None)
+            node.pop("architecture", None)
+            node.pop("os_distribution", None)
+            node.pop("os_version", None)
+    if native_runtime:
+        # Native content placement uses a path relative to the registered
+        # fileshare volume; the compiler fixture's absolute guest path is not
+        # a supported installed-backend materialization.
+        family_payload["content"]["logging-config"]["path"] = "logging.conf"
+    if required_artifact:
+        profile = exact_artifact_profile()
+        family_payload["nodes"]["gateway"]["source"] = {
+            "name": "example/app",
+            "version": "1.0",
+            "artifact_requirement": {
+                "requirement_id": "gateway-image",
+                "explicitness": "exact",
+                "exact_artifact": {
+                    "artifact_id": "example/app",
+                    "version": "1.0",
+                    "digest": "sha256:" + "1" * 64,
+                    "media_type": "application/vnd.oci.image.manifest.v1+json",
+                },
+                "permitted_routes": [
+                    {
+                        "mechanism": profile.model_dump(mode="json"),
+                        "acquisition": "local-lookup",
+                        "timing": "backend-preparation",
+                    }
+                ],
+            },
+        }
     for alternative in family_payload["variation_points"]["sensor-layout"][
         "alternatives"
     ].values():
@@ -137,9 +188,43 @@ def runtime_inputs(
         for effect in levels.values():
             for selection in effect.get("selections", []):
                 selection["scenario_family_digest"] = canonical_sdl_digest(family).value
+    if control_only:
+        fixed = {"bindings": [], "selections": []}
+        for levels in design["factorial_design"]["level_effects"].values():
+            effect = next(iter(levels.values()))
+            for key in fixed:
+                fixed[key].extend(effect.get(key, []))
+        design["factors"] = {
+            "control": {
+                "name": "Fixed control",
+                "factor_kind": "treatment",
+                "levels": ["fixed"],
+            }
+        }
+        design["factorial_design"] = {
+            "profile": "factorial-treatments-v1",
+            "factor_ids": ["control"],
+            "level_effects": {"control": {"fixed": fixed}},
+            "target_runs_per_condition": 1,
+            "condition_bound": 1,
+        }
     compilation = compilation.with_experiment(
         type(compilation.experiment).model_validate(design)
     )
+    if control_only:
+        descriptor_ref = compilation.input_refs.binding_descriptor_set_ref.model_copy(
+            update={
+                "ref_digest": canonical_json_digest(
+                    compilation.experiment.binding_descriptors.model_dump(mode="json")
+                ),
+            }
+        )
+        compilation = replace(
+            compilation,
+            input_refs=compilation.input_refs.model_copy(
+                update={"binding_descriptor_set_ref": descriptor_ref}
+            ),
+        )
     compiled = compile_admitted_trial_plan(compilation)
     assert compiled.plan is not None, compiled.diagnostics
     inputs = TrialRealizationInputs(
@@ -153,15 +238,59 @@ def runtime_inputs(
         backend_key=backend_key,
         participant_manifests=dict(compilation.participant_manifests),
     )
+    entry_id = next(iter(inputs.plan.entries))
+    availability = None
+    if required_artifact:
+        scenario = instantiate_admitted_trial_entry(
+            plan=inputs.plan, plan_entry_id=entry_id, family=inputs.family
+        )
+
+        class Available:
+            def artifact_available(self, reference, *, allow_remote):
+                return True
+
+        availability = artifact_availability_for_scenario(
+            scenario, Available(), allow_remote=False
+        )
     realized = realize_admitted_trial_entry(
-        inputs=inputs, plan_entry_id=next(iter(inputs.plan.entries))
+        inputs=inputs,
+        plan_entry_id=entry_id,
+        artifact_availability=availability,
+        target_name=backend.identity.name if native_runtime else None,
     )
     return inputs, realized.execution_plan.manifest
 
 
 class Provisioner:
+    readiness_requires_runner = False
+
+    def readiness_artifacts(self, scenario, probe, root):
+        from raes_contracts.contracts import ArtifactAvailabilityContext
+
+        return (
+            ArtifactAvailabilityContext()
+            if probe is None
+            else artifact_availability_for_scenario(
+                scenario,
+                probe,
+                allow_remote=False,
+                scenario_root=root,
+                materialize=False,
+            )
+        )
+
+    def readiness_contract(self, plan, root):
+        return not any(item.is_error for item in self.validate(plan))
+
+    def readiness_services(self, plan):
+        return False
+
+    def readiness_resource_minimum(self, inputs, entry):
+        return None
+
     def __init__(self, manifest):
         self.manifest = manifest
+        self.readiness = None
 
     def validate(self, plan):
         return []
@@ -222,7 +351,7 @@ class Provisioner:
                         binding_verified=True,
                     )
                 )
-        return ApplyResult(
+        result = ApplyResult(
             True,
             snapshot.with_entries(
                 entries,
@@ -230,6 +359,11 @@ class Provisioner:
                 realization_envelope=plan.realization_envelope,
             ),
             changed_addresses=[operation.address for operation in plan.operations],
+        )
+        return (
+            self.readiness.after_provisioning(plan, result)
+            if self.readiness is not None
+            else result
         )
 
 

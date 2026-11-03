@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from aptl.core.config import LabLifecyclePolicyConfig, LifecycleScheduleEntry
+from aptl.core.lifecycle_errors import LifecycleBusyError as LifecycleBusyError
 from aptl.utils.logging import get_logger
 from aptl.utils.redaction import redact
 
@@ -31,8 +32,6 @@ _LOCK_FILE = ".lock"
 _WEEKDAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 
-class LifecycleBusyError(RuntimeError):
-    """Raised when another lifecycle owner already holds the project lock."""
 
 
 @dataclass

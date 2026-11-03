@@ -20,12 +20,23 @@ owners are adapted here, never duplicated or bypassed.
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from aptl.core.evidence.adapters.sources import CallableWindowedSource, SourceResult, WindowedSource
+from aptl.core.evidence.adapters.sources import (
+    CallableWindowedSource,
+    SourceResult,
+    WindowedSource,
+)
 from aptl.core.evidence.outcomes import CollectorStatus
 from aptl.core.runstore import RunStorageBackend
+from aptl.utils.pathsafe import (
+    PathContainmentError,
+    open_contained_nofollow,
+    open_dir_contained_nofollow,
+)
+from aptl.utils.probe_execution import probe_output_byte_limit
 
 
 class RunArchiveSource:
@@ -48,13 +59,34 @@ class RunArchiveSource:
         """Read the subtree's JSONL records (the window is the run's own scope)."""
         # The archive subtree is already run-scoped, so the window is unused.
         del start_iso, end_iso
+        return self._read_subtree()
+
+    def check_readiness(self, _at_iso: str) -> bool:
+        """Verify bounded archive reads without invoking capture acquisition."""
+        result = self._read_subtree()
+        return (
+            result.status in {CollectorStatus.OK, CollectorStatus.EMPTY_OK}
+            and result.dropped_count == 0
+        )
+
+    def _read_subtree(self) -> SourceResult:
         try:
-            subtree = self._run_store.get_run_path(self._run_id) / self._subdir
+            root = self._run_store.get_run_path(self._run_id)
+            subtree = root / self._subdir
+            directory = open_dir_contained_nofollow(root, Path(self._subdir))
+            os.close(directory)
         except Exception:
             return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
         if not subtree.is_dir():
             return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
-        records, dropped = _read_jsonl_tree(subtree)
+        try:
+            records, dropped = _read_jsonl_tree(
+                subtree, root=root, byte_limit=probe_output_byte_limit()
+            )
+        except OverflowError:
+            return SourceResult(status=CollectorStatus.TRUNCATION)
+        except OSError, ValueError, PathContainmentError:
+            return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
         status = CollectorStatus.OK if records else CollectorStatus.EMPTY_OK
         return SourceResult(status=status, records=records, dropped_count=dropped)
 
@@ -76,6 +108,7 @@ class ContainerLogSource:
     def fetch(self, start_iso: str, end_iso: str) -> SourceResult:
         """Capture each container's window of logs, distinguishing failure from empty."""
         records: list[dict[str, object]] = []
+        remaining = probe_output_byte_limit()
         for container in self._containers:
             try:
                 result = self._backend.container_logs_capture(
@@ -86,13 +119,21 @@ class ContainerLogSource:
             if result.returncode != 0:
                 return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
             output = (result.stdout or "").strip()
+            if remaining is not None:
+                remaining -= len(output.encode("utf-8"))
+                if remaining < 0:
+                    return SourceResult(status=CollectorStatus.TRUNCATION)
             if output:
                 records.append({"container": container, "output": output})
         status = CollectorStatus.OK if records else CollectorStatus.EMPTY_OK
         return SourceResult(status=status, records=records)
 
 
-def soc_windowed_source(query: Callable[[str, str], list[dict[str, object]] | None]) -> WindowedSource:
+def soc_windowed_source(
+    query: Callable[[str, str], list[dict[str, object]] | None],
+    *,
+    readiness: Callable[[str], bool] | None = None,
+) -> WindowedSource:
     """Adapt a SOC query returning ``list`` (events) or ``None`` (transport failure).
 
     ``None`` — what the ``curl_safe`` boundary returns on an HTTP/transport
@@ -108,22 +149,39 @@ def soc_windowed_source(query: Callable[[str, str], list[dict[str, object]] | No
         status = CollectorStatus.OK if result else CollectorStatus.EMPTY_OK
         return SourceResult(status=status, records=list(result))
 
-    return CallableWindowedSource(_fetch)
+    return CallableWindowedSource(_fetch, readiness=readiness)
 
 
-def _read_jsonl_tree(subtree: Path) -> tuple[list[dict[str, object]], int]:
-    """Return (records, dropped_count) for every valid JSON line under ``subtree``."""
+def _read_jsonl_tree(
+    subtree: Path, *, root: Path, byte_limit: int | None
+) -> tuple[list[dict[str, object]], int]:
+    """Stream JSONL with one acquisition budget across all selected files."""
     records: list[dict[str, object]] = []
     dropped = 0
-    for path in sorted(subtree.rglob("*.jsonl")):
+    remaining = byte_limit
+    for path in subtree.rglob("*.jsonl"):
         if not path.is_file():
             continue
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        payload = bytearray()
+        with open_contained_nofollow(root, path.relative_to(root)) as source:
+            while True:
+                # read1 bounds the raw acquisition too; buffered readline can
+                # read ahead past the requested line length.
+                size = 8192 if remaining is None else min(8192, remaining + 1)
+                chunk = source.read1(size)
+                if remaining is not None:
+                    remaining -= len(chunk)
+                    if remaining < 0:
+                        raise OverflowError("source-byte-limit")
+                if not chunk:
+                    break
+                payload.extend(chunk)
+        for line in payload.splitlines():
             stripped = line.strip()
             if not stripped:
                 continue
             try:
-                records.append(json.loads(stripped))
+                records.append(json.loads(stripped.decode("utf-8", errors="replace")))
             except json.JSONDecodeError:
                 dropped += 1
     return records, dropped

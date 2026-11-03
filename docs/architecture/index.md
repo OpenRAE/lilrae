@@ -1,5 +1,8 @@
 # Lab Architecture
 
+- [Required trial readiness](exp-011-resource-readiness-design.md)
+- [Issue #753 readiness preflight](exp-011-resource-readiness-preflight.md)
+
 - [Participant request manifests](participant-request-manifests.md)
 - [Issue #1419 participant manifest preflight](issue-1419-participant-manifests-preflight.md)
 - [Issue #1418 Participant MCP Action Admission](issue-1418-participant-tool-admission-preflight.md)

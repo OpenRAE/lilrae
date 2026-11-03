@@ -6,8 +6,8 @@ import hashlib
 import json
 import os
 from collections.abc import Callable, Mapping
-from copy import deepcopy
 from contextlib import ExitStack
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -16,53 +16,59 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from raes_contracts.contracts import ParticipantConfigurationResultModel
+
     from aptl.core.participant_tools.contracts import ToolSession
 
-from aptl.utils.pathsafe import create_exclusive_nofollow
+from raes_contracts.contracts import ParticipantImplementationManifestModel
+
 from aptl.core.opencode import (
+    SUPPORTED_OPENCODE_BUILD,
     OpenCodeBuild,
     OpenCodeInvocationEvidence,
     OpenRouterRoute,
-    SUPPORTED_OPENCODE_BUILD,
 )
-from aptl.workbench.opencode_events import (
-    OpenCodeResponse,
-    parse_opencode_response,
-    _supervised_result_text,
-)
-from aptl.workbench.opencode_configuration import (
-    render_opencode_config,
-    opencode_environment,
-    PROVIDER_CREDENTIAL_NAMES,
-    validate_provider_environment,
-    validate_invocation_inputs,
-)
+from aptl.core.participant_requests.binding import ParticipantRequestBinding
+from aptl.core.participant_requests.request import ParticipantRequest
+from aptl.core.trial_readiness import ParticipantReadiness
+from aptl.utils.pathsafe import create_exclusive_nofollow
+from aptl.utils.probe_execution import note_probe_cessation
 from aptl.workbench.agent import (
     InventoryProbe,
     _admitted_executable,
-    _prepare_work_dir,
     _load_server_config,
+    _prepare_work_dir,
     _read_private_config,
     _server_environment,
     probe_mcp_server,
+)
+from aptl.workbench.opencode_configuration import (
+    PROVIDER_CREDENTIAL_NAMES,
+    opencode_environment,
+    render_opencode_config,
+    validate_invocation_inputs,
+    validate_provider_environment,
+)
+from aptl.workbench.opencode_events import (
+    OpenCodeResponse,
+    _supervised_result_text,
+    parse_opencode_response,
+)
+from aptl.workbench.participant_request import validate_opencode_request
+from aptl.workbench.process import (
+    REASON_CANCELLED,
+    AgentExecutionError,
+    BoundedProcessError,
+    BoundedProcessRunner,
+    CancellableProcessRunner,
+    ProcessRequest,
+    ProcessResult,
 )
 from aptl.workbench.profiles import (
     ProfileId,
     profile_for,
     verify_profile_tool_inventory,
 )
-from aptl.workbench.process import (
-    AgentExecutionError,
-    BoundedProcessRunner,
-    ProcessResult,
-    BoundedProcessError,
-    REASON_CANCELLED,
-    ProcessRequest,
-    CancellableProcessRunner,
-)
-from aptl.core.participant_requests.request import ParticipantRequest
-from aptl.core.participant_requests.binding import ParticipantRequestBinding
-from aptl.workbench.participant_request import validate_opencode_request
+from aptl.workbench.provider_readiness import openrouter_access_ready
 
 
 @dataclass(frozen=True)
@@ -179,6 +185,66 @@ class LilraeOpenCodeExecutor:
             or values.get("max_output_tokens") != self._max_output_tokens
         ):
             raise ValueError("participant delivery differs from its configuration")
+
+    def check_readiness(self, expected_version: str) -> bool:
+        """Verify the selected build and approved access without sending a task."""
+        if expected_version != self._build.version:
+            return False
+        self._check_launch(Event())
+        self._validate_delivery()
+        with TemporaryDirectory(
+            prefix="participant-readiness-", dir=self._work_root
+        ) as temporary:
+            work = Path(temporary)
+            try:
+                result = self._runner.run(
+                    (str(self._executable), "--version"),
+                    env={
+                        "PATH": os.defpath,
+                        "HOME": str(work),
+                        "OPENCODE_DISABLE_AUTOUPDATE": "true",
+                        "OPENCODE_DISABLE_MODELS_FETCH": "true",
+                    },
+                    cwd=work,
+                    stdin=b"",
+                    timeout_seconds=self.timeout_seconds,
+                    max_output_bytes=4096,
+                )
+            except Exception as exc:
+                cleanup = getattr(exc, "cleanup", None)
+                note_probe_cessation(cleanup is not None and not cleanup.residual)
+                return False
+        note_probe_cessation(result.cleanup is not None and not result.cleanup.residual)
+        if (
+            result.returncode != 0
+            or result.cleanup is None
+            or result.cleanup.residual
+            or len(result.stdout) + len(result.stderr) > 4096
+        ):
+            return False
+        if result.stdout.decode("utf-8", errors="strict").strip() != expected_version:
+            return False
+        return openrouter_access_ready(
+            self.model, self._route, self._environment, self._max_output_tokens
+        )
+
+    def readiness_owner(
+        self, manifest: ParticipantImplementationManifestModel
+    ) -> ParticipantReadiness:
+        """Expose actual complete settings and this harness's bounded probe."""
+
+        def configuration() -> ParticipantConfigurationResultModel:
+            current = self.configuration_result
+            if current is None:
+                raise ValueError("participant-configuration-unavailable")
+            self._validate_delivery()
+            return current
+
+        return ParticipantReadiness(
+            manifest.model_copy(deep=True),
+            configuration,
+            lambda: self.check_readiness(self._build.version),
+        )
 
     def _install_profile(self, tools: OpenCodeToolProfile | None) -> None:
         """Require the private server configuration to match the selected profile."""
