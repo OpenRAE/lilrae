@@ -2,9 +2,7 @@
 
 import pytest
 from aptl.workbench.lilrae_opencode import OpenCodeOptions
-from tests.test_opencode_transport import provider
-
-pytest_plugins = ["tests.test_opencode_transport"]
+from tests.test_opencode_transport import opencode_binary as opencode_binary, provider
 
 pytestmark = pytest.mark.integration
 

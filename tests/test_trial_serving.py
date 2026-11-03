@@ -836,8 +836,9 @@ def test_participant_application_refuses_before_placement_mutation(tmp_path):
     with serving(tmp_path) as (handler, request, *_):
         application = Mock()
         application.admit.side_effect = ValueError("participant trial refused")
+        handler = replace(handler, participants=application)
         with pytest.raises(ValueError, match="participant trial refused"):
-            replace(handler, participants=application).execute_trial(request)
+            handler.execute_trial(request)
         application.configure.assert_not_called()
         assert handler.runtime_unit.calls == 0
         assert not (tmp_path / TRIAL_FENCE).exists()

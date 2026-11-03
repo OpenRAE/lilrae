@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field, replace
-from datetime import datetime, UTC
+from datetime import datetime
 from types import MappingProxyType
 
 from raes import canonical_instantiated_sdl_digest
@@ -15,6 +15,7 @@ from raes_contracts.addressing import render_compiled_address
 from raes_contracts.contracts import ExperimentSpecModel
 from raes_contracts.trial_unit import TrialUnitRequest
 from raes_runtime.runtime_trial_decisions import TrialAttemptDecision
+from raes_contracts.timestamps import utc_now
 
 from aptl.core.config import ProcessEnvironmentCredentialSource
 from aptl.core.trial_participants import TrialParticipantBounds
@@ -51,7 +52,7 @@ class PreparedParticipantTrial:
         self.runtime_bounds()
 
     def runtime_bounds(
-        self, clock: Callable[[], datetime] = lambda: datetime.now(UTC)
+        self, clock: Callable[[], datetime] = utc_now
     ) -> TrialParticipantBounds:
         return TrialParticipantBounds(
             self.started_at,
@@ -75,6 +76,7 @@ def _validate_scope(
     scenario: InstantiatedScenario,
     experiment: ExperimentSpecModel,
 ) -> None:
+    """Join retained attempt and instantiated provenance to the pinned authoring input."""
     reference = request.plan.input_refs.authoring_input_ref
     provenance = scenario.instantiation_provenance.trial
     entry = request.plan.entries[request.plan_entry_id]
@@ -134,18 +136,7 @@ def prepare_trial_participants(
         or set(configurations) != set(contents)
     ):
         raise ValueError("participant trial configuration set is incomplete")
-    steps = experiment.run_plan.episode_control.max_steps
-    started = datetime.fromisoformat(attempt.started_at)
-    deadline = datetime.fromisoformat(attempt.deadline)
-    duration = (deadline - started).total_seconds()
-    if (
-        steps is None
-        or not 1 <= steps <= 10_000
-        or not 0
-        < duration
-        <= min(3600, request.execution_controls.attempt_timeout_seconds)
-    ):
-        raise ValueError("participant trial execution controls are unsupported")
+    started, deadline, steps = _execution_controls(request, attempt, experiment)
     requests = {}
     bindings = {}
     for address, configuration in configurations.items():
@@ -166,23 +157,49 @@ def prepare_trial_participants(
         started,
         deadline,
         steps,
-        tuple(
-            (
-                render_compiled_address("time", "clock", policy.clock_ref),
-                render_compiled_address("time", "policy", name),
-                policy.step_ticks,
-            )
-            for name, policy in scenario.time_progression_policies.items()
-            if policy.advancement_mode == "stepped"
-            and policy.reset_behavior == "unsupported"
-            and policy.replay_behavior == "unsupported"
-        ),
+        _clock_steps(scenario),
         MappingProxyType(requests),
         MappingProxyType(bindings),
         request,
     )
-    result.remaining_seconds(now or datetime.now(UTC))
+    result.remaining_seconds(now or utc_now())
     return result
+
+
+def _execution_controls(
+    request: TrialUnitRequest,
+    attempt: TrialAttemptDecision,
+    experiment: ExperimentSpecModel,
+) -> tuple[datetime, datetime, int]:
+    """Validate the pinned logical horizon and the original attempt interval."""
+    steps = experiment.run_plan.episode_control.max_steps
+    started = datetime.fromisoformat(attempt.started_at)
+    deadline = datetime.fromisoformat(attempt.deadline)
+    duration = (deadline - started).total_seconds()
+    if (
+        steps is None
+        or not 1 <= steps <= 10_000
+        or not 0
+        < duration
+        <= min(3600, request.execution_controls.attempt_timeout_seconds)
+    ):
+        raise ValueError("participant trial execution controls are unsupported")
+    return started, deadline, steps
+
+
+def _clock_steps(scenario: InstantiatedScenario) -> tuple[tuple[str, str, int], ...]:
+    """Project only explicit, non-resettable stepped progression policies."""
+    return tuple(
+        (
+            render_compiled_address("time", "clock", policy.clock_ref),
+            render_compiled_address("time", "policy", name),
+            policy.step_ticks,
+        )
+        for name, policy in scenario.time_progression_policies.items()
+        if policy.advancement_mode == "stepped"
+        and policy.reset_behavior == "unsupported"
+        and policy.replay_behavior == "unsupported"
+    )
 
 
 def _validate_installed_inputs(
@@ -221,7 +238,7 @@ def managed_trial_participants(
     credential_sources: Mapping[str, ProcessEnvironmentCredentialSource],
     source_environment: Mapping[str, str],
     stop_and_drain: Callable[[], None],
-    clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    clock: Callable[[], datetime] = utc_now,
 ) -> Iterator[Mapping[str, LilraeOpenCodeExecutor]]:
     """Acquire fresh per-role executors, then drain before destroying their leases."""
     invocation_timeouts = dict(invocation_timeouts)
@@ -287,7 +304,7 @@ class ManagedTrialParticipantApplication:
     options: Mapping[str, OpenCodeOptions]
     credential_sources: Mapping[str, ProcessEnvironmentCredentialSource]
     source_environment: Mapping[str, str] = field(repr=False)
-    clock: Callable[[], datetime] = lambda: datetime.now(UTC)
+    clock: Callable[[], datetime] = utc_now
     _stack: ExitStack = field(default_factory=ExitStack, init=False, repr=False)
     _state: str = field(default="new", init=False)
 

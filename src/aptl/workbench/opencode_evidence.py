@@ -1,7 +1,7 @@
 """Reduce process and native observations through the existing safe evidence sink."""
 
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import hashlib
 
 from aptl.core.opencode import NativeHistoryObservation, OpenCodeInvocationEvidence
@@ -12,6 +12,22 @@ from aptl.workbench.process import (
     BoundedProcessError,
     ProcessResult,
 )
+
+
+@dataclass(repr=False)
+class OpenCodeRunState:
+    """Private invocation state; only the recorder's safe projection is retained."""
+
+    result: ProcessResult | None = None
+    error: BoundedProcessError | None = None
+    partial: OpenCodeResponse | None = None
+    tool_transport_cleanup: str | None = None
+    native_history: NativeHistoryObservation | None = None
+    request_observation: RequestObservation | None = None
+
+    def retain_partial(self, output: bytes) -> None:
+        """Reduce private failure output without retaining completion text."""
+        self.partial = replace(parse_opencode_response(output), text="")
 
 
 class OpenCodeEvidenceRecorder:
@@ -26,18 +42,10 @@ class OpenCodeEvidenceRecorder:
         self._sink = sink
         self.last: OpenCodeInvocationEvidence | None = None
 
-    def record(
-        self,
-        action_id: str,
-        status: str,
-        result: ProcessResult | None,
-        error: BoundedProcessError | None = None,
-        partial: OpenCodeResponse | None = None,
-        tool_transport_cleanup: str | None = None,
-        native_history: NativeHistoryObservation | None = None,
-        request_observation: RequestObservation | None = None,
-    ) -> None:
+    def record(self, action_id: str, status: str, state: OpenCodeRunState) -> None:
         """Retain safe partial metadata after process and transport cleanup."""
+        result, error, partial = state.result, state.error, state.partial
+        native_history = state.native_history
         response = partial or parse_opencode_response(result.stdout if result else b"")
         cleanup = None
         stdout_sha256 = None
@@ -65,9 +73,9 @@ class OpenCodeEvidenceRecorder:
             cost=response.cost,
             finish_reason=response.finish_reason,
             cleanup_residual=cleanup.residual if cleanup else None,
-            tool_transport_cleanup=tool_transport_cleanup,
+            tool_transport_cleanup=state.tool_transport_cleanup,
             native_history=native_history,
-            request_observation=request_observation,
+            request_observation=state.request_observation,
         )
         if self._sink is not None:
             try:

@@ -131,8 +131,9 @@ def test_native_history_verifies_prompt_model_and_separate_step_usage(tmp_path):
     assert "outgoing_controls" in history.unavailable_fields
     assert "provider_generation_id" in history.unavailable_fields
     history.require_fields(frozenset({"prompt_delivery", "native_steps"}))
+    required_fields = frozenset({"outgoing_controls"})
     with pytest.raises(ValueError, match="unavailable"):
-        history.require_fields(frozenset({"outgoing_controls"}))
+        history.require_fields(required_fields)
     retained = json.dumps(asdict(history))
     assert all(
         value not in retained
@@ -240,8 +241,9 @@ def test_executor_reduces_history_before_private_teardown(tmp_path, failed):
         timeout_seconds=30,
     )
     if failed:
+        failure_cancellation = Event()
         with pytest.raises(AgentExecutionError):
-            active("action", Event())
+            active("action", failure_cancellation)
     else:
         assert active("action", Event()) == "done"
     history = records[0].native_history
@@ -275,8 +277,9 @@ def test_executor_refuses_mismatched_native_prompt(tmp_path):
         prompt="exact prompt\n",
         timeout_seconds=30,
     )
+    failure_cancellation = Event()
     with pytest.raises(AgentExecutionError, match="native"):
-        active("action", Event())
+        active("action", failure_cancellation)
     assert active.last_evidence.status == "failed"
     assert active.last_evidence.native_history.status == "invalid"
 
@@ -298,7 +301,8 @@ def test_required_native_history_cannot_be_silently_missing(tmp_path):
         prompt="exact prompt\n",
         timeout_seconds=30,
     )
+    failure_cancellation = Event()
     with pytest.raises(AgentExecutionError, match="native"):
-        active("action", Event())
+        active("action", failure_cancellation)
     assert active.last_evidence.status == "failed"
     assert active.last_evidence.native_history.status == "missing"

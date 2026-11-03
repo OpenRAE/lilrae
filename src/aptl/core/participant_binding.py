@@ -7,6 +7,7 @@ from raes_backend_protocols.capabilities import ParticipantExecutionBinding
 from raes_contracts.contracts import (
     ParticipantImplementationManifestModel,
     ParticipantImplementationSelectionModel,
+    ParticipantConfigurationResultModel,
 )
 from raes_contracts.canonical import canonical_contract_digest
 from raes_contracts.addressing import render_compiled_address
@@ -86,42 +87,45 @@ class LilraeParticipantBinding:
                 "participant configuration result is required by its manifest"
             )
         if configuration is not None:
-            selection = self.implementation_selection
-            if selection.manifest_ref != configuration.manifest_ref:
-                native_ref = render_compiled_address(
-                    "participant-implementation-manifests",
-                    self.implementation_manifest.identity.name,
-                )
-                if (
-                    configuration.manifest_ref
-                    != self.implementation_manifest.identity.name
-                    or selection.manifest_ref != native_ref
-                ):
-                    raise ValueError(
-                        "participant configuration manifest reference is inconsistent"
-                    )
-                selection = selection.model_copy(
-                    update={"manifest_ref": configuration.manifest_ref}
-                )
-            # Public RAE compilation maps each authored agent to this native
-            # address. Project the selection for validation, never the result.
-            if (
-                configuration.participant_address != selection.participant_address
-                and configuration.participant_address.startswith("agents.")
-            ):
-                name = configuration.participant_address.removeprefix("agents.")
-                if selection.participant_address != render_compiled_address(
-                    "participant", "behavior", name
-                ):
-                    raise ValueError(
-                        "participant configuration address is inconsistent"
-                    )
-                selection = selection.model_copy(
-                    update={"participant_address": configuration.participant_address}
-                )
+            selection = self._configuration_selection(configuration)
             validate_participant_configuration_selection(selection, configuration)
         if (
             hasattr(self.executor, "timeout_seconds")
             and self.executor.timeout_seconds > self.execution_binding.timeout_seconds
         ):
             raise ValueError("participant executor exceeds the admitted timeout")
+
+    def _configuration_selection(
+        self, configuration: ParticipantConfigurationResultModel
+    ) -> ParticipantImplementationSelectionModel:
+        """Project only the compiler's exact native manifest and agent addresses."""
+        selection = self.implementation_selection
+        if selection.manifest_ref != configuration.manifest_ref:
+            native_ref = render_compiled_address(
+                "participant-implementation-manifests",
+                self.implementation_manifest.identity.name,
+            )
+            if (
+                configuration.manifest_ref != self.implementation_manifest.identity.name
+                or selection.manifest_ref != native_ref
+            ):
+                raise ValueError(
+                    "participant configuration manifest reference is inconsistent"
+                )
+            selection = selection.model_copy(
+                update={"manifest_ref": configuration.manifest_ref}
+            )
+        # Project the compiler's native address for validation, never the result.
+        if (
+            configuration.participant_address != selection.participant_address
+            and configuration.participant_address.startswith("agents.")
+        ):
+            name = configuration.participant_address.removeprefix("agents.")
+            if selection.participant_address != render_compiled_address(
+                "participant", "behavior", name
+            ):
+                raise ValueError("participant configuration address is inconsistent")
+            selection = selection.model_copy(
+                update={"participant_address": configuration.participant_address}
+            )
+        return selection

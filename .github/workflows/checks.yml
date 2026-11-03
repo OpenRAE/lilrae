@@ -157,6 +157,8 @@ jobs:
         with:
           node-version: '22.23.4'
       - name: Ordinary tests and worker coverage
+        env:
+          LILRAE_OBSERVER_COVERAGE_DIR: ${{ github.workspace }}/coverage/observer
         run: >-
           python -m pytest tests/ -q -n 4 --dist loadfile
           --splits ${{ strategy.job-total }} --group ${{ matrix.shard }} --splitting-algorithm least_duration
@@ -165,7 +167,9 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-coverage-data-${{ matrix.shard }}
-          path: .coverage
+          path: |
+            .coverage
+            coverage/observer/*.lcov
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
@@ -318,10 +322,15 @@ jobs:
           done
           coverage combine coverage-data/python-coverage-data-1/.coverage coverage-data/python-coverage-data-2/.coverage coverage-data/python-coverage-data-3/.coverage
           coverage xml -o coverage.xml
+          mkdir -p coverage
+          find coverage-data -path '*/coverage/observer/*.lcov' -print0 | sort -z | xargs -0 --no-run-if-empty cat > coverage/observer-lcov.info
+          test -s coverage/observer-lcov.info
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-coverage
-          path: coverage.xml
+          path: |
+            coverage.xml
+            coverage/observer-lcov.info
           if-no-files-found: error
           retention-days: 7
 

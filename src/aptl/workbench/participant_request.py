@@ -111,16 +111,12 @@ def validate_opencode_request(
     build: OpenCodeBuild,
     route: OpenRouterRoute,
     output_limit: int,
-    assistant_turn_limit: int | None = None,
     binding: ParticipantRequestBinding | None = None,
 ) -> None:
     """Keep the native OpenCode delivery equal to the owner-verified request."""
     _validate_binding(request, binding)
     if request is None:
         return
-    turns = request.profile.assistant_turn_limit
-    if turns is not None and turns.value != assistant_turn_limit:
-        raise ValueError("participant native assistant turn limit differs from its pin")
     if (
         request.provider != "opencode"
         or request.profile.model != model

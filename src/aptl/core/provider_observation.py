@@ -20,6 +20,8 @@ class SafeObservation(BaseModel):
 
 
 class ObservedRoute(SafeObservation):
+    """Exact serving-provider order and fallback controls on one request."""
+
     only: Annotated[tuple[Label, ...], Field(max_length=16)]
     order: Annotated[tuple[Label, ...], Field(max_length=16)]
     allow_fallbacks: bool
@@ -27,17 +29,23 @@ class ObservedRoute(SafeObservation):
 
 
 class ObservedReasoning(SafeObservation):
+    """Reported outgoing reasoning settings, without generated reasoning text."""
+
     effort: Label | None = None
     max_tokens: Count | None = None
     enabled: bool | None = None
 
 
 class ObservedUsageControl(SafeObservation):
+    """Explicit provider usage-reporting request flags."""
+
     include_usage: bool | None = None
     include: bool | None = None
 
 
 class ObservedRequestControls(SafeObservation):
+    """Allowlisted serialized model, route and generation controls."""
+
     model: Label
     provider: ObservedRoute
     reasoning: ObservedReasoning | None = None
@@ -51,12 +59,16 @@ class ObservedRequestControls(SafeObservation):
 
 
 class ObservedContext(SafeObservation):
+    """Ordered message roles and content commitments without raw content."""
+
     role: Literal["system", "user", "assistant", "tool"]
     content_sha256: Digest
     authored_prefix_sha256: Digest | None = None
 
 
 class ProviderResponseObservation(SafeObservation):
+    """Available response claims; missing values carry no inferred identity."""
+
     missing_value_reason: Literal["not-reported-or-not-retained"] = (
         "not-reported-or-not-retained"
     )
@@ -82,6 +94,8 @@ class ProviderResponseObservation(SafeObservation):
 
 
 class ProviderCallObservation(SafeObservation):
+    """Membership, timing, controls and available results for one fetch call."""
+
     call_id: Annotated[int, Field(ge=1, le=10_000)]
     requested_at_ms: Count
     completed_at_ms: Count | None = None
@@ -95,6 +109,8 @@ class ProviderCallObservation(SafeObservation):
 
 
 class RequestObservation(SafeObservation):
+    """Bounded per-invocation request evidence from the pinned observer."""
+
     schema_version: Literal["lilrae-provider-observation/v1"] = (
         "lilrae-provider-observation/v1"
     )

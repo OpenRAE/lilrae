@@ -2,8 +2,46 @@
 
 import hashlib
 import json
+import os
+from pathlib import Path
 
 import pytest
+
+
+def probe_command(node, script, case):
+    """Enable Node's standard LCOV reporter only in the declared CI step."""
+    destination = os.environ.get("LILRAE_OBSERVER_COVERAGE_DIR")
+    command = [node]
+    report = None
+    if destination:
+        root = Path(destination).resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        report = root / f"{case}.lcov"
+        command += [
+            "--test",
+            "--experimental-test-coverage",
+            "--test-coverage-include=**/request_observer.mjs",
+            "--test-reporter=spec",
+            "--test-reporter-destination=stdout",
+            "--test-reporter=lcov",
+            f"--test-reporter-destination={report}",
+        ]
+    return command + [str(script)], report
+
+
+def normalize_observer_report(report):
+    """Map the digest-checked private module copy to its repository source path."""
+    if report is None:
+        return
+    lines = report.read_text().splitlines()
+    sources = [line for line in lines if line.startswith("SF:")]
+    assert len(sources) == 1
+    assert Path(sources[0][3:]).name == "request_observer.mjs"
+    normalized = [
+        "SF:src/aptl/workbench/request_observer.mjs" if line.startswith("SF:") else line
+        for line in lines
+    ]
+    report.write_text("\n".join(normalized) + "\n")
 
 
 def events():
@@ -78,8 +116,9 @@ def test_actual_controls_and_response_usage_are_joined_without_raw_content(tmp_p
     observed.require_fields(
         frozenset({"outgoing_controls", "provider_generation_id", "input_tokens"})
     )
+    required_fields = frozenset({"served_provider_claim"})
     with pytest.raises(ValueError, match="unavailable"):
-        observed.require_fields(frozenset({"served_provider_claim"}))
+        observed.require_fields(required_fields)
     assert "private prompt" not in repr(observed)
 
 
@@ -167,8 +206,9 @@ def synthetic_journal(work):
         "turn-limit",
     ],
 )
-def test_plugin_observes_actual_fetch_and_never_keeps_secret_content(tmp_path, case, monkeypatch):
-    import os
+def test_plugin_observes_actual_fetch_and_never_keeps_secret_content(
+    tmp_path, case, monkeypatch
+):
     import shutil
     import subprocess
     from aptl.core.opencode import OpenRouterRoute
@@ -205,8 +245,9 @@ def test_plugin_observes_actual_fetch_and_never_keeps_secret_content(tmp_path, c
         b"private prompt",
     )
     (tmp_path / "opencode.json").write_text(json.dumps(config))
+    environment["LILRAE_OBSERVER_PROBE_CASE"] = case
     script = r"""
-import {readFileSync} from 'node:fs';
+import {readFileSync, writeFileSync} from 'node:fs';
 const config = JSON.parse(readFileSync('./opencode.json', 'utf8'));
 const inputs = JSON.parse(readFileSync('./observer-input.json', 'utf8'));
 config.mcp={fixture:{environment:{LILRAE_TOOL_TOKEN:'tool-capability'}}};
@@ -237,11 +278,13 @@ try {
  if (process.argv[2] === 'turn-limit') await config.provider.openrouter.options.fetch(inputs.endpoint+'/chat/completions',
   {method:'POST',body:JSON.stringify(request),signal:cancellation.signal});
 } catch { refused=true; }
-console.log(JSON.stringify({forwarded,refused}));
+writeFileSync('./probe-result.json', JSON.stringify({forwarded,refused}), {flag:'wx',mode:0o600});
 """
+    script = script.replace("process.argv[2]", "process.env.LILRAE_OBSERVER_PROBE_CASE")
     (tmp_path / "probe.mjs").write_text(script)
-    result = subprocess.run(
-        [node, str(tmp_path / "probe.mjs"), case],
+    command, report = probe_command(node, tmp_path / "probe.mjs", case)
+    subprocess.run(
+        command,
         cwd=tmp_path,
         env=environment,
         capture_output=True,
@@ -249,7 +292,8 @@ console.log(JSON.stringify({forwarded,refused}));
         timeout=30,
         check=True,
     )
-    summary = json.loads(result.stdout)
+    summary = json.loads((tmp_path / "probe-result.json").read_text())
+    normalize_observer_report(report)
     if case.startswith("wrong-"):
         assert summary == {"forwarded": 0, "refused": True}
         return
@@ -285,8 +329,9 @@ def test_missing_usage_is_unknown_and_cannot_satisfy_completed_call_capture(tmp_
     del data[2]["response"]["input_tokens"]
     result = read(tmp_path, data)
     assert result.calls[0].response.input_tokens is None
+    required_fields = frozenset({"input_tokens"})
     with pytest.raises(ValueError, match="unavailable"):
-        result.require_fields(frozenset({"input_tokens"}))
+        result.require_fields(required_fields)
 
 
 def test_failed_retry_membership_does_not_duplicate_completed_usage(tmp_path):

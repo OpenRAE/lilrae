@@ -157,6 +157,7 @@ Private HOME, XDG and working directories, disabled ambient discovery and defaul
 The observer is a packaged local module copied into the private invocation directory.
 The parent verifies its installed digest before launch and selects exactly that file.
 A required invocation starts with an unusable provider URL and a placeholder credential.
+The placeholder is an empty value; it contains no credential material.
 The real credential uses a private child-environment alias that MCP children must not inherit.
 The plugin initializes its private bounded journal and installs the observing fetch function before restoring the admitted URL and credential.
 If plugin loading fails, the native client cannot reach the provider with its real credential.
@@ -171,6 +172,9 @@ It records available generation, model and provider claims, token categories, fi
 Observed provider claims remain distinct from immutable serving attestation and billing proof.
 Missing fields remain unknown; cancelled and failed calls retain partial membership without successful-empty capture.
 The parent reads bounded regular files through existing no-follow helpers before private-directory teardown.
+Separate helpers validate invocation limits, native session membership, request controls and response stream records.
+One invocation state retains process, transport and observation outcomes through the existing evidence recorder.
+These helpers preserve the same credential, filesystem and persistence boundaries.
 It validates the journal schema and membership, joins calls to existing action/trial/configuration coordinates, and uses the existing invocation evidence sink for #1421.
 
 ```mermaid

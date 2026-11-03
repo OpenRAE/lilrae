@@ -238,33 +238,21 @@ class LilraeParticipantExecution:
         item = self._by_key.get(
             (request.participant_address, request.action_contract_address)
         )
+        failure = "authority_denied"
+        refusal = None
         if item is None or not self._matches(item, request):
-            return self._outcome(
-                request,
-                snapshot,
-                episode_id,
-                "authority_denied",
-                "Native participant binding was refused.",
-            )
-        event = Event()
-        if self.trial_bounds is not None:
+            refusal = "Native participant binding was refused."
+        elif self.trial_bounds is not None:
             refusal = self.trial_bounds.refusal(snapshot, request.participant_address)
             if refusal is not None:
                 with self._condition:
                     self._tool_ports.pop(request.action_instance_id, None)
-                return self._outcome(
-                    request, snapshot, episode_id,
-                    "timeout" if self.trial_bounds.time_exhausted() else "authority_denied",
-                    refusal,
-                )
-        if not self._reserve(request, event):
-            return self._outcome(
-                request,
-                snapshot,
-                episode_id,
-                "authority_denied",
-                "Native participant reservation was refused.",
-            )
+                failure = "timeout" if self.trial_bounds.time_exhausted() else failure
+        event = Event()
+        if refusal is None and not self._reserve(request, event):
+            refusal = "Native participant reservation was refused."
+        if refusal is not None:
+            return self._outcome(request, snapshot, episode_id, failure, refusal)
         try:
             return self._invoke(item, request, snapshot, episode_id, event)
         finally:

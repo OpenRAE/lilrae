@@ -126,9 +126,10 @@ def test_native_turn_limit_cannot_be_overridden(admitted_participants, tmp_path)
         ),
     )
     for limit in (None, 2):
+        selected_options = replace(options, max_steps=limit)
         with pytest.raises(ValueError, match="turn"):
             LilraeOpenCodeExecutor(
-                options=replace(options, max_steps=limit),
+                options=selected_options,
                 model=request.profile.model,
                 prompt=request.prompt,
                 timeout_seconds=30,
@@ -204,12 +205,14 @@ def test_managed_trial_applies_models_prompts_turns_and_original_time_bound(
             assert active.last_evidence.participant_address == address
         current[0] = prepared.deadline
         for active in executors.values():
+            failure_cancellation = Event()
             with pytest.raises(AgentExecutionError, match="deadline"):
-                active("expired", Event())
+                active("expired", failure_cancellation)
     assert closed == [True]
     for active in executors.values():
+        failure_cancellation = Event()
         with pytest.raises(AgentExecutionError, match="closed"):
-            active("closed", Event())
+            active("closed", failure_cancellation)
 
 
 @pytest.mark.parametrize("invocation_seconds", [90, 30, 3601])
@@ -303,8 +306,9 @@ def test_trial_application_reuses_pending_scope_and_closes_only_after_finish(
     from aptl.workbench.process import AgentExecutionError
 
     for executor in first:
+        failure_cancellation = Event()
         with pytest.raises(AgentExecutionError, match="closed"):
-            executor("closed", Event())
+            executor("closed", failure_cancellation)
     application.configure(
         values[0]
     )  # Repeat terminal delivery must not reopen a lease.
@@ -328,8 +332,9 @@ def test_unconfigured_native_offer_cannot_dispatch(admitted_participants):
 
     request = next(iter(prepare(admitted_participants()).requests.values()))
     executor = PendingTrialParticipant(request.configuration_result, 90)
+    failure_cancellation = Event()
     with pytest.raises(AgentExecutionError, match="not been configured"):
-        executor("action", Event())
+        executor("action", failure_cancellation)
 
 
 def test_native_configuration_cannot_change_admitted_action_authority():
@@ -375,15 +380,13 @@ def test_compiler_manifest_reference_projection_refuses_arbitrary_aliases(
     )
     item = installed[0]
     alias = "participant-implementation-manifests.peer"
+    selection = item.implementation_selection.model_copy(update={"manifest_ref": alias})
+    binding = replace(item.execution_binding, participant_implementation_ref=alias)
     with pytest.raises(ValueError, match="manifest reference"):
         replace(
             item,
-            implementation_selection=item.implementation_selection.model_copy(
-                update={"manifest_ref": alias}
-            ),
-            execution_binding=replace(
-                item.execution_binding, participant_implementation_ref=alias
-            ),
+            implementation_selection=selection,
+            execution_binding=binding,
         )
 
 
@@ -395,22 +398,23 @@ def test_trial_requires_evidence_owner_before_credential_acquisition(
     from tests.opencode_fixture import synthetic_options
 
     prepared = prepare(admitted_participants())
+    context = managed_trial_participants(
+        prepared,
+        invocation_timeouts={address: 90 for address in prepared.requests},
+        options={
+            a: synthetic_options(executable=Path("/bin/true"), work_root=tmp_path)
+            for a in prepared.requests
+        },
+        credential_sources={
+            a: ProcessEnvironmentCredentialSource(
+                kind="process-environment", variable="MISSING_SOURCE"
+            )
+            for a in prepared.requests
+        },
+        source_environment={},
+        stop_and_drain=lambda: None,
+        clock=lambda: prepared.started_at,
+    )
     with pytest.raises(ValueError, match="evidence sink"):
-        with managed_trial_participants(
-            prepared,
-            invocation_timeouts={address: 90 for address in prepared.requests},
-            options={
-                a: synthetic_options(executable=Path("/bin/true"), work_root=tmp_path)
-                for a in prepared.requests
-            },
-            credential_sources={
-                a: ProcessEnvironmentCredentialSource(
-                    kind="process-environment", variable="MISSING_SOURCE"
-                )
-                for a in prepared.requests
-            },
-            source_environment={},
-            stop_and_drain=lambda: None,
-            clock=lambda: prepared.started_at,
-        ):
-            pytest.fail("missing evidence owner was admitted")
+        with context:
+            pass

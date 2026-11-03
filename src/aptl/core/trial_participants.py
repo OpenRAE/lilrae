@@ -4,7 +4,8 @@ from typing import Protocol
 from dataclasses import dataclass
 from threading import Event
 from collections.abc import Callable
-from datetime import datetime, UTC
+from datetime import datetime
+from raes_contracts.timestamps import utc_now
 
 from raes_contracts.contracts import (
     ParticipantConfigurationResultModel,
@@ -24,7 +25,7 @@ class TrialParticipantBounds:
     deadline: datetime
     logical_step_limit: int
     clock_steps: tuple[tuple[str, str, int], ...]
-    clock: Callable[[], datetime] = lambda: datetime.now(UTC)
+    clock: Callable[[], datetime] = utc_now
 
     def __post_init__(self) -> None:
         if (
@@ -48,6 +49,12 @@ class TrialParticipantBounds:
         """Read scheduler-owned coordinates; never count requests or advance time."""
         if self.time_exhausted():
             return "Participant attempt deadline is exhausted."
+        return self._logical_refusal(snapshot, participant)
+
+    def _logical_refusal(
+        self, snapshot: RuntimeSnapshot, participant: str
+    ) -> str | None:
+        """Require usable scheduler state for every policy governing this role."""
         states = [
             ParticipantAutonomousExecutionStateModel.model_validate(row)
             for row in snapshot.participant_autonomous_execution_states.values()
@@ -57,18 +64,28 @@ class TrialParticipantBounds:
             return "Participant logical clock is unavailable."
         limits = {clock: (policy, ticks) for clock, policy, ticks in self.clock_steps}
         for state in states:
-            clock = snapshot.time_model_state.clocks.get(state.clock_address)
-            expected = limits.get(state.clock_address)
-            if (
-                clock is None
-                or expected is None
-                or clock.progression_policy_address != expected[0]
-                or clock.coordinate.segment != 0
-            ):
-                return "Participant logical clock is unavailable."
-            elapsed = clock.coordinate.tick - clock.history[0].resulting.tick
-            if elapsed < 0 or elapsed >= self.logical_step_limit * expected[1]:
-                return "Participant logical step budget is exhausted."
+            refusal = self._clock_refusal(
+                snapshot, state.clock_address, limits.get(state.clock_address)
+            )
+            if refusal is not None:
+                return refusal
+        return None
+
+    def _clock_refusal(
+        self, snapshot: RuntimeSnapshot, address: str, expected: tuple[str, int] | None
+    ) -> str | None:
+        """Check one original clock segment and its half-open step horizon."""
+        clock = snapshot.time_model_state.clocks.get(address)
+        if (
+            clock is None
+            or expected is None
+            or clock.progression_policy_address != expected[0]
+            or clock.coordinate.segment != 0
+        ):
+            return "Participant logical clock is unavailable."
+        elapsed = clock.coordinate.tick - clock.history[0].resulting.tick
+        if elapsed < 0 or elapsed >= self.logical_step_limit * expected[1]:
+            return "Participant logical step budget is exhausted."
         return None
 
 
@@ -93,7 +110,8 @@ class PendingTrialParticipant:
     def __call__(self, action_id: str, cancellation: Event) -> str:
         raise AgentExecutionError("participant trial has not been configured")
 
+    @staticmethod
     def invoke_with_tools(
-        self, action_id: str, cancellation: Event, tools: ToolSession
+        action_id: str, cancellation: Event, tools: ToolSession
     ) -> str:
         raise AgentExecutionError("participant trial has not been configured")

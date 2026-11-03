@@ -30,6 +30,7 @@ _FINISH_REASONS = frozenset(
 
 
 def _identifier(value: object, prefix: str) -> str:
+    """Accept only the pinned native identifier format."""
     if not isinstance(value, str) or not re.fullmatch(
         prefix + r"_[A-Za-z0-9]{1,128}", value
     ):
@@ -38,6 +39,7 @@ def _identifier(value: object, prefix: str) -> str:
 
 
 def _object(raw: str) -> dict[str, object]:
+    """Decode one bounded closed native JSON object."""
     if len(raw.encode("utf-8")) > _MAX_VALUE_BYTES:
         raise ValueError("oversized native value")
     value = loads_strict(raw)
@@ -47,6 +49,7 @@ def _object(raw: str) -> dict[str, object]:
 
 
 def _count(value: object) -> int | None:
+    """Keep missing token counts distinct from reported zero."""
     if value is None:
         return None
     if type(value) is not int or not 0 <= value <= 10**12:
@@ -55,12 +58,14 @@ def _count(value: object) -> int | None:
 
 
 def _time(value: object) -> int:
+    """Validate the native millisecond timestamp range."""
     if type(value) is not int or not 0 <= value <= 2**53 - 1:
         raise ValueError("invalid native time")
     return value
 
 
 def _cost(value: object) -> float | None:
+    """Validate a finite nonnegative native estimate without billing claims."""
     if value is None:
         return None
     if type(value) not in {int, float} or not 0 <= value <= 10**6:
@@ -71,6 +76,7 @@ def _cost(value: object) -> float | None:
 def _step(
     message_id: str, step_id: str, data: dict[str, object], created: int, updated: int
 ) -> NativeStepObservation:
+    """Reduce one terminal step and its separate usage categories."""
     reason = data.get("reason")
     if reason not in _FINISH_REASONS:
         raise ValueError("invalid native finish")
@@ -101,6 +107,7 @@ def _step(
 def _messages(
     db: sqlite3.Connection, session: str, expected_model: str
 ) -> tuple[dict[str, str], str]:
+    """Validate message membership and the exact native model."""
     messages = db.execute(
         "SELECT id, data FROM message WHERE session_id=? ORDER BY time_created, id LIMIT ?",
         (session, _MAX_ROWS + 1),
@@ -115,12 +122,7 @@ def _messages(
         role = value.get("role")
         if role not in {"user", "assistant"} or identifier in roles:
             raise ValueError("invalid native message")
-        model = value.get("model") if role == "user" else value
-        if not isinstance(model, dict) or (
-            model.get("providerID") != "openrouter"
-            or model.get("modelID") != expected_model.removeprefix("openrouter/")
-        ):
-            raise ValueError("native model mismatch")
+        _validate_message_model(value, role, expected_model)
         roles[identifier] = role
         if role == "user":
             users.append(identifier)
@@ -135,6 +137,7 @@ def _read_session(
     expected_model: str,
     expected_session: str | None,
 ) -> NativeHistoryObservation:
+    """Join one native session to exact authored prompt bytes."""
     sessions = db.execute("SELECT id FROM session LIMIT 2").fetchall()
     if len(sessions) != 1:
         raise ValueError("ambiguous native session")
@@ -142,8 +145,48 @@ def _read_session(
     if expected_session is not None and session != expected_session:
         raise ValueError("native session mismatch")
     roles, user_message_id = _messages(db, session, expected_model)
+    delivered, steps = _parts(db, session, roles)
+    if delivered != expected_prompt:
+        raise ValueError("native prompt mismatch")
+    return NativeHistoryObservation(
+        status="observed" if steps and steps[-1].finish_reason == "stop" else "partial",
+        session_id=session,
+        user_message_id=user_message_id,
+        prompt_matches=True,
+        recorded_model=expected_model,
+        prompt_sha256=hashlib.sha256(delivered).hexdigest(),
+        authored_placement="native-user-text",
+        steps=tuple(steps),
+    )
+
+
+def _validate_message_model(
+    value: dict[str, object], role: str, expected_model: str
+) -> None:
+    """Compare the recorded provider and model with the independently retained pin."""
+    model = value.get("model") if role == "user" else value
+    if (
+        not isinstance(model, dict)
+        or model.get("providerID") != "openrouter"
+        or model.get("modelID") != expected_model.removeprefix("openrouter/")
+    ):
+        raise ValueError("native model mismatch")
+
+
+def _user_text(value: dict[str, object]) -> str:
+    """Accept native authored user text without implicit wrappers or other parts."""
+    if value.get("type") != "text" or not isinstance(value.get("text"), str):
+        raise ValueError("unexpected native user content")
+    return value["text"]
+
+
+def _parts(
+    db: sqlite3.Connection, session: str, roles: dict[str, str]
+) -> tuple[bytes, list[NativeStepObservation]]:
+    """Reduce bounded part membership to prompt bytes and terminal step facts."""
     parts = db.execute(
-        "SELECT id, message_id, data, time_created, time_updated FROM part WHERE session_id=? ORDER BY time_created, id LIMIT ?",
+        "SELECT id, message_id, data, time_created, time_updated "
+        "FROM part WHERE session_id=? ORDER BY time_created, id LIMIT ?",
         (session, _MAX_ROWS + 1),
     ).fetchall()
     if len(parts) > _MAX_ROWS:
@@ -158,24 +201,11 @@ def _read_session(
         seen.add(identifier)
         value = _object(raw)
         if roles[message] == "user":
-            if value.get("type") != "text" or not isinstance(value.get("text"), str):
-                raise ValueError("unexpected native user content")
-            prompt.append(value["text"])
+            prompt.append(_user_text(value))
         elif value.get("type") == "step-finish":
             steps.append(_step(message, identifier, value, created, updated))
     delivered = "".join(prompt).encode("utf-8")
-    if delivered != expected_prompt:
-        raise ValueError("native prompt mismatch")
-    return NativeHistoryObservation(
-        status="observed" if steps and steps[-1].finish_reason == "stop" else "partial",
-        session_id=session,
-        user_message_id=user_message_id,
-        prompt_matches=True,
-        recorded_model=expected_model,
-        prompt_sha256=hashlib.sha256(delivered).hexdigest(),
-        authored_placement="native-user-text",
-        steps=tuple(steps),
-    )
+    return delivered, steps
 
 
 def read_native_history(
@@ -195,33 +225,44 @@ def read_native_history(
     if sys.platform != "linux":
         return NativeHistoryObservation(status="unsupported-platform")
     try:
-        try:
-            with open_contained_nofollow(work, _DATABASE + "-wal") as journal:
-                if journal.read(1):
-                    return NativeHistoryObservation(status="uncheckpointed")
-        except PathContainmentError as exc:
-            if exc.reason != REASON_NOT_FOUND:
-                raise
-        with open_contained_nofollow(work, _DATABASE) as source:
-            if os.fstat(source.fileno()).st_size > max_bytes:
-                return NativeHistoryObservation(status="oversized")
-            uri = f"file:/proc/self/fd/{source.fileno()}?mode=ro&immutable=1"
-            with closing(sqlite3.connect(uri, uri=True, timeout=0)) as db:
-                db.execute("PRAGMA query_only=ON")
-                db.execute("PRAGMA trusted_schema=OFF")
-                db.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, _MAX_VALUE_BYTES)
-                calls = 0
-
-                def bounded_query() -> int:
-                    nonlocal calls
-                    calls += 1
-                    return int(calls > 1000)
-
-                db.set_progress_handler(bounded_query, 1000)
-                return _read_session(db, expected_prompt, expected_model, session_id)
+        observation = _contained_history(
+            work, expected_prompt, expected_model, session_id, max_bytes
+        )
     except PathContainmentError as exc:
-        return NativeHistoryObservation(
+        observation = NativeHistoryObservation(
             status="missing" if exc.reason == REASON_NOT_FOUND else "invalid"
         )
-    except OSError, sqlite3.Error, ValueError, TypeError, KeyError, UnicodeError:
-        return NativeHistoryObservation(status="invalid")
+    except OSError, sqlite3.Error, ValueError, TypeError, KeyError:
+        observation = NativeHistoryObservation(status="invalid")
+    return observation
+
+
+def _contained_history(
+    work: Path, prompt: bytes, model: str, session: str | None, max_bytes: int
+) -> NativeHistoryObservation:
+    """Read only a contained checkpointed database under SQLite resource limits."""
+    try:
+        with open_contained_nofollow(work, _DATABASE + "-wal") as journal:
+            if journal.read(1):
+                return NativeHistoryObservation(status="uncheckpointed")
+    except PathContainmentError as exc:
+        if exc.reason != REASON_NOT_FOUND:
+            raise
+    with open_contained_nofollow(work, _DATABASE) as source:
+        if os.fstat(source.fileno()).st_size > max_bytes:
+            return NativeHistoryObservation(status="oversized")
+        uri = f"file:/proc/self/fd/{source.fileno()}?mode=ro&immutable=1"
+        with closing(sqlite3.connect(uri, uri=True, timeout=0)) as db:
+            db.execute("PRAGMA query_only=ON")
+            db.execute("PRAGMA trusted_schema=OFF")
+            db.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, _MAX_VALUE_BYTES)
+            calls = 0
+
+            def bounded_query() -> int:
+                """Abort native queries after a bounded number of VM steps."""
+                nonlocal calls
+                calls += 1
+                return int(calls > 1000)
+
+            db.set_progress_handler(bounded_query, 1000)
+            return _read_session(db, prompt, model, session)

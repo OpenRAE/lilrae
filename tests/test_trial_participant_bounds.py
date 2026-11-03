@@ -174,8 +174,9 @@ def test_running_process_uses_remaining_trial_time_and_is_reaped(tmp_path):
             timeout_seconds=30,
         )
         started = monotonic()
+        failure_cancellation = Event()
         with pytest.raises(BoundedProcessError) as failure:
-            executor("bounded-action", Event())
+            executor("bounded-action", failure_cancellation)
         elapsed = monotonic() - started
         assert started_file.exists()
         assert remaining * 0.8 <= elapsed < remaining + 3

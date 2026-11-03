@@ -28,18 +28,23 @@ from aptl.utils.pathsafe import (
 )
 from aptl.utils.strict_json import loads_strict
 
-OBSERVER_SHA256 = "ade4a431b3aafa55d5bb01f74fec175d582d37b531fc901321b91ad3ed5e3f22"
+OBSERVER_SHA256 = "33a812aebf761f7860d695816a797f1b984f7a90da3b0770fb811405e86d9ffa"
 OBSERVER_CREDENTIAL = "LILRAE_OPENCODE_PROVIDER_KEY"
 MAX_OBSERVATION_BYTES = 16 * 1024 * 1024
+OBSERVER_MODULE = "request_observer.mjs"
 
 
 class Ready(SafeObservation):
+    """Journal identity and native-turn declaration written before requests."""
+
     kind: Literal["ready"]
     observer_sha256: Digest
     native_turn_limit: Annotated[int, Field(ge=1, le=10_000)] | None = None
 
 
 class Request(SafeObservation):
+    """Safe request controls and context commitments for a new call."""
+
     kind: Literal["request"]
     call_id: Annotated[int, Field(ge=1, le=10_000)]
     timestamp_ms: Count
@@ -50,6 +55,8 @@ class Request(SafeObservation):
 
 
 class Response(SafeObservation):
+    """Allowlisted response metadata for a previously dispatched call."""
+
     kind: Literal["response"]
     call_id: Annotated[int, Field(ge=1, le=10_000)]
     timestamp_ms: Count
@@ -58,6 +65,8 @@ class Response(SafeObservation):
 
 
 class End(SafeObservation):
+    """One terminal state for a dispatched call."""
+
     kind: Literal["end"]
     call_id: Annotated[int, Field(ge=1, le=10_000)]
     timestamp_ms: Count
@@ -74,6 +83,7 @@ def _validate_request(
     expected_controls: ObservedRequestControls | None,
     expected_prompt_sha256: str | None,
 ) -> None:
+    """Compare observed controls and authored-prefix membership with retained pins."""
     if expected_controls is not None:
         actual = event.controls.model_dump(exclude_unset=True)
         actual.pop("usage", None)
@@ -94,6 +104,7 @@ def _validate_request(
 def _update_call(
     call: ProviderCallObservation, event: Response | End
 ) -> ProviderCallObservation:
+    """Advance one call without changing its generation or request membership."""
     if call.state != "dispatched" or event.timestamp_ms < call.requested_at_ms:
         raise ValueError("observation order differs")
     if isinstance(event, End):
@@ -118,6 +129,7 @@ def _journal_calls(
     expected_controls: ObservedRequestControls | None,
     expected_prompt_sha256: str | None,
 ) -> tuple[Ready, tuple[ProviderCallObservation, ...]]:
+    """Validate bounded event order and reduce it to safe call records."""
     if not lines or len(lines) > 50_000 or any(len(line) > 131_072 for line in lines):
         raise ValueError("invalid observation journal")
     loads_strict(lines[0])
@@ -129,20 +141,35 @@ def _journal_calls(
         loads_strict(line)
         event = _EVENT.validate_json(line)
         if isinstance(event, Request):
-            if event.call_id != len(calls) + 1:
-                raise ValueError("request membership differs")
-            _validate_request(event, expected_controls, expected_prompt_sha256)
-            calls[event.call_id] = ProviderCallObservation(
-                call_id=event.call_id,
-                requested_at_ms=event.timestamp_ms,
-                controls=event.controls,
-                context=event.context,
+            calls[event.call_id] = _new_call(
+                event,
+                len(calls),
+                expected_controls,
+                expected_prompt_sha256,
             )
         else:
             if isinstance(event, Ready) or event.call_id not in calls:
                 raise ValueError("request membership differs")
             calls[event.call_id] = _update_call(calls[event.call_id], event)
     return ready, tuple(calls.values())
+
+
+def _new_call(
+    event: Request,
+    count: int,
+    controls: ObservedRequestControls | None,
+    prompt_sha256: str | None,
+) -> ProviderCallObservation:
+    """Admit exactly the next request with independently checked controls."""
+    if event.call_id != count + 1:
+        raise ValueError("request membership differs")
+    _validate_request(event, controls, prompt_sha256)
+    return ProviderCallObservation(
+        call_id=event.call_id,
+        requested_at_ms=event.timestamp_ms,
+        controls=event.controls,
+        context=event.context,
+    )
 
 
 def read_request_observations(
@@ -193,10 +220,10 @@ def read_request_observations(
 
 
 def install_request_observer(
-    work: Path, config: dict, environment: Mapping[str, str], prompt: bytes
+    work: Path, config: dict[str, object], environment: Mapping[str, str], prompt: bytes
 ) -> tuple[dict[str, str], ObservedRequestControls]:
     """Leave a failed plugin load unable to reach the admitted provider."""
-    module = Path(__file__).with_name("request_observer.mjs").read_bytes()
+    module = Path(__file__).with_name(OBSERVER_MODULE).read_bytes()
     if hashlib.sha256(module).hexdigest() != OBSERVER_SHA256:
         raise ValueError("participant observer differs from its pin")
     provider = config["provider"]["openrouter"]
@@ -223,11 +250,9 @@ def install_request_observer(
         "prompt_sha256": hashlib.sha256(prompt).hexdigest(),
     }
     create_exclusive_nofollow(work, "observer-input.json", json.dumps(inputs).encode())
-    create_exclusive_nofollow(work, "request_observer.mjs", module)
-    config["plugin"] = [(work / "request_observer.mjs").as_uri()]
-    provider["options"].update(
-        baseURL="lilrae-observer-required://provider", apiKey="observer-required"
-    )
+    create_exclusive_nofollow(work, OBSERVER_MODULE, module)
+    config["plugin"] = [(work / OBSERVER_MODULE).as_uri()]
+    provider["options"].update(baseURL="lilrae-observer-required://provider", apiKey="")
     child = dict(environment)
     child[OBSERVER_CREDENTIAL] = child.pop("OPENROUTER_API_KEY")
     child["OPENCODE_PURE"] = "false"

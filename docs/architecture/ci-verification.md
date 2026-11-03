@@ -4,6 +4,11 @@ The ordinary Python shards also qualify the packaged provider observer module.
 Those jobs install the same pinned Node version as the native transport job.
 The observer probes resolve that executable before starting their minimal child environment and pass its absolute path.
 They do not add ambient PATH entries to the provider process.
+In CI, [Node's built-in test runner](https://nodejs.org/download/release/v22.23.3/docs/api/test.html#coverage-reporters) emits LCOV for those exact packaged-module probes.
+The test normalizes only the copied module's source path; line coverage comes from Node.
+The existing Python coverage artifacts carry these reports to the combiner and SonarCloud.
+All workers retain the existing Python coverage requirements; observer reports are combined across the shards.
+Local targeted runs do not enable coverage collection.
 
 Issue #1468 replaces repeated verification with checks selected by changed inputs.
 The target is five minutes for Python coverage and ten minutes for ordinary PR checks.

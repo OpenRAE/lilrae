@@ -609,8 +609,9 @@ def test_required_observer_refuses_before_any_affected_provider_request(
             prompt="synthetic observed prompt",
             timeout_seconds=15,
         )
+        failure_cancellation = Event()
         with pytest.raises(AgentExecutionError):
-            active("refused", Event())
+            active("refused", failure_cancellation)
     assert requests == []
     assert active.last_evidence.status == "failed"
     assert "private-test-credential" not in repr(active.last_evidence)

@@ -90,6 +90,7 @@ COMPONENTS = {
             "raes_contracts.addressing",
             "raes_contracts.contracts",
             "raes_contracts.trial_unit",
+            "raes_contracts.timestamps",
             "raes_runtime.runtime_trial_decisions",
             "types",
         }
