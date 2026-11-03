@@ -258,8 +258,9 @@ def test_effort_names_outside_native_vocabulary_are_rejected(provider, effort):
         reasoning_effort={"state": "set", "value": effort},
         reasoning_budget={"state": "omit", "value": None},
     )
+    serialized = json.dumps(data)
     with pytest.raises(ValueError, match="effort is unsupported"):
-        RequestCatalog.model_validate_json(json.dumps(data))
+        RequestCatalog.model_validate_json(serialized)
 
 
 @pytest.mark.parametrize(
@@ -353,8 +354,9 @@ def test_unqualified_reasoning_modes_are_rejected_before_dispatch(provider, mode
             "value": 2048 if mode == "budget" else None,
         },
     )
+    serialized = json.dumps(data)
     with pytest.raises(ValueError, match="unsupported"):
-        RequestCatalog.model_validate_json(json.dumps(data))
+        RequestCatalog.model_validate_json(serialized)
 
 
 @pytest.mark.integration

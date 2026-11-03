@@ -161,25 +161,14 @@ def configured_opencode_executor(
 ) -> LilraeOpenCodeExecutor:
     """Verify the sealed result and artifact commitment before constructing a harness."""
     if options.request is not None:
-        request = options.request
-        request.validate()
-        if (
-            manifest != request.manifest
-            or configuration != request.configuration_result
-            or prompt != request.prompt
-            or prompt_ref != request.prompt_ref
-            or request.profile.model not in supported_models
-            or timeout_seconds is None
-        ):
-            raise ValueError(
-                "participant request is incompatible with its installed configuration"
-            )
-        return LilraeOpenCodeExecutor(
-            options=options,
-            model=request.profile.model,
-            prompt=prompt,
-            timeout_seconds=timeout_seconds,
-            configuration_result=configuration,
+        return _expanded_executor(
+            configuration,
+            manifest,
+            prompt,
+            prompt_ref,
+            supported_models,
+            options,
+            timeout_seconds,
         )
     _validate_configuration_result(configuration, manifest, options.build)
     values = _values(configuration.configuration)
@@ -207,4 +196,36 @@ def configured_opencode_executor(
         timeout_seconds=values["timeout_seconds"],
         configuration_result=configuration,
         options=options,
+    )
+
+
+def _expanded_executor(
+    configuration: ParticipantConfigurationResultModel,
+    manifest: ParticipantImplementationManifestModel,
+    prompt: str,
+    prompt_ref: str,
+    supported_models: frozenset[str],
+    options: OpenCodeOptions,
+    timeout_seconds: float | None,
+) -> LilraeOpenCodeExecutor:
+    """Match the expanded request to the installed factory's exact trusted inputs."""
+    request = options.request
+    request.validate()
+    if (
+        manifest != request.manifest
+        or configuration != request.configuration_result
+        or prompt != request.prompt
+        or prompt_ref != request.prompt_ref
+        or request.profile.model not in supported_models
+        or timeout_seconds is None
+    ):
+        raise ValueError(
+            "participant request is incompatible with its installed configuration"
+        )
+    return LilraeOpenCodeExecutor(
+        options=options,
+        model=request.profile.model,
+        prompt=prompt,
+        timeout_seconds=timeout_seconds,
+        configuration_result=configuration,
     )

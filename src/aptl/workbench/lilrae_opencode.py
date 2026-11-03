@@ -140,7 +140,12 @@ class LilraeOpenCodeExecutor:
         )
         self._request = options.request
         self._request_binding = options.request_binding
-        validate_opencode_request(self._request, model=model, prompt=prompt, build=options.build, route=self._route, output_limit=self._max_output_tokens, configuration=self._configuration_result, binding=self._request_binding)
+        validate_opencode_request(
+            self._request, model=model, prompt=prompt, build=options.build, route=self._route,
+            output_limit=self._max_output_tokens, binding=self._request_binding,
+        )
+        if self._request is not None and self._request.configuration_result != self._configuration_result:
+            raise ValueError("participant request differs from its sealed configuration")
         self._validate_delivery()
         self._max_output_bytes = options.max_output_bytes
         self._runner = options.runner or BoundedProcessRunner()

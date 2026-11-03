@@ -125,7 +125,7 @@ flowchart LR
 
 The publication path adds no listener, credential access, process or remote fetch.
 Claude and Codex usage stays on each launch handle.
-Explicit run-store injection persists only typed counters and fixed request identity fields through existing structured storage.
+The launch retains its injected run store for typed counters and fixed request identity fields through existing structured storage.
 The browser workbench supplies its existing store.
 Absent or invalid counters stay null, and each response replaces the previous observation.
 Existing authentication, artifact containment, credential isolation, tool admission and process cleanup remain required at their existing boundaries.

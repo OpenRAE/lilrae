@@ -13,6 +13,8 @@ from raes.participant_control_context import SDLControlContextConfigurationValid
 from raes_contracts.canonical import canonical_contract_digest
 from raes_contracts.contracts import (
     ConfigurationTargetRegistryModel,
+    ConfigurationTargetDeclarationModel,
+    RealizedConfigurationValueModel,
     ParticipantConfigurationModel,
     ParticipantConfigurationResultModel,
     ParticipantControlContextAssetReferenceModel,
@@ -115,8 +117,12 @@ class ParticipantRequestOwner:
                 "codex": "reviewed effort or disabled; budgets unsupported",
                 "opencode": "reviewed model-specific effort, budget or disabled",
             }[self.catalog.provider],
-            "effective_context": "authored assets only; native harness, tools and effective request are not attested",
-            "request_application": "requires a compatible sealed-configuration executor; admission is not execution evidence",
+            "effective_context": (
+                "authored assets only; native harness, tools and effective request are not attested"
+            ),
+            "request_application": (
+                "requires a compatible sealed-configuration executor; admission is not execution evidence"
+            ),
             "retry_policy": "no adapter fallback; native internal retries are not an exactly-once guarantee",
         }
         if self.catalog.provider != "opencode":
@@ -171,29 +177,36 @@ class ParticipantRequestOwner:
         ):
             raise ValueError("participant request configuration is incomplete")
         for entry in configuration.values:
-            declaration = registry.resolve(entry.target_id)
-            if entry.value_type != declaration.value_type:
-                raise ValueError("participant request type is inconsistent")
-            declaration.validate_value(entry.value)
-            if (
-                declaration.control_context is None
-                and entry.control_context_selection is not None
-            ):
-                raise ValueError(
-                    "participant context metadata is not declared for this target"
-                )
-            if declaration.control_context is not None:
-                selected = entry.control_context_selection
-                if (
-                    selected is None
-                    or selected.slot_id != declaration.control_context.slot_id
-                    or selected.declaration_ref != entry.value.value
-                    or selected.asset_ref
-                    != declaration.control_context.references[entry.value.value]
-                ):
-                    raise ValueError("participant context commitment is inconsistent")
+            self._validate_target(entry, registry.resolve(entry.target_id))
         self._profile(values)
         return configuration
+
+    @staticmethod
+    def _validate_target(
+        entry: RealizedConfigurationValueModel,
+        declaration: ConfigurationTargetDeclarationModel,
+    ) -> None:
+        """Validate one declared value and its exact optional context commitment."""
+        if entry.value_type != declaration.value_type:
+            raise ValueError("participant request type is inconsistent")
+        declaration.validate_value(entry.value)
+        if (
+            declaration.control_context is None
+            and entry.control_context_selection is not None
+        ):
+            raise ValueError(
+                "participant context metadata is not declared for this target"
+            )
+        if declaration.control_context is not None:
+            selected = entry.control_context_selection
+            if (
+                selected is None
+                or selected.slot_id != declaration.control_context.slot_id
+                or selected.declaration_ref != entry.value.value
+                or selected.asset_ref
+                != declaration.control_context.references[entry.value.value]
+            ):
+                raise ValueError("participant context commitment is inconsistent")
 
     def _profile(self, values: Mapping[str, object]) -> RequestProfile:
         for profile in self.catalog.profiles:

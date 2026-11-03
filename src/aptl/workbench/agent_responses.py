@@ -4,6 +4,8 @@ import json
 from collections.abc import Mapping
 from aptl.workbench.process import AgentExecutionError
 
+_INVALID_RESULT = "agent returned an invalid result"
+
 
 def parse_claude_result(stdout: bytes) -> str:
     """Parse the installed agent's strict JSON result envelope."""
@@ -19,7 +21,7 @@ def parse_claude_result(stdout: bytes) -> str:
             raise ValueError
         return result
     except (KeyError, ValueError) as exc:
-        raise AgentExecutionError("agent returned an invalid result") from exc
+        raise AgentExecutionError(_INVALID_RESULT) from exc
 
 
 def parse_codex_result(stdout: bytes) -> str:
@@ -39,9 +41,9 @@ def parse_codex_result(stdout: bytes) -> str:
             ):
                 final_message = item["text"]
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise AgentExecutionError("agent returned an invalid result") from exc
+        raise AgentExecutionError(_INVALID_RESULT) from exc
     if final_message is None:
-        raise AgentExecutionError("agent returned an invalid result")
+        raise AgentExecutionError(_INVALID_RESULT)
     return final_message
 
 

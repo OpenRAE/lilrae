@@ -3,6 +3,7 @@
 from pathlib import Path
 from dataclasses import replace
 from threading import Event
+from functools import partial
 import json
 
 import pytest
@@ -29,20 +30,16 @@ def test_reconstructed_request_requires_independent_trusted_binding(tmp_path, pr
     adapter = factory(
         **{f"{provider}_executable": Path("/bin/true")}, work_dir=tmp_path
     )
+    launch = DecisionAgentLaunch(
+        provider=provider, model=request.profile.model, run_id="scope", request=request
+    )
+    credentials = {
+        "ANTHROPIC_API_KEY"
+        if provider == "claude"
+        else "CODEX_API_KEY": "fixture-local-only"
+    }
     with pytest.raises(AgentExecutionError, match="binding"):
-        adapter.launch(
-            DecisionAgentLaunch(
-                provider=provider,
-                model=request.profile.model,
-                run_id="scope",
-                request=request,
-            ),
-            {
-                "ANTHROPIC_API_KEY"
-                if provider == "claude"
-                else "CODEX_API_KEY": "fixture-local-only"
-            },
-        )
+        adapter.launch(launch, credentials)
 
 
 @pytest.mark.parametrize("provider", ["claude", "codex", "opencode"])
@@ -91,18 +88,21 @@ def test_peer_or_incompatible_scope_never_reaches_dispatch(
                 serving_provider=request.profile.serving_provider,
             ),
         )
-        with pytest.raises((ValueError, AgentExecutionError)):
-            active = LilraeOpenCodeExecutor(
-                options=options,
-                model=initial.profile.model,
-                prompt=initial.prompt,
-                timeout_seconds=30,
-                configuration_result=initial.configuration_result,
-            )
-            assert after_launch
+        operation = partial(
+            LilraeOpenCodeExecutor,
+            options=options,
+            model=initial.profile.model,
+            prompt=initial.prompt,
+            timeout_seconds=30,
+            configuration_result=initial.configuration_result,
+        )
+        if after_launch:
+            active = operation()
             monkeypatch.setattr(active, "_request", forged)
             monkeypatch.setattr(active, "_request_binding", binding)
-            active("scope-attack", Event())
+            operation = partial(active, "scope-attack", Event())
+        with pytest.raises((ValueError, AgentExecutionError)):
+            operation()
     else:
         factory = (
             ClaudeCodeManagedAgentAdapter
@@ -112,27 +112,27 @@ def test_peer_or_incompatible_scope_never_reaches_dispatch(
         adapter = factory(
             **{f"{provider}_executable": executable}, work_dir=tmp_path, runner=runner
         )
-        with pytest.raises(AgentExecutionError, match="binding"):
-            handle = adapter.launch(
-                DecisionAgentLaunch(
-                    provider=provider,
-                    model=initial.profile.model,
-                    run_id="scope",
-                    request=initial,
-                    request_binding=initial_binding,
-                ),
-                {
-                    "ANTHROPIC_API_KEY"
-                    if provider == "claude"
-                    else "CODEX_API_KEY": "private-fixture-key"
-                },
-            )
-            assert after_launch
+        launch = DecisionAgentLaunch(
+            provider=provider,
+            model=initial.profile.model,
+            run_id="scope",
+            request=initial,
+            request_binding=initial_binding,
+        )
+        credentials = {
+            "ANTHROPIC_API_KEY"
+            if provider == "claude"
+            else "CODEX_API_KEY": "private-fixture-key"
+        }
+        operation = partial(adapter.launch, launch, credentials)
+        if after_launch:
+            handle = operation()
             handle.launch = replace(
                 handle.launch, request=forged, request_binding=binding
             )
             adapter.list_tools(handle)
-            adapter.respond(
+            operation = partial(
+                adapter.respond,
                 handle,
                 "choose",
                 response_schema={
@@ -144,6 +144,8 @@ def test_peer_or_incompatible_scope_never_reaches_dispatch(
                     "additionalProperties": False,
                 },
             )
+        with pytest.raises(AgentExecutionError, match="binding"):
+            operation()
     assert runner.calls == 0
 
 

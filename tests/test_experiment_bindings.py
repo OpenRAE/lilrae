@@ -425,8 +425,9 @@ def test_participant_configuration_requires_injected_owner_validation():
 
 
 def test_participant_manifest_binding_rejects_a_forged_digest():
+    manifest = _participant_manifest()
     with pytest.raises(ValueError, match="manifest digest"):
-        ParticipantManifestBinding(manifest=_participant_manifest(), manifest_ref="manifests/reference-red-agent.json", manifest_digest="sha256:" + "0" * 64, validator=_FIXTURE_VALIDATOR)
+        ParticipantManifestBinding(manifest=manifest, manifest_ref="manifests/reference-red-agent.json", manifest_digest="sha256:" + "0" * 64, validator=_FIXTURE_VALIDATOR)
 
 
 def test_explicit_bindings_are_pinned_in_immutable_trial_plan() -> None:

@@ -118,6 +118,15 @@ class RequestCatalog(ClosedModel):
         return self
 
     def _validate_profile(self, profile: RequestProfile) -> None:
+        self._validate_route(profile)
+        self._validate_reasoning(profile)
+        if self.provider == "opencode":
+            self._validate_opencode_parameters(profile)
+        else:
+            self._validate_cli_parameters(profile)
+
+    def _validate_route(self, profile: RequestProfile) -> None:
+        """Admit the gateway and any enforceable exclusive serving route."""
         gateway = {"claude": "anthropic", "codex": "openai", "opencode": "openrouter"}[
             self.provider
         ]
@@ -137,6 +146,16 @@ class RequestCatalog(ClosedModel):
             )
         ):
             raise ValueError("request gateway endpoint is not approved")
+        if self.provider == "opencode":
+            OpenRouterRoute(
+                endpoint=profile.gateway_endpoint,
+                serving_provider=profile.serving_provider,
+            )
+        elif profile.serving_provider != gateway:
+            raise ValueError("exclusive alternate serving routes are unsupported")
+
+    def _validate_reasoning(self, profile: RequestProfile) -> None:
+        """Keep effort vocabulary and reasoning modes native to each adapter."""
         efforts = {
             "claude": {"low", "medium", "high", "xhigh", "max"},
             "codex": {
@@ -154,21 +173,6 @@ class RequestCatalog(ClosedModel):
             and profile.reasoning_effort.value not in efforts[self.provider]
         ):
             raise ValueError("reasoning effort is unsupported by this implementation")
-        if self.provider != "opencode":
-            if profile.serving_provider != gateway:
-                raise ValueError("exclusive alternate serving routes are unsupported")
-            if any(
-                control.state != "unsupported"
-                for control in (profile.temperature, profile.top_p)
-            ):
-                raise ValueError("installed CLI sampling requests are unsupported")
-            if profile.output_limit.state != "provider-managed":
-                raise ValueError("installed CLI generation limits are provider-managed")
-        elif (
-            profile.output_limit.state not in {"set", "locked"}
-            or profile.limit_scope == "provider-managed"
-        ):
-            raise ValueError("OpenCode requires an explicit output limit")
         if self.provider == "codex" and profile.reasoning_mode == "budget":
             raise ValueError("Codex reasoning budgets are unsupported")
         if self.provider == "claude" and profile.reasoning_mode in {
@@ -178,22 +182,33 @@ class RequestCatalog(ClosedModel):
             raise ValueError(
                 "Claude disabled reasoning and budgets are unsupported by this adapter"
             )
+
+    @staticmethod
+    def _validate_cli_parameters(profile: RequestProfile) -> None:
+        """Disclose the CLI controls this adapter cannot set."""
+        if any(
+            control.state != "unsupported"
+            for control in (profile.temperature, profile.top_p)
+        ):
+            raise ValueError("installed CLI sampling requests are unsupported")
+        if profile.output_limit.state != "provider-managed":
+            raise ValueError("installed CLI generation limits are provider-managed")
+
+    @staticmethod
+    def _validate_opencode_parameters(profile: RequestProfile) -> None:
+        """Validate bounded generation, coupled budgets and deliberate sampling."""
         if (
-            self.provider == "opencode"
-            and profile.reasoning_mode == "budget"
-            and (
-                profile.limit_scope != "combined-generation"
-                or profile.reasoning_budget.value >= profile.output_limit.value
-            )
+            profile.output_limit.state not in {"set", "locked"}
+            or profile.limit_scope == "provider-managed"
+        ):
+            raise ValueError("OpenCode requires an explicit output limit")
+        if profile.reasoning_mode == "budget" and (
+            profile.limit_scope != "combined-generation"
+            or profile.reasoning_budget.value >= profile.output_limit.value
         ):
             raise ValueError("reasoning budget must fit the combined generation limit")
-        if self.provider == "opencode" and any(
+        if any(
             control.state == "provider-managed"
             for control in (profile.temperature, profile.top_p)
         ):
             raise ValueError("sampling must be explicit or deliberately omitted")
-        if self.provider == "opencode":
-            OpenRouterRoute(
-                endpoint=profile.gateway_endpoint,
-                serving_provider=profile.serving_provider,
-            )

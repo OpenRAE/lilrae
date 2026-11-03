@@ -138,8 +138,8 @@ function safeModelCount(name: string, value: unknown): boolean {
   if (value === null || publicCount(value)) return true;
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
-  const allowed = ['target_id', 'value_type', 'allowed_value_kinds', 'sensitivity', 'aliases', 'default'];
-  return Object.keys(item).every((key) => allowed.includes(key))
+  const allowed = new Set(['target_id', 'value_type', 'allowed_value_kinds', 'sensitivity', 'aliases', 'default']);
+  return Object.keys(item).every((key) => allowed.has(key))
     && item.target_id === name && item.value_type === 'integer'
     && Array.isArray(item.allowed_value_kinds) && item.allowed_value_kinds.length === 1 && item.allowed_value_kinds[0] === 'literal'
     && ['public', 'internal'].includes(item.sensitivity as string)

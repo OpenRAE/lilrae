@@ -239,9 +239,9 @@ provider=request.provider
 factory=ClaudeCodeManagedAgentAdapter if provider=='claude' else CodexManagedAgentAdapter
 kwargs={('claude_executable' if provider=='claude' else 'codex_executable'):Path(sys.argv[2])}
 store=LocalRunStore(Path(sys.argv[3])/'runs')
-adapter=factory(**kwargs,work_dir=Path(sys.argv[3])/'native',timeout_seconds=120 if sys.argv[4]=='200' else 20,run_store=store)
+adapter=factory(**kwargs,work_dir=Path(sys.argv[3])/'native',timeout_seconds=120 if sys.argv[4]=='200' else 20)
 key='ANTHROPIC_API_KEY' if provider=='claude' else 'CODEX_API_KEY'
-handle=adapter.launch(DecisionAgentLaunch(provider=provider,model=request.profile.model,run_id='qualification',request=request,request_binding=ParticipantRequestBinding(owner,'agents.operator')),{key:'sk-fixture-local-only'})
+handle=adapter.launch(DecisionAgentLaunch(provider=provider,model=request.profile.model,run_id='qualification',request=request,request_binding=ParticipantRequestBinding(owner,'agents.operator'),run_store=store),{key:'sk-fixture-local-only'})
 adapter.list_tools(handle)
 schema={'type':'object','properties':{'candidate':{'type':'integer','minimum':0,'maximum':0}},'required':['candidate'],'additionalProperties':False}
 if sys.argv[4]=='200':

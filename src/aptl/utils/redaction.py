@@ -101,6 +101,7 @@ def experiment_no_redact_active() -> bool:
     """
     return os.environ.get(_EXPERIMENT_NO_REDACT_ENV, "").strip().lower() in _TRUTHY
 
+
 # Substring tokens that mark a key as carrying credential material. Match
 # is case-insensitive substring against the *full key name* so a field like
 # ``ssl_authorization_header`` is also caught. ``pass`` subsumes
@@ -177,22 +178,42 @@ def _public_count(value: object) -> bool:
     return type(value) in (int, float) and 0 <= value < 2**53 and value == int(value)
 
 
-def _safe_model_count(name: str, value: object) -> bool:
-    """Preserve only typed public counts and closed integer target declarations."""
-    if name not in {"max_output_tokens", "input_tokens", "output_tokens"}:
-        return False
-    if value is None or _public_count(value):
-        return True
-    if not isinstance(value, dict):
-        return False
-    allowed = {"target_id", "value_type", "allowed_value_kinds", "sensitivity", "aliases", "default"}
+def _public_count_default(value: object) -> bool:
+    """Admit only a typed literal count as a declaration default."""
+    return (
+        isinstance(value, dict)
+        and value.get("kind") == "literal"
+        and _public_count(value.get("value"))
+    )
+
+
+def _count_declaration(name: str, value: dict[str, object]) -> bool:
+    """Recognize the closed native integer declaration shape."""
+    allowed = {
+        "target_id",
+        "value_type",
+        "allowed_value_kinds",
+        "sensitivity",
+        "aliases",
+        "default",
+    }
     return (
         set(value) <= allowed
         and value.get("target_id") == name
         and value.get("value_type") == "integer"
         and value.get("allowed_value_kinds") == ["literal"]
         and value.get("sensitivity") in ("public", "internal")
-        and ("default" not in value or isinstance(value["default"], dict) and value["default"].get("kind") == "literal" and _public_count(value["default"].get("value")))
+        and ("default" not in value or _public_count_default(value["default"]))
+    )
+
+
+def _safe_model_count(name: str, value: object) -> bool:
+    """Preserve only typed public counts and closed integer target declarations."""
+    return name in {"max_output_tokens", "input_tokens", "output_tokens"} and (
+        value is None
+        or _public_count(value)
+        or isinstance(value, dict)
+        and _count_declaration(name, value)
     )
 
 
@@ -267,9 +288,7 @@ _ARGV_SHORT_FLAG_RULES: tuple[tuple[str, frozenset[str], bool], ...] = (
 )
 
 
-def _is_argv_short_flag_target(
-    flag: str, value: str, modes: dict[str, bool]
-) -> bool:
+def _is_argv_short_flag_target(flag: str, value: str, modes: dict[str, bool]) -> bool:
     """Decide whether ``value`` (the element following ``flag``) should be
     redacted as a short-flag credential value, per ``modes``."""
     for mode, flags, content_gated in _ARGV_SHORT_FLAG_RULES:
@@ -409,7 +428,9 @@ def is_secret_shaped_value(value: object) -> bool:
     type mismatch.
     """
     baseline: object = (
-        bytes(value).decode("utf-8", "replace") if isinstance(value, (bytes, bytearray)) else value
+        bytes(value).decode("utf-8", "replace")
+        if isinstance(value, (bytes, bytearray))
+        else value
     )
     return _redact(value, 0) != baseline
 
@@ -440,7 +461,9 @@ def _redact(value: object, depth: int) -> object:
         return REDACTED
     if isinstance(value, dict):
         return {
-            k: REDACTED if _is_sensitive_key(str(k)) and not _safe_model_count(str(k), v) else _redact(v, depth + 1)
+            k: REDACTED
+            if _is_sensitive_key(str(k)) and not _safe_model_count(str(k), v)
+            else _redact(v, depth + 1)
             for k, v in value.items()
         }
     return (

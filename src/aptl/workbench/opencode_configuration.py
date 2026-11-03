@@ -9,13 +9,16 @@ from aptl.core.opencode import OpenRouterRoute
 from aptl.core._participant_model_ids import validate_installed_participant_model_id
 from aptl.core.participant_requests.profiles import RequestProfile
 
+_OPENROUTER_PREFIX = "openrouter/"
+
 
 def render_opencode_config(
     model: str,
     route: OpenRouterRoute,
     permissions: Mapping[str, str],
     servers: dict[str, object],
-    *, request_profile: RequestProfile | None = None,
+    *,
+    request_profile: RequestProfile | None = None,
 ) -> dict[str, object]:
     """Serialize admitted route and tool inputs into the upstream config shape."""
     config = {
@@ -24,13 +27,13 @@ def render_opencode_config(
         "enabled_providers": ["openrouter"],
         "provider": {
             "openrouter": {
-                "whitelist": [model.removeprefix("openrouter/")],
+                "whitelist": [model.removeprefix(_OPENROUTER_PREFIX)],
                 "options": {
                     "baseURL": route.endpoint,
                     "apiKey": "{env:OPENROUTER_API_KEY}",
                 },
                 "models": {
-                    model.removeprefix("openrouter/"): {
+                    model.removeprefix(_OPENROUTER_PREFIX): {
                         "options": {
                             "provider": {
                                 "only": [route.serving_provider],
@@ -54,7 +57,9 @@ def render_opencode_config(
     }
     if request_profile is not None:
         profile = request_profile
-        model_config = config["provider"]["openrouter"]["models"][model.removeprefix("openrouter/")]
+        model_config = config["provider"]["openrouter"]["models"][
+            model.removeprefix(_OPENROUTER_PREFIX)
+        ]
         native = model_config["options"]
         if profile.reasoning_mode == "effort":
             native["reasoning"] = {"effort": profile.reasoning_effort.value}

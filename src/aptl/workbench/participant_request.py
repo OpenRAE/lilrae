@@ -7,8 +7,20 @@ from pathlib import Path
 from aptl.core.participant_requests.request import ParticipantRequest
 from aptl.core.participant_requests.binding import ParticipantRequestBinding
 from aptl.core.opencode import OpenCodeBuild, OpenRouterRoute
-from raes_contracts.contracts import ParticipantConfigurationResultModel
 from aptl.workbench.process import AgentExecutionError
+
+
+def _validate_binding(
+    request: ParticipantRequest | None, binding: ParticipantRequestBinding | None
+) -> None:
+    """Require the independent binding for each expanded request."""
+    if request is None:
+        if binding is not None:
+            raise ValueError("participant request binding has no request")
+    elif binding is None:
+        raise ValueError("participant request requires a trusted binding")
+    else:
+        binding.validate(request)
 
 
 def validate_request(
@@ -20,16 +32,12 @@ def validate_request(
     binding: ParticipantRequestBinding | None = None,
 ) -> None:
     """Refuse changed executable or selection before any provider operation."""
-    if request is None:
-        if binding is not None:
-            raise AgentExecutionError("participant request binding has no request")
-        return
-    if binding is None:
-        raise AgentExecutionError("participant request requires a trusted binding")
     try:
-        binding.validate(request)
+        _validate_binding(request, binding)
     except ValueError:
         raise AgentExecutionError("participant request binding was refused") from None
+    if request is None:
+        return
     try:
         with executable.open("rb") as stream:
             digest = hashlib.file_digest(stream, "sha256").hexdigest()
@@ -103,17 +111,12 @@ def validate_opencode_request(
     build: OpenCodeBuild,
     route: OpenRouterRoute,
     output_limit: int,
-    configuration: ParticipantConfigurationResultModel | None,
     binding: ParticipantRequestBinding | None = None,
 ) -> None:
     """Keep the native OpenCode delivery equal to the owner-verified request."""
+    _validate_binding(request, binding)
     if request is None:
-        if binding is not None:
-            raise ValueError("participant request binding has no request")
         return
-    if binding is None:
-        raise ValueError("participant request requires a trusted binding")
-    binding.validate(request)
     if (
         request.provider != "opencode"
         or request.profile.model != model
@@ -123,6 +126,5 @@ def validate_opencode_request(
         or request.profile.gateway_endpoint != route.endpoint
         or request.profile.serving_provider != route.serving_provider
         or request.profile.output_limit.value != output_limit
-        or request.configuration_result != configuration
     ):
         raise ValueError("participant request differs from its installed delivery")

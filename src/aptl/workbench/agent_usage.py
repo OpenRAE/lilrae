@@ -3,7 +3,6 @@
 from dataclasses import asdict, dataclass
 import json
 
-from aptl.core.runstore import RunStorageBackend
 from aptl.workbench.process import ProcessResult
 from aptl.workbench.runtime import AgentLaunch, DecisionAgentLaunch
 
@@ -17,6 +16,7 @@ class AgentUsage:
 
 
 def _count(value: object) -> int | None:
+    """Keep only nonnegative counts with exact JSON integer representation."""
     return value if type(value) is int and 0 <= value < 2**53 else None
 
 
@@ -34,7 +34,7 @@ def parse_usage(provider: str, stdout: bytes) -> AgentUsage:
                 "turn.completed" if provider == "codex" else "result"
             ):
                 usage = event.get("usage")
-    except UnicodeDecodeError, ValueError:
+    except ValueError:
         return AgentUsage()
     if not isinstance(usage, dict):
         return AgentUsage()
@@ -46,9 +46,8 @@ def parse_usage(provider: str, stdout: bytes) -> AgentUsage:
 class AgentUsageRecorder:
     """Keep raw provider output out of the existing structured run store."""
 
-    def __init__(self, provider: str, store: RunStorageBackend | None) -> None:
+    def __init__(self, provider: str) -> None:
         self._provider = provider
-        self._store = store
 
     def record(self, launch: AgentLaunch, result: ProcessResult) -> AgentUsage:
         usage = parse_usage(self._provider, result.stdout)
@@ -57,8 +56,8 @@ class AgentUsageRecorder:
             if isinstance(launch, DecisionAgentLaunch) and launch.request is not None
             else None
         )
-        if self._store is not None:
-            self._store.append_jsonl(
+        if launch.run_store is not None:
+            launch.run_store.append_jsonl(
                 launch.run_id,
                 "workbench/usage.jsonl",
                 [

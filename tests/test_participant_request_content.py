@@ -32,10 +32,9 @@ def test_context_metadata_cannot_be_added_to_a_plain_request_target():
         else entry
         for entry in configuration.values
     ]
+    changed = configuration.model_copy(update={"values": values})
     with pytest.raises(ValueError, match="context"):
-        owner.validate_and_normalize(
-            configuration.model_copy(update={"values": values})
-        )
+        owner.validate_and_normalize(changed)
 
 
 def test_scope_and_stale_descriptor_fail_before_content_resolution():
@@ -43,11 +42,13 @@ def test_scope_and_stale_descriptor_fail_before_content_resolution():
     with pytest.raises(ValueError):
         realize(owner, participant="agents.peer")
     scenario.agents["peer"] = type(scenario.agents["operator"])(role="green")
+    peer_owner = owner.for_scenario(scenario)
     with pytest.raises(ValueError, match="scope-incompatible"):
-        realize(owner.for_scenario(scenario), participant="agents.peer")
+        realize(peer_owner, participant="agents.peer")
     scenario.control_context_assets["brief-terse"].asset_version = "changed"
+    changed_owner = owner.for_scenario(scenario)
     with pytest.raises(ValueError):
-        realize(owner.for_scenario(scenario))
+        realize(changed_owner)
 
 
 @pytest.mark.parametrize("algorithm", ["sha256", "sha384", "sha512", "blake3"])

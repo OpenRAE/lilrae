@@ -61,11 +61,10 @@ def test_reported_usage_survives_adapter_and_storage(
         else CodexManagedAgentAdapter
     )
     kwargs = {f"{provider}_executable": _executable(tmp_path / provider)}
-    adapter = factory(
-        **kwargs, work_dir=tmp_path / "work", runner=runner, run_store=store
-    )
+    adapter = factory(**kwargs, work_dir=tmp_path / "work", runner=runner)
     handle = adapter.launch(
         DecisionAgentLaunch(
+            run_store=store,
             provider=provider,
             model="claude-sonnet-5-5" if provider == "claude" else "gpt-5.2-codex",
             run_id="usage-run",
@@ -99,3 +98,34 @@ def test_reported_usage_survives_adapter_and_storage(
     assert records[0]["served_model"] is records[0]["served_provider"] is None
     assert "private" not in json.dumps(records)
     assert "must-not-persist" not in json.dumps(records)
+    other_store = LocalRunStore(tmp_path / "other-runs")
+    other_launch = DecisionAgentLaunch(
+        provider=provider,
+        model="claude-sonnet-5-5" if provider == "claude" else "gpt-5.2-codex",
+        run_id="other-run",
+        run_store=other_store,
+    )
+    credentials = {
+        "ANTHROPIC_API_KEY"
+        if provider == "claude"
+        else "CODEX_API_KEY": "private-fixture-key"
+    }
+    other_handle = adapter.launch(other_launch, credentials)
+    runner.value = 0
+    adapter.list_tools(other_handle)
+    adapter.respond(
+        other_handle, "choose separately", response_schema=_selection_schema(1)
+    )
+    adapter.close(other_handle)
+    other_record = json.loads(
+        (other_store.get_run_path("other-run") / "workbench/usage.jsonl").read_text()
+    )
+    assert other_record["input_tokens"] == other_record["output_tokens"] == 0
+    assert (
+        len(
+            (store.get_run_path("usage-run") / "workbench/usage.jsonl")
+            .read_text()
+            .splitlines()
+        )
+        == 2
+    )

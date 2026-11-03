@@ -96,7 +96,7 @@ The route records gateway endpoint and requested serving provider separately fro
 Actual identity remains unattested when the provider supplies no adequate evidence.
 Missing usage remains unknown, never zero.
 Claude and Codex expose their latest per-handle counters through `adapter.usage(handle)`.
-Pass an existing `RunStorageBackend` as `run_store` to retain allowlisted invocation reports in `workbench/usage.jsonl`.
+Pass an existing `RunStorageBackend` as the launch's `run_store` to retain allowlisted invocation reports in `workbench/usage.jsonl`.
 The browser workbench supplies its existing local run store automatically.
 Missing or invalid counts become null; reported zero stays zero.
 These counts have the native CLI's reporting scope, which can include auxiliary work.

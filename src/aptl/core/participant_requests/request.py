@@ -6,6 +6,7 @@ import hashlib
 from raes_contracts.contracts import (
     ParticipantConfigurationResultModel,
     ParticipantImplementationManifestModel,
+    RealizedConfigurationValueModel,
 )
 from raes_contracts.canonical import canonical_contract_digest
 from raes_contracts.artifact_checksums import checksum_hasher
@@ -38,6 +39,17 @@ class ParticipantRequest:
     def validate(self) -> None:
         result = self.configuration_result
         manifest = self.manifest
+        self._validate_manifest(result, manifest)
+        self._validate_profile(manifest)
+        self._validate_content(result, manifest)
+        self._validate_selection(result)
+
+    @staticmethod
+    def _validate_manifest(
+        result: ParticipantConfigurationResultModel,
+        manifest: ParticipantImplementationManifestModel,
+    ) -> None:
+        """Retain the manifest, owner and implementation commitments."""
         if (
             manifest.configuration_registry is None
             or result.manifest_digest != canonical_contract_digest(manifest)
@@ -45,6 +57,11 @@ class ParticipantRequest:
             or result.configuration.owner != manifest.configuration_registry.owner
         ):
             raise ValueError("participant request manifest is inconsistent")
+
+    def _validate_profile(
+        self, manifest: ParticipantImplementationManifestModel
+    ) -> None:
+        """Keep the selected profile and executable in the committed catalog."""
         catalog = RequestCatalog.model_validate_json(
             manifest.constraints["request_profiles"]
         )
@@ -57,7 +74,9 @@ class ParticipantRequest:
             raise ValueError(
                 "participant request profile or build differs from its manifest"
             )
-        self._validate_content(result, manifest)
+
+    def _validate_selection(self, result: ParticipantConfigurationResultModel) -> None:
+        """Match model, profile and exact prompt to the sealed selections."""
         values = {
             entry.target_id: entry.value.value
             for entry in result.configuration.values
@@ -101,33 +120,39 @@ class ParticipantRequest:
             self.context_contents,
             strict=True,
         ):
-            entry = selected[slot]
-            selection = entry.control_context_selection
-            asset = ParticipantControlContextAssetModel.model_validate_json(descriptor)
-            pin = control_context_asset_reference(asset)
-            domain = manifest.configuration_registry.resolve(
-                entry.target_id
-            ).control_context
-            if (
-                pin != selection.asset_ref
-                or domain is None
-                or domain.references.get(selection.declaration_ref) != pin
-                or entry.value.value != selection.declaration_ref
-            ):
-                raise ValueError(
-                    "participant content descriptor differs from its selected asset"
-                )
-            data = content.encode("utf-8")
-            hasher = checksum_hasher(asset.content.checksum.algorithm)
-            hasher.update(data)
-            if (
-                len(data) != asset.content.size_bytes
-                or hasher.hexdigest().casefold()
-                != asset.content.checksum.value.casefold()
-            ):
-                raise ValueError(
-                    "participant content differs from its selected commitment"
-                )
+            self._validate_asset(selected[slot], manifest, descriptor, content)
+
+    @staticmethod
+    def _validate_asset(
+        entry: RealizedConfigurationValueModel,
+        manifest: ParticipantImplementationManifestModel,
+        descriptor: str,
+        content: str,
+    ) -> None:
+        """Check one retained descriptor and its exact UTF-8 content commitment."""
+        selection = entry.control_context_selection
+        asset = ParticipantControlContextAssetModel.model_validate_json(descriptor)
+        pin = control_context_asset_reference(asset)
+        domain = manifest.configuration_registry.resolve(
+            entry.target_id
+        ).control_context
+        if (
+            pin != selection.asset_ref
+            or domain is None
+            or domain.references.get(selection.declaration_ref) != pin
+            or entry.value.value != selection.declaration_ref
+        ):
+            raise ValueError(
+                "participant content descriptor differs from its selected asset"
+            )
+        data = content.encode("utf-8")
+        hasher = checksum_hasher(asset.content.checksum.algorithm)
+        hasher.update(data)
+        if (
+            len(data) != asset.content.size_bytes
+            or hasher.hexdigest().casefold() != asset.content.checksum.value.casefold()
+        ):
+            raise ValueError("participant content differs from its selected commitment")
 
     @property
     def configuration_result(self) -> ParticipantConfigurationResultModel:

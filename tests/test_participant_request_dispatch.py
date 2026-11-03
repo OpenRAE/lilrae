@@ -184,11 +184,12 @@ def test_reconstructed_request_cannot_replace_prompt_and_its_hash(
             changed.encode()
         ).hexdigest()
         changes["context_descriptors"] = (json.dumps(descriptor),)
+    changed_sha256 = hashlib.sha256(changed.encode()).hexdigest()
     with pytest.raises(ValueError, match="content"):
         replace(
             request,
             prompt=changed,
-            prompt_sha256=hashlib.sha256(changed.encode()).hexdigest(),
+            prompt_sha256=changed_sha256,
             **changes,
         )
 

@@ -8,7 +8,6 @@ import json
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from aptl.core.runstore import RunStorageBackend
 from aptl.workbench.agent_usage import AgentUsage, AgentUsageRecorder
 
 from aptl.core.config import validate_installed_participant_model_id
@@ -60,7 +59,6 @@ class CodexManagedAgentAdapter:
         codex_executable: Path,
         work_dir: Path,
         runner: ProcessRunner | None = None,
-        run_store: RunStorageBackend | None = None,
         timeout_seconds: float = 120.0,
         max_output_bytes: int = 1_000_000,
         max_prompt_chars: int = 64_000,
@@ -75,7 +73,7 @@ class CodexManagedAgentAdapter:
         self._xdg_config_home = _prepare_work_dir(self._private_home / ".config")
         self._codex_home = _prepare_work_dir(self._work_dir / "codex-home")
         self._runner = runner or BoundedProcessRunner()
-        self._usage = AgentUsageRecorder("codex", run_store)
+        self._usage = AgentUsageRecorder("codex")
         self._timeout_seconds = timeout_seconds
         self._max_output_bytes = max_output_bytes
         self._max_prompt_chars = max_prompt_chars
@@ -91,7 +89,10 @@ class CodexManagedAgentAdapter:
             raise AgentExecutionError("Codex adapter supports decision-only launches")
         if launch.provider != "codex":
             raise AgentExecutionError("agent launch provider does not match adapter")
-        validate_request(launch.request, provider="codex", model=launch.model, executable=self._executable, binding=launch.request_binding)
+        validate_request(
+            launch.request, provider="codex", model=launch.model,
+            executable=self._executable, binding=launch.request_binding,
+        )
         try:
             validate_installed_participant_model_id(launch.provider, launch.model)
         except ValueError as exc:
@@ -156,7 +157,10 @@ class CodexManagedAgentAdapter:
         active = _require_handle(handle)
         if active.closed or not active.ready:
             raise AgentExecutionError("agent profile is not ready")
-        validate_request(active.launch.request, provider="codex", model=active.launch.model, executable=self._executable, binding=active.launch.request_binding)
+        validate_request(
+            active.launch.request, provider="codex", model=active.launch.model,
+            executable=self._executable, binding=active.launch.request_binding,
+        )
         if active.launch.request is not None:
             message = active.launch.request.prompt + message
         schema_json = admit_decision_response_schema(

@@ -11,7 +11,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aptl.core.runstore import RunStorageBackend
 from aptl.workbench.agent_usage import AgentUsage, AgentUsageRecorder
 from aptl.workbench.mcp_probe import InventoryProbe, probe_mcp_server as probe_mcp_server
 
@@ -76,7 +75,6 @@ class ClaudeCodeManagedAgentAdapter:
         claude_executable: Path,
         work_dir: Path,
         runner: ProcessRunner | None = None,
-        run_store: RunStorageBackend | None = None,
         inventory_probe: InventoryProbe = probe_mcp_server,
         timeout_seconds: float = 120.0,
         max_output_bytes: int = 1_000_000,
@@ -92,7 +90,7 @@ class ClaudeCodeManagedAgentAdapter:
         self._xdg_config_home = _prepare_work_dir(self._private_home / ".config")
         self._claude_config_dir = _prepare_work_dir(self._xdg_config_home / "claude")
         self._runner = runner or BoundedProcessRunner()
-        self._usage = AgentUsageRecorder("claude", run_store)
+        self._usage = AgentUsageRecorder("claude")
         self._inventory_probe = inventory_probe
         self._timeout_seconds = timeout_seconds
         self._max_output_bytes = max_output_bytes
@@ -107,7 +105,10 @@ class ClaudeCodeManagedAgentAdapter:
         if isinstance(launch, DecisionAgentLaunch) and launch.provider != "claude":
             raise AgentExecutionError("agent launch provider does not match adapter")
         request = launch.request if isinstance(launch, DecisionAgentLaunch) else None
-        validate_request(request, provider="claude", model=launch.model, executable=self._executable, binding=launch.request_binding if isinstance(launch, DecisionAgentLaunch) else None)
+        validate_request(
+            request, provider="claude", model=launch.model, executable=self._executable,
+            binding=launch.request_binding if isinstance(launch, DecisionAgentLaunch) else None,
+        )
         try:
             validate_installed_participant_model_id("claude", launch.model)
         except ValueError as exc:
@@ -197,7 +198,10 @@ class ClaudeCodeManagedAgentAdapter:
         if active.closed or not active.ready:
             raise AgentExecutionError("agent profile is not ready")
         if isinstance(active.launch, DecisionAgentLaunch):
-            validate_request(active.launch.request, provider="claude", model=active.launch.model, executable=self._executable, binding=active.launch.request_binding)
+            validate_request(
+                active.launch.request, provider="claude", model=active.launch.model,
+                executable=self._executable, binding=active.launch.request_binding,
+            )
             if active.launch.request is not None:
                 message = active.launch.request.prompt + message
         _assert_config_unchanged(active)
