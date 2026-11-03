@@ -11,9 +11,9 @@ from pathlib import Path
 
 from aptl.backends._raes_participant_models import ParticipantTurnResult
 from aptl.utils.pathsafe import create_exclusive_nofollow
+from aptl.workbench.agent_responses import parse_claude_result
 from aptl.workbench.agent import (
     _admitted_executable,
-    _parse_agent_result,
     _read_private_config,
 )
 from aptl.workbench.process import (
@@ -184,7 +184,7 @@ class ClaudeCodeHostParticipantAdapter:
             )
         if result.returncode != 0:
             raise AgentExecutionError("participant instruction delivery failed")
-        response = _parse_agent_result(result.stdout)
+        response = parse_claude_result(result.stdout)
         payload = json.loads(result.stdout)
         return ParticipantTurnResult(
             session_id=session_id,

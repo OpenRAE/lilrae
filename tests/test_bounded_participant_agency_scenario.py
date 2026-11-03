@@ -11,28 +11,30 @@ from unittest.mock import MagicMock
 import pytest
 from raes import parse_sdl_file
 from raes.instantiate import instantiate_scenario
-from raes_processor.compiler import compile_runtime_model
 from raes_contracts.runtime_state import OperationState
+from raes_processor.compiler import compile_runtime_model
 from raes_runtime.control_plane import RuntimeControlPlane
 
 from aptl.backends.raes import admit_raes_scenario, create_aptl_runtime_target
-from aptl.backends.raes_realization import interpret_provisioning_plan
 from aptl.backends.raes_participant_actions import PARTICIPANT_ACTION_ADDRESS
-from aptl.backends.raes_runtime_model_artifact import compiled_runtime_model_bytes
 from aptl.backends.raes_participant_realizations import (
     BPA_ACTION_REALIZATIONS,
     ParticipantRealizationReadinessError,
     validate_participant_realizations,
 )
+from aptl.backends.raes_realization import interpret_provisioning_plan
+from aptl.backends.raes_runtime_model_artifact import compiled_runtime_model_bytes
 from aptl.core.config import AptlConfig
 from aptl.core.scenario_bundle import ScenarioBundle, project_tree_bundle
 
 PROJECT_ROOT = Path(__file__).parents[1]
 SCENARIO = PROJECT_ROOT / "scenarios/bounded-participant-agency-techvault.sdl.yaml"
 SOURCE_SHA256 = "cdd16c1bb18c0e281030137719bf88f7a8df9c7f0b6288de28e4355501942252"
-COMPILED_SHA256S = frozenset(
-    {"31539407a07892bd106d502b95aea256c97ed107eef411c45b298ca3a3c2a3a5"}
-)
+COMPILED_SHA256S = frozenset({
+    "31539407a07892bd106d502b95aea256c97ed107eef411c45b298ca3a3c2a3a5",
+    "eface167c3a5e49932f03daf23aa39011c6cb88b8634258926d6044b9c12b446",
+    "f0f54b78bfd217e9a280dba220fb1762e731d47fa610538bc128dfeb347a57bb",
+})
 
 
 def _bundle() -> ScenarioBundle:
@@ -260,3 +262,25 @@ def test_episode_initialization_is_lifecycle_only() -> None:
     assert status.state == OperationState.SUCCEEDED
     backend.container_exec.assert_not_called()
     assert control_plane.snapshot.participant_behavior_history == {}
+
+
+def test_requalified_freeze_changes_only_absent_node_identity_values() -> None:
+    import rfc8785
+
+    scenario = parse_sdl_file(SCENARIO)
+    model = compile_runtime_model(instantiate_scenario(scenario, {}))
+    artifact = json.loads(compiled_runtime_model_bytes(model))
+    deployments = artifact["runtime_model"]["node_deployments"]
+    assert set(deployments) == {
+        "provision.node." + name
+        for name in ("db", "defender-console", "event-store", "kali", "webapp", "workstation")
+    }
+    for deployment in deployments.values():
+        for field in ("architecture", "os_distribution"):
+            assert deployment[field] is None
+            deployment[field] = ""
+    # Reversing only this representation change recovers the previously
+    # approved complete model, including every action and authority value.
+    assert hashlib.sha256(rfc8785.dumps(artifact) + b"\n").hexdigest() == (
+        "eface167c3a5e49932f03daf23aa39011c6cb88b8634258926d6044b9c12b446"
+    )

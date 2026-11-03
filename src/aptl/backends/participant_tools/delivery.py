@@ -9,14 +9,13 @@ from threading import Event, RLock
 from typing import Protocol, TYPE_CHECKING
 from uuid import uuid4
 
-from raes_contracts.satisfiability import canonical_contract_digest
-from raes_contracts.canonical import canonical_json_digest
+from raes_contracts.canonical import canonical_contract_digest, canonical_json_digest
 from raes_contracts.contracts import (
     ParticipantActionResultModel,
     ParticipantImplementationManifestModel,
     ParticipantImplementationSelectionModel,
 )
-from raes_contracts.participant_binding import ParticipantActionAdmissionRequest
+from raes_contracts.contracts.participant_action_admission import ParticipantActionAdmissionRequest
 from raes_contracts.participant_native_execution import ParticipantNativeActionExecution
 from raes_contracts.runtime_state import ApplyResult, OperationState, RuntimeSnapshot
 

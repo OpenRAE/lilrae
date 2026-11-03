@@ -65,6 +65,7 @@ from aptl.backends._raes_evidence_truth_refresh import (
     evidence_refresh_result,
 )
 from aptl.backends._raes_proposition_truth import project_proposition_truth_results
+from aptl.core.trial_readiness import TrialReadinessGate
 
 # Proposition and assertion truth is carried in ``proposition_truth_results``,
 # not the condition/objective ``EvaluationResultContract`` path (ADR-069 §3).
@@ -75,7 +76,8 @@ _PROPOSITION_RESOURCE_TYPES = frozenset({"proposition", "assertion"})
 if TYPE_CHECKING:
     from raes_processor.models import ExecutionPlan
     from raes_runtime.registry import RuntimeTarget
-    from aptl.backends.raes_planning_compat import AptlRuntimeManager
+
+    from aptl.backends.raes_runtime import AptlRuntimeManager
 
 
 @dataclass
@@ -248,6 +250,8 @@ class AptlEvaluator(object):
         init=False,
     )
 
+    readiness: TrialReadinessGate | None = field(default=None, repr=False)
+
     def bind_evidence_records(
         self,
         records: tuple[ExperimentEvidenceRecordModel, ...],
@@ -262,6 +266,8 @@ class AptlEvaluator(object):
 
     def start(self, plan: object, snapshot: object) -> ApplyResult:
         """Load a RAES evaluation plan and register its observable resources."""
+        if self.readiness is not None:
+            self.readiness.require_live()
         working_snapshot = (
             snapshot if isinstance(snapshot, RuntimeSnapshot) else RuntimeSnapshot()
         )

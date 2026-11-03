@@ -345,7 +345,7 @@ def test_archive_publication_cannot_follow_a_replaced_run_parent(tmp_path, monke
 
 
 def test_product_manager_accepts_protected_archive_owner(tmp_path):
-    from aptl.backends.raes_planning_compat import AptlRuntimeManager
+    from aptl.backends.raes_runtime import AptlRuntimeManager
 
     manager, _, _, child, plan, _ = reporting_runtime(
         tmp_path, manager_type=AptlRuntimeManager
@@ -415,7 +415,7 @@ def test_start_handoff_archives_and_returns_refreshed_inventory(tmp_path):
 
 
 def test_plan_options_bind_run_identity_before_sealing(tmp_path):
-    from aptl.backends.raes_planning_compat import (
+    from aptl.backends.raes_runtime import (
         AptlPlanningOptions,
         plan_aptl_scenario,
     )
@@ -442,7 +442,7 @@ def test_lab_resolves_one_run_identity_before_admission(tmp_path):
 
 
 def test_later_evaluation_retains_the_protected_archive(tmp_path):
-    from aptl.backends.raes_planning_compat import AptlRuntimeManager
+    from aptl.backends.raes_runtime import AptlRuntimeManager
     from raes_contracts.runtime_state import OperationState
 
     manager, _, _, child, plan, _ = reporting_runtime(
@@ -591,7 +591,7 @@ def test_runtime_refuses_a_plan_from_another_run(tmp_path):
 def test_planning_keeps_the_sealed_family_run_identity(tmp_path, family_input):
     from tests.test_family_adapter_contract import BACKEND
     from aptl.backends.scenario_family import admit_family_trial, FamilyTrialInput
-    from aptl.backends.raes_planning_compat import (
+    from aptl.backends.raes_runtime import (
         plan_aptl_scenario,
         AptlPlanningOptions,
     )
@@ -624,7 +624,7 @@ def test_planning_keeps_the_sealed_family_run_identity(tmp_path, family_input):
 
 
 def test_legacy_target_keeps_its_default_control_plane_scope():
-    from aptl.backends.raes_planning_compat import AptlRuntimeManager
+    from aptl.backends.raes_runtime import AptlRuntimeManager
     from raes_backend_stubs.stubs import create_stub_target
     from raes_contracts.runtime_state import OperationState
 

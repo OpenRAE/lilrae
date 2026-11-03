@@ -148,4 +148,10 @@ class ComposeNetworkOperationsMixin:
             BufferError,
         ):
             failures.append("Failed to establish network cleanup authority")
+        if not failures:
+            from aptl.core.deployment._compose_native_boundary import (
+                cleanup_native_policy,
+            )
+
+            failures.extend(cleanup_native_policy(self))
         return failures

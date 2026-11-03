@@ -26,6 +26,24 @@ permissions:
   pull-requests: read
 
 jobs:
+  # Temporary milestone-44 routing (#1593); Go port 31 (#1582) removes this job.
+  # Schedules use the default branch. Dispatch the target's own Checks workflow
+  # so it selects the Go lanes and whole-module mutation without a diff base.
+  dispatch-go-cutover:
+    name: Dispatch weekly Go cutover checks
+    if: github.event_name == 'schedule' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    env:
+      TARGET_BRANCH: go-cutover
+    steps:
+      - name: Dispatch Checks on Go cutover
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run checks.yml --ref "$TARGET_BRANCH"
+
   changes:
     name: Select changed inputs
     runs-on: ubuntu-latest
@@ -183,10 +201,10 @@ jobs:
         if: needs.changes.outputs.python == 'true' && needs.changes.outputs.dependencies == 'true'
         run: |
           for core in sysmon ctrace; do
-            COVERAGE_CORE=$core coverage run --data-file="$RUNNER_TEMP/coverage-$core" -m pytest tests/test_raes_planning_compat.py -q
+            COVERAGE_CORE=$core coverage run --data-file="$RUNNER_TEMP/coverage-$core" -m pytest tests/test_runtime_readback.py -q
             coverage json --data-file="$RUNNER_TEMP/coverage-$core" -o "$RUNNER_TEMP/coverage-$core.json"
           done
-          COVERAGE_FILE="$RUNNER_TEMP/coverage-workers" python -m pytest tests/test_raes_planning_compat.py -q -n 2 --cov --cov-report="json:$RUNNER_TEMP/coverage-workers.json"
+          COVERAGE_FILE="$RUNNER_TEMP/coverage-workers" python -m pytest tests/test_runtime_readback.py -q -n 2 --cov --cov-report="json:$RUNNER_TEMP/coverage-workers.json"
           python - <<'PYTHON'
           import json
           import os
@@ -198,7 +216,7 @@ jobs:
               reports.append({name: data["executed_lines"] for name, data in report["files"].items()})
           assert reports[0] == reports[1], "coverage cores disagree on executed lines"
           worker_report = json.loads((root / "coverage-workers.json").read_text())
-          planner = "src/aptl/backends/raes_planning_compat.py"
+          planner = "src/aptl/backends/raes_runtime.py"
           assert reports[0][planner], "serial planner coverage is empty"
           assert worker_report["files"][planner]["executed_lines"] == reports[0][planner], "worker coverage differs from serial planner coverage"
           print("Coverage cores agree on measured files and executed lines")
@@ -238,10 +256,23 @@ jobs:
         run: |
           docker info > /dev/null
           python -m pytest -q -m integration tests/test_mixed_realization_integration.py
+      - name: Native Docker range egress and host protection
+        run: |
+          docker info > /dev/null
+          python -m pytest -q -m integration tests/test_native_range_policy_integration.py
       - name: Linux CLI and init smoke
         run: |
           lilrae --help
           lilrae lab init "$RUNNER_TEMP/cli-smoke"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: '22.23.4'
+      - name: Pinned OpenCode installed transport qualification
+        run: |
+          bash tools/install-opencode.sh "$RUNNER_TEMP/opencode-1504"
+          npm ci --prefix mcp/aptl-mcp-common --ignore-scripts --no-audit
+          npm run --prefix mcp/aptl-mcp-common build
+          LILRAE_TEST_OPENCODE="$RUNNER_TEMP/opencode-1504/opencode" python -m pytest -q -m integration tests/test_opencode_transport.py tests/test_opencode_installed_actions.py tests/test_participant_request_dispatch.py
 
   python-tests:
     name: Python tests + coverage

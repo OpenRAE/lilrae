@@ -11,13 +11,15 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from hashlib import sha256
 
-from raes_contracts.participant_binding import ParticipantActionAdmissionRequest
+from raes_contracts.contracts.participant_action_admission import (
+    ParticipantActionAdmissionRequest,
+)
+from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.participant_episode import (
     ParticipantEpisodeHistoryEventType,
     ParticipantEpisodeTerminalReason,
 )
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotEntry
-from raes_contracts.diagnostics import Diagnostic
 
 
 def utc_now() -> str:
@@ -120,3 +122,14 @@ def selection_failure(
             )
         ],
     )
+
+
+def elapsed_seconds(initialized_at: str) -> float:
+    """Handle seconds for the bounded participant workflow."""
+    try:
+        start = datetime.fromisoformat(initialized_at.replace("Z", "+00:00"))
+    except ValueError:
+        return float("inf")
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - start).total_seconds()

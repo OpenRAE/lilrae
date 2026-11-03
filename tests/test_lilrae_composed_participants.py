@@ -6,7 +6,7 @@ from raes.parser import parse_sdl
 
 from aptl.backends.raes import create_aptl_runtime_target
 from aptl.backends.raes_node_materialization import realize_node
-from aptl.backends.raes_planning_compat import AptlRuntimeManager
+from aptl.backends.raes_runtime import AptlRuntimeManager
 from aptl.backends.raes_realization import interpret_provisioning_plan
 from aptl.core.config import AptlConfig
 from aptl.core.scenario_bundle import project_tree_bundle

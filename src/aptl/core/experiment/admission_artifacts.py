@@ -28,6 +28,7 @@ from typing import Protocol
 from raes_contracts.associated_artifacts import (
     AssociatedArtifactManifestModel,
     AssociatedArtifactValidationLimits,
+    ExperimentArtifactParent,
     load_associated_artifact_manifest_json,
     validate_associated_artifact_manifest,
 )
@@ -36,6 +37,7 @@ from raes_contracts.contracts import (
     ParticipantImplementationBindingTargetModel,
 )
 from raes_contracts.experiment_spec import ExperimentSpecModel
+from raes_contracts.canonical import canonical_contract_digest
 
 from aptl.core.experiment.errors import AdmissionRejection, diagnostic, normalize_raes_failure
 from aptl.core.experiment.bindings import (
@@ -165,7 +167,7 @@ def _resolved_participant_manifests(
         candidates[identity] = ParticipantManifestBinding(
             manifest=model,
             manifest_ref=artifact_id,
-            manifest_digest=resolved.digest,
+            manifest_digest=canonical_contract_digest(model),
         )
 
     return {
@@ -249,7 +251,7 @@ def build_associated_artifact_source(
 
     validation_diagnostics = validate_associated_artifact_manifest(
         manifest,
-        parent=spec,
+        parent=ExperimentArtifactParent(spec),
         artifact_readers=readers,
         limits=AssociatedArtifactValidationLimits(
             max_artifacts=policy.max_reference_count,

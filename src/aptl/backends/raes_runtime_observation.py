@@ -238,7 +238,15 @@ def _record_daemon_inventory(
     _record(
         concerns,
         _PUBLISHED_PORTS_PATH,
-        lambda: _observe_published_ports(info, runtime),
+        lambda: _observe_published_ports(
+            info,
+            runtime,
+            observed_bindings=(
+                backend.node_publication_bindings(container_name)
+                if callable(getattr(backend, "node_publication_bindings", None))
+                else None
+            ),
+        ),
     )
     _record(
         concerns,

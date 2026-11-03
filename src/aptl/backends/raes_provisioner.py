@@ -13,46 +13,46 @@ from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 
 from aptl.backends._raes_apply_reporting import (
     bounded_apply_details as _bounded_apply_details,
-    closed_credential_result,
-    with_artifact_satisfactions,
-    source_image_evidence,
 )
-
+from aptl.backends._raes_apply_reporting import (
+    closed_credential_result,
+    source_image_evidence,
+    with_artifact_satisfactions,
+)
+from aptl.backends._raes_provisioner_start import ProvisionerStartMixin
+from aptl.backends._raes_provisioning_helpers import (
+    availability_substrate_digests,
+    compose_validity_diagnostics,
+)
+from aptl.backends.lilrae_apparatus_reporting import LilraeApparatusReportingMixin
+from aptl.backends.native_readiness import NativeReadinessMixin
 from aptl.backends.raes_diagnostics import (
     PROVISIONING_ADDRESS,
     diagnostic,
     has_error,
 )
-from aptl.backends._raes_provisioner_start import ProvisionerStartMixin
-from aptl.backends.lilrae_apparatus_reporting import LilraeApparatusReportingMixin
-from aptl.backends._raes_provisioning_helpers import (
-    availability_substrate_digests,
-    compose_validity_diagnostics,
-)
 from aptl.backends.raes_observability_scope import ObservabilityScopeDecision
 from aptl.backends.raes_operator_access import OperatorAccessDecision
+from aptl.backends.raes_profiles import select_backend_profiles
 from aptl.backends.raes_realization import (
     AptlRealization,
     interpret_provisioning_plan,
 )
-from aptl.backends.raes_profiles import select_backend_profiles
-from aptl.backends.scenario_planning_compatibility import (
-    ResolvedPlanningCompatibility,
-)
 from aptl.backends.scenario_startup import ScenarioStartupSelection
 from aptl.core.config import AptlConfig
-from aptl.core.experiment.capture_plan import CapturePlan, empty_capture_plan
+from aptl.core.deployment.observation import DeploymentObservationContext
 from aptl.core.deployment.realization import (
     DeploymentCaptureApparatus,
     DeploymentRealizationSpec,
 )
-from aptl.core.deployment.observation import DeploymentObservationContext
+from aptl.core.experiment.capture_plan import CapturePlan, empty_capture_plan
+from aptl.core.trial_readiness import TrialReadinessGate
 from aptl.utils.logging import get_logger
 
 if TYPE_CHECKING:
-    from aptl.backends.lilrae_apparatus_reporting import PreparedCaptureResource
     from raes_contracts.contracts import ArtifactAvailabilityContext
 
+    from aptl.backends.lilrae_apparatus_reporting import PreparedCaptureResource
     from aptl.core.deployment.backend import DeploymentBackend
     from aptl.core.scenario_bundle import ScenarioBundle
 
@@ -66,7 +66,9 @@ _REALIZATION_READBACK_INTERVAL_SECONDS = 2.0
 
 
 @dataclass
-class AptlProvisioner(LilraeApparatusReportingMixin, ProvisionerStartMixin):
+class AptlProvisioner(
+    NativeReadinessMixin, LilraeApparatusReportingMixin, ProvisionerStartMixin
+):
     """Provisioning component of APTL's ``full-remote-control-plane`` target."""
 
     project_dir: Path
@@ -95,9 +97,6 @@ class AptlProvisioner(LilraeApparatusReportingMixin, ProvisionerStartMixin):
         default_factory=OperatorAccessDecision
     )
     startup_selection: ScenarioStartupSelection | None = field(default=None, repr=False)
-    planning_compatibility: ResolvedPlanningCompatibility | None = field(
-        default=None, repr=False
-    )
     reporting_manifest: BackendManifest | None = field(default=None, repr=False)
     _lilrae_apparatus_resources: tuple[PreparedCaptureResource, ...] = field(
         default=(), init=False, repr=False
@@ -113,6 +112,7 @@ class AptlProvisioner(LilraeApparatusReportingMixin, ProvisionerStartMixin):
     last_source_image_evidence: dict[str, object] = field(
         default_factory=dict, init=False, repr=False
     )
+    readiness: TrialReadinessGate | None = field(default=None, repr=False)
 
     def bind_attempt_id(self, attempt_id: str | None) -> None:
         """Bind the one already-resolved lab-start attempt to deployment."""
@@ -150,6 +150,8 @@ class AptlProvisioner(LilraeApparatusReportingMixin, ProvisionerStartMixin):
 
     def apply(self, plan: object, snapshot: object) -> ApplyResult:
         """Apply a RAES provisioning plan via APTL's deployment backend."""
+        if self.readiness is not None and not self._cleanup_only(plan):
+            self.readiness.require_provisioning()
 
         working_snapshot = (
             snapshot if isinstance(snapshot, RuntimeSnapshot) else RuntimeSnapshot()
@@ -170,7 +172,10 @@ class AptlProvisioner(LilraeApparatusReportingMixin, ProvisionerStartMixin):
                 result = ApplyResult(False, working_snapshot, diagnostics=diagnostics)
             else:
                 result = self._apply_realized_plan(plan, working_snapshot)
-        return self._record_apply_result(plan, working_snapshot, result)
+        result = self._record_apply_result(plan, working_snapshot, result)
+        if self.readiness is not None and isinstance(plan, ProvisioningPlan):
+            result = self.readiness.after_provisioning(plan, result)
+        return result
 
     def _materialization_run_diagnostics(
         self, plan: ProvisioningPlan
@@ -463,12 +468,17 @@ class AptlProvisioner(LilraeApparatusReportingMixin, ProvisionerStartMixin):
     @staticmethod
     def _invalid_plan_diagnostics(plan: object) -> list[Diagnostic]:
         if isinstance(plan, ProvisioningPlan):
-            if any(operation.action is ChangeAction.DELETE for operation in plan.operations):
-                return [diagnostic(
-                    "lilrae.provisioner.delete-scope-unavailable", PROVISIONING_ADDRESS,
-                    "Native deletion requires an installed receipt-bound trial cleanup owner; "
-                    "lab start cannot execute a delete plan.",
-                )]
+            if any(
+                operation.action is ChangeAction.DELETE for operation in plan.operations
+            ):
+                return [
+                    diagnostic(
+                        "lilrae.provisioner.delete-scope-unavailable",
+                        PROVISIONING_ADDRESS,
+                        "Native deletion requires an installed receipt-bound trial cleanup owner; "
+                        "lab start cannot execute a delete plan.",
+                    )
+                ]
             return []
         return [
             diagnostic(

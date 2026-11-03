@@ -46,6 +46,7 @@ Prompt commitments identify the exact delivered bytes.
 Prompt contents and credentials are excluded from public diagnostics.
 
 OpenCode is an explicit harness choice.
+See [managed OpenCode participants](../reference/opencode-participants.md) for installation, pinned build identity, route controls, and invocation.
 No Claude Code installation is required for an OpenCode binding.
 The existing managed-agent interface remains available for other installed harnesses.
 Each invocation uses a private working directory and explicit environment.
@@ -131,6 +132,10 @@ Tool-enabled bindings require an exact installed mapping and the invocation's sc
 The common MCP server gates SSH and API handlers before dispatch.
 RAES commits each accepted tool history alongside its enclosing invocation.
 An invocation without installed tool bindings makes no per-tool history claim.
+Whole-policy admission also requires scoped capability support.
+Each participant retains only its admitted tools.
+The [scoped-tool design](issue-1646-scoped-tool-affordances-design.md) defines the declaration and qualification.
+
 
 ## Existing architecture and verification
 

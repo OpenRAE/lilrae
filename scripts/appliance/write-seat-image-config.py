@@ -76,7 +76,7 @@ def main() -> int:
         "resources": {**RESOURCES, "disk_bytes": virtual_size},
         "boundary": full_techvault_boundary_policy().model_dump(mode="json"),
         "binding": {
-            "boundary_helper_image": image_digest("aptl-network-boundary-helper:6"),
+            "boundary_helper_image": image_digest("aptl-network-boundary-helper:7"),
             "egress_proxy_image": image_digest("aptl-appliance-egress-proxy:1"),
             # The guest's participant routes are whatever this disk contains,
             # so the disk's own digest is what the launch is bound to.

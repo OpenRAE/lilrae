@@ -128,8 +128,6 @@ class TestExperimentSettings:
             "sonnet",
             "claude-sonnet-4-5",
             "claude-haiku-4-5@latest",
-            "gpt-4o",
-            "gpt-5.2-codex",
             "bad model",
             "bad\nmodel",
             "x" * 129,
@@ -168,6 +166,16 @@ class TestExperimentSettings:
 
         with pytest.raises(ValidationError):
             ExperimentSettings(participant_models={provider: model})
+
+    @pytest.mark.parametrize(("provider", "model"), [
+        ("codex", "gpt-5.2-codex"), ("codex", "gpt-4o"),
+        ("claude", "claude-sonnet-4-5"), ("claude", "claude-sonnet-5-5"),
+        ("opencode", "openrouter/author/model:free"),
+    ])
+    def test_current_model_ids_do_not_require_snapshot_shaped_names(self, provider, model):
+        from aptl.core.config import ExperimentSettings
+
+        assert ExperimentSettings(participant_models={provider: model}).participant_models.model_for(provider) == model
 
     @pytest.mark.parametrize(
         "model",

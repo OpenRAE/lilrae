@@ -1,6 +1,6 @@
 """The experiment owner receives a terminal signal only after native cleanup."""
 
-from aptl.workbench.lilrae_opencode import OpenCodeOptions
+from tests.opencode_fixture import synthetic_options
 
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier, Event
@@ -106,7 +106,7 @@ def test_consecutive_trials_deliver_independent_prompt_variants(tmp_path):
             )
             runner = ConcurrentRunner()
             executor = configured_opencode_executor(
-                options=OpenCodeOptions(
+                options=synthetic_options(
                     executable=Path("/bin/true"),
                     work_root=tmp_path,
                     environment={},
@@ -116,7 +116,7 @@ def test_consecutive_trials_deliver_independent_prompt_variants(tmp_path):
                 manifest=manifest,
                 prompt=prompt,
                 prompt_ref="content.red-prompt@v1",
-                supported_models=frozenset({"provider/model"}),
+                supported_models=frozenset({"openrouter/model"}),
             )
             selection = binding.implementation_selection.model_copy(
                 update={

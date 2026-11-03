@@ -67,7 +67,7 @@ from aptl.backends.raes_manifest import (
     APTL_RAES_TARGET_NAME,
     create_aptl_manifest as create_aptl_manifest,
 )
-from aptl.backends.raes_planning_compat import (
+from aptl.backends.raes_runtime import (
     AptlPlanningOptions,
     AptlRuntimeManager,
     plan_aptl_scenario,

@@ -59,6 +59,23 @@ It does not survive the operation or change scenario authority.
 
 ## Data flows and security
 
+Redaction keeps the existing Python and TypeScript public entry points.
+Each delegates command parsing to an internal shell helper, which consumes
+shared pattern definitions within its language:
+
+```text
+redaction -> command helpers -> credential patterns
+redaction -------------------> credential patterns
+```
+
+Pattern modules never import the recursive redactor or command helpers.
+The recursive entry points retain depth and scan limits, JSON handling,
+key classification, and the experiment opt-out boundary.
+Moving code between these modules must preserve pattern order and output.
+The shared golden corpus checks Python and TypeScript parity; focused
+redaction, fuzz, and consumer tests check credential masking and bounded work.
+CI rebuilds and tests every MCP consumer of the common module.
+
 ```text
 Contributor changes [untrusted input]
   -> Git checkout and changed-path selector [read-only runner token]
@@ -101,7 +118,7 @@ flowchart LR
   A test keeps the `go-cutover` contexts a superset of the `dev` contexts.
 - `checks.yml`, `pr-title-lint.yml`, and the Phase E workflow run for pull requests into each protected branch.
   `checks.yml` also runs on pushes to `go-cutover`, so SonarCloud keeps a current analysis of the branch.
-  SonarCloud classifies `go-cutover` as a long-lived branch before its first analysis.
+  SonarCloud analyzes `go-cutover` as a short-lived branch, as it does `dev`, so each push gets a quality gate result.
 - On `go-cutover`, `.ground-control.yaml` sets `workflow.base_branch` to `go-cutover`.
   `/implement` then uses `go-cutover` for branch preparation, synchronization, and pull requests.
   `dev` keeps the default base.
@@ -113,6 +130,59 @@ flowchart LR
   Then it opens the pull request from `go-cutover` into `dev`.
   The maintainer merges it with a merge commit, so Release Please keeps each commit subject.
 - The release, documentation deployment, and Scorecard workflows run only for `main`.
+
+The temporary default-branch routing for Go dependency updates and weekly
+Checks is bounded by the [issue #1593 preflight](issue-1593-go-cutover-schedules-preflight.md).
+It qualifies the earlier bootstrap guidance: existing Dependabot entries keep
+targeting `dev`, while first-party Go version updates target `go-cutover`.
+The target branch's Checks workflow owns the dispatched run and its Go gates.
+
+The Monday schedule keeps the existing default-branch Checks run.
+A separate job dispatches `checks.yml` on `go-cutover` without waiting for other jobs.
+Only a schedule on the repository's default branch can start this job.
+Push, pull request, tag, and manual events cannot forward a run.
+The child uses its own workflow and checks out its own branch.
+Its manual event selects all lanes, including full Go mutation and dependency scans.
+A failed dispatch fails the parent job.
+An accepted dispatch does not establish that the child checks passed.
+
+Dependabot reads its version-2 configuration from `main`.
+One temporary `gomod` entry selects `/`, `/tools`, `/tools/lint`, and `/tools/gates` on `go-cutover`.
+It opens weekly version updates against that branch.
+The existing Caddy module entry continues to target `dev`.
+This policy does not enable Dependabot security updates on the cutover branch.
+The existing Go scanners provide vulnerability checks there.
+
+```text
+GitHub scheduler [external entity]
+  -> schedule event -> Checks dispatcher [isolated hosted job]
+  -> fixed workflow/ref request, ephemeral job token
+  -> GitHub Actions API [authorization boundary]
+  -> workflow_dispatch event -> go-cutover Checks [separate hosted jobs]
+  -> full gate results and artifacts -> existing Actions storage
+
+main dependabot.yml [configuration store]
+  -> module paths and target branch -> Dependabot [GitHub service boundary]
+go-cutover go.mod/go.sum files [manifest stores]
+  -> dependency versions -> Dependabot
+  -> version update pull requests -> go-cutover [protected branch]
+```
+
+The protected assets are workflow authority, dependency manifests, and check results.
+Only the dispatcher job has `actions: write` for this request.
+It performs no checkout and executes no repository code with that token.
+The token enters only the CLI environment, never command arguments or files.
+The repository comes from GitHub context; the branch is a fixed job value.
+These controls prevent untrusted code from using dispatch authority or selecting another target.
+Parsed workflow tests check admission and authority; a stub CLI checks the actual command and failure result.
+Existing selection tests check that dispatch selects all lanes.
+GitHub run records provide the later evidence for actual child execution.
+
+The workflow and Dependabot configuration are the executable architecture model.
+This change extends the existing routing decision and needs no new ADR or application model.
+The [Go port 31 retirement record](https://github.com/OpenRAE/lilrae/issues/1582#issuecomment-6591003613) names both temporary removals.
+The issue's Tasks section also records removal of the dispatcher and replacement of the temporary Dependabot entry.
+The retirement must reach `main` before deletion of `go-cutover`.
 
 ## Verification policy
 
@@ -133,6 +203,9 @@ Released-kit qualification belongs in the periodic integration lane when it exce
 - [Coverage.py combination](https://coverage.readthedocs.io/en/7.15.2/commands/cmd_combine.html): merge measured data before XML export.
 - [GitHub Actions workflow events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows): base-branch filters for `pull_request` and `push`.
 - [GitHub branch protection API](https://docs.github.com/en/rest/branches/branch-protection): required status checks of a protected branch.
+- [GitHub Dependabot options](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference): version 2, directories and target branch.
+- [GitHub workflow dispatch API](https://docs.github.com/en/rest/actions/workflows): create a workflow dispatch event and Actions write permission.
+- [GitHub workflow triggers](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow): dispatch with the existing job token.
 - [SonarQube Cloud long-lived branch pattern](https://docs.sonarsource.com/sonarqube-cloud/managing-your-projects/project-analysis/long-lived-branch-pattern): branch classification at first analysis.
 
 This document describes the verification architecture.

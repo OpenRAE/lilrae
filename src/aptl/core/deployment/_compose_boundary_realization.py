@@ -29,6 +29,7 @@ from aptl.core.deployment.boundary_compiler import (
 )
 from aptl.core.deployment.realization import DeploymentRealizationSpec
 from aptl.core.lab_types import LabResult
+from aptl.core.deployment._compose_native_boundary import ComposeNativeBoundaryMixin
 
 
 def _boundary_ip_families(
@@ -131,7 +132,7 @@ def _workload_addresses(
     return tuple(sorted(ipv4)), tuple(sorted(ipv6))
 
 
-class ComposeBoundaryRealizationMixin:
+class ComposeBoundaryRealizationMixin(ComposeNativeBoundaryMixin):
     """Apply platform and RAES policy on the selected Compose daemon host."""
 
     def configure_appliance_boundary(
@@ -192,7 +193,8 @@ class ComposeBoundaryRealizationMixin:
             "source_digest": source_digest,
             "enforcement_digest": policy.digest(),
             "families": ("bridge", "inet"),
-            "default_deny": policy.authority in {"platform", "seat-protection"},
+            "default_deny": policy.authority
+            in {"platform", "seat-protection", "native-range"},
             "network_coverage": (
                 tuple(
                     f"{network.name}/{family}"
@@ -237,6 +239,7 @@ class ComposeBoundaryRealizationMixin:
         """Install the platform deny floor before any scenario node can run."""
 
         stages = (
+            self._realize_native_range_boundary,
             lambda: self._bind_appliance_realization(realization),
             self._realize_platform_baseline,
             lambda: self._realize_seat_protection_boundary(realization),
