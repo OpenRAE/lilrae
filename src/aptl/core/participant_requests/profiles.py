@@ -64,6 +64,13 @@ class RequestProfile(ClosedModel):
     usage_policy: Literal["when-reported"]
     context_order: Annotated[tuple[Label, ...], Field(min_length=1, max_length=16)]
     context_placement: Literal["stdin-prefix"]
+    assistant_turn_limit: (
+        ParameterPolicy[Annotated[int, Field(ge=1, le=10_000)]] | None
+    ) = Field(default=None, exclude_if=lambda value: value is None)
+    unresolved_placeholders: Annotated[
+        tuple[Annotated[str, Field(min_length=1, max_length=128)], ...],
+        Field(max_length=64),
+    ] = Field(default=(), exclude_if=lambda value: not value)
 
     @property
     def reference(self) -> str:
@@ -75,6 +82,11 @@ class RequestProfile(ClosedModel):
 
     @model_validator(mode="after")
     def explicit_controls(self) -> RequestProfile:
+        if self.assistant_turn_limit is not None and (
+            self.gateway != "openrouter"
+            or self.assistant_turn_limit.state not in {"set", "locked"}
+        ):
+            raise ValueError("native assistant turn control is unsupported")
         if not self.no_fallback or self.seed.state != "unsupported":
             raise ValueError("fallback or seed requests are unsupported")
         if len(set(self.context_order)) != len(self.context_order):

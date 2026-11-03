@@ -19,6 +19,7 @@ def render_opencode_config(
     servers: dict[str, object],
     *,
     request_profile: RequestProfile | None = None,
+    max_steps: int | None = None,
 ) -> dict[str, object]:
     """Serialize admitted route and tool inputs into the upstream config shape."""
     config = {
@@ -74,6 +75,8 @@ def render_opencode_config(
         if profile.top_p.value is not None:
             agent["top_p"] = profile.top_p.value
         config["agent"] = {"build": agent}
+    if max_steps is not None:
+        config.setdefault("agent", {}).setdefault("build", {})["steps"] = max_steps
     return config
 
 

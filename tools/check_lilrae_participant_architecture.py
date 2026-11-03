@@ -12,6 +12,88 @@ import sys
 
 
 COMPONENTS = {
+    "src/aptl/workbench/opencode_observation.py": frozenset(
+        {
+            "__future__",
+            "collections.abc",
+            "dataclasses",
+            "hashlib",
+            "json",
+            "pathlib",
+            "aptl.core.provider_observation",
+            "aptl.core.opencode",
+            "aptl.utils.pathsafe",
+            "aptl.utils.strict_json",
+            "pydantic",
+            "typing",
+        }
+    ),
+    "src/aptl/workbench/opencode_evidence.py": frozenset(
+        {
+            "aptl.core.opencode",
+            "aptl.core.provider_observation",
+            "aptl.workbench.opencode_events",
+            "aptl.workbench.process",
+            "collections.abc",
+            "dataclasses",
+            "hashlib",
+        }
+    ),
+    "src/aptl/workbench/opencode_history.py": frozenset(
+        {
+            "__future__",
+            "aptl.core.opencode",
+            "aptl.utils.pathsafe",
+            "aptl.utils.strict_json",
+            "contextlib",
+            "hashlib",
+            "os",
+            "pathlib",
+            "re",
+            "sqlite3",
+            "sys",
+        }
+    ),
+    "src/aptl/workbench/opencode_options.py": frozenset(
+        {
+            "__future__",
+            "aptl.core.opencode",
+            "aptl.core.participant_requests.binding",
+            "aptl.core.participant_requests.request",
+            "aptl.workbench.agent",
+            "aptl.workbench.process",
+            "aptl.workbench.profiles",
+            "collections.abc",
+            "dataclasses",
+            "datetime",
+            "pathlib",
+            "sys",
+        }
+    ),
+    "src/aptl/workbench/trial_participants.py": frozenset(
+        {
+            "__future__",
+            "aptl.backends.lilrae_participant_execution",
+            "aptl.core.config",
+            "aptl.core.opencode",
+            "aptl.core.participant_requests",
+            "aptl.core.trial_participants",
+            "aptl.workbench.lilrae_opencode",
+            "aptl.workbench.opencode_bootstrap",
+            "collections.abc",
+            "contextlib",
+            "dataclasses",
+            "datetime",
+            "raes",
+            "raes.scenario",
+            "raes_contracts.canonical",
+            "raes_contracts.addressing",
+            "raes_contracts.contracts",
+            "raes_contracts.trial_unit",
+            "raes_runtime.runtime_trial_decisions",
+            "types",
+        }
+    ),
     "src/aptl/backends/participant_tools/delivery.py": frozenset(
         {
             "__future__",

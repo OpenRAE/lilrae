@@ -42,6 +42,7 @@ from aptl.core.trial_ownership import (
     require_trial_owner,
     trial_fence_owner,
 )
+from aptl.core.trial_participants import TrialParticipantApplication
 from aptl.utils.pathsafe import (
     PathContainmentError,
     open_private_dir_contained_nofollow,
@@ -133,6 +134,7 @@ class LilraeTrialUnit:
     reporting: TrialOutcomeReporting
     max_operations: int = 4096
     max_attempt_seconds: int = 86400
+    participants: TrialParticipantApplication | None = None
 
     def __post_init__(self) -> None:
         if any(
@@ -199,6 +201,13 @@ class LilraeTrialUnit:
             return self._execute_owned(request, daemon_root, project, daemon)
 
     def _admit(self, request: TrialUnitRequest) -> None:
+        if self.participants is None and any(
+            result.configuration.owner.validator_id == "lilrae-opencode-request"
+            for result in request.participant_configurations
+        ):
+            raise ValueError("trial-participant-application-required")
+        if self.participants is not None:
+            self.participants.admit(request)
         if os.name != "posix":
             raise ValueError("trial-serving-posix-required")
         count = sum(
@@ -228,6 +237,8 @@ class LilraeTrialUnit:
         # The runtime owns cessation, partial capture and owed cleanup, including
         # when this call raises TrialPending. Never tear down an unknown effect
         # independently or clear a fence in a finally clause.
+        if self.participants is not None:
+            self.participants.configure(request)
         try:
             result = replace(self.runtime_unit.execute_trial(request))
         except TrialPending:
@@ -245,6 +256,8 @@ class LilraeTrialUnit:
                 receipt=result.cleanup_receipt, evidence=result.cleanup_evidence
             )
         )
+        if self.participants is not None:
+            self.participants.finish(request)
         self.cleanup.store.create_run_json_once(
             request.run_id,
             "trial-serving/handoff.json",

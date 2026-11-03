@@ -1,14 +1,10 @@
 """Public owner admission, exact prompt pins and safe immutable publication."""
 
 import json
-import copy
 import subprocess
 import sys
 
 import pytest
-import yaml
-from raes import Scenario
-from raes_contracts.canonical import canonical_contract_digest
 from raes_contracts.contracts import ParticipantConfigurationResultModel
 
 
@@ -132,106 +128,9 @@ def test_request_route_and_reasoning_domains_are_implementation_owned(provider):
 def test_public_raes_compiler_seals_independent_participant_choices(
     tmp_path, provider, fixed
 ):
-    from raes import admit_scenario_family
-    from raes.canonical import canonical_sdl_digest
-    from raes_env_packs import load_pack_experiments, PackExperimentError
-    from raes_contracts.contracts import AdmittedParticipantManifestReferenceModel
-    from raes_processor.trial_compiler import compile_admitted_trial_plan
-    from tests.structural_family_fixture import (
-        FIXTURE,
-        build_pack,
-        write_content_manifest,
-        _apparatus_context,
-    )
+    from tests.participant_trial_fixture import compiled_participants
 
-    source = build_pack(tmp_path)
-    scenario_path = source / "sdl" / "structural-fixture.sdl.yaml"
-    scenario_data = yaml.safe_load(scenario_path.read_text())
-    scenario_data["agents"]["reviewer"] = {"role": "blue"}
-    scenario_path.write_text(yaml.safe_dump(scenario_data))
-    owner, _ = owner_fixture(provider)
-    owner = owner.for_scenario(Scenario.model_validate(scenario_data))
-    family_digest = canonical_sdl_digest(
-        admit_scenario_family(Scenario.model_validate(scenario_data))
-    ).value
-    manifest = owner.manifest
-    spec_path = source / "experiments" / "structural-design.exp.yaml"
-    spec = yaml.safe_load(spec_path.read_text())
-    design = spec["factorial_design"]
-    for name in ("operator-model", "operator-prompt"):
-        clone = name.replace("operator", "reviewer")
-        spec["factors"][clone] = copy.deepcopy(spec["factors"][name])
-        design["factor_ids"].append(clone)
-        design["level_effects"][clone] = copy.deepcopy(design["level_effects"][name])
-    design["condition_bound"] = 32
-    for factor, levels in design["level_effects"].items():
-        for i, effect in enumerate(levels.values()):
-            for binding in list(effect.get("bindings", [])):
-                target = binding["target"]
-                target.update(
-                    implementation_name=manifest.identity.name,
-                    implementation_version=manifest.identity.version,
-                )
-                if factor.startswith("reviewer"):
-                    target["participant_address"] = "agents.reviewer"
-                binding["owner"] = manifest.configuration_registry.owner.model_dump(
-                    mode="json"
-                )
-                if factor.endswith("model"):
-                    target["target_id"] = owner.model_target
-                    profile = owner.catalog.profiles[i]
-                    binding["value"]["value"] = profile.model
-                    for key, value in (
-                        ("request.profile", profile.reference),
-                        ("request.profile_digest", profile.digest),
-                    ):
-                        added = copy.deepcopy(binding)
-                        added["target"]["target_id"] = key
-                        added["value"]["value"] = value
-                        effect["bindings"].append(added)
-            # Shared scenario effects belong to the existing operator factor.
-            if factor.startswith("reviewer"):
-                effect.pop("selections", None)
-            for selection in effect.get("selections", []):
-                selection["scenario_family_digest"] = family_digest
-    if fixed:
-        for factor, levels in design["level_effects"].items():
-            key = next(iter(levels))
-            design["level_effects"][factor] = {key: levels[key]}
-            spec["factors"][factor]["levels"] = [key]
-        design["condition_bound"] = 1
-    spec_path.write_text(yaml.safe_dump(spec))
-    write_content_manifest(source)
-    try:
-        (experiment,) = load_pack_experiments(source)
-    except PackExperimentError as exc:
-        raise AssertionError(exc.result) from None
-    context = _apparatus_context(experiment, FIXTURE)
-    tail = (manifest.identity.name, manifest.identity.version, manifest.schema_version)
-    refs = [
-        AdmittedParticipantManifestReferenceModel(
-            participant_address=address,
-            implementation_name=tail[0],
-            implementation_version=tail[1],
-            manifest_version=tail[2],
-            manifest_digest=canonical_contract_digest(manifest),
-        )
-        for address in ("agents.operator", "agents.reviewer")
-    ]
-    context["apparatus"] = context["apparatus"].model_copy(
-        update={"participant_manifest_refs": refs}
-    )
-    context["participant_manifests"] = {
-        (ref.participant_address, *tail): manifest for ref in refs
-    }
-    authority = manifest.configuration_registry.owner
-    context["participant_configuration_validators"] = {
-        (authority.validator_id, authority.validator_version): owner
-    }
-    compiled = compile_admitted_trial_plan(experiment.compilation_request(**context))
-    assert compiled.plan is not None, [
-        (d.code, d.message) for d in compiled.diagnostics
-    ]
+    compiled, _, _ = compiled_participants(tmp_path, provider, fixed)
     assert len(compiled.plan.entries) == (1 if fixed else 32)
     pairs = set()
     for entry in compiled.plan.entries.values():

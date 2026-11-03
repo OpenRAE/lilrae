@@ -2,6 +2,8 @@
 
 - [Participant request manifests](participant-request-manifests.md)
 - [Issue #1419 participant manifest preflight](issue-1419-participant-manifests-preflight.md)
+- [Issue #1420 per-trial participant configuration preflight](issue-1420-trial-participant-configuration-preflight.md)
+- [Trial participant configuration](trial-participant-configuration.md)
 - [Issue #1418 Participant MCP Action Admission](issue-1418-participant-tool-admission-preflight.md)
 - [Participant action and control architecture assessment](participant-tool-admission.md)
 - [Participant action enforcement](participant-action-enforcement.md)

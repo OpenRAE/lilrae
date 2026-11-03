@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-from collections.abc import Callable, Mapping
 from copy import deepcopy
 from contextlib import ExitStack
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event
+from time import monotonic
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -20,13 +19,9 @@ if TYPE_CHECKING:
 
 from aptl.utils.pathsafe import create_exclusive_nofollow
 from aptl.core.opencode import (
-    OpenCodeBuild,
     OpenCodeInvocationEvidence,
-    OpenRouterRoute,
-    SUPPORTED_OPENCODE_BUILD,
 )
 from aptl.workbench.opencode_events import (
-    OpenCodeResponse,
     parse_opencode_response,
     _supervised_result_text,
 )
@@ -38,7 +33,6 @@ from aptl.workbench.opencode_configuration import (
     validate_invocation_inputs,
 )
 from aptl.workbench.agent import (
-    InventoryProbe,
     _admitted_executable,
     _prepare_work_dir,
     _load_server_config,
@@ -47,58 +41,34 @@ from aptl.workbench.agent import (
     probe_mcp_server,
 )
 from aptl.workbench.profiles import (
-    ProfileId,
     profile_for,
     verify_profile_tool_inventory,
 )
 from aptl.workbench.process import (
     AgentExecutionError,
     BoundedProcessRunner,
-    ProcessResult,
     BoundedProcessError,
     REASON_CANCELLED,
     ProcessRequest,
-    CancellableProcessRunner,
 )
-from aptl.core.participant_requests.request import ParticipantRequest
-from aptl.core.participant_requests.binding import ParticipantRequestBinding
 from aptl.workbench.participant_request import validate_opencode_request
+from aptl.workbench.opencode_history import read_native_history
+from aptl.workbench.opencode_evidence import OpenCodeEvidenceRecorder
+from aptl.workbench.opencode_observation import (
+    OBSERVER_CREDENTIAL,
+    install_request_observer,
+    read_request_observations,
+)
 
 
-@dataclass(frozen=True)
-class OpenCodeToolProfile:
-    """An admitted MCP profile and the private inputs needed to verify it."""
+# Existing public launch types remain available from this module.
+from aptl.workbench.opencode_options import OpenCodeOptions, OpenCodeToolProfile
 
-    profile: ProfileId
-    config: Path
-    credentials: Mapping[str, str] = field(default_factory=dict, repr=False)
-    inventory_probe: InventoryProbe = probe_mcp_server
-
-
-@dataclass(frozen=True)
-class OpenCodeOptions:
-    """Operator-owned launch settings, separate from participant configuration."""
-
-    executable: Path
-    work_root: Path
-    environment: Mapping[str, str] = field(default_factory=dict, repr=False)
-    max_output_bytes: int = 1_000_000
-    max_output_tokens: int = 128
-    runner: CancellableProcessRunner | None = None
-    tools: OpenCodeToolProfile | None = None
-    build: OpenCodeBuild = SUPPORTED_OPENCODE_BUILD
-    route: OpenRouterRoute | None = None
-    evidence_sink: Callable[[OpenCodeInvocationEvidence], None] | None = None
-    request: ParticipantRequest | None = None
-    request_binding: ParticipantRequestBinding | None = None
+__all__ = ["LilraeOpenCodeExecutor", "OpenCodeOptions", "OpenCodeToolProfile"]
 
 
 class LilraeOpenCodeExecutor:
-    """Run one bounded prompt with no ambient workspace, history, or tools.
-
-    Provider credentials are explicit management inputs. They are never read
-    from the host environment. Each call receives a fresh private context.
-    """
+    """Run a bounded prompt with explicit credentials and a fresh private context."""
 
     def __init__(
         self,
@@ -122,7 +92,8 @@ class LilraeOpenCodeExecutor:
             raise ValueError("explicit OpenRouter route and model are required")
         self._build = options.build
         self._route = options.route
-        self._evidence_sink = options.evidence_sink
+        self._native_history_required = options.native_history_required
+        self._request_observation_required = options.request_observation_required
         self._max_output_tokens = options.max_output_tokens
         self._executable = _admitted_executable(options.executable)
         self._work_root = _prepare_work_dir(options.work_root)
@@ -131,8 +102,20 @@ class LilraeOpenCodeExecutor:
         self._prompt_sha256 = hashlib.sha256(self._prompt).hexdigest()
         self._environment = dict(options.environment)
         self._closed = False
-        self._last_evidence: OpenCodeInvocationEvidence | None = None
         self._timeout_seconds = timeout_seconds
+        if options.max_steps is not None and (
+            type(options.max_steps) is not int or not 1 <= options.max_steps <= 10_000
+        ):
+            raise ValueError("participant native turn bound is invalid")
+        self._max_steps = options.max_steps
+        self._deadline = options.deadline
+        self._clock = options.clock
+        self._monotonic_deadline = None
+        if self._deadline is not None:
+            remaining = (self._deadline - self._clock()).total_seconds()
+            if remaining <= 0:
+                raise ValueError("participant attempt deadline is exhausted")
+            self._monotonic_deadline = monotonic() + remaining
         self._configuration_result = (
             configuration_result.model_copy(deep=True)
             if configuration_result is not None
@@ -141,11 +124,22 @@ class LilraeOpenCodeExecutor:
         self._request = options.request
         self._request_binding = options.request_binding
         validate_opencode_request(
-            self._request, model=model, prompt=prompt, build=options.build, route=self._route,
-            output_limit=self._max_output_tokens, binding=self._request_binding,
+            self._request,
+            model=model,
+            prompt=prompt,
+            build=options.build,
+            route=self._route,
+            output_limit=self._max_output_tokens,
+            assistant_turn_limit=self._max_steps,
+            binding=self._request_binding,
         )
-        if self._request is not None and self._request.configuration_result != self._configuration_result:
-            raise ValueError("participant request differs from its sealed configuration")
+        if (
+            self._request is not None
+            and self._request.configuration_result != self._configuration_result
+        ):
+            raise ValueError(
+                "participant request differs from its sealed configuration"
+            )
         self._validate_delivery()
         self._max_output_bytes = options.max_output_bytes
         self._runner = options.runner or BoundedProcessRunner()
@@ -153,6 +147,25 @@ class LilraeOpenCodeExecutor:
         # Tool inventory is installation/admission work, outside native action
         # dispatch. It must not delay cancellation of an already admitted action.
         self._tool_servers, self._tool_permissions = self._tools()
+        self._evidence = OpenCodeEvidenceRecorder(
+            OpenCodeInvocationEvidence(
+                action_id="",
+                build=self._build,
+                requested_model=self.model,
+                endpoint=self._route.endpoint,
+                requested_serving_provider=self._route.serving_provider,
+                prompt_sha256=self.prompt_sha256,
+                status="not-started",
+                participant_address=self._configuration_result.participant_address
+                if self._configuration_result is not None
+                else None,
+                configuration_digest=self._configuration_result.configuration_digest
+                if self._configuration_result is not None
+                else None,
+                trial_scope=options.trial_scope,
+            ),
+            options.evidence_sink,
+        )
 
     @property
     def tool_inventory(self) -> frozenset[tuple[str, str]]:
@@ -207,12 +220,21 @@ class LilraeOpenCodeExecutor:
 
     @property
     def timeout_seconds(self) -> float:
+        if self._deadline is not None:
+            return max(
+                0,
+                min(
+                    self._timeout_seconds,
+                    (self._deadline - self._clock()).total_seconds(),
+                    self._monotonic_deadline - monotonic(),
+                ),
+            )
         return self._timeout_seconds
 
     @property
     def last_evidence(self) -> OpenCodeInvocationEvidence | None:
         """Retain the last safe observation even without an external evidence sink."""
-        return self._last_evidence
+        return self._evidence.last
 
     def close(self) -> None:
         """Drop owned credential copies after the trial owner drains native work."""
@@ -297,6 +319,8 @@ class LilraeOpenCodeExecutor:
         """Refuse changed build/configuration before native work starts."""
         if self._closed:
             raise AgentExecutionError("participant OpenCode executor is closed")
+        if self.timeout_seconds <= 0:
+            raise AgentExecutionError("participant attempt deadline is exhausted")
         if cancellation.is_set():
             raise AgentExecutionError(REASON_CANCELLED)
         if self._request is not None:
@@ -327,6 +351,8 @@ class LilraeOpenCodeExecutor:
         partial = None
         transport_cleanup = None
         process_error = None
+        history = None
+        observation = None
 
         def retain_partial(output: bytes) -> None:
             """Reduce private failure bytes to a safe metadata snapshot."""
@@ -361,7 +387,9 @@ class LilraeOpenCodeExecutor:
                         server["environment"].update(carrier.environment(name))
                         # OpenCode merges parent environment into MCP children.
                         server["environment"].update(
-                            dict.fromkeys(PROVIDER_CREDENTIAL_NAMES, "")
+                            dict.fromkeys(
+                                PROVIDER_CREDENTIAL_NAMES | {OBSERVER_CREDENTIAL}, ""
+                            )
                         )
                 directory = stack.enter_context(
                     TemporaryDirectory(
@@ -370,9 +398,22 @@ class LilraeOpenCodeExecutor:
                 )
                 work = Path(directory)
                 config = render_opencode_config(
-                    self.model, self._route, self._tool_permissions, servers,
-                    request_profile=self._request.profile if self._request is not None else None,
+                    self.model,
+                    self._route,
+                    self._tool_permissions,
+                    servers,
+                    request_profile=self._request.profile
+                    if self._request is not None
+                    else None,
+                    max_steps=self._max_steps,
                 )
+                environment = opencode_environment(
+                    work, self._environment, self._max_output_tokens
+                )
+                if self._request_observation_required:
+                    environment, expected_controls = install_request_observer(
+                        work, config, environment, self._prompt
+                    )
                 create_exclusive_nofollow(
                     work, "opencode.json", json.dumps(config).encode()
                 )
@@ -388,9 +429,7 @@ class LilraeOpenCodeExecutor:
                             "--title",
                             "lilrae-participant",
                         ),
-                        env=opencode_environment(
-                            work, self._environment, self._max_output_tokens
-                        ),
+                        env=environment,
                         cwd=work,
                         stdin=self._prompt,
                         timeout_seconds=self.timeout_seconds,
@@ -406,74 +445,55 @@ class LilraeOpenCodeExecutor:
                 except BoundedProcessError as exc:
                     process_error = exc
                     raise
+                finally:
+                    native_response = partial or parse_opencode_response(
+                        result.stdout if result else b""
+                    )
+                    history = read_native_history(
+                        work,
+                        expected_prompt=self._prompt,
+                        expected_model=self.model,
+                        session_id=native_response.session_id,
+                    )
+                    if self._request_observation_required:
+                        observation = read_request_observations(
+                            work,
+                            expected_controls=expected_controls,
+                            expected_prompt_sha256=self.prompt_sha256,
+                        )
                 text = _supervised_result_text(result)
-        except BoundedProcessError as exc:
-            self._record(action_id, "failed", result, exc, partial, transport_cleanup)
-            raise
-        except AgentExecutionError:
-            self._record(
-                action_id, "failed", result, process_error, partial, transport_cleanup
+                if observation is not None and observation.status != "observed":
+                    raise AgentExecutionError(
+                        "participant provider request evidence is unavailable"
+                    )
+                if history.status == "invalid" or (
+                    self._native_history_required and history.status != "observed"
+                ):
+                    raise AgentExecutionError(
+                        "participant native delivery evidence is invalid"
+                    )
+        except Exception as exc:
+            self._evidence.record(
+                action_id,
+                "failed",
+                result,
+                exc if isinstance(exc, BoundedProcessError) else process_error,
+                partial,
+                transport_cleanup,
+                history,
+                observation,
             )
-            raise
-        except Exception:
-            self._record(
-                action_id, "failed", result, process_error, partial, transport_cleanup
-            )
+            if isinstance(exc, (BoundedProcessError, AgentExecutionError)):
+                raise
             raise AgentExecutionError(
                 "participant private context or launch failed"
             ) from None
-        self._record(
-            action_id, "succeeded", result, tool_transport_cleanup=transport_cleanup
+        self._evidence.record(
+            action_id,
+            "succeeded",
+            result,
+            tool_transport_cleanup=transport_cleanup,
+            native_history=history,
+            request_observation=observation,
         )
         return text
-
-    def _record(
-        self,
-        action_id: str,
-        status: str,
-        result: ProcessResult | None,
-        error: BoundedProcessError | None = None,
-        partial: OpenCodeResponse | None = None,
-        tool_transport_cleanup: str | None = None,
-    ) -> None:
-        """Retain safe partial metadata after process and transport cleanup."""
-        response = partial or parse_opencode_response(result.stdout if result else b"")
-        cleanup = None
-        stdout_sha256 = None
-        stdout_bytes = stderr_bytes = 0
-        if result is not None:
-            cleanup = result.cleanup
-            stdout_sha256 = hashlib.sha256(result.stdout).hexdigest()
-            stdout_bytes, stderr_bytes = len(result.stdout), len(result.stderr)
-        elif error is not None:
-            cleanup = error.cleanup
-            stdout_sha256 = error.stdout_sha256
-            stdout_bytes, stderr_bytes = error.stdout_bytes, error.stderr_bytes
-        self._last_evidence = OpenCodeInvocationEvidence(
-            action_id=action_id,
-            build=self._build,
-            requested_model=self.model,
-            endpoint=self._route.endpoint,
-            requested_serving_provider=self._route.serving_provider,
-            prompt_sha256=self.prompt_sha256,
-            status=status,
-            stdout_sha256=stdout_sha256,
-            stdout_bytes=stdout_bytes,
-            stderr_bytes=stderr_bytes,
-            partial_text_sha256=response.partial_text_sha256,
-            session_id=response.session_id,
-            input_tokens=response.input_tokens,
-            output_tokens=response.output_tokens,
-            cost=response.cost,
-            finish_reason=response.finish_reason,
-            cleanup_residual=cleanup.residual if cleanup else None,
-            tool_transport_cleanup=tool_transport_cleanup,
-        )
-        if self._evidence_sink is not None:
-            try:
-                self._evidence_sink(self._last_evidence)
-            except Exception:
-                self._last_evidence = replace(self._last_evidence, status="failed")
-                raise AgentExecutionError(
-                    "participant evidence could not be retained"
-                ) from None

@@ -273,6 +273,8 @@ class ParticipantRequestOwner:
                 output.append(data.decode("utf-8", errors="strict"))
             except UnicodeDecodeError:
                 raise ValueError("participant content must be UTF-8") from None
+        if any(token in "".join(output) for token in profile.unresolved_placeholders):
+            raise ValueError("participant content contains an unresolved placeholder")
         return tuple(output)
 
     def prepare_request(

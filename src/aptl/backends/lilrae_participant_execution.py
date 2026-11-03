@@ -13,7 +13,9 @@ from raes_contracts.contracts import (
     ParticipantActionResultModel,
     ParticipantTemporalRuntimeContextModel,
 )
-from raes_contracts.contracts.participant_action_admission import ParticipantActionAdmissionRequest
+from raes_contracts.contracts.participant_action_admission import (
+    ParticipantActionAdmissionRequest,
+)
 from raes_contracts.participant_native_execution import ParticipantNativeActionExecution
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 from raes_contracts.diagnostics import Diagnostic
@@ -24,6 +26,7 @@ from aptl.core.participant_binding import (
     MAX_CONCURRENT_PARTICIPANTS,
 )
 from aptl.utils.redaction import redact
+from aptl.core.trial_participants import TrialParticipantBounds
 from aptl.backends.participant_tools.session import LilraeToolBinding, LilraeToolSession
 from aptl.workbench.process import (
     AgentExecutionError,
@@ -71,6 +74,30 @@ class LilraeParticipantExecution:
         self._cancelled: set[str] = set()
         self._closed = False
         self._tool_ports: dict[str, ParticipantInvocationToolActionPort] = {}
+        self._trial_bounds: TrialParticipantBounds | None = None
+
+    @property
+    def trial_bounds(self) -> TrialParticipantBounds | None:
+        return self._trial_bounds
+
+    def install_before_dispatch(
+        self, bindings: tuple[LilraeParticipantBinding, ...],
+        *, trial_bounds: TrialParticipantBounds | None = None,
+    ) -> None:
+        """Replace only executor instances within the already admitted offer."""
+        candidate = LilraeParticipantExecution(bindings)
+        with self._condition:
+            if (
+                self._active
+                or self._seen
+                or self._tool_ports
+                or self._closed
+                or self.trial_bounds is not None
+                or candidate.bindings != self.bindings
+            ):
+                raise ValueError("participant runtime cannot be reconfigured")
+            self.bindings, self._by_key = candidate.bindings, candidate._by_key
+            self._trial_bounds = trial_bounds
 
     def attach_tool_port(self, port: ParticipantInvocationToolActionPort) -> None:
         """Retain the scheduler-issued port until its exact worker starts."""
@@ -220,6 +247,16 @@ class LilraeParticipantExecution:
                 "Native participant binding was refused.",
             )
         event = Event()
+        if self.trial_bounds is not None:
+            refusal = self.trial_bounds.refusal(snapshot, request.participant_address)
+            if refusal is not None:
+                with self._condition:
+                    self._tool_ports.pop(request.action_instance_id, None)
+                return self._outcome(
+                    request, snapshot, episode_id,
+                    "timeout" if self.trial_bounds.time_exhausted() else "authority_denied",
+                    refusal,
+                )
         if not self._reserve(request, event):
             return self._outcome(
                 request,
