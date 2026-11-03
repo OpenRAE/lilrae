@@ -28,7 +28,7 @@ from aptl.utils.pathsafe import (
 )
 from aptl.utils.strict_json import loads_strict
 
-OBSERVER_SHA256 = "33a812aebf761f7860d695816a797f1b984f7a90da3b0770fb811405e86d9ffa"
+OBSERVER_SHA256 = "ffbff358064493d84087d35a87f13cd74044ba864476194ee47f6caa901e7791"
 OBSERVER_CREDENTIAL = "LILRAE_OPENCODE_PROVIDER_KEY"
 MAX_OBSERVATION_BYTES = 16 * 1024 * 1024
 OBSERVER_MODULE = "request_observer.mjs"

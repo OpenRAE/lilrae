@@ -6,7 +6,7 @@ const input = JSON.parse(readFileSync(new URL("./observer-input.json", import.me
 const credentialName = "LILRAE_OPENCODE_PROVIDER_KEY";
 const controlFields = ["model", "provider", "reasoning", "temperature", "top_p", "seed", "max_tokens", "stream"];
 const requestFields = new Set([...controlFields, "messages", "stream_options", "usage", "tools", "tool_choice", "parallel_tool_calls"]);
-const finishReasons = ["stop", "length", "tool_calls", "content_filter", "function_call"];
+const finishReasons = new Set(["stop", "length", "tool_calls", "content_filter", "function_call"]);
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 const pick = (object, keys) => Object.fromEntries(keys.filter((key) => Object.hasOwn(object, key)).map((key) => [key, object[key]]));
 const fail = () => { throw new Error("participant request observation refused"); };
@@ -99,7 +99,7 @@ function responseMetadata(value, secrets) {
     reasoning_tokens: count(usage.completion_tokens_details?.reasoning_tokens ?? usage.reasoning_tokens),
     cache_read_tokens: count(usage.prompt_tokens_details?.cached_tokens ?? usage.cache_read_input_tokens),
     cache_write_tokens: count(usage.cache_creation_input_tokens), cost: amount(usage.cost),
-    finish_reason: finishReasons.includes(value.choices?.[0]?.finish_reason) ? value.choices[0].finish_reason : undefined,
+    finish_reason: finishReasons.has(value.choices?.[0]?.finish_reason) ? value.choices[0].finish_reason : undefined,
   };
 }
 

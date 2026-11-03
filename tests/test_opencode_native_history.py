@@ -165,6 +165,20 @@ def test_native_history_retains_prompt_delivery_on_interrupted_generation(tmp_pa
     assert history.steps == ()
 
 
+@pytest.mark.parametrize("column", ["message", "part"])
+@pytest.mark.parametrize("value", [None, b"invalid native JSON"])
+def test_native_history_rejects_non_text_json_columns(tmp_path, column, value):
+    path = native_database(tmp_path)
+    with sqlite3.connect(path) as db:
+        if column == "message":
+            db.execute("UPDATE message SET data=?", (value,))
+        else:
+            db.execute("UPDATE part SET data=?", (value,))
+    history = observe(tmp_path)
+    assert history.status == "invalid"
+    assert history.steps == ()
+
+
 @pytest.mark.parametrize("token_value", [None, 0, True, -1, "12"])
 def test_native_usage_does_not_invent_or_coerce_counts(tmp_path, token_value):
     path = native_database(tmp_path)

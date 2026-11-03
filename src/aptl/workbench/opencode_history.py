@@ -38,10 +38,10 @@ def _identifier(value: object, prefix: str) -> str:
     return value
 
 
-def _object(raw: str) -> dict[str, object]:
+def _object(raw: object) -> dict[str, object]:
     """Decode one bounded closed native JSON object."""
-    if len(raw.encode("utf-8")) > _MAX_VALUE_BYTES:
-        raise ValueError("oversized native value")
+    if not isinstance(raw, str) or len(raw.encode("utf-8")) > _MAX_VALUE_BYTES:
+        raise ValueError("invalid native JSON value")
     value = loads_strict(raw)
     if not isinstance(value, dict):
         raise ValueError("invalid native object")
