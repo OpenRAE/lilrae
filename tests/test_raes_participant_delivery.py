@@ -35,7 +35,7 @@ from aptl.backends._raes_participant_transport import (
     _render_runtime_profile_config,
 )
 from aptl.backends.raes_manifest import create_aptl_manifest
-from aptl.backends.raes_planning_compat import AptlRuntimeManager
+from aptl.backends.raes_runtime import AptlRuntimeManager
 from aptl.core.correlation.clock import FixedClockProvider
 from aptl.core.evidence.coordinator import acquire_evidence
 from aptl.core.evidence.protocol import RunScope

@@ -5,6 +5,12 @@
     promotion from `orchestration-evaluation` records the profile transition at
     that milestone. APTL's current claim is `full-remote-control-plane`; see the
     current [backend manifest](techvault-static-validation-gate.md#backend-manifest).
+    For the later red/blue MCP action scope, use the
+    [issue #1418 preflight](../architecture/issue-1418-participant-tool-admission-preflight.md).
+    Its shared SSH/API handler boundary does not repeat this milestone's
+    container-exec proof. Current `.ground-control.yaml` rules also supersede
+    the historical local test commands below: run only targeted tests and
+    staged `pre-commit run`; full suites and whole-tree checks belong in CI.
 
 This note is the architecture preflight for DSL-010 / issue #554. It is
 guidance, not an implementation plan. ADR-035 remains the binding RAES adoption

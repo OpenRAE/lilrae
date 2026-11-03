@@ -37,7 +37,7 @@
       "asset_id": "workbench-registry",
       "kind": "project-file",
       "source": "src/aptl/workbench/profiles.py",
-      "sha256": "c8b737b6b9f868c611aeb816da20bc92fb420b0cef1df24da46a277ac5eacdc9"
+      "sha256": "e05919ea0f2604f5aa7e0b2bcc05f752da0f44e5e0c3cd936f3fc974dfc7053c"
     },
     {
       "asset_id": "compose-model",
@@ -55,7 +55,7 @@
       "asset_id": "mcp-red-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-red/package-lock.json",
-      "sha256": "6b73c871d2d7d3ab27fe05a09930765464601b3e4c7f1fdded8f7cd7fb3abd22"
+      "sha256": "cbae644631a76a59e00e1bfaaa8be9dd0e212150c51f6c4842bc142cf1e7a249"
     },
     {
       "asset_id": "mcp-red-config",
@@ -143,6 +143,18 @@
       "services": [
         "wazuh.dashboard"
       ]
+    },
+    {
+      "asset_id": "workbench-policy",
+      "kind": "project-file",
+      "source": "src/aptl/core/mcp_policy.py",
+      "sha256": "d3d4fae78dc45caf2549d39bf3136309a1dd960988a5f88a2351759f25066826"
+    },
+    {
+      "asset_id": "workbench-catalog",
+      "kind": "project-file",
+      "source": "src/aptl/core/participant_mcp_policy.json",
+      "sha256": "ad109a685e54ad6cddd6bd6bae06a67ed8b82d995651eb0960d7353c0d08328b"
     }
   ]
 }

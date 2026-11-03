@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from raes_backend_protocols.capabilities import BackendManifest
 from raes_contracts.diagnostics import Diagnostic
-from raes_contracts.planning import ProvisioningPlan
+from raes_contracts.planning import ChangeAction, ProvisioningPlan
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 
 from aptl.backends._raes_apply_reporting import (
@@ -36,9 +36,6 @@ from aptl.backends.raes_realization import (
     interpret_provisioning_plan,
 )
 from aptl.backends.raes_profiles import select_backend_profiles
-from aptl.backends.scenario_planning_compatibility import (
-    ResolvedPlanningCompatibility,
-)
 from aptl.backends.scenario_startup import ScenarioStartupSelection
 from aptl.core.config import AptlConfig
 from aptl.core.experiment.capture_plan import CapturePlan, empty_capture_plan
@@ -95,9 +92,6 @@ class AptlProvisioner(LilraeApparatusReportingMixin, ProvisionerStartMixin):
         default_factory=OperatorAccessDecision
     )
     startup_selection: ScenarioStartupSelection | None = field(default=None, repr=False)
-    planning_compatibility: ResolvedPlanningCompatibility | None = field(
-        default=None, repr=False
-    )
     reporting_manifest: BackendManifest | None = field(default=None, repr=False)
     _lilrae_apparatus_resources: tuple[PreparedCaptureResource, ...] = field(
         default=(), init=False, repr=False
@@ -123,14 +117,9 @@ class AptlProvisioner(LilraeApparatusReportingMixin, ProvisionerStartMixin):
     def validate(self, plan: object) -> list[Diagnostic]:
         """Validate that the RAES provisioning plan is APTL-realizable."""
 
-        if not isinstance(plan, ProvisioningPlan):
-            return [
-                diagnostic(
-                    "aptl.provisioner.invalid-plan",
-                    PROVISIONING_ADDRESS,
-                    "APTL provisioner expected a RAES ProvisioningPlan.",
-                )
-            ]
+        diagnostics = self._invalid_plan_diagnostics(plan)
+        if diagnostics:
+            return diagnostics
 
         return [
             *self.realize_plan(plan).diagnostics,
@@ -468,6 +457,12 @@ class AptlProvisioner(LilraeApparatusReportingMixin, ProvisionerStartMixin):
     @staticmethod
     def _invalid_plan_diagnostics(plan: object) -> list[Diagnostic]:
         if isinstance(plan, ProvisioningPlan):
+            if any(operation.action is ChangeAction.DELETE for operation in plan.operations):
+                return [diagnostic(
+                    "lilrae.provisioner.delete-scope-unavailable", PROVISIONING_ADDRESS,
+                    "Native deletion requires an installed receipt-bound trial cleanup owner; "
+                    "lab start cannot execute a delete plan.",
+                )]
             return []
         return [
             diagnostic(

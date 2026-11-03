@@ -12,8 +12,8 @@ from aptl_techvault.serving import TechVaultPackInteraction
 
 PACK = PackIdentity(
     pack_id="techvault",
-    pack_version="6.5.1",
-    set_digest="sha256:a1abd4a382e048e4f74ce343c1b544626fe0633739dfe473c79f1b5fa3aded2f",
+    pack_version="7.2.2",
+    set_digest="sha256:98c2c6dc9383ccecce62c01b1e62856ddb1dc9d94ea26c15cb2b9d59b9b93101",
 )
 BACKEND = BackendIdentity("aptl", "0.1.0", "full-remote-control-plane")
 

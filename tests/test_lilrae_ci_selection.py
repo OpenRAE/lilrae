@@ -46,6 +46,14 @@ def test_project_wide_analysis_has_complete_current_coverage():
         assert all(lanes[name] for name in ("python", "mcp", "web"))
 
 
+def test_scheduled_and_dispatched_checks_select_all_lanes():
+    module = selector()
+    for event in ("schedule", "workflow_dispatch"):
+        paths = module.changed_paths({}, event)
+        assert paths is None
+        assert all(module.select_lanes(paths or [], full=paths is None).values())
+
+
 def test_every_dockerfile_selects_the_iac_gate():
     select = selector().select_lanes
     for path in (

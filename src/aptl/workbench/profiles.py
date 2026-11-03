@@ -6,206 +6,29 @@ import json
 import os
 import re
 from collections.abc import Collection, Mapping
-from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
+
+from aptl.core.mcp_policy import (
+    ProfileId,
+    ServerProfile,
+    WorkbenchConfigurationError,
+    WorkbenchProfile,
+    profile_for,
+)
 
 from aptl.utils.pathsafe import PathContainmentError, create_exclusive_nofollow
 
+__all__ = [
+    "ProfileId",
+    "ServerProfile",
+    "WorkbenchProfile",
+    "WorkbenchConfigurationError",
+    "profile_for",
+    "render_profile_config",
+    "verify_profile_tool_inventory",
+]
+
 _TRACE_ID_RE = re.compile(r"^[a-f0-9]{32}$")
-
-
-class WorkbenchConfigurationError(ValueError):
-    """The requested profile cannot safely produce a client configuration."""
-
-
-class ProfileId(str, Enum):
-    """The only participant capability compartments admitted by this release."""
-
-    RED = "red"
-    GUIDED_BLUE = "guided-blue"
-    BLUE = "blue"
-
-
-@dataclass(frozen=True)
-class ServerProfile:
-    """A built MCP artifact and the aliases it requires from its supervisor."""
-
-    server_id: str
-    artifact_ref: str
-    credential_aliases: tuple[str, ...] = ()
-    tool_names: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class WorkbenchProfile:
-    """An immutable launch compartment, not a client-side tool filter."""
-
-    profile_id: ProfileId
-    servers: tuple[ServerProfile, ...]
-    bookmark_refs: tuple[str, ...]
-    policy_version: str = "participant-workbench-profile/v1"
-
-    @property
-    def server_ids(self) -> tuple[str, ...]:
-        return tuple(server.server_id for server in self.servers)
-
-    @property
-    def credential_aliases(self) -> tuple[str, ...]:
-        return tuple(
-            sorted(
-                {
-                    alias
-                    for server in self.servers
-                    for alias in server.credential_aliases
-                }
-            )
-        )
-
-
-_RED = WorkbenchProfile(
-    profile_id=ProfileId.RED,
-    servers=(
-        ServerProfile(
-            "aptl-red",
-            "mcp/mcp-red/build/index.js",
-            tool_names=(
-                "kali_info",
-                "kali_run_command",
-                "kali_interactive_session",
-                "kali_background_session",
-                "kali_session_command",
-                "kali_list_sessions",
-                "kali_close_session",
-                "kali_get_session_output",
-                "kali_close_all_sessions",
-            ),
-        ),
-    ),
-    bookmark_refs=("aptl-guide", "kali-desktop"),
-)
-
-_GUIDED_BLUE = WorkbenchProfile(
-    profile_id=ProfileId.GUIDED_BLUE,
-    servers=(
-        ServerProfile(
-            "aptl-indexer",
-            "mcp/mcp-indexer/build/index.js",
-            (
-                "INDEXER_USERNAME",
-                "INDEXER_PASSWORD",
-                "API_USERNAME",
-                "API_PASSWORD",
-            ),
-            (
-                "indexer_query",
-                "indexer_create_rule",
-                "indexer_restart_manager",
-                "indexer_get_rule_file",
-            ),
-        ),
-        ServerProfile(
-            "aptl-wazuh",
-            "mcp/mcp-wazuh/build/index.js",
-            (
-                "INDEXER_USERNAME",
-                "INDEXER_PASSWORD",
-                "API_USERNAME",
-                "API_PASSWORD",
-            ),
-            (
-                "wazuh_query_alerts",
-                "wazuh_query_logs",
-                "wazuh_create_detection_rule",
-            ),
-        ),
-    ),
-    bookmark_refs=("aptl-guide", "soc-wazuh"),
-)
-
-_BLUE = WorkbenchProfile(
-    profile_id=ProfileId.BLUE,
-    servers=(
-        ServerProfile(
-            "aptl-indexer",
-            "mcp/mcp-indexer/build/index.js",
-            (
-                "INDEXER_USERNAME",
-                "INDEXER_PASSWORD",
-                "API_USERNAME",
-                "API_PASSWORD",
-            ),
-            (
-                "indexer_query",
-                "indexer_create_rule",
-                "indexer_restart_manager",
-                "indexer_get_rule_file",
-            ),
-        ),
-        ServerProfile(
-            "aptl-network",
-            "mcp/mcp-network/build/index.js",
-            ("INDEXER_USERNAME", "INDEXER_PASSWORD"),
-            (
-                "network_query_ids_alerts",
-                "network_query_dns_events",
-                "network_query_network_flows",
-                "network_query_web_attacks",
-            ),
-        ),
-        ServerProfile(
-            "aptl-soar",
-            "mcp/mcp-soar/build/index.js",
-            ("SHUFFLE_API_KEY",),
-            (
-                "soar_list_workflows",
-                "soar_get_workflow",
-                "soar_execute_workflow",
-                "soar_list_executions",
-                "soar_search_workflows",
-            ),
-        ),
-        ServerProfile(
-            "aptl-threatintel",
-            "mcp/mcp-threatintel/build/index.js",
-            ("MISP_API_KEY",),
-            (
-                "threatintel_search_iocs",
-                "threatintel_get_events",
-                "threatintel_add_indicator",
-                "threatintel_correlate_observable",
-            ),
-        ),
-        ServerProfile(
-            "aptl-wazuh",
-            "mcp/mcp-wazuh/build/index.js",
-            (
-                "INDEXER_USERNAME",
-                "INDEXER_PASSWORD",
-                "API_USERNAME",
-                "API_PASSWORD",
-            ),
-            (
-                "wazuh_query_alerts",
-                "wazuh_query_logs",
-                "wazuh_create_detection_rule",
-            ),
-        ),
-    ),
-    bookmark_refs=("aptl-guide", "soc-wazuh", "soc-misp", "soc-shuffle"),
-)
-
-_PROFILES = {
-    profile.profile_id: profile for profile in (_RED, _GUIDED_BLUE, _BLUE)
-}
-
-
-def profile_for(profile: ProfileId | str) -> WorkbenchProfile:
-    """Return an admitted profile or reject an unrecognised capability set."""
-    try:
-        return _PROFILES[ProfileId(profile)]
-    except ValueError as exc:
-        raise WorkbenchConfigurationError("unknown participant profile") from exc
 
 
 def _validate_run_id(run_id: str) -> str:
@@ -241,10 +64,13 @@ def _validate_artifacts(profile: WorkbenchProfile, payload_root: Path) -> None:
 
 
 def verify_profile_tool_inventory(
-    profile: ProfileId | str, inventory: Mapping[str, Collection[str]]
+    profile: ProfileId | str | WorkbenchProfile,
+    inventory: Mapping[str, Collection[str]],
 ) -> None:
     """Reject a launched profile unless every server reports its exact tools/list set."""
-    selected = profile_for(profile)
+    selected = (
+        profile if isinstance(profile, WorkbenchProfile) else profile_for(profile)
+    )
     expected = {
         server.server_id: frozenset(server.tool_names) for server in selected.servers
     }
@@ -259,7 +85,7 @@ def verify_profile_tool_inventory(
 
 def render_profile_config(
     *,
-    profile: ProfileId | str,
+    profile: ProfileId | str | WorkbenchProfile,
     payload_root: Path,
     output_dir: Path,
     state_dir: Path,
@@ -272,7 +98,9 @@ def render_profile_config(
     Secret values stay with the management-owned credential broker. The
     client expands only the selected aliases into the stdio server processes.
     """
-    selected = profile_for(profile)
+    selected = (
+        profile if isinstance(profile, WorkbenchProfile) else profile_for(profile)
+    )
     active_run_id = _validate_run_id(run_id)
     _validate_aliases(selected, credential_aliases)
     _validate_artifacts(selected, payload_root)
@@ -292,12 +120,12 @@ def render_profile_config(
                 "command": str(node),
                 "args": [str((payload / server.artifact_ref).resolve())],
                 "env": {
+                    **dict(
+                        dict(selected.runtime_environment).get(server.server_id, ())
+                    ),
                     "APTL_MCP_DISABLE_DOTENV": "1",
                     "APTL_STATE_DIR": str(canonical_state_dir),
-                    **{
-                        alias: f"${{{alias}}}"
-                        for alias in server.credential_aliases
-                    },
+                    **{alias: f"${{{alias}}}" for alias in server.credential_aliases},
                 },
             }
             for server in selected.servers

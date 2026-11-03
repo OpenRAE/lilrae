@@ -19,6 +19,7 @@ import {
   SessionConnectOptions,
 } from './ssh-contracts.js';
 import { PersistentSession } from './ssh-session.js';
+import { knownToolFailure, toolAbortSignal } from './lilrae-tool-outcome.js';
 
 const SHUTTING_DOWN = 'SSH manager is shutting down';
 
@@ -224,6 +225,7 @@ export class SSHConnectionManager {
     let client: Client;
     try {
       client = await this.getConnection(host, username, privateKeyPath, port);
+      toolAbortSignal()?.throwIfAborted();
     } catch (err) {
       this.activeExecs.delete(sessionId);
       ready();
@@ -356,7 +358,7 @@ export class SSHConnectionManager {
       })
       .catch(err => {
         this.pendingConnections.delete(connectionKey);
-        throw err;
+        throw knownToolFailure(err);
       });
     this.pendingConnections.set(connectionKey, creating);
     return creating;
@@ -442,6 +444,7 @@ export class SSHConnectionManager {
     const creation = (async (): Promise<PersistentSession> => {
       const port = options.port ?? 22;
       const client = await this.getConnection(target, username, privateKeyPath, port);
+      toolAbortSignal()?.throwIfAborted();
       const session = new PersistentSession(sessionId, target, username, type, client, options);
 
       // Attach ownership-transfer listeners BEFORE the initialize() await so a
@@ -538,6 +541,7 @@ export class SSHConnectionManager {
     raw?: boolean
   ): Promise<CommandResult> {
     require_(!this.stopping, SHUTTING_DOWN);
+    toolAbortSignal()?.throwIfAborted();
     const session = this.sessions.get(sessionId);
     require_(session !== undefined, `Session '${sessionId}' not found`);
 

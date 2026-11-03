@@ -114,7 +114,7 @@ def _granting(
     project_dir: Path,
     *grants: EnvironmentGrant,
     pack: str | None = "techvault",
-    adapter_names: frozenset[str] = frozenset(),
+    adapter_grants: tuple[EnvironmentGrant, ...] = (),
 ):
     """A backend whose preflight recorded these grants for one admitted pack."""
 
@@ -124,7 +124,7 @@ def _granting(
     env_file = project_dir / ".env"
     backend._environment_binding_context = EnvironmentBindingContext(
         pack_id=pack,
-        adapter_names=adapter_names,
+        adapter_grants=adapter_grants,
         grants=grants,
         project_environment=load_dotenv(env_file) if env_file.exists() else {},
         process_environment=os.environ,
@@ -386,7 +386,12 @@ def test_the_startup_adapter_binds_only_the_names_it_declares(tmp_path):
         f"INDEXER_PASSWORD={_OTHER}\nAPTL_API_TOKEN={_CANARY}\n",
         encoding="utf-8",
     )
-    backend = _granting(tmp_path, adapter_names=frozenset({"INDEXER_PASSWORD"}))
+    backend = _granting(
+        tmp_path,
+        adapter_grants=(
+            _grant("INDEXER_PASSWORD", "INDEXER_PASSWORD", kind="project-env-file"),
+        ),
+    )
     fixture = _spec(("INDEXER_PASSWORD",), sourced=("INDEXER_PASSWORD",))
     control_plane = _spec(("APTL_API_TOKEN",), sourced=("APTL_API_TOKEN",))
 
@@ -571,6 +576,9 @@ def test_an_adapter_selected_for_another_pack_supplies_nothing(tmp_path):
     plan = SimpleNamespace(
         environment_fixtures=(SimpleNamespace(name="DB_PASSWORD"),),
         environment_aliases=(),
+        environment_grants=(
+            _grant("DB_PASSWORD", "DB_PASSWORD", kind="project-env-file"),
+        ),
     )
     other = PackIdentity("techvault", "0.0.9", "sha256:" + "1" * 64)
     matching = _base_node_realization(
@@ -582,11 +590,11 @@ def test_an_adapter_selected_for_another_pack_supplies_nothing(tmp_path):
     names = {
         label: binding_context(
             replace(matching, startup_selection=selection), (), tmp_path
-        ).adapter_names
+        ).adapter_grants
         for label, selection in (("selected", selected), ("stale", stale))
     }
 
-    assert names == {"selected": frozenset({"DB_PASSWORD"}), "stale": frozenset()}
+    assert names == {"selected": plan.environment_grants, "stale": ()}
 
 
 def test_a_generated_value_never_replaces_an_authored_declaration(tmp_path):
@@ -667,6 +675,9 @@ def test_an_unreadable_env_file_fails_only_a_variable_that_needs_it(tmp_path):
             plan=SimpleNamespace(
                 environment_fixtures=(SimpleNamespace(name="DB_PASSWORD"),),
                 environment_aliases=(),
+                environment_grants=(
+                    _grant("DB_PASSWORD", "DB_PASSWORD", kind="project-env-file"),
+                ),
             ),
         ),
     )

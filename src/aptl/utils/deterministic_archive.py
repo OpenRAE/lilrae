@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import stat
 import tarfile
 from pathlib import Path
 from typing import BinaryIO
@@ -55,13 +56,26 @@ def open_nofollow(path: Path | str) -> BinaryIO:
     """Open one regular file read-only without following a final symlink.
 
     ``O_NOFOLLOW`` makes a symlink at ``path`` raise ``OSError`` (``ELOOP``)
-    rather than being followed. This guards a single already-resolved leaf; use
+    rather than being followed. ``O_NONBLOCK`` keeps a FIFO from blocking the
+    open until a writer appears (#1618): a file that is not regular raises
+    ``OSError``, and the descriptor of a regular file goes back to blocking
+    mode. This guards a single already-resolved leaf; use
     :mod:`aptl.utils.pathsafe` when the whole relative path is untrusted.
     """
-    flags = os.O_RDONLY | os.O_CLOEXEC
+    nonblock = getattr(os, "O_NONBLOCK", 0)
+    flags = os.O_RDONLY | os.O_CLOEXEC | nonblock
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
-    return os.fdopen(os.open(path, flags), "rb")
+    descriptor = os.open(path, flags)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OSError(f"not a regular file: {path}")
+        if nonblock:
+            os.set_blocking(descriptor, True)
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return os.fdopen(descriptor, "rb")
 
 
 def hash_file_nofollow(path: Path | str) -> tuple[str, int]:

@@ -127,10 +127,6 @@ class ExperimentExecutor:
         lambda trial, ordinal: f"{trial.planned_trial_id}-attempt-{ordinal}"
     )
 
-    def execute(self, admitted: AdmittedExperiment) -> list[SealResult]:
-        """Execute every planned trial once, returning one seal result per attempt."""
-        return [self.execute_trial(admitted, trial) for trial in admitted.plan.trials]
-
     def execute_trial(
         self, admitted: AdmittedExperiment, planned_trial: PlannedTrial, *, attempt_ordinal: int = 1
     ) -> SealResult:

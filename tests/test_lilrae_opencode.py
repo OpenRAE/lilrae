@@ -1,6 +1,7 @@
 """The OpenCode harness receives independent, explicitly selected inputs."""
 
-from aptl.workbench.lilrae_opencode import OpenCodeOptions, OpenCodeToolProfile
+from aptl.workbench.lilrae_opencode import OpenCodeToolProfile
+from tests.opencode_fixture import synthetic_options
 
 import json
 import os
@@ -25,7 +26,11 @@ class RecordingRunner:
                 json.loads(Path(options["env"]["OPENCODE_CONFIG"]).read_text()),
             )
         )
-        return ProcessResult(0, b'{"type":"text","part":{"text":"done"}}\n', b"")
+        return ProcessResult(
+            0,
+            b'{"type":"text","part":{"text":"done"}}\n{"type":"step_finish","part":{"reason":"stop"}}\n',
+            b"",
+        )
 
 
 def test_independent_models_prompts_and_fresh_contexts(tmp_path):
@@ -37,12 +42,12 @@ def test_independent_models_prompts_and_fresh_contexts(tmp_path):
     executable.chmod(0o700)
     contexts = []
     for model, prompt in (
-        ("provider/red", "red only"),
-        ("provider/blue", "blue only"),
-        ("provider/red", "changed red"),
+        ("openrouter/red", "red only"),
+        ("openrouter/blue", "blue only"),
+        ("openrouter/red", "changed red"),
     ):
         executor = LilraeOpenCodeExecutor(
-            options=OpenCodeOptions(
+            options=synthetic_options(
                 executable=executable,
                 work_root=tmp_path,
                 environment={"OPENROUTER_API_KEY": "test-private-token"},
@@ -72,7 +77,7 @@ def test_independent_models_prompts_and_fresh_contexts(tmp_path):
 def test_harness_rejects_ambient_configuration_environment(tmp_path):
     from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor
 
-    options = OpenCodeOptions(
+    options = synthetic_options(
         executable=Path("/bin/true"),
         work_root=tmp_path,
         environment={"OPENCODE_CONFIG": "/untrusted/config"},
@@ -80,7 +85,7 @@ def test_harness_rejects_ambient_configuration_environment(tmp_path):
     with pytest.raises(ValueError, match="environment"):
         LilraeOpenCodeExecutor(
             options=options,
-            model="provider/model",
+            model="openrouter/model",
             prompt="prompt",
             timeout_seconds=30,
         )
@@ -105,7 +110,7 @@ def test_only_verified_profile_tools_reach_opencode(tmp_path):
     inventory = {server.server_id: server.tool_names for server in profile.servers}
     runner = RecordingRunner()
     executor = LilraeOpenCodeExecutor(
-        options=OpenCodeOptions(
+        options=synthetic_options(
             executable=Path("/bin/true"),
             work_root=tmp_path,
             environment={},
@@ -117,11 +122,29 @@ def test_only_verified_profile_tools_reach_opencode(tmp_path):
                 inventory_probe=lambda server, *args: inventory[server],
             ),
         ),
-        model="provider/model",
+        model="openrouter/model",
         prompt="red task",
         timeout_seconds=30,
     )
-    executor("action", Event())
+    cancellation = Event()
+    with pytest.raises(AgentExecutionError, match="tool session"):
+        executor("action", cancellation)
+    assert runner.calls == []
+    from dataclasses import replace
+    from aptl.backends.participant_tools.session import LilraeToolSession
+    from tests.test_lilrae_participant_tools import binding, port
+
+    cancellation = Event()
+    session = LilraeToolSession(
+        port(),
+        tuple(
+            replace(binding(), server_id=server, tool_name=tool)
+            for server, tools in inventory.items()
+            for tool in tools
+        ),
+        cancellation,
+    )
+    executor.invoke_with_tools("outer-red", cancellation, session)
     config = runner.calls[0][2]
     assert set(config["mcp"]) == set(servers)
     expected = {
@@ -131,13 +154,15 @@ def test_only_verified_profile_tools_reach_opencode(tmp_path):
         tool for tool, value in config["permission"].items() if value == "allow"
     } == expected
     assert config["permission"]["*"] == "deny"
+    for server in config["mcp"].values():
+        assert len(server["environment"]["LILRAE_TOOL_TOKEN"]) == 64
+        assert not Path(server["environment"]["LILRAE_TOOL_SOCKET"]).exists()
     # Replacing the admitted file cannot widen the next invocation's tools.
     path.write_text(
         json.dumps({"mcpServers": {**servers, "peer": servers[next(iter(servers))]}})
     )
-    cancellation = Event()
     with pytest.raises(AgentExecutionError, match="changed"):
-        executor("action-2", cancellation)
+        executor.invoke_with_tools("outer-red", cancellation, session)
     assert len(runner.calls) == 1
 
 
@@ -154,7 +179,7 @@ def test_unknown_profile_server_is_rejected_before_probe(tmp_path):
         )
     )
     path.chmod(0o600)
-    options = OpenCodeOptions(
+    options = synthetic_options(
         executable=Path("/bin/true"),
         work_root=tmp_path,
         tools=OpenCodeToolProfile(
@@ -164,7 +189,7 @@ def test_unknown_profile_server_is_rejected_before_probe(tmp_path):
     with pytest.raises(ValueError, match="servers"):
         LilraeOpenCodeExecutor(
             options=options,
-            model="provider/model",
+            model="openrouter/model",
             prompt="task",
             timeout_seconds=30,
         )
@@ -179,19 +204,20 @@ def test_real_child_receives_stdin_and_private_configuration(tmp_path):
     executable.write_text(
         f"#!{sys.executable}\n"
         "import json,os,sys\n"
-        "assert sys.argv[1:] == ['run','--format','json','--model','provider/model']\n"
+        "assert sys.argv[1:] == ['run','--format','json','--model','openrouter/model','--title','lilrae-participant']\n"
         "assert os.environ['HOME'] == os.getcwd()\n"
         "config = json.load(open(os.environ['OPENCODE_CONFIG']))\n"
         "assert config['permission'] == {'*':'deny'}\n"
         "assert sys.stdin.buffer.read() == b'exact prompt'\n"
         "print(json.dumps({'type':'text','part':{'text':'bounded completion'}}))\n"
+        "print(json.dumps({'type':'step_finish','part':{'reason':'stop'}}))\n"
     )
     executable.chmod(0o700)
     executor = LilraeOpenCodeExecutor(
-        options=OpenCodeOptions(
+        options=synthetic_options(
             executable=executable, work_root=tmp_path, environment={}
         ),
-        model="provider/model",
+        model="openrouter/model",
         prompt="exact prompt",
         timeout_seconds=15,
     )

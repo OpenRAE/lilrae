@@ -10,6 +10,7 @@ reaches the lab without an adapter edit.
 from __future__ import annotations
 
 from aptl.backends.scenario_startup import AccountCredentialFixture
+from aptl.core.config import EnvironmentGrant
 
 #: ``(account, credential id, ((variable, part), ...))`` for each declared login.
 _ACCOUNT_VARIABLES = (
@@ -38,6 +39,7 @@ _ACCOUNT_VARIABLES = (
     ),
 )
 
+
 def techvault_account_environment() -> tuple[AccountCredentialFixture, ...]:
     """Return each backend variable as a reference to its declared credential."""
 
@@ -45,6 +47,28 @@ def techvault_account_environment() -> tuple[AccountCredentialFixture, ...]:
         AccountCredentialFixture(name, account, credential_id, part)
         for account, credential_id, variables in _ACCOUNT_VARIABLES
         for name, part in variables
+    )
+
+
+def techvault_environment_grants(pack_id: str) -> tuple[EnvironmentGrant, ...]:
+    """Authorize only each SOC service's required startup credentials."""
+
+    wazuh = ("INDEXER_USERNAME", "INDEXER_PASSWORD", "API_USERNAME", "API_PASSWORD")
+    consumers = {
+        "wazuh-manager": wazuh,
+        "wazuh-dashboard": (*wazuh, "DASHBOARD_USERNAME", "DASHBOARD_PASSWORD"),
+        "misp": ("ADMIN_KEY",),
+        "shuffle-backend": ("SHUFFLE_DEFAULT_USERNAME", "SHUFFLE_DEFAULT_PASSWORD"),
+    }
+    return tuple(
+        EnvironmentGrant(
+            pack=pack_id,
+            consumer=consumer,
+            variable=name,
+            source={"kind": "project-env-file", "variable": name},
+        )
+        for consumer, names in consumers.items()
+        for name in names
     )
 
 
