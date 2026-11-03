@@ -132,6 +132,10 @@ Tool-enabled bindings require an exact installed mapping and the invocation's sc
 The common MCP server gates SSH and API handlers before dispatch.
 RAES commits each accepted tool history alongside its enclosing invocation.
 An invocation without installed tool bindings makes no per-tool history claim.
+Whole-policy admission also requires scoped capability support.
+Each participant retains only its admitted tools.
+The [scoped-tool design](issue-1646-scoped-tool-affordances-design.md) defines the declaration and qualification.
+
 
 ## Existing architecture and verification
 
