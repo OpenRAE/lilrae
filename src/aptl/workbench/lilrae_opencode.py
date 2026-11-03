@@ -36,6 +36,7 @@ from aptl.workbench.opencode_configuration import (
     PROVIDER_CREDENTIAL_NAMES,
     OpenCodeOptions,
     OpenCodeToolProfile,
+    opencode_arguments,
     opencode_environment,
     render_opencode_config,
     validate_invocation_inputs,
@@ -398,16 +399,7 @@ class LilraeOpenCodeExecutor:
                 )
                 try:
                     request = ProcessRequest(
-                        (
-                            str(self._executable),
-                            "run",
-                            "--format",
-                            "json",
-                            "--model",
-                            self.model,
-                            "--title",
-                            "lilrae-participant",
-                        ),
+                        opencode_arguments(self._executable, self.model),
                         env=opencode_environment(
                             work, self._environment, self._max_output_tokens
                         ),

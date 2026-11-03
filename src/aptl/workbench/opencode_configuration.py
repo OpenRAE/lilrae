@@ -52,6 +52,20 @@ class OpenCodeOptions:
 _OPENROUTER_PREFIX = "openrouter/"
 
 
+def opencode_arguments(executable: Path, model: str) -> tuple[str, ...]:
+    """Build fixed invocation arguments for the admitted executable and model."""
+    return (
+        str(executable),
+        "run",
+        "--format",
+        "json",
+        "--model",
+        model,
+        "--title",
+        "lilrae-participant",
+    )
+
+
 def render_opencode_config(
     model: str,
     route: OpenRouterRoute,
