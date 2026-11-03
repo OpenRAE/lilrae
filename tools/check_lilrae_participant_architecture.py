@@ -33,10 +33,12 @@ COMPONENTS = {
             "aptl.core.opencode",
             "aptl.core.provider_observation",
             "aptl.workbench.opencode_events",
+            "aptl.workbench.opencode_options",
             "aptl.workbench.process",
             "collections.abc",
             "dataclasses",
             "hashlib",
+            "raes_contracts.contracts",
         }
     ),
     "src/aptl/workbench/opencode_history.py": frozenset(
