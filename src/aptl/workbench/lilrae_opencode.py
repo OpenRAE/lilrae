@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-from collections.abc import Callable, Mapping
 from contextlib import ExitStack
 from copy import deepcopy
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event
@@ -22,18 +20,11 @@ if TYPE_CHECKING:
 from raes_contracts.contracts import ParticipantImplementationManifestModel
 
 from aptl.core.opencode import (
-    SUPPORTED_OPENCODE_BUILD,
-    OpenCodeBuild,
     OpenCodeInvocationEvidence,
-    OpenRouterRoute,
 )
-from aptl.core.participant_requests.binding import ParticipantRequestBinding
-from aptl.core.participant_requests.request import ParticipantRequest
 from aptl.core.trial_readiness import ParticipantReadiness
 from aptl.utils.pathsafe import create_exclusive_nofollow
-from aptl.utils.probe_execution import note_probe_cessation
 from aptl.workbench.agent import (
-    InventoryProbe,
     _admitted_executable,
     _load_server_config,
     _prepare_work_dir,
@@ -43,6 +34,8 @@ from aptl.workbench.agent import (
 )
 from aptl.workbench.opencode_configuration import (
     PROVIDER_CREDENTIAL_NAMES,
+    OpenCodeOptions,
+    OpenCodeToolProfile,
     opencode_environment,
     render_opencode_config,
     validate_invocation_inputs,
@@ -59,44 +52,17 @@ from aptl.workbench.process import (
     AgentExecutionError,
     BoundedProcessError,
     BoundedProcessRunner,
-    CancellableProcessRunner,
     ProcessRequest,
     ProcessResult,
 )
 from aptl.workbench.profiles import (
-    ProfileId,
     profile_for,
     verify_profile_tool_inventory,
 )
-from aptl.workbench.provider_readiness import openrouter_access_ready
-
-
-@dataclass(frozen=True)
-class OpenCodeToolProfile:
-    """An admitted MCP profile and the private inputs needed to verify it."""
-
-    profile: ProfileId
-    config: Path
-    credentials: Mapping[str, str] = field(default_factory=dict, repr=False)
-    inventory_probe: InventoryProbe = probe_mcp_server
-
-
-@dataclass(frozen=True)
-class OpenCodeOptions:
-    """Operator-owned launch settings, separate from participant configuration."""
-
-    executable: Path
-    work_root: Path
-    environment: Mapping[str, str] = field(default_factory=dict, repr=False)
-    max_output_bytes: int = 1_000_000
-    max_output_tokens: int = 128
-    runner: CancellableProcessRunner | None = None
-    tools: OpenCodeToolProfile | None = None
-    build: OpenCodeBuild = SUPPORTED_OPENCODE_BUILD
-    route: OpenRouterRoute | None = None
-    evidence_sink: Callable[[OpenCodeInvocationEvidence], None] | None = None
-    request: ParticipantRequest | None = None
-    request_binding: ParticipantRequestBinding | None = None
+from aptl.workbench.provider_readiness import (
+    openrouter_access_ready,
+    probe_opencode_version,
+)
 
 
 class LilraeOpenCodeExecutor:
@@ -147,11 +113,21 @@ class LilraeOpenCodeExecutor:
         self._request = options.request
         self._request_binding = options.request_binding
         validate_opencode_request(
-            self._request, model=model, prompt=prompt, build=options.build, route=self._route,
-            output_limit=self._max_output_tokens, binding=self._request_binding,
+            self._request,
+            model=model,
+            prompt=prompt,
+            build=options.build,
+            route=self._route,
+            output_limit=self._max_output_tokens,
+            binding=self._request_binding,
         )
-        if self._request is not None and self._request.configuration_result != self._configuration_result:
-            raise ValueError("participant request differs from its sealed configuration")
+        if (
+            self._request is not None
+            and self._request.configuration_result != self._configuration_result
+        ):
+            raise ValueError(
+                "participant request differs from its sealed configuration"
+            )
         self._validate_delivery()
         self._max_output_bytes = options.max_output_bytes
         self._runner = options.runner or BoundedProcessRunner()
@@ -167,9 +143,7 @@ class LilraeOpenCodeExecutor:
 
     def _validate_delivery(self) -> None:
         """Verify delivered model, prompt, and deadline against the sealed result."""
-        if self._configuration_result is None:
-            return
-        if self._request is not None:
+        if self._configuration_result is None or self._request is not None:
             return
         values = {
             item.target_id: item.value.value
@@ -192,39 +166,13 @@ class LilraeOpenCodeExecutor:
             return False
         self._check_launch(Event())
         self._validate_delivery()
-        with TemporaryDirectory(
-            prefix="participant-readiness-", dir=self._work_root
-        ) as temporary:
-            work = Path(temporary)
-            try:
-                result = self._runner.run(
-                    (str(self._executable), "--version"),
-                    env={
-                        "PATH": os.defpath,
-                        "HOME": str(work),
-                        "OPENCODE_DISABLE_AUTOUPDATE": "true",
-                        "OPENCODE_DISABLE_MODELS_FETCH": "true",
-                    },
-                    cwd=work,
-                    stdin=b"",
-                    timeout_seconds=self.timeout_seconds,
-                    max_output_bytes=4096,
-                )
-            except Exception as exc:
-                cleanup = getattr(exc, "cleanup", None)
-                note_probe_cessation(cleanup is not None and not cleanup.residual)
-                return False
-        note_probe_cessation(result.cleanup is not None and not result.cleanup.residual)
-        if (
-            result.returncode != 0
-            or result.cleanup is None
-            or result.cleanup.residual
-            or len(result.stdout) + len(result.stderr) > 4096
-        ):
-            return False
-        if result.stdout.decode("utf-8", errors="strict").strip() != expected_version:
-            return False
-        return openrouter_access_ready(
+        return probe_opencode_version(
+            self._runner,
+            self._executable,
+            self._work_root,
+            expected_version,
+            self.timeout_seconds,
+        ) and openrouter_access_ready(
             self.model, self._route, self._environment, self._max_output_tokens
         )
 
@@ -234,6 +182,7 @@ class LilraeOpenCodeExecutor:
         """Expose actual complete settings and this harness's bounded probe."""
 
         def configuration() -> ParticipantConfigurationResultModel:
+            """Return the complete configuration after verifying its delivery."""
             current = self.configuration_result
             if current is None:
                 raise ValueError("participant-configuration-unavailable")
@@ -436,8 +385,13 @@ class LilraeOpenCodeExecutor:
                 )
                 work = Path(directory)
                 config = render_opencode_config(
-                    self.model, self._route, self._tool_permissions, servers,
-                    request_profile=self._request.profile if self._request is not None else None,
+                    self.model,
+                    self._route,
+                    self._tool_permissions,
+                    servers,
+                    request_profile=self._request.profile
+                    if self._request is not None
+                    else None,
                 )
                 create_exclusive_nofollow(
                     work, "opencode.json", json.dumps(config).encode()

@@ -111,7 +111,8 @@ def test_archive_readiness_bounds_acquisition_across_files(
             FixedClockProvider(measurement_time="2026-11-03T04:00:00Z")
         )
     whole_file_read.assert_not_called()
-    assert sizes and all(0 < size <= 1025 for size in sizes)
+    assert sizes
+    assert all(0 < size <= 1025 for size in sizes)
     assert acquired == 1025
 
 

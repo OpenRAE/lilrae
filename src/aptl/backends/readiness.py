@@ -8,8 +8,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from threading import RLock
 
-from raes_contracts.canonical import canonical_contract_digest
-from raes_contracts.contracts import ParticipantConfigurationResultModel
 from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.planning import ChangeAction, ProvisioningPlan
 from raes_contracts.runtime_state import ApplyResult
@@ -41,6 +39,7 @@ from aptl.core.trial_readiness import (
     ProvisionerReadinessPort,
     ReadinessOwners,
     observe_capture_readiness,
+    observe_participant_readiness,
 )
 from aptl.utils.pathsafe import open_private_dir_contained_nofollow
 from aptl.utils.probe_execution import ProbeProcessRunner
@@ -128,12 +127,11 @@ class TrialReadiness:
             self.target.participant_runtime,
         )
         for component in components:
-            if component is not None:
-                if (
-                    not isinstance(component, EffectReadinessPort)
-                    or component.readiness is not None
-                ):
-                    raise ValueError("trial-readiness-effect-owner-unavailable")
+            if component is not None and (
+                not isinstance(component, EffectReadinessPort)
+                or component.readiness is not None
+            ):
+                raise ValueError("trial-readiness-effect-owner-unavailable")
         provisioner.readiness = self
         for component in components:
             if component is not None:
@@ -293,35 +291,11 @@ class TrialReadiness:
         return self._apparatus.native_services(self._realization)
 
     def _participants(self) -> bool:
-        request = self._require_request()
-        installed = {}
-        for owner in self.owners.participants:
-            current = self._observer.call(owner.configuration)
-            if not isinstance(current, ParticipantConfigurationResultModel):
-                return False
-            current = ParticipantConfigurationResultModel.model_validate(
-                current.model_dump(mode="json")
-            )
-            if (
-                current.participant_address in installed
-                or canonical_contract_digest(current.configuration)
-                != current.configuration_digest
-            ):
-                return False
-            installed[current.participant_address] = (owner, current)
-        for configuration in request.participant_configurations:
-            selected = installed.get(configuration.participant_address)
-            if selected is None:
-                return False
-            owner, current = selected
-            if (
-                current.model_dump(mode="json") != configuration.model_dump(mode="json")
-                or canonical_contract_digest(owner.manifest)
-                != configuration.manifest_digest
-                or self._observer.call(owner.check) is not True
-            ):
-                return False
-        return True
+        return observe_participant_readiness(
+            self._require_request().participant_configurations,
+            self.owners.participants,
+            self._observer,
+        )
 
     def _storage(self) -> bool:
         request = self._require_request()
@@ -463,6 +437,7 @@ class TrialReadiness:
             checks: list[Diagnostic] = []
 
             def clean() -> bool:
+                """Require the ordinary owner to complete its clean check."""
                 check()
                 return True
 

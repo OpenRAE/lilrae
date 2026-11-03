@@ -130,19 +130,24 @@ class ComposeStatefulReadinessMixin:
         This is the ordinary startup owner's readback, without provisioning,
         credential rendering, seeding, or an optional-service catalog.
         """
-        for node in realization.nodes:
-            if node.container_name is None:
-                continue
-            inspected = self.container_inspect(node.container_name)
-            state = inspected.get("State", {})
-            if state.get("Running") is not True:
-                return False
-            health = state.get("Health")
-            if health is not None and health.get("Status") != "healthy":
-                return False
-        if await_declared_listeners(self, realization.nodes, timeout=0):
-            return False
-        return self._verify_stateful_authenticated_readiness(realization) is None
+        return (
+            all(
+                self._required_container_ready(node.container_name)
+                for node in realization.nodes
+                if node.container_name is not None
+            )
+            and not await_declared_listeners(self, realization.nodes, timeout=0)
+            and self._verify_stateful_authenticated_readiness(realization) is None
+        )
+
+    def _required_container_ready(self, name: str) -> bool:
+        """Read the selected container's running and optional health state."""
+        inspected = self.container_inspect(name)
+        state = inspected.get("State", {})
+        health = state.get("Health")
+        return state.get("Running") is True and (
+            health is None or health.get("Status") == "healthy"
+        )
 
     @property
     def authenticated_readiness(self) -> dict[str, bool]:

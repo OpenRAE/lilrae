@@ -523,8 +523,9 @@ def test_native_control_readiness_uses_the_installed_owners(
             from raes_contracts.runtime_state import RuntimeSnapshot
 
             # Direct native calls cannot bypass the wrapper's preparation.
+            snapshot = RuntimeSnapshot()
             with pytest.raises(ValueError, match="^trial-readiness-not-prepared$"):
-                provisioner.apply(request.provisioning_plan, RuntimeSnapshot())
+                provisioner.apply(request.provisioning_plan, snapshot)
             gate.record_clean(
                 request, DockerTrialPlacement(backend, tmp_path).require_clean
             )

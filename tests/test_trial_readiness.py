@@ -125,8 +125,9 @@ def test_effect_adapter_refuses_before_starting_work(admitted, name):
         realized.execution_plan,
         "orchestration" if name == "orchestrator" else "evaluation",
     )
+    snapshot = RuntimeSnapshot()
     with pytest.raises(ValueError, match="^required-source-unavailable$"):
-        component.start(plan, RuntimeSnapshot())
+        component.start(plan, snapshot)
 
 
 def test_exact_admitted_entry_passes_with_its_installed_owners(tmp_path, admitted):
@@ -222,9 +223,13 @@ def test_a_required_owner_failure_blocks_the_affected_trial(
     gate.owners = selected
     try:
         gate.record_clean(delivery.request, lambda: None)
-        with pytest.raises(ValueError, match="^trial-readiness-blocked$"):
+        if failure == "provider":
+            with pytest.raises(ValueError, match="^trial-readiness-blocked$"):
+                gate.prepare(delivery.request)
+        else:
             gate.prepare(delivery.request)
-            gate.check_live()
+            with pytest.raises(ValueError, match="^trial-readiness-blocked$"):
+                gate.check_live()
         assert delivery.calls == 0
         assert any(
             check["severity"] == "error"
@@ -483,7 +488,8 @@ def test_missing_pinned_artifact_blocks_without_remote_lookup(tmp_path):
     try:
         with pytest.raises(ValueError, match="^trial-readiness-blocked$"):
             gate.prepare(request)
-        assert missing.calls and all(remote is False for _, remote in missing.calls)
+        assert missing.calls
+        assert all(remote is False for _, remote in missing.calls)
     finally:
         gate.close()
 
@@ -528,8 +534,9 @@ def test_participant_admission_cannot_bypass_a_required_live_refusal(admitted):
 
     target.participant_runtime.readiness = Refusal()
     request = sample_participant_action_admission_request()
+    snapshot = RuntimeSnapshot()
     with pytest.raises(ValueError, match="^required-source-unavailable$"):
-        target.participant_runtime.admit_action(request, RuntimeSnapshot())
+        target.participant_runtime.admit_action(request, snapshot)
 
 
 def test_readiness_results_cannot_follow_a_store_symlink(tmp_path, admitted):
@@ -650,14 +657,12 @@ def test_later_passing_probes_cannot_clear_unconfirmed_cessation(tmp_path, admit
             gate.check_live()
         assert not gate.execution_ready
         assert gate.has_pending_probes
+        admission = sample_participant_action_admission_request()
+        snapshot = RuntimeSnapshot()
         with pytest.raises(ValueError, match="^trial-readiness-blocked$"):
-            target.participant_runtime.admit_action(
-                sample_participant_action_admission_request(), RuntimeSnapshot()
-            )
+            target.participant_runtime.admit_action(admission, snapshot)
         with pytest.raises(ValueError, match="^trial-readiness-blocked$"):
-            target.orchestrator.start(
-                delivery.request.orchestration_plan, RuntimeSnapshot()
-            )
+            target.orchestrator.start(delivery.request.orchestration_plan, snapshot)
     finally:
         gate.close()
 
@@ -705,7 +710,8 @@ def test_preparation_refusal_retains_ownership_from_a_prior_interruption(
             handler.execute_trial(request)
         project_owner = trial_fence_owner(tmp_path)
         daemon_owner = trial_fence_owner(daemon_root(handler))
-        assert project_owner and daemon_owner
+        assert project_owner
+        assert daemon_owner
         monkeypatch.setattr(handler.readiness, "prepare", prepare)
         handler.readiness.owners = replace(
             handler.readiness.owners, containment=lambda: False

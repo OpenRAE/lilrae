@@ -69,17 +69,22 @@ class RunArchiveSource:
             and result.dropped_count == 0
         )
 
-    def _read_subtree(self) -> SourceResult:
+    def _archive_subtree(self) -> tuple[Path, Path]:
+        """Require the selected run directory and refuse linked ancestors."""
         try:
             root = self._run_store.get_run_path(self._run_id)
             subtree = root / self._subdir
             directory = open_dir_contained_nofollow(root, Path(self._subdir))
             os.close(directory)
+            if not subtree.is_dir():
+                raise OSError("archive-subtree-unavailable")
         except Exception:
-            return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
-        if not subtree.is_dir():
-            return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
+            raise OSError("archive-subtree-unavailable") from None
+        return root, subtree
+
+    def _read_subtree(self) -> SourceResult:
         try:
+            root, subtree = self._archive_subtree()
             records, dropped = _read_jsonl_tree(
                 subtree, root=root, byte_limit=probe_output_byte_limit()
             )
@@ -109,22 +114,22 @@ class ContainerLogSource:
         """Capture each container's window of logs, distinguishing failure from empty."""
         records: list[dict[str, object]] = []
         remaining = probe_output_byte_limit()
-        for container in self._containers:
-            try:
+        try:
+            for container in self._containers:
                 result = self._backend.container_logs_capture(
                     container, since=start_iso, until=end_iso, timeout=30
                 )
-            except Exception:
-                return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
-            if result.returncode != 0:
-                return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
-            output = (result.stdout or "").strip()
-            if remaining is not None:
-                remaining -= len(output.encode("utf-8"))
-                if remaining < 0:
-                    return SourceResult(status=CollectorStatus.TRUNCATION)
-            if output:
-                records.append({"container": container, "output": output})
+                if result.returncode != 0:
+                    raise OSError("container-log-source-unavailable")
+                output = (result.stdout or "").strip()
+                if remaining is not None:
+                    remaining -= len(output.encode("utf-8"))
+                    if remaining < 0:
+                        return SourceResult(status=CollectorStatus.TRUNCATION)
+                if output:
+                    records.append({"container": container, "output": output})
+        except Exception:
+            return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
         status = CollectorStatus.OK if records else CollectorStatus.EMPTY_OK
         return SourceResult(status=status, records=records)
 
@@ -162,20 +167,7 @@ def _read_jsonl_tree(
     for path in subtree.rglob("*.jsonl"):
         if not path.is_file():
             continue
-        payload = bytearray()
-        with open_contained_nofollow(root, path.relative_to(root)) as source:
-            while True:
-                # read1 bounds the raw acquisition too; buffered readline can
-                # read ahead past the requested line length.
-                size = 8192 if remaining is None else min(8192, remaining + 1)
-                chunk = source.read1(size)
-                if remaining is not None:
-                    remaining -= len(chunk)
-                    if remaining < 0:
-                        raise OverflowError("source-byte-limit")
-                if not chunk:
-                    break
-                payload.extend(chunk)
+        payload, remaining = _read_jsonl_payload(root, path, remaining)
         for line in payload.splitlines():
             stripped = line.strip()
             if not stripped:
@@ -185,3 +177,23 @@ def _read_jsonl_tree(
             except json.JSONDecodeError:
                 dropped += 1
     return records, dropped
+
+
+def _read_jsonl_payload(
+    root: Path, path: Path, remaining: int | None
+) -> tuple[bytearray, int | None]:
+    """Cap each raw file read against the remaining shared acquisition budget."""
+    payload = bytearray()
+    with open_contained_nofollow(root, path.relative_to(root)) as source:
+        while True:
+            # read1 bounds raw acquisition; buffered readline may read ahead.
+            size = 8192 if remaining is None else min(8192, remaining + 1)
+            chunk = source.read1(size)
+            if remaining is not None:
+                remaining -= len(chunk)
+                if remaining < 0:
+                    raise OverflowError("source-byte-limit")
+            if not chunk:
+                break
+            payload.extend(chunk)
+    return payload, remaining

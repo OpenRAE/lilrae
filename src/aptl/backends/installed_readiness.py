@@ -69,16 +69,28 @@ class InstalledReadiness:
             return False
         current = capture_execution_boundary(self.backend)
         selected = self.approved_boundary
+        observed = {"observed", "partial"}
+        statuses_ready = (
+            current.observation.observation_status in observed
+            and selected.observation.observation_status in observed
+        )
         return (
             bool(selected.endpoint_digest and selected.daemon_digest)
-            and current.endpoint_digest == selected.endpoint_digest
-            and current.daemon_digest == selected.daemon_digest
-            and current.observation.observation_status in {"observed", "partial"}
-            and selected.observation.observation_status in {"observed", "partial"}
-            and current.observation.transport == selected.observation.transport
-            and current.observation.host_containment
-            == selected.observation.host_containment
-            and current.observation.profile_ref == selected.observation.profile_ref
+            and statuses_ready
+            and (
+                current.endpoint_digest,
+                current.daemon_digest,
+                current.observation.transport,
+                current.observation.host_containment,
+                current.observation.profile_ref,
+            )
+            == (
+                selected.endpoint_digest,
+                selected.daemon_digest,
+                selected.observation.transport,
+                selected.observation.host_containment,
+                selected.observation.profile_ref,
+            )
             and self.containment.check(self.backend.daemon_identity())
         )
 

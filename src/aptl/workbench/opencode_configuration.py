@@ -1,13 +1,53 @@
 """Provider-native OpenCode configuration and minimal launch environment."""
 
-from collections.abc import Mapping
-import os
 import math
+import os
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from aptl.core.opencode import OpenRouterRoute
 from aptl.core._participant_model_ids import validate_installed_participant_model_id
+from aptl.core.opencode import (
+    SUPPORTED_OPENCODE_BUILD,
+    OpenCodeBuild,
+    OpenCodeInvocationEvidence,
+    OpenRouterRoute,
+)
+from aptl.core.participant_requests.binding import ParticipantRequestBinding
 from aptl.core.participant_requests.profiles import RequestProfile
+from aptl.core.participant_requests.request import ParticipantRequest
+from aptl.workbench.agent import InventoryProbe, probe_mcp_server
+from aptl.workbench.process import CancellableProcessRunner
+from aptl.workbench.profiles import ProfileId
+
+
+@dataclass(frozen=True)
+class OpenCodeToolProfile:
+    """An admitted MCP profile and the private inputs needed to verify it."""
+
+    profile: ProfileId
+    config: Path
+    credentials: Mapping[str, str] = field(default_factory=dict, repr=False)
+    inventory_probe: InventoryProbe = probe_mcp_server
+
+
+@dataclass(frozen=True)
+class OpenCodeOptions:
+    """Operator-owned launch settings, separate from participant configuration."""
+
+    executable: Path
+    work_root: Path
+    environment: Mapping[str, str] = field(default_factory=dict, repr=False)
+    max_output_bytes: int = 1_000_000
+    max_output_tokens: int = 128
+    runner: CancellableProcessRunner | None = None
+    tools: OpenCodeToolProfile | None = None
+    build: OpenCodeBuild = SUPPORTED_OPENCODE_BUILD
+    route: OpenRouterRoute | None = None
+    evidence_sink: Callable[[OpenCodeInvocationEvidence], None] | None = None
+    request: ParticipantRequest | None = None
+    request_binding: ParticipantRequestBinding | None = None
+
 
 _OPENROUTER_PREFIX = "openrouter/"
 

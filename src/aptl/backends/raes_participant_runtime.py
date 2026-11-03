@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, cast
 
 from raes_backend_protocols.participant_invocation_tools import (
@@ -17,6 +16,7 @@ from raes_contracts.contracts import (
 from raes_contracts.contracts.participant_action_admission import (
     ParticipantActionAdmissionRequest,
 )
+from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.participant_binding import (
     ParticipantActionApplyResult,
     ParticipantNativeActionExecution,
@@ -37,6 +37,7 @@ from aptl.backends.raes_participant_provider import (
     ParticipantSelectionProvider,
     parse_provider_selection,
 )
+from aptl.backends.raes_participant_support import elapsed_seconds as _elapsed_seconds
 from aptl.backends.raes_participant_support import selection_failure
 from aptl.core.trial_readiness import TrialReadinessGate
 
@@ -105,7 +106,7 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         """Pass the runtime-owned port to its exact installed native worker."""
         self.autonomous_execution.attach_tool_port(port)
 
-    def readiness_planning_diagnostics(self, model: object) -> list:
+    def readiness_planning_diagnostics(self, model: object) -> list[Diagnostic]:
         """Validate the selected installed participant bindings without effects."""
         return self.autonomous_execution.planning_diagnostics(model)
 
@@ -488,14 +489,3 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
             snapshot,
             episode_id=episode_id,
         )
-
-
-def _elapsed_seconds(initialized_at: str) -> float:
-    """Handle seconds for the bounded participant workflow."""
-    try:
-        start = datetime.fromisoformat(initialized_at.replace("Z", "+00:00"))
-    except ValueError:
-        return float("inf")
-    if start.tzinfo is None:
-        start = start.replace(tzinfo=timezone.utc)
-    return (datetime.now(timezone.utc) - start).total_seconds()

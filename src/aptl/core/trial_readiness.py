@@ -1,13 +1,14 @@
 """Fixed native owner inputs for required trial readiness; no check registry."""
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from raes.scenario import InstantiatedScenario
+from raes_contracts.canonical import canonical_contract_digest
 from raes_contracts.contracts import (
     ArtifactAvailabilityContext,
     ParticipantConfigurationResultModel,
@@ -102,9 +103,8 @@ class CaptureSourceReadiness:
     clock: ClockProvider | None = field(default=None, repr=False)
 
     def clock_is_ready(self, binding: CaptureBinding, maximum_ms: int) -> bool:
-        if type(maximum_ms) is not int or maximum_ms < 0:
-            return False
-        if self.clock is None:
+        """Require this source's synchronized clock within its pinned tolerance."""
+        if type(maximum_ms) is not int or maximum_ms < 0 or self.clock is None:
             return False
         context = self.clock.clock_context(
             source_kind="collector", source_id=binding.registration_id
@@ -148,9 +148,10 @@ class ReadinessOwners:
 
 
 def _clock_milliseconds(value: str | None) -> Decimal:
+    """Parse a bounded explicit duration without locale or floating point loss."""
     if not isinstance(value, str) or len(value) > 64:
         raise ValueError
-    match = re.fullmatch(r"([+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+))(ns|us|ms|s)", value)
+    match = re.fullmatch(r"([+-]?(?:\d+(?:\.\d+)?|\.\d+))(ns|us|ms|s)", value, re.ASCII)
     if match is None:
         raise ValueError
     scale = {
@@ -207,3 +208,57 @@ def observe_capture_readiness(
             f"capture-storage-{index}",
             lambda check=check, required=required: check(required),
         )
+
+
+def _installed_participants(
+    owners: tuple[ParticipantReadiness, ...],
+    observer: ReadinessObserver,
+) -> dict[str, tuple[ParticipantReadiness, ParticipantConfigurationResultModel]] | None:
+    """Validate complete installed configurations before matching requests."""
+    installed = {}
+    for owner in owners:
+        current = observer.call(owner.configuration)
+        if not isinstance(current, ParticipantConfigurationResultModel):
+            return None
+        current = ParticipantConfigurationResultModel.model_validate(
+            current.model_dump(mode="json")
+        )
+        if (
+            current.participant_address in installed
+            or canonical_contract_digest(current.configuration)
+            != current.configuration_digest
+        ):
+            return None
+        installed[current.participant_address] = (owner, current)
+    return installed
+
+
+def _participant_is_ready(
+    configuration: ParticipantConfigurationResultModel,
+    selected: tuple[ParticipantReadiness, ParticipantConfigurationResultModel] | None,
+    observer: ReadinessObserver,
+) -> bool:
+    """Match exact sealed settings and observe their installed owner."""
+    if selected is None:
+        return False
+    owner, current = selected
+    return (
+        current.model_dump(mode="json") == configuration.model_dump(mode="json")
+        and canonical_contract_digest(owner.manifest) == configuration.manifest_digest
+        and observer.call(owner.check) is True
+    )
+
+
+def observe_participant_readiness(
+    configurations: Sequence[ParticipantConfigurationResultModel],
+    owners: tuple[ParticipantReadiness, ...],
+    observer: ReadinessObserver,
+) -> bool:
+    """Require each sealed participant configuration to match its actual owner."""
+    installed = _installed_participants(owners, observer)
+    return installed is not None and all(
+        _participant_is_ready(
+            configuration, installed.get(configuration.participant_address), observer
+        )
+        for configuration in configurations
+    )

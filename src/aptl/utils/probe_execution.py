@@ -11,10 +11,14 @@ from typing import Protocol
 
 
 class ProbeCleanup(Protocol):
+    """The process owner's retained descendants after its cleanup attempt."""
+
     residual: tuple[str, ...]
 
 
 class ProbeProcessResult(Protocol):
+    """Bounded process output and the owner's cleanup confirmation."""
+
     returncode: int
     stdout: bytes
     stderr: bytes
@@ -38,6 +42,8 @@ class ProbeProcessRunner(Protocol):
 
 @dataclass
 class ProbeExecutionScope:
+    """One observation's runner, acquisition budget and sticky cleanup state."""
+
     runner: ProbeProcessRunner
     max_output_bytes: int
     cessation_confirmed: bool = True
@@ -65,6 +71,7 @@ def note_probe_cessation(confirmed: bool) -> None:
 def bounded_probe_commands(
     runner: ProbeProcessRunner, max_output_bytes: int
 ) -> Iterator[ProbeExecutionScope]:
+    """Bind native probe commands and restore the caller's prior scope."""
     scope = ProbeExecutionScope(runner, max_output_bytes)
     token = _SCOPE.set(scope)
     try:

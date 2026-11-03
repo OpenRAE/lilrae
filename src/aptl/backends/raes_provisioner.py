@@ -66,7 +66,9 @@ _REALIZATION_READBACK_INTERVAL_SECONDS = 2.0
 
 
 @dataclass
-class AptlProvisioner(NativeReadinessMixin, LilraeApparatusReportingMixin, ProvisionerStartMixin):
+class AptlProvisioner(
+    NativeReadinessMixin, LilraeApparatusReportingMixin, ProvisionerStartMixin
+):
     """Provisioning component of APTL's ``full-remote-control-plane`` target."""
 
     project_dir: Path
@@ -148,12 +150,7 @@ class AptlProvisioner(NativeReadinessMixin, LilraeApparatusReportingMixin, Provi
 
     def apply(self, plan: object, snapshot: object) -> ApplyResult:
         """Apply a RAES provisioning plan via APTL's deployment backend."""
-        cleanup_only = (
-            isinstance(plan, ProvisioningPlan)
-            and bool(plan.operations)
-            and all(operation.action is ChangeAction.DELETE for operation in plan.operations)
-        )
-        if self.readiness is not None and not cleanup_only:
+        if self.readiness is not None and not self._cleanup_only(plan):
             self.readiness.require_provisioning()
 
         working_snapshot = (

@@ -6,7 +6,7 @@ from typing import cast
 
 from raes.scenario import InstantiatedScenario
 from raes_contracts.contracts import ArtifactAvailabilityContext
-from raes_contracts.planning import ProvisioningPlan
+from raes_contracts.planning import ChangeAction, ProvisioningPlan
 from raes_processor.trial_realization import TrialRealizationInputs
 
 from aptl.backends.raes_artifact_availability import (
@@ -14,6 +14,7 @@ from aptl.backends.raes_artifact_availability import (
     artifact_availability_for_scenario,
 )
 from aptl.core.lab_types import StartupOutcome
+from aptl.core.scenario_bundle import ScenarioBundle
 
 
 class NativeReadinessMixin:
@@ -21,9 +22,22 @@ class NativeReadinessMixin:
 
     readiness_requires_runner: bool = True
 
+    @staticmethod
+    def _cleanup_only(plan: object) -> bool:
+        """Allow only nonempty deletion plans through the cleanup policy path."""
+        return (
+            isinstance(plan, ProvisioningPlan)
+            and bool(plan.operations)
+            and all(
+                operation.action is ChangeAction.DELETE for operation in plan.operations
+            )
+        )
+
+    @staticmethod
     def readiness_artifacts(
-        self, scenario: InstantiatedScenario, probe: object | None, root: Path
+        scenario: InstantiatedScenario, probe: object | None, root: Path
     ) -> ArtifactAvailabilityContext:
+        """Read artifact availability without fetching or materializing content."""
         if probe is None:
             return ArtifactAvailabilityContext()
         return artifact_availability_for_scenario(
@@ -35,6 +49,7 @@ class NativeReadinessMixin:
         )
 
     def readiness_contract(self, plan: ProvisioningPlan, root: Path) -> bool:
+        """Qualify the exact deployment through the existing native owner."""
         if any(item.is_error for item in self.validate(plan)):
             return False
         realization = self.realize_plan(plan)
@@ -48,6 +63,7 @@ class NativeReadinessMixin:
         return result.success is True and result.outcome is StartupOutcome.READY
 
     def readiness_services(self, plan: ProvisioningPlan) -> bool:
+        """Read back only the services required by this admitted plan."""
         realization = self.realize_plan(plan)
         spec = realization.deployment_spec(
             self.selected_profiles(realization),
@@ -58,6 +74,7 @@ class NativeReadinessMixin:
     def readiness_resource_minimum(
         self, inputs: TrialRealizationInputs, plan_entry_id: str
     ) -> int | None:
+        """Re-resolve the exact entry's startup demand and reject stale selection."""
         from aptl.backends._raes_admission_helpers import bind_admission_trial
         from aptl.backends.scenario_family import FamilyTrialInput
         from aptl.backends.scenario_startup import select_scenario_startup
@@ -75,7 +92,7 @@ class NativeReadinessMixin:
                 raise ValueError("trial-resource-selection-mismatch")
             return None
         bound = bind_admission_trial(
-            replace(bundle, trial=None),
+            cast(ScenarioBundle, replace(bundle, trial=None)),
             self.config,
             FamilyTrialInput(inputs.plan, plan_entry_id, inputs.family),
             None,
