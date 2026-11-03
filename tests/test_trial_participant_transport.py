@@ -33,6 +33,10 @@ def test_trial_serving_executes_sealed_roles_through_shared_runtime(
     from tests.participant_runtime_trial_fixture import native_bindings
     from tests.cleanup_runtime_fixture import Services, target_for
     from tests.test_trial_serving import SchedulerDelivery, PlacementBackend, finish
+    from tests.trial_readiness_fixture import readiness_for
+    from aptl.backends.trial_services import ReadinessTrialServices
+    from aptl.core.runstore import LocalRunStore
+    from aptl.core.correlation.clock import FixedClockProvider
 
     with provider() as (endpoint, requests):
         compiled, compilation, owner = compiled_participants(
@@ -99,8 +103,18 @@ def test_trial_serving_executes_sealed_roles_through_shared_runtime(
             root.mkdir(mode=0o700)
             services = Services(root)
             records = []
+            readiness = readiness_for(
+                inputs,
+                target,
+                LocalRunStore(root / "runs"),
+                FixedClockProvider(measurement_time="2026-11-01T10:00:00Z"),
+                root,
+                entry_index=index,
+            )
             with RuntimeControlPlane(target) as runtime:
-                experiment_id = runtime.admit_experiment(inputs, services=services)
+                experiment_id = runtime.admit_experiment(
+                    inputs, services=ReadinessTrialServices(services, readiness)
+                )
                 delivery = SchedulerDelivery(runtime, experiment_id, index)
                 unit, request = delivery.unit, delivery.request
                 prepared = prepare_trial_participants(
@@ -143,6 +157,7 @@ def test_trial_serving_executes_sealed_roles_through_shared_runtime(
                         runtime, experiment_id, lambda request, result: {}
                     ),
                     participants=application,
+                    readiness=readiness,
                 )
                 finish(handler, request)
             assert len(records) == 2

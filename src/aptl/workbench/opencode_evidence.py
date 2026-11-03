@@ -29,6 +29,18 @@ class OpenCodeRunState:
         """Reduce private failure output without retaining completion text."""
         self.partial = replace(parse_opencode_response(output), text="")
 
+    def require_observations(self, history_required: bool) -> None:
+        """Refuse missing required evidence without confusing it with selected intent."""
+        observation, history = self.request_observation, self.native_history
+        if observation is not None and observation.status != "observed":
+            raise AgentExecutionError(
+                "participant provider request evidence is unavailable"
+            )
+        if history.status == "invalid" or (
+            history_required and history.status != "observed"
+        ):
+            raise AgentExecutionError("participant native delivery evidence is invalid")
+
 
 class OpenCodeEvidenceRecorder:
     """Keep selected identity separate from observations and sink failure state."""
@@ -85,3 +97,28 @@ class OpenCodeEvidenceRecorder:
                 raise AgentExecutionError(
                     "participant evidence could not be retained"
                 ) from None
+
+
+def invocation_recorder(
+    options, model: str, prompt_sha256: str, configuration
+) -> OpenCodeEvidenceRecorder:
+    """Create the existing safe invocation identity from installed launch inputs."""
+    return OpenCodeEvidenceRecorder(
+        OpenCodeInvocationEvidence(
+            action_id="",
+            build=options.build,
+            requested_model=model,
+            endpoint=options.route.endpoint,
+            requested_serving_provider=options.route.serving_provider,
+            prompt_sha256=prompt_sha256,
+            status="not-started",
+            participant_address=configuration.participant_address
+            if configuration is not None
+            else None,
+            configuration_digest=configuration.configuration_digest
+            if configuration is not None
+            else None,
+            trial_scope=options.trial_scope,
+        ),
+        options.evidence_sink,
+    )

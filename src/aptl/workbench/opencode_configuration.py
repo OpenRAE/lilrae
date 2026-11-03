@@ -1,15 +1,37 @@
 """Provider-native OpenCode configuration and minimal launch environment."""
 
-from collections.abc import Mapping
-import os
 import math
+import os
+from collections.abc import Mapping
 from pathlib import Path
 
-from aptl.core.opencode import OpenRouterRoute
 from aptl.core._participant_model_ids import validate_installed_participant_model_id
+from aptl.core.opencode import (
+    OpenRouterRoute,
+)
 from aptl.core.participant_requests.profiles import RequestProfile
 
+
+from aptl.workbench.opencode_options import (
+    OpenCodeOptions as OpenCodeOptions,
+    OpenCodeToolProfile as OpenCodeToolProfile,
+)
+
 _OPENROUTER_PREFIX = "openrouter/"
+
+
+def opencode_arguments(executable: Path, model: str) -> tuple[str, ...]:
+    """Build fixed invocation arguments for the admitted executable and model."""
+    return (
+        str(executable),
+        "run",
+        "--format",
+        "json",
+        "--model",
+        model,
+        "--title",
+        "lilrae-participant",
+    )
 
 
 def render_opencode_config(

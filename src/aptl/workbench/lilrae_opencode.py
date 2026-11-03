@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from copy import deepcopy
 from contextlib import ExitStack
+from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event
@@ -16,51 +16,50 @@ if TYPE_CHECKING:
     from raes_contracts.contracts import ParticipantConfigurationResultModel
     from aptl.core.participant_tools.contracts import ToolSession
 
+from raes_contracts.contracts import ParticipantImplementationManifestModel
+from aptl.core.opencode import OpenCodeInvocationEvidence
+from aptl.core.trial_readiness import ParticipantReadiness
 from aptl.utils.pathsafe import create_exclusive_nofollow
-from aptl.core.opencode import (
-    OpenCodeInvocationEvidence,
-)
-from aptl.workbench.opencode_events import (
-    parse_opencode_response,
-    _supervised_result_text,
-)
-from aptl.workbench.opencode_configuration import (
-    render_opencode_config,
-    opencode_environment,
-    PROVIDER_CREDENTIAL_NAMES,
-    validate_provider_environment,
-    validate_invocation_inputs,
-)
 from aptl.workbench.agent import (
     _admitted_executable,
-    _prepare_work_dir,
     _load_server_config,
+    _prepare_work_dir,
     _read_private_config,
     _server_environment,
     probe_mcp_server,
 )
-from aptl.workbench.profiles import (
-    profile_for,
-    verify_profile_tool_inventory,
+from aptl.workbench.opencode_configuration import (
+    PROVIDER_CREDENTIAL_NAMES,
+    opencode_arguments,
+    opencode_environment,
+    render_opencode_config,
+    validate_invocation_inputs,
+    validate_provider_environment,
 )
-from aptl.workbench.process import (
-    AgentExecutionError,
-    BoundedProcessRunner,
-    BoundedProcessError,
-    REASON_CANCELLED,
-    ProcessRequest,
+from aptl.workbench.opencode_events import (
+    _supervised_result_text,
+    parse_opencode_response,
 )
 from aptl.workbench.participant_request import validate_opencode_request
+from aptl.workbench.process import (
+    REASON_CANCELLED,
+    AgentExecutionError,
+    BoundedProcessError,
+    BoundedProcessRunner,
+    ProcessRequest,
+)
+from aptl.workbench.profiles import profile_for, verify_profile_tool_inventory
 from aptl.workbench.opencode_history import read_native_history
-from aptl.workbench.opencode_evidence import OpenCodeEvidenceRecorder, OpenCodeRunState
+from aptl.workbench.opencode_evidence import OpenCodeRunState, invocation_recorder
 from aptl.workbench.opencode_observation import (
     OBSERVER_CREDENTIAL,
     install_request_observer,
     read_request_observations,
 )
-
-
-# Existing public launch types remain available from this module.
+from aptl.workbench.provider_readiness import (
+    openrouter_access_ready,
+    probe_opencode_version,
+)
 from aptl.workbench.opencode_options import OpenCodeOptions, OpenCodeToolProfile
 
 __all__ = ["LilraeOpenCodeExecutor", "OpenCodeOptions", "OpenCodeToolProfile"]
@@ -133,24 +132,8 @@ class LilraeOpenCodeExecutor:
         # Tool inventory is installation/admission work, outside native action
         # dispatch. It must not delay cancellation of an already admitted action.
         self._tool_servers, self._tool_permissions = self._tools()
-        self._evidence = OpenCodeEvidenceRecorder(
-            OpenCodeInvocationEvidence(
-                action_id="",
-                build=self._build,
-                requested_model=self.model,
-                endpoint=self._route.endpoint,
-                requested_serving_provider=self._route.serving_provider,
-                prompt_sha256=self.prompt_sha256,
-                status="not-started",
-                participant_address=self._configuration_result.participant_address
-                if self._configuration_result is not None
-                else None,
-                configuration_digest=self._configuration_result.configuration_digest
-                if self._configuration_result is not None
-                else None,
-                trial_scope=options.trial_scope,
-            ),
-            options.evidence_sink,
+        self._evidence = invocation_recorder(
+            options, self.model, self.prompt_sha256, self._configuration_result
         )
 
     def _set_limits(self, options: OpenCodeOptions) -> None:
@@ -182,9 +165,7 @@ class LilraeOpenCodeExecutor:
 
     def _validate_delivery(self) -> None:
         """Verify delivered model, prompt, and deadline against the sealed result."""
-        if self._configuration_result is None:
-            return
-        if self._request is not None:
+        if self._configuration_result is None or self._request is not None:
             return
         values = {
             item.target_id: item.value.value
@@ -200,6 +181,41 @@ class LilraeOpenCodeExecutor:
             or values.get("max_output_tokens") != self._max_output_tokens
         ):
             raise ValueError("participant delivery differs from its configuration")
+
+    def check_readiness(self, expected_version: str) -> bool:
+        """Verify the selected build and approved access without sending a task."""
+        if expected_version != self._build.version:
+            return False
+        self._check_launch(Event())
+        self._validate_delivery()
+        return probe_opencode_version(
+            self._runner,
+            self._executable,
+            self._work_root,
+            expected_version,
+            self.timeout_seconds,
+        ) and openrouter_access_ready(
+            self.model, self._route, self._environment, self._max_output_tokens
+        )
+
+    def readiness_owner(
+        self, manifest: ParticipantImplementationManifestModel
+    ) -> ParticipantReadiness:
+        """Expose actual complete settings and this harness's bounded probe."""
+
+        def configuration() -> ParticipantConfigurationResultModel:
+            """Return the complete configuration after verifying its delivery."""
+            current = self.configuration_result
+            if current is None:
+                raise ValueError("participant-configuration-unavailable")
+            self._validate_delivery()
+            return current
+
+        return ParticipantReadiness(
+            manifest.model_copy(deep=True),
+            configuration,
+            lambda: self.check_readiness(self._build.version),
+        )
 
     def _install_profile(self, tools: OpenCodeToolProfile | None) -> None:
         """Require the private server configuration to match the selected profile."""
@@ -413,16 +429,7 @@ class LilraeOpenCodeExecutor:
         create_exclusive_nofollow(work, "opencode.json", json.dumps(config).encode())
         try:
             request = ProcessRequest(
-                (
-                    str(self._executable),
-                    "run",
-                    "--format",
-                    "json",
-                    "--model",
-                    self.model,
-                    "--title",
-                    "lilrae-participant",
-                ),
+                opencode_arguments(self._executable, self.model),
                 env=environment,
                 cwd=work,
                 stdin=self._prompt,
@@ -456,18 +463,6 @@ class LilraeOpenCodeExecutor:
                     expected_prompt_sha256=self.prompt_sha256,
                 )
 
-    def _require_observations(self, state: OpenCodeRunState) -> None:
-        """Refuse missing required evidence without confusing it with selected intent."""
-        observation, history = state.request_observation, state.native_history
-        if observation is not None and observation.status != "observed":
-            raise AgentExecutionError(
-                "participant provider request evidence is unavailable"
-            )
-        if history.status == "invalid" or (
-            self._native_history_required and history.status != "observed"
-        ):
-            raise AgentExecutionError("participant native delivery evidence is invalid")
-
     def _run(
         self, action_id: str, cancellation: Event, tools: ToolSession | None = None
     ) -> str:
@@ -484,7 +479,7 @@ class LilraeOpenCodeExecutor:
                 )
                 self._run_in_context(Path(directory), servers, cancellation, state)
                 text = _supervised_result_text(state.result)
-                self._require_observations(state)
+                state.require_observations(self._native_history_required)
         except Exception as exc:
             if isinstance(exc, BoundedProcessError):
                 state.error = exc

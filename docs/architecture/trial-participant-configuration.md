@@ -41,6 +41,8 @@ Unsupported turn semantics must be refused rather than assigned an implicit inte
 The existing runtime owns cancellation and draining before credential release.
 
 `LilraeTrialUnit` calls an installed participant application before it advances the admitted RAE unit.
+The serving unit retains its required readiness gate before configuration and advancement.
+Terminal readiness and cleanup checks complete before participant leases are released.
 Published complete OpenCode configurations require this application; omission fails admission.
 The application validates the exact request before placement mutation.
 It acquires and installs fresh executors once for that attempt.
