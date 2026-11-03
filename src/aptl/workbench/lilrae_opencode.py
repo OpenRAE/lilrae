@@ -60,6 +60,9 @@ from aptl.workbench.process import (
     ProcessRequest,
     CancellableProcessRunner,
 )
+from aptl.core.participant_requests.request import ParticipantRequest
+from aptl.core.participant_requests.binding import ParticipantRequestBinding
+from aptl.workbench.participant_request import validate_opencode_request
 
 
 @dataclass(frozen=True)
@@ -86,6 +89,8 @@ class OpenCodeOptions:
     build: OpenCodeBuild = SUPPORTED_OPENCODE_BUILD
     route: OpenRouterRoute | None = None
     evidence_sink: Callable[[OpenCodeInvocationEvidence], None] | None = None
+    request: ParticipantRequest | None = None
+    request_binding: ParticipantRequestBinding | None = None
 
 
 class LilraeOpenCodeExecutor:
@@ -133,6 +138,9 @@ class LilraeOpenCodeExecutor:
             if configuration_result is not None
             else None
         )
+        self._request = options.request
+        self._request_binding = options.request_binding
+        validate_opencode_request(self._request, model=model, prompt=prompt, build=options.build, route=self._route, output_limit=self._max_output_tokens, configuration=self._configuration_result, binding=self._request_binding)
         self._validate_delivery()
         self._max_output_bytes = options.max_output_bytes
         self._runner = options.runner or BoundedProcessRunner()
@@ -149,6 +157,8 @@ class LilraeOpenCodeExecutor:
     def _validate_delivery(self) -> None:
         """Verify delivered model, prompt, and deadline against the sealed result."""
         if self._configuration_result is None:
+            return
+        if self._request is not None:
             return
         values = {
             item.target_id: item.value.value
@@ -284,6 +294,8 @@ class LilraeOpenCodeExecutor:
             raise AgentExecutionError("participant OpenCode executor is closed")
         if cancellation.is_set():
             raise AgentExecutionError(REASON_CANCELLED)
+        if self._request is not None:
+            self._request_binding.validate(self._request)
         self._verify_profile_config()
         try:
             executable = _admitted_executable(self._executable)
@@ -353,7 +365,8 @@ class LilraeOpenCodeExecutor:
                 )
                 work = Path(directory)
                 config = render_opencode_config(
-                    self.model, self._route, self._tool_permissions, servers
+                    self.model, self._route, self._tool_permissions, servers,
+                    request_profile=self._request.profile if self._request is not None else None,
                 )
                 create_exclusive_nofollow(
                     work, "opencode.json", json.dumps(config).encode()

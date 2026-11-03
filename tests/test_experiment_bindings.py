@@ -7,6 +7,7 @@ import json
 
 import pytest
 from raes import parse_sdl
+from raes_contracts.canonical import canonical_contract_digest
 from raes_contracts.contracts import (
     ExperimentRunModel,
     ExperimentSpecModel,
@@ -383,9 +384,18 @@ def test_aptl_binding_registry_rejects_a_foreign_backend_identity() -> None:
         create_aptl_binding_manifest_model(foreign)
 
 
+class _FixtureConfigurationValidator:
+    def validate_and_normalize(self, configuration):
+        return configuration
+
+
+_FIXTURE_VALIDATOR = _FixtureConfigurationValidator()
+
+
 def _admitted_bindings(
     manifest: ParticipantImplementationManifestModel | None = None,
     spec: ExperimentSpecModel | None = None,
+    validator=_FIXTURE_VALIDATOR,
 ):
     manifest = manifest or _participant_manifest()
     return admit_experiment_bindings(
@@ -401,11 +411,22 @@ def _admitted_bindings(
             ): ParticipantManifestBinding(
                 manifest=manifest,
                 manifest_ref="manifests/reference-red-agent.json",
-                manifest_digest="sha256:" + "1" * 64,
+                manifest_digest=canonical_contract_digest(manifest),
+                validator=validator,
             )
         },
         base_config=AptlConfig(),
     )
+
+
+def test_participant_configuration_requires_injected_owner_validation():
+    with pytest.raises(ValueError, match="owner validation"):
+        _admitted_bindings(validator=None)
+
+
+def test_participant_manifest_binding_rejects_a_forged_digest():
+    with pytest.raises(ValueError, match="manifest digest"):
+        ParticipantManifestBinding(manifest=_participant_manifest(), manifest_ref="manifests/reference-red-agent.json", manifest_digest="sha256:" + "0" * 64, validator=_FIXTURE_VALIDATOR)
 
 
 def test_explicit_bindings_are_pinned_in_immutable_trial_plan() -> None:

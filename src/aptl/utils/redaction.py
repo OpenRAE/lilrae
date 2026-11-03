@@ -157,8 +157,8 @@ def _is_sensitive_key(name: str) -> bool:
 
 def is_sensitive_key(key: str) -> bool:
     """Public yes/no predicate: does ``redact()`` treat ``key`` as a
-    sensitive dict key (redacting its value wholesale, regardless of the
-    value's own shape)?
+    sensitive dict key? This conservative key-only classification does not
+    apply the separate value-aware exception for typed public model counts.
 
     This is a thin public wrapper around the exact same
     ``_is_sensitive_key``/``_SENSITIVE_TOKENS``/``_SAFE_KEY_NAMES`` table
@@ -170,6 +170,30 @@ def is_sensitive_key(key: str) -> bool:
     changes.
     """
     return _is_sensitive_key(key)
+
+
+def _public_count(value: object) -> bool:
+    """Use JSON integer semantics, including finite integral JSON numbers."""
+    return type(value) in (int, float) and 0 <= value < 2**53 and value == int(value)
+
+
+def _safe_model_count(name: str, value: object) -> bool:
+    """Preserve only typed public counts and closed integer target declarations."""
+    if name not in {"max_output_tokens", "input_tokens", "output_tokens"}:
+        return False
+    if value is None or _public_count(value):
+        return True
+    if not isinstance(value, dict):
+        return False
+    allowed = {"target_id", "value_type", "allowed_value_kinds", "sensitivity", "aliases", "default"}
+    return (
+        set(value) <= allowed
+        and value.get("target_id") == name
+        and value.get("value_type") == "integer"
+        and value.get("allowed_value_kinds") == ["literal"]
+        and value.get("sensitivity") in ("public", "internal")
+        and ("default" not in value or isinstance(value["default"], dict) and value["default"].get("kind") == "literal" and _public_count(value["default"].get("value")))
+    )
 
 
 def _redact_string(value: str, depth: int = 0) -> str:
@@ -416,7 +440,7 @@ def _redact(value: object, depth: int) -> object:
         return REDACTED
     if isinstance(value, dict):
         return {
-            k: REDACTED if _is_sensitive_key(str(k)) else _redact(v, depth + 1)
+            k: REDACTED if _is_sensitive_key(str(k)) and not _safe_model_count(str(k), v) else _redact(v, depth + 1)
             for k, v in value.items()
         }
     return (

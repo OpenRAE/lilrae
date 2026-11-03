@@ -221,6 +221,7 @@ def create_local_workbench_app(
         ClaudeCodeManagedAgentAdapter(
             claude_executable=settings.claude_executable,
             work_dir=state / "workbench" / "agent-work",
+            run_store=LocalRunStore(state / "runs"),
         ),
         LocalRunStore(state / "runs"),
         paths=WorkbenchPaths(

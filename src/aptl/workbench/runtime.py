@@ -13,6 +13,8 @@ from typing import Protocol
 from aptl.core.mcp_policy import configured_server_ids, configured_runtime_environment
 from aptl.core.runstore import RunStorageBackend
 from aptl.core.session import ScenarioSession
+from aptl.core.participant_requests.request import ParticipantRequest
+from aptl.core.participant_requests.binding import ParticipantRequestBinding
 from aptl.workbench.process import BoundedProcessError
 from aptl.workbench.profiles import (
     ProfileId,
@@ -51,6 +53,8 @@ class DecisionAgentLaunch:
     run_id: str
     model: str
     policy_version: str = "aptl-participant-decision-provider/v1"
+    request: ParticipantRequest | None = None
+    request_binding: ParticipantRequestBinding | None = None
 
 
 AgentLaunch = ProfileLaunch | DecisionAgentLaunch

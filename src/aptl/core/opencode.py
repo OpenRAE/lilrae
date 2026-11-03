@@ -5,13 +5,25 @@ import re
 from urllib.parse import SplitResult, urlsplit
 
 
-def _loopback_fixture(url: SplitResult) -> bool:
+def _loopback_fixture(url: SplitResult, path: str = "/api/v1") -> bool:
     """Admit only explicit loopback ports for offline provider qualification."""
     return (
         url.scheme == "http"
         and url.hostname in {"127.0.0.1", "::1"}
-        and url.path == "/api/v1"
+        and url.path == path
         and url.port is not None
+    )
+
+
+def is_loopback_gateway(endpoint: str, *, path: str) -> bool:
+    """Approve only explicit local fake-provider endpoints without credential locators."""
+    url = urlsplit(endpoint)
+    return (
+        _loopback_fixture(url, path)
+        and url.username is None
+        and url.password is None
+        and not url.query
+        and not url.fragment
     )
 
 

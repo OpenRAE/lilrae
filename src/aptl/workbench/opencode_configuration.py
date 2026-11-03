@@ -3,10 +3,11 @@
 from collections.abc import Mapping
 import os
 import math
-import re
 from pathlib import Path
 
 from aptl.core.opencode import OpenRouterRoute
+from aptl.core._participant_model_ids import validate_installed_participant_model_id
+from aptl.core.participant_requests.profiles import RequestProfile
 
 
 def render_opencode_config(
@@ -14,9 +15,10 @@ def render_opencode_config(
     route: OpenRouterRoute,
     permissions: Mapping[str, str],
     servers: dict[str, object],
+    *, request_profile: RequestProfile | None = None,
 ) -> dict[str, object]:
     """Serialize admitted route and tool inputs into the upstream config shape."""
-    return {
+    config = {
         "model": model,
         "small_model": model,
         "enabled_providers": ["openrouter"],
@@ -50,6 +52,24 @@ def render_opencode_config(
         "instructions": [],
         "snapshot": False,
     }
+    if request_profile is not None:
+        profile = request_profile
+        model_config = config["provider"]["openrouter"]["models"][model.removeprefix("openrouter/")]
+        native = model_config["options"]
+        if profile.reasoning_mode == "effort":
+            native["reasoning"] = {"effort": profile.reasoning_effort.value}
+        elif profile.reasoning_mode == "budget":
+            native["reasoning"] = {"max_tokens": profile.reasoning_budget.value}
+        elif profile.reasoning_mode == "disabled":
+            native["reasoning"] = {"enabled": False}
+        model_config["temperature"] = profile.temperature.value is not None
+        agent = {}
+        if profile.temperature.value is not None:
+            agent["temperature"] = profile.temperature.value
+        if profile.top_p.value is not None:
+            agent["top_p"] = profile.top_p.value
+        config["agent"] = {"build": agent}
+    return config
 
 
 def opencode_environment(
@@ -79,7 +99,6 @@ def opencode_environment(
 
 
 PROVIDER_CREDENTIAL_NAMES = frozenset({"OPENROUTER_API_KEY"})
-_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]*/[A-Za-z0-9][A-Za-z0-9_./:-]{0,255}\Z")
 
 
 def validate_provider_environment(environment: Mapping[str, str]) -> None:
@@ -101,11 +120,8 @@ def validate_invocation_inputs(
     max_output_tokens: int,
 ) -> None:
     """Bound participant inputs before any process or tool probe starts."""
-    if (
-        not _MODEL.fullmatch(model)
-        or not prompt.strip()
-        or len(prompt.encode()) > 128_000
-    ):
+    validate_installed_participant_model_id("opencode", model)
+    if not prompt.strip() or len(prompt.encode()) > 128_000:
         raise ValueError("participant model or prompt is invalid")
     if (
         not math.isfinite(timeout_seconds)

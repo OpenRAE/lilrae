@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import hmac
 import json
 import os
 import stat
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from aptl.core.runstore import RunStorageBackend
+from aptl.workbench.agent_usage import AgentUsage, AgentUsageRecorder
+from aptl.workbench.mcp_probe import InventoryProbe, probe_mcp_server as probe_mcp_server
 
 from aptl.utils.placeholders import contains_placeholder
 from aptl.core.config import validate_installed_participant_model_id
@@ -24,7 +24,9 @@ from aptl.workbench.process import (
     ProcessResult,
     ProcessRunner,
 )
+from aptl.workbench.agent_responses import parse_claude_result
 from aptl.workbench.runtime import AgentLaunch, DecisionAgentLaunch
+from aptl.workbench.participant_request import validate_request, request_environment, request_arguments
 
 __all__ = [
     "AgentExecutionError",
@@ -39,14 +41,16 @@ _BASE_ENVIRONMENT = {
     "PATH": "/usr/local/bin:/usr/bin:/bin",
     "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1",
     "NO_COLOR": "1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "DISABLE_AUTOUPDATER": "1",
 }
 _MODEL_CREDENTIAL = "ANTHROPIC_API_KEY"
-_MCP_INVENTORY_TIMEOUT_SECONDS = 10
 _MAX_CONFIG_BYTES = 1_000_000
 _POSIX_OWNERSHIP_REQUIRED = (
     "installed agent execution requires POSIX ownership semantics"
 )
-InventoryProbe = Callable[[str, str, list[str], dict[str, str]], tuple[str, ...]]
 
 
 @dataclass
@@ -60,37 +64,7 @@ class _ClaudeHandle:
     inventory: dict[str, tuple[str, ...]] = field(default_factory=dict)
     ready: bool = False
     closed: bool = False
-
-
-async def _probe(
-    command: str, args: list[str], environment: dict[str, str]
-) -> tuple[str, ...]:
-    """Probe one MCP stdio server and return its advertised tool names."""
-    parameters = StdioServerParameters(command=command, args=args, env=environment)
-    async with stdio_client(parameters) as (read_stream, write_stream):
-        async with ClientSession(
-            read_stream,
-            write_stream,
-            read_timeout_seconds=float(_MCP_INVENTORY_TIMEOUT_SECONDS),
-        ) as session:
-            await session.initialize()
-            result = await session.list_tools()
-            return tuple(tool.name for tool in result.tools)
-
-
-def probe_mcp_server(
-    server_id: str,
-    command: str,
-    args: list[str],
-    environment: dict[str, str],
-) -> tuple[str, ...]:
-    """Perform a real MCP initialize + tools/list exchange over stdio."""
-    try:
-        return asyncio.run(_probe(command, args, environment))
-    except Exception as exc:
-        raise AgentExecutionError(
-            f"MCP inventory probe failed for {server_id}"
-        ) from exc
+    usage: AgentUsage = AgentUsage()
 
 
 class ClaudeCodeManagedAgentAdapter:
@@ -102,6 +76,7 @@ class ClaudeCodeManagedAgentAdapter:
         claude_executable: Path,
         work_dir: Path,
         runner: ProcessRunner | None = None,
+        run_store: RunStorageBackend | None = None,
         inventory_probe: InventoryProbe = probe_mcp_server,
         timeout_seconds: float = 120.0,
         max_output_bytes: int = 1_000_000,
@@ -117,6 +92,7 @@ class ClaudeCodeManagedAgentAdapter:
         self._xdg_config_home = _prepare_work_dir(self._private_home / ".config")
         self._claude_config_dir = _prepare_work_dir(self._xdg_config_home / "claude")
         self._runner = runner or BoundedProcessRunner()
+        self._usage = AgentUsageRecorder("claude", run_store)
         self._inventory_probe = inventory_probe
         self._timeout_seconds = timeout_seconds
         self._max_output_bytes = max_output_bytes
@@ -130,6 +106,8 @@ class ClaudeCodeManagedAgentAdapter:
         """Admit a generated strict config and create a minimal binding."""
         if isinstance(launch, DecisionAgentLaunch) and launch.provider != "claude":
             raise AgentExecutionError("agent launch provider does not match adapter")
+        request = launch.request if isinstance(launch, DecisionAgentLaunch) else None
+        validate_request(request, provider="claude", model=launch.model, executable=self._executable, binding=launch.request_binding if isinstance(launch, DecisionAgentLaunch) else None)
         try:
             validate_installed_participant_model_id("claude", launch.model)
         except ValueError as exc:
@@ -143,6 +121,7 @@ class ClaudeCodeManagedAgentAdapter:
         admitted = (_MODEL_CREDENTIAL, *sorted(required_aliases))
         environment = {
             **_BASE_ENVIRONMENT,
+            **request_environment(request),
             "HOME": str(self._private_home),
             "XDG_CONFIG_HOME": str(self._xdg_config_home),
             "CLAUDE_CONFIG_DIR": str(self._claude_config_dir),
@@ -190,6 +169,7 @@ class ClaudeCodeManagedAgentAdapter:
             raise AgentExecutionError("credential isolation controls are unavailable")
         expected = {
             **_BASE_ENVIRONMENT,
+            **request_environment(active.launch.request),
             "HOME": str(self._private_home),
             "XDG_CONFIG_HOME": str(self._xdg_config_home),
             "CLAUDE_CONFIG_DIR": str(self._claude_config_dir),
@@ -216,6 +196,10 @@ class ClaudeCodeManagedAgentAdapter:
         active = _require_handle(handle)
         if active.closed or not active.ready:
             raise AgentExecutionError("agent profile is not ready")
+        if isinstance(active.launch, DecisionAgentLaunch):
+            validate_request(active.launch.request, provider="claude", model=active.launch.model, executable=self._executable, binding=active.launch.request_binding)
+            if active.launch.request is not None:
+                message = active.launch.request.prompt + message
         _assert_config_unchanged(active)
         schema_json = admit_decision_response_schema(
             active.launch,
@@ -225,6 +209,7 @@ class ClaudeCodeManagedAgentAdapter:
             raise AgentExecutionError(
                 "participant message exceeds the configured limit"
             )
+        active.usage = AgentUsage()
         result = self._runner.run(
             self._argv(self._executable, active, schema_json),
             env=dict(active.environment),
@@ -233,9 +218,15 @@ class ClaudeCodeManagedAgentAdapter:
             timeout_seconds=self._timeout_seconds,
             max_output_bytes=self._max_output_bytes,
         )
+        active.usage = self._usage.record(active.launch, result)
         if result.returncode != 0:
             raise AgentExecutionError("agent request failed")
-        return _parse_agent_result(result.stdout)
+        return parse_claude_result(result.stdout)
+
+    @staticmethod
+    def usage(handle: object) -> AgentUsage:
+        """Return only the latest invocation's reported token counters."""
+        return _require_handle(handle).usage
 
     @staticmethod
     def close(handle: object) -> None:
@@ -275,6 +266,7 @@ class ClaudeCodeManagedAgentAdapter:
                 raise AgentExecutionError("agent response schema is required")
             return (
                 *base,
+                *request_arguments(handle.launch.request),
                 "--model",
                 handle.launch.model,
                 "--json-schema",
@@ -474,20 +466,3 @@ def _require_handle(handle: object) -> _ClaudeHandle:
     if not isinstance(handle, _ClaudeHandle):
         raise AgentExecutionError("unknown agent handle")
     return handle
-
-
-def _parse_agent_result(stdout: bytes) -> str:
-    """Parse the installed agent's strict JSON result envelope."""
-    try:
-        payload = json.loads(stdout.decode("utf-8"))
-        result = payload["result"]
-        if (
-            payload.get("type") != "result"
-            or payload.get("is_error") is not False
-            or not isinstance(result, str)
-            or not result
-        ):
-            raise ValueError
-        return result
-    except (KeyError, ValueError) as exc:
-        raise AgentExecutionError("agent returned an invalid result") from exc

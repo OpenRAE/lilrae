@@ -1017,3 +1017,14 @@ class TestIsSecretShapedValuePredicate:
         else:
             baseline = value
         assert is_secret_shaped_value(value) == (redact(value) != baseline)
+@pytest.mark.parametrize("name", ["max_output_tokens", "input_tokens", "output_tokens"])
+def test_numeric_model_limits_and_usage_are_safe_but_secret_replacements_are_not(name):
+    from aptl.utils.redaction import redact
+
+    for value in (0, 128, None):
+        assert redact({name: value}) == {name: value}
+    for value in ("private-credential", {"api_key": "private-credential"}, True, -1, 2**53):
+        assert redact({name: value}) == {name: "[REDACTED]"}
+    declaration = {"target_id": name, "value_type": "integer", "allowed_value_kinds": ["literal"], "sensitivity": "internal"}
+    assert redact({name: declaration}) == {name: declaration}
+    assert redact({name: {**declaration, "api_key": "private-credential"}}) == {name: "[REDACTED]"}

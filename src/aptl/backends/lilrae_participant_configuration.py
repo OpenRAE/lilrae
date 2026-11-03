@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 
 from raes_contracts.contracts import (
+    ConfigurationTargetRegistryModel,
     ParticipantConfigurationModel,
     ParticipantConfigurationResultModel,
     ParticipantImplementationManifestModel,
@@ -14,6 +15,7 @@ from raes_contracts.contracts import (
 from raes_contracts.canonical import canonical_contract_digest
 
 from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor, OpenCodeOptions
+from aptl.core.participant_requests.manifest import participant_manifest
 from aptl.core.opencode import OpenCodeBuild, OpenRouterRoute, SUPPORTED_OPENCODE_BUILD
 
 _TARGETS = {
@@ -33,76 +35,36 @@ def opencode_manifest(
     build: OpenCodeBuild = SUPPORTED_OPENCODE_BUILD,
 ) -> ParticipantImplementationManifestModel:
     """Describe the installed harness, without claiming a provider model identity."""
-    contracts = [
-        "participant-episode-state-envelope-v1",
-        "participant-episode-history-event-stream-v1",
-        "participant-behavior-history-event-stream-v1",
-    ]
-    return ParticipantImplementationManifestModel.model_validate(
+    registry = ConfigurationTargetRegistryModel.model_validate(
         {
-            "identity": {"name": "lilrae-opencode", "version": version},
-            "implementation_kind": "agent",
-            "supported_contract_versions": [
-                "participant-implementation-manifest-v1",
-                "participant-implementation-provenance-v1",
-                "experiment-binding-descriptors-v1",
-                "participant-configuration-result-v1",
-                *contracts,
-            ],
-            "compatibility": {
-                "participant_runtimes": ["aptl"],
-                "processors": ["raes-reference-processor"],
-                "backends": ["aptl"],
+            "owner": {
+                "contract_id": "participant-implementation-manifest/v1",
+                "contract_version": "1",
+                "validator_id": "lilrae-opencode",
+                "validator_version": "2",
             },
-            "concept_bindings": [
-                {"scope": scope, "family": family}
-                for scope, family in (
-                    ("implementation_kind", "apparatus-declarations"),
-                    (
-                        "capabilities.supported_participant_contracts",
-                        "apparatus-declarations",
-                    ),
-                    (
-                        "capabilities.supported_decision_surface_modes",
-                        "apparatus-declarations",
-                    ),
-                    (
-                        "capabilities.tool_affordance_expectations",
-                        "tools-and-artifacts",
-                    ),
-                    ("capabilities.exposure_policy_kinds", "provenance-and-evidence"),
-                )
-            ],
-            "capabilities": {
-                "supported_participant_contracts": contracts,
-                "supported_decision_surface_modes": ["autonomous"],
-                "tool_affordance_expectations": ["x-lilrae:verified-workbench-profile"],
-                "exposure_policy_kinds": ["task-statement", "observation-stream"],
-            },
-            "constraints": {
-                "opencode_version": build.version,
-                "opencode_executable_sha256": build.executable_sha256,
-                "model_identity": "requested provider/model identifier; provider resolution is not attested",
-                "prompt_commitment": "sha256 of exact UTF-8 stdin bytes",
-            },
-            "configuration_registry": {
-                "owner": {
-                    "contract_id": "participant-implementation-manifest/v1",
-                    "contract_version": "1",
-                    "validator_id": "lilrae-opencode",
-                    "validator_version": "2",
-                },
-                "targets": {
-                    name: {
-                        "target_id": name,
-                        "value_type": kind,
-                        "allowed_value_kinds": ["literal"],
-                        "sensitivity": "internal",
-                    }
-                    for name, kind in _TARGETS.items()
-                },
+            "targets": {
+                name: {
+                    "target_id": name,
+                    "value_type": kind,
+                    "allowed_value_kinds": ["literal"],
+                    "sensitivity": "internal",
+                }
+                for name, kind in _TARGETS.items()
             },
         }
+    )
+    return participant_manifest(
+        name="lilrae-opencode",
+        version=version,
+        decision_only=False,
+        registry=registry,
+        constraints={
+            "opencode_version": build.version,
+            "opencode_executable_sha256": build.executable_sha256,
+            "model_identity": "requested provider/model identifier; provider resolution is not attested",
+            "prompt_commitment": "sha256 of exact UTF-8 stdin bytes",
+        },
     )
 
 
@@ -195,10 +157,34 @@ def configured_opencode_executor(
     prompt_ref: str,
     supported_models: frozenset[str],
     options: OpenCodeOptions,
+    timeout_seconds: float | None = None,
 ) -> LilraeOpenCodeExecutor:
     """Verify the sealed result and artifact commitment before constructing a harness."""
+    if options.request is not None:
+        request = options.request
+        request.validate()
+        if (
+            manifest != request.manifest
+            or configuration != request.configuration_result
+            or prompt != request.prompt
+            or prompt_ref != request.prompt_ref
+            or request.profile.model not in supported_models
+            or timeout_seconds is None
+        ):
+            raise ValueError(
+                "participant request is incompatible with its installed configuration"
+            )
+        return LilraeOpenCodeExecutor(
+            options=options,
+            model=request.profile.model,
+            prompt=prompt,
+            timeout_seconds=timeout_seconds,
+            configuration_result=configuration,
+        )
     _validate_configuration_result(configuration, manifest, options.build)
     values = _values(configuration.configuration)
+    if timeout_seconds is not None and timeout_seconds != values["timeout_seconds"]:
+        raise ValueError("participant deadline differs from its admitted configuration")
     if options.route != OpenRouterRoute(
         endpoint=values["gateway_endpoint"], serving_provider=values["serving_provider"]
     ):
