@@ -159,6 +159,17 @@ class TrialReadiness:
                 raise ValueError("trial-readiness-delivery-incomplete")
             self._delivery_complete = True
 
+    def complete_retained_delivery(
+        self, request: TrialUnitRequest, *, project: Path, daemon_root: Path, owner: bytes
+    ) -> None:
+        """Repair this exact handoff atomically; leave later deliveries alone."""
+        with self._lock:
+            if (
+                self._request_digest == readiness_request_digest(request)
+                and self._delivery == (project, daemon_root, owner)
+            ):
+                self.complete_delivery(request)
+
     def release_preparation(self, request: TrialUnitRequest) -> None:
         """Discard authority after a fully ceased refusal released its fences."""
         with self._lock:

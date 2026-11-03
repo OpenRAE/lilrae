@@ -1,4 +1,4 @@
-"""The one terminal-attempt archive coordinator (EXP-009 / ADR-050).
+"""Archive coordinator for owner-produced run records (EXP-009 / ADR-050).
 
 :func:`finalize_terminal_attempt` is invoked exactly once when an execution
 attempt reaches any terminal cause. It composes the validated public RAES run
@@ -12,7 +12,7 @@ conflict.
 
 The coordinator does not rediscover facts from mutable state, calculate metrics,
 reconstruct captures, or run another execution state machine — it consumes the
-immutable :class:`~aptl.core.archival.context.TerminalAttemptContext` and seals.
+immutable terminal context or a validated producer record and seals.
 """
 
 from __future__ import annotations
@@ -27,7 +27,6 @@ from aptl.core.archival.context import TerminalAttemptContext
 from aptl.core.archival.discovery_index import DiscoveryIndex, IndexEntry
 from aptl.core.archival.layout import (
     RUN_MANIFEST_RELPATH,
-    SEAL_MARKER_DIGEST_FIELD,
     SEAL_MARKER_RELPATH,
 )
 from aptl.core.archival.run_record import build_experiment_run_model
@@ -39,6 +38,7 @@ from aptl.core.archival.seal import (
     build_inventory_entry,
     build_seal_marker,
 )
+from aptl.core.archival.verify import verify_sealed_archive
 from aptl.core.runstore import LocalRunStore, RunStoreConflictError
 from aptl.utils.logging import get_logger
 
@@ -51,7 +51,7 @@ _MANIFEST_SPEC = SealedArtifactSpec(
 
 @dataclass(frozen=True)
 class SealResult:
-    """The outcome of sealing one terminal attempt."""
+    """The outcome of sealing one immutable run record."""
 
     run: ExperimentRunModel
     run_record_digest: str
@@ -76,6 +76,36 @@ def finalize_terminal_attempt(
     sealed with a different record.
     """
     run = build_experiment_run_model(context)
+    return seal_produced_run(
+        run,
+        store=store,
+        index=index,
+        artifacts=context.sealed_artifacts,
+        limitations=context.accepted_limitations,
+        completeness_statement=completeness_statement,
+    )
+
+
+def seal_produced_run(
+    run: ExperimentRunModel,
+    *,
+    store: LocalRunStore,
+    artifacts: tuple[SealedArtifactSpec, ...] = (),
+    limitations: tuple[SealLimitation, ...] = (),
+    index: DiscoveryIndex | None = None,
+    observed_at: str | None = None,
+    completeness_statement: str | None = None,
+) -> SealResult:
+    """Commit an owner-produced record without changing its outcome or times.
+
+    An unresolved record needs a retained observation time for local indexing.
+    That routing time never becomes the run's end time. Each portable version
+    uses its own store namespace; sealed working evidence is never reopened.
+    """
+    run = ExperimentRunModel.model_validate(run.model_dump(mode="json"))
+    terminal_at = run.ended_at or observed_at
+    if terminal_at is None:
+        raise ValueError("partial archive requires its retained observation time")
     run_record_digest = canonical_contract_digest(run)
     index = index or DiscoveryIndex(store.base_dir)
 
@@ -84,31 +114,29 @@ def finalize_terminal_attempt(
         run_version=run.run_version,
         manifest_digest=run_record_digest,
         seal_state="sealed",
-        terminal_at=run.ended_at,
+        terminal_at=terminal_at,
         location=RUN_MANIFEST_RELPATH,
     )
 
     # Hold the store-owned per-attempt finalization lock across compose
     # verification, manifest publication, inventory verification, and marker
     # commit so two finalizers of the same attempt cannot race (ADR-050).
-    with store.finalization_lock(context.attempt_id):
-        if _check_prior_seal(store, context.attempt_id, run_record_digest):
-            # Already sealed with this exact record: idempotent replay. Rebuild
-            # the result from the sealed bytes (reads only) — re-writing would
-            # now hit the create-once sealed guard.
-            return _existing_seal_result(store, context, run, run_record_digest, index_entry)
-
-        # Ensure the run directory and publish the canonical RAES run record
-        # create-once (immutable). A byte-identical replay is a no-op success.
-        store.create_run(context.attempt_id)
-        manifest_path = store.create_run_json_once(
-            context.attempt_id, RUN_MANIFEST_RELPATH, run.model_dump(mode="json")
-        )
-
-        inventory = _build_inventory(store, context)
-        limitations = list(context.accepted_limitations)
+    with store.finalization_lock(run.run_id):
+        prior = verify_sealed_archive(store.base_dir, run.run_id)
+        if prior is not None and prior.run_record_digest != run_record_digest:
+            raise RunStoreConflictError("produced record conflicts with its sealed version")
+        manifest_path = store.get_run_path(run.run_id) / RUN_MANIFEST_RELPATH
+        if prior is None:
+            store.create_run(run.run_id)
+            manifest_path = store.create_run_json_once(
+                run.run_id, RUN_MANIFEST_RELPATH, run.model_dump(mode="json")
+            )
+        inventory = _build_inventory(store, run.run_id, artifacts)
+        accepted = list(limitations)
+        if run.record_state == "partial":
+            accepted.append(SealLimitation("partial-record", "RAES retained an incomplete trial record."))
         statement = completeness_statement or _default_completeness_statement(
-            run, inventory, limitations
+            run, inventory, accepted
         )
         marker = build_seal_marker(
             SealMarkerInputs(
@@ -118,21 +146,23 @@ def finalize_terminal_attempt(
                 outcome_status=run.outcome_status,
                 run_record_digest=run_record_digest,
                 inventory=inventory,
-                contract_versions=_sealed_contract_versions(run, context),
-                limitations=limitations,
+                contract_versions=_sealed_contract_versions(run, artifacts),
+                limitations=accepted,
                 completeness_statement=statement,
             )
         )
+        if prior is not None and store.read_seal_marker(run.run_id) != marker:
+            raise RunStoreConflictError("produced inventory conflicts with its sealed version")
 
         # ADR-050 commit sequence: prepared entry names the expected identity,
         # then the atomic seal marker is the archive commit point, then the
         # committed entry. Each step is idempotent on identical bytes.
         index.prepare(index_entry)
-        seal_marker_path = store.commit_seal_marker(context.attempt_id, marker)
+        seal_marker_path = store.commit_seal_marker(run.run_id, marker)
         index.commit(index_entry)
 
     log.info(
-        "sealed terminal attempt %s (run_status=%s, outcome=%s, artifacts=%d)",
+        "sealed run record %s (run_status=%s, outcome=%s, artifacts=%d)",
         run.run_id,
         run.run_status,
         run.outcome_status,
@@ -145,66 +175,28 @@ def finalize_terminal_attempt(
         seal_marker_path=seal_marker_path,
         inventory=tuple(inventory),
         index_entry=index_entry,
-        idempotent=False,
+        idempotent=prior is not None,
     )
-
-
-def _existing_seal_result(
-    store: LocalRunStore,
-    context: TerminalAttemptContext,
-    run: ExperimentRunModel,
-    run_record_digest: str,
-    index_entry: IndexEntry,
-) -> SealResult:
-    """Rebuild the seal result for an already-sealed attempt (reads only)."""
-    run_dir = store.get_run_path(context.attempt_id)
-    inventory = _build_inventory(store, context)
-    return SealResult(
-        run=run,
-        run_record_digest=run_record_digest,
-        manifest_path=run_dir / RUN_MANIFEST_RELPATH,
-        seal_marker_path=run_dir / SEAL_MARKER_RELPATH,
-        inventory=tuple(inventory),
-        index_entry=index_entry,
-        idempotent=True,
-    )
-
-
-def _check_prior_seal(
-    store: LocalRunStore, attempt_id: str, run_record_digest: str
-) -> bool:
-    """Return whether the attempt is already sealed with an identical record.
-
-    A prior seal with a different run-record digest is a conflict (two different
-    finalizations of one attempt); an identical one makes this call an idempotent
-    replay.
-    """
-    existing = store.read_seal_marker(attempt_id)
-    if existing is None:
-        return False
-    if existing.get(SEAL_MARKER_DIGEST_FIELD) != run_record_digest:
-        raise RunStoreConflictError(
-            f"attempt {attempt_id!r} is already sealed with a different run record"
-        )
-    return True
 
 
 def _build_inventory(
-    store: LocalRunStore, context: TerminalAttemptContext
+    store: LocalRunStore, run_id: str, artifacts: tuple[SealedArtifactSpec, ...]
 ) -> list[SealInventoryEntry]:
     """Read and checksum the manifest plus every sealed artifact into the inventory."""
-    inventory = [build_inventory_entry(store, context.attempt_id, _MANIFEST_SPEC)]
-    for spec in context.sealed_artifacts:
-        inventory.append(build_inventory_entry(store, context.attempt_id, spec))
+    inventory = [build_inventory_entry(store, run_id, _MANIFEST_SPEC)]
+    for spec in artifacts:
+        inventory.append(build_inventory_entry(store, run_id, spec))
     return inventory
 
 
 def _sealed_contract_versions(
-    run: ExperimentRunModel, context: TerminalAttemptContext
+    run: ExperimentRunModel, artifacts: tuple[SealedArtifactSpec, ...]
 ) -> list[str]:
     """Collect the contract versions the sealed byte graph spans."""
-    versions = {run.schema_version, run.apparatus_context.schema_version}
-    if any("evidence" in spec.role for spec in context.sealed_artifacts):
+    versions = {run.schema_version}
+    if run.apparatus_context is not None:
+        versions.add(run.apparatus_context.schema_version)
+    if any("evidence" in spec.role for spec in artifacts):
         versions.add("experiment-evidence-record/v1")
     return sorted(versions)
 
@@ -224,7 +216,7 @@ def _default_completeness_statement(
     else:
         limitation_clause = "no accepted limitations"
     return (
-        f"Sealed terminal attempt {run.run_id} run_version {run.run_version}: "
+        f"Sealed run record {run.run_id} run_version {run.run_version}: "
         f"run_status={run.run_status}, outcome_status={run.outcome_status}, "
         f"{len(inventory)} bound artifact(s), {limitation_clause}."
     )

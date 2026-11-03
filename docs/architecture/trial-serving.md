@@ -33,6 +33,8 @@ after dispatch only when RAES's scope-complete resource-reuse predicate succeeds
 failure and fresh-range-required outcomes retain the fences. Evidence remains
 in the injected run store. Archival recovery seals an interrupted record; it
 does not resume execution. The legacy archival executor has no batch entry point.
+See the [issue #437 recovery guardrails](issue-437-interrupted-trial-recovery-preflight.md)
+for interrupted intent validation, sealing, cleanup uncertainty and duplicate recovery.
 
 The existing lifecycle lock gains context propagation for RAES's AnyIO worker
 callbacks. A delegated callback can enter the same live lock, while unrelated
