@@ -113,6 +113,10 @@ components:
     layer: foundation
     responsibility: Waits for a condition until a deadline.
     packages: [internal/wait]
+  - name: host-http
+    layer: foundation
+    responsibility: Sends bounded HTTP requests with caller-supplied trust and classified outcomes.
+    packages: [internal/httpclient]
   - name: secure-file
     layer: foundation
     responsibility: Opens, writes, and removes files below a trusted directory without following links, with final file modes.

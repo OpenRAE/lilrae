@@ -19,7 +19,7 @@ the design record of its packages.
    | 06c (#1606) | `internal/clock`, `internal/wait` | The timestamp vectors and the deadline waits |
    | 06d (#1609) | `internal/filelock` | Shared, exclusive, and Windows locks |
    | 06e (#1607) | `internal/process` | Argument arrays, process groups, output limits, and termination |
-   | 06f (#1608) | `internal/httpclient` | The lab CA and the outcome categories of `curl_safe` |
+   | 06f (#1608) | `internal/httpclient` | Caller-supplied trust roots and the outcome categories of `curl_safe`; [HTTP preflight](issue-1608-host-http-client-preflight.md) |
 
 2. **Foundation layer.** Each package is a component of the `foundation`
    layer of `architecture/model.yaml`, with no LilRAE concept. A package uses

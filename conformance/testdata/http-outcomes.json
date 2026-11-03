@@ -1,0 +1,16 @@
+[
+  {"id":"ok","exit":0,"status":200,"failure":"","category":"http_response"},
+  {"id":"unauthorized","exit":0,"status":401,"failure":"","category":"http_response"},
+  {"id":"forbidden","exit":0,"status":403,"failure":"","category":"http_response"},
+  {"id":"server-error","exit":0,"status":500,"failure":"","category":"http_response"},
+  {"id":"partial-response","exit":56,"status":200,"failure":"","category":"http_response"},
+  {"id":"refused","exit":7,"status":0,"failure":"","category":"connection_refused"},
+  {"id":"timeout","exit":28,"status":0,"failure":"","category":"timeout"},
+  {"id":"handshake","exit":35,"status":0,"failure":"","category":"tls_handshake"},
+  {"id":"empty","exit":52,"status":0,"failure":"","category":"empty_reply"},
+  {"id":"reset","exit":56,"status":0,"failure":"","category":"connection_reset"},
+  {"id":"certificate","exit":60,"status":0,"failure":"","category":"curl_error"},
+  {"id":"other","exit":6,"status":0,"failure":"","category":"curl_error"},
+  {"id":"request-timeout","exit":null,"status":0,"failure":"request_timeout","category":"request_timeout"},
+  {"id":"unavailable","exit":null,"status":0,"failure":"curl_unavailable","category":"curl_unavailable"}
+]
