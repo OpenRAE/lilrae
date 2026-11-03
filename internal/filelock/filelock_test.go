@@ -243,8 +243,8 @@ func TestAGoLockAndAPythonLockExcludeEachOther(t *testing.T) {
 	}
 	release := sync.OnceValue(func() error { return errors.Join(stdin.Close(), cmd.Wait()) })
 	t.Cleanup(func() {
-		if err := release(); err != nil {
-			t.Error(err)
+		if releaseErr := release(); releaseErr != nil {
+			t.Error(releaseErr)
 		}
 	})
 	line, err := bufio.NewReader(stdout).ReadString('\n')
