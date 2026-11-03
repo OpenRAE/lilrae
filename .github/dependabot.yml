@@ -105,6 +105,21 @@ updates:
       - dependency-name: "node"
         update-types: ["version-update:semver-major"]
 
+  # Temporary milestone-44 policy (#1593). Go port 31 (#1582) replaces this
+  # cutover target with the normal Go update policy before deleting the branch.
+  - package-ecosystem: "gomod"
+    directories:
+      - "/"
+      - "/tools"
+      - "/tools/lint"
+      - "/tools/gates"
+    target-branch: "go-cutover"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build"
+
   # The web image builds Caddy from source so that it can take Go and
   # golang.org/x/net security fixes before the upstream Caddy image does. This
   # entry keeps the Caddy module and its dependencies patched.
