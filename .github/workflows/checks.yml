@@ -279,7 +279,7 @@ jobs:
           bash tools/install-opencode.sh "$RUNNER_TEMP/opencode-1504"
           npm ci --prefix mcp/aptl-mcp-common --ignore-scripts --no-audit
           npm run --prefix mcp/aptl-mcp-common build
-          LILRAE_TEST_OPENCODE="$RUNNER_TEMP/opencode-1504/opencode" python -m pytest -q -m integration tests/test_opencode_transport.py tests/test_opencode_installed_actions.py tests/test_participant_request_dispatch.py tests/test_trial_participant_transport.py
+          LILRAE_TEST_OPENCODE="$RUNNER_TEMP/opencode-1504/opencode" python -m pytest -q -m integration tests/test_trial_participant_transport.py tests/test_opencode_transport.py tests/test_opencode_installed_actions.py tests/test_participant_request_dispatch.py
 
   python-tests:
     name: Python tests + coverage

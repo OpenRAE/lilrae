@@ -1,6 +1,5 @@
 """Sealed configurations execute through the existing production trial unit."""
 
-import pytest
 from aptl.workbench.lilrae_opencode import OpenCodeOptions
 from tests.test_opencode_transport import opencode_binary as opencode_binary, provider
 
@@ -159,7 +158,22 @@ def test_trial_serving_executes_sealed_roles_through_shared_runtime(
                     participants=application,
                     readiness=readiness,
                 )
-                finish(handler, request)
+                try:
+                    finish(handler, request)
+                except Exception as error:
+                    import json
+
+                    for reference in readiness.references:
+                        observation = json.loads(
+                            (root / "runs" / request.run_id / reference).read_text()
+                        )
+                        error.add_note(
+                            "Readiness checks: "
+                            + ", ".join(
+                                check["code"] for check in observation["checks"]
+                            )
+                        )
+                    raise
             assert len(records) == 2
             assert {r.participant_address for r in records} == set(prepared.requests)
             for record in records:
