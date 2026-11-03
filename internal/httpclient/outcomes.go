@@ -35,7 +35,7 @@ const (
 )
 
 var (
-	// ErrRequestTimeout also matches context.DeadlineExceeded with errors.Is.
+	// ErrRequestTimeout also matches the context deadline error through error inspection.
 	ErrRequestTimeout = fmt.Errorf("httpclient: request timeout: %w", context.DeadlineExceeded)
 	// ErrResponseLimit reports a body that exceeds the caller's byte limit.
 	ErrResponseLimit = errors.New("httpclient: response body exceeds limit")
