@@ -20,7 +20,7 @@ FROM python:3.14-slim@sha256:c3e521df8b2b498a7a682e7e18676771cb80c6b75b8699af886
 # real fresh-machine boot with no pre-existing apt cache to mask it).
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        systemd systemd-sysv dbus gnupg \
+        systemd systemd-sysv dbus gnupg curl openssh-server \
         bind9 dnsutils iptables postgresql samba python3-pip python3-venv \
     && rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
     && apt-get clean \

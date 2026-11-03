@@ -16,7 +16,7 @@ import subprocess
 from pathlib import Path
 
 from raes.artifact_requirements import ArtifactRequirement, ArtifactSatisfactionRoute
-from raes.explicitness import ExplicitnessClass, ExplicitnessProvenance
+from raes_contracts.explicitness import ExplicitnessClass, ExplicitnessProvenance
 from raes.runtime_configuration import RuntimeConfiguration
 from raes_contracts.contracts import (
     ArtifactAvailabilityContext,

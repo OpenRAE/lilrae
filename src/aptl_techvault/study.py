@@ -11,7 +11,6 @@ from aptl_techvault.capture_registrations import BUILTIN_REGISTRATIONS
 from aptl_techvault.study_capture_registrations import (
     participant_delivery_registrations,
 )
-from aptl_techvault.planning_compatibility import TechVaultPlanningCompatibilityProvider
 from aptl_techvault.runtime_parameters import (
     STUDY_PACK_SET_DIGEST,
     TECHVAULT_PACK_VERSION,
@@ -51,14 +50,6 @@ class StudyServing(TechVaultPackInteraction):
     """Bind the study pack to the proven TechVault serving adapter."""
 
     provider_id = "techvault-study-aptl-serving"
-    supported_pack_id = PACK_ID
-    supported_pack_set_digests = (STUDY_PACK_SET_DIGEST,)
-
-
-class StudyPlanningCompatibility(TechVaultPlanningCompatibilityProvider):
-    """Bind the study pack to TechVault planning compatibility."""
-
-    provider_id = "techvault-study-aptl-planning-compatibility"
     supported_pack_id = PACK_ID
     supported_pack_set_digests = (STUDY_PACK_SET_DIGEST,)
 
@@ -110,6 +101,5 @@ runtime_parameters = StudyRuntimeParameters()
 startup = StudyStartup()
 participant_desktop = StudyParticipantDesktop()
 serving = StudyServing()
-planning_compatibility = StudyPlanningCompatibility()
 capture = StudyCapture()
 verifier = StudyVerifier()

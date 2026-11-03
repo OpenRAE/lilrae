@@ -32,11 +32,13 @@ Reports name these facts, never argv, environment or output.
 from __future__ import annotations
 
 import os
+import hashlib
 import selectors
 import signal
 import subprocess
 import time
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
 from typing import Protocol
@@ -136,6 +138,7 @@ class BoundedProcessError(AgentExecutionError):
         cleanup: ProcessCleanup,
         stdout_bytes: int,
         stderr_bytes: int,
+        stdout_sha256: str | None = None,
     ) -> None:
         super().__init__(
             f"{reason}; withheld captured output (stdout {stdout_bytes} bytes, "
@@ -145,6 +148,7 @@ class BoundedProcessError(AgentExecutionError):
         self.cleanup = cleanup
         self.stdout_bytes = stdout_bytes
         self.stderr_bytes = stderr_bytes
+        self.stdout_sha256 = stdout_sha256
 
     def stable_summary(self) -> str:
         """Name the reason and the residue, without timings or process ids."""
@@ -154,12 +158,15 @@ class BoundedProcessError(AgentExecutionError):
     def record(self) -> dict[str, object]:
         """Return the failure as a JSON-ready record for run evidence."""
 
-        return {
+        record = {
             "reason": self.reason,
             "withheld_stdout_bytes": self.stdout_bytes,
             "withheld_stderr_bytes": self.stderr_bytes,
             "cleanup": self.cleanup.record(),
         }
+        if self.stdout_sha256 is not None:
+            record["withheld_stdout_sha256"] = self.stdout_sha256
+        return record
 
 
 class ProcessRunner(Protocol):
@@ -177,6 +184,62 @@ class ProcessRunner(Protocol):
     ) -> ProcessResult: ...
 
 
+class CancellableProcessRunner(Protocol):
+    """An explicitly cancellable process runner used by participant controllers."""
+
+    def run(
+        self,
+        argv: tuple[str, ...],
+        *,
+        env: dict[str, str],
+        cwd: Path,
+        stdin: bytes,
+        timeout_seconds: float,
+        max_output_bytes: int,
+        cancel_event: Event | None = None,
+    ) -> ProcessResult: ...
+
+
+@dataclass(frozen=True)
+class ProcessRequest:
+    """One invocation's fixed inputs; private bytes never enter its repr."""
+
+    argv: tuple[str, ...]
+    env: dict[str, str] = field(repr=False)
+    cwd: Path
+    stdin: bytes = field(repr=False)
+    timeout_seconds: float
+    max_output_bytes: int
+    cancel_event: Event | None = None
+
+    def run_with(self, runner: CancellableProcessRunner) -> ProcessResult:
+        """Deliver the request through the existing cancellable runner port."""
+        return runner.run(
+            self.argv,
+            env=self.env,
+            cwd=self.cwd,
+            stdin=self.stdin,
+            timeout_seconds=self.timeout_seconds,
+            max_output_bytes=self.max_output_bytes,
+            cancel_event=self.cancel_event,
+        )
+
+
+def _observe_failure(
+    output: bytearray,
+    reason: str,
+    observer: Callable[[bytes], None] | None,
+) -> str:
+    """Notify a private reducer without exposing its errors or output."""
+    if observer is None:
+        return reason
+    try:
+        observer(bytes(output))
+    except Exception:
+        return "agent failure output observation failed"
+    return reason
+
+
 class BoundedProcessRunner:
     """Run a child within one deadline, then clean up its whole process group."""
 
@@ -192,6 +255,25 @@ class BoundedProcessRunner:
         cancel_event: Event | None = None,
     ) -> ProcessResult:
         """Execute a child with strict time and combined-output limits."""
+        return BoundedProcessRunner.run_observed(
+            ProcessRequest(
+                argv, env, cwd, stdin, timeout_seconds, max_output_bytes, cancel_event
+            )
+        )
+
+    @staticmethod
+    def run_observed(
+        request: ProcessRequest,
+        *,
+        failure_stdout_observer: Callable[[bytes], None] | None = None,
+    ) -> ProcessResult:
+        """Reduce bounded captured failure output after process cleanup, if requested."""
+        argv, env, cwd, stdin = request.argv, request.env, request.cwd, request.stdin
+        timeout_seconds, max_output_bytes = (
+            request.timeout_seconds,
+            request.max_output_bytes,
+        )
+        cancel_event = request.cancel_event
         if timeout_seconds <= 0 or max_output_bytes <= 0:
             raise AgentExecutionError("agent process limits are invalid")
         if cancel_event is not None and cancel_event.is_set():
@@ -224,11 +306,13 @@ class BoundedProcessRunner:
         if reason is None and cleanup.residual:
             reason = REASON_RESIDUE
         if reason is not None:
+            reason = _observe_failure(exchange.stdout, reason, failure_stdout_observer)
             raise BoundedProcessError(
                 reason,
                 cleanup=cleanup,
                 stdout_bytes=len(exchange.stdout),
                 stderr_bytes=len(exchange.stderr),
+                stdout_sha256=hashlib.sha256(exchange.stdout).hexdigest(),
             )
         return ProcessResult(
             process.returncode,

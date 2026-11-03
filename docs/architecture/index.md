@@ -1,8 +1,12 @@
 # Lab Architecture
 
+- [Participant request manifests](participant-request-manifests.md)
+- [Issue #1419 participant manifest preflight](issue-1419-participant-manifests-preflight.md)
 - [Issue #1418 Participant MCP Action Admission](issue-1418-participant-tool-admission-preflight.md)
 - [Participant action and control architecture assessment](participant-tool-admission.md)
 - [Participant action enforcement](participant-action-enforcement.md)
+- [Issue #1504 Managed OpenCode participants](issue-1504-managed-opencode-preflight.md)
+- [Managed OpenCode design](managed-opencode.md)
 
 ## Network Topology
 
@@ -187,6 +191,7 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 - [Issue #1413 Configured Pack Source](issue-1413-configured-pack-source-preflight.md)
 - [Issue #955 Generic Systemd Substrate Privilege](issue-955-systemd-substrate-privilege-preflight.md)
 - [Issue #958 Execution Boundary](issue-958-execution-boundary-preflight.md)
+- [Native Docker Range Network Policy](issue-968-native-network-policy.md)
 - [Issue #601 Participant Demonstration](issue-601-participant-demonstration-preflight.md)
 - [Issue #851 First-Time User Documentation](issue-851-first-time-user-docs-preflight.md)
 - [Issue #880 TechVault Env-Pack Consumption](issue-880-techvault-env-pack-consumption-preflight.md)
@@ -199,6 +204,10 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 - [Issue #1002 Wazuh API TLS Warm-Up](issue-1002-wazuh-api-tls-warmup-preflight.md)
 - [Issue #1000 Partial Boot And Manual Release QA](issue-1000-manual-release-qa-preflight.md)
 - [Issue #992 Backend Observability Ownership](issue-992-backend-observability-ownership-preflight.md)
+- [Issue #1017 TechVault Bridge Retirement](issue-1017-techvault-bridge-retirement-preflight.md)
+- [Issue #1017 Native Runtime Attestation Design](issue-1017-native-runtime-attestation-design.md)
+- [Issue #1603 Released RAES Dependencies](issue-1603-raes-11-module-locations-preflight.md)
+- [Issue #1603 Released Module Adoption Design](issue-1603-released-module-design.md)
 - [Issue #974 Shuffle Worker Docker And Image Realization](issue-974-shuffle-worker-docker-images-preflight.md)
 - [Issue #934 APTL-To-LilRAE Rename Boundary](issue-934-rename-boundary-preflight.md)
 - [Issue #592 Scenario-Pack Terminology](issue-592-scenario-pack-terminology-preflight.md)

@@ -285,5 +285,74 @@
     "name": "empty_list",
     "input": [],
     "expected": []
+  },
+  {
+    "name": "model_numeric_usage",
+    "input": {
+      "input_tokens": 12,
+      "output_tokens": 0,
+      "max_output_tokens": 128
+    },
+    "expected": {
+      "input_tokens": 12,
+      "output_tokens": 0,
+      "max_output_tokens": 128
+    }
+  },
+  {
+    "name": "model_unknown_usage",
+    "input": {
+      "input_tokens": null
+    },
+    "expected": {
+      "input_tokens": null
+    }
+  },
+  {
+    "name": "model_credential_replacements",
+    "input": {
+      "input_tokens": "private-credential",
+      "max_output_tokens": {
+        "api_key": "private-credential"
+      }
+    },
+    "expected": {
+      "input_tokens": "[REDACTED]",
+      "max_output_tokens": "[REDACTED]"
+    }
+  },
+  {
+    "name": "model_count_fraction",
+    "input": {
+      "output_tokens": 0.5
+    },
+    "expected": {
+      "output_tokens": "[REDACTED]"
+    }
+  },
+  {
+    "name": "model_count_integral_json_number",
+    "input": {
+      "output_tokens": 12.0
+    },
+    "expected": {
+      "output_tokens": 12.0
+    }
+  },
+  {
+    "name": "model_malformed_count_declaration",
+    "input": {
+      "max_output_tokens": {
+        "target_id": "max_output_tokens",
+        "value_type": "integer",
+        "allowed_value_kinds": [
+          "literal"
+        ],
+        "sensitivity": []
+      }
+    },
+    "expected": {
+      "max_output_tokens": "[REDACTED]"
+    }
   }
 ]

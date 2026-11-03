@@ -499,7 +499,7 @@ def test_refresh_commits_truth_through_the_run_runtime_that_applied(tmp_path):
 
     from raes import parse_sdl_file
 
-    from aptl.backends.raes_planning_compat import AptlRuntimeManager
+    from aptl.backends.raes_runtime import AptlRuntimeManager
     from aptl.core.lab import _refresh_required_native_evidence
 
     scenario = tmp_path / "refresh.sdl.yaml"

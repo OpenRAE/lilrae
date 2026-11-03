@@ -46,6 +46,7 @@ Prompt commitments identify the exact delivered bytes.
 Prompt contents and credentials are excluded from public diagnostics.
 
 OpenCode is an explicit harness choice.
+See [managed OpenCode participants](../reference/opencode-participants.md) for installation, pinned build identity, route controls, and invocation.
 No Claude Code installation is required for an OpenCode binding.
 The existing managed-agent interface remains available for other installed harnesses.
 Each invocation uses a private working directory and explicit environment.

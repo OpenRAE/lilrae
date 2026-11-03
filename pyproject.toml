@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lilrae"
-version = "8.2.0"
+version = "9.0.0"
 description = "Advanced Purple Team Lab CLI"
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
@@ -30,8 +30,8 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.33.0",
     "opentelemetry-semantic-conventions>=0.54b0",
     "cryptography>=50.0.0",
-    "raes>=10.2.0,<10.4",
-    "raes-env-packs>=7.2.0,<8",
+    "raes>=10.6.0,<11",
+    "raes-env-packs>=7.2.2,<8",
     "mcp>=2,<3",
     "rfc8785>=0.1.4,<0.2.0",
     "packaging>=24.2",
@@ -153,10 +153,6 @@ build = [
 [project.entry-points."aptl.evidence_payload"]
 "aptl.collector.redteam-session-transcript" = "aptl_techvault.evidence.techvault_transcript:validate_retained_transcript"
 
-[project.entry-points."aptl.scenario_planning_compatibility"]
-"techvault.aptl" = "aptl_techvault.planning_compatibility:provider"
-"techvault-participant-study.aptl" = "aptl_techvault.study:planning_compatibility"
-
 [project.entry-points."aptl.scenario_runtime_parameters"]
 "techvault" = "aptl_techvault.runtime_parameters:provider"
 "techvault-participant-study" = "aptl_techvault.study:runtime_parameters"
@@ -225,7 +221,7 @@ banned-module-level-imports = ["boto3", "pyarrow"]
 # ADR-064 conventions check (tools/check_architecture.py). The check covers
 # only the enrolled packages and modules. A refactor issue adds the code that
 # it completes. Participant tool boundaries are enrolled by issue #1418.
-enrolled = ["aptl.core.participant_binding", "aptl.core.participant_tools", "aptl.core.agent_errors", "aptl.core.mcp_results", "aptl.backends.participant_tools"]
+enrolled = ["aptl.core.participant_requests", "aptl.core.participant_binding", "aptl.core.participant_tools", "aptl.core.agent_errors", "aptl.core.mcp_results", "aptl.backends.participant_tools"]
 # Core modules that scenario adapter plugins may import (#1515 adds them).
 extension-api = []
 # Ruff rules for enrolled code. UP042 is not selected: replacing a str-mixin
@@ -242,6 +238,7 @@ entry = [
     "aptl.cli",
     "aptl.services",
     "aptl.workbench.bootstrap",
+    "aptl.workbench.opencode_bootstrap",
 ]
 application = [
     "aptl.appliance",
