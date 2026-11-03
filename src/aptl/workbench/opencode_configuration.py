@@ -11,12 +11,6 @@ from aptl.core.opencode import (
 )
 from aptl.core.participant_requests.profiles import RequestProfile
 
-
-from aptl.workbench.opencode_options import (
-    OpenCodeOptions as OpenCodeOptions,
-    OpenCodeToolProfile as OpenCodeToolProfile,
-)
-
 _OPENROUTER_PREFIX = "openrouter/"
 
 

@@ -4,9 +4,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 import hashlib
 
+from raes_contracts.contracts import ParticipantConfigurationResultModel
+
 from aptl.core.opencode import NativeHistoryObservation, OpenCodeInvocationEvidence
 from aptl.core.provider_observation import RequestObservation
 from aptl.workbench.opencode_events import OpenCodeResponse, parse_opencode_response
+from aptl.workbench.opencode_options import OpenCodeOptions
 from aptl.workbench.process import (
     AgentExecutionError,
     BoundedProcessError,
@@ -100,7 +103,10 @@ class OpenCodeEvidenceRecorder:
 
 
 def invocation_recorder(
-    options, model: str, prompt_sha256: str, configuration
+    options: OpenCodeOptions,
+    model: str,
+    prompt_sha256: str,
+    configuration: ParticipantConfigurationResultModel | None,
 ) -> OpenCodeEvidenceRecorder:
     """Create the existing safe invocation identity from installed launch inputs."""
     return OpenCodeEvidenceRecorder(
