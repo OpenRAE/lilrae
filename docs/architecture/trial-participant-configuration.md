@@ -17,6 +17,7 @@ For a role with multiple offers, the shared executor uses their shortest admitte
 Admission checks these installed limits before placement ownership or credential acquisition.
 Each process receives the smaller of that invocation limit and the original remaining attempt allowance.
 The sealed entry supplies each participant's complete configuration.
+Readiness observes one installed owner per participant, including when several participants share one implementation manifest.
 The existing request owner verifies the manifest, selected profile, content pins and participant scope.
 Already resolved content comes from the approved artifact boundary.
 No descriptor URI causes a new file read or network request.
