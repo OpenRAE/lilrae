@@ -1,5 +1,13 @@
 # Issue #862 Explicit Participant Model Selection Preflight
 
+> Successor: [issue #1419](issue-1419-participant-manifests-preflight.md)
+> supersedes this note's model-factor exclusion, project-wide-only selection
+> authority and immutable-name admission rule. It adds owner-validated
+> per-participant request and scoped prompt targets. The isolation, credential
+> and action-admission guardrails below remain in force.
+> The [current request contract](participant-request-manifests.md) documents
+> native retry limitations and qualification.
+
 > Historical scope: issue #601 removed the checkout-only `aptl lab participant-readiness` command and its dedicated qualification runner. The TechVault participant study now authors its participant deliveries in SDL; normal `aptl lab start` executes them through the participant's authenticated host CLI.
 
 This note fixes the architecture boundaries for explicit model selection by

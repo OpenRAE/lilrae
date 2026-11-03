@@ -122,6 +122,30 @@ function isSensitiveKey(name: string): boolean {
   return SENSITIVE_TOKENS.some((token) => lower.includes(token));
 }
 
+function publicCount(value: unknown): boolean {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function safeCountDefault(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  return item.kind === 'literal' && publicCount(item.value);
+}
+
+function safeModelCount(name: string, value: unknown): boolean {
+  if (!['max_output_tokens', 'input_tokens', 'output_tokens'].includes(name)) return false;
+  if (value === null || publicCount(value)) return true;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  const allowed = new Set(['target_id', 'value_type', 'allowed_value_kinds', 'sensitivity', 'aliases', 'default']);
+  return Object.keys(item).every((key) => allowed.has(key))
+    && item.target_id === name && item.value_type === 'integer'
+    && Array.isArray(item.allowed_value_kinds) && item.allowed_value_kinds.length === 1 && item.allowed_value_kinds[0] === 'literal'
+    && ['public', 'internal'].includes(item.sensitivity as string)
+    && safeCountDefault(item.default);
+}
+
 // Inline-secret patterns for plain-text strings (command lines, HTTP
 // headers, query strings, etc.). MCP tool args/responses regularly carry
 // these — a key-only redactor cannot reach inside string values like
@@ -356,7 +380,7 @@ function redactInner(value: unknown, depth: number): unknown {
   if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = isSensitiveKey(k) ? REDACTED : redactInner(v, depth + 1);
+      out[k] = isSensitiveKey(k) && !safeModelCount(k, v) ? REDACTED : redactInner(v, depth + 1);
     }
     return out;
   }

@@ -37,6 +37,7 @@ from raes_contracts.contracts import (
     ParticipantImplementationBindingTargetModel,
 )
 from raes_contracts.experiment_spec import ExperimentSpecModel
+from raes_contracts.canonical import canonical_contract_digest
 
 from aptl.core.experiment.errors import AdmissionRejection, diagnostic, normalize_raes_failure
 from aptl.core.experiment.bindings import (
@@ -166,7 +167,7 @@ def _resolved_participant_manifests(
         candidates[identity] = ParticipantManifestBinding(
             manifest=model,
             manifest_ref=artifact_id,
-            manifest_digest=resolved.digest,
+            manifest_digest=canonical_contract_digest(model),
         )
 
     return {

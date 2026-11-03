@@ -81,6 +81,7 @@ nav:
     - MCP: reference/mcp.md
     - Web: reference/web.md
     - Managed OpenCode: reference/opencode-participants.md
+    - Participant request manifests: reference/participant-request-manifests.md
   - Operations:
     - Deployment: deployment.md
     - Troubleshooting: troubleshooting/index.md
@@ -175,6 +176,7 @@ nav:
     - TechVault Curated Live Validation Preflight: raes/techvault-curated-live-validation-preflight.md
     - TechVault Curated Live Validation Gate: raes/techvault-curated-live-validation-gate.md
   - Testing:
+    - Participant Request Qualification: testing/participant-request-1419-qualification.md
     - Platform Pull-Request Gates: testing/platform-pr-gates.md
     - Boot Realization Coverage: testing/boot-realization-coverage.md
     - Lab Fixture Pack: testing/lab-fixture-pack.md

@@ -40,6 +40,7 @@ def managed_opencode_executor(
     run_id: str,
     credential_source: ProcessEnvironmentCredentialSource,
     source_environment: Mapping[str, str],
+    timeout_seconds: float | None = None,
 ) -> Iterator[tuple[LilraeOpenCodeExecutor, CredentialBindingEvidence]]:
     """Use inside the trial owner; drain its RAES runtime before context exit."""
     if options.environment:
@@ -65,6 +66,7 @@ def managed_opencode_executor(
             prompt=request.prompt,
             prompt_ref=request.prompt_ref,
             supported_models=request.supported_models,
+            timeout_seconds=timeout_seconds,
         )
         # These controls are configuration/process controls, not an OS sandbox.
         evidence.isolation_controls_applied = (

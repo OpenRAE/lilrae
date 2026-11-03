@@ -55,7 +55,7 @@
       "asset_id": "mcp-red-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-red/package-lock.json",
-      "sha256": "6b73c871d2d7d3ab27fe05a09930765464601b3e4c7f1fdded8f7cd7fb3abd22"
+      "sha256": "cbae644631a76a59e00e1bfaaa8be9dd0e212150c51f6c4842bc142cf1e7a249"
     },
     {
       "asset_id": "mcp-red-config",

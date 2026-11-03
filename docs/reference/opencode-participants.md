@@ -4,6 +4,8 @@ OpenCode is an explicit implementation choice for each autonomous participant.
 It uses the shared RAES runtime and the same admitted MCP action boundary.
 It does not replace the browser workbench agent.
 
+The [participant request manifest API](participant-request-manifests.md) publishes typed model, request-profile and exact context selections for experiment admission.
+
 ## Install
 
 Install LilRAE with Python 3.14 using the [package installation instructions](../getting-started/installation.md).
