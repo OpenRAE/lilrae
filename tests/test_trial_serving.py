@@ -1,26 +1,30 @@
 """Trial isolation wraps the released RAES scheduler and native cleanup owner."""
 
-from contextlib import contextmanager
-from dataclasses import replace
 import hashlib
 import threading
+from contextlib import contextmanager
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 from raes_runtime import RuntimeControlPlane
 from raes_runtime.runtime_trial_unit import TrialPending
 
+from aptl.backends.trial_services import ReadinessTrialServices
 from aptl.backends.trial_serving import (
     DockerTrialPlacement,
     LilraeTrialUnit,
-    report_trial_outcomes,
     TrialOutcomeReporting,
+    report_trial_outcomes,
 )
+from aptl.core.correlation.clock import FixedClockProvider
 from aptl.core.deployment.backend_host_inventory import ProjectRuntimePresence
 from aptl.core.lifecycle_guard import lifecycle_mutation_lock
 from aptl.core.lifecycle_policy import LifecycleBusyError
+from aptl.core.runstore import LocalRunStore
 from aptl.core.trial_ownership import TRIAL_FENCE
 from tests.cleanup_runtime_fixture import Services, runtime_inputs, target_for
+from tests.trial_readiness_fixture import installed_participants, readiness_for
 
 
 class PlacementBackend:
@@ -88,6 +92,8 @@ def serving(
     content_reporting=False,
     native_policy=None,
     native_refusal=False,
+    control_only=False,
+    readiness_options=None,
 ):
     installed = ()
     if native_policy:
@@ -100,6 +106,7 @@ def serving(
         content_reporting=content_reporting,
         native_policy=native_policy,
         native_bindings=installed,
+        control_only=control_only,
     )
     services = Services(
         tmp_path, failed=failed, pending=pending, cleanup_fails=cleanup_fails
@@ -113,8 +120,20 @@ def serving(
         target.participant_runtime.autonomous_execution.cancel(
             "participant.behavior.red"
         )
+    readiness = readiness_for(
+        inputs,
+        target,
+        LocalRunStore(tmp_path / "runs"),
+        FixedClockProvider(measurement_time="2026-11-01T10:00:00Z"),
+        tmp_path,
+        owners={"target_identity": backend.daemon_identity},
+        entry_index=entry_index,
+        **(readiness_options or {}),
+    )
     with RuntimeControlPlane(target) as runtime:
-        experiment_id = runtime.admit_experiment(inputs, services=services)
+        experiment_id = runtime.admit_experiment(
+            inputs, services=ReadinessTrialServices(services, readiness)
+        )
         delivery = SchedulerDelivery(runtime, experiment_id, entry_index)
         request = delivery.request
         cleanup = services.cleanups[request.execution_attempt_id]
@@ -124,8 +143,12 @@ def serving(
             placement,
             delivery.unit.run._target_scope,
             TrialOutcomeReporting(runtime, experiment_id, lambda request, result: {}),
+            readiness=readiness,
         )
-        yield handler, request, services, runtime, experiment_id
+        try:
+            yield handler, request, services, runtime, experiment_id
+        finally:
+            readiness.close()
 
 
 def finish(handler, request):
@@ -415,6 +438,14 @@ def test_factorial_reporting_uses_shared_producer(tmp_path, case):
         for index in range(len(plan.entries)):
             delivery = SchedulerDelivery(runtime, experiment_id, index)
             request = delivery.request
+            # Install this condition's participant configuration before its
+            # readiness gate; an earlier entry's settings must never pass.
+            handler.readiness.owners = replace(
+                handler.readiness.owners,
+                participants=installed_participants(
+                    handler.readiness._apparatus.inputs, index
+                ),
+            )
             unit = replace(
                 handler,
                 runtime_unit=delivery,

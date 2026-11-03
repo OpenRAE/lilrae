@@ -10,6 +10,20 @@ state root. Every worker using the same daemon must use the same state root.
 The adapter preserves the admitted entry, run and attempt identities; it does
 not create an experiment plan or schedule a batch.
 
+Trial delivery requires a `TrialReadiness` gate bound to that same runtime
+target. Compose its `ReadinessEnvironment` from the selected approved lab
+owners, and wrap the runtime's installed trial services in
+`ReadinessTrialServices`. Readiness uses the admitted RAES entry directly.
+It checks required local artifacts, participant implementation and complete
+settings, clean placement, containment, required capture, and writable storage.
+Required services and capture sources are checked after provisioning and
+before effects. Missing, unavailable, crashing, malformed, and timed-out checks
+block the affected trial. Source readiness uses a separate read-only operation;
+it never invokes acquisition or its stimuli. A fully ceased preparation refusal
+releases newly claimed placement fences before dispatch. Clock accuracy is required only by a selected capture
+contract that declares it. No cloud resource is required for the fixed existing
+VM baseline. See [trial readiness](../architecture/trial-serving.md#required-readiness).
+
 The adapter holds the project lifecycle lock and a daemon lock during delivery.
 It rejects preexisting containers, networks or volumes. Pending execution,
 interruption or failed cleanup leaves durable ownership fences that block
@@ -71,6 +85,10 @@ capture that writes them ran.
     blobs/<sha256>                # Content-addressed raw evidence
     records/<record_id>.json      # Evidence records
   lifecycle/<sha256>              # Lifecycle attestation (terminal attempt)
+  readiness/clean/<sha256>.json   # Ordinary clean-placement observation
+  readiness/prepared/<sha256>.json # Entry and installed-resource observations
+  readiness/live/<sha256>.json    # Required live service and capture observations
+  trial-serving/handoff.json     # Cleanup and readiness references
   participant/
     inject-deliveries.jsonl       # Participant inject deliveries
     observations.jsonl            # Participant action observations
@@ -95,6 +113,7 @@ capture that writes them ran.
 | `manifest.json`, `seal.json` (terminal attempt) | `src/aptl/core/archival/coordinator.py` | A terminal attempt is sealed: the RAES `experiment-run/v1` record and its seal marker, both create-once |
 | `attempt-intent.json` | `src/aptl/core/execution/executor.py` | A terminal attempt starts |
 | `lifecycle/` | `src/aptl/core/execution/assembly.py` | A terminal attempt ends: its lifecycle attestation, with an evidence record in `evidence/records/` |
+| `readiness/`, `trial-serving/handoff.json` | `TrialReadiness` and `LilraeTrialUnit` | The trial checks clean placement and required resources; handoff follows verified cleanup and probe cessation. Results are create-once and include failures when storage works |
 | `provenance/startup-provenance.json` | `src/aptl/core/provenance/record.py`, called by `lilrae lab start` | After the lab-start run record |
 | `provenance/run-provenance.json` | `publish_provenance_record` in `src/aptl/core/provenance/record.py` | A caller that holds the admitted and executed run context publishes it; no `aptl` command does |
 | `correlation.json` | `src/aptl/core/correlation/persistence.py` | After the lab-start run record, built from `manifest.json` and `orchestration/` |

@@ -142,6 +142,8 @@ nav:
     - "Issue #1017 Native Runtime Attestation Design": architecture/issue-1017-native-runtime-attestation-design.md
     - "Issue #1603 Released RAES Dependencies": architecture/issue-1603-raes-11-module-locations-preflight.md
     - "Issue #1603 Released Module Adoption Design": architecture/issue-1603-released-module-design.md
+    - Required Trial Readiness: architecture/exp-011-resource-readiness-design.md
+    - "Issue #753 Readiness Preflight": architecture/exp-011-resource-readiness-preflight.md
     - LilRAE Readiness Review:
       - Assessment: reviews/962-lilrae-readiness/README.md
       - Migration Inventory: reviews/962-lilrae-readiness/migration-inventory.md

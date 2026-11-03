@@ -15,29 +15,29 @@ from aptl.core.appliance_boundary import (
     ApplianceBoundaryPolicy,
 )
 from aptl.core.config import EnvironmentGrant, validate_compose_project_name
-from aptl.core.deployment._operator_access import ComposeOperatorAccessMixin
+from aptl.core.deployment._cleanup_budget import cleanup_command_timeout
 from aptl.core.deployment._compose_autoremove import ComposeAutoremoveMixin
 from aptl.core.deployment._compose_base_substrate import ComposeBaseSubstrateMixin
 from aptl.core.deployment._compose_boundary import DEFAULT_BOUNDARY_HELPER_IMAGE
-from aptl.core.deployment._compose_owned_start import ComposeOwnedStartMixin
 from aptl.core.deployment._compose_direct_network import ComposeDirectNetworkMixin
 from aptl.core.deployment._compose_environment import ComposeEnvironmentBindingMixin
-from aptl.core.deployment._compose_receipt_capture import ComposeReceiptCaptureMixin
-from aptl.core.deployment._compose_resource_resolution import (
-    ComposeResourceResolutionMixin,
-)
 from aptl.core.deployment._compose_image_fetch import ComposeImageFetchMixin
 from aptl.core.deployment._compose_lifecycle import kill_compose_lab
+from aptl.core.deployment._compose_owned_start import ComposeOwnedStartMixin
 from aptl.core.deployment._compose_project_cleanup import ComposeProjectCleanupMixin
 from aptl.core.deployment._compose_project_inventory import (
     ComposeProjectInventoryMixin,
 )
 from aptl.core.deployment._compose_queries import ComposeQueryMixin
+from aptl.core.deployment._compose_realization import ComposeRealizationMixin
+from aptl.core.deployment._compose_receipt_capture import ComposeReceiptCaptureMixin
 from aptl.core.deployment._compose_resource_ownership import (
     OwnershipConflictError,
     WorkspaceOwnership,
 )
-from aptl.core.deployment._compose_realization import ComposeRealizationMixin
+from aptl.core.deployment._compose_resource_resolution import (
+    ComposeResourceResolutionMixin,
+)
 from aptl.core.deployment._compose_runtime_inventory import (
     ComposeRuntimeInventoryMixin,
 )
@@ -47,10 +47,11 @@ from aptl.core.deployment._compose_seed_attribution import (
 from aptl.core.deployment._compose_seed_execution import ComposeSeedExecutionMixin
 from aptl.core.deployment._compose_stop import stop_compose_lab
 from aptl.core.deployment._docker_endpoint_binding import DockerEndpointBindingMixin
+from aptl.core.deployment._operator_access import ComposeOperatorAccessMixin
 from aptl.core.deployment.errors import BackendTimeoutError
-from aptl.core.deployment._cleanup_budget import cleanup_command_timeout
 from aptl.core.lab_types import LabResult, LabStatus
 from aptl.utils.logging import get_logger
+from aptl.utils.probe_execution import run_bounded_probe_command
 
 log = get_logger("deployment.docker_compose")
 _DOCKER_TIMEOUT = 30
@@ -348,6 +349,14 @@ class DockerComposeBackend(
         """
         timeout = cleanup_command_timeout(timeout)
         kwargs = self._command_kwargs(cmd, streaming=False, timeout=timeout)
+        bounded = run_bounded_probe_command(
+            cmd,
+            cwd=Path(kwargs.get("cwd", self._project_dir)),
+            timeout=timeout,
+            env=kwargs.get("env"),
+        )
+        if bounded is not None:
+            return bounded
         try:
             return subprocess.run(cmd, **kwargs)
         except subprocess.TimeoutExpired as exc:

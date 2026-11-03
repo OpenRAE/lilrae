@@ -2,29 +2,34 @@
 
 from __future__ import annotations
 
-from aptl.backends._raes_participant_legacy import model_legacy_action
-from aptl.backends.raes_participant_support import selection_failure
-
 from collections.abc import Mapping
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, cast
 
-from raes_backend_protocols.participant_runtime_base import BaseParticipantRuntime
 from raes_backend_protocols.participant_invocation_tools import (
     ParticipantInvocationToolActionPort,
 )
+from raes_backend_protocols.participant_runtime_base import BaseParticipantRuntime
 from raes_contracts.contracts import (
     ParticipantDecisionSurfaceSelectionV2Model,
     ParticipantTemporalRuntimeContextModel,
 )
-from raes_contracts.contracts.participant_action_admission import ParticipantActionAdmissionRequest
-from raes_contracts.participant_binding import ParticipantActionApplyResult, ParticipantNativeActionExecution
+from raes_contracts.contracts.participant_action_admission import (
+    ParticipantActionAdmissionRequest,
+)
+from raes_contracts.diagnostics import Diagnostic
+from raes_contracts.participant_binding import (
+    ParticipantActionApplyResult,
+    ParticipantNativeActionExecution,
+)
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 
+from aptl.backends._raes_participant_legacy import model_legacy_action
 from aptl.backends.raes_participant_actions import (
     DEFAULT_PARTICIPANT_ACTIONS,
-    PARTICIPANT_ACTION_ADDRESS as _PARTICIPANT_ACTION_ADDRESS,
     ParticipantActionSpec,
+)
+from aptl.backends.raes_participant_actions import (
+    PARTICIPANT_ACTION_ADDRESS as _PARTICIPANT_ACTION_ADDRESS,
 )
 from aptl.backends.raes_participant_provider import (
     ParticipantDecisionSolicitation,
@@ -32,6 +37,9 @@ from aptl.backends.raes_participant_provider import (
     ParticipantSelectionProvider,
     parse_provider_selection,
 )
+from aptl.backends.raes_participant_support import elapsed_seconds as _elapsed_seconds
+from aptl.backends.raes_participant_support import selection_failure
+from aptl.core.trial_readiness import TrialReadinessGate
 
 if TYPE_CHECKING:
     from aptl.backends.lilrae_participant_execution import LilraeParticipantBinding
@@ -55,6 +63,7 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         action_specs: Mapping[str, ParticipantActionSpec] | None = None,
         plan_authority: ParticipantPlanAuthority | None = None,
         autonomous_bindings: tuple[LilraeParticipantBinding, ...] = (),
+        readiness: TrialReadinessGate | None = None,
     ) -> None:
         """Initialize bounded provider mediation over the RAES base runtime."""
 
@@ -64,6 +73,7 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         )
 
         self.autonomous_execution = LilraeParticipantExecution(autonomous_bindings)
+        self.readiness = readiness
         self.deployment_backend = deployment_backend
         self.action_specs = dict(action_specs or DEFAULT_PARTICIPANT_ACTIONS)
         self.plan_authority = plan_authority
@@ -96,6 +106,10 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         """Pass the runtime-owned port to its exact installed native worker."""
         self.autonomous_execution.attach_tool_port(port)
 
+    def readiness_planning_diagnostics(self, model: object) -> list[Diagnostic]:
+        """Validate the selected installed participant bindings without effects."""
+        return self.autonomous_execution.planning_diagnostics(model)
+
     def bind_autonomous_action(
         self,
         participant_address: str,
@@ -107,6 +121,8 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         snapshot: RuntimeSnapshot,
     ) -> ParticipantActionAdmissionRequest:
         """Resolve only an installed native binding for the RAES scheduler."""
+        if self.readiness is not None:
+            self.readiness.require_live()
         return self.autonomous_execution.bind(
             participant_address,
             action_contract_address,
@@ -123,6 +139,8 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         max_workers: int,
     ) -> tuple[ParticipantActionApplyResult, ...]:
         """Validate every installed binding before RAES dispatches the batch."""
+        if self.readiness is not None:
+            self.readiness.require_live()
         if not self.autonomous_execution.accepts_batch(requests, max_workers):
             from raes_backend_protocols.participant_action_commit import (
                 reject_participant_action_outcome,
@@ -146,6 +164,9 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
         snapshot: RuntimeSnapshot,
     ) -> ApplyResult:
         """Invoke and validate the provider inside a RAES participant operation."""
+
+        if self.readiness is not None:
+            self.readiness.require_live()
 
         budget_key = (request.participant_address, request.episode_id)
         self._prune_solicitation_state(budget_key)
@@ -337,6 +358,9 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
     ) -> ParticipantActionApplyResult:
         """Run the RAES base admission path and retain its authoritative history."""
 
+        if self.readiness is not None:
+            self.readiness.require_live()
+
         if request.execution_scope_ref is not None:
             # Autonomous workers do not own settled history or publication.
             return super().admit_action(request, snapshot)
@@ -465,14 +489,3 @@ class AptlParticipantRuntime(BaseParticipantRuntime):
             snapshot,
             episode_id=episode_id,
         )
-
-
-def _elapsed_seconds(initialized_at: str) -> float:
-    """Handle seconds for the bounded participant workflow."""
-    try:
-        start = datetime.fromisoformat(initialized_at.replace("Z", "+00:00"))
-    except ValueError:
-        return float("inf")
-    if start.tzinfo is None:
-        start = start.replace(tzinfo=timezone.utc)
-    return (datetime.now(timezone.utc) - start).total_seconds()
