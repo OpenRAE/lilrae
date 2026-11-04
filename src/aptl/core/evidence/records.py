@@ -51,6 +51,15 @@ _DEFAULT_WITHHOLDING_POLICY = "aptl.evaluator-only-withholding/v1"
 
 
 @dataclass(frozen=True)
+class RecordScope:
+    """Run and trial identity, with an optional attempt for older record producers."""
+
+    run_id: str
+    planned_trial_id: str
+    attempt_id: str | None = None
+
+
+@dataclass(frozen=True)
 class RecordDisclosure:
     """The coordinator's decided sensitivity + redaction/loss disposition for a record.
 
@@ -115,13 +124,11 @@ def _raw_content(
 def build_evidence_record(
     *,
     binding: CaptureBinding,
-    run_id: str,
-    planned_trial_id: str,
+    scope: RecordScope,
     content: ContentInsertion,
     outcome: CollectorOutcome,
     captured_at: str,
     disclosure: RecordDisclosure,
-    attempt_id: str | None = None,
 ) -> ExperimentEvidenceRecordModel:
     """Assemble one RAES :class:`ExperimentEvidenceRecordModel` for a captured binding.
 
@@ -131,6 +138,11 @@ def build_evidence_record(
     channel the evidence satisfies; identity is derived deterministically from
     the binding + retained-content digest.
     """
+    run_id, planned_trial_id, attempt_id = (
+        scope.run_id,
+        scope.planned_trial_id,
+        scope.attempt_id,
+    )
     window_ref = (
         binding.window_refs[0] if binding.window_refs else binding.requirement_id
     )

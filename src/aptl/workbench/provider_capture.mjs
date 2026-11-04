@@ -3,6 +3,67 @@
 import { constants, openSync, fstatSync, writeSync, closeSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 
+function observeResponse(response, requestId, append, maxBytes) {
+  if (!response.body) {
+    append("request-finished", requestId, { status: response.status, empty_body: true });
+    return response;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const sse = (response.headers.get("content-type") || "").includes("text/event-stream");
+  let buffered = "";
+  let done = false;
+  function accept(line) {
+    const text = line.trim();
+    if (!text || text.startsWith(":")) return;
+    if (sse && !text.startsWith("data:")) {
+      if (/^(event|id|retry):/.test(text)) return;
+      throw new Error("capture stream refused");
+    }
+    const data = sse ? text.slice(5).trim() : text;
+    if (data === "[DONE]") return;
+    JSON.parse(data);
+    append("response", requestId, { json: data });
+  }
+  function take(bytes, terminal = false) {
+    buffered += decoder.decode(bytes, { stream: !terminal });
+    if (Buffer.byteLength(buffered) > maxBytes) throw new Error("capture limit exceeded");
+    if (sse) {
+      let index;
+      while ((index = buffered.indexOf("\n")) >= 0) {
+        accept(buffered.slice(0, index));
+        buffered = buffered.slice(index + 1);
+      }
+    }
+    if (terminal && buffered.trim()) accept(buffered);
+  }
+  const stream = new ReadableStream({
+    async pull(controller) {
+      try {
+        const part = await reader.read();
+        if (part.done) {
+          take(undefined, true);
+          append("request-finished", requestId, { status: response.status });
+          done = true;
+          controller.close();
+          return;
+        }
+        take(part.value);
+        controller.enqueue(part.value);
+      } catch (error) {
+        try { append("response-failed", requestId); } catch { /* The missing terminal frame discloses this gap. */ }
+        await reader.cancel().catch(() => {});
+        controller.error(error);
+      }
+    },
+    async cancel() {
+      if (!done) append("response-cancelled", requestId);
+      await reader.cancel();
+    },
+  });
+  return new Response(stream, { status: response.status, statusText: response.statusText, headers: response.headers });
+}
+
 export default async function capturePlugin(_input, options) {
   const { path, maxBytes, endpoint, invocationId } = options;
   if (typeof path !== "string" || !Number.isSafeInteger(maxBytes) || maxBytes < 1024 ||
@@ -31,66 +92,6 @@ export default async function capturePlugin(_input, options) {
     }
   }
 
-  function observeResponse(response, requestId) {
-    if (!response.body) {
-      append("request-finished", requestId, { status: response.status, empty_body: true });
-      return response;
-    }
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder("utf-8", { fatal: true });
-    const sse = (response.headers.get("content-type") || "").includes("text/event-stream");
-    let buffered = "";
-    let done = false;
-    function accept(line) {
-      const text = line.trim();
-      if (!text || text.startsWith(":")) return;
-      if (sse && !text.startsWith("data:")) {
-        if (/^(event|id|retry):/.test(text)) return;
-        throw new Error("capture stream refused");
-      }
-      const data = sse ? text.slice(5).trim() : text;
-      if (data === "[DONE]") return;
-      JSON.parse(data);
-      append("response", requestId, { json: data });
-    }
-    function take(bytes, terminal = false) {
-      buffered += decoder.decode(bytes, { stream: !terminal });
-      if (Buffer.byteLength(buffered) > maxBytes) throw new Error("capture limit exceeded");
-      if (sse) {
-        let index;
-        while ((index = buffered.indexOf("\n")) >= 0) {
-          accept(buffered.slice(0, index));
-          buffered = buffered.slice(index + 1);
-        }
-      }
-      if (terminal && buffered.trim()) accept(buffered);
-    }
-    const stream = new ReadableStream({
-      async pull(controller) {
-        try {
-          const part = await reader.read();
-          if (part.done) {
-            take(undefined, true);
-            append("request-finished", requestId, { status: response.status });
-            done = true;
-            controller.close();
-            return;
-          }
-          take(part.value);
-          controller.enqueue(part.value);
-        } catch (error) {
-          try { append("response-failed", requestId); } catch { /* The missing terminal frame discloses this gap. */ }
-          await reader.cancel().catch(() => {});
-          controller.error(error);
-        }
-      },
-      async cancel() {
-        if (!done) append("response-cancelled", requestId);
-        await reader.cancel();
-      },
-    });
-    return new Response(stream, { status: response.status, statusText: response.statusText, headers: response.headers });
-  }
 
   append("capture-ready", null, { plugin_version: "1" });
   return {
@@ -115,7 +116,7 @@ export default async function capturePlugin(_input, options) {
               append("request-failed", requestId);
               throw error;
             }
-            return observeResponse(response, requestId);
+            return observeResponse(response, requestId, append, maxBytes);
           },
         };
       },

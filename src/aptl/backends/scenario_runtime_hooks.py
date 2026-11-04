@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 
 def _raise_partial_read(exc: Exception, timeout: int) -> None:
+    """Preserve accepted output while translating a bounded native read failure."""
     output = getattr(exc, "stdout", None)
     stderr = getattr(exc, "stderr", None)
     if isinstance(exc, TimeoutExpired):
@@ -28,6 +29,15 @@ def _raise_partial_read(exc: Exception, timeout: int) -> None:
     interrupted = InterruptedError("runtime-operation-interrupted")
     interrupted.stdout, interrupted.stderr = output, stderr
     raise interrupted from None
+
+
+def _command_timeout_matches(cause: BaseException | None, cmd: list[str]) -> bool:
+    """Accept partial command output only for this exact native command."""
+    return (
+        isinstance(cause, TimeoutExpired)
+        and isinstance(cause.cmd, list)
+        and cause.cmd[-len(cmd) :] == cmd
+    )
 
 
 def _valid_command(cmd: list[str]) -> bool:
@@ -44,6 +54,22 @@ def _valid_command(cmd: list[str]) -> bool:
             for item in cmd
         )
     )
+
+
+def _validate_log_timestamp(value: str | None) -> None:
+    """Require a bounded timestamp with an explicit time zone when selected."""
+    from datetime import datetime
+
+    if value is None:
+        return
+    try:
+        if not isinstance(value, str) or len(value) > 64:
+            raise ValueError("timestamp is invalid")
+        instant = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if instant.tzinfo is None:
+            raise ValueError("timestamp has no time zone")
+    except ValueError:
+        raise ValueError("runtime-operation-invalid") from None
 
 
 class ScenarioRuntimeOperations(Protocol):
@@ -106,11 +132,7 @@ class AdmittedRuntimeOperations:
             )
         except BackendTimeoutError as exc:
             cause = exc.__cause__
-            if (
-                isinstance(cause, TimeoutExpired)
-                and isinstance(cause.cmd, list)
-                and cause.cmd[-len(cmd) :] == cmd
-            ):
+            if _command_timeout_matches(cause, cmd):
                 _raise_partial_read(cause, timeout)
             raise TimeoutExpired("runtime-operation", timeout) from None
         except (TimeoutExpired, InterruptedError) as exc:
@@ -148,19 +170,9 @@ class AdmittedRuntimeOperations:
         max_bytes: int | None = None,
     ) -> CompletedProcess[str]:
         """Read the existing log interface for an admitted scenario container."""
-        from datetime import datetime
-
         self._validate(name, ["logs"], timeout)
         for value in (since, until):
-            if value is not None:
-                try:
-                    if not isinstance(value, str) or len(value) > 64:
-                        raise ValueError
-                    instant = datetime.fromisoformat(value.replace("Z", "+00:00"))
-                    if instant.tzinfo is None:
-                        raise ValueError
-                except ValueError:
-                    raise ValueError("runtime-operation-invalid") from None
+            _validate_log_timestamp(value)
         try:
             return self.__backend.container_logs_capture(
                 name,

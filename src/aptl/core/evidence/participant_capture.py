@@ -1,8 +1,7 @@
 """Protected, attempt-scoped participant source records and honest accounting."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 from pathlib import Path
@@ -30,11 +29,27 @@ from aptl.utils.pathsafe import (
     listdir_contained_nofollow,
     open_contained_nofollow,
 )
+from aptl.core.evidence._participant_calls import aggregate_model_calls
 from aptl.utils.redaction import redact
 from aptl.utils.strict_json import loads_strict
 
 _IDENTITY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 _FILE = re.compile(r"[a-f0-9]{64}\.json\Z")
+_JSON_SUFFIX = ".json"
+_CAPTURE_SCHEMA = "lilrae.participant-capture/v1"
+
+
+def _capture_limits_supported(limits: CaptureLimits) -> bool:
+    """Check the implemented byte, artifact, and duration bounds without coercion."""
+    bounded = (
+        (limits.max_bytes, 4096, 64 * 1024 * 1024),
+        (limits.max_artifact_count, 1, 4096),
+    )
+    return (
+        all(type(value) is int and low <= value <= high for value, low, high in bounded)
+        and type(limits.max_duration_s) is int
+        and limits.max_duration_s >= 1
+    )
 
 
 def participant_capture_registration(
@@ -49,26 +64,26 @@ def participant_capture_registration(
     declaration covers raw capture records, without study interpretation or
     stronger integrity and post-handoff retention promises.
     """
-    if (
-        offer.output_contract != "experiment-evidence-record-v1"
-        or offer.field_selectors != ("",)
-        or offer.window_kinds != frozenset({"run"})
-        or offer.media_types != frozenset({"application/json"})
-        or offer.redaction_policy != "redact_secrets"
-        or offer.sensitivity not in {"internal", "restricted", "redacted"}
-        or not offer.integrity_modes <= {"none", "checksum", "sha256-digest"}
-        or not offer.retention_policy_refs <= {"run_lifetime"}
-        or offer.channel_kinds != frozenset({"participant-observation"})
-        or offer.source_classes != frozenset({"apparatus"})
-        or offer.scopes != frozenset({"participant"})
-        or offer.export_policy != "not-required"
-        or type(limits.max_bytes) is not int
-        or not 4096 <= limits.max_bytes <= 64 * 1024 * 1024
-        or type(limits.max_artifact_count) is not int
-        or not 1 <= limits.max_artifact_count <= 4096
-        or type(limits.max_duration_s) is not int
-        or limits.max_duration_s < 1
-    ):
+    expected = {
+        "output_contract": "experiment-evidence-record-v1",
+        "field_selectors": ("",),
+        "window_kinds": frozenset({"run"}),
+        "media_types": frozenset({"application/json"}),
+        "redaction_policy": "redact_secrets",
+        "channel_kinds": frozenset({"participant-observation"}),
+        "source_classes": frozenset({"apparatus"}),
+        "scopes": frozenset({"participant"}),
+        "export_policy": "not-required",
+    }
+    if not all(getattr(offer, key) == value for key, value in expected.items()):
+        raise ValueError("participant capture offer is unsupported")
+    supported = (
+        offer.sensitivity in {"internal", "restricted", "redacted"},
+        offer.integrity_modes <= {"none", "checksum", "sha256-digest"},
+        offer.retention_policy_refs <= {"run_lifetime"},
+        _capture_limits_supported(limits),
+    )
+    if not all(supported):
         raise ValueError("participant capture offer is unsupported")
     return CollectorRegistration(
         registration_id=registration_id,
@@ -144,87 +159,6 @@ class ParticipantCaptureGrant:
         }
 
 
-def aggregate_model_calls(
-    invocations: Sequence[Mapping[str, object]],
-) -> dict[str, object]:
-    """Deduplicate provider deliveries; retain failed attempts and unknown totals."""
-    calls: dict[tuple[object, ...], Mapping[str, object]] = {}
-    consistent = True
-    uncertain = False
-    required = True
-    for invocation in invocations:
-        required &= invocation.get("required_usage_complete") is True
-        for call in invocation["calls"]:
-            claims = call["provider_claims"]
-            generation, provider = (
-                claims.get("generation_id"),
-                claims.get("served_provider"),
-            )
-            if generation and provider:
-                key = (invocation.get("gateway_endpoint"), provider, generation)
-            else:
-                key = (invocation["invocation_id"], call["request_id"])
-                uncertain = True
-            previous = calls.get(key)
-            if previous is not None:
-                consistent &= all(
-                    previous.get(field) == call.get(field)
-                    for field in ("input_tokens", "output_tokens", "cost")
-                )
-            else:
-                calls[key] = call
-    values = tuple(calls.values())
-    result: dict[str, object] = {
-        "call_count": len(values),
-        "deduplication_uncertain": uncertain,
-        "membership_complete": bool(invocations)
-        and consistent
-        and all(item.get("complete") is True for item in invocations),
-        "required_usage_complete": required and consistent,
-    }
-    result["required_usage_complete"] &= result["membership_complete"]
-    result["known_call_count"] = len(values)
-    if not result["membership_complete"]:
-        result["call_count"] = None
-    for field_name in ("input_tokens", "output_tokens"):
-        counts = [item.get(field_name) for item in values]
-        valid = [value for value in counts if type(value) is int and 0 <= value < 2**53]
-        result[f"known_{field_name}_subtotal"] = sum(valid)
-        result[field_name] = (
-            sum(valid)
-            if result["membership_complete"]
-            and consistent
-            and len(valid) == len(counts)
-            else None
-        )
-        result[f"{field_name}_complete"] = (
-            bool(result["membership_complete"])
-            and consistent
-            and len(valid) == len(counts)
-        )
-    costs = []
-    for item in values:
-        try:
-            value = item.get("cost")
-            amount = Decimal(value) if type(value) in {str, int} else None
-            if amount is not None and amount.is_finite() and 0 <= amount <= 10**6:
-                costs.append(amount)
-        except InvalidOperation, ValueError:
-            pass
-    subtotal = sum(costs, Decimal(0))
-    result.update(
-        known_cost_subtotal=str(subtotal),
-        cost=str(subtotal)
-        if result["membership_complete"] and consistent and len(costs) == len(values)
-        else None,
-        currency="USD",
-        billing_complete=bool(result["membership_complete"])
-        and consistent
-        and len(costs) == len(values),
-    )
-    return result
-
-
 class ParticipantCaptureArchive:
     """One native source owner; the plugin receives no archive authority."""
 
@@ -282,7 +216,7 @@ class ParticipantCaptureArchive:
         """Record membership before provider effects; an unpublished result stays missing."""
         if not isinstance(invocation, str) or not _IDENTITY.fullmatch(invocation):
             raise ValueError("participant capture invocation is invalid")
-        name = hashlib.sha256(invocation.encode()).hexdigest() + ".json"
+        name = hashlib.sha256(invocation.encode()).hexdigest() + _JSON_SUFFIX
         self.store.create_run_json_once(
             self.grant.scope.run_id,
             (self._intents_relative / name).as_posix(),
@@ -299,7 +233,7 @@ class ParticipantCaptureArchive:
         record = {
             **safe,
             **self.grant.identity(),
-            "schema": "lilrae.participant-capture/v1",
+            "schema": _CAPTURE_SCHEMA,
             "tool_observation_write_failed": self._tool_write_failed,
         }
         encoded = json.dumps(record, allow_nan=False).encode()
@@ -308,7 +242,7 @@ class ParticipantCaptureArchive:
                 record,
                 {
                     **self.grant.identity(),
-                    "schema": "lilrae.participant-capture/v1",
+                    "schema": _CAPTURE_SCHEMA,
                     "tool_observation_write_failed": self._tool_write_failed,
                     "invocation_id": invocation,
                     "calls": [],
@@ -318,69 +252,83 @@ class ParticipantCaptureArchive:
                 },
                 self.grant.binding.limits.max_bytes // 2,
             )
-        name = hashlib.sha256(invocation.encode()).hexdigest() + ".json"
+        name = hashlib.sha256(invocation.encode()).hexdigest() + _JSON_SUFFIX
         self.store.create_run_json_once(
             self.grant.scope.run_id, (self._relative / name).as_posix(), record
         )
 
+    def _read_names(self, root: Path, optional: bool) -> tuple[list[str], bool]:
+        """Distinguish an absent optional source from an unreadable archive."""
+        missing = False
+        try:
+            names = listdir_contained_nofollow(self.store.base_dir, root)
+        except (OSError, PathContainmentError) as exc:
+            absent = isinstance(exc, FileNotFoundError) or (
+                isinstance(exc, PathContainmentError) and exc.reason == REASON_NOT_FOUND
+            )
+            names, missing = [], not (optional and absent)
+        return names, missing
+
+    def _read_bytes(self, root: Path, name: str, remaining: int) -> bytes:
+        """Refuse unexpected filenames and read within the remaining archive quota."""
+        if not _FILE.fullmatch(name):
+            raise ValueError("participant capture filename is invalid")
+        with open_contained_nofollow(self.store.base_dir, root / name) as stream:
+            return stream.read(remaining + 1)
+
+    def _validate_payload(self, record: dict[str, object], tool: bool) -> None:
+        """Validate one measurement independently of later malformed archive rows."""
+        if tool:
+            if (
+                type(record.get("monotonic_ns")) is not int
+                or record["monotonic_ns"] < 0
+            ):
+                raise ValueError("tool capture clock is invalid")
+            aggregate_tool_calls((record,))
+        else:
+            aggregate_model_calls((record,))
+
+    def _validate_record(
+        self, data: bytes, name: str, optional: bool, intent: bool
+    ) -> dict[str, object]:
+        """Require exact trial membership and stable invocation or tool-event identity."""
+        record = loads_strict(data)
+        if not isinstance(record, dict) or any(
+            record.get(key) != value for key, value in self.grant.identity().items()
+        ):
+            raise ValueError("participant capture belongs to another trial")
+        invocation = record.get("invocation_id")
+        if not isinstance(invocation, str):
+            raise ValueError("participant capture identity is unavailable")
+        identity = (
+            f"{invocation}:{record['sequence']}"
+            if optional and not intent
+            else invocation
+        )
+        if name != hashlib.sha256(identity.encode()).hexdigest() + _JSON_SUFFIX:
+            raise ValueError("participant capture identity changed")
+        if not intent:
+            self._validate_payload(record, optional)
+        return record
+
     def _read(
         self, relative: Path, *, optional: bool = False, intent: bool = False
     ) -> tuple[list[dict[str, object]], bool]:
+        """Retain independent valid rows while enforcing the cumulative source bounds."""
         root = Path(self.grant.scope.run_id) / relative
-        try:
-            names = listdir_contained_nofollow(self.store.base_dir, root)
-        except FileNotFoundError:
-            return [], not optional
-        except PathContainmentError as exc:
-            return [], not (optional and exc.reason == REASON_NOT_FOUND)
-        except OSError:
-            return [], True
+        names, missing = self._read_names(root, optional)
         maximum = self.grant.binding.limits.max_artifact_count
-        missing = len(names) > maximum or (not names and not optional)
+        missing |= len(names) > maximum or (not names and not optional)
         remaining = self.grant.binding.limits.max_bytes
         records = []
         for name in sorted(names)[:maximum]:
             try:
-                if not _FILE.fullmatch(name):
-                    raise ValueError("participant capture filename is invalid")
-                with open_contained_nofollow(
-                    self.store.base_dir, root / name
-                ) as stream:
-                    data = stream.read(remaining + 1)
+                data = self._read_bytes(root, name, remaining)
                 remaining -= len(data)
                 if remaining < 0:
                     missing = True
                     break
-                record = loads_strict(data)
-                if not isinstance(record, dict) or any(
-                    record.get(key) != value
-                    for key, value in self.grant.identity().items()
-                ):
-                    raise ValueError("participant capture belongs to another trial")
-                invocation = record.get("invocation_id")
-                if not isinstance(invocation, str):
-                    raise ValueError("participant capture identity is unavailable")
-                identity = (
-                    f"{invocation}:{record['sequence']}"
-                    if optional and not intent
-                    else invocation
-                )
-                if name != hashlib.sha256(identity.encode()).hexdigest() + ".json":
-                    raise ValueError("participant capture identity changed")
-                # Validate one source row independently so a later bad row
-                # cannot discard other accepted invocations or tool events.
-                if intent:
-                    pass
-                elif optional:
-                    if (
-                        type(record.get("monotonic_ns")) is not int
-                        or record["monotonic_ns"] < 0
-                    ):
-                        raise ValueError("tool capture clock is invalid")
-                    aggregate_tool_calls((record,))
-                else:
-                    aggregate_model_calls((record,))
-                records.append(record)
+                records.append(self._validate_record(data, name, optional, intent))
             except (
                 OSError,
                 ValueError,
@@ -392,63 +340,71 @@ class ParticipantCaptureArchive:
                 missing = True
         return records, missing
 
-    def fetch(self, start_iso: str, end_iso: str) -> SourceResult:
-        """Read this exact attempt; optional billing never changes capture status."""
-        del start_iso, end_iso
-        try:
-            invocations, missing = self._read(self._relative)
-            expected, intent_missing = self._read(
-                self._intents_relative, optional=True, intent=True
+    def _invocation_totals(
+        self, invocations: list[dict[str, object]], missing: bool
+    ) -> dict[str, object]:
+        """Keep known subtotals while withholding complete totals after a membership gap."""
+        totals = aggregate_model_calls(invocations)
+        if missing:
+            for flag in (
+                "membership_complete",
+                "required_usage_complete",
+                "input_tokens_complete",
+                "output_tokens_complete",
+                "billing_complete",
+            ):
+                totals[flag] = False
+            for key in ("call_count", "input_tokens", "output_tokens", "cost"):
+                totals[key] = None
+        return totals
+
+    def _action_counts(
+        self,
+        invocations: list[dict[str, object]],
+        tools: list[dict[str, object]],
+        missing: bool,
+    ) -> tuple[dict[str, object], bool]:
+        """Disclose sticky write failures and sequence gaps separately from known counts."""
+        tools.sort(
+            key=lambda row: (row["monotonic_ns"], row["invocation_id"], row["sequence"])
+        )
+        counts = aggregate_tool_calls(tools)
+        missing |= (
+            self._tool_write_failed
+            or any(
+                row.get("tool_observation_write_failed") is True for row in invocations
             )
-            missing |= intent_missing or {row["invocation_id"] for row in expected} != {
-                row["invocation_id"] for row in invocations
-            }
-            tools, tools_missing = self._read(self._tools_relative, optional=True)
-            if not invocations and not tools:
-                return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
-            totals = aggregate_model_calls(invocations)
-            if missing:
-                for flag in (
-                    "membership_complete",
-                    "required_usage_complete",
-                    "input_tokens_complete",
-                    "output_tokens_complete",
-                    "billing_complete",
-                ):
-                    totals[flag] = False
-                for key in ("call_count", "input_tokens", "output_tokens", "cost"):
-                    totals[key] = None
-            tools.sort(
-                key=lambda row: (
-                    row["monotonic_ns"],
-                    row["invocation_id"],
-                    row["sequence"],
-                )
-            )
-            counts = aggregate_tool_calls(tools)
-            tools_missing |= (
-                self._tool_write_failed
-                or any(
-                    row.get("tool_observation_write_failed") is True
-                    for row in invocations
-                )
-                or not tool_sequence_complete(tools)
-            )
-            if tools_missing:
-                counts = {**dict.fromkeys(counts), "known_counts": counts}
-        except BufferError:
-            return SourceResult(status=CollectorStatus.TRUNCATION)
-        except OSError, ValueError, KeyError, TypeError, PathContainmentError:
+            or not tool_sequence_complete(tools)
+        )
+        if missing:
+            counts = {**dict.fromkeys(counts), "known_counts": counts}
+        return counts, missing
+
+    def _collect(self) -> SourceResult:
+        """Build the bounded participant artifact from this attempt's accepted sources."""
+        invocations, missing = self._read(self._relative)
+        expected, intent_missing = self._read(
+            self._intents_relative, optional=True, intent=True
+        )
+        missing |= intent_missing or {row["invocation_id"] for row in expected} != {
+            row["invocation_id"] for row in invocations
+        }
+        tools, tools_missing = self._read(self._tools_relative, optional=True)
+        if not invocations and not tools:
             return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
+        totals = self._invocation_totals(invocations, missing)
+        counts, tools_missing = self._action_counts(invocations, tools, tools_missing)
         truncated = any(row.get("truncated") is True for row in invocations)
-        complete = (
-            not missing
-            and not truncated
-            and not tools_missing
-            and totals["membership_complete"]
-            and totals["required_usage_complete"]
-            and not counts["in_flight"]
-            and not counts["unsettled"]
+        complete = all(
+            (
+                not missing,
+                not truncated,
+                not tools_missing,
+                totals["membership_complete"],
+                totals["required_usage_complete"],
+                not counts["in_flight"],
+                not counts["unsettled"],
+            )
         )
         records = [
             {
@@ -472,15 +428,21 @@ class ParticipantCaptureArchive:
                 )
             ]
             truncated = True
+        status = CollectorStatus.OK if complete else CollectorStatus.MID_RUN_LOSS
+        if truncated:
+            status = CollectorStatus.TRUNCATION
         return SourceResult(
-            status=CollectorStatus.TRUNCATION
-            if truncated
-            else CollectorStatus.OK
-            if complete
-            else CollectorStatus.MID_RUN_LOSS,
+            status=status,
             records=records,
-            source_pipeline={
-                "contract": "lilrae.participant-capture/v1",
-                **self.grant.identity(),
-            },
+            source_pipeline={"contract": _CAPTURE_SCHEMA, **self.grant.identity()},
         )
+
+    def fetch(self, start_iso: str, end_iso: str) -> SourceResult:
+        """Read this exact attempt; optional billing never changes capture status."""
+        del start_iso, end_iso
+        try:
+            return self._collect()
+        except BufferError:
+            return SourceResult(status=CollectorStatus.TRUNCATION)
+        except OSError, ValueError, KeyError, TypeError, PathContainmentError:
+            return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)

@@ -22,15 +22,20 @@ from aptl.core.evidence import content_store
 from aptl.core.evidence.content_store import ContentInsertion
 from aptl.core.evidence.outcomes import CollectorStatus
 from aptl.core.evidence.protocol import CollectorOutcome
-from aptl.core.evidence.records import RecordDisclosure, build_evidence_record
+from aptl.core.evidence.records import (
+    RecordDisclosure,
+    RecordScope,
+    build_evidence_record,
+)
 from aptl.core.evidence._bounded_json import capture_prefix
 from aptl.core.experiment.capture_registry import CaptureBinding, CaptureVisibility
 from aptl.core.runstore import LocalRunStore
 from aptl.utils.redaction import redact
 
 #: Media types with a trusted, bounded redaction path before persistence.
+_JSON_MEDIA_TYPE = "application/json"
 _JSON_MEDIA_TYPES = frozenset(
-    {"application/json", "application/x-ndjson", "application/jsonl"}
+    {_JSON_MEDIA_TYPE, "application/x-ndjson", "application/jsonl"}
 )
 _REDACTABLE_MEDIA_TYPES = _JSON_MEDIA_TYPES | {"text/plain"}
 _REDACTION_HANDLERS = {
@@ -149,13 +154,13 @@ def _prepare_bytes(
         return outcome.chunks, "none", False
 
     input_limit = binding.limits.max_bytes
-    if media_type == "application/json" and isinstance(outcome.chunks, (tuple, list)):
+    if media_type == _JSON_MEDIA_TYPE and isinstance(outcome.chunks, (tuple, list)):
         input_limit = max(input_limit, _MAX_REDACTION_BYTES)
     raw = _consume_bounded_chunks(outcome.chunks, input_limit)
     handler = _redaction_handler(binding)
     redacted, changed = _prepare_redactable_bytes(raw, media_type, handler)
     truncated = len(redacted) > binding.limits.max_bytes
-    if truncated and media_type == "application/json":
+    if truncated and media_type == _JSON_MEDIA_TYPE:
         prefix = capture_prefix(json.loads(redacted), {}, binding.limits.max_bytes)
         redacted = json.dumps([prefix], separators=(",", ":")).encode()
     return [redacted], ("redacted" if changed else "none"), truncated
@@ -192,7 +197,7 @@ def _prepare_redactable_bytes(
 ) -> tuple[bytes, bool]:
     """Validate and optionally redact one complete structured/text payload."""
 
-    if media_type == "application/json":
+    if media_type == _JSON_MEDIA_TYPE:
         if handler is not None:
             prepared = _redact_json_bytes(raw, handler)
         else:
@@ -282,12 +287,10 @@ def persist_success_outcome(
 
     record = build_evidence_record(
         binding=binding,
-        run_id=run_id,
-        planned_trial_id=planned_trial_id,
+        scope=RecordScope(run_id, planned_trial_id, attempt_id),
         content=content,
         outcome=outcome,
         captured_at=captured_at,
-        attempt_id=attempt_id,
         disclosure=RecordDisclosure(
             sensitivity=_record_sensitivity(binding.sensitivity),
             redaction_state=redaction_state,
@@ -396,7 +399,10 @@ def _loss_disclosure(
     participant-visible record needs none.
     """
     if outcome.status not in {CollectorStatus.OK, CollectorStatus.EMPTY_OK}:
-        return f"collector status {outcome.status.value}; partial capture retained; {outcome.dropped_count} event(s) dropped"
+        return (
+            f"collector status {outcome.status.value}; partial capture retained; "
+            f"{outcome.dropped_count} event(s) dropped"
+        )
     status_text = _STATUS_DISCLOSURES.get(effective_status)
     if status_text is not None:
         return status_text.format(dropped=outcome.dropped_count)

@@ -28,6 +28,8 @@ from ._redaction_patterns import (
     _redact_authorization,
 )
 
+from ._redaction_grants import erase_granted_secrets
+
 from ._redaction_shell import (
     _basic_auth_value_is_credential,
     _redact_command_flags,
@@ -404,45 +406,14 @@ def redact(value: Any) -> Any:
     return _redact(value, 0)
 
 
-def redact_granted_secrets(value: object, secrets: tuple[str, ...]) -> Any:
+def redact_granted_secrets(value: object, secrets: tuple[str, ...]) -> object:
     """Remove explicitly granted values, then apply the ordinary shared policy.
 
     This does not discover credentials or consult the environment. Callers
     supply only their existing grants. JSON-in-string values get the same
     treatment as structured values, including escaped credential strings.
     """
-    if any(not isinstance(secret, str) for secret in secrets):
-        raise TypeError("credential redaction requires string grants")
-    granted = tuple(
-        sorted({secret for secret in secrets if secret}, key=len, reverse=True)
-    )
-
-    def erase(item: object, depth: int) -> object:
-        if depth >= _MAX_DEPTH:
-            return REDACTED
-        if isinstance(item, str):
-            if item.lstrip().startswith(("{", "[")):
-                try:
-                    parsed = json.loads(item)
-                    if isinstance(parsed, (dict, list)):
-                        return json.dumps(
-                            erase(parsed, depth + 1), separators=(",", ":")
-                        )
-                except ValueError:
-                    pass
-            for secret in granted:
-                item = item.replace(secret, REDACTED)
-            return item
-        if isinstance(item, dict):
-            return {
-                erase(key, depth + 1): erase(child, depth + 1)
-                for key, child in item.items()
-            }
-        if isinstance(item, (tuple, list)):
-            return [erase(child, depth + 1) for child in item]
-        return item
-
-    return redact(erase(value, 0)) if granted else redact(value)
+    return redact(erase_granted_secrets(value, secrets, _MAX_DEPTH))
 
 
 def is_secret_shaped_value(value: object) -> bool:

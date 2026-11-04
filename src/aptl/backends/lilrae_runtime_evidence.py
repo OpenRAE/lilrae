@@ -42,6 +42,8 @@ if TYPE_CHECKING:
 
 _ROOT = Path("native-evidence")
 _MAX_MEMBER = 8 * 1024 * 1024
+_ZIP_MEDIA_TYPE = "application/zip"
+
 _MAX_BYTES = 64 * 1024 * 1024
 _MAX_MEMBERS = 1024
 _HASH = re.compile(r"[0-9a-f]{64}\Z", re.ASCII)
@@ -240,7 +242,7 @@ class LilraeRuntimeEvidence:
             }
             or binding.redaction_required
             or binding.sensitivity != "restricted"
-            or "application/zip" not in binding.expected_media_types
+            or _ZIP_MEDIA_TYPE not in binding.expected_media_types
         ):
             raise ValueError("native evidence requires a protected exact-byte binding")
         limit = min(_MAX_BYTES, binding.limits.max_bytes)
@@ -258,6 +260,7 @@ class LilraeRuntimeEvidence:
             raise ValueError("native references require a protected binding")
 
         def fetch(_start: str, _end: str) -> SourceResult:
+            """Retain references to the existing native archive bytes."""
             from aptl.core.evidence.content_store import create_content_addressed
 
             limit = min(_MAX_BYTES, binding.limits.max_bytes)
@@ -281,7 +284,7 @@ class LilraeRuntimeEvidence:
                         "run_id": self.run_id,
                         "native_archive": {
                             "uri": content.relative_path,
-                            "media_type": "application/zip",
+                            "media_type": _ZIP_MEDIA_TYPE,
                             "sha256": content.digest,
                             "size_bytes": content.size,
                         },
@@ -311,7 +314,7 @@ class LilraeRuntimeEvidence:
         return SourceResult(
             status=CollectorStatus.OK,
             chunks=(content,),
-            media_type="application/zip",
+            media_type=_ZIP_MEDIA_TYPE,
             source_pipeline={
                 "contract": "lilrae.native-evidence-handoff/v1",
                 "run_id": self.run_id,

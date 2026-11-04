@@ -186,9 +186,8 @@ def _start_all(
             )
             aborted = True
             continue
-        except (
-            BaseException
-        ) as exc:  # NOSONAR: finalize earlier starts before rethrowing.
+        # Defer operator interruption until earlier starts have finalized.
+        except BaseException as exc:  # NOSONAR(S5754)
             interrupted = exc
             not_started[_binding_key(binding)] = _failed_outcome(
                 CollectorStatus.STARTUP_FAILURE, clock, "collector start interrupted"
@@ -214,7 +213,7 @@ def _stop_all(
                 clock,
                 "collector raised during stop",
             )
-        except BaseException as exc:  # NOSONAR: every cancellation must preserve peers.
+        except BaseException as exc:  # NOSONAR(S5754)
             # Finish reverse-order cleanup even if one stop is interrupted.
             # Do not convert an operator interrupt into apparent success.
             if interrupted is None:
@@ -446,7 +445,8 @@ def acquire_evidence(
             trial_body()
     except Exception:
         pass
-    except BaseException as exc:  # NOSONAR: preserve operator/caller cancellation.
+    # The same interruption is re-raised after accepted capture data persists.
+    except BaseException as exc:  # NOSONAR(S5754)
         interrupted = exc
     finally:
         stop_outcomes, stop_interrupted = _stop_all(started, clock)

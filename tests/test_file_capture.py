@@ -53,8 +53,10 @@ def test_selected_current_and_rotated_files_exclude_other_trial_records(
         },
     )
     retained = (tmp_path / "runs" / "run-1" / captured.refs[0].content_uri).read_bytes()
-    assert b"older trial" not in retained and b"later trial" not in retained
-    assert b"requested raw event" in retained and b"extra" in retained
+    assert b"older trial" not in retained
+    assert b"later trial" not in retained
+    assert b"requested raw event" in retained
+    assert b"extra" in retained
     assert b"History coverage" in retained
     if missing_history:
         assert b"source-unavailable" in retained

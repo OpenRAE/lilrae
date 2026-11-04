@@ -44,7 +44,8 @@ def test_failed_invocation_publication_remains_incomplete_after_reopen(
     result = ParticipantCaptureArchive(store, _grant()).fetch("start", "end")
     assert result.status is CollectorStatus.MID_RUN_LOSS
     totals = result.records[0]["totals"]
-    assert totals["membership_complete"] is False and totals["input_tokens"] is None
+    assert totals["membership_complete"] is False
+    assert totals["input_tokens"] is None
     assert totals["known_input_tokens_subtotal"] == 12
 
 
@@ -102,11 +103,9 @@ def test_split_stream_credentials_cannot_be_reconstructed(interrupted):
         max_bytes=65536,
     )
     retained = json.dumps(result.records)
-    assert (
-        "granted-" not in retained
-        and "private-" not in retained
-        and "canary" not in retained
-    )
+    assert "granted-" not in retained
+    assert "private-" not in retained
+    assert "canary" not in retained
     assert result.calls
 
 
@@ -161,7 +160,8 @@ def test_incomplete_native_secret_blocks_are_withheld_in_artifacts(
     retained = (
         store.get_run_path(_SCOPE.run_id) / result.refs[0].content_uri
     ).read_bytes()
-    assert b"public record" in retained and b"QUJDREVGR0g=" not in retained
+    assert b"public record" in retained
+    assert b"QUJDREVGR0g=" not in retained
     assert result.reports[0].status is not CollectorStatus.OK
 
 
@@ -236,7 +236,8 @@ def test_capture_budget_covers_ownership_inspection_and_final_command(
         scope=_SCOPE,
         clock=_CLOCK,
     )
-    assert seen[0][0] == ["docker", "inspect"] and seen[0][1] == pytest.approx(1.0)
+    assert seen[0][0] == ["docker", "inspect"]
+    assert seen[0][1] == pytest.approx(1.0)
     if inspection_timeout:
         assert len(seen) == 1
         assert result.reports[0].status is CollectorStatus.TIMEOUT
@@ -257,9 +258,7 @@ def test_cli_content_is_redacted_after_reassembly(complete):
         events, ("granted-private-canary",), complete=complete
     )
     encoded = json.dumps(retained)
-    assert (
-        "granted-" not in encoded
-        and "private-" not in encoded
-        and "canary" not in encoded
-    )
+    assert "granted-" not in encoded
+    assert "private-" not in encoded
+    assert "canary" not in encoded
     assert retained[-1]["part"]["text"]

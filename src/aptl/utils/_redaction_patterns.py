@@ -44,9 +44,7 @@ _SENSITIVE_KV_RE = re.compile(
     rf"({_KEY_LB}{_SENSITIVE_KEY_PATTERN}{_KEY_RB}\s*[=:]\s*['\"]?)([^'\"&\s,;|]+)(['\"]?)",
     re.IGNORECASE,
 )
-_BARE_BEARER_RE = re.compile(
-    rf"({_KEY_LB}bearer\s+){_VALUE_PATTERN}", re.IGNORECASE
-)
+_BARE_BEARER_RE = re.compile(rf"({_KEY_LB}bearer\s+){_VALUE_PATTERN}", re.IGNORECASE)
 # `--password value` / `--client-secret value` / `--access-token value`
 # style (long CLI flags). The `[\w-]*` prefixes allow compound flag
 # names like `--client-secret`; regex backtracking finds the embedded
@@ -68,10 +66,10 @@ _COOKIE_HEADER_RE = re.compile(
 # URL userinfo: `scheme://user:password@host/path`. Preserve user (often
 # useful for diagnostics) and mask the password segment.
 _URL_USERINFO_RE = re.compile(r"(://[^/:@\s]+:)[^@\s]+(@)")
-# PEM key/cert blocks. `re.DOTALL` lets `.` span newlines; non-greedy so
-# adjacent blocks are masked separately.
+# PEM key/cert blocks. Stop before a closing delimiter so adjacent blocks
+# remain separate; an unfinished block is withheld through the end of input.
 _PEM_BLOCK_RE = re.compile(
-    r"(-----BEGIN[^-]*-----).*?(?:(-----END[^-]*-----)|\Z)",
+    r"(-----BEGIN[^-]*-----)(?:(?!-----END[^-]*-----).)*(-----END[^-]*-----|\Z)",
     re.DOTALL,
 )
 # Recognizes `--<sensitive>` (or compound `--client-secret`,
@@ -232,7 +230,9 @@ _LDAP_W_ATTACHED_UNQUOTED = re.compile(r"(^|\s|\|)-w([^\s='\"](?:\\.|[^\s'\"\\])
 
 _BASIC_AUTH_USER_DQUOTE = re.compile(rf"(^|\s|\|)(--user|-u|-U)(\s+|=)({_DQ_VALUE})")
 _BASIC_AUTH_USER_SQUOTE = re.compile(rf"(^|\s|\|)(--user|-u|-U)(\s+|=)({_SQ_VALUE})")
-_BASIC_AUTH_USER_UNQUOTED = re.compile(rf"(^|\s|\|)(--user|-u|-U)(\s+|=)({_BARE_VALUE})")
+_BASIC_AUTH_USER_UNQUOTED = re.compile(
+    rf"(^|\s|\|)(--user|-u|-U)(\s+|=)({_BARE_VALUE})"
+)
 _BASIC_AUTH_USER_ATTACHED_DQUOTE = re.compile(rf"(^|\s|\|)(-u|-U)({_DQ_VALUE})")
 _BASIC_AUTH_USER_ATTACHED_SQUOTE = re.compile(rf"(^|\s|\|)(-u|-U)({_SQ_VALUE})")
 _BASIC_AUTH_USER_ATTACHED_UNQUOTED = re.compile(

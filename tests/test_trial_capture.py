@@ -112,8 +112,9 @@ def test_participant_registration_refuses_unsupported_manifest_claims(tmp_path, 
     assert not participant_capture_registration(
         "rpt.collector.red", offer
     ).supports_chain_of_custody
+    unsupported = replace(offer, **change)
     with pytest.raises(ValueError, match="unsupported"):
-        participant_capture_registration("rpt.collector.red", replace(offer, **change))
+        participant_capture_registration("rpt.collector.red", unsupported)
 
 
 @pytest.mark.parametrize("failed", [False, True])
@@ -171,15 +172,12 @@ def test_missing_or_undeclared_trial_sources_do_not_start_participants(tmp_path)
     assert not effects
     assert not result.refs
     assert result.diagnostics
+    source = CallableWindowedSource(lambda *a: SourceResult(status=CollectorStatus.OK))
     with pytest.raises(ValueError, match="unknown collector registration"):
         acquire_trial_evidence(
             request,
             attempt_id="attempt-1",
-            sources={
-                "rpt.unknown": CallableWindowedSource(
-                    lambda *a: SourceResult(status=CollectorStatus.OK)
-                )
-            },
+            sources={"rpt.unknown": source},
             trial_body=lambda: effects.append(True),
         )
     assert not effects
@@ -380,9 +378,10 @@ def test_changed_manifest_or_failed_source_factory_prevents_trial_effects(tmp_pa
         ),
     )
     effects = []
+    changed_request = replace(request, capture_selection=changed)
     with pytest.raises(ValueError, match="changed after admission"):
         acquire_trial_evidence(
-            replace(request, capture_selection=changed),
+            changed_request,
             attempt_id="attempt-1",
             trial_body=lambda: effects.append(True),
         )
@@ -441,10 +440,9 @@ def test_runtime_capture_entry_point_uses_its_manifest_and_owned_backend(tmp_pat
         )
         assert len(result.refs) == 1
         assert result.reports[0].status is CollectorStatus.OK
+        other_request = replace(request, run_id="other-run")
         with pytest.raises(ValueError, match="runtime owner"):
-            runtime.collect_evidence(
-                replace(request, run_id="other-run"), attempt_id="attempt-1"
-            )
+            runtime.collect_evidence(other_request, attempt_id="attempt-1")
 
 
 def test_capture_phase_retains_accepted_data_with_requested_window_when_peer_is_missing(

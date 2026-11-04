@@ -29,6 +29,7 @@ def aggregate_tool_calls(rows: Sequence[Mapping[str, object]]) -> dict[str, obje
 
 
 def tool_sequence_complete(rows: Sequence[Mapping[str, object]]) -> bool:
+    """Check invocation sequence continuity and action settlement."""
     sequences: dict[str, list[int]] = {}
     actions: dict[str, set[str]] = {}
     for row in rows:

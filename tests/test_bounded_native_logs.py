@@ -61,5 +61,6 @@ def test_backend_bounded_logs_use_owned_identity_and_existing_transport(
         "end",
         "owned-soc",
     ]
-    assert kwargs["max_bytes"] == 4096 and kwargs["timeout"] == 3
+    assert kwargs["max_bytes"] == 4096
+    assert kwargs["timeout"] == 3
     assert kwargs["env"] == {"DOCKER_HOST": "ssh://fixture"}

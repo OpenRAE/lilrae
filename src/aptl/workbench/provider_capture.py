@@ -48,14 +48,17 @@ def redact_capture_value(value: object, secrets: tuple[str, ...]) -> object:
 
 
 def _count(value: object) -> int | None:
+    """Accept only exact nonnegative provider counts within the numeric bound."""
     return value if type(value) is int and 0 <= value < 2**53 else None
 
 
 def _identity(value: object) -> str | None:
+    """Accept a bounded opaque invocation or request identifier."""
     return value if isinstance(value, str) and _IDENTITY.fullmatch(value) else None
 
 
 def _cost(value: object) -> str | None:
+    """Accept finite nonnegative optional gateway billing."""
     if type(value) not in {str, int, Decimal}:
         return None
     try:
@@ -76,92 +79,102 @@ def _response_json(frame: Mapping[str, object]) -> dict[str, object]:
     return json.loads(original, parse_float=Decimal)
 
 
-def _call(rows: list[dict[str, object]]) -> dict[str, object]:
-    request = rows[0]
-    body = loads_strict(request["body"])
-    if not isinstance(body, dict):
-        raise ValueError("provider request is not an object")
-    responses = [_response_json(row) for row in rows if row["kind"] == "response"]
-    claims: dict[str, object] = {}
+def _update_claims(response: Mapping[str, object], claims: dict[str, object]) -> bool:
+    """Keep bounded returned claims and disclose contradictory frame identities."""
     inconsistent = False
+    for source, target in (
+        ("id", "generation_id"),
+        ("model", "served_model"),
+        ("provider", "served_provider"),
+    ):
+        candidate = response.get(source)
+        if isinstance(candidate, str) and len(candidate) <= 256:
+            inconsistent |= target in claims and claims[target] != candidate
+            claims[target] = candidate
+    return inconsistent
+
+
+def _claims_and_usage(
+    responses: list[dict[str, object]],
+) -> tuple[dict[str, object], dict[str, object], bool]:
+    """Reconcile returned identity and the single exposed usage observation."""
+    claims: dict[str, object] = {}
     usage = None
+    inconsistent = False
     for response in responses:
-        for source, target in (
-            ("id", "generation_id"),
-            ("model", "served_model"),
-            ("provider", "served_provider"),
-        ):
-            candidate = response.get(source)
-            if isinstance(candidate, str) and len(candidate) <= 256:
-                if target in claims and claims[target] != candidate:
-                    inconsistent = True
-                claims[target] = candidate
-        if response.get("usage") is not None:
-            candidate = response["usage"]
+        inconsistent |= _update_claims(response, claims)
+        candidate = response.get("usage")
+        if candidate is not None:
             if not isinstance(candidate, dict) or (
                 usage is not None and usage != candidate
             ):
                 inconsistent = True
             else:
                 usage = candidate
-    usage = usage or {}
-    final = rows[-1]
-    completed = (
-        final["kind"] == "request-finished"
-        and type(final.get("status")) is int
-        and 200 <= final["status"] < 300
-    )
+    return claims, usage or {}, inconsistent
+
+
+def _nested_count(usage: Mapping[str, object], details: str, field: str) -> int | None:
+    """Read an optional numeric usage breakdown without inventing a total."""
+    values = usage.get(details) or {}
+    return _count(values.get(field)) if isinstance(values, dict) else None
+
+
+def _usage_fields(usage: Mapping[str, object]) -> dict[str, object]:
+    """Project token totals and optional breakdowns using the gateway convention."""
     inputs, outputs = (
         _count(usage.get("prompt_tokens")),
         _count(usage.get("completion_tokens")),
     )
-    details = usage.get("completion_tokens_details") or {}
-    cache = usage.get("prompt_tokens_details") or {}
-    cost = _cost(usage.get("cost"))
-    result = {
-        "request_id": request["request_id"],
-        "invocation_id": request["invocation_id"],
-        "state": "completed"
-        if completed
-        else ("failed" if final["kind"] in _TERMINAL else "unsettled"),
-        "request_controls": {key: body[key] for key in _CONTROL_FIELDS if key in body},
-        "provider_claims": {
-            key: claims.get(key)
-            for key in ("generation_id", "served_model", "served_provider")
-        },
-        "identity_limit": "returned gateway claims; no independent model snapshot attestation",
-        "effective_token_limit": None,
-        "effective_limit_unavailable_reason": "not attested in the provider response",
+    return {
         "input_tokens": inputs,
         "output_tokens": outputs,
-        "reasoning_tokens": _count(details.get("reasoning_tokens"))
-        if isinstance(details, dict)
-        else None,
-        "cache_read_tokens": _count(cache.get("cached_tokens"))
-        if isinstance(cache, dict)
-        else None,
-        "cache_write_tokens": _count(cache.get("cache_write_tokens"))
-        if isinstance(cache, dict)
-        else None,
-        "usage_convention": "gateway prompt/completion totals; reasoning and cache are breakdowns, never added to totals",
-        "usage_unavailable_reason": "missing or invalid provider counts"
-        if inputs is None or outputs is None
-        else None,
+        "reasoning_tokens": _nested_count(
+            usage, "completion_tokens_details", "reasoning_tokens"
+        ),
+        "cache_read_tokens": _nested_count(
+            usage, "prompt_tokens_details", "cached_tokens"
+        ),
+        "cache_write_tokens": _nested_count(
+            usage, "prompt_tokens_details", "cache_write_tokens"
+        ),
+        "usage_convention": (
+            "gateway prompt/completion totals; reasoning and cache are breakdowns, never added to totals"
+        ),
+        "usage_unavailable_reason": (
+            "missing or invalid provider counts"
+            if inputs is None or outputs is None
+            else None
+        ),
+    }
+
+
+def _billing_fields(usage: Mapping[str, object]) -> dict[str, object]:
+    """Keep optional gateway billing separate from required token collection."""
+    cost = _cost(usage.get("cost"))
+    return {
         "cost": cost,
         "currency": "USD" if cost is not None else None,
         "billing_source": "gateway response usage.cost" if cost is not None else None,
         "billing_basis": "gateway-reported" if cost is not None else None,
-        "cost_unavailable_reason": "missing or invalid optional gateway billing"
-        if cost is None
-        else None,
-        "started_at": request["observed_at"],
-        "finished_at": final["observed_at"] if final["kind"] in _TERMINAL else None,
-        "duration_ms": final["monotonic_ms"] - request["monotonic_ms"],
-        "required_usage_complete": not inconsistent
-        and (not completed or (inputs is not None and outputs is not None)),
-        "claims_consistent": not inconsistent,
+        "cost_unavailable_reason": (
+            "missing or invalid optional gateway billing" if cost is None else None
+        ),
     }
-    result["unavailable_reasons"] = [
+
+
+def _call_state(final: Mapping[str, object], completed: bool) -> str:
+    """Distinguish completed delivery, terminal failure, and unfinished membership."""
+    if completed:
+        return "completed"
+    return "failed" if final["kind"] in _TERMINAL else "unsettled"
+
+
+def _unavailable_fields(
+    claims: Mapping[str, object], result: Mapping[str, object]
+) -> list[dict[str, str]]:
+    """Name each unexposed identity or optional usage field explicitly."""
+    return [
         {"field": key, "reason": "not disclosed in the provider response"}
         for key in ("generation_id", "served_model", "served_provider")
         if claims.get(key) is None
@@ -170,10 +183,61 @@ def _call(rows: list[dict[str, object]]) -> dict[str, object]:
         for key in ("reasoning_tokens", "cache_read_tokens", "cache_write_tokens")
         if result[key] is None
     ]
+
+
+def _completed_call(final: Mapping[str, object]) -> bool:
+    """Require a terminal request frame with a successful HTTP status."""
+    return (
+        final["kind"] == "request-finished"
+        and type(final.get("status")) is int
+        and 200 <= final["status"] < 300
+    )
+
+
+def _required_usage_complete(result: Mapping[str, object], completed: bool) -> bool:
+    """Successful calls require both counts; failed requests keep their failure evidence."""
+    return bool(result["claims_consistent"]) and (
+        not completed
+        or (result["input_tokens"] is not None and result["output_tokens"] is not None)
+    )
+
+
+def _call(rows: list[dict[str, object]]) -> dict[str, object]:
+    """Reduce one provider request and its accepted response frames."""
+    request = rows[0]
+    body = loads_strict(request["body"])
+    if not isinstance(body, dict):
+        raise ValueError("provider request is not an object")
+    responses = [_response_json(row) for row in rows if row["kind"] == "response"]
+    claims, usage, inconsistent = _claims_and_usage(responses)
+    final = rows[-1]
+    completed = _completed_call(final)
+    result = {
+        "request_id": request["request_id"],
+        "invocation_id": request["invocation_id"],
+        "state": _call_state(final, completed),
+        "request_controls": {key: body[key] for key in _CONTROL_FIELDS if key in body},
+        "provider_claims": {
+            key: claims.get(key)
+            for key in ("generation_id", "served_model", "served_provider")
+        },
+        "identity_limit": "returned gateway claims; no independent model snapshot attestation",
+        "effective_token_limit": None,
+        "effective_limit_unavailable_reason": "not attested in the provider response",
+        **_usage_fields(usage),
+        **_billing_fields(usage),
+        "started_at": request["observed_at"],
+        "finished_at": final["observed_at"] if final["kind"] in _TERMINAL else None,
+        "duration_ms": final["monotonic_ms"] - request["monotonic_ms"],
+        "claims_consistent": not inconsistent,
+    }
+    result["required_usage_complete"] = _required_usage_complete(result, completed)
+    result["unavailable_reasons"] = _unavailable_fields(claims, result)
     return result
 
 
 def _validate_frame(row: object, index: int, invocation_id: str) -> None:
+    """Require frame membership, order, kind, and observation clocks."""
     if (
         not isinstance(row, dict)
         or row.get("sequence") != index
@@ -185,6 +249,73 @@ def _validate_frame(row: object, index: int, invocation_id: str) -> None:
         row.get("monotonic_ms")
     ) not in {int, float}:
         raise ValueError("capture clock refused")
+
+
+def _record_request_frame(
+    row: dict[str, object],
+    request_id: str,
+    requests: dict[str, list[dict[str, object]]],
+) -> None:
+    """Admit each request once and refuse responses outside its open membership."""
+    if row["kind"] == "request":
+        if request_id in requests or not isinstance(loads_strict(row["body"]), dict):
+            raise ValueError("capture request repeated")
+        requests[request_id] = []
+    elif request_id not in requests or requests[request_id][-1]["kind"] in _TERMINAL:
+        raise ValueError("capture response membership refused")
+    if row["kind"] == "response":
+        _response_json(row)
+    requests[request_id].append(row)
+
+
+def _admit_capture_row(
+    row: dict[str, object], index: int, requests: dict[str, list[dict[str, object]]]
+) -> None:
+    """Require initial readiness before any identified provider request."""
+    if row["kind"] == "capture-ready":
+        if index != 0:
+            raise ValueError("capture readiness repeated")
+        return
+    request_id = _identity(row.get("request_id"))
+    if request_id is None or index == 0:
+        raise ValueError("capture request identity refused")
+    _record_request_frame(row, request_id, requests)
+
+
+def _read_capture_rows(
+    data: bytes,
+    invocation_id: str,
+    records: list[dict[str, object]],
+    requests: dict[str, list[dict[str, object]]],
+) -> None:
+    """Append only admitted frames, retaining the accepted prefix on failure."""
+    if not _identity(invocation_id):
+        raise ValueError("capture bounds refused")
+    for index, line in enumerate(data.splitlines()):
+        if index >= 4096:
+            raise ValueError("capture item bound exceeded")
+        row = loads_strict(line)
+        _validate_frame(row, index, invocation_id)
+        _admit_capture_row(row, index, requests)
+        records.append(row)
+
+
+def _reduce_calls(
+    requests: dict[str, list[dict[str, object]]],
+) -> tuple[list[dict[str, object]], bool]:
+    """Keep independently valid call reductions when another request is malformed."""
+    calls = []
+    complete = True
+    for rows in requests.values():
+        try:
+            calls.append(_call(rows))
+        except ValueError, TypeError, KeyError, RecursionError:
+            complete = False
+    complete &= bool(requests) and len(calls) == len(requests)
+    complete &= all(
+        call["state"] != "unsettled" and call["claims_consistent"] for call in calls
+    )
+    return calls, complete
 
 
 def reduce_provider_capture(
@@ -199,58 +330,17 @@ def reduce_provider_capture(
     requests: dict[str, list[dict[str, object]]] = {}
     complete = bool(data) and len(data) <= max_bytes
     try:
-        if not _identity(invocation_id):
-            raise ValueError("capture bounds refused")
-        for index, line in enumerate(data[:max_bytes].splitlines()):
-            if index >= 4096:
-                raise ValueError("capture item bound exceeded")
-            row = loads_strict(line)
-            _validate_frame(row, index, invocation_id)
-            if row["kind"] == "capture-ready":
-                if index != 0:
-                    raise ValueError("capture readiness repeated")
-            else:
-                request_id = _identity(row.get("request_id"))
-                if request_id is None or (index == 0):
-                    raise ValueError("capture request identity refused")
-                if row["kind"] == "request":
-                    if request_id in requests or not isinstance(
-                        loads_strict(row["body"]), dict
-                    ):
-                        raise ValueError("capture request repeated")
-                    requests[request_id] = []
-                elif (
-                    request_id not in requests
-                    or requests[request_id][-1]["kind"] in _TERMINAL
-                ):
-                    raise ValueError("capture response membership refused")
-                if row["kind"] == "response":
-                    _response_json(row)
-                requests[request_id].append(row)
-            records.append(row)
+        _read_capture_rows(data[:max_bytes], invocation_id, records, requests)
     except ValueError, KeyError, TypeError, RecursionError:
         complete = False
-    calls = []
-    for rows in requests.values():
-        try:
-            calls.append(_call(rows))
-        except ValueError, TypeError, KeyError, RecursionError:
-            complete = False
-    complete = (
-        complete
-        and bool(requests)
-        and len(calls) == len(requests)
-        and all(
-            call["state"] != "unsettled" and call["claims_consistent"] for call in calls
-        )
-    )
+    calls, calls_complete = _reduce_calls(requests)
     from aptl.workbench.provider_content_redaction import redact_response_records
 
     safe_records, withheld = redact_response_records(records, calls, secrets)
     return ProviderCapture(
         records=tuple(safe_records),
         calls=tuple(redact_capture_value(call, secrets) for call in calls),
-        complete=complete and not withheld,
+        complete=complete and calls_complete and not withheld,
         required_usage_complete=bool(calls)
         and all(call["required_usage_complete"] for call in calls),
     )

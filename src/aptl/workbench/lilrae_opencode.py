@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 from contextlib import ExitStack
-from copy import deepcopy
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -19,9 +18,12 @@ if TYPE_CHECKING:
 
 from raes_contracts.contracts import ParticipantImplementationManifestModel
 from aptl.core.opencode import OpenCodeInvocationEvidence
-from aptl.core.evidence.participant_capture import ParticipantCaptureArchive
-from aptl.workbench.opencode_capture import OpenCodeCaptureLease
-from aptl.workbench.provider_capture import redact_capture_value
+from aptl.workbench.opencode_capture import (
+    admitted_capture,
+    prepare_capture,
+    retain_native_observations,
+    retain_tool_event,
+)
 from aptl.core.trial_readiness import ParticipantReadiness
 from aptl.utils.pathsafe import create_exclusive_nofollow
 from aptl.workbench.agent import (
@@ -33,7 +35,6 @@ from aptl.workbench.agent import (
     probe_mcp_server,
 )
 from aptl.workbench.opencode_configuration import (
-    PROVIDER_CREDENTIAL_NAMES,
     opencode_arguments,
     opencode_environment,
     render_opencode_config,
@@ -42,24 +43,23 @@ from aptl.workbench.opencode_configuration import (
 )
 from aptl.workbench.opencode_events import (
     _supervised_result_text,
-    parse_opencode_response,
 )
 from aptl.workbench.participant_request import validate_opencode_request
 from aptl.workbench.process import (
     REASON_CANCELLED,
-    REASON_TIMEOUT,
     AgentExecutionError,
     BoundedProcessError,
     BoundedProcessRunner,
     ProcessRequest,
 )
 from aptl.workbench.profiles import profile_for, verify_profile_tool_inventory
-from aptl.workbench.opencode_history import read_native_history
-from aptl.workbench.opencode_evidence import OpenCodeRunState, invocation_recorder
+from aptl.workbench.opencode_evidence import (
+    OpenCodeRunState,
+    invocation_recorder,
+    invocation_servers,
+)
 from aptl.workbench.opencode_observation import (
-    OBSERVER_CREDENTIAL,
     install_request_observer,
-    read_request_observations,
 )
 from aptl.workbench.provider_readiness import (
     openrouter_access_ready,
@@ -112,18 +112,7 @@ class LilraeOpenCodeExecutor:
             if configuration_result is not None
             else None
         )
-        self._capture = options.capture
-        if self._capture is not None and (
-            not isinstance(self._capture, ParticipantCaptureArchive)
-            or self._configuration_result is None
-            or self._capture.grant.configuration_digest
-            != self._configuration_result.configuration_digest
-            or self._capture.grant.participant_address
-            != self._configuration_result.participant_address
-        ):
-            raise ValueError(
-                "participant capture differs from its admitted configuration"
-            )
+        self._capture = admitted_capture(options.capture, self._configuration_result)
         self._request = options.request
         self._request_binding = options.request_binding
         validate_opencode_request(
@@ -298,13 +287,11 @@ class LilraeOpenCodeExecutor:
 
     def observe_tool_event(self, event: Mapping[str, object]) -> None:
         """Retain tool observations with both provider and MCP credentials removed."""
-        if self._capture is None:
-            return
-        safe = redact_capture_value(
-            dict(event),
+        retain_tool_event(
+            self._capture,
+            event,
             tuple(self._environment.values()) + tuple(self._mcp_credentials.values()),
         )
-        self._capture.record_tool_event(safe)
 
     def _tools(self) -> tuple[dict[str, object], dict[str, str]]:
         """Translate only a private, unchanged and verified profile."""
@@ -398,39 +385,6 @@ class LilraeOpenCodeExecutor:
                 "ambient managed OpenCode configuration is not admitted"
             )
 
-    def _invocation_servers(
-        self, stack: ExitStack, tools: ToolSession | None, state: OpenCodeRunState
-    ) -> dict[str, object]:
-        """Open one scoped tool transport and retain its cleanup outcome."""
-        if tools is None:
-            return {}
-        state.tool_transport_cleanup = "uncertain"
-        transport = tools.transport()
-        carrier = transport.__enter__()
-
-        def close_transport(*exc: object) -> bool | None:
-            """Preserve native process failure if tool transport closure also fails."""
-            if isinstance(exc[1], BoundedProcessError):
-                state.error = exc[1]
-            try:
-                outcome = transport.__exit__(*exc)
-            except Exception:
-                raise AgentExecutionError(
-                    "participant tool transport cleanup failed"
-                ) from None
-            state.tool_transport_cleanup = "succeeded"
-            return outcome
-
-        stack.push(close_transport)
-        servers = deepcopy(self._tool_servers)
-        for name, server in servers.items():
-            server["environment"].update(carrier.environment(name))
-            # Native MCP children must not inherit either provider credential alias.
-            server["environment"].update(
-                dict.fromkeys(PROVIDER_CREDENTIAL_NAMES | {OBSERVER_CREDENTIAL}, "")
-            )
-        return servers
-
     def _run_in_context(
         self,
         work: Path,
@@ -453,19 +407,15 @@ class LilraeOpenCodeExecutor:
         environment = opencode_environment(
             work, self._environment, self._max_output_tokens
         )
-        capture_lease = None
-        if self._capture is not None:
-            capture_lease = OpenCodeCaptureLease(
-                work,
-                self._capture,
-                action_id,
-                self._route.endpoint,
-                self._environment,
-                self._route.serving_provider,
-                self.prompt_sha256,
-                len(self._prompt),
-                request_observer=self._request_observation_required,
-            )
+        capture_lease = prepare_capture(
+            work,
+            self._capture,
+            action_id,
+            route=self._route,
+            credentials=self._environment,
+            prompt=self._prompt,
+            request_observer=self._request_observation_required,
+        )
         expected_controls = None
         if self._request_observation_required:
             environment, expected_controls = install_request_observer(
@@ -477,13 +427,6 @@ class LilraeOpenCodeExecutor:
             )
         elif capture_lease is not None:
             capture_lease.configure(config, environment)
-        partial_stdout = b""
-
-        def retain_partial(output: bytes) -> None:
-            nonlocal partial_stdout
-            partial_stdout = output
-            state.retain_partial(output)
-
         create_exclusive_nofollow(work, "opencode.json", json.dumps(config).encode())
         try:
             request = ProcessRequest(
@@ -497,7 +440,7 @@ class LilraeOpenCodeExecutor:
             )
             if isinstance(self._runner, BoundedProcessRunner):
                 state.result = self._runner.run_observed(
-                    request, failure_stdout_observer=retain_partial
+                    request, failure_stdout_observer=state.retain_partial
                 )
             else:
                 state.result = request.run_with(self._runner)
@@ -505,36 +448,15 @@ class LilraeOpenCodeExecutor:
             state.error = exc
             raise
         finally:
-            try:
-                native_response = state.partial or parse_opencode_response(
-                    state.result.stdout if state.result else b""
-                )
-                state.native_history = read_native_history(
-                    work,
-                    expected_prompt=self._prompt,
-                    expected_model=self.model,
-                    session_id=native_response.session_id,
-                )
-                if self._request_observation_required:
-                    state.request_observation = read_request_observations(
-                        work,
-                        expected_controls=expected_controls,
-                        expected_prompt_sha256=self.prompt_sha256,
-                    )
-            finally:
-                if capture_lease is not None:
-                    reason = (
-                        state.error.reason
-                        if state.error is not None
-                        and state.error.reason in {REASON_TIMEOUT, REASON_CANCELLED}
-                        else "harness-failed"
-                        if state.error is not None
-                        else None
-                    )
-                    capture_lease.retain(
-                        state.result.stdout if state.result else partial_stdout,
-                        failure_reason=reason,
-                    )
+            retain_native_observations(
+                work,
+                state,
+                self._prompt,
+                self.model,
+                expected_controls,
+                self._request_observation_required,
+                capture_lease,
+            )
 
     def _run(
         self, action_id: str, cancellation: Event, tools: ToolSession | None = None
@@ -544,7 +466,7 @@ class LilraeOpenCodeExecutor:
         try:
             self._check_launch(cancellation)
             with ExitStack() as stack:
-                servers = self._invocation_servers(stack, tools, state)
+                servers = invocation_servers(stack, tools, self._tool_servers, state)
                 directory = stack.enter_context(
                     TemporaryDirectory(
                         prefix="lilrae-participant-", dir=self._work_root

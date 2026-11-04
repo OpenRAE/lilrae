@@ -14,7 +14,11 @@ from aptl.core.correlation.clock import ClockProvider
 from aptl.core.evidence.content_store import create_content_addressed
 from aptl.core.evidence.protocol import CollectorOutcome
 from aptl.core.evidence.outcomes import CollectorStatus
-from aptl.core.evidence.records import RecordDisclosure, build_evidence_record
+from aptl.core.evidence.records import (
+    RecordDisclosure,
+    RecordScope,
+    build_evidence_record,
+)
 from aptl.core.experiment.capture_registry import (
     CaptureBinding,
     CaptureLimits,
@@ -101,8 +105,7 @@ def retain_cleanup_readback(
     )
     record = build_evidence_record(
         binding=binding,
-        run_id=scope.run_id,
-        planned_trial_id=scope.plan_entry_id,
+        scope=RecordScope(scope.run_id, scope.plan_entry_id),
         content=content,
         outcome=CollectorOutcome(
             status=CollectorStatus.OK,

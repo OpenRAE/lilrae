@@ -116,3 +116,14 @@ Exercise the manifest, admitted request, source read, retained artifact, and res
 Check both participant sources, native logs, unsupported requests, and partial failures.
 Retain focused transport and secret-redaction checks for the participant observer.
 Run targeted tests locally; existing CI owns full verification.
+
+## Capture implementation boundaries
+
+The participant archive uses shared, private reducers for model-call totals
+and tool-action counts. Native log and file readers keep per-source results
+before applying the collection status. The OpenCode capture owner installs
+and finalizes content capture; the existing evidence owner tracks tool
+transport cleanup. These helpers do not add collection capabilities.
+
+Evidence record builders receive grouped run, trial and optional attempt
+identity. Record identifiers and serialized artifact contracts remain unchanged.

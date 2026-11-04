@@ -89,15 +89,12 @@ def test_trial_interruption_persists_accepted_artifact_references(
     def interrupted():
         raise interruption()
 
+    collector = _FakeCollector(binding.registration_id, outcome=outcome)
     with pytest.raises(interruption):
         _acquire(
             tmp_path,
             [binding],
-            {
-                binding.registration_id: _FakeCollector(
-                    binding.registration_id, outcome=outcome
-                )
-            },
+            {binding.registration_id: collector},
             trial_body=interrupted,
         )
     run = tmp_path / "runs" / "run-1"
@@ -177,5 +174,6 @@ def test_native_timeout_prefix_and_peer_survive_artifact_persistence(
         else CollectorStatus.MID_RUN_LOSS
     )
     retained = (tmp_path / "runs" / "run-1" / result.refs[0].content_uri).read_bytes()
-    assert b"accepted stdout" in retained and b"accepted stderr" in retained
+    assert b"accepted stdout" in retained
+    assert b"accepted stderr" in retained
     assert b"private-command" not in retained

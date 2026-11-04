@@ -92,9 +92,8 @@ def test_failed_file_read_keeps_accepted_stdout(tmp_path):
     retained = (
         store.get_run_path(_SCOPE.run_id) / result.refs[0].content_uri
     ).read_bytes()
-    assert (
-        b"accepted before failure" in retained and b"private diagnostic" not in retained
-    )
+    assert b"accepted before failure" in retained
+    assert b"private diagnostic" not in retained
 
 
 @pytest.mark.parametrize("timed_out", [False, True])
@@ -137,7 +136,8 @@ def test_source_bounds_precede_processing_ceiling_and_preserve_healthy_peers(
     retained = (
         store.get_run_path(_SCOPE.run_id) / result.refs[0].content_uri
     ).read_bytes()
-    assert b"accepted" in retained and b"healthy peer data" in retained
+    assert b"accepted" in retained
+    assert b"healthy peer data" in retained
     assert b"private-canary" not in retained
     assert len(retained) <= 4096
 

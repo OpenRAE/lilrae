@@ -88,13 +88,12 @@ def test_completed_missing_usage_is_partial_but_unknown_billing_is_usable(tmp_pa
 
 
 def test_content_capture_refuses_participant_visibility():
+    grant = _grant()
+    binding = replace(
+        grant.binding, visibility_class=CaptureVisibility.PARTICIPANT_VISIBLE
+    )
     with pytest.raises(ValueError):
-        replace(
-            _grant(),
-            binding=replace(
-                _grant().binding, visibility_class=CaptureVisibility.PARTICIPANT_VISIBLE
-            ),
-        )
+        replace(grant, binding=binding)
 
 
 def test_capture_enabled_executor_retains_before_private_directory_cleanup(tmp_path):

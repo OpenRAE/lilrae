@@ -26,15 +26,12 @@ def test_invalid_native_mapping_refuses_effects_even_with_supplied_sources(
         capture_selection=replace(request.capture_selection, contribution=contribution),
     )
     effects = []
+    source = CallableWindowedSource(lambda *a: SourceResult(status=CollectorStatus.OK))
     with pytest.raises(ValueError, match="family-capture-sources-invalid"):
         acquire_trial_evidence(
             request,
             attempt_id="attempt-1",
-            sources={
-                registration.registration_id: CallableWindowedSource(
-                    lambda *a: SourceResult(status=CollectorStatus.OK)
-                )
-            },
+            sources={registration.registration_id: source},
             trial_body=lambda: effects.append(True),
         )
     assert not effects

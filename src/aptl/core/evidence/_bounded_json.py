@@ -19,6 +19,7 @@ def capture_prefix(
     }
 
     def size() -> int:
+        """Measure the complete serialized artifact, including identity and loss metadata."""
         return len(
             json.dumps([result], separators=(",", ":"), allow_nan=False).encode()
         )
