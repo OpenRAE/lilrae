@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from time import monotonic
 
 from aptl.core.deployment.errors import BackendTimeoutError
+from aptl.core.evidence.deadline import native_read_timeout
 
 
 @dataclass(frozen=True)
@@ -28,21 +29,6 @@ _DEADLINE: ContextVar[CleanupDeadline | None] = ContextVar(
 )
 
 
-_READ_DEADLINE: ContextVar[CleanupDeadline | None] = ContextVar(
-    "native_read_deadline", default=None
-)
-
-
-@contextmanager
-def native_read_budget(expires: float, clock: Callable[[], float]) -> Iterator[None]:
-    """Apply one absolute capture deadline to every nested backend read."""
-    token = _READ_DEADLINE.set(CleanupDeadline(expires, clock))
-    try:
-        yield
-    finally:
-        _READ_DEADLINE.reset(token)
-
-
 @contextmanager
 def cleanup_budget(
     seconds: int, clock: Callable[[], float] = monotonic
@@ -60,8 +46,11 @@ def cleanup_budget(
 
 def cleanup_command_timeout(timeout: int | float | None) -> int | float | None:
     """Preserve ordinary timeouts outside cleanup; clamp them inside cleanup."""
-    for budget in (_DEADLINE.get(), _READ_DEADLINE.get()):
-        if budget is not None:
-            remaining = budget.remaining()
-            timeout = remaining if timeout is None else min(timeout, remaining)
-    return timeout
+    budget = _DEADLINE.get()
+    if budget is not None:
+        remaining = budget.remaining()
+        timeout = remaining if timeout is None else min(timeout, remaining)
+    try:
+        return native_read_timeout(timeout)
+    except TimeoutError:
+        raise BackendTimeoutError("capture read deadline expired") from None

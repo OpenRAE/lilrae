@@ -29,11 +29,7 @@ from typing import Protocol, runtime_checkable
 
 from aptl.core.correlation.clock import ClockProvider
 from aptl.core.evidence.outcomes import SUCCESS_STATUSES, CollectorStatus
-from aptl.core.deployment._cleanup_budget import (
-    cleanup_command_timeout,
-    native_read_budget,
-)
-from aptl.core.deployment.errors import BackendTimeoutError
+from aptl.core.evidence.deadline import native_read_timeout, native_read_budget
 from aptl.core.evidence.protocol import CollectorContext, CollectorOutcome
 from aptl.utils.probe_execution import probe_output_byte_limit
 
@@ -80,8 +76,8 @@ def capture_read_bytes(requested: int) -> int:
 def capture_read_timeout(requested: float) -> float:
     """Bound native reads through the backend's existing nested-call budget."""
     try:
-        return cleanup_command_timeout(requested)
-    except BackendTimeoutError:
+        return native_read_timeout(requested)
+    except TimeoutError:
         raise TimeoutExpired("capture-read", requested) from None
 
 
@@ -167,7 +163,7 @@ class WindowedQueryCollector:
             # already captured archives still need references after timeout.
             with native_read_budget(handle.deadline, monotonic):
                 result = self._source.fetch(handle.started_at, window_end)
-        except TimeoutExpired, BackendTimeoutError:
+        except TimeoutExpired, TimeoutError:
             result = SourceResult(status=CollectorStatus.TIMEOUT)
         except Exception:
             if monotonic() <= handle.deadline:
