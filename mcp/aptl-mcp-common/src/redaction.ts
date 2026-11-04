@@ -146,6 +146,11 @@ function safeModelCount(name: string, value: unknown): boolean {
     && safeCountDefault(item.default);
 }
 
+function safeAuthorizationScope(name: string, value: unknown): boolean {
+  return name.toLowerCase() === 'authorization_scope'
+    && Array.isArray(value) && value.every((label) => typeof label === 'string');
+}
+
 // Inline-secret patterns for plain-text strings (command lines, HTTP
 // headers, query strings, etc.). MCP tool args/responses regularly carry
 // these — a key-only redactor cannot reach inside string values like
@@ -380,7 +385,8 @@ function redactInner(value: unknown, depth: number): unknown {
   if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = isSensitiveKey(k) && !safeModelCount(k, v) ? REDACTED : redactInner(v, depth + 1);
+      out[k] = isSensitiveKey(k) && !safeModelCount(k, v) && !safeAuthorizationScope(k, v)
+        ? REDACTED : redactInner(v, depth + 1);
     }
     return out;
   }

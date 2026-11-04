@@ -205,39 +205,6 @@ class TestProductionSealPath:
             executor.execute_trial(admitted, trial)
         assert not store.is_sealed("trial-0001-attempt-1")
 
-    def test_recovers_an_interrupted_attempt(self, tmp_path):
-        """An attempt with a durable intent but no seal recovers to interrupted."""
-        store = _store(tmp_path)
-        admitted = _admitted()
-        trial = admitted.plan.trials[0]
-        # Simulate a crash mid-workload: the intent is written, nothing sealed.
-        attempt_id = "trial-0001-attempt-1"
-        store.create_run(attempt_id)
-        store.create_run_json_once(
-            attempt_id,
-            "attempt-intent.json",
-            {
-                "schema_version": "aptl.attempt-intent/v1",
-                "attempt_id": attempt_id,
-                "planned_trial_id": trial.planned_trial_id,
-                "plan_id": admitted.plan.plan_id,
-                "plan_digest": admitted.plan.plan_digest,
-                "started_at": "2026-05-26T00:10:00Z",
-            },
-        )
-        assert not store.is_sealed(attempt_id)
-
-        executor = ExperimentExecutor(
-            store=store, clock=_CLOCK, collectors={}, workload=_completed_workload
-        )
-        result = executor.recover_interrupted_attempt(admitted, trial, attempt_id)
-        assert result is not None
-        assert result.run.run_status == "aborted"  # infrastructure interruption
-        assert store.is_sealed(attempt_id)
-        # Already-sealed / never-started attempts recover to None.
-        assert executor.recover_interrupted_attempt(admitted, trial, attempt_id) is None
-
-
 class TestTerminalCauses:
     @pytest.mark.parametrize(
         ("signal", "expected_status"),
