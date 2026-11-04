@@ -27,7 +27,6 @@ from aptl.core.archival.context import TerminalAttemptContext
 from aptl.core.archival.discovery_index import DiscoveryIndex, IndexEntry
 from aptl.core.archival.layout import (
     RUN_MANIFEST_RELPATH,
-    SEAL_MARKER_RELPATH,
 )
 from aptl.core.archival.run_record import build_experiment_run_model
 from aptl.core.archival.seal import (
@@ -132,9 +131,7 @@ def seal_produced_run(
                 run.run_id, RUN_MANIFEST_RELPATH, run.model_dump(mode="json")
             )
         inventory = _build_inventory(store, run.run_id, artifacts)
-        accepted = list(limitations)
-        if run.record_state == "partial":
-            accepted.append(SealLimitation("partial-record", "RAES retained an incomplete trial record."))
+        accepted = _accepted_limitations(run, limitations)
         statement = completeness_statement or _default_completeness_statement(
             run, inventory, accepted
         )
@@ -177,6 +174,16 @@ def seal_produced_run(
         index_entry=index_entry,
         idempotent=prior is not None,
     )
+
+
+def _accepted_limitations(
+    run: ExperimentRunModel, limitations: tuple[SealLimitation, ...],
+) -> list[SealLimitation]:
+    """Disclose a partial record without changing its portable state."""
+    accepted = list(limitations)
+    if run.record_state == "partial":
+        accepted.append(SealLimitation("partial-record", "RAES retained an incomplete trial record."))
+    return accepted
 
 
 def _build_inventory(

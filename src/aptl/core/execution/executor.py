@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from aptl.core.archival.coordinator import SealResult, finalize_terminal_attempt
 from aptl.core.archival.status import TerminalCause
 from aptl.core.correlation.clock import ClockProvider
-from aptl.core.evidence.coordinator import AcquisitionResult, acquire_evidence
+from aptl.core.evidence.coordinator import acquire_evidence
 from aptl.core.evidence.outcomes import AcquisitionDisposition
 from aptl.core.evidence.protocol import Collector, RunScope
 from aptl.core.execution.assembly import (

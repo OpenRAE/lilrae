@@ -200,10 +200,12 @@ def test_recovery_owner_errors_expose_only_a_fixed_code_and_keep_exclusion(tmp_p
         class BrokenClock:
             def now(self):
                 raise RuntimeError("credential-canary-437")
+        control = case.cancellation()
+        clock = BrokenClock()
         with pytest.raises(ValueError, match="^trial-recovery-unavailable$") as error:
             recover_interrupted_trial(
-                case.handler, case.binding, case.cancellation(), runtime=case.worker,
-                clock=BrokenClock(), identity="worker-437",
+                case.handler, case.binding, control, runtime=case.worker,
+                clock=clock, identity="worker-437",
             )
         assert error.value.__suppress_context__
         assert (tmp_path / TRIAL_FENCE).is_file()

@@ -17,5 +17,6 @@ def test_snapshot_limits_refuse_incomplete_inventory(tmp_path, limit):
         "total": {"max_total_bytes": 9},
         "count": {"max_files": 1},
     }[limit]
+    limits = SnapshotLimits(**selected)
     with pytest.raises(ValueError, match="trial-archive-"):
-        snapshot_run_files(store, "run-a", limits=SnapshotLimits(**selected))
+        snapshot_run_files(store, "run-a", limits=limits)

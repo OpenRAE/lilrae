@@ -39,6 +39,8 @@ The existing producer supplies the run record and separate execution, capture an
 No local terminal-status mapping is added.
 
 The local archive owner persists producer records and their source artifacts.
+Immutable archive options group the installed snapshot limits, producer
+validation result and local limitation disclosures. Portable models stay with RAES.
 It retains public assignment, outcome, scenario, processor-plan and execution-snapshot carriers.
 Private runtime control journals remain with their RAES owner.
 They are not portable evidence and can contain credential-bearing internal state.

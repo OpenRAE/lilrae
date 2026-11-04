@@ -250,14 +250,18 @@ class LilraeTrialUnit:
         claim_trial_owner(owned.project, owned.owner)
         claim_trial_owner(owned.daemon_root, owned.owner)
         if not recovery:
-            try:
-                readiness.prepare(request)
-            except Exception:
-                if newly_owned and not readiness.has_pending_probes:
-                    remove_contained_nofollow(owned.project, TRIAL_FENCE)
-                    remove_contained_nofollow(owned.daemon_root, TRIAL_FENCE)
-                    readiness.release_preparation(request)
-                raise
+            self._prepare_delivery(owned, newly_owned)
+
+    def _prepare_delivery(self, owned: OwnedTrial, newly_owned: bool) -> None:
+        """Release only a newly owned, fully ceased preparation refusal."""
+        try:
+            owned.readiness.prepare(owned.request)
+        except Exception:
+            if newly_owned and not owned.readiness.has_pending_probes:
+                remove_contained_nofollow(owned.project, TRIAL_FENCE)
+                remove_contained_nofollow(owned.daemon_root, TRIAL_FENCE)
+                owned.readiness.release_preparation(owned.request)
+            raise
 
     def admit(self, request: TrialUnitRequest) -> None:
         """Check request bounds and the original native placement binding."""

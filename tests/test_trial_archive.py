@@ -9,7 +9,7 @@ from tests.trial_recovery_fixture import assigned_serving
 
 
 def seal_case(case, *, clock=None):
-    from aptl.backends.trial_archive import seal_recovered_run
+    from aptl.backends.trial_archive import ArchiveOptions, seal_recovered_run
 
     bundle = case.records()
     return seal_recovered_run(
@@ -19,7 +19,7 @@ def seal_case(case, *, clock=None):
         assignment=case.binding.assignment,
         store=case.handler.cleanup.store,
         clock=clock or case.clock,
-        validation_passed=bundle.validation_by_run[bundle.runs[0].run_id] == "passed",
+        options=ArchiveOptions(validation_passed=bundle.validation_by_run[bundle.runs[0].run_id] == "passed"),
     )
 
 

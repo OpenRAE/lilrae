@@ -49,12 +49,14 @@ class SnapshotArtifact:
 
 
 def _file_identity(info: os.stat_result) -> tuple[int, int, int, int]:
+    """Pin one file or directory observation to an unchanged object."""
     return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns
 
 
 def _read_artifact(
     store: LocalRunStore, relative: Path, expected: os.stat_result, limit: int
 ) -> bytes:
+    """Read the bounded original descriptor and reject identity drift."""
     with open_contained_nofollow(store.base_dir, relative) as source:
         before = os.fstat(source.fileno())
         if _file_identity(before) != _file_identity(expected):
@@ -67,8 +69,10 @@ def _read_artifact(
 
 
 def _directory_entries(
-    store: LocalRunStore, directory: Path,
+    store: LocalRunStore,
+    directory: Path,
 ) -> Iterator[tuple[Path, os.stat_result]]:
+    """Yield safe entries beneath one unchanged no-follow directory."""
     fd = open_dir_contained_nofollow(store.base_dir, directory)
     try:
         before = os.fstat(fd)
@@ -87,8 +91,11 @@ def _directory_entries(
 
 
 def _run_files(
-    store: LocalRunStore, run_id: str, limits: SnapshotLimits,
+    store: LocalRunStore,
+    run_id: str,
+    limits: SnapshotLimits,
 ) -> Iterator[tuple[Path, os.stat_result]]:
+    """Walk one run while enforcing directory count and depth limits."""
     pending = [(Path(run_id), 0)]
     directories = 1
     while pending:
@@ -119,5 +126,7 @@ def snapshot_run_files(
                 raise ValueError("trial-archive-byte-limit")
             data = _read_artifact(store, relative, info, available)
             total += len(data)
-            artifacts.append(SnapshotArtifact(relative.relative_to(run_id).as_posix(), data))
+            artifacts.append(
+                SnapshotArtifact(relative.relative_to(run_id).as_posix(), data)
+            )
     return tuple(sorted(artifacts, key=lambda artifact: artifact.path))

@@ -77,8 +77,9 @@ def test_duplicate_seal_finishes_index_commit_after_interruption(tmp_path):
         def commit(self, entry):
             raise OSError("interrupted after seal")
 
+    index = InterruptedIndex(store.base_dir)
     with pytest.raises(OSError, match="interrupted after seal"):
-        seal_produced_run(run, store=store, index=InterruptedIndex(store.base_dir))
+        seal_produced_run(run, store=store, index=index)
     assert verify_sealed_archive(store.base_dir, run.run_id) is not None
     duplicate = seal_produced_run(run, store=store)
     assert duplicate.idempotent
