@@ -1017,7 +1017,7 @@ class TestIsSecretShapedValuePredicate:
         else:
             baseline = value
         assert is_secret_shaped_value(value) == (redact(value) != baseline)
-@pytest.mark.parametrize("name", ["max_output_tokens", "input_tokens", "output_tokens"])
+@pytest.mark.parametrize("name", ['max_output_tokens', 'max_tokens', 'max_completion_tokens', 'input_tokens', 'output_tokens', 'prompt_tokens', 'completion_tokens', 'total_tokens', 'reasoning_tokens', 'cache_read_tokens', 'cache_write_tokens', 'cached_tokens', 'known_input_tokens_subtotal', 'known_output_tokens_subtotal', 'effective_token_limit'])
 def test_numeric_model_limits_and_usage_are_safe_but_secret_replacements_are_not(name):
     from aptl.utils.redaction import redact
 

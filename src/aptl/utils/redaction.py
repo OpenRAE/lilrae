@@ -1,26 +1,14 @@
-"""Shared redaction helper for serialization boundaries.
+"""Shared secret redaction for serialization boundaries (ADR-012 / ADR-029).
 
-Run analysis artifacts (``snapshot.json``, OTel span attributes, exported
-run archives, the local run store under ``LocalRunStore``) are not
-credential stores. Redact secret-shaped values at the serialization
-boundary so file permissions and archive locations remain defense in
-depth, not the only line of protection. See ADR-012 § Security Guardrail
-and ADR-029 (control-plane secret handling).
-
-This module mirrors ``mcp/aptl-mcp-common/src/redaction.ts`` so artifacts
-emitted from either language match shape — including the command-line
-credential forms (short ``-p`` passwords, ``-H`` NTLM hashes, ``-w`` LDAP
-bind passwords, ``--user``/``-u``/``-U`` Basic-auth and Samba
-``user%pass``, and impacket positional ``user:pass@host``). When you
-change a pattern here, mirror it there and keep ``tests/test_redaction.py``
-and ``mcp/aptl-mcp-common/tests/redaction.test.ts`` in parity.
+Run artifacts are not credential stores; redact before persistence.
+Mirror changes in mcp/aptl-mcp-common/src/redaction.ts and run both languages'
+redaction tests, including the shared parity corpus.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import re
 from typing import Any
 
 from ._redaction_patterns import (
@@ -85,19 +73,10 @@ _TRUTHY = frozenset({"1", "true", "yes", "on"})
 
 
 def experiment_no_redact_active() -> bool:
-    """Public accessor for the OBS-003 experimenter opt-out env var.
+    """Read the OBS-003 local capture opt-out; shared redact() never uses it.
 
-    Returns ``True`` only when ``APTL_EXPERIMENT_NO_REDACT`` is set
-    to a truthy value (``1``, ``true``, ``yes``, ``on`` — case-
-    insensitive). Any other value (including ``0``, ``false``,
-    empty, or unset) returns ``False`` (redaction-on default).
-
-    This is the **only** sanctioned consumer of the toggle. Call
-    this from a local per-run capture sink BEFORE invoking
-    :func:`redact`, and skip the redact call when it returns ``True``.
-    Do NOT add a guard inside :func:`redact` itself — that would
-    disable redaction for every serialization boundary in the
-    project, not just the experimental record.
+    Only experimental sink wrappers may consult this flag. Control-plane
+    serialization always redacts, including under this opt-out.
     """
     return os.environ.get(_EXPERIMENT_NO_REDACT_ENV, "").strip().lower() in _TRUTHY
 
@@ -209,7 +188,25 @@ def _count_declaration(name: str, value: dict[str, object]) -> bool:
 
 def _safe_model_count(name: str, value: object) -> bool:
     """Preserve only typed public counts and closed integer target declarations."""
-    return name in {"max_output_tokens", "input_tokens", "output_tokens"} and (
+    if name in {"input_tokens_complete", "output_tokens_complete"}:
+        return type(value) is bool
+    return name in {
+        "prompt_tokens",
+        "output_tokens",
+        "completion_tokens",
+        "max_tokens",
+        "cache_write_tokens",
+        "effective_token_limit",
+        "reasoning_tokens",
+        "input_tokens",
+        "total_tokens",
+        "cache_read_tokens",
+        "cached_tokens",
+        "max_completion_tokens",
+        "known_output_tokens_subtotal",
+        "known_input_tokens_subtotal",
+        "max_output_tokens",
+    } and (
         value is None
         or _public_count(value)
         or isinstance(value, dict)
@@ -407,25 +404,53 @@ def redact(value: Any) -> Any:
     return _redact(value, 0)
 
 
+def redact_granted_secrets(value: object, secrets: tuple[str, ...]) -> Any:
+    """Remove explicitly granted values, then apply the ordinary shared policy.
+
+    This does not discover credentials or consult the environment. Callers
+    supply only their existing grants. JSON-in-string values get the same
+    treatment as structured values, including escaped credential strings.
+    """
+    if any(not isinstance(secret, str) for secret in secrets):
+        raise TypeError("credential redaction requires string grants")
+    granted = tuple(
+        sorted({secret for secret in secrets if secret}, key=len, reverse=True)
+    )
+
+    def erase(item: object, depth: int) -> object:
+        if depth >= _MAX_DEPTH:
+            return REDACTED
+        if isinstance(item, str):
+            if item.lstrip().startswith(("{", "[")):
+                try:
+                    parsed = json.loads(item)
+                    if isinstance(parsed, (dict, list)):
+                        return json.dumps(
+                            erase(parsed, depth + 1), separators=(",", ":")
+                        )
+                except ValueError:
+                    pass
+            for secret in granted:
+                item = item.replace(secret, REDACTED)
+            return item
+        if isinstance(item, dict):
+            return {
+                erase(key, depth + 1): erase(child, depth + 1)
+                for key, child in item.items()
+            }
+        if isinstance(item, (tuple, list)):
+            return [erase(child, depth + 1) for child in item]
+        return item
+
+    return redact(erase(value, 0)) if granted else redact(value)
+
+
 def is_secret_shaped_value(value: object) -> bool:
-    """Public yes/no predicate: would :func:`redact` change ``value`` at all?
+    """Return whether the shared recursive redactor changes this value.
 
-    Delegates to the exact recursive core ``redact()`` uses
-    (:func:`_redact`) rather than a separate token/regex table, so this
-    predicate can never drift out of lockstep with the transform — it IS
-    the transform, compared against its own input. Useful as a validator
-    ahead of persistence (ADR-047 "Secret handling": reject secret-shaped
-    parameter values before plan construction, never rely on later
-    redaction to make executable data safe).
-
-    Works over scalars (a plain string/bytes value) and over containers
-    (a dict/list "value" is secret-shaped if ``redact()`` would touch
-    anything inside it, including via a nested sensitive key — see
-    :func:`is_sensitive_key` for the key-only check). ``bytes``/
-    ``bytearray`` are decoded the same way :func:`redact` decodes them
-    before comparing, so an unmodified byte string correctly reports
-    ``False`` instead of always reporting ``True`` from a bytes-vs-str
-    type mismatch.
+    Uses the same transform, including nested sensitive keys and depth bounds.
+    Bytes are decoded just as redact() decodes them before comparison.
+    Used to refuse secret-shaped executable inputs before persistence (ADR-047).
     """
     baseline: object = (
         bytes(value).decode("utf-8", "replace")

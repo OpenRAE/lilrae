@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import json
@@ -42,6 +42,7 @@ class NativeEvidenceRequest:
     run_id: str
     capture_selection: ResolvedScenarioCapture
     clock: ClockProvider | None = None
+    window: tuple[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -83,7 +84,7 @@ def _source_times_inside_actual_window(
             if result.source_max_time is not None
             else None
         )
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False
     return (
         start <= finish
@@ -186,4 +187,111 @@ def acquire_native_evidence(request: NativeEvidenceRequest) -> AcquisitionResult
     )
 
 
-__all__ = ("NativeEvidenceRequest", "acquire_native_evidence")
+def _validate_capture_window(window: tuple[str, str] | None) -> None:
+    if window is None:
+        return
+    if len(window) != 2:
+        raise ValueError("trial capture window is invalid")
+    start, finish = (_parse_timestamp(value) for value in window)
+    if start.tzinfo is None or finish.tzinfo is None or finish < start:
+        raise ValueError("trial capture window is invalid")
+
+
+def acquire_trial_evidence(
+    request: NativeEvidenceRequest,
+    *,
+    attempt_id: str,
+    sources: Mapping[str, WindowedSource] | None = None,
+    trial_body: Callable[[], None] | None = None,
+) -> AcquisitionResult:
+    """Collect an admitted trial through the existing coordinator and ledger.
+
+    Family adapters supply native sources through their existing contribution.
+    The caller may also supply participant archive sources. Cleanup follows
+    this call, after collectors have finalized even when the trial body fails.
+    """
+    from aptl.backends.scenario_capture import family_capture_sources
+    from aptl.core.evidence.adapters.wiring import build_collectors
+    from aptl.core.evidence.adapters.sources import CallableWindowedSource
+
+    if not isinstance(request.run_store, LocalRunStore):
+        raise TypeError("trial evidence requires a local run store")
+    if not isinstance(attempt_id, str) or not attempt_id or len(attempt_id) > 128:
+        raise ValueError("trial capture attempt is invalid")
+    _validate_capture_window(request.window)
+    registry = request.capture_selection.registry
+    registrations = {item.registration_id: item for item in registry.registrations}
+    bindings = request.plan.runtime_bindings()
+    for binding in bindings:
+        registration = registrations.get(binding.registration_id)
+        if registration is None or (
+            binding.effective_config_digest != registration.effective_config_digest()
+            or binding.implementation_version != registration.implementation_version
+        ):
+            raise ValueError("trial capture registration changed after admission")
+    scope = capture_run_scope(
+        request.capture_selection.context,
+        request.run_id,
+        request.plan.plan_id,
+        attempt_id,
+    )
+    combined = dict(sources or {})
+    if any(
+        not isinstance(source, WindowedSource) or not callable(source.fetch)
+        for source in combined.values()
+    ):
+        raise ValueError("trial capture source interface is invalid")
+    if not set(combined).issubset(registrations):
+        raise ValueError("unknown collector registration id")
+    from aptl.core.evidence.participant_capture import ParticipantCaptureArchive
+
+    selected = {binding.registration_id: binding for binding in bindings}
+    for registration_id, source in combined.items():
+        if isinstance(source, ParticipantCaptureArchive) and (
+            source.grant.scope != scope
+            or source.grant.binding != selected.get(registration_id)
+        ):
+            raise ValueError("participant capture source belongs to another trial")
+    if request.capture_selection.contribution.runtime_adapter is not None:
+        try:
+            native = family_capture_sources(request)
+        except RuntimeError:
+            # Source initialization failed; missing collectors prevent new trial
+            # effects, while the capture phase still retains healthy peers.
+            native = {}
+        if set(native) & set(combined):
+            raise ValueError("duplicate trial capture source")
+        combined.update(native)
+    if trial_body is None:
+        # During the runtime's capture phase, execution has already happened.
+        # Retain available sources even if another source failed to initialize.
+        for binding in bindings:
+            combined.setdefault(
+                binding.registration_id,
+                CallableWindowedSource(
+                    lambda *_: SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
+                ),
+            )
+    if request.window is not None:
+        window_start, window_end = request.window
+        combined = {
+            key: CallableWindowedSource(
+                lambda _start, _end, source=source: source.fetch(
+                    window_start, window_end
+                )
+            )
+            for key, source in combined.items()
+        }
+    collectors = build_collectors(combined, registry)
+    _persist_capture_plan(request.plan, request.run_store, request.run_id)
+    return acquire_evidence(
+        bindings=bindings,
+        collectors=collectors,
+        run_store=request.run_store,
+        scope=scope,
+        clock=request.clock or SystemClockProvider(),
+        trial_body=trial_body or (lambda: None),
+    )
+
+
+__all__ = ("NativeEvidenceRequest", "acquire_native_evidence", "acquire_trial_evidence")

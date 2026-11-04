@@ -3,17 +3,31 @@
 from __future__ import annotations
 
 from collections.abc import Sequence, Mapping
-from subprocess import CompletedProcess
+from subprocess import CompletedProcess, TimeoutExpired
 from typing import TYPE_CHECKING, Protocol
 
 from aptl.core.scenario_bundle import PackIdentity
 from aptl.utils.logging import get_logger
 from aptl.core.lab_types import LabResult
+from aptl.core.deployment.errors import BackendTimeoutError
+from aptl.core.evidence.adapters.sources import capture_read_timeout
 
 log = get_logger("scenario-runtime-hooks")
 
 if TYPE_CHECKING:
     from aptl.backends.scenario_family import AdmittedFamilyTrial
+
+
+def _raise_partial_read(exc: Exception, timeout: int) -> None:
+    output = getattr(exc, "stdout", None)
+    stderr = getattr(exc, "stderr", None)
+    if isinstance(exc, TimeoutExpired):
+        raise TimeoutExpired(
+            "runtime-operation", timeout, output=output, stderr=stderr
+        ) from None
+    interrupted = InterruptedError("runtime-operation-interrupted")
+    interrupted.stdout, interrupted.stderr = output, stderr
+    raise interrupted from None
 
 
 def _valid_command(cmd: list[str]) -> bool:
@@ -23,7 +37,10 @@ def _valid_command(cmd: list[str]) -> bool:
         isinstance(cmd, list)
         and 1 <= len(cmd) <= 64
         and all(
-            isinstance(item, str) and bool(item) and len(item) <= 4096 and "\0" not in item
+            isinstance(item, str)
+            and bool(item)
+            and len(item) <= 4096
+            and "\0" not in item
             for item in cmd
         )
     )
@@ -40,6 +57,15 @@ class ScenarioRuntimeOperations(Protocol):
     ) -> CompletedProcess[str]: ...
     def container_image_digest(self, name: str) -> str | None: ...
     def container_inspect(self, name: str) -> Mapping[str, object]: ...
+    def container_logs_capture(
+        self,
+        name: str,
+        *,
+        since: str | None = None,
+        until: str | None = None,
+        timeout: int = 30,
+        max_bytes: int | None = None,
+    ) -> CompletedProcess[str]: ...
     def container_restart(self, name: str) -> LabResult: ...
 
 
@@ -75,7 +101,20 @@ class AdmittedRuntimeOperations:
     ) -> CompletedProcess[str]:
         self._validate(name, cmd, timeout)
         try:
-            return self.__backend.container_exec(name, list(cmd), timeout=timeout)
+            return self.__backend.container_exec(
+                name, list(cmd), timeout=capture_read_timeout(timeout)
+            )
+        except BackendTimeoutError as exc:
+            cause = exc.__cause__
+            if (
+                isinstance(cause, TimeoutExpired)
+                and isinstance(cause.cmd, list)
+                and cause.cmd[-len(cmd) :] == cmd
+            ):
+                _raise_partial_read(cause, timeout)
+            raise TimeoutExpired("runtime-operation", timeout) from None
+        except (TimeoutExpired, InterruptedError) as exc:
+            _raise_partial_read(exc, timeout)
         except Exception:
             raise ValueError("runtime-operation-failed") from None
 
@@ -87,7 +126,7 @@ class AdmittedRuntimeOperations:
             raise ValueError("runtime-operation-invalid")
         try:
             return self.__backend.container_exec_with_input(
-                name, list(cmd), payload, timeout=timeout
+                name, list(cmd), payload, timeout=capture_read_timeout(timeout)
             )
         except Exception:
             raise ValueError("runtime-operation-failed") from None
@@ -96,6 +135,42 @@ class AdmittedRuntimeOperations:
         self._validate(name, ["inspect"], 30)
         try:
             return self.__backend.container_image_digest(name)
+        except Exception:
+            raise ValueError("runtime-operation-failed") from None
+
+    def container_logs_capture(
+        self,
+        name: str,
+        *,
+        since: str | None = None,
+        until: str | None = None,
+        timeout: int = 30,
+        max_bytes: int | None = None,
+    ) -> CompletedProcess[str]:
+        """Read the existing log interface for an admitted scenario container."""
+        from datetime import datetime
+
+        self._validate(name, ["logs"], timeout)
+        for value in (since, until):
+            if value is not None:
+                try:
+                    if not isinstance(value, str) or len(value) > 64:
+                        raise ValueError
+                    instant = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    if instant.tzinfo is None:
+                        raise ValueError
+                except ValueError:
+                    raise ValueError("runtime-operation-invalid") from None
+        try:
+            return self.__backend.container_logs_capture(
+                name,
+                since=since,
+                until=until,
+                timeout=capture_read_timeout(timeout),
+                **({"max_bytes": max_bytes} if max_bytes is not None else {}),
+            )
+        except (TimeoutExpired, InterruptedError) as exc:
+            _raise_partial_read(exc, timeout)
         except Exception:
             raise ValueError("runtime-operation-failed") from None
 

@@ -201,7 +201,9 @@ class LilraeRuntimeEvidence:
         )
         images = getattr(self.provisioner, "last_source_image_evidence", {})
         if images:
-            artifacts.append(self._blob("realization-source-image-evidence", _json_bytes(images)))
+            artifacts.append(
+                self._blob("realization-source-image-evidence", _json_bytes(images))
+            )
         for record in snapshot.materialization_attestations:
             original = self.archive.read(record).sdl.encode("utf-8")
             metadata = record.model_dump(mode="json")
@@ -243,6 +245,51 @@ class LilraeRuntimeEvidence:
             raise ValueError("native evidence requires a protected exact-byte binding")
         limit = min(_MAX_BYTES, binding.limits.max_bytes)
         return CallableWindowedSource(lambda _start, _end: self._fetch(limit))
+
+    def reference_source(self, binding: CaptureBinding) -> CallableWindowedSource:
+        """Return JSON references to a retained native archive, without relabeling it."""
+        if (
+            binding.visibility_class
+            not in {CaptureVisibility.EVALUATOR_ONLY, CaptureVisibility.APPARATUS_ONLY}
+            or binding.redaction_required
+            or binding.sensitivity != "restricted"
+            or "application/json" not in binding.expected_media_types
+        ):
+            raise ValueError("native references require a protected binding")
+
+        def fetch(_start: str, _end: str) -> SourceResult:
+            from aptl.core.evidence.content_store import create_content_addressed
+
+            limit = min(_MAX_BYTES, binding.limits.max_bytes)
+            result = self._fetch(limit)
+            if result.status is not CollectorStatus.OK:
+                return result
+            try:
+                content = create_content_addressed(
+                    self.archive.store,
+                    self.run_id,
+                    result.chunks,
+                    subdir="native-evidence/exports",
+                    max_bytes=limit,
+                )
+            except OSError, ValueError, PathContainmentError:
+                return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
+            return SourceResult(
+                status=CollectorStatus.OK,
+                records=[
+                    {
+                        "run_id": self.run_id,
+                        "native_archive": {
+                            "uri": content.relative_path,
+                            "media_type": "application/zip",
+                            "sha256": content.digest,
+                            "size_bytes": content.size,
+                        },
+                    }
+                ],
+            )
+
+        return CallableWindowedSource(fetch)
 
     def _fetch(self, limit: int) -> SourceResult:
         """Package the evidence and map failures to collector status."""

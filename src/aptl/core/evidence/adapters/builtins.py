@@ -10,6 +10,8 @@ empty-on-error collapse the raw ``collectors.py`` helpers use:
   ``SOURCE_UNAVAILABLE``, a present-but-empty subtree is ``EMPTY_OK``.
 * :class:`ContainerLogSource` — ``DeploymentBackend.container_logs_capture``: a
   non-zero returncode is ``SOURCE_UNAVAILABLE``, empty output is ``EMPTY_OK``.
+* :class:`ContainerFileSource` — bounded adapter-selected raw log files read
+  through admitted container operations, with explicit truncation/failure rows.
 * :func:`soc_windowed_source` — a SOC ``curl_safe`` query whose function
   returns ``None`` on transport failure (distinct from ``[]`` for no events).
 
@@ -22,10 +24,19 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from pathlib import PurePosixPath
+from datetime import datetime
+from subprocess import TimeoutExpired
 
-from aptl.core.evidence.adapters.sources import CallableWindowedSource, SourceResult, WindowedSource
+from aptl.core.evidence.adapters.sources import (
+    CallableWindowedSource,
+    SourceResult,
+    WindowedSource,
+    capture_read_bytes,
+)
 from aptl.core.evidence.outcomes import CollectorStatus
 from aptl.core.runstore import RunStorageBackend
+from aptl.utils.redaction import redact
 
 
 class RunArchiveSource:
@@ -59,6 +70,171 @@ class RunArchiveSource:
         return SourceResult(status=status, records=records, dropped_count=dropped)
 
 
+def _partial_read_record(name: str, exc: Exception) -> dict[str, object]:
+    def text(value: object) -> str:
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return value if isinstance(value, str) else ""
+
+    return {
+        "container": name,
+        "status": "timeout" if isinstance(exc, TimeoutExpired) else "interrupted-read",
+        "output": text(getattr(exc, "stdout", None)),
+        "stderr": text(getattr(exc, "stderr", None)),
+        "window_coverage": "partial",
+    }
+
+
+def _select_file_window(
+    records: list[dict[str, object]],
+    timestamp_of: Callable[[str], str],
+    start_iso: str,
+    end_iso: str,
+) -> int:
+    """Select complete raw lines by an adapter-owned timestamp decoder."""
+
+    def instant(value: str) -> datetime:
+        result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if result.tzinfo is None:
+            raise ValueError("file timestamp requires a time zone")
+        return result
+
+    start, end = instant(start_iso), instant(end_iso)
+    if end < start:
+        raise ValueError("file capture window is invalid")
+    dropped = 0
+    for record in records:
+        selected = []
+        for line in record.get("output", "").splitlines(keepends=True):
+            try:
+                observed = instant(timestamp_of(line))
+            except ValueError, TypeError, KeyError, AttributeError:
+                dropped += 1
+                continue
+            if start <= observed <= end:
+                selected.append(line)
+        record["output"] = "".join(selected)
+        record["window_coverage"] = "selected-records"
+        record["coverage_limitations"] = [
+            "History coverage depends on the adapter-selected current and rotated files."
+        ]
+    return dropped
+
+
+class ContainerFileSource:
+    """Read selected files, keeping raw lines within an adapter-decoded window.
+
+    The adapter selects current/rotated paths and decodes each line's timestamp.
+    A decoder is required before reading. History gaps, failed files,
+    malformed lines and bounded reads remain explicit partial data.
+    """
+
+    def __init__(
+        self,
+        operations: object,
+        files: Sequence[tuple[str, str]],
+        *,
+        max_bytes: int = 1024 * 1024,
+        timestamp_of: Callable[[str], str],
+    ) -> None:
+        if type(max_bytes) is not int or not 1 <= max_bytes <= 8 * 1024 * 1024:
+            raise ValueError("log file byte limit is invalid")
+        self._files = tuple(dict.fromkeys(files))
+        if len(self._files) > 256:
+            raise ValueError("too many log file sources")
+        for name, path in self._files:
+            if (
+                not name
+                or len(name) > 128
+                or len(path) > 4096
+                or not PurePosixPath(path).is_absolute()
+                or ".." in PurePosixPath(path).parts
+                or "\0" in path
+            ):
+                raise ValueError("log file source is invalid")
+        self._operations, self._limit = operations, max_bytes
+        if not callable(timestamp_of):
+            raise ValueError("file timestamp decoder is invalid")
+        self._timestamp_of = timestamp_of
+
+    def fetch(self, start_iso: str, end_iso: str) -> SourceResult:
+        records, failed = [], []
+        remaining, truncated, timed_out, interrupted = self._limit, False, False, False
+        for index, (name, path) in enumerate(self._files):
+            if remaining <= 0:
+                truncated = True
+                records.extend(
+                    {"container": name, "path": path, "status": "not-read-byte-limit"}
+                    for name, path in self._files[index:]
+                )
+                break
+            try:
+                result = self._operations.container_exec(
+                    name, ["head", "-c", str(remaining + 1), "--", path], timeout=30
+                )
+                if result.returncode:
+                    failed.append({"container": name, "path": path})
+                raw = result.stdout.encode("utf-8")
+                truncated |= len(raw) > remaining
+                retained = raw[:remaining].decode("utf-8", errors="ignore")
+                remaining -= len(raw[:remaining])
+                records.append(
+                    {
+                        "container": name,
+                        "path": path,
+                        "output": retained,
+                        "truncated": len(raw) > len(retained.encode("utf-8")),
+                        **(
+                            {"status": "source-unavailable"}
+                            if result.returncode
+                            else {}
+                        ),
+                    }
+                )
+            except (TimeoutExpired, InterruptedError) as exc:
+                record = _partial_read_record(name, exc)
+                record["path"] = path
+                # Preserve accepted streams within the same raw read budget.
+                for key in ("output", "stderr"):
+                    raw = record[key].encode("utf-8")
+                    truncated |= len(raw) > remaining
+                    record[key] = raw[:remaining].decode("utf-8", errors="ignore")
+                    remaining -= min(len(raw), remaining)
+                records.append(record)
+                timed_out |= isinstance(exc, TimeoutExpired)
+                interrupted = True
+            except Exception:
+                failed.append({"container": name, "path": path})
+                records.append(
+                    {"container": name, "path": path, "status": "source-unavailable"}
+                )
+        status = (
+            CollectorStatus.TRUNCATION
+            if truncated
+            else CollectorStatus.TIMEOUT
+            if timed_out
+            else CollectorStatus.MID_RUN_LOSS
+            if interrupted
+            else CollectorStatus.SOURCE_UNAVAILABLE
+            if failed
+            else CollectorStatus.MID_RUN_LOSS
+        )
+        for row in records:
+            row["requested_window"] = [start_iso, end_iso]
+        dropped = _select_file_window(records, self._timestamp_of, start_iso, end_iso)
+        return SourceResult(
+            status=status,
+            records=records,
+            dropped_count=dropped,
+            source_pipeline={
+                "method": "windowed-file-lines",
+                "requested_window": [start_iso, end_iso],
+                "failed_sources": failed,
+                "truncated": truncated,
+            },
+        )
+
+
 class ContainerLogSource:
     """A windowed source over ``DeploymentBackend.container_logs_capture``.
 
@@ -68,31 +244,107 @@ class ContainerLogSource:
     output becomes one ``{container, output}`` record.
     """
 
-    def __init__(self, backend: object, containers: Sequence[str]) -> None:
+    def __init__(
+        self,
+        backend: object,
+        containers: Sequence[str],
+        *,
+        max_bytes: int = 1024 * 1024,
+    ) -> None:
         """Bind to a DeploymentBackend and the containers whose logs to capture."""
         self._backend = backend
         self._containers = tuple(containers)
+        if type(max_bytes) is not int or not 1024 <= max_bytes <= 8 * 1024 * 1024:
+            raise ValueError("log capture byte limit is invalid")
+        self._limit = max_bytes
 
     def fetch(self, start_iso: str, end_iso: str) -> SourceResult:
         """Capture each container's window of logs, distinguishing failure from empty."""
         records: list[dict[str, object]] = []
+        failed: list[str] = []
+        timed_out, interrupted, truncated = False, False, False
+        budget = capture_read_bytes(self._limit)
+        per_source = max(
+            1,
+            (budget - 512 * len(self._containers)) // max(1, 6 * len(self._containers)),
+        )
         for container in self._containers:
             try:
                 result = self._backend.container_logs_capture(
-                    container, since=start_iso, until=end_iso, timeout=30
+                    container,
+                    since=start_iso,
+                    until=end_iso,
+                    timeout=30,
+                    max_bytes=per_source,
                 )
+            except (TimeoutExpired, InterruptedError) as exc:
+                records.append(_partial_read_record(container, exc))
+                timed_out |= isinstance(exc, TimeoutExpired)
+                interrupted = True
+                failed.append(container)
+                continue
             except Exception:
-                return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
-            if result.returncode != 0:
-                return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
-            output = (result.stdout or "").strip()
-            if output:
-                records.append({"container": container, "output": output})
-        status = CollectorStatus.OK if records else CollectorStatus.EMPTY_OK
-        return SourceResult(status=status, records=records)
+                failed.append(container)
+                records.append({"container": container, "status": "source-unavailable"})
+                continue
+            read_truncated = getattr(result, "truncated", False) is True
+            read_timed_out = getattr(result, "timed_out", False) is True
+            truncated |= read_truncated
+            timed_out |= read_timed_out
+            if result.returncode != 0 and not (read_truncated or read_timed_out):
+                failed.append(container)
+                records.append({"container": container, "status": "source-unavailable"})
+            output = result.stdout or ""
+            # Docker puts the container's stderr on stderr too. On failure,
+            # stderr is a transport diagnostic, so keep only accepted stdout.
+            stderr = (
+                (result.stderr or "")
+                if result.returncode == 0 or read_truncated or read_timed_out
+                else ""
+            )
+            if output or stderr or read_truncated or read_timed_out:
+                record = {"container": container, "output": output}
+                if read_truncated or read_timed_out:
+                    record["status"] = "truncation" if read_truncated else "timeout"
+                if stderr:
+                    record["stderr"] = stderr
+                records.append(record)
+        for record in records:
+            # Alternate native backends must also fit the admitted source budget.
+            # Redact complete values before retaining a prefix.
+            for key in ("output", "stderr"):
+                value = record.get(key)
+                if isinstance(value, str) and len(value.encode("utf-8")) > per_source:
+                    safe = redact(value).encode("utf-8")
+                    record[key] = safe[:per_source].decode("utf-8", errors="ignore")
+                    record["truncated"] = True
+                    truncated = True
+        status = (
+            CollectorStatus.TRUNCATION
+            if truncated
+            else CollectorStatus.TIMEOUT
+            if timed_out
+            else CollectorStatus.MID_RUN_LOSS
+            if interrupted
+            else CollectorStatus.SOURCE_UNAVAILABLE
+            if failed
+            else CollectorStatus.OK
+            if records
+            else CollectorStatus.EMPTY_OK
+        )
+        return SourceResult(
+            status=status,
+            records=records,
+            source_pipeline={
+                "requested_sources": list(self._containers),
+                "failed_sources": failed,
+            },
+        )
 
 
-def soc_windowed_source(query: Callable[[str, str], list[dict[str, object]] | None]) -> WindowedSource:
+def soc_windowed_source(
+    query: Callable[[str, str], list[dict[str, object]] | None],
+) -> WindowedSource:
     """Adapt a SOC query returning ``list`` (events) or ``None`` (transport failure).
 
     ``None`` — what the ``curl_safe`` boundary returns on an HTTP/transport

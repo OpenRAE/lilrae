@@ -71,7 +71,7 @@ _URL_USERINFO_RE = re.compile(r"(://[^/:@\s]+:)[^@\s]+(@)")
 # PEM key/cert blocks. `re.DOTALL` lets `.` span newlines; non-greedy so
 # adjacent blocks are masked separately.
 _PEM_BLOCK_RE = re.compile(
-    r"(-----BEGIN[^-]*-----).*?(-----END[^-]*-----)",
+    r"(-----BEGIN[^-]*-----).*?(?:(-----END[^-]*-----)|\Z)",
     re.DOTALL,
 )
 # Recognizes `--<sensitive>` (or compound `--client-secret`,

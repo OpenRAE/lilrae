@@ -52,7 +52,7 @@ def _cost(value: object, previous: float | None) -> float | None:
     if value is None:
         return previous
     if type(value) not in {int, float} or not 0 <= value <= 10**6:
-        raise ValueError("invalid cost")
+        return None
     return (previous or 0) + value
 
 

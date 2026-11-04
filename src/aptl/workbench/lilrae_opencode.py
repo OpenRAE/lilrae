@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from contextlib import ExitStack
@@ -25,6 +24,9 @@ from aptl.core.opencode import (
     OpenRouterRoute,
     SUPPORTED_OPENCODE_BUILD,
 )
+from aptl.core.evidence.participant_capture import ParticipantCaptureArchive
+from aptl.workbench.opencode_capture import OpenCodeCaptureLease
+from aptl.workbench.provider_capture import redact_capture_value
 from aptl.workbench.opencode_events import (
     OpenCodeResponse,
     parse_opencode_response,
@@ -57,6 +59,7 @@ from aptl.workbench.process import (
     ProcessResult,
     BoundedProcessError,
     REASON_CANCELLED,
+    REASON_TIMEOUT,
     ProcessRequest,
     CancellableProcessRunner,
 )
@@ -91,6 +94,7 @@ class OpenCodeOptions:
     evidence_sink: Callable[[OpenCodeInvocationEvidence], None] | None = None
     request: ParticipantRequest | None = None
     request_binding: ParticipantRequestBinding | None = None
+    capture: ParticipantCaptureArchive | None = field(default=None, repr=False)
 
 
 class LilraeOpenCodeExecutor:
@@ -138,14 +142,36 @@ class LilraeOpenCodeExecutor:
             if configuration_result is not None
             else None
         )
+        self._capture = options.capture
+        if self._capture is not None and (
+            not isinstance(self._capture, ParticipantCaptureArchive)
+            or self._configuration_result is None
+            or self._capture.grant.configuration_digest
+            != self._configuration_result.configuration_digest
+            or self._capture.grant.participant_address
+            != self._configuration_result.participant_address
+        ):
+            raise ValueError(
+                "participant capture differs from its admitted configuration"
+            )
         self._request = options.request
         self._request_binding = options.request_binding
         validate_opencode_request(
-            self._request, model=model, prompt=prompt, build=options.build, route=self._route,
-            output_limit=self._max_output_tokens, binding=self._request_binding,
+            self._request,
+            model=model,
+            prompt=prompt,
+            build=options.build,
+            route=self._route,
+            output_limit=self._max_output_tokens,
+            binding=self._request_binding,
         )
-        if self._request is not None and self._request.configuration_result != self._configuration_result:
-            raise ValueError("participant request differs from its sealed configuration")
+        if (
+            self._request is not None
+            and self._request.configuration_result != self._configuration_result
+        ):
+            raise ValueError(
+                "participant request differs from its sealed configuration"
+            )
         self._validate_delivery()
         self._max_output_bytes = options.max_output_bytes
         self._runner = options.runner or BoundedProcessRunner()
@@ -228,6 +254,20 @@ class LilraeOpenCodeExecutor:
             if self._configuration_result is not None
             else None
         )
+
+    @property
+    def tool_evidence_sink(self) -> Callable[[Mapping[str, object]], None] | None:
+        return self.observe_tool_event if self._capture is not None else None
+
+    def observe_tool_event(self, event: Mapping[str, object]) -> None:
+        """Retain tool observations with both provider and MCP credentials removed."""
+        if self._capture is None:
+            return
+        safe = redact_capture_value(
+            dict(event),
+            tuple(self._environment.values()) + tuple(self._mcp_credentials.values()),
+        )
+        self._capture.record_tool_event(safe)
 
     def _tools(self) -> tuple[dict[str, object], dict[str, str]]:
         """Translate only a private, unchanged and verified profile."""
@@ -327,11 +367,14 @@ class LilraeOpenCodeExecutor:
         partial = None
         transport_cleanup = None
         process_error = None
+        partial_stdout = b""
 
         def retain_partial(output: bytes) -> None:
             """Reduce private failure bytes to a safe metadata snapshot."""
-            nonlocal partial
+            nonlocal partial, partial_stdout
             partial = replace(parse_opencode_response(output), text="")
+            if self._capture is not None:
+                partial_stdout = output
 
         def close_transport(*exc: object) -> bool | None:
             """Retain transport closure status while preserving the original failure."""
@@ -370,9 +413,38 @@ class LilraeOpenCodeExecutor:
                 )
                 work = Path(directory)
                 config = render_opencode_config(
-                    self.model, self._route, self._tool_permissions, servers,
-                    request_profile=self._request.profile if self._request is not None else None,
+                    self.model,
+                    self._route,
+                    self._tool_permissions,
+                    servers,
+                    request_profile=self._request.profile
+                    if self._request is not None
+                    else None,
                 )
+                environment = opencode_environment(
+                    work, self._environment, self._max_output_tokens
+                )
+                capture_lease = None
+                if self._capture is not None:
+                    capture_lease = OpenCodeCaptureLease(
+                        work,
+                        self._capture,
+                        action_id,
+                        self._route.endpoint,
+                        self._environment,
+                        self._route.serving_provider,
+                        self.prompt_sha256,
+                        len(self._prompt),
+                    )
+                    capture_lease.configure(config, environment)
+                    stack.push(
+                        lambda _type, exc, _tb: capture_lease.retain(
+                            result.stdout if result else partial_stdout,
+                            failure_reason=(exc.reason if isinstance(exc, BoundedProcessError)
+                                and exc.reason in {REASON_TIMEOUT, REASON_CANCELLED}
+                                else "harness-failed" if exc is not None else None),
+                        )
+                    )
                 create_exclusive_nofollow(
                     work, "opencode.json", json.dumps(config).encode()
                 )
@@ -388,9 +460,7 @@ class LilraeOpenCodeExecutor:
                             "--title",
                             "lilrae-participant",
                         ),
-                        env=opencode_environment(
-                            work, self._environment, self._max_output_tokens
-                        ),
+                        env=environment,
                         cwd=work,
                         stdin=self._prompt,
                         timeout_seconds=self.timeout_seconds,

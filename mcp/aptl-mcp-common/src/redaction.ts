@@ -134,7 +134,8 @@ function safeCountDefault(value: unknown): boolean {
 }
 
 function safeModelCount(name: string, value: unknown): boolean {
-  if (!['max_output_tokens', 'input_tokens', 'output_tokens'].includes(name)) return false;
+  if (['input_tokens_complete', 'output_tokens_complete'].includes(name)) return typeof value === 'boolean';
+  if (!["max_output_tokens", "max_tokens", "max_completion_tokens", "input_tokens", "output_tokens", "prompt_tokens", "completion_tokens", "total_tokens", "reasoning_tokens", "cache_read_tokens", "cache_write_tokens", "cached_tokens", "known_input_tokens_subtotal", "known_output_tokens_subtotal", "effective_token_limit"].includes(name)) return false;
   if (value === null || publicCount(value)) return true;
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
@@ -213,7 +214,7 @@ const URL_USERINFO_PATTERN = /(:\/\/[^/:@\s]+:)[^@\s]+(@)/gi;
 // Multi-line with `[\s\S]` since `.` does not match newline by default;
 // non-greedy so adjacent blocks are masked separately.
 const PEM_BLOCK_PATTERN =
-  /(-----BEGIN[^-]*-----)[\s\S]*?(-----END[^-]*-----)/g;
+  /(-----BEGIN[^-]*-----)[\s\S]*?(?:(-----END[^-]*-----)|(?![\s\S]))/g;
 // Recognizes `--<sensitive>` (or compound `--client-secret`,
 // `--access-token`) as a standalone token used by array-pair detection
 // so adjacent positional values get redacted.

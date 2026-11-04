@@ -70,7 +70,12 @@ def _bare_hex(prefixed_digest: str) -> str:
 
 
 def derive_evidence_record_id(
-    *, run_id: str, planned_trial_id: str, binding: CaptureBinding, content_digest: str
+    *,
+    run_id: str,
+    planned_trial_id: str,
+    binding: CaptureBinding,
+    content_digest: str,
+    attempt_id: str | None = None,
 ) -> str:
     """Derive one evidence record's stable ID from identity inputs only.
 
@@ -88,6 +93,8 @@ def derive_evidence_record_id(
         "effective_config_digest": binding.effective_config_digest,
         "content_digest": content_digest,
     }
+    if attempt_id is not None:
+        projection["attempt_id"] = attempt_id
     return _EVIDENCE_ID_PREFIX + hashlib.sha256(rfc8785.dumps(projection)).hexdigest()
 
 
@@ -114,6 +121,7 @@ def build_evidence_record(
     outcome: CollectorOutcome,
     captured_at: str,
     disclosure: RecordDisclosure,
+    attempt_id: str | None = None,
 ) -> ExperimentEvidenceRecordModel:
     """Assemble one RAES :class:`ExperimentEvidenceRecordModel` for a captured binding.
 
@@ -131,6 +139,7 @@ def build_evidence_record(
         planned_trial_id=planned_trial_id,
         binding=binding,
         content_digest=content.digest,
+        attempt_id=attempt_id,
     )
     redaction_policy = binding.redaction_policy
     if disclosure.redaction_state == "withheld" and redaction_policy is None:
@@ -156,6 +165,18 @@ def build_evidence_record(
                 ref_kind="measurement-channel",
                 ref_id=binding.channel_ref_id,
                 ref_version=binding.channel_ref_version,
+            ),
+            *(
+                [
+                    ExperimentReferenceModel(
+                        ref_kind="other", ref_id=f"planned-trial:{planned_trial_id}"
+                    ),
+                    ExperimentReferenceModel(
+                        ref_kind="other", ref_id=f"attempt:{attempt_id}"
+                    ),
+                ]
+                if attempt_id is not None
+                else []
             ),
         ],
         evidence_kind=binding.capture_kind,
