@@ -139,7 +139,8 @@ def _prepare_bytes(
 ) -> tuple[Sequence[bytes], str, bool]:
     """Redact complete bounded input before retaining an over-quota prefix.
 
-    The separate 64 MiB processing ceiling bounds parsing and redaction.
+    Materialized JSON uses a separate processing ceiling for safe prefixes.
+    Streaming input and other media keep the admitted input byte limit.
     Opaque capture cannot satisfy a required redaction policy.
     """
     if media_type not in _REDACTABLE_MEDIA_TYPES:
@@ -147,9 +148,10 @@ def _prepare_bytes(
             raise ValueError("capture media type has no trusted redaction adapter")
         return outcome.chunks, "none", False
 
-    raw = _consume_bounded_chunks(
-        outcome.chunks, max(binding.limits.max_bytes, _MAX_REDACTION_BYTES)
-    )
+    input_limit = binding.limits.max_bytes
+    if media_type == "application/json" and isinstance(outcome.chunks, (tuple, list)):
+        input_limit = max(input_limit, _MAX_REDACTION_BYTES)
+    raw = _consume_bounded_chunks(outcome.chunks, input_limit)
     handler = _redaction_handler(binding)
     redacted, changed = _prepare_redactable_bytes(raw, media_type, handler)
     truncated = len(redacted) > binding.limits.max_bytes

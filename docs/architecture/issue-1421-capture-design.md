@@ -14,7 +14,8 @@ The same registry admits the capture plan; no parallel capability table is neede
 The existing coordinator applies redaction, limits, hashing, and artifact references.
 Oversized structured logs retain a redacted prefix in bounded valid JSON.
 The artifact quota includes serialized metadata.
-Structured redaction processes at most the greater of 64 MiB and the artifact limit.
+For materialized JSON, redaction processes at most the greater of 64 MiB and the artifact limit.
+Streaming input and other media retain the admitted input byte limit.
 
 `AptlRuntimeManager.collect_evidence` is the backend collection entry point.
 It checks the run, backend, admitted plan and manifest before acquisition.
