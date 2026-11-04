@@ -149,8 +149,8 @@ Commit PR titles. Do not hand-edit `CHANGELOG.md`. See
 
 ## Security Reports
 
-Do not open public issues for suspected security vulnerabilities. See
-[SECURITY.md](SECURITY.md).
+Do not put vulnerability details in public issues, pull requests, or
+discussions. See [SECURITY.md](SECURITY.md).
 
 ## Community Expectations
 

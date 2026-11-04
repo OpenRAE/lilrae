@@ -176,9 +176,9 @@ manual.
 - [Report a vulnerability privately](https://github.com/OpenRAE/lilrae/security/advisories/new)
 - [Review the OpenSSF Best Practices assessment](docs/security/openssf-best-practices.md)
 
-Do not report suspected vulnerabilities through a public issue. The
-[security policy](SECURITY.md) describes scope and the private fallback contact
-path.
+Do not put vulnerability details in a public issue, pull request, or
+discussion. The [security policy](SECURITY.md) describes scope and the private
+fallback contact path.
 
 ## Ethics And Disclaimer
 
