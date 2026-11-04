@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aptl.backends.raes_evidence_acquisition import NativeEvidenceRequest
+    from aptl.core.evidence.adapters.sources import WindowedSource
+    from aptl.core.evidence.coordinator import AcquisitionResult
 
 from raes_contracts.artifact_requirements import ArtifactAvailabilityContext
 from raes_contracts.realization_profiles import PlanProfileAuthority
@@ -109,6 +116,41 @@ class AptlRuntimeManager(_RaesRuntimeManager):
                 execution_plan, result.snapshot, phase="initial", success=result.success
             )
         return result
+
+    def collect_evidence(
+        self,
+        request: NativeEvidenceRequest,
+        *,
+        attempt_id: str,
+        sources: Mapping[str, WindowedSource] | None = None,
+        trial_body: Callable[[], None] | None = None,
+    ) -> AcquisitionResult:
+        """Collect for this runtime's run, backend and advertised capabilities.
+
+        The assigned-trial caller owns execution and cleanup. Collection
+        finalizes before this call returns, using the existing result contract.
+        """
+        from aptl.backends.raes_evidence_acquisition import acquire_trial_evidence
+
+        if (
+            request.run_id != self._lilrae_run_id
+            or request.backend
+            is not getattr(self._target.provisioner, "deployment_backend", None)
+            or request.capture_selection.registry.observation_projection()
+            != self._target.manifest.observation
+            or request.plan.plan_digest
+            != getattr(
+                getattr(self._target.provisioner, "capture_plan", None),
+                "plan_digest",
+                None,
+            )
+        ):
+            raise ValueError("capture request differs from its runtime owner")
+        if trial_body is None and request.window is None:
+            raise ValueError("runtime capture requires the requested trial window")
+        return acquire_trial_evidence(
+            request, attempt_id=attempt_id, sources=sources, trial_body=trial_body
+        )
 
     def refresh_inventory(self, execution_plan: ExecutionPlan) -> ApplyResult:
         """Refresh inventory and capture native evidence for the run."""

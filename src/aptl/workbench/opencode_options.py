@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aptl.core.evidence.participant_capture import ParticipantCaptureArchive
 from dataclasses import dataclass, field
 from datetime import datetime, UTC
 from pathlib import Path
@@ -59,6 +63,7 @@ class OpenCodeOptions:
     trial_scope: OpenCodeTrialScope | None = None
     native_history_required: bool = False
     request_observation_required: bool = False
+    capture: ParticipantCaptureArchive | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if (

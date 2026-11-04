@@ -21,11 +21,15 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from contextvars import ContextVar
+from subprocess import TimeoutExpired
+from time import monotonic
 from typing import Protocol, runtime_checkable
 
 from aptl.core.correlation.clock import ClockProvider
 from aptl.core.evidence.outcomes import SUCCESS_STATUSES, CollectorStatus
+from aptl.core.evidence.deadline import native_read_timeout, native_read_budget
 from aptl.core.evidence.protocol import CollectorContext, CollectorOutcome
 from aptl.utils.probe_execution import probe_output_byte_limit
 
@@ -61,12 +65,30 @@ class WindowedSource(Protocol):
         ...
 
 
+_READ_BYTES: ContextVar[int | None] = ContextVar("capture_read_bytes", default=None)
+
+
+def capture_read_bytes(requested: int) -> int:
+    """Use the admitted artifact budget when bounding native reads."""
+    return min(requested, _READ_BYTES.get() or requested)
+
+
+def capture_read_timeout(requested: float) -> float:
+    """Bound native reads through the backend's existing nested-call budget."""
+    try:
+        return native_read_timeout(requested)
+    except TimeoutError:
+        raise TimeoutExpired("capture-read", requested) from None
+
+
 @dataclass(frozen=True)
 class _WindowHandle:
     """Opaque per-start handle: the window's start time + the observation clock."""
 
     started_at: str
     clock: object
+    deadline: float
+    max_bytes: int
 
 
 class CallableWindowedSource:
@@ -125,12 +147,33 @@ class WindowedQueryCollector:
     @staticmethod
     def start(context: CollectorContext) -> _WindowHandle:
         """Open the observation window from the injected clock."""
-        return _WindowHandle(started_at=context.clock.now(), clock=context.clock)
+        return _WindowHandle(
+            started_at=context.clock.now(),
+            clock=context.clock,
+            deadline=monotonic() + context.deadline_seconds,
+            max_bytes=context.binding.limits.max_bytes,
+        )
 
     def stop(self, handle: _WindowHandle) -> CollectorOutcome:
         """Close the window, query the source, and map its typed result."""
+        window_end = handle.clock.now()
+        byte_token = _READ_BYTES.set(handle.max_bytes)
+        try:
+            # Native I/O enforces the remaining budget at its boundary. Local,
+            # already captured archives still need references after timeout.
+            with native_read_budget(handle.deadline, monotonic):
+                result = self._source.fetch(handle.started_at, window_end)
+        except TimeoutExpired, TimeoutError:
+            result = SourceResult(status=CollectorStatus.TIMEOUT)
+        except Exception:
+            if monotonic() <= handle.deadline:
+                raise
+            result = SourceResult(status=CollectorStatus.TIMEOUT)
+        finally:
+            _READ_BYTES.reset(byte_token)
         finished_at = handle.clock.now()
-        result = self._source.fetch(handle.started_at, finished_at)
+        if monotonic() > handle.deadline:
+            result = replace(result, status=CollectorStatus.TIMEOUT)
         return _to_outcome(result, handle.started_at, finished_at)
 
 
@@ -147,11 +190,12 @@ def _to_outcome(
 ) -> CollectorOutcome:
     """Map a :class:`SourceResult` to a :class:`CollectorOutcome`.
 
-    A source failure passes through without chunks; a success serializes the
-    structured records to ``application/json`` (empty records are a legitimate
-    ``EMPTY_OK``, never a failure).
+    Retain accepted content even when the source reports failure. Structured
+    records serialize to ``application/json``; empty successful records are
+    ``EMPTY_OK`` and failures keep their failure status.
     """
-    if result.status not in SUCCESS_STATUSES:
+    has_content = bool(result.records or result.chunks)
+    if result.status not in SUCCESS_STATUSES and not has_content:
         return CollectorOutcome(
             status=result.status,
             started_at=started_at,
@@ -159,8 +203,9 @@ def _to_outcome(
             dropped_count=result.dropped_count,
             detail=f"source reported {result.status.value}",
         )
-    has_content = bool(result.records or result.chunks)
-    status = CollectorStatus.OK if has_content else CollectorStatus.EMPTY_OK
+    status = result.status
+    if status is CollectorStatus.OK and not has_content:
+        status = CollectorStatus.EMPTY_OK
     chunks = (
         result.chunks
         if result.chunks

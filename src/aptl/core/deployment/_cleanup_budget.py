@@ -1,4 +1,4 @@
-"""One authored cleanup deadline shared by nested Docker readback calls."""
+"""Absolute cleanup and capture deadlines shared by nested Docker reads."""
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from time import monotonic
 
 from aptl.core.deployment.errors import BackendTimeoutError
+from aptl.core.evidence.deadline import native_read_timeout
 
 
 @dataclass(frozen=True)
@@ -46,7 +47,10 @@ def cleanup_budget(
 def cleanup_command_timeout(timeout: int | float | None) -> int | float | None:
     """Preserve ordinary timeouts outside cleanup; clamp them inside cleanup."""
     budget = _DEADLINE.get()
-    if budget is None:
-        return timeout
-    remaining = budget.remaining()
-    return remaining if timeout is None else min(timeout, remaining)
+    if budget is not None:
+        remaining = budget.remaining()
+        timeout = remaining if timeout is None else min(timeout, remaining)
+    try:
+        return native_read_timeout(timeout)
+    except TimeoutError:
+        raise BackendTimeoutError("capture read deadline expired") from None

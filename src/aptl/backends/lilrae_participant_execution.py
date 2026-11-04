@@ -343,7 +343,8 @@ class LilraeParticipantExecution:
             request.execution_generation,
         ):
             raise ValueError("participant tool port mismatch")
-        session = LilraeToolSession(port, item.tool_bindings, event)
+        session = LilraeToolSession(port, item.tool_bindings, event,
+            evidence_sink=getattr(item.executor, "tool_evidence_sink", None))
         try:
             return item.executor.invoke_with_tools(
                 request.action_instance_id, event, session

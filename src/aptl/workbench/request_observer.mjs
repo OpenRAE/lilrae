@@ -146,7 +146,7 @@ function observedResponse(response, observation) {
   return new Response(stream, { status: response.status, statusText: response.statusText, headers: response.headers });
 }
 
-function createObservedFetch(write, nativeTurns, secrets) {
+function createObservedFetch(write, nativeTurns, secrets, nativeFetch = fetch) {
   const counters = { calls: 0, completedTurns: 0 };
   return async (url, init = {}) => {
     if (String(url) !== input.endpoint + "/chat/completions" || init.method !== "POST"
@@ -167,7 +167,7 @@ function createObservedFetch(write, nativeTurns, secrets) {
     if (init.signal?.aborted) { abort(); fail(); }
     init.signal?.addEventListener("abort", abort, { once: true });
     let response;
-    try { response = await fetch(url, { ...init, redirect: "error" }); }
+    try { response = await nativeFetch(url, { ...init, redirect: "error" }); }
     catch {
       end(init.signal?.aborted ? "cancelled" : "failed");
       init.signal?.removeEventListener("abort", abort);
@@ -192,7 +192,13 @@ async function configureObserver(config) {
   const secrets = observerSecrets(config, credential);
   const write = journalWriter();
   write({ kind: "ready", observer_sha256: input.observer_sha256, native_turn_limit: nativeTurns });
-  const observedFetch = createObservedFetch(write, nativeTurns, secrets);
+  let nativeFetch = fetch;
+  if (input.capture) {
+    const capturePlugin = (await import("./provider-capture.mjs")).default;
+    const hooks = await capturePlugin({}, input.capture);
+    nativeFetch = (await hooks.auth.loader()).fetch;
+  }
+  const observedFetch = createObservedFetch(write, nativeTurns, secrets, nativeFetch);
   // Keep provider access disabled until the private journal and wrapper exist.
   Object.assign(config.provider.openrouter.options, { fetch: observedFetch, baseURL: input.endpoint, apiKey: credential });
 }
