@@ -4,6 +4,9 @@ from dataclasses import dataclass
 import re
 from urllib.parse import SplitResult, urlsplit
 
+from typing import Literal
+from aptl.core.provider_observation import RequestObservation
+
 
 def _loopback_fixture(url: SplitResult, path: str = "/api/v1") -> bool:
     """Admit only explicit loopback ports for offline provider qualification."""
@@ -71,6 +74,73 @@ class OpenRouterRoute:
 
 
 @dataclass(frozen=True)
+class NativeStepObservation:
+    """One native step report, without private text or provider attestation."""
+
+    message_id: str
+    step_id: str
+    finish_reason: str
+    created_at_ms: int
+    completed_at_ms: int
+    input_tokens: int | None
+    output_tokens: int | None
+    reasoning_tokens: int | None
+    cache_read_tokens: int | None
+    cache_write_tokens: int | None
+    estimated_cost: float | None
+
+
+@dataclass(frozen=True)
+class NativeHistoryObservation:
+    """Allowlisted delivery facts from one private native session database."""
+
+    status: Literal[
+        "observed",
+        "partial",
+        "missing",
+        "invalid",
+        "oversized",
+        "uncheckpointed",
+        "unsupported-platform",
+    ]
+    session_id: str | None = None
+    user_message_id: str | None = None
+    prompt_matches: bool | None = None
+    recorded_model: str | None = None
+    prompt_sha256: str | None = None
+    authored_placement: Literal["native-user-text"] | None = None
+    steps: tuple[NativeStepObservation, ...] = ()
+    source: Literal["native-session-history"] = "native-session-history"
+    unavailable_fields: tuple[str, ...] = (
+        "outgoing_controls",
+        "provider_generation_id",
+        "served_model",
+        "served_provider",
+        "billing_cost",
+    )
+
+    def require_fields(self, fields: frozenset[str]) -> None:
+        """Refuse a capture claim that the observed native source cannot satisfy."""
+        available = {
+            "prompt_delivery",
+            "recorded_model",
+            "native_session",
+            "native_steps",
+        }
+        if self.status != "observed" or not fields <= available:
+            raise ValueError("required native participant evidence is unavailable")
+
+
+@dataclass(frozen=True)
+class OpenCodeTrialScope:
+    """Sealed trial and retained attempt coordinates supplied by trusted entry code."""
+
+    run_id: str
+    execution_attempt_id: str
+    plan_entry_id: str
+
+
+@dataclass(frozen=True)
 class OpenCodeInvocationEvidence:
     """Allowlisted facts; no prompt, output text, credential, or raw event."""
 
@@ -94,3 +164,8 @@ class OpenCodeInvocationEvidence:
     served_provider: str | None = None
     cleanup_residual: tuple[str, ...] | None = None
     tool_transport_cleanup: str | None = None
+    native_history: NativeHistoryObservation | None = None
+    request_observation: RequestObservation | None = None
+    participant_address: str | None = None
+    configuration_digest: str | None = None
+    trial_scope: OpenCodeTrialScope | None = None

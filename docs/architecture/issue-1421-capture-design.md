@@ -52,7 +52,9 @@ History coverage remains limited to the selected files.
 
 An explicitly selected participant capture archive retains provider calls,
 returned session events, tool dispatch/results, timestamps, and exposed usage.
-The approved local OpenCode plugin observes the existing provider transport.
+The approved local OpenCode capture module observes the existing provider transport.
+When request observation is required, its existing host-owned observer calls the capture wrapper.
+The private configuration still loads one approved plugin.
 It adds no network destination and retains no credentials.
 The host removes granted credential values before writing source data.
 Shared redaction retains only typed usage counts; credential-shaped replacements remain masked.

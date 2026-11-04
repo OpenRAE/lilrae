@@ -356,6 +356,80 @@
     }
   },
   {
+    "name": "authorization_scope_labels",
+    "input": {
+      "authorization_scope": [
+        "run:read",
+        "run:stop"
+      ]
+    },
+    "expected": {
+      "authorization_scope": [
+        "run:read",
+        "run:stop"
+      ]
+    }
+  },
+  {
+    "name": "authorization_scope_inline_credential",
+    "input": {
+      "authorization_scope": [
+        "Bearer scope-test-credential"
+      ]
+    },
+    "expected": {
+      "authorization_scope": [
+        "Bearer [REDACTED]"
+      ]
+    }
+  },
+  {
+    "name": "authorization_scope_scalar_credential",
+    "input": {
+      "authorization_scope": "private-credential"
+    },
+    "expected": {
+      "authorization_scope": "[REDACTED]"
+    }
+  },
+  {
+    "name": "authorization_scope_nested_credential",
+    "input": {
+      "authorization_scope": {
+        "token": "private-credential"
+      }
+    },
+    "expected": {
+      "authorization_scope": "[REDACTED]"
+    }
+  },
+  {
+    "name": "authorization_scope_compound_credential",
+    "input": {
+      "authorization_scope_token": [
+        "private-credential"
+      ]
+    },
+    "expected": {
+      "authorization_scope_token": "[REDACTED]"
+    }
+  },
+  {
+    "name": "authorization_scope_keeps_authorization_header_private",
+    "input": {
+      "authorization_scope": [
+        "run:read"
+      ],
+      "Authorization": "Bearer private-credential"
+    },
+    "expected": {
+      "authorization_scope": [
+        "run:read"
+      ],
+      "Authorization": "[REDACTED]"
+    }
+  },
+  {
     "name": "capture_usage_counts",
     "input": {
       "max_output_tokens": 7,

@@ -41,7 +41,9 @@ prose must not accidentally rename them.
 
 | Surface | Files | Disposition |
 | --- | --- | --- |
+| Required trial readiness | `docs/architecture/exp-011-resource-readiness-design.md` | Keep admitted environment-pack and entry identity distinct from native resource observations and read-only source readiness. |
 | Released RAES dependency adoption | `docs/architecture/issue-1603-raes-11-module-locations-preflight.md`, `docs/architecture/issue-1603-released-module-design.md` | Keep dependency floors, exact released pack identities, installed adapter qualification, and observed runtime state distinct. |
+| Scoped participant tool qualification | `docs/architecture/issue-1646-scoped-tool-affordances-preflight.md`, `docs/testing/scoped-tools-1646-candidate.md` | Keep released environment-pack identity distinct from the installed tool authority and tested candidate artifact. |
 | Participant tool admission | `docs/architecture/participant-action-enforcement.md` | Keep environment-pack release identity distinct from installed native tool mappings and RAES action authority. |
 | Native realization reporting and runtime dependencies | `docs/adrs/adr-007-python-cli-control-plane.md`, `docs/architecture/issue-1130-owned-descendant-reporting-design.md`, `docs/architecture/issue-1130-runtime-realization-attestation-preflight.md` | Keep the released environment-pack identity distinct from the RAES reporting contract, Python dependency boundary, native ownership and protected evidence handoff. |
 | Pack boundary enforcement | `docs/architecture/issue-1121-pack-boundary-preflight.md` | Preserve original and independent RPT adapter ownership, exact compatibility exceptions, and selected host requirements. |

@@ -10,6 +10,20 @@ state root. Every worker using the same daemon must use the same state root.
 The adapter preserves the admitted entry, run and attempt identities; it does
 not create an experiment plan or schedule a batch.
 
+Trial delivery requires a `TrialReadiness` gate bound to that same runtime
+target. Compose its `ReadinessEnvironment` from the selected approved lab
+owners, and wrap the runtime's installed trial services in
+`ReadinessTrialServices`. Readiness uses the admitted RAES entry directly.
+It checks required local artifacts, participant implementation and complete
+settings, clean placement, containment, required capture, and writable storage.
+Required services and capture sources are checked after provisioning and
+before effects. Missing, unavailable, crashing, malformed, and timed-out checks
+block the affected trial. Source readiness uses a separate read-only operation;
+it never invokes acquisition or its stimuli. A fully ceased preparation refusal
+releases newly claimed placement fences before dispatch. Clock accuracy is required only by a selected capture
+contract that declares it. No cloud resource is required for the fixed existing
+VM baseline. See [trial readiness](../architecture/trial-serving.md#required-readiness).
+
 The adapter holds the project lifecycle lock and a daemon lock during delivery.
 It rejects preexisting containers, networks or volumes. Pending execution,
 interruption or failed cleanup leaves durable ownership fences that block
@@ -19,6 +33,24 @@ a second runtime is not recovery. A `fresh-range-required` outcome requires a
 new approved placement rather than reuse of the old one. Cancellation and
 deadlines use RAES's stop and observation path, preserving partial evidence
 before declared cleanup. See [trial serving](../architecture/trial-serving.md).
+
+For an interrupted assigned trial, call
+`aptl.backends.trial_recovery.recover_interrupted_trial` with its original
+`LilraeTrialUnit`, `AssignedTrial`, coordinator cancellation control, worker
+runtime, clock and execution identity. Recovery requires RAES 10.7.0 or later.
+Reopen the original durable RAES stores after a restart. Recovery validates the
+retained intent before native work and uses the original run and attempt IDs.
+It does not allocate a replacement or resume another entry.
+
+Recovery seals the producer record and retained bytes under
+`<run store>/archives/<snapshot digest>/<run_id>/`. Each snapshot has its own
+manifest, seal and discovery index. The working run stays writable so later
+cleanup facts can be retained without changing an old archive. Execution,
+capture and cleanup retain their separate RAES states. Unknown cessation has
+no invented end time. Verified sealing alone does not permit target reuse;
+cleanup, native absence and probe cessation must also be proven. Duplicate
+completed requests verify the retained archive and leave later owners alone.
+See [interrupted trial recovery](../architecture/interrupted-trial-recovery.md).
 
 For a portable, third-party-verifiable evidence archive built from a run's verified artifact closure, see [Portable Evidence Bundle Export](evidence-bundle-export.md) (`lilrae runs export-bundle`).
 
@@ -71,6 +103,11 @@ capture that writes them ran.
     blobs/<sha256>                # Content-addressed raw evidence
     records/<record_id>.json      # Evidence records
   lifecycle/<sha256>              # Lifecycle attestation (terminal attempt)
+  readiness/clean/<sha256>.json   # Ordinary clean-placement observation
+  readiness/prepared/<sha256>.json # Entry and installed-resource observations
+  readiness/live/<sha256>.json    # Required live service and capture observations
+  trial-serving/intent.json      # Immutable admitted request and owner commitments
+  trial-serving/handoff.json     # Cleanup and readiness references
   participant/
     inject-deliveries.jsonl       # Participant inject deliveries
     observations.jsonl            # Participant action observations
@@ -95,6 +132,7 @@ capture that writes them ran.
 | `manifest.json`, `seal.json` (terminal attempt) | `src/aptl/core/archival/coordinator.py` | A terminal attempt is sealed: the RAES `experiment-run/v1` record and its seal marker, both create-once |
 | `attempt-intent.json` | `src/aptl/core/execution/executor.py` | A terminal attempt starts |
 | `lifecycle/` | `src/aptl/core/execution/assembly.py` | A terminal attempt ends: its lifecycle attestation, with an evidence record in `evidence/records/` |
+| `readiness/`, `trial-serving/handoff.json` | `TrialReadiness` and `LilraeTrialUnit` | The trial checks clean placement and required resources; handoff follows verified cleanup and probe cessation. Results are create-once and include failures when storage works |
 | `provenance/startup-provenance.json` | `src/aptl/core/provenance/record.py`, called by `lilrae lab start` | After the lab-start run record |
 | `provenance/run-provenance.json` | `publish_provenance_record` in `src/aptl/core/provenance/record.py` | A caller that holds the admitted and executed run context publishes it; no `aptl` command does |
 | `correlation.json` | `src/aptl/core/correlation/persistence.py` | After the lab-start run record, built from `manifest.json` and `orchestration/` |
@@ -109,8 +147,8 @@ capture that writes them ran.
 | `mcp-side/sessions/` | `createPtyTeeWriter` in `mcp/aptl-mcp-common/src/runs.ts` | Each SSH session or one-shot command an MCP server runs, appended as output arrives |
 | `kali-side/<session_id>/` | `harvestSession` in `mcp/aptl-mcp-common/src/captures.ts` | An MCP server whose lab config names a capture container (the shipped red config does) finishes a `<prefix>_run_command` call, closes a session through `<prefix>_close_session` or `<prefix>_close_all_sessions`, sees the remote side of a session close, or shuts down with a session open. For the red server, `lilrae lab start` names this workspace's capture sidecar in `LILRAE_MCP_CAPTURE_CONTAINER`. The sidecar's capture broker writes `frames.jsonl` and `metadata.json` under `/var/log/aptl/captures/<run_id>/sessions/<session_id>/`. The harvest copies that directory after the broker confirms `metadata.json`. When the harvest fails, the directory holds `capture-harvest-failure.json` instead, which names the failure (see [Kali Red Team](../components/kali-redteam.md#mcp-integration)). A server that names no capture container does not harvest |
 
-Only the execution controller (`src/aptl/core/execution/`) produces terminal
-attempts. A run that `lilrae lab start` created never holds `seal.json`, so it
+The legacy execution composer and the assigned-trial recovery adapter publish
+sealed records through the shared archival coordinator. A run that `lilrae lab start` created never holds `seal.json`, so it
 stays unsealed.
 
 MCP servers write `mcp-side/` and `kali-side/` into the run that
@@ -172,25 +210,23 @@ that rule's leaf and the aggregate, and nothing else. Secret sources are
 excluded by allowlist before collection: `.env`, rendered secret-bearing
 config, credentials, and private keys are never read or hashed.
 
-## Sealed Terminal-Attempt Records (`manifest.json`, `seal.json`)
+## Sealed Run Records (`manifest.json`, `seal.json`)
 
-Every terminal execution attempt produces one conformant, sealed ACES run
-record (ADR-050). The execution controller (`src/aptl/core/execution/`) drives
-each admitted trial: it runs the trial workload under the evidence coordinator,
-normalizes the terminal cause, and hands the archival coordinator an immutable
-terminal-attempt context exactly once. The archival coordinator consumes the
-admitted plan, the observed apparatus and participant provenance, the evidence
-acquisition result, the evaluator-supplied result summaries, the clock context,
-and the normalized terminal cause, and it composes the public RAES
-`ExperimentRunModel` (`schema_version = experiment-run/v1`). It never recomputes
-metrics, reconstructs captures, or infers a run from mutable state.
+Assigned trials use RAES's record producer. Recovery passes its original
+`ExperimentRunModel` to the archival coordinator without changing statuses,
+event times or attempt accounting. Both terminal and partial records can be
+sealed. A partial record states its limitations and does not establish cessation.
+The returned archive path identifies the immutable snapshot; the ordinary CLI
+run listing does not scan nested snapshot stores.
 
-Each attempt always records its own terminal attestation as lifecycle evidence,
-so the run record's mandatory evidence, traceability, and result fields are
-satisfied even when a trial ends before any authored capture starts.
+The legacy execution composer (`src/aptl/core/execution/`) remains available to
+existing archival consumers. It composes a terminal-attempt context from its
+workload and evidence acquisition. Its ID allocation and terminal-cause mapping
+do not apply to RAES-assigned trial recovery. Legacy terminal attempts include
+a lifecycle attestation even when authored capture never started.
 
-- `manifest.json` is the canonical serialized RAES run record for a terminal
-  attempt. In a run that `lilrae lab start` created, `manifest.json` is the
+- `manifest.json` is the canonical serialized RAES run record for an immutable
+  snapshot. In a run that `lilrae lab start` created, `manifest.json` is the
   `aptl.run-record/v2` reproducibility record instead. One version-dispatching
   adapter reads every shape, including older `aptl.run-record/v1` archives.
 - `seal.json` is the atomic seal marker. A run is discoverable as sealed only
@@ -200,13 +236,12 @@ satisfied even when a trial ends before any authored capture starts.
   size, and checksum for every sealed artifact), the applicable contract
   versions, and an explicit completeness and limitation statement.
 
-Each execution attempt receives a distinct `attempt_id`, which is also its
-portable `run_id` and its run-directory name. A retry reuses the same admitted
-plan and `planned_trial_id` but gets a new `attempt_id`; retry and repair
+The legacy archival composer uses its `attempt_id` as its portable `run_id`.
+Assigned trials instead retain RAES's preallocated `run_id` and separate
+`execution_attempt_id`; recovery never substitutes one for the other. RAES owns retry and replacement identity for assigned trials. Retry and repair
 lineage travel as RAES run references (`used_refs`, `derived_from_refs`,
 `generated_refs`, and, where applicable, `invalidation.superseded_by`). The
-terminal cause maps to the record's real status and is never overwritten by the
-seal: completed execution records `completed` with the evaluator's outcome;
+record's real status is never overwritten by the seal: completed execution records `completed` with the evaluator's outcome;
 scenario or evaluator failure records `failed`; cancellation, policy stop, or
 infrastructure interruption records `aborted`; capture loss or another validity
 failure records `invalidated` with an invalidation reason; and a replaced record
@@ -220,11 +255,13 @@ a new run version or attestation with explicit lineage, never an in-place edit.
 Export packages the already-sealed bytes and never writes back into the archive.
 
 A small, append-safe discovery index under the run store records bounded routing
-facts (attempt identity, run version, manifest digest, seal state, terminal
+facts (run identity, run version, manifest digest, seal state, routing
 timestamp, and safe relative location) using a prepared and committed journal.
 Discovery replays that journal and verifies each entry against the on-disk seal
 marker, so restart discovery works without scanning or trusting arbitrary
-filesystem paths. The index is derived and rebuildable from sealed archives; its
+filesystem paths. Partial snapshots use their retained archive observation time only for local
+routing, without adding an end time to the run record. The index is derived and
+rebuildable from sealed archives; its
 loss never changes the portable record or the seal.
 
 ## Range Snapshot
@@ -295,8 +332,10 @@ bundle options, layout, and verification.
 ## Key Source Files
 
 - `src/aptl/core/runstore.py`: Storage backend protocol and local filesystem implementation, seal-marker commit, and sealed-state immutability
+- `src/aptl/backends/trial_recovery.py`: Recovery of one RAES-assigned interrupted attempt
+- `src/aptl/backends/trial_archive.py`: Immutable snapshots of producer facts and original artifacts
 - `src/aptl/core/archival/`: Terminal-attempt archival, covering RAES run-record composition, terminal-cause status mapping, atomic seal marker, discovery index, and the legacy-manifest read adapter
-- `src/aptl/core/execution/`: The execution controller that drives admitted trials to sealed terminal records, plus the owner-native RAES sub-model bridges (clock, apparatus context, parameters, stochastic controls, evidence artifacts, result summaries)
+- `src/aptl/core/execution/`: Legacy terminal-record composition and the owner-native RAES sub-model bridges (clock, apparatus context, parameters, stochastic controls, evidence artifacts, result summaries)
 - `src/aptl/core/lab.py`: The `lilrae lab start` steps that capture the range snapshot and write the run record, provisional provenance, and correlation projection
 - `src/aptl/core/snapshot.py`, `src/aptl/core/snapshot_models.py`: Range snapshot capture logic and dataclasses
 - `src/aptl/core/exporter.py`: Local tar.gz and S3 export

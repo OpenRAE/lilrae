@@ -29,6 +29,8 @@ class OpenCodeCaptureLease:
         serving_provider: str,
         stdin_sha256: str,
         stdin_bytes: int,
+        *,
+        request_observer: bool = False,
     ) -> None:
         self.work, self.archive, self.invocation_id = work, archive, invocation_id
         self.endpoint = endpoint
@@ -49,11 +51,22 @@ class OpenCodeCaptureLease:
             raise ValueError("provider capture requires the admitted credential grant")
         # OpenCode's documented auth.loader hook runs for a private auth entry.
         # This is the same granted key, never a new source or provider route.
-        create_exclusive_nofollow(
-            work,
-            "data/opencode/auth.json",
-            json.dumps({"openrouter": {"type": "api", "key": credential}}).encode(),
-        )
+        if not request_observer:
+            create_exclusive_nofollow(
+                work,
+                "data/opencode/auth.json",
+                json.dumps({"openrouter": {"type": "api", "key": credential}}).encode(),
+            )
+
+    @property
+    def observer_options(self) -> dict[str, object]:
+        """Private inputs used by either approved host-owned observer path."""
+        return {
+            "path": str(self.work / "provider-capture.jsonl"),
+            "maxBytes": self._limit,
+            "endpoint": self.endpoint,
+            "invocationId": self.invocation_id,
+        }
 
     def configure(self, config: dict[str, object], environment: dict[str, str]) -> None:
         """Enable only this host-owned plugin; ambient discovery stays disabled."""
@@ -62,12 +75,7 @@ class OpenCodeCaptureLease:
         config["plugin"] = [
             [
                 (self.work / "provider-capture.mjs").as_uri(),
-                {
-                    "path": str(self.work / "provider-capture.jsonl"),
-                    "maxBytes": self._limit,
-                    "endpoint": self.endpoint,
-                    "invocationId": self.invocation_id,
-                },
+                self.observer_options,
             ]
         ]
         environment.pop("OPENCODE_PURE")

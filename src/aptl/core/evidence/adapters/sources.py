@@ -27,6 +27,7 @@ from subprocess import TimeoutExpired
 from time import monotonic
 from typing import Protocol, runtime_checkable
 
+from aptl.core.correlation.clock import ClockProvider
 from aptl.core.evidence.outcomes import SUCCESS_STATUSES, CollectorStatus
 from aptl.core.deployment._cleanup_budget import (
     cleanup_command_timeout,
@@ -34,6 +35,7 @@ from aptl.core.deployment._cleanup_budget import (
 )
 from aptl.core.deployment.errors import BackendTimeoutError
 from aptl.core.evidence.protocol import CollectorContext, CollectorOutcome
+from aptl.utils.probe_execution import probe_output_byte_limit
 
 
 @dataclass(frozen=True)
@@ -100,9 +102,19 @@ class CallableWindowedSource:
     source owner) rather than a class, while keeping the narrow protocol.
     """
 
-    def __init__(self, fetch: Callable[[str, str], SourceResult]) -> None:
+    def __init__(
+        self,
+        fetch: Callable[[str, str], SourceResult],
+        *,
+        readiness: Callable[[str], bool] | None = None,
+    ) -> None:
         """Wrap a ``fetch(start_iso, end_iso) -> SourceResult`` callable."""
         self._fetch = fetch
+        self._readiness = readiness
+
+    def check_readiness(self, at_iso: str) -> bool:
+        """Invoke only an explicitly supplied read-only owner operation."""
+        return self._readiness is not None and self._readiness(at_iso) is True
 
     def fetch(self, start_iso: str, end_iso: str) -> SourceResult:
         """Delegate to the wrapped callable."""
@@ -128,6 +140,13 @@ class WindowedQueryCollector:
     def registration_id(self) -> str:
         """The registration this collector realizes."""
         return self._registration_id
+
+    def check_readiness(self, clock: ClockProvider) -> bool:
+        """Require the source owner's separate bounded, read-only operation."""
+        if probe_output_byte_limit() is None:
+            return False
+        operation = getattr(self._source, "check_readiness", None)
+        return callable(operation) and operation(clock.now()) is True
 
     @staticmethod
     def start(context: CollectorContext) -> _WindowHandle:

@@ -82,7 +82,13 @@ def autonomous_manifest_options(
     )
     if tools:
         features = frozenset(
-            {"tool_affordances", "preconditions", "effects", "failure_classes"}
+            {
+                "tool_affordances",
+                "scoped_tool_affordances",
+                "preconditions",
+                "effects",
+                "failure_classes",
+            }
         )
         participant = replace(
             participant,

@@ -1,15 +1,31 @@
 """Provider-native OpenCode configuration and minimal launch environment."""
 
-from collections.abc import Mapping
-import os
 import math
+import os
+from collections.abc import Mapping
 from pathlib import Path
 
-from aptl.core.opencode import OpenRouterRoute
 from aptl.core._participant_model_ids import validate_installed_participant_model_id
+from aptl.core.opencode import (
+    OpenRouterRoute,
+)
 from aptl.core.participant_requests.profiles import RequestProfile
 
 _OPENROUTER_PREFIX = "openrouter/"
+
+
+def opencode_arguments(executable: Path, model: str) -> tuple[str, ...]:
+    """Build fixed invocation arguments for the admitted executable and model."""
+    return (
+        str(executable),
+        "run",
+        "--format",
+        "json",
+        "--model",
+        model,
+        "--title",
+        "lilrae-participant",
+    )
 
 
 def render_opencode_config(
@@ -19,6 +35,7 @@ def render_opencode_config(
     servers: dict[str, object],
     *,
     request_profile: RequestProfile | None = None,
+    max_steps: int | None = None,
 ) -> dict[str, object]:
     """Serialize admitted route and tool inputs into the upstream config shape."""
     config = {
@@ -74,6 +91,8 @@ def render_opencode_config(
         if profile.top_p.value is not None:
             agent["top_p"] = profile.top_p.value
         config["agent"] = {"build": agent}
+    if max_steps is not None:
+        config.setdefault("agent", {}).setdefault("build", {})["steps"] = max_steps
     return config
 
 

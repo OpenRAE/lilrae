@@ -133,7 +133,8 @@ def test_go_cutover_requires_at_least_the_dev_checks() -> None:
 def test_dependabot_updates_each_cutover_go_module(directory: str) -> None:
     updates = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())["updates"]
     entries = [
-        entry for entry in updates
+        entry
+        for entry in updates
         if entry["package-ecosystem"] == "gomod"
         and entry.get("target-branch") == "go-cutover"
         and directory in entry.get("directories", [entry.get("directory")])
@@ -186,13 +187,20 @@ def test_cutover_dispatch_targets_child_and_propagates_api_failure(tmp_path, sta
         f"exit {status}",
     )
     result = _shell(
-        step["run"], tmp_path,
-        GH_TOKEN="fixture-token", GH_REPO="fixture-owner/fixture-repo",
-        DISPATCH_LOG=str(log), **job["env"],
+        step["run"],
+        tmp_path,
+        GH_TOKEN="fixture-token",
+        GH_REPO="fixture-owner/fixture-repo",
+        DISPATCH_LOG=str(log),
+        **job["env"],
     )
     assert result.returncode == status
     assert log.read_text().splitlines() == [
-        "workflow", "run", "checks.yml", "--ref", "go-cutover"
+        "workflow",
+        "run",
+        "checks.yml",
+        "--ref",
+        "go-cutover",
     ]
     assert "fixture-token" not in result.stdout + result.stderr + log.read_text()
 
@@ -213,15 +221,29 @@ def test_combined_python_coverage_refuses_a_missing_group(tmp_path: Path) -> Non
     for path in files:
         path.parent.mkdir(parents=True)
         path.write_bytes(b"measurement")
+    reports = []
+    for index, path in enumerate(files[:2]):
+        report = path.parent / "coverage" / "observer" / f"{index}.lcov"
+        report.parent.mkdir(parents=True)
+        report.write_text(
+            f"SF:src/aptl/workbench/request_observer.mjs\nDA:{index + 1},1\nend_of_record\n"
+        )
+        reports.append(report)
     env = {"RUNNER_TEMP": str(tmp_path), "COMBINE_LOG": str(log)}
     assert _shell(script, tmp_path, **env).returncode == 0
     assert set(log.read_text(encoding="utf-8").splitlines()[1:]) == {
         str(path.relative_to(tmp_path)) for path in files
     }
+    assert (tmp_path / "coverage" / "observer-lcov.info").read_text() == "".join(
+        p.read_text() for p in reports
+    )
     for path in files:
         path.unlink()
         assert _shell(script, tmp_path, **env).returncode != 0
         path.write_bytes(b"measurement")
+    for report in reports:
+        report.unlink()
+    assert _shell(script, tmp_path, **env).returncode != 0
 
 
 def test_python_audit_covers_shipped_exports_and_fails_closed(tmp_path: Path) -> None:

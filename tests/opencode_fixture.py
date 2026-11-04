@@ -23,9 +23,9 @@ def synthetic_options(*, executable, **kwargs):
     )
 
 
-def install_wheel(root: Path) -> Path:
+def install_wheel(root: Path, *, source_root: Path | None = None) -> Path:
     """Install a candidate without dependencies or network into a separate tree."""
-    repo = Path(__file__).resolve().parents[1]
+    repo = source_root or Path(__file__).resolve().parents[1]
     wheels = root / "wheels"
     subprocess.run(
         [

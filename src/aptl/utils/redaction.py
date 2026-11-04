@@ -138,7 +138,7 @@ def _is_sensitive_key(name: str) -> bool:
 def is_sensitive_key(key: str) -> bool:
     """Public yes/no predicate: does ``redact()`` treat ``key`` as a
     sensitive dict key? This conservative key-only classification does not
-    apply the separate value-aware exception for typed public model counts.
+    apply the value-aware exceptions for public model counts or scope labels.
 
     This is a thin public wrapper around the exact same
     ``_is_sensitive_key``/``_SENSITIVE_TOKENS``/``_SAFE_KEY_NAMES`` table
@@ -487,7 +487,9 @@ def _redact(value: object, depth: int) -> object:
     if isinstance(value, dict):
         return {
             k: REDACTED
-            if _is_sensitive_key(str(k)) and not _safe_model_count(str(k), v)
+            if _is_sensitive_key(str(k))
+            and not _safe_model_count(str(k), v)
+            and not _safe_authorization_scope(str(k), v)
             else _redact(v, depth + 1)
             for k, v in value.items()
         }
@@ -495,4 +497,13 @@ def _redact(value: object, depth: int) -> object:
         _redact_list(value, depth)
         if isinstance(value, (list, tuple))
         else _redact_scalar(value, depth)
+    )
+
+
+def _safe_authorization_scope(name: str, value: object) -> bool:
+    """Recognize permission labels; their values still receive inline masking."""
+    return (
+        name.lower() == "authorization_scope"
+        and isinstance(value, (list, tuple))
+        and all(isinstance(label, str) for label in value)
     )

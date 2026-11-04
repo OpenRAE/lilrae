@@ -58,7 +58,10 @@ The executable and private work root are explicit installed-host inputs.
 Credentials never enter command arguments, public metadata, or error messages.
 The child receives a fresh private HOME, XDG directories, and working directory.
 The generated configuration denies built-in tools and enables only the admitted MCP inventory.
-Project configuration, external skills, plugins, sharing, updates, and catalog downloads are disabled.
+Project configuration, external skills, ambient plugins, sharing, updates, and catalog downloads are disabled.
+Observed trials load one digest-pinned repository-owned observer plugin, with npm offline mode and private configuration.
+Its provider-fetch wrapper validates serialized controls before forwarding and retains safe request/response metadata.
+A failed observer load leaves the provider URL and credential unusable.
 The participant cannot authorize a new tool by returning text.
 Fresh contexts prevent history reuse across trials.
 
@@ -74,6 +77,18 @@ Fresh contexts prevent history reuse across trials.
 ## Evidence and release
 
 Invocation evidence records build identity, route, prompt commitment, status, output counts, and observed usage.
+The executor also reduces its private native session database before directory teardown.
+This observation checks the recorded user prompt and selected model against the admitted inputs.
+It records native session, message and step identifiers, timing and separate token categories.
+Native cost is an estimate; it does not establish provider billing.
+The Linux reader uses contained no-follow file access and read-only immutable SQLite queries.
+It refuses an uncheckpointed database rather than treating an incomplete snapshot as complete.
+Native data is reduced to allowlisted metadata without retaining chat, reasoning text or tool capabilities.
+Missing or invalid history has an explicit status.
+The sealed-trial factory requires a valid native delivery observation after a successful invocation.
+An observed model or prompt mismatch fails the invocation.
+Outgoing control values, provider generation identifiers and upstream serving claims remain unavailable from this native source.
+Transport qualification checks request construction independently of native session observations.
 The process runner retains a SHA-256 commitment to captured stdout when a limit stops an invocation.
 The adapter retains this commitment even when no complete response is available.
 It captures the process failure before private-directory teardown can replace that exception.
@@ -112,5 +127,12 @@ Release publication and scientific control qualification occur downstream of thi
 
 This design extends the existing participant and process contracts.
 The managed entry assembly groups admitted model, prompt, and manifest inputs in one immutable request.
+The [trial factory](trial-participant-configuration.md) prepares both roles from sealed results and independently retained scope.
+It verifies the pinned authoring input before reading its episode bound.
+It carries the retained attempt deadline into UTC and monotonic supervision without restarting its allowance.
+The native generation-step ceiling remains distinct from RAES logical steps, action attempts and provider retries.
+The ceiling comes from the sealed profile's explicit `assistant_turn_limit`.
+The trial-serving application keeps the original attempt deadline and retains leases while the RAE unit reports a pending attempt.
+The runtime owner supplies cancellation and draining before credential contexts close.
 Event helpers validate text, terminal state, and bounded usage separately, then reduce them to one evidence record.
 It introduces no new scheduler, policy engine, containment mechanism, or architecture decision.

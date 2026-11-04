@@ -1,9 +1,10 @@
 """Placement and isolation around one already admitted RAES runtime trial unit."""
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
 import hashlib
 import os
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import rfc8785
@@ -27,9 +28,10 @@ from raes_runtime.runtime_trial_services import TrialCleanupObservation
 from raes_runtime.runtime_trial_unit import TrialPending
 
 from aptl.backends.cleanup import DeclaredCleanup
+from aptl.backends.readiness import TrialReadiness
+from aptl.core.deployment._compose_resource_ownership import OwnershipConflictError
 from aptl.core.deployment.docker_compose import DockerComposeBackend
 from aptl.core.deployment.errors import BackendTimeoutError
-from aptl.core.deployment._compose_resource_ownership import OwnershipConflictError
 from aptl.core.deployment.lilrae_native_evidence import confirm_native_absence
 from aptl.core.lifecycle_guard import (
     canonical_lifecycle_project_root,
@@ -42,6 +44,8 @@ from aptl.core.trial_ownership import (
     require_trial_owner,
     trial_fence_owner,
 )
+from aptl.core.trial_participants import TrialParticipantApplication
+from aptl.core.trial_intent import load_trial_intent, retain_trial_intent, trial_intent
 from aptl.utils.pathsafe import (
     PathContainmentError,
     open_private_dir_contained_nofollow,
@@ -118,6 +122,18 @@ class TrialOutcomeReporting:
 
 
 @dataclass(frozen=True)
+class OwnedTrial:
+    """One admitted placement identity, without authority to advance a plan."""
+
+    request: TrialUnitRequest
+    project: Path
+    daemon_root: Path
+    owner: bytes
+    daemon: str
+    readiness: TrialReadiness
+
+
+@dataclass(frozen=True)
 class LilraeTrialUnit:
     """Serve one request through its RAES unit; never allocate or resume a plan.
 
@@ -133,6 +149,8 @@ class LilraeTrialUnit:
     reporting: TrialOutcomeReporting
     max_operations: int = 4096
     max_attempt_seconds: int = 86400
+    participants: TrialParticipantApplication | None = None
+    readiness: TrialReadiness | None = None
 
     def __post_init__(self) -> None:
         if any(
@@ -154,19 +172,24 @@ class LilraeTrialUnit:
             raise ValueError("trial-serving-owner-unavailable") from None
 
     def _execute_trial(self, request: TrialUnitRequest) -> TrialUnitResult:
+        with self.owned_trial(request) as owned:
+            return self._execute_owned(
+                owned.request, owned.daemon_root, owned.project, owned.daemon
+            )
+
+    def describe_trial(self, request: TrialUnitRequest) -> OwnedTrial:
+        """Validate the installed owners and observe the bounded placement identity."""
         request = replace(request)
-        self._admit(request)
+        self.admit(request)
+        if self.readiness is None:
+            raise ValueError("trial-readiness-unavailable")
+        if self.readiness.store.base_dir != self.cleanup.store.base_dir:
+            raise ValueError("trial-readiness-store-mismatch")
         project = self.cleanup.native.binding.project_dir
-        daemon = self.placement.daemon_id()
+        daemon = self.readiness.observe_placement(self.placement.daemon_id)
         daemon_root = (
             self.placement.state_root / hashlib.sha256(daemon.encode()).hexdigest()
         )
-        # The operator provides one existing shared root for this placement.
-        # The normal lifecycle lock creates its private child state safely.
-        fd = open_private_dir_contained_nofollow(
-            self.placement.state_root, Path(daemon_root.name)
-        )
-        os.close(fd)
         owner = (
             hashlib.sha256(
                 rfc8785.dumps(
@@ -182,23 +205,74 @@ class LilraeTrialUnit:
             .hexdigest()
             .encode("ascii")
         )
-        with (
-            placement_mutation_lock(daemon_root, trial_owner=owner),
-            lifecycle_mutation_lock(project, trial_owner=owner),
-        ):
-            if self.placement.daemon_id() != daemon:
-                raise ValueError("trial-daemon-changed")
-            require_trial_owner(daemon_root, owner)
-            if (
-                trial_fence_owner(project) is None
-                and trial_fence_owner(daemon_root) is None
-            ):
-                self.placement.require_clean()
-            claim_trial_owner(project, owner)
-            claim_trial_owner(daemon_root, owner)
-            return self._execute_owned(request, daemon_root, project, daemon)
+        return OwnedTrial(request, project, daemon_root, owner, daemon, self.readiness)
 
-    def _admit(self, request: TrialUnitRequest) -> None:
+    @contextmanager
+    def owned_trial(
+        self, request: TrialUnitRequest, *, recovery: bool = False
+    ) -> Iterator[OwnedTrial]:
+        """Share the exact intent, locks and fences for delivery and recovery."""
+        owned = self.describe_trial(request)
+        fd = open_private_dir_contained_nofollow(
+            self.placement.state_root, Path(owned.daemon_root.name)
+        )
+        os.close(fd)
+        with (
+            placement_mutation_lock(owned.daemon_root, trial_owner=owned.owner),
+            lifecycle_mutation_lock(owned.project, trial_owner=owned.owner),
+        ):
+            if owned.readiness.observe_placement(self.placement.daemon_id) != owned.daemon:
+                raise ValueError("trial-daemon-changed")
+            require_trial_owner(owned.daemon_root, owned.owner)
+            self._claim_delivery(owned, recovery=recovery)
+            yield owned
+
+    def _claim_delivery(self, owned: OwnedTrial, *, recovery: bool) -> None:
+        request, readiness = owned.request, owned.readiness
+        newly_owned = (
+            trial_fence_owner(owned.project) is None
+            and trial_fence_owner(owned.daemon_root) is None
+        )
+        intent = trial_intent(request, self.cleanup.native.binding, owned.owner, owned.daemon)
+        if newly_owned and not recovery:
+            retain_trial_intent(self.cleanup.store, intent)
+        else:
+            load_trial_intent(self.cleanup.store, intent)
+        readiness.bind_delivery(request, owned.project, owned.daemon_root, owned.owner, owned.daemon)
+        if newly_owned and not recovery:
+            try:
+                readiness.record_clean(request, self.placement.require_clean)
+            except ValueError:
+                if readiness.has_pending_probes:
+                    claim_trial_owner(owned.project, owned.owner)
+                    claim_trial_owner(owned.daemon_root, owned.owner)
+                raise
+        claim_trial_owner(owned.project, owned.owner)
+        claim_trial_owner(owned.daemon_root, owned.owner)
+        if not recovery:
+            self._prepare_delivery(owned, newly_owned)
+
+    @staticmethod
+    def _prepare_delivery(owned: OwnedTrial, newly_owned: bool) -> None:
+        """Release only a newly owned, fully ceased preparation refusal."""
+        try:
+            owned.readiness.prepare(owned.request)
+        except Exception:
+            if newly_owned and not owned.readiness.has_pending_probes:
+                remove_contained_nofollow(owned.project, TRIAL_FENCE)
+                remove_contained_nofollow(owned.daemon_root, TRIAL_FENCE)
+                owned.readiness.release_preparation(owned.request)
+            raise
+
+    def admit(self, request: TrialUnitRequest) -> None:
+        """Check request bounds and the original native placement binding."""
+        if self.participants is None and any(
+            result.configuration.owner.validator_id == "lilrae-opencode-request"
+            for result in request.participant_configurations
+        ):
+            raise ValueError("trial-participant-application-required")
+        if self.participants is not None:
+            self.participants.admit(request)
         if os.name != "posix":
             raise ValueError("trial-serving-posix-required")
         count = sum(
@@ -228,16 +302,18 @@ class LilraeTrialUnit:
         # The runtime owns cessation, partial capture and owed cleanup, including
         # when this call raises TrialPending. Never tear down an unknown effect
         # independently or clear a fence in a finally clause.
+        if self.participants is not None:
+            self.participants.configure(request)
         try:
             result = replace(self.runtime_unit.execute_trial(request))
         except TrialPending:
-            if self.placement.daemon_id() != daemon:
+            if self.readiness.observe_placement(self.placement.daemon_id) != daemon:
                 raise ValueError("trial-daemon-changed") from None
             # A started attempt can have reportable facts without a terminal
             # result. RAE's producer preserves uncertainty and absent phases.
             self.reporting.report(request, None)
             raise
-        if self.placement.daemon_id() != daemon:
+        if self.readiness.observe_placement(self.placement.daemon_id) != daemon:
             raise ValueError("trial-daemon-changed")
         validate_trial_unit_result(request, result, target_scope=self.target_scope)
         self.cleanup.verify_observation(
@@ -245,6 +321,15 @@ class LilraeTrialUnit:
                 receipt=result.cleanup_receipt, evidence=result.cleanup_evidence
             )
         )
+        if (
+            result.cleanup_receipt.trial_outcome == "succeeded"
+            and not self.readiness.execution_ready
+        ):
+            raise ValueError("trial-readiness-not-proven")
+        if self.readiness.has_pending_probes:
+            raise ValueError("trial-readiness-probes-pending")
+        if self.participants is not None:
+            self.participants.finish(request)
         self.cleanup.store.create_run_json_once(
             request.run_id,
             "trial-serving/handoff.json",
@@ -265,12 +350,15 @@ class LilraeTrialUnit:
                 "cleanup_evidence_record_refs": [
                     record.evidence_record_id for record in result.cleanup_evidence
                 ],
+                "readiness_refs": list(self.readiness.references),
+                "readiness_probe_cessation": True,
             },
         )
         self.reporting.report(request, result)
         if replacement_resources_reusable(request.cleanup_plan, result.cleanup_receipt):
             remove_contained_nofollow(project, TRIAL_FENCE)
             remove_contained_nofollow(daemon_root, TRIAL_FENCE)
+            self.readiness.complete_delivery(request)
         return result
 
 
