@@ -216,8 +216,9 @@ class ContainerFileSource:
             raise ValueError("file timestamp decoder is invalid")
         self._timestamp_of = timestamp_of
 
+    @staticmethod
     def _partial_file(
-        self, name: str, path: str, remaining: int, exc: Exception
+        name: str, path: str, remaining: int, exc: Exception
     ) -> _ReadResult:
         """Keep accepted streams from an interrupted file read within the shared quota."""
         record = {**_partial_read_record(name, exc), "path": path}
@@ -252,8 +253,9 @@ class ContainerFileSource:
                 failed=True,
             )
 
+    @staticmethod
     def _file_result(
-        self, name: str, path: str, remaining: int, result: object
+        name: str, path: str, remaining: int, result: object
     ) -> _ReadResult:
         """Retain raw bytes from one file without exceeding its remaining source share."""
         raw = result.stdout.encode("utf-8")

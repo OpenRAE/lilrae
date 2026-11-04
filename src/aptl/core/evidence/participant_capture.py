@@ -263,10 +263,12 @@ class ParticipantCaptureArchive:
         try:
             names = listdir_contained_nofollow(self.store.base_dir, root)
         except (OSError, PathContainmentError) as exc:
-            absent = isinstance(exc, FileNotFoundError) or (
+            containment_absent = (
                 isinstance(exc, PathContainmentError) and exc.reason == REASON_NOT_FOUND
             )
-            names, missing = [], not (optional and absent)
+            absent = isinstance(exc, FileNotFoundError) or containment_absent
+            names = []
+            missing = not optional or not absent
         return names, missing
 
     def _read_bytes(self, root: Path, name: str, remaining: int) -> bytes:
@@ -276,7 +278,8 @@ class ParticipantCaptureArchive:
         with open_contained_nofollow(self.store.base_dir, root / name) as stream:
             return stream.read(remaining + 1)
 
-    def _validate_payload(self, record: dict[str, object], tool: bool) -> None:
+    @staticmethod
+    def _validate_payload(record: dict[str, object], tool: bool) -> None:
         """Validate one measurement independently of later malformed archive rows."""
         if tool:
             if (
@@ -340,8 +343,9 @@ class ParticipantCaptureArchive:
                 missing = True
         return records, missing
 
+    @staticmethod
     def _invocation_totals(
-        self, invocations: list[dict[str, object]], missing: bool
+        invocations: list[dict[str, object]], missing: bool
     ) -> dict[str, object]:
         """Keep known subtotals while withholding complete totals after a membership gap."""
         totals = aggregate_model_calls(invocations)
