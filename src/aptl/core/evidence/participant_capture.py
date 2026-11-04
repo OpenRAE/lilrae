@@ -263,10 +263,9 @@ class ParticipantCaptureArchive:
         try:
             names = listdir_contained_nofollow(self.store.base_dir, root)
         except (OSError, PathContainmentError) as exc:
-            containment_absent = (
-                isinstance(exc, PathContainmentError) and exc.reason == REASON_NOT_FOUND
-            )
-            absent = isinstance(exc, FileNotFoundError) or containment_absent
+            absent = isinstance(exc, FileNotFoundError)
+            if isinstance(exc, PathContainmentError):
+                absent = absent or exc.reason == REASON_NOT_FOUND
             names = []
             missing = not optional or not absent
         return names, missing
