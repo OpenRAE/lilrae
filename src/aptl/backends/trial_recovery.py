@@ -121,9 +121,13 @@ def _completed_replay(
     owned = unit.describe_trial(binding.request)
     intent = load_trial_intent(store, _intent(unit, owned))
     if (
-        receipt.intent != intent
-        or receipt.assignment_digest != binding.assignment_digest
-        or receipt.outcome_digest != outcome.content_digest
+        receipt.intent,
+        receipt.assignment_digest,
+        receipt.outcome_digest,
+    ) != (
+        intent,
+        binding.assignment_digest,
+        outcome.content_digest,
     ):
         raise ValueError("trial-recovery-receipt-conflict")
     # A crash between receipt publication and fence removal still needs the

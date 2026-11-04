@@ -252,7 +252,8 @@ class LilraeTrialUnit:
         if not recovery:
             self._prepare_delivery(owned, newly_owned)
 
-    def _prepare_delivery(self, owned: OwnedTrial, newly_owned: bool) -> None:
+    @staticmethod
+    def _prepare_delivery(owned: OwnedTrial, newly_owned: bool) -> None:
         """Release only a newly owned, fully ceased preparation refusal."""
         try:
             owned.readiness.prepare(owned.request)
