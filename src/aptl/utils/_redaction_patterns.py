@@ -66,12 +66,28 @@ _COOKIE_HEADER_RE = re.compile(
 # URL userinfo: `scheme://user:password@host/path`. Preserve user (often
 # useful for diagnostics) and mask the password segment.
 _URL_USERINFO_RE = re.compile(r"(://[^/:@\s]+:)[^@\s]+(@)")
-# PEM key/cert blocks. Stop before a closing delimiter so adjacent blocks
-# remain separate; an unfinished block is withheld through the end of input.
-_PEM_BLOCK_RE = re.compile(
-    r"(-----BEGIN[^-]*-----)(?:(?!-----END[^-]*-----).)*(-----END[^-]*-----|\Z)",
-    re.DOTALL,
-)
+# Match only the delimiters; scanning between them avoids buffering or
+# backtracking over arbitrary key data, including an unfinished final block.
+_PEM_BEGIN_RE = re.compile(r"-----BEGIN[^-]*-----")
+_PEM_END_RE = re.compile(r"-----END[^-]*-----")
+
+
+def _redact_pem_blocks(value: str) -> str:
+    """Mask each PEM body through its closing delimiter or the end of input."""
+    parts = []
+    cursor = 0
+    while begin := _PEM_BEGIN_RE.search(value, cursor):
+        parts.extend((value[cursor : begin.end()], REDACTED))
+        end = _PEM_END_RE.search(value, begin.end())
+        if end is None:
+            cursor = len(value)
+            break
+        parts.append(end.group())
+        cursor = end.end()
+    parts.append(value[cursor:])
+    return "".join(parts)
+
+
 # Recognizes `--<sensitive>` (or compound `--client-secret`,
 # `--access-token`) as a standalone token used by array-pair detection
 # so adjacent positional values get redacted.

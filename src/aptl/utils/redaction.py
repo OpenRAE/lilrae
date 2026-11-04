@@ -22,7 +22,7 @@ from ._redaction_patterns import (
     _CREDENTIAL_TOOL_REGEXES,
     _HASH_TOOLS_RE,
     _LDAP_TOOL_RE,
-    _PEM_BLOCK_RE,
+    _redact_pem_blocks,
     _SENSITIVE_KV_RE,
     _URL_USERINFO_RE,
     _redact_authorization,
@@ -242,7 +242,7 @@ def _redact_string(value: str, depth: int = 0) -> str:
     # was a global rewrite and corrupted non-option text like
     # ``echo '-p' hunter2``; it now lives inside ``_redact_command_flags``
     # behind a segment-scoped tool gate.
-    out = _PEM_BLOCK_RE.sub(rf"\1{REDACTED}\2", value)
+    out = _redact_pem_blocks(value)
     out = _AUTHORIZATION_RE.sub(_redact_authorization, out)
     # Cookie before SENSITIVE_KV so the full header body is masked in one
     # pass (otherwise SENSITIVE_KV stops at `;` and leaves later segments).
