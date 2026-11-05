@@ -18,7 +18,11 @@ from aptl.core.deployment._compose_resource_ownership import (
     ResourceReceipt,
     WorkspaceOwnership,
 )
-from aptl.core.deployment.errors import BackendSeedError
+from aptl.core.deployment.errors import BackendSeedError, BackendTimeoutError
+from aptl.core.deployment.lilrae_native_evidence import (
+    confirm_native_absence,
+    retire_after_cleanup,
+)
 from aptl.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -105,11 +109,13 @@ class ComposeSeedAttributionMixin:
     ) -> None:
         """Retire the receipt of a volume removed outside ``stop -v``.
 
-        Volume names are reused across attempts, and only ``stop -v`` retires
-        their receipts. A receipt left for a volume that was deleted another
-        way would conflict with this attempt's receipt after the new volume
-        exists. Docker must report the volume as absent; any other inspect
-        failure keeps the receipt and refuses before creation.
+        Volume names are reused across attempts, and only lilrae cleanup
+        retires their receipts. A receipt left for a volume that was deleted
+        another way would conflict with this attempt's receipt after the new
+        volume exists. Docker must report the volume as absent, and a bounded listing
+        on the receipt's daemon must confirm it. Any other result keeps the
+        receipt and refuses before creation. The attempt evidence of the old
+        receipt keeps a copy and an absence witness.
         """
 
         try:
@@ -134,8 +140,16 @@ class ComposeSeedAttributionMixin:
                 )
                 raise OwnershipConflictError("recorded volume absence is unproven")
             for receipt in receipts:
-                ownership.retire_deleted_volume(receipt)
-        except OwnershipConflictError as exc:
+                if not confirm_native_absence(self, receipt):
+                    raise OwnershipConflictError("recorded volume absence is unproven")
+                retire_after_cleanup(ownership, receipt, cause="already-absent")
+        except (
+            OwnershipConflictError,
+            BackendTimeoutError,
+            OSError,
+            ValueError,
+            BufferError,
+        ) as exc:
             raise BackendSeedError(
                 f"Named volume '{logical_volume}' has an unverifiable ownership receipt"
             ) from exc

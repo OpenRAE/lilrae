@@ -60,7 +60,9 @@ then propagates to the runtime owner.
 Process death leaves the existing runtime ledger and native receipts for recovery.
 
 Repeated cleanup revalidates native state.
-Retired volume receipts permit absence checks, not deletion of replacement volumes.
+Destroy retires the receipt of each removed container, network, and volume after it records the absence.
+A recorded child receipt stays.
+Retired receipts permit absence checks, not deletion of replacement volumes.
 Foreign, replaced, unreadable, or stale resources do not gain deletion authority.
 Container removal does not implicitly remove anonymous volumes or host files.
 Named volumes require their own receipt within the bound range.
