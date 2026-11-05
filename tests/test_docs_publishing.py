@@ -11,6 +11,21 @@ import yaml
 ROOT = Path(__file__).parents[1]
 
 
+def test_reader_routes_keep_real_pages_and_home() -> None:
+    text = (ROOT / "mkdocs.yml").read_text(encoding="utf-8").replace(
+        "!!python/name:pymdownx.superfences.fence_code_format",
+        "'pymdownx.superfences.fence_code_format'",
+    )
+    nav = yaml.safe_load(text)["nav"]
+    routes = {key: value for entry in nav for key, value in entry.items()}
+    assert routes["Home"] == "index.md"
+    for route in ("Tutorials", "How-to guides", "Reference", "Explanation"):
+        assert routes[route]
+        for entry in routes[route]:
+            for target in entry.values():
+                assert (ROOT / "docs" / target).is_file(), target
+
+
 def _yaml(relative_path: str) -> dict[str, object]:
     return yaml.safe_load((ROOT / relative_path).read_text(encoding="utf-8"))
 
