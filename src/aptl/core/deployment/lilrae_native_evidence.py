@@ -173,18 +173,22 @@ def _publish_witness(root: Path, path: Path, data: bytes) -> None:
     try:
         create_exclusive_nofollow(root, path, data)
     except FileExistsError:
-        expected, existing = json.loads(data), json.loads(_read(root, path))
-        if not (
-            isinstance(existing, dict)
-            and existing.keys() == expected.keys()
-            and existing["cause"] in _CLEANUP_CAUSES
-            and all(
-                existing[key] == value
-                for key, value in expected.items()
-                if key not in _WITNESS_FREE
-            )
-        ):
+        if not _same_witness(json.loads(_read(root, path)), json.loads(data)):
             raise OwnershipConflictError("native cleanup witness conflicts") from None
+
+
+def _same_witness(existing: object, expected: dict[str, object]) -> bool:
+    """Return True when an existing witness records the same receipt absence."""
+    return (
+        isinstance(existing, dict)
+        and existing.keys() == expected.keys()
+        and existing["cause"] in _CLEANUP_CAUSES
+        and all(
+            existing[key] == value
+            for key, value in expected.items()
+            if key not in _WITNESS_FREE
+        )
+    )
 
 
 def retire_after_cleanup(
