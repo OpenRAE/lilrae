@@ -3397,6 +3397,8 @@ class TestSeedNamedVolumes:
         backend._resource_ownership = ownership
         backend._resource_attempt_id = "run-a"
         backend._docker_daemon_id = "test-daemon"
+        # A stale receipt retires only after a listing on its own daemon.
+        backend._current_docker_daemon_id = lambda: "test-daemon"
         for suffix in ("suricata_config_seed", "suricata_misp_rules"):
             volume = f"test_{suffix}"
             ownership.record(
