@@ -1,0 +1,3 @@
+docs/contributing-documentation.md
+docs/architecture/diataxis-adoption.md
+docs/architecture/documentation-assignments.md

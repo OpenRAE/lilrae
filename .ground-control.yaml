@@ -2,7 +2,7 @@ schema_version: 1
 project: aptl
 github_repo: OpenRAE/lilrae
 workflow:
-  # Local verification is deliberately change-scoped. The helper runs only
+  # Run behavior tests only in CI or an approved isolated VM. The helper runs only
   # changed test files (or explicit paths supplied by the caller); it refuses
   # to fall back to a bare/full suite. CI/CD owns full suites and coverage.
   test_command: bash tools/run-targeted-tests.sh

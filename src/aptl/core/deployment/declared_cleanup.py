@@ -21,6 +21,7 @@ from aptl.core.deployment.errors import BackendTimeoutError
 from aptl.core.deployment.lilrae_native_evidence import (
     confirm_native_absence,
     record_cleanup,
+    retire_after_cleanup,
 )
 from aptl.core.lifecycle_guard import lifecycle_mutation_lock
 from aptl.core.ephemeral_containers import remove_container_command
@@ -83,8 +84,8 @@ class ReceiptCleanup:
             for receipt in ownership.receipts(kind)
             if receipt.attempt_id == self.binding.native_attempt_id
         }
-        # Volume retirement removes live authority. Retained immutable receipts
-        # permit absence checks only, never deletion of a recreated volume.
+        # Retirement removes live authority. Retained immutable receipts permit
+        # absence checks only, never deletion of a recreated volume.
         retained = dict(current)
         for kind, data in self.backend.native_evidence_artifacts(
             self.binding.native_attempt_id
@@ -190,9 +191,12 @@ class ReceiptCleanup:
             and not present
             and (receipt.kind, receipt.native_id) in self._active_receipts
         ):
-            record_cleanup(ownership, receipt, cause="after-remove")
-            if receipt.kind == "volume":
-                ownership.retire_deleted_volume(receipt)
+            # A recorded child receipt stays: the recording store uses it as
+            # the completion record of its creation.
+            if receipt.managed_by == "child":
+                record_cleanup(ownership, receipt, cause="after-remove")
+            else:
+                retire_after_cleanup(ownership, receipt, cause="after-remove")
         return CleanupResourceState(
             receipt.kind, receipt.native_id, "present" if present else "absent"
         )
