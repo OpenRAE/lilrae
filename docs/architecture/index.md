@@ -1,5 +1,7 @@
 # Lab Architecture
 
+- [Diataxis adoption](diataxis-adoption.md)
+
 - [Required trial readiness](exp-011-resource-readiness-design.md)
 - [Issue #753 readiness preflight](exp-011-resource-readiness-preflight.md)
 
