@@ -21,7 +21,10 @@ from aptl.backends.scenario_family_models import (
 from aptl.core.scenario_bundle import PackIdentity
 
 if TYPE_CHECKING:
-    from raes.scenario import InstantiatedScenario
+    from pathlib import Path
+
+    from raes.materialization import MaterializedScenario
+    from raes.scenario import ExpandedScenario, InstantiatedScenario
     from raes.phase_contracts import TrialInstantiationProvenance
     from raes_contracts.contracts import AdmittedTrialPlanModel
     from aptl.core.scenario_bundle import ScenarioBundle
@@ -32,22 +35,37 @@ _DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 MAX_QUALIFIED_FAMILIES = 64
 
 
+def admit_family_source(
+    sdl_path: Path,
+) -> ExpandedScenario | MaterializedScenario:
+    """Parse a family source and admit it as the family that targets identify.
+
+    ``parse_sdl_file`` returns an import-free source in its normalized phase.
+    Qualified targets record the digest of the admitted family, so compare
+    family digests only after this transition.
+    """
+
+    from raes import admit_scenario_family, parse_sdl_file
+    from raes.scenario import Scenario
+
+    source = parse_sdl_file(sdl_path)
+    if isinstance(source, Scenario):
+        source = admit_scenario_family(source)
+    return source
+
+
 def admit_family_trial(
     bundle: ScenarioBundle, backend: BackendIdentity, request: FamilyTrialInput
 ) -> AdmittedFamilyTrial:
     """Bind a sealed trial to this acquired source through public RAES gates."""
 
-    from raes import canonical_instantiated_sdl_digest
-    from raes import canonical_sdl_digest, parse_sdl_file, admit_scenario_family
-    from raes.scenario import Scenario
+    from raes import canonical_instantiated_sdl_digest, canonical_sdl_digest
     from raes_processor.trial_realization import instantiate_admitted_trial_entry
 
     try:
         family = request.family.model_copy(deep=True)
         plan = request.plan.model_copy(deep=True)
-        source = parse_sdl_file(bundle.sdl_path)
-        if isinstance(source, Scenario):
-            source = admit_scenario_family(source)
+        source = admit_family_source(bundle.sdl_path)
         family_digest = canonical_sdl_digest(family).value
         if (
             bundle.pack_identity is None
@@ -378,6 +396,7 @@ __all__ = [
     "family_provider_matches",
     "FamilyTrialInput",
     "AdmittedFamilyTrial",
+    "admit_family_source",
     "admit_family_trial",
     "FamilyProviderSelection",
     "FamilyProviderIdentity",
