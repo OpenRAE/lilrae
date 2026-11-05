@@ -68,7 +68,7 @@ corrected differences in the delivery PR.
 
 Run Vale on changed documents during the edit. Run only fast staged checks in
 pre-commit. CI owns whole-tree prose checks and the strict MkDocs build.
-Run only targeted behavior tests locally. CI owns the full suites.
+Behavior tests and lab exercises run only in CI or an approved isolated VM.
 
 Reuse the existing publishing, navigation, and interface correspondence tests.
 Update them when the documented behavior or routes change. Do not add tests

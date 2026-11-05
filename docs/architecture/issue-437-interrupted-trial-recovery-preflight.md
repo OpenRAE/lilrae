@@ -133,8 +133,8 @@ during capture/cleanup/seal/index/fence release, duplicate/concurrent recovery,
 corrupt intent, foreign/replaced resources, unknown cessation and failed cleanup.
 Assert retained partial bytes, identity joins and fence exclusion, not just an
 aborted status. Focused mutation checks must detect dropped joins/lost evidence,
-unknown-to-success defaults and premature fence release. Run only targeted
-tests locally; full suites stay CI-only. This preflight runs none.
+unknown-to-success defaults and premature fence release. Tests run only in CI
+or an approved isolated VM; full suites stay CI-only. This preflight runs none.
 
 Non-goals: implementation, experiment scheduling/resume/retry policy, another
 schema/exception hierarchy/status taxonomy, new API/storage services, archive

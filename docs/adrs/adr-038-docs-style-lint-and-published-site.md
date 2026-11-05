@@ -111,7 +111,7 @@ The [documentation guide](../contributing-documentation.md) gives the commands.
 Local pre-commit runs staged hygiene and secret checks only.
 It does not install or run prose tools. This boundary replaces the earlier
 first-commit installation statement below. CI runs corpus prose checks and
-the strict MkDocs build. Run only targeted behavior tests locally.
+the strict MkDocs build. Behavior tests run only in CI or an approved isolated VM.
 Targeted tooling and navigation tests cover the changed behavior.
 
 MkDocs keeps Home and adds real routes for Tutorials, How-to guides,
