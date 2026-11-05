@@ -5,7 +5,7 @@ import { vi } from 'vitest';
 import type { LabStatus, ScenarioDetail } from '../../src/lib/types';
 
 const labStatus = writable<LabStatus>({ running: false, containers: [], error: null });
-vi.mock('$lib/stores/lab', () => ({ labStatus }));
+vi.mock('#lib/stores/lab.ts', () => ({ labStatus }));
 
 // Stub the DOM-canvas terminal deps, exactly as tests/components/workbench/blocks.test.ts
 // and tests/routes/terminal-page.test.ts already do. This file renders the whole
