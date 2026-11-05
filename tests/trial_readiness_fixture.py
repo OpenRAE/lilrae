@@ -23,15 +23,18 @@ def installed_participants(inputs, entry_index=0):
     """Model the participant settings explicitly installed by test composition."""
     return tuple(
         ParticipantReadiness(
-            manifest,
+            next(
+                manifest
+                for manifest in inputs.participant_manifests.values()
+                if manifest.identity
+                == configuration.configuration.implementation_identity
+            ),
             lambda configuration=configuration: configuration.model_copy(deep=True),
             lambda: True,
         )
         for configuration in list(inputs.plan.entries.values())[
             entry_index
         ].participant_configurations
-        for manifest in inputs.participant_manifests.values()
-        if manifest.identity == configuration.configuration.implementation_identity
     )
 
 

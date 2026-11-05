@@ -67,13 +67,13 @@
       "asset_id": "mcp-indexer-build",
       "kind": "mcp-artifact",
       "source": "mcp/mcp-indexer/build/index.js",
-      "sha256": "11014137cc5f31553cf9a7e104c0e230dbe849b16fcbb52c6c15c15f03820ccb"
+      "sha256": "a336fa7be5e41ca091afb5fc7ae177a3442d5e55fa512d7078581ee9e5080696"
     },
     {
       "asset_id": "mcp-indexer-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-indexer/package-lock.json",
-      "sha256": "69a15997264527688d6381830466f1919f2f1218dc71a459af400c390791a5ad"
+      "sha256": "00b13858f757271d99b38f939714913e7b36d8d3a19f92559ab7d8f947e2f038"
     },
     {
       "asset_id": "mcp-indexer-config",
@@ -91,7 +91,7 @@
       "asset_id": "mcp-wazuh-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-wazuh/package-lock.json",
-      "sha256": "f5cce4754036d3e3830858bb3593743dadb566cb156441ddf6c2db61f8577c0a"
+      "sha256": "3e1fb963fbdab9385346d67e405d489731fa83404785bb4317034262f7f3245e"
     },
     {
       "asset_id": "mcp-wazuh-config",

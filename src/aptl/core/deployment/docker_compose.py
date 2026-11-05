@@ -389,6 +389,7 @@ class DockerComposeBackend(
     ) -> subprocess.CompletedProcess:
         """Run one fixed command with a payload supplied only over stdin."""
 
+        timeout = cleanup_command_timeout(timeout)
         kwargs = self._command_kwargs(cmd, streaming=False, timeout=timeout)
         kwargs["input"] = payload
         try:

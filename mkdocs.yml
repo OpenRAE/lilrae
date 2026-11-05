@@ -70,13 +70,16 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Lab Guide:
+  - Tutorials:
+    - Run Your First Lab: getting-started/quick-start.md
+    - Workshop Walkthrough: workshop/walkthrough.md
+  - How-to guides:
+    - Write documentation: contributing-documentation.md
     - Overview: getting-started/index.md
     - Prerequisites: getting-started/prerequisites.md
     - Install LilRAE: getting-started/installation.md
     - Install a Scenario Pack: getting-started/installing-packs.md
-    - Run Your First Lab: getting-started/quick-start.md
-  - Interfaces:
+  - Reference:
     - CLI: reference/cli.md
     - MCP: reference/mcp.md
     - Web: reference/web.md
@@ -87,11 +90,11 @@ nav:
     - Troubleshooting: troubleshooting/index.md
   - Workshop:
     - Playbook: workshop/playbook.md
-    - Lab Walkthrough: workshop/walkthrough.md
   - Development:
     - Coding Standards: CODING_STANDARDS.md
-  - Architecture:
+  - Explanation:
     - Overview: architecture/index.md
+    - Design checks for /implement: architecture/design-checks.md
     - "Issue #1584 Go Cutover Branch Preflight": architecture/issue-1584-go-cutover-preflight.md
     - "Issue #1510 Code Quality Architecture Preflight": architecture/issue-1510-code-quality-preflight.md
     - "Issue #1510 Code Quality Architecture Design": architecture/issue-1510-code-quality-design.md
@@ -184,7 +187,8 @@ nav:
     - Lab Fixture Pack: testing/lab-fixture-pack.md
     - Release Candidate Manual QA: testing/smoke-test-plan.md
     - Property-Based Parser Tests: testing/property-based-parser-tests.md
-  - Reference:
+  - Additional reference:
+    - Documentation assignments: architecture/documentation-assignments.md
     - OpenSSF Best Practices Assessment: security/openssf-best-practices.md
     - Red Team Taxonomy: red-team-taxonomy.md
     - Guided Purple Participant Profile: reference/participant-profile.md

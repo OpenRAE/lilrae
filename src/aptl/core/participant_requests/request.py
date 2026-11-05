@@ -100,6 +100,8 @@ class ParticipantRequest:
         result: ParticipantConfigurationResultModel,
         manifest: ParticipantImplementationManifestModel,
     ) -> None:
+        if any(token in self.prompt for token in self.profile.unresolved_placeholders):
+            raise ValueError("participant content contains an unresolved placeholder")
         selected = {
             entry.control_context_selection.slot_id: entry
             for entry in result.configuration.values

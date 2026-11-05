@@ -84,6 +84,48 @@ the default version bound to the protected release branch. Pull-request builds
 may be enabled, but they do not replace the repository's required strict docs
 check.
 
+## Amendment: STE checks and reader routes
+
+Issue [#1664](https://github.com/OpenRAE/lilrae/issues/1664) adds the upstream
+[ste-cli v0.10.1](https://github.com/TudorAndrei/ste-cli/tree/v0.10.1).
+The tool uses the MIT license. `tools/install-ste.sh` pins release asset
+SHA-256 checksums and installs the binary under `.tools/ste/0.10.1/`.
+It verifies the archive before extraction or execution.
+
+`tools/ste-lint.sh` requires explicit paths. `.ste.yml` selects sentence
+length, paragraph length, and contractions.
+The wrapper sets `--fail-over 0` to make findings fail.
+Other STE rules are disabled initially. No second passive-voice gate is added.
+
+Vale retains the Google error checks. Google contraction suggestions are disabled.
+No dictionary import, remote analyzer, or custom prose checker is added.
+
+During editing, run Vale and STE on explicit changed paths.
+CI reports selected STE findings across tracked Markdown.
+Legacy findings remain advisory during migration. Pages in `.ste-required.txt`
+must pass. Each later rewrite adds its finished pages to this list.
+
+Partial rewrites also require an explicit check of the rewritten passage.
+The [documentation guide](../contributing-documentation.md) gives the commands.
+
+Local pre-commit runs staged hygiene and secret checks only.
+It does not install or run prose tools. This boundary replaces the earlier
+first-commit installation statement below. CI runs corpus prose checks and
+the strict MkDocs build. Behavior tests run only in CI or an approved isolated VM.
+Targeted tooling and navigation tests cover the changed behavior.
+
+MkDocs keeps Home and adds real routes for Tutorials, How-to guides,
+Reference, and Explanation. Existing page paths remain intact.
+Existing publishers and hash-locked dependencies remain the source of truth.
+One user-level `documentation` skill serves both agent clients.
+The repository holds guidance links, not a copy of that skill.
+
+Preserve exact evidence, generated releases, quotations, licenses, and upstream notices.
+Check historical narrative against its source revision.
+Check current claims against candidate code. Rewrite owned descriptions in STE.
+Edit maintained generator prose at its source.
+The [assignment register](../architecture/documentation-assignments.md) records delivery ownership and reader purpose.
+
 ## Consequences
 
 - Markdown touched by a commit must pass Google style at error level

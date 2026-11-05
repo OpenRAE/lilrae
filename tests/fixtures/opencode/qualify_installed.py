@@ -350,6 +350,7 @@ def run_trial(selected_mode):
         )
         active = configured_opencode_executor(
             options=OpenCodeOptions(
+                request_observation_required=True,
                 executable=Path(binary),
                 work_root=root,
                 environment={"OPENROUTER_API_KEY": "private-test-credential"},

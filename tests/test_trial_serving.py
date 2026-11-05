@@ -832,3 +832,44 @@ def test_failed_partial_publication_retains_fences_and_does_not_claim_completion
         assert (daemon_root(handler) / TRIAL_FENCE).exists()
         assert services.events == ["configure"]
         assert services.records
+
+
+def test_participant_application_is_bound_before_runtime_and_retained_while_pending(
+    tmp_path,
+):
+    from unittest.mock import Mock
+
+    with serving(tmp_path, pending=True) as (
+        handler,
+        request,
+        services,
+        runtime,
+        experiment_id,
+    ):
+        application = Mock()
+        handler = replace(handler, participants=application)
+        handler.runtime_unit.before_advance = lambda: (
+            application.configure.assert_called_with(request)
+        )
+        with pytest.raises(TrialPending):
+            handler.execute_trial(request)
+        application.admit.assert_called_with(request)
+        application.finish.assert_not_called()
+        runtime.cancel_experiment(experiment_id)
+        result = finish(handler, request)
+        assert result is not None
+        application.finish.assert_called_once_with(request)
+
+
+def test_participant_application_refuses_before_placement_mutation(tmp_path):
+    from unittest.mock import Mock
+
+    with serving(tmp_path) as (handler, request, *_):
+        application = Mock()
+        application.admit.side_effect = ValueError("participant trial refused")
+        handler = replace(handler, participants=application)
+        with pytest.raises(ValueError, match="participant trial refused"):
+            handler.execute_trial(request)
+        application.configure.assert_not_called()
+        assert handler.runtime_unit.calls == 0
+        assert not (tmp_path / TRIAL_FENCE).exists()

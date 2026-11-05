@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import pytest
 
 pytest.importorskip("fastapi", reason="Web dependencies not installed")
-pytest.importorskip("asyncssh", reason="asyncssh not installed")
 
 from fastapi import WebSocketDisconnect  # noqa: E402
 

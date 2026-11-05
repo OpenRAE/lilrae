@@ -12,6 +12,100 @@ import sys
 
 
 COMPONENTS = {
+    "src/aptl/workbench/opencode_observation.py": frozenset(
+        {
+            "__future__",
+            "collections.abc",
+            "dataclasses",
+            "hashlib",
+            "json",
+            "pathlib",
+            "aptl.core.provider_observation",
+            "aptl.core.opencode",
+            "aptl.utils.pathsafe",
+            "aptl.utils.strict_json",
+            "pydantic",
+            "typing",
+        }
+    ),
+    "src/aptl/workbench/opencode_evidence.py": frozenset(
+        {
+            "__future__",
+            "aptl.core.opencode",
+            "aptl.core.participant_tools.contracts",
+            "aptl.workbench.opencode_configuration",
+            "aptl.workbench.opencode_observation",
+            "contextlib",
+            "copy",
+            "typing",
+            "aptl.core.provider_observation",
+            "aptl.workbench.opencode_events",
+            "aptl.workbench.opencode_options",
+            "aptl.workbench.process",
+            "collections.abc",
+            "dataclasses",
+            "hashlib",
+            "raes_contracts.contracts",
+        }
+    ),
+    "src/aptl/workbench/opencode_history.py": frozenset(
+        {
+            "__future__",
+            "aptl.core.opencode",
+            "aptl.utils.pathsafe",
+            "aptl.utils.strict_json",
+            "contextlib",
+            "hashlib",
+            "os",
+            "pathlib",
+            "re",
+            "sqlite3",
+            "sys",
+        }
+    ),
+    "src/aptl/workbench/opencode_options.py": frozenset(
+        {
+            "__future__",
+            "aptl.core.evidence.participant_capture",
+            "aptl.core.opencode",
+            "aptl.core.participant_requests.binding",
+            "aptl.core.participant_requests.request",
+            "aptl.workbench.agent",
+            "aptl.workbench.process",
+            "aptl.workbench.profiles",
+            "collections.abc",
+            "dataclasses",
+            "datetime",
+            "pathlib",
+            "sys",
+            "typing",
+        }
+    ),
+    "src/aptl/workbench/trial_participants.py": frozenset(
+        {
+            "__future__",
+            "aptl.backends.lilrae_participant_execution",
+            "aptl.core.config",
+            "aptl.core.opencode",
+            "aptl.core.participant_requests",
+            "aptl.core.trial_participants",
+            "aptl.workbench.lilrae_opencode",
+            "aptl.workbench.opencode_bootstrap",
+            "collections.abc",
+            "contextlib",
+            "dataclasses",
+            "datetime",
+            "raes",
+            "raes.scenario",
+            "raes_contracts.canonical",
+            "raes_contracts.addressing",
+            "raes_contracts.contracts",
+            "raes_contracts.trial_unit",
+            "raes_contracts.timestamps",
+            "raes_runtime.runtime_trial_decisions",
+            "types",
+        }
+    ),
     "src/aptl/backends/participant_tools/delivery.py": frozenset(
         {
             "__future__",
@@ -56,6 +150,7 @@ COMPONENTS = {
             "json",
             "re",
             "threading",
+            "time",
             "rfc8785",
             "raes_backend_protocols.capabilities",
             "raes_backend_protocols.participant_invocation_tools",
@@ -65,6 +160,7 @@ COMPONENTS = {
             "aptl.core.participant_tools.model",
             "aptl.core.mcp_results",
             "aptl.core.agent_errors",
+            "aptl.core.correlation.clock",
             "aptl.core.participant_tools.contracts",
             "aptl.backends.participant_tools.transport",
         }

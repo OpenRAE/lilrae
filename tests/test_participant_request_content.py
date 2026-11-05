@@ -1,6 +1,7 @@
 """Exact prompt content, participant scope and ordered slot verification."""
 
 import hashlib
+import json
 import pytest
 from raes_contracts.canonical import canonical_contract_digest
 from raes_contracts.artifact_checksums import checksum_hasher
@@ -83,11 +84,12 @@ def test_verified_content_requires_exact_bytes_and_participant(algorithm):
             owner.verify_content(result, participant_address=address, contents=contents)
 
 
-def test_multiple_context_slots_preserve_authored_order_and_exact_bytes():
+@pytest.mark.parametrize("playbook", [b"second instruction\n", b""])
+def test_multiple_context_slots_preserve_authored_order_and_exact_bytes(playbook):
     from aptl.core.participant_requests import ParticipantRequestOwner
 
     original, scenario = owner_fixture()
-    data = {"first": b"first instruction\n", "later": b"second instruction\n"}
+    data = {"first": b"first instruction\n", "later": playbook}
     domains = {}
     for slot, asset_name in (("first", "brief-terse"), ("later", "brief-rich")):
         asset = scenario.control_context_assets[asset_name]
@@ -133,3 +135,33 @@ def test_multiple_context_slots_preserve_authored_order_and_exact_bytes():
     assert owner.verify_content(
         result, participant_address="agents.operator", contents=data
     ) == (data["later"].decode(), data["first"].decode())
+
+
+def test_producer_declared_unresolved_placeholder_is_refused_before_dispatch():
+    from aptl.core.participant_requests import ParticipantRequestOwner, RequestCatalog
+
+    original, scenario = owner_fixture()
+    payload = b"Use {{TARGET}} to report findings.\n"
+    asset = scenario.control_context_assets["brief-terse"]
+    asset.content.checksum.value = hashlib.sha256(payload).hexdigest()
+    asset.content.size_bytes = len(payload)
+    data = original.catalog.model_dump(mode="json")
+    for profile in data["profiles"]:
+        profile["unresolved_placeholders"] = ["{{TARGET}}"]
+    catalog = RequestCatalog.model_validate_json(json.dumps(data))
+    owner = ParticipantRequestOwner(
+        catalog=catalog,
+        scenario=scenario,
+        context_domains={
+            "brief": {
+                "control_context_assets.brief-terse": control_context_asset_reference(
+                    asset
+                )
+            }
+        },
+    )
+    result = realize(owner)
+    with pytest.raises(ValueError, match="placeholder"):
+        owner.prepare_request(
+            result, participant_address="agents.operator", contents={"brief": payload}
+        )

@@ -1,8 +1,8 @@
-schema_version: 1
+schema_version: 2
 project: aptl
 github_repo: OpenRAE/lilrae
 workflow:
-  # Local verification is deliberately change-scoped. The helper runs only
+  # Run behavior tests only in CI or an approved isolated VM. The helper runs only
   # changed test files (or explicit paths supplied by the caller); it refuses
   # to fall back to a bare/full suite. CI/CD owns full suites and coverage.
   test_command: bash tools/run-targeted-tests.sh
@@ -12,118 +12,90 @@ workflow:
   completion_command: pre-commit run
   lint_command: pre-commit run
   format_command: pre-commit run
+  # Structural design checks for /implement design review (schema_version 2,
+  # issue #1673). Every command runs from the repository root in the
+  # credential-free gate environment, with no network access, and leaves HEAD,
+  # the index, and the working tree unchanged. Each command uses the same uv
+  # environment as tools/run-targeted-tests.sh, so the gate reuses the installed
+  # development toolchain and does not fetch dependencies.
+  design:
+    # The repository has no separate type checker, so byte-compilation is the
+    # native compile check. It compiles the Python control plane, the tests, and
+    # the tooling.
+    compile_command: "uv run --frozen --group build --no-default-groups --extra dev --extra web python -m compileall -q src tests tools"
+    # ADR-064 layered-architecture rules (tools/check_architecture.py, built on
+    # grimp), the participant adapter boundary, and the rule-violation fixtures.
+    structural_command: "uv run --frozen --group build --no-default-groups --extra dev --extra web bash -c 'python tools/check_architecture.py && python tools/check_lilrae_participant_architecture.py && python -m pytest tests/test_check_architecture.py tests/test_lilrae_participant_architecture.py tests/test_readiness_architecture.py -q -o addopts= -p no:cacheprovider'"
+    # Component dependency view derived from the grimp import graph.
+    wiring_command: "uv run --frozen --group build --no-default-groups --extra dev --extra web python tools/design_wiring.py"
+    # pytest acceptance adapter: it reads one {test_file, test_name} JSON object
+    # on stdin and writes one JSON observation on stdout.
+    acceptance_command: "uv run --frozen --group build --no-default-groups --extra dev --extra web python tools/design_acceptance.py"
   codex_review:
     pre_push_cap: 1
-  review_disposition:
-    enabled: false
-    mode: shadow
-    max_auto_overrides: 0
-    judge:
-      enabled: false
 sonarcloud:
   project_key: Brad-Edwards_aptl
   organization: brad-edwards
-routing:
-  # Per-step model routing (ADR-036). When enabled, each /implement step is
-  # dispatched on the model its tier hint maps to (low->haiku, medium->sonnet,
-  # high->opus) instead of always running on the parent session model.
-  enabled: true
-  default_provider: claude
 rules:
   plan_rules: .gc/plan-rules.md
-# Canonical boundary model declarations (GC-GRC-004 / GC-GRC-023). These are the
-# eight trust boundaries of the aptl platform + contained cyber range, declared
-# so the in-loop /implement GRC screening reuses them. They were the basis of
-# the GRC baseline bootstrap (issue #597, GC-GRC-018).
-#
-# `surfaces` is adapter-routing metadata, NOT aptl's attack-surface ontology: each
-# token must be a Ground Control derivation-adapter surface so GRC screening can
-# derive facts. Registered adapters (code-verified against Ground Control, see
-# issue #634 / autarchy-ai/Ground-Control#1326): CodeQL -> `application`
-# (python/js/ts); IaC/pipeline & Boundary -> `dockerfile`, `docker-compose`,
-# `terraform`, `github-actions`. Each boundary lists only the surfaces its actual
-# `paths` content warrants. `config/**` (suricata, wazuh_*, otel)
-# and network topology have NO derivation adapter — they stay owned by their
-# boundary via `paths` but contribute no `surfaces` (accept-as-uncovered rather
-# than declaring a token that silently derives nothing).
-grc:
-  boundaries:
-    - key: range-perimeter
-      name: Range Containment Perimeter
-      description: Outermost trust boundary — the contained range vs. the external internet; egress firewall (SAF-002) is the primary safety boundary.
-      paths:
-        - docker-compose.yml
-        - containers/appliance-egress-proxy/**
-        - src/aptl/core/**
-        - config/suricata/**
-      # src/aptl/core and appliance-egress-proxy (python) -> application;
-      # docker-compose.yml -> docker-compose; the egress proxy Dockerfile ->
-      # dockerfile; config/suricata uncovered.
-      surfaces: [application, docker-compose, dockerfile]
-    - key: host-boundary
-      name: Docker Host Boundary
-      description: Docker host vs. range containers — kill switch (SAF-001), resource limits (INF-004), health checks (INF-003).
-      paths:
-        - docker-compose.yml
-        - containers/base/**
-        - containers/network-boundary-helper/**
-        - appliance/guest/**
-        - src/aptl/appliance/**
-        - src/aptl/cli/**
-      # src/aptl/cli (python) -> application; docker-compose.yml -> docker-compose;
-      # containers/base and network-boundary-helper Dockerfiles -> dockerfile.
-      surfaces: [application, docker-compose, dockerfile]
-    - key: mcp-control-plane
-      name: MCP Control Plane
-      description: Red/blue MCP servers and orchestrator that AI agents drive — the agent authorization and command-filtering surface.
-      paths:
-        - mcp/**
-        - src/aptl/workbench/**
-      # mcp/** is first-party TypeScript -> application (Dockerfiles under mcp/ are
-      # vendored node_modules only).
-      surfaces: [application]
-    - key: redteam-zone
-      name: Red Team Zone (aptl-redteam)
-      description: Attacker network hosting Kali and the reverse-engineering container.
-      paths:
-        - containers/kali/**
-        - containers/kali-capture/**
-        - containers/reverse/**
-      # kali / kali-capture / reverse Dockerfiles -> dockerfile.
-      surfaces: [dockerfile]
-    - key: dmz-zone
-      name: DMZ Zone (aptl-dmz)
-      description: Semi-exposed victim network — generic component build contexts.
-      paths:
-        - containers/mailserver/**
-      surfaces: [dockerfile]
-    - key: internal-zone
-      name: Internal Zone (aptl-internal)
-      description: Internal enterprise network — Active Directory, PostgreSQL, SMB fileshare, victim/workstation hosts.
-      paths:
-        - containers/ad/**
-        - containers/victim/**
-        - containers/workstation/**
-        - containers/windows-victim/**
-      # fileshare / victim / workstation Dockerfiles -> dockerfile.
-      surfaces: [dockerfile]
-    - key: security-zone
-      name: Security/SOC Zone (aptl-security)
-      description: Defensive stack — Wazuh, Suricata, MISP, Shuffle; zone isolation via multi-homing only (NET-005).
-      paths:
-        - containers/misp-suricata-sync/**
-        - config/wazuh_cluster/**
-        - config/wazuh_dashboard/**
-        - config/wazuh_indexer/**
-      # misp-suricata-sync Dockerfile -> dockerfile; config/* uncovered.
-      surfaces: [dockerfile]
-    - key: observability-plane
-      name: Observability Plane
-      description: OpenTelemetry collector, Tempo, Grafana, and the aptl web API/UI experiment-observability surface.
-      paths:
-        - config/otel/**
-        - web/**
-        - src/aptl/api/**
-      # web/** (ts/svelte) + src/aptl/api (python) -> application; web/Dockerfile* ->
-      # dockerfile; config/otel uncovered.
-      surfaces: [application, dockerfile]
+# Module ownership for /implement design review (schema_version 2, issue #1673).
+# Each entry maps a repository path to existing implementation files and the
+# ADRs that govern it. All matching parent entries apply, and `.` carries the
+# repository-wide decisions. The map covers the Python control plane, the
+# scenario adapter plugin, the TypeScript MCP surface, the tests, and the
+# tooling, where ADR-064 design review applies.
+architecture:
+  modules:
+    - path: .
+      implementations:
+        - src/aptl/__init__.py
+        - tools/check_architecture.py
+      adrs:
+        - docs/adrs/adr-000-use-adrs.md
+        - docs/adrs/adr-007-python-cli-control-plane.md
+        - docs/adrs/adr-064-layered-architecture-and-code-conventions.md
+    - path: src/aptl
+      implementations:
+        - src/aptl/cli/__init__.py
+        - src/aptl/core/lab.py
+      adrs:
+        - docs/adrs/adr-007-python-cli-control-plane.md
+        - docs/adrs/adr-054-lilrae-core-and-experience-ownership.md
+        - docs/adrs/adr-055-local-runtime-authority-and-ownership.md
+        - docs/adrs/adr-064-layered-architecture-and-code-conventions.md
+    - path: src/aptl/backends
+      implementations:
+        - src/aptl/backends/__init__.py
+        - src/aptl/backends/raes_runtime.py
+      adrs:
+        - docs/adrs/adr-013-deployment-abstraction.md
+        - docs/adrs/adr-035-raes-sdl-adoption.md
+        - docs/adrs/adr-051-component-level-raes-realization.md
+    - path: src/aptl_techvault
+      implementations:
+        - src/aptl_techvault/account_environment.py
+      adrs:
+        - docs/adrs/adr-046-dynamic-raes-scenario-realization.md
+        - docs/adrs/adr-053-pack-backend-deployment-serving-interaction-seam.md
+        - docs/adrs/adr-059-canonical-techvault-delivery-and-host-mcp-access.md
+    - path: mcp
+      implementations:
+        - mcp/aptl-mcp-common/src/config.ts
+        - mcp/mcp-red/src/index.ts
+      adrs:
+        - docs/adrs/adr-003-mcp-common-library.md
+        - docs/adrs/adr-027-red-team-structured-logging.md
+        - docs/adrs/adr-057-agent-execution-compartments.md
+    - path: tests
+      implementations:
+        - tests/conftest.py
+      adrs:
+        - docs/adrs/adr-010-sonarcloud-quality.md
+        - docs/adrs/adr-064-layered-architecture-and-code-conventions.md
+    - path: tools
+      implementations:
+        - tools/check_architecture.py
+        - tools/check_pack_boundary.py
+      adrs:
+        - docs/adrs/adr-010-sonarcloud-quality.md
+        - docs/adrs/adr-064-layered-architecture-and-code-conventions.md

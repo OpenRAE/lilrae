@@ -1,10 +1,14 @@
 # Lab Architecture
 
+- [Diataxis adoption](diataxis-adoption.md)
+
 - [Required trial readiness](exp-011-resource-readiness-design.md)
 - [Issue #753 readiness preflight](exp-011-resource-readiness-preflight.md)
 
 - [Participant request manifests](participant-request-manifests.md)
 - [Issue #1419 participant manifest preflight](issue-1419-participant-manifests-preflight.md)
+- [Issue #1420 per-trial participant configuration preflight](issue-1420-trial-participant-configuration-preflight.md)
+- [Trial participant configuration](trial-participant-configuration.md)
 - [Issue #1418 Participant MCP Action Admission](issue-1418-participant-tool-admission-preflight.md)
 - [Participant action and control architecture assessment](participant-tool-admission.md)
 - [Participant action enforcement](participant-action-enforcement.md)
@@ -177,6 +181,7 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 
 ## Preflights
 
+- [Issue #1421 RPT Capture](issue-1421-rpt-capture-preflight.md)
 - [Issue #1510 Code Quality Architecture Preflight](issue-1510-code-quality-preflight.md)
 - [Issue #1510 Code Quality Architecture Design](issue-1510-code-quality-design.md)
 - [Issue #1465 Released Structural Factorial Experiment Tuple](issue-1465-released-experiment-tuple-preflight.md)

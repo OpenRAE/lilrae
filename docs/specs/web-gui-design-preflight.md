@@ -37,7 +37,7 @@ type, route contract, or workflow concept.
 | Svelte wire-type mirror | `web/src/lib/types.ts` |
 | `aptl web serve` bind/runtime contract | `src/aptl/cli/web.py` |
 | Split web Compose profile | `docker-compose.yml` services `aptl-web-api` and `aptl-web-ui` |
-| Web build artifact contract | `web/package.json`, `web/svelte.config.js`, `web/vite.config.ts` |
+| Web build artifact contract | `web/package.json`, `web/vite.config.ts` |
 | Lab lifecycle and startup diagnostics | `src/aptl/core/lab.py`, `src/aptl/core/lab_types.py`, ADR-030 |
 | Endpoint display and terminal target metadata | `src/aptl/core/endpoints.py`, ADR-036, ADR-040 |
 | Docker and Docker Compose access | `src/aptl/core/deployment/`, ADR-023, ADR-037 |
@@ -186,7 +186,7 @@ Tailwind surface, not a parallel design system.
   existing sanctioned raw-HTML path. Generic primitives should render text or
   Svelte children, not add new `{@html}` surfaces.
 - Preserve SvelteKit's static SPA and strict CSP posture from
-  `web/src/routes/+layout.ts` and `web/svelte.config.js`: no remote assets,
+  `web/src/routes/+layout.ts` and `web/vite.config.ts`: no remote assets,
   no inline-script-dependent component behavior, no API token in route data,
   generated bundles, local storage, examples, screenshots, or style tokens.
 - Kit tests belong under `web/tests/components/` and should assert behavior,

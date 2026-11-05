@@ -184,3 +184,45 @@ def test_recorder_shutdown_cannot_certify_success_after_the_deadline(tmp_path):
     backend._finish_docker_recordings = shutdown
     cleanup = ReceiptCleanup(backend, cleanup.binding, clock=lambda: elapsed[0])
     assert not cleanup.execute("destroy", 120).absent
+
+
+def test_destroy_retires_the_removed_receipt_and_keeps_its_evidence(tmp_path):
+    """Destroy retires a live receipt; the retained copy still certifies absence."""
+    cleanup, backend = setup_cleanup(tmp_path)
+    (receipt,) = backend.owner.receipts("container")
+
+    assert cleanup.execute("destroy", 120).absent
+
+    assert backend.owner.receipts("container") == ()
+    roles = [role for role, _ in backend.native_evidence_artifacts("native-a")]
+    assert roles.count("native-resource-receipt/v1") == 1
+    assert roles.count("native-cleanup/v1") == 1
+    assert cleanup.execute("verify", 120).absent
+    assert backend.removed == [("docker", "rm", "-f", receipt.native_id)]
+
+
+def test_destroy_keeps_a_recorded_child_receipt(tmp_path):
+    """The recording store uses a child receipt as its completion record."""
+    cleanup, backend = setup_cleanup(tmp_path)
+    child = ResourceReceipt(
+        "container",
+        "d" * 64,
+        "child",
+        "child",
+        "node.a",
+        backend.owner.workspace_id,
+        backend.owner.project_name,
+        "daemon-a",
+        "native-a",
+        managed_by="child",
+    )
+    backend.owner.record(child)
+    backend.live[child.native_id] = {}
+    backend._recorded_child_is_current = (
+        lambda receipt, recovery=False: receipt.native_id in backend.live
+    )
+
+    assert cleanup.execute("destroy", 120).absent
+
+    assert backend.owner.receipts("container") == (child,)
+    assert child.native_id not in backend.live
