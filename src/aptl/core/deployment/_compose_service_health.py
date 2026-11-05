@@ -193,11 +193,14 @@ def wait_for_realized_health(
     # exists by now. A container that is still absent is never going to appear,
     # and polling for it would burn the whole budget before reporting a failure
     # we can already prove. Waiting is only for containers that exist and have
-    # yet to settle.
+    # yet to settle. Ask membership rather than inspecting: the Compose backend
+    # records ownership only for containers that exist once `up` returns, so
+    # inspecting one that was never created raises an ownership error instead
+    # of returning nothing (issue #1299).
     missing = [
         f"container {name!r} was never created"
         for name in all_names
-        if not backend.container_inspect(name)
+        if not backend.container_exists(name)
     ]
     if missing:
         return missing

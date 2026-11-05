@@ -7,8 +7,12 @@ healthy. These pin that state machine, including the fail-fast and timeout paths
 
 from __future__ import annotations
 
+import json
+import subprocess
+
 import pytest
 
+from aptl.core.deployment._compose_resource_ownership import ResourceReceipt
 from aptl.core.deployment._compose_service_health import (
     container_completed_successfully,
     container_health,
@@ -17,6 +21,7 @@ from aptl.core.deployment._compose_service_health import (
     unhealthy_container_reasons,
     wait_for_realized_health,
 )
+from aptl.core.deployment.docker_compose import DockerComposeBackend
 
 
 def _info(
@@ -105,6 +110,9 @@ class _FakeBackend:
             k: (v if isinstance(v, list) else [v]) for k, v in states.items()
         }
         self._calls = {k: 0 for k in states}
+
+    def container_exists(self, name):
+        return name in self._states
 
     def container_inspect(self, name):
         if name not in self._states:
@@ -255,3 +263,95 @@ def test_unhealthy_reasons_reports_a_stopped_container():
     joined = " ".join(reasons)
     assert "aptl-stopped" in joined
     assert "not running" in joined
+
+
+# ---------------------------------------------------------------------------
+# Through the real Compose backend
+# ---------------------------------------------------------------------------
+
+_WEB_ID = "a" * 64
+
+
+@pytest.fixture
+def recorded_web(tmp_path, mocker):
+    """Drive a real Compose backend whose only receipt is for ``aptl-web``.
+
+    Compose start records a receipt only for a container that exists once
+    ``up`` returns, so a service it never created has none. Only the ``docker``
+    binary is faked: ``docker inspect`` answers for the recorded native ID with
+    the returned ``State`` and fails for anything else, as the daemon does for
+    an object it does not have.
+    """
+
+    backend = DockerComposeBackend(tmp_path, project_name="aptl")
+    backend._docker_daemon_id = "daemon-a"
+    ownership = backend._ensure_resource_ownership(attempt_id="run-a")
+    external = ownership.container_name("aptl-web")
+    ownership.record(
+        ResourceReceipt(
+            kind="container",
+            native_id=_WEB_ID,
+            external_name=external,
+            semantic_name="aptl-web",
+            node_address="provision.node.aptl-web",
+            workspace_id=ownership.workspace_id,
+            project_name=ownership.project_name,
+            daemon_id="daemon-a",
+            attempt_id="run-a",
+        )
+    )
+    inspected = {
+        **_info(health="healthy"),
+        "Id": _WEB_ID,
+        "Name": f"/{external}",
+        "Config": {
+            "Labels": {
+                "aptl.workspace.id": ownership.workspace_id,
+                "aptl.lifecycle.project": ownership.project_name,
+                "com.docker.compose.project": ownership.project_name,
+            }
+        },
+    }
+
+    def docker(argv, **_kwargs):
+        if argv == ["docker", "inspect", _WEB_ID]:
+            payload = json.dumps([inspected])
+            return subprocess.CompletedProcess(argv, 0, stdout=payload, stderr="")
+        return subprocess.CompletedProcess(
+            argv, 1, stdout="", stderr="Error: No such object"
+        )
+
+    mocker.patch("subprocess.run", side_effect=docker)
+    return backend, inspected["State"]
+
+
+@pytest.mark.parametrize(
+    ("ongoing", "completed"),
+    [(["aptl-web", "aptl-db"], []), (["aptl-web"], ["aptl-db"])],
+    ids=["service", "run-once"],
+)
+def test_wait_reports_a_container_compose_never_created(
+    recorded_web, ongoing, completed
+):
+    backend, _state = recorded_web
+    sleeps = []
+
+    reasons = wait_for_realized_health(
+        backend, ongoing, completed_container_names=completed, sleep=sleeps.append
+    )
+
+    assert reasons == ["container 'aptl-db' was never created"]
+    assert sleeps == []
+
+
+def test_wait_still_polls_a_recorded_container_until_it_settles(recorded_web):
+    backend, state = recorded_web
+    state["Health"] = {"Status": "starting"}
+    sleeps = []
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        state["Health"] = {"Status": "healthy"}
+
+    assert wait_for_realized_health(backend, ["aptl-web"], sleep=sleep) == []
+    assert len(sleeps) == 1
