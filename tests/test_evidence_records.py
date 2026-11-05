@@ -15,6 +15,7 @@ from aptl.core.evidence.protocol import CollectorOutcome
 from aptl.core.evidence.outcomes import CollectorStatus
 from aptl.core.evidence.records import (
     RecordDisclosure,
+    RecordScope,
     build_evidence_record,
     derive_evidence_record_id,
 )
@@ -91,7 +92,12 @@ def _record(
         redaction_state=redaction_state,
         loss_disclosure=loss_disclosure,
     )
-    return build_evidence_record(disclosure=disclosure, **kwargs)
+    scope = RecordScope(
+        kwargs.pop("run_id"),
+        kwargs.pop("planned_trial_id"),
+        kwargs.pop("attempt_id", None),
+    )
+    return build_evidence_record(scope=scope, disclosure=disclosure, **kwargs)
 
 
 class TestIdentity:

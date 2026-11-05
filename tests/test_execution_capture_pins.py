@@ -11,14 +11,21 @@ from __future__ import annotations
 import dataclasses
 
 import pytest
-from raes_contracts.contracts import ExperimentCaptureSpecReferenceModel, ExperimentTaskModel
+from raes_contracts.contracts import (
+    ExperimentCaptureSpecReferenceModel,
+    ExperimentTaskModel,
+)
 
 from aptl.core.correlation.clock import FixedClockProvider
 from aptl.core.evidence.content_store import ContentInsertion
 from aptl.core.evidence.coordinator import AcquisitionDisposition, AcquisitionResult
 from aptl.core.evidence.outcomes import CollectorStatus
 from aptl.core.evidence.protocol import CollectorOutcome, RunScope
-from aptl.core.evidence.records import RecordDisclosure, build_evidence_record
+from aptl.core.evidence.records import (
+    RecordDisclosure,
+    RecordScope,
+    build_evidence_record,
+)
 from aptl.core.execution.assembly import (
     AdmittedExperiment,
     AssemblyInputs,
@@ -80,8 +87,9 @@ def _record(admitted: AdmittedExperiment, digest_hex: str):
     """A real coordinator-built record for the admitted binding (version omitted)."""
     return build_evidence_record(
         binding=admitted.plan.capture_bindings[0],
-        run_id=_attempt_id(admitted),
-        planned_trial_id=admitted.plan.trials[0].planned_trial_id,
+        scope=RecordScope(
+            _attempt_id(admitted), admitted.plan.trials[0].planned_trial_id
+        ),
         content=ContentInsertion(
             relative_path=f"evidence/{digest_hex}",
             digest=f"sha256:{digest_hex}",
@@ -146,8 +154,7 @@ def _assemble(store: LocalRunStore, admitted: AdmittedExperiment, records=()):
 
 def _pins(context) -> list[tuple[str, str | None]]:
     return [
-        (ref.ref_id, ref.ref_version)
-        for ref in context.traceability.capture_spec_refs
+        (ref.ref_id, ref.ref_version) for ref in context.traceability.capture_spec_refs
     ]
 
 

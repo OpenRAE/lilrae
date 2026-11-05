@@ -12,6 +12,7 @@ from aptl.core.deployment._compose_resource_ownership import (
     WorkspaceOwnership,
 )
 from aptl.core.deployment.errors import BackendSeedError, BackendTimeoutError
+from aptl.core.deployment._cleanup_budget import cleanup_command_timeout
 from aptl.core.ephemeral_containers import remove_container_command
 from aptl.core.deployment.observation import DeploymentObservationContext
 
@@ -111,7 +112,8 @@ class ComposeResourceResolutionMixin:
         verified: tuple[str, ...] = ()
         for attempt, delay in enumerate((0, *_CONTAINER_INSPECT_RETRY_DELAYS)):
             if delay:
-                time.sleep(delay)
+                time.sleep(cleanup_command_timeout(delay))
+                cleanup_command_timeout(0)
             try:
                 verified = tuple(
                     receipt.native_id
@@ -119,6 +121,7 @@ class ComposeResourceResolutionMixin:
                     if self._container_receipt_is_current(ownership, receipt)
                 )
             except BackendTimeoutError:
+                cleanup_command_timeout(0)
                 if attempt == len(_CONTAINER_INSPECT_RETRY_DELAYS):
                     raise
                 continue

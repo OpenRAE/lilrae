@@ -132,25 +132,24 @@ def capture_source_context(request: object) -> CaptureSourceContext:
 
 
 def family_capture_sources(request: object) -> Mapping[str, WindowedSource]:
-    """Contain native-source callbacks and reject undeclared source identities."""
-
+    """Keep invalid declarations distinct from a source factory's runtime failure."""
+    contribution = request.capture_selection.contribution
+    context = capture_source_context(request)
     try:
-        contribution = request.capture_selection.contribution
-        sources = contribution.runtime_adapter.native_sources(
-            capture_source_context(request)
-        )
-        if (
-            not isinstance(sources, Mapping)
-            or len(sources) > 256
-            or not set(sources).issubset(contribution.native_registration_ids)
-            or any(
-                not isinstance(source, WindowedSource) for source in sources.values()
-            )
-        ):
-            raise ValueError
-        return dict(sources)
+        sources = contribution.runtime_adapter.native_sources(context)
     except Exception:
-        raise ValueError("family-capture-sources-invalid") from None
+        raise RuntimeError("family-capture-sources-unavailable") from None
+    if (
+        not isinstance(sources, Mapping)
+        or len(sources) > 256
+        or not set(sources).issubset(contribution.native_registration_ids)
+        or any(
+            not isinstance(source, WindowedSource) or not callable(source.fetch)
+            for source in sources.values()
+        )
+    ):
+        raise ValueError("family-capture-sources-invalid")
+    return dict(sources)
 
 
 @dataclass(frozen=True)

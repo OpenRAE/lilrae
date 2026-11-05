@@ -1110,7 +1110,7 @@ def test_family_capture_sources_contain_callback_failures():
     request.capture_selection.contribution.runtime_adapter = SimpleNamespace(
         native_sources=broken
     )
-    with pytest.raises(ValueError, match="^family-capture-sources-invalid$"):
+    with pytest.raises(RuntimeError, match="^family-capture-sources-unavailable$"):
         family_capture_sources(request)
 
     request.capture_selection.contribution.runtime_adapter.native_sources = (
