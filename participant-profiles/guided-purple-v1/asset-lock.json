@@ -73,7 +73,7 @@
       "asset_id": "mcp-indexer-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-indexer/package-lock.json",
-      "sha256": "c477ca8b211bc5a7ec448c81f63bb100bc3ea43d98cb3442b3125892fcad456a"
+      "sha256": "00b13858f757271d99b38f939714913e7b36d8d3a19f92559ab7d8f947e2f038"
     },
     {
       "asset_id": "mcp-indexer-config",
