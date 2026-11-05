@@ -960,6 +960,7 @@ These exact headings refine the page assignments. Keep the other headings and li
 Issue #1668 owns the following source documentation.
 Docstrings and API comments serve Reference. Tutorial examples serve Tutorials.
 Operating instructions serve How-to guides. Design rationale serves Explanation.
+
 Keep executable examples, signatures, and identifiers exact.
 Edit generated prose at these maintained sources, then use the existing generator.
 

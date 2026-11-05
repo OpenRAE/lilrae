@@ -79,7 +79,6 @@ nav:
     - Prerequisites: getting-started/prerequisites.md
     - Install LilRAE: getting-started/installation.md
     - Install a Scenario Pack: getting-started/installing-packs.md
-    - Run Your First Lab: getting-started/quick-start.md
   - Reference:
     - CLI: reference/cli.md
     - MCP: reference/mcp.md
@@ -91,7 +90,6 @@ nav:
     - Troubleshooting: troubleshooting/index.md
   - Workshop:
     - Playbook: workshop/playbook.md
-    - Lab Walkthrough: workshop/walkthrough.md
   - Development:
     - Coding Standards: CODING_STANDARDS.md
   - Explanation:
