@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { AppConfig } from '$lib/types';
-	import { preferences } from '$lib/stores/preferences';
+	import type { AppConfig } from '#lib/types.ts';
+	import { preferences } from '#lib/stores/preferences.ts';
 
 	interface Props {
 		config: AppConfig;

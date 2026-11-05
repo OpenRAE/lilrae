@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { labStatus, labLoading, refreshLabStatus } from '$lib/stores/lab';
-	import { startLab, stopLab, killLab } from '$lib/api';
-	import Button from '$lib/components/kit/Button.svelte';
-	import StatusBadge from '$lib/components/kit/StatusBadge.svelte';
-	import type { Tone } from '$lib/components/kit/tone';
-	import ContainerGrid from '$lib/components/ContainerGrid.svelte';
-	import LabStartNotice from '$lib/components/LabStartNotice.svelte';
-	import KillConfirmDialog from '$lib/components/KillConfirmDialog.svelte';
-	import ScenarioCard from '$lib/components/ScenarioCard.svelte';
-	import { guardControlledAction } from '$lib/stores/ui';
-	import type { LabActionResponse, KillActionResponse, ScenarioSummary } from '$lib/types';
+	import { labStatus, labLoading, refreshLabStatus } from '#lib/stores/lab.ts';
+	import { startLab, stopLab, killLab } from '#lib/api.ts';
+	import Button from '#lib/components/kit/Button.svelte';
+	import StatusBadge from '#lib/components/kit/StatusBadge.svelte';
+	import type { Tone } from '#lib/components/kit/tone.ts';
+	import ContainerGrid from '#lib/components/ContainerGrid.svelte';
+	import LabStartNotice from '#lib/components/LabStartNotice.svelte';
+	import KillConfirmDialog from '#lib/components/KillConfirmDialog.svelte';
+	import ScenarioCard from '#lib/components/ScenarioCard.svelte';
+	import { guardControlledAction } from '#lib/stores/ui.ts';
+	import type { LabActionResponse, KillActionResponse, ScenarioSummary } from '#lib/types.ts';
 
 	let { data }: { data: { scenarios: ScenarioSummary[]; scenariosError: boolean } } = $props();
 

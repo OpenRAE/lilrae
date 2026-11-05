@@ -1,5 +1,5 @@
-import { getScenarios } from '$lib/api';
-import type { ScenarioSummary } from '$lib/types';
+import { getScenarios } from '#lib/api.ts';
+import type { ScenarioSummary } from '#lib/types.ts';
 
 /**
  * Load the scenario catalog summary for the Lab Home entry points.
