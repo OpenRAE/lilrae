@@ -15,6 +15,7 @@ import { startServer } from 'aptl-mcp-common';
 import { captureToolCall } from './capture.js';
 import { topLevelSegments } from './classifier.js';
 import { isEffectiveRawCall, isOutcomeKnown } from './effective-mode.js';
+import { resultSessionId } from './result-envelope.js';
 import { defaultRedTeamSinks, deriveCommandOutcome, logRedTeamCommandAsync, } from './logger.js';
 const AGENT_NAME = 'aptl-kali-red';
 const COMMAND_TOOL_SUFFIXES = ['_run_command', '_session_command'];
@@ -25,21 +26,19 @@ function isCommandTool(toolName) {
  * Resolve the session id for capture/OCSF correlation. Prefer the
  * explicit `args.session_id` (persistent session handlers); fall
  * back to the synthetic `exec-...` id the one-shot run_command path
- * generates in `SSHConnectionManager.executeCommand` and surfaces
- * back in `result.output.sessionId` (codex pre-push cycle 3
- * finding-5). Without this fallback, run_command's tool-call JSONL
- * + OCSF records ship without a session id, leaving no join key to
- * the per-run mcp-side PTY tee or kali-side captures.
+ * generates in `SSHConnectionManager.executeCommand` and reports in
+ * the result envelope as `output.sessionId`. The hook receives the
+ * MCP-shaped result, so the id is read from the envelope text, not
+ * from a field on the result object. Without this fallback,
+ * run_command's tool-call JSONL + OCSF records ship without a session
+ * id, leaving no join key to the per-run mcp-side PTY tee or
+ * kali-side captures.
  */
 function extractSessionId(info) {
     const fromArgs = info.args.session_id;
     if (typeof fromArgs === 'string' && fromArgs.length > 0)
         return fromArgs;
-    // run_command returns { target, command, username, success, output }.
-    // `output` is the underlying CommandResult, which now carries
-    // `sessionId` per OBS-003 / cycle 1 finding-3.
-    const result = info.result;
-    return result?.output?.sessionId;
+    return resultSessionId(info.result);
 }
 function captureContextFor(info, outcome, outcomeKnown) {
     const sessionId = extractSessionId(info);

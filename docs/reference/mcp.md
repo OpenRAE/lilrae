@@ -14,7 +14,6 @@ resolved ports, and transport settings.
 
 | Artifact | Generated client entry | Tool prefix | Default client config | Target |
 | --- | --- | --- | --- | --- |
-| `mcp-casemgmt` | `aptl-casemgmt` | `cases` | yes | TheHive cases, observables, and analyzers |
 | `mcp-indexer` | `aptl-indexer` | `indexer` | yes | Wazuh Indexer search and index operations |
 | `mcp-network` | `aptl-network` | `network` | yes | Network IDS observations exposed through the lab APIs |
 | `mcp-red` | `aptl-red` | `kali` | yes | Kali information, commands, and bounded sessions |
@@ -84,3 +83,30 @@ normally let `lilrae lab start` own the build and generated configuration.
   ports and available targets can change with realization.
 
 For implementation architecture, see [MCP Integration](../components/mcp-integration.md).
+
+## Scenario service selection
+
+A run exposes only MCP servers whose service bindings exist in its exact admitted
+scenario. Family trials use their instantiated snapshot, so a selected-out MISP
+service has no threat-intelligence MCP server, credentials, or endpoint binding.
+The shipped operator catalog is `src/aptl/core/participant_mcp_policy.json`;
+scenario packs cannot add artifacts or widen its role ceilings.
+
+Operators can narrow admission in `aptl.json`:
+
+```json
+{
+  "mcp": {
+    "allowed_servers": ["aptl-indexer", "aptl-wazuh"],
+    "required_servers": ["aptl-wazuh"]
+  }
+}
+```
+
+A required server without its declared services rejects admission before
+deployment. A selected server whose live endpoint or credential is unavailable
+fails startup. An intentionally omitted service is simply absent from discovery.
+Each run replaces managed MCP entries and endpoint bindings; guest discovery and
+server dispatch apply that selection as well as the enrolled role. Older seat
+records without an explicit MCP selection grant no MCP access; prepare a fresh
+transport binding after upgrading.

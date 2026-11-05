@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from raes_contracts.realization_structure import validate_realization_value
-from raes_contracts.runtime_state import RuntimeSnapshot
+from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
+from raes_runtime.backend_account_credentials import plan_has_account_credentials
 
 from aptl.backends.raes_artifact_mechanisms import SOURCE_ARTIFACT_REQUIREMENT_KIND
 from aptl.backends.raes_artifact_satisfaction import satisfactions_for_plan
@@ -187,3 +188,20 @@ __all__ = (
     "capture_apparatus_observations",
     "with_artifact_satisfactions",
 )
+
+
+def closed_credential_result(
+    plan: ProvisioningPlan, result: ApplyResult
+) -> ApplyResult:
+    """Return no free-form details for a plan that carries account credentials.
+
+    RAES refuses any backend details from a credential-bearing apply, because
+    details are an open carrier a credential could leave through. Realized
+    evidence still travels in the snapshot entries and realization
+    observations, and APTL keeps the source-image evidence it read from the
+    details before they are closed.
+    """
+
+    if not plan_has_account_credentials(plan):
+        return result
+    return replace(result, details={})

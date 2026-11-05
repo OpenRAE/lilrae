@@ -185,6 +185,10 @@ def transcript_sessions(
         raise ValueError("capture export is incomplete")
     budget = _TranscriptBudget(limits, artifact_count=2 * len(expected))
     sessions = tuple(_transcript_session(raw, budget) for raw in sessions_raw)
+    if "accepted_session_ids" in payload:
+        accepted = _expected_session_ids(payload["accepted_session_ids"], limits)
+        if set(accepted) != {session.session_id for session in sessions}:
+            raise ValueError("broker ledger disagrees with exported sessions")
     return expected, sessions
 
 

@@ -452,3 +452,87 @@ def test_a_root_model_cannot_add_undeclared_host_authority(tmp_path, monkeypatch
         _spec(RuntimeConfiguration.model_validate({})), scenario_root=tmp_path
     )
     assert result.success
+
+
+def _companion_spec() -> DeploymentRealizationSpec:
+    from dataclasses import replace
+
+    from aptl.core.deployment.realization import DeploymentCompanionRealization
+
+    spec = _spec(RuntimeConfiguration.model_validate({}))
+    companion = DeploymentCompanionRealization(
+        role="web",
+        image=DeploymentImageRealization(
+            address="provision.node.workload",
+            service_name="workload-web",
+            source_name="web",
+            source_version="1",
+            image_ref="example/web@" + _DIGEST_A,
+            mode="pull",
+            policy_rule="backend-open-profile",
+        ),
+        tmpfs=("/tmp:mode=1777",),
+    )
+    (node,) = spec.nodes
+    return replace(spec, nodes=(replace(node, backend_companions=(companion,)),))
+
+
+def test_effective_model_accepts_the_rendered_companion_contract() -> None:
+    from aptl.core.deployment._compose_node_generation import (
+        render_realization_compose,
+    )
+
+    spec = _companion_spec()
+
+    issues = effective_runtime_contract_issues(
+        render_realization_compose(spec), spec, profile=SHARED_DOCKER_PROFILE
+    )
+
+    assert issues == ()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("privileged", True),
+        ("cap_add", ["NET_ADMIN"]),
+        ("network_mode", "host"),
+        ("read_only", False),
+        ("user", "0"),
+        ("volumes", [{"type": "bind", "source": "/", "target": "/host"}]),
+    ],
+)
+def test_effective_model_refuses_added_companion_authority(field, value) -> None:
+    """A backend companion has no authored runtime, so nothing may widen it (#1407)."""
+
+    from aptl.core.deployment._compose_node_generation import (
+        render_realization_compose,
+    )
+
+    spec = _companion_spec()
+    payload = render_realization_compose(spec)
+    payload["services"]["workload-web"][field] = value
+
+    issues = effective_runtime_contract_issues(
+        payload, spec, profile=SHARED_DOCKER_PROFILE
+    )
+
+    assert len(issues) == 1
+    assert "backend companion authority" in issues[0].limitation
+
+
+def test_effective_model_refuses_a_missing_companion() -> None:
+    from aptl.core.deployment._compose_node_generation import (
+        render_realization_compose,
+    )
+
+    spec = _companion_spec()
+    payload = render_realization_compose(spec)
+    del payload["services"]["workload-web"]
+
+    issues = effective_runtime_contract_issues(
+        payload, spec, profile=SHARED_DOCKER_PROFILE
+    )
+
+    assert len(issues) == 1
+    assert "companion is absent" in issues[0].limitation

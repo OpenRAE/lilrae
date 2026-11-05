@@ -133,6 +133,7 @@ def _authority_admission_is_complete(
         getattr(node, "service_name", None) == admission.service_name
         and set(admission.allowed_networks) == _declared_node_networks(node)
         and _admission_endpoint_is_supported(admission)
+        and _positive_int(admission.execution_timeout_seconds)
         and all(
             _spawn_requirement_is_complete(
                 requirement,
@@ -182,14 +183,14 @@ def _environment_names(raw: object) -> set[str]:
     return set()
 
 
-def _mount_is_exact_socket(mount: object) -> bool:
+def _mount_is_exact_socket(mount: object, source: str = DOCKER_SOCKET_PATH) -> bool:
     """Whether one effective mount is the declared host-socket bind."""
 
     if not isinstance(mount, Mapping):
         return False
     return bool(
         mount.get("type") == "bind"
-        and mount.get("source") == DOCKER_SOCKET_PATH
+        and mount.get("source") == source
         and mount.get("target") == DOCKER_SOCKET_PATH
         and mount.get("read_only", False) is False
     )
@@ -220,11 +221,12 @@ def _authority_service_errors(
     service_name: object,
     raw_service: Mapping[object, object],
     socket_mounts: list[object],
+    source: str = DOCKER_SOCKET_PATH,
 ) -> list[str]:
     """Validate one service selected by a carried authority admission."""
 
     errors: list[str] = []
-    if len(socket_mounts) != 1 or not _mount_is_exact_socket(socket_mounts[0]):
+    if len(socket_mounts) != 1 or not _mount_is_exact_socket(socket_mounts[0], source):
         errors.append(
             f"Docker authority service {service_name} must have exactly one "
             "canonical read-write socket bind."
@@ -256,6 +258,7 @@ def _effective_service_errors(
                 service_name,
                 raw_service,
                 socket_mounts,
+                holders[service_name],
             )
         elif socket_mounts:
             errors = [
@@ -267,6 +270,8 @@ def _effective_service_errors(
 def effective_orchestration_model_errors(
     payload: object,
     realization: DeploymentRealizationSpec,
+    *,
+    recording_sockets: Mapping[str, str] | None = None,
 ) -> list[str]:
     """Return fail-closed errors for the effective Compose authority model."""
 
@@ -279,7 +284,10 @@ def effective_orchestration_model_errors(
     except ValueError as exc:
         return [str(exc)]
     holders = {
-        admission.service_name: admission.node_address for admission in admissions
+        admission.service_name: (recording_sockets or {}).get(
+            admission.node_address, DOCKER_SOCKET_PATH
+        )
+        for admission in admissions
     }
 
     errors = [

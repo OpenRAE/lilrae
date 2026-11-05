@@ -263,3 +263,34 @@ dependent MCP package per the repo plan rules.
 - [ADR-033: Red-Side Behavioural Capture and Non-Contamination Boundary](adr-033-agent-reasoning-trace-boundary.md)
 - [ADR-029: Control-Plane Secret Handling in Run Data and Local State](adr-029-control-plane-secret-handling.md)
 - [ADR-037: Docker Compose Backend Cohesion](adr-037-docker-compose-backend-cohesion.md)
+
+## Session finalization at MCP shutdown (#1541)
+
+The common SSH manager stops accepting new sessions and waits for pending
+session creation before shutdown. It tracks one-shot exec channels as well as
+persistent shells. All harvest triggers share one result per run and session;
+remote-close failures remain visible to the shutdown owner.
+
+The MCP server starts this shutdown when stdin closes, or when it receives
+`SIGTERM` or `SIGINT`. A closed stdin is the first shutdown signal of the MCP
+stdio transport. The server starts at that signal because the MCP client can
+send `SIGKILL` soon after `SIGTERM`.
+
+The trusted host invokes `broker.py stop-session --run-id ... --session-id ...`
+through the configured capture container. The broker validates the run against
+its active authority and signals only that session's registration. It records
+`forced-teardown` without injecting an agent `exit` command or quiescing other
+MCP servers. Normal agent closes retain their existing shell exit semantics.
+
+`metadata.json` is the commit marker of a session. Before the host copies a
+session, it invokes `broker.py await-session` with the same arguments. This
+action sends no signal. It waits until the broker releases the session
+registration, then requires `metadata.json`. The host copies the session one
+time, after this check passes. It does not poll with repeated copies. When the
+check fails, the host writes the harvest-failure record and copies no frames.
+
+A finalization, harvest, or SSH teardown failure makes MCP shutdown exit
+non-zero. The MCP client can stop the server before this work completes. Lab
+stop does not use this copy: broker quiescence and export supply the full-run
+transcript. This decision adds no workload-accessible control endpoint or
+capture-volume mount.

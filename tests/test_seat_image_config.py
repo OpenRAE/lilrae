@@ -32,13 +32,14 @@ def _boundary(**overrides: object) -> dict[str, object]:
 BINDING = {
     "boundary_helper_image": "aptl-network-boundary-helper@sha256:" + "a" * 64,
     "egress_proxy_image": "aptl-appliance-egress-proxy@sha256:" + "b" * 64,
-    "raes_plan_digest": "sha256:" + "c" * 64,
+    "participant_routes_digest": "sha256:" + "c" * 64,
 }
 
 
 def _config(**overrides: object) -> bytes:
     document: dict[str, object] = {
-        "schema_version": "aptl.seat-image/v1",
+        "schema_version": "aptl.seat-image/v3",
+        "desktop_privilege_contract": "aptl.desktop-privileges/v1",
         "resources": dict(RESOURCES),
         "boundary": _boundary(),
         "binding": dict(BINDING),
@@ -60,13 +61,21 @@ def test_declares_resources_and_carries_the_boundary_policy() -> None:
 
 
 def test_new_signed_image_declares_launch_selected_privileges() -> None:
-    config = parse_seat_image_config(_config(
-        schema_version="aptl.seat-image/v2",
-        desktop_privilege_contract="aptl.desktop-privileges/v1",
-    ))
+    config = parse_seat_image_config(
+        _config(
+            schema_version="aptl.seat-image/v3",
+            desktop_privilege_contract="aptl.desktop-privileges/v1",
+        )
+    )
     assert config.desktop_privilege_contract == "aptl.desktop-privileges/v1"
-    missing_capability = _config(schema_version="aptl.seat-image/v2")
+    assert config.binding.participant_routes_digest == "sha256:" + "c" * 64
+    assert config.binding.raes_plan_digest is None
+    missing_capability = _config(
+        schema_version="aptl.seat-image/v3",
+        desktop_privilege_contract=None,
+    )
     unsupported_capability = _config(
+        schema_version="aptl.seat-image/v1",
         desktop_privilege_contract="aptl.desktop-privileges/v1",
     )
     with pytest.raises(SeatImageConfigError):
@@ -139,7 +148,9 @@ def test_non_object_payloads_are_refused(payload: bytes) -> None:
 
 def test_duplicate_signed_config_key_is_refused() -> None:
     payload = _config().replace(
-        b'"schema_version":', b'"schema_version":"aptl.seat-image/v1","schema_version":', 1
+        b'"schema_version":',
+        b'"schema_version":"aptl.seat-image/v3","schema_version":',
+        1,
     )
     with pytest.raises(SeatImageConfigError, match="duplicate"):
         parse_seat_image_config(payload)
@@ -150,8 +161,18 @@ def test_duplicate_signed_config_key_is_refused() -> None:
     [
         ({"boundary_helper_image": "no-digest:latest"}, "unpinned helper image"),
         ({"egress_proxy_image": "also-unpinned"}, "unpinned proxy image"),
-        ({"raes_plan_digest": "not-a-digest"}, "malformed plan digest"),
-        ({"raes_plan_digest": "sha256:" + "A" * 64}, "uppercase digest"),
+        ({"participant_routes_digest": "not-a-digest"}, "malformed route digest"),
+        (
+            {"participant_routes_digest": "sha256:" + "A" * 64},
+            "uppercase route digest",
+        ),
+        (
+            {
+                "participant_routes_digest": "sha256:" + "c" * 64,
+                "raes_plan_digest": "sha256:" + "d" * 64,
+            },
+            "runtime plan cannot be baked into the image",
+        ),
     ],
 )
 def test_unpinned_guest_identities_are_refused(binding, reason: str) -> None:

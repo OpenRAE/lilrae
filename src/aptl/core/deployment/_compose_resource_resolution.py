@@ -12,7 +12,9 @@ from aptl.core.deployment._compose_resource_ownership import (
     WorkspaceOwnership,
 )
 from aptl.core.deployment.errors import BackendSeedError, BackendTimeoutError
+from aptl.core.deployment._cleanup_budget import cleanup_command_timeout
 from aptl.core.ephemeral_containers import remove_container_command
+from aptl.core.deployment.observation import DeploymentObservationContext
 
 if TYPE_CHECKING:
     import subprocess
@@ -20,7 +22,6 @@ if TYPE_CHECKING:
     from aptl.core.deployment._compose_base_substrate import BaseContainerSpec
     from aptl.core.deployment.realization import (
         DeploymentNetworkRealization,
-        DeploymentSpawnImageRequirement,
     )
 
 _DOCKER_TIMEOUT = 30
@@ -30,6 +31,18 @@ _CONTAINER_INSPECT_RETRY_DELAYS = (0.2, 0.5, 1.0)
 
 class ComposeResourceResolutionMixin:
     """Resolve daemon-native resources only through durable receipts."""
+
+    def _bind_realization_attempt(
+        self, observation_context: DeploymentObservationContext | None
+    ) -> DeploymentObservationContext:
+        """Bind workspace ownership and selected attempt before preflight."""
+        observation_context = observation_context or DeploymentObservationContext()
+        attempt_id = observation_context.attempt_id or self._resource_attempt_id
+        ownership = self._ensure_resource_ownership()
+        self._ensure_resource_ownership(
+            attempt_id=attempt_id or ownership.new_attempt_id()
+        )
+        return observation_context
 
     def _load_resource_ownership(self) -> WorkspaceOwnership | None:
         """Load an existing workspace scope without publishing new state."""
@@ -99,7 +112,8 @@ class ComposeResourceResolutionMixin:
         verified: tuple[str, ...] = ()
         for attempt, delay in enumerate((0, *_CONTAINER_INSPECT_RETRY_DELAYS)):
             if delay:
-                time.sleep(delay)
+                time.sleep(cleanup_command_timeout(delay))
+                cleanup_command_timeout(0)
             try:
                 verified = tuple(
                     receipt.native_id
@@ -107,6 +121,7 @@ class ComposeResourceResolutionMixin:
                     if self._container_receipt_is_current(ownership, receipt)
                 )
             except BackendTimeoutError:
+                cleanup_command_timeout(0)
                 if attempt == len(_CONTAINER_INSPECT_RETRY_DELAYS):
                     raise
                 continue
@@ -121,6 +136,9 @@ class ComposeResourceResolutionMixin:
     ) -> bool:
         """Verify one recorded container against its current daemon object."""
 
+        if receipt.managed_by == "child":
+            return self._recorded_child_is_current(receipt)
+
         info = self._raw_container_inspect(receipt.native_id)
         if not info:
             return False
@@ -128,11 +146,7 @@ class ComposeResourceResolutionMixin:
             raise OwnershipConflictError("container native identity changed")
         config = info.get("Config")
         labels = config.get("Labels") if isinstance(config, dict) else None
-        isolated_child = bool(
-            receipt.managed_by == "child"
-            and getattr(self, "_attempt_isolated_docker_daemon", False)
-        )
-        if not isolated_child and not self._workspace_labels_match(ownership, labels):
+        if not self._workspace_labels_match(ownership, labels):
             raise OwnershipConflictError("container ownership labels changed")
         observed_name = str(info.get("Name", "")).removeprefix("/")
         if observed_name != receipt.external_name:
@@ -391,35 +405,3 @@ class ComposeResourceResolutionMixin:
                 managed_by="direct",
             )
         )
-
-    def _record_isolated_child_receipts(
-        self,
-        container_ids: tuple[str, ...],
-        requirement: DeploymentSpawnImageRequirement,
-    ) -> None:
-        """Bind children from an attempt-dedicated daemon to native IDs."""
-
-        ownership = self._ensure_resource_ownership()
-        daemon_id = self._ownership_daemon_id()
-        attempt_id = self._resource_attempt_id
-        if attempt_id is None:
-            raise OwnershipConflictError("backend attempt identity is unavailable")
-        for native_id in container_ids:
-            info = self._raw_container_inspect(native_id)
-            external_name = str(info.get("Name", "")).removeprefix("/")
-            if info.get("Id") != native_id or not external_name:
-                raise OwnershipConflictError("spawned-child native identity changed")
-            ownership.record(
-                ResourceReceipt(
-                    kind="container",
-                    native_id=native_id,
-                    external_name=external_name,
-                    semantic_name=requirement.template_id,
-                    node_address=requirement.node_address,
-                    workspace_id=ownership.workspace_id,
-                    project_name=ownership.project_name,
-                    daemon_id=daemon_id,
-                    attempt_id=attempt_id,
-                    managed_by="child",
-                )
-            )

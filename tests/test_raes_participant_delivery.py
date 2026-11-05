@@ -35,7 +35,7 @@ from aptl.backends._raes_participant_transport import (
     _render_runtime_profile_config,
 )
 from aptl.backends.raes_manifest import create_aptl_manifest
-from aptl.backends.raes_planning_compat import AptlRuntimeManager
+from aptl.backends.raes_runtime import AptlRuntimeManager
 from aptl.core.correlation.clock import FixedClockProvider
 from aptl.core.evidence.coordinator import acquire_evidence
 from aptl.core.evidence.protocol import RunScope
@@ -623,8 +623,8 @@ def test_runtime_profile_carries_workspace_capture_container(tmp_path: Path) -> 
 
 
 class _FakeRuntimeManager(AptlRuntimeManager):
-    def __init__(self) -> None:
-        self._snapshot = RuntimeSnapshot()
+    def __init__(self, target, **options: object) -> None:
+        super().__init__(target, **options)
         self.advances: list[tuple[str, int, int]] = []
 
     def advance_time(
@@ -660,7 +660,24 @@ def _execute_study_plan(
     project.mkdir()
     (project / ".mcp.json").write_text('{"mcpServers":{}}\n', encoding="utf-8")
     store = LocalRunStore(tmp_path / "runs")
-    manager = _FakeRuntimeManager()
+    target = replace(
+        create_stub_target(),
+        manifest=replace(
+            create_aptl_manifest(participant_inject_delivery=True),
+            supported_contract_versions=create_aptl_manifest(
+                participant_inject_delivery=True
+            ).supported_contract_versions
+            - {
+                "backend-runtime-descendants-v1",
+                "backend-materialization-attestation-v1",
+            },
+        ),
+    )
+    # Production builds the run's one runtime with the plan's participant
+    # configuration before any turn (OpenRAE/rae#1660).
+    from aptl.backends._raes_participant_crossing import participant_runtime_options
+
+    manager = _FakeRuntimeManager(target, **participant_runtime_options(plan, target))
     selected_profiles: list[ProfileId] = []
 
     def render(**kwargs: object) -> tuple[Path, tuple[str, ...]]:
@@ -688,10 +705,7 @@ def _execute_study_plan(
             model="claude-sonnet-5",
             run_store=store,
             run_id="run-coordinator",
-            target=replace(
-                create_stub_target(),
-                manifest=create_aptl_manifest(participant_inject_delivery=True),
-            ),
+            target=target,
             runtime_manager=manager,
             initial_snapshot=manager.snapshot,
             runner=runner,

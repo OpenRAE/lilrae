@@ -16,10 +16,20 @@ from tests.test_appliance_guest_observation import _Backend
 
 
 def _vm_policy():
-    return full_techvault_boundary_policy().model_copy(
-        update={
-            "guest_publications": _policy().guest_publications,
-            "host_mcp_contract": None,
+    return ApplianceBoundaryPolicy.model_validate(
+        {
+            "schema_version": "aptl.appliance-boundary/v2",
+            "policy_id": "techvault-vm-only-fixture",
+            "generation": 3,
+            "workbench_policy_version": "participant-workbench-profile/v1",
+            "default_deny": False,
+            "guest_publications": [
+                item.model_dump(mode="json") for item in _policy().guest_publications
+            ],
+            "docker_authority": {
+                "allowed_holder_labels": [],
+                "require_guest_daemon": True,
+            },
         }
     )
 
@@ -29,7 +39,7 @@ def _vm_guest():
 
 
 def test_vm_policy_has_no_scenario_zone_selectors():
-    policy = full_techvault_boundary_policy()
+    policy = _vm_policy()
     assert policy.schema_version == "aptl.appliance-boundary/v2"
     assert not policy.internal_zone_isolation
     assert not policy.default_deny
@@ -41,7 +51,7 @@ def test_vm_policy_has_no_scenario_zone_selectors():
 
 def test_vm_startup_does_not_apply_platform_rules_to_lab_networks(tmp_path):
     backend = DockerComposeBackend(tmp_path, project_name="seat")
-    backend.configure_appliance_boundary(full_techvault_boundary_policy(), _binding())
+    backend.configure_appliance_boundary(_vm_policy(), _binding())
     backend.realize_boundary = MagicMock(
         side_effect=AssertionError("no platform rules")
     )
@@ -79,7 +89,7 @@ def test_vm_observer_reports_guest_identity_without_synthetic_firewall_probes():
     backend._run = MagicMock(side_effect=AssertionError("no internal probes"))
     result = collect_guest_observation(
         backend=backend,
-        policy=full_techvault_boundary_policy(),
+        policy=_vm_policy(),
         binding=_binding(),
         boundary_specs={},
         boundary_receipts={},

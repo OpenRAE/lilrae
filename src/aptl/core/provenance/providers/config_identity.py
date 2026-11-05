@@ -38,7 +38,7 @@ CONFIG_PROVIDER_ID = "config-identity"
 
 #: Versioned identity of the safe projection shape. Adding or removing an
 #: allowlisted field bumps this so an archived identity is never reinterpreted.
-SAFE_CONFIG_SCHEMA_VERSION = "aptl-safe-config-identity/v3"
+SAFE_CONFIG_SCHEMA_VERSION = "aptl-safe-config-identity/v4"
 
 #: Identity domain for the configuration projection.
 _DOMAIN = "config"
@@ -62,6 +62,7 @@ def _participant_models_projection(config: object) -> dict[str, object]:
     return {
         "claude": getattr(models, "claude", None),
         "codex": getattr(models, "codex", None),
+        "opencode": getattr(models, "opencode", None),
     }
 
 
@@ -79,7 +80,7 @@ def _participant_credential_sources_projection(
     if sources is None:
         return {}
     projection: dict[str, object] = {}
-    for provider in ("claude", "codex"):
+    for provider in ("claude", "codex", "opencode"):
         source = getattr(sources, provider, None)
         projection[provider] = (
             None

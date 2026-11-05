@@ -60,7 +60,20 @@ if "-w" in curl:
 """
 
 
-def _run_seed(tmp_path, *, existing=True, fail="", trigger=True, reject=""):
+_LEGACY_DESCRIPTION = (
+    "Receives Wazuh alert webhook, enriches source IP via MISP, creates TheHive case"
+)
+
+
+def _run_seed(
+    tmp_path,
+    *,
+    existing=True,
+    fail="",
+    trigger=True,
+    reject="",
+    description="operator annotation",
+):
     scripts = tmp_path / "project/scripts"
     scripts.mkdir(parents=True)
     for name in ("seed-shuffle.sh", "aptl-env.sh"):
@@ -70,6 +83,8 @@ def _run_seed(tmp_path, *, existing=True, fail="", trigger=True, reject=""):
     docker = bin_dir / "docker"
     docker.write_text(_DOCKER)
     docker.chmod(0o755)
+    # A workflow from the earlier seed: its name, a retired TheHive case action,
+    # and the branch that reached it.
     workflow = {
         "id": "workflow-1",
         "name": "APTL Alert to Case",
@@ -78,10 +93,21 @@ def _run_seed(tmp_path, *, existing=True, fail="", trigger=True, reject=""):
         if trigger
         else [],
         "actions": [
-            {"label": label, "parameters": [{"name": "headers", "value": "stale"}]}
+            {
+                "id": f"action-{label}",
+                "label": label,
+                "parameters": [{"name": "headers", "value": "stale"}],
+            }
             for label in ("misp_ip_lookup", "create_thehive_case")
         ],
-        "description": "operator annotation",
+        "branches": [
+            {"source_id": "server-trigger", "destination_id": "action-misp_ip_lookup"},
+            {
+                "source_id": "action-misp_ip_lookup",
+                "destination_id": "action-create_thehive_case",
+            },
+        ],
+        "description": description,
     }
     state_path = tmp_path / "state.json"
     state_path.write_text(
@@ -103,8 +129,7 @@ def _run_seed(tmp_path, *, existing=True, fail="", trigger=True, reject=""):
             "APTL_TEST_STATE": str(state_path),
             "APTL_SHUFFLE_WEBHOOK_FILE": str(hook),
             "SHUFFLE_API_KEY": "shuffle-fixture",
-            "THEHIVE_API_KEY": "thehive-fixture+/=",
-            "MISP_API_KEY": "misp-fixture",
+            "MISP_API_KEY": "misp-fixture+/=",
             "SHUFFLE_CONTAINER": "workspace-shuffle",
         },
         capture_output=True,
@@ -130,17 +155,21 @@ def test_seed_converges_workflow_and_webhook_without_rotating_identity(
         )
         for action in workflow["actions"]
     }
-    assert "thehive-fixture+/=" in headers["create_thehive_case"]
-    assert "misp-fixture" in headers["misp_ip_lookup"]
+    assert set(headers) == {"misp_ip_lookup"}
+    assert "misp-fixture+/=" in headers["misp_ip_lookup"]
+    assert workflow["name"] == "APTL Alert Enrichment"
     assert state["hook"]["id"] == "server-trigger"
     assert hook.read_text().strip().endswith("/hooks/webhook_server-trigger")
     assert hook.stat().st_mode & 0o777 == 0o600
     if existing:
         assert workflow["description"] == "operator annotation"
+        assert workflow["branches"] == [
+            {"source_id": "server-trigger", "destination_id": "action-misp_ip_lookup"}
+        ]
         assert not any(c["operation"] == "POST workflows" for c in state["calls"])
     assert all("workspace-shuffle" in c["argv"] for c in state["calls"])
     argv = json.dumps([c["argv"] for c in state["calls"]])
-    for credential in ("shuffle-fixture", "misp-fixture", "thehive-fixture"):
+    for credential in ("shuffle-fixture", "misp-fixture"):
         assert credential not in argv
         assert credential not in result.stdout + result.stderr
 
@@ -174,3 +203,12 @@ def test_seed_rejects_application_failure_even_with_http_success(tmp_path, opera
     assert not hook.exists()
     assert "Seed Complete" not in result.stdout
     assert "private-upstream-detail" not in result.stdout + result.stderr
+
+
+def test_seed_replaces_only_the_description_the_earlier_seed_wrote(tmp_path):
+    result, state, _hook = _run_seed(tmp_path, description=_LEGACY_DESCRIPTION)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert state["workflow"]["description"] == (
+        "Receives Wazuh alert webhook and enriches the source IP via MISP"
+    )

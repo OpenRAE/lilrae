@@ -23,11 +23,9 @@ SAMBA_AD = "samba-ad"
 OPENSEARCH_SECURITY = "opensearch-security"
 WAZUH_API = "wazuh-api"
 MISP = "misp"
-THEHIVE = "thehive"
-CORTEX = "cortex"
 SHUFFLE = "shuffle"
 APPLICATION_ACCOUNT_PROVIDERS = frozenset(
-    {OPENSEARCH_SECURITY, WAZUH_API, MISP, THEHIVE, CORTEX, SHUFFLE}
+    {OPENSEARCH_SECURITY, WAZUH_API, MISP, SHUFFLE}
 )
 
 # Provider-native identity grammars. These reject the list separator (`,`) that

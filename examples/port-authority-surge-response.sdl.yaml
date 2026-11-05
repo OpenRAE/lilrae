@@ -15,7 +15,7 @@ nodes:
   backup-net: {type: Switch, description: Historian and backup network}
 
   shipping-portal:
-    type: VM
+    type: compute
     os: linux
     source: portal-app
     resources: {ram: 4 gib, cpu: 2}
@@ -29,7 +29,7 @@ nodes:
         entities: [port-blue.it]
 
   manifest-db:
-    type: VM
+    type: compute
     os: linux
     source: manifest-db
     resources: {ram: 8 gib, cpu: 4}
@@ -48,7 +48,7 @@ nodes:
       availability: high
 
   terminal-ops:
-    type: VM
+    type: compute
     os: linux
     source: terminal-operating-system
     resources: {ram: 6 gib, cpu: 4}
@@ -62,7 +62,7 @@ nodes:
         entities: [port-blue.it]
 
   port-idp:
-    type: VM
+    type: compute
     os: linux
     source: port-idp
     resources: {ram: 2 gib, cpu: 1}
@@ -76,7 +76,7 @@ nodes:
         entities: [port-blue.it]
 
   customs-gateway:
-    type: VM
+    type: compute
     os: linux
     source: customs-gateway
     resources: {ram: 2 gib, cpu: 2}
@@ -90,8 +90,9 @@ nodes:
         entities: [customs-agency]
 
   yard-hmi:
-    type: VM
+    type: compute
     os: windows
+    os_distribution: windows-client
     os_version: "10"
     source: yard-hmi
     resources: {ram: 4 gib, cpu: 2}
@@ -111,7 +112,7 @@ nodes:
       availability: critical
 
   crane-plc:
-    type: VM
+    type: compute
     os: other
     source: crane-plc
     resources: {ram: 512 mib, cpu: 1}
@@ -122,8 +123,9 @@ nodes:
     roles: {plc-admin: plcsvc}
 
   gate-kiosk:
-    type: VM
+    type: compute
     os: windows
+    os_distribution: windows-client
     os_version: "11"
     source: gate-kiosk
     resources: {ram: 2 gib, cpu: 1}
@@ -133,7 +135,7 @@ nodes:
     roles: {kiosk-admin: kiosk}
 
   camera-analytics:
-    type: VM
+    type: compute
     os: linux
     source: camera-analytics
     resources: {ram: 4 gib, cpu: 2}
@@ -147,7 +149,7 @@ nodes:
         entities: [port-blue.yard-ops]
 
   historian01:
-    type: VM
+    type: compute
     os: linux
     source: ot-historian
     resources: {ram: 4 gib, cpu: 2}
@@ -160,7 +162,7 @@ nodes:
     roles: {historian-admin: historian}
 
   vendor-jump:
-    type: VM
+    type: compute
     os: linux
     source: vendor-jump
     resources: {ram: 2 gib, cpu: 1}
@@ -173,7 +175,7 @@ nodes:
         entities: [vendor-maintenance]
 
   soc01:
-    type: VM
+    type: compute
     os: linux
     source: siem-stack
     resources: {ram: 8 gib, cpu: 4}
@@ -191,7 +193,7 @@ nodes:
         entities: [port-blue.incident-command]
 
   backup-vault:
-    type: VM
+    type: compute
     os: linux
     source: immutable-backup
     resources: {ram: 4 gib, cpu: 2}
@@ -293,23 +295,6 @@ conditions:
   soc-feed-healthy: {command: /usr/local/bin/check-soc-feed, interval: 30}
   surge-incident-ticketed: {command: /usr/local/bin/check-surge-ticket, interval: 60}
   blackstart-runbook-ready: {command: /usr/local/bin/check-blackstart-runbook, interval: 60}
-
-vulnerabilities:
-  stale-customs-token:
-    name: Stale customs federation token
-    description: Customs bridge accepts tokens beyond intended lifetime during surge conditions
-    technical: true
-    class: CWE-613
-  vendor-vpn-cred-reuse:
-    name: Vendor credential reuse
-    description: Shared maintenance credentials allow reuse from the jump host
-    technical: true
-    class: CWE-521
-  flat-yard-trust:
-    name: Flat yard trust
-    description: Yard HMI can directly manage crane PLC without an approval gate
-    technical: true
-    class: CWE-306
 
 propositions:
   crane-safe-mode:
@@ -624,10 +609,293 @@ relationships:
     source: terminal-service
     target: customs-api
 
+# Abstract action intent; backend realization and authorization remain separate.
+action_contracts:
+  coordinate:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Coordinate intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Coordinate against the scenario-declared subject set.
+      target_refs:
+      - customs-federates-port
+      - customs-gateway
+      - manifest-db
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  disable:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Disable intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Disable against the scenario-declared subject set.
+      target_refs:
+      - shipping-portal
+      - vendor-jump
+      - yard-hmi
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  inspect:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Inspect intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Inspect against the scenario-declared subject set.
+      target_refs:
+      - backup-vault
+      - camera-analytics
+      - historian-replicates-backup
+      - historian01
+      - infrastructure.yard-ot.acls.allow-yard-control
+      - nodes.crane-plc.services.crane-opcua
+      - nodes.historian01.services.historian-ui
+      - yard-hmi
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  isolate:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Isolate intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Isolate against the scenario-declared subject set.
+      target_refs:
+      - backup-vault
+      - historian-replicates-backup
+      - historian01
+      - infrastructure.yard-ot.acls.allow-yard-control
+      - nodes.crane-plc.services.crane-opcua
+      - yard-hmi
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  monitor:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Monitor intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Monitor against the scenario-declared subject set.
+      target_refs:
+      - customs-federates-port
+      - customs-gateway
+      - manifest-db
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  phish:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Phish intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Phish against the scenario-declared subject set.
+      target_refs:
+      - cargo-manifests
+      - manifest-db
+      - portal-to-manifest
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  pivot:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Pivot intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Pivot against the scenario-declared subject set.
+      target_refs:
+      - shipping-portal
+      - vendor-jump
+      - yard-hmi
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  recover:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Recover intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Recover against the scenario-declared subject set.
+      target_refs:
+      - shipping-portal
+      - soc01
+      - terminal-ops
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  restore:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Restore intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Restore against the scenario-declared subject set.
+      target_refs:
+      - backup-vault
+      - historian-replicates-backup
+      - historian01
+      - infrastructure.yard-ot.acls.allow-yard-control
+      - nodes.crane-plc.services.crane-opcua
+      - yard-hmi
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  tamper:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Tamper intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Tamper against the scenario-declared subject set.
+      target_refs:
+      - cargo-manifests
+      - manifest-db
+      - portal-to-manifest
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  triage:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Triage intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Triage against the scenario-declared subject set.
+      target_refs:
+      - customs-federates-port
+      - customs-gateway
+      - manifest-db
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  validate:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Validate intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Validate against the scenario-declared subject set.
+      target_refs:
+      - backup-vault
+      - camera-analytics
+      - historian-replicates-backup
+      - historian01
+      - infrastructure.yard-ot.acls.allow-yard-control
+      - nodes.crane-plc.services.crane-opcua
+      - nodes.historian01.services.historian-ui
+      - yard-hmi
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+
 agents:
   red-yard-agent:
-    entity: red-cartel
-    actions: [Phish, Tamper, Disable, Pivot]
+    affiliations: [red-cartel]
+    actions: [phish, tamper, disable, pivot]
     initial_knowledge:
       hosts: [shipping-portal, vendor-jump, yard-hmi]
       subnets: [public-edge, vendor-net, yard-ot]
@@ -635,8 +903,8 @@ agents:
       accounts: [vendor-tech]
     allowed_subnets: [public-edge, vendor-net, yard-ot, terminal-it]
   blue-yard-agent:
-    entity: port-blue.yard-ops
-    actions: [Inspect, Isolate, Restore, Validate]
+    affiliations: [port-blue.yard-ops]
+    actions: [inspect, isolate, restore, validate]
     starting_accounts: [crane-operator]
     initial_knowledge:
       hosts: [yard-hmi, crane-plc, historian01]
@@ -645,8 +913,8 @@ agents:
       accounts: [historian-svc]
     allowed_subnets: [yard-ot, safety-net, backup-net]
   blue-soc-agent:
-    entity: port-blue.incident-command
-    actions: [Monitor, Triage, Coordinate, Recover]
+    affiliations: [port-blue.incident-command]
+    actions: [monitor, triage, coordinate, recover]
     starting_accounts: [soc-analyst]
     initial_knowledge:
       hosts: [soc01, shipping-portal, terminal-ops]
@@ -657,8 +925,8 @@ agents:
 
 objectives:
   red-corrupt-manifests:
-    agent: red-yard-agent
-    actions: [Phish, Tamper]
+    assigned_participant: red-yard-agent
+    actions: [phish, tamper]
     targets: [cargo-manifests, manifest-db, portal-to-manifest]
     success:
       assertions: [tampered-manifest-observed]
@@ -666,7 +934,7 @@ objectives:
       stories: [surge-day]
       scripts: [arrival-phase, customs-surge-phase]
   red-degrade-yard-ops:
-    entity: red-cartel
+    owner: red-cartel
     targets: [yard-hmi, crane-plc, hmi-manages-crane]
     success:
       assertions: [tampered-manifest-observed]
@@ -676,8 +944,8 @@ objectives:
       scripts: [yard-disruption-phase]
       events: [yard-standdown]
   blue-maintain-customs-integrity:
-    agent: blue-soc-agent
-    actions: [Monitor, Triage, Coordinate]
+    assigned_participant: blue-soc-agent
+    actions: [monitor, triage, coordinate]
     targets: [customs-gateway, manifest-db, customs-federates-port]
     success:
       assertions: [customs-link-healthy, manifest-integrity-ok]
@@ -687,8 +955,8 @@ objectives:
       workflows: [yard-recovery]
       steps: [yard-recovery.maintain-integrity]
   blue-blackstart-yard:
-    agent: blue-yard-agent
-    actions: [Inspect, Isolate, Restore, Validate]
+    assigned_participant: blue-yard-agent
+    actions: [inspect, isolate, restore, validate]
     targets:
       - backup-vault
       - historian01
@@ -706,8 +974,8 @@ objectives:
       workflows: [yard-recovery]
       steps: [yard-recovery.restore-yard]
   blue-validate-yard-telemetry:
-    agent: blue-yard-agent
-    actions: [Inspect, Validate]
+    assigned_participant: blue-yard-agent
+    actions: [inspect, validate]
     targets:
       - historian01
       - camera-analytics
@@ -758,3 +1026,58 @@ workflows:
         next: finish
       finish:
         type: end
+
+realization:
+  constraints:
+    - field_pointer: /nodes/shipping-portal
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/manifest-db
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/terminal-ops
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/port-idp
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/customs-gateway
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/yard-hmi
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/crane-plc
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/gate-kiosk
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/camera-analytics
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/historian01
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/vendor-jump
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/soc01
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/backup-vault
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}

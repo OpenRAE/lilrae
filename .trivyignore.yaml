@@ -38,8 +38,8 @@ misconfigurations:
       - containers/kali-capture/Dockerfile
     statement: >-
       OpenSSH sshd privilege separation requires starting as root; Compose
-      grants only the CHOWN, DAC_OVERRIDE, NET_BIND_SERVICE, SETGID, SETUID,
-      and SYS_CHROOT capabilities it needs.
+      grants only the AUDIT_WRITE, CHOWN, DAC_OVERRIDE, KILL,
+      NET_BIND_SERVICE, SETGID, SETUID, and SYS_CHROOT capabilities it needs.
   - id: DS-0002
     paths:
       - containers/suricata-wazuh-agent/Dockerfile
@@ -67,13 +67,18 @@ vulnerabilities:
   - id: GHSA-6v7p-g79w-8964
     purls: [pkg:pypi/msgpack@1.1.2]
     statement: Vendored by pip 26.2.1 (pip/_vendor); no pip release vendors msgpack >= 1.2.1 yet.
+  # The locked pip 26.2.2 wheel contains only msgpack's Python fallback.
+  # GHSA-j586-36cw-2gc2 identifies a C-extension defect; that extension is absent.
+  # tests/test_platform_ci_gates.py verifies the locked install's implementation.
   - id: CVE-2026-114613
     purls: [pkg:pypi/msgpack@1.1.2]
     statement: >-
-      Not affected: pip vendors the pure-Python fallback, not the compiled
-      extension affected by GHSA-j586-36cw-2gc2. The Debian substrate build
-      asserts that Unpacker uses pip._vendor.msgpack.fallback. Platform
-      maintainers remove this entry when pip updates its vendored version.
+      Not affected: pip 26.2.2 vendors the pure-Python fallback, not the compiled
+      extension affected by GHSA-j586-36cw-2gc2
+      (https://github.com/msgpack/msgpack-python/security/advisories/GHSA-j586-36cw-2gc2).
+      The Debian substrate build and regression test verify the fallback and
+      absence of the C extension. Remove this entry when pip updates its
+      vendored version.
   - id: CVE-2025-47273
     purls: [pkg:pypi/setuptools@70.3.0]
     statement: Vendored by pip 26.2.1 (pip/_vendor); no pip release vendors setuptools >= 78.1.1 yet.

@@ -110,7 +110,9 @@ def _secret(name: str, classification: str = "operator_secret") -> dict[str, str
     return {"name": name, "value_classification": classification}
 
 
-def _realization(*nodes, adapter_names=(), pack=_PACK) -> DeploymentRealizationSpec:
+def _realization(
+    *nodes, adapter_names=(), adapter_grants=None, pack=_PACK
+) -> DeploymentRealizationSpec:
     images = tuple(
         DeploymentImageRealization(
             address=node.address,
@@ -126,6 +128,18 @@ def _realization(*nodes, adapter_names=(), pack=_PACK) -> DeploymentRealizationS
     plan = SimpleNamespace(
         environment_fixtures=tuple(SimpleNamespace(name=n) for n in adapter_names),
         environment_aliases=(),
+        environment_grants=adapter_grants
+        if adapter_grants is not None
+        else tuple(
+            EnvironmentGrant(
+                pack=pack.pack_id,
+                consumer=node.name,
+                variable=name,
+                source={"kind": "project-env-file", "variable": name},
+            )
+            for node in nodes
+            for name in adapter_names
+        ),
     )
     return DeploymentRealizationSpec(
         profiles=(),
@@ -1003,6 +1017,18 @@ def test_compose_never_fills_a_variable_that_placed_content_names(
         assert _content_bind(tmp_path, case) in binds
     error = backend._effective_compose_model_error(command, realization, tmp_path)
     assert error is None
+
+    # An admitted content bind never authorizes an unrelated host bind.
+    unexpected = json.loads(readback.stdout)
+    unexpected["services"]["app"]["volumes"].append(
+        {"type": "bind", "source": "/", "target": "/foreign-host", "read_only": False}
+    )
+    monkeypatch.setattr(backend, "_run", lambda *_args, **_kwargs: subprocess.CompletedProcess(
+        [], 0, json.dumps(unexpected), ""
+    ))
+    assert "undeclared runtime authority" in backend._effective_compose_model_error(
+        command, realization, tmp_path
+    )
 
 
 def _capture_model(root: Path) -> tuple[Path, DeploymentRealizationSpec]:

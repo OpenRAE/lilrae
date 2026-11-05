@@ -35,7 +35,7 @@ from aptl.core.deployment._operator_access_proof import (
     operator_access_details,
     ssh_banner_reachable,
 )
-from aptl.core.deployment.realization import DeploymentOperatorAccess
+from aptl.core.deployment._realization_access import DeploymentOperatorAccess
 from aptl.core.host_ports import published_port_specs
 
 

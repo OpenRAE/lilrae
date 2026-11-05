@@ -142,7 +142,7 @@ class TestContainerLogSource:
     def test_empty_output_is_empty_ok(self):
         backend = types.SimpleNamespace(
             container_logs_capture=lambda *a, **k: types.SimpleNamespace(
-                returncode=0, stdout="  "
+                returncode=0, stdout="", stderr=""
             )
         )
         source = ContainerLogSource(backend, ["c1"])
@@ -151,7 +151,7 @@ class TestContainerLogSource:
     def test_output_becomes_records(self):
         backend = types.SimpleNamespace(
             container_logs_capture=lambda *a, **k: types.SimpleNamespace(
-                returncode=0, stdout="line1\nline2"
+                returncode=0, stdout="line1\nline2", stderr=""
             )
         )
         source = ContainerLogSource(backend, ["c1"])
@@ -204,7 +204,6 @@ class TestWiring:
                 "aptl.collector.suricata-eve",
                 "aptl.collector.wazuh-alerts",
                 "aptl.collector.tempo-traces",
-                "aptl.collector.cortex-enrichment",
                 "aptl.collector.misp-authenticated-api-readiness",
                 "aptl.collector.redteam-session-transcript",
                 "aptl.collector.suricata-rule-readiness",

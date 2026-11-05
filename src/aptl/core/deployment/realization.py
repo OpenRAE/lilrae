@@ -7,6 +7,11 @@ from typing import TYPE_CHECKING, Literal
 
 from aptl.runtime_authority import DeploymentDockerAuthorityAdmission
 from aptl.core.scenario_bundle import PackIdentity
+from aptl.core.deployment._companion_realization import (
+    DeploymentCompanionRealization,
+    companion_container_name,
+)
+from aptl.core.deployment._realization_access import DeploymentCaptureApparatus
 from aptl.core.deployment._realization_primitives import (
     AclAction as _AclAction,
     AclDirection as _AclDirection,
@@ -115,6 +120,17 @@ class DeploymentNodeRealization(object):
     # The pack/backend seam resolves serving membership once; renderers reuse
     # the DTO rather than infer it from component names.
     profiles: tuple[str, ...] = ()
+    # Backend-owned containers that share this node's network namespace.
+    backend_companions: tuple[DeploymentCompanionRealization, ...] = ()
+
+    def companion_containers(self) -> tuple[str, ...]:
+        """Return the semantic container names of this node's companions."""
+
+        owner = self.container_name or f"aptl-{self.name}"
+        return tuple(
+            companion_container_name(owner, companion.role)
+            for companion in self.backend_companions
+        )
 
 
 ContentSourceKind = Literal[
@@ -421,61 +437,13 @@ class DeploymentPersistentVolumeRealization(object):
 
 
 @dataclass(frozen=True)
-class DeploymentCaptureApparatus(object):
-    """One scope-admitted backend observer that deployment must realize."""
-
-    apparatus_id: str
-    service_name: str
-    container_name: str
-    target_refs: tuple[str, ...]
-    governing_scopes: tuple[str, ...]
-    environment_visible: bool
-    observer_effects: tuple[str, ...]
-
-    def details(self) -> dict[str, object]:
-        return {
-            "apparatus_id": self.apparatus_id,
-            "service_name": self.service_name,
-            "container_name": self.container_name,
-            "target_refs": list(self.target_refs),
-            "governing_scopes": list(self.governing_scopes),
-            "environment_visible": self.environment_visible,
-            "observer_effects": list(self.observer_effects),
-        }
-
-
-@dataclass(frozen=True)
-class DeploymentOperatorAccess(object):
-    """One declared operator interactive access the backend must make reachable.
-
-    A scenario declares that a participant reaches a node interactively
-    (``agents.<agent>.interactive_access.<id>``). That is an in-world fact; how
-    an operator on the host actually reaches an internal node is the backend's
-    choice under open realization, and the backend must make it true or refuse
-    admission (issue #1006).
-    """
-
-    access_id: str
-    agent: str
-    target_node: str
-    channel: str
-
-    def details(self) -> dict[str, object]:
-        return {
-            "access_id": self.access_id,
-            "agent": self.agent,
-            "target_node": self.target_node,
-            "channel": self.channel,
-        }
-
-
-@dataclass(frozen=True)
 class DeploymentRealizationSpec(object):
     """Portable input for typed deployment backend realization."""
 
     profiles: tuple[str, ...]
     nodes: tuple[DeploymentNodeRealization, ...]
     networks: tuple[DeploymentNetworkRealization, ...]
+    raes_plan_digest: str | None = None
     docker_authority_admissions: tuple[DeploymentDockerAuthorityAdmission, ...] = ()
     acls: tuple[DeploymentAclRealization, ...] = ()
     images: tuple[DeploymentImageRealization, ...] = ()

@@ -12,8 +12,8 @@ from aptl_techvault.serving import TechVaultPackInteraction
 
 PACK = PackIdentity(
     pack_id="techvault",
-    pack_version="0.1.2",
-    set_digest="sha256:b23696c91f6313aad7bbc5c0000da26f719d9456e01bd7b81d740de34bcd681e",
+    pack_version="7.2.2",
+    set_digest="sha256:98c2c6dc9383ccecce62c01b1e62856ddb1dc9d94ea26c15cb2b9d59b9b93101",
 )
 BACKEND = BackendIdentity("aptl", "0.1.0", "full-remote-control-plane")
 
@@ -56,7 +56,7 @@ def test_provider_is_bound_to_the_released_shuffle_contract() -> None:
 
 def test_provider_does_not_adopt_backend_apparatus_as_pack_components() -> None:
     provider = TechVaultPackInteraction()
-    context = _context("provision.node.aptl-grafana-otel", "provision.node.cortex")
+    context = _context("provision.node.aptl-grafana-otel", "provision.node.misp")
     with pytest.raises(ValueError, match="unsupported-component-address"):
         provider.resolve(context)
 

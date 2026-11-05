@@ -1,9 +1,10 @@
-"""Exact validation for the four released TechVault evidence sources."""
+"""Exact validation for the released TechVault evidence sources."""
 
 import json
 
+import pytest
+
 from aptl_techvault.evidence.techvault import (
-    CortexEnrichmentSource,
     RedteamSessionTranscriptSource,
     SuricataRuleReadinessSource,
     SuricataWazuhSqliSource,
@@ -19,44 +20,6 @@ _TRIGGERED = "2026-09-14T10:00:05Z"
 _FINISHED = "2026-09-14T10:00:10Z"
 _END = "2026-09-14T10:01:00Z"
 _DIGEST = "sha256:" + "a" * 64
-
-
-def _cortex_payload():
-    return {
-        "analyzers": [
-            {"id": "Other_1_0", "enabled": False},
-            {"id": "TechVaultScenarioContext_1_0", "enabled": True},
-        ],
-        "report": {
-            "analyzer_id": "TechVaultScenarioContext_1_0",
-            "observable": "172.20.1.30",
-            "status": "Success",
-            "started_at": _TRIGGERED,
-            "finished_at": _FINISHED,
-            "scenario_role": "attacker",
-            "summary": {"taxonomies": []},
-        },
-        "connector": {"name": "techvault-cortex", "status": "OK"},
-    }
-
-
-def test_cortex_source_requires_exact_fresh_analyzer_report_and_connector():
-    source = CortexEnrichmentSource(lambda _start, _end: _cortex_payload())
-
-    result = source.fetch(_START, _END)
-
-    assert result.status is CollectorStatus.OK
-    assert result.records[0]["enabled_analyzers"] == ["TechVaultScenarioContext_1_0"]
-    assert "summary" not in result.records[0]["report"]
-    assert "source_refs" in result.source_pipeline
-
-
-def test_cortex_source_rejects_stale_or_partial_readback():
-    payload = _cortex_payload()
-    payload["connector"] = {"name": "techvault-cortex", "status": "ERROR"}
-    source = CortexEnrichmentSource(lambda _start, _end: payload)
-
-    assert source.fetch(_START, _END).status is CollectorStatus.MID_RUN_LOSS
 
 
 def _readiness_payload():
@@ -209,7 +172,7 @@ def test_transcript_source_rejects_bypass_or_forged_chain():
         }
     )
     bypass = RedteamSessionTranscriptSource(
-        lambda: ["session-1", "direct-exec"], lambda: [_session()]
+        lambda: ["direct-exec"], lambda: [_session()]
     )
     tampered = RedteamSessionTranscriptSource(lambda: ["session-1"], lambda: [forged])
 
@@ -237,5 +200,44 @@ def test_transcript_source_withholds_cross_direction_secret_context():
     assert result.status is CollectorStatus.OK
     entry = json.loads(b"".join(result.chunks))["transcript_entries"][0]
     assert [frame["data"] for frame in entry["frames"]] == [
-        "[REDACTED]", "[REDACTED]",
+        "[REDACTED]",
+        "[REDACTED]",
     ]
+
+
+def test_transcript_empty_census_is_legitimate_empty():
+    result = RedteamSessionTranscriptSource(lambda: [], lambda: []).fetch(_START, _END)
+    assert result.status is CollectorStatus.EMPTY_OK
+    assert result.dropped_count == 0
+    assert "reconciliation" not in json.loads(result.chunks[0])
+
+
+def test_transcript_parser_rejects_accepted_ledger_without_matching_sessions():
+    from aptl.core.experiment.capture_registry import CaptureLimits
+    from aptl_techvault.evidence.transcript_parsing import transcript_sessions
+
+    limits = CaptureLimits(max_bytes=10000, max_artifact_count=10, max_duration_s=60)
+    with pytest.raises(ValueError, match="broker ledger"):
+        transcript_sessions(
+            {
+                "expected_session_ids": ["session-1"],
+                "accepted_session_ids": ["session-1"],
+                "sessions": [],
+            },
+            limits,
+        )
+
+
+def test_portable_transcript_validator_rejects_contradictory_gap_report():
+    from aptl_techvault.evidence.techvault_transcript import (
+        validate_retained_transcript,
+    )
+
+    result = RedteamSessionTranscriptSource(
+        lambda: ["session-1", "missing"], lambda: [_session()]
+    ).fetch(_START, _END)
+    retained = json.loads(result.chunks[0])
+    validate_retained_transcript(retained, expected_entries=1, expected_frames=2)
+    retained["reconciliation"]["missing_count"] = 0
+    with pytest.raises(ValueError, match="reconciliation"):
+        validate_retained_transcript(retained)

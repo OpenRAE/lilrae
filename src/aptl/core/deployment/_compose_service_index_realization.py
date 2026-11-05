@@ -7,7 +7,7 @@ brought up and observed healthy, then each declared portable field schema is
 ensured on it through its native interface and proven by a fresh native
 readback whose portable projection reproduces the declared digest. Only after
 every schema is proven does the caller start the general workload, so a
-consumer such as Cortex never races the initial state it needs.
+consumer never races the initial state it needs.
 """
 
 from __future__ import annotations
@@ -18,12 +18,12 @@ from pathlib import Path
 from aptl.core.deployment._compose_service_health import wait_for_realized_health
 from aptl.core.deployment._service_index_materialization import (
     MATERIALIZATION_TIMEOUT,
-    NATIVE_PRODUCT_CONTRACT_MISMATCH,
     UNOWNED_COLLISION,
     ServiceIndexMaterializationResult,
     materialize_search_index_schema,
     native_index_name,
 )
+from aptl.core.deployment._companion_realization import with_companion_services
 from aptl.core.deployment.realization import DeploymentRealizationSpec
 from aptl.core.lab_types import LabResult
 
@@ -34,11 +34,6 @@ _REFUSED_INDEX_DETAILS: dict[tuple[str | None, bool], str] = {
         "lacks this content's ownership marker, so APTL cannot prove it owns "
         "the index, and it did not adopt, delete or overwrite it."
     ),
-    (NATIVE_PRODUCT_CONTRACT_MISMATCH, True): (
-        "carries this content's ownership marker, but its mapping differs from "
-        "the one that this release creates, so APTL cannot use the index, and "
-        "it did not change or delete it."
-    ),
 }
 
 
@@ -47,15 +42,14 @@ def _materialization_error(
 ) -> str:
     """Describe one failed schema without any native response content.
 
-    An unowned collision, or an adopted index whose mapping fails its product's
-    contract, also names the index and its container and says why APTL refused
-    it. Materialization validated the adapter-bound index name before it
+    An unowned collision also names the index and its container and says why
+    APTL refused it. Materialization validated the adapter-bound index name before it
     queried the service, and ``container`` is the realized target, so
     neither carries content read from the existing index. What the operator
     runs next is added at the lab-start edge (``_lab_start_failure_error``).
     Within the 512-character RAES diagnostic message limit, the provisioner's
     diagnostic stays contract-valid, so RAES does not reject it as "Backend
-    returned invalid diagnostic fields.". In both cases RAES drops it from the
+    returned invalid diagnostic fields.". RAES drops it from the
     failed apply result, and ``_with_backend_failure_diagnostics`` re-attaches
     it first for the handoff.
     """
@@ -178,7 +172,9 @@ class ComposeRealizationServiceIndexMixin(object):
             build=build,
             compose_files=compose_files,
             exclude_services=exclude_services,
-            only_services=tuple(sorted(target_services)),
+            only_services=with_companion_services(
+                realization, tuple(sorted(target_services))
+            ),
             scenario_root=scenario_root,
         )
         if not start.success:
@@ -230,8 +226,7 @@ class ComposeRealizationServiceIndexMixin(object):
     def _service_indexes_created_this_start(self) -> set[tuple[str, str]]:
         """Return the ``(container, address)`` indexes this lab start created.
 
-        One backend serves one ``lilrae lab start``, and a retried apply
-        (``BEFORE_BACKEND_RETRY``) runs this step again on the same backend.
+        One backend serves one ``lilrae lab start``.
         """
 
         created = getattr(self, "_service_indexes_created", None)

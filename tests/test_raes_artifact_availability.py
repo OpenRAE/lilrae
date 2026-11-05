@@ -260,10 +260,10 @@ def test_shipped_scenario_declares_artifact_demand_for_every_imaged_node(tmp_pat
 
     # One address per artifact-bearing address — every image-backed node and
     # every digest-pinned content placement in the full TechVault env-pack. The
-    # ADR-088 conversion (#889) removed the `cortex-index-init` image-backed node.
-    # The 6.1.0 pack's backend-neutral inventory contains 31 exact content
-    # demands; compute substrates are selected separately under OPEN authority.
-    assert len(context.requirements) == 31
+    # 7.0.0 pack's backend-neutral inventory contains 29 exact content demands:
+    # it removed the two Cortex analyzer artifacts with TheHive and Cortex.
+    # Compute substrates are selected separately under OPEN authority.
+    assert len(context.requirements) == 29
     addresses = {requirement.address for requirement in context.requirements}
     assert {
         "provision.content.ad-rules",
@@ -321,12 +321,9 @@ def stub_pack(monkeypatch):
 def _pack_requirement(digest: str = _DIGEST, *, route=None):
     """An EXACT content requirement routed through APTL's env-pack copy route."""
 
-    from raes.artifact_requirements import (
-        ArtifactIdentity,
-        ArtifactRequirement,
-        ArtifactSatisfactionRoute,
-    )
-    from raes.explicitness import ExplicitnessClass
+    from raes.artifact_requirements import ArtifactRequirement, ArtifactSatisfactionRoute
+    from raes_contracts.artifact_identity import ArtifactIdentity
+    from raes_contracts.explicitness import ExplicitnessClass
 
     from aptl.backends.raes_artifact_mechanisms import env_pack_copy_profile
 

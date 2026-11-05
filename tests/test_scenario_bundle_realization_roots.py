@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from raes import Scenario
+
 import pytest
 
 _ENGINE_ONLY_COMPOSE = """\
@@ -148,7 +150,7 @@ def _capture_availability_root(monkeypatch, seen):
         seen["component_root"] = component_root
         raise RuntimeError("stop after capture")
 
-    monkeypatch.setattr(raes, "parse_sdl_file", lambda path: object())
+    monkeypatch.setattr(raes, "parse_sdl_file", lambda path: Scenario(name="test", version="1.0"))
     monkeypatch.setattr(
         raes, "create_aptl_runtime_target", lambda **kwargs: MagicMock()
     )

@@ -123,7 +123,7 @@ selection, safe activity, result inspection, troubleshooting, and teardown.
 
 ## Requirements
 
-- Python 3.12 or newer and [pipx](https://pipx.pypa.io/)
+- Python 3.14 and [pipx](https://pipx.pypa.io/)
 - Docker Engine 28.0 or newer (native, or inside Docker Desktop or Colima)
   with Compose and Buildx, on a cgroup v2 host
 - OpenSSH client with `ssh-keygen` on `PATH`
@@ -176,9 +176,9 @@ manual.
 - [Report a vulnerability privately](https://github.com/OpenRAE/lilrae/security/advisories/new)
 - [Review the OpenSSF Best Practices assessment](docs/security/openssf-best-practices.md)
 
-Do not report suspected vulnerabilities through a public issue. The
-[security policy](SECURITY.md) describes scope and the private fallback contact
-path.
+Do not put vulnerability details in a public issue, pull request, or
+discussion. The [security policy](SECURITY.md) describes scope and the private
+fallback contact path.
 
 ## Ethics And Disclaimer
 

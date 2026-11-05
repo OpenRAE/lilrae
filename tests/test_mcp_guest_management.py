@@ -51,9 +51,10 @@ def test_guest_rejects_pack_switch_after_study_enrollment(tmp_path, monkeypatch)
         guest_binding._observe_stable_guest(binding)
 
 
+@pytest.mark.parametrize("admitted_projection", [False, True])
 @pytest.mark.parametrize("pack_id", ["techvault", "techvault-participant-study"])
 def test_guest_enrollment_publishes_private_forced_keys_and_rejects_bad_inventory(
-    tmp_path, monkeypatch, pack_id
+    tmp_path, monkeypatch, pack_id, admitted_projection
 ):
     record = access_record(
         container_ids={"aptl-kali": "a" * 64},
@@ -96,6 +97,7 @@ def test_guest_enrollment_publishes_private_forced_keys_and_rejects_bad_inventor
         preparation, "observe_guest_containers", lambda _: record.container_ids
     )
     def staged_pack(_root, identity):
+        assert not admitted_projection, "must not reparse the full source pack"
         assert identity == pack_id
         return SimpleNamespace(pack_identity=record.scenario_pack)
 
@@ -141,9 +143,23 @@ def test_guest_enrollment_publishes_private_forced_keys_and_rejects_bad_inventor
         ),
         delivery="rootful-integration",
     )
+    if admitted_projection:
+        from aptl.core.mcp_policy import McpRunAdmission
+        from aptl.core._soc_ca_io import _atomic_write
+
+        selected = ("aptl-red",)
+        (tmp_path / ".mcp.json").write_text(json.dumps({
+            "mcpServers": {"aptl-red": {"env": {"APTL_MCP_ADMITTED_RUN_ID": run_id}}},
+        }))
+        admission = McpRunAdmission(
+            run_id=run_id, pack=record.scenario_pack,
+            server_ids=selected, container_aliases=(("aptl-kali",),),
+        )
+        _atomic_write(tmp_path / ".aptl/mcp-admission.json", admission.model_dump_json().encode(), mode=0o600)
     output = tmp_path / "transport"
     binding = preparation.prepare_guest_transport(request, output)
     assert binding.run_id == run_id
+    assert binding.access.mcp_server_ids == (("aptl-red",) if admitted_projection else ())
     assert binding.access.container_ids == record.container_ids
     assert "restrict,command=" in (output / "authorized_keys").read_text()
     assert "ForceCommand" not in (output / "sshd_config").read_text()

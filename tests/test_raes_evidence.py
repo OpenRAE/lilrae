@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 from raes import parse_sdl_file
-from raes.evidence_requirements import EvidenceRequirement
+from raes_contracts.evidence_requirements import EvidenceRequirement
 from raes.realization_designation import RealizationDesignation
 from raes_processor.capture_admission import (
     capture_admission_diagnostics,
@@ -17,7 +17,6 @@ from raes_processor.capture_admission import (
 from aptl.core.experiment.errors import AdmissionRejection
 
 _DEMAND_IDS = {
-    "cortex-enrichment-readback",
     "misp-authenticated-api-readiness",
     "redteam-session-transcript",
     "suricata-local-rule-readiness",
@@ -55,7 +54,6 @@ def test_manifest_exactly_admits_every_released_techvault_demand(scenario):
     assert capture_admission_diagnostics(demands, observation) == []
     assert observation is not None
     assert {offer.offer_id for offer in observation.capture_offers} == {
-        "aptl.collector.cortex-enrichment",
         "aptl.collector.misp-authenticated-api-readiness",
         "aptl.collector.redteam-session-transcript",
         "aptl.collector.suricata-rule-readiness",
@@ -168,7 +166,6 @@ def test_open_scope_without_an_otel_dependent_demand_omits_optional_stack():
 @pytest.mark.parametrize(
     ("requirement_id", "changed"),
     [
-        ("cortex-enrichment-readback", {"retention": "archival"}),
         ("suricata-local-rule-readiness", {"source_class": "external"}),
         ("suricata-login-sqli-alert", {"integrity": "signature"}),
         ("redteam-session-transcript", {"redaction": "aggregate_only"}),

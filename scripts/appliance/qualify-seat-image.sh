@@ -1,30 +1,33 @@
 #!/usr/bin/env bash
-# Boot the baked disk in a disposable overlay and prove Docker, the lab and MCP.
+# Qualify one immutable signed image through the real seat launcher and first boot.
 set -euo pipefail
-export LIBGUESTFS_BACKEND=${LIBGUESTFS_BACKEND:-direct}
-export LIBGUESTFS_BACKEND_SETTINGS=force_kvm
-guestfs_command=(env)
-if test "${APTL_SEAT_LIBGUESTFS_SUDO:-0}" = 1; then
-  guestfs_command=(sudo env "LIBGUESTFS_BACKEND=$LIBGUESTFS_BACKEND"
-    "LIBGUESTFS_BACKEND_SETTINGS=$LIBGUESTFS_BACKEND_SETTINGS")
-fi
+umask 077
 
 source_root=$PWD
-disk=${1:?baked seat disk is required}
-test -r "$disk"
+image=${1:?signed image digest is required}
+public_key=${2:-}
+if ! [[ "$image" =~ ^[a-z0-9][a-z0-9._/:~-]{0,254}@sha256:[a-f0-9]{64}$ ]]; then
+  echo 'qualify an exact signed image digest, not a disk path or mutable tag' >&2
+  exit 2
+fi
+aptl_cli=${APTL_SEAT_CLI:-$source_root/.venv/bin/lilrae}
+test -x "$aptl_cli" || {
+  echo 'installed LilRAE CLI is required' >&2
+  exit 2
+}
 test -r /dev/kvm && test -w /dev/kvm || {
   echo 'seat qualification requires access to /dev/kvm' >&2
   exit 2
 }
-for tool in qemu-img qemu-system-x86_64 virt-customize virt-cat; do
-  command -v "$tool" >/dev/null || {
-    echo "seat qualification requires $tool" >&2
-    exit 2
-  }
-done
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/aptl-seat-qualification.XXXXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/lilrae-seat-qualification.XXXXXXXX")
+seat_root=$work/seat
+image_cache=$work/cache
+running=0
 cleanup() {
+  if test "$running" = 1; then
+    "$aptl_cli" seat stop --seat-root "$seat_root" >/dev/null 2>&1 || true
+  fi
   if test "${APTL_SEAT_QUALIFY_KEEP_WORK:-0}" = 1; then
     echo "seat qualification workspace: $work" >&2
   else
@@ -32,38 +35,41 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
-overlay=$work/seat.qcow2
-qemu-img create -f qcow2 -F qcow2 -b "$(realpath "$disk")" "$overlay" >/dev/null
 
-"${guestfs_command[@]}" virt-customize --add "$overlay" \
-  --copy-in "$source_root/appliance/guest/seat-qualification-smoke.sh:/usr/local/libexec" \
-  --copy-in "$source_root/appliance/guest/seat-qualification-smoke.service:/etc/systemd/system" \
-  --run-command 'chmod 0755 /usr/local/libexec/seat-qualification-smoke.sh && systemctl disable aptl-appliance-first-boot.service && systemctl enable seat-qualification-smoke.service'
-
-vm_status=0
-timeout --signal=TERM --kill-after=30s 4200 \
-  qemu-system-x86_64 \
-    -enable-kvm -cpu host -smp 8 -m 32768 -no-reboot \
-    -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
-    -drive "file=$overlay,format=qcow2,if=virtio,cache=none,aio=threads,readonly=off" \
-    -netdev user,id=participant,net=10.0.2.0/24,dhcpstart=10.0.2.15 \
-    -device virtio-net-pci,netdev=participant \
-    -device virtio-rng-pci \
-    -serial "file:$work/serial.log" -display none -monitor none \
-  || vm_status=$?
-
-result=$work/result
-if ! "${guestfs_command[@]}" virt-cat -a "$overlay" /var/log/aptl-seat-qualification.result >"$result"; then
-  echo 'seat qualification produced no guest result' >&2
-  exit 1
+image_args=(
+  --seat-root "$seat_root"
+  --image-cache "$image_cache"
+  --image "$image"
+  --yes
+)
+if test -n "$public_key"; then
+  image_args+=(--public-key "$public_key")
 fi
-cat "$result"
-if test "$vm_status" -ne 0 || \
-  ! grep -qx 'docker=0 compose=0 load=0 run=0' "$result" || \
-  ! grep -qx 'lab=0' "$result" || \
-  ! grep -qx 'mcp=0' "$result" || \
-  ! grep -qx 'cleanup=0 clean_start=0 clean_stop=0' "$result"; then
-  echo "seat qualification failed (VM exit ${vm_status})" >&2
-  exit 1
-fi
-echo 'seat qualification passed'
+
+# This first start verifies the signature into an empty cache, uses the normal
+# launcher, mounts its private launch record, runs the real first-boot service,
+# and requires the fatal appliance boundary gate before returning ready.
+"$aptl_cli" seat start "${image_args[@]}" --desktop-mode event >"$work/clean-start.json"
+running=1
+"$aptl_cli" seat status --seat-root "$seat_root" >"$work/clean-status.json"
+"$aptl_cli" seat stop --seat-root "$seat_root" >"$work/clean-stop.json"
+running=0
+
+# A warm restart must retain the same selected immutable image and re-run the
+# current-generation readiness and boundary observations.
+"$aptl_cli" seat start "${image_args[@]}" >"$work/warm-start.json"
+running=1
+"$aptl_cli" seat status --seat-root "$seat_root" >"$work/warm-status.json"
+"$aptl_cli" seat stop --seat-root "$seat_root" >"$work/warm-stop.json"
+running=0
+
+# Reset destroys the overlay. The final start is therefore another clean
+# installed-lab boot, not evidence inherited from the first one.
+"$aptl_cli" seat reset "${image_args[@]}" --desktop-mode event >"$work/reset.json"
+"$aptl_cli" seat start "${image_args[@]}" >"$work/reset-start.json"
+running=1
+"$aptl_cli" seat status --seat-root "$seat_root" >"$work/reset-status.json"
+"$aptl_cli" seat stop --seat-root "$seat_root" >"$work/reset-stop.json"
+running=0
+
+echo "protected seat qualification passed: $image"

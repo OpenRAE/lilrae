@@ -445,6 +445,11 @@ export class PersistentSession extends EventEmitter {
     return this.boundRunId;
   }
 
+  /** The session's stable id, for a harvest keyed by it. */
+  getSessionId(): string {
+    return this.sessionInfo.sessionId;
+  }
+
   /**
    * OBS-003 testing aid: resolve when the per-session PTY tee has
    * flushed every chunk handed to it so far (or it failed and was

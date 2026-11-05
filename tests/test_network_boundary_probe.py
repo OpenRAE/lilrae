@@ -3,6 +3,7 @@
 import importlib.util
 import socket
 import threading
+import time
 from pathlib import Path
 
 
@@ -31,9 +32,11 @@ def test_probe_listener_proves_a_real_tcp_connection() -> None:
         target=lambda: result.append(probe._listen("127.0.0.1", port, 2.0))
     )
     listener.start()
-    for _attempt in range(100):
-        if probe._connect("127.0.0.1", port, 0.05) == 0:
-            break
+    # A refused connect returns at once, so retry for as long as the listener
+    # waits: a busy runner can start the thread after many quick attempts.
+    deadline = time.monotonic() + 2.0
+    while probe._connect("127.0.0.1", port, 0.05) and time.monotonic() < deadline:
+        time.sleep(0.01)
     listener.join(timeout=3)
 
     assert result == [0]
@@ -47,3 +50,43 @@ def test_probe_connect_fails_when_no_target_is_listening() -> None:
     reservation.close()
 
     assert probe._connect("127.0.0.1", port, 0.05) == 1
+
+
+def test_probe_listener_supports_ipv6_without_falling_back_to_ipv4() -> None:
+    probe = _module()
+    reservation = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+    reservation.bind(("::1", 0))
+    port = reservation.getsockname()[1]
+    reservation.close()
+    result: list[int] = []
+    listener = threading.Thread(
+        target=lambda: result.append(probe._listen("::1", port, 2.0))
+    )
+    listener.start()
+    for _attempt in range(100):
+        if probe._connect("::1", port, 0.05) == 0:
+            break
+    listener.join(timeout=3)
+
+    assert result == [0]
+
+
+def test_probe_listener_proves_a_real_udp_exchange() -> None:
+    probe = _module()
+    reservation = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    reservation.bind(("127.0.0.1", 0))
+    port = reservation.getsockname()[1]
+    reservation.close()
+    result: list[int] = []
+    listener = threading.Thread(
+        target=lambda: result.append(
+            probe._listen("127.0.0.1", port, 2.0, protocol="udp")
+        )
+    )
+    listener.start()
+    for _attempt in range(100):
+        if probe._connect("127.0.0.1", port, 0.05, protocol="udp") == 0:
+            break
+    listener.join(timeout=3)
+
+    assert result == [0]

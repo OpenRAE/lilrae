@@ -8,6 +8,7 @@ import stat
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from aptl.utils.deterministic_archive import open_nofollow
 from aptl.workbench.access import SeatAccessRecord
 from aptl.workbench.profiles import WorkbenchConfigurationError
 
@@ -55,11 +56,7 @@ def _validate_generation_files(root: Path) -> None:
 def _read_access_record(path: Path) -> SeatAccessRecord:
     """Read a bounded owner-only access record without following a leaf link."""
 
-    flags = os.O_RDONLY | os.O_CLOEXEC
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    descriptor = os.open(path, flags)
-    with os.fdopen(descriptor, "rb") as handle:
+    with open_nofollow(path) as handle:
         payload = handle.read(64 * 1024 + 1)
     if not payload or len(payload) > 64 * 1024:
         raise OSError("existing access record has invalid size")

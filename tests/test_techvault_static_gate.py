@@ -16,6 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 from raes.module_registry import LOCKFILE_NAME
 from raes_runtime.manager import RuntimeManager
 from raes_contracts.planning import (
@@ -155,13 +156,20 @@ def test_operational_scenario_matches_public_start_profiles_and_services(operati
         PROJECT_ROOT, expected_profiles
     )
     realized_aliases = _realized_aliases(details)
+    # A backend companion joins its owner's network namespace and is realized
+    # with that owner node, not as an SDL node of its own. It counts only when
+    # the owner node reports that exact companion service and image.
+    realized_companions = _realized_companions(details)
+    compose_images = _compose_service_images()
     missing = {
         service: aliases
         for service, aliases in expected_services.items()
         if service not in PROFILE_INFRASTRUCTURE_SERVICES
         and not set(aliases) & realized_aliases
+        and realized_companions.get(service) != compose_images.get(service)
     }
     assert missing == {}
+    assert set(_namespace_companions()) <= set(realized_companions)
 
 
 def test_operational_scenario_lowers_wazuh_stateful_resources(operational_scenario, operational_bundle):
@@ -778,7 +786,6 @@ def test_check_provisioning_realization_rejects_planner_errors(monkeypatch, tmp_
 
     def _plan_aptl_scenario(**kwargs):
         assert kwargs.pop("target") is target
-        assert kwargs.pop("bundle") is bundle
         planned.update(kwargs)
         return execution_plan
 
@@ -1038,6 +1045,38 @@ def test_no_start_backend_refuses_everything():
         backend.stop()
     with pytest.raises(RuntimeError):
         backend.status()
+
+
+def _namespace_companions() -> dict[str, str]:
+    """Map each root Compose service that joins another's namespace to its owner."""
+
+    services = yaml.safe_load((PROJECT_ROOT / "docker-compose.yml").read_text())[
+        "services"
+    ]
+    return {
+        name: str(service["network_mode"]).removeprefix("service:")
+        for name, service in services.items()
+        if str(service.get("network_mode", "")).startswith("service:")
+    }
+
+
+def _compose_service_images() -> dict[str, str]:
+    """Map each root Compose service to its declared image reference."""
+
+    services = yaml.safe_load((PROJECT_ROOT / "docker-compose.yml").read_text())[
+        "services"
+    ]
+    return {name: str(service.get("image", "")) for name, service in services.items()}
+
+
+def _realized_companions(details) -> dict[str, str]:
+    """Map each realized backend companion's Compose service to its image."""
+
+    return {
+        companion["image"]["service_name"]: companion["image"]["image_ref"]
+        for node in details.get("nodes", [])
+        for companion in node.get("backend_companions") or ()
+    }
 
 
 def _realized_aliases(details):

@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import subprocess
 from types import SimpleNamespace
-from urllib.parse import unquote, urlsplit
 
 import pytest
 
@@ -58,9 +57,8 @@ def _account(username, *, auth_method="password", secret=_SECRET, name="console"
 class _Product:
     """A fake product: answers curl programs and MISP database programs."""
 
-    def __init__(self, *, accepts=(), converge_grants=(), misp=None):
+    def __init__(self, *, accepts=(), misp=None):
         self.accepts = set(accepts)
-        self.converge_grants = set(converge_grants)
         self.misp = misp if misp is not None else {}
         self.calls: list[tuple[str, list[str], str]] = []
 
@@ -81,20 +79,10 @@ class _Product:
         return _done("".join(f"{code}\n" for code in codes))
 
     def _answer(self, url, headers, body):
-        if url.endswith(("/password/set", "/api/user")) and body is not None:
-            self.accepts |= self.converge_grants
-            return 204
-        if url.endswith("/api/maintenance/migrate"):
-            return 204
         presented = {h for h in headers if h.startswith("Authorization")}
         if body is not None:
             presented.add(body)
-        return (
-            200
-            if presented & self.accepts
-            or (url.endswith("/current") and "session" in self.accepts)
-            else 401
-        )
+        return 200 if presented & self.accepts else 401
 
     def _php(self, program, payload):
         data = json.loads(payload)
@@ -108,72 +96,6 @@ class _Product:
             return _done("absent\n")
         self.accepts.add(f"Authorization: {data['secret']}")
         return _done("applied\n")
-
-
-class _TheHiveProduct(_Product):
-    """Model authenticated user creation, password changes and readback."""
-
-    def __init__(
-        self,
-        *,
-        users=None,
-        rotation_status=204,
-        apply_rotation=True,
-        bootstrap_status=None,
-        revoke_declared=False,
-    ):
-        super().__init__()
-        self.users = {
-            requests.THEHIVE_BOOTSTRAP_USER: requests.THEHIVE_BOOTSTRAP_PASSWORD
-        }
-        self.users.update(users or {})
-        self.rotation_status = rotation_status
-        self.apply_rotation = apply_rotation
-        self.bootstrap_status = bootstrap_status
-        self.revoke_declared = revoke_declared
-        self.rotations = []
-
-    def _answer(self, url, headers, body):
-        path = unquote(urlsplit(url).path)
-        actor = next(
-            (
-                user
-                for user, password in self.users.items()
-                if requests.basic_authorization(user, password) in headers
-            ),
-            None,
-        )
-        bootstrap = (
-            requests.basic_authorization(
-                requests.THEHIVE_BOOTSTRAP_USER, requests.THEHIVE_BOOTSTRAP_PASSWORD
-            )
-            in headers
-        )
-        if path.endswith("/current"):
-            if bootstrap and self.bootstrap_status is not None:
-                return self.bootstrap_status
-            return 200 if actor else 401
-        if actor is None:
-            return 401
-        data = json.loads(body) if body is not None else {}
-        if path == "/api/v1/user":
-            if data["login"] in self.users:
-                return 400
-            self.users[data["login"]] = "unset"
-            return 201
-        if path.endswith("/password/set"):
-            user = path.removeprefix("/api/v1/user/").removesuffix("/password/set")
-            if user == requests.THEHIVE_BOOTSTRAP_USER:
-                self.rotations.append((actor, data["password"]))
-                if self.rotation_status != 204:
-                    return self.rotation_status
-                if not self.apply_rotation:
-                    return 204
-                if self.revoke_declared:
-                    self.users.pop(actor, None)
-            self.users[user] = data["password"]
-            return 204
-        return 404
 
 
 def _field(block, key):
@@ -252,190 +174,10 @@ def test_an_undeclared_listener_is_refused_before_any_request():
     assert product.calls == []
 
 
-def test_thehive_creates_the_declared_administrator_then_proves_it():
-    node = _node("thehive", "aptl-thehive", listeners=(("thehive", 9000),))
-    product = _TheHiveProduct()
-
-    assert _run(provider.THEHIVE, product, node, _account("admin@example.test")) is None
-    converge = next(
-        config
-        for _, _, config in product.calls
-        if '"https://localhost:9000/api/v1/user"' in config
-    )
-    assert '"https://localhost:9000/api/v1/user"' in converge
-    assert "/api/v1/user/admin%40example.test/password/set" in converge
-    _assert_no_secret_in_argv(product)
-
-
-def test_thehive_keeps_a_credential_that_already_authenticates():
-    node = _node("thehive", "aptl-thehive", listeners=(("thehive", 9000),))
-    product = _TheHiveProduct(users={"admin@example.test": _SECRET})
-
-    assert _run(provider.THEHIVE, product, node, _account("admin@example.test")) is None
-    assert product.users["admin@example.test"] == _SECRET
-    assert not any(
-        "admin%40example.test/password/set" in config for _, _, config in product.calls
-    )
-
-
-def test_thehive_closes_bootstrap_access_only_after_the_declared_admin_works():
-    node = _node("thehive", "aptl-thehive", listeners=(("thehive", 9000),))
-    product = _TheHiveProduct()
-
-    assert _run(provider.THEHIVE, product, node, _account("admin@example.test")) is None
-    assert product.users["admin@example.test"] == _SECRET
-    assert (
-        product.users[requests.THEHIVE_BOOTSTRAP_USER]
-        != requests.THEHIVE_BOOTSTRAP_PASSWORD
-    )
-    assert product.rotations[0][0] == "admin@example.test"
-    generated = product.rotations[0][1]
-    assert 32 <= len(generated) <= 128
-    _assert_no_secret_in_argv(product, generated)
-    _assert_no_secret_in_argv(product)
-    assert _run(provider.THEHIVE, product, node, _account("admin@example.test")) is None
-    assert len(product.rotations) == 2
-    assert product.rotations[0][1] != product.rotations[1][1]
-
-
-def test_thehive_existing_declared_admin_also_closes_bootstrap_access():
-    node = _node("thehive", "aptl-thehive", listeners=(("thehive", 9000),))
-    product = _TheHiveProduct(users={"admin@example.test": _SECRET})
-
-    assert _run(provider.THEHIVE, product, node, _account("admin@example.test")) is None
-    assert len(product.rotations) == 1
-
-
-@pytest.mark.parametrize(
-    "options",
-    [
-        {"rotation_status": 403},
-        {"apply_rotation": False},
-        {"bootstrap_status": 500},
-        {"bootstrap_status": 403},
-        {"bootstrap_status": 0},
-        {"revoke_declared": True},
-    ],
-)
-def test_thehive_refuses_start_when_bootstrap_closure_is_not_proven(options):
-    node = _node("thehive", "aptl-thehive", listeners=(("thehive", 9000),))
-    product = _TheHiveProduct(users={"admin@example.test": _SECRET}, **options)
-
-    result = _run(provider.THEHIVE, product, node, _account("admin@example.test"))
-
-    assert result is not None
-    assert not result.success
-    assert "account-bootstrap-retirement-unproven" in (result.error or "")
-    assert _SECRET not in repr(result)
-    for _, generated in product.rotations:
-        assert generated not in repr(result)
-
-
-def test_thehive_can_add_another_declared_admin_after_bootstrap_is_closed():
-    node = _node("thehive", "aptl-thehive", listeners=(("thehive", 9000),))
-    product = _TheHiveProduct(users={"admin@example.test": _SECRET})
-    product.users[requests.THEHIVE_BOOTSTRAP_USER] = "already-rotated"
-
-    assert (
-        _run(
-            provider.THEHIVE,
-            product,
-            node,
-            _account("new@example.test", secret="new-fixture", name="new"),
-            _account("admin@example.test"),
-        )
-        is None
-    )
-    assert product.users["new@example.test"] == "new-fixture"
-    assert len(product.rotations) == 1
-
-
-def test_thehive_preserves_an_explicitly_declared_bootstrap_principal():
-    node = _node("thehive", "aptl-thehive", listeners=(("thehive", 9000),))
-    product = _TheHiveProduct()
-
-    assert (
-        _run(provider.THEHIVE, product, node, _account(requests.THEHIVE_BOOTSTRAP_USER))
-        is None
-    )
-    assert product.users[requests.THEHIVE_BOOTSTRAP_USER] == _SECRET
-
-
-def test_thehive_does_not_rotate_without_a_working_declared_administrator():
-    node = _node("thehive", "aptl-thehive", listeners=(("thehive", 9000),))
-    product = _TheHiveProduct()
-    product.users.clear()
-
-    result = _run(provider.THEHIVE, product, node, _account("admin@example.test"))
-
-    assert result is not None
-    assert not result.success
-    assert product.rotations == []
-
-
-def test_thehive_refuses_failed_exec_as_proof_of_bootstrap_retirement():
-    class FailedExec(_TheHiveProduct):
-        def _curl(self, config):
-            result = super()._curl(config)
-            if (
-                requests.basic_authorization(
-                    requests.THEHIVE_BOOTSTRAP_USER, requests.THEHIVE_BOOTSTRAP_PASSWORD
-                )
-                in config
-            ):
-                result.returncode = 1
-            return result
-
-    node = _node("thehive", "aptl-thehive", listeners=(("thehive", 9000),))
-    product = FailedExec(users={"admin@example.test": _SECRET})
-    product.users[requests.THEHIVE_BOOTSTRAP_USER] = "already-rotated"
-
-    result = _run(provider.THEHIVE, product, node, _account("admin@example.test"))
-
-    assert result is not None
-    assert not result.success
-    assert "account-bootstrap-retirement-unproven" in (result.error or "")
-
-
 def test_account_requests_do_not_expose_authentication_in_their_repr():
-    step = requests.thehive_login("admin@example.test", _SECRET)[0]
+    step = requests.opensearch_login("admin@example.test", _SECRET)[0]
 
     assert requests.basic_authorization("admin@example.test", _SECRET) not in repr(step)
-
-
-@pytest.mark.parametrize("applies", [True, False])
-def test_thehive_requires_password_replacement_even_if_the_default_login_is_locked(
-    applies,
-):
-    node = _node("thehive", "aptl-thehive", listeners=(("thehive", 9000),))
-    product = _TheHiveProduct(
-        users={"admin@example.test": _SECRET},
-        bootstrap_status=401,
-        apply_rotation=applies,
-    )
-
-    result = _run(provider.THEHIVE, product, node, _account("admin@example.test"))
-
-    if applies:
-        assert result is None
-        assert (
-            product.users[requests.THEHIVE_BOOTSTRAP_USER]
-            != requests.THEHIVE_BOOTSTRAP_PASSWORD
-        )
-    else:
-        assert result is not None
-        assert not result.success
-
-
-def test_cortex_migrates_then_uses_the_first_run_window_for_the_administrator():
-    node = _node("cortex", "aptl-cortex", listeners=(("cortex", 9001),))
-    login = requests.json_body({"user": "admin@example.test", "password": _SECRET})
-    product = _Product(converge_grants={login, "session"})
-
-    assert _run(provider.CORTEX, product, node, _account("admin@example.test")) is None
-    assert "/api/maintenance/migrate" in product.calls[0][2]
-    assert '"http://localhost:9001/api/user"' in product.calls[2][2]
-    _assert_no_secret_in_argv(product)
 
 
 def test_shuffle_is_proven_through_the_node_that_fronts_its_backend():
@@ -538,8 +280,6 @@ def test_every_released_techvault_account_provider_resolves_its_ingress(released
     assert {kind: item.base_url for kind, item in resolved.items()} == {
         provider.OPENSEARCH_SECURITY: "https://localhost:9200",
         provider.WAZUH_API: "https://localhost:55000",
-        provider.THEHIVE: "https://localhost:9000",
-        provider.CORTEX: "http://localhost:9001",
         provider.MISP: "https://localhost:443",
         provider.SHUFFLE: "https://localhost:443",
     }

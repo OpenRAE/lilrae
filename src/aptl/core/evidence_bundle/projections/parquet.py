@@ -41,8 +41,11 @@ _INT64_MAX = 2**63 - 1
 
 
 def _canonical_json(value: object) -> str:
-    """Return the RFC 8785 canonical JSON of ``value`` as an ASCII string."""
-    return rfc8785.dumps(value).decode("ascii")
+    """Return the RFC 8785 canonical JSON of ``value`` as a string.
+
+    RFC 8785 writes non-ASCII characters as raw UTF-8 (#1598).
+    """
+    return rfc8785.dumps(value).decode("utf-8")
 
 
 def _get(record: dict[str, object], *path: str) -> object | None:

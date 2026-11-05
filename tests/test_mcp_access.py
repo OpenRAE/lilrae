@@ -32,6 +32,7 @@ def access_record(**changes):
         host_key_fingerprint="SHA256:" + "A" * 43,
         observed_at=datetime.now(UTC),
         lifecycle_state="ready",
+        mcp_server_ids=("aptl-red", "aptl-indexer", "aptl-network", "aptl-soar", "aptl-threatintel", "aptl-wazuh"),
     )
     values.update(changes)
     return SeatAccessRecord.model_validate(values)

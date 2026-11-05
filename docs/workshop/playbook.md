@@ -175,7 +175,6 @@ Let students explore within the bounded profile.
 - Two-person purple: one student drives red, one drives blue, and they race the
   loop.
 
-SMB enumeration, web SQL injection, MISP, TheHive, Cortex, Shuffle, and
-Suricata exercises belong to the full `techvault-operational` research stack.
+SMB enumeration, web SQL injection, MISP, Shuffle, and Suricata exercises belong to the full `techvault-operational` research stack.
 They are optional follow-on material, not a fallback required to complete this
 profile.

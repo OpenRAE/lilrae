@@ -65,14 +65,17 @@ def test_dns_node_boots_base_container_materialized_and_resolves(tmp_path):
         timeout=600,
         check=True,
     )
-    subprocess.run(["docker", "rm", "-f", "aptl-dns"], capture_output=True, text=True)
 
+    # An isolated project gets its own workspace identity, so the test never
+    # removes or records ownership of a lab that runs from this checkout.
+    project = tmp_path / "project"
+    project.mkdir()
     cfg = AptlConfig(lab={"name": "x"}, containers={})
-    be = DockerComposeBackend(project_dir=repo, project_name="aptl")
-    bundle = techvault_scenario_bundle(tmp_path)
+    be = DockerComposeBackend(project_dir=project, project_name="aptl")
+    bundle = techvault_scenario_bundle(tmp_path / "bundle")
     plan = RuntimeManager(
         create_aptl_runtime_target(
-            project_dir=repo, config=cfg, backend=be, bundle=bundle
+            project_dir=project, config=cfg, backend=be, bundle=bundle
         )
     ).plan(
         parse_sdl_file(bundle.sdl_path),
@@ -136,6 +139,31 @@ def test_dns_node_boots_base_container_materialized_and_resolves(tmp_path):
         )
         assert "172.20.1.20" in dig.stdout
     finally:
-        subprocess.run(
-            ["docker", "rm", "-f", "aptl-dns"], capture_output=True, text=True
-        )
+        _remove_workspace_resources(project)
+
+
+def _remove_workspace_resources(project: Path) -> None:
+    """Remove every Docker object labeled with this test's workspace identity."""
+
+    if not (project / ".aptl").exists():
+        return
+    workspace_id = DockerComposeBackend(
+        project_dir=project, project_name="aptl"
+    )._ensure_resource_ownership().workspace_id
+    selector = f"label=aptl.workspace.id={workspace_id}"
+    for listing, removal in (
+        (["docker", "ps", "-aq"], ["docker", "rm", "-f"]),
+        (["docker", "network", "ls", "-q"], ["docker", "network", "rm"]),
+        (["docker", "volume", "ls", "-q"], ["docker", "volume", "rm", "-f"]),
+    ):
+        found = subprocess.run(
+            [*listing, "--filter", selector],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=60,
+        ).stdout.split()
+        if found:
+            subprocess.run(
+                [*removal, *found], capture_output=True, text=True, timeout=120
+            )

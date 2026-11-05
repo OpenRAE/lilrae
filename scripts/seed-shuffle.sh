@@ -4,21 +4,19 @@ set -euo pipefail
 # =============================================================================
 # APTL Shuffle SOAR Seed Script
 # =============================================================================
-# Seeds Shuffle with an "Alert to Case" workflow that receives alert
-# webhooks, enriches the source IP via MISP threat intel lookup, then
-# creates a corresponding TheHive case with enrichment data.
+# Seeds Shuffle with an "Alert Enrichment" workflow that receives alert
+# webhooks and enriches the source IP through a MISP threat intel lookup.
 #
 # Prerequisites:
 #   - Shuffle backend running (aptl-shuffle-backend / localhost:5001)
-#   - TheHive running (aptl-thehive / localhost:9000)
 #   - MISP running (aptl-misp / localhost:8443)
-#   - THEHIVE_API_KEY env var set
 #
 # Usage:
-#   export THEHIVE_API_KEY="your-api-key-here"
 #   ./scripts/seed-shuffle.sh
 #
 # Reruns reuse workflow identity and converge credentials, actions, and webhook.
+# A workflow seeded under the earlier "APTL Alert to Case" name converges in
+# place; the converge step removes its retired TheHive case action.
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -28,7 +26,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$PROJECT_DIR/.env"
 source "$SCRIPT_DIR/aptl-env.sh"
-for key in SHUFFLE_API_KEY MISP_API_KEY THEHIVE_API_KEY; do
+for key in SHUFFLE_API_KEY MISP_API_KEY; do
     aptl_load_env_key "$ENV_FILE" "$key"
 done
 
@@ -49,28 +47,19 @@ SHUFFLE_API_KEY="${SHUFFLE_API_KEY:-31a211c4-ea5c-4a49-b022-5e2434e758a7}"
 # defaults to verifying, which fails against the lab CA — see below).
 # Reached at runtime by Shuffle worker actions on the aptl-security network.
 # Use service DNS names, not the pre-#875 static IPs the env-pack no longer
-# pins. Both services use HTTPS; the generic HTTP action's explicit `verify`
-# setting remains false because its worker does not receive the private lab CA.
-THEHIVE_INTERNAL_URL="https://thehive:9000"
+# pins. MISP uses HTTPS; the generic HTTP action's explicit `verify` setting
+# remains false because its worker does not receive the private lab CA.
 MISP_INTERNAL_URL="https://misp"
 MISP_API_KEY="${MISP_API_KEY:-JHxBbGPnAtyut0FTwkeuhVFnbMksGRCRwsE0V9Xw}"
-WORKFLOW_NAME="APTL Alert to Case"
+WORKFLOW_NAME="APTL Alert Enrichment"
+LEGACY_WORKFLOW_NAME="APTL Alert to Case"
 
 if ! command -v docker >/dev/null 2>&1; then
     echo "ERROR: docker is required to reach Shuffle on the container network" >&2
     exit 1
 fi
 
-
-# Required integrations fail closed; a placeholder key cannot yield a usable lab.
-if [ -z "${THEHIVE_API_KEY:-}" ] && [ -x "$SCRIPT_DIR/thehive-apikey.sh" ]; then
-    THEHIVE_API_KEY=$("$SCRIPT_DIR/thehive-apikey.sh") || exit 1
-fi
-if [ -z "${THEHIVE_API_KEY:-}" ]; then
-    echo "ERROR: TheHive API key could not be provisioned." >&2
-    exit 1
-fi
-export SHUFFLE_API_KEY MISP_API_KEY THEHIVE_API_KEY
+export SHUFFLE_API_KEY MISP_API_KEY
 export SHUFFLE_URL
 
 # Curl reads credentials and request bodies from stdin, never process argv.
@@ -118,22 +107,21 @@ import json, sys
 workflows = json.load(sys.stdin)
 if not isinstance(workflows, list):
     raise SystemExit("ERROR: Invalid Shuffle workflow inventory.")
-matches = [w["id"] for w in workflows if w.get("name") == "APTL Alert to Case"]
+names = set(sys.argv[1:])
+matches = [w["id"] for w in workflows if w.get("name") in names]
 if len(matches) > 1:
     raise SystemExit("ERROR: Multiple seeded Shuffle workflows found.")
 print(matches[0] if matches else "")
-')
+' "$WORKFLOW_NAME" "$LEGACY_WORKFLOW_NAME")
 MISP_HEADERS_JSON=$(python3 -c 'import json, os; print(json.dumps("Authorization: " + os.environ["MISP_API_KEY"] + "\nContent-Type: application/json\nAccept: application/json"))')
-THEHIVE_HEADERS_JSON=$(python3 -c 'import json, os; print(json.dumps("Authorization: Bearer " + os.environ["THEHIVE_API_KEY"] + "\nContent-Type: application/json"))')
 
 TRIGGER_ID="trigger-webhook-$(date +%s)"
 MISP_ACTION_ID="action-misp-lookup-$(date +%s)"
-CASE_ACTION_ID="action-create-case-$(date +%s)"
 
 # NOTE: a node's JSON `body` must be a single-line JSON object built ONLY
 # from scalar interpolations (e.g. $exec.data.srcip). Two traps that both
-# yield "SyntaxError - unterminated string literal" so no TheHive case is
-# created even though the workflow reports FINISHED:
+# yield "SyntaxError - unterminated string literal" so the action fails even
+# though the workflow reports FINISHED:
 #   1. Embedding a whole node output (e.g. $misp_ip_lookup) -- Shuffle
 #      splices the raw JSON, with its own quotes, into the surrounding
 #      string and breaks it.
@@ -143,7 +131,7 @@ CASE_ACTION_ID="action-create-case-$(date +%s)"
 read -r -d '' WORKFLOW_JSON << ENDJSON || true
 {
     "name": "${WORKFLOW_NAME}",
-    "description": "Receives Wazuh alert webhook, enriches source IP via MISP, creates TheHive case",
+    "description": "Receives Wazuh alert webhook and enriches the source IP via MISP",
     "start": "${TRIGGER_ID}",
     "actions": [
         {
@@ -159,22 +147,6 @@ read -r -d '' WORKFLOW_JSON << ENDJSON || true
                 {"name": "method", "value": "POST"},
                 {"name": "headers", "value": ${MISP_HEADERS_JSON}},
                 {"name": "body", "value": "{\"value\": \"\$exec.data.srcip\", \"type\": \"ip-src\", \"returnFormat\": \"json\"}"},
-                {"name": "verify", "value": "false"}
-            ]
-        },
-        {
-            "id": "${CASE_ACTION_ID}",
-            "app_name": "http",
-            "app_version": "1.4.0",
-            "name": "POST",
-            "label": "create_thehive_case",
-            "environment": "Shuffle",
-            "position": {"x": 750, "y": 200},
-            "parameters": [
-                {"name": "url", "value": "${THEHIVE_INTERNAL_URL}/api/v1/case"},
-                {"name": "method", "value": "POST"},
-                {"name": "headers", "value": ${THEHIVE_HEADERS_JSON}},
-                {"name": "body", "value": "{\"title\": \"[Wazuh \$exec.rule.id] \$exec.rule.description\", \"description\": \"Wazuh alert id \$exec.id; rule \$exec.rule.id (\$exec.rule.description); level \$exec.rule.level; source IP \$exec.data.srcip; agent \$exec.agent.name; time \$exec.timestamp; MISP: source IP \$exec.data.srcip checked against threat intelligence.\", \"severity\": 3}"},
                 {"name": "verify", "value": "false"}
             ]
         }
@@ -195,12 +167,6 @@ read -r -d '' WORKFLOW_JSON << ENDJSON || true
         {
             "source_id": "${TRIGGER_ID}",
             "destination_id": "${MISP_ACTION_ID}",
-            "conditions": [],
-            "has_errors": false
-        },
-        {
-            "source_id": "${MISP_ACTION_ID}",
-            "destination_id": "${CASE_ACTION_ID}",
             "conditions": [],
             "has_errors": false
         }
@@ -225,7 +191,21 @@ triggers = [t for t in workflow.get("triggers", []) if t.get("trigger_type") == 
 if len(triggers) != 1 or not triggers[0].get("id"):
     raise SystemExit("ERROR: Seeded workflow must have one webhook trigger.")
 workflow["start"] = triggers[0]["id"]
+# Converge a workflow seeded under the earlier name. Keep an operator-edited
+# description; replace only the description that the earlier seed wrote.
+legacy_description = "Receives Wazuh alert webhook, enriches source IP via MISP, creates TheHive case"
+if workflow.get("name") == "APTL Alert to Case":
+    workflow["name"] = template["name"]
+    if workflow.get("description") == legacy_description:
+        workflow["description"] = template["description"]
 desired = {a["label"]: a["parameters"] for a in template["actions"]}
+retired = [a for a in workflow.get("actions", []) if a.get("label") == "create_thehive_case"]
+retired_ids = {a["id"] for a in retired if a.get("id")}
+workflow["actions"] = [a for a in workflow.get("actions", []) if a.get("label") != "create_thehive_case"]
+workflow["branches"] = [
+    b for b in workflow.get("branches", [])
+    if b.get("source_id") not in retired_ids and b.get("destination_id") not in retired_ids
+]
 seen = set()
 for action in workflow.get("actions", []):
     label = action.get("label")
