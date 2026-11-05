@@ -17,7 +17,7 @@ pytestmark = pytest.mark.integration
 
 
 @contextmanager
-def provider(*, status=200):
+def provider(*, status=200, pause=None):
     requests = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -55,6 +55,10 @@ def provider(*, status=200):
                     },
                 }
                 self.wfile.write(b"data: " + json.dumps(chunk).encode() + b"\n\n")
+                self.wfile.flush()
+                if pause is not None and finish is None:
+                    pause.wait(60)
+                    return
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
 
@@ -75,6 +79,118 @@ def opencode_binary():
     if not selected:
         pytest.skip("real launcher requires the pinned OpenCode qualification binary")
     return Path(selected).resolve(strict=True)
+
+
+@pytest.mark.parametrize(
+    "mode,role,request_observer",
+    [
+        ("200", "red", False),
+        ("200", "blue", False),
+        ("200", "red", True),
+        ("401", "red", False),
+        ("timeout", "red", False),
+        ("cancelled", "blue", False),
+    ],
+)
+def test_installed_capture_observer_retains_real_provider_transport(
+    tmp_path, opencode_binary, mode, role, request_observer
+):
+    """The shipped plugin runs under the pinned binary, without a live provider."""
+    import subprocess
+    import sys
+    from tests.opencode_fixture import install_wheel
+
+    installed = install_wheel(tmp_path)
+    script = tmp_path / "capture.py"
+    script.write_text("""import sys,json,hashlib
+from dataclasses import replace
+from pathlib import Path
+from threading import Event, Timer
+sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[2])
+from aptl.backends.lilrae_participant_configuration import opencode_manifest, configured_opencode_executor, OpenCodeConfigurationValidator
+from aptl.workbench.lilrae_opencode import OpenCodeOptions
+from aptl.core.opencode import OpenRouterRoute
+from aptl.core.evidence.participant_capture import ParticipantCaptureArchive
+from aptl.core.runstore import LocalRunStore
+from aptl.workbench.process import AgentExecutionError, REASON_TIMEOUT, REASON_CANCELLED
+from aptl.core.experiment.capture_registry import CaptureLimits
+from raes_contracts.contracts.participant_configuration import ConfigurationOverrideModel, realize_participant_configuration
+from raes_contracts.canonical import canonical_contract_digest
+from tests.test_participant_capture import _grant
+import aptl.workbench.opencode_capture as owner
+assert Path(owner.__file__).is_relative_to(Path(sys.argv[1]))
+manifest=opencode_manifest(version="1.0.0")
+endpoint=sys.argv[4]
+mode,role=sys.argv[6:8]
+values={"model":"openrouter/test/model", "prompt_ref":"content.test@v1", "prompt_sha256":hashlib.sha256(b"Return transport completion.").hexdigest(), "timeout_seconds":20 if mode=="timeout" else 60, "gateway_endpoint":endpoint, "serving_provider":"test-provider", "max_output_tokens":128}
+result=realize_participant_configuration(participant_address=f"participant.behavior.{role}", manifest=manifest, manifest_ref="participant-implementation-manifests.opencode.v1", manifest_digest=canonical_contract_digest(manifest), overrides=[ConfigurationOverrideModel(target_id=k,value={"kind":"literal","value":v}) for k,v in values.items()], validator=OpenCodeConfigurationValidator(frozenset({values["model"]})))
+grant=replace(_grant(), participant_address=result.participant_address, configuration_digest=result.configuration_digest)
+grant=replace(grant,binding=replace(grant.binding,limits=CaptureLimits(2*1024*1024,100,120)))
+archive=ParticipantCaptureArchive(LocalRunStore(Path(sys.argv[5])/"runs"),grant)
+options=OpenCodeOptions(executable=Path(sys.argv[3]),work_root=Path(sys.argv[5]),environment={"OPENROUTER_API_KEY":"private-test-credential"},route=OpenRouterRoute(endpoint=endpoint,serving_provider="test-provider"),capture=archive,request_observation_required=sys.argv[8]=="true")
+active=configured_opencode_executor(options=options, configuration=result, manifest=manifest,prompt="Return transport completion.",prompt_ref=values["prompt_ref"],supported_models=frozenset({values["model"]}))
+cancellation=Event()
+timer=Timer(20,cancellation.set) if mode=="cancelled" else None
+if timer: timer.start()
+try:
+    answer=active(f"outer-{role}",cancellation)
+    assert mode=="200" and answer=="transport completion"
+except AgentExecutionError:
+    assert mode in {"401","timeout","cancelled"}
+finally:
+    if timer: timer.cancel()
+retained=archive.fetch("start","end")
+assert retained.records, "observer did not retain source records"
+invocation=retained.records[0]["invocations"][0]
+assert invocation["calls"], invocation
+assert "private-test-credential" not in json.dumps(retained.records)
+assert invocation["calls"][0]["request_controls"]["model"]=="test/model"
+assert invocation["prompt_delivery"]["stdin_sha256"]==hashlib.sha256(b"Return transport completion.").hexdigest()
+if mode=="200":
+    assert retained.status.value=="ok", retained
+    assert retained.records[0]["totals"]["input_tokens"]==12
+    assert retained.records[0]["totals"]["output_tokens"]==3
+    assert any(row["type"]=="text" for row in invocation["cli_events"])
+elif mode=="401":
+    assert invocation["calls"][0]["state"]=="failed"
+else:
+    assert invocation["calls"][0]["state"]=="unsettled"
+    assert invocation["harness_failure_reason"]==({"timeout":REASON_TIMEOUT,"cancelled":REASON_CANCELLED}[mode])
+    assert invocation["records"], invocation
+if sys.argv[8]=="true":
+    assert active.last_evidence.request_observation.status=="observed"
+assert not list(Path(sys.argv[5]).glob("lilrae-participant-*"))
+print(json.dumps({"retained":True}))
+""")
+    pause = Event() if mode in {"timeout", "cancelled"} else None
+    with provider(status=401 if mode == "401" else 200, pause=pause) as (
+        endpoint,
+        requests,
+    ):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                str(script),
+                str(installed),
+                str(Path(__file__).resolve().parents[1]),
+                str(opencode_binary),
+                endpoint,
+                str(tmp_path / "work"),
+                mode,
+                role,
+                "true" if request_observer else "false",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=100,
+        )
+        if pause is not None:
+            pause.set()
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert requests
+    assert json.loads(result.stdout)["retained"]
 
 
 @pytest.mark.parametrize("status", [200, 401])
@@ -410,6 +526,7 @@ from aptl.core.opencode import OpenRouterRoute
 from aptl.backends.lilrae_participant_configuration import opencode_manifest, OpenCodeConfigurationValidator
 from aptl.workbench.opencode_bootstrap import OpenCodeParticipantRequest, managed_opencode_executor
 from aptl.workbench.process import AgentExecutionError
+from aptl.core.experiment.capture_registry import CaptureLimits
 from raes_contracts.contracts.participant_configuration import ConfigurationOverrideModel, realize_participant_configuration
 from raes_contracts.canonical import canonical_contract_digest
 project=AptlConfig.model_validate_json(pathlib.Path(sys.argv[5]).read_bytes())

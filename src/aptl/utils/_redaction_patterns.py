@@ -44,9 +44,7 @@ _SENSITIVE_KV_RE = re.compile(
     rf"({_KEY_LB}{_SENSITIVE_KEY_PATTERN}{_KEY_RB}\s*[=:]\s*['\"]?)([^'\"&\s,;|]+)(['\"]?)",
     re.IGNORECASE,
 )
-_BARE_BEARER_RE = re.compile(
-    rf"({_KEY_LB}bearer\s+){_VALUE_PATTERN}", re.IGNORECASE
-)
+_BARE_BEARER_RE = re.compile(rf"({_KEY_LB}bearer\s+){_VALUE_PATTERN}", re.IGNORECASE)
 # `--password value` / `--client-secret value` / `--access-token value`
 # style (long CLI flags). The `[\w-]*` prefixes allow compound flag
 # names like `--client-secret`; regex backtracking finds the embedded
@@ -68,12 +66,28 @@ _COOKIE_HEADER_RE = re.compile(
 # URL userinfo: `scheme://user:password@host/path`. Preserve user (often
 # useful for diagnostics) and mask the password segment.
 _URL_USERINFO_RE = re.compile(r"(://[^/:@\s]+:)[^@\s]+(@)")
-# PEM key/cert blocks. `re.DOTALL` lets `.` span newlines; non-greedy so
-# adjacent blocks are masked separately.
-_PEM_BLOCK_RE = re.compile(
-    r"(-----BEGIN[^-]*-----).*?(-----END[^-]*-----)",
-    re.DOTALL,
-)
+# Match only the delimiters; scanning between them avoids buffering or
+# backtracking over arbitrary key data, including an unfinished final block.
+_PEM_BEGIN_RE = re.compile(r"-----BEGIN[^-]*-----")
+_PEM_END_RE = re.compile(r"-----END[^-]*-----")
+
+
+def _redact_pem_blocks(value: str) -> str:
+    """Mask each PEM body through its closing delimiter or the end of input."""
+    parts = []
+    cursor = 0
+    while begin := _PEM_BEGIN_RE.search(value, cursor):
+        parts.extend((value[cursor : begin.end()], REDACTED))
+        end = _PEM_END_RE.search(value, begin.end())
+        if end is None:
+            cursor = len(value)
+            break
+        parts.append(end.group())
+        cursor = end.end()
+    parts.append(value[cursor:])
+    return "".join(parts)
+
+
 # Recognizes `--<sensitive>` (or compound `--client-secret`,
 # `--access-token`) as a standalone token used by array-pair detection
 # so adjacent positional values get redacted.
@@ -232,7 +246,9 @@ _LDAP_W_ATTACHED_UNQUOTED = re.compile(r"(^|\s|\|)-w([^\s='\"](?:\\.|[^\s'\"\\])
 
 _BASIC_AUTH_USER_DQUOTE = re.compile(rf"(^|\s|\|)(--user|-u|-U)(\s+|=)({_DQ_VALUE})")
 _BASIC_AUTH_USER_SQUOTE = re.compile(rf"(^|\s|\|)(--user|-u|-U)(\s+|=)({_SQ_VALUE})")
-_BASIC_AUTH_USER_UNQUOTED = re.compile(rf"(^|\s|\|)(--user|-u|-U)(\s+|=)({_BARE_VALUE})")
+_BASIC_AUTH_USER_UNQUOTED = re.compile(
+    rf"(^|\s|\|)(--user|-u|-U)(\s+|=)({_BARE_VALUE})"
+)
 _BASIC_AUTH_USER_ATTACHED_DQUOTE = re.compile(rf"(^|\s|\|)(-u|-U)({_DQ_VALUE})")
 _BASIC_AUTH_USER_ATTACHED_SQUOTE = re.compile(rf"(^|\s|\|)(-u|-U)({_SQ_VALUE})")
 _BASIC_AUTH_USER_ATTACHED_UNQUOTED = re.compile(

@@ -30,7 +30,14 @@ COMPONENTS = {
     ),
     "src/aptl/workbench/opencode_evidence.py": frozenset(
         {
+            "__future__",
             "aptl.core.opencode",
+            "aptl.core.participant_tools.contracts",
+            "aptl.workbench.opencode_configuration",
+            "aptl.workbench.opencode_observation",
+            "contextlib",
+            "copy",
+            "typing",
             "aptl.core.provider_observation",
             "aptl.workbench.opencode_events",
             "aptl.workbench.opencode_options",
@@ -59,6 +66,7 @@ COMPONENTS = {
     "src/aptl/workbench/opencode_options.py": frozenset(
         {
             "__future__",
+            "aptl.core.evidence.participant_capture",
             "aptl.core.opencode",
             "aptl.core.participant_requests.binding",
             "aptl.core.participant_requests.request",
@@ -70,6 +78,7 @@ COMPONENTS = {
             "datetime",
             "pathlib",
             "sys",
+            "typing",
         }
     ),
     "src/aptl/workbench/trial_participants.py": frozenset(
@@ -141,6 +150,7 @@ COMPONENTS = {
             "json",
             "re",
             "threading",
+            "time",
             "rfc8785",
             "raes_backend_protocols.capabilities",
             "raes_backend_protocols.participant_invocation_tools",
@@ -150,6 +160,7 @@ COMPONENTS = {
             "aptl.core.participant_tools.model",
             "aptl.core.mcp_results",
             "aptl.core.agent_errors",
+            "aptl.core.correlation.clock",
             "aptl.core.participant_tools.contracts",
             "aptl.backends.participant_tools.transport",
         }

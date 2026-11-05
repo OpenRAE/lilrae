@@ -8,6 +8,7 @@ from hashlib import sha256
 import json
 import re
 from threading import Event as Cancellation, RLock
+from time import monotonic_ns
 
 import rfc8785
 from raes_backend_protocols.participant_invocation_tools import (
@@ -25,6 +26,7 @@ from aptl.core.participant_tools.model import (
 )
 from aptl.core.mcp_results import redact_mcp_result
 from aptl.core.agent_errors import AgentExecutionError
+from aptl.core.correlation.clock import ClockProvider, SystemClockProvider
 from aptl.core.participant_tools.contracts import (
     LilraeToolBinding,
     LilraeToolCall,
@@ -87,6 +89,9 @@ class LilraeToolSession:
         port: ParticipantInvocationToolActionPort,
         bindings: tuple[LilraeToolBinding, ...],
         cancellation: Cancellation,
+        *,
+        evidence_sink: Callable[[Mapping[str, object]], None] | None = None,
+        clock: ClockProvider | None = None,
     ) -> None:
         self._port = port
         self.bindings = tuple(deepcopy(item) for item in bindings)
@@ -100,6 +105,28 @@ class LilraeToolSession:
         self._lock = RLock()
         self._calls: dict[tuple[str, str], tuple[bytes, LilraeToolCall]] = {}
         self._closed = False
+        self._evidence_sink = evidence_sink
+        self._clock = clock or SystemClockProvider()
+        self._observation_ordinal = 0
+
+    def _observe(self, phase: str, *, call: LilraeToolCall | None = None,
+                 **fields: object) -> None:
+        """Observe native authority; a sink never grants dispatch or completion."""
+        if self._evidence_sink is None:
+            return
+        ordinal = self._observation_ordinal
+        self._observation_ordinal += 1
+        self._evidence_sink({
+            "phase": phase, "sequence": ordinal,
+            "invocation_id": self._port.invocation_action_instance_id,
+            "participant_address": self._port.participant_address,
+            "episode_id": self._port.episode_id,
+            "execution_scope_ref": self._port.execution_scope_ref,
+            "execution_generation": self._port.execution_generation,
+            "action_instance_id": call.action_id if call is not None else None,
+            "observed_at": self._clock.now(), "monotonic_ns": monotonic_ns(),
+            **fields,
+        })
 
     def transport(self) -> LilraeToolTransport:
         """Build the carrier owned by this adapter for the injected session port."""
@@ -137,6 +164,8 @@ class LilraeToolSession:
             if not isinstance(detached, dict) or not _IDENTIFIER.fullmatch(call_id):
                 raise ValueError("invalid call")
             with self._lock:
+                self._observe("proposed", server_id=server, tool_name=tool,
+                              call_id=call_id, arguments=detached)
                 self._require_available(server, call_id)
                 matches = [
                     item
@@ -150,6 +179,11 @@ class LilraeToolSession:
                     raise ValueError("ambiguous or unknown semantics")
                 return self._admit(matches[0], call_id, data)
         except Exception:
+            try:
+                with self._lock:
+                    self._observe("refused")
+            except Exception:
+                pass
             raise AgentExecutionError(_REFUSED) from None
 
     def _require_available(self, server: str, call_id: str) -> None:
@@ -193,11 +227,19 @@ class LilraeToolSession:
             binding, decision.action_instance_id, advance(ActionState(), Event.ADMIT)
         )
         self._calls[(binding.server_id, call_id)] = (sha256(data).digest(), call)
-        if not self._live() or not port.dispatch(call.action_id).accepted:
-            if port.cancel(call.action_id).accepted:
-                call.state = advance(call.state, Event.WITHHOLD)
-            raise AgentExecutionError(_REFUSED)
-        call.state = advance(call.state, Event.DISPATCH)
+        try:
+            self._observe("admitted", call=call)
+            if not self._live() or not port.dispatch(call.action_id).accepted:
+                raise AgentExecutionError(_REFUSED)
+            call.state = advance(call.state, Event.DISPATCH)
+            self._observe("dispatched", call=call)
+        except Exception:
+            if call.state.phase == Phase.ADMITTED:
+                if port.cancel(call.action_id).accepted:
+                    call.state = advance(call.state, Event.WITHHOLD)
+            else:
+                self.unknown(call)
+            raise
         return call
 
     def _owns(self, call: LilraeToolCall) -> bool:
@@ -233,6 +275,7 @@ class LilraeToolSession:
                     raise ValueError("outcome refused")
                 call.state = advance(call.state, Event.COMPLETE)
                 call.state = advance(call.state, Event.DELIVER)
+                self._observe("failed" if failed else "succeeded", call=call, result=safe)
                 return safe
             except Exception:
                 self.unknown(call)
@@ -252,6 +295,12 @@ class LilraeToolSession:
                     pass
                 finally:
                     call.state = advance(call.state, Event.UNKNOWN)
+                    try:
+                        self._observe("unsettled", call=call)
+                    except Exception:
+                        # The retained dispatch without a terminal row remains
+                        # incomplete. Continue draining every owned call.
+                        pass
 
     def invoke(
         self,

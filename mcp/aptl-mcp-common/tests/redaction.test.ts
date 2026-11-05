@@ -922,7 +922,7 @@ describe('redactor defense-in-depth bounds (issue #386, ARCH-386-01)', () => {
   });
 });
 describe('numeric model limits and usage', () => {
-  it.each(['max_output_tokens', 'input_tokens', 'output_tokens'])('preserves typed %s without exposing credential replacements', (name) => {
+  it.each(["max_output_tokens", "max_tokens", "max_completion_tokens", "input_tokens", "output_tokens", "prompt_tokens", "completion_tokens", "total_tokens", "reasoning_tokens", "cache_read_tokens", "cache_write_tokens", "cached_tokens", "known_input_tokens_subtotal", "known_output_tokens_subtotal", "effective_token_limit"])('preserves typed %s without exposing credential replacements', (name) => {
     for (const value of [0, 128, null]) expect(redact({ [name]: value })).toEqual({ [name]: value });
     for (const value of ['private-credential', { api_key: 'private-credential' }, true, -1, 2 ** 53]) {
       expect(redact({ [name]: value })).toEqual({ [name]: '[REDACTED]' });

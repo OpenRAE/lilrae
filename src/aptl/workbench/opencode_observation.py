@@ -28,7 +28,7 @@ from aptl.utils.pathsafe import (
 )
 from aptl.utils.strict_json import loads_strict
 
-OBSERVER_SHA256 = "ffbff358064493d84087d35a87f13cd74044ba864476194ee47f6caa901e7791"
+OBSERVER_SHA256 = "f9c7924367684be08ac42685936ee0f30026ef1820a77fa3ca9e27598fd3d96e"
 OBSERVER_CREDENTIAL = "LILRAE_OPENCODE_PROVIDER_KEY"
 MAX_OBSERVATION_BYTES = 16 * 1024 * 1024
 OBSERVER_MODULE = "request_observer.mjs"
@@ -220,7 +220,12 @@ def read_request_observations(
 
 
 def install_request_observer(
-    work: Path, config: dict[str, object], environment: Mapping[str, str], prompt: bytes
+    work: Path,
+    config: dict[str, object],
+    environment: Mapping[str, str],
+    prompt: bytes,
+    *,
+    capture: Mapping[str, object] | None = None,
 ) -> tuple[dict[str, str], ObservedRequestControls]:
     """Leave a failed plugin load unable to reach the admitted provider."""
     module = Path(__file__).with_name(OBSERVER_MODULE).read_bytes()
@@ -249,6 +254,8 @@ def install_request_observer(
         "prompt_bytes": len(prompt),
         "prompt_sha256": hashlib.sha256(prompt).hexdigest(),
     }
+    if capture is not None:
+        inputs["capture"] = dict(capture)
     create_exclusive_nofollow(work, "observer-input.json", json.dumps(inputs).encode())
     create_exclusive_nofollow(work, OBSERVER_MODULE, module)
     config["plugin"] = [(work / OBSERVER_MODULE).as_uri()]

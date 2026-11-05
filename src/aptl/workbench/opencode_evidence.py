@@ -1,7 +1,18 @@
 """Reduce process and native observations through the existing safe evidence sink."""
 
+from __future__ import annotations
+
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from contextlib import ExitStack
+from copy import deepcopy
+from typing import TYPE_CHECKING
+
+from aptl.workbench.opencode_configuration import PROVIDER_CREDENTIAL_NAMES
+from aptl.workbench.opencode_observation import OBSERVER_CREDENTIAL
+
+if TYPE_CHECKING:
+    from aptl.core.participant_tools.contracts import ToolSession
+from dataclasses import dataclass, field, replace
 import hashlib
 
 from raes_contracts.contracts import ParticipantConfigurationResultModel
@@ -24,12 +35,14 @@ class OpenCodeRunState:
     result: ProcessResult | None = None
     error: BoundedProcessError | None = None
     partial: OpenCodeResponse | None = None
+    failure_stdout: bytes = field(default=b"", repr=False)
     tool_transport_cleanup: str | None = None
     native_history: NativeHistoryObservation | None = None
     request_observation: RequestObservation | None = None
 
     def retain_partial(self, output: bytes) -> None:
         """Reduce private failure output without retaining completion text."""
+        self.failure_stdout = output
         self.partial = replace(parse_opencode_response(output), text="")
 
     def require_observations(self, history_required: bool) -> None:
@@ -128,3 +141,40 @@ def invocation_recorder(
         ),
         options.evidence_sink,
     )
+
+
+def invocation_servers(
+    stack: ExitStack,
+    tools: ToolSession | None,
+    configured_servers: dict[str, object],
+    state: OpenCodeRunState,
+) -> dict[str, object]:
+    """Open one scoped tool transport and retain its cleanup outcome."""
+    if tools is None:
+        return {}
+    state.tool_transport_cleanup = "uncertain"
+    transport = tools.transport()
+    carrier = transport.__enter__()
+
+    def close_transport(*exc: object) -> bool | None:
+        """Preserve native process failure if tool transport closure also fails."""
+        if isinstance(exc[1], BoundedProcessError):
+            state.error = exc[1]
+        try:
+            outcome = transport.__exit__(*exc)
+        except Exception:
+            raise AgentExecutionError(
+                "participant tool transport cleanup failed"
+            ) from None
+        state.tool_transport_cleanup = "succeeded"
+        return outcome
+
+    stack.push(close_transport)
+    servers = deepcopy(configured_servers)
+    for name, server in servers.items():
+        server["environment"].update(carrier.environment(name))
+        # Native MCP children must not inherit either provider credential alias.
+        server["environment"].update(
+            dict.fromkeys(PROVIDER_CREDENTIAL_NAMES | {OBSERVER_CREDENTIAL}, "")
+        )
+    return servers
