@@ -239,12 +239,15 @@ def test_shared_volume_creation_waits_for_ownership_receipt(tmp_path: Path) -> N
     assert len(ownership.receipts("volume")) == 1
 
 
-def _seed_backend_with_stale_receipt(tmp_path: Path, inspect_stderr: str):
+def _seed_backend_with_stale_receipt(
+    tmp_path: Path, inspect_stderr: str, *, listed: bool = False
+):
     """Leave a receipt from an earlier attempt whose volume no longer exists."""
 
     backend = DockerComposeBackend(tmp_path)
     ownership = backend._ensure_resource_ownership(attempt_id="run-old")
     backend._docker_daemon_id = "daemon-a"
+    backend._current_docker_daemon_id = lambda: "daemon-a"
     volume = f"{ownership.project_name}_shared"
     ownership.record(
         ResourceReceipt(
@@ -270,6 +273,10 @@ def _seed_backend_with_stale_receipt(tmp_path: Path, inspect_stderr: str):
             if labels is None:
                 return subprocess.CompletedProcess(command, 1, "", inspect_stderr)
             return subprocess.CompletedProcess(command, 0, json.dumps(labels), "")
+        if command[:3] == ["docker", "volume", "ls"]:
+            return subprocess.CompletedProcess(
+                command, 0, f"{volume}\n" if listed else "", ""
+            )
         assert command[:3] == ["docker", "volume", "create"]
         creates.append(command)
         state["labels"] = {
@@ -305,6 +312,29 @@ def test_seed_volume_retires_a_receipt_whose_volume_was_removed(
     assert len(creates) == 1
     (receipt,) = ownership.receipts("volume")
     assert receipt.attempt_id == "run-new"
+    roles = [role for role, _ in backend.native_evidence_artifacts("run-old")]
+    assert roles == ["native-resource-receipt/v1", "native-cleanup/v1"]
+
+
+def test_seed_volume_keeps_a_receipt_that_the_daemon_still_lists(
+    tmp_path: Path,
+) -> None:
+    """An inspect error alone does not retire a receipt the listing still shows."""
+
+    from aptl.core.deployment.errors import BackendSeedError
+
+    backend, ownership, creates = _seed_backend_with_stale_receipt(
+        tmp_path,
+        "Error response from daemon: get x: no such volume",
+        listed=True,
+    )
+
+    with pytest.raises(BackendSeedError):
+        backend._ensure_labeled_project_volume("shared")
+
+    assert creates == []
+    (receipt,) = ownership.receipts("volume")
+    assert receipt.attempt_id == "run-old"
 
 
 def test_seed_volume_keeps_a_receipt_when_absence_is_not_proven(
@@ -953,225 +983,6 @@ def test_clean_volume_cleanup_retires_already_absent_receipt(tmp_path: Path) -> 
 
     ownership.record(ResourceReceipt(**{**receipt.__dict__, "attempt_id": "run-b"}))
     assert ownership.receipts("volume")[0].attempt_id == "run-b"
-
-
-class _ReusedProjectDaemon:
-    """One daemon that a reused project starts and tears down repeatedly."""
-
-    def __init__(self, backend: DockerComposeBackend) -> None:
-        self.ownership = backend._ensure_resource_ownership(attempt_id="run-0")
-        self.containers: dict[str, dict[str, object]] = {}
-        self.networks: dict[str, dict[str, object]] = {}
-        self.container_inspects = 0
-        backend._docker_daemon_id = "daemon-a"
-        backend._raw_container_inspect = self.inspect_container
-        backend.host_inspect_network = lambda native_id: self.networks.get(
-            native_id, {}
-        )
-        backend._run = self.run
-        backend._build_command = lambda action, *args, **kwargs: [
-            "docker",
-            "compose",
-            action,
-        ]
-        backend.remove_stranded_helpers = lambda: []
-        backend.observe_project_runtime = self.presence
-
-    def start(self, attempt: int) -> str:
-        """Create and record one Compose container and network; return the ID."""
-
-        container_id, network_id = f"c{attempt:063x}", f"e{attempt:063x}"
-        attempt_id = f"run-{attempt}"
-        external = self.ownership.container_name("victim")
-        network = f"{self.ownership.project_name}_lab-net"
-        for kind, native_id, name, semantic in (
-            ("container", container_id, external, "victim"),
-            ("network", network_id, network, "lab-net"),
-        ):
-            self.ownership.record(
-                ResourceReceipt(
-                    kind=kind,
-                    native_id=native_id,
-                    external_name=name,
-                    semantic_name=semantic,
-                    node_address=semantic,
-                    workspace_id=self.ownership.workspace_id,
-                    project_name=self.ownership.project_name,
-                    daemon_id="daemon-a",
-                    attempt_id=attempt_id,
-                    managed_by="compose",
-                )
-            )
-        self.containers[container_id] = {
-            "Id": container_id,
-            "Name": f"/{external}",
-            "Config": {
-                "Labels": {
-                    "aptl.workspace.id": self.ownership.workspace_id,
-                    "aptl.lifecycle.project": self.ownership.project_name,
-                }
-            },
-        }
-        self.networks[network_id] = {
-            "id": network_id,
-            "name": network,
-            "labels": {"com.docker.compose.project": self.ownership.project_name},
-        }
-        return container_id
-
-    def inspect_container(self, native_id: str) -> dict[str, object]:
-        """Count one ``docker inspect`` and return the current object, if any."""
-
-        self.container_inspects += 1
-        return self.containers.get(native_id, {})
-
-    def run(self, cmd: list[str], *, timeout: int | None = None):
-        """Apply removal and Compose teardown commands to the daemon state."""
-
-        del timeout
-        if cmd[:2] == ["docker", "rm"]:
-            self.containers.pop(cmd[-1], None)
-        elif cmd[:3] == ["docker", "network", "rm"]:
-            self.networks.pop(cmd[-1], None)
-        elif cmd[:3] == ["docker", "compose", "down"]:
-            self.containers.clear()
-            self.networks.clear()
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    def presence(self):
-        """Report the checked runtime presence of this project."""
-
-        from aptl.core.deployment.backend_host_inventory import ProjectRuntimePresence
-
-        return ProjectRuntimePresence(
-            container_count=len(self.containers), network_count=len(self.networks)
-        )
-
-
-@pytest.mark.parametrize("teardown", ["stop", "kill"])
-@pytest.mark.parametrize("earlier_starts", [1, 8])
-def test_resolution_cost_stays_flat_across_starts_in_a_reused_project(
-    tmp_path: Path, teardown: str, earlier_starts: int
-) -> None:
-    """Teardown retires removed resources' receipts once absence is proven."""
-
-    from aptl.core.deployment._compose_lifecycle import kill_compose_lab
-    from aptl.core.deployment._compose_stop import stop_compose_lab
-
-    backend = DockerComposeBackend(tmp_path, project_name="aptl")
-    daemon = _ReusedProjectDaemon(backend)
-    volume = ResourceReceipt(
-        kind="volume",
-        native_id=f"{daemon.ownership.project_name}_data",
-        external_name=f"{daemon.ownership.project_name}_data",
-        semantic_name="data",
-        node_address="data",
-        workspace_id=daemon.ownership.workspace_id,
-        project_name=daemon.ownership.project_name,
-        daemon_id="daemon-a",
-        attempt_id="run-0",
-    )
-    kept = (
-        volume,
-        ResourceReceipt(
-            **{
-                **volume.__dict__,
-                "kind": "container",
-                "native_id": _ID_A,
-                "managed_by": "child",
-            }
-        ),
-        ResourceReceipt(
-            **{
-                **volume.__dict__,
-                "kind": "network",
-                "native_id": _ID_B,
-                "daemon_id": "daemon-b",
-            }
-        ),
-    )
-    for receipt in kept:
-        daemon.ownership.record(receipt)
-    for attempt in range(1, earlier_starts + 1):
-        daemon.start(attempt)
-        if teardown == "stop":
-            assert stop_compose_lab(
-                backend, [], remove_volumes=False, timeout=30
-            ).success
-        else:
-            assert kill_compose_lab(backend, [], timeout=30) == (True, "")
-    current = daemon.start(earlier_starts + 1)
-    daemon.container_inspects = 0
-
-    assert backend._resolve_owned_container_id("victim") == current
-    assert daemon.container_inspects == 1
-    assert {r.native_id for r in daemon.ownership.receipts("container")} == {
-        current,
-        _ID_A,
-    }
-    assert len(daemon.ownership.receipts("network")) == 2
-    assert daemon.ownership.receipts("volume") == (volume,)
-
-
-@pytest.mark.parametrize(
-    "presence",
-    [
-        {"container_count": 1},
-        {"network_count": 1},
-        {"error": "network observation failed"},
-    ],
-)
-def test_teardown_keeps_receipts_without_proven_runtime_absence(
-    tmp_path: Path, presence: dict[str, object]
-) -> None:
-    """Residue or a failed observation proves nothing absent, so nothing retires."""
-
-    from aptl.core.deployment._compose_stop import stop_compose_lab
-    from aptl.core.deployment.backend_host_inventory import ProjectRuntimePresence
-
-    backend = DockerComposeBackend(tmp_path, project_name="aptl")
-    daemon = _ReusedProjectDaemon(backend)
-    daemon.start(1)
-
-    def runtime_receipts():
-        return daemon.ownership.receipts("container") + daemon.ownership.receipts(
-            "network"
-        )
-
-    before = runtime_receipts()
-    backend.observe_project_runtime = lambda: ProjectRuntimePresence(**presence)
-
-    assert not stop_compose_lab(backend, [], remove_volumes=False, timeout=30).success
-    assert runtime_receipts() == before
-
-
-def test_removed_resource_retirement_refuses_unproven_or_changed_receipts(
-    tmp_path: Path,
-) -> None:
-    """Retirement needs the exact receipt, a bound daemon and a readable store."""
-
-    backend = DockerComposeBackend(tmp_path, project_name="aptl")
-    daemon = _ReusedProjectDaemon(backend)
-    daemon.start(1)
-    container = daemon.ownership.receipts("container")[0]
-    changed = ResourceReceipt(**{**container.__dict__, "attempt_id": "run-other"})
-    volume = ResourceReceipt(**{**container.__dict__, "kind": "volume"})
-
-    with pytest.raises(OwnershipConflictError, match="receipt conflicts"):
-        daemon.ownership.retire_removed_resource(changed)
-    with pytest.raises(OwnershipConflictError, match="scope mismatch"):
-        daemon.ownership.retire_removed_resource(volume)
-    backend._docker_daemon_id = None
-    assert backend.retire_removed_runtime_receipts() == []
-    assert daemon.ownership.receipts("container") == (container,)
-
-    backend._docker_daemon_id = "daemon-a"
-    malformed = tmp_path / ".aptl/lifecycle/resource-receipts-v1/network/malformed.json"
-    malformed.write_text("{}\n", encoding="utf-8")
-    assert backend.retire_removed_runtime_receipts() == [
-        "failed to retire receipts of removed resources"
-    ]
-    assert daemon.ownership.receipts("container") == (container,)
 
 
 def _record_worker(

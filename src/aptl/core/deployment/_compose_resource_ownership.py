@@ -3,7 +3,8 @@
 Names and Docker labels are discovery hints.  Authority comes from an
 owner-only, append-only receipt for the daemon-issued native identifier, bound
 to one workspace, effective project namespace, daemon, and start attempt.
-Teardown retires a receipt only after it has proven the native object absent.
+Cleanup retires a receipt only after it has proven the native object absent
+and retained the receipt in the attempt evidence.
 """
 
 from __future__ import annotations
@@ -214,13 +215,16 @@ class WorkspaceOwnership:
         Docker never reissues a container or network ID, so the receipt of a
         removed object authorizes nothing. Keeping it would cost every later
         resolution of the same name one more inspect, start after start.
-        The caller must first prove native absence on the receipt's daemon;
-        this method rechecks the exact receipt bytes and removes only its
+        The caller must first prove native absence on the receipt's daemon and
+        retain the receipt in the attempt evidence. A recorded child receipt
+        stays, because the recording store uses it as the completion record.
+        This method rechecks the exact receipt bytes and removes only its
         contained file.
         """
 
         if (
             receipt.kind not in {"container", "network"}
+            or receipt.managed_by == "child"
             or receipt.workspace_id != self.workspace_id
             or receipt.project_name != self.project_name
         ):
