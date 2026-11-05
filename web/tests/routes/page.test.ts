@@ -33,8 +33,8 @@ const startLab = vi.fn();
 const stopLab = vi.fn();
 const killLab = vi.fn();
 
-vi.mock('$lib/stores/lab', () => ({ labStatus, labLoading, refreshLabStatus }));
-vi.mock('$lib/api', () => ({ startLab, stopLab, killLab }));
+vi.mock('#lib/stores/lab.ts', () => ({ labStatus, labLoading, refreshLabStatus }));
+vi.mock('#lib/api.ts', () => ({ startLab, stopLab, killLab }));
 
 async function renderPage(
 	data: { scenarios: ScenarioSummary[]; scenariosError: boolean } = {
