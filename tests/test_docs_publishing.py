@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shlex
 
 import yaml
 
@@ -11,8 +12,45 @@ import yaml
 ROOT = Path(__file__).parents[1]
 
 
+def test_reader_routes_keep_real_pages_and_home() -> None:
+    text = (ROOT / "mkdocs.yml").read_text(encoding="utf-8").replace(
+        "!!python/name:pymdownx.superfences.fence_code_format",
+        "'pymdownx.superfences.fence_code_format'",
+    )
+    nav = yaml.safe_load(text)["nav"]
+    routes = {key: value for entry in nav for key, value in entry.items()}
+    assert routes["Home"] == "index.md"
+    def check_targets(entries: list[dict]) -> None:
+        for entry in entries:
+            for target in entry.values():
+                if isinstance(target, str):
+                    assert (ROOT / "docs" / target).is_file(), target
+                else:
+                    check_targets(target)
+
+    for route in ("Tutorials", "How-to guides", "Reference", "Explanation"):
+        assert routes[route]
+        check_targets(routes[route])
+
+
 def _yaml(relative_path: str) -> dict[str, object]:
     return yaml.safe_load((ROOT / relative_path).read_text(encoding="utf-8"))
+
+
+def test_docs_lane_runs_targeted_behavior_checks_without_runtime_selection() -> None:
+    docs = _yaml(".github/workflows/checks.yml")["jobs"]["docs"]
+    commands = [
+        (step, shlex.split(step["run"]))
+        for step in docs["steps"] if "run" in step
+    ]
+    tests = [(step, args) for step, args in commands if args[:3] == ["python", "-m", "pytest"]]
+    assert len(tests) == 1
+    step, args = tests[0]
+    assert "if" not in step
+    assert set(args[4:]) == {
+        "tests/test_documentation_checks.py", "tests/test_docs_publishing.py",
+        "tests/test_docs_user_journey.py", "tests/test_scenario_pack_ownership_contract.py",
+    }
 
 
 def test_read_the_docs_reuses_the_strict_canonical_mkdocs_build() -> None:

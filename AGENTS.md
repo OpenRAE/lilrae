@@ -126,6 +126,19 @@ end-to-end loop. Summary for agents working in this repo:
 
 ## Workflow Notes
 
+### Documentation
+
+Use the shared user-level `documentation` skill for documentation changes.
+Select a Diataxis purpose from the reader's task. Verify technical claims
+against code, configuration, and supported interfaces. Preserve technical meaning.
+
+Follow [the documentation guide](docs/contributing-documentation.md) for
+STE limits, explicit-path checks, source records, and migration assignments.
+Record source paths, revision, checks, and corrected differences in the PR.
+Keep the skill outside repository version control. Keep routine edits small.
+
+### Delivery
+
 - One issue = one PR. The issue's delivery PR must address all acceptance
   criteria, including code, documentation, and tests. Update an existing PR
   instead of splitting the issue across multiple PRs. If an issue is too large,

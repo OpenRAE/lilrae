@@ -40,19 +40,25 @@ keep their standard names. They can link to the relevant reader route.
 
 ## Writing and verification
 
-Use the existing Vale installation and add the upstream
-[write-good package](https://github.com/vale-cli/write-good). It has an MIT
-license and supplies checks for passive voice and wordiness. Pin its source
-revision. Check both a fresh style install and an existing Google style cache.
-Do not add a custom tool or skill. Use existing contribution and agent guidance
-to give agents the writing and verification steps.
+Keep the existing Vale installation and Google error checks.
+Add the MIT-licensed [ste-cli v0.10.1](https://github.com/TudorAndrei/ste-cli/tree/v0.10.1).
+Pin release checksums in `tools/install-ste.sh`. Use its upstream sentence-length,
+paragraph-length, and contraction rules. Disable Google contraction suggestions.
+Do not add write-good or another passive-voice gate.
 
-Vale assists the writer. It does not establish Diataxis or full
+Use one shared user-level `documentation` skill for Claude Code and Codex.
+Issue #1664 explicitly authorizes this skill. Keep one canonical copy outside
+repository version control and link both clients to it.
+Do not add a custom checker, remote analyzer, or dictionary-import pipeline.
+
+The tools assist the writer. They do not establish Diataxis or full
 [ASD-STE100](https://www.asd-ste100.org/) conformance. Review reader purpose,
 approved words, sentence limits, active voice, and technical terms separately.
 Use the official STE writing rules and dictionary. Do not copy the copyrighted
 dictionary into this repository. Keep code, command names, and literal output
-exact. Record technical names without changing the names used by the code.
+exact.
+
+Record technical names without changing the names used by the code.
 
 Every issue that changes documentation has this acceptance criterion:
 **The documentation is rewritten to conform to ASD-STE100 Simplified Technical
@@ -63,16 +69,19 @@ corrected differences in the delivery PR.
 Run Vale on changed documents during the edit. Run only fast staged checks in
 pre-commit. CI owns whole-tree prose checks and the strict MkDocs build.
 Behavior tests and lab exercises run only in CI or an approved isolated VM.
+
 Reuse the existing publishing, navigation, and interface correspondence tests.
 Update them when the documented behavior or routes change. Do not add tests
 that only repeat a sentence from a document.
 
-Keep current Google error checks. Expose the selected write-good diagnostics
-for changed prose without making old corpus warnings block the first tooling
-PR. Review and resolve those diagnostics during each rewrite. The last issue
-checks the full corpus. Amend
-[ADR-038](../adrs/adr-038-docs-style-lint-and-published-site.md) when the tooling
-and final policy change.
+Report legacy STE findings in CI during migration. Require rewritten sections
+to pass the selected rules. `tools/ste-lint.sh` uses explicit paths and
+`--fail-over 0`. Add finished pages to `.ste-required.txt` as each rewrite ships.
+Check partial rewrites through standard input.
+
+Use [the documentation guide](../contributing-documentation.md) for editing commands.
+[ADR-038](../adrs/adr-038-docs-style-lint-and-published-site.md) records the local
+and CI boundaries. The final issue checks the full corpus and assignment register.
 
 ## Records and generated material
 
@@ -99,6 +108,9 @@ Each row produces one complete delivery PR. A row owns any pages it creates
 when it splits its source material, even when those pages use another form.
 The tooling PR records exact page assignments within these scopes. The final
 PR checks for omissions and documentation added during the migration.
+
+The [assignment register](documentation-assignments.md) lists exact page and
+mixed-section ownership, source documentation, and generated sources.
 
 | Issue | Owned content | Result |
 | --- | --- | --- |
@@ -145,4 +157,4 @@ Read each issue's `milestone` and `body` fields from the issue API too.
 - [Diataxis compass](https://diataxis.fr/compass/)
 - [Diataxis incremental adoption guidance](https://diataxis.fr/how-to-use-diataxis/)
 - [ASD-STE100 official source](https://www.asd-ste100.org/)
-- [Vale write-good source and license](https://github.com/vale-cli/write-good)
+- [ste-cli source and MIT license](https://github.com/TudorAndrei/ste-cli/tree/v0.10.1)
