@@ -87,6 +87,7 @@ An adapter can retain its detached inputs without changing the admitted executio
 
 Generate runtime-owned parameters before sealing the plan.
 Use `resolve_family_runtime_parameters(bundle, target)` from `aptl.backends.scenario_runtime_parameters` when the adapter supplies those values.
+The resolver admits the source family with `admit_family_source` before it compares the family digest with the target.
 The caller must include them in RAES admission and record their binding provenance.
 LilRAE does not merge generated values into an already sealed snapshot.
 Additional parameters on sealed trial admission cause `family-trial-parameter-collision`.
