@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
-import { ApiError, getScenario } from '$lib/api';
-import type { ScenarioDetail } from '$lib/types';
+import { ApiError, getScenario } from '#lib/api.ts';
+import type { ScenarioDetail } from '#lib/types.ts';
 
 /**
  * Load the scenario-detail workbench projection for `/scenarios/[id]`.

@@ -17,7 +17,7 @@
  * - **Reset** — `resetPreferences()` returns every field to its default.
  *
  * Reading/writing storage and applying document effects are guarded on
- * `globalThis` (mirroring `$lib/session`) so the module is import-safe under SSR
+ * `globalThis` (mirroring `#lib/session.ts`) so the module is import-safe under SSR
  * and in tests.
  */
 import { get, writable } from 'svelte/store';
