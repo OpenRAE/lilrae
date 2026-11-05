@@ -604,7 +604,9 @@ pydantic-core==2.46.4 \
     --hash=sha256:e846ae7835bf0703ae43f534ab79a867146dadd59dc9ca5c8b53d5c8f7c9ef02 \
     --hash=sha256:f99626688942fb746e545232e7726926f3be91b5975f8b55327665fafda991c7 \
     --hash=sha256:fc3e9034a63de20e15e8ade85358bc6efc614008cab72898b4b4952bea0509ff
-    # via pydantic
+    # via
+    #   lilrae
+    #   pydantic
 pygments==2.20.0 \
     --hash=sha256:6757cd03768053ff99f3039c1a36d6c0aa0b263438fcab17520b30a303a82b5f \
     --hash=sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176

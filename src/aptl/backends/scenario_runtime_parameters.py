@@ -27,13 +27,16 @@ def resolve_family_runtime_parameters(
 ) -> Mapping[str, object] | None:
     """Generate runtime bindings for the caller to include in the sealed plan."""
 
-    from aptl.backends.scenario_family import select_family_provider
-    from raes import canonical_sdl_digest, parse_sdl_file
+    from aptl.backends.scenario_family import (
+        admit_family_source,
+        select_family_provider,
+    )
+    from raes import canonical_sdl_digest
 
     try:
         if bundle.trial is not None or bundle.pack_identity != target.pack:
             raise ValueError("family-context-mismatch")
-        family = parse_sdl_file(bundle.sdl_path)
+        family = admit_family_source(bundle.sdl_path)
         if (
             family.name != target.family_id
             or canonical_sdl_digest(family).value != target.family_digest

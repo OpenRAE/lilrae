@@ -67,7 +67,7 @@
       "asset_id": "mcp-indexer-build",
       "kind": "mcp-artifact",
       "source": "mcp/mcp-indexer/build/index.js",
-      "sha256": "11014137cc5f31553cf9a7e104c0e230dbe849b16fcbb52c6c15c15f03820ccb"
+      "sha256": "a336fa7be5e41ca091afb5fc7ae177a3442d5e55fa512d7078581ee9e5080696"
     },
     {
       "asset_id": "mcp-indexer-dependencies",
