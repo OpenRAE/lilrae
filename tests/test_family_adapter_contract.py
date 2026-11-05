@@ -829,6 +829,90 @@ def test_family_runtime_parameters_are_copied_before_sealing(monkeypatch, family
         resolve_family_runtime_parameters(sealed_bundle, trial.target)
 
 
+_NORMALIZED_FAMILY = """name: family-n
+nodes:
+  primary: {type: compute, resources: {ram: 1 GiB, cpu: 1}}
+realization:
+  constraints:
+  - field_pointer: /nodes/primary
+    concern: compute-substrate
+    posture: exact
+    domain: {kind: exact, value: virtual-machine}
+"""
+
+
+@pytest.fixture
+def normalized_family(tmp_path, monkeypatch):
+    """An import-free family whose parsed and admitted digests differ (#1676)."""
+    from raes import admit_scenario_family, canonical_sdl_digest, parse_sdl_file
+    from aptl.backends import scenario_family as contract
+    from aptl.core.scenario_bundle import ScenarioBundle, ScenarioSourceKind
+
+    sdl = tmp_path / "family.yaml"
+    sdl.write_text(_NORMALIZED_FAMILY)
+    parsed = parse_sdl_file(sdl)
+    admitted = canonical_sdl_digest(admit_scenario_family(parsed)).value
+    assert canonical_sdl_digest(parsed).value != admitted
+    target = QualifiedFamilyTarget(PACK, "family-n", admitted, BACKEND)
+    other = replace(target, family_digest="sha256:" + "c" * 64)
+    calls = []
+
+    def entry(qualified, result):
+        provider = _provider(qualified)
+        provider.extension_api_version = "1"
+        provider.provider_id = f"provider-{len(calls)}-{result}"
+        provider.resolve = lambda bundle: calls.append(result) or {"selected": result}
+        return SimpleNamespace(
+            name=PACK.pack_id, load=lambda: provider,
+            dist=SimpleNamespace(name="example-adapter", version="1.0", requires=None),
+        )
+
+    entries = [entry(other, "other"), entry(target, "exact")]
+    monkeypatch.setattr(contract.metadata, "entry_points", lambda **kw: entries)
+    bundle = ScenarioBundle(
+        PACK.pack_id, tmp_path, sdl, ScenarioSourceKind.ENV_PACK, PACK
+    )
+    return bundle, target, calls
+
+
+def test_family_runtime_parameters_admit_normalized_family(normalized_family):
+    from aptl.backends.scenario_runtime_parameters import (
+        resolve_family_runtime_parameters,
+    )
+
+    bundle, target, calls = normalized_family
+    assert resolve_family_runtime_parameters(bundle, target) == {"selected": "exact"}
+    assert calls == ["exact"]
+
+
+@pytest.mark.parametrize("change", [
+    "source", "family_id", "family_digest", "pack", "trial",
+])
+def test_family_runtime_parameters_refuse_mismatch_before_provider(
+    normalized_family, change
+):
+    from aptl.backends.scenario_runtime_parameters import (
+        resolve_family_runtime_parameters, RuntimeParameterProviderError,
+    )
+
+    bundle, target, calls = normalized_family
+    if change == "source":
+        bundle.sdl_path.write_text(_NORMALIZED_FAMILY.replace("cpu: 1", "cpu: 2"))
+    elif change == "family_id":
+        target = replace(target, family_id="family-other")
+    elif change == "family_digest":
+        target = replace(target, family_digest="sha256:" + "d" * 64)
+    elif change == "pack":
+        bundle = replace(bundle, pack_identity=replace(PACK, pack_version="1.0.1"))
+    else:
+        bundle = replace(bundle, trial=SimpleNamespace(target=target))
+    with pytest.raises(
+        RuntimeParameterProviderError, match="^family-runtime-parameters-invalid$"
+    ):
+        resolve_family_runtime_parameters(bundle, target)
+    assert calls == []
+
+
 def test_family_runtime_receives_trial_and_scoped_operations(family_input):
     from aptl.backends.scenario_family import FamilyTrialInput, admit_family_trial
     from aptl.backends.scenario_startup import (
