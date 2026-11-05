@@ -1,10 +1,12 @@
 # APP-1 Appliance Boundary Materialization Preflight
 
-**Scope update (2026-09-20):** APP-1 internal security review/implementation is
-tracked in #1127, not a #1022 delivery gate. Current seats use the explicit
+**Scope update (2026-10-31):** #1127 implements APP-1 seat-component
+protection as `aptl.appliance-boundary/v3`. V2 seats retain the explicit
 [ADR-060 VM-only contract](../adrs/adr-060-vm-only-seat-containment.md).
-The inner-boundary guidance below applies to that follow-up, not as permission
-to alter ordinary TechVault traffic in VM-only seats.
+The [#1127 seat-component protection preflight](../architecture/issue-1127-seat-component-protection-preflight.md)
+supersedes the three-zone guidance below for current seat implementation. The
+older material remains useful history and generic APP-1 context, but it is not
+permission to zone the range or alter ordinary TechVault traffic.
 
 This note is the architecture preflight for APP-1 / issues #822 and #1022. It narrows
 [ADR-049](../adrs/adr-049-sealed-disposable-lab-appliance.md) for boundary
@@ -259,13 +261,12 @@ scope; this section constrains their use of APP-1.
 
 ### Preserve identity meanings and evidence provenance
 
-- `seat/lifecycle.py`, `core/lab.py`, and
-  `workbench/guest_binding.py` currently populate or compare `raes_plan_digest`
-  with `participant_routes_digest`. Routes and the admitted infrastructure plan
-  are different artifacts. Bind the actual admitted plan identity through the
-  existing release/launch/boundary contracts; do not relabel one digest or
-  recompute a second plan. Version incompatible contracts and update all
-  producers, readers, signatures, fixtures, and qualification evidence together.
+- At the source-inspection baseline, `seat/lifecycle.py`, `core/lab.py`, and
+  `workbench/guest_binding.py` populated or compared `raes_plan_digest` with
+  `participant_routes_digest`. Routes and the admitted infrastructure plan are
+  different artifacts. Issue #1127 now carries them separately through the
+  release, launch, and boundary contracts; later work must preserve that split
+  rather than relabel one digest or recompute a second plan.
 - The launcher uses the physical-host boot ID; guest startup and
   `GuestAdmission` use the guest boot ID in the same boundary field. Keep host
   boot, guest boot, overlay instance/generation, process start identity, and

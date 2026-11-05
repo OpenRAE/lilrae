@@ -69,9 +69,9 @@ def test_navigation_puts_operator_tasks_before_design_records() -> None:
     nav = yaml.safe_load(mkdocs)["nav"]
     top_level = [next(iter(item)) for item in nav]
 
-    assert top_level[:4] == ["Home", "Lab Guide", "Interfaces", "Operations"]
-    assert top_level.index("Lab Guide") < top_level.index("Architecture")
-    assert top_level.index("Interfaces") < top_level.index("Decisions")
+    assert top_level[:4] == ["Home", "Tutorials", "How-to guides", "Reference"]
+    assert top_level.index("How-to guides") < top_level.index("Explanation")
+    assert top_level.index("Reference") < top_level.index("Decisions")
 
 
 def test_home_links_directly_to_the_complete_first_time_journey() -> None:

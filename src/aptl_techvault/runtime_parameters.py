@@ -6,17 +6,14 @@ import secrets
 from collections.abc import Mapping
 
 from aptl.backends.scenario_runtime_parameters import EXTENSION_API_VERSION
-from aptl.backends.raes_runtime_attestation import (
-    TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST,
-)
 from aptl.core.scenario_bundle import ScenarioBundle
 
 from aptl_techvault.pack_identity import (
+    STUDY_PACK_SET_DIGEST,
     TECHVAULT_PACK_SET_DIGEST,
     TECHVAULT_PACK_VERSION,
 )
 
-STUDY_PACK_SET_DIGEST = TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST
 _FLAG_HOSTS = ("victim", "workstation", "webapp", "fileshare", "ad")
 
 

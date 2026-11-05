@@ -1,11 +1,26 @@
 # Lab Architecture
 
+- [Diataxis adoption](diataxis-adoption.md)
+
+- [Required trial readiness](exp-011-resource-readiness-design.md)
+- [Issue #753 readiness preflight](exp-011-resource-readiness-preflight.md)
+
+- [Participant request manifests](participant-request-manifests.md)
+- [Issue #1419 participant manifest preflight](issue-1419-participant-manifests-preflight.md)
+- [Issue #1420 per-trial participant configuration preflight](issue-1420-trial-participant-configuration-preflight.md)
+- [Trial participant configuration](trial-participant-configuration.md)
+- [Issue #1418 Participant MCP Action Admission](issue-1418-participant-tool-admission-preflight.md)
+- [Participant action and control architecture assessment](participant-tool-admission.md)
+- [Participant action enforcement](participant-action-enforcement.md)
+- [Issue #1504 Managed OpenCode participants](issue-1504-managed-opencode-preflight.md)
+- [Managed OpenCode design](managed-opencode.md)
+
 ## Network Topology
 
 ```mermaid
 flowchart TD
     subgraph "Host System"
-        H[Host Ports<br/>443, 2023, 2024, 8443, 9000, 9001, 9200, 55000, ...]
+        H[Host Ports<br/>443, 2023, 2024, 8443, 9200, 55000, ...]
     end
 
     subgraph "Security Network 172.20.0.0/24"
@@ -13,9 +28,7 @@ flowchart TD
         WD[Wazuh Dashboard<br/>172.20.0.11]
         WI[Wazuh Indexer<br/>172.20.0.12]
         MISP[MISP<br/>172.20.0.16]
-        TH[TheHive<br/>172.20.0.18]
         SHUF[Shuffle SOAR<br/>172.20.0.20/.21]
-        CTX[Cortex<br/>172.20.0.22]
         SUR[Suricata IDS<br/>172.20.0.50]
         R[Reverse Engineering<br/>172.20.0.27]
     end
@@ -65,7 +78,6 @@ flowchart TD
     MCP --> WI
     MCP --> R
     MCP --> MISP
-    MCP --> TH
     MCP --> SHUF
     MCP --> SUR
 ```
@@ -80,8 +92,6 @@ flowchart TD
 | aptl-suricata | security, dmz, internal | 172.20.0.50 | Network IDS |
 | aptl-misp | security | 172.20.0.16 | Threat intelligence |
 | aptl-misp-web | Shares the `aptl-misp` network namespace | 172.20.0.16 | MISP HTTPS web tier |
-| aptl-thehive | security | 172.20.0.18 | Case management |
-| aptl-cortex | security | 172.20.0.22 | Automated enrichment |
 | aptl-shuffle-backend | security | 172.20.0.20 | SOAR backend |
 | aptl-shuffle-frontend | security | 172.20.0.21 | SOAR frontend |
 | aptl-webapp | dmz, internal | 172.20.1.20 | Vulnerable web app |
@@ -105,8 +115,6 @@ flowchart TD
 | 2024 | aptl-operator-ssh-soc-workstation, relaying to soc-workstation:22 | Operator SSH to the SOC workstation |
 | 3443, 3001 | aptl-shuffle-frontend | Shuffle SOAR UI |
 | 8443 | aptl-misp:443 | MISP UI |
-| 9000 | aptl-thehive:9000 | TheHive UI |
-| 9001 | aptl-cortex:9001 | Cortex UI |
 | 9200 | aptl-wazuh-indexer:9200 | OpenSearch API |
 | 55000 | aptl-wazuh-manager:55000 | Wazuh API |
 
@@ -158,7 +166,6 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 
 - Suricata: Network IDS on all zones
 - MISP: Threat intelligence and IOC feeds
-- TheHive + Cortex: Case management and enrichment
 - Shuffle: SOAR playbooks
 
 **Lab Environment:**
@@ -174,6 +181,7 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 
 ## Preflights
 
+- [Issue #1421 RPT Capture](issue-1421-rpt-capture-preflight.md)
 - [Issue #1510 Code Quality Architecture Preflight](issue-1510-code-quality-preflight.md)
 - [Issue #1510 Code Quality Architecture Design](issue-1510-code-quality-design.md)
 - [Issue #1465 Released Structural Factorial Experiment Tuple](issue-1465-released-experiment-tuple-preflight.md)
@@ -191,6 +199,7 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 - [Issue #1413 Configured Pack Source](issue-1413-configured-pack-source-preflight.md)
 - [Issue #955 Generic Systemd Substrate Privilege](issue-955-systemd-substrate-privilege-preflight.md)
 - [Issue #958 Execution Boundary](issue-958-execution-boundary-preflight.md)
+- [Native Docker Range Network Policy](issue-968-native-network-policy.md)
 - [Issue #601 Participant Demonstration](issue-601-participant-demonstration-preflight.md)
 - [Issue #851 First-Time User Documentation](issue-851-first-time-user-docs-preflight.md)
 - [Issue #880 TechVault Env-Pack Consumption](issue-880-techvault-env-pack-consumption-preflight.md)
@@ -203,6 +212,10 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 - [Issue #1002 Wazuh API TLS Warm-Up](issue-1002-wazuh-api-tls-warmup-preflight.md)
 - [Issue #1000 Partial Boot And Manual Release QA](issue-1000-manual-release-qa-preflight.md)
 - [Issue #992 Backend Observability Ownership](issue-992-backend-observability-ownership-preflight.md)
+- [Issue #1017 TechVault Bridge Retirement](issue-1017-techvault-bridge-retirement-preflight.md)
+- [Issue #1017 Native Runtime Attestation Design](issue-1017-native-runtime-attestation-design.md)
+- [Issue #1603 Released RAES Dependencies](issue-1603-raes-11-module-locations-preflight.md)
+- [Issue #1603 Released Module Adoption Design](issue-1603-released-module-design.md)
 - [Issue #974 Shuffle Worker Docker And Image Realization](issue-974-shuffle-worker-docker-images-preflight.md)
 - [Issue #934 APTL-To-LilRAE Rename Boundary](issue-934-rename-boundary-preflight.md)
 - [Issue #592 Scenario-Pack Terminology](issue-592-scenario-pack-terminology-preflight.md)
@@ -237,3 +250,5 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 - [Issue #823 Versioned Disposable Lab Appliance](issue-823-versioned-disposable-appliance-preflight.md)
 - [Issue #824 Kiosk Launcher, Reset, And Recovery](issue-824-kiosk-launcher-reset-recovery-preflight.md)
 - [Issue #1022 Appliance Seat Delivery](issue-1022-appliance-seat-delivery-preflight.md)
+- [Issue #1127 Seat Component Protection](issue-1127-seat-component-protection-preflight.md)
+- [Issue #1127 Seat Component Protection Design](issue-1127-seat-component-protection-design.md)

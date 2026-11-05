@@ -5,11 +5,11 @@
 # major is part of its contract: Dependabot refreshes the digest but never the
 # major (issue #1193). The slim variant omits the full buildpack toolchain
 # (desktop, media, and kernel-header packages) this substrate never uses.
-# Resolve the offline npm cache inputs with the APTL runtime closure, which
-# requires Python 3.14 (RAES 9). Debian 13 does not package it, so this build
+# Resolve the offline npm cache inputs with the APTL runtime closure. APTL and
+# RAES require Python >=3.14,<3.15. Debian 13 does not package it, so this build
 # stage uses the official Python 3.14 image on the same Debian release and
 # hands over only the verified lockfiles and their identity (issue #1407).
-FROM python:3.14-slim@sha256:c3e521df8b2b498a7a682e7e18676771cb80c6b75b8699af886b2d554ce40151 AS npm-cache-input
+FROM python:3.14-slim@sha256:930e1abba7c4e8f96ed93e8012c35d174d7732752731bbd5e8e757d7ec6f3966 AS npm-cache-input
 COPY requirements/runtime.txt /tmp/aptl-runtime-requirements.txt
 COPY src/aptl /tmp/aptl-cache-src/aptl
 COPY src/aptl_techvault /tmp/aptl-cache-src/aptl_techvault
@@ -21,7 +21,7 @@ RUN set -eu; \
         python3 -m aptl_techvault.build_cache \
         > /opt/aptl/npm-cache-input-identity.json
 
-FROM node:22.23.4-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
+FROM node:22.23.4-trixie-slim@sha256:2117f713a417f3aff682ac8f5bc2ebbdf1beed51f36e67ab1e0fd3866b6d2d8f
 RUN test "$(node --version)" = "v22.23.4" \
     && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -118,7 +118,7 @@ COPY --from=npm-cache-input /opt/aptl/npm-cache-input-identity.json \
     /opt/aptl/npm-cache-input-identity.json
 ENV npm_config_cache=/opt/aptl/npm-cache
 RUN set -eu; \
-    for project in aptl-mcp-common mcp-casemgmt mcp-indexer mcp-network \
+    for project in aptl-mcp-common mcp-indexer mcp-network \
         mcp-red mcp-reverse mcp-soar mcp-threatintel mcp-wazuh; do \
         npm --prefix "/opt/aptl/npm-source/$project" ci \
             --include=dev --ignore-scripts --no-audit --no-fund; \

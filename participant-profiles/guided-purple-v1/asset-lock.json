@@ -7,7 +7,7 @@
       "asset_id": "narrative",
       "kind": "project-file",
       "source": "participant-profiles/guided-purple-v1/narrative.json",
-      "sha256": "a1d971348cbf22f97c3f7957ccb1387bef6de7a5f5bd9c031863a7f6959ef8af"
+      "sha256": "592062f843f5fc849e1dff9130eef22f6f8ae7a4b0022dc68fc952bf4133c938"
     },
     {
       "asset_id": "readiness",
@@ -37,13 +37,13 @@
       "asset_id": "workbench-registry",
       "kind": "project-file",
       "source": "src/aptl/workbench/profiles.py",
-      "sha256": "c52c5ab26d211b42e584a7c890400afdda8a0338622ec40449b4d8e0c60d0734"
+      "sha256": "e05919ea0f2604f5aa7e0b2bcc05f752da0f44e5e0c3cd936f3fc974dfc7053c"
     },
     {
       "asset_id": "compose-model",
       "kind": "project-file",
       "source": "docker-compose.yml",
-      "sha256": "e377bfae3f6630a8310c945b3dee610dd24ce7c9fd5049a83b15284c1f320b94"
+      "sha256": "bf40ff69bdf0bfa358de4c2ef84ad7f72f8991c9be6a800a160cacf9cad7110c"
     },
     {
       "asset_id": "mcp-red-build",
@@ -55,7 +55,7 @@
       "asset_id": "mcp-red-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-red/package-lock.json",
-      "sha256": "6b73c871d2d7d3ab27fe05a09930765464601b3e4c7f1fdded8f7cd7fb3abd22"
+      "sha256": "cbae644631a76a59e00e1bfaaa8be9dd0e212150c51f6c4842bc142cf1e7a249"
     },
     {
       "asset_id": "mcp-red-config",
@@ -143,6 +143,18 @@
       "services": [
         "wazuh.dashboard"
       ]
+    },
+    {
+      "asset_id": "workbench-policy",
+      "kind": "project-file",
+      "source": "src/aptl/core/mcp_policy.py",
+      "sha256": "d3d4fae78dc45caf2549d39bf3136309a1dd960988a5f88a2351759f25066826"
+    },
+    {
+      "asset_id": "workbench-catalog",
+      "kind": "project-file",
+      "source": "src/aptl/core/participant_mcp_policy.json",
+      "sha256": "ad109a685e54ad6cddd6bd6bae06a67ed8b82d995651eb0960d7353c0d08328b"
     }
   ]
 }

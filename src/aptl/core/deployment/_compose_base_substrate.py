@@ -223,9 +223,7 @@ class ComposeBaseSubstrateMixin(ComposeGenericBaseImageMixin):
         return (
             running
             and image == run_image_ref
-            and substrate_posture_mismatch(
-                info, spec, volume_prefix=self._project_name
-            )
+            and substrate_posture_mismatch(info, spec, volume_prefix=self._project_name)
             is None
             and realized_environment_matches(info, bindings)
         )
@@ -474,9 +472,9 @@ class ComposeBaseSubstrateMixin(ComposeGenericBaseImageMixin):
     def configure_base_container_networks(self, nodes: tuple[object, ...]) -> None:
         """Bind base-container-materialized nodes to admitted networks before creation."""
 
-        strict = getattr(
-            self, "_appliance_boundary", None
-        ) is not None or "raes" in getattr(self, "_boundary_receipts", {})
+        strict = getattr(self, "_appliance_boundary", None) is not None or bool(
+            {"raes", "native-range"} & getattr(self, "_boundary_receipts", {}).keys()
+        )
         if not strict:
             self._base_networks_by_address = {}
             return
@@ -485,5 +483,8 @@ class ComposeBaseSubstrateMixin(ComposeGenericBaseImageMixin):
             nodes,
             managed,
             self._project_name,
-            appliance_boundary=getattr(self, "_appliance_boundary", None) is not None,
+            appliance_boundary=(
+                getattr(self, "_appliance_boundary", None) is not None
+                or "native-range" in getattr(self, "_boundary_receipts", {})
+            ),
         )

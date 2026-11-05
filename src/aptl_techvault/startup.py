@@ -15,27 +15,26 @@ from aptl.backends.scenario_startup import (
 )
 from aptl.backends.scenario_startup_policy import (
     ScenarioComposeStartupPolicy,
-    StartupHealthDependency,
-    StartupHealthProbe,
 )
 from aptl.backends.scenario_service_policy import (
     ScenarioComposeServicePolicy,
-    ServiceEnvironmentFile,
     ServiceFileMount,
     ServiceContainerNameEnvironment,
 )
-from raes_processor.semantics.realization import CONCERN_PAYLOAD_PATH
 from aptl.core.scenario_bundle import ScenarioBundle
 from aptl_techvault.log_sources import realize_log_sources
 from aptl_techvault.database import realize_database
-from aptl_techvault.redis_acl_observation import observe_redis_app_authorizations
+from aptl_techvault.runtime_readback import (
+    OBSERVED_RUNTIME_CONCERNS,
+    observe_runtime as observe_product_runtime,
+)
 from aptl_techvault.runtime_parameters import (
     TECHVAULT_PACK_SET_DIGEST,
     TECHVAULT_PACK_VERSION,
 )
 from aptl_techvault.account_environment import (
-    SEED_ADMINISTRATOR_KEYS,
     techvault_account_environment,
+    techvault_environment_grants,
 )
 
 
@@ -47,6 +46,7 @@ class TechVaultStartupProvider:
     supported_pack_id = "techvault"
     supported_pack_versions = (TECHVAULT_PACK_VERSION,)
     supported_pack_set_digests = (TECHVAULT_PACK_SET_DIGEST,)
+    observed_runtime_concerns = OBSERVED_RUNTIME_CONCERNS
     # The pack leaves customer-database client authentication open; this is the
     # posture realize_database() applies and verifies (see that module).
     runtime_selections = (
@@ -68,8 +68,8 @@ class TechVaultStartupProvider:
 
         return context.run_operation()
 
-    @staticmethod
-    def resolve(bundle: ScenarioBundle) -> ScenarioStartupPlan:
+    @classmethod
+    def resolve(cls, bundle: ScenarioBundle) -> ScenarioStartupPlan:
         return ScenarioStartupPlan(
             minimum_max_map_count=262144,
             seed_script="scripts/seed-prime.sh",
@@ -86,9 +86,8 @@ class TechVaultStartupProvider:
                 EnvironmentAlias(target="ADMIN_KEY", source="MISP_API_KEY"),
             ),
             environment_fixtures=techvault_account_environment(),
+            environment_grants=techvault_environment_grants(cls.supported_pack_id),
             container_environment=(
-                ContainerEnvironmentBinding("CORTEX_CONTAINER", "aptl-cortex"),
-                ContainerEnvironmentBinding("THEHIVE_CONTAINER", "aptl-thehive"),
                 ContainerEnvironmentBinding("MISP_CONTAINER", "aptl-misp"),
                 ContainerEnvironmentBinding(
                     "SHUFFLE_CONTAINER", "aptl-shuffle-frontend"
@@ -122,13 +121,9 @@ class TechVaultStartupProvider:
                 "MISP_URL",
                 "SHUFFLE_API_KEY",
                 "SHUFFLE_URL",
-                "CORTEX_API_KEY",
-                "THEHIVE_API_KEY",
-                *SEED_ADMINISTRATOR_KEYS,
             ),
             mcp_build_script="mcp/build-all-mcps.sh",
             mcp_server_keys=(
-                McpServerCredentials("aptl-casemgmt", ("THEHIVE_API_KEY",)),
                 McpServerCredentials(
                     "aptl-indexer",
                     (
@@ -158,38 +153,16 @@ class TechVaultStartupProvider:
 
     @staticmethod
     def compose_startup_policy() -> ScenarioComposeStartupPolicy:
-        """Wait for declared stateful dependencies before starting JVM services."""
+        """Add no health probes; TechVault's stateful services declare their own."""
 
-        return ScenarioComposeStartupPolicy(
-            probes=(
-                StartupHealthProbe(
-                    "thehive-cassandra",
-                    ("CMD", "cqlsh", "-e", "describe cluster"),
-                ),
-                StartupHealthProbe(
-                    "thehive-es",
-                    ("CMD", "curl", "-fsS", "http://localhost:9200/_cluster/health"),
-                ),
-                StartupHealthProbe(
-                    "cortex",
-                    ("CMD", "curl", "-fsS", "http://localhost:9001/api/status"),
-                    start_period_seconds=180,
-                ),
-            ),
-            dependencies=(
-                StartupHealthDependency("cortex", "thehive-es"),
-                StartupHealthDependency("thehive", "thehive-cassandra"),
-                StartupHealthDependency("thehive", "thehive-es"),
-                StartupHealthDependency("thehive", "cortex"),
-            ),
-        )
+        return ScenarioComposeStartupPolicy()
 
     @staticmethod
     def compose_service_policy() -> ScenarioComposeServicePolicy:
         """Connect SDL-owned certificate files to upstream image TLS paths.
 
         The pack delivers these generated files at portable locations. The
-        image-specific paths and TheHive Play config belong to this adapter.
+        image-specific paths belong to this adapter.
         """
 
         return ScenarioComposeServicePolicy(
@@ -203,21 +176,6 @@ class TechVaultStartupProvider:
                     "shuffle-frontend",
                     "config/soc_certs/shuffle-frontend/server.key",
                     "/etc/nginx/privkey.pem",
-                ),
-                ServiceFileMount(
-                    "thehive",
-                    "config/soc_certs/thehive/keystore.p12",
-                    "/etc/thehive/keystore.p12",
-                ),
-                ServiceFileMount(
-                    "thehive",
-                    "config/thehive/application.conf",
-                    "/etc/thehive/application.conf",
-                ),
-            ),
-            environment_files=(
-                ServiceEnvironmentFile(
-                    "thehive", "config/soc_certs/thehive/keystore.p12.password"
                 ),
             ),
             container_name_environment=(
@@ -236,22 +194,7 @@ class TechVaultStartupProvider:
             return failures
         return realize_database(backend, nodes)
 
-    @staticmethod
-    def observe_runtime(backend: object, node: object) -> dict[tuple[str, ...], object]:
-        """Corroborate TechVault's generated cache ACL without exposing it."""
-
-        runtime = getattr(node, "runtime", None)
-        container = getattr(node, "container_name", "")
-        if (
-            getattr(node, "name", "") != "misp-redis"
-            or runtime is None
-            or not container
-        ):
-            return {}
-        observed = observe_redis_app_authorizations(backend, container, runtime)
-        if observed is None:
-            return {}
-        return {CONCERN_PAYLOAD_PATH["runtime-app-authorizations"]: observed}
+    observe_runtime = staticmethod(observe_product_runtime)
 
 
 provider = TechVaultStartupProvider()

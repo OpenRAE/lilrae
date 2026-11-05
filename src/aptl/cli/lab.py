@@ -75,7 +75,6 @@ _DESTRUCTIVE_DATA_WARNING = (
     "\n  WARNING: This will destroy all lab data including:\n"
     "    - Wazuh SIEM indexes and configuration\n"
     "    - MISP threat intelligence data\n"
-    "    - TheHive cases and analysis\n"
     "    - Shuffle SOAR workflows\n"
     "    - All container logs and state\n"
 )
@@ -655,7 +654,7 @@ def status(
 _LIVE_GATE_WARNING = (
     "\n  WARNING: the live validation gate runs `lilrae lab stop -v` and then\n"
     "  re-boots the lab through the RAES start path. This DESTROYS all lab\n"
-    "  data (Wazuh/MISP/TheHive/Shuffle volumes). Pass --skip-clean-boot to\n"
+    "  data (Wazuh/MISP/Shuffle volumes). Pass --skip-clean-boot to\n"
     "  validate the already-running lab without destroying it.\n"
 )
 

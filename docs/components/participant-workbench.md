@@ -11,7 +11,7 @@ workbench access to its own exact acquired pack identity.
 | Role | MCP servers | Browser surfaces |
 | --- | --- | --- |
 | `red` | `aptl-red` | Packaged guide and captured Kali command terminal |
-| `blue` | `aptl-indexer`, `aptl-wazuh`, `aptl-network`, `aptl-threatintel`, `aptl-casemgmt`, `aptl-soar` | Guide, Wazuh, TheHive, MISP, Shuffle |
+| `blue` | `aptl-indexer`, `aptl-wazuh`, `aptl-network`, `aptl-threatintel`, `aptl-soar` | Guide, Wazuh, MISP, Shuffle |
 
 `guided-blue` remains available for the historical guided fixture. It is not
 the full-TechVault delivery profile. The Kali surface is a command terminal
@@ -44,6 +44,9 @@ supplies only its configured provider key; guest MCP service credentials never
 enter the agent environment. Users of the **host** Claude Code or Codex CLI keep
 provider authentication in their own host account. Browser agent use is not
 required for the guide, terminal or service browser routes.
+
+Autonomous experiment participants can select [managed OpenCode](../reference/opencode-participants.md) through their installed runtime bindings.
+That selection uses the shared RAES runtime and does not change the browser agent adapter.
 
 ## MCP authority and capture
 

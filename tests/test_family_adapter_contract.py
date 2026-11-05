@@ -348,7 +348,7 @@ def test_family_discovery_requires_all_seams_from_one_distribution(
     )
     entries = _install_family_entries(monkeypatch, trial)
     selections = contract.require_family_capabilities(trial)
-    assert len(selections) == 6
+    assert len(selections) == 5
     assert {selection.distribution for selection in selections} == {"example-adapter"}
     entries.pop()
     with pytest.raises(ValueError, match="^family-provider-missing$"):
@@ -360,7 +360,7 @@ def test_family_discovery_requires_all_seams_from_one_distribution(
     [
         ["lilrae>=999"],
         ["raes-env-packs<6"],
-        ["raes_env_packs>=6.5.1,<7", "raes<10"],
+        ["raes_env_packs>=7.0.0,<8", "raes<10"],
     ],
 )
 def test_family_qualification_rejects_an_excluded_installed_release(
@@ -392,7 +392,7 @@ def test_family_qualification_checks_the_host_declarations(monkeypatch, family_i
         trial,
         requires=["lilrae", "requests>=999", 'raes>=999; extra == "legacy"'],
     )
-    assert len(contract.require_family_capabilities(trial)) == 6
+    assert len(contract.require_family_capabilities(trial)) == 5
 
     declared = metadata.requires
     monkeypatch.setattr(
@@ -554,13 +554,6 @@ def test_startup_planning_and_verifier_receive_same_trial(monkeypatch, family_in
         select_scenario_startup,
         ScenarioStartupPlan,
     )
-    from aptl.backends.scenario_planning_compatibility import (
-        ScenarioPlanningCompatibilityContext,
-        PlanningCompatibilityDecision,
-    )
-    from aptl.backends.scenario_planning_compatibility_discovery import (
-        resolve_scenario_planning_compatibility,
-    )
     from aptl.validation.scenario_verification import (
         VerificationContext,
         ScenarioIdentity,
@@ -589,7 +582,7 @@ def test_startup_planning_and_verifier_receive_same_trial(monkeypatch, family_in
             seen.append(context.trial.snapshot_digest)
             if group == "aptl.scenario_startup":
                 return ScenarioStartupPlan("scripts/seed.sh", ("lab",), ("lab",))
-            return PlanningCompatibilityDecision()
+            raise AssertionError("Unexpected startup capability")
 
         def run(context):
             seen.append(context.trial.snapshot_digest)
@@ -615,12 +608,6 @@ def test_startup_planning_and_verifier_receive_same_trial(monkeypatch, family_in
 
     monkeypatch.setattr(contract.metadata, "entry_points", entries)
     assert select_scenario_startup(bundle).plan.seed_script == "scripts/seed.sh"
-    assert (
-        resolve_scenario_planning_compatibility(
-            ScenarioPlanningCompatibilityContext(PACK, BACKEND, trial)
-        ).provider_id
-        == "example-provider"
-    )
     scenario = ScenarioIdentity(
         "family-a", trial.target.family_digest, "env-pack", "1.0.0"
     )
@@ -628,7 +615,7 @@ def test_startup_planning_and_verifier_receive_same_trial(monkeypatch, family_in
         VerificationContext("run-a", "attempt-a", scenario, BACKEND, trial=trial)
     )
     assert report.status is VerificationStatus.PASSED
-    assert seen == [trial.snapshot_digest] * 3
+    assert seen == [trial.snapshot_digest] * 2
 
 
 def test_bundled_adapter_uses_no_private_core_imports():
@@ -1123,7 +1110,7 @@ def test_family_capture_sources_contain_callback_failures():
     request.capture_selection.contribution.runtime_adapter = SimpleNamespace(
         native_sources=broken
     )
-    with pytest.raises(ValueError, match="^family-capture-sources-invalid$"):
+    with pytest.raises(RuntimeError, match="^family-capture-sources-unavailable$"):
         family_capture_sources(request)
 
     request.capture_selection.contribution.runtime_adapter.native_sources = (
@@ -1281,9 +1268,8 @@ def test_independent_wheels_use_only_public_contract(
         from aptl.core.evidence.outcomes import AcquisitionDisposition
         from aptl.core.runstore import LocalRunStore
         from types import SimpleNamespace
-        from aptl.backends.scenario_planning_compatibility import ScenarioPlanningCompatibilityContext
-        from aptl.backends.scenario_planning_compatibility_discovery import resolve_scenario_planning_compatibility
-        from aptl.backends.scenario_startup import select_scenario_startup, run_scenario_runtime
+        from aptl.backends.scenario_startup import select_scenario_startup, run_scenario_runtime, observe_scenario_runtime_concerns
+        from subprocess import CompletedProcess
         from aptl.core.scenario_bundle import ScenarioBundle, ScenarioSourceKind
         from aptl.validation.scenario_verification import ScenarioIdentity, VerificationContext, VerificationStatus
         from aptl.validation.scenario_verification_discovery import verify_scenario
@@ -1293,12 +1279,26 @@ def test_independent_wheels_use_only_public_contract(
         for value in json.loads(Path(sys.argv[2]).read_text()):
             trial = AdmittedFamilyTrial(target, value['digest'], value['snapshot'].encode())
             selections = require_family_capabilities(trial)
-            assert len(selections) == 6
+            assert len(selections) == 5
             assert {s.distribution for s in selections} == {'lilrae-family-contract-fixture'}
             assert {s.distribution_version for s in selections} == {sys.argv[3]}
             bundle = ScenarioBundle(target.pack.pack_id, Path.cwd(), Path('unused'), ScenarioSourceKind.ENV_PACK, target.pack, trial)
             startup = select_scenario_startup(bundle)
             assert run_scenario_runtime(target.pack, object(), (), selection=startup) == []
+            path = trial.scenario.content['payload'].path
+            class NativeBackend:
+                missing = False
+                def container_exec(self, name, command, *, timeout):
+                    assert name == 'selected-container' and command == ['test', '-f', path] and timeout == 30
+                    return CompletedProcess(command, 1 if self.missing else 0, '', '')
+            native_backend = NativeBackend()
+            native_node = SimpleNamespace(container_name='selected-container', address='provision.node.shared.primary')
+            reading_path = ('spec', 'node', 'runtime', 'filesystem_inventory')
+            readings = observe_scenario_runtime_concerns(target.pack, native_backend, native_node, selection=startup)
+            assert readings[reading_path].value == [{'path': path, 'entry_type': 'file'}]
+            assert readings[reading_path].source.value == 'guest-observed'
+            native_backend.missing = True
+            assert observe_scenario_runtime_concerns(target.pack, native_backend, native_node, selection=startup) == {}
             assert resolve_pack_backend_interaction(PackBackendInteractionContext(target.pack, target.backend, ('nodes.primary',)), trial=trial).operator_groups == ('lab',)
             capture = resolve_scenario_capture(ScenarioCaptureContext(target.pack, target.backend, trial))
             capture_plan = admit_sdl_evidence(trial.scenario, registry=capture.registry)
@@ -1310,7 +1310,6 @@ def test_independent_wheels_use_only_public_contract(
             ))
             assert acquired.disposition is AcquisitionDisposition.SEALED_READY
             assert len(acquired.records) == 1
-            assert resolve_scenario_planning_compatibility(ScenarioPlanningCompatibilityContext(target.pack, target.backend, trial)) is not None
             scenario = ScenarioIdentity(target.family_id, target.family_digest, 'env-pack', target.pack.pack_version)
             report = verify_scenario(VerificationContext('run-a', 'attempt-a', scenario, target.backend, trial=trial))
             assert report.status is VerificationStatus.PASSED

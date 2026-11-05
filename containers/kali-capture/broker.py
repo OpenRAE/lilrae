@@ -604,27 +604,94 @@ def quiesce(runtime_root: Path = _RUNTIME_ROOT) -> None:
         time.sleep(0.1)
 
 
-def stop_session(
-    run_id: str, session_id: str, runtime_root: Path = _RUNTIME_ROOT
-) -> None:
-    """Finalize one registered session without stopping other broker users."""
+_FINALIZE_WAIT_SECONDS = 30.0
+_EXIT_SESSION_MISSING = 3
+_EXIT_SESSION_UNFINISHED = 4
+
+
+class CaptureSessionMissing(LookupError):
+    """The capture root holds no directory for the session."""
+
+
+class CaptureSessionUnfinished(TimeoutError):
+    """The session did not release its registration with final metadata."""
+
+
+def _registration(
+    run_id: str, session_id: str, runtime_root: Path, *, terminate: bool
+) -> Path:
+    """Check the run authority, then signal the registration if requested."""
     validate_id(run_id, "run id")
     validate_id(session_id, "session id")
     with _admission_lock(runtime_root):
         if read_authority(runtime_root)["run_id"] != run_id:
             raise ValueError("capture run authority mismatch")
         path = runtime_root / "sessions" / f"{session_id}.pid"
-        if not path.exists():
-            return  # Already finalized: harvest still verifies metadata exists.
-        try:
-            os.kill(int(path.read_text().strip()), signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-    deadline = time.monotonic() + 30
-    while path.exists():
+        if terminate and path.exists():
+            try:
+                os.kill(int(path.read_text().strip()), signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+    return path
+
+
+def _await_finalized(
+    registration: Path, session_root: Path, wait_seconds: float
+) -> None:
+    """Wait for the session to release its registration with final metadata.
+
+    The broker writes metadata.json before it removes the registration, so
+    metadata.json is the commit marker of a complete session.
+    """
+    deadline = time.monotonic() + wait_seconds
+    while registration.exists():
         if time.monotonic() >= deadline:
-            raise TimeoutError("capture session did not finalize")
+            raise CaptureSessionUnfinished("capture session did not finalize")
         time.sleep(0.1)
+    if not session_root.is_dir():
+        raise CaptureSessionMissing("capture session is missing")
+    if not (session_root / "metadata.json").is_file():
+        raise CaptureSessionUnfinished("capture session has no final metadata")
+
+
+def stop_session(
+    run_id: str,
+    session_id: str,
+    runtime_root: Path = _RUNTIME_ROOT,
+    capture_root: Path = _CAPTURE_ROOT,
+    wait_seconds: float = _FINALIZE_WAIT_SECONDS,
+) -> None:
+    """Finalize one registered session without stopping other broker users."""
+    registration = _registration(run_id, session_id, runtime_root, terminate=True)
+    _await_finalized(
+        registration, capture_root / run_id / "sessions" / session_id, wait_seconds
+    )
+
+
+def await_session(
+    run_id: str,
+    session_id: str,
+    runtime_root: Path = _RUNTIME_ROOT,
+    capture_root: Path = _CAPTURE_ROOT,
+    wait_seconds: float = _FINALIZE_WAIT_SECONDS,
+) -> None:
+    """Wait, without a signal, until one session is complete and final."""
+    registration = _registration(run_id, session_id, runtime_root, terminate=False)
+    _await_finalized(
+        registration, capture_root / run_id / "sessions" / session_id, wait_seconds
+    )
+
+
+def _finalize_session_command(action: str, run_id: str, session_id: str) -> int:
+    """Run one session finalization action and map its outcome to an exit code."""
+    finalize = stop_session if action == "stop-session" else await_session
+    try:
+        finalize(run_id, session_id, _RUNTIME_ROOT, _CAPTURE_ROOT)
+    except CaptureSessionMissing:
+        return _EXIT_SESSION_MISSING
+    except CaptureSessionUnfinished:
+        return _EXIT_SESSION_UNFINISHED
+    return 0
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -634,9 +701,10 @@ def _parser() -> argparse.ArgumentParser:
     activate.add_argument("--run-id", required=True)
     activate.add_argument("--plan-id", required=True)
     activate.add_argument("--binding-id", required=True)
-    stop = subparsers.add_parser("stop-session")
-    stop.add_argument("--run-id", required=True)
-    stop.add_argument("--session-id", required=True)
+    for name in ("stop-session", "await-session"):
+        finalize = subparsers.add_parser(name)
+        finalize.add_argument("--run-id", required=True)
+        finalize.add_argument("--session-id", required=True)
     subparsers.add_parser("status")
     subparsers.add_parser("quiesce")
     subparsers.add_parser("export")
@@ -654,9 +722,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(value, separators=(",", ":")))
         return 0
-    if args.action == "stop-session":
-        stop_session(args.run_id, args.session_id)
-        return 0
+    if args.action in {"stop-session", "await-session"}:
+        return _finalize_session_command(args.action, args.run_id, args.session_id)
     if args.action == "status":
         authority = read_authority()
         try:

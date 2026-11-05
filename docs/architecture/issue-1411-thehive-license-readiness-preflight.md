@@ -1,182 +1,179 @@
 # Issue #1411: TechVault After TheHive Trial Expiry
 
-Status: decided. The owner chose to remove TheHive and Cortex from the TechVault
-SOC stack. [ADR-063](../adrs/adr-063-remove-thehive-and-cortex.md) records the
-decision. This note keeps the preflight investigation and the candidates it
-reviewed. It does not authorize license procurement.
+Status: design preflight, aligned with the accepted owner decision in
+[ADR-063](../adrs/adr-063-remove-thehive-and-cortex.md). Remove TheHive and Cortex;
+TechVault will have no case-management tool. Licensing is no longer the proposed
+remedy. This note adds preservation and qualification boundaries, not an
+implementation plan or evidence that removal has shipped.
 
-## Finding And Decision For Review
+## Finding And Remaining Decision
 
-The supplied observations describe a persistent entitlement failure, not a
-Cortex startup failure. Source inspection supports this chain:
+The supplied observations describe an entitlement failure. Source inspection
+supports the failure chain: `_techvault_native_cortex.py` requires both a fresh
+successful analyzer report and healthy TheHive connector; `CortexEnrichmentSource`
+returns `SOURCE_UNAVAILABLE` without that readback. The capture registration and
+proposition interpreter bind both facts to `cortex-enrichment-readback`.
+`core/lab.py::_step_acquire_required_native_evidence()` requires sealed acquisition
+and successful RAES evidence evaluation before guest readiness publication.
+First boot fails and the host eventually stops the guest through its normal
+failure path. A successful Cortex job, usable case management, fulfilled scenario
+contract, and running VM are different claims.
 
-1. `aptl_techvault/evidence/_techvault_native_cortex.py` executes the exact
-   analyzer, waits for its report, then polls TheHive `/api/v1/status`.
-   Its projection returns no result without a healthy Cortex connector.
-2. `CortexEnrichmentSource` in `evidence/techvault.py` maps that missing result
-   to `CollectorStatus.SOURCE_UNAVAILABLE`. Its validated success payload
-   requires both a fresh successful analyzer report and connector status `OK`.
-3. `capture_registrations.py` explicitly offers both facts against both node
-   references. `capture.py` and `evidence/proposition_truth.py` bind that offer
-   to `cortex-enrichment-readback` and its exact proposition.
-4. `core/lab.py::_step_acquire_required_native_evidence()` requires
-   `SEALED_READY` acquisition and successful RAES evidence evaluation. Guest
-   readiness publication follows these gates. The first-boot service exits on
-   lab-start failure; the host receives no successful readiness response and
-   eventually stops the VM through its existing failure path.
+ADR-063 selects removal with a new authored pack release, tracked there as
+env-packs issue #536, and accepts the loss of the case-management UI in the new
+stack. It does not supply a data-preserving transition for expired
+seats. Its consequence that old cases/jobs become inaccessible must not be read
+as permission to delete their storage. The issue's data-preservation requirement
+still applies. Before implementation of that transition, agree how an already
+failed seat reaches supported operation, how retained data can be restored or
+accessed, and what interrupted-transition recovery guarantees cover. New-image
+success alone cannot close that gap. Do not invent a migration mechanism here.
 
-These are three separate claims: entitlement to use a feature; live service
-and integration behavior; and fulfillment of the admitted scenario/evidence
-contract. None proves the others. A successful Cortex job does not prove
-TheHive can use Cortex. A connector health response does not prove case writes
-or the complete investigation workflow. A running VM or visible desktop does
-not prove scenario readiness.
+Owner decision (2026-10-31): an expired seat moves to the new image through the
+existing seat update, which resets its overlay. Before the reset, an operator
+reads the retained files that they need through `lilrae seat rescue`. No other
+migration path is added. The troubleshooting guide documents this procedure.
 
-Recommend preserving the full TechVault workflow and existing state through
-an operator-approved, vendor-supported entitlement **only if** its terms,
-duration, quotas, instance binding, and offline operation satisfy the supported
-installation lifetime. Do not label an annual renewal a permanent fix. If that
-condition cannot be met, the owner must agree a scenario dependency change
-before implementation. There is no automatic reduced-function fallback.
+No affected VM was inspected. Record its immutable image, installed application
+build, pack/backend identity, and sanitized failure state before claiming an
+observed diagnosis or recovery. The checked-in legacy Compose tag does not
+identify an installed seat. Vendor licensing rationale remains in ADR-063; this
+preflight adds no new entitlement or legal determination.
 
-| Candidate | Review condition |
+## Required Contracts And Security Layers
+
+Paths in the table are relative to `src/` unless qualified otherwise. These are
+existing boundaries the design must pass, not new validators to build.
+
+| Layer and canonical owners | Required passage for the removal design |
 | --- | --- |
-| Activate an appropriate entitlement in the existing installation | Preferred for preserving the full workflow and data. Confirm permitted business/training use, all required features and quotas, per-seat/clone activation, validity period, and operation without runtime portal access. A finite entitlement needs an explicitly accepted renewal/recovery policy; otherwise it does not satisfy the issue's durability outcome. |
-| Change the scenario's licensed dependency | Required alternative if a suitable durable entitlement is unavailable. Review a supported replacement or an explicitly narrower scenario, including case management, Shuffle workflows, participant tools, desktop guidance, evidence meaning, and data compatibility. Cortex-only operation cannot inherit full TechVault qualification. |
+| Pack acquisition and identity: `aptl/core/scenario_bundle.py`, `_pack_staging.py`, env-packs `validate_pack()` / `validate_pack_content_manifest()`, `aptl/utils/pathsafe.py` | Admit the released pack through bounded, no-follow staging and its content manifest. A revised scenario requires a new version/digest qualification in `aptl_techvault/pack_identity.py`. Never edit staged SDL, rewrite hashes, widen compatibility to accept unknown bytes, or fall back to checkout assets. |
+| Semantic admission and native observation: RAES parsing/runtime models, `RuntimeManager`, `aptl/backends/raes_realization_envelope.py`, implementation catalog and `raes_runtime_attestation.py` | Remove nodes, relationships, accounts, artifacts, propositions and evidence demands in the authored pack. Realize and observe that admitted meaning. Keep one RAES runtime owner. Unsupported old/new combinations fail before mutation; deleting a local collector cannot waive an old pack's demand. |
+| Adapter shapes: `aptl/backends/scenario_startup.py`, `_scenario_environment.py`, `scenario_startup_policy.py`, `scenario_service_policy.py`, `scenario_capture_discovery.py`, `participant_desktop.py` | Keep reference resolution, tuple/set types, uniqueness, key bounds, forbidden Docker transport keys, script containment and declared service checks. Remove obsolete account, service, generated-output and capture references together. An account removed from SDL still named by `AccountCredentialFixture` fails startup; dangling desktop refs fail publication. Retain unrelated startup capabilities and native evidence. |
+| Config and environment: `aptl/core/config.py::AptlConfig`, `_credential_sources.py::EnvironmentGrant`, `core/env.py`, deployment `_environment_bindings.py`, `_compose_environment.py`, `_realization_primitives.py::environment_file_line()` | Keep strict non-secret config and explicit pack/consumer grants, classifications, generated dependencies and byte-safe env delivery. Stop supplying removed credentials to seed, capture and MCP consumers. Ambient environment presence grants nothing. Retaining a private old `.env` for restoration does not authorize forwarding its obsolete keys. Environment-name labels detect changed bindings and may trigger container recreation; retention must cover that effect. |
+| Authentication and MCP: `aptl/backends/_raes_participant_transport.py`, `aptl/core/participant_desktop.py`, `aptl/workbench/profiles.py`, common MCP config/tool validation | Remove the case-management server and its advertised tools, credentials, smoke operation and endpoint bindings consistently. Keep native authentication for remaining SOC services and exact participant environment allowlists. Do not repurpose `cases_*` as MISP/Shuffle tools. Any touched operator API still passes `api/deps.py::verify_token`, `WebAuthSettings` and `BFFMiddleware` Host/session/CSRF controls. Seat desktop access remains ADR-061's separate contract. |
+| Secret transport and OS exposure: ADR-029, `aptl/utils/curl_safe.py`, repository `scripts/aptl-env.sh::aptl_curl_config()`, backend stdin execution, `core/credentials.py`, contained/private file helpers | Any retained-service or recovery command keeps secrets out of argv, URLs, shell tracing, Docker command/env dumps, logs and error text. Use protected files/stdin with cleanup. Preserve private `.env`, CA and generated credentials for retained state; do not print or bundle them into migration reports or images. No activation keys, vendor portal automation or new outbound processing are needed. |
+| Runtime ownership, TLS and network: `DeploymentBackend`, admitted publications/ACLs, `techvault_native_support.py::published_url()` / generated CA resolution, `core/soc_ca.py`, seat boundary policy | Operate only on verified project-owned guest resources through the selected local/SSH backend. Remove obsolete publications and certificate consumers without rotating the shared CA or breaking MISP/Shuffle trust. Keep remaining TLS verification and VM/host containment. No host Docker socket, daemon-wide prune, extra public recovery port or TLS bypass. Changed signed image/config bytes require normal admission and qualification. |
+| Evidence shape and persistence: `SourceResult`, `CollectorStatus`, `CollectorRegistration`, `CapturePlan`, evidence coordinator / `_persist.py`, `ExperimentEvidenceRecordModel`, `LocalRunStore`, TechVault `evidence/proposition_truth.py` | Remove the obsolete demand and its offer/source/interpreter only for the newly qualified contract. Remaining sources keep exact scopes, source refs, windows, requiredness, quotas, redaction and sealing. Missing/malformed/stale/unauthorized evidence cannot become `OK`, `EMPTY_OK` or true. Preserve old records, hashes, provenance and contract identity; do not reinterpret old runs under the new pack or rewrite sealed evidence. Best-effort `core/collectors.py` is not required capture. |
+| Errors and observability: provider errors, RAES `Diagnostic`, `LabResult` / `StartupDiagnostic`, `SeatLauncherError`, `get_logger()`, Python/TypeScript shared `redact()` | Report bounded failure codes and safe identity/status context through existing envelopes and CLI/API/web projections. Never expose native response bodies, credentials, validation inputs, commands or raw exception text. `source-unavailable` alone does not prove license expiry. Retained MCP APIs reuse common `api-handlers.ts` validation and redacted/bounded failures; no new exception tree, log-text classifier or parallel readiness report. |
+| Guest/host readiness: `aptl/core/lab.py`, repository `appliance/guest/aptl-appliance-first-boot`, `aptl/appliance/seat/readiness.py` and lifecycle | Publish readiness only after the remaining admitted native evidence and boundary checks pass. Keep fresh nonce, seat, instance, generation and descriptor checks, gateway checks and failure cleanup. A desktop, removed container or cached success marker proves no scenario readiness. No optional-evidence flag or longer timeout can repair the old contract. |
 
-Before agreement, record which candidate is selected, its supported lifetime
-and connectivity, who supplies/maintains any entitlement, and how an already
-failed preserved seat is recovered without reset. Do not purchase, register,
-upload an instance challenge, or contact the vendor on the user's behalf as
-part of this preflight.
+## Whole-Repository Dependencies And Reuse
 
-## Vendor Evidence And Remaining Uncertainty
+The canonical service list is the acquired pack, not `docker-compose.yml`.
+Within this repository, the following consumers also see the change:
 
-Public vendor guidance checked on 2026-10-30 states:
+- `aptl_techvault/startup.py`, `account_environment.py`, `serving.py`, `capture.py`,
+  `capture_registrations.py`, `evidence/`, `participant_desktop.py`,
+  `participant_smoke.py` and `build_cache.py` own qualified TechVault behavior.
+  Keep their exact pack identity consistent. `CORTEX_OBSERVABLE` is also used
+  by retained SQL-injection evidence and telemetry; removing its enrichment
+  consumer must not break that scenario fact or the Suricata/Wazuh validators.
+- Backend `_raes_backend_implementation_catalog.py`,
+  `_raes_backend_generated_artifacts.py`, `_raes_image_policy.py`,
+  `raes_runtime_attestation.py` and deployment account, service-index,
+  credential and artifact owners carry product-specific realization facts.
+  Retire obsolete facts without deleting generic account/index/secret machinery
+  used by other services. A datastore image name alone does not prove exclusive
+  ownership of its implementation profile or persisted data.
+- Repository `scripts/seed-prime.sh`, `seed-shuffle.sh`, TheHive/Cortex scripts,
+  `config/`, legacy Compose/scenarios and examples must agree with supported
+  delivery. Shuffle's current workflow requires TheHive credentials even though
+  the integration is disabled at first boot. Remove that dependency and its
+  claims; keep Shuffle/MISP and the remaining workflow behavior truthful.
+- `mcp/mcp-casemgmt`, `mcp/build-all-mcps.sh`, `.mcp.json.example`, workbench
+  profiles/bookmarks, participant narratives and desktop handoff consume the
+  removed capability. Core collector/CLI/kill lists also name it. Retire active
+  references without deleting user-authored unrelated MCP configuration.
+  Retained MCP servers continue using `mcp/aptl-mcp-common`; changing common code
+  requires targeted consumer checks and CI qualification of every consumer.
+- `pyproject.toml` / `uv.lock`, the image catalog and build-input closure,
+  repository `scripts/appliance/`, `appliance/guest/provision-offline.sh`,
+  `scan-golden.sh` and `.github/workflows/checks.yml` govern installed payloads.
+  No removed server binary, credential requirement or stale image preload should
+  be needed for a newly built seat. Workshop/reference docs, current feature
+  claims, MkDocs navigation and smoke expectations must reflect no case tool.
+  Historical ADRs, requirement records and run evidence remain historical.
 
-- TheHive 5.3 and later initially receive a 14-day trial, then become read-only
-  without a valid license. Cortex itself does not need a license. Licenses
-  carry validity/expiration dates and user, organization, instance, Cortex,
-  and MISP quotas. See [About licenses](https://docs.strangebee.com/thehive/installation/licenses/about-licenses/).
-- Current [Community Edition guidance](https://strangebee.com/thehive-community-edition/)
-  limits use to non-commercial settings. The vendor's
-  [5.3 announcement](https://strangebee.com/blog/thehive-5-3-is-out-and-buzzing-for-even-more-efficiency/)
-  describes a renewable one-year Community license. Neither source establishes
-  a perpetual entitlement.
-- [Activation](https://docs.strangebee.com/thehive/installation/licenses/license/)
-  uses an instance challenge, the vendor portal, and a key applied to TheHive.
-  This does not establish permission to redistribute an activated image or
-  clone one entitlement across seats, nor prove renewal works offline.
+Reuse these owners; do not add a second service inventory, license schema,
+configuration validator, seed controller, evidence writer or migration framework.
+`tools/check_pack_boundary.py` and `.gc/pack-ownership.json` remain the repository
+ownership gate; no new product-name condition in generic orchestration.
 
-These sources are product guidance, not the actual entitlement agreement or
-proof of the affected image's behavior. No affected VM was inspected or
-modified. Confirm its immutable image identity, installed TheHive build,
-pack/backend identity, sanitized native license/quota state, and the failing
-connector before approving a remedy. Do not infer them from the checkout's
-legacy `docker-compose.yml` tag. Canonical delivery consumes the acquired pack
-through `ScenarioBundle`; this checkout's adapter qualifies the exact
-version/digest pair in `aptl_techvault/pack_identity.py`.
+## Preservation And Recovery
 
-## Canonical Owners And Required Passage
+Preserve each existing qcow2 overlay and its immutable backing chain, guest
+Docker/application data, other lab and desktop data, project `.env`, generated
+credentials/CA material and run store. Inventory actual mounts and writable
+container state before claiming retention. Cases/attachments, Cassandra,
+Elasticsearch indexes shared by TheHive/Cortex and Cortex jobs need consistent
+retention; stopping a process, recreating a container, deleting a volume and
+resetting a seat have different effects. Do not use orphan cleanup as migration.
 
-Paths below are relative to `src/` unless qualified otherwise. The approved
-design must pass each applicable layer; changing a local probe is insufficient.
+`seat stop` and failed-start cleanup retain the overlay. In contrast,
+`appliance/seat/image_update.py::update_seat_image()` resets an existing seat;
+`recover_seat()` also resets it. Therefore `lilrae seat update`, `seat reset`,
+`seat recover`, lab `start --clean` and `stop --volumes` are not preservation
+routes for #1411. A replacement signed image serves new seats; it does not
+repair existing overlays. Never replace backing bytes underneath an overlay,
+rewrite signed metadata, clear license databases or reseed to restart a trial.
 
-| Layer | Existing owner and guardrail |
-| --- | --- |
-| Pack bytes, identity, and portable meaning | `aptl/core/scenario_bundle.py`, `_pack_staging.py`, env-packs `validate_pack()` / `validate_pack_content_manifest()`, and `aptl/utils/pathsafe.py` own acquisition and containment. RAES parsing, strict runtime models, `RuntimeManager`, `raes_realization_envelope.py`, and exact-concern observation own admission and truth. Consume the admitted artifact and declarations; do not edit staged SDL, copy topology into Python, rewrite digests, or substitute checkout assets. A changed evidence requirement needs an authored pack release and exact adapter qualification. |
-| Adapter selection and startup | `aptl/backends/scenario_startup.py`, `_scenario_environment.py`, scenario service/startup policies, and `scenario_capture_discovery.py` validate compatibility, scripts, bindings, and contribution shapes. Keep TheHive-specific behavior in the qualified `aptl_techvault` adapter and existing seed owners (`scripts/seed-prime.sh`, `thehive-apikey.sh`, `cortex-apikey.sh`). Preserve core startup ordering, account realization, native evidence, and one RAES runtime owner; do not add a second boot/retry controller or a product-name branch in generic core. |
-| Configuration and environment | `AptlConfig`, `EnvironmentGrant` in `aptl/core/_credential_sources.py`, `core/env.py` parsing/placeholder checks, deployment `_environment_bindings.py`, `_compose_environment.py`, and `_realization_primitives.py::environment_file_line()` own config shape and delivery. A new variable must be declared, classified, and explicitly sourced for its consumer before mutation. Respect startup seed and capture runtime key allowlists and forbidden Docker transport keys. Ambient environment presence grants nothing. Keep config as non-secret locators; do not add an untyped license/options bag, fixture license key, broad process-env forwarding, or bypass flag. Do not force a key through an env-file format that cannot carry its bytes exactly. |
-| Authentication and authority | Reuse declared administrator account resolution (`aptl_techvault/account_environment.py`, `_compose_application_accounts.py`) for any approved activation operation. Native readback keeps its runtime service identity; Cortex's initializer and `read`/`analyze` connector credentials remain distinct in `_cortex_service_credentials.py`. A license is not an API credential and grants no operator authority. Add no participant activation tool or unauthenticated route. If operator API surfaces are touched, `api/deps.py::verify_token`, `WebAuthSettings`, and `api/middleware/bff.py::BFFMiddleware` retain Host/session/CSRF enforcement. Seat desktop access remains its separate ADR-061 contract. |
-| Secret transport, files, and OS exposure | ADR-029, `aptl/utils/curl_safe.py`, `scripts/aptl-env.sh::aptl_curl_config()`, backend stdin execution, `core/credentials.py`, and contained file helpers own secret-safe transport/storage. Treat license keys and activation material as operator-private data. Keep bytes out of host/guest argv, URLs, shell tracing, Docker command/env dumps, logs, evidence, and errors. Use protected files/stdin and cleanup, not `curl -H <token>`, `docker exec -e NAME=value`, or shell evaluation. Never generate a substitute for a vendor-issued key or embed one in pack content, wheels, golden disks, or CI artifacts. |
-| Network, TLS, and resource ownership | `published_url()` and generated CA resolution in `techvault_native_support.py`, SOC CA configuration, `DeploymentBackend`, admitted publications/ACLs, and appliance boundary policy own endpoints and effects. Retain TheHive CA verification and the admitted Cortex transport. Resolve the selected owned guest resource; no daemon-wide repair, host Docker socket, new public port, arbitrary URL, TLS bypass, or automatic vendor egress. Local and SSH transports share backend operations. Operator-mediated activation must respect the offline seat contract and approved data-transfer boundary. |
-| Evidence validation and persistence | Reuse `CortexEnrichmentSource`, its payload validators, `SourceResult`, `CollectorRegistration`/capture matching, `CapturePlan`, `CollectorStatus`, the evidence coordinator and `_persist.py`, `ExperimentEvidenceRecordModel`, and `LocalRunStore`. Preserve time windows, limits, source references, requiredness, redaction, checksum/sealing, and proposition matching. Missing, malformed, stale, unauthorized, or unavailable sources must not become `OK`, `EMPTY_OK`, or true evidence. Do not use best-effort `core/collectors.py` to satisfy required capture. |
-| Diagnostics and observation | Reuse `curl_safe.curl_request()` / `CurlOutcome` when transport/HTTP distinctions are needed, existing provider errors, RAES `Diagnostic`, `LabResult`/`StartupDiagnostic`, `SeatLauncherError`, `get_logger()`, and `redact()`. Preserve the collector failure and add only bounded, observed reason context through existing envelopes. Distinguish entitlement missing/expired/quota-denied from auth rejection, TLS, transport, malformed status, analyzer failure, and transient connector refresh. Unknown state stays unknown. Never infer licensing from every connector failure or leak HTTP bodies, validation inputs, commands, or exception text. Normalize sensitive native failures before core's broad exception logging. Keep API/CLI/web projections aligned; no new exception hierarchy or log-text classification. |
-| Guest/host readiness and image trust | `core/lab.py`, `appliance/guest/aptl-appliance-first-boot`, `appliance/seat/readiness.py`, lifecycle, boundary gates, and signed image/config selection own readiness. Keep fresh nonce/seat/instance/generation/descriptor checks and normal access revocation. A license diagnostic must not bypass required evidence or become a forged/stale guest readiness response. CI image qualification and `appliance/guest/scan-golden.sh` remain release boundaries. A fresh trial boot is insufficient evidence of durability. |
+Use existing seat/project mutation locks, ownership checks and private atomic
+writes. Any agreed transition must be repeatable, detect partial completion,
+retain evidence of failure and have a tested restore route. Backup bytes stay
+in approved local storage and include consistent application/database state and
+the backing chain. Retaining inaccessible files alone must not be advertised
+as restored case-management functionality.
 
-## Preservation And Recovery Boundaries
+`appliance/seat/maintenance.py` provides a locked, stopped-overlay rescue shell,
+not a running application recovery service. An expired seat cannot depend on
+successful normal first boot to reach its repair route. The recovery route and
+access to retained historical data remain unresolved; the removal decision
+itself does not need to be reopened.
+Do not add participant admin authority or declare the failed seat ready to
+make recovery reachable.
 
-Preserve the outer qcow2 overlay and its retained immutable backing image,
-guest Docker data, application state, and project `.env`/generated credentials,
-CA material, and run/evidence store. Relevant SOC storage includes TheHive
-case/attachment data, Cassandra, indexes, and Cortex jobs; shared Elasticsearch
-also serves Cortex. Preserve other lab and desktop data, not just TheHive files.
-Inventory the actual admitted mounts before claiming retention. Application
-process restart, container recreation, Compose teardown, and seat reset have
-different persistence effects; unmounted container state can be lost.
+## Extensibility And Qualification
 
-`seat stop` and failed-start cleanup retain the overlay.
-`appliance/seat/image_update.py::update_seat_image()` calls reset for an existing
-seat. Therefore `lilrae seat update`, `seat reset`, `seat recover`, lab
-`start --clean`, and `stop --volumes` are not recovery defaults for this issue.
-Do not replace backing images underneath existing overlays, rewrite signed
-metadata, clear license databases, rotate working identities, or reseed cases
-to restart a trial. Reinstallation, clock manipulation, and downgrading to an
-older release to evade expiry are outside the supported approach.
+The existing seam is the exact pack version/digest plus its selected startup,
+capture, serving and desktop contributions. The authored contract decides
+capabilities; no global `licensed`, `legacy` or `skip_cortex` switch belongs in
+core. A later case-management option would be another authored release with
+qualified contributions and evidence meaning, not an alias for removed tools.
+If old/new support is agreed, qualify complete identity pairs and preserve
+historical record readers; do not broaden independent version/digest lists into
+unqualified combinations. Preservation policy must explicitly distinguish new
+seat creation from transition of an existing seat.
 
-Use existing seat/project mutation locks, owner checks, private atomic writes,
-and vendor-native persistence. Do not create a parallel entitlement ledger or
-cached healthy marker. Repeated recovery must preserve the current valid
-entitlement and data; an interrupted or uncertain activation needs native
-readback before retry. Backups must cover consistent application/database state
-and the retained backing chain, stay in approved storage, and have a verified
-restore route. A new image cannot repair old overlays by itself.
+Evidence must show new installed seats start and restart offline without a
+trial-dependent service, while every remaining native requirement still fails
+truthfully on missing or invalid evidence. Existing expired seats require a
+separate demonstrated preservation/recovery result, with modified user data,
+interruption/retry and restoration checks. Do not manipulate production clocks
+or claim fresh trial boot or mocks prove durable recovery. If the old collector
+is retained for compatibility, its 30 connector attempts with 30-second requests
+can exceed the 300-second registration budget; all work must respect the shared
+deadline, and HTTP byte bounds must apply before parsing, not only to saved JSON.
 
-The existing `appliance/seat/maintenance.py` rescue route is an offline shell
-for a stopped overlay. It does not supply a running TheHive activation UI/API.
-Any candidate must demonstrate a controlled administrator recovery route for
-the already-failed seat without publishing it as ready, weakening participant
-privileges, or depending on the normal successful boot it is trying to restore.
-This remains an agreement condition, not a claim of existing online recovery.
+Canonical evidence includes acquired-pack fixtures (`tests/techvault_pack.py`),
+TechVault startup/desktop/MCP and native-source tests, RAES admission/truth tests,
+and seat persistence/readiness/lifecycle/maintenance tests. Remove obsolete
+expectations, retain failure-path coverage and secret-canary checks. Legacy
+Compose source-text tests alone do not qualify shipped seats.
+`.ground-control.yaml`, `.gc/plan-rules.md`, `.pre-commit-config.yaml` and
+[CI verification](ci-verification.md) select targeted local tests and staged
+`pre-commit run`; full suites, installed-wheel clean-lab and actual signed-image
+qualification belong to CI/CD and the established image release process.
+Clean-lab teardown runs only on disposable qualification state.
 
-## Extensibility, Verification, And Non-Goals
+## Non-Goals And Implementation Boundary
 
-The seam is the existing exact-qualified startup/capture adapter plus admitted
-service/integration identity and operator-selected credential source. Bind
-checks to the selected connector and required capabilities/quotas, not a tier
-name or global `licensed` boolean. A second permitted connector or a changed
-entitlement must not require editing portable content to insert a customer
-key. License keys/state remain instance-local; genuine authored workflow
-changes still require a new pack identity and qualification. Reuse narrow
-typed extensions to the existing context only when an approved design needs
-information it currently lacks.
-
-Current probe limitations matter to that design. `connector_projection()`
-searches nested mappings for an `OK` Cortex context; do not treat an arbitrary
-subtree or another connector as proof for the selected integration. Native
-HTTP currently collapses many failures to `None`, so `source-unavailable` alone
-cannot diagnose licensing. Also, 30 connector attempts with 30-second requests
-plus sleeps can exceed the registration's 300-second budget. The owner must
-respect the existing capture deadline across all operations. Longer host
-timeouts and repeated analyzer jobs cannot repair deterministic license denial.
-Enforce response byte/structure bounds as well as saved-payload limits;
-post-parse `bounded()` checks alone do not bound an HTTP download.
-Keep startup-generated analyzer/seed activity distinct from participant work.
-
-Qualification must distinguish valid supported entitlement, expired/missing
-entitlement, insufficient quotas, healthy standalone Cortex with a denied
-connector, temporary connector refresh, and unrelated auth/TLS/transport or
-malformed responses. It must prove truthful outcomes, bounded work, secret
-canaries, repeated/interrupted recovery, preserved modified lab data, and
-unchanged containment. Exercise a preserved seat beyond the real trial boundary
-and offline restart, rather than changing a production clock or claiming mocks
-prove expiry behavior. Any finite entitlement also needs evidence of the
-agreed renewal/expiry behavior.
-
-Canonical focused tests include `tests/test_techvault_evidence_sources.py`,
-`test_techvault_native_evidence.py`, `test_raes_native_evidence_truth.py`,
-`test_raes_evidence_acquisition.py`, and seat readiness/lifecycle/maintenance
-tests. Use acquired-pack fixtures (`tests/techvault_pack.py`) for canonical
-content; legacy Compose source-text tests alone do not qualify delivered seats.
-`.ground-control.yaml`, `.gc/plan-rules.md`, `.pre-commit-config.yaml`, and
-`docs/architecture/ci-verification.md` govern checks: targeted local tests and
-staged `pre-commit run`; installed-lab, full-suite, and image qualification in
-CI/CD. Compose/Dockerfile/`config/` changes select the existing clean-lab gate
-on disposable test state, never on a preserved user's seat.
-
-Non-goals are implementing or deploying a remedy; buying or activating a
-license; vendor account automation; resetting or upgrading installations;
-changing scenario meaning or evidence requiredness without agreement; a new
-license service, schema authority, validator, exception tree, or workflow
-engine; and broader SOC hardening or replacement. No requirement/status links,
-issue closure, release claim, or change to accepted ADRs follows from this note.
+This issue run investigates and records the reviewed direction. It does not
+implement removal, publish an image, edit another repository, activate or buy
+licenses, migrate/reset seats, introduce a replacement case product, or claim
+recovery works. No trial renewal, clock manipulation, downgrade, optional
+required evidence, fabricated health or automatic reduced-function fallback.
+No new service, schema authority, exception hierarchy or workflow engine.
+Further source changes need an agreed delivery contract covering both pack
+adoption and preserved-seat recovery. No requirement UID/status, issue closure,
+merge, procurement or external data transfer is authorized by this note.

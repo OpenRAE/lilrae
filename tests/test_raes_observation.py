@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 from types import SimpleNamespace
 
-from aptl.backends import _raes_observation_ordering as observation_ordering
 
 from raes_contracts.planning import (
     ChangeAction,
@@ -41,95 +40,6 @@ from aptl.core.deployment._compose_realization_networks import _concrete_network
 from aptl.core.deployment.errors import BackendTimeoutError
 
 _PROJECT = "aptl"
-
-
-def test_techvault_order_alignment_only_reorders_equivalent_collections():
-    declared = {
-        "members": [
-            {"id": "first", "groups": ["red", "blue"]},
-            {"id": "second", "groups": ["green"]},
-        ]
-    }
-    observed = {
-        "members": [
-            {"id": "second", "groups": ["green"]},
-            {"id": "first", "groups": ["blue", "red"]},
-        ]
-    }
-
-    assert observation_ordering._align_equivalent_value(declared, observed) == declared
-
-    observed["members"][1]["groups"] = ["blue", "wrong"]
-    assert (
-        observation_ordering._align_equivalent_value(declared, observed)
-        is observation_ordering._MISSING
-    )
-
-
-def test_techvault_order_alignment_uses_declared_operation_not_typed_resource():
-    from dataclasses import replace
-
-    from aptl.backends._raes_observation_helpers import ObservedResource
-    from aptl.backends.raes_runtime_attestation import (
-        TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST,
-        TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST,
-    )
-    from aptl.core.scenario_bundle import PackIdentity
-
-    authored = [
-        {"path": "/first", "entry_type": "directory"},
-        {"path": "/second", "entry_type": "directory"},
-    ]
-    normalized = list(reversed(authored))
-    address = "provision.node.vm"
-    pointer = "/spec/node/runtime/filesystem_inventory"
-    path = ("spec", "node", "runtime", "filesystem_inventory")
-    resource_payload = {
-        "spec": {"node": {"runtime": {"filesystem_inventory": normalized}}}
-    }
-    operation_payload = {
-        "spec": {"node": {"runtime": {"filesystem_inventory": authored}}}
-    }
-    resource = PlannedResource(
-        address=address,
-        domain=RuntimeDomain.PROVISIONING,
-        resource_type="node",
-        payload=resource_payload,
-    )
-    operation = ProvisionOp(
-        action=ChangeAction.CREATE,
-        address=address,
-        resource_type="node",
-        payload=operation_payload,
-    )
-    authority = SimpleNamespace(
-        address=address,
-        requirement_kind="runtime-filesystem-inventory",
-        payload_pointer=pointer,
-        constraint_document=object(),
-    )
-    plan = replace(
-        ProvisioningPlan(resources={address: resource}, operations=[operation]),
-        realization_authority=(authority,),
-    )
-
-    for pack_id, digest in (
-        ("techvault", TECHVAULT_RUNTIME_ATTESTATION_SET_DIGEST),
-        ("techvault-participant-study", TECHVAULT_STUDY_RUNTIME_ATTESTATION_SET_DIGEST),
-    ):
-        result = observation_ordering.align_techvault_identity_collection_observations(
-            plan=plan,
-            observations={
-                address: ObservedResource(
-                    realized=True,
-                    concerns={path: normalized},
-                )
-            },
-            pack_identity=PackIdentity(pack_id, "0.1.3", digest),
-        )
-
-        observed = result[address].concerns[path]
-        assert [item["path"] for item in observed] == ["/first", "/second"]
 
 
 class _Backend:
@@ -1103,15 +1013,15 @@ def test_rendered_config_observation_records_digest_not_content(tmp_path):
 
 
 def test_generated_environment_delivery_is_read_back_without_value_disclosure(tmp_path):
-    address = "provision.generated-artifact.cortex-service-credentials"
+    address = "provision.generated-artifact.misp-cache-credential"
     spec = {
         "generator": "rendered_config",
         "lifecycle": "reuse_valid",
-        "provenance": "techvault:cortex-service-credentials/v1",
+        "provenance": "techvault:misp-cache-credential/v2",
         "outputs": [
             {
-                "name": "connector-api-key",
-                "path": "cortex/connector-api-key",
+                "name": "cache-password",
+                "path": "cache-password",
                 "sensitivity": "secret",
                 "disposition": "consumer_selected",
             }
@@ -1119,11 +1029,11 @@ def test_generated_environment_delivery_is_read_back_without_value_disclosure(tm
         "consumers": [],
         "environment_consumers": [
             {
-                "node": "thehive",
-                "target_address": "provision.node.thehive",
+                "node": "misp",
+                "target_address": "provision.node.misp",
                 "delivery_mode": "environment",
-                "output": "connector-api-key",
-                "environment_variable": "TH_CORTEX_KEYS",
+                "output": "cache-password",
+                "environment_variable": "REDIS_PASSWORD",
             }
         ],
         "ordering_dependencies": [],
@@ -1133,39 +1043,39 @@ def test_generated_environment_delivery_is_read_back_without_value_disclosure(tm
         address=address,
         domain=RuntimeDomain.PROVISIONING,
         resource_type="generated-artifact",
-        payload={"name": "cortex-service-credentials", "spec": spec},
+        payload={"name": "misp-cache-credential", "spec": spec},
     )
     plan = ProvisioningPlan(resources={address: resource})
     output = (
         tmp_path
-        / ".aptl/realization/cortex-service-credentials/cortex/connector-api-key"
+        / ".aptl/realization/misp-cache-credential/cache-password"
     )
     output.parent.mkdir(parents=True)
     output.write_text("source-secret\n")
     consumer = DeploymentGeneratedArtifactEnvironmentConsumer(
-        target_address="provision.node.thehive",
-        node_name="thehive",
-        service_name="thehive",
-        output_name="connector-api-key",
-        environment_variable="TH_CORTEX_KEYS",
+        target_address="provision.node.misp",
+        node_name="misp",
+        service_name="misp",
+        output_name="cache-password",
+        environment_variable="REDIS_PASSWORD",
     )
     realization = AptlRealization(
         profiles=frozenset(),
-        nodes=(_node_realization("thehive", "aptl-thehive", imaged=True),),
+        nodes=(_node_realization("misp", "aptl-misp", imaged=True),),
         networks=(),
         placements=(),
         diagnostics=(),
         generated_artifacts=(
             DeploymentGeneratedArtifactRealization(
                 address=address,
-                name="cortex-service-credentials",
+                name="misp-cache-credential",
                 generator="rendered_config",
                 lifecycle="reuse_valid",
-                provenance="techvault:cortex-service-credentials/v1",
+                provenance="techvault:misp-cache-credential/v2",
                 outputs=(
                     DeploymentGeneratedArtifactOutput(
-                        name="connector-api-key",
-                        path="cortex/connector-api-key",
+                        name="cache-password",
+                        path="cache-password",
                         sensitivity="secret",
                     ),
                 ),
@@ -1175,9 +1085,9 @@ def test_generated_environment_delivery_is_read_back_without_value_disclosure(tm
         ),
     )
     backend = _Backend(
-        containers=("aptl-thehive",),
+        containers=("aptl-misp",),
         realization_root=tmp_path,
-        environments={"aptl-thehive": ["TH_CORTEX_KEYS=source-secret"]},
+        environments={"aptl-misp": ["REDIS_PASSWORD=source-secret"]},
     )
 
     observed = observe_realization(backend, realization, plan, scenario_root=tmp_path)[
@@ -1188,15 +1098,15 @@ def test_generated_environment_delivery_is_read_back_without_value_disclosure(tm
     assert observed.concerns == {("spec",): spec}
     assert observed.evidence["environment_bindings"] == [
         {
-            "target_address": "provision.node.thehive",
-            "environment_variable": "TH_CORTEX_KEYS",
-            "output": "connector-api-key",
+            "target_address": "provision.node.misp",
+            "environment_variable": "REDIS_PASSWORD",
+            "output": "cache-password",
             "status": "present",
         }
     ]
     assert "source-secret" not in repr(observed.evidence)
 
-    backend._environments = {"aptl-thehive": ["TH_CORTEX_KEYS=wrong"]}
+    backend._environments = {"aptl-misp": ["REDIS_PASSWORD=wrong"]}
     assert (
         observe_realization(backend, realization, plan, scenario_root=tmp_path)[
             address

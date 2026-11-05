@@ -24,6 +24,7 @@ from aptl.core.deployment._compose_resource_ownership import (
     OwnershipConflictError,
     WorkspaceOwnership,
 )
+from aptl.core.deployment._cleanup_budget import cleanup_command_timeout
 from aptl.core.deployment.lilrae_docker_http import NativeDocker
 from aptl.core.deployment.lilrae_docker_recording import RecordingStore, _encode
 from aptl.core.deployment.lilrae_docker_relay import DockerRecordingRelay
@@ -116,11 +117,14 @@ class RecordingSession:
     def _control(self, command: str) -> dict[str, object]:
         """Send one control command and return the verified recorder reply."""
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-            client.settimeout(2)
+            client.settimeout(cleanup_command_timeout(2))
             client.connect(str(self.directory / "control.sock"))
+            client.settimeout(cleanup_command_timeout(2))
             client.sendall(_encode({"command": command}))
+            client.settimeout(cleanup_command_timeout(2))
             with client.makefile("rb") as stream:
                 result = json.loads(stream.readline(1024 * 1024))
+            cleanup_command_timeout(2)
         if (
             result.get("workspace_id") != self.store.ownership.workspace_id
             or result.get("attempt_id") != self.store.attempt_id
@@ -147,12 +151,13 @@ class RecordingSession:
 
     def _drain(self) -> bool:
         """Ask the recorder to quiesce and return True when it drains in time."""
-        deadline = time.monotonic() + 10
+        deadline = time.monotonic() + cleanup_command_timeout(10)
         try:
             while time.monotonic() < deadline:
                 if self._control("quiesce").get("quiesced"):
+                    cleanup_command_timeout(10)
                     return True
-                time.sleep(0.05)
+                time.sleep(cleanup_command_timeout(0.05))
         except OSError, ValueError:
             pass
         return False
@@ -166,10 +171,12 @@ class RecordingSession:
             pass
         if self.process is not None:
             try:
-                self.process.wait(timeout=5)
+                self.process.wait(timeout=cleanup_command_timeout(5))
             except subprocess.TimeoutExpired:
+                remaining = cleanup_command_timeout(5)
                 self.process.terminate()
-                self.process.wait(timeout=5)
+                self.process.wait(timeout=remaining)
+        cleanup_command_timeout(5)
 
 
 def start_recording(

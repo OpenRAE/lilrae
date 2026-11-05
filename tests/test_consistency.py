@@ -196,18 +196,6 @@ class TestComposeConsistency:
             "/etc/otelcol-contrib/config.yaml",
         ]
 
-    def test_thehive_elasticsearch_stays_writable_on_full_host(self, compose_config):
-        """Fresh TheHive and Cortex bootstrap must not depend on host usage.
-
-        Elasticsearch's percentage flood-stage can reject the first Cortex
-        organisation write while cluster health remains green. The lab store
-        is disposable and single-node, so host percentage watermarks are not
-        an appropriate readiness policy.
-        """
-        environment = compose_config["services"]["thehive-es"]["environment"]
-
-        assert "cluster.routing.allocation.disk.threshold_enabled=false" in environment
-
     def test_shuffle_opensearch_stays_writable_on_full_host(self, compose_config):
         """Shuffle's lab datastore must not use host percentage watermarks.
 

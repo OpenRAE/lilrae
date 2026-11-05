@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { generateToolHandlers, resolveCaptureContainer, errorMessage } from '../src/tools/handlers.js';
+import { generateToolHandlers, errorMessage } from '../src/tools/handlers.js';
+import { resolveCaptureContainer } from '../src/tools/session-capture.js';
 import { CommandTimeoutError } from '../src/ssh.js';
 import { harvestSession } from '../src/captures.js';
 
@@ -299,7 +300,7 @@ describe('#1319: run_command harvests a timed-out exec session', () => {
   const timeoutEnvelope = { command, success: false, error: `Command timeout after 30000ms: ${command}` };
 
   const sessionId = 'exec-1760000000000-0a1b2c3d';
-  const harvestedFrom = [{ containerName: 'aptl-test-capture', runId: 'run-1319', awaitMetadataMs: 30000 }, sessionId];
+  const harvestedFrom = [{ containerName: 'aptl-test-capture', runId: 'run-1319' }, sessionId];
 
   // A stub manager whose executeCommand rejects the way SSHConnectionManager
   // does when the timer fires; the test decides when the channel closes.
@@ -458,7 +459,7 @@ describe('#1242: a declared empty capture binding still reaches the harvester', 
       { session_id: 'sess-1' },
       { sshManager, labConfig: withSidecar({ capture_container_name: '' }) },
     );
-    expect(harvestSession).toHaveBeenCalledExactlyOnceWith({ containerName: '', runId: 'run-1242', awaitMetadataMs: 30000 }, 'sess-1');
+    expect(harvestSession).toHaveBeenCalledExactlyOnceWith({ containerName: '', runId: 'run-1242' }, 'sess-1');
     expect(JSON.parse(result.content[0].text).harvest_warning).toBeDefined();
   });
 

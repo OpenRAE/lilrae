@@ -3,13 +3,18 @@
 Split out of ``runstore.py`` (which owns the :class:`LocalRunStore` filesystem
 implementation) so the module stays focused: this file holds the id/path
 validators, the create-once canonicalization + secret-invariant helpers, the
-per-run lock registry, the create-once error taxonomy, and the cross-process
-run-dir resolution. ``runstore`` re-imports and re-exports these, so existing
-``from aptl.core.runstore import ...`` call sites are unaffected.
+per-run lock registry, the create-once error taxonomy, the cross-process
+run-dir resolution, and the owner-only mode helpers. ``runstore`` re-imports
+and re-exports these, so existing ``from aptl.core.runstore import ...`` call
+sites are unaffected.
 """
 
+import errno
 import json
+import os
 import re
+import shutil
+import stat
 import threading
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -21,6 +26,21 @@ from aptl.utils.logging import get_logger
 from aptl.utils.redaction import redact
 
 log = get_logger("runstore")
+
+#: ADR-033 "Security layers": run captures are readable only by the owning
+#: user, so every directory the store creates is ``0700`` and every file
+#: ``0600``. A requested mode without group or other bits stays clear of them
+#: under any umask. On non-POSIX hosts the modes are ignored and the
+#: tightening steps below are no-ops.
+_PRIVATE_DIR_MODE = 0o700
+_PRIVATE_FILE_MODE = 0o600
+_GROUP_OTHER = 0o077
+
+#: ``open`` errors that mean "nothing to tighten here": the entry is missing,
+#: is not a directory, is a symlink (``O_NOFOLLOW``), or cannot be opened.
+_SKIP_RESTRICT_ERRNOS = frozenset(
+    {errno.ENOENT, errno.ENOTDIR, errno.ELOOP, errno.EACCES, errno.EPERM}
+)
 
 
 class RunManifest(TypedDict):
@@ -186,6 +206,140 @@ def _safe_default(obj: object) -> str:
     closes that escape hatch (ADR-029).
     """
     return redact(str(obj))
+
+
+def _restrict_fd(fd: int) -> None:
+    """Clear group/other bits on an open entry the effective user owns.
+
+    Clear-only and owner-only: an entry that is already private, or that
+    belongs to another account (for example a seat run tree handed to the
+    desktop user), is left as it is. A no-op without POSIX ``fchmod``.
+    """
+    if os.name != "posix" or not hasattr(os, "fchmod"):
+        return
+    status = os.fstat(fd)
+    mode = stat.S_IMODE(status.st_mode)
+    if mode & _GROUP_OTHER and status.st_uid == os.geteuid():
+        os.fchmod(fd, mode & ~_GROUP_OTHER)
+
+
+def _restrict_to_owner(directory: Path) -> None:
+    """Tighten an existing store-owned directory to owner-only, best-effort.
+
+    The directory is opened ``O_NOFOLLOW`` and re-moded through its
+    descriptor, so a symlink is skipped and an entry swapped in after the
+    check is never re-moded by path. A missing entry, a non-directory, or
+    one that cannot be opened is skipped rather than raised; the write that
+    follows then behaves as it did before this step existed.
+    """
+    if os.name != "posix":
+        return
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    try:
+        fd = os.open(directory, flags)
+    except OSError as exc:
+        if exc.errno in _SKIP_RESTRICT_ERRNOS:
+            return
+        raise
+    try:
+        _restrict_fd(fd)
+    finally:
+        os.close(fd)
+
+
+def _mkdir_private(directory: Path) -> None:
+    """Create one directory ``0700``; an existing directory is left as it is."""
+    try:
+        os.mkdir(directory, _PRIVATE_DIR_MODE)
+    except FileExistsError:
+        if not directory.is_dir():
+            raise
+
+
+def _make_private_dirs(directory: Path) -> None:
+    """``mkdir -p`` that creates every missing component ``0700``.
+
+    ``Path.mkdir(parents=True)`` and ``os.makedirs`` create missing parents
+    with the umask's default mode, so missing ancestors (such as ``.aptl/``)
+    would be group- or world-readable. Existing components are never
+    re-moded.
+    """
+    try:
+        _mkdir_private(directory)
+    except FileNotFoundError:
+        if directory.parent == directory:
+            raise
+        _make_private_dirs(directory.parent)
+        _mkdir_private(directory)
+
+
+def _private_store_entry(base_dir: Path, name: str) -> None:
+    """Create ``base_dir`` owner-only and tighten its existing ``name`` entry."""
+    _make_private_dirs(base_dir)
+    _restrict_to_owner(base_dir / name)
+
+
+def _make_private_run_dirs(base_dir: Path, run_id: str, *directories: Path) -> None:
+    """Prepare ``base_dir/run_id`` and ``directories`` for a run write.
+
+    Every directory the store creates is ``0700``, including missing
+    ancestors of ``base_dir``; files are created ``0600`` through
+    :func:`_private_opener`. On each write, the run, namespace or ``locks``
+    directory written into and the written file lose group and other bits
+    when the current user owns them. An existing ``base_dir`` and other
+    existing entries keep their modes. The modes are defense in depth, not a
+    substitute for the ADR-029 redaction at the persistence boundary.
+    """
+    _private_store_entry(base_dir, run_id)
+    for directory in directories:
+        _make_private_dirs(directory)
+
+
+def _private_opener(path: str, flags: int) -> int:
+    """``open`` opener: create files ``0600`` and tighten an existing one."""
+    fd = os.open(path, flags, _PRIVATE_FILE_MODE)
+    try:
+        _restrict_fd(fd)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _require_regular_file(status: os.stat_result, path: Path, role: str) -> None:
+    """Raise :class:`shutil.SpecialFileError` unless ``status`` is a regular file."""
+    if not stat.S_ISREG(status.st_mode):
+        raise shutil.SpecialFileError(f"copy_file {role} is not a regular file: {path}")
+
+
+def _copy_private(source: Path, target: Path) -> None:
+    """Copy ``source`` bytes and timestamps into an owner-only ``target``.
+
+    Unlike ``shutil.copy2`` this copies neither the source's permission bits
+    nor its flags or extended attributes (which can carry a POSIX access
+    ACL), so a ``0644`` source lands ``0600``. The source is never modified.
+    Only regular files are copied: a source or an existing target that is a
+    FIFO, device, socket or directory raises :class:`shutil.SpecialFileError`
+    before any byte is read or written. The source is opened non-blocking so
+    a FIFO is refused instead of waiting for a writer.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+    with os.fdopen(os.open(source, flags), "rb") as src:
+        source_status = os.fstat(src.fileno())
+        _require_regular_file(source_status, source, "source")
+        try:
+            target_status = os.stat(target)
+        except FileNotFoundError:
+            target_status = None
+        if target_status is not None:
+            _require_regular_file(target_status, target, "target")
+        if target_status is not None and os.path.samestat(source_status, target_status):
+            # copy2 refuses this too; truncating the target would lose the bytes.
+            raise shutil.SameFileError(f"{source} and {target} are the same file")
+        with open(target, "wb", opener=_private_opener) as dst:
+            shutil.copyfileobj(src, dst)
+        source_status = os.fstat(src.fileno())
+    os.utime(target, ns=(source_status.st_atime_ns, source_status.st_mtime_ns))
 
 
 # ---------------------------------------------------------------------------

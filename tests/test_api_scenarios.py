@@ -46,8 +46,8 @@ def test_list_reports_validated_acquired_pack_identity(released_api_client, tmp_
     assert body[0]["name"] == "TechVault Participant Study"
     assert body[0]["pack"] == {
         "id": "techvault-participant-study",
-        "version": "0.1.3",
-        "set_digest": "sha256:6dfe161bf9b4b63dfa64d732f12e71538f5e2bfd0f863ca1fad2fdb2635a9121",
+        "version": "7.2.2",
+        "set_digest": "sha256:5bad673a406446cbb983a4f97a1aefa6d745374a2f4db9a1c88617b885cb767b",
         "maturity": "built",
     }
     assert body[0]["validation"]["valid"] is True
@@ -64,7 +64,7 @@ def test_detail_projects_same_validated_identity(released_api_client, tmp_path):
     body = response.json()
     assert body["id"] == "techvault-participant-study"
     assert body["pack"]["id"] == "techvault-participant-study"
-    assert body["pack"]["version"] == "0.1.3"
+    assert body["pack"]["version"] == "7.2.2"
     assert body["pack"]["maturity"] == "built"
     assert body["blocks"][0]["type"] == "narrative"
     assert ".aptl/staged-packs" not in response.text

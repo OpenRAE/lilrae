@@ -3,6 +3,14 @@
 This repository (APTL — Advanced Purple Team Lab) uses Ground Control for
 requirements management and workflow automation.
 
+## Execution boundary
+
+Do not run LilRAE commands, lab lifecycle operations, or tests on the
+developer workstation. Run them only in CI or an explicitly approved,
+isolated test VM. Workstation work is limited to source edits, static
+checks, Git operations, and commit hygiene. Remote test runs must still
+use targeted test paths; full suites remain CI-only.
+
 ## Ground Control Context
 
 This repo's Ground Control project id, workflow commands, SonarCloud
@@ -15,7 +23,7 @@ Key facts encoded there today:
 
 - Ground Control project: `aptl`
 - GitHub repo: `OpenRAE/lilrae`
-- Local test command: `bash tools/run-targeted-tests.sh` (changed test files
+- Targeted test command in an approved test VM: `bash tools/run-targeted-tests.sh` (changed test files
   only, or pass explicit test paths)
 - Local hygiene command: `pre-commit run` after staging the intended changes
 - Full suites, coverage, whole-tree lint, and whole-tree prose checks: CI/CD
@@ -103,7 +111,7 @@ end-to-end loop. Summary for agents working in this repo:
    their consumers; lifecycle and configuration changes select installed-lab
    qualification. See [CI verification](docs/architecture/ci-verification.md).
 3. **Implement.** Make the code change.
-4. **Verify locally.** Run only tests targeted to the changed behavior. Use
+4. **Verify in an approved test VM or CI.** Run only tests targeted to the changed behavior. Use
    `bash tools/run-targeted-tests.sh` when the relevant test files changed, or
    pass explicit test paths to that script. Stage the intended changes and run
    `pre-commit run` for rapid hygiene and secret scanning. Do not run bare
@@ -117,6 +125,19 @@ end-to-end loop. Summary for agents working in this repo:
    linked.
 
 ## Workflow Notes
+
+### Documentation
+
+Use the shared user-level `documentation` skill for documentation changes.
+Select a Diataxis purpose from the reader's task. Verify technical claims
+against code, configuration, and supported interfaces. Preserve technical meaning.
+
+Follow [the documentation guide](docs/contributing-documentation.md) for
+STE limits, explicit-path checks, source records, and migration assignments.
+Record source paths, revision, checks, and corrected differences in the PR.
+Keep the skill outside repository version control. Keep routine edits small.
+
+### Delivery
 
 - One issue = one PR. The issue's delivery PR must address all acceptance
   criteria, including code, documentation, and tests. Update an existing PR

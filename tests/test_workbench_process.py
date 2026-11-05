@@ -54,6 +54,8 @@ _HANG_DEADLINE = 5.0
 # Covers interpreter start-up and writing a few pipe buffers of output.
 _INPUT_DEADLINE = 3.0
 _RESULT = b'{"ok": true}\n'
+
+
 # The OpenTelemetry OTLP exporter's default export timeout, which bounds the
 # trace flush that starts the common MCP server's SIGTERM handler.
 _OTLP_EXPORT_TIMEOUT_SECONDS = 10.0
@@ -468,13 +470,13 @@ def test_helpers_finish_a_graceful_shutdown_only_after_the_child_exits(
 
 
 def test_shutdown_grace_covers_the_mcp_server_teardown_bounds() -> None:
-    """The long grace period outlasts the common MCP server's SIGTERM path.
+    """The long grace period outlasts the MCP server's SSH teardown and trace flush.
 
-    The server flushes its traces, bounded by the OTLP exporter's default
-    10 s timeout, then ``disconnectAll`` waits up to ``REMOTE_CLOSE_AWAIT``
-    for the sessions' remote close and up to ``SESSION_CLOSE`` for the
-    connections. If either SSH bound grows, this fails until the grace period
-    is resized with it.
+    ``disconnectAll`` waits up to ``REMOTE_CLOSE_AWAIT`` for the sessions'
+    remote close and up to ``SESSION_CLOSE`` for the connections. The trace
+    flush is bounded inside the OTLP exporter's default 10 s timeout. If either
+    SSH bound grows, this fails until the grace period is resized with it.
+    Capture finalization and harvest are outside this bound (ADR-042).
     """
 
     contracts = (_REPO / "mcp/aptl-mcp-common/src/ssh-contracts.ts").read_text(
@@ -650,9 +652,7 @@ def test_cleanup_confirms_group_exit_after_a_denied_stop_signal(
             killed = True
         raise PermissionError(1, "Operation not permitted")
 
-    with mock.patch(
-        "aptl.workbench.process.os.killpg", side_effect=disappearing_group
-    ):
+    with mock.patch("aptl.workbench.process.os.killpg", side_effect=disappearing_group):
         result = _run(
             (sys.executable, "-c", "print('{\"ok\": true}')"),
             cwd=tmp_path,
@@ -785,3 +785,30 @@ def test_escaped_stream_holder_is_reported_without_secrets(tmp_path: Path) -> No
         assert not _poll_until_absent(helper, timeout=0.5), "outside the group"
     finally:
         _end_helper(pid_file)
+
+
+def test_private_failure_observer_error_retains_cleanup_without_output_leak(tmp_path):
+    def observe(output):
+        assert b"private-observer-canary" in output
+        raise RuntimeError("private-observer-canary")
+
+    from aptl.workbench.process import ProcessRequest
+
+    request = ProcessRequest(
+        (
+            sys.executable,
+            "-c",
+            "import time; print('private-observer-canary',flush=True); time.sleep(60)",
+        ),
+        env=_ENVIRONMENT,
+        cwd=tmp_path,
+        stdin=b"",
+        timeout_seconds=0.5,
+        max_output_bytes=4096,
+    )
+    with pytest.raises(BoundedProcessError) as observed:
+        BoundedProcessRunner.run_observed(request, failure_stdout_observer=observe)
+    assert observed.value.reason == "agent failure output observation failed"
+    assert observed.value.cleanup.residual == ()
+    assert "private-observer-canary" not in str(observed.value)
+    assert "private-observer-canary" not in repr(observed.value.record())

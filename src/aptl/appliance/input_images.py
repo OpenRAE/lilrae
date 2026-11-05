@@ -13,6 +13,7 @@ from aptl.core.config import AptlConfig
 from aptl.core.deployment._compose_boundary import DEFAULT_BOUNDARY_HELPER_IMAGE
 from aptl.core.deployment._compose_content_realization import CONTENT_SEEDER_IMAGE
 from aptl.core.deployment._operator_access_endpoints import OPERATOR_ACCESS_IMAGE
+from aptl.core.helper_images import PINNED_HELPER_IMAGES
 from aptl.core.scenario_bundle import ScenarioBundle
 from aptl.validation.curated_live_proof import bundle_realization
 
@@ -22,14 +23,7 @@ _PINNED_THIRD_PARTY_IMAGES = {
         "debian:13-slim@sha256:"
         "d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132"
     ),
-    "jasonish/suricata:7.0": (
-        "jasonish/suricata:7.0@sha256:"
-        "0364b6f31192bc27a84dd471f60de22781d88e4d9511fbd3413e56ba4e150ac8"
-    ),
-    "wazuh/wazuh-certs-generator:0.0.2": (
-        "wazuh/wazuh-certs-generator:0.0.2@sha256:"
-        "88c4b30ad9b8320ba29f0a891761ad8000866c15c844d27b04974f5cb427c8f0"
-    ),
+    **PINNED_HELPER_IMAGES,
 }
 
 

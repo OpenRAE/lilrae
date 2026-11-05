@@ -5,9 +5,6 @@ from __future__ import annotations
 from raes.runtime_configuration import RuntimeConfiguration
 from raes_contracts.planning import PlannedResource
 
-from aptl.core.deployment._cortex_service_credentials import (
-    CORTEX_SERVICE_CREDENTIALS_PROFILE,
-)
 from aptl.core.deployment._misp_cache_credential import (
     MISP_CACHE_CONFIG_MOUNT_DESTINATION,
     MISP_CACHE_CONFIG_OUTPUT,
@@ -50,8 +47,6 @@ def selected_generated_artifacts(
     """Return prerequisites introduced by an admitted backend selection."""
 
     artifacts: list[DeploymentGeneratedArtifactRealization] = []
-    if profile_id == "thehive-5.4" and "runtime-environment" in additions:
-        artifacts.append(_cortex_service_credentials(resource, service_name))
     if profile_id == "misp-2.5.50" and "runtime-environment" in additions:
         artifacts.extend(
             _misp_cache_credential_artifacts(
@@ -65,43 +60,6 @@ def selected_generated_artifacts(
         artifacts.append(_misp_server_tls_artifact(resource, service_name))
         artifacts.append(_misp_fastcgi_loopback_artifact(resource, service_name))
     return tuple(artifacts)
-
-
-def _cortex_service_credentials(
-    resource: PlannedResource, service_name: str
-) -> DeploymentGeneratedArtifactRealization:
-    """Build the TheHive-to-Cortex generated credential delivery."""
-
-    return DeploymentGeneratedArtifactRealization(
-        address="backend.generated-artifact.cortex-service-credentials",
-        name="cortex-service-credentials",
-        generator="rendered_config",
-        lifecycle="reuse_valid",
-        provenance=CORTEX_SERVICE_CREDENTIALS_PROFILE,
-        outputs=(
-            DeploymentGeneratedArtifactOutput(
-                name="initializer-api-key",
-                path="cortex/initializer-api-key",
-                sensitivity="secret",
-                disposition="producer_private",
-            ),
-            DeploymentGeneratedArtifactOutput(
-                name="connector-api-key",
-                path="cortex/connector-api-key",
-                sensitivity="secret",
-            ),
-        ),
-        consumers=(),
-        environment_consumers=(
-            DeploymentGeneratedArtifactEnvironmentConsumer(
-                target_address=resource.address,
-                node_name=resource.address.rsplit(".", 1)[-1],
-                service_name=service_name,
-                output_name="connector-api-key",
-                environment_variable="TH_CORTEX_KEYS",
-            ),
-        ),
-    )
 
 
 def _misp_server_tls_artifact(

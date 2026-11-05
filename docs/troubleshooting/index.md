@@ -166,7 +166,7 @@ docker logs --tail 30 aptl-<name>
 Signs: `RestartCount` climbing, entrypoint lines like `Killed  su ... bin/<service>`,
 `OOMKilled` may stay `false` if the JVM/child was killed outside docker's
 tracking. The fix is to raise `deploy.resources.limits.memory` on that
-service in `docker-compose.yml`. Cortex 3.1.8 at 512m was one confirmed
+service in `docker-compose.yml`. A Play/JVM service at 512m was one confirmed
 case ([#723](https://github.com/Brad-Edwards/aptl/issues/723), fixed on
 `dev`); watch for similar behavior on any service whose limit is 128m /
 256m / 512m if its images are non-trivial (JVM, Play, Elasticsearch,
@@ -286,6 +286,39 @@ APTL cleanup is deliberately bounded by the validated project labels.
 
 Tracked in [#722](https://github.com/Brad-Edwards/aptl/issues/722).
 
+### An older TechVault seat stops before it is ready
+
+A TechVault seat image built before
+[ADR-063](../adrs/adr-063-remove-thehive-and-cortex.md) includes TheHive.
+TheHive's trial ends 14 days after the seat first starts. After that, the seat
+fails its readiness check and the launcher stops the guest.
+
+Such a seat can't recover in place. Move it to a seat image built from a
+release that includes ADR-063. An image update resets the seat and deletes its
+overlay data, so read the files that you need first:
+
+1.  Stop the seat as its host owner. Then, as a host administrator with
+    `virt-rescue` installed, open the rescue shell and read the guest files
+    that you need:
+
+    ```shell
+    lilrae seat stop --seat-root <seat-root>
+    sudo lilrae seat rescue --seat-root <seat-root>
+    ```
+
+    The [seat launcher reference](../reference/appliance-seat-launcher.md)
+    describes the rescue shell.
+
+2.  Exit the rescue shell. Then update and start the seat:
+
+    ```shell
+    lilrae seat update
+    lilrae seat start
+    ```
+
+The new image has no TheHive or Cortex, and their cases and analyzer jobs are
+not restored.
+
 ### `lilrae lab start` reports an unowned search index
 
 A scenario can declare a search-index schema as initial service state. APTL
@@ -296,17 +329,17 @@ earlier lab, APTL can't prove that the index holds disposable data. It never
 adopts, deletes, or overwrites such an index. Startup stops before the workload
 starts, and the error names the index and its container.
 
-The Cortex job-index schema is the only schema that APTL maps to a native index
-name (`cortex_6`). For example, with the search service in container
-`aptl-thehive-es`, the error reads:
+A product adapter maps each schema to its native index name. No current release
+maps a schema, so a current lab does not report this error. The error has this
+form:
 
 ```
 Lab start failed.
   error: Lab start failed: RAES runtime handoff failed:
   aptl.provisioner.backend-start-failed at runtime.apply.provisioning: service
-  materialization failed for provision.content.cortex-job-index-schema
-  (reason=unowned-collision): search index cortex_6 in container
-  aptl-thehive-es lacks this content's ownership marker, ...
+  materialization failed for provision.content.<schema>
+  (reason=unowned-collision): search index <index> in container
+  <container> lacks this content's ownership marker, ...
 ```
 
 Recover in this order, with the index and container names from your error:
@@ -372,50 +405,6 @@ Recover in this order, with the index and container names from your error:
     confirmation first. Then start the lab again with the same `--scenario` or
     `--scenario-path` option. Restore required data separately; restoring the
     conflicting index unchanged also restores its unowned state.
-
-### `lilrae lab start` reports a search index whose mapping drifted
-
-The search service already holds an index with the scenario content's
-ownership marker, but its mapping differs from the mapping that this release
-creates. For example, a data volume kept from an earlier lab can hold an index
-that an earlier release created with another mapping. APTL doesn't
-change the mapping of an index that it finds, and it doesn't delete or
-re-create the index. Startup stops before the workload starts, and the error
-names the index and its container:
-
-```
-Lab start failed.
-  error: Lab start failed: RAES runtime handoff failed:
-  aptl.provisioner.backend-start-failed at runtime.apply.provisioning: service
-  materialization failed for provision.content.cortex-job-index-schema
-  (reason=native-product-contract-mismatch): search index cortex_6 in
-  container aptl-thehive-es carries this content's ownership marker, ...
-```
-
-`lilrae lab stop` keeps the volume, so a later start finds the same index and
-fails the same way. Recover in this order, with the index and container names
-from your error:
-
-1.  Inspect the index read-only, then take an Elasticsearch snapshot of the
-    data that you need and test its restoration, as steps 1 and 2 of
-    [the unowned index section](#lilrae-lab-start-reports-an-unowned-search-index)
-    describe. Keep the snapshot repository outside every lab volume, and
-    back up required data in other lab services with their own procedures.
-
-2.  Reset only when all lab data is disposable or its required backups have
-    passed restoration checks:
-
-    ```shell
-    lilrae lab stop --volumes
-    ```
-
-    This is a destructive reset. It permanently deletes all of this project's
-    lab volumes, not only the drifted index. The command asks for confirmation
-    first. Then start the lab again with the same `--scenario` or
-    `--scenario-path` option. The search service then starts without the
-    index, so APTL creates it with this release's mapping. Restore required
-    data separately; restoring the drifted index unchanged also restores its
-    drifted mapping, and the next start fails the same way.
 
 ### macOS: Docker Desktop uninstall leftovers
 

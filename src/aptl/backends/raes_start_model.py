@@ -66,6 +66,7 @@ class AdmittedScenarioStart:
     capture_selection: ResolvedScenarioCapture | None = None
     scenario: object | None = None
     participant_delivery_plan: ParticipantDeliveryPlan | None = None
+    mcp_server_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

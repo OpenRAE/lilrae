@@ -168,14 +168,6 @@ def test_sealed_native_record_decides_only_its_exact_techvault_proposition():
     ),
     [
         (
-            "cortex-enrichment-readback",
-            "cortex-enrichment-ready",
-            "urn:raes:observable:cortex-enrichment-ready",
-            "api_response",
-            "observation",
-            "participant-observation",
-        ),
-        (
             "suricata-local-rule-readiness",
             "network-detection-rule-source-ready",
             "urn:raes:observable:network-detection-rule-source-ready",
@@ -507,7 +499,7 @@ def test_refresh_commits_truth_through_the_run_runtime_that_applied(tmp_path):
 
     from raes import parse_sdl_file
 
-    from aptl.backends.raes_planning_compat import AptlRuntimeManager
+    from aptl.backends.raes_runtime import AptlRuntimeManager
     from aptl.core.lab import _refresh_required_native_evidence
 
     scenario = tmp_path / "refresh.sdl.yaml"

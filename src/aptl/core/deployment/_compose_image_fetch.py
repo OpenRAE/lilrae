@@ -5,7 +5,8 @@ file-length budget. ``pull_images`` makes images available before
 ``compose up`` so a missing image fails as a bounded warning rather than
 mid-start. It inspects the selected daemon first: an image already present is
 used as is, as Compose itself would use it, so a warm start needs no registry
-(#953). Offline-staged mode never pulls.
+(#953). Offline-staged mode never pulls. A ``name:tag@sha256:…`` reference
+is realized digest first, and its tag is then pointed at that image.
 """
 
 from __future__ import annotations
@@ -21,6 +22,9 @@ class ComposeImageFetchMixin:
     def pull_images(self, images: list[str]) -> list[str]:
         """Pull each image the selected daemon does not already hold.
 
+        A ``name:tag@sha256:…`` reference makes the tag resolve to that
+        digest; offline-staged mode verifies the staged tag.
+
         Args:
             images: List of image references to make available.
 
@@ -31,7 +35,11 @@ class ComposeImageFetchMixin:
         warnings: list[str] = []
         for image in images:
             try:
-                warning = self._fetch_one_image(image)
+                warning = (
+                    self._fetch_pinned_image(image)
+                    if "@sha256:" in image
+                    else self._fetch_one_image(image)
+                )
             except OSError as exc:
                 warning = self._image_fetch_exception(image, exc)
                 log.warning(warning)
@@ -53,6 +61,27 @@ class ComposeImageFetchMixin:
         if self._offline_staged:
             return self._image_fetch_failure(image, present.stderr)
         return self._pull_one_image(image)
+
+    def _fetch_pinned_image(self, pinned: str) -> str | None:
+        """Point a ``name:tag@sha256:…`` reference's tag at its pinned digest.
+
+        Containers keep running by the tag. Online, the digest is used if the
+        daemon holds it and pulled otherwise, and the tag is then pointed at it.
+        Offline-staged mode verifies only the staged tag: ``docker save`` and
+        ``docker load`` need not keep a registry digest.
+        """
+
+        tag = pinned.partition("@")[0]
+        if self._offline_staged:
+            return self._fetch_one_image(tag)
+        present = self._run(["docker", "image", "inspect", pinned])
+        warning = None if present.returncode == 0 else self._pull_one_image(pinned)
+        if warning is None:
+            tagged = self._run(["docker", "tag", pinned, tag])
+            if tagged.returncode != 0:
+                warning = f"Failed to tag {pinned} as {tag}: {tagged.stderr.strip()}"
+                log.warning(warning)
+        return warning
 
     def _pull_one_image(self, image: str) -> str | None:
         """Pull one image the daemon lacks; return a warning on failure."""

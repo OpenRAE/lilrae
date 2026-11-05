@@ -1,6 +1,6 @@
 """Execute independent participants through the real RAES scheduler."""
 
-from aptl.workbench.lilrae_opencode import OpenCodeOptions
+from tests.opencode_fixture import synthetic_options
 
 import threading
 from dataclasses import replace
@@ -15,7 +15,7 @@ from raes_backend_protocols.manifest import backend_manifest_v2_model
 from raes_backend_stubs.stubs import create_stub_target
 from raes_processor.compiler import compile_runtime_model
 from raes_runtime.registry import ReferenceTimeRuntime
-from aptl.backends.raes_planning_compat import AptlRuntimeManager as RuntimeManager
+from aptl.backends.raes_runtime import AptlRuntimeManager as RuntimeManager
 
 from aptl.backends.raes_manifest import create_aptl_manifest
 from aptl.backends.raes_participant_runtime import AptlParticipantRuntime
@@ -68,7 +68,8 @@ def target_for(installed):
         supported_contract_versions=(
             target.manifest.supported_contract_versions
             | manifest.supported_contract_versions
-        ) - {
+        )
+        - {
             "backend-runtime-descendants-v1",
             "backend-materialization-attestation-v1",
         },
@@ -271,10 +272,10 @@ def test_nonzero_harness_exit_preserves_peer_and_continue_policy(tmp_path, binar
 
     rendezvous = threading.Barrier(2, timeout=15)
     harness = LilraeOpenCodeExecutor(
-        options=OpenCodeOptions(
+        options=synthetic_options(
             executable=Path(binary), work_root=tmp_path, environment={}
         ),
-        model="provider/model",
+        model="openrouter/model",
         prompt="task",
         timeout_seconds=15,
     )
@@ -314,10 +315,10 @@ def test_cancellation_before_harness_launch_has_a_terminal_result(tmp_path):
     from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor
 
     harness = LilraeOpenCodeExecutor(
-        options=OpenCodeOptions(
+        options=synthetic_options(
             executable=Path("/bin/false"), work_root=tmp_path, environment={}
         ),
-        model="provider/model",
+        model="openrouter/model",
         prompt="task",
         timeout_seconds=15,
     )
@@ -333,5 +334,7 @@ def test_cancellation_before_harness_launch_has_a_terminal_result(tmp_path):
         result = manager.apply(manager.plan(scenario()))
         assert result.success, result.diagnostics
         history = manager.snapshot.participant_behavior_history
-        assert "cancelled before launch" in str(list(history["participant.behavior.red"]))
+        assert "cancelled before launch" in str(
+            list(history["participant.behavior.red"])
+        )
         assert "peer retained" in str(list(history["participant.behavior.blue"]))

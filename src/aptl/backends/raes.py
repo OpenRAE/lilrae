@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -65,7 +67,7 @@ from aptl.backends.raes_manifest import (
     APTL_RAES_TARGET_NAME,
     create_aptl_manifest as create_aptl_manifest,
 )
-from aptl.backends.raes_planning_compat import (
+from aptl.backends.raes_runtime import (
     AptlPlanningOptions,
     AptlRuntimeManager,
     plan_aptl_scenario,
@@ -75,6 +77,7 @@ from aptl.backends.raes_orchestrator import AptlOrchestrator as AptlOrchestrator
 from aptl.backends import raes_participant_delivery as participant_delivery
 from aptl.backends.raes_participant_runtime import AptlParticipantRuntime
 from aptl.backends.raes_provisioner import AptlProvisioner
+from aptl.backends.scenario_trial_archive import archive_family_trial
 from aptl.backends.raes_start_model import (
     AcesRunTarget,
     AcesStartOutcome,
@@ -162,6 +165,8 @@ def start_raes_scenario(
             )
         resolved_scenario = admitted.bundle.sdl_path
         run_target = admitted_run_target(admitted, run_target, project_dir, config)
+        if admitted.bundle.trial is not None:
+            archive_family_trial(run_target.run_store, admitted.bundle.trial)
         return _run_execution_plan(
             admitted.target,
             admitted.execution_plan,
@@ -222,6 +227,9 @@ def admit_raes_scenario(
     scenario, parameters, capture_plan = prepare_admission_scenario(
         bundle, parameters, capture_selection, parser=parse_sdl_file
     )
+    from aptl.core.mcp_policy import select_scenario_servers
+
+    mcp_server_ids = select_scenario_servers(scenario, config.mcp)
     # A runtime authority is joined and bound before any artifact probe, so
     # every image fact and later mutation targets the same exact local daemon.
     prepare_runtime_orchestration_for_scenario(scenario, backend)
@@ -288,6 +296,7 @@ def admit_raes_scenario(
     participant_delivery_plan = bind_admitted_participant_runtime(
         target, execution_plan, bundle, config, realization, scenario, capture_plan
     )
+    participant_delivery_plan = replace(participant_delivery_plan, mcp_server_ids=mcp_server_ids)
     return AdmittedScenarioStart(
         bundle=bundle,
         target=target,
@@ -299,6 +308,7 @@ def admit_raes_scenario(
         capture_selection=capture_selection,
         scenario=scenario,
         participant_delivery_plan=participant_delivery_plan,
+        mcp_server_ids=mcp_server_ids,
     )
 
 
@@ -409,6 +419,8 @@ def _apply_execution_plan(
     reporting_options = materialization_reporting_options(
         execution_plan, run_store=run_store, run_id=run_id
     )
+    if run_id is not None:
+        reporting_options.setdefault("run_scope", f"run:{run_id}")
     if isinstance(target.provisioner, AptlProvisioner):
         target.provisioner.bind_attempt_id(run_id)
     manager = RuntimeManager(

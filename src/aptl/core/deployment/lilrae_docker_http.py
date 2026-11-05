@@ -13,6 +13,7 @@ import h11
 
 from aptl.core.deployment._compose_resource_ownership import OwnershipConflictError
 from aptl.core.deployment._docker_endpoint_binding import _local_docker_socket_identity
+from aptl.core.deployment._cleanup_budget import cleanup_command_timeout
 
 
 class _UnixConnection(http.client.HTTPConnection):
@@ -47,11 +48,12 @@ class NativeDocker:
             or _local_docker_socket_identity(self.socket_path) != self.identity
         ):
             raise OwnershipConflictError("recording daemon endpoint changed")
-        connection = _UnixConnection(self.socket_path, timeout=5)
+        connection = _UnixConnection(self.socket_path, timeout=cleanup_command_timeout(5))
         try:
             connection.request(method, path)
             response = connection.getresponse()
             body = response.read(INSPECTION_LIMIT + 1)
+            cleanup_command_timeout(5)
             if len(body) > INSPECTION_LIMIT:
                 raise OwnershipConflictError(
                     "recording native response is uninspectable"

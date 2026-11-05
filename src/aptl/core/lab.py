@@ -25,6 +25,7 @@ import icontract
 import yaml
 
 from aptl.core.certs import ensure_ssl_certs
+from aptl.core.helper_images import PINNED_HELPER_IMAGES, SURICATA_SEEDER_IMAGE
 from aptl.core.soc_ca import ensure_soc_certs
 from aptl.core.deployment._misp_server_tls import stage_misp_server_tls
 from aptl.core.config import AptlConfig, DeploymentConfig, find_config, load_config
@@ -134,6 +135,7 @@ if TYPE_CHECKING:
     from aptl.core.snapshot import RangeSnapshot
 
 log = get_logger("lab")
+_STATE_DIR_NAME = ".aptl"
 
 _START_OPERATION_ERRORS = (
     OSError,
@@ -193,15 +195,6 @@ _UNOWNED_SEARCH_INDEX_RECOVERY_HINT = (
     "https://openrae.github.io/lilrae/troubleshooting/"
     "#lilrae-lab-start-reports-an-unowned-search-index"
 )
-# The backend also names an adopted index whose mapping drifted (#1280).
-_DRIFTED_SEARCH_INDEX_RECOVERY_HINT = (
-    "Back up the index first; `lilrae lab stop` keeps every lab volume, and a "
-    "later start finds the same index. Only if its data is disposable, run "
-    "`lilrae lab stop --volumes`, a destructive reset that permanently deletes "
-    "every lab volume; the next start then creates the index. Recovery steps: "
-    "https://openrae.github.io/lilrae/troubleshooting/"
-    "#lilrae-lab-start-reports-a-search-index-whose-mapping-drifted"
-)
 _WAZUH_MANAGER_SERVICE = "wazuh.manager"
 _WAZUH_MANAGER_CONTAINER = "aptl-wazuh-manager"
 _WAZUH_INDEXER_SERVICE = "wazuh.indexer"
@@ -233,15 +226,6 @@ def _looks_like_unowned_search_index_error(error: str) -> bool:
     )
 
 
-def _looks_like_drifted_search_index_error(error: str) -> bool:
-    """Return True when service materialization named an adopted drifted index."""
-
-    return (
-        "service materialization failed for " in error
-        and "(reason=native-product-contract-mismatch): search index " in error
-    )
-
-
 def _lab_start_failure_error(error: str) -> str:
     """Build the CLI-visible lab-start failure message with recovery hints."""
 
@@ -250,8 +234,6 @@ def _lab_start_failure_error(error: str) -> str:
         return f"{message}\n{_STALE_NETWORK_RECOVERY_HINT}"
     if _looks_like_unowned_search_index_error(error):
         return f"{message}\n{_UNOWNED_SEARCH_INDEX_RECOVERY_HINT}"
-    if _looks_like_drifted_search_index_error(error):
-        return f"{message}\n{_DRIFTED_SEARCH_INDEX_RECOVERY_HINT}"
     return message
 
 
@@ -412,8 +394,9 @@ WAZUH_IMAGE_VERSION = "4.12.0"
 # Suricata service's own image is reused so the seed step adds no new
 # supply-chain surface; it is already pulled for the `suricata` service.
 # A test pins this to the `suricata` service's `image:` in
-# docker-compose.yml so the two cannot drift.
-SURICATA_IMAGE = "jasonish/suricata:7.0"
+# docker-compose.yml so the two cannot drift. Its digest is pinned in
+# ``aptl.core.helper_images``.
+SURICATA_IMAGE = SURICATA_SEEDER_IMAGE
 
 # All known Docker Compose profiles. Used as fallback when config is
 # unavailable (e.g. stop_lab, kill switch).  Keep in sync with
@@ -768,7 +751,7 @@ def _stop_recovery_configuration(
             from aptl.core.operator_group_state import load_admitted_operator_groups
 
             admitted_groups = list(load_admitted_operator_groups(search_dir))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             failure = LabResult(
                 success=False,
                 error=f"[lifecycle-state-invalid] Lab {command} blocked: invalid "
@@ -1121,7 +1104,7 @@ def _clean_boot_rootless_refusal(
         try:
             config = load_config(config_path) if config_path is not None else None
             backend = _get_backend(project_root, config)
-        except (FileNotFoundError, ValueError):
+        except FileNotFoundError, ValueError:
             return None
     return _rootless_daemon_refusal(backend)
 
@@ -1151,7 +1134,7 @@ def lab_status(
             try:
                 config = load_config(config_path)
                 backend = _get_backend(config_path.parent, config)
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 return LabStatus(
                     running=False,
                     error="[lifecycle-invalid-configuration] Lab status blocked: "
@@ -1947,7 +1930,16 @@ def _configure_verified_appliance_launch(
             binding = ApplianceBoundaryBinding(
                 policy_digest=descriptor.boundary_policy_digest,
                 payload_digest=descriptor.image_digest,
-                raes_plan_digest=descriptor.participant_routes_digest,
+                participant_routes_digest=(
+                    descriptor.participant_routes_digest
+                    if boundary_policy.seat_component_protection
+                    else None
+                ),
+                raes_plan_digest=(
+                    None
+                    if boundary_policy.seat_component_protection
+                    else descriptor.participant_routes_digest
+                ),
                 raes_boundary_required=boundary_policy.internal_zone_isolation,
                 boundary_helper_image=descriptor.boundary_helper_image,
                 egress_proxy_image=descriptor.egress_proxy_image,
@@ -2110,7 +2102,7 @@ def _prepare_scenario_startup(
         if plan is None:
             return None
         return _bind_scenario_startup_environment(ctx, plan)
-    except (OSError, ValueError, ScenarioStartupProviderError):
+    except OSError, ValueError, ScenarioStartupProviderError:
         log.warning("Scenario startup adapter preparation failed")
         return LabResult(
             success=False,
@@ -2452,23 +2444,25 @@ def _seed_suricata_volumes_local(ctx: _LabStartContext) -> LabResult | None:
 
     # ctx.backend is narrowed to the local Compose backend by the caller's guard.
     assert ctx.backend is not None
-    # Pull the seeder image up front. Both the ownership repair and the seed
-    # container implicitly pull it via `docker run`, and on a fresh host a
-    # failed/slow implicit pull can surface as an opaque `exit 125` from the
-    # seeder with no docker stderr in the redacted log path — pulling here
-    # keeps registry failures at a stage the user can reason about (a
-    # `Failed to pull ...` warning) instead of a bare seed-exit code.
-    pull_warnings = list(ctx.backend.pull_images([SURICATA_IMAGE]))
+    # Point the seeder tag at its pinned digest up front. Both the ownership
+    # repair and the seed container run the tag via `docker run`, so a failure
+    # here stops the step with a `Failed to pull ...` warning rather than an
+    # opaque `exit 125`, and never falls back to whatever the tag names.
+    pull_warnings = list(
+        ctx.backend.pull_images([PINNED_HELPER_IMAGES[SURICATA_IMAGE]])
+    )
     for pull_warning in pull_warnings:
         log.warning(pull_warning)
     result: LabResult | None = None
-    if ctx.offline_staged and pull_warnings:
+    if pull_warnings:
+        failure = (
+            "Offline staged Suricata image verification failed"
+            if ctx.offline_staged
+            else "Pinned Suricata seeder image is unavailable"
+        )
         result = LabResult(
             success=False,
-            error=(
-                "Offline staged Suricata image verification failed: "
-                f"{'; '.join(pull_warnings)}"
-            ),
+            error=f"{failure}: {'; '.join(pull_warnings)}",
         )
     if result is None:
         ownership = ensure_suricata_config_source_ownership(
@@ -2520,6 +2514,7 @@ def _step_generate_certs(ctx: _LabStartContext) -> LabResult | None:
     cert_result = ensure_ssl_certs(
         ctx.project_dir,
         project=None if ctx.backend is None else ctx.backend._ephemeral_project(),
+        pull_images=None if ctx.backend is None else ctx.backend.pull_images,
     )
     if cert_result.success:
         return None
@@ -2712,14 +2707,14 @@ def _persist_start_recovery(ctx: _LabStartContext) -> LabResult | None:
         from aptl.core.operator_group_state import persist_admitted_operator_groups
 
         persist_admitted_operator_groups(ctx.project_dir, ctx.selected_profiles)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return LabResult(
             success=False,
             error="Could not persist admitted operator groups for recovery.",
         )
     try:
         _persist_cleanup_actions(ctx)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return LabResult(
             success=False,
             error="Could not persist pending lab cleanup records for recovery.",
@@ -3247,7 +3242,7 @@ def _resolve_run_target(ctx: _LabStartContext) -> tuple[object, str]:
     if ctx.run_store is not None and ctx.run_id is not None:
         return ctx.run_store, ctx.run_id
 
-    state_dir = ctx.project_dir / ".aptl"
+    state_dir = ctx.project_dir / _STATE_DIR_NAME
     active_run_dir = resolve_active_run_dir(state_dir)
     if active_run_dir is not None:
         ctx.run_store, ctx.run_id = (
@@ -3344,12 +3339,26 @@ def _write_run_record(ctx: _LabStartContext) -> None:
     final_snapshot = _resolve_raes_snapshot(outcome)
     now_str = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
+    # This legacy manifest describes startup health, not a scientific verdict.
+    startup = outcome.lab_result
+    health = derive_startup_outcome(
+        [*ctx.diagnostics, *startup.diagnostics], fatal=not startup.success
+    )
+    record_outcome = "failed"
+    if startup.success:
+        record_outcome = (
+            "success"
+            if health is StartupOutcome.READY
+            and startup.outcome is StartupOutcome.READY
+            else "partial"
+        )
+
     inputs = RunRecordInputs(
         run_id=run_id,
         backend_name="aptl",
         started_at=snapshot.timestamp,
         finished_at=now_str,
-        outcome="success",
+        outcome=record_outcome,
         final_snapshot=final_snapshot,
         realization_details=_safe_dict(getattr(outcome, "realization_details", {})),
         selected_profiles=_safe_list(getattr(outcome, "selected_profiles", [])),
@@ -3989,38 +3998,51 @@ def _step_publish_participant_desktop(ctx: _LabStartContext) -> LabResult | None
 def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
     """Refresh local MCP client env keys after SOC seeding."""
     # `.mcp.json` is the canonical config Claude Code, Cursor, and Cline
-    # read to spawn MCP servers. Seed-prime writes API keys (TheHive
-    # provisioned, MISP/Shuffle defaults) to `.env`. If the user has a
+    # read to spawn MCP servers. Seed-prime writes API keys (MISP/Shuffle
+    # defaults) to `.env`. If the user has a
     # local `.mcp.json`, surface those keys into per-server env blocks
     # so the MCPs authenticate without manual rewiring after a fresh
     # `lab stop -v` + `lab start`.
     log.info("Step 14: Syncing MCP client config with seeded API keys...")
-    if ctx.admitted_surface is not None and not ctx.selected_profiles:
-        log.debug("No adapter profiles selected, skipping MCP client configuration")
-        return None
     try:
         active_profiles = (
             set(ctx.admitted_surface.selected_profiles)
             if ctx.admitted_surface is not None
             else None
         )
+        server_ids = (
+            ctx.admitted_start.mcp_server_ids
+            if ctx.admitted_start is not None
+            else None
+        )
         runtime_ports = (
             _runtime_mcp_host_ports(
-                ctx.project_dir, ctx.backend, active_profiles=active_profiles
+                ctx.project_dir,
+                ctx.backend,
+                active_profiles=active_profiles,
+                server_ids=server_ids,
             )
             if ctx.backend is not None
             else []
         )
         ports_by_variable = {
             getattr(port, "env_var", None): port
-            for port in [*ctx.resolved_ports, *runtime_ports]
+            for port in (
+                runtime_ports
+                if ctx.admitted_start is not None
+                else [*ctx.resolved_ports, *runtime_ports]
+            )
             if getattr(port, "env_var", None)
         }
         _sync_mcp_config_keys(
             ctx.project_dir,
             list(ports_by_variable.values()),
             server_keys=_mcp_startup_policy(ctx),
+            server_ids=server_ids,
+            run_id=ctx.run_id,
         )
+        if ctx.admitted_start is not None:
+            _persist_mcp_run_admission(ctx)
         from aptl.backends.scenario_startup import ScenarioStartupPlan
         from aptl.core.scenario_bundle import ScenarioSourceKind
 
@@ -4042,15 +4064,9 @@ def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
     except Exception:
         # Exception text may include API key names — keep it in the log
         # only (existing redaction). Diagnostic stays narrow.
-        log.exception("MCP config sync skipped")
-        _emit_diagnostic(
-            ctx,
-            step="mcp_config_sync",
-            impact=DiagnosticImpact.CAPABILITY,
-            severity=DiagnosticSeverity.WARNING,
-            message="MCP client config not refreshed; MCP servers may not "
-            "authenticate without manual key wiring",
-            operator_action="Inspect .mcp.json env blocks against .env after a fresh lab start",
+        log.exception("MCP config sync failed")
+        return LabResult(
+            success=False, error="Selected MCP service configuration is unavailable."
         )
     if os.environ.get("APTL_SEAT_DESKTOP_HANDOFF") == "1":
         try:
@@ -4066,12 +4082,52 @@ def _step_sync_mcp_config(ctx: _LabStartContext) -> LabResult | None:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-        except (OSError, subprocess.CalledProcessError):
+        except OSError, subprocess.CalledProcessError:
             return LabResult(
                 success=False,
                 error="Seat desktop MCP handoff failed.",
             )
     return None
+
+
+def _persist_mcp_run_admission(ctx: _LabStartContext) -> None:
+    """Keep guest discovery on the same exact trial as startup."""
+    from aptl.backends.raes_profiles import normalized_identifier_aliases
+    from aptl.core._soc_ca_io import _atomic_write
+    from aptl.core.mcp_policy import McpRunAdmission
+
+    admitted = ctx.admitted_start
+    if admitted is None or admitted.bundle.pack_identity is None:
+        return
+    if admitted.realization is None or not ctx.run_id:
+        raise ValueError("MCP deployment admission is unavailable")
+    admission = McpRunAdmission(
+        run_id=ctx.run_id,
+        pack=admitted.bundle.pack_identity,
+        server_ids=admitted.mcp_server_ids,
+        container_aliases=tuple(
+            tuple(
+                sorted(
+                    {
+                        alias
+                        for name in (
+                            node.name,
+                            node.container_name,
+                            *node.backend_services,
+                        )
+                        if name
+                        for alias in normalized_identifier_aliases(name)
+                    }
+                )
+            )
+            for node in admitted.realization.nodes
+        ),
+    )
+    _atomic_write(
+        ctx.project_dir / _STATE_DIR_NAME / "mcp-admission.json",
+        (admission.model_dump_json() + "\n").encode(),
+        mode=0o600,
+    )
 
 
 def _step_execute_participant_injects(ctx: _LabStartContext) -> LabResult | None:
@@ -4854,7 +4910,6 @@ def _serve_appliance_guest_access(ctx: _LabStartContext) -> LabResult | None:
 
 
 _MCP_SERVER_KEYS = {
-    "aptl-casemgmt": ("THEHIVE_API_KEY",),
     "aptl-threatintel": ("MISP_API_KEY",),
     "aptl-soar": ("SHUFFLE_API_KEY",),
 }
@@ -4909,7 +4964,11 @@ def _resolved_host_port_env(resolved_ports: list[object]) -> dict[str, str]:
 
 
 def _runtime_mcp_host_ports(
-    project_dir: Path, backend: object, *, active_profiles: set[str] | None = None
+    project_dir: Path,
+    backend: object,
+    *,
+    active_profiles: set[str] | None = None,
+    server_ids: tuple[str, ...] | None = None,
 ) -> list[object]:
     """Map MCP port variables to receipt-owned live publications.
 
@@ -4926,6 +4985,33 @@ def _runtime_mcp_host_ports(
 
     bindings = port_bindings.project_port_bindings(backend)
     resolved: dict[str, object | None] = {}
+    if server_ids is not None:
+        from aptl.core.mcp_policy import service_bindings
+
+        return [
+            host_ports.ResolvedPort(
+                service=binding.endpoint_node or binding.node,
+                env_var=binding.environment,
+                default_port=binding.endpoint_port or binding.port,
+                resolved_port=port,
+                protos=("tcp",),
+                host_ip="127.0.0.1",
+                remapped=port != (binding.endpoint_port or binding.port),
+            )
+            for server_id in server_ids
+            for binding in service_bindings(server_id)
+            if binding.environment is not None
+            and (
+                port := bindings.get(
+                    (
+                        binding.endpoint_node or binding.node,
+                        binding.endpoint_port or binding.port,
+                        "tcp",
+                    )
+                )
+            )
+            is not None
+        ]
     for spec in host_ports.published_port_specs(project_dir, active_profiles):
         if spec.env_var is None:
             continue
@@ -5042,7 +5128,7 @@ def _sync_native_mcp_ingress(
                 managed.setdefault("env", {}).update(
                     APTL_MCP_ADMITTED_RUN_ID=run_id,
                     APTL_MCP_RUN_STORE_BASE=run_store_base,
-                    APTL_STATE_DIR=str(project_dir / ".aptl"),
+                    APTL_STATE_DIR=str(project_dir / _STATE_DIR_NAME),
                 )
     path.write_text(json.dumps(cfg, indent=2) + "\n")
     path.chmod(0o600)
@@ -5053,14 +5139,14 @@ def _sync_mcp_config_keys(
     resolved_ports: list[object],
     *,
     server_keys: Mapping[str, tuple[str, ...]] | None = None,
+    server_ids: tuple[str, ...] | None = None,
+    run_id: str | None = None,
 ) -> None:
     """Create or update `.mcp.json` with dynamic API keys and resolved ports.
 
-    A fresh lab copies the shipped example so its seven enabled custom MCPs
-    are client-ready without a manual configuration step. Existing client
-    configuration is preserved: only the known dynamic credential entries are
-    refreshed after seed-prime, and each server's ``${APTL_HP_*}`` host ports
-    are injected with the run's resolved (possibly remapped) values.
+    An admitted start intersects the operator catalog with declared services,
+    removes selected-out entries, and replaces endpoints from live observations.
+    Callers without an admission retain the legacy credential-refresh behavior.
     """
     import json
 
@@ -5068,31 +5154,50 @@ def _sync_mcp_config_keys(
     example_path = project_dir / ".mcp.json.example"
     env_path = project_dir / ".env"
     source_path = mcp_path if mcp_path.exists() else example_path
-    if not source_path.exists() or not env_path.exists():
-        log.debug(
-            "MCP sync: missing client template/config or %s, skipping",
-            env_path.name,
-        )
+    if not source_path.exists():
+        if server_ids:
+            raise ValueError("selected MCP configuration inputs are unavailable")
         return
-
-    # Use the canonical .env parser so quoted values, `export` prefixes,
-    # and trailing comments are handled identically to lab startup.
     try:
         env_vals = load_dotenv(env_path)
     except FileNotFoundError:
-        log.debug("MCP sync: %s vanished between checks; skipping", env_path.name)
-        return
+        if server_ids:
+            raise ValueError("selected MCP credential inputs are unavailable") from None
+        if server_ids is None:
+            return
+        env_vals = {}
 
     cfg = json.loads(source_path.read_text())
+    if server_ids is not None:
+        from aptl.core.mcp_configuration import select_run_configuration
+
+        template = (
+            json.loads(example_path.read_text()) if example_path.exists() else cfg
+        )
+        cfg = select_run_configuration(
+            cfg, template, server_ids, _resolved_host_port_env(resolved_ports), env_vals
+        )
+    if server_ids:
+        if not run_id:
+            raise ValueError("MCP run identity is unavailable")
+        for name in server_ids:
+            cfg["mcpServers"][name]["env"].update(
+                APTL_MCP_ADMITTED_RUN_ID=run_id,
+                APTL_MCP_RUN_STORE_BASE=str(
+                    _expected_transcript_store(project_dir).resolve()
+                ),
+                APTL_STATE_DIR=str(project_dir / _STATE_DIR_NAME),
+            )
     updated = _refresh_mcp_server_keys(cfg, env_vals, server_keys)
     updated += _inject_mcp_server_ports(
         cfg, project_dir, _resolved_host_port_env(resolved_ports)
     )
 
     created = source_path == example_path
-    if updated or created:
-        mcp_path.write_text(json.dumps(cfg, indent=2) + "\n")
-        mcp_path.chmod(0o600)
+    if updated or created or server_ids is not None:
+        from aptl.core._soc_ca_io import _atomic_write
+
+        _atomic_write(mcp_path, (json.dumps(cfg, indent=2) + "\n").encode(), mode=0o600)
         action = "created" if created else "refreshed"
         details = f" ({', '.join(updated)})" if updated else ""
         log.info("MCP sync: %s %s%s", action, mcp_path.name, details)

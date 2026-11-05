@@ -29,7 +29,7 @@ from aptl.utils.pathsafe import PathContainmentError
 def _capture_selection(runtime_adapter: object | None = None):
     selection = resolve_scenario_capture(
         ScenarioCaptureContext(
-            PackIdentity("techvault", "0.1.3", TECHVAULT_PACK_SET_DIGEST),
+            PackIdentity("techvault", "7.2.2", TECHVAULT_PACK_SET_DIGEST),
             BackendIdentity("aptl", "0.1.0", "full-remote-control-plane"),
         )
     )
@@ -127,7 +127,7 @@ def test_on_demand_collector_bounds_query_then_records_actual_finish():
         "2026-09-14T00:00:00Z",
         "2026-09-14T00:00:05Z",
     )
-    binding = _binding("aptl.collector.cortex-enrichment", "cortex")
+    binding = _binding("aptl.collector.misp-authenticated-api-readiness", "misp")
     context = CollectorContext(
         planned_trial_id="capture-plan-test",
         run_id="run-1",
@@ -164,7 +164,7 @@ def test_on_demand_collector_rejects_source_time_after_actual_finish():
         "2026-09-14T00:00:00Z",
         "2026-09-14T00:00:05Z",
     )
-    binding = _binding("aptl.collector.cortex-enrichment", "cortex")
+    binding = _binding("aptl.collector.misp-authenticated-api-readiness", "misp")
     context = CollectorContext(
         planned_trial_id="capture-plan-test",
         run_id="run-1",
@@ -187,7 +187,6 @@ def test_acquire_native_evidence_persists_only_immediate_native_bindings(
     from aptl.backends import raes_evidence_acquisition as acquisition
 
     native = (
-        _binding("aptl.collector.cortex-enrichment", "cortex"),
         _binding("aptl.collector.misp-authenticated-api-readiness", "misp"),
         _binding("aptl.collector.suricata-rule-readiness", "readiness"),
         _binding("aptl.collector.suricata-wazuh-sqli", "sqli"),
@@ -232,7 +231,6 @@ def test_acquire_native_evidence_persists_only_immediate_native_bindings(
             environment={
                 "INDEXER_USERNAME": "admin",
                 "INDEXER_PASSWORD": "password",
-                "THEHIVE_API_KEY": "operator-api-key",
             },
             run_store=store,
             run_id="run-1",
@@ -245,7 +243,7 @@ def test_acquire_native_evidence_persists_only_immediate_native_bindings(
     assert {report.registration_id for report in result.reports} == {
         item.registration_id for item in native
     }
-    assert len(result.records) == 5
+    assert len(result.records) == 4
     assert (
         store.get_run_path("run-1") / "evidence/capture-plans/capture-plan-test.json"
     ).read_bytes() == plan.canonical_bytes
@@ -256,7 +254,7 @@ def test_acquire_native_evidence_fails_when_a_required_source_is_unavailable(
 ):
     from aptl.backends import raes_evidence_acquisition as acquisition
 
-    binding = _binding("aptl.collector.cortex-enrichment", "cortex")
+    binding = _binding("aptl.collector.misp-authenticated-api-readiness", "misp")
     plan = SimpleNamespace(
         plan_id="capture-plan-test",
         canonical_bytes=b"{}",
@@ -281,7 +279,6 @@ def test_acquire_native_evidence_fails_when_a_required_source_is_unavailable(
             environment={
                 "INDEXER_USERNAME": "admin",
                 "INDEXER_PASSWORD": "password",
-                "THEHIVE_API_KEY": "operator-api-key",
             },
             run_store=LocalRunStore(tmp_path / "runs"),
             run_id="run-1",
@@ -307,7 +304,6 @@ def _lab_context(tmp_path, plan):
         raw_env={
             "INDEXER_USERNAME": "admin",
             "INDEXER_PASSWORD": "password",
-            "THEHIVE_API_KEY": "operator-api-key",
         },
         backend=object(),
         env=SimpleNamespace(indexer_username="admin", indexer_password="password"),
@@ -347,7 +343,7 @@ def test_lab_start_native_step_retains_successful_acquisition(tmp_path, monkeypa
     from aptl.core.lab import _step_acquire_required_native_evidence
     from raes_contracts.runtime_state import OperationState, RuntimeSnapshot
 
-    binding = _binding("aptl.collector.cortex-enrichment", "cortex")
+    binding = _binding("aptl.collector.misp-authenticated-api-readiness", "misp")
     capture = SimpleNamespace(
         disposition=AcquisitionDisposition.SEALED_READY,
         records=("native-record",),
@@ -379,7 +375,7 @@ def test_lab_start_native_step_supports_credential_free_adapter(tmp_path, monkey
     from aptl.core.lab import _step_acquire_required_native_evidence
     from raes_contracts.runtime_state import OperationState
 
-    binding = _binding("aptl.collector.cortex-enrichment", "cortex")
+    binding = _binding("aptl.collector.misp-authenticated-api-readiness", "misp")
     capture = SimpleNamespace(
         disposition=AcquisitionDisposition.SEALED_READY,
         records=("native-record",),
@@ -421,14 +417,14 @@ def test_native_request_reads_credentials_created_during_seeding(tmp_path):
     from aptl.core.lab import _native_evidence_request
 
     context = _lab_context(tmp_path, object())
-    context.raw_env.pop("THEHIVE_API_KEY")
+    context.raw_env.pop("INDEXER_PASSWORD")
     (tmp_path / ".env").write_text(
-        "THEHIVE_API_KEY=seeded-test-key\nUNDECLARED_SECRET=not-forwarded\n"
+        "INDEXER_PASSWORD=seeded-test-key\nUNDECLARED_SECRET=not-forwarded\n"
     )
 
     request = _native_evidence_request(context, object(), object())
 
-    assert request.environment["THEHIVE_API_KEY"] == "seeded-test-key"
+    assert request.environment["INDEXER_PASSWORD"] == "seeded-test-key"
     assert request.environment["INDEXER_USERNAME"] == "admin"
     assert "UNDECLARED_SECRET" not in request.environment
 
@@ -439,7 +435,7 @@ def test_lab_start_native_step_rejects_failed_truth_refresh(tmp_path, monkeypatc
     from aptl.core.lab import _step_acquire_required_native_evidence
     from raes_contracts.runtime_state import OperationState, RuntimeSnapshot
 
-    binding = _binding("aptl.collector.cortex-enrichment", "cortex")
+    binding = _binding("aptl.collector.misp-authenticated-api-readiness", "misp")
     capture = SimpleNamespace(
         disposition=AcquisitionDisposition.SEALED_READY,
         records=("native-record",),
@@ -502,7 +498,7 @@ def test_lab_start_native_step_rejects_failed_required_acquisition(
     from aptl.backends import raes_evidence_acquisition as acquisition
     from aptl.core.lab import _step_acquire_required_native_evidence
 
-    binding = _binding("aptl.collector.cortex-enrichment", "cortex")
+    binding = _binding("aptl.collector.misp-authenticated-api-readiness", "misp")
     capture = SimpleNamespace(disposition=AcquisitionDisposition.INCONCLUSIVE)
     monkeypatch.setattr(
         acquisition, "acquire_native_evidence", lambda *_args, **_kwargs: capture
@@ -523,7 +519,7 @@ def test_lab_start_native_step_rejects_collector_exception(tmp_path, monkeypatch
     from aptl.backends import raes_evidence_acquisition as acquisition
     from aptl.core.lab import _step_acquire_required_native_evidence
 
-    binding = _binding("aptl.collector.cortex-enrichment", "cortex")
+    binding = _binding("aptl.collector.misp-authenticated-api-readiness", "misp")
 
     def fail(**_kwargs):
         raise OSError("source detail must not cross the boundary")
@@ -818,11 +814,25 @@ def test_expected_transcript_sessions_reject_symlinked_census_entry(tmp_path):
         )
 
 
+@pytest.mark.parametrize(
+    "gap",
+    [
+        None,
+        "ssh-failure",
+        "session-limit",
+        "invalid-identity",
+        "during-quiesce",
+        "after-quiesce",
+        "all-missing",
+        "accepted-limitation",
+    ],
+)
 @pytest.mark.parametrize("collapse_retained", [False, True])
 def test_finalize_transcript_quiesces_broker_persists_evidence_and_marks_complete(
     tmp_path,
     monkeypatch,
     collapse_retained,
+    gap,
 ):
     import base64
     import hashlib
@@ -842,6 +852,7 @@ def test_finalize_transcript_quiesces_broker_persists_evidence_and_marks_complet
         _binding("aptl.collector.redteam-session-transcript", "transcript"),
         redaction_required=True,
         redaction_policy="redact_secrets",
+        accepted_limitation="partial-window" if gap == "accepted-limitation" else None,
     )
     plan = SimpleNamespace(
         plan_id="capture-plan-test",
@@ -896,19 +907,34 @@ def test_finalize_transcript_quiesces_broker_persists_evidence_and_marks_complet
     census = store.get_run_path("run-1") / "mcp-side/sessions"
     census.mkdir(parents=True)
     (census / "session-1.jsonl").write_text("")
+    if gap:
+        exported["expected_session_ids"].append(gap)
+        if gap not in {"during-quiesce", "after-quiesce"}:
+            (census / f"{gap}.jsonl").write_text("")
+    if gap == "all-missing":
+        exported["accepted_session_ids"] = []
+        exported["sessions"] = []
     observed_expected = None
 
     lifecycle = []
 
     def quiesce_capture_apparatus():
         lifecycle.append("quiesce")
+        if gap in {"during-quiesce", "after-quiesce"}:
+            (census / f"{gap}.jsonl").write_text("")
         return True
 
     def export_capture_apparatus(*, expected_session_ids):
         nonlocal observed_expected
         lifecycle.append("export")
         observed_expected = expected_session_ids
-        return exported
+        from aptl.core.deployment.docker_compose import DockerComposeBackend
+
+        apparatus = DockerComposeBackend(tmp_path)
+        apparatus._export_capture_payload = lambda: exported
+        return apparatus.export_capture_apparatus(
+            expected_session_ids=expected_session_ids
+        )
 
     backend = SimpleNamespace(
         quiesce_capture_apparatus=quiesce_capture_apparatus,
@@ -944,6 +970,29 @@ def test_finalize_transcript_quiesces_broker_persists_evidence_and_marks_complet
             == []
         )
         assert load_active_transcript_authorities(tmp_path)
+        return
+
+    if gap:
+        assert result.disposition is AcquisitionDisposition.INVALIDATED
+        assert result.reports[0].status is CollectorStatus.MID_RUN_LOSS
+        assert len(result.records) == 1
+        record = result.records[0]
+        assert record.raw_content.loss_disclosure
+        retained = store.read_run_json("run-1", record.raw_content.content_uri)
+        report = retained["reconciliation"]
+        assert len(report["census_refs"]) == 2
+        assert (
+            "capture-" + hashlib.sha256(gap.encode()).hexdigest()
+            in report["missing_refs"]
+        )
+        assert report["missing_count"] == (2 if gap == "all-missing" else 1)
+        assert len(retained["transcript_entries"]) == (0 if gap == "all-missing" else 1)
+        if gap != "all-missing":
+            assert retained["transcript_entries"][0]["frames"][0]["data"] == "whoami"
+        assert "hunter2" not in json.dumps(retained)
+        assert load_active_transcript_authorities(tmp_path)
+        assert not (tmp_path / ".aptl/capture-finalized/run-1.json").exists()
+        assert result.diagnostics
         return
 
     assert result.disposition is AcquisitionDisposition.SEALED_READY
@@ -1215,7 +1264,9 @@ def test_lab_stop_records_transcript_backend_timeouts(
         return SimpleNamespace(returncode=0, stdout="{}")
 
     monkeypatch.setattr(backend, "container_exec", container_exec)
-    monkeypatch.setattr(lab, "_expected_transcript_store", lambda _project: store.base_dir)
+    monkeypatch.setattr(
+        lab, "_expected_transcript_store", lambda _project: store.base_dir
+    )
 
     result = lab._finalize_required_transcript_capture(tmp_path, backend)
 

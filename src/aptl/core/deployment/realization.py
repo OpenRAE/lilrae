@@ -443,6 +443,7 @@ class DeploymentRealizationSpec(object):
     profiles: tuple[str, ...]
     nodes: tuple[DeploymentNodeRealization, ...]
     networks: tuple[DeploymentNetworkRealization, ...]
+    raes_plan_digest: str | None = None
     docker_authority_admissions: tuple[DeploymentDockerAuthorityAdmission, ...] = ()
     acls: tuple[DeploymentAclRealization, ...] = ()
     images: tuple[DeploymentImageRealization, ...] = ()

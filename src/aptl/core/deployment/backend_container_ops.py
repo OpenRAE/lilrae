@@ -59,6 +59,7 @@ class ContainerOpsBackend(Protocol):
         since: str | None = None,
         until: str | None = None,
         timeout: int | None = None,
+        max_bytes: int | None = None,
     ) -> subprocess.CompletedProcess:
         """Capture a container's logs (for programmatic consumption).
 
@@ -69,9 +70,11 @@ class ContainerOpsBackend(Protocol):
             timeout: Optional timeout in seconds. Set this for
                 archive collection so a stalled docker daemon doesn't
                 hang the run forever.
+            max_bytes: Optional combined stream budget for bounded capture.
 
         Returns:
-            CompletedProcess with captured stdout/stderr.
+            CompletedProcess with captured stdout/stderr. Bounded reads also
+            expose truncated and timed_out flags.
         """
         ...
 

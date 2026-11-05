@@ -16,9 +16,15 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Protocol
 
-from aptl.core.lab_types import LabResult, LabStatus
+from aptl.core.appliance_boundary import (
+    ApplianceBoundaryBinding,
+    ApplianceBoundaryPolicy,
+)
 from aptl.core.deployment.backend_container_ops import ContainerOpsBackend
 from aptl.core.deployment.backend_host_inventory import HostInventoryBackend
+from aptl.core.deployment.boundary import BoundaryEnforcementSpec
+from aptl.core.deployment.lilrae_recorded_inventory import RecordedInventorySnapshot
+from aptl.core.deployment.observation import DeploymentObservationContext
 from aptl.core.deployment.realization import (
     DeploymentAccountRealization,
     DeploymentContentRealization,
@@ -26,13 +32,7 @@ from aptl.core.deployment.realization import (
     DeploymentNodeRealization,
     DeploymentRealizationSpec,
 )
-from aptl.core.deployment.boundary import BoundaryEnforcementSpec
-from aptl.core.deployment.observation import DeploymentObservationContext
-from aptl.core.deployment.lilrae_recorded_inventory import RecordedInventorySnapshot
-from aptl.core.appliance_boundary import (
-    ApplianceBoundaryBinding,
-    ApplianceBoundaryPolicy,
-)
+from aptl.core.lab_types import LabResult, LabStatus
 from aptl.core.seed_spec import NamedVolumeSeed
 
 # Imported from ``aptl.core.lab_types`` (the leaf module) rather than
@@ -126,6 +126,12 @@ class DeploymentBackend(HostInventoryBackend, ContainerOpsBackend, Protocol):
 
         ...
 
+    def verify_required_service_readiness(
+        self, realization: DeploymentRealizationSpec
+    ) -> bool:
+        """Read required service readiness through the ordinary startup owners."""
+        ...
+
     def realize_boundary(self, policy: BoundaryEnforcementSpec) -> LabResult:
         """Apply and read back one project-owned appliance boundary policy."""
 
@@ -187,7 +193,9 @@ class DeploymentBackend(HostInventoryBackend, ContainerOpsBackend, Protocol):
         Each image is inspected on the selected daemon first. An image already
         present is used as is, as Compose itself would use it, so a warm start
         needs no registry (#953). Only an absent image is pulled, and
-        offline-staged mode never pulls.
+        offline-staged mode never pulls. A ``name:tag@sha256:…`` reference
+        makes the tag resolve to that digest; offline-staged mode verifies the
+        staged tag.
 
         Args:
             images: List of image references to make available.
@@ -253,7 +261,10 @@ class DeploymentBackend(HostInventoryBackend, ContainerOpsBackend, Protocol):
         ...
 
     def container_image_digest(
-        self, container_name: str, *, expected_ref: str | None = None,
+        self,
+        container_name: str,
+        *,
+        expected_ref: str | None = None,
         expected_config_id: str | None = None,
     ) -> str | None:
         """Return the manifest digest of the image backing one container.

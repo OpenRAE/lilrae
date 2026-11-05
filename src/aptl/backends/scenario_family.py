@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict
 from importlib import metadata
 import json
 import re
@@ -11,15 +11,19 @@ from collections.abc import Callable
 
 from aptl.backends._lilrae_family_release_set import require_consistent_release_set
 from aptl.backends.identity import BackendIdentity
+from aptl.backends.scenario_family_models import (
+    QualifiedFamilyTarget,
+    FamilyTrialInput,
+    FamilyProviderIdentity,
+    FamilyProviderSelection,
+    AdmittedFamilyTrial,
+)
 from aptl.core.scenario_bundle import PackIdentity
 
 if TYPE_CHECKING:
-    from raes.scenario import ExpandedScenario, InstantiatedScenario
+    from raes.scenario import InstantiatedScenario
     from raes.phase_contracts import TrialInstantiationProvenance
-    from raes_contracts.contracts import (
-        AdmittedTrialPlanModel,
-        ParticipantConfigurationResultModel,
-    )
+    from raes_contracts.contracts import AdmittedTrialPlanModel
     from aptl.core.scenario_bundle import ScenarioBundle
 
 FAMILY_API_VERSION = "1"
@@ -28,141 +32,22 @@ _DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 MAX_QUALIFIED_FAMILIES = 64
 
 
-@dataclass(frozen=True)
-class QualifiedFamilyTarget:
-    """One release, authored family and backend qualified together."""
-
-    pack: PackIdentity
-    family_id: str
-    family_digest: str
-    backend: BackendIdentity
-
-
-@dataclass(frozen=True)
-class FamilyTrialInput:
-    """Sealed owner inputs; core reconstructs them before adapter admission."""
-
-    plan: AdmittedTrialPlanModel = field(repr=False)
-    plan_entry_id: str
-    family: ExpandedScenario = field(repr=False)
-
-
-@dataclass(frozen=True)
-class FamilyProviderIdentity:
-    """Safe installed identity retained for one selected capability."""
-
-    group: str
-    entry_point: str
-    provider_id: str
-    distribution: str
-    distribution_version: str
-    extension_api_version: str
-
-
-@dataclass(frozen=True)
-class FamilyProviderSelection:
-    """Host-observed installation identity and the selected trusted provider."""
-
-    group: str
-    entry_point: str
-    distribution: str
-    distribution_version: str
-    provider_id: str
-    provider: object = field(repr=False, compare=False)
-    requires: tuple[str, ...] = field(default=(), repr=False, compare=False)
-
-    def identity(self) -> FamilyProviderIdentity:
-        version = "2" if self.group == "aptl.scenario_verifiers" else "1"
-        return FamilyProviderIdentity(
-            self.group,
-            self.entry_point,
-            self.provider_id,
-            self.distribution,
-            self.distribution_version,
-            version,
-        )
-
-
-@dataclass(frozen=True)
-class AdmittedFamilyTrial:
-    """Immutable canonical bytes; each scenario access returns a detached model."""
-
-    target: QualifiedFamilyTarget
-    snapshot_digest: str
-    snapshot: bytes = field(repr=False)
-    installation: tuple[str, str] | None = None
-    providers: tuple[FamilyProviderIdentity, ...] = ()
-    participant_configurations: bytes = field(default=b"[]", repr=False)
-
-    @property
-    def scenario(self) -> InstantiatedScenario:
-        from raes import InstantiatedScenarioSnapshot, admit_instantiated_scenario
-
-        envelope = InstantiatedScenarioSnapshot.model_validate_json(self.snapshot)
-        return admit_instantiated_scenario(envelope.scenario)
-
-    @property
-    def provenance(self) -> TrialInstantiationProvenance:
-        return self.scenario.instantiation_provenance.trial
-
-    @property
-    def participant_configuration_results(
-        self,
-    ) -> tuple[ParticipantConfigurationResultModel, ...]:
-        """Return detached copies of the sealed entry's participant configurations."""
-
-        from pydantic import TypeAdapter
-        from raes_contracts.contracts import ParticipantConfigurationResultModel
-
-        adapter = TypeAdapter(tuple[ParticipantConfigurationResultModel, ...])
-        return adapter.validate_json(self.participant_configurations)
-
-    def identity(self) -> dict[str, str]:
-        """Return safe lineage identifiers without binding or selection values."""
-
-        trial = self.provenance
-        return {
-            "family_id": self.target.family_id,
-            "family_digest": self.target.family_digest,
-            "snapshot_digest": self.snapshot_digest,
-            "plan_id": trial.plan_id,
-            "plan_digest": trial.plan_digest,
-            "plan_entry_id": trial.plan_entry_id,
-            "entry_digest": trial.entry_digest,
-            "run_id": trial.run_id,
-        }
-
-    def evidence(self) -> dict[str, object]:
-        """Project qualification, lineage and installations without runtime values."""
-
-        return {
-            "target": asdict(self.target),
-            "trial": self.identity(),
-            "providers": [asdict(item) for item in self.providers],
-            "participant_configurations": [
-                {
-                    "participant_address": item.participant_address,
-                    "manifest_digest": item.manifest_digest,
-                    "configuration_digest": item.configuration_digest,
-                }
-                for item in self.participant_configuration_results
-            ],
-        }
-
-
 def admit_family_trial(
     bundle: ScenarioBundle, backend: BackendIdentity, request: FamilyTrialInput
 ) -> AdmittedFamilyTrial:
     """Bind a sealed trial to this acquired source through public RAES gates."""
 
-    from raes import canonical_instantiated_sdl_bytes, canonical_instantiated_sdl_digest
-    from raes import canonical_sdl_digest, parse_sdl_file
+    from raes import canonical_instantiated_sdl_digest
+    from raes import canonical_sdl_digest, parse_sdl_file, admit_scenario_family
+    from raes.scenario import Scenario
     from raes_processor.trial_realization import instantiate_admitted_trial_entry
 
     try:
         family = request.family.model_copy(deep=True)
         plan = request.plan.model_copy(deep=True)
         source = parse_sdl_file(bundle.sdl_path)
+        if isinstance(source, Scenario):
+            source = admit_scenario_family(source)
         family_digest = canonical_sdl_digest(family).value
         if (
             bundle.pack_identity is None
@@ -182,9 +67,7 @@ def admit_family_trial(
             )
         ):
             raise ValueError
-        snapshot = canonical_instantiated_sdl_bytes(scenario)
-        if len(snapshot) > 16 * 1024 * 1024:
-            raise ValueError
+        snapshot = _trial_snapshot(scenario, request.snapshot)
         return AdmittedFamilyTrial(
             QualifiedFamilyTarget(
                 bundle.pack_identity, family.name, family_digest, backend
@@ -197,6 +80,21 @@ def admit_family_trial(
         )
     except Exception:
         raise ValueError("family-trial-invalid") from None
+
+
+def _trial_snapshot(scenario: InstantiatedScenario, supplied: bytes | None) -> bytes:
+    """Bound the canonical input and reject a caller's substituted bytes."""
+
+    from raes import canonical_instantiated_sdl_bytes
+
+    snapshot = canonical_instantiated_sdl_bytes(scenario)
+    if len(snapshot) > 16 * 1024 * 1024:
+        raise ValueError
+    if supplied is not None and (
+        not isinstance(supplied, bytes) or supplied != snapshot
+    ):
+        raise ValueError
+    return snapshot
 
 
 def _sealed_participant_configurations(
@@ -324,7 +222,6 @@ def family_capabilities(
         ("aptl.scenario_runtime_parameters", pack, "1", "resolve"),
         ("aptl.scenario_startup", pack, "1", "resolve"),
         ("aptl.scenario_capture", serving, "1", "resolve"),
-        ("aptl.scenario_planning_compatibility", serving, "1", "resolve"),
         ("aptl.scenario_verifiers", verifier, "2", "run"),
     )
 

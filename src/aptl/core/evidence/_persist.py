@@ -2,7 +2,7 @@
 
 Split out of :mod:`aptl.core.evidence.coordinator` to keep that module within
 the 500-line budget and its orchestration readable. This module owns the
-coordinator-side work for ONE successfully-captured collector outcome: the
+coordinator-side work for one captured outcome, including failed partial data: the
 media-type check, structured redaction, content-addressed persistence (with
 the byte quota + truncation), and RAES evidence-record + reference assembly.
 A collector never does any of this itself (preflight "Narrow collector
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from raes_contracts.contracts import ExperimentEvidenceRecordModel
@@ -22,14 +22,20 @@ from aptl.core.evidence import content_store
 from aptl.core.evidence.content_store import ContentInsertion
 from aptl.core.evidence.outcomes import CollectorStatus
 from aptl.core.evidence.protocol import CollectorOutcome
-from aptl.core.evidence.records import RecordDisclosure, build_evidence_record
+from aptl.core.evidence.records import (
+    RecordDisclosure,
+    RecordScope,
+    build_evidence_record,
+)
+from aptl.core.evidence._bounded_json import capture_prefix
 from aptl.core.experiment.capture_registry import CaptureBinding, CaptureVisibility
 from aptl.core.runstore import LocalRunStore
 from aptl.utils.redaction import redact
 
 #: Media types with a trusted, bounded redaction path before persistence.
+_JSON_MEDIA_TYPE = "application/json"
 _JSON_MEDIA_TYPES = frozenset(
-    {"application/json", "application/x-ndjson", "application/jsonl"}
+    {_JSON_MEDIA_TYPE, "application/x-ndjson", "application/jsonl"}
 )
 _REDACTABLE_MEDIA_TYPES = _JSON_MEDIA_TYPES | {"text/plain"}
 _REDACTION_HANDLERS = {
@@ -46,6 +52,7 @@ _EVIDENCE_SUBDIR = "evidence/blobs"
 
 #: Run-relative subdirectory for the explicit, create-once evidence-record ledger.
 _LEDGER_SUBDIR = "evidence/records"
+_MAX_REDACTION_BYTES = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -64,6 +71,9 @@ class EvidenceRef:
     requirement_id: str
     registration_id: str
     visibility_class: str
+    run_id: str = ""
+    planned_trial_id: str = ""
+    attempt_id: str | None = None
 
     def as_reference_dict(self) -> dict[str, str]:
         """Project to the ``backend_evidence.evidence_references`` shape OBS-002 consumes."""
@@ -74,6 +84,15 @@ class EvidenceRef:
             "digest": self.content_digest,
             "requirement_id": self.requirement_id,
             "visibility_class": self.visibility_class,
+            **(
+                {
+                    "run_id": self.run_id,
+                    "planned_trial_id": self.planned_trial_id,
+                    "attempt_id": self.attempt_id,
+                }
+                if self.attempt_id is not None
+                else {}
+            ),
         }
 
 
@@ -122,24 +141,29 @@ def _redact_json_bytes(
 
 def _prepare_bytes(
     outcome: CollectorOutcome, media_type: str, binding: CaptureBinding
-) -> tuple[Sequence[bytes], str]:
-    """Return the (possibly redacted) chunks + the redaction_state for persistence.
+) -> tuple[Sequence[bytes], str, bool]:
+    """Redact complete bounded input before retaining an over-quota prefix.
 
-    Bound input before joining or decoding it. Reject an oversized
-    document rather than retaining a truncated, potentially secret-bearing
-    fragment. Opaque capture cannot satisfy a required redaction policy.
+    Materialized JSON uses a separate processing ceiling for safe prefixes.
+    Streaming input and other media keep the admitted input byte limit.
+    Opaque capture cannot satisfy a required redaction policy.
     """
     if media_type not in _REDACTABLE_MEDIA_TYPES:
         if binding.redaction_required:
             raise ValueError("capture media type has no trusted redaction adapter")
-        return outcome.chunks, "none"
+        return outcome.chunks, "none", False
 
-    raw = _consume_bounded_chunks(outcome.chunks, binding.limits.max_bytes)
+    input_limit = binding.limits.max_bytes
+    if media_type == _JSON_MEDIA_TYPE and isinstance(outcome.chunks, (tuple, list)):
+        input_limit = max(input_limit, _MAX_REDACTION_BYTES)
+    raw = _consume_bounded_chunks(outcome.chunks, input_limit)
     handler = _redaction_handler(binding)
     redacted, changed = _prepare_redactable_bytes(raw, media_type, handler)
-    if len(redacted) > binding.limits.max_bytes:
-        raise BufferError("redacted capture exceeds its admitted byte budget")
-    return [redacted], ("redacted" if changed else "none")
+    truncated = len(redacted) > binding.limits.max_bytes
+    if truncated and media_type == _JSON_MEDIA_TYPE:
+        prefix = capture_prefix(json.loads(redacted), {}, binding.limits.max_bytes)
+        redacted = json.dumps([prefix], separators=(",", ":")).encode()
+    return [redacted], ("redacted" if changed else "none"), truncated
 
 
 def _consume_bounded_chunks(chunks: Sequence[bytes], max_bytes: int) -> bytes:
@@ -173,7 +197,7 @@ def _prepare_redactable_bytes(
 ) -> tuple[bytes, bool]:
     """Validate and optionally redact one complete structured/text payload."""
 
-    if media_type == "application/json":
+    if media_type == _JSON_MEDIA_TYPE:
         if handler is not None:
             prepared = _redact_json_bytes(raw, handler)
         else:
@@ -225,6 +249,7 @@ def persist_success_outcome(
     run_id: str,
     planned_trial_id: str,
     captured_at: str,
+    attempt_id: str | None = None,
 ) -> ProcessedOutcome:
     """Persist one captured outcome content-addressably and build its RAES record.
 
@@ -235,7 +260,9 @@ def persist_success_outcome(
     ``redaction_state="withheld"`` so a participant projection can drop it.
     """
     media_type = _media_type_of(outcome, binding)
-    chunks, structured_redaction_state = _prepare_bytes(outcome, media_type, binding)
+    chunks, structured_redaction_state, prepared_truncation = _prepare_bytes(
+        outcome, media_type, binding
+    )
 
     content = content_store.create_content_addressed(
         run_store,
@@ -245,6 +272,8 @@ def persist_success_outcome(
         max_bytes=binding.limits.max_bytes,
     )
 
+    if prepared_truncation:
+        content = replace(content, truncated=True)
     effective_status = _effective_status(outcome, content=content, binding=binding)
 
     withheld = binding.visibility_class in (
@@ -258,8 +287,7 @@ def persist_success_outcome(
 
     record = build_evidence_record(
         binding=binding,
-        run_id=run_id,
-        planned_trial_id=planned_trial_id,
+        scope=RecordScope(run_id, planned_trial_id, attempt_id),
         content=content,
         outcome=outcome,
         captured_at=captured_at,
@@ -285,6 +313,9 @@ def persist_success_outcome(
         requirement_id=binding.requirement_id,
         registration_id=binding.registration_id,
         visibility_class=binding.visibility_class.value,
+        run_id=run_id,
+        planned_trial_id=planned_trial_id,
+        attempt_id=attempt_id,
     )
     return ProcessedOutcome(record=record, ref=ref, effective_status=effective_status)
 
@@ -330,7 +361,7 @@ def _elapsed_seconds(outcome: CollectorOutcome) -> float:
     try:
         start = datetime.fromisoformat(outcome.started_at.replace("Z", "+00:00"))
         end = datetime.fromisoformat(outcome.finished_at.replace("Z", "+00:00"))
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         return 0.0
     return max(0.0, (end - start).total_seconds())
 
@@ -367,6 +398,11 @@ def _loss_disclosure(
     otherwise a redacted/withheld record discloses; a lossless, un-redacted,
     participant-visible record needs none.
     """
+    if outcome.status not in {CollectorStatus.OK, CollectorStatus.EMPTY_OK}:
+        return (
+            f"collector status {outcome.status.value}; partial capture retained; "
+            f"{outcome.dropped_count} event(s) dropped"
+        )
     status_text = _STATUS_DISCLOSURES.get(effective_status)
     if status_text is not None:
         return status_text.format(dropped=outcome.dropped_count)

@@ -177,6 +177,7 @@ def _admitted_start_fixture(bundle_root: Path):
     return SimpleNamespace(
         bundle=project_tree_bundle(bundle_root, bundle_root / "fixture.sdl.yaml"),
         runtime_materialization_failure=None,
+        mcp_server_ids=(),
     )
 
 
@@ -2135,7 +2136,7 @@ class TestOrchestrateLabStart:
         """A .env.example placeholder secret must stop the start fail-closed.
 
         Hydration only repairs the vars it owns generators for; a sensitive
-        var outside `_HYDRATED_ENV_SPECS` (THEHIVE_SECRET) keeps its copied
+        var outside `_HYDRATED_ENV_SPECS` (SHUFFLE_API_KEY) keeps its copied
         .env.example placeholder, and booting with it would bring the SOC
         stack up with admin credentials anyone can read in the repo. If
         `_validate_env_secrets` were unwired from `_step_load_env`, only
@@ -2146,13 +2147,13 @@ class TestOrchestrateLabStart:
         mocks = self._patch_all_steps(mocker, tmp_path)
         env_file = tmp_path / ".env"
         env_file.write_text(
-            env_file.read_text() + "THEHIVE_SECRET=CHANGE_ME_thehive_secret\n"
+            env_file.read_text() + "SHUFFLE_API_KEY=CHANGE_ME_shuffle_api_key\n"
         )
 
         result = orchestrate_lab_start(tmp_path)
 
         assert result.success is False
-        assert "THEHIVE_SECRET" in result.error
+        assert "SHUFFLE_API_KEY" in result.error
         mocks["start"].assert_not_called()
 
     def test_stops_on_env_loading_failure(self, mocker, tmp_path):
@@ -3508,7 +3509,9 @@ class TestSyncCredentialsStep:
         # The lab's project scopes the generator so teardown can find it if a
         # killed process strands it.
         generator.assert_called_once_with(
-            tmp_path, project=ctx.backend._ephemeral_project()
+            tmp_path,
+            project=ctx.backend._ephemeral_project(),
+            pull_images=ctx.backend.pull_images,
         )
 
     def test_renders_to_aptl_config_and_leaves_source_untouched(self, mocker, tmp_path):
@@ -3599,10 +3602,10 @@ class TestResolveHostPortsStep:
 
         resolution = [
             ResolvedPort(
-                service="cortex",
-                env_var="APTL_HP_CORTEX_9001",
-                default_port=9001,
-                resolved_port=9001,
+                service="misp",
+                env_var="APTL_HP_MISP_443",
+                default_port=8443,
+                resolved_port=8443,
                 protos=("tcp",),
                 host_ip="127.0.0.1",
                 remapped=False,
@@ -3752,9 +3755,9 @@ class TestSeedSuricataVolumesStep:
         assert suffixes == {"suricata_config_seed", "suricata_misp_rules"}
 
     def test_seeder_image_pulled_before_ownership_and_seed(self, tmp_path):
-        """Pre-pull surfaces registry failures before opaque `exit 125` from
-        the seeder container (both the ownership repair and seed step
-        implicitly pull the same image via `docker run`)."""
+        """The seeder tag is pointed at its pinned digest before the ownership
+        repair and the seed step run it via `docker run`."""
+        from aptl.core.helper_images import PINNED_HELPER_IMAGES
         from aptl.core.lab import SURICATA_IMAGE, _step_seed_suricata_volumes
 
         _write_suricata_seed_sources(tmp_path)
@@ -3764,7 +3767,9 @@ class TestSeedSuricataVolumesStep:
         result = _step_seed_suricata_volumes(self._ctx(tmp_path, backend))
 
         assert result is None
-        backend.pull_images.assert_called_once_with([SURICATA_IMAGE])
+        backend.pull_images.assert_called_once_with(
+            [PINNED_HELPER_IMAGES[SURICATA_IMAGE]]
+        )
         # Pull happens before the seed hand-off.
         pull_call = next(
             i for i, c in enumerate(backend.mock_calls) if c[0] == "pull_images"
@@ -3773,6 +3778,21 @@ class TestSeedSuricataVolumesStep:
             i for i, c in enumerate(backend.mock_calls) if c[0] == "seed_named_volumes"
         )
         assert pull_call < seed_call
+
+    def test_unavailable_pinned_seeder_image_stops_before_any_seed(self, tmp_path):
+        """Online, a failed pinned pull never falls back to the mutable tag."""
+        from aptl.core.lab import _step_seed_suricata_volumes
+
+        _write_suricata_seed_sources(tmp_path)
+        backend = MagicMock()
+        warning = "Failed to pull jasonish/suricata:7.0@sha256:0364: 429"
+        backend.pull_images.return_value = [warning]
+
+        result = _step_seed_suricata_volumes(self._ctx(tmp_path, backend))
+
+        assert result is not None
+        assert result.error == f"Pinned Suricata seeder image is unavailable: {warning}"
+        backend.seed_named_volumes.assert_not_called()
 
     def test_offline_missing_seeder_image_is_named_before_any_seed(self, tmp_path):
         from aptl.core.lab import SURICATA_IMAGE, _step_seed_suricata_volumes
@@ -4544,6 +4564,40 @@ class TestStartupClassificationWiring:
         ctx.run_id = run_id
         return ctx, run_store, run_id
 
+    @pytest.mark.parametrize(
+        "failed,impact,expected",
+        [
+            (False, None, "success"),
+            (True, None, "failed"),
+            (False, "telemetry", "partial"),
+            (False, "readiness", "partial"),
+        ],
+    )
+    def test_startup_record_uses_observed_health(
+        self, tmp_path, failed, impact, expected
+    ):
+        from aptl.core.lab import _write_run_record
+        from aptl.core.lab_types import (
+            DiagnosticImpact,
+            DiagnosticSeverity,
+            LabResult,
+            StartupDiagnostic,
+        )
+
+        ctx, store, run_id = self._run_record_ctx(tmp_path)
+        ctx.raes_outcome.lab_result = LabResult(success=not failed)
+        if impact:
+            ctx.diagnostics.append(
+                StartupDiagnostic(
+                    step="capture",
+                    impact=DiagnosticImpact(impact),
+                    severity=DiagnosticSeverity.WARNING,
+                    message="bounded failure",
+                )
+            )
+        _write_run_record(ctx)
+        assert store.get_run_manifest(run_id)["outcome"] == expected
+
     def test_write_run_record_references_existing_orchestration_evidence(
         self, tmp_path
     ):
@@ -4807,39 +4861,31 @@ class TestStartupClassificationWiring:
 
     # -- mcp_config_sync (capability) ----------------------------------
 
-    def test_product_neutral_start_skips_mcp_config_sync(self, tmp_path, mocker):
+    def test_product_neutral_start_clears_previous_mcp_selection(self, tmp_path, mocker):
         from aptl.core.lab import _step_sync_mcp_config
+        from aptl.core.scenario_bundle import ScenarioSourceKind
 
         ctx = self._ctx(tmp_path, selected_profiles=set())
-        ctx.admitted_surface = object()
+        ctx.admitted_surface = SimpleNamespace(selected_profiles=(), source_kind=ScenarioSourceKind.PROJECT_TREE)
+        ctx.admitted_start = SimpleNamespace(mcp_server_ids=())
+        mocker.patch("aptl.core.lab._runtime_mcp_host_ports", return_value=[])
         sync = mocker.patch("aptl.core.lab._sync_mcp_config_keys")
-
+        mocker.patch("aptl.core.lab._persist_mcp_run_admission")
         assert _step_sync_mcp_config(ctx) is None
+        assert sync.call_args.kwargs["server_ids"] == ()
 
-        sync.assert_not_called()
-        assert ctx.diagnostics == []
-
-    def test_mcp_config_sync_exception_emits_capability_warning(self, tmp_path, mocker):
+    def test_mcp_config_sync_failure_blocks_readiness(self, tmp_path, mocker):
         from aptl.core.lab import _step_sync_mcp_config
-        from aptl.core.lab_types import DiagnosticImpact, DiagnosticSeverity
 
         ctx = self._ctx(tmp_path)
         mocker.patch(
             "aptl.core.lab._sync_mcp_config_keys",
-            side_effect=RuntimeError("THEHIVE_API_KEY mismatch"),
+            side_effect=RuntimeError("MISP_API_KEY mismatch"),
         )
-
         result = _step_sync_mcp_config(ctx)
-        assert result is None
-
-        assert len(ctx.diagnostics) == 1
-        diag = ctx.diagnostics[0]
-        assert diag.step == "mcp_config_sync"
-        assert diag.impact is DiagnosticImpact.CAPABILITY
-        assert diag.severity is DiagnosticSeverity.WARNING
-        # Exception text contains a sensitive-looking key name —
-        # diagnostic message must not echo the raw exception payload.
-        assert "THEHIVE_API_KEY" not in diag.message
+        assert result is not None
+        assert not result.success
+        assert "MISP_API_KEY" not in result.error
 
     def test_mcp_config_sync_clean_emits_no_diagnostic(self, tmp_path, mocker):
         from aptl.core.lab import _step_sync_mcp_config
@@ -4906,7 +4952,7 @@ class TestStartupClassificationWiring:
         assert _step_sync_mcp_config(ctx) is None
 
         runtime.assert_called_once_with(
-            ctx.project_dir, ctx.backend, active_profiles=None
+            ctx.project_dir, ctx.backend, active_profiles=None, server_ids=None
         )
         assert sync.call_args.args[1] == [live]
         assert ctx.diagnostics == []
@@ -5305,8 +5351,8 @@ class TestLabOrchestrationContracts:
         unowned_error = (
             "RAES runtime handoff failed: aptl.provisioner.backend-start-failed "
             "at runtime.apply.provisioning: service materialization failed for "
-            "provision.content.cortex-job-index-schema (reason=unowned-collision): "
-            "search index cortex_6 in container aptl-thehive-es lacks this "
+            "provision.content.example-index-schema (reason=unowned-collision): "
+            "search index example_index in container aptl-search lacks this "
             "content's ownership marker, so APTL cannot prove it owns the "
             "index, and it did not adopt, delete or overwrite it."
         )

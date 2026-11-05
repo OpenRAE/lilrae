@@ -6,7 +6,6 @@ import dataclasses
 from collections.abc import Mapping
 from copy import deepcopy
 
-from raes_contracts.apparatus import RealizationVerificationScope
 from raes_contracts.diagnostics import Diagnostic, Severity
 from raes_contracts.planning import (
     ChangeAction,
@@ -15,16 +14,14 @@ from raes_contracts.planning import (
     RuntimeDomain,
 )
 from raes_contracts.runtime_state import (
-    RealizationObservationDisclosure,
     RuntimeSnapshot,
     SnapshotEntry,
 )
-from raes_contracts.vocabulary import ObservationStrength
 from raes_processor.semantics.realization import CONCERN_PAYLOAD_PATH
+from raes_processor.semantics.realization_concerns import realization_concern_descriptor
 from raes_runtime.backend_account_credentials import plan_has_account_credentials
 
 from aptl.backends.raes_observation import ObservedResource
-from aptl.backends.raes_planning_compat import DAEMON_READBACK_RUNTIME_CONCERNS
 from aptl.utils.logging import get_logger
 from aptl.utils.redaction import redact
 
@@ -45,21 +42,32 @@ SUPPORTED_RESOURCE_TYPES = frozenset(
     }
 )
 
-_GUEST_READBACK_RUNTIME_CONCERNS = frozenset(
-    {
-        "process-resource-limits",
-        "runtime-dependency-manifests",
-        "runtime-filesystem-inventory",
-        "runtime-local-identity",
-        "runtime-packages",
-        "runtime-service-manager-units",
-    }
+_RUNTIME_READBACK_CONCERNS = frozenset(
+    kind for kind, path in CONCERN_PAYLOAD_PATH.items()
+    if path[:3] == ("spec", "node", "runtime")
 )
-_RUNTIME_READBACK_CONCERNS = (
-    DAEMON_READBACK_RUNTIME_CONCERNS
-    | _GUEST_READBACK_RUNTIME_CONCERNS
-    | {"forwarding-agents"}
-)
+# The realization concerns snapshot assembly reports for each resource type.
+_CONCERN_KINDS: dict[str, tuple[str, ...]] = {
+    "node": (
+        "node-type",
+        "os-family",
+        "domain-topology",
+        # raes 3.1.0 per-node runtime realization concerns (#876): observed
+        # off the realized container and written at their nested payload
+        # paths, or removed so an unrealized EXACT declaration is rejected.
+        *sorted(_RUNTIME_READBACK_CONCERNS),
+    ),
+    # ADR-088 (#889): a content-placement carrying a service materialization
+    # exposes the service-search-index-schema-materialization concern, which
+    # the gate replaces with the corroborated observation (or removes when
+    # unproven, so planned state is never accepted).
+    "content-placement": (
+        "content-type",
+        "service-search-index-schema-materialization",
+    ),
+    "generated-artifact": ("generated-artifact",),
+    "persistent-volume": ("persistent-volume",),
+}
 _APPLIED_ENTRY_STATUS = "applied"
 _UNCHANGED_ENTRY_STATUS = "unchanged"
 
@@ -197,7 +205,9 @@ def snapshot_after_apply(
             profile_bindings=resource.profile_bindings,
             status=_entry_status(actions.get(address)),
         )
-    observations_disclosure = _realization_observation_disclosures(observations)
+    from aptl.backends._raes_operational_observation import runtime_observation_disclosures
+
+    observations_disclosure = runtime_observation_disclosures(observations)
     updated = snapshot.with_entries(entries)
     if observations_disclosure:
         updated = dataclasses.replace(
@@ -208,46 +218,6 @@ def snapshot_after_apply(
             ),
         )
     return updated
-
-
-def _realization_observation_disclosures(
-    observations: Mapping[str, ObservedResource],
-) -> tuple[RealizationObservationDisclosure, ...]:
-    """Disclose how APTL corroborated each realized ``configuration``-scope concern.
-
-    RAES's runtime gate accepts a concern with a non-null
-    verification scope only when the returned snapshot carries a matching
-    observation disclosure whose scope and strength the backend manifest also
-    declares. Disclose only a concern present in the actual observation map;
-    absence therefore still fails closed instead of turning a capability claim
-    into evidence.
-    """
-
-    disclosures: list[RealizationObservationDisclosure] = []
-    for address, observed in observations.items():
-        node_name = address.removeprefix("provision.node.")
-        for kinds, strength in (
-            (
-                DAEMON_READBACK_RUNTIME_CONCERNS | {"forwarding-agents"},
-                ObservationStrength.DAEMON_OBSERVED,
-            ),
-            (_GUEST_READBACK_RUNTIME_CONCERNS, ObservationStrength.GUEST_OBSERVED),
-        ):
-            for kind in sorted(kinds):
-                path = CONCERN_PAYLOAD_PATH[kind]
-                if path not in observed.concerns:
-                    continue
-                disclosures.append(
-                    RealizationObservationDisclosure(
-                        address=address,
-                        field_path=f"nodes.{node_name}." + ".".join(path[2:]),
-                        domain="runtime-realization",
-                        requirement_kind=kind,
-                        verification_scope=RealizationVerificationScope.CONFIGURATION,
-                        observation_strength=strength,
-                    )
-                )
-    return tuple(disclosures)
 
 
 def _entry_status(action: ChangeAction | None) -> str:
@@ -290,6 +260,34 @@ def _admitted_concern_kinds(
     return {address: frozenset(kinds) for address, kinds in admitted.items()}
 
 
+def unobserved_admitted_concerns(
+    plan: ProvisioningPlan,
+    snapshot: RuntimeSnapshot,
+) -> tuple[tuple[str, str], ...]:
+    """Return ``(address, kind)`` for each admitted concern readback missed.
+
+    Only a credential-bearing plan has any. Snapshot assembly removes an
+    admitted concern it did not observe, and where the plan holds a value
+    there, even an empty or null one, RAES's closed result contract refuses the
+    whole result with a message that names neither address nor concern. Inspect
+    the assembled snapshot so retained compiler nulls are not mistaken for
+    omitted values in materialization plans.
+    """
+
+    admitted = _admitted_concern_kinds(plan)
+    if admitted is None:
+        return ()
+    return tuple(
+        (address, kind)
+        for address, resource in plan.resources.items()
+        if (entry := snapshot.entries.get(address)) is not None
+        for kind in _CONCERN_KINDS.get(resource.resource_type, ())
+        if kind in admitted.get(address, frozenset())
+        and not _has_path(entry.payload, CONCERN_PAYLOAD_PATH[kind])
+        and _has_path(resource.payload, CONCERN_PAYLOAD_PATH[kind])
+    )
+
+
 def realized_changed_addresses(
     plan: ProvisioningPlan,
     snapshot: RuntimeSnapshot,
@@ -327,41 +325,40 @@ def _observed_payload(
     ``admitted_kinds`` is plan-owned like a name and keeps the plan's value;
     ``None`` admits every concern. Source-image evidence is added only when
     ``evidence`` is set; otherwise the run outcome alone carries it.
+    Materialization retains compiler absence values, but a credential-bearing
+    admitted concern must also accept that absence as a valid observation value.
     """
 
     payload = deepcopy(dict(planned_payload))
-    concern_kinds = {
-        "node": (
-            "node-type",
-            "os-family",
-            "domain-topology",
-            # raes 3.1.0 per-node runtime realization concerns (#876): observed
-            # off the realized container and written at their nested payload
-            # paths, or removed so an unrealized EXACT declaration is rejected.
-            *sorted(_RUNTIME_READBACK_CONCERNS),
-        ),
-        # ADR-088 (#889): a content-placement carrying a service materialization
-        # exposes the service-search-index-schema-materialization concern, which
-        # the gate replaces with the corroborated observation (or removes when
-        # unproven, so planned state is never accepted).
-        "content-placement": (
-            "content-type",
-            "service-search-index-schema-materialization",
-        ),
-        "generated-artifact": ("generated-artifact",),
-        "persistent-volume": ("persistent-volume",),
-    }.get(resource_type, ())
-    for kind in concern_kinds:
+    for kind in _CONCERN_KINDS.get(resource_type, ()):
         path = CONCERN_PAYLOAD_PATH[kind]
         if path in observed.concerns:
             _set_path(payload, path, observed.concerns[path])
         elif admitted_kinds is None or kind in admitted_kinds:
-            if not preserve_nulls or _path_value(payload, path) not in (None, ""):
+            value = _path_value(payload, path)
+            if not (
+                preserve_nulls
+                and value in (None, "")
+                and (admitted_kinds is None or _valid_concern_absence(kind, value))
+            ):
                 _pop_path(payload, path)
     source_image = observed.evidence.get("source_image")
     if evidence and isinstance(source_image, dict):
         payload["backend_evidence"] = {"source_image": deepcopy(source_image)}
     return payload
+
+
+def _valid_concern_absence(kind: str, value: object) -> bool:
+    """Keep compiler absence only when the credential closure accepts it."""
+
+    descriptor = realization_concern_descriptor(kind)
+    if descriptor is None:
+        return True
+    try:
+        descriptor.sanitize_observation(value)
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def _path_value(payload: Mapping[str, object], path: tuple[str, ...]) -> object:
@@ -385,6 +382,17 @@ def _set_path(payload: dict[str, object], path: tuple[str, ...], value: object) 
             current[key] = nested
         current = nested
     current[path[-1]] = value
+
+
+def _has_path(payload: Mapping[str, object], path: tuple[str, ...]) -> bool:
+    """Return whether the payload holds a value, possibly null, at ``path``."""
+
+    current: object = payload
+    for key in path:
+        if not isinstance(current, Mapping) or key not in current:
+            return False
+        current = current[key]
+    return True
 
 
 def _pop_path(payload: dict[str, object], path: tuple[str, ...]) -> None:

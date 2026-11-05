@@ -8,6 +8,7 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 from tests.fixture_pack import FIXTURE_SDL
@@ -91,6 +92,119 @@ def test_dev_requires_existing_platform_job_contexts() -> None:
     assert {jobs[job]["name"] for job in platform_jobs} <= contexts
 
 
+def _protected_branches() -> dict:
+    return json.loads(BASELINE.read_text(encoding="utf-8"))["branches"]
+
+
+def _triggers(workflow: str) -> dict:
+    data = yaml.safe_load((WORKFLOW.parent / workflow).read_text(encoding="utf-8"))
+    # PyYAML follows YAML 1.1, which reads the `on:` key as the boolean True.
+    return data[True]
+
+
+@pytest.mark.parametrize(
+    "workflow", ["checks.yml", "pr-title-lint.yml", "ground-control-phase-e.yml"]
+)
+def test_pull_request_workflows_run_for_every_protected_branch(workflow: str) -> None:
+    branches = set(_triggers(workflow)["pull_request"]["branches"])
+    assert set(_protected_branches()) <= branches, (
+        f"{workflow} does not run for pull requests into every protected branch; "
+        "a required check that never runs leaves the pull request blocked or unchecked"
+    )
+
+
+def test_checks_analyze_every_protected_branch_on_push() -> None:
+    branches = set(_triggers("checks.yml")["push"]["branches"])
+    assert set(_protected_branches()) <= branches
+
+
+def test_go_cutover_requires_at_least_the_dev_checks() -> None:
+    branches = _protected_branches()
+    dev, cutover = branches["dev"], branches["go-cutover"]
+    assert cutover["changes_land_via_pull_request"] is True
+    assert cutover["admin_bypass_allowed"] == dev["admin_bypass_allowed"]
+    assert cutover["required_status_checks"]["strict"] is True
+    assert set(dev["required_status_checks"]["contexts"]) <= set(
+        cutover["required_status_checks"]["contexts"]
+    )
+
+
+@pytest.mark.parametrize("directory", ["/", "/tools", "/tools/lint", "/tools/gates"])
+def test_dependabot_updates_each_cutover_go_module(directory: str) -> None:
+    updates = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())["updates"]
+    entries = [
+        entry
+        for entry in updates
+        if entry["package-ecosystem"] == "gomod"
+        and entry.get("target-branch") == "go-cutover"
+        and directory in entry.get("directories", [entry.get("directory")])
+    ]
+    assert len(entries) == 1, f"expected one cutover updater for {directory}"
+    assert entries[0]["schedule"]["interval"] == "weekly"
+    assert entries[0].get("open-pull-requests-limit", 5) > 0
+    assert any(
+        entry["package-ecosystem"] == "gomod"
+        and entry.get("directory") == "/web/caddy-build"
+        and entry.get("target-branch") == "dev"
+        for entry in updates
+    )
+
+
+def test_cutover_dispatch_has_only_trusted_schedule_authority() -> None:
+    workflow = yaml.safe_load(WORKFLOW.read_text())
+    job = workflow["jobs"]["dispatch-go-cutover"]
+    assert job["if"] == (
+        "github.event_name == 'schedule' && "
+        "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)"
+    )
+    assert workflow[True]["schedule"] == [{"cron": "17 3 * * 1"}]
+    assert "workflow_dispatch" in workflow[True]
+    assert "needs" not in job
+    assert job["permissions"] == {"actions": "write"}
+    assert "write" not in workflow["permissions"].values()
+    assert job["runs-on"] == "ubuntu-latest"
+    assert len(job["steps"]) == 1
+    step = job["steps"][0]
+    assert "uses" not in step  # No checkout or third-party action with write authority.
+    assert step["env"] == {
+        "GH_TOKEN": "${{ github.token }}",
+        "GH_REPO": "${{ github.repository }}",
+    }
+    assert job["env"] == {"TARGET_BRANCH": "go-cutover"}
+
+
+@pytest.mark.parametrize("status", [0, 17])
+def test_cutover_dispatch_targets_child_and_propagates_api_failure(tmp_path, status):
+    job = _jobs()["dispatch-go-cutover"]
+    step = job["steps"][0]
+    log = tmp_path / "dispatch-args"
+    _stub(
+        tmp_path,
+        "gh",
+        'test "$GH_TOKEN" = fixture-token || exit 91\n'
+        'test "$GH_REPO" = fixture-owner/fixture-repo || exit 92\n'
+        'printf "%s\\n" "$@" > "$DISPATCH_LOG"\n'
+        f"exit {status}",
+    )
+    result = _shell(
+        step["run"],
+        tmp_path,
+        GH_TOKEN="fixture-token",
+        GH_REPO="fixture-owner/fixture-repo",
+        DISPATCH_LOG=str(log),
+        **job["env"],
+    )
+    assert result.returncode == status
+    assert log.read_text().splitlines() == [
+        "workflow",
+        "run",
+        "checks.yml",
+        "--ref",
+        "go-cutover",
+    ]
+    assert "fixture-token" not in result.stdout + result.stderr + log.read_text()
+
+
 def test_combined_python_coverage_refuses_a_missing_group(tmp_path: Path) -> None:
     script = _run_step("python-tests", "Combine complete worker coverage")
     log = tmp_path / "combine.log"
@@ -107,15 +221,29 @@ def test_combined_python_coverage_refuses_a_missing_group(tmp_path: Path) -> Non
     for path in files:
         path.parent.mkdir(parents=True)
         path.write_bytes(b"measurement")
+    reports = []
+    for index, path in enumerate(files[:2]):
+        report = path.parent / "coverage" / "observer" / f"{index}.lcov"
+        report.parent.mkdir(parents=True)
+        report.write_text(
+            f"SF:src/aptl/workbench/request_observer.mjs\nDA:{index + 1},1\nend_of_record\n"
+        )
+        reports.append(report)
     env = {"RUNNER_TEMP": str(tmp_path), "COMBINE_LOG": str(log)}
     assert _shell(script, tmp_path, **env).returncode == 0
     assert set(log.read_text(encoding="utf-8").splitlines()[1:]) == {
         str(path.relative_to(tmp_path)) for path in files
     }
+    assert (tmp_path / "coverage" / "observer-lcov.info").read_text() == "".join(
+        p.read_text() for p in reports
+    )
     for path in files:
         path.unlink()
         assert _shell(script, tmp_path, **env).returncode != 0
         path.write_bytes(b"measurement")
+    for report in reports:
+        report.unlink()
+    assert _shell(script, tmp_path, **env).returncode != 0
 
 
 def test_python_audit_covers_shipped_exports_and_fails_closed(tmp_path: Path) -> None:

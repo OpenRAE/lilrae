@@ -8,7 +8,6 @@ from aptl.backends.pack_interaction import (
 )
 from aptl.backends.scenario_capture import ScenarioCaptureContribution
 from aptl.backends.scenario_family import decode_family_target
-from aptl.backends.scenario_planning_compatibility import PlanningCompatibilityDecision
 from aptl.backends.scenario_startup import ScenarioStartupPlan
 from aptl.validation.scenario_verification import (
     VerificationCheck,
@@ -55,10 +54,6 @@ class Capture(Provider):
         return ScenarioCaptureContribution(())
 
 
-class Planning(Provider):
-    def resolve(self, context):
-        return PlanningCompatibilityDecision()
-
 
 class Verifier(Provider):
     extension_api_version = "2"
@@ -87,4 +82,4 @@ class Verifier(Provider):
 
 
 serving, parameters, startup = Serving(), Parameters(), Startup()
-capture, planning, verifier = Capture(), Planning(), Verifier()
+capture, verifier = Capture(), Verifier()
