@@ -73,7 +73,7 @@
       "asset_id": "mcp-indexer-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-indexer/package-lock.json",
-      "sha256": "69a15997264527688d6381830466f1919f2f1218dc71a459af400c390791a5ad"
+      "sha256": "c477ca8b211bc5a7ec448c81f63bb100bc3ea43d98cb3442b3125892fcad456a"
     },
     {
       "asset_id": "mcp-indexer-config",
@@ -91,7 +91,7 @@
       "asset_id": "mcp-wazuh-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-wazuh/package-lock.json",
-      "sha256": "f5cce4754036d3e3830858bb3593743dadb566cb156441ddf6c2db61f8577c0a"
+      "sha256": "3e1fb963fbdab9385346d67e405d489731fa83404785bb4317034262f7f3245e"
     },
     {
       "asset_id": "mcp-wazuh-config",
