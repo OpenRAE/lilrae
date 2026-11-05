@@ -949,7 +949,7 @@ wheels = [
 
 [[package]]
 name = "lilrae"
-version = "9.1.0"
+version = "9.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "asyncssh" },
