@@ -84,7 +84,7 @@ Keep exact source records outside the rewrite gate. Check their owned
 descriptions and links. Do not suppress a real problem to clear a gate.
 
 CI runs the strict MkDocs build and the corpus prose checks.
-Behavior tests run only in CI or an approved isolated VM.
-Use targeted test paths. Workstation pre-commit runs staged hygiene and secrets checks.
+Run only targeted behavior test paths locally.
+Workstation pre-commit runs staged hygiene and secrets checks.
 See [ADR-038](adrs/adr-038-docs-style-lint-and-published-site.md)
 and the [contribution guide](https://github.com/OpenRAE/lilrae/blob/dev/CONTRIBUTING.md).

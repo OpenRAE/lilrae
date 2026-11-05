@@ -14,16 +14,15 @@ Mandatory constraints the `/implement` skill applies during plan phase.
   preserving test counts or coverage percentages. Use `pytest -m fuzz` for
   property-based tests.
 - Plans that touch `mcp/aptl-mcp-common` MUST account for the fact that
-  every MCP server consumes it. Run targeted common and consumer tests only
-  in CI or an approved isolated VM. CI/CD rebuilds and tests every dependent MCP.
+  every MCP server consumes it. Run only targeted common and consumer tests
+  locally; CI/CD rebuilds and tests every dependent MCP before the change is
+  considered complete.
 - Plans that change any Compose asset (`docker-compose*.yml`), container
-  Dockerfiles, or `config/` files MUST include focused contract tests.
-  Run them only in CI or an approved isolated VM.
+  Dockerfiles, or `config/` files MUST include focused local contract tests.
   CI/CD owns the clean `lilrae lab stop -v && lilrae lab start` validation on a
   fresh machine — the lab is the primary product, not the codebase.
-- Workstation verification permits source edits, static checks, Git operations,
-  and staged `pre-commit run` hygiene. Run targeted pytest or Vitest paths only
-  in CI or an approved isolated VM. Bare/full suites,
+- Local verification MUST remain change-scoped: targeted pytest or Vitest
+  paths plus `pre-commit run` on staged files. Bare/full suites,
   `pre-commit run --all-files`, whole-tree prose checks, dependency checks, and
   coverage runs are CI/CD-only.
 - Plans MUST NOT edit `CHANGELOG.md` or the version. Releases are automated by

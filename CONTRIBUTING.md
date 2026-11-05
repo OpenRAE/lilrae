@@ -67,7 +67,7 @@ npm install
 5. Give the PR a [Conventional Commit](https://www.conventionalcommits.org)
    title (`feat:`, `fix:`, etc.); release-please derives the changelog and
    version from it. Do not edit `CHANGELOG.md`.
-6. Run staged hygiene locally. Run behavior tests in CI or an approved isolated VM.
+6. Run the relevant checks locally.
 7. Open the issue's single pull request against `dev`, or update its existing
    PR. Describe what changed, why, and how each acceptance criterion was
    verified. Follow the [coding standards](docs/CODING_STANDARDS.md).
@@ -83,11 +83,11 @@ pre-commit run
 
 Local commit hooks run secret detection and fast file hygiene only. Full Python,
 MCP and web suites, dependency-lock freshness, complexity and prose checks run in
-CI/CD. Run targeted tests only in CI or an approved isolated VM. Do not
+CI/CD. Run only the exact tests relevant to a change while developing. Do not
 run bare `pytest`, package-wide `npm test`, `pre-commit run --all-files`, or the
 whole-tree `.pre-commit-ci.yaml` configuration locally.
 
-Examples of targeted checks in CI or an approved isolated VM:
+Examples of targeted checks:
 
 ```shell
 pytest tests/test_specific_behavior.py
@@ -115,8 +115,9 @@ Full lab startup on macOS and Windows remains an operator qualification.
 See [CI verification](docs/architecture/ci-verification.md) for routing and budgets.
 
 When changing `docker-compose.yml`, container Dockerfiles, or files under
-`config/`, run focused contract tests in CI or an approved isolated VM.
-CI/CD owns clean lab stop/start validation.
+`config/`, run only focused contract tests locally. CI/CD owns the clean lab
+stop/start validation so local verification does not expand into a full system
+run.
 
 ## Documentation changes
 
