@@ -9,6 +9,39 @@ This file is maintained by [release-please](https://github.com/googleapis/releas
 from Conventional Commit messages; release sections are generated on release,
 not hand-edited in PRs.
 
+## [9.2.0](https://github.com/OpenRAE/lilrae/compare/v9.1.0...v9.2.0) (2026-11-05)
+
+
+### Features
+
+* apply and verify per-trial participant configuration ([21a9a7d](https://github.com/OpenRAE/lilrae/commit/21a9a7dbf2f9aefafab892e181ef7a82101f7d9a))
+* collect requested RPT trial observations ([1641a55](https://github.com/OpenRAE/lilrae/commit/1641a55ac9de7403a8a565a2c303e3a3762b58fb))
+* collect requested RPT trial observations ([12ddaaf](https://github.com/OpenRAE/lilrae/commit/12ddaaf33db1ce2e0a87881e16046d3d45dac237))
+* recover interrupted assigned trials ([b75c483](https://github.com/OpenRAE/lilrae/commit/b75c48369258747f5ece59cc1a06a98be816266d))
+* recover interrupted assigned trials ([5a84a09](https://github.com/OpenRAE/lilrae/commit/5a84a099a1f33eccd5548d9cc82919990ef235d1))
+
+
+### Bug Fixes
+
+* admit the family before the runtime-parameter digest check ([cef379d](https://github.com/OpenRAE/lilrae/commit/cef379defdb03dada2fb3ec2fd316fba0aab4c2b))
+* admit the family before the runtime-parameter digest check ([9cc85fa](https://github.com/OpenRAE/lilrae/commit/9cc85fa797a3344cf333d89513e27d2006555bfa))
+* keep capture deadlines in the core layer ([e703f1d](https://github.com/OpenRAE/lilrae/commit/e703f1d1c38b2e34b90caf7af73e5395a5e4bdb7))
+* **mcp:** re-pin the participant asset lock for the MCP lockfiles ([6b7a377](https://github.com/OpenRAE/lilrae/commit/6b7a377c491c20a9a1b402b87723eba099df2b03))
+* preserve streaming capture limits and declare dependencies ([908b859](https://github.com/OpenRAE/lilrae/commit/908b85921aca0061d631bcc520b1f4290378b0f3))
+* retire container and network receipts after teardown proves them gone ([839f306](https://github.com/OpenRAE/lilrae/commit/839f306a96f14777ee79a452b9b5782ea89ad539))
+* retire receipts only after the attempt evidence retains them ([a783191](https://github.com/OpenRAE/lilrae/commit/a783191bf54ffd134ab98a02469a9302e663a732)), closes [#1478](https://github.com/OpenRAE/lilrae/issues/1478)
+
+
+### Documentation
+
+* align planning guidance with the test execution boundary ([7148d2c](https://github.com/OpenRAE/lilrae/commit/7148d2c525975b36ed2d220e2f20c2550e6d91f8))
+* design Diataxis adoption and implementation backlog ([4bdb79b](https://github.com/OpenRAE/lilrae/commit/4bdb79b6da25f90129de72be124eeba23dd480c9))
+* design Diataxis adoption and implementation backlog ([3146871](https://github.com/OpenRAE/lilrae/commit/31468713397f2aea289b92d6a481205fefbdf278))
+* keep vulnerability details out of public issues, PRs, and discussions ([b21564c](https://github.com/OpenRAE/lilrae/commit/b21564c579cc7e558f8d65937dcd1bee8b7bdf61))
+* keep vulnerability details out of public issues, PRs, and discussions ([38d3cec](https://github.com/OpenRAE/lilrae/commit/38d3cece5da79dbf0d8c2ab7829c8b0b07ffecbe)), closes [#1661](https://github.com/OpenRAE/lilrae/issues/1661)
+* update license copyright holders and add a README start line ([77706b8](https://github.com/OpenRAE/lilrae/commit/77706b8ff65c4f8797fe62561ce105653d0f0242))
+* update license copyright holders and add a README start line ([d125cc0](https://github.com/OpenRAE/lilrae/commit/d125cc048b9597935cebc9b64c49dcc049bba12f)), closes [#1674](https://github.com/OpenRAE/lilrae/issues/1674)
+
 ## [9.1.0](https://github.com/OpenRAE/lilrae/compare/v9.0.0...v9.1.0) (2026-11-03)
 
 
