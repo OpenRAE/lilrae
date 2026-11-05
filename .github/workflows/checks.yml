@@ -118,10 +118,21 @@ jobs:
           cache: pip
           cache-dependency-path: requirements/*.txt
       - run: |
-          pip install --require-hashes -r requirements/docs.txt
+          pip install --require-hashes -r requirements/docs.txt -r requirements/dev.txt
           pip install -e . --no-deps --no-build-isolation
+      - name: Targeted documentation tooling and navigation tests
+        run: >-
+          python -m pytest -q tests/test_documentation_checks.py
+          tests/test_docs_publishing.py tests/test_docs_user_journey.py
+          tests/test_scenario_pack_ownership_contract.py
       - name: Vale prose lint (full lintable corpus, ADR-038)
         run: bash tools/vale-lint-all.sh
+      - name: STE corpus report (legacy findings are advisory)
+        run: |
+          bash tools/install-ste.sh
+          git ls-files -z '*.md' | xargs -0 -r .tools/ste/0.10.1/ste lint --config .ste.yml --no-baseline --format github
+      - name: STE rewritten pages (no selected findings)
+        run: xargs -r bash tools/ste-lint.sh --format github < .ste-required.txt
       - name: mkdocs strict build (nav and links must resolve)
         run: mkdocs build --strict
 
