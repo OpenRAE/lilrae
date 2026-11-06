@@ -216,11 +216,11 @@ sudo lilrae seat rescue --seat-root <seat-root>
 ```
 
 The host needs `virt-rescue` for this task.
-Exit rescue before updating and starting the same selected seat:
+Exit rescue before updating and starting the same selected seat in event mode:
 
 ```shell
-lilrae seat update --seat-root <seat-root>
-lilrae seat start --seat-root <seat-root>
+lilrae seat update --seat-root <seat-root> --desktop-mode event
+lilrae seat start --seat-root <seat-root> --desktop-mode event
 ```
 
 See the [seat launcher](../reference/appliance-seat-launcher.md) for seat selection and image trust requirements.
