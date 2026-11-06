@@ -16,6 +16,11 @@ Upstream environment packs owns pack formats and TechVault content.
 These pages link those owners. They do not copy their schema documentation.
 Source inspection invoked no provider, model, external target, or lab operation.
 
+The integration merge added source revision `5c928b06e2f7637cf6c6fadfd0d36e2ba040b8b2`.
+Its retained-enrollment contract was checked against `scenario_capture.py`, `_raes_native_evidence_acquisition.py`, `retained_enrollment.py`, and `lifecycle_cleanup.py`.
+The merged reference keeps the first-capture authority, trial scope, prior-ID result, refusal conditions, and volume-reset cleanup.
+CI owns `tests/test_retained_enrollment.py` and `tests/test_family_adapter_contract.py` for this contract.
+
 ## Section correspondence
 
 Each row identifies source checks for its listed pages and their maintained sections.

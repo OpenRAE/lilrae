@@ -164,6 +164,19 @@ Its contribution gives registrations, declared credential keys, optional generat
 It receives no run store or project path.
 
 `read_generated_output(artifact, output)` reads only an explicitly granted, admitted output through contained file operations.
+
+On a trial, `retain_enrollment_ids(observed)` takes a node-to-Wazuh-agent-ID map.
+It returns the IDs that core retained for the same trial before the call.
+Core creates the trial's record once, in the first provisioning capture of the trial.
+Only that capture adds IDs, and it does not replace a retained ID.
+All other contexts only read the record, which includes rebuilt sources and captures after a restart.
+Thus an ID that core did not retain in the first provisioning capture cannot prove continuity.
+
+The result is `None` when the record is missing or not valid.
+It is also `None` when the input is not valid or core cannot store the IDs.
+Duplicate agent IDs are not valid.
+`lilrae lab stop -v` clears the retained IDs.
+
 `ScenarioPropositionInterpreter` documents the existing five positional arguments.
 Its result remains subject to core's evidence and proposition checks.
 Native evidence uses the sealed plan-entry ID as its planned-trial identity.
