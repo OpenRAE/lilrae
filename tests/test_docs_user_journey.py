@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+import shlex
 
 import yaml
 from typer.main import get_command
 
 from aptl.api.routers import config, kill, lab, scenarios, terminal
 from aptl.cli.main import app as cli_app
+from aptl.core.opencode import SUPPORTED_OPENCODE_BUILD
 
 
 ROOT = Path(__file__).parents[1]
@@ -167,18 +169,76 @@ def test_split_operator_pages_are_reachable_from_reader_navigation() -> None:
         "getting-started/installation-reference.md",
         "getting-started/pack-reference.md",
         "troubleshooting/diagnostics.md",
+        "components/wazuh-siem.md",
+        "components/wazuh-active-response.md",
+        "components/victim-containers.md",
+        "reference/opencode-participants.md",
+        "reference/windows-endpoint.md",
+        "sdl/curated-variant-reference.md",
+        "raes/techvault-static-validation-gate.md",
+        "raes/techvault-live-validation-gate.md",
         "workshop/reference.md",
         "workshop/hosted-backup-reference.md",
     } <= routes["Reference"]
-    assert {"workshop/setup.md", "troubleshooting/search-index-backup.md"} <= routes[
-        "How-to guides"
-    ]
+    assert {
+        "workshop/setup.md",
+        "troubleshooting/search-index-backup.md",
+        "sdl/index.md",
+        "sdl/techvault-curated-variants.md",
+        "containers/victim-template-guide.md",
+        "components/victim-operations.md",
+        "components/kali-operations.md",
+        "reference/source-image-maintenance.md",
+        "components/wazuh-operations.md",
+        "components/wazuh-response-operations.md",
+        "components/defensive-posture-operations.md",
+        "components/appliance-qualification.md",
+        "raes/scenario-validation.md",
+        "raes/live-validation.md",
+        "raes/install-cleanup.md",
+        "reference/appliance-seat-operations.md",
+        "reference/evidence-bundle-operations.md",
+        "reference/host-mcp-operations.md",
+        "reference/mcp-operations.md",
+        "reference/opencode-operations.md",
+        "reference/project-configuration.md",
+        "reference/migrate-configuration.md",
+        "reference/run-operations.md",
+        "reference/web-proxy.md",
+        "reference/family-adapter-operations.md",
+        "reference/participant-request-operations.md",
+        "components/workbench-composition.md",
+    } <= routes["How-to guides"]
+    assert {"sdl/paper-walkthrough.md", "workshop/walkthrough.md"} <= routes["Tutorials"]
     assert {
         "getting-started/execution-boundaries.md",
         "getting-started/environment-bindings.md",
+        "reference/seat-containment.md",
+        "components/red-side-capture-boundary.md",
+        "sdl/runtime-architecture.md",
+        "components/techvault-adapter-boundary.md",
     } <= routes["Explanation"]
     for target in set().union(*routes.values()):
         assert (DOCS / target).is_file(), target
+
+    split_pages = {
+        "reference/appliance-seat-launcher.md": "reference/appliance-seat-operations.md",
+        "reference/host-mcp-access.md": "reference/host-mcp-operations.md",
+        "reference/evidence-bundle-export.md": "reference/evidence-bundle-operations.md",
+        "reference/opencode-participants.md": "reference/opencode-operations.md",
+        "reference/family-adapters.md": "reference/family-adapter-operations.md",
+        "reference/participant-request-manifests.md": "reference/participant-request-operations.md",
+        "raes/techvault-static-validation-gate.md": "raes/scenario-validation.md",
+        "raes/techvault-live-validation-gate.md": "raes/live-validation.md",
+    }
+    for source, guide in split_pages.items():
+        for origin, destination in ((source, guide), (guide, source)):
+            links = {
+                (DOCS / origin).parent / target.split("#", 1)[0]
+                for target in _links(_document(f"docs/{origin}")).values()
+                if "://" not in target
+            }
+            assert (DOCS / destination) in links, (origin, destination)
 
 
 def test_cli_reference_tracks_every_registered_command_group() -> None:
@@ -187,6 +247,23 @@ def test_cli_reference_tracks_every_registered_command_group() -> None:
     registered = set(get_command(cli_app).commands)
 
     assert documented == registered
+
+    # Check the documented command paths and flags against the real CLI.
+    # This detects renamed/removed subcommands and options without running a lab.
+    root = get_command(cli_app)
+    for row in _table("docs/reference/cli.md", "First-Lab Commands"):
+        arguments = shlex.split(row["Command"])[1:]
+        command = root
+        while arguments and hasattr(command, "commands"):
+            name = arguments.pop(0)
+            assert name in command.commands, row["Command"]
+            command = command.commands[name]
+        options = {
+            option
+            for parameter in command.params
+            for option in (*parameter.opts, *parameter.secondary_opts)
+        }
+        assert {value for value in arguments if value.startswith("-")} <= options
 
 
 def test_mcp_reference_tracks_built_and_enabled_server_surfaces() -> None:
@@ -253,3 +330,10 @@ def test_support_and_security_actions_use_the_canonical_repository_policies() ->
         assert links["Report a vulnerability privately"] == (
             "https://github.com/OpenRAE/lilrae/security/advisories/new"
         )
+
+
+def test_opencode_reference_matches_the_supported_executable() -> None:
+    rows = _table("docs/reference/opencode-participants.md", "Supported build and route")
+    values = {row["Identity"]: row["Supported value"] for row in rows}
+    assert values["OpenCode"].split(",", 1)[0] == SUPPORTED_OPENCODE_BUILD.version
+    assert values["Executable SHA-256"] == SUPPORTED_OPENCODE_BUILD.executable_sha256

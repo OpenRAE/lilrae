@@ -1,46 +1,33 @@
 # Scenario Authoring Boundary
 
-APTL no longer maintains a local scenario language or parser. ADR-035 moved
-scenario authoring and runtime handoff to RAES SDL.
+Use RAES SDL to author scenarios.
+LilRAE no longer gives a local scenario language or parser.
+[ADR-035](../adrs/adr-035-raes-sdl-adoption.md) records that decision.
 
 ## Companion repositories
 
-Scenario authoring and the reusable environment-pack format are defined in the
-RAES companion repositories, not in APTL:
+1. Use [OpenRAE/rae](https://github.com/OpenRAE/rae) for SDL schema, semantics, tools, and runtime contracts.
+2. Use [OpenRAE/env-packs](https://github.com/OpenRAE/env-packs) for pack structure, templates, schemas, validation, and authoring guidance.
+3. Install a pack through the [pack installation guide](../getting-started/installing-packs.md).
+4. Examine its acquired identity with `lilrae lab scenarios` in the approved lab environment.
+5. Validate changes through [static validation](../raes/scenario-validation.md).
+6. Use [live validation](../raes/live-validation.md) for deployment evidence in CI or an approved isolated VM.
 
-- [OpenRAE/rae](https://github.com/OpenRAE/rae): the RAES SDL, tools, runtime,
-  and reference backend. It owns SDL shape and semantics.
-- [OpenRAE/env-packs](https://github.com/OpenRAE/env-packs): the RAES companion
-  repository for environment-pack definitions, formats, templates, schemas,
-  validation, tooling, and authoring/adoption guidance. Use it to author and
-  validate environment packs.
+These upstream links are documentation routes.
+They do not authorize runtime acquisition or establish a trust root.
+LilRAE owns deployment, lifecycle, credentials, and evidence for its backend.
 
-These are authoring and reference links, not runtime source URLs or trust roots.
-APTL consumes published RAES SDL and packs. How a scenario *runs* as a lab (the
-Compose topology, container realization, lab lifecycle, credentials, and
-captured evidence) stays APTL-owned and is documented in APTL's own pages.
+## Selection and limits
 
-Current operator-facing startup selection uses one acquired-pack path:
+The configured `ScenarioSourceConfig` selects an acquired pack.
+`resolve_scenario_bundle()` validates its SDL and associated artifacts.
+The installed pack catalog gives operator metadata.
+The RAES parser validates the selected SDL before runtime handoff.
 
-- `ScenarioSourceConfig` for the configured pack selector
-- `resolve_scenario_bundle()` for staging and associated-artifact identity
-  validation
-- the `raes-env-packs` catalog model for operator-facing metadata
-- `raes.parse_sdl_file` for SDL validation
-- `aptl.backends.raes.start_raes_scenario()` for runtime handoff through RAES
+An explicit `--scenario-path` selects a project-contained development input.
+It does not replace a missing or invalid acquired pack automatically.
+Use the [research fixture guide](techvault-curated-variants.md) only from a matching source checkout.
 
-`lilrae lab scenarios` therefore reports pack identity (id, version, set digest,
-and maturity), not an APTL-relative path. An explicit `--scenario-path` is a
-project-contained development override; it is not a fallback for a missing or
-invalid acquired pack.
-
-The historical APTL-local SDL reference pages in this section are retained only
-for old ADR links and design archaeology. They are not current authoring
-guidance, not runtime input documentation, and not an alternate schema
-authority.
-
-For current TechVault authoring and validation, use the RAES pages:
-
-- [TechVault Static Validation Gate](../raes/techvault-static-validation-gate.md)
-- [TechVault Live Validation Gate](../raes/techvault-live-validation-gate.md)
-- [APTL research scenario fixtures](techvault-curated-variants.md)
+The retired local-SDL pages keep stable links for historical ADRs.
+They are not alternate schema or runtime authorities.
+See [runtime handoff](runtime-architecture.md) for the current relationship between admission and execution.
