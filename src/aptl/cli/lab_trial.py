@@ -15,9 +15,14 @@ def run_lab_trial(
     project_dir: Path,
     attempt: TrialAttempt,
     *,
+    scenario_path: Path | None,
+    scenario_sha256: str,
     progress: Callable[[str], None],
 ) -> TrialRecord:
-    """Run the declared participants on the started lab and seal the run."""
+    """Run the declared participants on the started lab and seal the run.
+
+    The trial refuses an SDL whose digest differs from the one startup admitted.
+    """
     raise RuntimeError("trial runs are not supported")
 
 

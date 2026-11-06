@@ -18,6 +18,7 @@ from aptl.core.opencode import (
     OpenCodeInvocationEvidence,
 )
 from aptl.core.trial_sdl import DeclaredParticipant
+from aptl.workbench.agent import InventoryProbe, probe_mcp_server
 from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor
 from aptl.workbench.process import CancellableProcessRunner
 
@@ -45,6 +46,7 @@ class TrialLaunchSettings:
     max_output_tokens: int = 32768
     build: OpenCodeBuild = SUPPORTED_OPENCODE_BUILD
     runner: CancellableProcessRunner | None = None
+    inventory_probe: InventoryProbe = probe_mcp_server
 
 
 def participant_prompt(

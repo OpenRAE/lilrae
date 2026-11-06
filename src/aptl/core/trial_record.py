@@ -60,8 +60,13 @@ class TrialRecord(BaseModel):
     ended_at: str
     terminal_cause: TerminalCause
     participants: tuple[TrialParticipantRecord, ...]
+    #: Each cleanup step and its result, for example ``credentials: removed``.
+    cleanup: dict[str, str] = Field(default_factory=dict)
 
 
 def seal_trial_record(store: LocalRunStore, record: TrialRecord) -> Path:
-    """Write the record once and seal every regular file in the run."""
+    """Write the record once and seal every regular file in the run.
+
+    Call it only after every evidence producer and credential cleanup ended.
+    """
     raise RuntimeError("trial sealing is not supported")

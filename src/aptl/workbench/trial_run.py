@@ -9,7 +9,6 @@ from typing import Protocol
 
 from aptl.core.runstore import LocalRunStore
 from aptl.core.trial_attempt import TrialAttempt
-from aptl.core.trial_control import TrialControl
 from aptl.core.trial_record import TrialRecord
 from aptl.core.trial_sdl import DeclaredParticipant
 
@@ -32,10 +31,14 @@ def run_declared_trial(
     participants: tuple[DeclaredParticipant, ...],
     invocations: Mapping[str, ParticipantInvocation],
     evidence: Mapping[str, Mapping[str, object]],
-    control: TrialControl,
+    stop_requested: Callable[[], bool],
     store: LocalRunStore,
     clock: Callable[[], datetime],
     poll_seconds: float = 1.0,
 ) -> TrialRecord:
-    """Start every participant, stop them at the deadline or on request, then seal."""
+    """Start every participant and stop them at the deadline or on request.
+
+    The returned record is not sealed. The caller drains credentials and
+    capture first, records their cleanup, and then seals the run.
+    """
     raise RuntimeError("trial runs are not supported")

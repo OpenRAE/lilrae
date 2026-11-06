@@ -63,6 +63,8 @@ from aptl.core.lab_types import (
     StartupOutcome as StartupOutcome,
     describe_project_runtime,
 )
+from aptl.core.trial_attempt import TrialAttempt
+from aptl.core.trial_control import TrialControl
 from aptl.core.lifecycle_guard import (
     LifecycleLockUnavailableError,
     lifecycle_recovery_command,
@@ -136,6 +138,9 @@ if TYPE_CHECKING:
 
 log = get_logger("lab")
 _STATE_DIR_NAME = ".aptl"
+# A stopped trial cancels its participants, drains them for at most 60 s, then
+# seals. The wait leaves a wide margin over that drain.
+TRIAL_STOP_WAIT_SECONDS = 300.0
 
 _START_OPERATION_ERRORS = (
     OSError,
@@ -546,6 +551,9 @@ def stop_lab(
         LabResult indicating success or failure.
     """
     search_dir = project_dir or Path(".")
+    trial_failure = request_trial_stop(search_dir, wait_seconds=TRIAL_STOP_WAIT_SECONDS)
+    if trial_failure is not None:
+        return trial_failure
     try:
         with lifecycle_mutation_lock(search_dir) as project_root:
             return _stop_lab_owned(remove_volumes, project_root, backend)
@@ -901,7 +909,7 @@ def clean_boot_lab(
     progress: ProgressCallback | None = None,
     appliance: ApplianceStartOptions | None = None,
     teardown_on_failure: bool = False,
-    run_id: str | None = None,
+    trial: TrialAttempt | None = None,
 ) -> LabResult:
     """Boot the lab into a guaranteed clean state (RNG-001).
 
@@ -953,7 +961,7 @@ def clean_boot_lab(
                 appliance=appliance,
                 teardown_on_failure=teardown_on_failure,
                 after_start=after_start,
-                run_id=run_id,
+                trial=trial,
             )
     except LifecycleBusyError:
         result = _lifecycle_busy_result("start --clean")
@@ -973,7 +981,7 @@ def _clean_boot_lab_owned(
     appliance: ApplianceStartOptions | None,
     teardown_on_failure: bool = False,
     after_start: list[Callable[[], LabResult | None]] | None = None,
-    run_id: str | None = None,
+    trial: TrialAttempt | None = None,
 ) -> LabResult:
     """Clean and restart the lab while the caller owns lifecycle mutation."""
 
@@ -1019,7 +1027,7 @@ def _clean_boot_lab_owned(
             progress=progress,
             teardown_on_failure=teardown_on_failure,
             after_start=after_start,
-            run_id=run_id,
+            trial=trial,
             **appliance_kwargs,
         )
     return orchestrate_lab_start(
@@ -1028,7 +1036,7 @@ def _clean_boot_lab_owned(
         scenario_path=scenario_path,
         progress=progress,
         teardown_on_failure=teardown_on_failure,
-        run_id=run_id,
+        trial=trial,
         **appliance_kwargs,
     )
 
@@ -1384,8 +1392,8 @@ class _LabStartContext(object):
     # workflow artifacts and the record share a single run directory.
     run_store: RunStorageBackend | None = None
     run_id: str | None = None
-    # A trial caller's run ID (#1670). It names the run directory exactly.
-    requested_run_id: str | None = None
+    # A trial caller's attempt (#1670). Its run ID names the run directory.
+    trial: TrialAttempt | None = None
     reset_admission_id: str = field(default_factory=lambda: uuid4().hex)
     stateful_artifact_ownership: frozenset[tuple[str, str, str, str, str]] = frozenset()
     # The one admitted scenario execution (issue #951). `_step_load_config`
@@ -4646,7 +4654,7 @@ def orchestrate_lab_start(
     progress: ProgressCallback | None = None,
     appliance: ApplianceStartOptions | None = None,
     teardown_on_failure: bool = False,
-    run_id: str | None = None,
+    trial: TrialAttempt | None = None,
 ) -> LabResult:
     """Own and orchestrate the complete lab startup process.
 
@@ -4666,7 +4674,7 @@ def orchestrate_lab_start(
                 appliance=appliance,
                 after_start=after_start,
                 teardown_on_failure=teardown_on_failure,
-                run_id=run_id,
+                trial=trial,
             )
     except LifecycleBusyError:
         return _lifecycle_busy_result("start")
@@ -4698,7 +4706,7 @@ def _orchestrate_lab_start_owned(
     appliance: ApplianceStartOptions | None = None,
     after_start: list[Callable[[], LabResult | None]] | None = None,
     teardown_on_failure: bool = False,
-    run_id: str | None = None,
+    trial: TrialAttempt | None = None,
 ) -> LabResult:
     """Orchestrate the complete lab startup process.
 
@@ -4735,12 +4743,36 @@ def _orchestrate_lab_start_owned(
         scenario_path=scenario_path,
         progress=progress,
         teardown_on_failure=teardown_on_failure,
-        requested_run_id=run_id,
+        trial=trial,
     )
     try:
-        return _run_lab_start_steps(ctx, after_start)
+        result = _run_lab_start_steps(ctx, after_start)
     finally:
         _close_run_runtime(ctx)
+    return _bind_trial_start(ctx, result)
+
+
+def _bind_trial_start(ctx: _LabStartContext, result: LabResult) -> LabResult:
+    """Hand a usable trial start its run and SDL identity, then fence it (#1670).
+
+    The fence is claimed while startup still owns the lifecycle lock, so no
+    other lifecycle operation can run between startup and the trial.
+    """
+    if ctx.trial is None:
+        return result
+    raise RuntimeError("trial start binding is not supported")
+
+
+def request_trial_stop(project_dir: Path, *, wait_seconds: float) -> LabResult | None:
+    """Ask a running trial to stop and wait until it releases its fence."""
+    if not (project_dir / _STATE_DIR_NAME / "trial").exists():
+        return None
+    raise RuntimeError("trial stop requests are not supported")
+
+
+def finalize_trial_capture(project_dir: Path) -> str:
+    """Finalize required run transcripts before a trial seal; return the disposition."""
+    raise RuntimeError("trial capture finalization is not supported")
 
 
 def _close_run_runtime(ctx: _LabStartContext) -> None:

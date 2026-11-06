@@ -13,7 +13,7 @@ from aptl.core.config import ExperimentSettings
 from aptl.core.opencode import OpenCodeBuild
 from aptl.core.runstore import LocalRunStore
 from aptl.core.trial_attempt import TrialAttempt
-from aptl.core.trial_control import TrialControl
+from aptl.core.trial_record import seal_trial_record
 from aptl.core.trial_sdl import declared_participants
 from aptl.workbench.process import ProcessResult
 from aptl.workbench.trial_launch import TrialLaunchSettings, trial_executors
@@ -100,14 +100,17 @@ def test_vertex_participant_key_comes_from_reference_and_stays_out_of_evidence(t
     evidence: dict[str, dict[str, object]] = {}
 
     try:
-        record = _run_vertex_trial(scenario, participants, settings, deadline, store, evidence, tmp_path)
+        record = _run_vertex_trial(scenario, participants, settings, deadline, store, evidence)
+        # Credentials are gone before the seal makes the run immutable.
+        assert all(call["key_path"] and not Path(call["key_path"]).exists() for call in runner.calls)
+        seal_trial_record(store, record)
     except (RuntimeError, ValueError) as exc:
         pytest.fail(f"the Vertex trial did not run to a seal: {exc}")
     _assert_vertex_trial(runner, record, document, participants, store)
     _assert_unconfigured_vertex_refused(tmp_path, scenario, participants, deadline)
 
 
-def _run_vertex_trial(scenario, participants, settings, deadline, store, evidence, tmp_path):
+def _run_vertex_trial(scenario, participants, settings, deadline, store, evidence):
     with trial_executors(
         scenario,
         participants,
@@ -119,21 +122,19 @@ def _run_vertex_trial(scenario, participants, settings, deadline, store, evidenc
             {"status": item.status}
         ),
     ) as executors:
-        record = run_declared_trial(
+        return run_declared_trial(
             attempt=TrialAttempt("run-1", "attempt-1", deadline),
             scenario_sha256="sha256:" + "0" * 64,
             participants=participants,
             invocations=executors,
             evidence=evidence,
-            control=TrialControl(tmp_path / "state"),
+            stop_requested=lambda: False,
             store=store,
             clock=lambda: datetime.now(UTC),
         )
-    return record
 
 
 def _assert_vertex_trial(runner, record, document, participants, store):
-    key_paths = [call["key_path"] for call in runner.calls]
     assert record.terminal_cause == "completed"
     assert len(runner.calls) == 2
     for call in runner.calls:
@@ -144,7 +145,6 @@ def _assert_vertex_trial(runner, record, document, participants, store):
         assert "TEST_VERTEX_KEY" not in call["env"]
         assert _PRIVATE_KEY not in json.dumps(call["config"])
         assert _PRIVATE_KEY not in " ".join(call["argv"])
-    assert all(path and not Path(path).exists() for path in key_paths)
 
     assert _PRIVATE_KEY not in json.dumps(document)
     for item in participants:

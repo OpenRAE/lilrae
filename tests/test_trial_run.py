@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import threading
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -14,7 +13,7 @@ from aptl.core.archival import verify_sealed_archive
 from aptl.core.runstore import LocalRunStore
 from aptl.core.trial_attempt import TrialAttempt, parse_trial_attempt
 from aptl.core.trial_control import TrialControl
-from aptl.core.trial_record import TRIAL_RECORD_RELPATH
+from aptl.core.trial_record import TRIAL_RECORD_RELPATH, seal_trial_record
 from aptl.core.trial_sdl import DeclaredParticipant
 from aptl.workbench.trial_run import run_declared_trial
 
@@ -31,17 +30,26 @@ class FinishingInvocation:
         return "finished output"
 
 
-class BlockingInvocation:
-    """Write partial output, then wait for cancellation like a long model turn."""
+class PartialInvocation:
+    """Report partial native evidence, then wait for cancellation like a long turn."""
 
     prompt_sha256 = "b" * 64
 
-    def __init__(self):
+    def __init__(self, address, evidence):
+        self.address, self.evidence = address, evidence
         self.started = threading.Event()
 
     def __call__(self, action_id, cancellation):
+        # The real executor reports through its evidence sink while it runs.
+        self.evidence[self.address] = {
+            "action_id": action_id,
+            "status": "running",
+            "partial_text_sha256": "c" * 64,
+            "output_tokens": 7,
+        }
         self.started.set()
         cancellation.wait(30)
+        self.evidence[self.address] = {**self.evidence[self.address], "status": "cancelled"}
         raise RuntimeError("participant invocation cancelled after partial output")
 
 
@@ -52,7 +60,7 @@ def _store(tmp_path, run_id):
     return store
 
 
-def _run(tmp_path, attempt, invocations, *, control=None, evidence=None):
+def _run(tmp_path, attempt, invocations, *, stop_requested=lambda: False, evidence=None):
     store = _store(tmp_path, attempt.run_id)
     try:
         record = run_declared_trial(
@@ -60,12 +68,13 @@ def _run(tmp_path, attempt, invocations, *, control=None, evidence=None):
             scenario_sha256="sha256:" + "1" * 64,
             participants=_PARTICIPANTS,
             invocations=invocations,
-            evidence=evidence or {},
-            control=control or TrialControl(tmp_path / "state"),
+            evidence=evidence if evidence is not None else {},
+            stop_requested=stop_requested,
             store=store,
             clock=lambda: datetime.now(UTC),
             poll_seconds=0.05,
         )
+        seal_trial_record(store, record)
     except (RuntimeError, ValueError) as exc:
         pytest.fail(f"the trial did not run to a seal: {exc}")
     return store, record
@@ -112,38 +121,46 @@ def test_trial_stops_at_deadline_or_stop_request_and_keeps_partial_evidence(tmp_
 
 
 def _check_stop(tmp_path, cause):
+    from aptl.core.lab import request_trial_stop
+
     tmp_path.mkdir()
     now = datetime.now(UTC)
     deadline = now + (timedelta(seconds=1) if cause == "deadline" else timedelta(minutes=5))
-    invocations = {item.address: BlockingInvocation() for item in _PARTICIPANTS}
-    control = TrialControl(tmp_path / "state")
-    evidence = {
-        item.address: {"status": "running", "stdout_bytes": 17} for item in _PARTICIPANTS
-    }
+    attempt = TrialAttempt("R2", "A2", deadline)
+    evidence: dict[str, dict[str, object]] = {}
+    invocations = {item.address: PartialInvocation(item.address, evidence) for item in _PARTICIPANTS}
+    control = TrialControl(tmp_path)
+    stop_results = []
+    try:
+        control.claim(attempt)
+        control.begin(attempt)
+    except RuntimeError as exc:
+        pytest.fail(f"the trial fence was not claimed: {exc}")
     if cause == "stopped":
 
-        def request_stop():
+        def stop_through_lab():
             for invocation in invocations.values():
                 invocation.started.wait(10)
-            control.request_stop()
+            stop_results.append(request_trial_stop(tmp_path, wait_seconds=30))
 
-        threading.Thread(target=request_stop, daemon=True).start()
+        stopper = threading.Thread(target=stop_through_lab, daemon=True)
+        stopper.start()
 
     store, record = _run(
-        tmp_path,
-        TrialAttempt("R2", "A2", deadline),
-        invocations,
-        control=control,
-        evidence=evidence,
+        tmp_path, attempt, invocations, stop_requested=control.stop_requested, evidence=evidence
     )
+    control.release(attempt)
+    if cause == "stopped":
+        stopper.join(30)
+        assert stop_results == [None]
 
     assert record.terminal_cause == cause
     assert {item.status for item in record.participants} == {"cancelled"}
     for item in record.participants:
-        assert item.invocation == evidence[item.address]
+        assert item.invocation["partial_text_sha256"] == "c" * 64
+        assert item.invocation["status"] == "cancelled"
         assert item.failure
     sealed = verify_sealed_archive(store.base_dir, "R2")
     assert sealed is not None
     assert TRIAL_RECORD_RELPATH in sealed.inventory_paths
     assert control.active() is None
-    assert not any(Path(tmp_path / "state").rglob("*.json"))
