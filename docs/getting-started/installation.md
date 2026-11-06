@@ -37,7 +37,7 @@ cd my-lab
 ```
 
 Expected result: the directory contains released assets and a default `aptl.json`.
-The wheel includes configuration, container build contexts, MCP sources, web sources, and the full participant profile.
+The wheel includes configuration, container build contexts, MCP sources, and web sources.
 The environment-pack dependency supplies released scenarios.
 For the desktop-seat tutorial, follow [Workshop setup](../workshop/setup.md).
 The historical reduced fixture needs separate checkout inputs.

@@ -12,7 +12,11 @@ These records do not provide current installation or appliance qualification ins
 3. Read the [QA review guide](qa.md) for attack, detection, fix, and reset evidence.
 4. Compare repairs with the [branch audit](../../architecture/issue-1022-historical-branch-audit.md).
 
-The original records come from `3462dee1`.
+The event records originate at `3462dee1`.
+These copies preserve the maintained files from source revision `772260d6d7c64baa79513bc19cf4a520018cb5ce`.
+The facilitator file matches the event revision exactly.
+The maintained handout and QA files add Wazuh fixture-credential clarifications.
+
 Exact text, commands, outputs, addresses, credentials, and workflow IDs remain in the linked source records.
 They describe that disposable event range only.
 Current releases omit TheHive and Cortex.
