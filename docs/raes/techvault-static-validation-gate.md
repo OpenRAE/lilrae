@@ -35,10 +35,12 @@ A local approximation cannot replace the native manifest.
 | `orchestrator` | Workflow execution with decision, parallel, failure, condition, and inject handling. |
 | `evaluator` | Conditions, objectives, and result/history envelopes. The retired SDL scoring chain is unsupported. |
 | `participant_runtime` | The manifest's declared participant lifecycle, action, observation, and shared-state contracts. |
-| `observation` | `null`. Participant observations remain participant-runtime data. |
+| `observation` | `null` for the empty default collector registry. An admitted registry can declare its supported observation projection. |
 | `cleanup` | `null` for ordinary interactive startup. An installed [cleanup service](declared-cleanup.md) can declare its bounded capabilities. |
 
 Exact capability and contract declarations come from `src/aptl/backends/raes_manifest.py` and its component owners.
+Participant observations are participant-runtime data, separate from a standalone observation component.
+The compatible processors, concept-authority bindings, and supported contract versions are separate compatibility declarations.
 RAES owns the schema and conformance rules.
 See the [authoring boundary](../sdl/index.md) for upstream owners.
 A static pass does not establish runtime installation, readiness, evidence capture, or broad role support.
