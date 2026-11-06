@@ -15,7 +15,7 @@ LilRAE no longer gives a local scenario language or parser.
 
 These upstream links are documentation routes.
 They do not authorize runtime acquisition or establish a trust root.
-Deployment, lifecycle, credential, and evidence guidance for the LilRAE backend remains APTL-owned.
+Compose topology, container realization, lifecycle, credentials, and evidence remain APTL-owned for the LilRAE backend.
 
 ## Selection and limits
 
