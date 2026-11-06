@@ -7,9 +7,7 @@ differ in where the node's scenario state comes from.
 ## Base-container-materialized node
 
 A **base-container-materialized node** declares runtime desired state in the
-RAES SDL and has no node image of its own. APTL starts a **base container** for
-it from a **base image** and then applies the declared packages, software,
-content, identities, and services to that running container. Readback then
+RAES SDL and has no node image of its own. LilRAE starts a **base container** from a **base image**. It applies the declared packages, software, content, identities, and services to that running container. Readback then
 verifies the applied state.
 
 The base image is a hard dependency. It is a real Docker image, either a
@@ -31,10 +29,8 @@ declared content into it.
 
 ## Compose startup is a separate fact
 
-Whether Compose starts a node and how APTL obtains the node's state are
-separate questions. A base-container-materialized node never becomes a Compose
-service: APTL starts its base container directly with Docker and scales any
-Compose service stub with the same name to zero. A graph with no image-backed
+Whether Compose starts a node and how APTL gets the node's state are
+separate questions. LilRAE starts a base-container-materialized node directly through Docker. It scales any Compose service stub with the same name to zero. A graph with no image-backed
 node still uses Docker, even when `compose up` has nothing to start.
 
 Content placed at an authored literal destination path reaches both routes.
@@ -44,8 +40,7 @@ image-backed node.
 ## Historical term
 
 Before issue [#1193](https://github.com/OpenRAE/lilrae/issues/1193), APTL
-called base-container-materialized nodes "image-free." That name was wrong:
-these nodes always start from a base image. ADR-048's title, older ADRs,
+called base-container-materialized nodes "image-free." The nodes still require a base image, so the earlier term was inaccurate. ADR-048's title, older ADRs,
 architecture preflight notes, reviews, and changelog entries keep the old term
 as a historical record. Read "image-free" there as "base-container-materialized."
 

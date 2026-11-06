@@ -50,6 +50,7 @@ def test_docs_lane_runs_targeted_behavior_checks_without_runtime_selection() -> 
     assert set(args[4:]) == {
         "tests/test_documentation_checks.py", "tests/test_docs_publishing.py",
         "tests/test_docs_user_journey.py", "tests/test_scenario_pack_ownership_contract.py",
+        "tests/test_hosted_seat_helper.py", "tests/test_stage_hosted_seat_payload.py",
     }
 
 

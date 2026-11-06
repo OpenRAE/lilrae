@@ -201,7 +201,8 @@ def test_family_native_capture_uses_trial_entry_identity(
         selected,
     )
     monkeypatch.setattr(
-        "aptl.backends.scenario_capture.family_capture_sources", lambda request: {}
+        "aptl.backends.scenario_capture.family_capture_sources",
+        lambda request, **_: {},
     )
     monkeypatch.setattr(
         "aptl.backends._raes_native_evidence_acquisition.acquire_evidence",
