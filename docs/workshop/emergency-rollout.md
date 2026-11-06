@@ -1,190 +1,109 @@
-# Emergency Workshop Rollout Runbook
+<a id="emergency-workshop-rollout-runbook"></a>
 
-This runbook covers the fallback path for an instructor-led workshop when
-students cannot reliably run the lab on their own laptops. It is not the normal
-APTL delivery model. The normal model remains:
+# Prepare An Emergency Workshop Rollout
 
-```bash
-pipx install lilrae
-lilrae lab init workshop
-cd workshop
-lilrae lab start --yes
-```
-
-Use this guide when the workshop needs a short-lived hosted fleet with APTL,
-Docker, Claude Code or another agent, and the MCP servers already working.
+Use this guide when participant machines cannot support the planned exercise.
+You need a separately approved hosting plan, provider budget, access policy, and teardown owner.
+Do not create cloud resources or transfer payloads before that approval.
+The result is an admitted contingency session or an explicit decision to postpone.
+Do not run lab operations or behavior tests on the developer workstation.
 
 ## Decision Gate
 
-Use a hosted fallback only when at least one of these is true:
-
-- student machines cannot install or run Docker in time;
-- local operating-system variance is blocking the workshop;
-- venue networking prevents package downloads or container image pulls;
-- the workshop has already started and the facilitator needs a fast recovery
-  path.
-
-Do not use the fallback to avoid fixing the normal local install path. Any issue
-found during a fallback should become a release or docs issue after the event.
+Confirm which failure blocks the normal route: Docker installation, platform mismatch, unavailable downloads, or an active session failure.
+First try [session recovery](setup.md#recover-a-session) for an existing range.
+Do not treat emergency hosting as qualification of an untested delivery path.
+Record each defect and retain non-secret evidence for its repair.
 
 ## Capacity Model
 
-Size the fleet from the instance vCPU count, not the instance count. For
-example, `m7i.2xlarge` hosts consume 8 Standard On-Demand vCPUs each. Keep
-quota headroom for canaries and replacement hosts.
+Calculate required vCPUs for the intended instance size and seat count.
+Include replacement and canary capacity.
+For an approved AWS deployment, inspect the selected region's Standard On-Demand quota:
 
-Before launch, check:
-
-```bash
+```shell
 aws service-quotas get-service-quota \
   --service-code ec2 \
   --quota-code L-1216C47A \
   --region "$AWS_REGION"
 ```
 
-If a quota increase is needed, request the total desired vCPU quota, not just
-the added capacity. Close the quota case after the event if it is no longer
-needed.
+Request the total required quota if an increase is needed.
+Confirm approval before launch.
+The [historical trial reference](hosted-backup-reference.md) records its exact resource inputs.
 
 ## Golden Host
 
-Build and validate one host before launching the class fleet.
+Build one canary on the same intended delivery path as participants.
+Install the approved runtime, desktop access, and agent versions.
+Use [Workshop setup](setup.md) for the released desktop-seat exercise.
+For a released full-TechVault seat, use the [seat launcher](../reference/appliance-seat-launcher.md).
+Do not substitute a historical provisioning snapshot for either route.
 
-Minimum host contract:
-
-- supported student-like desktop access, usually RDP to an Ubuntu desktop;
-- Docker installed and usable by the student account;
-- `pipx`, Python, Node.js, and npm installed;
-- `lilrae` installed from the intended release channel;
-- the workshop lab initialized and started;
-- Claude Code or the selected agent installed and authenticated;
-- MCP servers built and registered from the workshop directory.
-
-Do not validate on a materially different platform from the students. For
-example, Windows Server or WSL does not prove the native Windows student path.
+Complete the actual tutorial on that canary before copying an event image.
+A Linux canary does not qualify Windows, macOS, or another access path.
 
 ## Lab Contract
 
-The hosted lab should start from the same workshop profile used in the local
-walkthrough. Keep optional containers disabled unless the workshop needs them.
-For the standard workshop, `reverse` stays disabled.
-
-Expected workshop MCPs:
-
-- `kali-ssh` for Kali command execution;
-- `indexer` for raw Wazuh indexer queries;
-- `wazuh` for SIEM query helpers;
-- `network` for Suricata/network alert queries;
-- `threatintel` for MISP;
-- `soar` for Shuffle.
-
-Do not register an MCP for a disabled service. A broken MCP entry is worse than
-an absent one because it confuses students and agents.
+Choose one profile for the event and record its exact inputs.
+For this lesson, keep red and blue agent terminals separate.
+Use only the SSH and Wazuh operations required by the tutorial.
+Use [the workshop reference](reference.md) for the profile facts.
+Do not silently expand a reduced exercise into the full research stack.
+Register only services present in the admitted scenario.
 
 ## Readiness Proof
 
-Every host needs machine-checked proof, not a visual spot check. At minimum,
-validate:
+On each approved host, inspect the installed versions and project state:
 
-```bash
+```shell
 lilrae --version
 lilrae lab status
-docker ps -a
+lilrae lab info
 node --version
 npm --version
-claude --version
-claude mcp list
 ```
 
-Then run direct MCP smoke tests through the Model Context Protocol client. The
-smoke must call real backend operations, not only list tools:
-
-- `kali_run_command` returns `uid=1000(kali)`;
-- `indexer_query` returns HTTP 200;
-- `wazuh_query_alerts` returns HTTP 200;
-- `network_query_ids_alerts` returns HTTP 200;
-- `threatintel_search_iocs` returns HTTP 200;
-- `soar_list_workflows` returns HTTP 200.
-
-Run one complete walkthrough through the agent and MCPs before students arrive.
-The proof should include the MCP tool calls, the expected alert rule IDs, and
-the source IPs seen by the SOC.
+Then complete the real learner tool calls and browser checks.
+Record the Kali identity, bounded authentication attempts, and correlated SSH alerts.
+Keep canary proof separate from each participant seat's proof.
+A connected MCP process, tool list, or HTTP 200 alone is insufficient.
+Do not assign a host until its required operations pass.
 
 ## Student Distribution
 
-Do not publish a single public bundle that contains every credential. Prefer a
-claim page:
-
-- unguessable URL or neutral custom domain;
-- workshop code shown in the room;
-- one unused lab assignment per browser/session;
-- generated RDP file for only the assigned host;
-- displayed username and passphrase only for the assigned host;
-- claim state stored server-side so assignments are not duplicated.
-
-Email distribution is slower and less reliable unless SES production access is
-already approved in the target region. SES sandbox mode can send only to
-verified identities.
-
-For a room display, use a QR code plus the workshop code. Avoid putting product
-or security-sensitive terms in the public URL when a neutral name works.
+Use only the event's approved private assignment channel.
+Give each participant their own URL, account, and authentication instructions.
+Do not publish a bundle containing every participant credential.
+If an assignment service is proposed, obtain approval before deploying it or sending data to it.
+Keep provider credentials out of images, handouts, and shared state.
+Test the exact participant sign-in path before admitting the host.
 
 ## During The Event
 
-Keep the fleet stable while students are using it:
-
-- reuse hosts while debugging instead of rebuilding the fleet repeatedly;
-- keep canary proof separate from student proof;
-- watch quota and running instance count;
-- avoid adding MCPs or services during the event unless a verified workaround
-  requires it;
-- if an issue does not block students, file it for later.
-
-When fixing a host-level issue, make the remediation idempotent and run it
-across the whole fleet. Then rerun the readiness proof across the whole fleet.
+Keep the admitted fleet stable.
+Withdraw an affected assignment before repair or replacement.
+Repeat its readiness proof after a change.
+If a host-level repair applies to the fleet, verify every affected host before reassignment.
+Keep the private instance and assignment ledger current.
+Do not add services or relax access checks under event pressure.
 
 ## Wind Down
 
-When the event ends, remove both cost drivers and exposure surfaces:
+Withdraw participant assignments and close their agents.
+Stop each lab through its own project lifecycle.
+For cloud resources, review the exact IDs in the approved event ledger before deletion.
+Terminate only event instances and verify their final state.
 
-```bash
-aws ec2 terminate-instances --instance-ids "$INSTANCE_IDS"
-aws lambda delete-function --function-name "$CLAIM_FUNCTION"
-aws apigatewayv2 delete-api --api-id "$CLAIM_API"
-aws dynamodb delete-table --table-name "$CLAIM_TABLE"
-aws s3 rm "s3://$DISTRIBUTION_BUCKET" --recursive
-aws s3api delete-bucket --bucket "$DISTRIBUTION_BUCKET"
-```
-
-Also check for and remove:
-
-- AMIs and their EBS snapshots;
-- available EBS volumes;
-- event security groups and key pairs;
-- pending ACM certificates;
-- temporary IAM roles and instance profiles;
-- open quota-increase support cases;
-- local credential CSVs, RDP bundles, presigned URL files, and claim-page
-  private state.
-
-Keep non-secret proof artifacts and notes long enough to write issues and
-post-event fixes.
+Audit volumes, images, snapshots, network interfaces, public addresses, security groups, DNS, certificates, IAM resources, and assignment services.
+Remove event credentials and provider authentication state through their approved handling procedure.
+Restore reused hosts to their recorded baseline instead of terminating them.
+See [historical teardown](hosted-backup-seats.md#teardown) only for that pinned event recipe.
+Expected result: no event cost drivers, public listeners, or participant access remain.
 
 ## Lessons Learned
 
-- Validate the exact user path. A Linux canary does not prove macOS or Windows,
-  and Windows Server does not prove native student Windows.
-- Cross-platform success means `lilrae lab start` from the expected student shell
-  with Docker installed, not a hand-curated container workaround.
-- A connected MCP process is not enough. The proof must call a backend API or
-  command for every MCP students will use.
-- Persist service API keys in `.env` before registering SOC MCPs. Renewal of a
-  stale key must be safe and repeatable.
-- Count Wazuh agents as a range, not a fixed number. Startup timing and enabled
-  services can make 7 to 9 active agents normal.
-- Quota requests are total desired quota values. Requesting the current value
-  opens a support case without adding capacity.
-- A claim page is safer than a public all-student RDP bundle and easier than
-  email when SES is sandboxed.
-- Teardown is part of the workshop. If AMIs, snapshots, buckets, and IAM roles
-  are not in the checklist, they will be missed.
+Compare the final state with the pre-event ledger.
+Record non-secret proof, failures, repairs, and unresolved operating decisions.
+Use [the pinned trial reference](hosted-backup-reference.md) for historical observations.
+Do not describe those observations as current qualification.

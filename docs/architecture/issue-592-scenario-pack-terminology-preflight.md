@@ -75,6 +75,7 @@ prose must not accidentally rename them.
 | Historical requirements and review evidence | `docs/requirements/SCN-010/requirement.md`, `docs/reviews/962-lilrae-readiness/` | Preserve historical names and exact recorded links. The review's backlog and identity dispositions provide current interpretation without changing the underlying evidence. |
 | Code quality architecture | `docs/architecture/issue-1510-code-quality-preflight.md` | Keep env-pack validation and pack admission authority unchanged while the refactor moves code between layers. |
 | Terminology record and navigation labels | `docs/architecture/issue-592-scenario-pack-terminology-preflight.md`, `docs/architecture/index.md`, `mkdocs.yml` | Titles may preserve an issue's or file's historical locator. Descriptive labels for current contracts use the terminology above. |
+| User and workshop rewrite | `docs/getting-started/environment-bindings.md`, `docs/getting-started/pack-reference.md` | Keep admitted pack identity, adapter behavior, runtime observations, and historical qualification distinct. |
 | Scenario pack installation guide | `docs/getting-started/installing-packs.md` | Keep the content-pack and adapter distinction and the env-pack identity and source selection; do not rename the pack, RAES, or backend contracts. |
 
 The inventory identified three current-prose hazards for issue #592 to resolve:
