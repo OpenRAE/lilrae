@@ -60,7 +60,7 @@ The whitelist permits later purple-team iterations. It does not suppress detecti
 
 Wazuh combines `rules_id`, `rules_group`, and `level` matchers with logical OR.
 A block with rule 302010 and level 10 also matches other level-10-or-higher alerts.
-Both conditions are not necessary.
+A match on either condition selects the alert.
 
 The five checked response blocks select explicit rules without a `level` matcher.
 The configuration declares their selected rules at level 10 or higher.
