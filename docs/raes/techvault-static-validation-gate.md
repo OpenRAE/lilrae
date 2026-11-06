@@ -1,122 +1,57 @@
 # TechVault static validation gate
 
-The static validation gate (`aptl.validation.techvault_gate`) blocks a RAES
-SCN-010 cutover unless the TechVault scenario is parseable, semantically valid,
-conformance-aligned against the canonical RAES `backend-manifest-v2` surface,
-realizable into a concrete provisioning plan, and account-consistent between
-the SDL and the provisioner. It implements requirement SCN-010 (issue #322).
-
-The gate is scenario-generic. `validate_scenario()` takes a scenario path, a
-backend profile, the RAES corpus roots, and a target name, so the next scenario
-in APTL's expressivity class passes through by changing inputs rather than by
-editing the gate. TechVault is the proving input, never a hardcoded branch.
+`aptl.validation.techvault_gate.validate_scenario()` returns a `GateReport` for the selected SDL file.
+It parses, verifies imports, compiles, does conformance checks, and interprets the scenario. It does not start Docker.
+The gate uses TechVault as its reference input for issue #322.
+The gate accepts other scenarios through the same inputs.
 
 ## What the gate checks
 
-`validate_scenario()` composes existing authorities in order and returns a
-`GateReport`. Each stage is one `GateCheck`:
+| Stage | Pass condition | Important failure case |
+| --- | --- | --- |
+| Parse | `raes.parse_sdl_file` accepts the selected SDL. | Parse failure ends the report before later stages. |
+| Import lock | Declared imports match the adjacent `raes.lock.json`. | Changed imports fail verification when `check_imports` is enabled. |
+| Compile | The installed RAES compiler accepts scenario semantics. | Semantic errors fail the check. |
+| Backend conformance | The native manifest and target satisfy the selected RAES profile through API and CLI checks. | Missing corpus, profile, or conformance command fails the gate. |
+| Provisioning realization | The interpreter produces valid nodes, services, networks, and dependency closure. | Missing, ambiguous, or disabled support services fail realization. |
+| Account parity | Declared accounts agree with the provisioner. | Group, mail, SPN, or disabled-state differences fail parity. |
 
-1. **Parse.** The RAES reference parser (`raes.parse_sdl_file`) accepts
-   the SDL resolved from the validated acquired `techvault` bundle.
-2. **Import lock** (when the scenario declares imports and `check_imports` is
-   enabled). `raes sdl verify-imports` verifies the committed
-   `raes.lock.json` next to the scenario against a fresh resolution. The
-   lockfile's local `resolved_source` is checkout-independent (RAES #551), so
-   this passes on CI and any developer checkout and fails only when an
-   imported module changes without re-running `raes sdl resolve`.
-3. **Compile.** `raes_processor.compiler.compile_scenario_runtime_model` runs
-   semantic validation against the concept-authority corpus and produces the
-   runtime model.
-4. **Backend conformance.** APTL's canonical `backend-manifest-v2` target passes
-   `run_target_conformance()` for the `full-remote-control-plane` profile, and
-   the published `raes conformance backend --profile full-remote-control-plane`
-   command runs against the bundled contract corpus. A missing corpus, profile
-   artifact, or conformance command is a gate failure with an actionable
-   diagnostic, never a downgraded warning and never a reason to accept an
-   APTL-local manifest approximation.
-5. **Provisioning realization.** The interpreter realizes the provisioning plan
-   with no errors and produces nodes, services, and networks. It computes the
-   dependency closure for selected nodes from RAES provisioning dependencies
-   and Compose `depends_on` metadata before selecting backend profiles, so a
-   subset scenario pulls in required support profiles or fails with RAES
-   diagnostics for missing, ambiguous, or disabled support services. The
-   selected Compose profiles must match the public lab-start profile set, so a
-   scenario that would instantiate a partial range fails the gate. The
-   realization is driven by declared content, not by the scenario identifier.
-6. **Account provisioner parity.** Every account the SDL declares is a real,
-   clean-start-realized fixture in the provisioner script, not a phantom
-   declaration: group membership, mail attributes, SPNs, and the disabled flag
-   must all agree between the SDL and what the provisioner actually creates
-   (#689).
+`GateOptions` defaults to `full-remote-control-plane`, with import checking enabled.
+Optional corpus roots override the installed wheel's roots.
+A scenario without imports needs no import lock.
+Selected Compose profiles must agree with public startup's admitted realization.
+
+Scenario names do not select a preset.
 
 ## Backend manifest
 
-APTL publishes its capability declaration as the canonical RAES
-`backend-manifest-v2` surface (`raes_backend_protocols.capabilities`) through
-`create_aptl_manifest()`. The previous APTL-local manifest shim is removed: a
-local dataclass approximation is not accepted as conformance evidence.
+`create_aptl_manifest()` publishes the native RAES `backend-manifest-v2` declaration.
+The profile is a conformance input, separate from Compose profile selection.
+A local approximation cannot replace the native manifest.
 
-The conformance profile applied to that manifest and its runtime target is
-`full-remote-control-plane`. The profile name is a conformance input, not a
-serialized manifest field, and it is unrelated to the Docker Compose profiles
-that select APTL services. On the reference APTL backend, the declared manifest
-components mean:
-
-| Manifest component | APTL declaration |
+| Component | LilRAE contract |
 | --- | --- |
-| `provisioner` | Realizes `vm` nodes as Linux Docker containers, `switch` nodes as Docker networks, bounded `file` and `directory` content placements, and accounts with the listed non-secret account features through typed realization and `DeploymentBackend`. It does not claim datasets or ACLs. |
-| `orchestrator` | Drives RTE-001 workflows through `WorkflowEngine`, including decision, parallel-barrier, failure-transition, outcome-matching, condition-reference, and inject-binding surfaces. |
-| `evaluator` | Evaluates conditions and objectives and publishes result/history envelopes. It does not support scoring or the deprecated SDL scoring chain. |
-| `participant_runtime` | Supports the bounded red-participant episode, behavior-history, observation, and shared-state-change surface through `DeploymentBackend.container_exec()`. It does not claim other roles or general multi-party semantics. |
-| `observation` | Is `null`: participant observations are participant-runtime contract data, not a standalone observation component. |
-| `cleanup` | Defaults to `null` for interactive lab start. An installed [declared cleanup service](declared-cleanup.md) can declare idempotent `destroy` and `verify` actions with `native-absence` probes. Native receipt authority and exact attempt binding remain mandatory. |
+| `provisioner` | Typed node, network, content, and account realization through the deployment backend. The backend refuses unsupported concerns. |
+| `orchestrator` | Workflow execution with decision, parallel, failure, condition, and inject handling. |
+| `evaluator` | Conditions, objectives, and result/history envelopes. The retired SDL scoring chain is unsupported. |
+| `participant_runtime` | The manifest's declared participant lifecycle, action, observation, and shared-state contracts. |
+| `observation` | `null` for the empty default collector registry. An admitted registry can declare its supported observation projection. |
+| `cleanup` | `null` for ordinary interactive startup. An installed [cleanup service](declared-cleanup.md) can declare its bounded capabilities. |
 
-Realization support declares exact `declared-capability-match` coverage and the
-single constrained kind APTL currently exercises non-vacuously: `os-family`.
-Node type and content type are still checked as exact realization concerns when
-authored literally; account placements are realized and verified by the typed
-account provider, but RAES 0.21.0 does not emit an `account-feature`
-runtime-realization concern for the SEM-218 gate. Disclosure flows through the
-manifest, operation-status, and runtime-snapshot contracts. The compatible
-processors, concept-authority bindings, and supported contract versions are
-separate compatibility declarations rather than additional capabilities.
-
-The profile defines the minimum component and contract surface required for
-conformance. APTL may publish a compatible contract superset, such as
-participant lifecycle and observation envelopes, without turning those
-contracts into extra manifest components or broader role claims. The manifest
-created by `create_aptl_manifest()` remains the authority when this explanation
-and runtime behavior differ.
+Exact capability and contract declarations come from `src/aptl/backends/raes_manifest.py` and its component owners.
+Participant observations are participant-runtime data, separate from a standalone observation component.
+The compatible processors, concept-authority bindings, and supported contract versions are separate compatibility declarations.
+RAES owns the schema and conformance rules.
+See the [authoring boundary](../sdl/index.md) for upstream owners.
+A static pass does not establish runtime installation, readiness, evidence capture, or broad role support.
 
 ## Advisory today, blocking at cutover
 
-The gate runs today as the advisory `raes-scenario-gate` CI job
-(`continue-on-error: true`), which surfaces failures on the pull request
-without blocking merge, while the fast gate-logic tests run in the blocking
-default test suite. A future cutover PR removes `continue-on-error` to make
-the full-scenario gate blocking.
+The job was advisory during the original cutover.
+A failed selected gate now blocks CI.
+The `raes-scenario-gate` job in `.github/workflows/checks.yml` has no `continue-on-error` allowance.
+Issue #1193 records the cutover.
 
 ## Running the gate
 
-The fast gate-logic tests run in the default suite:
-
-```
-pytest tests/test_techvault_static_gate.py -m "not integration"
-```
-
-The full-scenario gate parses the full TechVault tree and spawns the `raes`
-CLI, which takes minutes, so it is integration-marked. Run it before pushing a
-scenario or manifest change:
-
-```
-pytest tests/test_techvault_static_gate.py -m integration
-```
-
-or through the manual pre-commit hook:
-
-```
-pre-commit run raes-scenario-gate --hook-stage manual
-```
-
-The gate needs only the installed `raes` wheel, which bundles the contract
-corpus, and the `raes` command. It does not require a separate corpus checkout.
+See [validate a scenario](scenario-validation.md).

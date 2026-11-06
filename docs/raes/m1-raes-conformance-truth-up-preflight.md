@@ -1,5 +1,10 @@
 # M1 RAES Conformance Truth-Up Preflight
 
+> Source record: The last source change was 2026-10-12. Its status review date is 2026-11-06.
+> The original text below keeps historical proposals, decisions, and evidence.
+> It does not establish current runtime behavior or authorize external publication.
+> See the [current validation reference](techvault-static-validation-gate.md) and [live validation reference](techvault-live-validation-gate.md).
+
 !!! warning "Superseded in part (2026-07-12, issue #690)"
     This is a dated preflight record, kept as written. Where it names the
     captured `scenarios/techvault.sdl.yaml`, the SCN-010 parity inventory

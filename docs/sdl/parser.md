@@ -7,3 +7,6 @@ cutover.
 Current scenario validation is delegated to `raes.parse_sdl_file` through
 the startup catalog and RAES runtime handoff. New scenario-authoring work must
 use RAES SDL docs and the APTL RAES validation gates, not a local parser API.
+
+Status reviewed: 2026-11-06.
+Use the [current authoring guide](index.md) for supported scenario work.
