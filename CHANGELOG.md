@@ -9,6 +9,23 @@ This file is maintained by [release-please](https://github.com/googleapis/releas
 from Conventional Commit messages; release sections are generated on release,
 not hand-edited in PRs.
 
+## [9.3.0](https://github.com/OpenRAE/lilrae/compare/v9.2.0...v9.3.0) (2026-11-06)
+
+
+### Features
+
+* expose trial-scoped retained enrollment ids to capture sources ([5c928b0](https://github.com/OpenRAE/lilrae/commit/5c928b06e2f7637cf6c6fadfd0d36e2ba040b8b2))
+* expose trial-scoped retained enrollment ids to capture sources ([1c7f9ad](https://github.com/OpenRAE/lilrae/commit/1c7f9adcf92de800de0296e5a26fa6da2a1c8459)), closes [#1685](https://github.com/OpenRAE/lilrae/issues/1685)
+
+
+### Documentation
+
+* correct bundled assets and archive provenance ([cabbda8](https://github.com/OpenRAE/lilrae/commit/cabbda8017e78df70bc87cd1203b06a909d98102))
+* rewrite interface and scenario documentation ([d05c03e](https://github.com/OpenRAE/lilrae/commit/d05c03e23569312d1e685b1d0d445974ee6d081b))
+* rewrite user and workshop guides by reader task ([28fc8f1](https://github.com/OpenRAE/lilrae/commit/28fc8f18c0866066ee450ae6e28ed234e93ca6b4))
+* rewrite user and workshop guides by reader task ([360acf1](https://github.com/OpenRAE/lilrae/commit/360acf10ce4353c82adbf21e502518ad06839e35))
+* select event mode during legacy seat replacement ([a168d21](https://github.com/OpenRAE/lilrae/commit/a168d21f9432feec3dfa4be9e5c56671a135466e))
+
 ## [9.2.0](https://github.com/OpenRAE/lilrae/compare/v9.1.0...v9.2.0) (2026-11-05)
 
 
