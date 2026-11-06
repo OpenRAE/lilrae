@@ -3,7 +3,7 @@
 ## Revision and use
 
 This register covers the tracked documentation at `4bdb79b6da25f90129de72be124eeba23dd480c9`.
-It also includes the documentation added by issue #1664.
+It also includes documentation added by issues #1664 and #1665.
 Each page has one delivery owner and a default reader purpose.
 The section table refines mixed pages. Unlisted sections inherit the page purpose.
 Delivery owners also own pages split from their assigned content.
@@ -282,6 +282,19 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 | `docs/components/wazuh-siem.md` | #1666 | Reference |
 | `docs/containers/victim-template-guide.md` | #1666 | How-to guide |
 | `docs/contributing-documentation.md` | #1668 | How-to guide |
+| `docs/getting-started/environment-bindings.md` | #1665 | Explanation |
+| `docs/getting-started/execution-boundaries.md` | #1665 | Explanation |
+| `docs/getting-started/host-requirements.md` | #1665 | Reference |
+| `docs/getting-started/installation-reference.md` | #1665 | Reference |
+| `docs/getting-started/pack-reference.md` | #1665 | Reference |
+| `docs/troubleshooting/diagnostics.md` | #1665 | Reference |
+| `docs/troubleshooting/search-index-backup.md` | #1665 | How-to guide |
+| `docs/workshop/arsenal-2026/records/facilitator.md` | #1665 | Reference (source record) |
+| `docs/workshop/arsenal-2026/records/handout.md` | #1665 | Reference (source record) |
+| `docs/workshop/arsenal-2026/records/qa.md` | #1665 | Reference (source record) |
+| `docs/workshop/hosted-backup-reference.md` | #1665 | Reference |
+| `docs/workshop/reference.md` | #1665 | Reference |
+| `docs/workshop/setup.md` | #1665 | How-to guide |
 | `docs/deployment.md` | #1665 | How-to guide |
 | `docs/getting-started/index.md` | #1665 | How-to guide |
 | `docs/getting-started/installation.md` | #1665 | How-to guide |
@@ -645,7 +658,7 @@ These exact headings refine the page assignments. Keep the other headings and li
 | `docs/components/wazuh-siem.md` | MCP Integration | #1666 | Reference |
 | `docs/components/wazuh-siem.md` | Troubleshooting | #1666 | How-to guide |
 | `docs/deployment.md` | Released Local Project | #1665 | How-to guide |
-| `docs/deployment.md` | Source Checkout | #1665 | Reference |
+| `docs/deployment.md` | Source Checkout | #1665 | How-to guide |
 | `docs/deployment.md` | Disposable Appliance | #1665 | How-to guide |
 | `docs/deployment.md` | Configuration | #1665 | How-to guide |
 | `docs/deployment.md` | Scenario Environment Grants | #1665 | How-to guide |
@@ -666,7 +679,7 @@ These exact headings refine the page assignments. Keep the other headings and li
 | `docs/getting-started/installation.md` | Migrate A pip Virtual Environment | #1665 | How-to guide |
 | `docs/getting-started/installation.md` | Keep Your Lab Projects | #1665 | How-to guide |
 | `docs/getting-started/installation.md` | Roll Back | #1665 | How-to guide |
-| `docs/getting-started/installation.md` | Source Install For Contributors | #1665 | Reference |
+| `docs/getting-started/installation.md` | Source Install For Contributors | #1665 | How-to guide |
 | `docs/getting-started/installing-packs.md` | Install the pack | #1665 | How-to guide |
 | `docs/getting-started/installing-packs.md` | Install the adapter | #1665 | How-to guide |
 | `docs/getting-started/installing-packs.md` | Select the pack | #1665 | How-to guide |
@@ -678,14 +691,14 @@ These exact headings refine the page assignments. Keep the other headings and li
 | `docs/getting-started/prerequisites.md` | Python environment | #1665 | How-to guide |
 | `docs/getting-started/prerequisites.md` | Verify | #1665 | How-to guide |
 | `docs/getting-started/prerequisites.md` | Tested execution profiles and limits | #1665 | How-to guide |
-| `docs/getting-started/quick-start.md` | Choose The Execution Boundary | #1665 | Explanation |
+| `docs/getting-started/quick-start.md` | Choose The Execution Boundary | #1665 | Tutorial |
 | `docs/getting-started/quick-start.md` | Check The Host | #1665 | Tutorial |
 | `docs/getting-started/quick-start.md` | Choose A Scenario | #1665 | Tutorial |
-| `docs/getting-started/quick-start.md` | Start And Verify The Lab | #1665 | How-to guide |
+| `docs/getting-started/quick-start.md` | Start And Verify The Lab | #1665 | Tutorial |
 | `docs/getting-started/quick-start.md` | Inspect The Running Lab | #1665 | Tutorial |
 | `docs/getting-started/quick-start.md` | Generate Safe Test Activity | #1665 | Tutorial |
-| `docs/getting-started/quick-start.md` | Inspect Results | #1665 | Reference |
-| `docs/getting-started/quick-start.md` | Stop Or Reset The Lab | #1665 | How-to guide |
+| `docs/getting-started/quick-start.md` | Inspect Results | #1665 | Tutorial |
+| `docs/getting-started/quick-start.md` | Stop Or Reset The Lab | #1665 | Tutorial |
 | `docs/getting-started/quick-start.md` | Continue From Here | #1665 | Tutorial |
 | `docs/index.md` | Run Your First Lab | #1668 | How-to guide |
 | `docs/index.md` | Supported Interfaces | #1668 | Reference |
@@ -929,9 +942,9 @@ These exact headings refine the page assignments. Keep the other headings and li
 | `docs/workshop/playbook.md` | 9. Investigate, hands-on (about 12 min) | #1665 | How-to guide |
 | `docs/workshop/playbook.md` | 10. Purple teaming (about 4 min) | #1665 | How-to guide |
 | `docs/workshop/playbook.md` | 11. Play (open) | #1665 | How-to guide |
-| `docs/workshop/walkthrough.md` | 0. Prerequisites, once, at home | #1665 | How-to guide |
-| `docs/workshop/walkthrough.md` | 1. Install and stand up the range [2] | #1665 | How-to guide |
-| `docs/workshop/walkthrough.md` | 2. Verify the range is up [2] | #1665 | How-to guide |
+| `docs/workshop/walkthrough.md` | 0. Prerequisites, once, at home | #1665 | Tutorial |
+| `docs/workshop/walkthrough.md` | 1. Install and stand up the range [2] | #1665 | Tutorial |
+| `docs/workshop/walkthrough.md` | 2. Verify the range is up [2] | #1665 | Tutorial |
 | `docs/workshop/walkthrough.md` | 3. Wire your agent [3] | #1665 | Tutorial |
 | `docs/workshop/walkthrough.md` | 4. Confirm the agent can reach Kali [3, 5] | #1665 | Tutorial |
 | `docs/workshop/walkthrough.md` | 5. See the required attack tool [5] | #1665 | Tutorial |
@@ -946,7 +959,7 @@ These exact headings refine the page assignments. Keep the other headings and li
 | `docs/workshop/walkthrough.md` | 10. Name it: agentic purple [10] | #1665 | Tutorial |
 | `docs/workshop/walkthrough.md` | 11. Play [11] | #1665 | Tutorial |
 | `docs/workshop/walkthrough.md` | Developer-preview clean reset | #1665 | Tutorial |
-| `docs/workshop/walkthrough.md` | Developer-preview troubleshooting | #1665 | How-to guide |
+| `docs/workshop/walkthrough.md` | Developer-preview troubleshooting | #1665 | Tutorial |
 | `src/aptl_techvault/README.md` | Declared SOC logins | #1666 | How-to guide |
 | `src/aptl_techvault/README.md` | Why it lives here | #1666 | Explanation |
 | `src/aptl_techvault/README.md` | Customer database | #1666 | How-to guide |

@@ -121,6 +121,66 @@ def test_quick_start_follows_the_operator_workflow_in_order() -> None:
     assert [heading for heading in headings if heading in required_order] == required_order
 
 
+def test_workshop_routes_separate_setup_from_learning() -> None:
+    """A learner can reach setup, recovery and cleanup without design records."""
+    tutorial = _links(_document("docs/workshop/walkthrough.md"))
+    setup = _links(_document("docs/workshop/setup.md"))
+    assert "setup.md" in tutorial.values()
+    assert "setup.md#recover-a-session" in tutorial.values()
+    assert "setup.md#clean-up" in tutorial.values()
+    assert "walkthrough.md" in setup.values()
+    for document in ("docs/workshop/walkthrough.md", "docs/workshop/setup.md"):
+        for target in _links(_document(document)).values():
+            if "://" in target:
+                continue
+            path, _, fragment = target.partition("#")
+            destination = ROOT / document
+            destination = destination.parent / path if path else destination
+            assert destination.is_file(), target
+            if fragment:
+                headings = re.findall(
+                    r"(?m)^#{1,6} (.+)$", destination.read_text(encoding="utf-8")
+                )
+                assert fragment in {_slug(heading) for heading in headings}, target
+
+
+def test_split_operator_pages_are_reachable_from_reader_navigation() -> None:
+    """Every split page has a reader route; source archives remain separate."""
+    mkdocs = _document("mkdocs.yml").replace(
+        "!!python/name:pymdownx.superfences.fence_code_format",
+        "'pymdownx.superfences.fence_code_format'",
+    )
+
+    def targets(value: object) -> set[str]:
+        if isinstance(value, str):
+            return {value}
+        if isinstance(value, list):
+            return set().union(*(targets(item) for item in value))
+        if isinstance(value, dict):
+            return set().union(*(targets(item) for item in value.values()))
+        return set()
+
+    nav = yaml.safe_load(mkdocs)["nav"]
+    routes = {next(iter(item)): targets(item) for item in nav}
+    assert {
+        "getting-started/host-requirements.md",
+        "getting-started/installation-reference.md",
+        "getting-started/pack-reference.md",
+        "troubleshooting/diagnostics.md",
+        "workshop/reference.md",
+        "workshop/hosted-backup-reference.md",
+    } <= routes["Reference"]
+    assert {"workshop/setup.md", "troubleshooting/search-index-backup.md"} <= routes[
+        "How-to guides"
+    ]
+    assert {
+        "getting-started/execution-boundaries.md",
+        "getting-started/environment-bindings.md",
+    } <= routes["Explanation"]
+    for target in set().union(*routes.values()):
+        assert (DOCS / target).is_file(), target
+
+
 def test_cli_reference_tracks_every_registered_command_group() -> None:
     rows = _table("docs/reference/cli.md", "Command Groups")
     documented = {row["Command"].removeprefix("lilrae ") for row in rows}
