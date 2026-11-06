@@ -62,7 +62,39 @@ def _read(project_dir: Path, relpath: Path) -> dict[str, str] | None:
 
 
 def _encode(ids: Mapping[str, str]) -> bytes:
+    """Return the canonical record bytes."""
+
     return (json.dumps(dict(ids), sort_keys=True) + "\n").encode()
+
+
+def _establish(project_dir: Path, relpath: Path) -> bool:
+    """Create the trial's empty record once; return whether this call made it."""
+
+    try:
+        create_exclusive_nofollow(project_dir, relpath, _encode({}))
+    except (OSError, PathContainmentError):
+        return False
+    return True
+
+
+def _add_new_hosts(
+    project_dir: Path,
+    relpath: Path,
+    prior: dict[str, str],
+    observed: Mapping[str, str],
+) -> bool:
+    """Retain hosts not yet retained, never replacing an id; return success."""
+
+    merged = {**dict(observed), **prior}
+    if merged == prior:
+        return True
+    try:
+        if not _valid_ids(merged):
+            raise ValueError("enrollment-ids-invalid")
+        replace_private_nofollow(project_dir, relpath, _encode(merged))
+    except (OSError, ValueError, PathContainmentError):
+        return False
+    return True
 
 
 def trial_enrollment_retainer(
@@ -80,28 +112,15 @@ def trial_enrollment_retainer(
     if match is None:
         raise ValueError("enrollment-trial-key-invalid")
     relpath = WAZUH_TRIAL_ENROLLMENT_DIR / f"{match.group(1)}.json"
-    writable = False
-    if establish:
-        try:
-            create_exclusive_nofollow(project_dir, relpath, _encode({}))
-            writable = True
-        except (OSError, PathContainmentError):
-            writable = False
+    writable = establish and _establish(project_dir, relpath)
 
     def retain(observed: Mapping[str, str]) -> dict[str, str] | None:
-        if not _valid_ids(observed):
-            return None
-        prior = _read(project_dir, relpath)
-        if prior is None or not writable:
-            return prior
-        merged = {**dict(observed), **prior}
-        if merged != prior:
-            if not _valid_ids(merged):
-                return None
-            try:
-                replace_private_nofollow(project_dir, relpath, _encode(merged))
-            except (OSError, ValueError, PathContainmentError):
-                return None
+        """Return the ids retained before this call, or ``None`` if unproven."""
+
+        prior = _read(project_dir, relpath) if _valid_ids(observed) else None
+        if prior is not None and writable:
+            if not _add_new_hosts(project_dir, relpath, prior, observed):
+                prior = None
         return prior
 
     return retain

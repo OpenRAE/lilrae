@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol, Callable
-from collections.abc import Mapping
+from typing import Protocol
+from collections.abc import Callable, Mapping
 from types import MappingProxyType
 from copy import deepcopy
 
