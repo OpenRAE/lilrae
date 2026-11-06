@@ -901,6 +901,7 @@ def clean_boot_lab(
     progress: ProgressCallback | None = None,
     appliance: ApplianceStartOptions | None = None,
     teardown_on_failure: bool = False,
+    run_id: str | None = None,
 ) -> LabResult:
     """Boot the lab into a guaranteed clean state (RNG-001).
 
@@ -952,6 +953,7 @@ def clean_boot_lab(
                 appliance=appliance,
                 teardown_on_failure=teardown_on_failure,
                 after_start=after_start,
+                run_id=run_id,
             )
     except LifecycleBusyError:
         result = _lifecycle_busy_result("start --clean")
@@ -971,6 +973,7 @@ def _clean_boot_lab_owned(
     appliance: ApplianceStartOptions | None,
     teardown_on_failure: bool = False,
     after_start: list[Callable[[], LabResult | None]] | None = None,
+    run_id: str | None = None,
 ) -> LabResult:
     """Clean and restart the lab while the caller owns lifecycle mutation."""
 
@@ -1016,6 +1019,7 @@ def _clean_boot_lab_owned(
             progress=progress,
             teardown_on_failure=teardown_on_failure,
             after_start=after_start,
+            run_id=run_id,
             **appliance_kwargs,
         )
     return orchestrate_lab_start(
@@ -1024,6 +1028,7 @@ def _clean_boot_lab_owned(
         scenario_path=scenario_path,
         progress=progress,
         teardown_on_failure=teardown_on_failure,
+        run_id=run_id,
         **appliance_kwargs,
     )
 
@@ -1379,6 +1384,8 @@ class _LabStartContext(object):
     # workflow artifacts and the record share a single run directory.
     run_store: RunStorageBackend | None = None
     run_id: str | None = None
+    # A trial caller's run ID (#1670). It names the run directory exactly.
+    requested_run_id: str | None = None
     reset_admission_id: str = field(default_factory=lambda: uuid4().hex)
     stateful_artifact_ownership: frozenset[tuple[str, str, str, str, str]] = frozenset()
     # The one admitted scenario execution (issue #951). `_step_load_config`
@@ -4639,6 +4646,7 @@ def orchestrate_lab_start(
     progress: ProgressCallback | None = None,
     appliance: ApplianceStartOptions | None = None,
     teardown_on_failure: bool = False,
+    run_id: str | None = None,
 ) -> LabResult:
     """Own and orchestrate the complete lab startup process.
 
@@ -4658,6 +4666,7 @@ def orchestrate_lab_start(
                 appliance=appliance,
                 after_start=after_start,
                 teardown_on_failure=teardown_on_failure,
+                run_id=run_id,
             )
     except LifecycleBusyError:
         return _lifecycle_busy_result("start")
@@ -4689,6 +4698,7 @@ def _orchestrate_lab_start_owned(
     appliance: ApplianceStartOptions | None = None,
     after_start: list[Callable[[], LabResult | None]] | None = None,
     teardown_on_failure: bool = False,
+    run_id: str | None = None,
 ) -> LabResult:
     """Orchestrate the complete lab startup process.
 
@@ -4725,6 +4735,7 @@ def _orchestrate_lab_start_owned(
         scenario_path=scenario_path,
         progress=progress,
         teardown_on_failure=teardown_on_failure,
+        requested_run_id=run_id,
     )
     try:
         return _run_lab_start_steps(ctx, after_start)

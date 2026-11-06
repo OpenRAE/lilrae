@@ -74,6 +74,19 @@ class OpenRouterRoute:
 
 
 @dataclass(frozen=True)
+class VertexRoute:
+    """The Vertex AI global endpoint for one Google Cloud project."""
+
+    project: str
+
+    def __post_init__(self) -> None:
+        raise ValueError("Vertex AI route is not admitted")
+
+
+ParticipantRoute = OpenRouterRoute | VertexRoute
+
+
+@dataclass(frozen=True)
 class NativeStepObservation:
     """One native step report, without private text or provider attestation."""
 

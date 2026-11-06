@@ -41,6 +41,8 @@ from aptl.core.lab_types import (
     LabStatus,
     describe_project_runtime,
 )
+from aptl.cli.lab_trial import run_lab_trial, trial_summary
+from aptl.core.trial_attempt import TrialAttempt, parse_trial_attempt
 from aptl.core.scenario_catalog import (
     load_scenario_catalog,
     resolve_scenario_selection,
@@ -211,13 +213,37 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
         "-j",
         help="Print the result as one JSON object; progress goes to stderr.",
     ),
+    run_id: Optional[str] = typer.Option(
+        None,
+        "--run-id",
+        help="Run ID of the trial that the SDL declares. Needs --attempt-id and --deadline.",
+    ),
+    attempt_id: Optional[str] = typer.Option(
+        None,
+        "--attempt-id",
+        help="Attempt ID of the trial. Needs --run-id and --deadline.",
+    ),
+    deadline: Optional[str] = typer.Option(
+        None,
+        "--deadline",
+        help="UTC deadline of the trial, for example 2026-11-06T12:00:00Z.",
+    ),
 ) -> None:
     """Start the LilRAE lab environment.
+
+    With --run-id, --attempt-id and --deadline, also run the trial that the
+    SDL declares, then seal the run.
 
     Exit status: 0 when the lab started (read the outcome for degraded
     states), 1 when the start failed, 2 for invalid options.
     """
     log.info("Starting lab from %s (clean=%s)", project_dir, clean)
+
+    try:
+        trial_attempt = parse_trial_attempt(run_id, attempt_id, deadline)
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2)
 
     try:
         selected_scenario = resolve_scenario_selection(
@@ -284,6 +310,7 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
             access_output_dir=appliance_access_output_dir,
             candidate_trust=appliance_candidate_trust,
         )
+    trial_kwargs = {"run_id": trial_attempt.run_id} if trial_attempt else {}
     if clean:
         if not _confirm_destructive(yes, output_json=output_json, option="--clean"):
             raise typer.Exit(code=0)
@@ -294,6 +321,7 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
             scenario_path=selected_scenario,
             progress=_start_progress(output_json),
             teardown_on_failure=teardown_on_failure,
+            **trial_kwargs,
             **appliance_kwargs,
         )
     else:
@@ -303,9 +331,13 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
             scenario_path=selected_scenario,
             progress=_start_progress(output_json),
             teardown_on_failure=teardown_on_failure,
+            **trial_kwargs,
             **appliance_kwargs,
         )
-    _report_start_result(project_dir, result, output_json)
+    if trial_attempt is None or not result.success:
+        _report_start_result(project_dir, result, output_json)
+        return
+    _report_trial_result(project_dir, result, trial_attempt, output_json)
 
 
 def _start_result_fields(project_dir: Path, result: LabResult) -> dict[str, object]:
@@ -387,6 +419,35 @@ def _report_start_result(
             )
     if not result.success:
         raise typer.Exit(code=EXIT_FAILED)
+
+
+def _report_trial_result(
+    project_dir: Path,
+    result: LabResult,
+    attempt: TrialAttempt,
+    output_json: bool,
+) -> None:
+    """Run the declared trial on the started lab, then report its sealed record."""
+    if not output_json:
+        render_start_result(result, project_dir)
+    try:
+        record = run_lab_trial(project_dir, attempt, progress=_start_progress(output_json))
+    except (OSError, RuntimeError, ValueError) as exc:
+        message = redact_text(str(exc))
+        if output_json:
+            fields = _start_result_fields(project_dir, result)
+            emit_json_result("lab start", False, {**fields, "trial": {"error": message}})
+        else:
+            typer.echo(f"error: trial did not run to a seal: {message}", err=True)
+        raise typer.Exit(code=EXIT_FAILED)
+    if output_json:
+        fields = _start_result_fields(project_dir, result)
+        emit_json_result("lab start", True, {**fields, "trial": trial_summary(record)})
+        return
+    typer.echo(
+        f"Trial {record.run_id} attempt {record.attempt_id} sealed: "
+        f"{record.terminal_cause}."
+    )
 
 
 @app.command("info")

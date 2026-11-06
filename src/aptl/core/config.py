@@ -317,11 +317,13 @@ class InstalledParticipantCredentialSources(BaseModel):
     claude: ProcessEnvironmentCredentialSource | None = None
     codex: ProcessEnvironmentCredentialSource | None = None
     opencode: ProcessEnvironmentCredentialSource | None = None
+    #: A Google Cloud service account key for Vertex AI participant models.
+    vertex: ProcessEnvironmentCredentialSource | None = None
 
     def source_for(self, provider: str) -> ProcessEnvironmentCredentialSource:
         """Return one explicitly configured source or fail closed."""
 
-        if provider not in {"claude", "codex", "opencode"}:
+        if provider not in {"claude", "codex", "opencode", "vertex"}:
             raise ValueError("unknown installed participant provider")
         source = getattr(self, provider)
         if source is None:
@@ -347,6 +349,10 @@ class ExperimentSettings(BaseModel):
     )
     participant_credential_sources: InstalledParticipantCredentialSources = Field(
         default_factory=InstalledParticipantCredentialSources
+    )
+    #: The operator-approved OpenRouter serving provider for each trial model.
+    participant_serving_providers: dict[str, str] = Field(
+        default_factory=dict, max_length=64
     )
 
 
