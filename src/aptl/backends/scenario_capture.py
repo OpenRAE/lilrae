@@ -38,6 +38,9 @@ class CaptureSourceContext:
     read_generated_output: Callable[[str, str], bytes] | None = field(
         default=None, repr=False
     )
+    retain_enrollment_ids: (
+        Callable[[Mapping[str, str]], Mapping[str, str] | None] | None
+    ) = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -84,8 +87,14 @@ class ScenarioPropositionInterpreter(Protocol):
     ) -> Mapping[str, object] | None: ...
 
 
-def capture_source_context(request: object) -> CaptureSourceContext:
-    """Detach source inputs and expose only explicitly granted credential keys."""
+def capture_source_context(
+    request: object, *, establish_enrollment: bool = False
+) -> CaptureSourceContext:
+    """Detach source inputs and expose only explicitly granted credential keys.
+
+    Only the provisioning capture passes ``establish_enrollment``; it may create
+    the trial's retained enrollment record once. Other contexts only read it.
+    """
 
     from aptl.backends.scenario_service_policy import artifact_source_path
     from aptl.utils.pathsafe import open_contained_nofollow
@@ -122,19 +131,52 @@ def capture_source_context(request: object) -> CaptureSourceContext:
         except Exception:
             raise ValueError("capture-output-unavailable") from None
 
+    trial = request.capture_selection.context.trial
     return CaptureSourceContext(
         AdmittedRuntimeOperations(request.backend, realization.nodes),
         realization,
         environment,
-        request.capture_selection.context.trial,
+        trial,
         read_output,
+        None
+        if trial is None
+        else _enrollment_retainer(request.project_dir, trial, establish_enrollment),
     )
 
 
-def family_capture_sources(request: object) -> Mapping[str, WindowedSource]:
+def _enrollment_retainer(
+    project_dir: object, trial: AdmittedFamilyTrial, establish: bool
+) -> Callable[[Mapping[str, str]], Mapping[str, str] | None]:
+    """Bind core-retained enrollment ids to the admitted trial identity."""
+
+    import hashlib
+    import json
+    from pathlib import Path
+
+    from aptl.core.retained_enrollment import trial_enrollment_retainer
+
+    digest = hashlib.sha256(json.dumps(trial.identity(), sort_keys=True).encode())
+    retain = trial_enrollment_retainer(
+        Path(project_dir), f"sha256:{digest.hexdigest()}", establish=establish
+    )
+
+    def retain_ids(observed: Mapping[str, str]) -> Mapping[str, str] | None:
+        """Return node-to-agent ids this trial retained before this call."""
+
+        prior = retain(observed)
+        return None if prior is None else MappingProxyType(prior)
+
+    return retain_ids
+
+
+def family_capture_sources(
+    request: object, *, establish_enrollment: bool = False
+) -> Mapping[str, WindowedSource]:
     """Keep invalid declarations distinct from a source factory's runtime failure."""
     contribution = request.capture_selection.contribution
-    context = capture_source_context(request)
+    context = capture_source_context(
+        request, establish_enrollment=establish_enrollment
+    )
     try:
         sources = contribution.runtime_adapter.native_sources(context)
     except Exception:
