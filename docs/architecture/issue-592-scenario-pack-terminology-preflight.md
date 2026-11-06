@@ -77,6 +77,7 @@ prose must not accidentally rename them.
 | Terminology record and navigation labels | `docs/architecture/issue-592-scenario-pack-terminology-preflight.md`, `docs/architecture/index.md`, `mkdocs.yml` | Titles may preserve an issue's or file's historical locator. Descriptive labels for current contracts use the terminology above. |
 | User and workshop rewrite | `docs/getting-started/environment-bindings.md`, `docs/getting-started/pack-reference.md` | Keep admitted pack identity, adapter behavior, runtime observations, and historical qualification distinct. |
 | Scenario pack installation guide | `docs/getting-started/installing-packs.md` | Keep the content-pack and adapter distinction and the env-pack identity and source selection; do not rename the pack, RAES, or backend contracts. |
+| Interface and scenario rewrite | `docs/containers/victim-template-guide.md`, `docs/reference/interface-source-checks.md` | Keep upstream environment-pack authoring distinct from backend realization and observed evidence. |
 
 The inventory identified three current-prose hazards for issue #592 to resolve:
 the tautological rename sentence at the start of the issue #589 preflight, the

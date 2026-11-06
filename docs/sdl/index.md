@@ -7,7 +7,7 @@ LilRAE no longer gives a local scenario language or parser.
 ## Companion repositories
 
 1. Use [OpenRAE/rae](https://github.com/OpenRAE/rae) for SDL schema, semantics, tools, and runtime contracts.
-2. Use [OpenRAE/env-packs](https://github.com/OpenRAE/env-packs) for pack structure, templates, schemas, validation, and authoring guidance.
+2. Use [OpenRAE/env-packs](https://github.com/OpenRAE/env-packs) for environment-pack structure, templates, schemas, validation, and authoring guidance.
 3. Install a pack through the [pack installation guide](../getting-started/installing-packs.md).
 4. Examine its acquired identity with `lilrae lab scenarios` in the approved lab environment.
 5. Validate changes through [static validation](../raes/scenario-validation.md).
@@ -15,7 +15,7 @@ LilRAE no longer gives a local scenario language or parser.
 
 These upstream links are documentation routes.
 They do not authorize runtime acquisition or establish a trust root.
-LilRAE owns deployment, lifecycle, credentials, and evidence for its backend.
+Deployment, lifecycle, credential, and evidence guidance for the LilRAE backend remains APTL-owned.
 
 ## Selection and limits
 
