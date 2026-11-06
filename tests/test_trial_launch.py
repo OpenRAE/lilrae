@@ -99,6 +99,15 @@ def test_vertex_participant_key_comes_from_reference_and_stays_out_of_evidence(t
     store.write_json("run-1", "manifest.json", {"startup": "synthetic"})
     evidence: dict[str, dict[str, object]] = {}
 
+    try:
+        record = _run_vertex_trial(scenario, participants, settings, deadline, store, evidence, tmp_path)
+    except (RuntimeError, ValueError) as exc:
+        pytest.fail(f"the Vertex trial did not run to a seal: {exc}")
+    _assert_vertex_trial(runner, record, document, participants, store)
+    _assert_unconfigured_vertex_refused(tmp_path, scenario, participants, deadline)
+
+
+def _run_vertex_trial(scenario, participants, settings, deadline, store, evidence, tmp_path):
     with trial_executors(
         scenario,
         participants,
@@ -120,8 +129,11 @@ def test_vertex_participant_key_comes_from_reference_and_stays_out_of_evidence(t
             store=store,
             clock=lambda: datetime.now(UTC),
         )
-        key_paths = [call["key_path"] for call in runner.calls]
+    return record
 
+
+def _assert_vertex_trial(runner, record, document, participants, store):
+    key_paths = [call["key_path"] for call in runner.calls]
     assert record.terminal_cause == "completed"
     assert len(runner.calls) == 2
     for call in runner.calls:
@@ -142,6 +154,9 @@ def test_vertex_participant_key_comes_from_reference_and_stays_out_of_evidence(t
         if path.is_file():
             assert b"synthetic-vertex-key-material" not in path.read_bytes(), path
 
+
+
+def _assert_unconfigured_vertex_refused(tmp_path, scenario, participants, deadline):
     missing = tmp_path / "missing"
     missing.mkdir()
     unconfigured = _settings(missing, KeyReadingRunner(), with_source=False)

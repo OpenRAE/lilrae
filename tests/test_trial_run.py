@@ -52,26 +52,32 @@ def _store(tmp_path, run_id):
     return store
 
 
-def _run(tmp_path, attempt, invocations, *, control=None, clock=None, evidence=None):
+def _run(tmp_path, attempt, invocations, *, control=None, evidence=None):
     store = _store(tmp_path, attempt.run_id)
-    record = run_declared_trial(
-        attempt=attempt,
-        scenario_sha256="sha256:" + "1" * 64,
-        participants=_PARTICIPANTS,
-        invocations=invocations,
-        evidence=evidence or {},
-        control=control or TrialControl(tmp_path / "state"),
-        store=store,
-        clock=clock or (lambda: datetime.now(UTC)),
-        poll_seconds=0.05,
-    )
+    try:
+        record = run_declared_trial(
+            attempt=attempt,
+            scenario_sha256="sha256:" + "1" * 64,
+            participants=_PARTICIPANTS,
+            invocations=invocations,
+            evidence=evidence or {},
+            control=control or TrialControl(tmp_path / "state"),
+            store=store,
+            clock=lambda: datetime.now(UTC),
+            poll_seconds=0.05,
+        )
+    except (RuntimeError, ValueError) as exc:
+        pytest.fail(f"the trial did not run to a seal: {exc}")
     return store, record
 
 
 def test_sealed_trial_run_uses_caller_run_and_attempt_ids(tmp_path, monkeypatch):
-    deadline = datetime.now(UTC) + timedelta(minutes=5)
-    attempt = parse_trial_attempt("R1", "A1", deadline.strftime("%Y-%m-%dT%H:%M:%SZ"))
-    assert attempt == TrialAttempt("R1", "A1", deadline.replace(microsecond=0))
+    deadline = datetime.now(UTC).replace(microsecond=0) + timedelta(minutes=5)
+    try:
+        attempt = parse_trial_attempt("R1", "A1", deadline.strftime("%Y-%m-%dT%H:%M:%SZ"))
+    except ValueError as exc:
+        pytest.fail(f"valid trial options were refused: {exc}")
+    assert attempt == TrialAttempt("R1", "A1", deadline)
 
     store, record = _run(
         tmp_path,
@@ -100,8 +106,13 @@ def test_sealed_trial_run_uses_caller_run_and_attempt_ids(tmp_path, monkeypatch)
     assert started == []
 
 
-@pytest.mark.parametrize("cause", ["deadline", "stopped"])
-def test_trial_stops_at_deadline_or_stop_request_and_keeps_partial_evidence(tmp_path, cause):
+def test_trial_stops_at_deadline_or_stop_request_and_keeps_partial_evidence(tmp_path):
+    for cause in ("deadline", "stopped"):
+        _check_stop(tmp_path / cause, cause)
+
+
+def _check_stop(tmp_path, cause):
+    tmp_path.mkdir()
     now = datetime.now(UTC)
     deadline = now + (timedelta(seconds=1) if cause == "deadline" else timedelta(minutes=5))
     invocations = {item.address: BlockingInvocation() for item in _PARTICIPANTS}
@@ -135,4 +146,4 @@ def test_trial_stops_at_deadline_or_stop_request_and_keeps_partial_evidence(tmp_
     assert sealed is not None
     assert TRIAL_RECORD_RELPATH in sealed.inventory_paths
     assert control.active() is None
-    assert not Path(tmp_path / "state").exists() or not any(Path(tmp_path / "state").rglob("*.json"))
+    assert not any(Path(tmp_path / "state").rglob("*.json"))

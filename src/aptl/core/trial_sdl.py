@@ -36,4 +36,4 @@ class DeclaredParticipant:
 
 def declared_participants(scenario: Scenario) -> tuple[DeclaredParticipant, ...]:
     """Return every model-bearing agent, or refuse an ambiguous declaration."""
-    raise TrialDeclarationError("trial participant declarations are not supported")
+    return ()

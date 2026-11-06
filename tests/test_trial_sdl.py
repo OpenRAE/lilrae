@@ -18,25 +18,29 @@ def _prompt(role: str, playbook: str) -> str:
     ).decode()
 
 
-@pytest.mark.parametrize(
-    "variables",
-    [
-        {},
-        {"red_model": "openrouter/vendor-c/model-c"},
-        {"blue_model": "google-vertex/vendor-d/model-d"},
-        {"red_playbook": "red-playbook-loud"},
-        {"blue_playbook": "blue-playbook-block"},
-        {"intel_present": False},
-    ],
+_VARIATIONS = (
+    {},
+    {"red_model": "openrouter/vendor-c/model-c"},
+    {"blue_model": "google-vertex/vendor-d/model-d"},
+    {"red_playbook": "red-playbook-loud"},
+    {"blue_playbook": "blue-playbook-block"},
+    {"intel_present": False},
 )
-def test_trial_participants_follow_declared_models_prompts_and_misp(variables):
+
+
+def test_trial_participants_follow_declared_models_prompts_and_misp():
+    for variables in _VARIATIONS:
+        _check_variation(variables)
+
+
+def _check_variation(variables):
     document = trial_document(**variables)
     scenario = parse_trial(document)
 
     participants = {item.role: item for item in declared_participants(scenario)}
 
     expected = trial_document.__kwdefaults__ | variables
-    assert set(participants) == {"red", "blue"}
+    assert set(participants) == {"red", "blue"}, variables
     assert participants["red"].model == expected["red_model"]
     assert participants["blue"].model == expected["blue_model"]
     assert participant_prompt(scenario, participants["red"], read_fixture_asset) == _prompt(
