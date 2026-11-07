@@ -29,6 +29,31 @@ EVIDENCE_CAPTURE_DOMAIN = "experiment-capture"
 EVIDENCE_CAPTURE_STAGE_LABEL = "Experiment evidence acquisition failed"
 
 
+class AcquisitionPhase(str, Enum):
+    """The native caller's acquisition phase, selected at the acquisition boundary.
+
+    ``PREPARATION`` is the startup boundary (``acquire_native_evidence``). It
+    alone may authorize a source to perform required state-changing stimulus,
+    and the startup owner verifies the baseline before participant release.
+    ``MEASUREMENT`` is every ``acquire_trial_evidence`` observation; it never
+    authorizes preparation. Permission is an allowlist (:data:`PREPARATION_PHASES`),
+    so an unknown future phase stays observational until it is explicitly
+    permitted. The caller selects the phase; scenario content and adapters
+    cannot override it, and the phase is never inferred from timestamps,
+    attempt names, or whether a trial window exists.
+    """
+
+    PREPARATION = "preparation"
+    MEASUREMENT = "measurement"
+
+
+#: The phases that authorize a source to perform state-changing preparation.
+#: An allowlist, so an unknown or future phase never gains preparation authority.
+PREPARATION_PHASES: frozenset[AcquisitionPhase] = frozenset(
+    {AcquisitionPhase.PREPARATION}
+)
+
+
 class CollectorStatus(str, Enum):
     """The distinct per-collector outcomes an adapter must preserve.
 

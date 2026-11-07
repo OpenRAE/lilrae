@@ -20,7 +20,7 @@ from raes_contracts.contracts import ExperimentEvidenceRecordModel
 
 from aptl.core.evidence import content_store
 from aptl.core.evidence.content_store import ContentInsertion
-from aptl.core.evidence.outcomes import CollectorStatus
+from aptl.core.evidence.outcomes import AcquisitionPhase, CollectorStatus
 from aptl.core.evidence.protocol import CollectorOutcome
 from aptl.core.evidence.records import (
     RecordDisclosure,
@@ -250,6 +250,7 @@ def persist_success_outcome(
     planned_trial_id: str,
     captured_at: str,
     attempt_id: str | None = None,
+    phase: AcquisitionPhase | None = None,
 ) -> ProcessedOutcome:
     """Persist one captured outcome content-addressably and build its RAES record.
 
@@ -296,6 +297,7 @@ def persist_success_outcome(
             redaction_state=redaction_state,
             loss_disclosure=loss_disclosure,
         ),
+        phase=phase,
     )
     # Persist the record into the explicit, create-once run-scoped evidence
     # ledger (identity is content-derived, so re-persisting is idempotent).

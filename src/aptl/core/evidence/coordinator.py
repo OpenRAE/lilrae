@@ -25,6 +25,7 @@ hierarchy, and no overloading of ``LabResult`` startup readiness.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
@@ -41,6 +42,7 @@ from aptl.core.evidence.outcomes import (
     STATUS_DIAGNOSTIC_CODES,
     SUCCESS_STATUSES,
     AcquisitionDisposition,
+    AcquisitionPhase,
     CollectorStatus,
     capture_diagnostic,
 )
@@ -274,12 +276,61 @@ def _resolve_plan(
     return plan, diagnostics, unavailable
 
 
+#: Bound for the observer-effect retained in a failure-fact record.
+_OBSERVER_EFFECT_FACT_LIMIT = 500
+
+
+def _failure_fact_blob(
+    binding: CaptureBinding, status: CollectorStatus, effect: str
+) -> tuple[str, bytes]:
+    """Render bounded, core-owned failure facts in a media type the binding retains."""
+    expected = binding.expected_media_types
+    if expected and "application/json" not in expected and "text/plain" in expected:
+        return "text/plain", f"status={status.value}; observer_effect={effect}".encode(
+            "utf-8"
+        )
+    facts = {"status": status.value, "observer_effect": effect}
+    return "application/json", json.dumps(facts, separators=(",", ":")).encode("utf-8")
+
+
+def _retained_failure_outcome(
+    outcome: CollectorOutcome, binding: CaptureBinding
+) -> CollectorOutcome:
+    """Give a top-level content-free non-aborting failure a durable facts blob.
+
+    An operation that ran and then failed may have changed state, even when the
+    source supplied no observer-effect string. Absence of effect text cannot
+    establish absence of an effect, so retain bounded core-owned facts (status
+    and observer effect, "unknown" when absent) through the normal persistence
+    owners. An aborting status (a source that never started) and an outcome that
+    already carries content are left unchanged. Keeping this at the top level
+    preserves the fail-closed policy that never manufactures evidence from
+    content that could not be safely retained during persistence.
+    """
+    if (
+        outcome.status in SUCCESS_STATUSES
+        or outcome.chunks
+        or outcome.status in _ABORTING_STATUSES
+    ):
+        return outcome
+    effect = (outcome.observer_effect or "unknown")[:_OBSERVER_EFFECT_FACT_LIMIT]
+    media, blob = _failure_fact_blob(binding, outcome.status, effect)
+    return replace(
+        outcome,
+        chunks=(blob,),
+        media_type=media,
+        event_count=1,
+        observer_effect=effect,
+    )
+
+
 def _process_outcome(
     binding: CaptureBinding,
     outcome: CollectorOutcome,
     *,
     run_store: object,
     scope: RunScope,
+    phase: AcquisitionPhase | None = None,
 ) -> tuple[
     CollectorReport,
     ExperimentEvidenceRecordModel | None,
@@ -301,6 +352,7 @@ def _process_outcome(
             planned_trial_id=scope.planned_trial_id,
             attempt_id=scope.attempt_id,
             captured_at=outcome.finished_at,
+            phase=phase,
         )
     except (BufferError, ValueError, RecursionError, OSError) as exc:
         # Persistence is part of capture, not an exception-shaped escape from
@@ -319,6 +371,7 @@ def _process_outcome(
             ),
             run_store=run_store,
             scope=scope,
+            phase=phase,
         )
     report = CollectorReport(
         registration_id=binding.registration_id,
@@ -416,6 +469,7 @@ def acquire_evidence(
     scope: RunScope,
     clock: ClockProvider,
     trial_body: Callable[[], None] = lambda: None,
+    phase: AcquisitionPhase | None = None,
 ) -> AcquisitionResult:
     """Acquire evidence for one trial's admitted capture bindings.
 
@@ -462,9 +516,11 @@ def acquire_evidence(
     refs: list[EvidenceRef] = []
     all_diagnostics: list[Diagnostic] = list(diagnostics)
     for binding in bindings:
-        outcome = outcomes_by_key[_binding_key(binding)]
+        outcome = _retained_failure_outcome(
+            outcomes_by_key[_binding_key(binding)], binding
+        )
         report, record, ref, diagnostic = _process_outcome(
-            binding, outcome, run_store=run_store, scope=scope
+            binding, outcome, run_store=run_store, scope=scope, phase=phase
         )
         reports.append(
             replace(report, scope=scope, capture_spec_id=binding.capture_spec_id)
