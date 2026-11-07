@@ -20,7 +20,12 @@ from raes_contracts.contracts import ExperimentEvidenceRecordModel
 
 from aptl.core.evidence import content_store
 from aptl.core.evidence.content_store import ContentInsertion
-from aptl.core.evidence.outcomes import CollectorStatus
+from aptl.core.evidence.outcomes import (
+    ABORTING_STATUSES,
+    SUCCESS_STATUSES,
+    AcquisitionPhase,
+    CollectorStatus,
+)
 from aptl.core.evidence.protocol import CollectorOutcome
 from aptl.core.evidence.records import (
     RecordDisclosure,
@@ -34,10 +39,11 @@ from aptl.utils.redaction import redact
 
 #: Media types with a trusted, bounded redaction path before persistence.
 _JSON_MEDIA_TYPE = "application/json"
+_TEXT_MEDIA_TYPE = "text/plain"
 _JSON_MEDIA_TYPES = frozenset(
     {_JSON_MEDIA_TYPE, "application/x-ndjson", "application/jsonl"}
 )
-_REDACTABLE_MEDIA_TYPES = _JSON_MEDIA_TYPES | {"text/plain"}
+_REDACTABLE_MEDIA_TYPES = _JSON_MEDIA_TYPES | {_TEXT_MEDIA_TYPE}
 _REDACTION_HANDLERS = {
     # APTL's shared recursive redactor is deliberately the stronger handler:
     # it removes credentials and sensitivity-labelled values.  Both authored
@@ -203,7 +209,7 @@ def _prepare_redactable_bytes(
         else:
             json.loads(raw)
             prepared = raw, False
-    elif media_type == "text/plain":
+    elif media_type == _TEXT_MEDIA_TYPE:
         prepared = _prepare_text_bytes(raw, handler)
     else:
         prepared = _prepare_json_lines(raw, handler)
@@ -248,8 +254,8 @@ def persist_success_outcome(
     run_store: LocalRunStore,
     run_id: str,
     planned_trial_id: str,
-    captured_at: str,
     attempt_id: str | None = None,
+    phase: AcquisitionPhase | None = None,
 ) -> ProcessedOutcome:
     """Persist one captured outcome content-addressably and build its RAES record.
 
@@ -258,7 +264,9 @@ def persist_success_outcome(
     payloads, and derives a deterministic evidence-record identity.
     ``WITHHELD``-visibility evidence keeps its bytes but is recorded as
     ``redaction_state="withheld"`` so a participant projection can drop it.
+    The record's capture time is the collector's observed finish time.
     """
+    captured_at = outcome.finished_at
     media_type = _media_type_of(outcome, binding)
     chunks, structured_redaction_state, prepared_truncation = _prepare_bytes(
         outcome, media_type, binding
@@ -296,6 +304,7 @@ def persist_success_outcome(
             redaction_state=redaction_state,
             loss_disclosure=loss_disclosure,
         ),
+        phase=phase,
     )
     # Persist the record into the explicit, create-once run-scoped evidence
     # ledger (identity is content-derived, so re-persisting is idempotent).
@@ -318,6 +327,68 @@ def persist_success_outcome(
         attempt_id=attempt_id,
     )
     return ProcessedOutcome(record=record, ref=ref, effective_status=effective_status)
+
+
+#: Bound for the observer effect retained in a failure-fact record.
+_OBSERVER_EFFECT_FACT_LIMIT = 500
+
+
+def _failure_fact_blob(
+    binding: CaptureBinding, status: CollectorStatus, effect: str
+) -> tuple[str, bytes]:
+    """Render bounded, core-owned failure facts in a media type the binding retains."""
+    expected = binding.expected_media_types
+    if expected and _JSON_MEDIA_TYPE not in expected and _TEXT_MEDIA_TYPE in expected:
+        text = f"status={status.value}; observer_effect={effect}"
+        return _TEXT_MEDIA_TYPE, text.encode("utf-8")
+    facts = {"status": status.value, "observer_effect": effect}
+    return _JSON_MEDIA_TYPE, json.dumps(facts, separators=(",", ":")).encode("utf-8")
+
+
+def retained_failure_outcome(
+    outcome: CollectorOutcome,
+    binding: CaptureBinding,
+    phase: AcquisitionPhase | None,
+) -> CollectorOutcome:
+    """Give a top-level content-free non-aborting failure a durable facts blob.
+
+    A preparation operation that ran and then failed may have changed state,
+    even when the source supplied no observer-effect string. Absence of effect
+    text cannot establish absence of an effect, so a preparation failure retains
+    bounded core-owned facts (status and observer effect, "unknown" when absent).
+    A measurement is observe-only, so it retains a fact only when it reports an
+    observer effect, which is itself a contract violation worth recording; a
+    failed observation that reports no effect keeps no evidence reference, which
+    preserves the delivery contract (issue #963). An aborting status (a source
+    that never started) and an outcome that already carries content are left
+    unchanged. The coordinator calls this once per binding before persistence,
+    so the persistence-failure path keeps the fail-closed policy that never
+    manufactures evidence from content that could not be safely retained.
+    """
+    if (
+        outcome.status in SUCCESS_STATUSES
+        or outcome.chunks
+        or outcome.status in ABORTING_STATUSES
+    ):
+        return outcome
+    if phase is not AcquisitionPhase.PREPARATION and outcome.observer_effect is None:
+        return outcome
+    effect = (outcome.observer_effect or "unknown")[:_OBSERVER_EFFECT_FACT_LIMIT]
+    media, blob = _failure_fact_blob(binding, outcome.status, effect)
+    return CollectorOutcome(
+        status=outcome.status,
+        started_at=outcome.started_at,
+        finished_at=outcome.finished_at,
+        chunks=(blob,),
+        media_type=media,
+        event_count=1,
+        dropped_count=outcome.dropped_count,
+        source_min_time=outcome.source_min_time,
+        source_max_time=outcome.source_max_time,
+        observer_effect=effect,
+        detail=outcome.detail,
+        source_pipeline=outcome.source_pipeline,
+    )
 
 
 #: Fixed disclosure text per non-``none`` redaction state (RAES requires a

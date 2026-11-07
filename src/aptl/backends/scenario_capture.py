@@ -20,6 +20,7 @@ from aptl.backends.scenario_runtime_hooks import (
     ScenarioRuntimeOperations,
 )
 from aptl.core.evidence.adapters.sources import WindowedSource
+from aptl.core.evidence.outcomes import AcquisitionPhase, PREPARATION_PHASES
 from aptl.core.experiment.capture_registry import CaptureBinding
 from aptl.core.evidence.protocol import Collector, RunScope
 
@@ -41,6 +42,19 @@ class CaptureSourceContext:
     retain_enrollment_ids: (
         Callable[[Mapping[str, str]], Mapping[str, str] | None] | None
     ) = field(default=None, repr=False)
+    phase: AcquisitionPhase = AcquisitionPhase.MEASUREMENT
+
+    def __post_init__(self) -> None:
+        """Reject a malformed phase before any source reads the context."""
+
+        if not isinstance(self.phase, AcquisitionPhase):
+            raise ValueError("capture-source-phase-invalid")
+
+    @property
+    def may_prepare(self) -> bool:
+        """Return whether this phase authorizes state-changing preparation."""
+
+        return self.phase in PREPARATION_PHASES
 
 
 @dataclass(frozen=True)
@@ -88,12 +102,17 @@ class ScenarioPropositionInterpreter(Protocol):
 
 
 def capture_source_context(
-    request: object, *, establish_enrollment: bool = False
+    request: object,
+    *,
+    establish_enrollment: bool = False,
+    phase: AcquisitionPhase = AcquisitionPhase.MEASUREMENT,
 ) -> CaptureSourceContext:
     """Detach source inputs and expose only explicitly granted credential keys.
 
     Only the provisioning capture passes ``establish_enrollment``; it may create
     the trial's retained enrollment record once. Other contexts only read it.
+    The caller selects ``phase``; preparation alone authorizes state-changing
+    stimulus, and every other phase stays observational.
     """
 
     from aptl.backends.scenario_service_policy import artifact_source_path
@@ -141,6 +160,7 @@ def capture_source_context(
         None
         if trial is None
         else _enrollment_retainer(request.project_dir, trial, establish_enrollment),
+        phase=phase,
     )
 
 
@@ -170,12 +190,15 @@ def _enrollment_retainer(
 
 
 def family_capture_sources(
-    request: object, *, establish_enrollment: bool = False
+    request: object,
+    *,
+    establish_enrollment: bool = False,
+    phase: AcquisitionPhase = AcquisitionPhase.MEASUREMENT,
 ) -> Mapping[str, WindowedSource]:
     """Keep invalid declarations distinct from a source factory's runtime failure."""
     contribution = request.capture_selection.contribution
     context = capture_source_context(
-        request, establish_enrollment=establish_enrollment
+        request, establish_enrollment=establish_enrollment, phase=phase
     )
     try:
         sources = contribution.runtime_adapter.native_sources(context)

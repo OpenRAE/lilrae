@@ -110,9 +110,14 @@ def test_missing_earlier_evidence_stays_unproven_across_restart(
 
     seen = []
 
-    def sources(request, *, establish_enrollment=False):
+    def sources(
+        request,
+        *,
+        establish_enrollment=False,
+        phase=scenario_capture.AcquisitionPhase.MEASUREMENT,
+    ):
         context = scenario_capture.capture_source_context(
-            request, establish_enrollment=establish_enrollment
+            request, establish_enrollment=establish_enrollment, phase=phase
         )
         seen.append(context.retain_enrollment_ids)
         return {}

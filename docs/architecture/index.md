@@ -181,6 +181,7 @@ capture runs, `aptl container shell aptl-kali` is refused (see
 
 ## Preflights
 
+- [Issue #1689 Native Acquisition Phase](issue-1689-native-acquisition-phase-preflight.md)
 - [Issue #1421 RPT Capture](issue-1421-rpt-capture-preflight.md)
 - [Issue #1510 Code Quality Architecture Preflight](issue-1510-code-quality-preflight.md)
 - [Issue #1510 Code Quality Architecture Design](issue-1510-code-quality-design.md)
