@@ -82,20 +82,32 @@ def verify_full_inventory(matrix: ExpectedMatrix, containers: dict[str, str]) ->
         )
 
 
+def load_run_admission(project: Path, run_id: str) -> McpRunAdmission | None:
+    """Read the private MCP admission bound to this run and its MCP configuration.
+
+    An absent record returns ``None``. A record of another run, or one whose
+    servers differ from the run's ``.mcp.json`` selection, is refused.
+    """
+    selection_path = project / ".aptl" / "mcp-admission.json"
+    if not selection_path.exists():
+        return None
+    admission = McpRunAdmission.model_validate_json(
+        read_management_bytes(selection_path)
+    )
+    if admission.run_id != run_id or admission.server_ids != configured_server_ids(
+        project, run_id
+    ):
+        raise WorkbenchConfigurationError("guest MCP admission belongs to another run")
+    return admission
+
+
 def _transport_inventory(
     project: Path, config: AptlConfig, run_id: str, containers: dict[str, str]
 ) -> tuple[PackIdentity, tuple[str, ...]]:
     """Validate the admitted workload and server selection for guest enrollment."""
-    selection_path = project / ".aptl" / "mcp-admission.json"
     server_ids = configured_server_ids(project, run_id)
-    if selection_path.exists():
-        admission = McpRunAdmission.model_validate_json(
-            read_management_bytes(selection_path)
-        )
-        if admission.run_id != run_id or admission.server_ids != server_ids:
-            raise WorkbenchConfigurationError(
-                "guest MCP admission belongs to another run"
-            )
+    admission = load_run_admission(project, run_id)
+    if admission is not None:
         observed = set().union(
             *(set(normalized_identifier_aliases(name)) for name in containers)
         )

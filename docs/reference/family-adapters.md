@@ -216,6 +216,64 @@ Their published DTOs support independent adapter packages.
 The adapter and required auxiliary entries form one installation.
 Core refuses combined registrations from unrelated installed providers.
 
+### Participant MCP smoke providers
+
+An `aptl.participant_mcp_smoke_plans` entry point is named `<profile_id>.<scenario catalog_id>`.
+It loads a static tuple of `McpSmokeOperation` values or a provider object.
+Import the public values from `aptl.validation.participant_mcp_smoke`.
+[ADR-067](../adrs/adr-067-admitted-participant-smoke-providers.md) records the decisions.
+
+A provider has these members:
+
+| Member | Contract |
+| --- | --- |
+| `extension_api_version` | The string `"1"`. |
+| `checks` | A tuple of `McpSmokeCheck(check_id, server_id, tool_name)`. Discovery reads it. |
+| `resolve(context)` | Returns a tuple of `McpSmokeOperation` values for the admitted inputs. |
+
+`resolve` receives one `McpSmokeContext`:
+
+| Field | Value |
+| --- | --- |
+| `profile_id`, `scenario_id`, `pack` | Admitted profile, scenario catalog ID, and pack identity. |
+| `nodes` | `AdmittedNode` values: SDL node name, declared service ports, and static network addresses. |
+| `grants` | `McpToolGrant` values: each admitted MCP server and its exact tool names. |
+| `checks` | The readiness checks that the plan must cover. |
+
+Use `context.node(name)` to test if a node is admitted.
+Use `context.address(node, network)` to get one admitted address.
+It raises `ParticipantMcpSmokeError` when the address is not admitted.
+
+Make `resolve` a pure data transformation.
+Do not start processes, inspect containers, open connections, or read credentials.
+Return operations only for checks in `context.checks`.
+Use only checks that `checks` declares.
+
+The host applies these rules before it starts any MCP process:
+
+- A required readiness check has the capability of a required narrative operation.
+- A required check whose server is not admitted stops qualification.
+- An optional check whose server is not admitted gets no operation and no registration.
+- The plan covers each expected check once, with the declared server.
+- Each tool is in the grant of its server.
+- Arguments are JSON values of 64 KiB or less.
+
+A provider needs the run MCP admission.
+Lab start writes it for an env-pack start.
+Without it, provider resolution fails and static plans keep their earlier behavior.
+
+#### Migration from a static plan
+
+Static tuples keep their behavior. No change is necessary.
+To select operations from the admitted inventory, follow these steps:
+
+1. Replace the tuple entry point target with a provider object.
+2. Declare every possible check in `checks`.
+3. In `resolve`, omit operations for a server that `context.grants` does not contain.
+4. Replace each fixed address with `context.address(node, network)`.
+5. Use `discover_participant_mcp_smoke_checks(selector)` for discovery.
+   `resolve_participant_mcp_smoke_plan(selector)` refuses a provider.
+
 ## Supported release tuple
 
 This historical tuple records structural factorial compilation and family admission.

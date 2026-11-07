@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from aptl.core.mcp_smoke_contract import AdmittedNode
 from aptl.core.scenario_bundle import PackIdentity
 
 if TYPE_CHECKING:
@@ -138,6 +139,9 @@ class McpRunAdmission(_PolicyValue):
     pack: PackIdentity
     server_ids: tuple[str, ...]
     container_aliases: tuple[tuple[str, ...], ...]
+    # Realized SDL nodes, their declared ports, and static addresses (#1707).
+    # A record from an earlier release has none, so providers find no target.
+    nodes: tuple[AdmittedNode, ...] = ()
 
 
 def profile_for(

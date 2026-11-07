@@ -182,6 +182,7 @@ nav:
     - Scenario environment and Docker authority: getting-started/environment-bindings.md
     - Overview: architecture/index.md
     - Design-check tools: architecture/design-checks.md
+    - "Issue #1707 Admitted Participant Smoke Providers": architecture/issue-1707-participant-smoke-provider-preflight.md
     - "Issue #1689 Native Acquisition Phase": architecture/issue-1689-native-acquisition-phase-preflight.md
     - "Issue #1584 Go Cutover Branch Preflight": architecture/issue-1584-go-cutover-preflight.md
     - "Issue #1510 Code Quality Architecture Preflight": architecture/issue-1510-code-quality-preflight.md
@@ -333,6 +334,7 @@ nav:
     - ADR-063 Remove TheHive and Cortex: adrs/adr-063-remove-thehive-and-cortex.md
     - ADR-064 Layered Architecture and Code Conventions: adrs/adr-064-layered-architecture-and-code-conventions.md
     - ADR-066 Runtime Readback Reports Realized State: adrs/adr-066-runtime-readback-reports-realized-state.md
+    - ADR-067 Admitted Participant Smoke Providers: adrs/adr-067-admitted-participant-smoke-providers.md
 
 extra:
   social:

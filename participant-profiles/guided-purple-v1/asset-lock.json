@@ -148,7 +148,7 @@
       "asset_id": "workbench-policy",
       "kind": "project-file",
       "source": "src/aptl/core/mcp_policy.py",
-      "sha256": "d3d4fae78dc45caf2549d39bf3136309a1dd960988a5f88a2351759f25066826"
+      "sha256": "022cf730e9af87375884b77b91853591a413a8a48ec2e9583f6233d2dea93866"
     },
     {
       "asset_id": "workbench-catalog",

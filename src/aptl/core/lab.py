@@ -4121,6 +4121,11 @@ def _persist_mcp_run_admission(ctx: _LabStartContext) -> None:
     from aptl.backends.raes_profiles import normalized_identifier_aliases
     from aptl.core._soc_ca_io import _atomic_write
     from aptl.core.mcp_policy import McpRunAdmission
+    from aptl.core.mcp_smoke_contract import (
+        AdmittedAddress,
+        AdmittedNode,
+        AdmittedServicePort,
+    )
 
     admitted = ctx.admitted_start
     if admitted is None or admitted.bundle.pack_identity is None:
@@ -4145,6 +4150,22 @@ def _persist_mcp_run_admission(ctx: _LabStartContext) -> None:
                         for alias in normalized_identifier_aliases(name)
                     }
                 )
+            )
+            for node in admitted.realization.nodes
+        ),
+        nodes=tuple(
+            AdmittedNode(
+                name=node.name,
+                services=tuple(
+                    AdmittedServicePort(
+                        name=service.name, port=service.port, protocol=service.protocol
+                    )
+                    for service in node.services
+                ),
+                addresses=tuple(
+                    AdmittedAddress(network=network, address=address)
+                    for network, address in node.static_address_assignments
+                ),
             )
             for node in admitted.realization.nodes
         ),

@@ -140,6 +140,10 @@ def test_guest_admission_projection_retains_exact_reduced_inventory(tmp_path):
                         name="misp",
                         container_name="aptl-misp",
                         backend_services=("misp",),
+                        services=(
+                            SimpleNamespace(name="https", port=443, protocol="tcp"),
+                        ),
+                        static_address_assignments=(("soc", "172.20.0.16"),),
                     ),
                 )
             ),
@@ -152,4 +156,50 @@ def test_guest_admission_projection_retains_exact_reduced_inventory(tmp_path):
     assert admitted.run_id == ctx.run_id
     assert len(admitted.container_aliases) == 1
     assert "misp" in admitted.container_aliases[0]
+    (node,) = admitted.nodes
+    assert node.name == "misp"
+    assert [(s.name, s.port, s.protocol) for s in node.services] == [
+        ("https", 443, "tcp")
+    ]
+    assert [(a.network, a.address) for a in node.addresses] == [
+        ("soc", "172.20.0.16")
+    ]
     assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_run_admission_is_bound_to_its_run_and_mcp_selection(tmp_path):
+    from aptl.core._soc_ca_io import _atomic_write
+    from aptl.core.mcp_policy import McpRunAdmission
+    from aptl.workbench.preparation import load_run_admission
+
+    run_id = "b" * 32
+    assert load_run_admission(tmp_path, run_id) is None
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {"mcpServers": {"aptl-red": {"env": {"APTL_MCP_ADMITTED_RUN_ID": run_id}}}}
+        )
+    )
+
+    def write(server_ids, owner_run=run_id):
+        admission = McpRunAdmission(
+            run_id=owner_run,
+            pack=access_record().scenario_pack,
+            server_ids=server_ids,
+            container_aliases=(),
+        )
+        _atomic_write(
+            tmp_path / ".aptl/mcp-admission.json",
+            admission.model_dump_json().encode(),
+            mode=0o600,
+        )
+
+    write(("aptl-red",))
+    loaded = load_run_admission(tmp_path, run_id)
+    assert loaded is not None
+    assert loaded.nodes == ()
+    write(("aptl-red",), owner_run="c" * 32)
+    with pytest.raises(WorkbenchConfigurationError, match="another run"):
+        load_run_admission(tmp_path, run_id)
+    write(("aptl-red", "aptl-wazuh"))
+    with pytest.raises(WorkbenchConfigurationError, match="another run"):
+        load_run_admission(tmp_path, run_id)

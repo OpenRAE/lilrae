@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -166,3 +167,48 @@ def _assert_unconfigured_vertex_refused(tmp_path, scenario, participants, deadli
     )
     with pytest.raises(ValueError):
         refused.__enter__()
+
+
+def test_vertex_participant_uses_attached_account_without_a_key(tmp_path):
+    """An attached account delivers only the project; tokens come from metadata (#1709)."""
+    document = trial_document(
+        red_model="google-vertex/vendor-d/model-d", blue_model="google-vertex/vendor-e/model-e"
+    )
+    scenario = parse_trial(document)
+    participants = declared_participants(scenario)
+    runner = KeyReadingRunner()
+    settings = _settings(tmp_path, runner)
+    attached = ExperimentSettings.model_validate(
+        {
+            "participant_credential_sources": {
+                "vertex": {"kind": "attached-service-account", "project": "attached-project"}
+            }
+        }
+    )
+    settings = replace(settings, experiment=attached, source_environment={})
+    deadline = datetime.now(UTC) + timedelta(minutes=5)
+    store = LocalRunStore(tmp_path / "runs")
+    store.create_run("run-1")
+    store.write_json("run-1", "manifest.json", {"startup": "synthetic"})
+
+    record = _run_vertex_trial(scenario, participants, settings, deadline, store, {})
+
+    assert record.terminal_cause == "completed"
+    assert len(runner.calls) == 2
+    for call in runner.calls:
+        assert call["key_path"] is None
+        assert call["env"]["GOOGLE_CLOUD_PROJECT"] == "attached-project"
+        assert "METADATA_SERVER_DETECTION" not in call["env"]
+        assert call["config"]["enabled_providers"] == ["google-vertex"]
+
+
+@pytest.mark.parametrize("project", ["", "Bad_Project", "x" * 31])
+def test_attached_account_refuses_an_invalid_project(project):
+    with pytest.raises(ValueError):
+        ExperimentSettings.model_validate(
+            {
+                "participant_credential_sources": {
+                    "vertex": {"kind": "attached-service-account", "project": project}
+                }
+            }
+        )
