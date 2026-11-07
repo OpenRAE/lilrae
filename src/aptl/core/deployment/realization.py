@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
+from raes.random_value import RandomValueRecipe
+from raes.runtime_generated_value import GeneratedArtifactValueSource
+from raes_contracts.vocabulary import GeneratedArtifactRegenerationScope
+
 from aptl.runtime_authority import DeploymentDockerAuthorityAdmission
 from aptl.core.scenario_bundle import PackIdentity
 from aptl.core.deployment._companion_realization import (
@@ -39,7 +43,7 @@ valid_environment_variable_name = _valid_environment_variable_name
 
 StatefulConsumerAccessMode = Literal["read_only", "read_write"]
 GeneratedArtifactKind = Literal[
-    "certificate_bundle", "rendered_config", "ssh_key_bundle"
+    "certificate_bundle", "rendered_config", "ssh_key_bundle", "random_value"
 ]
 GeneratedArtifactLifecycle = Literal["regenerate_on_change", "reuse_valid"]
 GeneratedArtifactOutputDisposition = Literal["consumer_selected", "producer_private"]
@@ -140,6 +144,7 @@ ContentSourceKind = Literal[
     "empty-directory",
     "pack-file",
     "pack-directory",
+    "generated-text",
 ]
 
 
@@ -173,6 +178,7 @@ class DeploymentContentRealization(object):
     artifact_digest: str | None = None
     media_type: str | None = None
     sensitive: bool = False
+    generated_value_source: GeneratedArtifactValueSource | None = None
 
     def details(self) -> dict[str, object]:
         return {
@@ -379,6 +385,23 @@ class DeploymentGeneratedArtifactEnvironmentConsumer(object):
 
 
 @dataclass(frozen=True)
+class DeploymentGeneratedContentConsumer:
+    """One generated output delivered through an admitted content placement."""
+
+    content: str
+    target_address: str
+    output: str
+
+    def details(self) -> dict[str, str]:
+        return {
+            "content": self.content,
+            "target_address": self.target_address,
+            "delivery_mode": "content_text",
+            "output": self.output,
+        }
+
+
+@dataclass(frozen=True)
 class DeploymentGeneratedArtifactRealization(object):
     """One RAES generated-artifact operation admitted for deployment."""
 
@@ -394,6 +417,10 @@ class DeploymentGeneratedArtifactRealization(object):
     ] = ()
     ordering_dependencies: tuple[str, ...] = ()
     refresh_dependencies: tuple[str, ...] = ()
+    random_value: RandomValueRecipe | None = None
+    regeneration_scope: GeneratedArtifactRegenerationScope | None = None
+    scope_binding: str = ""
+    content_consumers: tuple[DeploymentGeneratedContentConsumer, ...] = ()
 
     def details(self) -> dict[str, object]:
         return {

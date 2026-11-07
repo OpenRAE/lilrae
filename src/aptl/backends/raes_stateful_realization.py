@@ -7,6 +7,8 @@ from typing import Any, cast
 
 from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.planning import PlannedResource
+from raes.stateful_resources import GeneratedArtifact
+from raes_contracts.vocabulary import GeneratedArtifactRegenerationScope
 
 from aptl.backends.raes_diagnostics import diagnostic
 from aptl.backends._raes_stateful_values import (
@@ -20,6 +22,7 @@ from aptl.core.deployment.realization import (
     DeploymentGeneratedArtifactEnvironmentConsumer,
     DeploymentGeneratedArtifactOutput,
     DeploymentGeneratedArtifactRealization,
+    DeploymentGeneratedContentConsumer,
     DeploymentPersistentVolumeRealization,
     DeploymentStatefulConsumer,
     GeneratedArtifactKind,
@@ -32,7 +35,9 @@ from aptl.core.deployment.realization import (
     valid_environment_variable_name,
 )
 
-_GENERATORS = frozenset({"certificate_bundle", "rendered_config", "ssh_key_bundle"})
+_GENERATORS = frozenset(
+    {"certificate_bundle", "rendered_config", "ssh_key_bundle", "random_value"}
+)
 _ARTIFACT_LIFECYCLES = frozenset({"regenerate_on_change", "reuse_valid"})
 _SENSITIVITIES = frozenset({"public", "restricted", "secret"})
 _DISPOSITIONS = frozenset({"consumer_selected", "producer_private"})
@@ -95,12 +100,14 @@ def _generated_artifact(
     environment_consumers = _environment_consumers(
         resource, spec.get("environment_consumers"), nodes, diagnostics
     )
+    content_consumers = _content_consumers(spec.get("content_consumers", ()))
     incomplete = (
         generator is None
         or lifecycle is None
         or provenance is None
         or not outputs
-        or not (consumers or environment_consumers)
+        or content_consumers is None
+        or not (consumers or environment_consumers or content_consumers)
     )
     if incomplete:
         _append_invalid(resource, diagnostics)
@@ -111,6 +118,48 @@ def _generated_artifact(
         resource, outputs, consumers, environment_consumers, diagnostics
     ):
         return None
+    if any(
+        not any(
+            output.name == consumer.output and output.disposition != "producer_private"
+            for output in outputs
+        )
+        for consumer in content_consumers
+    ):
+        _append_invalid(resource, diagnostics)
+        return None
+    random_fields = {}
+    if generator == "random_value":
+        try:
+            source = GeneratedArtifact.model_validate(
+                {
+                    key: spec[key]
+                    for key in (
+                        "generator",
+                        "lifecycle",
+                        "provenance",
+                        "outputs",
+                        "random_value",
+                        "regeneration_scope",
+                    )
+                    if key in spec
+                }
+            )
+            binding = resource.payload.get("scope_binding")
+            if (
+                source.regeneration_scope
+                is not GeneratedArtifactRegenerationScope.PER_RUN
+                or not isinstance(binding, str)
+                or not binding.startswith("run:")
+            ):
+                raise ValueError("unsupported random value scope")
+        except ValueError:
+            _append_invalid(resource, diagnostics)
+            return None
+        random_fields = {
+            "random_value": source.random_value,
+            "regeneration_scope": source.regeneration_scope,
+            "scope_binding": binding,
+        }
     return DeploymentGeneratedArtifactRealization(
         address=resource.address,
         name=_resource_name(resource),
@@ -122,7 +171,33 @@ def _generated_artifact(
         environment_consumers=tuple(environment_consumers),
         ordering_dependencies=resource.ordering_dependencies,
         refresh_dependencies=resource.refresh_dependencies,
+        content_consumers=content_consumers,
+        **random_fields,
     )
+
+
+def _content_consumers(
+    raw: object,
+) -> tuple[DeploymentGeneratedContentConsumer, ...] | None:
+    if not isinstance(raw, (list, tuple)):
+        return None
+    consumers = []
+    for row in raw:
+        if not isinstance(row, Mapping) or row.get("delivery_mode") != "content_text":
+            return None
+        if any(
+            not isinstance(row.get(key), str) or not row[key]
+            for key in ("content", "target_address", "output")
+        ):
+            return None
+        consumers.append(
+            DeploymentGeneratedContentConsumer(
+                content=row["content"],
+                target_address=row["target_address"],
+                output=row["output"],
+            )
+        )
+    return tuple(consumers)
 
 
 def _selection_valid(

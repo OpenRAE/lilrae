@@ -96,7 +96,7 @@ def test_manifest_advertises_released_stateful_contract() -> None:
     assert {
         str(getattr(mode, "value", mode))
         for mode in manifest.provisioner.supported_generated_artifact_delivery_modes
-    } == {"mount", "environment"}
+    } == {"mount", "environment", "content_text"}
     assert manifest.provisioner.supports_persistent_volumes is True
 
 

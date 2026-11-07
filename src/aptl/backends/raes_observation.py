@@ -27,6 +27,7 @@ drift from the set of concerns the gate actually enforces.
 from __future__ import annotations
 
 from aptl.backends._lilrae_catalog_image_observation import observe_catalog_images
+from aptl.backends.initial_service_inventory import observe_initial_services
 
 from collections.abc import Mapping
 from pathlib import Path
@@ -69,6 +70,7 @@ from aptl.backends.raes_runtime_observation import observe_runtime_concerns
 from aptl.backends.scenario_startup import observe_scenario_runtime_concerns
 from aptl.core.deployment._compose_service_health import runtime_expects_completion
 from aptl.utils.logging import get_logger
+from aptl.backends.generated_content import generated_content_delivered
 
 log = get_logger("realization-observe")
 
@@ -123,6 +125,7 @@ def observe_realization(
         for address, resource in plan.resources.items()
     }
     observe_catalog_images(backend, realization, observations, observation_context)
+    observe_initial_services(backend, realization, observations)
     _add_adapter_runtime_observations(
         backend,
         realization,
@@ -183,6 +186,7 @@ def _observe_planned_resource(
             index.placement_targets.get(address),
             index.placement_content.get(address),
             index.placement_datasets.get(address),
+            index.realization_root,
         )
     return observed
 
@@ -374,6 +378,7 @@ def _observe_placement(
     target_address: str | None,
     content: DeploymentContentRealization | None,
     dataset: ParticipantDatasetRealization | None,
+    realization_root: Path | None = None,
 ) -> ObservedResource:
     """Observe a node-scoped placement through the node that received it.
 
@@ -402,6 +407,11 @@ def _observe_placement(
             observed = ObservedResource(realized=False)
         else:
             concerns: dict[tuple[str, ...], object] = {}
+            if content is not None and content.source_kind == "generated-text":
+                if realization_root is None or not generated_content_delivered(
+                    backend, container_name, content, realization_root
+                ):
+                    return ObservedResource(realized=False)
             content_type = _observed_content_type(
                 backend, content, container_name, info
             )

@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from raes_contracts.vocabulary import ObservationStrength
 
 from aptl.backends._raes_runtime_container_observation import CONTAINER_DAEMON_FIELDS
+from aptl.backends.initial_service_inventory import RUNTIME_SERVICE_READERS
 
 
 CORE_RUNTIME_CONCERN_SOURCES = {
@@ -22,11 +23,13 @@ CORE_RUNTIME_CONCERN_SOURCES = {
             "runtime-node-memory-limit",
             "runtime-restart-policy",
             "service-listeners",
+            "runtime-orchestration-authorities",
         },
         ObservationStrength.DAEMON_OBSERVED,
     ),
     **dict.fromkeys(
         {
+            *(RUNTIME_SERVICE_READERS.keys() - {"runtime-orchestration-authorities"}),
             "forwarding-agents",
             "process-resource-limits",
             "runtime-dependency-manifests",

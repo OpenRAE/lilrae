@@ -288,11 +288,12 @@ _PROVISIONER = ProvisionerCapabilities(
     # (keypairs + authorized-key projections generated at standup, outputs read
     # back present with producer-private material kept off consumers).
     supported_generated_artifact_kinds=frozenset(
-        {"certificate_bundle", "rendered_config", "ssh_key_bundle"}
+        {"certificate_bundle", "rendered_config", "ssh_key_bundle", "random_value"}
     ),
     # APTL realizes both existing read-only mounts and RAES 4.1's generated
     # output -> environment projection. It does not claim env_file delivery.
-    supported_generated_artifact_delivery_modes=frozenset({"mount", "environment"}),
+    supported_generated_artifact_delivery_modes=frozenset({"mount", "environment", "content_text"}),
+    supported_regeneration_scopes=frozenset({"per_run"}),
     supports_persistent_volumes=True,
 )
 

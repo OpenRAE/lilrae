@@ -16,6 +16,7 @@ from aptl.core.deployment._misp_fastcgi_loopback import (
     MISP_FASTCGI_LOOPBACK_PROFILE,
 )
 from aptl.core.deployment._misp_server_tls import MISP_SERVER_TLS_PROFILE
+from aptl.core.deployment.random_values import random_value_directory
 from aptl.core.deployment._compose_stateful_constants import (
     CERTIFICATE_ROOT_RELPATH,
     CERTIFICATE_PROVENANCE,
@@ -48,7 +49,9 @@ def artifact_source_path(
     """
 
     provenance = getattr(artifact, "provenance", None)
-    if provenance == SOC_CERT_PROFILE:
+    if artifact.generator == "random_value":
+        relative = random_value_directory(artifact.address, artifact.scope_binding) / "outputs"
+    elif provenance == SOC_CERT_PROFILE:
         relative = Path(SOC_CERTS_ROOT_RELPATH)
     elif artifact.generator == "certificate_bundle" and provenance in {CERTIFICATE_PROVENANCE, *WAZUH_CERT_PROFILES}:
         relative = Path(CERTIFICATE_ROOT_RELPATH)

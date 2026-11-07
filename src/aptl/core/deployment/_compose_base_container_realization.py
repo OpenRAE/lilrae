@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, cast
 from aptl.core.deployment.realization import DeploymentRealizationSpec
 from aptl.core.deployment.errors import BackendSeedError
 from aptl.core.lab_types import LabResult
+from aptl.utils.pathsafe import read_contained_nofollow
 
 if TYPE_CHECKING:
     from aptl.backends.raes_base_substrate import VolumeMount
@@ -149,7 +150,7 @@ def _realize_node_subset(
     if preparation_failure is not None:
         return preparation_failure
 
-    content_by_node = _content_ops_by_node(content)
+    content_by_node = _content_ops_by_node(content, getattr(backend, "realization_root", scenario_root))
     for address, ops in (extra_ops or {}).items():
         content_by_node.setdefault(address, []).extend(ops)
     return realize_nodes(
@@ -300,18 +301,20 @@ def _bind_base_container_networks(
     return None
 
 
-def _content_ops_by_node(content: tuple[object, ...]) -> dict[str, list[object]]:
+def _content_ops_by_node(
+    content: tuple[object, ...], realization_root: Path | None = None
+) -> dict[str, list[object]]:
     """Lower each content item to a placement op, keyed by target node address."""
 
     by_node: dict[str, list[object]] = {}
     for item in content:
-        op = _content_placement_op(item)
+        op = _content_placement_op(item, realization_root)
         if op is not None:
             by_node.setdefault(item.target_address, []).append(op)
     return by_node
 
 
-def _content_placement_op(item: object) -> object | None:
+def _content_placement_op(item: object, realization_root: Path | None = None) -> object | None:
     """Return one content item's materializer placement op, or ``None``.
 
     A source kind that carries nothing placeable (an incomplete pack reference,
@@ -326,7 +329,12 @@ def _content_placement_op(item: object) -> object | None:
 
     dest = "/" + item.dest_relpath.lstrip("/")
     op: object | None = None
-    if item.source_kind == "inline-text" and item.inline_text is not None:
+    if item.source_kind == "generated-text":
+        if realization_root is None or not item.source_relpath:
+            raise ValueError("generated content has no admitted output path")
+        value = read_contained_nofollow(realization_root, item.source_relpath)
+        op = PlaceFileOp(path=dest, content=value.decode("utf-8"), mode="0600" if item.sensitive else "0644")
+    elif item.source_kind == "inline-text" and item.inline_text is not None:
         op = PlaceFileOp(path=dest, content=item.inline_text)
     elif (
         item.source_kind in ("pack-file", "pack-directory")

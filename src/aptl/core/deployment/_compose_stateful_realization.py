@@ -61,6 +61,8 @@ from aptl.core.deployment._flag_signing_keys import (
 )
 from aptl.core.deployment._ssh_key_bundle import realize_ssh_key_bundle
 from aptl.core.deployment.errors import BackendTimeoutError
+from aptl.core.deployment.random_values import realize_random_value
+from aptl.utils.pathsafe import PathContainmentError
 from aptl.core.deployment.realization import (
     DeploymentGeneratedArtifactRealization,
     DeploymentRealizationSpec,
@@ -138,6 +140,7 @@ class ComposeStatefulRealizationMixin(ComposeStatefulReadinessMixin):
             ),
             "rendered_config": self._realize_rendered_config,
             "ssh_key_bundle": self._realize_ssh_key_bundle,
+            "random_value": self._realize_random_value,
         }.get(artifact.generator)
         if realizer is None:
             return LabResult(
@@ -153,6 +156,16 @@ class ComposeStatefulRealizationMixin(ComposeStatefulReadinessMixin):
                 artifact, scenario_root, _non_compose_consumer_addresses(realization)
             )
         return failure
+
+    @staticmethod
+    def _realize_random_value(
+        artifact: DeploymentGeneratedArtifactRealization, scenario_root: Path
+    ) -> LabResult | None:
+        try:
+            realize_random_value(scenario_root, artifact)
+        except (OSError, ValueError, PathContainmentError):
+            return LabResult(success=False, error="Random artifact generation failed.")
+        return None
 
     @staticmethod
     def _realize_ssh_key_bundle(

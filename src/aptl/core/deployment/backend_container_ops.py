@@ -124,6 +124,17 @@ class ContainerOpsBackend(Protocol):
         """Start a detached non-interactive process inside a container."""
         ...
 
+    def container_exec_with_input(
+        self,
+        name: str,
+        cmd: list[str],
+        payload: str,
+        *,
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess:
+        """Run a native query with private input on stdin rather than argv."""
+        ...
+
     def container_inspect(self, name: str) -> dict[str, Any]:
         """Return parsed ``docker inspect`` output for a single container.
 

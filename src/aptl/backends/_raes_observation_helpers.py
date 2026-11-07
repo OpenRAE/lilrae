@@ -126,7 +126,7 @@ def artifact_spec(
 ) -> dict[str, object]:
     """Render the RAES concern value observed for a generated artifact."""
 
-    return {
+    result = {
         "generator": artifact.generator,
         "lifecycle": artifact.lifecycle,
         "provenance": artifact.provenance,
@@ -141,6 +141,12 @@ def artifact_spec(
         "ordering_dependencies": _author_dependencies(artifact.ordering_dependencies),
         "refresh_dependencies": _author_dependencies(artifact.refresh_dependencies),
     }
+    if artifact.random_value is not None:
+        result["random_value"] = artifact.random_value.model_dump(mode="json")
+        result["regeneration_scope"] = artifact.regeneration_scope.value
+    if artifact.content_consumers:
+        result["content_consumers"] = [item.details() for item in artifact.content_consumers]
+    return result
 
 
 def volume_spec(volume: DeploymentPersistentVolumeRealization) -> dict[str, object]:

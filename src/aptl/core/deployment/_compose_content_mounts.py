@@ -24,6 +24,7 @@ from aptl.core.deployment.realization import (
     DeploymentContentRealization,
     DeploymentRealizationSpec,
 )
+from aptl.utils.pathsafe import read_contained_nofollow
 
 CONTENT_MOUNT_ROOT_RELPATH = Path(".aptl") / "realization" / "content"
 #: Where owner-declared content is staged inside an image node (#1273). A bind
@@ -300,7 +301,10 @@ def _place_content(
     basename = PurePosixPath(item.dest_relpath).name or slug
 
     placed: Path | None = None
-    if item.source_kind == "inline-text" and item.inline_text is not None:
+    if item.source_kind == "generated-text" and item.source_relpath:
+        read_contained_nofollow(realization_root, item.source_relpath)
+        placed = realization_root / item.source_relpath
+    elif item.source_kind == "inline-text" and item.inline_text is not None:
         root = _content_output_root(realization_root, slug)
         placed = root / basename
         _remove_previous_output(placed)

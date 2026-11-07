@@ -42,6 +42,7 @@ from aptl.backends.raes_realization_networks import (
     append_network_topology_diagnostics,
 )
 from aptl.backends.raes_stateful_realization import realize_stateful_resources
+from aptl.backends.generated_content import bind_generated_content
 from aptl.backends.raes_realization_model import (
     AptlRealization,
     NetworkRealization,
@@ -154,6 +155,7 @@ def interpret_provisioning_plan(
         nodes,
         diagnostics,
     )
+    placements = bind_generated_content(placements, generated_artifacts, diagnostics)
     if bundle.pack_identity is None and not _all_nodes_base_container_materialized(
         nodes
     ):

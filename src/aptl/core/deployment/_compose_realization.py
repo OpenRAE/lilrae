@@ -295,6 +295,7 @@ class ComposeRealizationMixin(
         self._base_container_generated_environment = {}
         ops_by_address: dict[str, list[object]] = {}
         generated_environment: dict[str, dict[str, str]] = {}
+        content_targets = {item.address: item.target_address for item in realization.content}
         for artifact in realization.generated_artifacts:
             consumers = [
                 consumer
@@ -306,7 +307,11 @@ class ComposeRealizationMixin(
                 for consumer in artifact.environment_consumers
                 if consumer.target_address in addresses
             ]
-            if not consumers and not environment_consumers:
+            content_consumer = any(
+                content_targets.get(consumer.target_address) in addresses
+                for consumer in artifact.content_consumers
+            )
+            if not consumers and not environment_consumers and not content_consumer:
                 continue
             failure = self._realize_one_generated_artifact(
                 artifact, realization_root, realization

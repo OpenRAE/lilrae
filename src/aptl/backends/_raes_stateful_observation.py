@@ -40,6 +40,8 @@ from aptl.core.deployment.realization import (
 )
 from aptl.core.soc_ca import soc_bundle_evidence
 from aptl.utils.logging import get_logger
+from aptl.utils.pathsafe import PathContainmentError
+from aptl.core.deployment.random_values import read_random_value
 
 if TYPE_CHECKING:
     from aptl.core.deployment.backend import DeploymentBackend
@@ -66,6 +68,11 @@ def _observe_generated_artifact(
     if artifact is None or not isinstance(realization_root, Path):
         return ObservedResource(realized=False)
     source = artifact_source_path(realization_root, artifact)
+    if artifact.generator == "random_value":
+        try:
+            read_random_value(realization_root, artifact)
+        except (OSError, ValueError, PathContainmentError):
+            return ObservedResource(realized=False)
     realized, outputs_present, consumers_mounted, consumers_ready, evidence = (
         _artifact_realization_state(
             backend,

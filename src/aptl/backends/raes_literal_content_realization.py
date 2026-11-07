@@ -16,6 +16,7 @@ from typing import Any
 
 from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.planning import PlannedResource
+from raes.runtime_generated_value import GeneratedArtifactValueSource
 
 from aptl.backends.raes_content_source_policy import forbidden_source_reason
 from aptl.backends.raes_diagnostics import diagnostic
@@ -147,7 +148,11 @@ def _pack_artifact_literal_placement(
     media_type = _optional_string(exact, "media_type")
     kind = "pack-directory" if content_type == "directory" else "pack-file"
     rejection = _pack_artifact_rejection(
-        resource, artifact_id=artifact_id, digest=digest, media_type=media_type, kind=kind
+        resource,
+        artifact_id=artifact_id,
+        digest=digest,
+        media_type=media_type,
+        kind=kind,
     )
     if rejection is not None:
         return None, rejection
@@ -231,11 +236,46 @@ def resolve_literal_content_placement(
             )
         ]
     dest = _optional_string(spec, "path") or _optional_string(spec, "destination")
-    name = _optional_string(payload, "content_name") or _optional_string(payload, "name") or ""
-
-    result = _inline_text_literal_placement(
-        resource, target_address, dest=dest, name=name, text=_content_text(spec), spec=spec
+    name = (
+        _optional_string(payload, "content_name")
+        or _optional_string(payload, "name")
+        or ""
     )
+
+    result = None
+    if spec.get("text_from") is not None and dest:
+        try:
+            source = GeneratedArtifactValueSource.model_validate(spec["text_from"])
+        except ValueError:
+            return None, [
+                diagnostic(
+                    "aptl.provisioner.generated-content-invalid",
+                    resource.address,
+                    "Generated content reference is invalid.",
+                )
+            ]
+        result = (
+            DeploymentContentRealization(
+                address=resource.address,
+                target_address=target_address,
+                content_name=name,
+                volume_suffix="",
+                dest_relpath=dest.lstrip("/"),
+                source_kind="generated-text",
+                sensitive=spec.get("sensitive") is True,
+                generated_value_source=source,
+            ),
+            [],
+        )
+    if result is None:
+        result = _inline_text_literal_placement(
+            resource,
+            target_address,
+            dest=dest,
+            name=name,
+            text=_content_text(spec),
+            spec=spec,
+        )
     if result is None:
         result = _pack_artifact_literal_placement(
             resource,
@@ -256,12 +296,15 @@ def resolve_literal_content_placement(
             spec=spec,
         )
     if result is None:
-        result = None, [
-            diagnostic(
-                "aptl.provisioner.literal-content-unsupported",
-                resource.address,
-                "literal-destination content placement supports an inline-text file or a "
-                "project-contained file/directory source with a destination path.",
-            )
-        ]
+        result = (
+            None,
+            [
+                diagnostic(
+                    "aptl.provisioner.literal-content-unsupported",
+                    resource.address,
+                    "literal-destination content placement supports an inline-text file or a "
+                    "project-contained file/directory source with a destination path.",
+                )
+            ],
+        )
     return result
