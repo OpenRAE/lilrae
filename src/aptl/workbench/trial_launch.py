@@ -17,7 +17,6 @@ from types import MappingProxyType
 from raes import Scenario
 from raes_contracts.contracts import ParticipantControlContextAssetModel
 
-from aptl.core._credential_sources import AttachedServiceAccountSource, ProcessEnvironmentCredentialSource
 from aptl.core.config import ExperimentSettings
 from aptl.core.mcp_policy import ProfileId, WorkbenchConfigurationError, profile_for
 from aptl.core.opencode import (
@@ -176,8 +175,6 @@ def _openrouter(
         raise ValueError(f"model {model} has no approved serving provider")
     route = OpenRouterRoute(endpoint=settings.openrouter_endpoint, serving_provider=provider)
     source = settings.experiment.participant_credential_sources.source_for("opencode")
-    if not isinstance(source, ProcessEnvironmentCredentialSource):
-        raise ValueError("the OpenRouter credential source must be a process environment variable")
     credentials, _ = resolver.acquire(
         "opencode", run_id, source=source, delivery_alias="OPENROUTER_API_KEY"
     )
@@ -194,12 +191,8 @@ def _vertex(
     resolver: ProcessEnvironmentCredentialResolver,
     run_id: str,
 ) -> Iterator[tuple[ParticipantRoute, Mapping[str, str]]]:
-    """Give one Vertex AI participant a private key file, or the host's attached account."""
+    """Give one Vertex AI participant a private key file for its project."""
     source = settings.experiment.participant_credential_sources.source_for("vertex")
-    if isinstance(source, AttachedServiceAccountSource):
-        # Tokens come from the metadata server; no key exists to deliver or remove.
-        yield VertexRoute(source.project), {"GOOGLE_CLOUD_PROJECT": source.project}
-        return
     credentials, _ = resolver.acquire("vertex", run_id, source=source, delivery_alias="key")
     directory = Path(tempfile.mkdtemp(prefix="lilrae-vertex-", dir=settings.work_root))
     try:
