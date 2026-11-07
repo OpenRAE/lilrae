@@ -308,12 +308,12 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 | `docs/raes/dsl-005-assertion-evaluation-preflight.md` | #1666 | Reference (source record) |
 | `docs/raes/dsl-008-realization-preflight.md` | #1666 | Reference (source record) |
 | `docs/raes/dsl-010-participant-runtime-preflight.md` | #1666 | Reference (source record) |
-| `docs/raes/issue-601-participant-demonstration.md` | #1666 | Reference |
+| `docs/raes/issue-601-participant-demonstration.md` | #1666 | Reference (source record) |
 | `docs/raes/issue-759-libvirt-service-reachability-preflight.md` | #1666 | Reference (source record) |
 | `docs/raes/m1-raes-conformance-truth-up-preflight.md` | #1666 | Reference (source record) |
 | `docs/raes/orchestration-capable-profile-preflight.md` | #1666 | Reference (source record) |
 | `docs/raes/paper-scenario-realization.md` | #1666 | Reference |
-| `docs/raes/techvault-curated-live-validation-gate.md` | #1666 | Reference |
+| `docs/raes/techvault-curated-live-validation-gate.md` | #1666 | Reference (source record) |
 | `docs/raes/techvault-curated-live-validation-preflight.md` | #1666 | Reference (source record) |
 | `docs/raes/techvault-live-validation-gate.md` | #1666 | Reference |
 | `docs/raes/techvault-live-validation-preflight.md` | #1666 | Reference (source record) |
@@ -332,8 +332,8 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 | `docs/reference/opencode-participants.md` | #1666 | Reference |
 | `docs/reference/participant-profile.md` | #1666 | Reference |
 | `docs/reference/participant-request-manifests.md` | #1666 | Reference |
-| `docs/reference/techvault-company-profile.md` | #1666 | Reference |
-| `docs/reference/techvault-osint-readiness.md` | #1666 | Reference |
+| `docs/reference/techvault-company-profile.md` | #1666 | Reference (source record) |
+| `docs/reference/techvault-osint-readiness.md` | #1666 | Reference (source record) |
 | `docs/reference/techvault-scenario-overview.md` | #1666 | Reference |
 | `docs/reference/web.md` | #1666 | Reference |
 | `docs/releasing.md` | #1668 | How-to guide |
@@ -547,12 +547,50 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 | `docs/workshop/walkthrough.md` | #1665 | Tutorial |
 | `mcp/mcp-reverse/README.md` | #1666 | How-to guide |
 | `scenarios/archive/README.md` | #1666 | How-to guide |
-| `scenarios/archive/prime-scenario.md` | #1666 | How-to guide |
-| `src/aptl_techvault/README.md` | #1666 | How-to guide |
+| `scenarios/archive/prime-scenario.md` | #1666 | Reference (source record) |
+| `src/aptl_techvault/README.md` | #1666 | Reference |
 | `tests/fixtures/structural_family/pack/docs/protocol.md` | #1668 | Reference (source record) |
 | `tools/sonar/README.md` | #1668 | How-to guide |
 | `tools/workshop/arsenal-2026/README.md` | #1665 | How-to guide |
 | `web/caddy-build/third_party/go-jose/UPSTREAM.md` | #1668 | Reference (source record) |
+| `containers/windows-victim/records/setup-2026-11-06.txt` | #1666 | Reference (source record) |
+| `docs/components/appliance-boundary-history.md` | #1666 | Reference (source record) |
+| `docs/components/appliance-qualification.md` | #1666 | How-to guide |
+| `docs/components/defensive-posture-operations.md` | #1666 | How-to guide |
+| `docs/components/records/default-defensive-posture-2026-11-06.txt` | #1666 | Reference (source record) |
+| `docs/components/records/reverse-engineering-container-2026-11-06.txt` | #1666 | Reference (source record) |
+| `docs/components/records/victim-containers-2026-11-06.txt` | #1666 | Reference (source record) |
+| `docs/components/records/wazuh-response-2026-11-06.txt` | #1666 | Reference (source record) |
+| `docs/components/records/wazuh-siem-2026-11-06.txt` | #1666 | Reference (source record) |
+| `docs/components/red-side-capture-boundary.md` | #1666 | Explanation |
+| `docs/components/victim-operations.md` | #1666 | How-to guide |
+| `docs/components/wazuh-operations.md` | #1666 | How-to guide |
+| `docs/components/wazuh-response-operations.md` | #1666 | How-to guide |
+| `docs/containers/records/victim-template-guide-2026-11-06.txt` | #1666 | Reference (source record) |
+| `docs/raes/install-cleanup.md` | #1666 | How-to guide |
+| `docs/raes/live-validation.md` | #1666 | How-to guide |
+| `docs/raes/scenario-validation.md` | #1666 | How-to guide |
+| `docs/reference/appliance-seat-operations.md` | #1666 | How-to guide |
+| `docs/reference/evidence-bundle-operations.md` | #1666 | How-to guide |
+| `docs/reference/host-mcp-operations.md` | #1666 | How-to guide |
+| `docs/reference/interface-source-checks.md` | #1666 | Reference |
+| `docs/reference/mcp-operations.md` | #1666 | How-to guide |
+| `docs/reference/migrate-configuration.md` | #1666 | How-to guide |
+| `docs/reference/opencode-operations.md` | #1666 | How-to guide |
+| `docs/reference/project-configuration.md` | #1666 | How-to guide |
+| `docs/reference/records/techvault-scenario-overview-2026-11-06.txt` | #1666 | Reference (source record) |
+| `docs/reference/run-operations.md` | #1666 | How-to guide |
+| `docs/reference/seat-containment.md` | #1666 | Explanation |
+| `docs/reference/web-proxy.md` | #1666 | How-to guide |
+| `docs/sdl/curated-variant-reference.md` | #1666 | Reference |
+| `docs/sdl/paper-walkthrough.md` | #1666 | Tutorial |
+| `docs/reference/family-adapter-operations.md` | #1666 | How-to guide |
+| `docs/reference/participant-request-operations.md` | #1666 | How-to guide |
+| `docs/components/workbench-composition.md` | #1666 | How-to guide |
+| `docs/components/techvault-adapter-boundary.md` | #1666 | Explanation |
+| `docs/components/kali-operations.md` | #1666 | How-to guide |
+| `docs/reference/source-image-maintenance.md` | #1666 | How-to guide |
+| `docs/reference/windows-endpoint.md` | #1666 | Reference |
 
 ## Mixed sections
 
@@ -595,7 +633,7 @@ These exact headings refine the page assignments. Keep the other headings and li
 | `docs/components/appliance-boundary.md` | Historical V1 Materialization | #1666 | Reference |
 | `docs/components/appliance-boundary.md` | Historical V1 Participant Workbench | #1666 | Reference |
 | `docs/components/appliance-boundary.md` | Historical V1 Controlled Egress | #1666 | Reference |
-| `docs/components/appliance-boundary.md` | Qualification And Start Gate | #1666 | How-to guide |
+| `docs/components/appliance-boundary.md` | Qualification And Start Gate | #1666 | Reference |
 | `docs/components/appliance-boundary.md` | Host MCP policy extension | #1666 | Reference |
 | `docs/components/default-defensive-posture.md` | How to read this doc | #1666 | Reference |
 | `docs/components/default-defensive-posture.md` | Suricata IDS | #1666 | Reference |
@@ -608,7 +646,7 @@ These exact headings refine the page assignments. Keep the other headings and li
 | `docs/components/default-defensive-posture.md` | Cross-references | #1666 | Reference |
 | `docs/components/default-defensive-posture.md` | How to extend | #1666 | Reference |
 | `docs/components/default-defensive-posture.md` | Appendix: forward-looking notes (NOT current contract) | #1666 | Reference |
-| `docs/components/default-defensive-posture.md` | Per-run mode-gated posture (SCN-001) | #1666 | How-to guide |
+| `docs/components/default-defensive-posture.md` | Per-run mode-gated posture (SCN-001) | #1666 | Reference |
 | `docs/components/default-defensive-posture.md` | Orchestrator-side continuity carve-out (RTE-001 / #252) | #1666 | Reference |
 | `docs/components/kali-redteam.md` | Realized Node | #1666 | Reference |
 | `docs/components/kali-redteam.md` | Network Access | #1666 | Reference |
@@ -616,31 +654,31 @@ These exact headings refine the page assignments. Keep the other headings and li
 | `docs/components/kali-redteam.md` | Session Capture | #1666 | Reference |
 | `docs/components/kali-redteam.md` | MCP Integration | #1666 | Reference |
 | `docs/components/kali-redteam.md` | Experimental record redaction toggle | #1666 | Reference |
-| `docs/components/kali-redteam.md` | Why no SIEM integration | #1666 | Explanation |
+| `docs/components/kali-redteam.md` | Why no SIEM integration | #1666 | Reference |
 | `docs/components/mcp-integration.md` | Runtime Flow | #1666 | Reference |
 | `docs/components/mcp-integration.md` | Server Families | #1666 | Reference |
-| `docs/components/mcp-integration.md` | Configuration Boundary | #1666 | Explanation |
+| `docs/components/mcp-integration.md` | Configuration Boundary | #1666 | Reference |
 | `docs/components/mcp-integration.md` | Development | #1666 | Reference |
 | `docs/components/node-realization.md` | Base-container-materialized node | #1666 | Reference |
 | `docs/components/node-realization.md` | Image-backed node | #1666 | Reference |
-| `docs/components/node-realization.md` | Compose startup is a separate fact | #1666 | How-to guide |
+| `docs/components/node-realization.md` | Compose startup is a separate fact | #1666 | Reference |
 | `docs/components/node-realization.md` | Historical term | #1666 | Reference |
 | `docs/components/participant-workbench.md` | Assembly and authorization | #1666 | Reference |
 | `docs/components/participant-workbench.md` | MCP authority and capture | #1666 | Reference |
-| `docs/components/reverse-engineering-container.md` | Container Configuration | #1666 | How-to guide |
+| `docs/components/reverse-engineering-container.md` | Container Configuration | #1666 | Reference |
 | `docs/components/reverse-engineering-container.md` | Network Access | #1666 | Reference |
 | `docs/components/reverse-engineering-container.md` | MCP Integration | #1666 | Reference |
 | `docs/components/reverse-engineering-container.md` | SIEM Integration | #1666 | Reference |
-| `docs/components/victim-containers.md` | Container Configuration | #1666 | How-to guide |
+| `docs/components/victim-containers.md` | Container Configuration | #1666 | Reference |
 | `docs/components/victim-containers.md` | Security Monitoring | #1666 | Reference |
 | `docs/components/victim-containers.md` | Wazuh Agent + Falco Integration | #1666 | Reference |
 | `docs/components/victim-containers.md` | Monitored Data | #1666 | Reference |
-| `docs/components/victim-containers.md` | Network Configuration | #1666 | How-to guide |
+| `docs/components/victim-containers.md` | Network Configuration | #1666 | Reference |
 | `docs/components/victim-containers.md` | Access Methods | #1666 | Reference |
 | `docs/components/victim-containers.md` | Service Status | #1666 | Reference |
-| `docs/components/victim-containers.md` | Troubleshooting | #1666 | How-to guide |
-| `docs/components/wazuh-active-response.md` | Overview | #1666 | Explanation |
-| `docs/components/wazuh-active-response.md` | Architecture | #1666 | Explanation |
+| `docs/components/victim-containers.md` | Troubleshooting | #1666 | Reference |
+| `docs/components/wazuh-active-response.md` | Overview | #1666 | Reference |
+| `docs/components/wazuh-active-response.md` | Architecture | #1666 | Reference |
 | `docs/components/wazuh-active-response.md` | Available commands | #1666 | Reference |
 | `docs/components/wazuh-active-response.md` | Wiring a detection rule to AR | #1666 | Reference |
 | `docs/components/wazuh-active-response.md` | Whitelist (kali-IP carve-out) | #1666 | Reference |
@@ -648,7 +686,7 @@ These exact headings refine the page assignments. Keep the other headings and li
 | `docs/components/wazuh-active-response.md` | Timeout strategy | #1666 | Reference |
 | `docs/components/wazuh-active-response.md` | Default posture | #1666 | Reference |
 | `docs/components/wazuh-active-response.md` | `disable-account` manual procedure (AC#4 of #249) | #1666 | Reference |
-| `docs/components/wazuh-active-response.md` | Troubleshooting | #1666 | How-to guide |
+| `docs/components/wazuh-active-response.md` | Troubleshooting | #1666 | Reference |
 | `docs/components/wazuh-active-response.md` | Related | #1666 | Reference |
 | `docs/components/wazuh-siem.md` | Components | #1666 | Reference |
 | `docs/components/wazuh-siem.md` | Data Flow | #1666 | Reference |
@@ -657,7 +695,7 @@ These exact headings refine the page assignments. Keep the other headings and li
 | `docs/components/wazuh-siem.md` | Wazuh Dashboard | #1666 | Reference |
 | `docs/components/wazuh-siem.md` | Falco Integration | #1666 | Reference |
 | `docs/components/wazuh-siem.md` | MCP Integration | #1666 | Reference |
-| `docs/components/wazuh-siem.md` | Troubleshooting | #1666 | How-to guide |
+| `docs/components/wazuh-siem.md` | Troubleshooting | #1666 | Reference |
 | `docs/deployment.md` | Released Local Project | #1665 | How-to guide |
 | `docs/deployment.md` | Source Checkout | #1665 | How-to guide |
 | `docs/deployment.md` | Disposable Appliance | #1665 | How-to guide |
@@ -705,57 +743,57 @@ These exact headings refine the page assignments. Keep the other headings and li
 | `docs/index.md` | Supported Interfaces | #1668 | Reference |
 | `docs/index.md` | Help And Project Policies | #1668 | Reference |
 | `docs/index.md` | Design And Historical Records | #1668 | Explanation |
-| `docs/reference/appliance-seat-launcher.md` | Security boundary | #1666 | Explanation |
-| `docs/reference/appliance-seat-launcher.md` | Prerequisites | #1666 | How-to guide |
-| `docs/reference/appliance-seat-launcher.md` | Choose desktop privileges and start a seat | #1666 | How-to guide |
+| `docs/reference/appliance-seat-launcher.md` | Security boundary | #1666 | Reference |
+| `docs/reference/appliance-seat-launcher.md` | Prerequisites | #1666 | Reference |
+| `docs/reference/appliance-seat-launcher.md` | Choose desktop privileges and start a seat | #1666 | Reference |
 | `docs/reference/appliance-seat-launcher.md` | Participant desktop | #1666 | Reference |
 | `docs/reference/appliance-seat-launcher.md` | Updates are never forced | #1666 | Reference |
 | `docs/reference/appliance-seat-launcher.md` | Reserving operator-selected ports | #1666 | Reference |
-| `docs/reference/appliance-seat-launcher.md` | Reset and recovery | #1666 | How-to guide |
+| `docs/reference/appliance-seat-launcher.md` | Reset and recovery | #1666 | Reference |
 | `docs/reference/appliance-seat-launcher.md` | Directory layout | #1666 | Reference |
-| `docs/reference/appliance-seat-launcher.md` | Building the image | #1666 | How-to guide |
+| `docs/reference/appliance-seat-launcher.md` | Building the image | #1666 | Reference |
 | `docs/reference/appliance-seat-launcher.md` | Diagnostics | #1666 | Reference |
 | `docs/reference/appliance-seat-launcher.md` | Related documents | #1666 | Reference |
 | `docs/reference/cli.md` | Command Groups | #1666 | Reference |
 | `docs/reference/cli.md` | First-Lab Commands | #1666 | Reference |
 | `docs/reference/cli.md` | Exit Status And JSON Output | #1666 | Reference |
 | `docs/reference/cli.md` | Destructive And Emergency Operations | #1666 | Reference |
-| `docs/reference/cli.md` | Configuration And Secrets | #1666 | How-to guide |
-| `docs/reference/evidence-bundle-export.md` | Build a bundle | #1666 | How-to guide |
-| `docs/reference/evidence-bundle-export.md` | Verify a bundle | #1666 | How-to guide |
+| `docs/reference/cli.md` | Configuration And Secrets | #1666 | Reference |
+| `docs/reference/evidence-bundle-export.md` | Build a bundle | #1666 | Reference |
+| `docs/reference/evidence-bundle-export.md` | Verify a bundle | #1666 | Reference |
 | `docs/reference/evidence-bundle-export.md` | Bundle layout | #1666 | Reference |
 | `docs/reference/evidence-bundle-export.md` | The `aptl-evidence-bundle/v1` envelope | #1666 | Reference |
 | `docs/reference/evidence-bundle-export.md` | Determinism | #1666 | Reference |
 | `docs/reference/evidence-bundle-export.md` | Projections | #1666 | Reference |
 | `docs/reference/evidence-bundle-export.md` | Security posture | #1666 | Reference |
-| `docs/reference/evidence-bundle-export.md` | Run store permissions | #1666 | How-to guide |
+| `docs/reference/evidence-bundle-export.md` | Run store permissions | #1666 | Reference |
 | `docs/reference/evidence-bundle-export.md` | Seal state and partial runs | #1666 | Reference |
 | `docs/reference/experiment-runs.md` | Clean State Between Runs | #1666 | Reference |
-| `docs/reference/experiment-runs.md` | Run Directory Structure | #1666 | How-to guide |
-| `docs/reference/experiment-runs.md` | Run Provenance (`provenance/`) | #1666 | How-to guide |
-| `docs/reference/experiment-runs.md` | Sealed Run Records (`manifest.json`, `seal.json`) | #1666 | How-to guide |
+| `docs/reference/experiment-runs.md` | Run Directory Structure | #1666 | Reference |
+| `docs/reference/experiment-runs.md` | Run Provenance (`provenance/`) | #1666 | Reference |
+| `docs/reference/experiment-runs.md` | Sealed Run Records (`manifest.json`, `seal.json`) | #1666 | Reference |
 | `docs/reference/experiment-runs.md` | Range Snapshot | #1666 | Reference |
 | `docs/reference/experiment-runs.md` | CLI Commands | #1666 | Reference |
 | `docs/reference/experiment-runs.md` | Key Source Files | #1666 | Reference |
 | `docs/reference/family-adapters.md` | Discovery and versions | #1666 | Reference |
 | `docs/reference/family-adapters.md` | Sealed trial handoff | #1666 | Reference |
 | `docs/reference/family-adapters.md` | Supported imports and callbacks | #1666 | Reference |
-| `docs/reference/family-adapters.md` | Restart and auxiliary interfaces | #1666 | How-to guide |
+| `docs/reference/family-adapters.md` | Restart and auxiliary interfaces | #1666 | Reference |
 | `docs/reference/family-adapters.md` | Supported release tuple | #1666 | Reference |
 | `docs/reference/family-adapters.md` | Compatibility evidence | #1666 | Reference |
 | `docs/reference/family-adapters.md` | Optional host requirements and supporting imports | #1666 | Reference |
 | `docs/reference/host-mcp-access.md` | Guest enrollment | #1666 | Reference |
-| `docs/reference/host-mcp-access.md` | Host configuration | #1666 | How-to guide |
+| `docs/reference/host-mcp-access.md` | Host configuration | #1666 | Reference |
 | `docs/reference/host-mcp-access.md` | Discovery, authority and lifecycle | #1666 | Reference |
 | `docs/reference/host-mcp-access.md` | Software integration checks | #1666 | Reference |
 | `docs/reference/host-mcp-access.md` | Appliance-seat integration | #1666 | Reference |
 | `docs/reference/mcp.md` | Server Availability | #1666 | Reference |
 | `docs/reference/mcp.md` | Tool Names And Behavior | #1666 | Reference |
-| `docs/reference/mcp.md` | Setup And Verification | #1666 | How-to guide |
-| `docs/reference/mcp.md` | Security Boundary | #1666 | Explanation |
+| `docs/reference/mcp.md` | Setup And Verification | #1666 | Reference |
+| `docs/reference/mcp.md` | Security Boundary | #1666 | Reference |
 | `docs/reference/mcp.md` | Scenario service selection | #1666 | Reference |
-| `docs/reference/opencode-participants.md` | Install | #1666 | How-to guide |
-| `docs/reference/opencode-participants.md` | Configure and invoke | #1666 | How-to guide |
+| `docs/reference/opencode-participants.md` | Install | #1666 | Reference |
+| `docs/reference/opencode-participants.md` | Configure and invoke | #1666 | Reference |
 | `docs/reference/opencode-participants.md` | Evidence and limits | #1666 | Reference |
 | `docs/reference/participant-profile.md` | Canonical full TechVault | #1666 | Reference |
 | `docs/reference/participant-profile.md` | Guided Purple fixture | #1666 | Reference |
@@ -768,7 +806,7 @@ These exact headings refine the page assignments. Keep the other headings and li
 | `docs/reference/participant-profile.md` | Full research stack | #1666 | Reference |
 | `docs/reference/participant-profile.md` | Research fixture ownership | #1666 | Reference |
 | `docs/reference/participant-request-manifests.md` | Public interfaces | #1666 | Reference |
-| `docs/reference/participant-request-manifests.md` | Configuration targets | #1666 | How-to guide |
+| `docs/reference/participant-request-manifests.md` | Configuration targets | #1666 | Reference |
 | `docs/reference/participant-request-manifests.md` | Request support and limitations | #1666 | Reference |
 | `docs/reference/participant-request-manifests.md` | Content verification | #1666 | Reference |
 | `docs/reference/participant-request-manifests.md` | Compatibility evidence | #1666 | Reference |
@@ -857,7 +895,7 @@ These exact headings refine the page assignments. Keep the other headings and li
 | `docs/reference/techvault-scenario-overview.md` | Host-published ports | #1666 | Reference |
 | `docs/reference/techvault-scenario-overview.md` | Planted vulnerabilities | #1666 | Reference |
 | `docs/reference/techvault-scenario-overview.md` | Planted secrets | #1666 | Reference |
-| `docs/reference/techvault-scenario-overview.md` | Curated startup variants | #1666 | How-to guide |
+| `docs/reference/techvault-scenario-overview.md` | Curated startup variants | #1666 | Reference |
 | `docs/reference/web.md` | Supported Delivery | #1666 | Reference |
 | `docs/reference/web.md` | Serve Defaults | #1666 | Reference |
 | `docs/reference/web.md` | Operator Surfaces | #1666 | Reference |

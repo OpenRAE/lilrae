@@ -1,5 +1,10 @@
 # TechVault curated live validation gate
 
+> Source record: The last source change was 2026-09-21. Its status review date is 2026-11-06.
+> The original text below keeps historical proposals, decisions, and evidence.
+> It does not establish current runtime behavior or authorize external publication.
+> See the [current validation reference](techvault-static-validation-gate.md) and [live validation reference](techvault-live-validation-gate.md).
+
 > Historical evidence notice: these 2026-06-24/25 records predate issue #992.
 > OTel and Kali capture are now backend apparatus, the observability-only SDL
 > variant has been retired, and current TechVault native evidence does not

@@ -137,16 +137,21 @@ def _native_bindings(
 
 def _persist_capture_plan(
     plan: CapturePlan, run_store: LocalRunStore, run_id: str
-) -> None:
-    """Create the run and seal the admitted capture plan exactly once."""
+) -> bool:
+    """Create the run and seal the admitted capture plan exactly once.
 
+    Return whether this call sealed it, which marks the trial's first capture.
+    """
+
+    relative_path = f"evidence/capture-plans/{plan.plan_id}.json"
     run_store.create_run(run_id)
-    create_run_json_once(
-        run_store,
-        run_id,
-        f"evidence/capture-plans/{plan.plan_id}.json",
-        json.loads(plan.canonical_bytes),
+    sealed_before = (run_store.get_run_path(run_id) / relative_path).exists(
+        follow_symlinks=False
     )
+    create_run_json_once(
+        run_store, run_id, relative_path, json.loads(plan.canonical_bytes)
+    )
+    return not sealed_before
 
 
 def acquire_native_evidence(request: NativeEvidenceRequest) -> AcquisitionResult:
@@ -161,13 +166,17 @@ def acquire_native_evidence(request: NativeEvidenceRequest) -> AcquisitionResult
         "provisioning",
     )
     bindings = _native_bindings(request.plan, request.capture_selection)
-    _persist_capture_plan(request.plan, request.run_store, request.run_id)
+    first_capture = _persist_capture_plan(
+        request.plan, request.run_store, request.run_id
+    )
     runtime_adapter = request.capture_selection.contribution.runtime_adapter
     source_factory = getattr(runtime_adapter, "native_sources", None)
     if request.capture_selection.context.trial is not None:
         from aptl.backends.scenario_capture import family_capture_sources
 
-        sources = family_capture_sources(request)
+        sources = family_capture_sources(
+            request, establish_enrollment=first_capture
+        )
     else:
         sources = source_factory(request) if callable(source_factory) else {}
     collectors = {

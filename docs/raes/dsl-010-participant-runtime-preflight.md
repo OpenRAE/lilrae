@@ -1,5 +1,10 @@
 # DSL-010 Participant Runtime Preflight
 
+> Source record: The last source change was 2026-10-31. Its status review date is 2026-11-06.
+> The original text below keeps historical proposals, decisions, and evidence.
+> It does not establish current runtime behavior or authorize external publication.
+> See the [current validation reference](techvault-static-validation-gate.md) and [live validation reference](techvault-live-validation-gate.md).
+
 !!! warning "Historical backend-profile milestone"
     This is a dated preflight record, kept as written. Its description of the
     promotion from `orchestration-evaluation` records the profile transition at

@@ -5,3 +5,6 @@ longer a supported authoring or runtime surface after the ADR-035 RAES cutover.
 
 Use RAES SDL and the TechVault RAES validation gate documentation for current
 scenario sections, imports, composition, and runtime handoff behavior.
+
+Status reviewed: 2026-11-06.
+Use the [current authoring guide](index.md) for supported scenario work.

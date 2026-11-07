@@ -73,7 +73,33 @@ nav:
   - Tutorials:
     - Run Your First Lab: getting-started/quick-start.md
     - Workshop Walkthrough: workshop/walkthrough.md
+    - Trace a participant action: sdl/paper-walkthrough.md
   - How-to guides:
+    - Author a scenario: sdl/index.md
+    - Author a research fixture: sdl/techvault-curated-variants.md
+    - Add a victim: containers/victim-template-guide.md
+    - Inspect a victim: components/victim-operations.md
+    - Operate Kali: components/kali-operations.md
+    - Maintain source-image entries: reference/source-image-maintenance.md
+    - Inspect Wazuh: components/wazuh-operations.md
+    - Configure Wazuh response: components/wazuh-response-operations.md
+    - Change defensive posture: components/defensive-posture-operations.md
+    - Validate a scenario: raes/scenario-validation.md
+    - Validate a running scenario: raes/live-validation.md
+    - Install cleanup: raes/install-cleanup.md
+    - Operate an appliance seat: reference/appliance-seat-operations.md
+    - Qualify an appliance boundary: components/appliance-qualification.md
+    - Validate project configuration: reference/project-configuration.md
+    - Migrate project configuration: reference/migrate-configuration.md
+    - Prepare run evidence: reference/run-operations.md
+    - Export and verify evidence: reference/evidence-bundle-operations.md
+    - Connect MCP servers: reference/mcp-operations.md
+    - Configure host MCP access: reference/host-mcp-operations.md
+    - Configure managed OpenCode: reference/opencode-operations.md
+    - Compose a family adapter: reference/family-adapter-operations.md
+    - Compose participant requests: reference/participant-request-operations.md
+    - Compose a participant workbench: components/workbench-composition.md
+    - Run the web control plane: reference/web-proxy.md
     - Write documentation: contributing-documentation.md
     - Overview: getting-started/index.md
     - Prerequisites: getting-started/prerequisites.md
@@ -103,14 +129,55 @@ nav:
       - Participant record: workshop/arsenal-2026/records/handout.md
       - QA record: workshop/arsenal-2026/records/qa.md
     - CLI: reference/cli.md
+    - Configuration migration: reference/configuration-migration.md
     - MCP: reference/mcp.md
     - Web: reference/web.md
     - Managed OpenCode: reference/opencode-participants.md
     - Lab start trials: reference/lab-start-trials.md
+    - Optional Windows endpoint: reference/windows-endpoint.md
     - Participant request manifests: reference/participant-request-manifests.md
+    - Components:
+      - Wazuh SIEM: components/wazuh-siem.md
+      - Wazuh Active Response: components/wazuh-active-response.md
+      - Default Defensive Posture: components/default-defensive-posture.md
+      - Victim Containers: components/victim-containers.md
+      - Kali Red Team: components/kali-redteam.md
+      - Reverse Engineering Container: components/reverse-engineering-container.md
+      - MCP Integration: components/mcp-integration.md
+      - MCP Smoke-Test Protocol: components/mcp-smoke-test-protocol.md
+      - Participant Workbench: components/participant-workbench.md
+      - Appliance Network Boundary: components/appliance-boundary.md
+      - Node Realization Routes: components/node-realization.md
+    - Scenario validation: raes/techvault-static-validation-gate.md
+    - Live scenario validation: raes/techvault-live-validation-gate.md
+    - Curated fixture matrix: sdl/curated-variant-reference.md
+    - Declared cleanup: raes/declared-cleanup.md
+    - Paper realization: raes/paper-scenario-realization.md
+    - Family adapters: reference/family-adapters.md
+    - Source image catalog: source-image-catalog.md
+    - Documentation source checks: reference/interface-source-checks.md
+    - Historical RAES records:
+      - "APP-1 Appliance Boundary Materialization Preflight": raes/app-1-appliance-boundary-materialization-preflight.md
+      - "DSL-003 Runtime Variable Backend Consumption Preflight": raes/dsl-003-runtime-substitution-preflight.md
+      - "DSL-005 Assertion Evaluation Preflight": raes/dsl-005-assertion-evaluation-preflight.md
+      - "DSL-008 RAES Topology Realization Preflight": raes/dsl-008-realization-preflight.md
+      - "DSL-010 Participant Runtime Preflight": raes/dsl-010-participant-runtime-preflight.md
+      - "Issue 601: TechVault participant demonstration": raes/issue-601-participant-demonstration.md
+      - "Libvirt Service Reachability Preflight": raes/issue-759-libvirt-service-reachability-preflight.md
+      - "M1 RAES Conformance Truth-Up Preflight": raes/m1-raes-conformance-truth-up-preflight.md
+      - "RAES Orchestration-Capable Profile Preflight": raes/orchestration-capable-profile-preflight.md
+      - "TechVault curated live validation gate": raes/techvault-curated-live-validation-gate.md
+      - "TechVault curated live validation preflight": raes/techvault-curated-live-validation-preflight.md
+      - "TechVault RAES Live Validation Preflight": raes/techvault-live-validation-preflight.md
+      - "TechVault Static Validation Preflight": raes/techvault-static-validation-preflight.md
+    - Historical V1 boundary: components/appliance-boundary-history.md
   - Development:
     - Coding Standards: CODING_STANDARDS.md
   - Explanation:
+    - Why seats use a VM boundary: reference/seat-containment.md
+    - Why red capture stays outside SIEM: components/red-side-capture-boundary.md
+    - Runtime handoff: sdl/runtime-architecture.md
+    - Why TechVault has an adapter: components/techvault-adapter-boundary.md
     - Execution boundaries: getting-started/execution-boundaries.md
     - Scenario environment and Docker authority: getting-started/environment-bindings.md
     - Overview: architecture/index.md
@@ -122,7 +189,6 @@ nav:
     - "Issue #1372 Capture Spec Version Design": architecture/issue-1372-capture-spec-version-design.md
     - "Issue #1121 Pack Boundary Preflight": architecture/issue-1121-pack-boundary-preflight.md
     - Pack Boundary: architecture/pack-boundary-design.md
-    - Configuration Migration: reference/configuration-migration.md
     - "Issue #1130 Runtime Realization Attestation Preflight": architecture/issue-1130-runtime-realization-attestation-preflight.md
     - "Owned Descendant Reporting Design": architecture/issue-1130-owned-descendant-reporting-design.md
     - "Issue #1413 Configured Pack Source Preflight": architecture/issue-1413-configured-pack-source-preflight.md
@@ -176,30 +242,6 @@ nav:
       - Delivery Plan: reviews/962-lilrae-readiness/delivery-plan.md
       - Upstream update: reviews/962-lilrae-readiness/upstream-update.md
       - Evidence: reviews/962-lilrae-readiness/evidence/README.md
-  - Components:
-    - Wazuh SIEM: components/wazuh-siem.md
-    - Wazuh Active Response: components/wazuh-active-response.md
-    - Default Defensive Posture: components/default-defensive-posture.md
-    - Victim Containers: components/victim-containers.md
-    - Victim Template Guide: containers/victim-template-guide.md
-    - Kali Red Team: components/kali-redteam.md
-    - Reverse Engineering Container: components/reverse-engineering-container.md
-    - MCP Integration: components/mcp-integration.md
-    - MCP Smoke-Test Protocol: components/mcp-smoke-test-protocol.md
-    - Participant Workbench: components/participant-workbench.md
-    - Appliance Network Boundary: components/appliance-boundary.md
-    - Node Realization Routes: components/node-realization.md
-  - Scenarios:
-    - Authoring Boundary: sdl/index.md
-    - Curated RAES Variants: sdl/techvault-curated-variants.md
-  - RAES:
-    - APP-1 Appliance Boundary Materialization Preflight: raes/app-1-appliance-boundary-materialization-preflight.md
-    - TechVault Static Validation Preflight: raes/techvault-static-validation-preflight.md
-    - TechVault Static Validation Gate: raes/techvault-static-validation-gate.md
-    - TechVault Live Validation Preflight: raes/techvault-live-validation-preflight.md
-    - TechVault Live Validation Gate: raes/techvault-live-validation-gate.md
-    - TechVault Curated Live Validation Preflight: raes/techvault-curated-live-validation-preflight.md
-    - TechVault Curated Live Validation Gate: raes/techvault-curated-live-validation-gate.md
   - Testing:
     - Participant Request Qualification: testing/participant-request-1419-qualification.md
     - Platform Pull-Request Gates: testing/platform-pr-gates.md
