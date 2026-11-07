@@ -9,6 +9,27 @@ This file is maintained by [release-please](https://github.com/googleapis/releas
 from Conventional Commit messages; release sections are generated on release,
 not hand-edited in PRs.
 
+## [10.0.0](https://github.com/OpenRAE/lilrae/compare/v9.3.0...v10.0.0) (2026-11-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* CollectorRegistration no longer has the supports_chain_of_custody field. Remove that argument from pack adapter collector registrations.
+
+### Features
+
+* allow startup plans without seed-script metadata when seeding is not selected ([3f5dd48](https://github.com/OpenRAE/lilrae/commit/3f5dd48e99278989ea5b774c6674e1d302c760a6))
+* allow startup plans without seed-script metadata when seeding is not selected ([84178c8](https://github.com/OpenRAE/lilrae/commit/84178c8594bf8912c049322029669ace5f58182e))
+* run one trial from a trial SDL in lab start ([11cb6e9](https://github.com/OpenRAE/lilrae/commit/11cb6e900ed19b0ffc5aec46e1eb5c834649e563))
+
+
+### Bug Fixes
+
+* keep lab stop off trial state when no trial is recorded ([7994987](https://github.com/OpenRAE/lilrae/commit/79949877308c43a8b86c627c0dae85ed34024432))
+* resolve SonarCloud findings in the trial path ([1f4507e](https://github.com/OpenRAE/lilrae/commit/1f4507e94a51d8cc36eb66f02300143bba96bd21))
+* return the Ground Control configuration to schema version 1 ([60b939f](https://github.com/OpenRAE/lilrae/commit/60b939f6633340f9db3bf7d011fdb0beff106280))
+* return the Ground Control configuration to schema version 1 ([c969ddb](https://github.com/OpenRAE/lilrae/commit/c969ddbad03daa668d579df58b0cd0ee7efb2a86)), closes [#1694](https://github.com/OpenRAE/lilrae/issues/1694)
+
 ## [9.3.0](https://github.com/OpenRAE/lilrae/compare/v9.2.0...v9.3.0) (2026-11-06)
 
 
