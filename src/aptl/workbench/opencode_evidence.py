@@ -148,10 +148,16 @@ def invocation_servers(
     tools: ToolSession | None,
     configured_servers: dict[str, object],
     state: OpenCodeRunState,
+    *,
+    allowlisted: bool = False,
 ) -> dict[str, object]:
-    """Open one scoped tool transport and retain its cleanup outcome."""
+    """Open one scoped tool transport and retain its cleanup outcome.
+
+    Without a tool session, an allowlisted executor runs its verified servers
+    directly, and an ordinary executor runs none.
+    """
     if tools is None:
-        return {}
+        return _without_provider_credentials(deepcopy(configured_servers)) if allowlisted else {}
     state.tool_transport_cleanup = "uncertain"
     transport = tools.transport()
     carrier = transport.__enter__()
@@ -173,7 +179,12 @@ def invocation_servers(
     servers = deepcopy(configured_servers)
     for name, server in servers.items():
         server["environment"].update(carrier.environment(name))
-        # Native MCP children must not inherit either provider credential alias.
+    return _without_provider_credentials(servers)
+
+
+def _without_provider_credentials(servers: dict[str, object]) -> dict[str, object]:
+    """Keep every provider credential and credential path out of MCP children."""
+    for server in servers.values():
         server["environment"].update(
             dict.fromkeys(PROVIDER_CREDENTIAL_NAMES | {OBSERVER_CREDENTIAL}, "")
         )

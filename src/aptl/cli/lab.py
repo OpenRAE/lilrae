@@ -82,6 +82,9 @@ _DESTRUCTIVE_DATA_WARNING = (
 )
 
 
+_START_COMMAND = "lab start"
+
+
 def _emit_lab_start_progress(message: str, *, err: bool = False) -> None:
     """Print participant-facing startup progress."""
     typer.echo(f"[lab start] {message}", err=err)
@@ -410,7 +413,7 @@ def _report_start_result(
     """Print the start result as text or JSON and exit with its status."""
     if output_json:
         fields = _start_result_fields(project_dir, result)
-        emit_json_result("lab start", result.success, fields)
+        emit_json_result(_START_COMMAND, result.success, fields)
     else:
         render_start_result(result, project_dir)
         if result.success:
@@ -452,7 +455,7 @@ def _report_trial_result(
     succeeded = record.terminal_cause != "failed"
     if output_json:
         fields = _start_result_fields(project_dir, result)
-        emit_json_result("lab start", succeeded, {**fields, "trial": trial_summary(record)})
+        emit_json_result(_START_COMMAND, succeeded, {**fields, "trial": trial_summary(record)})
     else:
         typer.echo(
             f"Trial {record.run_id} attempt {record.attempt_id} sealed: "
@@ -468,7 +471,7 @@ def _report_trial_failure(
     """Report a trial that did not reach a seal and exit with status 1."""
     if output_json:
         fields = _start_result_fields(project_dir, result)
-        emit_json_result("lab start", False, {**fields, "trial": {"error": message}})
+        emit_json_result(_START_COMMAND, False, {**fields, "trial": {"error": message}})
     else:
         typer.echo(f"error: trial did not run to a seal: {message}", err=True)
     raise typer.Exit(code=EXIT_FAILED)

@@ -76,7 +76,8 @@ class OpenRouterRoute:
     #: Child environment names this route may receive.
     environment_names: ClassVar[frozenset[str]] = frozenset({"OPENROUTER_API_KEY"})
 
-    def admits(self, model: str) -> bool:
+    @staticmethod
+    def admits(model: str) -> bool:
         """Accept only an OpenRouter model identity."""
         return model.startswith("openrouter/")
 
@@ -120,7 +121,8 @@ class VertexRoute:
         ):
             raise ValueError("Vertex AI route is not admitted")
 
-    def admits(self, model: str) -> bool:
+    @staticmethod
+    def admits(model: str) -> bool:
         """Accept only a Vertex AI model identity."""
         return model.startswith("google-vertex/")
 

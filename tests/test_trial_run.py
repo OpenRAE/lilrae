@@ -15,7 +15,7 @@ from aptl.core.trial_attempt import TrialAttempt, parse_trial_attempt
 from aptl.core.trial_control import TrialControl
 from aptl.core.trial_record import TRIAL_RECORD_RELPATH, seal_trial_record
 from aptl.core.trial_sdl import DeclaredParticipant
-from aptl.workbench.trial_run import run_declared_trial
+from aptl.workbench.trial_run import DeclaredTrial, run_declared_trial
 
 _PARTICIPANTS = (
     DeclaredParticipant("red-operator", "red", "openrouter/vendor-a/model-a", ("red-task",)),
@@ -62,30 +62,22 @@ def _store(tmp_path, run_id):
 
 def _run(tmp_path, attempt, invocations, *, stop_requested=lambda: False, evidence=None):
     store = _store(tmp_path, attempt.run_id)
-    try:
-        record = run_declared_trial(
-            attempt=attempt,
-            scenario_sha256="sha256:" + "1" * 64,
-            participants=_PARTICIPANTS,
-            invocations=invocations,
-            evidence=evidence if evidence is not None else {},
-            stop_requested=stop_requested,
-            store=store,
-            clock=lambda: datetime.now(UTC),
-            poll_seconds=0.05,
-        )
-        seal_trial_record(store, record)
-    except (RuntimeError, ValueError) as exc:
-        pytest.fail(f"the trial did not run to a seal: {exc}")
+    record = run_declared_trial(
+        DeclaredTrial(attempt, "sha256:" + "1" * 64, _PARTICIPANTS),
+        invocations=invocations,
+        evidence=evidence if evidence is not None else {},
+        stop_requested=stop_requested,
+        store=store,
+        clock=lambda: datetime.now(UTC),
+        poll_seconds=0.05,
+    )
+    seal_trial_record(store, record)
     return store, record
 
 
 def test_sealed_trial_run_uses_caller_run_and_attempt_ids(tmp_path, monkeypatch):
     deadline = datetime.now(UTC).replace(microsecond=0) + timedelta(minutes=5)
-    try:
-        attempt = parse_trial_attempt("R1", "A1", deadline.strftime("%Y-%m-%dT%H:%M:%SZ"))
-    except ValueError as exc:
-        pytest.fail(f"valid trial options were refused: {exc}")
+    attempt = parse_trial_attempt("R1", "A1", deadline.strftime("%Y-%m-%dT%H:%M:%SZ"))
     assert attempt == TrialAttempt("R1", "A1", deadline)
 
     store, record = _run(
@@ -95,10 +87,12 @@ def test_sealed_trial_run_uses_caller_run_and_attempt_ids(tmp_path, monkeypatch)
     )
 
     sealed = verify_sealed_archive(store.base_dir, "R1")
-    assert sealed is not None and sealed.run_id == "R1"
+    assert sealed is not None
+    assert sealed.run_id == "R1"
     assert TRIAL_RECORD_RELPATH in sealed.inventory_paths
     written = json.loads((store.get_run_path("R1") / TRIAL_RECORD_RELPATH).read_text())
-    assert written["run_id"] == "R1" and written["attempt_id"] == "A1"
+    assert written["run_id"] == "R1"
+    assert written["attempt_id"] == "A1"
     assert record.terminal_cause == "completed"
     assert {item.status for item in record.participants} == {"completed"}
 
@@ -131,11 +125,8 @@ def _check_stop(tmp_path, cause):
     invocations = {item.address: PartialInvocation(item.address, evidence) for item in _PARTICIPANTS}
     control = TrialControl(tmp_path)
     stop_results = []
-    try:
-        control.claim(attempt)
-        control.begin(attempt)
-    except RuntimeError as exc:
-        pytest.fail(f"the trial fence was not claimed: {exc}")
+    control.claim(attempt)
+    control.begin(attempt)
     if cause == "stopped":
 
         def stop_through_lab():

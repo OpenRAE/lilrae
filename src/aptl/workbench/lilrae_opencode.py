@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-from copy import deepcopy
 import json
 from contextlib import ExitStack
 from collections.abc import Callable, Mapping
@@ -41,7 +40,6 @@ from aptl.workbench.opencode_configuration import (
     render_opencode_config,
     validate_invocation_inputs,
     validate_provider_environment,
-    PROVIDER_CREDENTIAL_NAMES,
 )
 from aptl.workbench.opencode_events import (
     _supervised_result_text,
@@ -228,11 +226,7 @@ class LilraeOpenCodeExecutor:
 
     def _install_profile(self, tools: OpenCodeToolProfile | None) -> None:
         """Require the private server configuration to match the selected profile."""
-        self._profile = (
-            profile_for(tools.profile, server_ids=tools.server_ids)
-            if tools is not None
-            else None
-        )
+        self._profile = None
         self._profile_config = tools.config if tools is not None else None
         self._mcp_credentials = dict(tools.credentials) if tools is not None else {}
         self._inventory_probe = (
@@ -241,6 +235,7 @@ class LilraeOpenCodeExecutor:
         self._servers = {}
         self._profile_digest = ""
         if tools is not None:
+            self._profile = profile_for(tools.profile, server_ids=tools.server_ids)
             self._servers, self._profile_digest = _load_server_config(tools.config)
             if set(self._servers) != set(self._profile.server_ids):
                 raise ValueError(
@@ -310,8 +305,6 @@ class LilraeOpenCodeExecutor:
         servers = {}
         for name, server in self._servers.items():
             environment = _server_environment(server, self._mcp_credentials)
-            # MCP children never receive a provider credential or its file path.
-            environment.update(dict.fromkeys(PROVIDER_CREDENTIAL_NAMES, ""))
             inventory[name] = self._inventory_probe(
                 name, str(server["command"]), list(server["args"]), environment
             )
@@ -475,10 +468,12 @@ class LilraeOpenCodeExecutor:
         try:
             self._check_launch(cancellation)
             with ExitStack() as stack:
-                servers = (
-                    deepcopy(self._tool_servers)
-                    if tools is None and self._tool_governance == "allowlist"
-                    else invocation_servers(stack, tools, self._tool_servers, state)
+                servers = invocation_servers(
+                    stack,
+                    tools,
+                    self._tool_servers,
+                    state,
+                    allowlisted=self._tool_governance == "allowlist",
                 )
                 directory = stack.enter_context(
                     TemporaryDirectory(

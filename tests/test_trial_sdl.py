@@ -108,20 +108,17 @@ def _check_variation(tmp_path, variables):
     assert set(roles) == {"red", "blue"}, variables
 
     runner = LaunchRecorder()
-    try:
-        with trial_executors(
-            scenario,
-            participants,
-            run_id="run-1",
-            deadline=datetime.now(UTC) + timedelta(minutes=5),
-            settings=_settings(tmp_path, scenario, runner),
-            read_asset=read_fixture_asset,
-            evidence_sink=lambda address, item: None,
-        ) as executors:
-            for role in ("red", "blue"):
-                executors[roles[role].address]("action-1", Event())
-    except (RuntimeError, ValueError) as exc:
-        pytest.fail(f"participants did not launch: {exc}")
+    with trial_executors(
+        scenario,
+        participants,
+        run_id="run-1",
+        deadline=datetime.now(UTC) + timedelta(minutes=5),
+        settings=_settings(tmp_path, scenario, runner),
+        read_asset=read_fixture_asset,
+        evidence_sink=lambda address, item: None,
+    ) as executors:
+        for role in ("red", "blue"):
+            executors[roles[role].address]("action-1", Event())
 
     red, blue = runner.calls
     assert expected["red_model"] in red["argv"]
@@ -138,23 +135,23 @@ def _check_variation(tmp_path, variables):
         return read_fixture_asset(asset) + b"x"
 
     (tmp_path / "tampered").mkdir(mode=0o700)
-    tampered_settings = _settings(tmp_path / "tampered", scenario, LaunchRecorder())
+    refused = trial_executors(
+        scenario,
+        participants,
+        run_id="run-2",
+        deadline=datetime.now(UTC) + timedelta(minutes=5),
+        settings=_settings(tmp_path / "tampered", scenario, LaunchRecorder()),
+        read_asset=tampered,
+        evidence_sink=lambda address, item: None,
+    )
     with pytest.raises(ValueError):
-        with trial_executors(
-            scenario,
-            participants,
-            run_id="run-2",
-            deadline=datetime.now(UTC) + timedelta(minutes=5),
-            settings=tampered_settings,
-            read_asset=tampered,
-            evidence_sink=lambda address, item: None,
-        ):
-            pass
+        refused.__enter__()
 
     # Two model components on one participant's node is ambiguous.
     ambiguous = trial_document(**variables)
     ambiguous["nodes"]["kali"]["runtime"]["software_components"].append(
         {"component_id": "second", "name": "second", "model": "openrouter/vendor-x/model-x"}
     )
+    ambiguous_scenario = parse_trial(ambiguous)
     with pytest.raises(TrialDeclarationError):
-        declared_participants(parse_trial(ambiguous))
+        declared_participants(ambiguous_scenario)

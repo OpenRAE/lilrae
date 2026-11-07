@@ -26,7 +26,7 @@ from aptl.core.trial_control import TrialControl
 from aptl.core.trial_record import TrialRecord, seal_trial_record
 from aptl.core.trial_sdl import TrialDeclarationError, declared_participants
 from aptl.workbench.trial_launch import TrialLaunchSettings, invocation_fields, trial_executors
-from aptl.workbench.trial_run import run_declared_trial
+from aptl.workbench.trial_run import DeclaredTrial, run_declared_trial
 
 __all__ = ["refuse_existing_trial_run", "run_lab_trial", "trial_summary"]
 
@@ -86,7 +86,15 @@ def trial_summary(record: TrialRecord) -> dict[str, object]:
     }
 
 
-def _run_and_drain(root, config, config_path, attempt, scenario_path, scenario_sha256, progress) -> TrialRecord:
+def _run_and_drain(
+    root: Path,
+    config: AptlConfig,
+    config_path: Path,
+    attempt: TrialAttempt,
+    scenario_path: Path | None,
+    scenario_sha256: str,
+    progress: Callable[[str], None],
+) -> TrialRecord:
     """Run every participant, then remove its credentials before returning."""
     bundle = resolve_scenario_bundle(root, scenario_path, config)
     try:
@@ -100,9 +108,11 @@ def _run_and_drain(root, config, config_path, attempt, scenario_path, scenario_s
         evidence: dict[str, dict[str, object]] = {}
 
         def sink(address: str, item: OpenCodeInvocationEvidence) -> None:
+            """Keep the latest allowlisted invocation facts of one participant."""
             evidence[address] = invocation_fields(item)
 
         def read_asset(asset: ParticipantControlContextAssetModel) -> bytes:
+            """Read one prompt asset from the scenario pack by its artifact ID."""
             return resolve_pack_artifact(str(bundle.root), asset.content.artifact_id).data
 
         progress(f"Starting {len(participants)} trial participants.")
@@ -117,9 +127,7 @@ def _run_and_drain(root, config, config_path, attempt, scenario_path, scenario_s
         ) as executors:
             control = TrialControl(root)
             record = run_declared_trial(
-                attempt=attempt,
-                scenario_sha256=scenario_sha256,
-                participants=participants,
+                DeclaredTrial(attempt, scenario_sha256, participants),
                 invocations=executors,
                 evidence=evidence,
                 stop_requested=lambda: terminated.is_set() or control.stop_requested(),
@@ -145,11 +153,13 @@ def _termination_stops() -> Iterator[object]:
 
 
 def _run_store_base(config_root: Path, config: AptlConfig) -> Path:
+    """Resolve the configured run store against the configuration directory."""
     base = Path(config.run_storage.local_path)
     return base if base.is_absolute() else config_root / base
 
 
 def _launch_settings(root: Path, config: AptlConfig, attempt: TrialAttempt) -> TrialLaunchSettings:
+    """Collect the operator settings that every participant launch uses."""
     executable = config.experiment.opencode_executable
     if executable is None:
         raise ValueError("aptl.json experiment.opencode_executable must name the OpenCode build")

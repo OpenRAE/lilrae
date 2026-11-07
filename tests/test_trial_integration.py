@@ -24,7 +24,7 @@ from aptl.core.trial_control import TrialControl
 from aptl.core.trial_record import seal_trial_record
 from aptl.core.trial_sdl import declared_participants
 from aptl.workbench.trial_launch import TrialLaunchSettings, invocation_fields, trial_executors
-from aptl.workbench.trial_run import run_declared_trial
+from aptl.workbench.trial_run import DeclaredTrial, run_declared_trial
 from tests.test_opencode_transport import provider
 from tests.trial_sdl_fixture import ASSET_BYTES, parse_trial, read_fixture_asset, trial_document
 
@@ -83,9 +83,7 @@ def _run_trial(tmp_path, scenario, settings, attempt, *, control):
             ),
         ) as executors:
             record = run_declared_trial(
-                attempt=attempt,
-                scenario_sha256="sha256:" + "2" * 64,
-                participants=participants,
+                DeclaredTrial(attempt, "sha256:" + "2" * 64, participants),
                 invocations=executors,
                 evidence=evidence,
                 stop_requested=control.stop_requested,
@@ -245,6 +243,7 @@ def test_real_vertex_participant_key_stays_out_of_the_run(tmp_path, opencode_bin
     for path in store.get_run_path("run-vertex").rglob("*"):
         if path.is_file():
             data = path.read_bytes()
-            assert secret not in data and encoded not in data, path
+            assert secret not in data, path
+            assert encoded not in data, path
     assert hashlib.sha256(key.encode()).hexdigest() not in json.dumps(record.model_dump())
     assert verify_sealed_archive(store.base_dir, "run-vertex") is not None

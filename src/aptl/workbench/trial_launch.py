@@ -8,7 +8,7 @@ import re
 import shutil
 import tempfile
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import ExitStack, contextmanager
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime
 from pathlib import Path
@@ -53,6 +53,7 @@ AssetReader = Callable[[ParticipantControlContextAssetModel], bytes]
 _OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1"
 _MAX_INVOCATION_SECONDS = 3600.0
 _PROJECT = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
+_NOT_SERVICE_ACCOUNT_KEY = "the Vertex AI credential is not a service account key"
 
 
 @dataclass(frozen=True)
@@ -141,14 +142,14 @@ def trial_executors(
                 ),
                 model=participant.model,
                 prompt=prompt,
-                timeout_seconds=_timeout(deadline, settings),
+                timeout_seconds=_timeout(deadline),
             )
             stack.callback(executor.close)
             executors[participant.address] = executor
         yield MappingProxyType(executors)
 
 
-def _timeout(deadline: datetime, settings: TrialLaunchSettings) -> float:
+def _timeout(deadline: datetime) -> float:
     """Bound one invocation; the executor also stops at the trial deadline."""
     remaining = (deadline - datetime.now(deadline.tzinfo)).total_seconds()
     return max(1.0, min(_MAX_INVOCATION_SECONDS, remaining))
@@ -157,13 +158,18 @@ def _timeout(deadline: datetime, settings: TrialLaunchSettings) -> float:
 def _address_sink(
     sink: Callable[[str, OpenCodeInvocationEvidence], None], address: str
 ) -> Callable[[OpenCodeInvocationEvidence], None]:
+    """Bind one participant address to the shared evidence sink."""
     return lambda evidence: sink(address, evidence)
 
 
 @contextmanager
 def _openrouter(
-    model: str, settings: TrialLaunchSettings, resolver, run_id: str
+    model: str,
+    settings: TrialLaunchSettings,
+    resolver: ProcessEnvironmentCredentialResolver,
+    run_id: str,
 ) -> Iterator[tuple[ParticipantRoute, Mapping[str, str]]]:
+    """Route one model through the approved OpenRouter serving provider."""
     provider = settings.experiment.participant_serving_providers.get(model)
     if provider is None:
         raise ValueError(f"model {model} has no approved serving provider")
@@ -180,8 +186,12 @@ def _openrouter(
 
 @contextmanager
 def _vertex(
-    model: str, settings: TrialLaunchSettings, resolver, run_id: str
+    model: str,
+    settings: TrialLaunchSettings,
+    resolver: ProcessEnvironmentCredentialResolver,
+    run_id: str,
 ) -> Iterator[tuple[ParticipantRoute, Mapping[str, str]]]:
+    """Give one Vertex AI participant a private key file for its project."""
     source = settings.experiment.participant_credential_sources.source_for("vertex")
     credentials, _ = resolver.acquire("vertex", run_id, source=source, delivery_alias="key")
     directory = Path(tempfile.mkdtemp(prefix="lilrae-vertex-", dir=settings.work_root))
@@ -205,23 +215,28 @@ def _key_project(key: str) -> str:
     try:
         document = json.loads(key)
     except json.JSONDecodeError:
-        raise ValueError("the Vertex AI credential is not a service account key") from None
+        raise ValueError(_NOT_SERVICE_ACCOUNT_KEY) from None
     if not isinstance(document, dict):
-        raise ValueError("the Vertex AI credential is not a service account key")
+        raise ValueError(_NOT_SERVICE_ACCOUNT_KEY)
     project = document.get("project_id")
     if (
         document.get("type") != "service_account"
         or not isinstance(project, str)
         or not _PROJECT.fullmatch(project)
     ):
-        raise ValueError("the Vertex AI credential is not a service account key")
+        raise ValueError(_NOT_SERVICE_ACCOUNT_KEY)
     return project
 
 
 _PROVIDERS = {"openrouter/": _openrouter, "google-vertex/": _vertex}
 
 
-def _provider(model, settings, resolver, run_id):
+def _provider(
+    model: str,
+    settings: TrialLaunchSettings,
+    resolver: ProcessEnvironmentCredentialResolver,
+    run_id: str,
+) -> AbstractContextManager[tuple[ParticipantRoute, Mapping[str, str]]]:
     """Select the model's gateway by its provider prefix."""
     for prefix, launcher in _PROVIDERS.items():
         if model.startswith(prefix):
@@ -276,6 +291,7 @@ def _absolute_argument(base: Path, argument: str) -> str:
 
 
 def _plain(value: object) -> object:
+    """Convert nested dataclasses and tuples to plain JSON-shaped values."""
     if is_dataclass(value) and not isinstance(value, type):
         return {key: _plain(item) for key, item in asdict(value).items()}
     if isinstance(value, (tuple, list)):

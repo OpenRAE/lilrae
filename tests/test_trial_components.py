@@ -6,7 +6,6 @@ import json
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta, timezone
-from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
 
@@ -16,6 +15,7 @@ from aptl.core.lab_types import LabResult, StartupOutcome
 from aptl.core.opencode import OpenRouterRoute, VertexRoute
 from aptl.core.trial_attempt import TrialAttempt, parse_trial_attempt
 from aptl.core.trial_control import TrialControl, trial_owner
+from aptl.core.lifecycle_errors import LifecycleBusyError
 from aptl.core.trial_ownership import TRIAL_FENCE
 from aptl.workbench.opencode_configuration import (
     render_opencode_config,
@@ -30,8 +30,9 @@ def test_attempt_refuses_unsafe_ids_and_non_utc_deadlines():
     assert parse_trial_attempt(None, None, None) is None
     with pytest.raises(ValueError):
         TrialAttempt("run..1", "a", _ATTEMPT.deadline)
+    not_utc = datetime(2030, 1, 1, tzinfo=timezone(timedelta(hours=1)))
     with pytest.raises(ValueError):
-        TrialAttempt("r", "a", datetime(2030, 1, 1, tzinfo=timezone(timedelta(hours=1))))
+        TrialAttempt("r", "a", not_utc)
     with pytest.raises(ValueError):
         parse_trial_attempt("r", "a", "2030-01-01T00:00:00+01:00")
     parsed = parse_trial_attempt("r", "a", "2030-01-01T00:00:00.5Z")
@@ -43,7 +44,7 @@ def test_fence_blocks_a_second_attempt_and_releases_only_its_own(tmp_path):
     control.claim(_ATTEMPT)
     assert (tmp_path / TRIAL_FENCE).read_bytes() == trial_owner(_ATTEMPT)
     other = TrialAttempt("run-2", "attempt-1", _ATTEMPT.deadline)
-    with pytest.raises(Exception):
+    with pytest.raises(LifecycleBusyError):
         control.claim(other)
     with pytest.raises(RuntimeError):
         control.release(other)
@@ -78,7 +79,8 @@ def test_stop_reports_a_live_runner_that_does_not_seal(tmp_path):
     control.claim(_ATTEMPT)
     control.begin(_ATTEMPT)
     result = request_trial_stop(tmp_path, wait_seconds=0)
-    assert result is not None and not result.success
+    assert result is not None
+    assert not result.success
     assert control.stop_requested()
     assert request_trial_stop(tmp_path / "empty", wait_seconds=0) is None
 
@@ -104,14 +106,16 @@ def test_start_binding_fences_only_a_usable_trial_start(tmp_path):
     assert not (tmp_path / TRIAL_FENCE).exists()
 
     bound = _bind_trial_start(_start_context(tmp_path, _ATTEMPT), LabResult(success=True))
-    assert bound.run_id == "run-1" and bound.scenario_sha256.startswith("sha256:")
+    assert bound.run_id == "run-1"
+    assert bound.scenario_sha256.startswith("sha256:")
     assert (tmp_path / TRIAL_FENCE).exists()
 
     (tmp_path / "other").mkdir()
     mismatch = _start_context(tmp_path / "other", _ATTEMPT)
     mismatch.run_id = "different"
     refused = _bind_trial_start(mismatch, LabResult(success=True))
-    assert not refused.success and refused.outcome is StartupOutcome.FAILED
+    assert not refused.success
+    assert refused.outcome is StartupOutcome.FAILED
 
 
 def test_finalize_reports_no_pending_transcripts(tmp_path):
@@ -123,8 +127,10 @@ def test_finalize_reports_no_pending_transcripts(tmp_path):
 def test_routes_admit_only_their_own_models_and_environment():
     vertex = VertexRoute("synthetic-project")
     router = OpenRouterRoute(endpoint="https://openrouter.ai/api/v1", serving_provider="z-ai")
-    assert vertex.admits("google-vertex/zai-org/glm") and not vertex.admits("openrouter/a/b")
-    assert router.admits("openrouter/a/b") and not router.admits("google-vertex/a")
+    assert vertex.admits("google-vertex/zai-org/glm")
+    assert not vertex.admits("openrouter/a/b")
+    assert router.admits("openrouter/a/b")
+    assert not router.admits("google-vertex/a")
     with pytest.raises(ValueError):
         VertexRoute("Not A Project")
     config = render_opencode_config("google-vertex/zai-org/glm", vertex, {"*": "deny"}, {})
@@ -134,10 +140,9 @@ def test_routes_admit_only_their_own_models_and_environment():
         "options": {"project": "synthetic-project", "location": "global"},
         "models": {"zai-org/glm": {}},
     }
+    profile = SimpleNamespace()
     with pytest.raises(ValueError):
-        render_opencode_config(
-            "google-vertex/a", vertex, {}, {}, request_profile=SimpleNamespace()
-        )
+        render_opencode_config("google-vertex/a", vertex, {}, {}, request_profile=profile)
     validate_provider_environment({"GOOGLE_CLOUD_PROJECT": "p"}, vertex)
     with pytest.raises(ValueError):
         validate_provider_environment({"GOOGLE_CLOUD_PROJECT": "p"}, router)
@@ -162,9 +167,9 @@ def test_unknown_model_provider_and_role_are_refused():
     with pytest.raises(ValueError):
         participant_tool_servers("white", ("aptl-red",))
     settings = SimpleNamespace(experiment=SimpleNamespace(participant_serving_providers={}))
+    unapproved = _provider("openrouter/a/b", settings, None, "run-1")
     with pytest.raises(ValueError):
-        with _provider("openrouter/a/b", settings, None, "run-1"):
-            pass
+        unapproved.__enter__()
 
 
 def test_executor_requires_a_session_for_tools_unless_allowlisted(tmp_path):
@@ -184,10 +189,8 @@ def test_executor_requires_a_session_for_tools_unless_allowlisted(tmp_path):
         route=VertexRoute("synthetic-project"),
         build=OpenCodeBuild("1.19.5", hashlib.sha256(executable.read_bytes()).hexdigest()),
     )
-    with pytest.raises(ValueError):
-        LilraeOpenCodeExecutor(
-            options=options, model="openrouter/a/b", prompt="p", timeout_seconds=5
-        )
+    with pytest.raises(ValueError, match="route that admits the model"):
+        LilraeOpenCodeExecutor(options=options, model="openrouter/a/b", prompt="p", timeout_seconds=5)
     executor = LilraeOpenCodeExecutor(
         options=options, model="google-vertex/a/b", prompt="p", timeout_seconds=5
     )

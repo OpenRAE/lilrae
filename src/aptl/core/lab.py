@@ -64,6 +64,7 @@ from aptl.core.lab_types import (
     describe_project_runtime,
 )
 from aptl.core.trial_attempt import TrialAttempt
+from aptl.utils.pathsafe import PathContainmentError as PathSafetyError
 from aptl.core.trial_control import TRIAL_ATTEMPT_RECORD, TrialControl
 from aptl.core.lifecycle_guard import (
     LifecycleLockUnavailableError,
@@ -1022,13 +1023,15 @@ def _clean_boot_lab_owned(
         # The outer clean-boot owner must also be released before supervision.
         return _orchestrate_lab_start_owned(
             project_root,
-            skip_seed=skip_seed,
-            scenario_path=scenario_path,
-            progress=progress,
-            teardown_on_failure=teardown_on_failure,
+            request=_StartRequest(
+                skip_seed=skip_seed,
+                scenario_path=scenario_path,
+                progress=progress,
+                appliance=appliance,
+                teardown_on_failure=teardown_on_failure,
+                trial=trial,
+            ),
             after_start=after_start,
-            trial=trial,
-            **appliance_kwargs,
         )
     return orchestrate_lab_start(
         project_root,
@@ -4670,13 +4673,15 @@ def orchestrate_lab_start(
         with lifecycle_mutation_lock(project_dir) as project_root:
             result = _orchestrate_lab_start_owned(
                 project_root,
-                skip_seed=skip_seed,
-                scenario_path=scenario_path,
-                progress=progress,
-                appliance=appliance,
+                request=_StartRequest(
+                    skip_seed=skip_seed,
+                    scenario_path=scenario_path,
+                    progress=progress,
+                    appliance=appliance,
+                    teardown_on_failure=teardown_on_failure,
+                    trial=trial,
+                ),
                 after_start=after_start,
-                teardown_on_failure=teardown_on_failure,
-                trial=trial,
             )
     except LifecycleBusyError:
         return _lifecycle_busy_result("start")
@@ -4700,15 +4705,22 @@ def _supervise_started_lab(
     return result
 
 
+@dataclass(frozen=True)
+class _StartRequest:
+    """The operator's choices for one lab start, passed to the owned start."""
+
+    skip_seed: bool = False
+    scenario_path: Path | None = None
+    progress: ProgressCallback | None = None
+    appliance: ApplianceStartOptions | None = None
+    teardown_on_failure: bool = False
+    trial: TrialAttempt | None = None
+
+
 def _orchestrate_lab_start_owned(
     project_dir: Path,
-    skip_seed: bool = False,
-    scenario_path: Path | None = None,
-    progress: ProgressCallback | None = None,
-    appliance: ApplianceStartOptions | None = None,
+    request: _StartRequest | None = None,
     after_start: list[Callable[[], LabResult | None]] | None = None,
-    teardown_on_failure: bool = False,
-    trial: TrialAttempt | None = None,
 ) -> LabResult:
     """Orchestrate the complete lab startup process.
 
@@ -4720,18 +4732,19 @@ def _orchestrate_lab_start_owned(
 
     Args:
         project_dir: Root directory of the APTL project.
-        skip_seed: If True, skip SOC tool seeding (Step 13).
-        scenario_path: Optional selected RAES SDL scenario path.
-        progress: Optional callback for participant-facing startup updates.
+        request: The start options: SOC seeding, scenario path, progress
+            callback, appliance options, teardown policy, and trial attempt.
+        after_start: Supervisors that run after the lifecycle lock is released.
 
     Returns:
         LabResult indicating overall success or failure.
     """
+    request = request or _StartRequest()
     log.info("Starting APTL lab from %s", project_dir)
-    appliance = appliance or ApplianceStartOptions()
+    appliance = request.appliance or ApplianceStartOptions()
     ctx = _LabStartContext(
         project_dir=project_dir,
-        skip_seed=skip_seed,
+        skip_seed=request.skip_seed,
         offline_staged=appliance.offline_staged,
         appliance_launch_descriptor=appliance.launch_descriptor,
         appliance_release_public_key=appliance.release_public_key,
@@ -4742,10 +4755,10 @@ def _orchestrate_lab_start_owned(
         appliance_access_device=appliance.access_device,
         appliance_access_output_dir=appliance.access_output_dir,
         appliance_candidate_trust=appliance.candidate_trust,
-        scenario_path=scenario_path,
-        progress=progress,
-        teardown_on_failure=teardown_on_failure,
-        trial=trial,
+        scenario_path=request.scenario_path,
+        progress=request.progress,
+        teardown_on_failure=request.teardown_on_failure,
+        trial=request.trial,
     )
     try:
         result = _run_lab_start_steps(ctx, after_start)
@@ -4771,7 +4784,7 @@ def _bind_trial_start(ctx: _LabStartContext, result: LabResult) -> LabResult:
         try:
             digest = "sha256:" + hashlib.sha256(selection.bundle.sdl_path.read_bytes()).hexdigest()
             TrialControl(ctx.project_dir).claim(ctx.trial)
-        except (LifecycleBusyError, OSError, PathContainmentError, ValueError):
+        except (LifecycleBusyError, OSError, PathSafetyError, ValueError):
             log.exception("The trial fence could not be claimed")
             failure = "The trial could not claim its lifecycle fence."
     if failure is not None:
@@ -4832,7 +4845,7 @@ def finalize_trial_capture(project_dir: Path) -> str:
     try:
         if not load_active_transcript_authorities(root):
             return "not-required"
-    except (OSError, PathContainmentError, ValueError):
+    except (OSError, PathSafetyError, ValueError):
         log.exception("Pending run transcripts could not be read")
         return "failed"
     _, backend, _, failure = _stop_recovery_configuration(root, None)

@@ -17,7 +17,7 @@ from aptl.core.trial_record import seal_trial_record
 from aptl.core.trial_sdl import declared_participants
 from aptl.workbench.process import ProcessResult
 from aptl.workbench.trial_launch import TrialLaunchSettings, trial_executors
-from aptl.workbench.trial_run import run_declared_trial
+from aptl.workbench.trial_run import DeclaredTrial, run_declared_trial
 from tests.trial_sdl_fixture import parse_trial, read_fixture_asset, trial_document
 
 _PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\nsynthetic-vertex-key-material\n-----END PRIVATE KEY-----\n"
@@ -99,13 +99,12 @@ def test_vertex_participant_key_comes_from_reference_and_stays_out_of_evidence(t
     store.write_json("run-1", "manifest.json", {"startup": "synthetic"})
     evidence: dict[str, dict[str, object]] = {}
 
-    try:
-        record = _run_vertex_trial(scenario, participants, settings, deadline, store, evidence)
-        # Credentials are gone before the seal makes the run immutable.
-        assert all(call["key_path"] and not Path(call["key_path"]).exists() for call in runner.calls)
-        seal_trial_record(store, record)
-    except (RuntimeError, ValueError) as exc:
-        pytest.fail(f"the Vertex trial did not run to a seal: {exc}")
+    record = _run_vertex_trial(scenario, participants, settings, deadline, store, evidence)
+    # Credentials are gone before the seal makes the run immutable.
+    for call in runner.calls:
+        assert call["key_path"]
+        assert not Path(call["key_path"]).exists()
+    seal_trial_record(store, record)
     _assert_vertex_trial(runner, record, document, participants, store)
     _assert_unconfigured_vertex_refused(tmp_path, scenario, participants, deadline)
 
@@ -123,9 +122,7 @@ def _run_vertex_trial(scenario, participants, settings, deadline, store, evidenc
         ),
     ) as executors:
         return run_declared_trial(
-            attempt=TrialAttempt("run-1", "attempt-1", deadline),
-            scenario_sha256="sha256:" + "0" * 64,
-            participants=participants,
+            DeclaredTrial(TrialAttempt("run-1", "attempt-1", deadline), "sha256:" + "0" * 64, participants),
             invocations=executors,
             evidence=evidence,
             stop_requested=lambda: False,
@@ -155,19 +152,17 @@ def _assert_vertex_trial(runner, record, document, participants, store):
             assert b"synthetic-vertex-key-material" not in path.read_bytes(), path
 
 
-
 def _assert_unconfigured_vertex_refused(tmp_path, scenario, participants, deadline):
     missing = tmp_path / "missing"
     missing.mkdir(mode=0o700)
-    unconfigured = _settings(missing, KeyReadingRunner(), with_source=False)
+    refused = trial_executors(
+        scenario,
+        participants,
+        run_id="run-2",
+        deadline=deadline,
+        settings=_settings(missing, KeyReadingRunner(), with_source=False),
+        read_asset=read_fixture_asset,
+        evidence_sink=lambda address, item: None,
+    )
     with pytest.raises(ValueError):
-        with trial_executors(
-            scenario,
-            participants,
-            run_id="run-2",
-            deadline=deadline,
-            settings=unconfigured,
-            read_asset=read_fixture_asset,
-            evidence_sink=lambda address, item: None,
-        ):
-            pass
+        refused.__enter__()

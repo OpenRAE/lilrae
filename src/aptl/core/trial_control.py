@@ -93,15 +93,15 @@ class TrialControl:
     def runner_alive(self) -> bool:
         """Return whether the recorded runner process still exists."""
         current = self.active()
-        if current is None or current.pid is None or current.pid <= 0:
-            return False
-        try:
-            os.kill(current.pid, 0)
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            return True
-        return True
+        alive = current is not None and current.pid is not None and current.pid > 0
+        if alive:
+            try:
+                os.kill(current.pid, 0)
+            except ProcessLookupError:
+                alive = False
+            except PermissionError:
+                alive = True
+        return alive
 
     def request_stop(self) -> ActiveTrial | None:
         """Record a stop request for the fenced attempt and return it."""
