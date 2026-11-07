@@ -118,8 +118,9 @@ def test_startup_plan_rejects_seed_fields_without_a_script(seed_field: dict) -> 
         _validated_plan,
     )
 
+    plan = ScenarioStartupPlan(**seed_field)
     with pytest.raises(ScenarioStartupProviderError):
-        _validated_plan(ScenarioStartupPlan(**seed_field))
+        _validated_plan(plan)
 
 
 def _unseeded_stack_selection(run_seed: bool) -> SimpleNamespace:
