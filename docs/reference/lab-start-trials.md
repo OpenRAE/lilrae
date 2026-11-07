@@ -24,6 +24,23 @@ lilrae lab start --scenario techvault-purpleteam \
   --run-id run-0042 --attempt-id attempt-1 --deadline 2026-11-06T12:00:00Z
 ```
 
+## Admitted plan entry
+
+`--trial-input` runs one entry of an admitted RAES trial plan. It needs the three
+trial options. The file is JSON with exactly these keys:
+
+| Key | Value |
+| --- | --- |
+| `plan` | The admitted trial plan. It must pass the RAES plan ingress gate. |
+| `plan_entry_id` | The plan entry to run. |
+| `snapshot` | The canonical instantiated scenario snapshot of that entry. |
+
+The file is at most 32 MiB. LilRAE admits the entry against the installed pack
+through the family trial path. The plan must name the installed family digest,
+the snapshot bytes must equal the entry's instantiated snapshot, and the entry's
+run ID must equal `--run-id`. The trial then runs the instantiated scenario, and
+the trial record keeps the snapshot digest as its SDL digest.
+
 ## Start and ownership
 
 The trial starts only when the lab start outcome is `ready` or
