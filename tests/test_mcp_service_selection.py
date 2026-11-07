@@ -312,7 +312,8 @@ def test_run_admission_is_bound_to_its_run_and_mcp_selection(tmp_path):
 
     write(("aptl-red",))
     loaded = load_run_admission(tmp_path, run_id)
-    assert loaded is not None and loaded.nodes == ()
+    assert loaded is not None
+    assert loaded.nodes == ()
     write(("aptl-red",), owner_run="c" * 32)
     with pytest.raises(WorkbenchConfigurationError, match="another run"):
         load_run_admission(tmp_path, run_id)

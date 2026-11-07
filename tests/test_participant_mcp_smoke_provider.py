@@ -259,10 +259,9 @@ def test_selected_out_optional_service_has_no_operation_or_connection(
     assert servers == ("aptl-red", "aptl-indexer")
     assert "mcp.blue.wazuh-investigation" not in {item.check_id for item in evidence}
     assert not (tmp_path / "started-aptl-wazuh").exists()
+    extra = _registrations(tmp_path, ALL_SERVERS)
     with pytest.raises(ParticipantMcpSmokeError, match="registration surface"):
-        run_participant_mcp_smoke(
-            profile, _registrations(tmp_path, ALL_SERVERS), admission=admission
-        )
+        run_participant_mcp_smoke(profile, extra, admission=admission)
 
 
 def test_present_optional_service_keeps_its_operation(monkeypatch) -> None:
@@ -278,10 +277,10 @@ def test_missing_required_service_stops_before_resolution(monkeypatch) -> None:
     provider = _Provider()
     _install(monkeypatch, provider)
 
+    profile = _profile()
+    admission = _admission(servers=("aptl-red", "aptl-indexer"))
     with pytest.raises(ParticipantMcpSmokeError, match="required MCP server"):
-        resolve_participant_mcp_smoke_operations(
-            _profile(), _admission(servers=("aptl-red", "aptl-indexer"))
-        )
+        resolve_participant_mcp_smoke_operations(profile, admission)
     assert provider.contexts == []
 
 
@@ -295,8 +294,9 @@ def test_empty_admitted_selection_never_qualifies(monkeypatch) -> None:
         "blue.wazuh-investigation",
     )
 
+    admission = _admission(servers=())
     with pytest.raises(ParticipantMcpSmokeError, match="no admitted"):
-        resolve_participant_mcp_smoke_operations(profile, _admission(servers=()))
+        resolve_participant_mcp_smoke_operations(profile, admission)
 
 
 def test_missing_target_stops_before_any_mcp_process(
@@ -304,12 +304,11 @@ def test_missing_target_stops_before_any_mcp_process(
 ) -> None:
     _install(monkeypatch, _Provider())
 
+    profile = _profile()
+    registrations = _registrations(tmp_path, ALL_SERVERS)
+    admission = _admission(nodes=(_node("victim", "other", "10.9.1.20"),))
     with pytest.raises(ParticipantMcpSmokeError, match="target is not admitted"):
-        run_participant_mcp_smoke(
-            _profile(),
-            _registrations(tmp_path, ALL_SERVERS),
-            admission=_admission(nodes=(_node("victim", "other", "10.9.1.20"),)),
-        )
+        run_participant_mcp_smoke(profile, registrations, admission=admission)
     assert _started(tmp_path) == []
 
 
@@ -329,12 +328,11 @@ def test_late_denied_tool_stops_before_any_mcp_process(
 
     _install(monkeypatch, Denied())
 
+    profile = _profile()
+    registrations = _registrations(tmp_path, ALL_SERVERS)
+    admission = _admission()
     with pytest.raises(ParticipantMcpSmokeError, match="not granted"):
-        run_participant_mcp_smoke(
-            _profile(),
-            _registrations(tmp_path, ALL_SERVERS),
-            admission=_admission(),
-        )
+        run_participant_mcp_smoke(profile, registrations, admission=admission)
     assert _started(tmp_path) == []
 
 
@@ -345,8 +343,9 @@ def test_duplicate_check_cannot_hide_behind_set_comparison(monkeypatch) -> None:
 
     _install(monkeypatch, _Provider(override=duplicated))
 
+    profile, admission = _profile(), _admission()
     with pytest.raises(ParticipantMcpSmokeError, match="malformed"):
-        resolve_participant_mcp_smoke_operations(_profile(), _admission())
+        resolve_participant_mcp_smoke_operations(profile, admission)
 
 
 def test_provider_cannot_emit_an_undeclared_check(monkeypatch) -> None:
@@ -358,8 +357,9 @@ def test_provider_cannot_emit_an_undeclared_check(monkeypatch) -> None:
 
     _install(monkeypatch, Narrow())
 
+    profile, admission = _profile(), _admission()
     with pytest.raises(ParticipantMcpSmokeError, match="undeclared"):
-        resolve_participant_mcp_smoke_operations(_profile(), _admission())
+        resolve_participant_mcp_smoke_operations(profile, admission)
 
 
 @pytest.mark.parametrize(
@@ -373,8 +373,9 @@ def test_non_json_or_oversized_arguments_are_refused(monkeypatch, arguments) -> 
 
     _install(monkeypatch, _Provider(override=bad))
 
+    profile, admission = _profile(), _admission()
     with pytest.raises(ParticipantMcpSmokeError, match="malformed"):
-        resolve_participant_mcp_smoke_operations(_profile(), _admission())
+        resolve_participant_mcp_smoke_operations(profile, admission)
 
 
 def test_provider_mutation_after_return_does_not_change_the_plan(
@@ -395,8 +396,9 @@ def test_provider_failure_is_normalized_without_its_message(monkeypatch) -> None
 
     _install(monkeypatch, _Provider(override=fail))
 
+    profile, admission = _profile(), _admission()
     with pytest.raises(ParticipantMcpSmokeError) as raised:
-        resolve_participant_mcp_smoke_operations(_profile(), _admission())
+        resolve_participant_mcp_smoke_operations(profile, admission)
     assert "secret detail" not in str(raised.value)
     assert raised.value.__cause__ is None
 
@@ -405,8 +407,9 @@ def test_provider_requires_a_run_admission(monkeypatch) -> None:
     provider = _Provider()
     _install(monkeypatch, provider)
 
+    profile = _profile()
     with pytest.raises(ParticipantMcpSmokeError, match="admitted inputs"):
-        resolve_participant_mcp_smoke_operations(_profile())
+        resolve_participant_mcp_smoke_operations(profile)
     with pytest.raises(ParticipantMcpSmokeError, match="admitted inputs"):
         resolve_participant_mcp_smoke_plan(SELECTOR)
     assert provider.contexts == []
@@ -447,8 +450,9 @@ def test_conflicting_grants_for_one_server_are_refused(monkeypatch) -> None:
         profile, workbench_profiles=(*profile.workbench_profiles, narrowed)
     )
 
+    admission = _admission()
     with pytest.raises(ParticipantMcpSmokeError, match="conflicting"):
-        resolve_participant_mcp_smoke_operations(conflicted, _admission())
+        resolve_participant_mcp_smoke_operations(conflicted, admission)
 
 
 def test_validator_exception_records_a_failed_check(tmp_path: Path) -> None:
@@ -482,10 +486,10 @@ def test_caller_supplied_operations_get_the_same_validation(tmp_path: Path) -> N
     )
     duplicated = (*operations, operations[0])
 
+    profile = _profile()
+    registrations = _registrations(tmp_path, ALL_SERVERS)
     with pytest.raises(ParticipantMcpSmokeError, match="malformed"):
-        run_participant_mcp_smoke(
-            _profile(), _registrations(tmp_path, ALL_SERVERS), duplicated
-        )
+        run_participant_mcp_smoke(profile, registrations, duplicated)
     assert _started(tmp_path) == []
 
 

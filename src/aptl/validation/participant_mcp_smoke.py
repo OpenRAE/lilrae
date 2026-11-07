@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
 
@@ -110,6 +110,28 @@ def _is_static(loaded: object) -> bool:
     return isinstance(loaded, (tuple, list))
 
 
+def _valid_check(check: object) -> bool:
+    """Return whether one declaration is typed and uses bounded identifiers."""
+
+    return (
+        isinstance(check, McpSmokeCheck)
+        and _safe_id(check.check_id)
+        and _safe_id(check.server_id)
+        and _safe_id(check.tool_name)
+    )
+
+
+def _valid_declarations(checks: object) -> bool:
+    """Return whether a provider declares a bounded set of unique checks."""
+
+    return (
+        isinstance(checks, tuple)
+        and 0 < len(checks) <= _MAX_OPERATIONS
+        and all(_valid_check(check) for check in checks)
+        and len({check.check_id for check in checks}) == len(checks)
+    )
+
+
 def _provider_checks(provider: object) -> tuple[McpSmokeCheck, ...]:
     """Return a provider's validated check declarations."""
 
@@ -117,17 +139,7 @@ def _provider_checks(provider: object) -> tuple[McpSmokeCheck, ...]:
     if (
         getattr(provider, "extension_api_version", None) != SMOKE_PROVIDER_API_VERSION
         or not callable(getattr(provider, "resolve", None))
-        or not isinstance(checks, tuple)
-        or not checks
-        or len(checks) > _MAX_OPERATIONS
-        or not all(isinstance(check, McpSmokeCheck) for check in checks)
-        or not all(
-            _safe_id(check.check_id)
-            and _safe_id(check.server_id)
-            and _safe_id(check.tool_name)
-            for check in checks
-        )
-        or len({check.check_id for check in checks}) != len(checks)
+        or not _valid_declarations(checks)
     ):
         raise ParticipantMcpSmokeError(_MALFORMED_PROVIDER_MESSAGE)
     return checks
@@ -158,7 +170,13 @@ def _host_operation(operation: object) -> McpSmokeOperation:
         or not callable(operation.validates)
     ):
         raise ParticipantMcpSmokeError(_MALFORMED_PLAN_MESSAGE)
-    return replace(operation, arguments=_host_arguments(operation.arguments))
+    return McpSmokeOperation(
+        check_id=operation.check_id,
+        server_id=operation.server_id,
+        tool_name=operation.tool_name,
+        arguments=_host_arguments(operation.arguments),
+        validates=operation.validates,
+    )
 
 
 def _validated_operations(loaded: object) -> tuple[McpSmokeOperation, ...]:
