@@ -181,7 +181,7 @@ nav:
     - Execution boundaries: getting-started/execution-boundaries.md
     - Scenario environment and Docker authority: getting-started/environment-bindings.md
     - Overview: architecture/index.md
-    - Design checks for /implement: architecture/design-checks.md
+    - Design-check tools: architecture/design-checks.md
     - "Issue #1584 Go Cutover Branch Preflight": architecture/issue-1584-go-cutover-preflight.md
     - "Issue #1510 Code Quality Architecture Preflight": architecture/issue-1510-code-quality-preflight.md
     - "Issue #1510 Code Quality Architecture Design": architecture/issue-1510-code-quality-design.md
