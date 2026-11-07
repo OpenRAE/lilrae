@@ -166,7 +166,6 @@ The published site is the canonical user manual:
 - [Run your first lab](docs/getting-started/quick-start.md)
 - [Troubleshooting](docs/troubleshooting/index.md)
 - [Architecture and historical records](docs/architecture/index.md)
-- [Design checks for /implement](docs/architecture/design-checks.md)
 - [OpenSSF Best Practices assessment](docs/security/openssf-best-practices.md)
 
 The README is the GitHub and package-index gateway, not a second copy of the

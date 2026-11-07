@@ -1,4 +1,4 @@
-schema_version: 2
+schema_version: 1
 project: aptl
 github_repo: OpenRAE/lilrae
 workflow:
@@ -12,25 +12,6 @@ workflow:
   completion_command: pre-commit run
   lint_command: pre-commit run
   format_command: pre-commit run
-  # Structural design checks for /implement design review (schema_version 2,
-  # issue #1673). Every command runs from the repository root in the
-  # credential-free gate environment, with no network access, and leaves HEAD,
-  # the index, and the working tree unchanged. Each command uses the same uv
-  # environment as tools/run-targeted-tests.sh, so the gate reuses the installed
-  # development toolchain and does not fetch dependencies.
-  design:
-    # The repository has no separate type checker, so byte-compilation is the
-    # native compile check. It compiles the Python control plane, the tests, and
-    # the tooling.
-    compile_command: "uv run --frozen --group build --no-default-groups --extra dev --extra web python -m compileall -q src tests tools"
-    # ADR-064 layered-architecture rules (tools/check_architecture.py, built on
-    # grimp), the participant adapter boundary, and the rule-violation fixtures.
-    structural_command: "uv run --frozen --group build --no-default-groups --extra dev --extra web bash -c 'python tools/check_architecture.py && python tools/check_lilrae_participant_architecture.py && python -m pytest tests/test_check_architecture.py tests/test_lilrae_participant_architecture.py tests/test_readiness_architecture.py -q -o addopts= -p no:cacheprovider'"
-    # Component dependency view derived from the grimp import graph.
-    wiring_command: "uv run --frozen --group build --no-default-groups --extra dev --extra web python tools/design_wiring.py"
-    # pytest acceptance adapter: it reads one {test_file, test_name} JSON object
-    # on stdin and writes one JSON observation on stdout.
-    acceptance_command: "uv run --frozen --group build --no-default-groups --extra dev --extra web python tools/design_acceptance.py"
   codex_review:
     pre_push_cap: 1
 sonarcloud:
@@ -38,64 +19,3 @@ sonarcloud:
   organization: brad-edwards
 rules:
   plan_rules: .gc/plan-rules.md
-# Module ownership for /implement design review (schema_version 2, issue #1673).
-# Each entry maps a repository path to existing implementation files and the
-# ADRs that govern it. All matching parent entries apply, and `.` carries the
-# repository-wide decisions. The map covers the Python control plane, the
-# scenario adapter plugin, the TypeScript MCP surface, the tests, and the
-# tooling, where ADR-064 design review applies.
-architecture:
-  modules:
-    - path: .
-      implementations:
-        - src/aptl/__init__.py
-        - tools/check_architecture.py
-      adrs:
-        - docs/adrs/adr-000-use-adrs.md
-        - docs/adrs/adr-007-python-cli-control-plane.md
-        - docs/adrs/adr-064-layered-architecture-and-code-conventions.md
-    - path: src/aptl
-      implementations:
-        - src/aptl/cli/__init__.py
-        - src/aptl/core/lab.py
-      adrs:
-        - docs/adrs/adr-007-python-cli-control-plane.md
-        - docs/adrs/adr-054-lilrae-core-and-experience-ownership.md
-        - docs/adrs/adr-055-local-runtime-authority-and-ownership.md
-        - docs/adrs/adr-064-layered-architecture-and-code-conventions.md
-    - path: src/aptl/backends
-      implementations:
-        - src/aptl/backends/__init__.py
-        - src/aptl/backends/raes_runtime.py
-      adrs:
-        - docs/adrs/adr-013-deployment-abstraction.md
-        - docs/adrs/adr-035-raes-sdl-adoption.md
-        - docs/adrs/adr-051-component-level-raes-realization.md
-    - path: src/aptl_techvault
-      implementations:
-        - src/aptl_techvault/account_environment.py
-      adrs:
-        - docs/adrs/adr-046-dynamic-raes-scenario-realization.md
-        - docs/adrs/adr-053-pack-backend-deployment-serving-interaction-seam.md
-        - docs/adrs/adr-059-canonical-techvault-delivery-and-host-mcp-access.md
-    - path: mcp
-      implementations:
-        - mcp/aptl-mcp-common/src/config.ts
-        - mcp/mcp-red/src/index.ts
-      adrs:
-        - docs/adrs/adr-003-mcp-common-library.md
-        - docs/adrs/adr-027-red-team-structured-logging.md
-        - docs/adrs/adr-057-agent-execution-compartments.md
-    - path: tests
-      implementations:
-        - tests/conftest.py
-      adrs:
-        - docs/adrs/adr-010-sonarcloud-quality.md
-        - docs/adrs/adr-064-layered-architecture-and-code-conventions.md
-    - path: tools
-      implementations:
-        - tools/check_architecture.py
-        - tools/check_pack_boundary.py
-      adrs:
-        - docs/adrs/adr-010-sonarcloud-quality.md
-        - docs/adrs/adr-064-layered-architecture-and-code-conventions.md
