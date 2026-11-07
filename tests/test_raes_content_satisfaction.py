@@ -1,7 +1,7 @@
 """Satisfaction disclosure for env-pack-resolved content (issue #875).
 
-The 19 TechVault content placements that author an EXACT ``source.artifact_requirement``
-were rejected by RAES's SEM-218 runtime gate with ``runtime.backend-contract-invalid``
+Content placements that author an EXACT ``source.artifact_requirement`` were
+rejected by RAES's SEM-218 runtime gate with ``runtime.backend-contract-invalid``
 because APTL disclosed nothing for them: the disclosure path only covered nodes.
 These tests run that same real gate (``evaluate_artifact_realization``) against
 APTL's owned fixture pack (issue #985), admitted through the production resolver,
@@ -327,7 +327,7 @@ def test_the_disclosed_digest_is_the_hash_of_the_bytes_the_pack_resolved(stub_pa
     """
 
     store, _calls = stub_pack
-    payload_bytes = b"# TechVault MISP sync\n"
+    payload_bytes = b"# MISP sync\n"
     store[_ARTIFACT_ID] = payload_bytes
     digest = _digest_of(payload_bytes)
 
@@ -353,7 +353,7 @@ def test_bytes_that_do_not_hash_to_the_pin_produce_no_disclosure(stub_pack):
 def test_one_artifact_shared_by_several_placements_is_resolved_once(stub_pack):
     """Re-validating the pack per placement would buy nothing but wall time.
 
-    Several TechVault placements plant the same artifact, so the resolver is
+    Several placements can plant the same artifact, so the resolver is
     keyed by artifact id; every sharing address must still get its own
     disclosure.
     """

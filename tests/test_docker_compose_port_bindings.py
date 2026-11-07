@@ -8,14 +8,11 @@ reaches the victims over the Docker networks. The webapp proxy's publication
 went with issue #1006, and the dns stub's all-interface publication with issue
 #1004.
 
-This test pins that boundary on two models, so a future edit cannot silently
-re-expose a SOC management port or add a host publication nobody classified:
-
-- the base and backend-observability Compose assets, which an explicit
-  project-tree scenario starts as written; and
-- the publications the planner renders for the pinned TechVault pack, which
-  ``aptl lab start`` runs by default without reading the root
-  ``docker-compose.yml`` (#954).
+This test pins that boundary on the base and backend-observability Compose
+assets, which an explicit project-tree scenario starts as written, so a future
+edit cannot silently re-expose a SOC management port or add a host publication
+nobody classified. The released-pack tests check the same boundary on the
+publications the planner renders for a released pack (#954, #1700).
 """
 
 import re
@@ -23,8 +20,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
-from aptl.core.deployment._compose_port_realization import compose_port_entry
 
 # Compose variable references (``${VAR}`` / ``${VAR:-default}``) can appear in a
 # port mapping — published host ports are parameterized so `aptl lab start` can
@@ -69,24 +64,9 @@ MANAGEMENT_SURFACES = [
     # The reverse-engineering workstation is defender tooling, not a target.
 ]
 
-# The same boundary on the pinned TechVault pack's rendered publications. Its
-# nodes keep the pack's names, so the Wazuh services are hyphenated here.
-RENDERED_MANAGEMENT_SURFACES = [
-    ("wazuh-manager", 1514),
-    ("wazuh-manager", 1515),
-    ("wazuh-manager", 514),
-    ("wazuh-manager", 55000),
-    ("wazuh-indexer", 9200),
-    ("wazuh-dashboard", 443),
-    ("misp", 8443),
-    ("shuffle-frontend", 3443),
-    ("shuffle-frontend", 3001),
-]
-
 # Each checked model's fixture name, with the surfaces classified on it.
 SURFACES_BY_MODEL = {
     "compose": MANAGEMENT_SURFACES,
-    "rendered": RENDERED_MANAGEMENT_SURFACES,
 }
 
 
@@ -128,28 +108,6 @@ def compose() -> dict:
     return base
 
 
-@pytest.fixture(scope="module")
-def rendered(released_techvault_realization) -> dict:
-    """Every node publication the realization carries for the pinned TechVault pack.
-
-    `aptl lab start` writes an image node's publications into the Compose port
-    override and a base-container node's into its own ``docker run -p``. Both
-    render these declarations, so each node is checked here whichever way it
-    starts. Backend apparatus outside the realization, such as the
-    operator-access relays, is checked in ``tests/test_operator_access.py``.
-    The pack is realized once per test session, without Docker.
-    """
-    realization = released_techvault_realization
-    spec = realization.deployment_spec(sorted(realization.profiles))
-    return {
-        "services": {
-            node.name: {"ports": [compose_port_entry(p) for p in node.published_ports]}
-            for node in spec.nodes
-            if node.published_ports
-        }
-    }
-
-
 def _published_for(compose: dict, service: str, host_port: int):
     svc = compose["services"].get(service, {})
     matches = []
@@ -158,6 +116,33 @@ def _published_for(compose: dict, service: str, host_port: int):
         if parsed_port == host_port:
             matches.append((host_ip, entry))
     return matches
+
+
+def assert_loopback_bound(model: dict, service: str, host_port: int) -> None:
+    """Fail unless ``service`` publishes ``host_port`` on loopback only."""
+    matches = _published_for(model, service, host_port)
+    assert matches, f"{service} no longer publishes host port {host_port}"
+    for host_ip, entry in matches:
+        assert host_ip == "127.0.0.1", (
+            f"{service} host port {host_port} must bind 127.0.0.1 (ADR-034 "
+            f"Host Exposure Amendment), got {entry!r}"
+        )
+
+
+def unclassified_publications(model: dict, classified: set) -> list:
+    """Return each host publication of ``model`` outside ``classified``."""
+    # A publication with no fixed host port gets an ephemeral one on its
+    # host_ip, so it is reported too rather than skipped.
+    return sorted(
+        (
+            (service, host_port)
+            for service, definition in model["services"].items()
+            for entry in definition.get("ports", []) or []
+            for _host_ip, host_port, _proto in [_parse_port(entry)]
+            if (service, host_port) not in classified
+        ),
+        key=str,
+    )
 
 
 @pytest.mark.parametrize(
@@ -169,13 +154,7 @@ def _published_for(compose: dict, service: str, host_port: int):
     ],
 )
 def test_management_surface_is_loopback_bound(request, model, service, host_port):
-    matches = _published_for(request.getfixturevalue(model), service, host_port)
-    assert matches, f"{service} no longer publishes host port {host_port}"
-    for host_ip, entry in matches:
-        assert host_ip == "127.0.0.1", (
-            f"{service} host port {host_port} must bind 127.0.0.1 (ADR-034 "
-            f"Host Exposure Amendment), got {entry!r}"
-        )
+    assert_loopback_bound(request.getfixturevalue(model), service, host_port)
 
 
 @pytest.mark.parametrize("model", sorted(SURFACES_BY_MODEL))
@@ -187,20 +166,8 @@ def test_every_published_port_is_classified(request, model):
     all interfaces (issue #1006). Every host-published port must now appear in
     its model's management surfaces, which pin it to loopback.
     """
-    classified = set(SURFACES_BY_MODEL[model])
-    # A publication with no fixed host port gets an ephemeral one on its
-    # host_ip, so it is reported too rather than skipped.
-    unclassified = sorted(
-        (
-            (service, host_port)
-            for service, definition in request.getfixturevalue(model)[
-                "services"
-            ].items()
-            for entry in definition.get("ports", []) or []
-            for _host_ip, host_port, _proto in [_parse_port(entry)]
-            if (service, host_port) not in classified
-        ),
-        key=str,
+    unclassified = unclassified_publications(
+        request.getfixturevalue(model), set(SURFACES_BY_MODEL[model])
     )
     assert not unclassified, (
         f"host-published ports with no exposure classification: {unclassified}; "

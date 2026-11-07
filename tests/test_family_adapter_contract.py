@@ -130,17 +130,6 @@ def test_serving_context_exposes_no_trial_or_scenario():
     assert not hasattr(context, "scenario")
 
 
-def test_baseline_write_path_rejection_returns_false(monkeypatch, tmp_path):
-    from aptl_techvault.evidence import techvault_enrollment_baseline as baseline
-    from aptl.utils.pathsafe import PathContainmentError, REASON_SYMLINK
-
-    def reject(*args, **kwargs):
-        raise PathContainmentError(REASON_SYMLINK, "private-path-canary")
-
-    monkeypatch.setattr(baseline, "replace_private_nofollow", reject)
-    assert baseline.record_enrollment_baseline(tmp_path, {"agent": "001"}) is False
-
-
 def test_family_retry_operations_keep_admitted_aliases_and_hide_environment():
     from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
     from aptl.core.lab_types import LabResult
@@ -623,9 +612,16 @@ def test_bundled_adapter_uses_no_private_core_imports():
     import ast
     from pathlib import Path
 
+    from tests.declared_adapters import adapter_packages
+
+    bundled = [
+        path for package in sorted(adapter_packages())
+        for path in Path("src", package).rglob("*.py")
+    ]
+    assert bundled, "no bundled adapter source to check"
     violations = []
     for path in [
-        *Path("src/aptl_techvault").rglob("*.py"),
+        *bundled,
         *Path("tests/fixtures/family_adapter/family_adapter").rglob("*.py"),
     ]:
         for node in ast.walk(ast.parse(path.read_text())):

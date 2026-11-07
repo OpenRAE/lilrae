@@ -12,7 +12,7 @@ from aptl.core.appliance_boundary import (
     load_boundary_policy,
     render_egress_proxy_policy,
 )
-from aptl.appliance.policy import full_techvault_boundary_policy
+from tests.seat_policy_fixture import protected_seat_policy
 from aptl.workbench import ProfileId, profile_for
 
 
@@ -188,33 +188,14 @@ def test_proxy_policy_rejects_an_empty_authority_projection() -> None:
         render_egress_proxy_policy(policy)
 
 
-def test_full_techvault_policy_is_distinct_seat_component_protection() -> None:
-    policy = full_techvault_boundary_policy()
-
-    assert policy.schema_version == "aptl.appliance-boundary/v3"
-    assert policy.generation == 4
-    assert policy.default_deny is True
-    assert policy.internal_zone_isolation is False
-    assert policy.seat_component_protection is True
-    assert {item.component_class for item in policy.protected_components} == {
-        "management-control",
-        "evidence-capture",
-        "evidence-store",
-        "docker-authority",
-        "credentials",
-    }
-    assert len({item.probe_identity for item in policy.protected_components}) == 5
-    assert policy.permitted_host_flows == []
-
-
 def test_seat_component_policy_rejects_incomplete_or_ambiguous_coverage() -> None:
-    payload = full_techvault_boundary_policy().model_dump(mode="json")
+    payload = protected_seat_policy().model_dump(mode="json")
     payload["protected_components"] = payload["protected_components"][:-1]
 
     with pytest.raises(ValidationError, match="protected component classes"):
         ApplianceBoundaryPolicy.model_validate(payload)
 
-    payload = full_techvault_boundary_policy().model_dump(mode="json")
+    payload = protected_seat_policy().model_dump(mode="json")
     payload["protected_components"][1]["probe_identity"] = payload[
         "protected_components"
     ][0]["probe_identity"]
@@ -222,7 +203,7 @@ def test_seat_component_policy_rejects_incomplete_or_ambiguous_coverage() -> Non
     with pytest.raises(ValidationError, match="probe identities"):
         ApplianceBoundaryPolicy.model_validate(payload)
 
-    payload = full_techvault_boundary_policy().model_dump(mode="json")
+    payload = protected_seat_policy().model_dump(mode="json")
     payload["permitted_host_flows"] = [
         {
             "source": "ordinary-range-workload",
@@ -239,7 +220,7 @@ def test_seat_component_policy_rejects_incomplete_or_ambiguous_coverage() -> Non
 
 
 def test_vm_only_policy_cannot_claim_seat_component_protection() -> None:
-    payload = full_techvault_boundary_policy().model_dump(mode="json")
+    payload = protected_seat_policy().model_dump(mode="json")
     payload["schema_version"] = "aptl.appliance-boundary/v2"
     payload["default_deny"] = False
 

@@ -5,7 +5,7 @@ so every project-ownership check that filters containers by the
 `com.docker.compose.project` label (container_exists, the host snapshot
 listing, observation) would otherwise never see a node the generic
 materializer realized directly. Caught by a real local live-gate boot of
-the full TechVault range, not by any unit test - this file exists so it
+the full range, not by any unit test - this file exists so it
 cannot regress silently again.
 """
 
@@ -1512,14 +1512,14 @@ class TestBaseContainerReuseRejectsDrift:
         )
 
         grant = EnvironmentGrant(
-            pack="techvault",
+            pack="fixture-range",
             consumer="db",
             variable="DB_PASSWORD",
             source={"kind": "process-environment", "variable": "LAB_DB_PASSWORD"},
         )
         backend = _backend(tmp_path)
         backend._environment_binding_context = EnvironmentBindingContext(
-            pack_id="techvault", grants=(grant,), process_environment=os.environ
+            pack_id="fixture-range", grants=(grant,), process_environment=os.environ
         )
         backend._environment_consumers = {"provision.node.db": "db"}
         spec = replace(

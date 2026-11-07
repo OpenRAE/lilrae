@@ -59,7 +59,7 @@ def _minimal_task() -> ExperimentTaskModel:
         description="Minimal task exercised by the execution-controller integration test.",
         scenario_ref=ExperimentScenarioReferenceModel(
             ref_kind="scenario-snapshot",
-            ref_id="scenario-techvault",
+            ref_id=reference_run().scenario_snapshot_ref.ref_id,
             ref_version="2026-05-26",
             ref_digest="sha256:" + "1" * 64,
         ),

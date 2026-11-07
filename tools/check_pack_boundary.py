@@ -12,7 +12,9 @@ the owners and their facts without a fixed string list:
 
 It scans the generic paths in :data:`COVERED` and reports each match by path
 and fact kind, never by value. #1273 covers the participant desktop, the rule
-tools, and the account providers, including the generic core directory.
+tools, and the account providers, including the generic core directory. #1700
+covers the tests of generic code; tests of the adapter or the released pack
+live in :data:`ADAPTER_TESTS`, which the check does not scan.
 
 Usage: ``python tools/check_pack_boundary.py [root] [--pack-directory ID=PATH]``
 """
@@ -35,7 +37,13 @@ COVERED = (
     "appliance/guest/**/*",
     "mcp/*/docker-lab-config.json",
     "src/aptl/**/*",
+    "tests/**/*",
+    "web/tests/**/*",
 )
+#: The test subtree for the adapter and the released-pack contract (#1700).
+ADAPTER_TESTS = "tests/techvault/"
+#: Paths where the pack identifier itself is also a forbidden fact.
+_IDENTIFIER_PATHS = ("src/aptl/", "tests/", "web/tests/")
 _CORE_PACKAGE = "aptl"
 _MIN_SECRET_LENGTH = 6
 
@@ -144,6 +152,7 @@ def covered_files(root: Path, patterns: Iterable[str] = COVERED) -> list[Path]:
     return sorted(
         path for path in found
         if path.is_file() and not path.is_symlink() and "__pycache__" not in path.parts
+        and not path.relative_to(root).as_posix().startswith(ADAPTER_TESTS)
     )
 
 
@@ -163,7 +172,7 @@ def findings(
         for line in lines:
             digest = "sha256:" + hashlib.sha256(line.encode()).hexdigest()
             for fact, kind in lowered.items():
-                if kind == "pack identifier" and not relative.startswith("src/aptl/"):
+                if kind == "pack identifier" and not relative.startswith(_IDENTIFIER_PATHS):
                     continue
                 if fact not in line.lower():
                     continue

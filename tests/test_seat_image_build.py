@@ -31,27 +31,6 @@ def _script(name: str):
     return module
 
 
-def test_realized_techvault_image_inventory_includes_helpers_and_children(
-    tmp_path: Path,
-) -> None:
-    from aptl.appliance.input_images import canonical_image_references
-    from aptl.core.scenario_bundle import env_pack_bundle
-    from aptl.validation.curated_live_proof import expected_bundle_matrix
-    from aptl.core.config import AptlConfig
-
-    bundle = env_pack_bundle(tmp_path / "packs", "techvault")
-    references = canonical_image_references(ROOT, bundle)
-    matrix = expected_bundle_matrix(ROOT, AptlConfig(), bundle)
-
-    assert {
-        "scenario." + service for service in matrix.expected_services
-    } <= references.keys()
-    assert references["scenario.ad"].split("/", 1)[0] == "aptl"
-    assert references["child.shuffle-worker"].split("/", 1)[0] == "ghcr.io"
-    assert references["helper.certs"].split("/", 1)[0] == "wazuh"
-    assert "@sha256:" in references["scenario.misp"]
-
-
 def test_saved_archive_must_match_inspected_image_roles(tmp_path: Path) -> None:
     import io
 
@@ -111,7 +90,7 @@ def test_seat_archive_omits_abandoned_web_profile(tmp_path: Path, monkeypatch) -
 def test_generated_config_validates_against_the_launcher_contract() -> None:
     # The bake writes this and the launcher parses it; a declaration the
     # launcher would refuse must fail the bake, not a participant's start.
-    from aptl.appliance.policy import full_techvault_boundary_policy
+    from tests.seat_policy_fixture import protected_seat_policy
     from aptl.appliance.seat.image_config import parse_seat_image_config
 
     resources = _script("write-seat-image-config.py").RESOURCES
@@ -121,7 +100,7 @@ def test_generated_config_validates_against_the_launcher_contract() -> None:
             "schema_version": "aptl.seat-image/v3",
             "desktop_privilege_contract": "aptl.desktop-privileges/v1",
             "resources": resources,
-            "boundary": full_techvault_boundary_policy().model_dump(mode="json"),
+            "boundary": protected_seat_policy().model_dump(mode="json"),
             "binding": {
                 "boundary_helper_image": "aptl-network-boundary-helper@sha256:"
                 + "c" * 64,
@@ -230,11 +209,11 @@ def test_bake_uses_the_proven_offline_guest_provisioning() -> None:
     assert "test ! -e /etc/sudoers.d/90-aptl-desktop" in scan
     assert "docker|sudo" in scan
     from aptl.appliance.loopback_proxy import build_proxy_bindings
-    from aptl.appliance.policy import full_techvault_boundary_policy
+    from tests.seat_policy_fixture import protected_seat_policy
     from aptl.appliance.seat.vm import DEFAULT_QEMU_GUEST_ADDRESS
 
     bindings = build_proxy_bindings(
-        full_techvault_boundary_policy(), adapter_address=DEFAULT_QEMU_GUEST_ADDRESS
+        protected_seat_policy(), adapter_address=DEFAULT_QEMU_GUEST_ADDRESS
     )
     assert all(item.listen_address == "10.0.2.15" for item in bindings)
     assert all(item.target_address == "127.0.0.1" for item in bindings)

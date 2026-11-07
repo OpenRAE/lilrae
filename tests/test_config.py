@@ -261,7 +261,7 @@ class TestExperimentSettings:
 
 
 _GRANT = {
-    "pack": "techvault",
+    "pack": "fixture-range",
     "consumer": "webapp",
     "variable": "DB_PASSWORD",
     "source": {"kind": "process-environment", "variable": "LAB_DB_PASSWORD"},
@@ -300,7 +300,7 @@ class TestEnvironmentGrants:
         config = DeploymentConfig(environment_grants=[{**_GRANT, "source": source}])
         grant = config.environment_grants[0]
 
-        assert grant.key == ("techvault", "webapp", "DB_PASSWORD")
+        assert grant.key == ("fixture-range", "webapp", "DB_PASSWORD")
         assert grant.source_identity == identity
 
     @pytest.mark.parametrize(
@@ -310,7 +310,7 @@ class TestEnvironmentGrants:
             {"source": {"kind": "process-environment", "variable": "lab-db"}},
             {"source": {"kind": "process-environment"}},
             {"variable": "DB-PASSWORD"},
-            {"pack": "../techvault"},
+            {"pack": "../fixture-range"},
             {"consumer": ""},
             {"value": "s3cret"},
         ],

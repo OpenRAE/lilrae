@@ -1,6 +1,6 @@
 """Full-stack real-Docker test: base-container-materialized and image-backed nodes together.
 
-TechVault's real shape is permanently mixed: some nodes convert to the
+A realistic range is permanently mixed: some nodes convert to the
 generic materializer (`runtime:`), others stay on a declared vendor
 `source:` (a legitimate, transparently-declared upstream image - not a
 hidden appliance image ADR-047/048 targets). `realize()` must materialize
