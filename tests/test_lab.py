@@ -937,6 +937,7 @@ class TestCleanBootLab:
             scenario_path=None,
             progress=None,
             teardown_on_failure=False,
+            trial=None,
         ):
             captured["skip_seed"] = skip_seed
             captured["scenario_path"] = scenario_path

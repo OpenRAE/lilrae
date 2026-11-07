@@ -6,7 +6,7 @@ The rewrite does not change runtime code, schemas, dependency locks, or authorit
 
 ## Source revision and dependency evidence
 
-`pyproject.toml` declares Python `>=3.14,<3.15`, RAES `>=10.7.0,<11`, and environment packs `>=7.2.2,<8`.
+`pyproject.toml` declares Python `>=3.14,<3.15`, RAES `>=11.0.0`, and environment packs `>=7.2.4,<8`.
 `uv.lock` resolves RAES 10.7.0 and environment packs 7.2.2.
 The source review used TechVault SDL and content from the installed 7.2.2 pack.
 Its qualified version/digest pair remains owned by `src/aptl_techvault/pack_identity.py`.

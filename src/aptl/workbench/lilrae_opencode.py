@@ -83,7 +83,7 @@ class LilraeOpenCodeExecutor:
         configuration_result: ParticipantConfigurationResultModel | None = None,
     ) -> None:
         """Validate participant configuration and verify tools before dispatch."""
-        validate_provider_environment(options.environment)
+        validate_provider_environment(options.environment, options.route)
         validate_invocation_inputs(
             model,
             prompt,
@@ -91,10 +91,11 @@ class LilraeOpenCodeExecutor:
             options.max_output_bytes,
             options.max_output_tokens,
         )
-        if options.route is None or not model.startswith("openrouter/"):
-            raise ValueError("explicit OpenRouter route and model are required")
+        if options.route is None or not options.route.admits(model):
+            raise ValueError("an explicit provider route that admits the model is required")
         self._build = options.build
         self._route = options.route
+        self._tool_governance = options.tool_governance
         self._native_history_required = options.native_history_required
         self._request_observation_required = options.request_observation_required
         self._max_output_tokens = options.max_output_tokens
@@ -225,7 +226,7 @@ class LilraeOpenCodeExecutor:
 
     def _install_profile(self, tools: OpenCodeToolProfile | None) -> None:
         """Require the private server configuration to match the selected profile."""
-        self._profile = tools.profile if tools is not None else None
+        self._profile = None
         self._profile_config = tools.config if tools is not None else None
         self._mcp_credentials = dict(tools.credentials) if tools is not None else {}
         self._inventory_probe = (
@@ -234,8 +235,9 @@ class LilraeOpenCodeExecutor:
         self._servers = {}
         self._profile_digest = ""
         if tools is not None:
+            self._profile = profile_for(tools.profile, server_ids=tools.server_ids)
             self._servers, self._profile_digest = _load_server_config(tools.config)
-            if set(self._servers) != set(profile_for(tools.profile).server_ids):
+            if set(self._servers) != set(self._profile.server_ids):
                 raise ValueError(
                     "participant MCP servers do not match the selected profile"
                 )
@@ -334,8 +336,8 @@ class LilraeOpenCodeExecutor:
             raise AgentExecutionError("participant MCP configuration changed")
 
     def __call__(self, action_id: str, cancellation: Event) -> str:
-        """Preserve ordinary no-tool invocations; refuse ungoverned tool launch."""
-        if self._tool_servers:
+        """Run without a tool session only with no tools or an explicit allowlist."""
+        if self._tool_servers and self._tool_governance != "allowlist":
             raise AgentExecutionError("Participant tool session is required.")
         return self._run(action_id, cancellation)
 
@@ -466,7 +468,13 @@ class LilraeOpenCodeExecutor:
         try:
             self._check_launch(cancellation)
             with ExitStack() as stack:
-                servers = invocation_servers(stack, tools, self._tool_servers, state)
+                servers = invocation_servers(
+                    stack,
+                    tools,
+                    self._tool_servers,
+                    state,
+                    allowlisted=self._tool_governance == "allowlist",
+                )
                 directory = stack.enter_context(
                     TemporaryDirectory(
                         prefix="lilrae-participant-", dir=self._work_root

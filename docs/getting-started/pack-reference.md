@@ -8,7 +8,7 @@ Use [Install a scenario pack](installing-packs.md) for the procedure.
 ## Installed Pack Source
 
 The default source is `env-pack`.
-The current LilRAE dependency is `raes-env-packs>=7.2.2,<8`.
+The current LilRAE dependency is `raes-env-packs>=7.2.4,<8`.
 An installed pack is read from `resources/packs/<identity>/sdl/<identity>.sdl.yaml`.
 Acquisition stages a private copy and applies environment-pack validation gates.
 TechVault includes the `techvault` and `techvault-participant-study` packs.

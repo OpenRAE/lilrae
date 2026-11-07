@@ -78,6 +78,7 @@ prose must not accidentally rename them.
 | User and workshop rewrite | `docs/getting-started/environment-bindings.md`, `docs/getting-started/pack-reference.md` | Keep admitted pack identity, adapter behavior, runtime observations, and historical qualification distinct. |
 | Scenario pack installation guide | `docs/getting-started/installing-packs.md` | Keep the content-pack and adapter distinction and the env-pack identity and source selection; do not rename the pack, RAES, or backend contracts. |
 | Interface and scenario rewrite | `docs/containers/victim-template-guide.md`, `docs/reference/interface-source-checks.md` | Keep upstream environment-pack authoring distinct from backend realization and observed evidence. |
+| Lab start trials | `docs/reference/lab-start-trials.md` | Keep the trial SDL declarations and the scenario pack's prompt assets distinct from the LilRAE trial record. |
 
 The inventory identified three current-prose hazards for issue #592 to resolve:
 the tautological rename sentence at the start of the issue #589 preflight, the

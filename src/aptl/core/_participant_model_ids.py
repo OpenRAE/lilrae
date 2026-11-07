@@ -5,7 +5,8 @@ import re
 _PARTICIPANT_MODEL_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:/@-]{0,127}$")
 _PARTICIPANT_MODEL_PATTERNS = {
     "opencode": re.compile(
-        r"^openrouter/[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,116}$", flags=re.ASCII
+        r"^(?:openrouter|google-vertex)/[a-zA-Z0-9][a-zA-Z0-9._:/@-]{0,112}$",
+        flags=re.ASCII,
     ),
     "claude": re.compile(
         r"^claude-(?:[a-z0-9-]+[-@]\d{8}|(?:sonnet|opus|haiku)-[1-9][a-z0-9.-]*)$",

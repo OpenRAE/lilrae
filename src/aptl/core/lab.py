@@ -16,7 +16,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from time import monotonic
+from time import monotonic, sleep
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Optional, cast
 from uuid import uuid4
@@ -63,6 +63,9 @@ from aptl.core.lab_types import (
     StartupOutcome as StartupOutcome,
     describe_project_runtime,
 )
+from aptl.core.trial_attempt import TrialAttempt
+from aptl.utils.pathsafe import PathContainmentError as PathSafetyError
+from aptl.core.trial_control import TRIAL_ATTEMPT_RECORD, TrialControl
 from aptl.core.lifecycle_guard import (
     LifecycleLockUnavailableError,
     lifecycle_recovery_command,
@@ -136,6 +139,9 @@ if TYPE_CHECKING:
 
 log = get_logger("lab")
 _STATE_DIR_NAME = ".aptl"
+# A stopped trial cancels its participants, drains them for at most 60 s, then
+# seals. The wait leaves a wide margin over that drain.
+TRIAL_STOP_WAIT_SECONDS = 300.0
 
 _START_OPERATION_ERRORS = (
     OSError,
@@ -546,6 +552,9 @@ def stop_lab(
         LabResult indicating success or failure.
     """
     search_dir = project_dir or Path(".")
+    trial_failure = request_trial_stop(search_dir, wait_seconds=TRIAL_STOP_WAIT_SECONDS)
+    if trial_failure is not None:
+        return trial_failure
     try:
         with lifecycle_mutation_lock(search_dir) as project_root:
             return _stop_lab_owned(remove_volumes, project_root, backend)
@@ -901,6 +910,7 @@ def clean_boot_lab(
     progress: ProgressCallback | None = None,
     appliance: ApplianceStartOptions | None = None,
     teardown_on_failure: bool = False,
+    trial: TrialAttempt | None = None,
 ) -> LabResult:
     """Boot the lab into a guaranteed clean state (RNG-001).
 
@@ -952,6 +962,7 @@ def clean_boot_lab(
                 appliance=appliance,
                 teardown_on_failure=teardown_on_failure,
                 after_start=after_start,
+                trial=trial,
             )
     except LifecycleBusyError:
         result = _lifecycle_busy_result("start --clean")
@@ -971,6 +982,7 @@ def _clean_boot_lab_owned(
     appliance: ApplianceStartOptions | None,
     teardown_on_failure: bool = False,
     after_start: list[Callable[[], LabResult | None]] | None = None,
+    trial: TrialAttempt | None = None,
 ) -> LabResult:
     """Clean and restart the lab while the caller owns lifecycle mutation."""
 
@@ -1011,12 +1023,15 @@ def _clean_boot_lab_owned(
         # The outer clean-boot owner must also be released before supervision.
         return _orchestrate_lab_start_owned(
             project_root,
-            skip_seed=skip_seed,
-            scenario_path=scenario_path,
-            progress=progress,
-            teardown_on_failure=teardown_on_failure,
+            request=_StartRequest(
+                skip_seed=skip_seed,
+                scenario_path=scenario_path,
+                progress=progress,
+                appliance=appliance,
+                teardown_on_failure=teardown_on_failure,
+                trial=trial,
+            ),
             after_start=after_start,
-            **appliance_kwargs,
         )
     return orchestrate_lab_start(
         project_root,
@@ -1024,6 +1039,7 @@ def _clean_boot_lab_owned(
         scenario_path=scenario_path,
         progress=progress,
         teardown_on_failure=teardown_on_failure,
+        trial=trial,
         **appliance_kwargs,
     )
 
@@ -1379,6 +1395,8 @@ class _LabStartContext(object):
     # workflow artifacts and the record share a single run directory.
     run_store: RunStorageBackend | None = None
     run_id: str | None = None
+    # A trial caller's attempt (#1670). Its run ID names the run directory.
+    trial: TrialAttempt | None = None
     reset_admission_id: str = field(default_factory=lambda: uuid4().hex)
     stateful_artifact_ownership: frozenset[tuple[str, str, str, str, str]] = frozenset()
     # The one admitted scenario execution (issue #951). `_step_load_config`
@@ -3243,7 +3261,7 @@ def _resolve_run_target(ctx: _LabStartContext) -> tuple[object, str]:
         return ctx.run_store, ctx.run_id
 
     state_dir = ctx.project_dir / _STATE_DIR_NAME
-    active_run_dir = resolve_active_run_dir(state_dir)
+    active_run_dir = None if ctx.trial is not None else resolve_active_run_dir(state_dir)
     if active_run_dir is not None:
         ctx.run_store, ctx.run_id = (
             LocalRunStore(active_run_dir.parent),
@@ -3256,7 +3274,9 @@ def _resolve_run_target(ctx: _LabStartContext) -> tuple[object, str]:
     if not configured_path.is_absolute():
         configured_path = ctx.project_dir / configured_path
     run_id = (
-        datetime.now(timezone.utc).strftime("run_%Y%m%dT%H%M%SZ_") + uuid4().hex[:12]
+        ctx.trial.run_id
+        if ctx.trial is not None
+        else datetime.now(timezone.utc).strftime("run_%Y%m%dT%H%M%SZ_") + uuid4().hex[:12]
     )
     ctx.run_store, ctx.run_id = LocalRunStore(configured_path), run_id
     return ctx.run_store, ctx.run_id
@@ -4645,6 +4665,7 @@ def orchestrate_lab_start(
     progress: ProgressCallback | None = None,
     appliance: ApplianceStartOptions | None = None,
     teardown_on_failure: bool = False,
+    trial: TrialAttempt | None = None,
 ) -> LabResult:
     """Own and orchestrate the complete lab startup process.
 
@@ -4658,12 +4679,15 @@ def orchestrate_lab_start(
         with lifecycle_mutation_lock(project_dir) as project_root:
             result = _orchestrate_lab_start_owned(
                 project_root,
-                skip_seed=skip_seed,
-                scenario_path=scenario_path,
-                progress=progress,
-                appliance=appliance,
+                request=_StartRequest(
+                    skip_seed=skip_seed,
+                    scenario_path=scenario_path,
+                    progress=progress,
+                    appliance=appliance,
+                    teardown_on_failure=teardown_on_failure,
+                    trial=trial,
+                ),
                 after_start=after_start,
-                teardown_on_failure=teardown_on_failure,
             )
     except LifecycleBusyError:
         return _lifecycle_busy_result("start")
@@ -4687,14 +4711,22 @@ def _supervise_started_lab(
     return result
 
 
+@dataclass(frozen=True)
+class _StartRequest:
+    """The operator's choices for one lab start, passed to the owned start."""
+
+    skip_seed: bool = False
+    scenario_path: Path | None = None
+    progress: ProgressCallback | None = None
+    appliance: ApplianceStartOptions | None = None
+    teardown_on_failure: bool = False
+    trial: TrialAttempt | None = None
+
+
 def _orchestrate_lab_start_owned(
     project_dir: Path,
-    skip_seed: bool = False,
-    scenario_path: Path | None = None,
-    progress: ProgressCallback | None = None,
-    appliance: ApplianceStartOptions | None = None,
+    request: _StartRequest | None = None,
     after_start: list[Callable[[], LabResult | None]] | None = None,
-    teardown_on_failure: bool = False,
 ) -> LabResult:
     """Orchestrate the complete lab startup process.
 
@@ -4706,18 +4738,19 @@ def _orchestrate_lab_start_owned(
 
     Args:
         project_dir: Root directory of the APTL project.
-        skip_seed: If True, skip SOC tool seeding (Step 13).
-        scenario_path: Optional selected RAES SDL scenario path.
-        progress: Optional callback for participant-facing startup updates.
+        request: The start options: SOC seeding, scenario path, progress
+            callback, appliance options, teardown policy, and trial attempt.
+        after_start: Supervisors that run after the lifecycle lock is released.
 
     Returns:
         LabResult indicating overall success or failure.
     """
+    request = request or _StartRequest()
     log.info("Starting APTL lab from %s", project_dir)
-    appliance = appliance or ApplianceStartOptions()
+    appliance = request.appliance or ApplianceStartOptions()
     ctx = _LabStartContext(
         project_dir=project_dir,
-        skip_seed=skip_seed,
+        skip_seed=request.skip_seed,
         offline_staged=appliance.offline_staged,
         appliance_launch_descriptor=appliance.launch_descriptor,
         appliance_release_public_key=appliance.release_public_key,
@@ -4728,14 +4761,105 @@ def _orchestrate_lab_start_owned(
         appliance_access_device=appliance.access_device,
         appliance_access_output_dir=appliance.access_output_dir,
         appliance_candidate_trust=appliance.candidate_trust,
-        scenario_path=scenario_path,
-        progress=progress,
-        teardown_on_failure=teardown_on_failure,
+        scenario_path=request.scenario_path,
+        progress=request.progress,
+        teardown_on_failure=request.teardown_on_failure,
+        trial=request.trial,
     )
     try:
-        return _run_lab_start_steps(ctx, after_start)
+        result = _run_lab_start_steps(ctx, after_start)
     finally:
         _close_run_runtime(ctx)
+    return _bind_trial_start(ctx, result)
+
+
+def _bind_trial_start(ctx: _LabStartContext, result: LabResult) -> LabResult:
+    """Hand a usable trial start its run and SDL identity, then fence it (#1670).
+
+    The fence is claimed while startup still owns the lifecycle lock, so no
+    other lifecycle operation can run between startup and the trial.
+    """
+    usable = (StartupOutcome.READY, StartupOutcome.DEGRADED_USABLE)
+    if ctx.trial is None or not result.success or result.outcome not in usable:
+        return result
+    selection = ctx.start_selection
+    failure = None
+    if selection is None or ctx.run_id != ctx.trial.run_id:
+        failure = "The trial start has no admitted scenario or run."
+    else:
+        try:
+            digest = "sha256:" + hashlib.sha256(selection.bundle.sdl_path.read_bytes()).hexdigest()
+            TrialControl(ctx.project_dir).claim(ctx.trial)
+        except (LifecycleBusyError, OSError, PathSafetyError, ValueError):
+            log.exception("The trial fence could not be claimed")
+            failure = "The trial could not claim its lifecycle fence."
+    if failure is not None:
+        return LabResult(
+            success=False,
+            error=failure,
+            outcome=StartupOutcome.FAILED,
+            diagnostics=list(result.diagnostics),
+        )
+    result.run_id = ctx.trial.run_id
+    result.scenario_sha256 = digest
+    return result
+
+
+def request_trial_stop(project_dir: Path, *, wait_seconds: float) -> LabResult | None:
+    """Ask a running trial to stop and wait until it releases its fence.
+
+    A fence whose runner process is gone cannot seal. Stop then releases the
+    fence and tears down; the trial run stays unsealed with its partial evidence.
+    """
+    # A trial records its attempt before it runs. Without that record, stop
+    # touches no trial state, which also keeps non-POSIX hosts on the old path.
+    if not (project_dir / TRIAL_ATTEMPT_RECORD).is_file():
+        return None
+    control = TrialControl(project_dir.resolve())
+    active = control.request_stop()
+    if active is None:
+        return None
+    log.info("Requested trial %s attempt %s to stop", active.run_id, active.attempt_id)
+    wait_until = monotonic() + wait_seconds
+    while control.active() is not None:
+        if not control.runner_alive():
+            log.warning("Trial %s has no live runner; its run stays unsealed", active.run_id)
+            control.release(active)
+            return None
+        if monotonic() >= wait_until:
+            return LabResult(
+                success=False,
+                error=(
+                    "The running trial did not seal its run after the stop request. "
+                    "Retry `lilrae lab stop`."
+                ),
+                outcome=StartupOutcome.FAILED,
+            )
+        sleep(1)
+    return None
+
+
+def finalize_trial_capture(project_dir: Path) -> str:
+    """Finalize required run transcripts before a trial seal; return the disposition.
+
+    Teardown finalizes pending transcripts too. A trial seals first, so it
+    finalizes them here; the later teardown then finds none pending.
+    """
+    from aptl.backends.raes_evidence_acquisition import load_active_transcript_authorities
+
+    root = project_dir.resolve()
+    try:
+        if not load_active_transcript_authorities(root):
+            return "not-required"
+    except (OSError, PathSafetyError, ValueError):
+        log.exception("Pending run transcripts could not be read")
+        return "failed"
+    _, backend, _, failure = _stop_recovery_configuration(root, None)
+    if failure is not None or backend is None:
+        return "failed"
+    if _finalize_required_transcript_capture(root, backend) is not None:
+        return "failed"
+    return "sealed-ready"
 
 
 def _close_run_runtime(ctx: _LabStartContext) -> None:

@@ -191,10 +191,10 @@ def _realize_entries(bundle, experiment, plan) -> None:
         assert content.inline_text in {"loglevel notice\n", "loglevel debug\n"}
         errors = [item for item in admitted.execution_plan.diagnostics if item.is_error]
         if present:
-            # This fixture deliberately has no native observer for the exact
-            # runtime defaults in its selected listener inventory. Retain the
-            # owner's refusal; rendering the graph does not prove observation.
-            assert errors
+            # This fixture has no native observer for the exact runtime defaults
+            # in its selected listener inventory. RAES owns that decision; since
+            # RAES 11 admits projected runtime snapshots (rae#1904), any refusal
+            # it still reports must use one of these owner codes.
             assert all(
                 item.code
                 in {

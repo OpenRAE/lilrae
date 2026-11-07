@@ -32,6 +32,24 @@ ContextDomains = Mapping[
 ]
 
 
+def decode_context_asset(asset: ParticipantControlContextAssetModel, data: bytes) -> str:
+    """Check bounded pinned bytes before decoding an authored context slot."""
+    if (
+        not isinstance(data, bytes)
+        or len(data) > 128_000
+        or len(data) != asset.content.size_bytes
+    ):
+        raise ValueError("participant content size is invalid")
+    hasher = checksum_hasher(asset.content.checksum.algorithm)
+    hasher.update(data)
+    if hasher.hexdigest().casefold() != asset.content.checksum.value.casefold():
+        raise ValueError("participant content checksum is inconsistent")
+    try:
+        return data.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        raise ValueError("participant content must be UTF-8") from None
+
+
 class ParticipantRequestOwner:
     """Trusted assembly supplies the catalog; author selections cannot extend it."""
 
@@ -259,28 +277,10 @@ class ParticipantRequestOwner:
             self.validate_control_context_reference(participant_address, selection)
             declaration = index.declaration_for(selection.declaration_ref)
             asset = self._scenario.control_context_assets[declaration.model_tokens[1]]
-            output.append(self._decode_content(asset, contents[slot]))
+            output.append(decode_context_asset(asset, contents[slot]))
         if any(token in "".join(output) for token in profile.unresolved_placeholders):
             raise ValueError("participant content contains an unresolved placeholder")
         return tuple(output)
-
-    @staticmethod
-    def _decode_content(asset: ParticipantControlContextAssetModel, data: bytes) -> str:
-        """Check bounded pinned bytes before decoding an authored context slot."""
-        if (
-            not isinstance(data, bytes)
-            or len(data) > 128_000
-            or len(data) != asset.content.size_bytes
-        ):
-            raise ValueError("participant content size is invalid")
-        hasher = checksum_hasher(asset.content.checksum.algorithm)
-        hasher.update(data)
-        if hasher.hexdigest().casefold() != asset.content.checksum.value.casefold():
-            raise ValueError("participant content checksum is inconsistent")
-        try:
-            return data.decode("utf-8", errors="strict")
-        except UnicodeDecodeError:
-            raise ValueError("participant content must be UTF-8") from None
 
     def prepare_request(
         self,

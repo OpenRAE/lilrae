@@ -61,13 +61,15 @@ See the [design](../architecture/managed-opencode.md) and [shared runtime](../ar
 | Identity | Supported value |
 | --- | --- |
 | Python | 3.14 |
-| RAES | At least 10.7.0, below 11 |
+| RAES | 11.0.0 or later |
 | OpenCode | 1.19.5, Linux x86_64 baseline build |
 | Archive SHA-256 | `17c200fd4b2289954cc01552559f9b6d03ec157b2ddfb5eb54144f491656333d` |
 | Executable SHA-256 | `7df4e4136301f16589b0f30bf91a61380fca5f8ef22dd36570f5ebe1d4ec802c` |
 | Adapter manifest | `lilrae-opencode`, independently versioned by its publisher |
 | Gateway | Explicit `https://openrouter.ai/api/v1` |
 | Serving route | The route uses one operator-approved serving provider. Fallbacks are disabled |
+
+A [lab start trial](lab-start-trials.md) can also use Vertex AI models through the `google-vertex` provider.
 
 Alternate builds must have an explicit `OpenCodeBuild` and separate qualification.
 The installed manifest commits its build version and executable digest.

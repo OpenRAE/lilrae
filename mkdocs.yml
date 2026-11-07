@@ -133,6 +133,7 @@ nav:
     - MCP: reference/mcp.md
     - Web: reference/web.md
     - Managed OpenCode: reference/opencode-participants.md
+    - Lab start trials: reference/lab-start-trials.md
     - Optional Windows endpoint: reference/windows-endpoint.md
     - Participant request manifests: reference/participant-request-manifests.md
     - Components:

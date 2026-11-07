@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import re
 from urllib.parse import SplitResult, urlsplit
 
-from typing import Literal
+from typing import ClassVar, Literal
 from aptl.core.provider_observation import RequestObservation
 
 
@@ -71,6 +71,76 @@ class OpenRouterRoute:
             or not re.fullmatch(r"[a-z0-9][a-z0-9_./:-]{0,127}", self.serving_provider)
         ):
             raise ValueError("OpenCode route is not admitted")
+
+    provider_id: ClassVar[str] = "openrouter"
+    #: Child environment names this route may receive.
+    environment_names: ClassVar[frozenset[str]] = frozenset({"OPENROUTER_API_KEY"})
+
+    @staticmethod
+    def admits(model: str) -> bool:
+        """Accept only an OpenRouter model identity."""
+        return model.startswith("openrouter/")
+
+    def provider_config(self, model: str) -> dict[str, object]:
+        """Pin the one approved serving provider and disable fallbacks."""
+        name = model.removeprefix("openrouter/")
+        return {
+            "whitelist": [name],
+            "options": {"baseURL": self.endpoint, "apiKey": "{env:OPENROUTER_API_KEY}"},
+            "models": {
+                name: {
+                    "options": {
+                        "provider": {
+                            "only": [self.serving_provider],
+                            "order": [self.serving_provider],
+                            "allow_fallbacks": False,
+                            "require_parameters": True,
+                        }
+                    }
+                }
+            },
+        }
+
+
+@dataclass(frozen=True)
+class VertexRoute:
+    """The Vertex AI global endpoint for one Google Cloud project."""
+
+    project: str
+
+    provider_id: ClassVar[str] = "google-vertex"
+    endpoint: ClassVar[str] = "https://aiplatform.googleapis.com"
+    serving_provider: ClassVar[str] = "google-vertex"
+    environment_names: ClassVar[frozenset[str]] = frozenset(
+        {"GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_CLOUD_PROJECT", "METADATA_SERVER_DETECTION"}
+    )
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.project, str) or not re.fullmatch(
+            r"[a-z][a-z0-9-]{4,28}[a-z0-9]", self.project
+        ):
+            raise ValueError("Vertex AI route is not admitted")
+
+    @staticmethod
+    def admits(model: str) -> bool:
+        """Accept only a Vertex AI model identity."""
+        return model.startswith("google-vertex/")
+
+    def provider_config(self, model: str) -> dict[str, object]:
+        """Allow and declare only the selected model in the project's global location.
+
+        OpenCode refuses a model outside its bundled catalog unless the
+        provider declares it, as the OpenRouter route does.
+        """
+        name = model.removeprefix("google-vertex/")
+        return {
+            "whitelist": [name],
+            "options": {"project": self.project, "location": "global"},
+            "models": {name: {}},
+        }
+
+
+ParticipantRoute = OpenRouterRoute | VertexRoute
 
 
 @dataclass(frozen=True)

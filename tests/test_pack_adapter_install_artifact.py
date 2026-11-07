@@ -173,7 +173,6 @@ def _build_second_adapter(tmp_path: Path) -> Path:
                         supports_redaction=True,
                         integrity_modes=frozenset({"checksum"}),
                         sealing_modes=frozenset({"digest"}),
-                        supports_chain_of_custody=False,
                         supports_retention=True,
                         supports_loss_disclosure=True,
                         visibility_class=CaptureVisibility.EVALUATOR_ONLY,
@@ -421,8 +420,9 @@ def test_second_installed_pack_starts_captures_plans_and_verifies(
                 {"otherpack.collector.events": source}, capture.registry
             )["otherpack.collector.events"]
             clock = SimpleNamespace(now=lambda: "2026-09-21T00:00:00Z")
+            (binding,) = admitted.capture_plan.bindings
             handle = collector.start(CollectorContext(
-                "trial", "run", "attempt", SimpleNamespace(), 10.0, clock
+                "trial", "run", "attempt", binding, 10.0, clock
             ))
             collector_outcome = collector.stop(handle)
             assert collector_outcome.status is CollectorStatus.OK
