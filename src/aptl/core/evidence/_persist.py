@@ -20,7 +20,12 @@ from raes_contracts.contracts import ExperimentEvidenceRecordModel
 
 from aptl.core.evidence import content_store
 from aptl.core.evidence.content_store import ContentInsertion
-from aptl.core.evidence.outcomes import AcquisitionPhase, CollectorStatus
+from aptl.core.evidence.outcomes import (
+    ABORTING_STATUSES,
+    SUCCESS_STATUSES,
+    AcquisitionPhase,
+    CollectorStatus,
+)
 from aptl.core.evidence.protocol import CollectorOutcome
 from aptl.core.evidence.records import (
     RecordDisclosure,
@@ -248,7 +253,6 @@ def persist_success_outcome(
     run_store: LocalRunStore,
     run_id: str,
     planned_trial_id: str,
-    captured_at: str,
     attempt_id: str | None = None,
     phase: AcquisitionPhase | None = None,
 ) -> ProcessedOutcome:
@@ -259,7 +263,9 @@ def persist_success_outcome(
     payloads, and derives a deterministic evidence-record identity.
     ``WITHHELD``-visibility evidence keeps its bytes but is recorded as
     ``redaction_state="withheld"`` so a participant projection can drop it.
+    The record's capture time is the collector's observed finish time.
     """
+    captured_at = outcome.finished_at
     media_type = _media_type_of(outcome, binding)
     chunks, structured_redaction_state, prepared_truncation = _prepare_bytes(
         outcome, media_type, binding
@@ -320,6 +326,62 @@ def persist_success_outcome(
         attempt_id=attempt_id,
     )
     return ProcessedOutcome(record=record, ref=ref, effective_status=effective_status)
+
+
+#: Bound for the observer effect retained in a failure-fact record.
+_OBSERVER_EFFECT_FACT_LIMIT = 500
+
+
+def _failure_fact_blob(
+    binding: CaptureBinding, status: CollectorStatus, effect: str
+) -> tuple[str, bytes]:
+    """Render bounded, core-owned failure facts in a media type the binding retains."""
+    expected = binding.expected_media_types
+    if expected and "application/json" not in expected and "text/plain" in expected:
+        text = f"status={status.value}; observer_effect={effect}"
+        return "text/plain", text.encode("utf-8")
+    facts = {"status": status.value, "observer_effect": effect}
+    return "application/json", json.dumps(facts, separators=(",", ":")).encode("utf-8")
+
+
+def retained_failure_outcome(
+    outcome: CollectorOutcome,
+    binding: CaptureBinding,
+    phase: AcquisitionPhase | None,
+) -> CollectorOutcome:
+    """Give a top-level content-free non-aborting failure a durable facts blob.
+
+    A preparation operation that ran and then failed may have changed state,
+    even when the source supplied no observer-effect string. Absence of effect
+    text cannot establish absence of an effect, so a preparation failure retains
+    bounded core-owned facts (status and observer effect, "unknown" when absent).
+    A measurement is observe-only, so it retains a fact only when it reports an
+    observer effect, which is itself a contract violation worth recording; a
+    failed observation that reports no effect keeps no evidence reference, which
+    preserves the delivery contract (issue #963). An aborting status (a source
+    that never started) and an outcome that already carries content are left
+    unchanged. The coordinator calls this once per binding before persistence,
+    so the persistence-failure path keeps the fail-closed policy that never
+    manufactures evidence from content that could not be safely retained.
+    """
+    if (
+        outcome.status in SUCCESS_STATUSES
+        or outcome.chunks
+        or outcome.status in ABORTING_STATUSES
+    ):
+        return outcome
+    if phase is not AcquisitionPhase.PREPARATION and outcome.observer_effect is None:
+        return outcome
+    effect = (outcome.observer_effect or "unknown")[:_OBSERVER_EFFECT_FACT_LIMIT]
+    media, blob = _failure_fact_blob(binding, outcome.status, effect)
+    retained: CollectorOutcome = replace(
+        outcome,
+        chunks=(blob,),
+        media_type=media,
+        event_count=1,
+        observer_effect=effect,
+    )
+    return retained
 
 
 #: Fixed disclosure text per non-``none`` redaction state (RAES requires a

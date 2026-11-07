@@ -25,7 +25,6 @@ hierarchy, and no overloading of ``LabResult`` startup readiness.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
@@ -37,8 +36,10 @@ from aptl.core.evidence._persist import (
     EvidenceRef,
     media_type_supported,
     persist_success_outcome,
+    retained_failure_outcome,
 )
 from aptl.core.evidence.outcomes import (
+    ABORTING_STATUSES,
     STATUS_DIAGNOSTIC_CODES,
     SUCCESS_STATUSES,
     AcquisitionDisposition,
@@ -53,12 +54,6 @@ from aptl.core.evidence.protocol import (
     RunScope,
 )
 from aptl.core.experiment.capture_registry import CaptureBinding
-
-#: Statuses that abort the attempt before participant action (source never
-#: came up), yielding an INCONCLUSIVE disposition.
-_ABORTING_STATUSES: frozenset[CollectorStatus] = frozenset(
-    {CollectorStatus.SOURCE_UNAVAILABLE, CollectorStatus.STARTUP_FAILURE}
-)
 
 #: Statuses that invalidate a REQUIRED capture unless the policy explicitly
 #: accepted the degradation.
@@ -276,62 +271,6 @@ def _resolve_plan(
     return plan, diagnostics, unavailable
 
 
-#: Bound for the observer-effect retained in a failure-fact record.
-_OBSERVER_EFFECT_FACT_LIMIT = 500
-
-
-def _failure_fact_blob(
-    binding: CaptureBinding, status: CollectorStatus, effect: str
-) -> tuple[str, bytes]:
-    """Render bounded, core-owned failure facts in a media type the binding retains."""
-    expected = binding.expected_media_types
-    if expected and "application/json" not in expected and "text/plain" in expected:
-        return "text/plain", f"status={status.value}; observer_effect={effect}".encode(
-            "utf-8"
-        )
-    facts = {"status": status.value, "observer_effect": effect}
-    return "application/json", json.dumps(facts, separators=(",", ":")).encode("utf-8")
-
-
-def _retained_failure_outcome(
-    outcome: CollectorOutcome,
-    binding: CaptureBinding,
-    phase: AcquisitionPhase | None,
-) -> CollectorOutcome:
-    """Give a top-level content-free non-aborting failure a durable facts blob.
-
-    A preparation operation that ran and then failed may have changed state,
-    even when the source supplied no observer-effect string. Absence of effect
-    text cannot establish absence of an effect, so a preparation failure retains
-    bounded core-owned facts (status and observer effect, "unknown" when absent).
-    A measurement is observe-only, so it retains a fact only when it reports an
-    observer effect, which is itself a contract violation worth recording; a
-    failed observation that reports no effect keeps no evidence reference, which
-    preserves the delivery contract (issue #963). An aborting status (a source
-    that never started) and an outcome that already carries content are left
-    unchanged. Keeping this at the top level preserves the fail-closed policy
-    that never manufactures evidence from content that could not be safely
-    retained during persistence.
-    """
-    if (
-        outcome.status in SUCCESS_STATUSES
-        or outcome.chunks
-        or outcome.status in _ABORTING_STATUSES
-    ):
-        return outcome
-    if phase is not AcquisitionPhase.PREPARATION and outcome.observer_effect is None:
-        return outcome
-    effect = (outcome.observer_effect or "unknown")[:_OBSERVER_EFFECT_FACT_LIMIT]
-    media, blob = _failure_fact_blob(binding, outcome.status, effect)
-    return replace(
-        outcome,
-        chunks=(blob,),
-        media_type=media,
-        event_count=1,
-        observer_effect=effect,
-    )
-
-
 def _process_outcome(
     binding: CaptureBinding,
     outcome: CollectorOutcome,
@@ -359,7 +298,6 @@ def _process_outcome(
             run_id=scope.run_id,
             planned_trial_id=scope.planned_trial_id,
             attempt_id=scope.attempt_id,
-            captured_at=outcome.finished_at,
             phase=phase,
         )
     except (BufferError, ValueError, RecursionError, OSError) as exc:
@@ -454,7 +392,8 @@ def _pre_persistence_failure(
 
 def _disposition(reports: Sequence[CollectorReport]) -> AcquisitionDisposition:
     """Compute the overall disposition from the per-binding effective statuses."""
-    if any(r.status in _ABORTING_STATUSES for r in reports):
+    # An aborting status means a required source never came up: INCONCLUSIVE.
+    if any(r.status in ABORTING_STATUSES for r in reports):
         return AcquisitionDisposition.INCONCLUSIVE
     partial = False
     for report in reports:
@@ -524,7 +463,7 @@ def acquire_evidence(
     refs: list[EvidenceRef] = []
     all_diagnostics: list[Diagnostic] = list(diagnostics)
     for binding in bindings:
-        outcome = _retained_failure_outcome(
+        outcome = retained_failure_outcome(
             outcomes_by_key[_binding_key(binding)], binding, phase
         )
         report, record, ref, diagnostic = _process_outcome(

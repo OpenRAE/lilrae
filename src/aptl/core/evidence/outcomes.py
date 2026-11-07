@@ -82,6 +82,13 @@ SUCCESS_STATUSES: frozenset[CollectorStatus] = frozenset(
     {CollectorStatus.OK, CollectorStatus.EMPTY_OK}
 )
 
+#: Statuses where the source never came up, so the operation did not run. They
+#: abort the attempt before participant action and leave no probe residue, so a
+#: failure-fact record is never manufactured for them.
+ABORTING_STATUSES: frozenset[CollectorStatus] = frozenset(
+    {CollectorStatus.SOURCE_UNAVAILABLE, CollectorStatus.STARTUP_FAILURE}
+)
+
 #: One stable capture-domain diagnostic code per failure status. The raw
 #: value is never echoed; only these fixed codes reach a diagnostic.
 STATUS_DIAGNOSTIC_CODES: dict[CollectorStatus, str] = {
