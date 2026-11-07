@@ -88,3 +88,4 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [064](adr-064-layered-architecture-and-code-conventions.md) | Layered Architecture and Code Conventions | accepted | 2026-10-31 |
 | [065](adr-065-executable-participant-action-boundaries.md) | Executable Participant Action Boundaries | proposed | 2026-10-31 |
 | [066](adr-066-runtime-readback-reports-realized-state.md) | Runtime Readback Reports Realized State | accepted | 2026-10-31 |
+| [067](adr-067-admitted-participant-smoke-providers.md) | Admitted Participant Smoke Providers | accepted | 2026-11-07 |

@@ -50,7 +50,7 @@
       "owner": "LilRAE original-scenario compatibility",
       "symbol": "_profile_checks",
       "kind": "pack identifier",
-      "line_digest": "sha256:cb689ee19f9710bc978023185fd8a18a08d16ba22ddc38ebc77c440a37cfca71",
+      "line_digest": "sha256:efcbf1b37f7a2e8a8269af3e3fc1f97c24a146d2ac1205b9e634e79799f4e25e",
       "count": 1,
       "purpose": "Original-family appliance inputs and qualification policy remain explicit release assets; the generic admission path does not select this preset.",
       "allowed_use": "Only this exact reviewed source line and occurrence count, supporting original-scenario contracts; never an implicit selector for another pack.",
