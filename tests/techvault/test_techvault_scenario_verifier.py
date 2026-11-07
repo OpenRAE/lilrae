@@ -52,7 +52,7 @@ def _context(operations: object | None = None) -> VerificationContext:
         # -- admission is discovery's job. So the context carries a deliberately
         # synthetic identity rather than the plugin's own declaration: binding a
         # declared digest to the pack APTL admits is proved against
-        # `env_pack_bundle()` in tests/test_plugin_pack_compatibility.py, never
+        # `env_pack_bundle()` in tests/techvault/test_plugin_pack_compatibility.py, never
         # by asserting a constant against itself.
         scenario=ScenarioIdentity(
             identity="techvault",
@@ -84,7 +84,7 @@ def test_every_qualified_pair_is_declared_whole() -> None:
     """A release admits pairs, so no pair may be assembled from parts.
 
     The values themselves are not the subject here -- what they must equal is
-    the admitted pack, proved in tests/test_plugin_pack_compatibility.py against
+    the admitted pack, proved in tests/techvault/test_plugin_pack_compatibility.py against
     `env_pack_bundle()`. What this asserts is the shape that makes the claim
     honest: every declared pair is complete in every dimension, and the pack
     content is identical across them, so no combination is admitted that the
