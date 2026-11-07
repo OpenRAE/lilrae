@@ -272,6 +272,7 @@ def seed_script_path(project_dir: Path, plan: ScenarioStartupPlan) -> Path:
 
 
 __all__ = [
+    "DOCKER_TRANSPORT_KEYS",
     "ENTRY_POINT_GROUP",
     "EXTENSION_API_VERSION",
     "ContainerEnvironmentBinding",
