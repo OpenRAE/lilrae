@@ -61,6 +61,7 @@ def test_materialize_default_config_is_valid(fake_bundle: Path, tmp_path: Path) 
         "claude": None,
         "codex": None,
         "opencode": None,
+        "vertex": None,
     }
 
 

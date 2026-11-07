@@ -64,7 +64,7 @@ from aptl.core.lab_types import (
     describe_project_runtime,
 )
 from aptl.core.trial_attempt import TrialAttempt
-from aptl.core.trial_control import TrialControl
+from aptl.core.trial_control import TRIAL_ATTEMPT_RECORD, TrialControl
 from aptl.core.lifecycle_guard import (
     LifecycleLockUnavailableError,
     lifecycle_recovery_command,
@@ -4792,7 +4792,9 @@ def request_trial_stop(project_dir: Path, *, wait_seconds: float) -> LabResult |
     A fence whose runner process is gone cannot seal. Stop then releases the
     fence and tears down; the trial run stays unsealed with its partial evidence.
     """
-    if not project_dir.is_dir():
+    # A trial records its attempt before it runs. Without that record, stop
+    # touches no trial state, which also keeps non-POSIX hosts on the old path.
+    if not (project_dir / TRIAL_ATTEMPT_RECORD).is_file():
         return None
     control = TrialControl(project_dir.resolve())
     active = control.request_stop()

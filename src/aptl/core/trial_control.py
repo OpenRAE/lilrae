@@ -24,10 +24,12 @@ from aptl.utils.pathsafe import (
     remove_contained_nofollow,
 )
 
-__all__ = ["ActiveTrial", "TrialControl", "trial_owner"]
+__all__ = ["TRIAL_ATTEMPT_RECORD", "ActiveTrial", "TrialControl", "trial_owner"]
 
 _RECORDS = Path(".aptl/trial")
 _ATTEMPT = _RECORDS / "attempt.json"
+#: The record whose presence shows a claimed trial; it exists before the run.
+TRIAL_ATTEMPT_RECORD = _ATTEMPT
 _RUNNER = _RECORDS / "runner.json"
 _STOP = _RECORDS / "stop-request.json"
 _MAX_RECORD_BYTES = 4096
