@@ -8,13 +8,13 @@ from types import SimpleNamespace
 
 import yaml
 
+from aptl.backends._scenario_startup_plan import _safe_relative_script
 from aptl.backends.scenario_startup import (
     ENTRY_POINT_GROUP,
     ScenarioStartupProviderError,
     ScenarioStartupPlan,
     ScenarioStartupSelection,
     StartupHookContext,
-    _safe_relative_script,
     observe_scenario_runtime_concerns,
     run_scenario_runtime,
     resolve_scenario_startup,
@@ -64,7 +64,7 @@ def _bundle(*, digest: str = TECHVAULT_PACK_SET_DIGEST) -> ScenarioBundle:
         root=pack_root,
         sdl_path=pack_root / "sdl/techvault.sdl.yaml",
         source_kind=ScenarioSourceKind.ENV_PACK,
-        pack_identity=PackIdentity("techvault", "7.2.2", digest),
+        pack_identity=PackIdentity("techvault", "7.2.4", digest),
     )
 
 
@@ -108,7 +108,7 @@ def _startup_spec(
         nodes=nodes,
         networks=(),
         images=images,
-        pack_identity=PackIdentity("techvault", "7.2.2", digest),
+        pack_identity=PackIdentity("techvault", "7.2.4", digest),
     )
 
 

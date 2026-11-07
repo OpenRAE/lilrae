@@ -170,6 +170,9 @@ class LabResult:
     # populated on lab start so the CLI can report the real host port each
     # service landed on when a default was already in use. Empty for other ops.
     resolved_ports: list[object] = field(default_factory=list)
+    # A trial start's run ID and admitted SDL digest (#1670); ``None`` otherwise.
+    run_id: str | None = None
+    scenario_sha256: str | None = None
     # The selected daemon observed during this exact startup attempt. A missing
     # observation is rendered explicitly as unknown, including on early failure.
     execution_boundary: ExecutionBoundaryObservation | None = None

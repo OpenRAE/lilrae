@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Ground Control design acceptance adapter for the Python test runner.
+"""Design acceptance adapter for the Python test runner.
 
-The design review step of Ground Control ``/implement`` validates one named
-acceptance case at a time (ADR-064 design checks). Ground Control runs this
-adapter once per acceptance criterion. The adapter reads one JSON request on
-stdin and writes one JSON observation on stdout.
+The adapter validates one named acceptance case at a time (ADR-064 design
+checks). Run it manually once per acceptance criterion. The adapter reads one
+JSON request on stdin and writes one JSON observation on stdout.
 
 Request (stdin)::
 

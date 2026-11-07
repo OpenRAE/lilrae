@@ -149,7 +149,7 @@ class CollectorRegistration:
     supported RAES capture-spec contract version, the observation channel kind
     (a governed ``observation-channel-kinds`` term), capture kind/scope, window
     semantics, media types, required artifact roles, sensitivities,
-    redaction/integrity/sealing/chain-of-custody/retention support, loss
+    redaction/integrity/sealing/retention support, loss
     disclosure, visibility class, and limits. It carries NO factory, import
     path, or executable reference — the trusted adapter wiring is composed
     separately (EXP-010 PR 2).
@@ -174,7 +174,6 @@ class CollectorRegistration:
     supports_redaction: bool
     integrity_modes: frozenset[str]
     sealing_modes: frozenset[str]
-    supports_chain_of_custody: bool
     supports_retention: bool
     supports_loss_disclosure: bool
     visibility_class: CaptureVisibility
@@ -216,7 +215,6 @@ class CollectorRegistration:
             "supports_redaction": self.supports_redaction,
             "integrity_modes": sorted(self.integrity_modes),
             "sealing_modes": sorted(self.sealing_modes),
-            "supports_chain_of_custody": self.supports_chain_of_custody,
             "supports_retention": self.supports_retention,
             "redaction_policies": sorted(self.redaction_policies),
             "retention_policies": sorted(self.retention_policies),
@@ -421,9 +419,6 @@ class CollectorRegistry:
             supports_redaction=any(r.supports_redaction for r in self.registrations),
             supports_loss_disclosure=any(
                 r.supports_loss_disclosure for r in self.registrations
-            ),
-            supports_chain_of_custody=any(
-                r.supports_chain_of_custody for r in self.registrations
             ),
             capture_offers=tuple(
                 registration.capture_offer

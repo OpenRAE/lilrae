@@ -5,7 +5,10 @@ from aptl.core.participant_requests.profiles import (
     RequestCatalog,
     RequestProfile,
 )
-from aptl.core.participant_requests.owner import ParticipantRequestOwner
+from aptl.core.participant_requests.owner import (
+    ParticipantRequestOwner,
+    decode_context_asset,
+)
 from aptl.core.participant_requests.request import ParticipantRequest
 from aptl.core.participant_requests.binding import ParticipantRequestBinding
 
@@ -16,4 +19,5 @@ __all__ = [
     "ParticipantRequestBinding",
     "RequestCatalog",
     "RequestProfile",
+    "decode_context_asset",
 ]

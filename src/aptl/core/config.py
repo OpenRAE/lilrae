@@ -317,11 +317,13 @@ class InstalledParticipantCredentialSources(BaseModel):
     claude: ProcessEnvironmentCredentialSource | None = None
     codex: ProcessEnvironmentCredentialSource | None = None
     opencode: ProcessEnvironmentCredentialSource | None = None
+    #: A Google Cloud service account key for Vertex AI participant models.
+    vertex: ProcessEnvironmentCredentialSource | None = None
 
     def source_for(self, provider: str) -> ProcessEnvironmentCredentialSource:
         """Return one explicitly configured source or fail closed."""
 
-        if provider not in {"claude", "codex", "opencode"}:
+        if provider not in {"claude", "codex", "opencode", "vertex"}:
             raise ValueError("unknown installed participant provider")
         source = getattr(self, provider)
         if source is None:
@@ -348,6 +350,20 @@ class ExperimentSettings(BaseModel):
     participant_credential_sources: InstalledParticipantCredentialSources = Field(
         default_factory=InstalledParticipantCredentialSources
     )
+    #: The operator-approved OpenRouter serving provider for each trial model.
+    participant_serving_providers: dict[str, str] = Field(
+        default_factory=dict, max_length=64
+    )
+    #: The absolute path of the installed, pinned OpenCode executable.
+    opencode_executable: str | None = Field(default=None, min_length=2, max_length=4096)
+
+    @field_validator("opencode_executable")
+    @classmethod
+    def validate_opencode_executable(cls, value: str | None) -> str | None:
+        """Admit only an absolute executable path."""
+        if value is not None and not Path(value).is_absolute():
+            raise ValueError("opencode_executable must be an absolute path")
+        return value
 
 
 class SeatSettings(BaseModel):

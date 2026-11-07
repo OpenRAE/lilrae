@@ -54,6 +54,7 @@ docs/reference/family-adapters.md
 docs/reference/host-mcp-access.md
 docs/reference/host-mcp-operations.md
 docs/reference/interface-source-checks.md
+docs/reference/lab-start-trials.md
 docs/reference/mcp-operations.md
 docs/reference/mcp.md
 docs/reference/migrate-configuration.md

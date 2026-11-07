@@ -272,9 +272,16 @@ def test_cleanup_receipt_is_consumable_by_the_public_batch_validator(tmp_path):
         validate_batch_execution_receipt,
     )
 
+    from raes_contracts.contract_seals import seal_contract_fixture
+
     root = corpus_root() / "fixtures"
-    original = AdmittedTrialPlanModel.model_validate_json(
-        (root / "plans/admitted-trial-plan-v1/valid/minimal.json").read_bytes()
+    # RAES fixtures omit derived digests; the owning contract seals them (rae#1929).
+    original = AdmittedTrialPlanModel.model_validate(
+        seal_contract_fixture(
+            "admitted-trial-plan-v1",
+            json.loads((root / "plans/admitted-trial-plan-v1/valid/minimal.json").read_text()),
+            kind="valid",
+        )
     )
     cleanup, native = service(tmp_path)
     fields = {
@@ -285,10 +292,12 @@ def test_cleanup_receipt_is_consumable_by_the_public_batch_validator(tmp_path):
     fields["cleanup_plans"] = {"cleanup-a": cleanup.plan}
     plan = seal_admitted_trial_plan(**fields)
     observed = cleanup.execute("failed")
-    payload = json.loads(
-        (
-            root / "control-plane/batch-execution-receipt-v1/valid/serial.json"
-        ).read_bytes()
+    payload = seal_contract_fixture(
+        "batch-execution-receipt-v1",
+        json.loads(
+            (root / "control-plane/batch-execution-receipt-v1/valid/serial.json").read_text()
+        ),
+        kind="valid",
     )
     payload.update(
         plan_id=plan.plan_id,

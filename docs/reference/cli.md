@@ -48,6 +48,9 @@ and direct calls into Python modules are not supported interfaces.
 | Stop | `lilrae lab stop` | Stops the project and keeps volumes. |
 | Reset | `lilrae lab reset` | After confirmation, removes the project's containers, networks, and volumes and finishes pending host cleanup. `lilrae lab stop -v` does the same. |
 
+To run one trial that a trial SDL declares, add `--run-id`, `--attempt-id`, and
+`--deadline` to `lilrae lab start`. See [Lab start trials](lab-start-trials.md).
+
 The CLI result reports the admitted startup outcome.
 A running container alone does not establish lab readiness.
 Generated configuration and observed endpoints belong to the supported startup path.
@@ -85,7 +88,7 @@ as `[REDACTED]`.
 | Command | Fields after `command`, `schema_version`, and `ok` |
 | --- | --- |
 | `lilrae doctor --json` | `counts`, `checks`. |
-| `lilrae lab start --json` | `outcome`, `error`, `execution_boundary`, `admission_seconds`, `diagnostics`, `published_ports`, `published_ports_observed`, `residue`. |
+| `lilrae lab start --json` | `outcome`, `error`, `execution_boundary`, `admission_seconds`, `diagnostics`, `published_ports`, `published_ports_observed`, `residue`, and `trial` for a trial start. |
 | `lilrae lab stop --json` | `volumes`, `error`. |
 | `lilrae lab reset --json` | `containers_found`, `networks_found`, `error`. |
 
@@ -101,6 +104,7 @@ as `[REDACTED]`.
 | `published_ports` | This field contains entries with `service`, `default_port`, `host_port`, `protocols`, `host_ip`, and `remapped`. |
 | `published_ports_observed` | This field states whether Docker reported the ports. |
 | `residue` | This field is `null` or failed-start state with `container_count`, `network_count`, `teardown_requested`, and `torn_down`. |
+| `trial` | This field is present only for a [trial start](lab-start-trials.md#exit-status-and-json-output). |
 | `volumes` | This field states whether stop requested `--volumes`. |
 | `containers_found`, `networks_found` | These fields give pre-reset counts for the recorded workspace project. They are `0` without a recorded project, or `null` for unavailable counts. |
 
