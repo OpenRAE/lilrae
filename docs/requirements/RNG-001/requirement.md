@@ -27,6 +27,6 @@ Persistent containers accumulate state (files, processes, credentials, logs) tha
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/_live_gate_probes.py` (live gate consumes clean_boot_lab)
 - TESTS → TEST `tests/test_lab.py` (TestCleanBootLab)
 - TESTS → TEST `tests/test_cli.py` (start --clean CLI tests)
-- TESTS → TEST `tests/test_techvault_live_gate.py` (live-gate boot tests (clean_boot_lab))
+- TESTS → TEST `tests/techvault/test_techvault_live_gate.py` (live-gate boot tests (clean_boot_lab))
 - IMPLEMENTS → GITHUB_ISSUE `424` (RNG-001: Ephemeral Environments with Clean State Guarantees)
 - DOCUMENTS → DOCUMENTATION `docs/reference/experiment-runs.md` (Clean State Between Runs reference)

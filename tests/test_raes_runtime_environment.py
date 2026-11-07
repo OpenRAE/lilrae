@@ -1,11 +1,10 @@
 """Runtime environment binding and closed-scope preservation.
 
 The generic binding path remains available for scenarios that author runtime
-environment requirements.  TechVault 6.2.0 deliberately does not: its portable
-semantic state leaves backend mechanics out of the scenario and resolves the
-unspecified environment and mount scopes CLOSED.  APTL must preserve that
-absence rather than restoring old Docker Compose details behind the author's
-back.
+environment requirements. A released pack can leave backend mechanics out of
+the scenario and resolve the unspecified environment and mount scopes CLOSED.
+APTL must preserve that absence rather than restoring old Docker Compose
+details behind the author's back; the released-pack tests check it (#1700).
 
 The security property under test is that a value never reaches process argv.
 Environment carries credentials; `-e NAME=value` would expose them to any local
@@ -32,23 +31,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from raes.parser import parse_sdl_file
 
-from aptl.backends.raes_base_substrate import BaseContainerSpec, _environment_names
+from aptl.backends.raes_base_substrate import BaseContainerSpec
 from aptl.core.config import EnvironmentGrant
 from aptl.core.deployment._environment_bindings import EnvironmentBindingContext
 from aptl.core.deployment.errors import BackendSeedError
-from tests.helpers import techvault_scenario_path
-
-
-@pytest.fixture(scope="module")
-def scenario_path(tmp_path_factory) -> Path:
-    """Staged SDL path of the default TechVault env-pack scenario (#875)."""
-    return techvault_scenario_path(tmp_path_factory.mktemp("raes-env"))
-
-
-def _webapp_runtime(scenario_path: Path):
-    return parse_sdl_file(scenario_path).nodes["webapp"].runtime
 
 
 def _backend(project_dir: Path):
@@ -99,7 +86,7 @@ def _grant(
     source: str,
     *,
     kind: str = "process-environment",
-    pack: str = "techvault",
+    pack: str = "fixture-range",
     consumer: str = "webapp",
 ) -> EnvironmentGrant:
     return EnvironmentGrant(
@@ -113,7 +100,7 @@ def _grant(
 def _granting(
     project_dir: Path,
     *grants: EnvironmentGrant,
-    pack: str | None = "techvault",
+    pack: str | None = "fixture-range",
     adapter_grants: tuple[EnvironmentGrant, ...] = (),
 ):
     """A backend whose preflight recorded these grants for one admitted pack."""
@@ -140,14 +127,6 @@ def _bound_body(backend, spec: BaseContainerSpec) -> str:
     argv: list[str] = []
     backend._append_base_environment(argv, spec)
     return Path(argv[1]).read_text(encoding="utf-8")
-
-
-def test_closed_pack_environment_is_not_invented(scenario_path):
-    """An empty closed environment remains empty at the base-container seam."""
-
-    names = _environment_names(_webapp_runtime(scenario_path))
-
-    assert names == ()
 
 
 def test_secret_values_never_reach_process_argv(tmp_path, monkeypatch):
@@ -240,38 +219,6 @@ def test_an_ungranted_secret_is_refused_not_inherited(tmp_path, monkeypatch):
     assert not (tmp_path / ".aptl").exists()
 
 
-def test_closed_node_mounts_are_not_invented(scenario_path):
-    """Backend-neutral nodes gain no Docker mount details through APTL."""
-
-    from aptl.backends.raes_base_substrate import _volume_mounts
-
-    scenario = parse_sdl_file(scenario_path)
-    lowered = {
-        name: {(m.source, m.target) for m in _volume_mounts(node.runtime)}
-        for name, node in scenario.nodes.items()
-        if getattr(node, "runtime", None) and node.runtime.mounts
-    }
-
-    assert lowered == {}
-
-    # Explicit portable persistent-volume resources remain authored state; they
-    # are not node-local Docker mount selections and keep their exact consumers.
-    persistent = {
-        name: {
-            (consumer.node, consumer.mount_destination) for consumer in volume.consumers
-        }
-        for name, volume in scenario.persistent_volumes.items()
-    }
-    assert persistent["suricata_misp_rules"] == {
-        ("suricata", "/var/lib/suricata/rules/misp"),
-        ("misp-suricata-sync", "/var/lib/suricata/rules/misp"),
-    }
-    assert persistent["suricata_command_socket"] == {
-        ("suricata", "/var/run/suricata"),
-        ("misp-suricata-sync", "/var/run/suricata"),
-    }
-
-
 def test_the_project_env_file_is_read_only_through_a_grant(tmp_path):
     """A `project-env-file` grant reads exactly the key it names."""
 
@@ -299,16 +246,6 @@ def test_the_process_environment_is_read_only_through_a_grant(tmp_path, monkeypa
     )
 
     assert body == f"DB_PASSWORD={_GRANTED}\n"
-
-
-def test_closed_pack_environment_has_no_backend_defaults(scenario_path):
-    """Old Compose literals are not smuggled into the backend-neutral pack."""
-
-    from aptl.backends.raes_base_substrate import _environment_defaults
-
-    defaults = dict(_environment_defaults(_webapp_runtime(scenario_path)))
-
-    assert defaults == {}
 
 
 def test_authored_values_survive_same_named_ambient_and_project_values(
@@ -353,7 +290,7 @@ def test_a_grant_binds_only_the_consumer_it_names(tmp_path, monkeypatch):
     ids=["other-pack", "project-tree"],
 )
 def test_a_grant_binds_only_the_pack_it_names(tmp_path, monkeypatch, pack, named):
-    """Pack identity: a grant for `techvault` binds nothing in any other run."""
+    """Pack identity: a grant for `fixture-range` binds nothing in any other run."""
 
     monkeypatch.setenv("LAB_DB_PASSWORD", _GRANTED)
     backend = _granting(tmp_path, _grant("DB_PASSWORD", "LAB_DB_PASSWORD"), pack=pack)
@@ -457,7 +394,7 @@ def _base_node_realization(environment=None, **fields):
         profiles=(),
         nodes=(node,),
         networks=(),
-        pack_identity=PackIdentity("techvault", "6.5.1", "sha256:" + "0" * 64),
+        pack_identity=PackIdentity("fixture-range", "6.5.1", "sha256:" + "0" * 64),
         **fields,
     )
 
@@ -480,7 +417,7 @@ _API_KEY_FOR_DB = SimpleNamespace(
 @pytest.mark.parametrize(
     ("environment", "artifacts", "refusal"),
     [
-        (None, (), "DB_PASSWORD has no environment grant for pack techvault"),
+        (None, (), "DB_PASSWORD has no environment grant for pack fixture-range"),
         ([_GENERATED_API_KEY], (), "API_KEY has no generated output for this node"),
         (
             [_GENERATED_API_KEY],
@@ -544,7 +481,7 @@ def test_a_granted_binding_passes_the_preflight(tmp_path, monkeypatch, deploymen
     from aptl.core.deployment import get_backend
 
     grant = {
-        "pack": "techvault",
+        "pack": "fixture-range",
         "consumer": "webapp",
         "variable": "DB_PASSWORD",
         "source": {"kind": "process-environment", "variable": "LAB_DB_PASSWORD"},
@@ -580,7 +517,7 @@ def test_an_adapter_selected_for_another_pack_supplies_nothing(tmp_path):
             _grant("DB_PASSWORD", "DB_PASSWORD", kind="project-env-file"),
         ),
     )
-    other = PackIdentity("techvault", "0.0.9", "sha256:" + "1" * 64)
+    other = PackIdentity("fixture-range", "0.0.9", "sha256:" + "1" * 64)
     matching = _base_node_realization(
         startup_selection=SimpleNamespace(identity=None, plan=plan)
     )
@@ -770,43 +707,6 @@ def test_spec_lowering_marks_out_of_band_and_generated_names():
     assert spec.environment_sourced == ("OPERATOR", "FIXTURE", "WITHHELD")
     assert spec.environment_generated == ("GENERATED",)
     assert dict(spec.environment_defaults) == {"SETTING": "on", "PLANTED": "changeme"}
-
-
-def test_closed_pack_credentials_are_not_reintroduced_as_environment(scenario_path):
-    """A planted secret elsewhere in the scenario does not open this scope."""
-
-    from aptl.backends.raes_base_substrate import _environment_defaults
-
-    scenario = parse_sdl_file(scenario_path)
-
-    db = dict(_environment_defaults(scenario.nodes["db"].runtime))
-    webapp = dict(_environment_defaults(scenario.nodes["webapp"].runtime))
-
-    assert db == {}
-    assert webapp == {}
-
-
-def test_a_real_operator_secret_is_still_authored_empty(scenario_path):
-    """The distinction must cut both ways, or everything becomes a fixture."""
-
-    from aptl.backends.raes_base_substrate import _environment_defaults
-
-    scenario = parse_sdl_file(scenario_path)
-    sync = dict(_environment_defaults(scenario.nodes["misp-suricata-sync"].runtime))
-
-    # MISP's API key is a real deployment credential, not planted range content.
-    assert "MISP_API_KEY" not in sync
-
-
-def test_closed_pack_environment_has_no_values_to_reclassify(
-    scenario_path,
-):
-    """APTL cannot reinterpret absent closed values as backend fixtures."""
-
-    scenario = parse_sdl_file(scenario_path)
-
-    assert scenario.nodes["db"].runtime.environment == []
-    assert scenario.nodes["webapp"].runtime.environment == []
 
 
 # Values Docker's env-file reader keeps byte for byte (#966). The last one makes

@@ -84,8 +84,8 @@ class TestBaseSubstrate:
     def test_ensure_base_substrate_starts_the_base_container(self):
         started: list[tuple[str, str]] = []
         ex = _executor(_FakeExec(), started=started)
-        ex.ensure_base_substrate("techvault.wazuh-manager", "debian:13-slim")
-        assert started == [("techvault.wazuh-manager", "debian:13-slim")]
+        ex.ensure_base_substrate("range.wazuh-manager", "debian:13-slim")
+        assert started == [("range.wazuh-manager", "debian:13-slim")]
 
 
 class TestPackages:
@@ -111,7 +111,7 @@ class TestPackages:
     def test_install_runs_generic_manager_command_in_the_node_container(self):
         fake = _FakeExec()
         _executor(fake).install_packages(
-            "techvault.wazuh-manager", "apt", ("wazuh-manager",)
+            "range.wazuh-manager", "apt", ("wazuh-manager",)
         )
         container, argv = fake.calls[-1]
         assert container == "aptl-wazuh-manager"

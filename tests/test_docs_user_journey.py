@@ -146,8 +146,8 @@ def test_workshop_routes_separate_setup_from_learning() -> None:
                 assert fragment in {_slug(heading) for heading in headings}, target
 
 
-def test_split_operator_pages_are_reachable_from_reader_navigation() -> None:
-    """Every split page has a reader route; source archives remain separate."""
+def reader_routes() -> dict[str, set[str]]:
+    """Return each top-level reader section's page set from ``mkdocs.yml``."""
     mkdocs = _document("mkdocs.yml").replace(
         "!!python/name:pymdownx.superfences.fence_code_format",
         "'pymdownx.superfences.fence_code_format'",
@@ -163,7 +163,24 @@ def test_split_operator_pages_are_reachable_from_reader_navigation() -> None:
         return set()
 
     nav = yaml.safe_load(mkdocs)["nav"]
-    routes = {next(iter(item)): targets(item) for item in nav}
+    return {next(iter(item)): targets(item) for item in nav}
+
+
+def assert_split_pages_cross_link(split_pages: dict[str, str]) -> None:
+    """Fail unless each split source page and its guide link to each other."""
+    for source, guide in split_pages.items():
+        for origin, destination in ((source, guide), (guide, source)):
+            links = {
+                (DOCS / origin).parent / target.split("#", 1)[0]
+                for target in _links(_document(f"docs/{origin}")).values()
+                if "://" not in target
+            }
+            assert (DOCS / destination) in links, (origin, destination)
+
+
+def test_split_operator_pages_are_reachable_from_reader_navigation() -> None:
+    """Every split page has a reader route; source archives remain separate."""
+    routes = reader_routes()
     assert {
         "getting-started/host-requirements.md",
         "getting-started/installation-reference.md",
@@ -175,8 +192,6 @@ def test_split_operator_pages_are_reachable_from_reader_navigation() -> None:
         "reference/opencode-participants.md",
         "reference/windows-endpoint.md",
         "sdl/curated-variant-reference.md",
-        "raes/techvault-static-validation-gate.md",
-        "raes/techvault-live-validation-gate.md",
         "workshop/reference.md",
         "workshop/hosted-backup-reference.md",
     } <= routes["Reference"]
@@ -184,7 +199,6 @@ def test_split_operator_pages_are_reachable_from_reader_navigation() -> None:
         "workshop/setup.md",
         "troubleshooting/search-index-backup.md",
         "sdl/index.md",
-        "sdl/techvault-curated-variants.md",
         "containers/victim-template-guide.md",
         "components/victim-operations.md",
         "components/kali-operations.md",
@@ -216,7 +230,6 @@ def test_split_operator_pages_are_reachable_from_reader_navigation() -> None:
         "reference/seat-containment.md",
         "components/red-side-capture-boundary.md",
         "sdl/runtime-architecture.md",
-        "components/techvault-adapter-boundary.md",
     } <= routes["Explanation"]
     for target in set().union(*routes.values()):
         assert (DOCS / target).is_file(), target
@@ -228,17 +241,8 @@ def test_split_operator_pages_are_reachable_from_reader_navigation() -> None:
         "reference/opencode-participants.md": "reference/opencode-operations.md",
         "reference/family-adapters.md": "reference/family-adapter-operations.md",
         "reference/participant-request-manifests.md": "reference/participant-request-operations.md",
-        "raes/techvault-static-validation-gate.md": "raes/scenario-validation.md",
-        "raes/techvault-live-validation-gate.md": "raes/live-validation.md",
     }
-    for source, guide in split_pages.items():
-        for origin, destination in ((source, guide), (guide, source)):
-            links = {
-                (DOCS / origin).parent / target.split("#", 1)[0]
-                for target in _links(_document(f"docs/{origin}")).values()
-                if "://" not in target
-            }
-            assert (DOCS / destination) in links, (origin, destination)
+    assert_split_pages_cross_link(split_pages)
 
 
 def test_cli_reference_tracks_every_registered_command_group() -> None:

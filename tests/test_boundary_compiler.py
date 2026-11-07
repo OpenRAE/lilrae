@@ -3,7 +3,7 @@
 import pytest
 
 from aptl.core.appliance_boundary import ApplianceBoundaryPolicy
-from aptl.appliance.policy import full_techvault_boundary_policy
+from tests.seat_policy_fixture import protected_seat_policy
 from aptl.core.deployment.boundary import BoundaryNetwork, BoundaryWorkload
 from aptl.core.deployment.boundary_compiler import (
     BoundaryCompileError,
@@ -355,7 +355,7 @@ def test_seat_protection_binds_every_realized_range_bridge_without_zoning() -> N
     )
 
     spec = compile_seat_protection_boundary(
-        full_techvault_boundary_policy(),
+        protected_seat_policy(),
         _realization(),
         policy_digest="sha256:" + "a" * 64,
         networks=networks,
@@ -378,7 +378,7 @@ def test_seat_protection_binds_every_realized_range_bridge_without_zoning() -> N
 
 
 def test_seat_protection_requires_exact_complete_realization_networks() -> None:
-    policy = full_techvault_boundary_policy()
+    policy = protected_seat_policy()
     incomplete_networks = (
         BoundaryNetwork(
             name="orchard",

@@ -1,8 +1,8 @@
 """APTL's owned lab-machinery fixture pack (issue #985).
 
 Core tests of the generic lab machinery -- pack admission, content resolution,
-realization and the live gate -- use this small pack instead of the released
-TechVault one, so an unrelated pack release cannot break them. The pack lives in
+realization and the live gate -- use this small pack instead of a released
+pack, so an unrelated pack release cannot break them. The pack lives in
 ``tests/fixtures/packs/`` and is admitted through the production resolver
 (:func:`aptl.core.scenario_bundle.env_pack_bundle`), which runs env-packs' own
 ``validate_pack`` and content-manifest gates exactly as for a released pack.

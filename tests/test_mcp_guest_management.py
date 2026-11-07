@@ -31,7 +31,7 @@ def _observation(record, run_id):
 def test_guest_rejects_pack_switch_after_study_enrollment(tmp_path, monkeypatch):
     record = access_record(
         scenario_pack={
-            "pack_id": "techvault-participant-study",
+            "pack_id": "fixture-range-study",
             "pack_version": "0.1.0",
             "set_digest": "b" * 64,
         }
@@ -52,7 +52,7 @@ def test_guest_rejects_pack_switch_after_study_enrollment(tmp_path, monkeypatch)
 
 
 @pytest.mark.parametrize("admitted_projection", [False, True])
-@pytest.mark.parametrize("pack_id", ["techvault", "techvault-participant-study"])
+@pytest.mark.parametrize("pack_id", ["fixture-range", "fixture-range-study"])
 def test_guest_enrollment_publishes_private_forced_keys_and_rejects_bad_inventory(
     tmp_path, monkeypatch, pack_id, admitted_projection
 ):

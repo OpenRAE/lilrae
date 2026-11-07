@@ -25,7 +25,7 @@ Issue #820 defines the reusable bounded workshop/classroom profile and qualifica
 - IMPLEMENTS → PULL_REQUEST `836` (PR #836: define bounded participant lab profile)
 - TESTS → TEST `tests/test_participant_profile.py` (Participant profile conformance tests)
 - TESTS → TEST `tests/test_participant_qualification.py` (Participant qualification trust and budget tests)
-- TESTS → TEST `tests/test_participant_mcp_smoke.py` (Participant MCP semantic smoke tests)
+- TESTS → TEST `tests/techvault/test_participant_mcp_smoke.py` (Participant MCP semantic smoke tests)
 - DOCUMENTS → DOCUMENTATION `docs/reference/participant-profile.md` (Participant profile reference)
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/participant_profile.py` (Participant profile loader and conformance model)
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/participant_qualification.py` (Authenticated participant qualification evaluator)

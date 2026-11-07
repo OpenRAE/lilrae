@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from aptl.appliance.policy import full_techvault_boundary_policy
+from tests.seat_policy_fixture import protected_seat_policy
 from aptl.appliance.seat.image_config import (
     SeatImageConfigError,
     parse_seat_image_config,
@@ -24,7 +24,7 @@ RESOURCES = {
 
 
 def _boundary(**overrides: object) -> dict[str, object]:
-    document = full_techvault_boundary_policy().model_dump(mode="json")
+    document = protected_seat_policy().model_dump(mode="json")
     document.update(overrides)
     return document
 

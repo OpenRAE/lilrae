@@ -269,16 +269,3 @@ def test_startup_plan_refuses_unowned_or_ambiguous_sources(invalid):
     bundle = SimpleNamespace(pack_identity=None if invalid == "unidentified" else _PACK)
     with pytest.raises(ScenarioStartupProviderError, match="provider-result-invalid"):
         _validated_plan(plan, bundle)
-
-
-@pytest.mark.parametrize("study", [False, True])
-def test_inherited_startup_plan_uses_its_providers_own_pack_identity(study):
-    from aptl_techvault.startup import TechVaultStartupProvider
-    from aptl_techvault.study import StudyStartup
-
-    provider = StudyStartup if study else TechVaultStartupProvider
-    plan = provider.resolve(None)
-    assert plan.environment_grants
-    assert {grant.pack for grant in plan.environment_grants} == {
-        provider.supported_pack_id
-    }

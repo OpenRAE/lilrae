@@ -21,6 +21,8 @@ from raes_contracts.planning import (
 )
 
 from aptl.backends.raes_observation import observe_realization
+from aptl.core.deployment._misp_cache_credential import MISP_CACHE_CREDENTIAL_PROFILE
+from aptl.core.deployment._ssh_key_bundle import SSH_ACCESS_PROFILE_V1
 from aptl.backends.raes_realization_model import (
     AptlRealization,
     NetworkRealization,
@@ -342,20 +344,20 @@ def test_guest_os_readback_normalizes_supported_product_release_lines():
 
 
 _DECLARED_TOPOLOGY = {
-    "domain_id": "techvault",
+    "domain_id": "range",
     "profile": "active_directory",
-    "dns_name": "techvault.local",
-    "netbios_name": "TECHVAULT",
-    "authority_account_address": "provision.account.ad-emily-chen",
+    "dns_name": "range.example",
+    "netbios_name": "RANGE",
+    "authority_account_address": "provision.account.ad-domain-admin",
     "role": "controller",
     "controller_addresses": ("provision.node.ad",),
 }
 
 _SAMBA_DOMAIN_INFO = (
-    "Forest           : techvault.local\n"
-    "Domain           : techvault.local\n"
-    "Netbios domain   : TECHVAULT\n"
-    "DC name          : dc.techvault.local\n"
+    "Forest           : range.example\n"
+    "Domain           : range.example\n"
+    "Netbios domain   : RANGE\n"
+    "DC name          : dc.range.example\n"
     "DC netbios name  : DC\n"
 )
 
@@ -411,7 +413,7 @@ def test_domain_topology_omitted_when_live_domain_differs(tmp_path):
     backend = _Backend(
         containers=("aptl-ad",),
         exec_results={
-            "aptl-ad": (0, _SAMBA_DOMAIN_INFO.replace("TECHVAULT", "OTHERCORP"))
+            "aptl-ad": (0, _SAMBA_DOMAIN_INFO.replace("RANGE", "OTHERCORP"))
         },
     )
     obs = observe_realization(
@@ -1017,7 +1019,7 @@ def test_generated_environment_delivery_is_read_back_without_value_disclosure(tm
     spec = {
         "generator": "rendered_config",
         "lifecycle": "reuse_valid",
-        "provenance": "techvault:misp-cache-credential/v2",
+        "provenance": MISP_CACHE_CREDENTIAL_PROFILE,
         "outputs": [
             {
                 "name": "cache-password",
@@ -1071,7 +1073,7 @@ def test_generated_environment_delivery_is_read_back_without_value_disclosure(tm
                 name="misp-cache-credential",
                 generator="rendered_config",
                 lifecycle="reuse_valid",
-                provenance="techvault:misp-cache-credential/v2",
+                provenance=MISP_CACHE_CREDENTIAL_PROFILE,
                 outputs=(
                     DeploymentGeneratedArtifactOutput(
                         name="cache-password",
@@ -1420,12 +1422,12 @@ _SSH_OUTPUTS = (
 def _ssh_bundle_fixture(*, imaged, selected=("labadmin-key",)):
     """One ``ssh_key_bundle`` artifact with a single output-selecting consumer."""
 
-    address = "provision.generated-artifact.techvault-ssh-keys"
+    address = "provision.generated-artifact.range-ssh-keys"
     resource = PlannedResource(
         address=address,
         domain=RuntimeDomain.PROVISIONING,
         resource_type="generated-artifact",
-        payload={"name": "techvault-ssh-keys", "spec": {}},
+        payload={"name": "range-ssh-keys", "spec": {}},
     )
     plan = ProvisioningPlan(resources={address: resource})
     consumer = DeploymentStatefulConsumer(
@@ -1445,10 +1447,10 @@ def _ssh_bundle_fixture(*, imaged, selected=("labadmin-key",)):
         generated_artifacts=(
             DeploymentGeneratedArtifactRealization(
                 address=address,
-                name="techvault-ssh-keys",
+                name="range-ssh-keys",
                 generator="ssh_key_bundle",
                 lifecycle="reuse_valid",
-                provenance="techvault:ssh-access-profile/v1",
+                provenance=SSH_ACCESS_PROFILE_V1,
                 outputs=_SSH_OUTPUTS,
                 consumers=(consumer,),
             ),
@@ -1460,7 +1462,7 @@ def _ssh_bundle_fixture(*, imaged, selected=("labadmin-key",)):
 def _write_ssh_bundle(root):
     """Materialize the bundle's declared outputs under a realization root."""
 
-    bundle = root / ".aptl/realization/ssh-key-bundles/techvault-ssh-keys"
+    bundle = root / ".aptl/realization/ssh-key-bundles/range-ssh-keys"
     for output in _SSH_OUTPUTS:
         path = bundle / output.path
         path.parent.mkdir(parents=True, exist_ok=True)

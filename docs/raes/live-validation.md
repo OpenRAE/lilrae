@@ -18,7 +18,7 @@ Do not copy secrets into evidence or command arguments.
 Run focused logic checks in the approved runner:
 
 ```shell
-bash tools/run-targeted-tests.sh tests/test_techvault_live_gate.py
+bash tools/run-targeted-tests.sh tests/techvault/test_techvault_live_gate.py
 ```
 
 Run the destructive public gate:
@@ -39,7 +39,7 @@ Examine blocked and failed checks separately.
 The targeted integration test has one more guard:
 
 ```shell
-APTL_LIVE_GATE=1 bash tools/run-targeted-tests.sh tests/test_techvault_live_gate.py -m integration -q
+APTL_LIVE_GATE=1 bash tools/run-targeted-tests.sh tests/techvault/test_techvault_live_gate.py -m integration -q
 ```
 
 Without `APTL_LIVE_GATE=1`, pytest skips that destructive test.

@@ -293,7 +293,7 @@ def _copied_fixture(destination: Path) -> Path:
 def test_the_owned_fixture_pack_is_admitted_by_the_production_resolver(tmp_path):
     """The fixture is a real pack: env-packs' own gates admit it unmodified.
 
-    Core tests use this pack instead of the released TechVault one, so a pack
+    Core tests use this pack instead of a released pack, so a pack
     release cannot break them. That only holds while the fixture passes the same
     ``validate_pack`` and content-manifest gates a released pack does.
     """
