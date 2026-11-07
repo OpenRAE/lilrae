@@ -162,8 +162,9 @@ def test_vertex_key_must_be_a_service_account_key(key):
 
 
 def test_unknown_model_provider_and_role_are_refused():
+    no_settings = SimpleNamespace()
     with pytest.raises(ValueError):
-        _provider("anthropic/claude", SimpleNamespace(), None, "run-1")
+        _provider("anthropic/claude", no_settings, None, "run-1")
     with pytest.raises(ValueError):
         participant_tool_servers("white", ("aptl-red",))
     settings = SimpleNamespace(experiment=SimpleNamespace(participant_serving_providers={}))
@@ -195,5 +196,6 @@ def test_executor_requires_a_session_for_tools_unless_allowlisted(tmp_path):
         options=options, model="google-vertex/a/b", prompt="p", timeout_seconds=5
     )
     executor._tool_servers = {"aptl-red": {}}
+    cancellation = Event()
     with pytest.raises(AgentExecutionError, match="tool session"):
-        executor("action", Event())
+        executor("action", cancellation)
