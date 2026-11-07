@@ -16,6 +16,7 @@ from raes_contracts.contracts import ParticipantControlContextAssetModel
 from raes_env_packs import resolve_pack_artifact
 
 from aptl.backends._raes_scenario_resolution import resolve_scenario_bundle
+from aptl.core._credential_sources import AttachedServiceAccountSource
 from aptl.core.config import AptlConfig, find_config, load_config
 from aptl.core.lab import finalize_trial_capture
 from aptl.core.mcp_policy import configured_server_ids
@@ -134,7 +135,13 @@ def _run_and_drain(
                 store=LocalRunStore(_run_store_base(config_path.parent, config)),
                 clock=lambda: datetime.now(UTC),
             )
-        return record.model_copy(update={"cleanup": {"provider_access": "removed"}})
+        cleanup = {"provider_access": "removed"}
+        # An attached account has no delivered key to remove; record that it was used.
+        if isinstance(
+            config.experiment.participant_credential_sources.vertex, AttachedServiceAccountSource
+        ) and any(item.model.startswith("google-vertex/") for item in participants):
+            cleanup["vertex_access"] = "attached-service-account"
+        return record.model_copy(update={"cleanup": cleanup})
     finally:
         bundle.close()
 

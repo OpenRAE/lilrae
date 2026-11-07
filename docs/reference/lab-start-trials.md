@@ -89,7 +89,7 @@ Set these values in the `experiment` section of `aptl.json`:
 | --- | --- |
 | `opencode_executable` | The absolute path of the installed OpenCode 1.19.5 executable. |
 | `participant_credential_sources.opencode` | The source of the OpenRouter API key, for `openrouter/` models. |
-| `participant_credential_sources.vertex` | The source of a Google Cloud service account key, for `google-vertex/` models. |
+| `participant_credential_sources.vertex` | The source of a Google Cloud service account key, or the host's attached service account, for `google-vertex/` models. |
 | `participant_serving_providers` | The approved OpenRouter serving provider for each `openrouter/` model. |
 
 ```json
@@ -124,6 +124,24 @@ work directory. The OpenCode child receives these values:
 
 The location is `global`. LilRAE removes the key file before it seals the run.
 The key does not go into the SDL, the prompt, the trial record, or the run files.
+
+### Attached service account
+
+On a Google Cloud VM, the `vertex` source can select the VM's attached service
+account. The account needs only Vertex AI invocation permission.
+
+```json
+"vertex": {"kind": "attached-service-account", "project": "example-project"}
+```
+
+The OpenCode child receives only `GOOGLE_CLOUD_PROJECT`. It gets short-lived
+tokens from the metadata server, so no key file exists. The trial record
+contains `vertex_access: attached-service-account` in its `cleanup` section.
+The run provenance records the source kind and descriptor digest.
+
+The OpenCode child runs on the host. Block participant containers from the
+metadata server before the trial starts; LilRAE does not change host firewall
+rules.
 
 ## Deadline and stop
 
