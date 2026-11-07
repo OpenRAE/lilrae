@@ -80,7 +80,7 @@ def _participant_credential_sources_projection(
     if sources is None:
         return {}
     projection: dict[str, object] = {}
-    for provider in ("claude", "codex", "opencode"):
+    for provider in ("claude", "codex", "opencode", "vertex"):
         source = getattr(sources, provider, None)
         projection[provider] = (
             None
