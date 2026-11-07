@@ -193,6 +193,26 @@ def _validated_profile_groups(
     return profiles, activation
 
 
+def _validated_seed(
+    value: ScenarioStartupPlan,
+) -> tuple[str | None, tuple[str, ...], tuple[str, ...]]:
+    """Validate the seed script and profiles, or require no seed fields."""
+
+    if value.seed_script is None:
+        if (
+            value.required_profiles != ()
+            or value.activation_profiles != ()
+            or value.seed_environment_keys != ()
+            or value.container_environment != ()
+        ):
+            raise ScenarioStartupProviderError("provider-result-invalid")
+        return None, (), ()
+    profiles, activation = _validated_profile_groups(
+        value.required_profiles, value.activation_profiles
+    )
+    return _safe_relative_script(value.seed_script), profiles, activation
+
+
 def _validated_seed_keys(value: object) -> tuple[str, ...]:
     """Allow declared seed values without Docker transport overrides."""
 
@@ -254,9 +274,7 @@ def _validated_plan(
 
     if not isinstance(value, ScenarioStartupPlan):
         raise ScenarioStartupProviderError("provider-result-invalid")
-    profiles, activation = _validated_profile_groups(
-        value.required_profiles, value.activation_profiles
-    )
+    seed_script, profiles, activation = _validated_seed(value)
     if not isinstance(value.lifecycle_capabilities, frozenset) or any(
         not isinstance(item, StartupCapability) for item in value.lifecycle_capabilities
     ):
@@ -283,7 +301,7 @@ def _validated_plan(
         value.environment_grants, supplied, getattr(identity, "pack_id", None)
     )
     return ScenarioStartupPlan(
-        seed_script=_safe_relative_script(value.seed_script),
+        seed_script=seed_script,
         required_profiles=tuple(profiles),
         activation_profiles=tuple(activation),
         environment_aliases=aliases,
@@ -459,6 +477,8 @@ from aptl.backends.scenario_runtime_selection import (
 
 def seed_script_path(project_dir: Path, plan: ScenarioStartupPlan) -> Path:
     """Resolve a validated plan script beneath the materialized project root."""
+    if plan.seed_script is None:
+        raise ScenarioStartupProviderError("provider-seed-unconfigured")
     root = project_dir.resolve()
     candidate = root.joinpath(*PurePosixPath(plan.seed_script).parts).resolve()
     try:

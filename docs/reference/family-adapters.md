@@ -271,6 +271,16 @@ The `HOST_TOOLS` lifecycle capability is not necessary for kernel demand.
 Core owns the kernel probe and selects the engine host boundary.
 A missing demand performs no kernel probe.
 
+`ScenarioStartupPlan.seed_script`, `required_profiles`, and `activation_profiles` are optional.
+A plan without scenario seeding omits all three fields.
+It also omits `seed_environment_keys` and `container_environment`.
+Plan validation rejects a seed field that has no seed script.
+A plan with a seed script must declare nonempty required and activation profile groups.
+
+The seed stage uses the `post_start_configuration` preparation phase.
+A `stack_environment` hook can skip that phase.
+If the seed operation runs without a seed script, the lab start fails.
+
 `aptl.core.deployment.backend.DeploymentBackend` and `aptl.core.deployment.errors.BackendTimeoutError` keep their public protocol and error roles.
 `aptl.backends.identity` and the existing `raes_manifest` target constants identify the backend contract independently of distribution releases.
 `aptl.core.lifecycle_cleanup.WAZUH_ENROLLMENT_BASELINE_RELPATH` names reserved core-owned historical state.
