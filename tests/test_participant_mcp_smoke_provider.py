@@ -413,10 +413,11 @@ def test_provider_requires_a_run_admission(monkeypatch) -> None:
     _install(monkeypatch, provider)
 
     profile = _profile()
+    selector = _selector()
     with pytest.raises(ParticipantMcpSmokeError, match="admitted inputs"):
         resolve_participant_mcp_smoke_operations(profile)
     with pytest.raises(ParticipantMcpSmokeError, match="admitted inputs"):
-        resolve_participant_mcp_smoke_plan(_selector())
+        resolve_participant_mcp_smoke_plan(selector)
     assert provider.contexts == []
 
 
@@ -435,9 +436,10 @@ def test_malformed_provider_declarations_are_refused(monkeypatch, change) -> Non
     for name, value in change.items():
         setattr(provider, name, value)
     _install(monkeypatch, provider)
+    selector = _selector()
 
     with pytest.raises(ParticipantMcpSmokeError, match="malformed"):
-        discover_participant_mcp_smoke_checks(_selector())
+        discover_participant_mcp_smoke_checks(selector)
 
 
 def test_conflicting_grants_for_one_server_are_refused(monkeypatch) -> None:
