@@ -20,7 +20,6 @@ from pydantic import (
 )
 
 from aptl.core._credential_sources import (
-    AttachedServiceAccountSource,
     EnvironmentGrant,
     ProcessEnvironmentCredentialSource,
 )
@@ -318,15 +317,10 @@ class InstalledParticipantCredentialSources(BaseModel):
     claude: ProcessEnvironmentCredentialSource | None = None
     codex: ProcessEnvironmentCredentialSource | None = None
     opencode: ProcessEnvironmentCredentialSource | None = None
-    #: A Google Cloud service account key, or the host's attached account, for
-    #: Vertex AI participant models.
-    vertex: ProcessEnvironmentCredentialSource | AttachedServiceAccountSource | None = Field(
-        default=None, discriminator="kind"
-    )
+    #: A Google Cloud service account key for Vertex AI participant models.
+    vertex: ProcessEnvironmentCredentialSource | None = None
 
-    def source_for(
-        self, provider: str
-    ) -> ProcessEnvironmentCredentialSource | AttachedServiceAccountSource:
+    def source_for(self, provider: str) -> ProcessEnvironmentCredentialSource:
         """Return one explicitly configured source or fail closed."""
 
         if provider not in {"claude", "codex", "opencode", "vertex"}:
