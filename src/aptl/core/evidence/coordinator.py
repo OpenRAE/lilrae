@@ -36,11 +36,14 @@ from aptl.core.evidence._persist import (
     EvidenceRef,
     media_type_supported,
     persist_success_outcome,
+    retained_failure_outcome,
 )
 from aptl.core.evidence.outcomes import (
+    ABORTING_STATUSES,
     STATUS_DIAGNOSTIC_CODES,
     SUCCESS_STATUSES,
     AcquisitionDisposition,
+    AcquisitionPhase,
     CollectorStatus,
     capture_diagnostic,
 )
@@ -51,12 +54,6 @@ from aptl.core.evidence.protocol import (
     RunScope,
 )
 from aptl.core.experiment.capture_registry import CaptureBinding
-
-#: Statuses that abort the attempt before participant action (source never
-#: came up), yielding an INCONCLUSIVE disposition.
-_ABORTING_STATUSES: frozenset[CollectorStatus] = frozenset(
-    {CollectorStatus.SOURCE_UNAVAILABLE, CollectorStatus.STARTUP_FAILURE}
-)
 
 #: Statuses that invalidate a REQUIRED capture unless the policy explicitly
 #: accepted the degradation.
@@ -280,6 +277,7 @@ def _process_outcome(
     *,
     run_store: object,
     scope: RunScope,
+    phase: AcquisitionPhase | None = None,
 ) -> tuple[
     CollectorReport,
     ExperimentEvidenceRecordModel | None,
@@ -300,7 +298,7 @@ def _process_outcome(
             run_id=scope.run_id,
             planned_trial_id=scope.planned_trial_id,
             attempt_id=scope.attempt_id,
-            captured_at=outcome.finished_at,
+            phase=phase,
         )
     except (BufferError, ValueError, RecursionError, OSError) as exc:
         # Persistence is part of capture, not an exception-shaped escape from
@@ -319,6 +317,7 @@ def _process_outcome(
             ),
             run_store=run_store,
             scope=scope,
+            phase=phase,
         )
     report = CollectorReport(
         registration_id=binding.registration_id,
@@ -393,7 +392,8 @@ def _pre_persistence_failure(
 
 def _disposition(reports: Sequence[CollectorReport]) -> AcquisitionDisposition:
     """Compute the overall disposition from the per-binding effective statuses."""
-    if any(r.status in _ABORTING_STATUSES for r in reports):
+    # An aborting status means a required source never came up: INCONCLUSIVE.
+    if any(r.status in ABORTING_STATUSES for r in reports):
         return AcquisitionDisposition.INCONCLUSIVE
     partial = False
     for report in reports:
@@ -416,6 +416,7 @@ def acquire_evidence(
     scope: RunScope,
     clock: ClockProvider,
     trial_body: Callable[[], None] = lambda: None,
+    phase: AcquisitionPhase | None = None,
 ) -> AcquisitionResult:
     """Acquire evidence for one trial's admitted capture bindings.
 
@@ -462,9 +463,11 @@ def acquire_evidence(
     refs: list[EvidenceRef] = []
     all_diagnostics: list[Diagnostic] = list(diagnostics)
     for binding in bindings:
-        outcome = outcomes_by_key[_binding_key(binding)]
+        outcome = retained_failure_outcome(
+            outcomes_by_key[_binding_key(binding)], binding, phase
+        )
         report, record, ref, diagnostic = _process_outcome(
-            binding, outcome, run_store=run_store, scope=scope
+            binding, outcome, run_store=run_store, scope=scope, phase=phase
         )
         reports.append(
             replace(report, scope=scope, capture_spec_id=binding.capture_spec_id)

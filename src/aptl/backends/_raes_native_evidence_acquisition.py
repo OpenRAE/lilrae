@@ -17,7 +17,7 @@ from aptl.core.evidence.adapters.sources import (
     _to_outcome,
 )
 from aptl.core.evidence.content_store import create_run_json_once
-from aptl.core.evidence.outcomes import CollectorStatus
+from aptl.core.evidence.outcomes import AcquisitionPhase, CollectorStatus
 from aptl.core.evidence.protocol import CollectorContext, CollectorOutcome, RunScope
 from aptl.backends.scenario_capture import capture_run_scope
 from aptl.core.experiment.capture_registry import CaptureBinding, CollectorRegistration
@@ -118,7 +118,14 @@ class _OnDemandNativeCollector:
         if not _source_times_inside_actual_window(
             result, handle.started_at, finished_at
         ):
-            result = SourceResult(status=CollectorStatus.CLOCK_SKEW)
+            # Drop the time-correlated records, whose timing is untrustworthy,
+            # but keep the probe residue so a skewed preparation still retains
+            # its observer effect.
+            result = SourceResult(
+                status=CollectorStatus.CLOCK_SKEW,
+                observer_effect=result.observer_effect,
+                source_pipeline=result.source_pipeline,
+            )
         return _to_outcome(result, handle.started_at, finished_at)
 
 
@@ -175,7 +182,9 @@ def acquire_native_evidence(request: NativeEvidenceRequest) -> AcquisitionResult
         from aptl.backends.scenario_capture import family_capture_sources
 
         sources = family_capture_sources(
-            request, establish_enrollment=first_capture
+            request,
+            establish_enrollment=first_capture,
+            phase=AcquisitionPhase.PREPARATION,
         )
     else:
         sources = source_factory(request) if callable(source_factory) else {}
@@ -193,6 +202,7 @@ def acquire_native_evidence(request: NativeEvidenceRequest) -> AcquisitionResult
         run_store=request.run_store,
         scope=scope,
         clock=request.clock or SystemClockProvider(),
+        phase=AcquisitionPhase.PREPARATION,
     )
 
 
@@ -254,7 +264,9 @@ def _add_native_sources(
 
     if request.capture_selection.contribution.runtime_adapter is not None:
         try:
-            native = family_capture_sources(request)
+            native = family_capture_sources(
+                request, phase=AcquisitionPhase.MEASUREMENT
+            )
         except RuntimeError:
             native = {}
         if set(native) & set(combined):
@@ -337,6 +349,7 @@ def acquire_trial_evidence(
         scope=scope,
         clock=request.clock or SystemClockProvider(),
         trial_body=trial_body or (lambda: None),
+        phase=AcquisitionPhase.MEASUREMENT,
     )
 
 

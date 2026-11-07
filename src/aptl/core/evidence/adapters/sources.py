@@ -196,11 +196,18 @@ def _to_outcome(
     """
     has_content = bool(result.records or result.chunks)
     if result.status not in SUCCESS_STATUSES and not has_content:
+        # Keep safe failure facts: the probe residue (observer effect), the
+        # source pipeline, and the source's reported times. The timestamps are
+        # retained as reported, never promoted to verified observation timing.
         return CollectorOutcome(
             status=result.status,
             started_at=started_at,
             finished_at=finished_at,
             dropped_count=result.dropped_count,
+            source_min_time=result.source_min_time,
+            source_max_time=result.source_max_time,
+            observer_effect=result.observer_effect,
+            source_pipeline=result.source_pipeline,
             detail=f"source reported {result.status.value}",
         )
     status = result.status
