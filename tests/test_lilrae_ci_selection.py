@@ -28,7 +28,7 @@ def test_api_and_common_changes_select_their_consumers():
     for path in (
         "mcp/aptl-mcp-common/src/server.ts",
         "containers/kali-capture/broker.py",
-        "tests/test_mcp_capture_lifecycle.py",
+        "tests/test_kali_capture_broker.py",
     ):
         assert select([path])["mcp"]
     assert select(["uv.lock"])["dependencies"]

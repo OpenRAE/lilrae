@@ -15,7 +15,7 @@ import pytest
 from raes_contracts.contracts import ExperimentRunModel
 from raes_contracts.canonical import canonical_contract_digest
 
-from tests.archival_fixtures import completed_context
+from tests.archival_fixtures import completed_context, reference_run
 from aptl.core.archival.coordinator import finalize_terminal_attempt
 from aptl.core.archival.discovery_index import DiscoveryIndex, IndexEntry
 from aptl.core.archival.layout import RUN_MANIFEST_RELPATH, SEAL_MARKER_RELPATH
@@ -24,6 +24,9 @@ from aptl.core.archival.seal import SealedArtifactSpec
 from aptl.core.archival.status import TerminalCause
 from aptl.core.runstore import LocalRunStore, RunStoreConflictError, SealedRunError
 from aptl.utils.pathsafe import PathContainmentError
+
+
+_RUN_ID = reference_run().run_id
 
 
 def _store(tmp_path) -> LocalRunStore:
@@ -69,7 +72,7 @@ class TestSealCommit:
         store = _store(tmp_path)
         # A provenance artifact written by its owner before the handoff.
         store.write_json(
-            "run-techvault-001",
+            _RUN_ID,
             "provenance/run-provenance.json",
             {"seal_state": "ready-to-seal"},
         )
@@ -147,7 +150,7 @@ class TestInventoryVerification:
 
         store = _store(tmp_path)
         store.write_json(
-            "run-techvault-001", "provenance/run-provenance.json", {"seal_state": "ready-to-seal"}
+            _RUN_ID, "provenance/run-provenance.json", {"seal_state": "ready-to-seal"}
         )
         context = completed_context(
             sealed_artifacts=(
@@ -196,7 +199,7 @@ class TestArtifactIdentityJoin:
 
         store = _store(tmp_path)
         blob = b'{"evidence": true}'
-        store.write_file("run-techvault-001", "evidence/blobs/blob-1.json", blob)
+        store.write_file(_RUN_ID, "evidence/blobs/blob-1.json", blob)
         ref = self._artifact_ref(hashlib.sha256(blob).hexdigest(), len(blob))
         spec = SealedArtifactSpec.from_artifact_ref(
             run_relative_path="evidence/blobs/blob-1.json",
@@ -213,7 +216,7 @@ class TestArtifactIdentityJoin:
 
         store = _store(tmp_path)
         blob = b'{"evidence": true}'
-        store.write_file("run-techvault-001", "evidence/blobs/blob-1.json", blob)
+        store.write_file(_RUN_ID, "evidence/blobs/blob-1.json", blob)
         # The RAES ref claims a different checksum than the bytes on disk.
         ref = self._artifact_ref("f" * 64, len(blob))
         spec = SealedArtifactSpec.from_artifact_ref(
@@ -233,7 +236,7 @@ class TestArtifactIdentityJoin:
 
         store = _store(tmp_path)
         blob = b'{"evidence": true}'
-        store.write_file("run-techvault-001", "evidence/blobs/blob-1.json", blob)
+        store.write_file(_RUN_ID, "evidence/blobs/blob-1.json", blob)
         ref = self._artifact_ref(hashlib.sha256(blob).hexdigest(), len(blob) + 99)
         spec = SealedArtifactSpec.from_artifact_ref(
             run_relative_path="evidence/blobs/blob-1.json",

@@ -1593,13 +1593,12 @@ services:
     def test_stop_with_volumes_fails_when_seeded_volume_cannot_be_removed(
         self, tmp_path
     ):
-        from aptl_techvault.evidence.techvault_enrollment_baseline import (
-            enrollment_baseline,
-            record_enrollment_baseline,
-        )
+        from aptl.core.lifecycle_cleanup import WAZUH_ENROLLMENT_BASELINE_RELPATH
 
         backend = self._make_backend(tmp_path)
-        record_enrollment_baseline(tmp_path, {"db": "001"})
+        baseline = tmp_path / WAZUH_ENROLLMENT_BASELINE_RELPATH
+        baseline.parent.mkdir(parents=True, exist_ok=True)
+        baseline.write_text('{"db": "001"}\n', encoding="utf-8")
         (tmp_path / "docker-compose.yml").write_text("volumes:\n  seeded_data:\n")
         ownership = backend._resource_ownership
         assert ownership is not None
@@ -1643,7 +1642,7 @@ services:
         assert "failed to remove receipt-owned volume" in result.error
         # The identity still describes retained volume state. Clearing it on a
         # failed reset would let a later capture bless a re-enrolment as fresh.
-        assert enrollment_baseline(tmp_path) == {"db": "001"}
+        assert baseline.read_text(encoding="utf-8") == '{"db": "001"}\n'
 
     def test_stop_removes_leftover_project_networks(self, tmp_path):
         backend = self._make_backend(tmp_path)
@@ -3940,7 +3939,7 @@ class TestRealizeContent:
             "volume_suffix": "fileshare_data",
             "dest_relpath": "public/notice.txt",
             "source_kind": "inline-text",
-            "inline_text": "Welcome to TechVault.",
+            "inline_text": "Welcome to the range.",
         }
         fields.update(overrides)
         return DeploymentContentRealization(**fields)
@@ -4003,12 +4002,12 @@ class TestRealizeContent:
         assert "cp -a /src/notice.txt /dest/public/notice.txt" in script
 
         rendered_file = rendered_dir / "notice.txt"
-        assert rendered_file.read_text(encoding="utf-8") == "Welcome to TechVault."
+        assert rendered_file.read_text(encoding="utf-8") == "Welcome to the range."
 
     def test_project_file_source_binds_resolved_parent_directory(self, tmp_path):
         from aptl.core.deployment.realization import DeploymentContentRealization
 
-        source_dir = tmp_path / "scenarios" / "fixtures" / "techvault-content"
+        source_dir = tmp_path / "scenarios" / "fixtures" / "range-content"
         source_dir.mkdir(parents=True)
         (source_dir / "onboarding.md").write_text("hello", encoding="utf-8")
         item = DeploymentContentRealization(
@@ -4018,7 +4017,7 @@ class TestRealizeContent:
             volume_suffix="fileshare_data",
             dest_relpath="onboarding/onboarding.md",
             source_kind="project-file",
-            source_relpath="scenarios/fixtures/techvault-content/onboarding.md",
+            source_relpath="scenarios/fixtures/range-content/onboarding.md",
         )
         backend = self._backend(tmp_path)
         with patch("subprocess.run", side_effect=self._content_run_mock()) as mock_run:
@@ -4628,9 +4627,9 @@ class TestRealizeAccounts:
         backend = self._backend(tmp_path)
         ad = _FakeAd()
         account = _acct(
-            "jessica.williams",
+            "alice.smith",
             groups=("Sales", "VPN-Users"),
-            mail="jessica.williams@techvault.local",
+            mail="alice.smith@range.example",
         )
         with patch.object(backend, "container_exec", ad):
             result = backend.realize_accounts((account,), (_ad_node(),))
@@ -4638,7 +4637,7 @@ class TestRealizeAccounts:
         # User created via --random-password, mail set atomically, no secret argv.
         create = ad.cmds("samba-tool", "user", "create")[0]
         assert "--random-password" in create
-        assert "--mail-address=jessica.williams@techvault.local" in create
+        assert "--mail-address=alice.smith@range.example" in create
         assert all("password123" not in tok for tok in create)
         # Groups are ensured before membership is reconciled.
         first_addmember = _index(ad.calls, lambda c: c[1:3] == ["group", "addmembers"])
@@ -4654,8 +4653,8 @@ class TestRealizeAccounts:
 
     def test_existing_user_is_not_recreated_preserving_password(self, tmp_path):
         backend = self._backend(tmp_path)
-        ad = _FakeAd(users=["jessica.williams"], groups=["Sales"])
-        account = _acct("jessica.williams", groups=("Sales",))
+        ad = _FakeAd(users=["alice.smith"], groups=["Sales"])
+        account = _acct("alice.smith", groups=("Sales",))
         with patch.object(backend, "container_exec", ad):
             result = backend.realize_accounts((account,), (_ad_node(),))
         assert result is None
@@ -4668,7 +4667,7 @@ class TestRealizeAccounts:
             "group",
             "addmembers",
             "Sales",
-            "jessica.williams",
+            "alice.smith",
         ] in ad.calls
 
     def test_authored_disabled_true_disables_and_verifies(self, tmp_path):
@@ -4728,9 +4727,9 @@ class TestRealizeAccounts:
         # converged (samba-tool user rename --mail-address), not left stale, and
         # the create path is never taken (password preserved).
         backend = self._backend(tmp_path)
-        ad = _FakeAd(users=["jessica.williams"])
-        ad.users["jessica.williams"]["mail"] = "stale@old.local"
-        account = _acct("jessica.williams", mail="jessica.williams@techvault.local")
+        ad = _FakeAd(users=["alice.smith"])
+        ad.users["alice.smith"]["mail"] = "stale@old.local"
+        account = _acct("alice.smith", mail="alice.smith@range.example")
         with patch.object(backend, "container_exec", ad):
             assert backend.realize_accounts((account,), (_ad_node(),)) is None
         assert ad.cmds("samba-tool", "user", "create") == []
@@ -4738,11 +4737,11 @@ class TestRealizeAccounts:
             "samba-tool",
             "user",
             "rename",
-            "jessica.williams",
-            "--mail-address=jessica.williams@techvault.local",
+            "alice.smith",
+            "--mail-address=alice.smith@range.example",
         ] in ad.calls
         assert (
-            ad.users["jessica.williams"]["mail"] == "jessica.williams@techvault.local"
+            ad.users["alice.smith"]["mail"] == "alice.smith@range.example"
         )
 
     def test_omitted_mail_is_not_materialized_or_verified(self, tmp_path):
@@ -4765,8 +4764,8 @@ class TestRealizeAccounts:
                 return super()._dispatch_user(cmd)
 
         ad = _PrefixSpnAd(users=["svc-sql"])
-        ad.users["svc-sql"]["spns"].add("MSSQLSvc/db.techvault.local:14330")
-        account = _acct("svc-sql", spn="MSSQLSvc/db.techvault.local:1433")
+        ad.users["svc-sql"]["spns"].add("MSSQLSvc/db.range.example:14330")
+        account = _acct("svc-sql", spn="MSSQLSvc/db.range.example:1433")
         with patch.object(backend, "container_exec", ad):
             result = backend.realize_accounts((account,), (_ad_node(),))
         assert result is not None
@@ -4783,9 +4782,9 @@ class TestRealizeAccounts:
                     return self._ok(cmd)  # pretend success, never update mail
                 return super()._dispatch_user(cmd)
 
-        ad = _IgnoreRenameAd(users=["jessica.williams"])
-        ad.users["jessica.williams"]["mail"] = "xjessica.williams@techvault.local"
-        account = _acct("jessica.williams", mail="jessica.williams@techvault.local")
+        ad = _IgnoreRenameAd(users=["alice.smith"])
+        ad.users["alice.smith"]["mail"] = "xalice.smith@range.example"
+        account = _acct("alice.smith", mail="alice.smith@range.example")
         with patch.object(backend, "container_exec", ad):
             result = backend.realize_accounts((account,), (_ad_node(),))
         assert result is not None
@@ -4835,7 +4834,7 @@ class TestRealizeAccounts:
         backend = self._backend(tmp_path)
         ad = _FakeAd()
         accounts = (
-            _acct("jessica.williams", groups=("Sales",)),
+            _acct("alice.smith", groups=("Sales",)),
             _acct("emily.chen", address="provision.account-placement.emily"),
             _acct("weak,Administrator", address="provision.account-placement.evil"),
         )
@@ -4855,11 +4854,11 @@ class TestRealizeAccounts:
         class _CaseMemberAd(_FakeAd):
             def _dispatch_group(self, cmd):
                 if cmd[2] == "listmembers":
-                    return self._ok(cmd, stdout="JESSICA.WILLIAMS\n")
+                    return self._ok(cmd, stdout="ALICE.SMITH\n")
                 return super()._dispatch_group(cmd)
 
-        ad = _CaseMemberAd(users=["jessica.williams"], groups=["Sales"])
-        account = _acct("jessica.williams", groups=("Sales",))
+        ad = _CaseMemberAd(users=["alice.smith"], groups=["Sales"])
+        account = _acct("alice.smith", groups=("Sales",))
         with patch.object(backend, "container_exec", ad):
             assert backend.realize_accounts((account,), (_ad_node(),)) is None
 
@@ -4870,11 +4869,11 @@ class TestRealizeAccounts:
         class _BadListAd(_FakeAd):
             def _dispatch_group(self, cmd):
                 if cmd[2] == "listmembers":
-                    return self._fail(cmd, stderr="jessica.williams")  # rc!=0 w/ stdout
+                    return self._fail(cmd, stderr="alice.smith")  # rc!=0 w/ stdout
                 return super()._dispatch_group(cmd)
 
-        ad = _BadListAd(users=["jessica.williams"], groups=["Sales"])
-        account = _acct("jessica.williams", groups=("Sales",))
+        ad = _BadListAd(users=["alice.smith"], groups=["Sales"])
+        account = _acct("alice.smith", groups=("Sales",))
         with patch.object(backend, "container_exec", ad):
             result = backend.realize_accounts((account,), (_ad_node(),))
         assert result is not None
@@ -4883,14 +4882,14 @@ class TestRealizeAccounts:
     def test_spn_is_added_and_verified(self, tmp_path):
         backend = self._backend(tmp_path)
         ad = _FakeAd()
-        account = _acct("svc-sql", spn="MSSQLSvc/db.techvault.local:1433")
+        account = _acct("svc-sql", spn="MSSQLSvc/db.range.example:1433")
         with patch.object(backend, "container_exec", ad):
             assert backend.realize_accounts((account,), (_ad_node(),)) is None
         assert [
             "samba-tool",
             "spn",
             "add",
-            "MSSQLSvc/db.techvault.local:1433",
+            "MSSQLSvc/db.range.example:1433",
             "svc-sql",
         ] in ad.calls
         assert ad.cmds("samba-tool", "spn", "list")
@@ -4930,7 +4929,7 @@ class TestRealizeAccounts:
         monkeypatch.setattr(car, "_READINESS_TIMEOUT", 0)
         backend = self._backend(tmp_path)
         ad = _FakeAd(ready=False)
-        account = _acct("jessica.williams", groups=("Sales",))
+        account = _acct("alice.smith", groups=("Sales",))
         with patch.object(backend, "container_exec", ad):
             result = backend.realize_accounts((account,), (_ad_node(),))
         assert result is not None
@@ -4953,7 +4952,7 @@ class TestRealizeAccounts:
         monkeypatch.setattr(car, "_READINESS_TIMEOUT", 0)
         backend = self._backend(tmp_path)
         ad = _FakeAd(provisioned=False)  # service up, baseline not yet complete
-        account = _acct("jessica.williams", groups=("Sales",))
+        account = _acct("alice.smith", groups=("Sales",))
         with patch.object(backend, "container_exec", ad):
             result = backend.realize_accounts((account,), (_ad_node(),))
         assert result is not None
@@ -5012,7 +5011,7 @@ class TestAccountProvisionerOrderingContract:
 class TestDeclaredCredentialClassIsRealized:
     """Issue #1006: a declared weak account must actually hold a weak credential.
 
-    TechVault declares seven weak and four medium accounts. Creating all of them
+    A scenario can declare weak and medium accounts. Creating all of them
     with ``--random-password`` deletes the credential-guessing surface the attack
     path depends on, while every gate still reports success.
     """

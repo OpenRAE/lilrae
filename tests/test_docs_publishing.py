@@ -37,7 +37,16 @@ def _yaml(relative_path: str) -> dict[str, object]:
     return yaml.safe_load((ROOT / relative_path).read_text(encoding="utf-8"))
 
 
-def test_docs_lane_runs_targeted_behavior_checks_without_runtime_selection() -> None:
+#: The generic documentation checks the docs lane runs.
+DOCS_LANE_GENERIC_TESTS = frozenset({
+    "tests/test_documentation_checks.py", "tests/test_docs_publishing.py",
+    "tests/test_docs_user_journey.py", "tests/test_scenario_pack_ownership_contract.py",
+    "tests/test_hosted_seat_helper.py", "tests/test_stage_hosted_seat_payload.py",
+})
+
+
+def docs_lane_test_paths() -> set[str]:
+    """Return the test paths of the docs lane's one unconditional pytest step."""
     docs = _yaml(".github/workflows/checks.yml")["jobs"]["docs"]
     commands = [
         (step, shlex.split(step["run"]))
@@ -47,11 +56,14 @@ def test_docs_lane_runs_targeted_behavior_checks_without_runtime_selection() -> 
     assert len(tests) == 1
     step, args = tests[0]
     assert "if" not in step
-    assert set(args[4:]) == {
-        "tests/test_documentation_checks.py", "tests/test_docs_publishing.py",
-        "tests/test_docs_user_journey.py", "tests/test_scenario_pack_ownership_contract.py",
-        "tests/test_hosted_seat_helper.py", "tests/test_stage_hosted_seat_payload.py",
-    }
+    return set(args[4:])
+
+
+def test_docs_lane_runs_targeted_behavior_checks_without_runtime_selection() -> None:
+    paths = docs_lane_test_paths()
+
+    assert DOCS_LANE_GENERIC_TESTS <= paths
+    assert all((ROOT / path).is_file() for path in paths)
 
 
 def test_read_the_docs_reuses_the_strict_canonical_mkdocs_build() -> None:

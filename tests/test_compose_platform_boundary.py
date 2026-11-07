@@ -6,7 +6,7 @@ from aptl.core.appliance_boundary import (
     ApplianceBoundaryBinding,
     ApplianceBoundaryPolicy,
 )
-from aptl.appliance.policy import full_techvault_boundary_policy
+from tests.seat_policy_fixture import protected_seat_policy
 from aptl.core.deployment.docker_compose import DockerComposeBackend
 from aptl.core.deployment.realization import (
     DeploymentImageRealization,
@@ -224,7 +224,7 @@ def test_protected_seat_uses_receipt_owned_range_networks_before_workloads(
     tmp_path,
 ) -> None:
     backend = DockerComposeBackend(tmp_path, project_name="seat")
-    backend.configure_appliance_boundary(full_techvault_boundary_policy(), _binding())
+    backend.configure_appliance_boundary(protected_seat_policy(), _binding())
     realization = DeploymentRealizationSpec(
         profiles=(),
         nodes=(),
@@ -263,7 +263,7 @@ def test_protected_seat_uses_receipt_owned_range_networks_before_workloads(
 
 def test_protected_seat_refuses_unrecorded_network_without_mutation(tmp_path) -> None:
     backend = DockerComposeBackend(tmp_path, project_name="seat")
-    backend.configure_appliance_boundary(full_techvault_boundary_policy(), _binding())
+    backend.configure_appliance_boundary(protected_seat_policy(), _binding())
     realization = DeploymentRealizationSpec(
         profiles=(),
         nodes=(),
@@ -284,7 +284,7 @@ def test_protected_seat_refuses_unrecorded_network_without_mutation(tmp_path) ->
 def test_protected_seat_binds_actual_runtime_plan_before_enforcement(tmp_path) -> None:
     backend = DockerComposeBackend(tmp_path, project_name="seat")
     backend.configure_appliance_boundary(
-        full_techvault_boundary_policy(),
+        protected_seat_policy(),
         _binding().model_copy(
             update={
                 "participant_routes_digest": "sha256:" + "1" * 64,
@@ -311,7 +311,7 @@ def test_protected_seat_binds_actual_runtime_plan_before_enforcement(tmp_path) -
 def test_protected_seat_refuses_missing_runtime_plan_identity(tmp_path) -> None:
     backend = DockerComposeBackend(tmp_path, project_name="seat")
     backend.configure_appliance_boundary(
-        full_techvault_boundary_policy(),
+        protected_seat_policy(),
         _binding().model_copy(
             update={
                 "participant_routes_digest": "sha256:" + "1" * 64,

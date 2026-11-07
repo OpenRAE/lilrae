@@ -39,6 +39,24 @@ Cases that pin a released pack stay on TechVault and remain separate: its
 exact content identity, its evidence contracts, plugin compatibility, and the
 TechVault realization, static, and live gates.
 
+## Choose the input for a new test
+
+Use these steps when a new test needs a scenario or pack input.
+[The pack boundary](../architecture/pack-boundary-design.md#test-ownership)
+gives the two test groups.
+
+1. Find the code that the test checks.
+2. If the test checks the TechVault adapter or the released pack, put it in `tests/techvault/`.
+3. Otherwise, use `admit_fixture_pack()` for admission and realization cases.
+4. For a smaller case, use neutral RAES models, deployment values, or API data.
+5. Use the released-pack fixtures in `tests/techvault/conftest.py` only in `tests/techvault/`.
+6. Copy nested declarations before a test changes a shared scenario or realization.
+7. Run `uv run python tools/check_pack_boundary.py` before you commit.
+
+A generic test must not name the released pack, its hosts, its accounts, or its credentials.
+Generic UI fixtures use the types in `web/src/lib/types.ts` and neutral values.
+Neutral test data must not change a persisted format or sealed evidence.
+
 The clean-install boot job copies the same SDL into a fresh project and starts
 it with `--scenario-path`. An explicit path is a project-tree selection, so that
 job proves the installed wheel's lifecycle, not pack admission. Unit tests

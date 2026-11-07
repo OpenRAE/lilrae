@@ -193,7 +193,7 @@ def test_sync_container_enters_through_the_primary_command():
 
 
 def test_pack_content_probe_keeps_the_pack_supplied_sync_name():
-    """The TechVault pack ships its own frozen sync script named ``aptl-*``."""
+    """A pack can ship its own frozen sync script named ``aptl-*``."""
     from aptl.core.deployment import _forwarding_agent_realization as realization
 
     source = Path(realization.__file__).read_text()

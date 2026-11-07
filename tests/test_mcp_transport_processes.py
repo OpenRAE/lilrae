@@ -1,7 +1,7 @@
 """Real OpenSSH and built MCP interoperability, without a deployed lab.
 
 Run after mcp/build-all-mcps.sh. Runtime identity/capture observations are test
-fixtures, not evidence of full TechVault boot or production qualification.
+fixtures, not evidence of a full scenario boot or production qualification.
 """
 
 import json

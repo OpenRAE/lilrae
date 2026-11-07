@@ -29,7 +29,7 @@ lilrae lab start --scenario-path scenarios/techvault-attacker-target.sdl.yaml
 Run the focused contract checks in that runner:
 
 ```shell
-bash tools/run-targeted-tests.sh tests/test_techvault_curated_variants.py
+bash tools/run-targeted-tests.sh tests/techvault/test_techvault_curated_variants.py
 ```
 
 Examine parse, compile, realization, selected profiles, and rename behavior.

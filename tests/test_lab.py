@@ -1714,7 +1714,7 @@ class TestOrchestrateLabStart:
             json.dumps(
                 {
                     "lab": {"name": "test-lab"},
-                    "scenario": {"identity": "techvault"},
+                    "scenario": {"identity": "fixture-range"},
                     # Pin every profile: these orchestration tests assert the
                     # outcome/diagnostics of a wazuh/victim/kali lab, so the
                     # written config must not inherit the SOC-enabled defaults.
@@ -2108,31 +2108,6 @@ class TestOrchestrateLabStart:
         mocks["start"].assert_called_once()
         assert mocks["start"].call_args.kwargs["scenario_path"] == selected
 
-    def test_orchestrate_hydrates_missing_env(
-        self, mocker, tmp_path, released_techvault_bundle
-    ):
-        """A fresh checkout can start without a hand-created .env."""
-        from aptl.core.env import find_placeholder_env_values, load_dotenv
-        from aptl.core.lab import orchestrate_lab_start
-
-        mocks = self._patch_all_steps(mocker, tmp_path)
-        mocks["resolve_bundle"].return_value = released_techvault_bundle
-        (tmp_path / ".env").unlink()
-
-        result = orchestrate_lab_start(tmp_path)
-        env = load_dotenv(tmp_path / ".env")
-
-        assert result.success is True
-        assert find_placeholder_env_values(env) == []
-        assert env[_env_key("INDEXER", "PASSWORD")]
-        assert env[_env_key("API", "PASSWORD")]
-        mocks["dashboard_creds"].assert_called_once()
-        assert (
-            mocks["dashboard_creds"].call_args.args[1]
-            == env[_env_key("API", "PASSWORD")]
-        )
-        assert mocks["manager_creds"].call_args.args[1]
-
     def test_refuses_start_when_env_keeps_placeholder_secret(self, mocker, tmp_path):
         """A .env.example placeholder secret must stop the start fail-closed.
 
@@ -2165,7 +2140,7 @@ class TestOrchestrateLabStart:
         # aptl.json still needed to not hit a different error first
         import json
 
-        (tmp_path / "aptl.json").write_text(json.dumps({"lab": {"name": "test"}, "scenario": {"identity": "techvault"}}))
+        (tmp_path / "aptl.json").write_text(json.dumps({"lab": {"name": "test"}, "scenario": {"identity": "fixture-range"}}))
 
         result = orchestrate_lab_start(tmp_path)
 
@@ -2934,7 +2909,7 @@ class TestOrchestrateLabStart:
             json.dumps(
                 {
                     "lab": {"name": "test-lab"},
-                    "scenario": {"identity": "techvault"},
+                    "scenario": {"identity": "fixture-range"},
                     "containers": {'profiles': []},
                 }
             )
@@ -3906,7 +3881,7 @@ class TestStartupClassificationWiring:
                 "fileshare": False,
                 "dns": False,
             }),
-            scenario={"identity": "techvault"},
+            scenario={"identity": "fixture-range"},
         )
 
     def _ctx(self, tmp_path, *, config=None, selected_profiles=None):
@@ -4546,7 +4521,7 @@ class TestStartupClassificationWiring:
         outcome = AcesStartOutcome(
             lab_result=LabResult(success=True, message="ok"),
             final_snapshot=RuntimeSnapshot(),
-            realization_details={"nodes": [{"name": "techvault.victim"}]},
+            realization_details={"nodes": [{"name": "range.victim"}]},
             selected_profiles=["victim", "otel"],
             scenario_path=tmp_path / "scenarios" / "demo.sdl.yaml",
             pack_interaction_evidence={
@@ -5052,7 +5027,6 @@ class TestLabOrchestrationContracts:
         from aptl.core.config import AptlConfig
         from aptl.core.lab import StartSelection, _LabStartContext
         from aptl.core.scenario_bundle import project_tree_bundle
-        from aptl_techvault.startup import TechVaultStartupProvider
 
         ctx = _LabStartContext(project_dir=tmp_path, skip_seed=False)
         plan = ScenarioStartupPlan(
@@ -5063,7 +5037,7 @@ class TestLabOrchestrationContracts:
         )
         bundle = project_tree_bundle(tmp_path, tmp_path / "fixture.sdl.yaml")
         provider_selection = ScenarioStartupSelection(
-            None, TechVaultStartupProvider(), plan
+            None, object(), plan
         )
         ctx.scenario_startup = plan
         ctx.start_selection = StartSelection(

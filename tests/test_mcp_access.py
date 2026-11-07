@@ -25,7 +25,7 @@ def access_record(**changes):
         guest_project="aptl-seat-1",
         container_ids={"kali": "a" * 64},
         scenario_pack=dict(
-            pack_id="techvault", pack_version="1.0.0", set_digest="b" * 64
+            pack_id="fixture-range", pack_version="1.0.0", set_digest="b" * 64
         ),
         guest_endpoint=dict(address="127.0.0.1", port=2222),
         outer_endpoint=dict(address="127.0.0.1", port=30222),

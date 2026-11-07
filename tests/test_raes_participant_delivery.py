@@ -45,7 +45,6 @@ from aptl.core.experiment.capture_registry import (
     CaptureVisibility,
 )
 from aptl.core.runstore import LocalRunStore
-from aptl_techvault.study import StudyCapture
 from aptl.core.evidence.outcomes import CollectorStatus
 from aptl.workbench.process import (
     REASON_OVERFLOW,
@@ -356,20 +355,6 @@ def test_plan_binds_each_turn_to_its_exact_admitted_capture() -> None:
         "aptl.collector.participant-delivery.blue-start",
         "aptl.collector.participant-delivery.blue-stop",
     ]
-
-
-def test_study_capture_declares_all_four_delivery_collectors() -> None:
-    contribution = StudyCapture.resolve(SimpleNamespace())
-    registration_ids = {
-        registration.registration_id for registration in contribution.registrations
-    }
-
-    assert {
-        "aptl.collector.participant-delivery.red-start",
-        "aptl.collector.participant-delivery.red-stop",
-        "aptl.collector.participant-delivery.blue-start",
-        "aptl.collector.participant-delivery.blue-stop",
-    } <= registration_ids
 
 
 def test_delivery_collector_uses_public_coordinator_for_content_addressed_evidence(

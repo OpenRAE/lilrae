@@ -464,11 +464,10 @@ def test_configured_target_reports_its_exact_manifest(tmp_path, monkeypatch):
     from aptl.backends.raes import create_aptl_runtime_target
     from aptl.backends._raes_runtime_target_options import RuntimeTargetOptions
     from aptl.core.experiment.capture_registry import CollectorRegistry
-    from aptl_techvault.capture_registrations import BUILTIN_REGISTRATIONS
 
     native = NativeFacts([])
     selection = SimpleNamespace(
-        registry=CollectorRegistry(BUILTIN_REGISTRATIONS),
+        registry=CollectorRegistry(()),
         contribution=SimpleNamespace(proposition_interpreter=None),
     )
     target = create_aptl_runtime_target(

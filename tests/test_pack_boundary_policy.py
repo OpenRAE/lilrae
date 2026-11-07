@@ -31,18 +31,11 @@ def check():
 @pytest.fixture(scope="module")
 def facts(check):
     owners = check.owner_packs()
-    assert {"techvault", "techvault-participant-study"} <= owners
+    assert owners, "no installed adapter claims a pack"
     collected = {}
     for pack_id in sorted(owners):
         collected.update(check.pack_facts(pack_id))
     return collected
-
-
-def test_the_owner_facts_come_from_the_pack_sdl(facts):
-    kinds = set(facts.values())
-
-    assert {"hostname", "credential", "account username"} <= kinds
-    assert "misp.techvault.local" in facts
 
 
 def test_the_covered_generic_paths_carry_no_pack_fact(check, facts):
@@ -105,24 +98,10 @@ def test_staged_hook_runs_the_same_boundary_checker():
     assert hook is not None
     assert "tools/check_pack_boundary.py" in hook["entry"]
     assert hook["pass_filenames"] is False
+    import re
 
-
-def test_boundary_checker_reads_the_configured_owner_release(check, tmp_path):
-    import json
-    import shutil
-    from aptl.core.scenario_bundle import EnvPackError, env_pack_bundle
-
-    bundle = env_pack_bundle(tmp_path / "acquired", "techvault")
-    destination = tmp_path / "releases" / "techvault"
-    shutil.copytree(bundle.root, destination)
-    bundle.close()
-    (tmp_path / "aptl.json").write_text(json.dumps({"scenario": {
-        "identity": "techvault", "pack_directory": "releases/techvault",
-    }}))
-    assert "misp.techvault.local" in check.pack_facts("techvault", project_dir=tmp_path)
-    (destination / "assets" / "unmanifested.txt").write_text("corruption")
-    with pytest.raises(EnvPackError):
-        check.pack_facts("techvault", project_dir=tmp_path)
+    for changed in ("tests/test_generic.py", "web/tests/routes/page.test.ts"):
+        assert re.match(hook["files"], changed), changed
 
 
 def test_boundary_check_accepts_explicit_owner_sources(check, tmp_path, monkeypatch):
@@ -151,19 +130,9 @@ def test_missing_owner_source_has_a_value_free_diagnostic(
     assert "Traceback" not in capsys.readouterr().err
 
 
-def test_project_tree_selection_keeps_installed_owner_packs_checkable(check, tmp_path):
-    import json
-
-    (tmp_path / "aptl.json").write_text(json.dumps({"scenario": {
-        "source": "project-tree", "identity": "techvault",
-    }}))
-    assert "misp.techvault.local" in check.pack_facts("techvault", project_dir=tmp_path)
-
-
 def test_owner_identity_is_a_fact_even_without_authored_hosts(check, monkeypatch):
     from types import SimpleNamespace
     from pathlib import Path
-    import tempfile
     bundle = SimpleNamespace(sdl_path=Path('unused'))
     monkeypatch.setattr('aptl.backends._raes_scenario_resolution.resolve_scenario_bundle', lambda *args, **kwargs: bundle)
     monkeypatch.setattr('aptl.backends.raes.parse_sdl_file', lambda *args: SimpleNamespace(nodes={}, accounts={}))
@@ -213,3 +182,28 @@ def test_owner_path_detects_a_dependency_without_a_pack_literal(check, tmp_path,
     caller = tmp_path / 'src/aptl/backends/another.py'
     caller.write_text('from aptl.backends.fixture_policy import read_policy\n')
     assert check.findings(tmp_path, facts) == [('src/aptl/backends/another.py', 'pack identifier')]
+
+
+def test_generic_tests_carry_no_pack_identifier(check, tmp_path):
+    """Generic test paths are covered; the adapter test subtree is not (#1700)."""
+    planted = {
+        "tests/test_generic.py",
+        "tests/conftest.py",
+        "tests/fixtures/data.json",
+        "web/tests/components/Card.test.ts",
+        f"{check.ADAPTER_TESTS}test_adapter.py",
+        f"{check.ADAPTER_TESTS}conftest.py",
+    }
+    for relative in planted:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('PACK = "another-owner"\n', encoding="utf-8")
+
+    found = check.findings(tmp_path, {"another-owner": "pack identifier"})
+
+    assert found == [
+        ("tests/conftest.py", "pack identifier"),
+        ("tests/fixtures/data.json", "pack identifier"),
+        ("tests/test_generic.py", "pack identifier"),
+        ("web/tests/components/Card.test.ts", "pack identifier"),
+    ]

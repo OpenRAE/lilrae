@@ -124,7 +124,9 @@ jobs:
         run: >-
           python -m pytest -q tests/test_documentation_checks.py
           tests/test_docs_publishing.py tests/test_docs_user_journey.py
+          tests/techvault/test_docs_user_journey.py
           tests/test_scenario_pack_ownership_contract.py
+          tests/techvault/test_scenario_pack_ownership_contract.py
           tests/test_hosted_seat_helper.py tests/test_stage_hosted_seat_payload.py
       - name: Vale prose lint (full lintable corpus, ADR-038)
         run: bash tools/vale-lint-all.sh
@@ -369,7 +371,7 @@ jobs:
         run: pip install --require-hashes -r requirements/dev.txt
       - name: Prove core-only and separately installed verifier wheels
         run: >-
-          python -m pytest tests/test_scenario_verification_artifacts.py tests/test_lab_core_only_artifact.py -q
+          python -m pytest tests/techvault/test_scenario_verification_artifacts.py tests/test_lab_core_only_artifact.py -q
           -m integration
       # Independent family adapter wheels run outside the source tree on the
       # released RAES tuple (#1465). The modules are integration-marked, so the
@@ -409,8 +411,8 @@ jobs:
           pip install -e . --no-deps --no-build-isolation
       - name: Bind every installed plugin's declaration to the admitted pack
         run: >-
-          python -m pytest tests/test_env_pack_bundle.py
-          tests/test_plugin_pack_compatibility.py -q -m integration
+          python -m pytest tests/techvault/test_env_pack_bundle.py
+          tests/techvault/test_plugin_pack_compatibility.py -q -m integration
 
   python-cross-platform:
     name: Python cross-platform smoke (${{ matrix.os }})
@@ -526,7 +528,7 @@ jobs:
         # -n auto runs the parse / compile / conformance-CLI checks in parallel
         # via pytest-xdist. No coverage is collected here, so xdist worker
         # measurement is not a concern.
-        run: python -m pytest tests/test_techvault_static_gate.py -q -m integration -n auto
+        run: python -m pytest tests/techvault/test_techvault_static_gate.py -q -m integration -n auto
 
   fresh-start-preflight:
     name: Fresh-install lab-start pre-flight (issue #951)
@@ -789,7 +791,7 @@ jobs:
         run: |
           docker info > /dev/null
           command -v node ssh ssh-keygen
-          python -m pytest tests/test_mcp_capture_lifecycle.py -q -m integration
+          python -m pytest tests/techvault/test_mcp_capture_lifecycle.py -q -m integration
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-transport-coverage

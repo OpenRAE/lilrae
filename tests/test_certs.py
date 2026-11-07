@@ -550,7 +550,7 @@ class TestEnsureSSLCerts:
         assert mock_run.call_args_list[1][0][0][-2:] == ["down", "--remove-orphans"]
 
     def test_cleanup_failure_blocks_start(self, tmp_path, mocker):
-        """A leftover generator network would overlap TechVault and must fail."""
+        """A leftover generator network would overlap the range and must fail."""
         from aptl.core.certs import ensure_ssl_certs
 
         (tmp_path / "config").mkdir()

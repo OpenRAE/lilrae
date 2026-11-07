@@ -45,7 +45,7 @@ def _runtime_with_service() -> RuntimeConfiguration:
 class TestBaseContainerSpec:
     def test_image_and_name_derive_from_os_and_address_only(self):
         spec = base_container_spec(
-            "techvault.wazuh-manager", os="linux", os_version="", runtime=None
+            "range.wazuh-manager", os="linux", os_version="", runtime=None
         )
         assert (
             spec.image_ref
@@ -279,7 +279,7 @@ class TestBaseContainerSpec:
 class TestPlanNode:
     def test_spec_and_ops_are_coherent(self):
         spec, ops = plan_node(
-            "techvault.wazuh-manager",
+            "range.wazuh-manager",
             os="linux",
             os_version="",
             runtime=_runtime_with_service(),

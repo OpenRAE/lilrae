@@ -51,7 +51,7 @@ class TestLifecyclePolicyConfig:
                 "idle_timeout_minutes": 60,
                 "teardown_remove_volumes": True,
                 "schedule": [
-                    {"at": "08:00", "days": ["mon", "Fri"], "scenario": "techvault"}
+                    {"at": "08:00", "days": ["mon", "Fri"], "scenario": "fixture-range"}
                 ],
             },
         }
@@ -217,13 +217,13 @@ class TestDecide:
         assert decision.policy == "ttl"
 
     def test_not_running_due_schedule_provisions(self):
-        entry = LifecycleScheduleEntry(at="08:00", scenario="techvault")
+        entry = LifecycleScheduleEntry(at="08:00", scenario="fixture-range")
         policy = LabLifecyclePolicyConfig(schedule=[entry])
         decision = lp.decide(
             policy, lp.LifecycleState(), _now(hour=8, minute=5), False, None, 60
         )
         assert decision.action == "provision"
-        assert decision.scenario == "techvault"
+        assert decision.scenario == "fixture-range"
 
     def test_not_running_no_schedule_is_noop(self):
         policy = LabLifecyclePolicyConfig(ttl_minutes=60)

@@ -12,13 +12,13 @@ No separate corpus checkout is required.
 Run the focused gate-logic checks:
 
 ```shell
-bash tools/run-targeted-tests.sh tests/test_techvault_static_gate.py
+bash tools/run-targeted-tests.sh tests/techvault/test_techvault_static_gate.py
 ```
 
 In CI or the approved VM, run the full selected scenario's integration gate:
 
 ```shell
-bash tools/run-targeted-tests.sh tests/test_techvault_static_gate.py -m integration -q
+bash tools/run-targeted-tests.sh tests/techvault/test_techvault_static_gate.py -m integration -q
 ```
 
 Examine every failed stage in the `GateReport`.

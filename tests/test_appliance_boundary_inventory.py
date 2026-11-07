@@ -14,7 +14,7 @@ from aptl.core.appliance_boundary_inventory import (
     RangeWorkloadObservation,
     qualify_appliance_boundary,
 )
-from aptl.appliance.policy import full_techvault_boundary_policy
+from tests.seat_policy_fixture import protected_seat_policy
 
 
 POLICY_DIGEST = "sha256:" + "1" * 64
@@ -295,7 +295,7 @@ def _protected_host() -> HostBoundaryObservation:
 
 
 def _protected_guest() -> GuestBoundaryObservation:
-    policy = full_techvault_boundary_policy()
+    policy = protected_seat_policy()
     coverage = ("orchard/ipv4", "quartz/ipv4", "quartz/ipv6")
     probes = []
     for source in coverage:
@@ -370,7 +370,7 @@ def _protected_guest() -> GuestBoundaryObservation:
 
 def test_protected_seat_requires_complete_component_and_network_coverage() -> None:
     result = qualify_appliance_boundary(
-        full_techvault_boundary_policy(),
+        protected_seat_policy(),
         _protected_binding(),
         _protected_host(),
         _protected_guest(),
@@ -384,7 +384,7 @@ def test_protected_seat_requires_complete_component_and_network_coverage() -> No
         update={"probes": _protected_guest().probes[:-1]}
     )
     failed = qualify_appliance_boundary(
-        full_techvault_boundary_policy(),
+        protected_seat_policy(),
         _protected_binding(),
         _protected_host(),
         missing,
@@ -408,7 +408,7 @@ def test_protected_seat_rejects_unbound_or_dangerous_range_runtime() -> None:
     guest = _protected_guest().model_copy(update={"range_workloads": (dangerous,)})
 
     result = qualify_appliance_boundary(
-        full_techvault_boundary_policy(),
+        protected_seat_policy(),
         _protected_binding(),
         _protected_host(),
         guest,
@@ -427,7 +427,7 @@ def test_protected_seat_rejects_duplicate_native_workload_identity() -> None:
     )
 
     result = qualify_appliance_boundary(
-        full_techvault_boundary_policy(),
+        protected_seat_policy(),
         _protected_binding(),
         _protected_host(),
         guest,

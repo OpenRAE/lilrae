@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from aptl.core.deployment._compose_stateful_model import _append_artifact_mounts
-from aptl.core.deployment._ssh_key_bundle import realize_ssh_key_bundle
+from aptl.core.deployment._ssh_key_bundle import SSH_ACCESS_PROFILE_V1, realize_ssh_key_bundle
 from aptl.core.deployment.realization import (
     DeploymentGeneratedArtifactOutput,
     DeploymentGeneratedArtifactRealization,
@@ -67,11 +67,11 @@ def _artifact():
         ),
     )
     return DeploymentGeneratedArtifactRealization(
-        address="provision.generated-artifact.techvault-ssh-keys",
-        name="techvault-ssh-keys",
+        address="provision.generated-artifact.range-ssh-keys",
+        name="range-ssh-keys",
         generator="ssh_key_bundle",
         lifecycle="regenerate_on_change",
-        provenance="techvault:ssh-access-profile/v1",
+        provenance=SSH_ACCESS_PROFILE_V1,
         outputs=outputs,
         consumers=consumers,
     )
@@ -179,7 +179,7 @@ def stub_keygen(monkeypatch):
 def test_each_authorized_keys_file_authorizes_exactly_its_declared_access_path(
     tmp_path, stub_keygen
 ):
-    """The projections reproduce the TechVault access topology, nothing wider.
+    """The projections reproduce the declared access topology, nothing wider.
 
     A target authorizes the control-plane, kali-pivot and workstation-pivot keys
     (operator SSH, the kali->target attack path, the workstation->target pivot);

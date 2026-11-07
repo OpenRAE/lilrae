@@ -46,7 +46,7 @@ def test_local_sdl_package_is_removed():
 
 
 def test_clean_install_workflow_starts_the_product_neutral_envelope():
-    """CI exercises materialization independently of TechVault's adapter."""
+    """CI exercises materialization independently of any scenario adapter."""
     workflow = (PROJECT_ROOT / ".github" / "workflows" / "checks.yml").read_text()
     job_match = re.search(
         r"(?ms)^  clean-install-lab-boot:.*?(?=^  [a-z][a-z0-9-]*:|\Z)",
