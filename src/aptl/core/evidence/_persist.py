@@ -39,10 +39,11 @@ from aptl.utils.redaction import redact
 
 #: Media types with a trusted, bounded redaction path before persistence.
 _JSON_MEDIA_TYPE = "application/json"
+_TEXT_MEDIA_TYPE = "text/plain"
 _JSON_MEDIA_TYPES = frozenset(
     {_JSON_MEDIA_TYPE, "application/x-ndjson", "application/jsonl"}
 )
-_REDACTABLE_MEDIA_TYPES = _JSON_MEDIA_TYPES | {"text/plain"}
+_REDACTABLE_MEDIA_TYPES = _JSON_MEDIA_TYPES | {_TEXT_MEDIA_TYPE}
 _REDACTION_HANDLERS = {
     # APTL's shared recursive redactor is deliberately the stronger handler:
     # it removes credentials and sensitivity-labelled values.  Both authored
@@ -208,7 +209,7 @@ def _prepare_redactable_bytes(
         else:
             json.loads(raw)
             prepared = raw, False
-    elif media_type == "text/plain":
+    elif media_type == _TEXT_MEDIA_TYPE:
         prepared = _prepare_text_bytes(raw, handler)
     else:
         prepared = _prepare_json_lines(raw, handler)
@@ -337,11 +338,11 @@ def _failure_fact_blob(
 ) -> tuple[str, bytes]:
     """Render bounded, core-owned failure facts in a media type the binding retains."""
     expected = binding.expected_media_types
-    if expected and "application/json" not in expected and "text/plain" in expected:
+    if expected and _JSON_MEDIA_TYPE not in expected and _TEXT_MEDIA_TYPE in expected:
         text = f"status={status.value}; observer_effect={effect}"
-        return "text/plain", text.encode("utf-8")
+        return _TEXT_MEDIA_TYPE, text.encode("utf-8")
     facts = {"status": status.value, "observer_effect": effect}
-    return "application/json", json.dumps(facts, separators=(",", ":")).encode("utf-8")
+    return _JSON_MEDIA_TYPE, json.dumps(facts, separators=(",", ":")).encode("utf-8")
 
 
 def retained_failure_outcome(
@@ -374,14 +375,20 @@ def retained_failure_outcome(
         return outcome
     effect = (outcome.observer_effect or "unknown")[:_OBSERVER_EFFECT_FACT_LIMIT]
     media, blob = _failure_fact_blob(binding, outcome.status, effect)
-    retained: CollectorOutcome = replace(
-        outcome,
+    return CollectorOutcome(
+        status=outcome.status,
+        started_at=outcome.started_at,
+        finished_at=outcome.finished_at,
         chunks=(blob,),
         media_type=media,
         event_count=1,
+        dropped_count=outcome.dropped_count,
+        source_min_time=outcome.source_min_time,
+        source_max_time=outcome.source_max_time,
         observer_effect=effect,
+        detail=outcome.detail,
+        source_pipeline=outcome.source_pipeline,
     )
-    return retained
 
 
 #: Fixed disclosure text per non-``none`` redaction state (RAES requires a

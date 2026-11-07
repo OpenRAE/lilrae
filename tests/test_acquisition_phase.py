@@ -377,6 +377,40 @@ def test_aborting_failure_without_an_operation_keeps_no_record(tmp_path):
     assert result.records == ()
 
 
+def test_retained_failure_outcome_preserves_every_other_field():
+    # The retained outcome is built field by field; this fails if a field added
+    # to CollectorOutcome is not carried across.
+    from dataclasses import fields
+
+    from aptl.core.evidence._persist import retained_failure_outcome
+    from aptl.core.evidence.protocol import CollectorOutcome
+
+    original = CollectorOutcome(
+        status=CollectorStatus.MID_RUN_LOSS,
+        started_at="2026-01-01T00:00:00Z",
+        finished_at="2026-01-01T00:00:05Z",
+        dropped_count=3,
+        source_min_time="2026-01-01T00:00:01Z",
+        source_max_time="2026-01-01T00:00:04Z",
+        observer_effect="probe sent",
+        detail="source reported mid-run-loss",
+        source_pipeline={"source_refs": []},
+    )
+    binding = SimpleNamespace(expected_media_types=("application/json",))
+    retained = retained_failure_outcome(
+        original, binding, AcquisitionPhase.PREPARATION
+    )
+    overridden = {"chunks", "media_type", "event_count", "observer_effect"}
+    for item in fields(CollectorOutcome):
+        if item.name not in overridden:
+            assert getattr(retained, item.name) == getattr(original, item.name), (
+                item.name
+            )
+    assert retained.media_type == "application/json"
+    assert retained.event_count == 1
+    assert retained.observer_effect == "probe sent"
+
+
 def test_nontrial_startup_produces_preparation_labeled_records(tmp_path):
     result = _run_native_with_source(
         tmp_path,
