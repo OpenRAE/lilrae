@@ -325,28 +325,7 @@ def test_content_free_failure_with_observer_effect_is_retained(tmp_path):
     assert ("other", "observer-effect:probe sent") in refs
 
 
-def test_content_free_failure_without_observer_effect_records_unknown(tmp_path):
-    # An operation that ran and failed may have changed state even when the
-    # source supplied no observer-effect string (core-F2). Retain a durable
-    # fact with an unknown effect rather than claiming no effect occurred.
-    result = _run_trial_with_source(
-        tmp_path, SourceResult(status=CollectorStatus.MID_RUN_LOSS)
-    )
-    assert len(result.records) == 1
-    refs = _record_source_refs(result.records[0])
-    assert ("other", "acquisition-phase:measurement") in refs
-    assert ("other", "observer-effect:unknown") in refs
-
-
-def test_aborting_failure_without_an_operation_keeps_no_record(tmp_path):
-    # A source that never started changed nothing, so it leaves no fact record.
-    result = _run_trial_with_source(
-        tmp_path, SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
-    )
-    assert result.records == ()
-
-
-def test_nontrial_startup_produces_preparation_labeled_records(tmp_path):
+def _run_native_with_source(tmp_path, result):
     from dataclasses import replace as dc_replace
 
     from aptl.backends.raes_evidence_acquisition import acquire_native_evidence
@@ -356,13 +335,7 @@ def test_nontrial_startup_produces_preparation_labeled_records(tmp_path):
     reg_id = registration.registration_id
 
     def native_sources(_request):
-        return {
-            reg_id: CallableWindowedSource(
-                lambda *_: SourceResult(
-                    status=CollectorStatus.OK, records=[{"ready": True}]
-                )
-            )
-        }
+        return {reg_id: CallableWindowedSource(lambda *_: result)}
 
     selection = dc_replace(
         request.capture_selection,
@@ -371,8 +344,43 @@ def test_nontrial_startup_produces_preparation_labeled_records(tmp_path):
             runtime_adapter=SimpleNamespace(native_sources=native_sources),
         ),
     )
-    result = acquire_native_evidence(
-        dc_replace(request, capture_selection=selection)
+    return acquire_native_evidence(dc_replace(request, capture_selection=selection))
+
+
+def test_preparation_content_free_failure_records_unknown(tmp_path):
+    # A preparation operation that ran and failed may have changed state even
+    # when the source supplied no observer-effect string (core-F2). Retain a
+    # durable fact with an unknown effect rather than claiming no effect.
+    result = _run_native_with_source(
+        tmp_path, SourceResult(status=CollectorStatus.MID_RUN_LOSS)
+    )
+    assert len(result.records) == 1
+    refs = _record_source_refs(result.records[0])
+    assert ("other", "acquisition-phase:preparation") in refs
+    assert ("other", "observer-effect:unknown") in refs
+
+
+def test_measurement_content_free_failure_without_effect_has_no_record(tmp_path):
+    # Measurement observes; a failed observation that reports no effect keeps no
+    # evidence reference, preserving the delivery contract (issue #963).
+    result = _run_trial_with_source(
+        tmp_path, SourceResult(status=CollectorStatus.MID_RUN_LOSS)
+    )
+    assert result.records == ()
+
+
+def test_aborting_failure_without_an_operation_keeps_no_record(tmp_path):
+    # A source that never started changed nothing, so it leaves no fact record.
+    result = _run_native_with_source(
+        tmp_path, SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
+    )
+    assert result.records == ()
+
+
+def test_nontrial_startup_produces_preparation_labeled_records(tmp_path):
+    result = _run_native_with_source(
+        tmp_path,
+        SourceResult(status=CollectorStatus.OK, records=[{"ready": True}]),
     )
     assert len(result.records) == 1
     refs = _record_source_refs(result.records[0])

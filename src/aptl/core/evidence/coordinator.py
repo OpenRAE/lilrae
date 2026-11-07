@@ -294,24 +294,32 @@ def _failure_fact_blob(
 
 
 def _retained_failure_outcome(
-    outcome: CollectorOutcome, binding: CaptureBinding
+    outcome: CollectorOutcome,
+    binding: CaptureBinding,
+    phase: AcquisitionPhase | None,
 ) -> CollectorOutcome:
     """Give a top-level content-free non-aborting failure a durable facts blob.
 
-    An operation that ran and then failed may have changed state, even when the
-    source supplied no observer-effect string. Absence of effect text cannot
-    establish absence of an effect, so retain bounded core-owned facts (status
-    and observer effect, "unknown" when absent) through the normal persistence
-    owners. An aborting status (a source that never started) and an outcome that
-    already carries content are left unchanged. Keeping this at the top level
-    preserves the fail-closed policy that never manufactures evidence from
-    content that could not be safely retained during persistence.
+    A preparation operation that ran and then failed may have changed state,
+    even when the source supplied no observer-effect string. Absence of effect
+    text cannot establish absence of an effect, so a preparation failure retains
+    bounded core-owned facts (status and observer effect, "unknown" when absent).
+    A measurement is observe-only, so it retains a fact only when it reports an
+    observer effect, which is itself a contract violation worth recording; a
+    failed observation that reports no effect keeps no evidence reference, which
+    preserves the delivery contract (issue #963). An aborting status (a source
+    that never started) and an outcome that already carries content are left
+    unchanged. Keeping this at the top level preserves the fail-closed policy
+    that never manufactures evidence from content that could not be safely
+    retained during persistence.
     """
     if (
         outcome.status in SUCCESS_STATUSES
         or outcome.chunks
         or outcome.status in _ABORTING_STATUSES
     ):
+        return outcome
+    if phase is not AcquisitionPhase.PREPARATION and outcome.observer_effect is None:
         return outcome
     effect = (outcome.observer_effect or "unknown")[:_OBSERVER_EFFECT_FACT_LIMIT]
     media, blob = _failure_fact_blob(binding, outcome.status, effect)
@@ -517,7 +525,7 @@ def acquire_evidence(
     all_diagnostics: list[Diagnostic] = list(diagnostics)
     for binding in bindings:
         outcome = _retained_failure_outcome(
-            outcomes_by_key[_binding_key(binding)], binding
+            outcomes_by_key[_binding_key(binding)], binding, phase
         )
         report, record, ref, diagnostic = _process_outcome(
             binding, outcome, run_store=run_store, scope=scope, phase=phase
