@@ -8,13 +8,13 @@ from types import SimpleNamespace
 
 import yaml
 
+from aptl.backends._scenario_startup_plan import _safe_relative_script
 from aptl.backends.scenario_startup import (
     ENTRY_POINT_GROUP,
     ScenarioStartupProviderError,
     ScenarioStartupPlan,
     ScenarioStartupSelection,
     StartupHookContext,
-    _safe_relative_script,
     observe_scenario_runtime_concerns,
     run_scenario_runtime,
     resolve_scenario_startup,
