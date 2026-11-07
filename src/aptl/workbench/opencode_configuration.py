@@ -8,6 +8,8 @@ from pathlib import Path
 from aptl.core._participant_model_ids import validate_installed_participant_model_id
 from aptl.core.opencode import (
     OpenRouterRoute,
+    ParticipantRoute,
+    VertexRoute,
 )
 from aptl.core.participant_requests.profiles import RequestProfile
 
@@ -30,7 +32,7 @@ def opencode_arguments(executable: Path, model: str) -> tuple[str, ...]:
 
 def render_opencode_config(
     model: str,
-    route: OpenRouterRoute,
+    route: ParticipantRoute,
     permissions: Mapping[str, str],
     servers: dict[str, object],
     *,
@@ -38,31 +40,13 @@ def render_opencode_config(
     max_steps: int | None = None,
 ) -> dict[str, object]:
     """Serialize admitted route and tool inputs into the upstream config shape."""
+    if request_profile is not None and not isinstance(route, OpenRouterRoute):
+        raise ValueError("participant request profiles need an OpenRouter route")
     config = {
         "model": model,
         "small_model": model,
-        "enabled_providers": ["openrouter"],
-        "provider": {
-            "openrouter": {
-                "whitelist": [model.removeprefix(_OPENROUTER_PREFIX)],
-                "options": {
-                    "baseURL": route.endpoint,
-                    "apiKey": "{env:OPENROUTER_API_KEY}",
-                },
-                "models": {
-                    model.removeprefix(_OPENROUTER_PREFIX): {
-                        "options": {
-                            "provider": {
-                                "only": [route.serving_provider],
-                                "order": [route.serving_provider],
-                                "allow_fallbacks": False,
-                                "require_parameters": True,
-                            }
-                        }
-                    }
-                },
-            }
-        },
+        "enabled_providers": [route.provider_id],
+        "provider": {route.provider_id: route.provider_config(model)},
         "compaction": {"auto": False, "prune": False},
         "autoupdate": False,
         "share": "disabled",
@@ -122,12 +106,15 @@ def opencode_environment(
     }
 
 
-PROVIDER_CREDENTIAL_NAMES = frozenset({"OPENROUTER_API_KEY"})
+PROVIDER_CREDENTIAL_NAMES = OpenRouterRoute.environment_names | VertexRoute.environment_names
 
 
-def validate_provider_environment(environment: Mapping[str, str]) -> None:
-    """Permit only explicit provider credentials without ambient configuration."""
-    if set(environment) - PROVIDER_CREDENTIAL_NAMES:
+def validate_provider_environment(
+    environment: Mapping[str, str], route: ParticipantRoute | None = None
+) -> None:
+    """Permit only the route's explicit provider inputs without ambient configuration."""
+    admitted = route.environment_names if route is not None else OpenRouterRoute.environment_names
+    if set(environment) - admitted:
         raise ValueError("participant provider environment is not admitted")
     if any(
         not isinstance(value, str) or not value or "\0" in value

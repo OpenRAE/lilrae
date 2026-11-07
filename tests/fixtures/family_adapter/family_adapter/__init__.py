@@ -131,7 +131,6 @@ class Capture(Provider):
             supports_redaction=True,
             integrity_modes=frozenset({"checksum"}),
             sealing_modes=frozenset({"digest"}),
-            supports_chain_of_custody=False,
             supports_retention=True,
             supports_loss_disclosure=True,
             visibility_class=CaptureVisibility.EVALUATOR_ONLY,

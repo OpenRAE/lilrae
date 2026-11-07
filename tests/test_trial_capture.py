@@ -94,7 +94,7 @@ def test_observed_empty_log_file_discloses_unverified_window_coverage():
 @pytest.mark.parametrize(
     "change",
     [
-        {"integrity_modes": frozenset({"chain_of_custody"})},
+        {"integrity_modes": frozenset({"signed-attestation"})},
         {"field_selectors": ("/invented-field",)},
         {"window_kinds": frozenset({"episode"})},
         {"retention_policy_refs": frozenset({"study_lifetime"})},
@@ -109,9 +109,6 @@ def test_participant_registration_refuses_unsupported_manifest_claims(tmp_path, 
         channel_kinds=frozenset({"participant-observation"}),
         scopes=frozenset({"participant"}),
     )
-    assert not participant_capture_registration(
-        "rpt.collector.red", offer
-    ).supports_chain_of_custody
     unsupported = replace(offer, **change)
     with pytest.raises(ValueError, match="unsupported"):
         participant_capture_registration("rpt.collector.red", unsupported)

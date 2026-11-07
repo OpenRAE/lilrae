@@ -354,6 +354,16 @@ class ExperimentSettings(BaseModel):
     participant_serving_providers: dict[str, str] = Field(
         default_factory=dict, max_length=64
     )
+    #: The absolute path of the installed, pinned OpenCode executable.
+    opencode_executable: str | None = Field(default=None, min_length=2, max_length=4096)
+
+    @field_validator("opencode_executable")
+    @classmethod
+    def validate_opencode_executable(cls, value: str | None) -> str | None:
+        """Admit only an absolute executable path."""
+        if value is not None and not Path(value).is_absolute():
+            raise ValueError("opencode_executable must be an absolute path")
+        return value
 
 
 class SeatSettings(BaseModel):

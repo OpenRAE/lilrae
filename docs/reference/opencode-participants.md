@@ -30,12 +30,14 @@ Pass that absolute path to `OpenCodeOptions.executable`.
 | Identity | Supported value |
 | --- | --- |
 | Python | 3.14 |
-| RAES | At least 11.0.0, below 12 |
+| RAES | 11.0.0 or later |
 | OpenCode | 1.19.5, Linux x86_64 baseline build |
 | Executable SHA-256 | `7df4e4136301f16589b0f30bf91a61380fca5f8ef22dd36570f5ebe1d4ec802c` |
 | Adapter manifest | `lilrae-opencode`, independently versioned by its publisher |
 | Gateway | Explicit `https://openrouter.ai/api/v1` |
 | Serving route | One operator-approved serving provider; fallbacks disabled |
+
+A [lab start trial](lab-start-trials.md) can also use Vertex AI models through the `google-vertex` provider.
 
 Alternate builds require an explicit `OpenCodeBuild` and separate qualification.
 The installed manifest commits its build version and executable digest.

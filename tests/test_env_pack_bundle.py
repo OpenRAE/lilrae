@@ -81,8 +81,8 @@ def test_released_pack_owns_only_scenario_and_retains_its_evidence_contracts(
     from raes_processor.capture_admission import compile_scenario_capture_demands
 
     # Ranges, not single-version pins: the installed releases satisfy them.
-    assert version("raes-env-packs") in SpecifierSet(">=7.2.2,<8")
-    assert version("raes") in SpecifierSet(">=11.0.0,<12")
+    assert version("raes-env-packs") in SpecifierSet(">=7.2.4,<8")
+    assert version("raes") in SpecifierSet(">=11.0.0")
     bundle = env_pack_bundle(tmp_path / "released", "techvault")
     scenario = parse_sdl(bundle.sdl_path.read_text())
     assert not {"aptl-otel-collector", "aptl-tempo", "aptl-grafana-otel"}.intersection(
@@ -96,7 +96,7 @@ def test_released_pack_owns_only_scenario_and_retains_its_evidence_contracts(
         "wazuh-agent-readiness",
     }
     transcript = scenario.evidence_requirements["redteam-session-transcript"]
-    assert transcript.integrity == "chain_of_custody"
+    assert transcript.integrity == "checksum"
     assert transcript.scope_refs == ["nodes.kali"]
     assert transcript.window == "the full run, from range readiness through teardown"
     assert all(
@@ -120,9 +120,9 @@ def test_env_pack_bundle_stages_and_validates_the_bundled_techvault_pack(
     assert bundle.identity == "techvault"
     assert bundle.pack_identity == PackIdentity(
         pack_id="techvault",
-        pack_version="7.2.2",
+        pack_version="7.2.4",
         set_digest=(
-            "sha256:98c2c6dc9383ccecce62c01b1e62856ddb1dc9d94ea26c15cb2b9d59b9b93101"
+            "sha256:9926391531cc8160e97524826490f331c6e4371e3b8d07057ce2a1a560377047"
         ),
     )
     # The bundle roots at the staged copy, never at the installed package.

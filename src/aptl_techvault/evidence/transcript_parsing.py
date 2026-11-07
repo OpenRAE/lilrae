@@ -142,7 +142,7 @@ def _binding_schema_keys() -> tuple[str, ...]:
         sensitivity="plain",
         redaction_required=True,
         redaction_policy="redact_secrets",
-        integrity_requirements=("chain_of_custody",),
+        integrity_requirements=("checksum",),
         retention_policy="run_lifetime",
         loss_disclosure_required=True,
         visibility_class=registration.visibility_class,

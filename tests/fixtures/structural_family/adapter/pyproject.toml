@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "lilrae-structural-family-fixture"
 version = "1.0.0"
 requires-python = ">=3.14"
-dependencies = ["lilrae", "raes>=11.0.0,<12", "raes-env-packs>=7.2.2,<8"]
+dependencies = ["lilrae", "raes>=11.0.0", "raes-env-packs>=7.2.4,<8"]
 
 [project.entry-points."aptl.pack_backend_interactions"]
 "structural-fixture.aptl" = "structural_family_adapter:serving"

@@ -488,9 +488,9 @@ raes==11.0.0 \
     # via
     #   lilrae
     #   raes-env-packs
-raes-env-packs==7.2.2 \
-    --hash=sha256:136d6a198d701370e226d90ca9db8294d36e989ca0259928d737d82075f32a76 \
-    --hash=sha256:fe209485eb26a049ff46605751b3a276324b17ec012dd00ab1b0bf11af193497
+raes-env-packs==7.2.4 \
+    --hash=sha256:1b879ce57a044762cf5392fe776d3f1c2856f417c2b7d78033ff46984b72d18d \
+    --hash=sha256:dd52e3c7ab819c04f6fcb6081c1fb66cd3bb6e97e0f32221a4f8532ee3724b12
     # via lilrae
 referencing==0.37.0 \
     --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231 \

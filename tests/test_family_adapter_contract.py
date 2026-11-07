@@ -71,7 +71,7 @@ def family_input(tmp_path):
         )
         payload = json.loads(fixture.read_text())
         entry = payload["entries"]["entry-a"]
-        entry.pop("entry_digest")
+        entry.pop("entry_digest", None)
         entry["bindings"] = []
         entry["stochastic_draws"] = []
         entry["selections"][0]["outcome"] = {"kind": "literal", "value": value}
@@ -86,7 +86,7 @@ def family_input(tmp_path):
             canonical_sdl_digest(selected_family).value
         )
         payload["stochastic_controls"] = {}
-        payload.pop("plan_digest")
+        payload.pop("plan_digest", None)
         payload = {
             name: TypeAdapter(
                 AdmittedTrialPlanModel.model_fields[name].annotation

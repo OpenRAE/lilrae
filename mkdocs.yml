@@ -106,6 +106,7 @@ nav:
     - MCP: reference/mcp.md
     - Web: reference/web.md
     - Managed OpenCode: reference/opencode-participants.md
+    - Lab start trials: reference/lab-start-trials.md
     - Participant request manifests: reference/participant-request-manifests.md
   - Development:
     - Coding Standards: CODING_STANDARDS.md

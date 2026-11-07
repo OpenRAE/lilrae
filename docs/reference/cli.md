@@ -49,6 +49,9 @@ and direct calls into Python modules are not supported interfaces.
 | Stop | `lilrae lab stop` | Stops the project while preserving volumes. |
 | Reset | `lilrae lab reset` | After confirmation, removes the project's containers, networks, and volumes and finishes pending host cleanup; `lilrae lab stop -v` does the same. |
 
+To run one trial that a trial SDL declares, add `--run-id`, `--attempt-id`, and
+`--deadline` to `lilrae lab start`. See [Lab start trials](lab-start-trials.md).
+
 The CLI result is authoritative. Do not infer readiness from `docker ps`, use a
 hard-coded port, or substitute raw `docker compose up` for `lilrae lab start`.
 The control plane owns scenario realization, generated configuration, port
@@ -84,7 +87,7 @@ as `[REDACTED]`.
 | Command | Fields after `command`, `schema_version`, and `ok` |
 | --- | --- |
 | `lilrae doctor --json` | `counts`, the number of checks per status (`pass`, `warn`, `fail`, `skip`); `checks`, a list of `id`, `status`, `summary`, and `fix`. |
-| `lilrae lab start --json` | `outcome` (`ready`, `degraded_usable`, `degraded_unusable`, or `failed`); `error`, a string or `null`; `execution_boundary`, the observed boundary or `null`; `admission_seconds`, a number or `null`; `diagnostics`, a list of `step`, `component`, `impact`, `severity`, `message`, and `operator_action`; `published_ports`, a list of `service`, `default_port`, `host_port`, `protocols`, `host_ip`, and `remapped`; `published_ports_observed`, whether Docker reported those ports; `residue`, `null` or the `container_count`, `network_count`, `teardown_requested`, and `torn_down` of a failed start. |
+| `lilrae lab start --json` | `outcome` (`ready`, `degraded_usable`, `degraded_unusable`, or `failed`); `error`, a string or `null`; `execution_boundary`, the observed boundary or `null`; `admission_seconds`, a number or `null`; `diagnostics`, a list of `step`, `component`, `impact`, `severity`, `message`, and `operator_action`; `published_ports`, a list of `service`, `default_port`, `host_port`, `protocols`, `host_ip`, and `remapped`; `published_ports_observed`, whether Docker reported those ports; `residue`, `null` or the `container_count`, `network_count`, `teardown_requested`, and `torn_down` of a failed start; `trial`, only for a [trial start](lab-start-trials.md#exit-status-and-json-output). |
 | `lilrae lab stop --json` | `volumes`, whether `--volumes` was requested; `error`, a string or `null`. |
 | `lilrae lab reset --json` | `containers_found` and `networks_found`, the containers and networks of the workspace-scoped project that the reset removes, counted before it (`0` when no `lilrae lab start` recorded that project), or `null` when they couldn't be counted; `error`, a string or `null`. |
 

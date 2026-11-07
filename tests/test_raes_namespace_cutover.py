@@ -45,16 +45,17 @@ def test_project_pins_the_qualified_raes_release() -> None:
 
     project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
 
-    assert "raes>=11.0.0,<12" in project["project"]["dependencies"]
+    assert "raes>=11.0.0" in project["project"]["dependencies"]
     assert all(
         not dependency.startswith("aces-sdl")
         for dependency in project["project"]["dependencies"]
     )
-    supported = SpecifierSet(">=11.0.0,<12")
+    supported = SpecifierSet(">=11.0.0")
     assert raes.__version__ in supported
-    assert "12.0.0" not in supported
-    assert "raes-env-packs>=7.2.2,<8" in project["project"]["dependencies"]
-    assert version("raes-env-packs") in SpecifierSet(">=7.2.2,<8")
+    assert "12.0.0" in supported
+    assert "10.8.0" not in supported
+    assert "raes-env-packs>=7.2.4,<8" in project["project"]["dependencies"]
+    assert version("raes-env-packs") in SpecifierSet(">=7.2.4,<8")
 
 
 def _source_and_test_imports_of(import_roots: frozenset[str]) -> list[str]:

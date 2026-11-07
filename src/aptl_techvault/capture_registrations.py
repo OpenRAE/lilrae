@@ -141,7 +141,6 @@ def _techvault_registration(
     *,
     offer: ObservationCaptureOffer,
     limits: CaptureLimits,
-    chain_of_custody: bool = False,
 ) -> CollectorRegistration:
     """Bind one TechVault offer to its implementation and runtime limits."""
 
@@ -159,7 +158,6 @@ def _techvault_registration(
         supports_redaction=True,
         integrity_modes=offer.integrity_modes,
         sealing_modes=frozenset({"digest"}),
-        supports_chain_of_custody=chain_of_custody,
         supports_retention=True,
         supports_loss_disclosure=True,
         visibility_class=CaptureVisibility.EVALUATOR_ONLY,
@@ -200,7 +198,6 @@ def _builtin(
         supports_redaction=True,
         integrity_modes=frozenset({"sha256-digest"}),
         sealing_modes=frozenset({"digest"}),
-        supports_chain_of_custody=False,
         supports_retention=True,
         redaction_policies=frozenset({"redact_secrets"}),
         retention_policies=frozenset({"run_lifetime"}),
@@ -225,13 +222,12 @@ _REDTEAM_SESSION_TRANSCRIPT = _techvault_registration(
             window_kinds=frozenset(
                 {"the full run, from range readiness through teardown"}
             ),
-            integrity_mode="chain_of_custody",
+            integrity_mode="checksum",
             redaction_policy="redact_secrets",
             source_class="apparatus",
         ),
     ),
     limits=_TECHVAULT_LIMITS["transcript"],
-    chain_of_custody=True,
 )
 
 _SURICATA_RULE_READINESS = _techvault_registration(
@@ -438,7 +434,6 @@ SERVICE_INDEX_READBACK_REGISTRATION = CollectorRegistration(
     redaction_policies=frozenset({"redact_secrets"}),
     integrity_modes=frozenset({"sha256-digest"}),
     sealing_modes=frozenset({"digest"}),
-    supports_chain_of_custody=False,
     supports_retention=True,
     retention_policies=frozenset({"run_lifetime"}),
     supports_loss_disclosure=True,

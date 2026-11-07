@@ -100,7 +100,7 @@ def test_trial_participants_follow_declared_models_prompts_and_misp(tmp_path):
 
 
 def _check_variation(tmp_path, variables):
-    tmp_path.mkdir()
+    tmp_path.mkdir(mode=0o700)
     expected = trial_document.__kwdefaults__ | variables
     scenario = parse_trial(trial_document(**variables))
     participants = declared_participants(scenario)
@@ -137,7 +137,7 @@ def _check_variation(tmp_path, variables):
     def tampered(asset):
         return read_fixture_asset(asset) + b"x"
 
-    (tmp_path / "tampered").mkdir()
+    (tmp_path / "tampered").mkdir(mode=0o700)
     tampered_settings = _settings(tmp_path / "tampered", scenario, LaunchRecorder())
     with pytest.raises(ValueError):
         with trial_executors(

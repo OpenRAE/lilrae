@@ -328,6 +328,7 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 | `docs/reference/family-adapters.md` | #1666 | Reference |
 | `docs/reference/host-mcp-access.md` | #1666 | Reference |
 | `docs/reference/mcp.md` | #1666 | Reference |
+| `docs/reference/lab-start-trials.md` | #1670 | Reference |
 | `docs/reference/opencode-participants.md` | #1666 | Reference |
 | `docs/reference/participant-profile.md` | #1666 | Reference |
 | `docs/reference/participant-request-manifests.md` | #1666 | Reference |

@@ -320,7 +320,7 @@ def _binding(role: str, phase: str) -> CaptureBinding:
         sensitivity="plain",
         redaction_required=True,
         redaction_policy="redact_secrets",
-        integrity_requirements=("chain_of_custody",),
+        integrity_requirements=("checksum",),
         retention_policy="run_lifetime",
         loss_disclosure_required=True,
         visibility_class=CaptureVisibility.APPARATUS_ONLY,

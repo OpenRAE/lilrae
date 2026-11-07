@@ -17,7 +17,7 @@ from aptl.core.opencode import (
     OpenCodeBuild,
     OpenCodeInvocationEvidence,
     OpenCodeTrialScope,
-    OpenRouterRoute,
+    ParticipantRoute,
     SUPPORTED_OPENCODE_BUILD,
 )
 from aptl.core.participant_requests.request import ParticipantRequest
@@ -40,6 +40,8 @@ class OpenCodeToolProfile:
     config: Path
     credentials: Mapping[str, str] = field(default_factory=dict, repr=False)
     inventory_probe: InventoryProbe = probe_mcp_server
+    #: The run's selected servers; ``None`` admits the whole role catalog.
+    server_ids: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -54,7 +56,7 @@ class OpenCodeOptions:
     runner: CancellableProcessRunner | None = None
     tools: OpenCodeToolProfile | None = None
     build: OpenCodeBuild = SUPPORTED_OPENCODE_BUILD
-    route: OpenRouterRoute | None = None
+    route: ParticipantRoute | None = None
     evidence_sink: Callable[[OpenCodeInvocationEvidence], None] | None = None
     request: ParticipantRequest | None = None
     request_binding: ParticipantRequestBinding | None = None

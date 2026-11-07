@@ -16,7 +16,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from time import monotonic
+from time import monotonic, sleep
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Optional, cast
 from uuid import uuid4
@@ -3258,7 +3258,7 @@ def _resolve_run_target(ctx: _LabStartContext) -> tuple[object, str]:
         return ctx.run_store, ctx.run_id
 
     state_dir = ctx.project_dir / _STATE_DIR_NAME
-    active_run_dir = resolve_active_run_dir(state_dir)
+    active_run_dir = None if ctx.trial is not None else resolve_active_run_dir(state_dir)
     if active_run_dir is not None:
         ctx.run_store, ctx.run_id = (
             LocalRunStore(active_run_dir.parent),
@@ -3271,7 +3271,9 @@ def _resolve_run_target(ctx: _LabStartContext) -> tuple[object, str]:
     if not configured_path.is_absolute():
         configured_path = ctx.project_dir / configured_path
     run_id = (
-        datetime.now(timezone.utc).strftime("run_%Y%m%dT%H%M%SZ_") + uuid4().hex[:12]
+        ctx.trial.run_id
+        if ctx.trial is not None
+        else datetime.now(timezone.utc).strftime("run_%Y%m%dT%H%M%SZ_") + uuid4().hex[:12]
     )
     ctx.run_store, ctx.run_id = LocalRunStore(configured_path), run_id
     return ctx.run_store, ctx.run_id
@@ -4758,21 +4760,85 @@ def _bind_trial_start(ctx: _LabStartContext, result: LabResult) -> LabResult:
     The fence is claimed while startup still owns the lifecycle lock, so no
     other lifecycle operation can run between startup and the trial.
     """
-    if ctx.trial is None:
+    usable = (StartupOutcome.READY, StartupOutcome.DEGRADED_USABLE)
+    if ctx.trial is None or not result.success or result.outcome not in usable:
         return result
-    raise RuntimeError("trial start binding is not supported")
+    selection = ctx.start_selection
+    failure = None
+    if selection is None or ctx.run_id != ctx.trial.run_id:
+        failure = "The trial start has no admitted scenario or run."
+    else:
+        try:
+            digest = "sha256:" + hashlib.sha256(selection.bundle.sdl_path.read_bytes()).hexdigest()
+            TrialControl(ctx.project_dir).claim(ctx.trial)
+        except (LifecycleBusyError, OSError, PathContainmentError, ValueError):
+            log.exception("The trial fence could not be claimed")
+            failure = "The trial could not claim its lifecycle fence."
+    if failure is not None:
+        return LabResult(
+            success=False,
+            error=failure,
+            outcome=StartupOutcome.FAILED,
+            diagnostics=list(result.diagnostics),
+        )
+    result.run_id = ctx.trial.run_id
+    result.scenario_sha256 = digest
+    return result
 
 
 def request_trial_stop(project_dir: Path, *, wait_seconds: float) -> LabResult | None:
-    """Ask a running trial to stop and wait until it releases its fence."""
-    if not (project_dir / _STATE_DIR_NAME / "trial").exists():
+    """Ask a running trial to stop and wait until it releases its fence.
+
+    A fence whose runner process is gone cannot seal. Stop then releases the
+    fence and tears down; the trial run stays unsealed with its partial evidence.
+    """
+    if not project_dir.is_dir():
         return None
-    raise RuntimeError("trial stop requests are not supported")
+    control = TrialControl(project_dir.resolve())
+    active = control.request_stop()
+    if active is None:
+        return None
+    log.info("Requested trial %s attempt %s to stop", active.run_id, active.attempt_id)
+    wait_until = monotonic() + wait_seconds
+    while control.active() is not None:
+        if not control.runner_alive():
+            log.warning("Trial %s has no live runner; its run stays unsealed", active.run_id)
+            control.release(active)
+            return None
+        if monotonic() >= wait_until:
+            return LabResult(
+                success=False,
+                error=(
+                    "The running trial did not seal its run after the stop request. "
+                    "Retry `lilrae lab stop`."
+                ),
+                outcome=StartupOutcome.FAILED,
+            )
+        sleep(1)
+    return None
 
 
 def finalize_trial_capture(project_dir: Path) -> str:
-    """Finalize required run transcripts before a trial seal; return the disposition."""
-    raise RuntimeError("trial capture finalization is not supported")
+    """Finalize required run transcripts before a trial seal; return the disposition.
+
+    Teardown finalizes pending transcripts too. A trial seals first, so it
+    finalizes them here; the later teardown then finds none pending.
+    """
+    from aptl.backends.raes_evidence_acquisition import load_active_transcript_authorities
+
+    root = project_dir.resolve()
+    try:
+        if not load_active_transcript_authorities(root):
+            return "not-required"
+    except (OSError, PathContainmentError, ValueError):
+        log.exception("Pending run transcripts could not be read")
+        return "failed"
+    _, backend, _, failure = _stop_recovery_configuration(root, None)
+    if failure is not None or backend is None:
+        return "failed"
+    if _finalize_required_transcript_capture(root, backend) is not None:
+        return "failed"
+    return "sealed-ready"
 
 
 def _close_run_runtime(ctx: _LabStartContext) -> None:

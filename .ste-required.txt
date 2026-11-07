@@ -12,6 +12,7 @@ docs/getting-started/installing-packs.md
 docs/getting-started/pack-reference.md
 docs/getting-started/prerequisites.md
 docs/getting-started/quick-start.md
+docs/reference/lab-start-trials.md
 docs/troubleshooting/diagnostics.md
 docs/troubleshooting/index.md
 docs/troubleshooting/search-index-backup.md

@@ -41,7 +41,7 @@ from aptl.core.lab_types import (
     LabStatus,
     describe_project_runtime,
 )
-from aptl.cli.lab_trial import run_lab_trial, trial_summary
+from aptl.cli.lab_trial import refuse_existing_trial_run, run_lab_trial, trial_summary
 from aptl.core.trial_attempt import TrialAttempt, parse_trial_attempt
 from aptl.core.scenario_catalog import (
     load_scenario_catalog,
@@ -241,6 +241,8 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
 
     try:
         trial_attempt = parse_trial_attempt(run_id, attempt_id, deadline)
+        if trial_attempt is not None:
+            refuse_existing_trial_run(project_dir, trial_attempt)
     except ValueError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=2)

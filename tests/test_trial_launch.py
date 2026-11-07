@@ -158,7 +158,7 @@ def _assert_vertex_trial(runner, record, document, participants, store):
 
 def _assert_unconfigured_vertex_refused(tmp_path, scenario, participants, deadline):
     missing = tmp_path / "missing"
-    missing.mkdir()
+    missing.mkdir(mode=0o700)
     unconfigured = _settings(missing, KeyReadingRunner(), with_source=False)
     with pytest.raises(ValueError):
         with trial_executors(
