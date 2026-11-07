@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate the component dependency view of the Python control plane.
 
-Ground Control design review (ADR-064 design checks) needs a dependency or
-component view that comes from the code, not from a hand-drawn diagram. This
+The ADR-064 design checks need a dependency or component view that comes from
+the code, not from a hand-drawn diagram. This
 tool reuses the static import graph that ``tools/check_architecture.py`` builds
 with grimp and the ADR-064 layer map in ``[tool.lilrae.architecture]``. It
 prints each layer's module count and every observed import edge between two

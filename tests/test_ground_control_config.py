@@ -12,6 +12,12 @@ def _config() -> dict[str, object]:
     return yaml.safe_load((ROOT / ".ground-control.yaml").read_text())
 
 
+def test_config_uses_the_schema_version_the_server_accepts() -> None:
+    config = _config()
+
+    assert config["schema_version"] == 1
+    assert "design" not in config["workflow"]
+    assert "architecture" not in config
 
 
 def test_local_workflow_uses_only_targeted_tests_and_staged_hygiene() -> None:
