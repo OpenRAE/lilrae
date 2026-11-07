@@ -36,9 +36,12 @@ services, readiness failures, and present/absent/present transitions with fresh
 configs and endpoint bindings. Existing transport and workbench tests qualify
 lifecycle and inventory enforcement; CI owns full installed-lab qualification.
 
-Startup also writes a private `.aptl/mcp-admission.json` containing the current
-run identity, pack identity, selected servers, and admitted native-container
-aliases. Guest enrollment verifies that projection and the observed containers
-instead of reparsing the full source pack for a reduced family trial. A different
-run or incomplete admitted inventory is rejected. Legacy non-trial enrollment
-retains its existing full-inventory validation when this projection is absent.
+Startup also writes a private `.aptl/mcp-admission.json` file.
+It contains the run identity, pack identity, selected servers, and admitted native-container aliases.
+It also contains the realized SDL nodes, their declared service ports, and their static addresses.
+Guest enrollment compares this record with the observed containers.
+It does not parse the full source pack again for a reduced family trial.
+Enrollment refuses a record of a different run or an incomplete admitted inventory.
+When the record is absent, legacy non-trial enrollment keeps its full-inventory validation.
+Participant smoke providers read the node facts through this record
+([ADR-067](../adrs/adr-067-admitted-participant-smoke-providers.md)).

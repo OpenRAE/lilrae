@@ -1,6 +1,8 @@
 containers/windows-victim/README.md
+docs/adrs/adr-067-admitted-participant-smoke-providers.md
 docs/architecture/diataxis-adoption.md
 docs/architecture/documentation-assignments.md
+docs/architecture/issue-1707-participant-smoke-provider-preflight.md
 docs/components/appliance-boundary.md
 docs/components/appliance-qualification.md
 docs/components/default-defensive-posture.md
