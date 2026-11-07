@@ -31,8 +31,7 @@ from aptl.validation.participant_profile import load_participant_profile
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROFILE_PATH = PROJECT_ROOT / "participant-profiles/guided-purple-v1/profile.json"
-SELECTOR = "guided-purple.techvault-attacker-target"
-PACK = PackIdentity("techvault", "1.0.0", "sha256:" + "a" * 64)
+PACK = PackIdentity("example-pack", "1.0.0", "sha256:" + "a" * 64)
 RUN_ID = "a" * 32
 ALL_SERVERS = ("aptl-red", "aptl-indexer", "aptl-wazuh")
 
@@ -65,6 +64,13 @@ def _profile():
     if _PROFILE is None:
         _PROFILE = load_participant_profile(PROJECT_ROOT, PROFILE_PATH)
     return _PROFILE
+
+
+def _selector() -> str:
+    """Return the installed-plan selector that the admitted profile names."""
+
+    manifest = _profile().manifest
+    return f"{manifest.profile_id}.{manifest.scenario.catalog_id}"
 
 
 def _optional(profile, *capabilities: str):
@@ -109,7 +115,7 @@ def _accept(_result) -> bool:
 
 
 class _Provider:
-    """A provider outside the TechVault package."""
+    """A provider outside the adapter package."""
 
     extension_api_version = "1"
     checks = (
@@ -159,9 +165,8 @@ class _Provider:
 
 
 class _EntryPoint:
-    name = SELECTOR
-
     def __init__(self, loaded):
+        self.name = _selector()
         self.loaded = loaded
 
     def load(self):
@@ -220,7 +225,7 @@ def test_provider_selects_operations_from_the_admitted_inventory(
     context = provider.contexts[0]
     assert context.extension_api_version == "1"
     assert context.profile_id == "guided-purple"
-    assert context.scenario_id == "techvault-attacker-target"
+    assert context.scenario_id == _profile().manifest.scenario.catalog_id
     assert context.pack == PACK
     assert {grant.server_id for grant in context.grants} == set(ALL_SERVERS)
     assert context.node("victim") is not None
@@ -408,10 +413,11 @@ def test_provider_requires_a_run_admission(monkeypatch) -> None:
     _install(monkeypatch, provider)
 
     profile = _profile()
+    selector = _selector()
     with pytest.raises(ParticipantMcpSmokeError, match="admitted inputs"):
         resolve_participant_mcp_smoke_operations(profile)
     with pytest.raises(ParticipantMcpSmokeError, match="admitted inputs"):
-        resolve_participant_mcp_smoke_plan(SELECTOR)
+        resolve_participant_mcp_smoke_plan(selector)
     assert provider.contexts == []
 
 
@@ -430,9 +436,10 @@ def test_malformed_provider_declarations_are_refused(monkeypatch, change) -> Non
     for name, value in change.items():
         setattr(provider, name, value)
     _install(monkeypatch, provider)
+    selector = _selector()
 
     with pytest.raises(ParticipantMcpSmokeError, match="malformed"):
-        discover_participant_mcp_smoke_checks(SELECTOR)
+        discover_participant_mcp_smoke_checks(selector)
 
 
 def test_conflicting_grants_for_one_server_are_refused(monkeypatch) -> None:
@@ -525,9 +532,19 @@ def test_installed_provider_is_discovered_from_package_metadata(
     )
 
 
-def test_static_plan_discovery_keeps_its_declared_checks() -> None:
-    checks = discover_participant_mcp_smoke_checks("techvault-full.techvault")
-    static = resolve_participant_mcp_smoke_plan("techvault-full.techvault")
+def test_static_plan_discovery_keeps_its_declared_checks(monkeypatch) -> None:
+    _install(
+        monkeypatch,
+        tuple(
+            McpSmokeOperation(
+                check.check_id, check.server_id, check.tool_name, {"command": "id"}, _accept
+            )
+            for check in _Provider.checks
+        ),
+    )
+
+    checks = discover_participant_mcp_smoke_checks(_selector())
+    static = resolve_participant_mcp_smoke_plan(_selector())
 
     assert checks == tuple(
         McpSmokeCheck(o.check_id, o.server_id, o.tool_name) for o in static
