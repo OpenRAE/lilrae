@@ -3607,6 +3607,12 @@ def _step_seed_soc(ctx: _LabStartContext) -> LabResult | None:
     plan = ctx.scenario_startup
     if not isinstance(plan, ScenarioStartupPlan):
         return None
+    if plan.seed_script is None:
+        log.error("Step 13: Scenario seeding was selected but the plan has no seed script")
+        return LabResult(
+            success=False,
+            error="Scenario seeding was selected without a seed script.",
+        )
     if ctx.skip_seed:
         log.info("Step 13: Skipping scenario seeding (--skip-seed)")
     else:

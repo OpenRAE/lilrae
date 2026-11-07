@@ -75,9 +75,10 @@ class McpServerCredentials:
 class ScenarioStartupPlan:
     """Validated scenario-specific work executed by the generic lifecycle."""
 
-    seed_script: str
-    required_profiles: tuple[str, ...]
-    activation_profiles: tuple[str, ...]
+    # A plan without seeding omits the script and every seed field.
+    seed_script: str | None = None
+    required_profiles: tuple[str, ...] = ()
+    activation_profiles: tuple[str, ...] = ()
     environment_aliases: tuple[EnvironmentAlias, ...] = ()
     # An adapter may name an SDL account credential instead of a value; core
     # resolves it against the admitted SDL, so a validated plan holds values.
