@@ -13,7 +13,7 @@ import os
 import re
 import subprocess
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import partial
 from pathlib import Path
 from time import monotonic, sleep
@@ -123,6 +123,7 @@ if TYPE_CHECKING:
     from raes_contracts.contracts import ExperimentEvidenceRecordModel
 
     from aptl.backends._raes_scenario_queries import AdmittedStartSurface
+    from aptl.backends.scenario_family_models import FamilyTrialInput
     from aptl.backends.scenario_startup import (
         ScenarioStartupPlan,
         ScenarioStartupSelection,
@@ -376,6 +377,7 @@ def admit_start_surface(
     bundle: ScenarioBundle | None = None,
     startup_selection: ScenarioStartupSelection | None = None,
     run_id: str | None = None,
+    trial: "FamilyTrialInput | None" = None,
 ) -> tuple["AdmittedScenarioStart", "AdmittedStartSurface"]:
     """Lazy RAES import for the one admitted execution lab start reuses."""
 
@@ -391,6 +393,7 @@ def admit_start_surface(
         bundle=bundle,
         startup_selection=startup_selection,
         run_id=run_id,
+        trial=trial,
     )
 
 
@@ -1688,6 +1691,10 @@ def _select_start_source(ctx: _LabStartContext) -> StartStageResult:
         if failure is not None:
             return StartStageResult(error=failure.error)
         bundle = resolve_scenario_bundle(ctx.project_dir, ctx.scenario_path, config)
+        if ctx.trial is not None and ctx.trial.unit is not None:
+            from aptl.backends._raes_admission_helpers import bind_trial_unit
+
+            bundle = bind_trial_unit(bundle, config, ctx.trial)
         provider_selection = select_scenario_startup(bundle)
     except (OSError, ValueError, EnvPackError, ScenarioStartupProviderError) as exc:
         if isinstance(exc, ScenarioStartupProviderError):
@@ -2065,6 +2072,15 @@ def _load_admitted_start_surface(
             if ctx.start_selection is not None
             else {}
         )
+        if ctx.start_selection is not None and ctx.start_selection.bundle.trial is not None:
+            from aptl.backends._raes_admission_helpers import family_trial_input
+
+            # Admission binds the sealed trial itself and selects its own adapters.
+            assert ctx.trial is not None
+            admission_kwargs = {
+                "bundle": replace(ctx.start_selection.bundle, trial=None),
+                "trial": family_trial_input(ctx.start_selection.bundle, ctx.trial),
+            }
         ctx.run_store, ctx.run_id = _resolve_run_target(ctx)
         admitted, surface = admit_start_surface(
             ctx.project_dir,
@@ -4809,7 +4825,12 @@ def _bind_trial_start(ctx: _LabStartContext, result: LabResult) -> LabResult:
         failure = "The trial start has no admitted scenario or run."
     else:
         try:
-            digest = "sha256:" + hashlib.sha256(selection.bundle.sdl_path.read_bytes()).hexdigest()
+            trial = selection.bundle.trial
+            digest = (
+                trial.snapshot_digest
+                if trial is not None
+                else "sha256:" + hashlib.sha256(selection.bundle.sdl_path.read_bytes()).hexdigest()
+            )
             TrialControl(ctx.project_dir).claim(ctx.trial)
         except (LifecycleBusyError, OSError, PathSafetyError, ValueError):
             log.exception("The trial fence could not be claimed")

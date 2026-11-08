@@ -90,7 +90,7 @@ def _start_context(tmp_path, trial):
     sdl.write_text("name: trial\n")
     return SimpleNamespace(
         trial=trial,
-        start_selection=SimpleNamespace(bundle=SimpleNamespace(sdl_path=sdl)),
+        start_selection=SimpleNamespace(bundle=SimpleNamespace(sdl_path=sdl, trial=None)),
         run_id=trial.run_id if trial else None,
         project_dir=tmp_path,
     )
