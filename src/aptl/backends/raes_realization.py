@@ -57,6 +57,11 @@ from aptl.core.config import AptlConfig
 from aptl.core.deployment.realization import DeploymentGeneratedArtifactRealization
 from aptl.core.deployment._misp_server_tls import MISP_SERVER_TLS_PROFILE
 from aptl.core.deployment._compose_stateful_constants import SOC_CERT_PROFILE
+from aptl.backends.raes_random_values import (
+    inline_random_values,
+    is_random_value,
+    random_values,
+)
 from aptl.core.scenario_bundle import ScenarioBundle
 from aptl.utils.redaction import redact
 
@@ -137,6 +142,13 @@ def interpret_provisioning_plan(
     # checkout. They are the same directory for an in-tree scenario, so this is
     # behaviour-preserving today and is the single point that changes when a
     # scenario is handed over from somewhere else.
+    # Random values become the inline text of their consumers (content_text delivery).
+    values = random_values(payload_resources, content_root)
+    payload_resources = [
+        resource
+        for resource in inline_random_values(payload_resources, values)
+        if not is_random_value(resource)
+    ]
     placements = _realize_placements(
         payload_resources,
         _node_lookup(nodes),

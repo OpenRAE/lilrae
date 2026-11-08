@@ -71,6 +71,7 @@ def admit_start_surface(
     startup_selection: ScenarioStartupSelection | None = None,
     run_id: str | None = None,
     trial: "FamilyTrialInput | None" = None,
+    autonomous_bindings: tuple = (),
 ) -> tuple["AdmittedScenarioStart", AdmittedStartSurface]:
     """Admit the scenario once and project the pre-start facts off it.
 
@@ -89,7 +90,7 @@ def admit_start_surface(
         config,
         backend,
         scenario_path=scenario_path,
-        source=ScenarioAdmissionSource(bundle, startup_selection),
+        source=ScenarioAdmissionSource(bundle, startup_selection, autonomous_bindings),
         run=ScenarioAdmissionRun(run_id=run_id, trial=trial),
     )
     return admitted, start_surface_of(admitted, config)
