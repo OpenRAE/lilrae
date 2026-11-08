@@ -13,7 +13,8 @@ The rewrite also owns its new explanation, lookup, integration, and verification
 The assignment register records those paths and reader purposes.
 
 The 123 historical preflight, review, and qualification records receive status and source-revision notices.
-Their original record bodies remain exact.
+Their original record text remains exact.
+The terminology inventory also receives one dated maintenance row; its original text remains unchanged.
 Their embedded outputs, quotations, dates, and qualification limits are source evidence rather than current procedures.
 The original revision remains available through each notice.
 
@@ -87,6 +88,11 @@ Static comparison checks requirement metadata and preserved record bodies agains
 Non-Markdown evidence artifacts remain unchanged.
 Heading comparison checks old fragments and the explicit compatibility anchor for the continuity decision.
 Navigation uses the existing MkDocs configuration and real destination pages.
+
+The first documentation CI run passed 72 checks and found one missing inventory update.
+The existing terminology inventory now lists the five additional Scenario Pack pages.
+The new row is dated and does not rewrite its historical source text.
+No test or inventory-matching rule was changed.
 
 CI owns the strict MkDocs build, full prose checks, and behavior tests.
 The existing documentation lane runs its targeted tooling and navigation cases.
