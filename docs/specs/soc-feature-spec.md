@@ -11,9 +11,7 @@
 ### 1.1 Purpose
 
 The Scenario & Observability Core (SOC) adds structured experiment execution to
-APTL. It provides the ability to define attack scenarios as YAML, execute them
-against the lab, and capture **all** telemetry into a self-contained run archive
-for post-hoc analysis.
+APTL. The historical design specified YAML exercises and complete telemetry archives for later analysis. It does not prove capture completeness or current runtime support.
 
 ### 1.2 Use Cases
 
@@ -25,9 +23,7 @@ for post-hoc analysis.
 
 ### 1.3 Design Principles
 
-1. **Match existing patterns**—Pydantic v2 for validation, dataclasses for
-   results, `get_logger()` per module, subprocess for external tools, thin CLI
-   over core logic.
+1. **Match existing patterns**: Pydantic v2 validation, dataclass results, `get_logger()`, subprocess tools, and a thin CLI over core logic.
 2. **Minimal new dependencies**—Only `PyYAML` and `requests` are added.
 3. **Scenarios are data, not code**—YAML files authored, shared, and
    version-controlled independently of the engine.

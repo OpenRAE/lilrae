@@ -1,5 +1,13 @@
 # Issue #592 Scenario-Pack Terminology Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-592-scenario-pack-terminology-preflight.md).
+Its last recorded file change before this rewrite was `76024b0323cb`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note fixes the terminology boundary for issue #592. It does not rename a
 runtime identifier, migrate an asset, or change pack acquisition. The issue
 predates the ACES-to-RAES project rename and the companion repository's current

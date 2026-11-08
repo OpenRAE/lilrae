@@ -1,5 +1,13 @@
 # Changes That Landed During Review
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/reviews/962-lilrae-readiness/upstream-update.md).
+Its last recorded file change before this rewrite was `d48d2b7e7fb1`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 The initial stocktake uses `f35f86ee3bcc41f0b918fd209a944bf91e83f659`.
 During the review, [PR #959](https://github.com/Brad-Edwards/aptl/pull/959)
 merged to `dev` as `65390508`. The issue branch incorporated that commit with

@@ -1,5 +1,11 @@
 # Participant request manifests
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/participant-request-manifests.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 ## Ownership and interfaces
 
 Installed Claude Code, Codex and OpenCode implementations publish the RAES participant manifest contract.
@@ -18,20 +24,25 @@ Manifests depend on supported domains, not the selected treatment or participant
 An implementation-owned profile schema defines the supported request vocabulary.
 It does not replace a RAES configuration schema.
 Every profile has an exact version, review reference and content digest.
+
 The realized configuration includes its digest as a required target.
 The manifest also commits the complete profile definitions.
 Changing profile content therefore changes both identities.
+
 Profiles contain no executable options, credentials, environment maps or prompt text.
 
 Profiles explicitly select gateway, requested serving provider, no-fallback policy, reasoning, sampling, seed disposition, generation limit and usage policy.
 Required omissions are explicit null values with a declared reason.
 Unsupported and locked controls remain public constraints.
+
 Reasoning effort and budget are distinct modes.
 Only reviewed combinations in the trusted catalog pass validation.
 Claude Code and Codex do not expose sampling or seed controls through these adapters.
+
 Their generation limits remain provider-managed and explicitly uncontrolled.
 OpenCode supports a bounded generation request limit with a declared scope and reviewed sampling settings.
 Its seed control remains unsupported until native transport support is qualified.
+
 Profile selection also specifies instruction placement and slot order.
 
 ## Admission and content
@@ -39,36 +50,46 @@ Profile selection also specifies instruction placement and slot order.
 The owner validator checks the complete target set, manifest identity, model domain and exact profile commitment.
 It composes the existing SDL control-context validator.
 The SDL validator checks exact versions, descriptor digests, participant scope and slot conflicts.
+
 Its `for_scenario()` hook validates each instantiated trial independently.
 The older experiment admission path receives the trusted validator through `ParticipantManifestBinding`.
 That path refuses participant configuration when the validator is absent.
+
 It checks the canonical manifest digest independently of the acquired file checksum.
 Validators never load executable code from authored names.
 
 Content verification accepts already resolved bytes and the sealed configuration result.
 The consumer supplies those bytes through its approved artifact resolver.
 Verification checks the result digest, manifest, participant, exact retained asset pin, content checksum, byte count and UTF-8 encoding.
+
 No content URI triggers a network or filesystem read.
 The returned content follows the declared slot order without newline conversion or an implicit template.
 Request preparation snapshots the sealed result before content verification.
+
 Selection and verified content do not establish live disclosure authority or actual delivery.
 The existing ACT-620 and runtime gates retain those responsibilities.
 The owner creates an immutable verified request after content verification.
+
 Existing managed adapters consume that request through their sealed launch inputs.
 The request binds the profile, participant configuration, prompt bytes and executable pin.
 It retains the ordered content and exact selected descriptors.
+
 Reconstruction checks asset pins, content checksums and prompt composition before dispatch.
 Native launch inputs separately bind the expected participant address and trusted owner validator.
 Reconstructed data cannot replace that binding.
+
 Dispatch rechecks the trusted manifest, participant address and SDL scope before process work.
 Adapters check that pin before native work and preserve minimal environments.
 Claude Code restricts available models and disables fallback in explicit settings.
+
 Codex locks its model provider and reasoning setting through native configuration arguments.
 Its named provider uses the admitted OpenAI endpoint and the isolated credential key.
 OpenCode applies its admitted provider restriction, generation limit, reasoning and sampling through its native configuration.
+
 Required omissions remain omissions in native request construction.
 The [trial factory](trial-participant-configuration.md) owns sealed trial-start assembly and native delivery observations.
 Native request construction tests remain distinct from the native history source and its explicit missing fields.
+
 Legacy configurations retain their existing delivery checks.
 
 ## Identity and limitations
@@ -76,12 +97,15 @@ Legacy configurations retain their existing delivery checks.
 A model alias is a requested identifier.
 Neither its spelling nor a date suffix proves an immutable snapshot.
 An admitted model does not prove account access.
+
 The requested route does not attest the actual serving provider.
 Unavailable served identity, usage or generation metadata remains unknown.
 The public manifest retains these limitations before selection.
+
 Seed requests cannot establish deterministic output.
 The selected asset commitment covers authored content only.
 Harness instructions, tool schemas, auxiliary calls and provider context remain separate effective-request concerns.
+
 OpenCode's internal retries and process-supervision limits remain documented limitations.
 
 ## Data flow and trust boundaries
@@ -127,12 +151,15 @@ flowchart LR
 The publication path adds no listener, credential access, process or remote fetch.
 Claude and Codex usage stays on each launch handle.
 The launch retains its injected run store for typed counters and fixed request identity fields through existing structured storage.
+
 The browser workbench supplies its existing store.
 Absent or invalid counters stay null, and each response replaces the previous observation.
 Existing authentication, artifact containment, credential isolation, tool admission and process cleanup remain required at their existing boundaries.
+
 Policy-as-code uses closed profiles, native RAES validation and shared redaction.
 Architecture-as-code uses ADR-064's module map and the existing participant architecture model.
 No new deployment, scheduling, containment or authority plane is needed.
+
 ADR-047, ADR-052, ADR-064 and ADR-065 continue to govern these boundaries.
 The issue-862 non-goal is superseded only for admitted model and context factors.
 

@@ -1,5 +1,13 @@
 # Existing ADR Disposition
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/reviews/962-lilrae-readiness/adr-disposition.md).
+Its last recorded file change before this rewrite was `7b5320d0c0e5`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 All 54 baseline records (ADR-000 through ADR-053) are covered below. Status changes are recommendations for decision review. This review makes no edits to accepted ADR bodies or statuses; the incorporated upstream PR #959 amended ADR-049 as described in the [update](upstream-update.md). Proposed ADR-054 through ADR-058 state the replacement scope explicitly.
 
 | ADR | Proposed disposition | Reason |

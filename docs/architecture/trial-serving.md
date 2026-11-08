@@ -1,5 +1,11 @@
 # Serving RAES trials
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/trial-serving.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 Issue #459 implements the released `BackendTrialUnit` boundary. RAES owns the
 sealed plan, request derivation, runtime admission, operation ledger, deadlines,
 cancellation, replacement and resume. LilRAE wraps an already admitted runtime
@@ -29,10 +35,14 @@ proves cessation or authorizes a different attempt.
 RAES retains partial observations before teardown and invokes declared cleanup
 after success, failure, cancellation or timeout. Validate the returned joins and
 verify the cleanup owner's retained evidence and live readback. Remove fences
-after dispatch only when RAES's scope-complete resource-reuse predicate succeeds. Cleanup
+after dispatch only when RAES's scope-complete resource-reuse predicate succeeds.
+
+Cleanup
 failure and fresh-range-required outcomes retain the fences. Evidence remains
 in the injected run store. Archival recovery seals an interrupted record; it
-does not resume execution. The legacy archival executor has no batch entry point.
+does not resume execution.
+
+The legacy archival executor has no batch entry point.
 See the [issue #437 recovery guardrails](issue-437-interrupted-trial-recovery-preflight.md)
 for interrupted intent validation, sealing, cleanup uncertainty and duplicate recovery.
 
@@ -43,74 +53,13 @@ A durable project fence also excludes ordinary lifecycle mutation after a crash.
 
 ## Required readiness
 
-Construct `TrialReadiness` with the public `TrialRealizationInputs` and a
-`ReadinessEnvironment` for the exact installed runtime target. The environment
-supplies approved native owners, local artifact access, the selected collector
-registry, the run store, the clock, and the existing `BoundedProcessRunner`.
-The native target must expose its provisioner readiness port. Its effect
-adapters share this same gate. Do not construct another runtime for readiness.
-Wrap installed trial services in `ReadinessTrialServices` before RAES admission.
-Pass the gate to `LilraeTrialUnit`; a missing gate refuses dispatch.
+Readiness belongs to the exact admitted runtime target and approved placement.
+One shared gate binds clean placement, preparation, and live observations.
+A second runtime or an unverified endpoint cannot supply equivalent proof.
+Read-only observations stay separate from capture acquisition and provisioning effects.
 
-The wrapper records the ordinary clean-placement check while it holds both
-placement locks. Preparation reconstructs the sealed selected entry, checks
-its processor plans and snapshot, and verifies installed configuration,
-artifact, backend, capture, containment, and storage obligations.
-A fully ceased preparation refusal releases only fences newly claimed by that invocation.
-Existing ownership and uncertain probes retain their fences. A retry rechecks clean placement.
-
-`InstalledReadiness` connects the ordinary Docker backend, approved placement
-record, participant executor ports, installed collectors, and local run store.
-Use `executor.readiness_owner(manifest)` for each configured participant.
-Supply the same collectors used for capture and their source clocks.
-Each source must expose a separate bounded, read-only readiness operation.
-Acquisition, stimuli, and remote write probes stay in the capture lifecycle.
-Sources without that read-only operation refuse readiness.
-`create_gate(inputs, target, scenario_root, registry)` attaches the resulting gate.
-Pass it to both `ReadinessTrialServices` and `LilraeTrialUnit`.
-The placement record must come from the already approved lab owner.
-Supply `AppliancePlacementReadiness` with that owner's policy, binding, and
-fresh host and guest observation methods. The ordinary boundary qualifier
-must confirm identity, perimeter, and enforcement. Missing or invalid proof
-fails even when the endpoint and daemon match. This check does not approve a new VM.
-
-Collector registrations pin any `clock_accuracy_ms` requirement in their
-configuration digest. The gate reads the admitted value; a missing clock fails
-when accuracy is required. Native startup's selected `minimum_max_map_count`
-passes unchanged to the ordinary system requirement owner. Missing or unknown
-ownership fails that required check.
-Artifacts are checked locally without pulls or materialization.
-Provider readiness uses the selected implementation build and approved access
-operation; a model label or configuration digest alone cannot pass.
-The OpenCode executor exposes `readiness_owner(manifest)` for its actual
-configuration, bounded build probe, and configured provider readiness operation.
-
-After complete provisioning, the gate checks required services and capture
-sources before effects. Orchestration, evaluation, and participant adapters
-also enforce the gate. The Docker service check reuses ordinary container,
-listener, and authenticated service checks against the selected durable graph.
-Missing sources, collector wiring, writable output, or required capability
-refuse execution. Source clocks need measured accuracy only when their selected
-capture contract requires it. A baseline on an approved existing VM requires
-no cloud account or final factorial matrix.
-
-Readiness retains immutable observations under `readiness/clean/`,
-`readiness/prepared/`, and `readiness/live/`. Digests bind every observation to
-its plan, entry, run, attempt, snapshot, target, and selected configurations.
-Fixed diagnostics identify failed checks without source output or exceptions.
-Run storage and each separate capture destination must prove write capacity;
-captures sharing a destination share one aggregate capacity check.
-The handoff names readiness observations for the existing archive inventory.
-Storage failure blocks execution, including an otherwise passing verdict.
-
-A failed readiness check does not erase successful native provisioning.
-RAES commits those effects so its cleanup can remove them.
-`ReadinessTrialServices` refuses a successful workload claim after a readiness
-failure while preserving native cessation and evidence verification.
-Partial capture, stop, and cleanup remain available after readiness fails.
-A timed-out probe does not establish cessation. Outstanding probe calls or
-unverified process cleanup retain the placement fences and block handoff.
-See [the readiness design](exp-011-resource-readiness-design.md).
+The [integration guide](../reference/trial-readiness-integration.md) describes owner assembly and the supported gate inputs.
+The [readiness design](exp-011-resource-readiness-design.md) explains evidence and failure boundaries.
 
 ## Security and executable checks
 
@@ -167,10 +116,13 @@ Timeout or requested cancellation does not prove cessation. Preserve
 `TrialPending` and indeterminate work through the RAES ledger, including
 unknown native residue. A refusal follows its admitted failure disposition;
 do not erase it because execution continued, or classify every refusal as
-infrastructure failure. Missing required evidence cannot become unconditional
+infrastructure failure.
+
+Missing required evidence cannot become unconditional
 success. Distinguish a source that never started, invalidating evidence loss,
 and an explicitly admitted degradation with loss/comparability disclosures.
 Optional absence and a legitimately empty successful capture also stay distinct.
+
 Pass these facts to the released producer rather than adding a local precedence
 table. Record validation failure is visible failure data, not permission to
 publish a successful or eligible result.
@@ -181,10 +133,7 @@ Keep the admitted plan ID/digest, entry ID/digest, entry-derived `run_id`,
 distinct `execution_attempt_id`, instantiated SDL digest and cleanup/native
 bindings joined. `TrialUnitResult` has no independent top-level run ID:
 retain the request context and enforce `validate_trial_unit_result` with the
-selected target scope before handing it on. Do not allocate a new identity
-through startup's `_resolve_run_target`, equate run and attempt, sanitize an
-incompatible ID into another ID, or identify a factorial condition by its
-display name. Preserve selected participant configuration/control-context
+selected target scope before handing it on. Run, attempt, and condition identities remain distinct. Startup must not mint another ID, sanitize an incompatible ID, or substitute a display name. Preserve selected participant configuration/control-context
 commitments from that entry without persisting secret values.
 
 Return the validated result with its operation receipts, execution snapshot,
@@ -249,17 +198,12 @@ Extend the existing trial-serving, cleanup-runtime, participant-workload,
 execution-bridge, evidence, archival, redaction and family contract evidence
 at their public seams. The current trial-serving fixture chooses the first
 plan entry; it alone does not prove reporting for every factorial condition.
-Qualification must retain distinct identities and all outcome dimensions
-across entries, including timeout, cancellation, refusal, capture failure,
-cleanup failure, unknown cessation, publication conflict and repeated delivery.
+Qualification preserves entry identities and separate timeout, cancellation, refusal, capture, cleanup, cessation, publication, and repeated-delivery outcomes.
 Use real released validators and content-backed producer validation; mutation
 checks must catch failure-to-success defaults and dropped identity/evidence.
 This documentation-only preflight runs no runtime or mutation tests.
 
-Non-goals are implementation, a new plan/compiler/controller, replacement or
-retry policy, study/statistical analysis, portable schemas, credential/config
-changes, a new API/storage service, deployment changes, historical archive
-migration, or a broad refactor of legacy execution. Keep the change within
+This preflight adds no compiler/controller, retry policy, study analysis, portable schema, credential/configuration change, service, deployment, archive migration, or broad refactor. Keep the change within
 owner observation, honest outcome handoff and the existing reporting boundary;
 do not absorb the public experiment entry point's separate delivery scope.
 
@@ -322,11 +266,15 @@ validation into success. RAES validates metadata identity against started runs.
 Each `LilraeTrialUnit` requires a `TrialOutcomeReporting` composition. After
 result validation and handoff persistence, the adapter invokes this reporter.
 The metadata callback receives the admitted request and verified terminal result.
+
 For unresolved execution, it receives `None` instead of a terminal result.
 It preserves known metadata without inventing an evaluator verdict.
-It supplies metadata for the experiment's started runs. The same RAES runtime
+It supplies metadata for the experiment's started runs.
+
+The same RAES runtime
 produces the records. Reporting must identify this admitted run and attempt
 before the adapter can release fences. Publication failures retain fences.
+
 The callback may report no evaluator verdict; RAES then retains not-evaluated.
 It must interpret participant observations using their admitted policy.
 

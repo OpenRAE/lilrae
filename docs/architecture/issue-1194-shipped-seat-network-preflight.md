@@ -1,5 +1,13 @@
 # Issue #1194 Shipped Seat Network Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1194-shipped-seat-network-preflight.md).
+Its last recorded file change before this rewrite was `089bb459b56c`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 The supplied [issue #1194](https://github.com/Brad-Edwards/aptl/issues/1194)
 is the acceptance contract. This note sets implementation boundaries, not an
 implementation plan or an incident finding. No new ADR is needed: ADR-025,

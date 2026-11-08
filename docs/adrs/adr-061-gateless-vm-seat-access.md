@@ -6,17 +6,33 @@ accepted
 
 Owner decision for issue #1178 on 2026-09-30. This supersedes the VM-seat browser UI and host-MCP entry decisions in ADR-059 and ADR-060. Their signed image, per-user VM, capacity, and host-containment decisions remain in force.
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [seat Reference](../reference/appliance-seat-launcher.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
-The earlier seat image booted a headless Ubuntu guest. Its participant port served an APTL web control panel and terminal, while an expiring SSH-carried host MCP grant linked agents on the physical host to the guest. The operator's August seats instead gave each participant an XFCE desktop with a browser and red/blue Claude terminals, reached through Apache Guacamole. The operator selected that desktop experience for the nested `aptl seat` VM and retired the APTL web control panel as a participant interface. Extra APTL login and grant steps obstruct experimentation.
+The earlier seat image booted a headless Ubuntu guest. The earlier participant port exposed a web panel and terminal. An expiring SSH-carried grant linked physical-host agents to guest MCP. The operator's August seats instead gave each participant an XFCE desktop with a browser and red/blue Claude terminals, reached through Apache Guacamole. The operator selected that desktop experience for the nested `aptl seat` VM and retired the APTL web control panel as a participant interface. Extra APTL login and grant steps obstruct experimentation.
 
 ## Decision
 
-A new seat image boots XFCE and xrdp inside its own guest. Apache Guacamole and guacd run from digest-pinned images loaded from the signed offline archive. A private PostgreSQL database holds one RDP connection. An internal nginx proxy supplies the fixed Guacamole header identity; the participant opens the gateway through `aptl seat open-kiosk` without a Guacamole password prompt or an APTL launch token. Guacamole's session mechanism and the xrdp password are generated inside the disposable overlay and are never copied to the golden disk. The proxy replaces any client-supplied identity header. Only the proxy is published through QEMU's per-user network namespace; Guacamole, guacd, PostgreSQL, and xrdp have no separate host port mapping. Scenario applications retain their own native authentication.
+A new seat image boots XFCE and xrdp inside its own guest. Apache Guacamole and guacd run from digest-pinned images loaded from the signed offline archive. A private PostgreSQL database holds one RDP connection.
 
-The guest desktop autostarts a browser and red/blue terminal tabs. The signed image includes the Claude executable and built MCP servers. Agent/provider sign-in belongs to the participant inside the guest and is not baked into the image. The terminals use the guest's lab services and the current run's guest configuration; no host MCP enrollment, caller grant, generated host client files, or access virtio channel is created for the new image.
+An internal nginx proxy supplies the fixed Guacamole identity header. The historical `aptl seat open-kiosk` opened it without a Guacamole password or launch token. Guacamole's session mechanism and the xrdp password are generated inside the disposable overlay and are never copied to the golden disk.
 
-The signed boundary policy advances generation and declares one `participant` TCP publication at guest loopback port 8080. Host-side port allocation may choose a different loopback outer port. QEMU runs inside a rootless network namespace owned by the launching Unix account. The launcher enters that namespace to observe its listener, verify Guacamole readiness, and open the participant browser. Other host accounts cannot enter the namespace, and the gateway port is unreachable from the ordinary host network. The launcher keeps exact policy-to-mapping validation, private 9p launch share, KVM resource admission, forbidden-reachability probe, fresh guest boundary observation, and a fatal readiness gate. Status checks current gateway availability separately from saved lifecycle state and QEMU PID. Old image digests remain sticky and keep their old signed contract; existing overlays are neither migrated nor reset.
+The proxy replaces any client-supplied identity header. Only the proxy is published through QEMU's per-user network namespace; Guacamole, guacd, PostgreSQL, and xrdp have no separate host port mapping. Scenario applications retain their own native authentication.
+
+The guest desktop autostarts a browser and red/blue terminal tabs. The signed image includes the Claude executable and built MCP servers. Agent/provider sign-in belongs to the participant inside the guest and is not baked into the image. Terminals use guest services and current guest configuration. The new image creates no host enrollment, caller grant, host client files, or access virtio channel.
+
+The signed boundary policy advances generation and declares one `participant` TCP publication at guest loopback port 8080. Host-side port allocation may choose a different loopback outer port. QEMU runs inside a rootless network namespace owned by the launching Unix account.
+
+The launcher enters that namespace to observe its listener, verify Guacamole readiness, and open the participant browser. Other host accounts cannot enter the namespace, and the gateway port is unreachable from the ordinary host network. The launcher keeps exact policy-to-mapping validation, private 9p launch share, KVM resource admission, forbidden-reachability probe, fresh guest boundary observation, and a fatal readiness gate.
+
+Status checks current gateway availability separately from saved lifecycle state and QEMU PID. Old image digests remain sticky and keep their old signed contract; existing overlays are neither migrated nor reset.
 
 The seat launcher does not impose default outbound network controls. Rootless
 `slirp4netns` gives QEMU's private namespace an outbound route, and QEMU's

@@ -1,5 +1,13 @@
 # Issue #1411: TechVault After TheHive Trial Expiry
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1411-thehive-license-readiness-preflight.md).
+Its last recorded file change before this rewrite was `699138cc03c9`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 Status: design preflight, aligned with the accepted owner decision in
 [ADR-063](../adrs/adr-063-remove-thehive-and-cortex.md). Remove TheHive and Cortex;
 TechVault will have no case-management tool. Licensing is no longer the proposed
