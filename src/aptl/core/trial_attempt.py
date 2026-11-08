@@ -2,17 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any
 
-__all__ = ["TrialAttempt", "TrialUnit", "load_trial_unit", "parse_trial_attempt"]
-
-#: The canonical instantiated snapshot limit that family trial admission applies.
-MAX_TRIAL_UNIT_BYTES = 32 * 1024 * 1024
+__all__ = ["TrialAttempt", "parse_trial_attempt"]
 
 # The run store's identifier contract: a run ID names one run directory.
 _IDENTIFIER = re.compile(r"^\w[\w.-]{0,127}$", re.ASCII)
@@ -20,26 +14,12 @@ _UTC_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
 
 
 @dataclass(frozen=True)
-class TrialUnit:
-    """One admitted RAES plan entry and its exact instantiated snapshot bytes."""
-
-    plan: Any = field(repr=False)
-    plan_entry_id: str
-    snapshot: bytes = field(repr=False)
-
-
-@dataclass(frozen=True)
 class TrialAttempt:
-    """Run and attempt IDs and the UTC deadline that the caller owns.
-
-    ``unit`` is the admitted plan entry to run. Without it, the trial runs the
-    SDL that the project selects.
-    """
+    """Run and attempt IDs and the UTC deadline that the caller owns."""
 
     run_id: str
     attempt_id: str
     deadline: datetime
-    unit: TrialUnit | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         for name, value in (("run ID", self.run_id), ("attempt ID", self.attempt_id)):
@@ -67,28 +47,3 @@ def parse_trial_attempt(
         raise ValueError("--deadline must be an RFC 3339 UTC time ending in Z")
     parsed = datetime.fromisoformat(deadline.replace("Z", "+00:00")).astimezone(UTC)
     return TrialAttempt(str(run_id), str(attempt_id), parsed)
-
-
-def load_trial_unit(path: Path) -> TrialUnit:
-    """Read one ``{plan, plan_entry_id, snapshot}`` trial input file.
-
-    The plan passes the RAES plan ingress gate. Family trial admission later
-    binds the plan entry, the installed family and the snapshot bytes.
-    """
-    from raes_contracts.canonical import canonical_json_bytes
-    from raes_contracts.contracts.admitted_trial_plan_ingress import (
-        parse_admitted_trial_plan_json,
-    )
-
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_TRIAL_UNIT_BYTES:
-        raise ValueError("--trial-input must be a regular file within the size limit")
-    document = json.loads(path.read_bytes())
-    if not isinstance(document, dict) or set(document) != {"plan", "plan_entry_id", "snapshot"}:
-        raise ValueError("--trial-input must contain only plan, plan_entry_id and snapshot")
-    entry = document["plan_entry_id"]
-    if not isinstance(entry, str) or not _IDENTIFIER.fullmatch(entry):
-        raise ValueError("--trial-input plan entry ID is invalid")
-    plan = parse_admitted_trial_plan_json(canonical_json_bytes(document["plan"]))
-    if entry not in plan.entries:
-        raise ValueError("--trial-input plan has no such entry")
-    return TrialUnit(plan, entry, canonical_json_bytes(document["snapshot"]))

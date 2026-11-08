@@ -28,7 +28,6 @@ from aptl.core.scenario_bundle import ScenarioSourceKind
 
 if TYPE_CHECKING:
     from aptl.backends.scenario_startup import ScenarioStartupSelection
-    from aptl.backends.scenario_family_models import FamilyTrialInput
     from aptl.backends.raes_realization_model import AptlRealization
     from aptl.backends.raes_start_model import AdmittedScenarioStart
     from aptl.core.deployment.backend import DeploymentBackend
@@ -70,7 +69,6 @@ def admit_start_surface(
     bundle: ScenarioBundle | None = None,
     startup_selection: ScenarioStartupSelection | None = None,
     run_id: str | None = None,
-    trial: "FamilyTrialInput | None" = None,
 ) -> tuple["AdmittedScenarioStart", AdmittedStartSurface]:
     """Admit the scenario once and project the pre-start facts off it.
 
@@ -90,7 +88,7 @@ def admit_start_surface(
         backend,
         scenario_path=scenario_path,
         source=ScenarioAdmissionSource(bundle, startup_selection),
-        run=ScenarioAdmissionRun(run_id=run_id, trial=trial),
+        run=ScenarioAdmissionRun(run_id=run_id),
     )
     return admitted, start_surface_of(admitted, config)
 

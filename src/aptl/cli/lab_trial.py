@@ -15,7 +15,6 @@ from raes import parse_sdl_file
 from raes_contracts.contracts import ParticipantControlContextAssetModel
 from raes_env_packs import resolve_pack_artifact
 
-from aptl.backends._raes_admission_helpers import bind_trial_unit
 from aptl.backends._raes_scenario_resolution import resolve_scenario_bundle
 from aptl.core._credential_sources import AttachedServiceAccountSource
 from aptl.core.config import AptlConfig, find_config, load_config
@@ -100,9 +99,10 @@ def _run_and_drain(
     """Run every participant, then remove its credentials before returning."""
     bundle = resolve_scenario_bundle(root, scenario_path, config)
     try:
-        scenario, digest = _trial_scenario(bundle, config, attempt)
-        if digest != scenario_sha256:
+        sdl = bundle.sdl_path.read_bytes()
+        if "sha256:" + hashlib.sha256(sdl).hexdigest() != scenario_sha256:
             raise RuntimeError("the trial SDL differs from the SDL that startup admitted")
+        scenario = parse_sdl_file(bundle.sdl_path)
         participants = declared_participants(scenario)
         if not participants:
             raise TrialDeclarationError("the trial SDL declares no model-bearing participant")
@@ -144,19 +144,6 @@ def _run_and_drain(
         return record.model_copy(update={"cleanup": cleanup})
     finally:
         bundle.close()
-
-
-def _trial_scenario(bundle, config: AptlConfig, attempt: TrialAttempt) -> tuple[object, str]:
-    """Return the scenario the trial runs and its digest.
-
-    An admitted plan entry runs its instantiated snapshot; otherwise the SDL file runs.
-    """
-    if attempt.unit is not None:
-        trial = bind_trial_unit(bundle, config, attempt).trial
-        assert trial is not None
-        return trial.scenario, trial.snapshot_digest
-    digest = "sha256:" + hashlib.sha256(bundle.sdl_path.read_bytes()).hexdigest()
-    return parse_sdl_file(bundle.sdl_path), digest
 
 
 @contextmanager
