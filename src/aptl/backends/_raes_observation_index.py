@@ -57,7 +57,7 @@ def build_observation_index(
     """Build all address maps once before observing the planned resources."""
 
     project_name = getattr(backend, "project_name", _DEFAULT_PROJECT_NAME)
-    node_containers, node_runtimes = _node_indexes(realization)
+    node_containers, node_runtimes = _node_indexes(realization, plan)
     placement_content, placement_datasets = _placement_payload_indexes(realization)
     return RealizationObservationIndex(
         realization_root=_realization_root(backend, scenario_root),
@@ -86,6 +86,7 @@ def build_observation_index(
 
 def _node_indexes(
     realization: AptlRealization,
+    plan: ProvisioningPlan,
 ) -> tuple[dict[str, str], dict[str, RuntimeConfiguration]]:
     """Index concrete container names and typed runtime declarations by node."""
 
@@ -94,12 +95,37 @@ def _node_indexes(
         for node in realization.nodes
         if node.container_name
     }
+    planned = {
+        str(resource.payload.get("name", ""))
+        for resource in plan.resources.values()
+        if resource.resource_type == "generated-artifact"
+    }
     runtimes = {
-        node.address: node.runtime
+        node.address: _portable_runtime(node.runtime, planned)
         for node in realization.nodes
         if node.runtime is not None
     }
     return containers, runtimes
+
+
+def _portable_runtime(
+    runtime: RuntimeConfiguration, planned: set[str]
+) -> RuntimeConfiguration:
+    """Leave out variables that read a backend-owned generated artifact.
+
+    Such an artifact is not in the plan, so a readback of its variable would
+    reference an artifact that the portable inventory does not contain.
+    """
+
+    def portable(variable: object) -> bool:
+        artifact = getattr(getattr(variable, "value_from", None), "generated_artifact", None)
+        return artifact is None or artifact.removeprefix("generated_artifacts.") in planned
+
+    environment = list(runtime.environment or ())
+    kept = [variable for variable in environment if portable(variable)]
+    if len(kept) == len(environment):
+        return runtime
+    return runtime.model_copy(update={"environment": kept})
 
 
 def _non_compose_addresses(realization: AptlRealization) -> frozenset[str]:
