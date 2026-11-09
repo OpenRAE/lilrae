@@ -31,10 +31,31 @@ def observe_environment(
 ) -> object | None:
     """Disclose declared variables carrying their realized container values."""
 
+    return _disclosure(runtime, _container_environment(info))
+
+
+def declared_disclosure(runtime: RuntimeConfiguration) -> object | None:
+    """Disclose declared variables as readback reports them once realized.
+
+    Each authored value is its realized value. A protected variable without an
+    authored value is realized from its grant, so readback reports its presence.
+    """
+
+    realized = {
+        variable.name: (variable.value or "")
+        for variable in runtime.environment or ()
+        if getattr(variable, "name", "")
+        and (getattr(variable, "value", "") or _classification(variable) in _PROTECTED)
+    }
+    return _disclosure(runtime, realized)
+
+
+def _disclosure(runtime: RuntimeConfiguration, realized: Mapping[str, str]) -> object | None:
+    """Disclose the declared variables that ``realized`` holds."""
+
     declared = runtime.environment
     if not declared:
         return None
-    realized = _container_environment(info)
     withheld = _out_of_band_commitments(runtime)
     records = [
         record
@@ -93,4 +114,4 @@ def _container_environment(info: Mapping[str, Any]) -> dict[str, str]:
     return realized
 
 
-__all__ = ("observe_environment",)
+__all__ = ("declared_disclosure", "observe_environment")
