@@ -463,7 +463,7 @@ class TestSoftwareComponent:
         _executor(fake).install_software_component("n.node", op)
 
         assert fake.argvs() == [
-            ["npm", "--prefix", "/opt/mcp/common", "ci", "--include=dev"],
+            ["npm", "--prefix", "/opt/mcp/common", "ci", "--include=dev", "--offline"],
             ["npm", "--prefix", "/opt/mcp/common", "run", "build", "--if-present"],
         ]
 

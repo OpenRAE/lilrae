@@ -379,9 +379,8 @@ class DockerMaterializationExecutor(DockerMaterializationObservationMixin):
                 f"unsupported software component ecosystem on {node_address}"
             )
         directory = str(PurePosixPath(op.manifest_path).parent)
-        install_argv = ["npm", "--prefix", directory, "ci", "--include=dev"]
-        if self._offline_staged:
-            install_argv.append("--offline")
+        # Range egress is default-deny: install from the node image's npm cache.
+        install_argv = ["npm", "--prefix", directory, "ci", "--include=dev", "--offline"]
         self._require_ok(node_address, install_argv, "install software component")
         self._require_ok(
             node_address,
