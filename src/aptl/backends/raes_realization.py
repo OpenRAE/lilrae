@@ -143,7 +143,8 @@ def interpret_provisioning_plan(
     # behaviour-preserving today and is the single point that changes when a
     # scenario is handed over from somewhere else.
     # Random values become the inline text of their consumers (content_text delivery).
-    values = random_values(payload_resources, content_root)
+    # Outside the pack root: the pack's content manifest must keep matching its files.
+    values = random_values(payload_resources, content_root.parent)
     payload_resources = [
         resource
         for resource in inline_random_values(payload_resources, values)

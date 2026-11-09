@@ -1,6 +1,6 @@
 """Realize ``random_value`` generated artifacts as the text of their consumers.
 
-LilRAE generates each value once per run and keeps it under the scenario
+LilRAE generates each value once per run and keeps it beside the scenario
 bundle, so every interpretation of the run's plan uses the same value. A
 consuming content placement receives the value as inline text.
 """
