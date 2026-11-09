@@ -31,27 +31,10 @@ def observe_environment(
 ) -> object | None:
     """Disclose declared variables carrying their realized container values."""
 
-    return _disclosure(runtime, _container_environment(info))
-
-
-def disclosed_declarations(runtime: RuntimeConfiguration) -> list[dict[str, object]] | None:
-    """Return the declared variables that readback discloses, in SDL form."""
-
-    withheld = _out_of_band_commitments(runtime)
-    records = [
-        variable.model_dump(mode="json", by_alias=True, exclude_none=True)
-        for variable in runtime.environment or ()
-        if getattr(variable, "name", "") and variable.name not in withheld
-    ]
-    return records or None
-
-
-def _disclosure(runtime: RuntimeConfiguration, realized: Mapping[str, str]) -> object | None:
-    """Disclose the declared variables that ``realized`` holds."""
-
     declared = runtime.environment
     if not declared:
         return None
+    realized = _container_environment(info)
     withheld = _out_of_band_commitments(runtime)
     records = [
         record
@@ -110,4 +93,4 @@ def _container_environment(info: Mapping[str, Any]) -> dict[str, str]:
     return realized
 
 
-__all__ = ("disclosed_declarations", "observe_environment")
+__all__ = ("observe_environment",)

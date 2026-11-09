@@ -32,11 +32,7 @@ from raes_processor.planner.realization_collections import planned_node_collecti
 
 from aptl.core.experiment.capture_plan import CaptureApparatus
 from aptl.backends._raes_apply_reporting import closed_credential_result
-from aptl.backends.raes_realization_model import AptlRealization
-from aptl.backends.raes_prepared_completions import (
-    complete_backend_selections,
-    complete_operating_systems,
-)
+from aptl.backends.raes_prepared_operating_systems import complete_operating_systems
 
 
 @dataclass(frozen=True)
@@ -59,14 +55,11 @@ def prepare_apparatus_completion(
     manifest: BackendManifest,
     apparatus: tuple[CaptureApparatus, ...],
     operating_systems: Mapping[str, tuple[str, str]] | None = None,
-    realization: AptlRealization | None = None,
 ) -> RealizationPreparation:
     """Return a pure completion for the runtime's existing preparation gate."""
     prepared = prepare_apparatus_resources(request, previous, manifest, apparatus)
     operations = {operation.address: operation for operation in request.operations}
     complete_operating_systems(request, operations, operating_systems or {})
-    if realization is not None:
-        complete_backend_selections(request, operations, realization)
     for item in prepared:
         resource = item.resource
         operations[resource.address] = ProvisionOp(
@@ -246,7 +239,6 @@ class LilraeApparatusReportingMixin:
             self.reporting_manifest or create_aptl_manifest(),
             self.capture_plan.apparatus,
             getattr(provider, "prepared_operating_systems", None),
-            self.realize_plan(plan),
         )
 
     def _report_inventory(
