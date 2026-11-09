@@ -1,5 +1,13 @@
 # DEP-008 Self-Contained Lab Assets Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/dep-008-self-contained-lab-assets-preflight.md).
+Its last recorded file change before this rewrite was `ced66dcc408b`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note is the architecture preflight for DEP-008 / issue #659. It is
 guidance, not an implementation plan. Existing ADRs remain binding: ADR-007
 owns the Python CLI control plane, ADR-013/ADR-023/ADR-037 own deployment

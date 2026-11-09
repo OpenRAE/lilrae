@@ -1,5 +1,13 @@
 # Issue #980 Pack Adapter Install Seam Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-980-pack-adapter-install-seam-preflight.md).
+Its last recorded file change before this rewrite was `abfc5883533b`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note is the architecture preflight for issue #980. It is guidance, not an
 implementation plan. At this preflight's baseline (`3ce89ad5`), APTL already
 selects installed scenario startup, runtime-parameter, pack/backend interaction,

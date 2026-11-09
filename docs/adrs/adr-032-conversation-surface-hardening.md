@@ -8,6 +8,13 @@ accepted
 
 2026-05-17
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 The repository's issue, pull-request, and discussion surfaces accept

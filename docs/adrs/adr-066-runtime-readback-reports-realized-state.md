@@ -8,6 +8,14 @@ accepted
 
 2026-10-31
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [realization Reference](../components/node-realization.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 LilRAE realizes RAES scenarios and reports each realized runtime concern to the RAES runtime gate.

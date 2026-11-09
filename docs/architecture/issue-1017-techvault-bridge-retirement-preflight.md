@@ -1,5 +1,13 @@
 # Issue #1017 TechVault Bridge Retirement Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1017-techvault-bridge-retirement-preflight.md).
+Its last recorded file change before this rewrite was `85b3e4fefc19`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 Issue #1017, including its third-party family acceptance criterion, is the
 contract. Retire the temporary behavior through released RAE contracts; do not
 turn it into an extensible policy or attestation service. This note supplements

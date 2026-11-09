@@ -11,11 +11,16 @@ accepted
 ## Status update—2026-07-25
 
 The per-asset inventory implementation mentioned in the historical text below
-was removed from APTL by issue #690/#757. Asset-inventory methodology and
-semantic capture evidence now belong to RAES; APTL still applies this ADR's
-secret classification and serialization boundary to its own backend
-observations and run evidence. New work must not recreate an APTL inventory
+was removed from APTL by issue #690/#757. RAES now owns inventory methodology and semantic capture evidence. LilRAE keeps this ADR's classification and serialization rules for native observations and run evidence. New work must not recreate an APTL inventory
 tree, bundle ledger, or capture runner merely to carry out redaction.
+
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [run Reference](../reference/experiment-runs.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
 
 ## Context
 
@@ -47,9 +52,7 @@ Existing guardrails already cover part of the boundary:
   from inside that target. The durable fix is to keep such keys out of
   scenario containers entirely rather than to scrub them after capture.
 
-The remaining risk is concept confusion: a value can be an intentional target
-credential in one context and still become a control-plane secret if it is
-copied into an operator-facing artifact without classification or redaction.
+The remaining risk is classification confusion. An intentional target credential can still become a control-plane disclosure when copied into an operator artifact without classification or redaction.
 
 ## Decision
 
@@ -57,8 +60,8 @@ APTL separates secret-like values into two classes:
 
 | Class | Examples | Artifact rule |
 | --- | --- | --- |
-| Designed-vulnerable target data | Lab user passwords, intentionally weak web/database credentials, captured CTF flags, hashes or credential dumps produced by target compromise, default credentials documented as part of the vulnerable range | May appear in target containers and evidence artifacts when needed for lab realism or scoring, but should still be minimized and redacted at generic serialization boundaries when shape alone cannot distinguish it from control-plane material. |
-| Control-plane/operator secrets | Real API keys, service tokens, bearer tokens, cookies, JWTs, private SSH keys, private TLS keys, `.env` runtime secrets, generated service config secrets, cloud/S3 credentials, MCP client env secrets, replayable session identifiers | Must never appear unredacted in snapshots, OTel traces, exports, run archives, CLI output, logs, API error envelopes, or normal local-state artifacts. |
+| Designed-vulnerable target data | Lab passwords, weak application credentials, CTF flags, compromise-produced hashes or dumps, and documented vulnerable-range defaults | Can appear in target systems and necessary realism or scoring evidence. Generic serialization should minimize and redact values when their shape cannot distinguish control-plane material. |
+| Control-plane/operator secrets | Real API keys, service tokens, bearer tokens, cookies, JWTs, private SSH/TLS keys, runtime secrets, cloud credentials, MCP environment secrets, and replayable session identifiers | Must never appear unredacted in snapshots, OTel traces, exports, run archives, CLI output, logs, API error envelopes, or normal local-state artifacts. |
 
 The invariant is: **control-plane/operator secrets are redacted before they
 cross a serialization, observability, archive, CLI, API-response, or log
@@ -66,9 +69,7 @@ boundary.** File permissions, ignored paths, S3 bucket access controls, and
 archive location are defense in depth only.
 
 Use the existing shared helper for the boundary in the language that owns the
-artifact. Do not add a second secret taxonomy, parallel DTO schema, custom
-exception hierarchy, or call-site-only filter unless the canonical helper
-cannot express the required shape and is extended first.
+artifact. Extend the canonical helper first when it cannot express a required classification. Do not add parallel taxonomies, models, exceptions, or call-site-only filters.
 
 ## Artifact Boundary Audit
 
@@ -82,7 +83,7 @@ cannot express the required shape and is extended first.
 | `src/aptl/cli/runs.py` | Run IDs, scenario names, artifact paths, counts | Manifest fields if future code adds tokens, absolute paths can expose local layout but not secret values | CLI should display metadata only. Any future `--json` or content-viewing output must reuse redacted runstore/DTO shapes. |
 | `aptl config show --json` | First-party configuration values | Should not contain `.env` secrets; future config fields might contain tokens if schema boundaries drift | `AptlConfig` remains the canonical non-secret config schema. Do not move runtime secrets from `.env` into `aptl.json` without an explicit secret-handling design. |
 | `aptl lab continuity-audit --json` and `continuity-events.jsonl` | Firewall rules, target containers, continuity evidence | Usually no secrets; command/error strings could leak if backend output is copied verbatim in the future | Keep event schema narrow. Do not include raw backend command output unless redacted first. |
-| `.aptl/trace-context.json`, `.aptl/session.json`, generated `.aptl/config/*` | Trace/session correlation IDs and generated lab config | Replayable IDs and generated service secrets | Keep under ignored state with restrictive permissions where applicable; do not archive or print generated secret-bearing config, and redact replayable IDs when they enter analysis artifacts. |
+| `.aptl/trace-context.json`, `.aptl/session.json`, generated `.aptl/config/*` | Trace/session correlation IDs and generated lab config | Replayable IDs and generated service secrets | Ignored state keeps restrictive permissions where applicable. Generated secret-bearing configuration must not enter archives or output. Analysis artifacts must redact replayable identifiers. |
 
 ## Security Layers
 
@@ -92,15 +93,9 @@ cannot express the required shape and is extended first.
   `src/aptl/utils/redaction.py`; MCP/TypeScript artifacts use
   `mcp/aptl-mcp-common/src/redaction.ts`. The helpers must stay shape-aligned,
   especially for command-line credential forms.
-- **RAES evidence capture:** the strongest control for an operator/control-plane
-  key is to exclude it at the Compose mount layer so it never reaches a target
-  container or a capture. SEC #417 applies this directly: the targets mount only
+- **RAES evidence capture:** the strongest protection excludes operator keys from Compose mounts. A key that never reaches the target cannot enter its capture. SEC #417 applies this directly: the targets mount only
   public keys plus a dedicated scenario pivot key, and the operator control-plane
-  key is never bind-mounted into a scenario container. Where an operator secret
-  can still reach a capture, committed inventory evidence must classify sensitive
-  filesystem paths before bytes reach `evidence/`; do not apply a whole-file PEM
-  scrub that erases intentional fixture evidence, and do not bypass the boundary
-  because a pre-commit private-key hook excludes reviewed evidence files.
+  key is never bind-mounted into a scenario container. Inventory capture must classify sensitive paths before writing bytes to `evidence/`. Blanket PEM removal must not erase intentional fixtures. A hook exception does not waive classification.
   Exclusion and redaction decisions must be pinned by the per-asset inventory
   tests and reflected in the bundle README, ledger, capture limits, and evidence
   checksums.
@@ -128,20 +123,11 @@ audit and route through the existing language boundary. New command-line
 credential forms should extend both redaction helpers and their mirror tests,
 not one caller or one language only.
 
-If future work needs different handling for designed target data versus
-operator secrets, add explicit artifact metadata or a small caller-supplied
-classification option at the redaction boundary. Do not infer safety from the
+Different treatment of target fixtures and operator secrets should use explicit artifact metadata or a small classification input at the shared redaction boundary. Do not infer safety from the
 source container name alone.
 
-For path-based inventory captures, the first seam is the Compose mount surface:
-an operator/control-plane key should not be bind-mounted into a scenario
-container, so it never reaches a capture. SEC #417 split the operator
-control-plane key from the kali pivot key for exactly this reason. Where a
-secret can still appear, the fallback seam is a small, reusable sensitive-path
-classification list/function parameterized by asset id and path, able to add the
-next operator-mounted private key path without editing every capture script,
-while preserving asset-specific allowlisted target fixtures such as planted
-deploy keys, host keys, and flags.
+Compose mounts are the first inventory boundary. An operator key should not enter a scenario container and therefore cannot enter its capture. SEC #417 split the operator
+control-plane key from the kali pivot key for exactly this reason. The fallback is shared sensitive-path classification by asset ID and path. It can cover another operator key without changing every capture script. Asset-specific fixture exceptions preserve planted keys, host keys, and flags.
 
 ## Non-Goals
 
@@ -172,7 +158,4 @@ deploy keys, host keys, and flags.
 - Treating `.env`, generated config, target container data, run archive data,
   and OTel attributes as the same concept because they all contain
   credential-shaped strings.
-- Copying TypeScript command redaction patterns into Python incompletely; the
-  two helper test suites must prove parity for `--password value`,
-  hydra-style `-p value`, Samba `user%pass`, Basic-auth `user:pass`, NTLM
-  `-H <hash>`, LDAP bind passwords, and impacket positional credentials.
+- Incomplete cross-language redaction copies. Both helper suites must cover `--password value`, Hydra `-p`, Samba `user%pass`, Basic auth, NTLM hashes, LDAP passwords, and impacket credentials.

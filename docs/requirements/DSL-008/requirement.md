@@ -11,6 +11,13 @@ updated_at: 2026-10-22T00:00:00.000000Z
 
 # DSL-008: APTL Realization of ACES Infrastructure Topology
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/DSL-008/requirement.md).
+
+
 ## Statement
 
 The APTL backend shall consume ACES parser/compiler output and declared topology/runtime-model content for containers, Compose profiles, networks, services, addresses, volumes, health checks, and supported topology transitions. Before scenario execution, it shall validate that the running lab satisfies those declarations, realize supported changes through model/plan-driven Docker Compose operations, and fail with explicit diagnostics for unsupported or missing declarations instead of dispatching on scenario name or maintaining an APTL-local scenario DSL.
