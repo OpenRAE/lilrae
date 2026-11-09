@@ -78,13 +78,18 @@ def _describe_node(node: dict[str, Any], entry: SnapshotEntry) -> None:
             _set_path(node, descriptor.authored_path, deepcopy(observed))
 
 
+_VALUE_FREE_MARKERS = frozenset({"value_present", "bind_source_present"})
+
+
 def _is_value_free(observed: object) -> bool:
-    """Return True for a list of RAES value-free readback records."""
-    return (
-        isinstance(observed, list)
-        and bool(observed)
-        and all(isinstance(item, dict) and "value_present" in item for item in observed)
-    )
+    """Return True when the readback holds RAES value-free records at any depth."""
+    if isinstance(observed, dict):
+        return bool(_VALUE_FREE_MARKERS & observed.keys()) or any(
+            _is_value_free(value) for value in observed.values()
+        )
+    if isinstance(observed, list):
+        return any(_is_value_free(item) for item in observed)
+    return False
 
 
 def _is_unobserved(observed: object, authored_path: tuple[str, ...]) -> bool:
