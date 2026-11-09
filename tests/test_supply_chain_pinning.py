@@ -203,7 +203,7 @@ def test_node_base_images_name_supported_patch_releases() -> None:
 def test_node_artifact_builds_assert_the_effective_version() -> None:
     expected = {
         "containers/generic-systemd-node22-base/Dockerfile": "v22.23.4",
-        "web/Dockerfile": "v26.12.1",
+        "web/Dockerfile": "v26.13.0",
     }
     missing = []
     for relative, version in expected.items():
