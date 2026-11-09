@@ -19,6 +19,14 @@ with GHCR artifacts authenticated by Cosign, as described below.
 
 2026-09-20
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [seat-containment explanation](../reference/seat-containment.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 The immediate product is the existing full TechVault lab running with rootful
@@ -42,10 +50,7 @@ changing containment requires new signed bytes, never an environment bypass.
 Runtime inventories state which containment contract was observed and do not
 manufacture internal firewall/probe evidence for a VM-only seat.
 
-Retain verified artifacts and trust anchors, private per-user state, separate
-guest Docker daemons and overlays, authenticated instance-specific readiness,
-restricted seat-scoped MCP access, loopback host mappings, and physical-host /
-cross-seat isolation. Guest-Docker operations continue through normal admitted
+Keep verified artifacts/trust anchors, private user state, separate daemons/overlays, authenticated instance readiness, scoped MCP, loopback publications, and physical-host/cross-seat isolation. Guest-Docker operations continue through normal admitted
 backend authority. Stop/reset affect only the owned VM. Release qualification
 still requires actual lab behavior, lifecycle isolation and independent-machine
 evidence; software tests are not that evidence.

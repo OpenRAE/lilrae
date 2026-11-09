@@ -1,5 +1,13 @@
 # Issue #949 Orborus Control Authority Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-949-orborus-control-authority-preflight.md).
+Its last recorded file change before this rewrite was `3ce89ad5d652`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 > **Superseded in part by issue #974.** The
 > [issue #974 preflight](issue-974-shuffle-worker-docker-images-preflight.md)
 > replaces this note's requirements for an authored host `bind_source`,

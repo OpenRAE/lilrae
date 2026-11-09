@@ -1,5 +1,13 @@
 # Issue #1407 PHP image repin preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1407-php-image-repin-preflight.md).
+Its last recorded file change before this rewrite was `6b79634e7f14`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This is a design boundary record for the supplied #1407 contract, inspected on
 2026-10-22. It does not change pins, qualify images, or prescribe an
 implementation sequence. No new ADR is needed: ADR-025, ADR-028, ADR-029,

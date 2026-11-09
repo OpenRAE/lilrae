@@ -1,116 +1,64 @@
 # APTL web component kit
 
-The component kit is a small set of presentation and interaction primitives for
-the APTL web GUI. It formalizes the Tailwind v4 tokens already shipped in
-[`web/src/app.css`](https://github.com/Brad-Edwards/aptl/blob/main/web/src/app.css)
-into a documented design system and provides reusable Svelte components that the
-v1 routes assemble from, rather than ad-hoc markup or a wholesale admin
-template.
-
-This document implements issue UI-008b under the
-[Web GUI Design Specification](web-gui-design.md). It covers the token set and
-the kit primitives only. Page-level routes consume the kit in separate child
-issues.
+The kit gives the web workbench a small shared presentation and interaction layer.
+It extends the existing Tailwind v4 tokens rather than adding a separate admin template.
+Svelte routes compose the primitives instead of repeating their focus, color, and form behavior.
+The historical UI-008b issue identifies this component-design work.
 
 ## Design tokens
 
-`web/src/app.css` is the single source for the design tokens. The `@theme`
-block defines custom properties that Tailwind v4 turns into `*-aptl-*`
-utilities, so a token named `--color-aptl-surface` produces utilities such as
-`bg-aptl-surface` and `border-aptl-surface`. The kit maps semantic intent to
-those utilities through shared recipes in
-[`web/src/lib/components/kit/tone.ts`](https://github.com/Brad-Edwards/aptl/blob/main/web/src/lib/components/kit/tone.ts).
-No token value is duplicated in JavaScript and the Tailwind configuration is not
-forked.
+`web/src/app.css` owns token values.
+`web/src/lib/components/kit/tone.ts` maps semantic intent to Tailwind classes.
+JavaScript does not keep another copy of the color values.
+This gives palette changes one owner.
 
 ### Token groups
 
-| Group | Tokens | Role |
-| --- | --- | --- |
-| Surface | `aptl-bg`, `aptl-surface`, `aptl-surface-hover`, `aptl-border` | Page background through raised surfaces and dividers. |
-| Text | `aptl-text`, `aptl-text-muted` | Primary copy and muted secondary copy. |
-| Accent and status | `aptl-indigo`, `aptl-indigo-hover`, `aptl-violet`, `aptl-teal`, `aptl-red`, `aptl-green`, `aptl-amber` | Purple stays an accent. Status meaning is carried by the semantic tones below, never by colour alone. |
-| Focus | `aptl-focus` | Named token for the shared focus-ring recipe, aliasing indigo so focus treatment is overridable in one place. |
-| Typography | `font-sans`, `font-mono` | Sans for interface copy with a system-font fallback, mono for terminal and command text. |
+The [token Reference](../reference/web-component-kit.md#token-groups) lists the shared groups.
+Status meaning uses text and context as well as color.
+Purple remains an accent rather than the only status signal.
 
 ### Reduced motion
 
-`app.css` honours the `prefers-reduced-motion` media query globally. Animations
-and transitions collapse to an instant change when the user asks for reduced
-motion, so an affordance such as the `StatusBadge` pulse never animates against
-that preference.
+Global CSS honors system reduced-motion preferences and the explicit application setting.
+It uses minimal animation and transition durations rather than depending on every component author to remember a guard.
+The [motion Reference](../reference/web-component-kit.md#focus-and-motion) states the exact behavior.
 
 ### Density
 
-Density is a presentation choice exposed through component props, such as the
-`density` prop on `Table`. The kit does not persist a density preference. The
-browser-local preferences store that records operator settings is a separate
-concern under the settings dialog child issue.
+Density belongs to presentation props such as Table's `density`.
+The kit does not persist preferences.
+The existing operator-preferences owner handles that separate concern.
 
 ## Primitives
 
-The kit lives in
-[`web/src/lib/components/kit/`](https://github.com/Brad-Edwards/aptl/blob/main/web/src/lib/components/kit)
-and is re-exported from `index.ts`. Every component takes semantic props instead
-of arbitrary colour-class strings, and every interactive component carries the
-shared focus ring and an accessible name.
-
-| Component | Purpose | Key props |
-| --- | --- | --- |
-| `Badge` | Semantic pill for tags and labels. | `tone`, `dot`, `pulse`, `label` |
-| `StatusBadge` | Status pill with a dot and a visible text label. | `tone`, `label`, `pulse` |
-| `Button` | Action control; renders a link when `href` is set. | `variant`, `size`, `href`, `disabled`, `label` |
-| `Field` | Label, description, and error wrapper for a form control. | `label`, `description`, `error`, `required` |
-| `TextInput` | Text input that reads its wiring from a parent `Field`. | `value`, `type`, `invalid`, `ariaLabel` |
-| `Select` | Option select that reads its wiring from a parent `Field`. | `value`, `options`, `invalid`, `ariaLabel` |
-| `Table` | Captioned data table with a density option. | `caption`, `captionVisible`, `density` |
-| `Dialog` | Accessible modal dialog or side drawer. | `open`, `title`, `description`, `placement` |
-| `Menu` | Accessible dropdown menu with keyboard navigation. | `label`, `items`, `align` |
+`web/src/lib/components/kit/index.ts` exports the shared primitives.
+Their semantic props keep visual decisions consistent across routes.
+The [primitive Reference](../reference/web-component-kit.md#primitives) lists components and key props.
+The source interfaces remain authoritative; the table does not declare another schema.
 
 ### Semantic tones
 
-`Badge`, `StatusBadge`, and the form validation states share one `Tone` scale:
-`neutral`, `info`, `success`, `warning`, `danger`, and `accent`. The tone maps to
-the palette through `tone.ts`, which keeps status colours from drifting into a
-separate colour decision in each component.
+Badges and validation states share one `Tone` vocabulary.
+The recipes map that vocabulary to the palette.
+A route therefore does not need its own color switch for the same status.
 
 ### Forms
 
-`Field` owns identifier generation and the relationship wiring. It associates
-its label with the control, exposes a description through `aria-describedby`,
-and announces a validation message through `role="alert"`. A control placed
-inside a `Field` reads that wiring from context, so a caller writes a field
-without threading identifiers by hand:
-
-```svelte
-<Field label="Row limit" description="The backend remains authoritative.">
-  <TextInput />
-</Field>
-```
-
-`TextInput` and `Select` fall back to their own props when used outside a
-`Field`, with `ariaLabel` providing the accessible name.
+Field context keeps the control, label, description, and error relationship together.
+It avoids manually passing a separate group of IDs through every caller.
+The [field Reference](../reference/web-component-kit.md#field-context) contains the exact relationships and example.
 
 ### Overlays and accessibility
 
-`Dialog` and `Menu` manage keyboard focus directly rather than depending on a
-headless component library. Owning the behaviour keeps the kit small, avoids a
-new runtime dependency under the strict content-security policy, and lets the
-focus contract be tested.
-
-- `Dialog` exposes `role="dialog"` with `aria-modal`, a programmatic title and
-  description, a focus trap, Escape-to-close, a backdrop close, and focus return
-  to the control that opened it. The `placement` prop selects a centred modal or
-  a right-side drawer.
-- `Menu` exposes `role="menu"` with a trigger that reports its expanded state.
-  The arrow keys, Home, and End move focus across enabled items, Escape closes
-  the menu and returns focus to the trigger, and a click outside closes it.
+Dialog and Menu own their focus behavior without another component-library dependency.
+This keeps the runtime small and makes the focus contract directly testable.
+The [focus Reference](../reference/web-component-kit.md#focus-and-motion) describes keyboard behavior and closure.
+The kit's accessibility behavior does not prove accessibility of every assembled route.
 
 ## Testing
 
-Every primitive has a Vitest suite in
-[`web/tests/components/kit/`](https://github.com/Brad-Edwards/aptl/blob/main/web/tests/components/kit)
-that asserts behaviour and accessibility rather than rendered snapshots: tone
-recipe mapping, focus-trap wrapping, label and description wiring, dialog focus
-return, and menu keyboard navigation. Run the suite with `npm test` in the `web`
-directory.
+Existing tests under `web/tests/components/kit/` exercise recipes, field wiring, focus trapping/return, and menu navigation.
+They provide behavior evidence rather than a screenshot-only comparison.
+Behavior tests run in CI or an approved isolated VM.
+Their targeted paths qualify the changed component; the full web suite remains CI-only.

@@ -1,172 +1,108 @@
 # Network Architecture
 
-Four Docker bridge networks providing segmented lab environment.
-
-This page describes the default TechVault / compatibility Docker Compose
-topology. For dynamic RAES scenarios, the compiled SDL infrastructure plan is
-the topology authority: networks, CIDR/gateway/IPAM, `internal` egress policy,
-and node attachments must be realized through typed `DeploymentBackend`
-operations as described in [ADR-046](../adrs/adr-046-dynamic-raes-scenario-realization.md).
-Do not treat the fixed `docker-compose.yml` network block below as the source
-of truth for a scenario whose compiled plan declares different segmentation.
+LilRAE separates scenario topology from deployment transport.
+The compiled SDL infrastructure plan determines the scenario's networks, addresses, and node attachments.
+Typed backend operations realize those declarations.
+A fixed root Compose network block cannot replace an admitted plan.
+[ADR-046](../adrs/adr-046-dynamic-raes-scenario-realization.md) records this ownership decision.
 
 ## Networks
 
-| Network | Subnet | Purpose |
-|---------|--------|---------|
-| aptl-security | 172.20.0.0/24 | SOC stack (Wazuh, MISP, Shuffle, Suricata mgmt) |
-| aptl-dmz | 172.20.1.0/24 | Externally reachable services (webapp, mail, DNS) |
-| aptl-internal | 172.20.2.0/24 | Enterprise services (AD, DB, file server, victim, workstation) |
-| aptl-redteam | 172.20.4.0/24 | Red team (Kali) |
+The [root Compose topology reference](../reference/compose-topology.md#networks) lists the four compatibility network declarations.
+They separate security services, DMZ targets, internal targets, and the red-team workstation.
+Those names and subnets do not impose a topology on another Scenario Pack.
 
 ## Container IPs
 
+The [address tables](../reference/compose-topology.md#container-ips) describe root declarations, including compatibility stubs.
+The admitted scenario and runtime observations determine actual addresses.
+A stub's image field does not identify the substrate used for generic realization.
+
 ### Security Network (172.20.0.0/24)
 
-| Container | IP | Service |
-|-----------|----|---------|
-| aptl-wazuh-manager | 172.20.0.10 | Log processing, rules, alerts |
-| aptl-wazuh-dashboard | 172.20.0.11 | Web UI |
-| aptl-wazuh-indexer | 172.20.0.12 | OpenSearch data storage |
-| aptl-misp | 172.20.0.16 | Threat intelligence |
-| aptl-misp-web | 172.20.0.16 (shares the `aptl-misp` network namespace) | MISP HTTPS web tier |
-| aptl-misp-db | 172.20.0.17 | MISP database |
-| aptl-shuffle-backend | 172.20.0.20 | SOAR backend |
-| aptl-shuffle-frontend | 172.20.0.21 | SOAR frontend |
-| aptl-dns | 172.20.0.25 | DNS (security interface) |
-| aptl-reverse | 172.20.0.27 | Reverse engineering |
-| aptl-suricata | 172.20.0.50 | IDS (security interface) |
+The [security address table](../reference/compose-topology.md#security-network-172200024) owns these compatibility declarations.
 
 ### DMZ Network (172.20.1.0/24)
 
-| Container | IP | Service |
-|-----------|----|---------|
-| aptl-wazuh-manager | 172.20.1.10 | Log collection from DMZ |
-| aptl-webapp | 172.20.1.20 | Web application |
-| aptl-mailserver | 172.20.1.21 | Email server |
-| aptl-dns | 172.20.1.22 | DNS (DMZ interface) |
-| aptl-kali | 172.20.1.30 | Red team (DMZ access) |
-| aptl-suricata | 172.20.1.50 | IDS (DMZ tap) |
+The [DMZ address table](../reference/compose-topology.md#dmz-network-172201024) owns these compatibility declarations.
 
 ### Internal Network (172.20.2.0/24)
 
-| Container | IP | Service |
-|-----------|----|---------|
-| aptl-ad | 172.20.2.10 | Samba AD domain controller |
-| aptl-db | 172.20.2.11 | PostgreSQL database |
-| aptl-fileshare | 172.20.2.12 | Samba file server |
-| aptl-victim | 172.20.2.20 | Rocky Linux target |
-| aptl-webapp | 172.20.2.25 | Web app (internal interface) |
-| aptl-mailserver | 172.20.2.26 | Mail (internal interface) |
-| aptl-dns | 172.20.2.27 | DNS (internal interface) |
-| aptl-wazuh-manager | 172.20.2.30 | Log collection from internal |
-| aptl-kali | 172.20.2.35 | Red team (internal access) |
-| aptl-workstation | 172.20.2.40 | Developer workstation |
-| aptl-suricata | 172.20.2.50 | IDS (internal tap) |
+The [internal address table](../reference/compose-topology.md#internal-network-172202024) owns these compatibility declarations.
 
 ### Red Team Network (172.20.4.0/24)
 
-| Container | IP | Service |
-|-----------|----|---------|
-| aptl-kali | 172.20.4.30 | Red-team workstation |
+The [red-team address table](../reference/compose-topology.md#red-team-network-172204024) owns these compatibility declarations.
 
 ## Multi-Homed Containers
 
-Several containers connect to multiple networks:
-
-- **Wazuh Manager**: security + dmz + internal (collects logs from all zones)
-- **Kali**: redteam + dmz + internal (attack access to all zones)
-- **Suricata**: security + dmz + internal (taps all zones)
-- **DNS**: security + dmz + internal (resolves across all zones)
-- **Webapp**: dmz + internal (serves DMZ, accesses internal DB)
-- **Mail server**: dmz + internal
+Several declared services attach to more than one network.
+Wazuh Manager collects logs across zones.
+Suricata observes traffic through its attached interfaces.
+DNS serves multiple zones, and the web application connects its DMZ and internal interfaces.
+Kali's compatibility attachments include both DMZ and internal networks.
+This topology does not require a DMZ compromise before Kali reaches internal targets.
 
 ## Host Port Mappings
 
-| Host Port | Container | Service |
-|-----------|-----------|---------|
-| 443 | aptl-wazuh-dashboard:5601 | Wazuh Dashboard |
-| 514/udp, 1514, 1515 | aptl-wazuh-manager | Syslog + agent enrollment |
-| 2023 | aptl-operator-ssh-kali, relaying to kali:22 | Operator SSH to Kali |
-| 2024 | aptl-operator-ssh-soc-workstation, relaying to soc-workstation:22 | Operator SSH to the SOC workstation |
-| 3443, 3001 | aptl-shuffle-frontend | Shuffle SOAR UI |
-| 8443 | aptl-misp:443 | MISP UI |
-| 9200 | aptl-wazuh-indexer:9200 | OpenSearch API |
-| 55000 | aptl-wazuh-manager:55000 | Wazuh API |
+The [publication reference](../reference/compose-topology.md#host-port-mappings) lists default host ports and override variables.
+SOC management publications bind to loopback.
+Loopback binding limits network exposure; it does not authenticate a local caller.
+The [web reference](../reference/web.md) describes the web control plane's separate authentication checks.
 
-These are the host publications of the realized TechVault pack plus the two
-operator-access relays, which LilRAE adds for the pack's declared interactive
-access. Every one binds `127.0.0.1`. When a default port is in use,
-`aptl lab start` publishes on a free port and prints it; the matching `APTL_HP_*`
-variable pins a port. The web app publishes no host port. A project-tree
-scenario that starts the root `docker-compose.yml` with the `reverse` or
-`mail` profile also publishes the reverse-engineering workstation's SSH on
-2027 and the mail server on 25, 143, 587 and 993, on loopback as well.
-
-The victim and kali nodes publish no host ports. Use
-`aptl container shell aptl-victim` for a shell on the victim. Reach Kali
-through the red-team MCP server or the operator-access relay. While session
-capture runs, `aptl container shell aptl-kali` is refused (see
-[Kali Red Team Container](../components/kali-redteam.md#host-access)).
+The victim and Kali stubs publish no host ports.
+Supported access uses admitted operator relays, MCP, or the existing container-shell interface.
+[Kali operations](../components/kali-operations.md) describes the capture boundary and shell restrictions.
 
 ## Internal Communication
 
-**Log Collection:**
-- Victim → Manager (agent: 1514/tcp, syslog: 514/udp)
-- Kali → Manager (syslog: 514/udp)
-- Enterprise containers → Manager (syslog: 514/udp)
-
-**SIEM Stack:**
-- Manager <-> Indexer (9200/tcp)
-- Dashboard <-> Indexer (9200/tcp)
-
-**DNS Resolution:**
-- Containers use Docker internal DNS (127.0.0.11)
-- Kali has `extra_hosts` entries for `techvault.local` domain (required for Kerberos)
+Wazuh collects agent and syslog traffic and sends indexed events to its Indexer.
+The Dashboard queries the Indexer.
+Suricata produces Eve JSON for the configured collection path.
+The source configuration determines each transport's authentication and TLS behavior.
+[ADR-034](../adrs/adr-034-lab-managed-soc-tls-ca.md) explains the lab CA and its Wazuh exception.
+Network segmentation does not mean that all internal traffic is unencrypted.
 
 ## Network Isolation
 
-- Containers isolated from host network via Docker bridge
-- Only mapped ports accessible from host
-- Internal traffic unencrypted (lab environment)
-- Kali can reach DMZ and internal networks (simulates attacker with pivot access)
+Docker bridge networks separate attachments and provide the declared network transport.
+They do not provide the VM containment required for a disposable seat.
+[ADR-060](../adrs/adr-060-vm-only-seat-containment.md) explains that separate host boundary.
+A published port, shared daemon, or multi-homed node has its own security implications.
 
 ## Egress Controls (SAF-002)
 
-Three of the four networks use Docker's `internal: true` flag to prevent containers from reaching the internet. This is a safety constraint: autonomous agents controlling Kali must not be able to scan or attack external targets.
+The root DMZ, internal, and red-team networks declare `internal: true`.
+The security network does not.
+The internal flag restricts external connectivity through that network.
+It is not a complete policy for a node with another external attachment.
 
-| Network | `internal: true` | Rationale |
-|---------|-------------------|-----------|
-| aptl-security | No | SOC tools (MISP, Wazuh, Shuffle) need internet for threat feeds and rule updates |
-| aptl-dmz | **Yes** | Contains attack targets and Kali entry point |
-| aptl-internal | **Yes** | Contains AD, database, victim, workstation—all attack targets |
-| aptl-redteam | **Yes** | Kali command center; must not reach the real internet |
-
-For dynamic RAES realization, the equivalent safety property is carried by the
-authored network's `internal` property and the backend-created network must
-apply it directly. An `internal` network that is created without Docker's
-internal flag is a SAF-002 regression even if the fixed Compose topology still
-passes these tables.
+An authored RAES network carries its own `internal` property.
+Backend realization must preserve that property.
+Correct root Compose declarations cannot compensate for an incorrectly realized dynamic network.
 
 ### Multi-homed container egress
 
-Containers connected to both an internal network and `aptl-security` (dns, wazuh.manager, suricata) retain internet access via the security network interface. Attack containers (kali, victim, webapp, ad, db, fileshare, workstation, mailserver) are only on internal networks and have no internet egress.
+A node attached to an external security network can retain an external path.
+DNS, Wazuh Manager, and Suricata have such compatibility attachments.
+An internal attachment alone cannot prove that the whole node has no egress.
 
 ### Host port mappings
 
-Docker `internal: true` blocks outbound container traffic (no MASQUERADE rules), but inbound host port mappings (docker-proxy/DNAT) continue to work for containers that publish them, such as the reverse engineering container (port 2027). The victim and kali containers publish no host ports; reach them with `aptl container shell`.
+Internal-network policy and host port publication are separate controls.
+The realized backend and host determine the effective reachability.
+A successful configuration check does not replace installed network qualification.
 
 ### Package pre-installation
 
-Wazuh agent and Falco are pre-installed in container images at build time so that containers on internal networks do not need internet access at runtime. The runtime install scripts (`install-wazuh.sh`, `install-falco.sh`) detect pre-installed packages and skip downloads. If the packages are not pre-installed (for example, using an older image), the scripts fall back to downloading from the internet, which will fail on internal networks.
+Internal-only nodes cannot depend on runtime internet downloads.
+The selected substrate and authored software must satisfy their installation requirements.
+Older Wazuh and Falco install scripts can attempt downloads when packages are absent.
+Their fallback cannot establish readiness on a network without external access.
 
 ### Upgrading from pre-SAF-002 deployments
 
-Existing labs must be fully torn down before restarting with the new network configuration:
-
-```bash
-docker compose down    # remove old networks
-docker compose up -d   # recreate with internal: true
-```
-
-Docker cannot change a network's `internal` flag in place. Rebuilding container images (`docker compose build`) is also required to pre-install Wazuh and Falco packages.
+Docker cannot change a network's internal flag in place.
+Network replacement requires the supported lab lifecycle and its ownership checks.
+The [deployment guide](../deployment.md) describes stop, reset, and startup operations.
+Direct Compose teardown is not the generic scenario recovery procedure.

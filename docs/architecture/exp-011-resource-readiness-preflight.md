@@ -1,5 +1,13 @@
 # EXP-011: Required resources before execution (#753)
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/exp-011-resource-readiness-preflight.md).
+Its last recorded file change before this rewrite was `0290deee68fb`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 The issue is the delivery contract. Readiness is an execution gate over the
 RAES `admitted-trial-plan-v1` and its selected entry, not another admission
 language, scheduler, or lab readiness system. This note fixes boundaries; it

@@ -1,5 +1,11 @@
 # Participant action and control architecture assessment
 
+Reader purpose: historical Reference.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/participant-tool-admission.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 Date: 2026-10-31.
 Status: research for discussion. No implementation architecture is accepted here.
 Scope: LilRAE #1418 and the surrounding RAE language, participant, action, control, realization, and evidence boundaries.
@@ -34,9 +40,11 @@ Recommendations below are engineering judgments, not experimental results.
 RAE was inspected at released tags `v10.1.0` and `v10.2.0`.
 LilRAE was inspected from `9ae37a5f` on `1418-participant-tool-runtime`.
 The RAE checkout was read only; uncommitted work was not used as released evidence.
+
 Historical research status tables were distinguished from current requirement files.
 For example, SEM-235, API-424, RUN-320, and ASR-538 are ACTIVE at the assessed release.
 ASR-537 remains DRAFT.
+
 Those statuses describe bounded requirement completion, not every native backend or feature combination.
 
 Existing research was read before extending the external comparison.

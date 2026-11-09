@@ -1,5 +1,13 @@
 # Issue #1504: Managed OpenCode participant preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1504-managed-opencode-preflight.md).
+Its last recorded file change before this rewrite was `22e5638ecd79`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 Status: architecture guidance before implementation; no installed OpenCode
 release or live qualification is asserted here. The supplied issue is the
 delivery contract. This note records boundaries, not an implementation plan.

@@ -1,185 +1,79 @@
 # Lab Architecture
 
-- [Diataxis adoption](diataxis-adoption.md)
-
-- [Required trial readiness](exp-011-resource-readiness-design.md)
-- [Issue #753 readiness preflight](exp-011-resource-readiness-preflight.md)
-
-- [Participant request manifests](participant-request-manifests.md)
-- [Issue #1419 participant manifest preflight](issue-1419-participant-manifests-preflight.md)
-- [Issue #1420 per-trial participant configuration preflight](issue-1420-trial-participant-configuration-preflight.md)
-- [Trial participant configuration](trial-participant-configuration.md)
-- [Issue #1418 Participant MCP Action Admission](issue-1418-participant-tool-admission-preflight.md)
-- [Participant action and control architecture assessment](participant-tool-admission.md)
-- [Participant action enforcement](participant-action-enforcement.md)
-- [Issue #1504 Managed OpenCode participants](issue-1504-managed-opencode-preflight.md)
-- [Managed OpenCode design](managed-opencode.md)
+LilRAE provides native lab realization, control, and local evidence storage.
+RAES owns portable scenario semantics and admitted trial plans.
+Installed Scenario Packs supply their scenario content.
+The backend realizes the admitted topology; it does not substitute root Compose defaults.
+[The pack boundary](pack-boundary-design.md) explains these ownership limits.
 
 ## Network Topology
 
+[Network architecture](networking.md) explains segmentation, egress controls, and host exposure.
+The [root Compose reference](../reference/compose-topology.md) lists compatibility declarations.
+Those declarations include stubs and do not prove an installed pack's realized topology.
+
 ```mermaid
-flowchart TD
-    subgraph "Host System"
-        H[Host Ports<br/>443, 2023, 2024, 8443, 9200, 55000, ...]
-    end
-
-    subgraph "Security Network 172.20.0.0/24"
-        WM[Wazuh Manager<br/>172.20.0.10]
-        WD[Wazuh Dashboard<br/>172.20.0.11]
-        WI[Wazuh Indexer<br/>172.20.0.12]
-        MISP[MISP<br/>172.20.0.16]
-        SHUF[Shuffle SOAR<br/>172.20.0.20/.21]
-        SUR[Suricata IDS<br/>172.20.0.50]
-        R[Reverse Engineering<br/>172.20.0.27]
-    end
-
-    subgraph "DMZ 172.20.1.0/24"
-        WA[Web App<br/>172.20.1.20]
-        MAIL[Mail Server<br/>172.20.1.21]
-        DNS[DNS<br/>172.20.1.22]
-    end
-
-    subgraph "Internal 172.20.2.0/24"
-        AD[Samba AD DC<br/>172.20.2.10]
-        DB[PostgreSQL<br/>172.20.2.11]
-        FS[File Server<br/>172.20.2.12]
-        V[Victim<br/>172.20.2.20]
-        WS[Workstation<br/>172.20.2.40]
-    end
-
-    subgraph "Red Team 172.20.4.0/24"
-        K[Kali<br/>172.20.4.30]
-    end
-
-    H --> WD
-    H --> V
-    H --> K
-    H --> WI
-    H --> WM
-    H --> R
-    V --> |Agent 1514| WM
-    V --> |Syslog 514| WM
-    K --> |Syslog 514| WM
-    WM --> WI
-    WI --> WD
-    R --> |Syslog 514| WM
-    K --> WA
-    K --> AD
-    WA --> DB
-
-    subgraph "AI Integration"
-        MCP[MCP Servers]
-        AI[AI Agents]
-    end
-
-    AI --> MCP
-    MCP --> K
-    MCP --> WM
-    MCP --> WI
-    MCP --> R
-    MCP --> MISP
-    MCP --> SHUF
-    MCP --> SUR
+flowchart LR
+    Scenario[Admitted scenario and trial] -->|Compiled declarations| Runtime[RAES runtime]
+    Runtime -->|Native operations| Backend[LilRAE backend]
+    Backend -->|Realized topology and software| Nodes[Scenario nodes]
+    Nodes -->|Observed state and capture| Evidence[(Local run store)]
+    Backend -->|Typed outcomes| Runtime
+    Operator[Operator CLI or authenticated web API] -->|Lifecycle requests| Backend
+    Participants[Admitted participants] -->|Scoped tool calls| MCP[Common MCP dispatch]
+    MCP -->|Admitted native operations| Nodes
 ```
 
 ## Container Layout
 
-| Container | Networks | Primary IP | Purpose |
-|-----------|-----------|------------|---------|
-| aptl-wazuh-manager | security, dmz, internal | 172.20.0.10 | Log processing, rules, alerts |
-| aptl-wazuh-dashboard | security | 172.20.0.11 | Web interface |
-| aptl-wazuh-indexer | security | 172.20.0.12 | OpenSearch data storage |
-| aptl-suricata | security, dmz, internal | 172.20.0.50 | Network IDS |
-| aptl-misp | security | 172.20.0.16 | Threat intelligence |
-| aptl-misp-web | Shares the `aptl-misp` network namespace | 172.20.0.16 | MISP HTTPS web tier |
-| aptl-shuffle-backend | security | 172.20.0.20 | SOAR backend |
-| aptl-shuffle-frontend | security | 172.20.0.21 | SOAR frontend |
-| aptl-webapp | dmz, internal | 172.20.1.20 | Vulnerable web app |
-| aptl-mailserver | dmz, internal | 172.20.1.21 | Email server |
-| aptl-dns | dmz, internal, security | 172.20.1.22 | DNS server |
-| aptl-ad | internal | 172.20.2.10 | Samba AD domain controller |
-| aptl-db | internal | 172.20.2.11 | PostgreSQL database |
-| aptl-fileshare | internal | 172.20.2.12 | Samba file server |
-| aptl-victim | internal | 172.20.2.20 | Rocky Linux target |
-| aptl-workstation | internal | 172.20.2.40 | Developer workstation |
-| aptl-kali | redteam, dmz, internal | 172.20.4.30 | Attack platform |
-| aptl-reverse | security | 172.20.0.27 | Reverse engineering |
+The [root address tables](../reference/compose-topology.md#container-ips) describe compatibility service declarations.
+[Node realization](../components/node-realization.md) describes substrate selection and authored software.
+A root stub is not a deployed container specification.
 
 ## Ports
 
-| Host | Container | Service |
-|------|-----------|---------|
-| 443 | aptl-wazuh-dashboard:5601 | Wazuh web UI |
-| 514/udp, 1514, 1515 | aptl-wazuh-manager | Syslog + agent enrollment |
-| 2023 | aptl-operator-ssh-kali, relaying to kali:22 | Operator SSH to Kali |
-| 2024 | aptl-operator-ssh-soc-workstation, relaying to soc-workstation:22 | Operator SSH to the SOC workstation |
-| 3443, 3001 | aptl-shuffle-frontend | Shuffle SOAR UI |
-| 8443 | aptl-misp:443 | MISP UI |
-| 9200 | aptl-wazuh-indexer:9200 | OpenSearch API |
-| 55000 | aptl-wazuh-manager:55000 | Wazuh API |
-
-These are the host publications of the realized TechVault pack plus the two
-operator-access relays, which LilRAE adds for the pack's declared interactive
-access. Every one binds `127.0.0.1`. When a default port is in use,
-`aptl lab start` publishes on a free port and prints it; the matching `APTL_HP_*`
-variable pins a port. The web app publishes no host port. A project-tree
-scenario that starts the root `docker-compose.yml` with the `reverse` or
-`mail` profile also publishes the reverse-engineering workstation's SSH on
-2027 and the mail server on 25, 143, 587 and 993, on loopback as well.
-
-The victim and kali nodes publish no host ports. Use
-`aptl container shell aptl-victim` for a shell on the victim. Reach Kali
-through the red-team MCP server or the operator-access relay. While session
-capture runs, `aptl container shell aptl-kali` is refused (see
-[Kali Red Team Container](../components/kali-redteam.md#host-access)).
+The [publication tables](../reference/compose-topology.md#host-port-mappings) describe root defaults and overrides.
+[Host MCP access](../reference/host-mcp-access.md) describes operator access.
+[Web authentication](../reference/web.md) describes the browser and API boundaries.
+Published endpoints and authenticated access are different properties.
 
 ## Data Flow
 
-1. **Victim** sends logs via:
-   - Wazuh agent → Manager (port 1514)
-   - rsyslog → Manager (port 514)
-2. **Kali** sends logs → Manager (syslog port 514)
-3. **Enterprise containers** send logs → Manager (syslog)
-4. Manager processes logs → Indexer (storage)
-5. Dashboard queries Indexer → Web UI
-6. Suricata taps network traffic → Eve JSON → Wazuh
-7. MCP servers control containers via SSH and APIs
+RAES admits authored plans before LilRAE performs native work.
+Native owners return observations and typed outcomes to the runtime.
+The run store retains selected evidence and provenance.
+[Trial serving](trial-serving.md) explains dispatch, readiness, cleanup, and ownership fences.
+[Interrupted recovery](interrupted-trial-recovery.md) explains recovery without replay of native work.
+
+Participant actions pass the [action enforcement boundary](participant-action-enforcement.md).
+Diagnostic telemetry and research evidence have different owners.
+[Red-side capture](../components/red-side-capture-boundary.md) explains why reasoning traces stay outside the SIEM.
 
 ## Components
 
-**Wazuh SIEM:**
+[Enterprise infrastructure](enterprise-infrastructure.md) explains the lab's attack and defense design.
+[Family adapters](family-adapter-contract.md) explains capability discovery and family admission.
+[Participant request manifests](participant-request-manifests.md) explains selected model and content commitments.
+[Trial configuration](trial-participant-configuration.md) explains delivered settings and native observations.
+[Concurrent execution](concurrent-participant-execution.md) explains participant isolation and settlement.
+[Managed OpenCode](managed-opencode.md) explains native process ownership and qualification limits.
 
-- Manager: Log processing, rules, alerts
-- Indexer: OpenSearch data storage
-- Dashboard: Web interface
-
-**Enterprise Infrastructure:**
-
-- Samba AD DC: Identity, Kerberos, LDAP
-- PostgreSQL: Application database
-- Web app: Vulnerable TechVault portal
-- File server: Department shares with planted data
-- Mail server: Postfix + Dovecot
-- DNS: Bind9, internal resolution
-
-**SOC Stack:**
-
-- Suricata: Network IDS on all zones
-- MISP: Threat intelligence and IOC feeds
-- Shuffle: SOAR playbooks
-
-**Lab Environment:**
-
-- Victim: Rocky Linux, SSH, Wazuh agent, Falco eBPF monitoring
-- Kali: Attack tools, MCP integration
-- Reverse Engineering: Binary analysis tools, MCP integration
+[ADR-063](../adrs/adr-063-remove-thehive-and-cortex.md) records removal of TheHive, Cortex, and case-management integration.
+Older plans and evidence can still describe those services.
+Their presence in a historical record does not make them current capabilities.
 
 ## CI verification
 
-[Verification architecture](ci-verification.md) describes changed-input selection.
+[Verification architecture](ci-verification.md) explains changed-input selection and evidence ownership.
 [Performance evidence](../testing/ci-performance.md) records pruning and measurement rules.
+[Documentation authority](documentation-boundaries.md) explains current claims and preserved records.
 
 ## Preflights
+
+These links lead to design constraints and historical records.
+A preflight records a source revision and proposed work; it does not establish delivery or installed qualification.
+Current explanations and successor ADRs determine which design remains applicable.
+
 
 - [Issue #1707 Admitted Participant Smoke Providers](issue-1707-participant-smoke-provider-preflight.md)
 - [Issue #1689 Native Acquisition Phase](issue-1689-native-acquisition-phase-preflight.md)
