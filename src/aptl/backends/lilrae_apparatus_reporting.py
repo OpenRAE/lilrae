@@ -1,5 +1,6 @@
 """Prepare capture containers before mutation and report verified additions."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 import hashlib
 import json
@@ -31,6 +32,7 @@ from raes_processor.planner.realization_collections import planned_node_collecti
 
 from aptl.core.experiment.capture_plan import CaptureApparatus
 from aptl.backends._raes_apply_reporting import closed_credential_result
+from aptl.backends.raes_prepared_operating_systems import complete_operating_systems
 
 
 @dataclass(frozen=True)
@@ -52,10 +54,12 @@ def prepare_apparatus_completion(
     previous: RuntimeSnapshot,
     manifest: BackendManifest,
     apparatus: tuple[CaptureApparatus, ...],
+    operating_systems: Mapping[str, tuple[str, str]] | None = None,
 ) -> RealizationPreparation:
     """Return a pure completion for the runtime's existing preparation gate."""
     prepared = prepare_apparatus_resources(request, previous, manifest, apparatus)
     operations = {operation.address: operation for operation in request.operations}
+    complete_operating_systems(request, operations, operating_systems or {})
     for item in prepared:
         resource = item.resource
         operations[resource.address] = ProvisionOp(
@@ -227,11 +231,14 @@ class LilraeApparatusReportingMixin:
         """Offer capture additions through the public, read-only completion gate."""
         from aptl.backends.raes_manifest import create_aptl_manifest
 
+        selection = self.startup_selection
+        provider = selection.provider if selection is not None else None
         return prepare_apparatus_completion(
             plan,
             snapshot,
             self.reporting_manifest or create_aptl_manifest(),
             self.capture_plan.apparatus,
+            getattr(provider, "prepared_operating_systems", None),
         )
 
     def _report_inventory(
