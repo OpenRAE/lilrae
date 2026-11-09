@@ -32,6 +32,7 @@ from raes_processor.planner.realization_collections import planned_node_collecti
 
 from aptl.core.experiment.capture_plan import CaptureApparatus
 from aptl.backends._raes_apply_reporting import closed_credential_result
+from aptl.backends.raes_diagnostics import entry_status
 from aptl.backends.raes_prepared_operating_systems import complete_operating_systems
 
 
@@ -186,6 +187,7 @@ def append_verified_apparatus(
     result: ApplyResult,
     prepared: tuple[PreparedCaptureResource, ...],
     observations: tuple[dict[str, object], ...],
+    plan: ProvisioningPlan,
 ) -> ApplyResult:
     """Propose only first-party container additions with complete native readback."""
     if not result.success or not prepared:
@@ -204,6 +206,9 @@ def append_verified_apparatus(
         ):
             raise ValueError("capture apparatus readback is incomplete")
         resource = item.resource
+        action = next(
+            (op.action for op in plan.operations if op.address == resource.address), None
+        )
         entries[resource.address] = SnapshotEntry(
             address=resource.address,
             domain=resource.domain,
@@ -212,7 +217,7 @@ def append_verified_apparatus(
             ordering_dependencies=resource.ordering_dependencies,
             refresh_dependencies=resource.refresh_dependencies,
             profile_bindings=resource.profile_bindings,
-            status="ready",
+            status=entry_status(action),
         )
         changed.add(resource.address)
     return replace(

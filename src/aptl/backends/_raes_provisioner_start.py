@@ -323,7 +323,7 @@ class ProvisionerStartMixin(object):
         from aptl.backends.lilrae_apparatus_reporting import append_verified_apparatus
 
         return append_verified_apparatus(
-            result, self._lilrae_apparatus_resources, apparatus_observations
+            result, self._lilrae_apparatus_resources, apparatus_observations, plan
         )
 
     def _realized_snapshot(
