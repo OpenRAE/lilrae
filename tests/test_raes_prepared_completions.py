@@ -53,7 +53,7 @@ def test_only_blank_open_fields_of_known_nodes_are_completed():
     assert (payload["misp"]["os_distribution"], payload["misp"]["os_version"]) == (None, "")
 
 
-def test_backend_selected_values_are_prepared_in_readback_form():
+def test_backend_selected_values_are_prepared_in_plan_form():
     from raes.runtime_configuration import RuntimeConfiguration
 
     from aptl.backends.raes_prepared_completions import complete_backend_selections

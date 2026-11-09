@@ -9,8 +9,8 @@ LilRAE realized. Two sources know those values before start:
 - LilRAE's own backend implementation profiles select runtime values, such as
   environment variables or an entrypoint, from the plan.
 
-Each value is prepared in the form that readback reports. Readback still
-verifies every value after start.
+Each value is prepared in plan form; RAES projects it and its readback alike.
+Readback still verifies every value after start.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from typing import Any
 from raes_contracts.planning import ProvisioningPlan, ProvisionOp, RealizationAuthorityMode
 from raes_processor.semantics.realization import CONCERN_PAYLOAD_PATH
 
-from aptl.backends._raes_runtime_environment_observation import declared_disclosure
+from aptl.backends._raes_runtime_environment_observation import disclosed_declarations
 from aptl.backends.raes_realization_model import AptlRealization
 
 _OS_FIELDS = {"os-distribution": "os_distribution", "os-version": "os_version"}
@@ -61,9 +61,12 @@ def complete_operating_systems(
 
 
 def _selected_value(kind: str, runtime: Any) -> object | None:
-    """Return one selected runtime value in the form that readback reports."""
+    """Return one selected runtime value as the plan carries it.
+
+    The environment omits the variables that readback withholds.
+    """
     if kind == "runtime-environment":
-        return declared_disclosure(runtime)
+        return disclosed_declarations(runtime)
     value: object = runtime.model_dump(mode="json", by_alias=True, exclude_none=True)
     for token in CONCERN_PAYLOAD_PATH[kind][len(_RUNTIME_PREFIX) :]:
         value = value.get(token) if isinstance(value, dict) else None

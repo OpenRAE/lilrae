@@ -34,20 +34,16 @@ def observe_environment(
     return _disclosure(runtime, _container_environment(info))
 
 
-def declared_disclosure(runtime: RuntimeConfiguration) -> object | None:
-    """Disclose declared variables as readback reports them once realized.
+def disclosed_declarations(runtime: RuntimeConfiguration) -> list[dict[str, object]] | None:
+    """Return the declared variables that readback discloses, in SDL form."""
 
-    Each authored value is its realized value. A protected variable without an
-    authored value is realized from its grant, so readback reports its presence.
-    """
-
-    realized = {
-        variable.name: (variable.value or "")
+    withheld = _out_of_band_commitments(runtime)
+    records = [
+        variable.model_dump(mode="json", by_alias=True, exclude_none=True)
         for variable in runtime.environment or ()
-        if getattr(variable, "name", "")
-        and (getattr(variable, "value", "") or _classification(variable) in _PROTECTED)
-    }
-    return _disclosure(runtime, realized)
+        if getattr(variable, "name", "") and variable.name not in withheld
+    ]
+    return records or None
 
 
 def _disclosure(runtime: RuntimeConfiguration, realized: Mapping[str, str]) -> object | None:
@@ -114,4 +110,4 @@ def _container_environment(info: Mapping[str, Any]) -> dict[str, str]:
     return realized
 
 
-__all__ = ("declared_disclosure", "observe_environment")
+__all__ = ("disclosed_declarations", "observe_environment")
