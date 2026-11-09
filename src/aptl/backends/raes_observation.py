@@ -65,7 +65,6 @@ from aptl.backends.raes_realization_model import (
     AptlRealization,
     ParticipantDatasetRealization,
 )
-from aptl.backends.raes_random_values import is_random_value, observe_random_value
 from aptl.backends.raes_runtime_observation import observe_runtime_concerns
 from aptl.backends.scenario_startup import observe_scenario_runtime_concerns
 from aptl.core.deployment._compose_service_health import runtime_expects_completion
@@ -118,13 +117,8 @@ def observe_realization(
 
     index = build_observation_index(backend, realization, plan, scenario_root)
     observations = {
-        address: (
-            # Random values are stored beside the bundle, where realization made them.
-            observe_random_value(resource, scenario_root.parent)
-            if is_random_value(resource)
-            else _observe_planned_resource(
-                backend, address, resource, index, observation_context
-            )
+        address: _observe_planned_resource(
+            backend, address, resource, index, observation_context
         )
         for address, resource in plan.resources.items()
     }
