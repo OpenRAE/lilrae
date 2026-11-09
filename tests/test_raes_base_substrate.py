@@ -327,14 +327,10 @@ class TestPlanNode:
     @pytest.mark.parametrize("capability", ["SYS_ADMIN", "NET_ADMIN"])
     def test_backend_provider_cannot_select_any_capability(self, capability):
         # Issue #976 removed the last backend-selected grant; the allowlist is empty.
+        runtime = RuntimeConfiguration()
+        options = NodePlanningOptions(
+            backend_base_image_ref="aptl/generic-samba-ad-base:latest",
+            backend_run_capabilities=(capability,),
+        )
         with pytest.raises(UnauthorizedCapabilityError, match=capability):
-            plan_node(
-                "n.ad",
-                os="linux",
-                os_version="",
-                runtime=RuntimeConfiguration(),
-                options=NodePlanningOptions(
-                    backend_base_image_ref="aptl/generic-samba-ad-base:latest",
-                    backend_run_capabilities=(capability,),
-                ),
-            )
+            plan_node("n.ad", os="linux", os_version="", runtime=runtime, options=options)

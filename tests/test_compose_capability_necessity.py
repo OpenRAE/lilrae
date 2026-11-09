@@ -493,7 +493,9 @@ def test_a_damaged_acl_store_stops_a_restarted_container(domain_controller, dama
             break
         time.sleep(1)
 
-    assert state.startswith("exited") and not state.endswith(" 0"), state
+    status, exit_code = state.split()
+    assert status == "exited", state
+    assert exit_code != "0", state
     assert _XATTR_STORE in _docker("logs", dc.name).stderr
 
 
