@@ -426,16 +426,16 @@ services:
       - "127.0.0.1:${APTL_HP_SHUFFLE_FRONTEND_80:-3001}:80"
     environment:
       - BACKEND_HOSTNAME=shuffle-backend
-    volumes:
-      # SEC-006 / ADR-034: Override the Shuffle upstream image's bundled
-      # self-signed cert by mounting the lab-CA-signed cert+key directly
-      # over /etc/nginx/{fullchain.cert.pem,privkey.pem} — the paths the
-      # upstream image's baked-in /etc/nginx/nginx.conf already references
-      # for the 443 listener. This keeps the upstream HTTPS routing
-      # contract intact while swapping the trust anchor.
-      - ./config/soc_certs/shuffle-frontend/server.pem:/etc/nginx/fullchain.cert.pem:ro
-      - ./config/soc_certs/shuffle-frontend/server.key:/etc/nginx/privkey.pem:ro
-      - ./config/soc_certs/lab-ca.pem:/etc/lab-ca/lab-ca.pem:ro
+    # SEC-006 / ADR-034: serve the lab-CA-signed cert that the pack mounts at
+    # /opt/techvault/soc-certs, at the paths the upstream nginx.conf names.
+    # The upstream entrypoint renders nginx.conf, then runs this command.
+    command:
+      - sh
+      - -c
+      - >-
+        ln -sf /opt/techvault/soc-certs/shuffle-frontend/server.pem /etc/nginx/fullchain.cert.pem
+        && ln -sf /opt/techvault/soc-certs/shuffle-frontend/server.key /etc/nginx/privkey.pem
+        && exec nginx -g 'daemon off;'
     healthcheck:
       test: ["CMD-SHELL", "curl -ksf https://localhost/ || exit 1"]
       interval: 30s
