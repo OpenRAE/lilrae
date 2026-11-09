@@ -1,5 +1,13 @@
 # Issue #1191 Wazuh API Cold-Boot RCA Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1191-wazuh-api-cold-boot-rca-preflight.md).
+Its last recorded file change before this rewrite was `11e90ac09a14`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note narrows the follow-up to issue #1188. It is architecture guidance,
 not an implementation plan, and changes no runtime behavior. No new ADR is
 needed: ADR-029 owns secret-safe diagnostics, ADR-030 owns fail-closed startup,

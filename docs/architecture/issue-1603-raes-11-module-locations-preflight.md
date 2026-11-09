@@ -1,5 +1,13 @@
 # Issue #1603: Released RAES dependency adoption
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1603-raes-11-module-locations-preflight.md).
+Its last recorded file change before this rewrite was `fda638221fcd`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 The maintainer selected RAES 10.6.0 and environment packs 7.2.2.
 These releases replace the originally anticipated RAES 11 target.
 Both releases are published on PyPI.

@@ -1,5 +1,11 @@
 # Family adapter contract
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/family-adapter-contract.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 LilRAE owns adapter discovery, admission, lifecycle order, and evidence storage.
 An independently installed adapter owns behavior for its qualified scenario family.
 Installed adapters are trusted Python code.
@@ -10,9 +16,11 @@ Entry points provide discovery, not isolation.
 The existing purpose-specific entry points remain the discovery interfaces.
 The public contract owners retain their existing result types and validation.
 Family API `1` adds an explicit family qualification and trial context.
+
 Legacy providers retain their existing API and absence behavior outside family trials.
 A family trial requires all five capabilities before realization.
 These capabilities are serving, runtime parameters, startup, capture, and verification.
+
 [ADR-066](../adrs/adr-066-runtime-readback-reports-realized-state.md) removed planning compatibility.
 Core no longer reads that entry-point group, and no adapter can change a compiled plan.
 
@@ -26,9 +34,11 @@ Both must use one source for that kind, or admission fails.
 `QualifiedFamilyTarget` binds one pack release, family reference, and backend identity.
 Pack version and content digest form one pair.
 Each provider declares exact qualified targets and a literal family API version.
+
 Installed distribution versions remain separate from contract versions.
 One distribution must provide the required capabilities for a trial.
 Duplicate compatible providers cause admission failure.
+
 The release set is `lilrae`, `raes`, and `raes-env-packs`.
 The host and adapter requirements on the release set must include each installed version.
 
@@ -37,30 +47,39 @@ The host and adapter requirements on the release set must include each installed
 The caller supplies a sealed RAES trial plan, entry ID, and expanded family.
 Core compares the family with the validated bundle source.
 Core admits an import-free source through RAES family admission before it compares semantic identity.
+
 RAES reconstructs the sealed plan and instantiates its selected entry.
 Core retains the resulting canonical snapshot and provenance.
 Core also retains the entry's sealed participant configurations from the plan copy that RAES verified.
+
 The entry digest in the provenance binds those configurations to the trial.
 Providers receive detached copies of this context where their capability needs it.
 Serving discovery uses trial identity internally.
+
 Serving callbacks receive only pack identity, backend identity, and admitted component addresses, as ADR-053 requires.
 Providers cannot change the admitted execution through these copies.
 Capture sources receive only declared credentials and generated-output grants.
+
 Container operations stay within the admitted node set.
 Inspection excludes container environment values.
 Native capture records use the sealed entry identity, separate from the capture-plan identity.
+
 Archive run identity must match the sealed trial before apply.
 The caller can supply canonical instantiated snapshot bytes with the sealed entry.
 Admission compares those bytes with the snapshot that RAES derives from the sealed plan.
+
 A mismatch stops admission before adapter callbacks or backend preparation.
 Planning adopts both the entry's preallocated run ID and its entry ID.
 An explicit conflicting run or instantiation ID stops planning.
+
 Start uses the configured local run store when the caller supplies no archive target.
 Before apply, core retains the exact snapshot in `trial/instantiated-snapshot.json`.
 It retains safe family, plan, entry, selection-digest, and provider joins in `trial/identity.json`.
+
 Snapshot storage uses private permissions, contained paths, immutable publication, and the existing run seal lock.
 An archive conflict or write failure stops apply.
 Runtime parameters cannot overwrite a sealed trial binding.
+
 A failed apply ends the start; core does not apply the plan again.
 
 ```mermaid
@@ -98,32 +117,41 @@ Compatibility failure prevents entry into preparation.
 The protected assets are admitted scenario identity, credentials, evidence, and backend authority.
 Pack content cannot select Python import paths or install executable code.
 Core selects exact installed entry-point names before loading providers.
+
 Atomic qualification prevents unqualified version and digest combinations.
 The release-set check prevents an install without dependency resolution from mixing incompatible releases.
 RAES validation prevents altered selections from acquiring trial authority.
+
 Detached snapshots prevent callback changes to the admitted scenario.
 Snapshot values remain absent from automatic representations and safe identity projections.
 The private snapshot can contain sensitive trial values.
+
 Core does not redact these bytes, because redaction would change the admitted input.
 Ordinary evidence contains selection identities and digests, not selection values.
 The env-pack renderer and startup operations consume only the instantiated node and inventory sets.
+
 Each trial starts from a new admitted model after the previous trial's declared cleanup.
 The execution caller owns cleanup between trials; admission does not stop another run's resources.
 Requested facts require native readback at the declared observation scope.
+
 Unsupported or unobserved facts retain the existing planning and runtime refusal behavior.
 Trial evidence records participant configuration digests, not configuration values.
 Existing environment, path, capture, and backend validators remain mandatory.
+
 Provider failures produce bounded codes without exception payloads.
 Tests cover rejected admission before backend effects and credential canaries.
 A reading that has an undeclared kind, a different source, or an invalid value drops the adapter result for that node.
+
 Readings pass through the RAES projection, so protected values become presence markers or commitments.
 
 Capture uses the existing registry, source results, collector protocol, and outcome types.
 Public supporting functions retain their current validation owners.
 Finalization and reset retain checks against installed-provider changes.
+
 Their persisted identities contain no credential values.
 Archive payload validation uses the recorded capture distribution and version.
 Capture finalization uses the explicit resume callback with safe trial identities.
+
 Cleanup-action schema v2 carries family targets; v1 receipts retain their encoding.
 Installed Python retains process authority; this contract does not provide a sandbox.
 
@@ -132,9 +160,11 @@ Installed Python retains process authority; this contract does not provide a san
 Existing dataclasses, protocols, entry-point groups, and result validators define the executable architecture.
 Family matching extends those owners without another plugin registry or executor.
 `ScenarioAdmissionSource` groups a preselected bundle and startup adapter.
+
 Trial admission validates this source before provider selection or backend preparation.
 Targeted compatibility tests enforce the family boundary.
 No deployment policy or infrastructure declaration changes.
+
 ADR-047, ADR-053, and ADR-054 supply the existing ownership decisions.
 Independent adapter ownership clarifies their application without changing portable SDL meaning.
 

@@ -1,5 +1,13 @@
 # Issue #1465: Released Structural Factorial Experiment Tuple
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1465-released-experiment-tuple-preflight.md).
+Its last recorded file change before this rewrite was `ced9ee4e7881`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 Issue #1465 is the delivery contract; no requirement is attached.
 This note defines adoption boundaries, not an implementation plan or a qualified
 package tuple. Inspection started at `338236cc`: its lock selects `raes 9.2.0`

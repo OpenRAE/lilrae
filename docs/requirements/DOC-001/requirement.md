@@ -11,6 +11,13 @@ updated_at: 2026-06-11T15:09:30.834369Z
 
 # DOC-001: Accurate, Style-Linted, Published Documentation
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/DOC-001/requirement.md).
+
+
 ## Statement
 
 The project shall maintain documentation that is verified accurate against the current code and configuration, readable and accessible (consistent structure, working cross-links, coherent navigation), enforced by an automated prose style-lint gate in pre-commit and CI, and published as a public docs site on GitHub Pages that rebuilds automatically from the main branch with the mkdocs navigation reconciled to the actual docs tree (strict build passes).

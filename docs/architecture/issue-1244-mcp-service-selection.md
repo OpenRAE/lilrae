@@ -1,5 +1,11 @@
 # MCP selection from admitted services
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1244-mcp-service-selection.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 The operator policy owns server artifacts, exact tool inventories, role ceilings,
 credential aliases, and service bindings. Scenario content cannot register a
 server or widen that policy. `aptl.json` can further restrict allowed servers and
@@ -39,9 +45,11 @@ lifecycle and inventory enforcement; CI owns full installed-lab qualification.
 Startup also writes a private `.aptl/mcp-admission.json` file.
 It contains the run identity, pack identity, selected servers, and admitted native-container aliases.
 It also contains the realized SDL nodes, their declared service ports, and their static addresses.
+
 Guest enrollment compares this record with the observed containers.
 It does not parse the full source pack again for a reduced family trial.
 Enrollment refuses a record of a different run or an incomplete admitted inventory.
+
 When the record is absent, legacy non-trial enrollment keeps its full-inventory validation.
 Participant smoke providers read the node facts through this record
 ([ADR-067](../adrs/adr-067-admitted-participant-smoke-providers.md)).
