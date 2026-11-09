@@ -8,6 +8,14 @@ accepted
 
 2026-11-07
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [smoke-protocol Reference](../components/mcp-smoke-test-protocol.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 The `aptl.participant_mcp_smoke_plans` entry point loads a fixed tuple of MCP operations.

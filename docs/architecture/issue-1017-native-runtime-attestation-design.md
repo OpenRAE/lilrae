@@ -1,5 +1,11 @@
 # Issue #1017 Native Runtime Readback
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1017-native-runtime-attestation-design.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 LilRAE compiles and plans through the public RAES APIs without changing author authority.
 The dependency set is RAES 10.5.0 and env-packs 7.2.1.
 RAES accepts authored-empty open concerns without a proof of absence.
@@ -98,8 +104,10 @@ CI owns full suites and fresh installed-lab qualification.
 The released portal currently declares authentication on two unguarded routes.
 They are `/logout` and `/api/v1/users/<int:user_id>` in both bundled packs.
 The exact application handlers contain no authentication guard for these routes.
+
 RAES rejects observations that report their actual authentication state.
 This is a pack declaration mismatch, not permission to restore the bridge.
 The correction is tracked in [env-packs #628](https://github.com/OpenRAE/env-packs/issues/628)
 and [PR #629](https://github.com/OpenRAE/env-packs/pull/629).
+
 A corrected published release must be qualified before the TechVault experiment runs.

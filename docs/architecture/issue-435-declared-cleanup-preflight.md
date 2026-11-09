@@ -1,5 +1,13 @@
 # Issue #435: Declared cleanup preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-435-declared-cleanup-preflight.md).
+Its last recorded file change before this rewrite was `3d76109e051b`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 The issue payload is the delivery contract. This note fixes boundaries for
 DSL-007; it is not an implementation plan. No new ADR is needed: ADR-029,
 ADR-046, ADR-050's released-producer successor clause, ADR-055, and ADR-064

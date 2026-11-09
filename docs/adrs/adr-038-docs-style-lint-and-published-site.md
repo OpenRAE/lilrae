@@ -8,20 +8,20 @@ accepted
 
 2026-06-11
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [documentation guide](../contributing-documentation.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
-Issue #407 (requirement DOC-001) found the documentation corpus in poor
-shape: `mkdocs.yml` referenced 12 pages that did not exist, listed only
-12 of 38 ADRs, and omitted entire sections (`sdl/`, `raes/`, `testing/`,
-most of `components/`); no prose linting existed anywhere in the repo;
-and the docs were not published, despite a fully configured
-mkdocs-material theme. Prose quality drifted unchecked because nothing
+Issue #407, for DOC-001, found 12 missing navigation targets and only 12 of 38 ADRs listed. SDL, RAES, testing, and many component pages were omitted. The configured MkDocs Material site was unpublished, and the tree had no prose gate. Prose quality drifted unchecked because nothing
 gated it, and nav drift went unnoticed because nothing built the site.
 
-An upstream workflow platform already runs a proven apparatus for this:
-a pinned, checksum-verified Vale install script, a pre-commit wrapper
-hook, the Google style package at error level, and a small house-style
-overlay. Porting it is cheaper and better-tested than inventing a new
+An upstream workflow already supplied pinned, checksum-verified Vale installation, a wrapper hook, Google error rules, and a small project overlay. The design reused that apparatus. Porting it is cheaper and better-tested than inventing a new
 one.
 
 ## Decision
@@ -128,9 +128,7 @@ The [assignment register](../architecture/documentation-assignments.md) records 
 
 ## Consequences
 
-- Markdown touched by a commit must pass Google style at error level
-  before it lands; CI re-checks the whole corpus, so drift cannot
-  re-enter through excluded paths or merge skew.
+- Changed Markdown must pass the selected Google error rules. CI examines the full applicable corpus to catch drift and integration differences.
 - The published site exposes nav rot immediately: a page that exists
   on disk but not in `nav` is visible in the strict build log, and a
   removed page fails the build.

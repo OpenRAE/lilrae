@@ -1,5 +1,13 @@
 # Issue 845 RAES Hard-Rename Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-845-raes-hard-rename-preflight.md).
+Its last recorded file change before this rewrite was `272660373ef6`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note fixes the architecture guardrails for the ACES-to-RAES cutover. It is
 design guidance, not an implementation plan. ADR-025, ADR-029, ADR-035,
 ADR-044, ADR-046, and ADR-047 remain authoritative for strict configuration,

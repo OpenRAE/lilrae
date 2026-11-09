@@ -8,6 +8,14 @@ accepted
 
 2026-06-20
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [capture explanation](../components/red-side-capture-boundary.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 ADR-033 moved red-side behavioural capture out of the SIEM and into
@@ -22,12 +30,7 @@ container:
   `docker cp` into `.aptl/runs/<run_id>/kali-side/<session_id>/`.
 
 The workload user is `kali` and intentionally has passwordless sudo for
-legitimate red-team tooling. That means ordinary Unix ownership inside the
-same container is not a sufficient capture-integrity boundary: after
-`sudo su -`, the workload can remove or truncate root-owned files under the
-same writable mount. Making a helper daemon root-owned inside Kali, or writing
-as a dedicated capture user inside the same mount namespace, does not satisfy
-the issue #305 acceptance criteria by itself.
+legitimate red-team tooling. Unix ownership inside the workload is not a sufficient integrity boundary. A `sudo su -` workload can remove or truncate files in that writable mount. A root-owned daemon or separate capture user in the same writable mount namespace does not alone meet issue #305.
 
 ## Decision
 
@@ -35,19 +38,10 @@ Use a dedicated capture sidecar service, `aptl-kali-capture`, as the
 Kali-side capture writer. The sidecar is part of the `kali` profile, shares
 ONLY the Kali container's network namespace (so tcpdump sees Kali's traffic
 and the abstract socket is mutually reachable), and mounts the `kali_captures`
-volume read-write. It deliberately does NOT share Kali's PID namespace: a
-shared PID namespace would let a sudo-root Kali shell traverse
-`/proc/<sidecar-pid>/root` into the sidecar's mount namespace and reach the
-evidence. auditd and process accounting are kernel-wide and need no PID
-sharing to observe Kali's processes.
+volume read-write. It does not share Kali's PID namespace. Otherwise, a root workload could reach sidecar mounts through `/proc/<sidecar-pid>/root`. The original audit and accounting sources did not need PID sharing.
 
 **The Kali workload container does not mount `kali_captures` at all, not even
-read-only.** A read-only mount blocks writes but not reads: a `sudo`-capable
-agent can still `cat` a sibling session's `pty/typescript` or pcap on an `ro`
-mount, which would leave issue #305's cross-session-disclosure criterion
-(added in the issue thread) unmet. The only way to deny *read, list, and
-modify* to a sudo-root shell is to keep the capture sink out of the workload
-container's mount namespace entirely. The `kali` user, including after
+read-only.** Read-only mounts prevent writes but still expose sibling-session transcripts and pcaps to sudo-capable readers. That would fail issue #305's cross-session disclosure criterion. The selected boundary keeps the capture sink outside the workload mount namespace. This denies direct read, listing, and modification through workload paths. The `kali` user, including after
 `sudo su -`, therefore has no filesystem path to any capture evidence,
 neither its own session's nor any other's.
 
@@ -82,27 +76,24 @@ The sidecar owns all paths below `/var/log/aptl/captures`:
 
 The sidecar also owns `auditd` and `accton` startup. Move
 `AUDIT_CONTROL`, `AUDIT_WRITE`, and `SYS_PACCT` capability requirements from
-the Kali workload service to the sidecar wherever Docker permits. Kali keeps
-only capabilities required by red-team tooling, such as `NET_RAW` and
-`NET_ADMIN`; it must not retain capabilities whose only purpose is starting,
-stopping, or reconfiguring the capture subsystems.
+the Kali workload service to the sidecar wherever Docker permits. Kali keeps tooling capabilities such as `NET_RAW` and `NET_ADMIN`. It must not keep capabilities used only to manage capture subsystems.
 
 > **Update (2026-10-12, #1328):** the shipped sidecar runs neither auditd nor
 > process accounting. It does not own `_audit/audit.log` or
 > `_proc-acct/pacct`, does not start `auditd` or `accton`, and is granted none
 > of `AUDIT_CONTROL`, `AUDIT_WRITE`, or `SYS_PACCT` (see the `kali-capture`
 > service in `docker-compose.capture.yml`). The harvest no longer copies the
-> global `_audit` / `_proc-acct` directories (#1242, recorded in ADR-042). The
-> `_audit` and `_proc-acct` items in the list above, and the assignment of
-> `auditd`, `accton`, and those three capabilities to the sidecar, record the
-> 2026-06-20 design and are not current. The same applies wherever else this
-> ADR names auditd or process accounting as a sidecar-owned writer, a harvest
-> source, a test expectation, or a tamper-resistant witness.
+> global `_audit` / `_proc-acct` directories (#1242, recorded in ADR-042).
+>
+> The `_audit` and `_proc-acct` entries above describe the 2026-06-20 design.
+> Their auditd, accton, and capability assignments are not current. This correction applies to every auditd or process-accounting claim in this record.
+>
+> It includes ownership, harvest sources, test expectations, and witness-integrity claims.
 
 > **Update (2026-10-28, #1495):** the sidecar is granted `AUDIT_WRITE` again,
 > for a reason the 2026-06-20 design did not cover; it still runs no auditd.
-> Debian's sshd writes a kernel audit login record when it allocates a PTY for
-> an outer session, and drops the connection when the write is refused. Without
+> Debian sshd writes a kernel audit login record when it allocates an outer-session PTY.
+> Refusal of that write drops the connection. Without
 > the capability, every participant session that requested a PTY failed to
 > open, while sessions without one worked. `AUDIT_CONTROL` and `SYS_PACCT` stay
 > withdrawn, and the 2026-10-12 update still holds for the audit and accounting
@@ -119,9 +110,7 @@ stopping, or reconfiguring the capture subsystems.
 
 The sidecar RPC is a small local control protocol, not a file API.
 
-- Transport: Unix-domain socket only. Prefer an abstract socket, or a socket
-  path made available to Kali through a read-only mount, so sudo-root in Kali
-  cannot unlink or replace the endpoint.
+- Transport: Unix-domain socket only. Prefer an abstract socket or read-only socket-path mount. A root workload must not be able to replace or unlink the endpoint.
 - Authentication/authority: use kernel peer credentials and a per-session
   control connection. Do not use an env-var token, argv token, shared secret,
   or file token that the Kali workload can read after sudo.
@@ -162,10 +151,7 @@ typescript/timing artifacts from a wrapper-to-sidecar byte stream. Do not leave
   MCP ingress session checks, and the Bash wrapper: `^[A-Za-z0-9_][A-Za-z0-9._-]*$`
   and no `..`. Do not add a looser sidecar-only schema.
 - **Config shape:** the sidecar is part of the existing Compose `kali` profile,
-  not a new durable `aptl.json` feature flag. If implementation needs runtime
-  knobs for socket name, capture root, enabled capture classes, or pcap
-  rotation limits, define them as sidecar environment variables with explicit
-  parser/shape checks and safe defaults. Add `AptlConfig` fields only for
+  not a new durable `aptl.json` feature flag. Necessary runtime settings belong in parsed sidecar environment variables with safe defaults. Examples include socket name, capture root, enabled classes, and pcap rotation limits. Add `AptlConfig` fields only for
   durable first-party user configuration.
 - **OS and mount exposure:** the capture volume is mounted read-write only in
   the sidecar and is **not mounted in the Kali workload at all**. The barrier
@@ -222,16 +208,8 @@ Implementations must build on the existing incumbents:
 
 Static and live tests should pin the boundary, not just the happy path:
 
-- Compose consistency: `kali_captures` is NOT mounted in the Kali workload at
-  all, read-write in `aptl-kali-capture`; sidecar shares Kali pid/net
-  namespaces; sidecar has no host ports and no `hostname` (which conflicts
-  with `network_mode: service:`); capture-only caps are not on the Kali
-  workload service.
-- OBS-003 live tests: `sudo su -` in Kali cannot read, list, remove,
-  truncate, or modify the capture sink (the volume is absent from Kali's mount
-  namespace); per-session PTY, pcap, auditd, and pacct survive a
-  `sudo rm -rf /var/log/aptl/captures/*` attempt; a Kali shell in session N
-  cannot read session M's captures.
+- Compose consistency: `kali_captures` is absent from Kali and writable only in `aptl-kali-capture`. The original implementation paragraph below described PID and network sharing. The later correction above withdraws PID-sharing and audit/accounting claims. The sidecar has no host publications or `hostname` override.
+- OBS-003 live tests: `sudo su -` cannot directly access the absent capture mount. The recorded `sudo rm -rf /var/log/aptl/captures/*` attempt did not remove sidecar evidence. The original audit and accounting expectations are superseded above. Separate sessions cannot read each other's retained files through that mount.
 - RPC unit tests: invalid ids, path-bearing messages, delete/truncate frames,
   spoofed stop/finalize attempts, and writer-unavailable paths.
 - Existing MCP tests: harvest remains best-effort and surfaces warnings rather
@@ -262,11 +240,7 @@ concept.
 > below documents why issue #305 shipped without that property; ADR-042 is the
 > design that closes it.
 
-This boundary makes capture evidence **undeletable and unreadable** by the
-Kali workload, and makes the genuinely Kali-side witnesses (per-session
-**pcap**, **auditd**, and **process accounting**) **tamper-resistant**,
-because the sidecar produces them from kernel sources the workload does not
-feed. It does **not** make the Kali-side PTY *typescript* tamper-proof for the
+The sink is unreadable and unwritable through the Kali mount namespace. The original paragraph also claimed kernel-source witnesses for pcap, auditd, and accounting. The later audit/accounting withdrawal limits those claims. It does **not** make the Kali-side PTY *typescript* tamper-proof for the
 workload's own session.
 
 Update (2026-10-12, #1328): auditd and process accounting are no longer
@@ -274,25 +248,12 @@ among these witnesses, because the shipped sidecar produces neither (see the
 update at the end of the Decision).
 
 The reason is fundamental: a shell transcript is generated by the shell, which
-runs in the Kali container. Any capture of it that the workload can feed or
-write (here, `script(1)` to a wrapper FIFO to `aptl-capture-client` to the
-sidecar RPC) can be forged by a sudo-capable workload for its own session: it
-can type fake output, run the client by hand, or write to the FIFO/fds of its
-own wrapper. Connection ownership stops one session from forging *another*
-session's transcript and the single-use session-id rule stops reopening a
-*finalized* session for append, but neither prevents a session from forging
-*its own* in-flight transcript.
+runs in the Kali container. A sudo-capable workload can forge its own workload-fed transcript. It can emit fake output, invoke the client, or write its wrapper FIFO and descriptors. Connection ownership prevents cross-session append. Single-use IDs prevent reopening finalized sessions. Neither control authenticates a workload-fed in-flight transcript.
 
-The authoritative, tamper-resistant keystroke/output record is therefore the
-**MCP-side PTY tee** (`createPtyTeeWriter` in `mcp/aptl-mcp-common/src/runs.ts`),
-which runs in the MCP server process outside every container and which the Kali
-workload cannot reach, exactly as issue #305's own framing states. The
+The MCP-side PTY tee supplies an independent record through `createPtyTeeWriter` in `mcp/aptl-mcp-common/src/runs.ts`. That process sits outside the containers and their workload mount namespaces. The
 Kali-side typescript is a convenience secondary to it.
 
-Fully tamper-proofing the Kali-side typescript would require the sidecar to own
-the PTY master itself (moving sshd / PTY proxying into the sidecar), a much
-larger rearchitecture that changes the SSH/shell execution model and is out of
-scope for this boundary. It would be its own ADR if pursued.
+Authenticating the Kali-side transcript requires the sidecar to own the PTY master. Moving the SSH or PTY boundary was separate work, later defined by ADR-042. It would be its own ADR if pursued.
 
 ## Consequences
 
@@ -312,12 +273,7 @@ scope for this boundary. It would be its own ADR if pursued.
 - Session capture now has an RPC lifecycle that must be tested for ordering,
   spoofing, and unavailable-writer behavior.
 - PTY transcript capture needs deliberate design; sharing the network
-  namespace alone does not make sidecar `script(1)` observe a shell. The
-  Kali-side transcript is therefore supplied by the workload over the RPC and
-  is NOT tamper-resistant against a sudo-capable Kali user (see "PTY transcript
-  authenticity" below); the authoritative keystroke/output record is the
-  MCP-side PTY tee, and the tamper-resistant Kali-side witnesses are the
-  sidecar-produced pcap, auditd, and process-accounting streams.
+  namespace alone does not make sidecar `script(1)` observe a shell. This older RPC path accepts workload-supplied transcript bytes and cannot prevent self-forgery. The MCP-side tee remains independent. ADR-042 supersedes the workload-fed PTY design; later updates withdraw audit/accounting witnesses.
   Update (2026-10-12, #1328): the shipped sidecar produces no auditd or
   process-accounting stream (see the update at the end of the Decision).
 

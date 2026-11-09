@@ -1,56 +1,30 @@
 # Design-check tools
 
-This repository keeps four manual design checks. Run them before you change the
-architecture. `.ground-control.yaml` does not configure these checks.
+LilRAE has four existing design-check categories: compilation, structure, wiring, and acceptance.
+They answer different questions.
+None proves runtime containment or complete implementation correctness.
+`.ground-control.yaml` does not configure a separate design-check workflow.
 
 ## The four design checks
 
-Run each check from the repository root. Each check needs no credentials and no
-network access. Each check leaves the Git HEAD, the index, and the working tree
-unchanged. Use the same `uv` environment as `tools/run-targeted-tests.sh`.
+Compilation finds Python syntax errors and creates bytecode.
+The repository has no separate configured type checker.
+The structural checks apply the existing architecture and participant dependency rules.
+The wiring view shows observed imports, including imports that do not satisfy the target architecture.
+[ADR-064](../adrs/adr-064-layered-architecture-and-code-conventions.md) distinguishes target rules from staged enrollment.
 
-| Check | Purpose | Tool |
-| --- | --- | --- |
-| Compile | Byte-compile the Python source, tests, and tools. | `python -m compileall -q src tests tools` |
-| Structure | Check the ADR-064 layer rules, the participant boundary, and the rule fixtures. | `tools/check_architecture.py`, `tools/check_lilrae_participant_architecture.py`, and the architecture fixture tests |
-| Wiring | Print the component dependency view from the import graph. | `tools/design_wiring.py` |
-| Acceptance | Run one named test case and report its result as JSON. | `tools/design_acceptance.py` |
-
-This repository has no separate type checker. Byte-compilation is the native
-compile check.
+The [tool reference](../reference/design-check-tools.md#tool-contracts) lists executable owners and output contracts.
 
 ## The acceptance adapter
 
-`tools/design_acceptance.py` runs one acceptance case. It
-reads one JSON object on standard input:
-
-```json
-{"test_file": "tests/test_feature.py", "test_name": "test_rejects_empty_name"}
-```
-
-It writes one JSON object on standard output:
-
-```json
-{"test_name": "test_rejects_empty_name", "status": "failed", "matches": 1, "message": "AssertionError: expected two, received one"}
-```
-
-The `status` field is one of `failed`, `passed`, `missing`, `skipped`, or
-`broken`. The `matches` field is the count of collected cases with that exact
-name. A valid red case has the `failed` status, one match, and the real
-assertion message.
-
-The adapter exits zero when it reports a valid observation. A failing test is a
-valid observation. The adapter exits nonzero only when it cannot run or report.
-Test-runner output goes to standard error. Standard output holds only the one
-JSON object.
+The acceptance adapter reports one observed test result.
+An observed failing assertion can be a valid adapter result.
+Adapter success therefore does not mean test success.
+The [JSON reference](../reference/design-check-tools.md#the-acceptance-adapter) defines statuses and exit behavior.
 
 ## Run the checks
 
-Run each command from the repository root. Install the development dependencies
-first. For example, run the acceptance adapter like this:
-
-```shell
-echo '{"test_file": "tests/test_version.py", "test_name": "test_example"}' \
-  | uv run --frozen --group build --no-default-groups --extra dev --extra web \
-    python tools/design_acceptance.py
-```
+Behavior tests, including the acceptance adapter, run only in CI or an approved isolated VM.
+The workstation supports source review and static checks.
+The [contribution guide](../contributing-documentation.md#run-writing-checks) describes the documentation checks.
+[CI verification](ci-verification.md) explains test selection and qualification boundaries.
