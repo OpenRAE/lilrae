@@ -510,7 +510,7 @@ def test_active_directory_semantics_select_generic_samba_provider() -> None:
     assert selected is not None
     assert selected.base_image_ref == SAMBA_AD_BASE_IMAGE
     assert selected.base_use_image_command is True
-    assert selected.base_run_capabilities == ("SYS_ADMIN",)
+    assert selected.base_run_capabilities == ()
     assert selected.provider_kind == "samba-active-directory"
     assert dict(selected.provider_parameters) == {
         "domain": "EXAMPLE",

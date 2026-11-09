@@ -281,6 +281,17 @@ jobs:
         run: |
           docker info > /dev/null
           python -m pytest -q -m integration tests/test_native_range_policy_integration.py
+      # The Samba provider runs without SYS_ADMIN (#976). Only a real domain
+      # provision proves that. The step builds both Samba images first, so the
+      # tests cannot pass by a skip for a missing image.
+      - name: Samba provider domain without SYS_ADMIN through Docker
+        run: |
+          docker build -t aptl/generic-samba-ad-base:latest containers/generic-samba-ad-base
+          docker build -t aptl/generic-samba-ad-wazuh-agent-base:latest \
+            -f containers/generic-samba-ad-wazuh-agent-base/Dockerfile \
+            --build-arg APTL_PARENT_IMAGE=aptl/generic-samba-ad-base:latest .
+          docker image inspect aptl/generic-samba-ad-base:latest aptl/generic-samba-ad-wazuh-agent-base:latest > /dev/null
+          python -m pytest -q -m integration tests/test_compose_capability_necessity.py
       - name: Linux CLI and init smoke
         run: |
           lilrae --help
