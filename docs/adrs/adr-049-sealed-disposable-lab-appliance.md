@@ -12,30 +12,36 @@ create or attest a disposable seat. The optional `aptl seat` path supplies a
 separate VM boundary when its exact image, host, and runtime profile passes
 qualification. [ADR-060](adr-060-vm-only-seat-containment.md) supersedes this
 ADR's internal-zone enforcement claims for the current seat: workloads inside
-that VM share the guest boundary. The topology and milestone controls below
-describe the broader participant architecture, not properties inferred from a
-Docker or VM label or promised by an ordinary local start. Scenario-visible
+that VM share the guest boundary.
+
+The topology and milestone controls below describe the broader participant design. Docker/VM labels and ordinary local startup do not prove those properties. Scenario-visible
 node/VM/container requirements remain RAES admission and realization concerns.
-The current seat requires Linux/KVM, QEMU, OVMF, reserved CPU/RAM/disk and a
-verified signed image; [one-host acceptance](../reviews/1162-seat-acceptance.md)
-does not qualify every host or runtime version. Ordinary local use exposes the
+
+Seat operation requires Linux/KVM, QEMU, OVMF, resources, and a verified signed image. [One-host acceptance](../reviews/1162-seat-acceptance.md) does not qualify all hosts or runtime versions. Ordinary local use exposes the
 selected Docker daemon to its control plane and may publish scenario ports and
-mount project files. [Execution-profile limits](../getting-started/prerequisites.md#tested-execution-profiles-and-limits)
+mount project files.
+
+[Execution-profile limits](../getting-started/prerequisites.md#tested-execution-profiles-and-limits)
 record the exact tested versions and unsupported claims.
 
 ## Date
 
 2026-07-25
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [seat-containment explanation](../reference/seat-containment.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 APTL's historical delivery model places Docker, the Python control plane, MCP
 servers, and the external agent process on a developer's physical host. Lab
 services publish to host loopback, the web API mounts the host Docker socket,
-and several SOC services hold that socket directly. This is an acceptable
-trusted-development posture, but it is not a supported boundary for workshops,
-classrooms, research participants, or hosted seats where participant input,
-Kali root, model output, and the venue LAN are untrusted.
+and several SOC services hold that socket directly. That posture permits trusted development. It does not establish containment for untrusted participants, Kali root, model output, venue networks, workshops, or hosted seats.
 
 Later decisions already provide most of the internal contracts that a safer
 delivery model needs:
@@ -48,16 +54,12 @@ delivery model needs:
   tamper boundaries, reproducibility, and persistence.
 - ADR-035 through ADR-048 make RAES contracts and APTL's image-free,
   Docker-based realization pipeline authoritative.
-- ADR-039 and the BFF/session implementation protect a trusted operator web
-  control plane, but that API still grants guest-Docker authority and is not a
-  participant authorization surface.
+- ADR-039 and BFF sessions protect the operator web API. That API still grants guest-Docker authority and is not participant authorization.
 - `AptlParticipantRuntime` already implements the RAES participant episode and
   action contracts. It is a runtime contract, not an agent installer or a
   participant-facing shell API.
 
-The missing decision is the outer delivery boundary. Moving a few processes
-into containers, publishing fewer host ports, or calling the current hosted
-workshop fallback an appliance would leave the same authority paths in place.
+The missing decision is the outer delivery boundary. Containerizing processes, reducing publications, or renaming the hosted fallback would keep the same authority paths. Those changes cannot establish the appliance boundary.
 
 ### Terminology
 
@@ -70,11 +72,7 @@ containment envelope, not a RAES node-realization backend.
 ## Decision
 
 The supported participant delivery boundary is one sealed, disposable
-appliance per seat. A hardware-virtualized VM is the reference boundary. An
-alternative is conforming only if its isolation, device, network, reset,
-artifact-integrity, and operator-recovery properties are demonstrated to be at
-least equivalent; a container, namespace, Docker daemon, user account, or
-shared multi-seat host process is not equivalent.
+appliance per seat. A hardware-virtualized VM is the reference boundary. An alternative must demonstrate equivalent isolation, devices, networking, reset, artifact integrity, and operator recovery. Containers, namespaces, daemons, accounts, or shared host processes do not prove equivalence.
 
 Ordinary local execution remains available to trusted operators using their
 selected Docker daemon. Its host exposure and limits must be reported from
@@ -153,9 +151,7 @@ flowchart TB
 
 Every named zone is a distinct enforced network and policy domain inside the
 guest. The target DMZ and internal networks remain separate subzones under the
-target trust domain. A Docker network name alone is not enforcement: routing
-and firewall policy must be default-deny, and an ordinary workload must not
-become an implicit router merely because it is multi-homed. DNS, telemetry,
+target trust domain. A network name is not enforcement. Routing and firewall policy must default to denial. Multi-homing must not make an ordinary workload an implicit router. DNS, telemetry,
 inspection, and control traffic cross zones through narrow gateways, proxies,
 or tap/collector paths with explicit flow policy.
 
@@ -224,10 +220,7 @@ scenario definitions, MCP tools, frontend bundles, API DTOs, or credential
 semantics. Black Hat, another event, and ordinary local use differ by operator
 policy and deployment metadata, never by a source fork or event profile.
 
-The extensibility seam is one versioned appliance-envelope contract containing
-only payload identity, delivery form, participant ingress, health/recovery
-adapter, secret-bootstrap channel, egress policy reference, resource limits,
-and evidence-export sink. It composes the existing `AptlConfig`, RAES, MCP,
+The extension point is one versioned envelope. It contains payload identity, delivery, ingress, health/recovery adapter, secret bootstrap, egress-policy reference, resource limits, and evidence destination. It composes the existing `AptlConfig`, RAES, MCP,
 API, and runstore contracts; it does not replace or mirror them.
 
 ## Explicit contracts
@@ -260,10 +253,10 @@ generic file API, service-port tunnel, secret viewer, or raw-log endpoint.
 | Runtime placement | Docker/Compose, the Python control plane, web services, agent runtime, and every MCP server run inside the guest |
 | Agent separation | Agent and MCP processes run in the management zone and never inside Kali or another scenario workload |
 | Zone isolation | Participant, management, red, blue, target, and egress networks are distinct and live tests prove the allowed-flow matrix and denied paths |
-| Participant API | Participant ingress mounts only participant routes backed by RAES participant/runtime and narrow read projections; operator lifecycle, Docker, kill, config mutation, arbitrary terminal, and raw evidence routes are absent |
+| Participant API | Participant ingress exposes only admitted runtime routes and narrow read projections. Operator lifecycle, Docker, kill, configuration mutation, arbitrary terminal, and raw evidence routes remain absent |
 | Operator API | The ADR-039 API remains management-only, keeps BFF/session/CSRF/Host/WebSocket controls, and is not reachable from participant, red, blue, target, egress, or venue networks |
-| Docker authority | No participant-reachable workload or application/action container receives raw Docker authority. A management orchestration holder and a product-required management worker may receive the same selected guest-daemon endpoint only through portable demand, evidenced backend capability, and the independent signed operator grant defined by [ADR-055](adr-055-local-runtime-authority-and-ownership.md) and the [issue #974 preflight](../architecture/issue-974-shuffle-worker-docker-images-preflight.md). Guest-Docker authority otherwise stays with the smallest management owner and existing typed `DeploymentBackend` operations. |
-| Secret placement | Model and operator credentials exist only in management-zone secret state, are short-lived where supported, and are absent from Kali, target, blue, images, snapshots, argv, URLs, logs, and evidence |
+| Docker authority | No participant-reachable workload or application/action container receives raw Docker authority. A management owner and required worker may share the selected guest daemon only with portable demand, evidenced capability, and an independent signed operator grant. [ADR-055](adr-055-local-runtime-authority-and-ownership.md) and the [#974 preflight](../architecture/issue-974-shuffle-worker-docker-images-preflight.md) define that exception. Guest-Docker authority otherwise stays with the smallest management owner and existing typed `DeploymentBackend` operations. |
+| Secret placement | Provider and operator credentials stay in management secret state and are short-lived where supported. They remain absent from workloads, images, snapshots, arguments, URLs, logs, and evidence |
 | Evidence placement | Runstore, correlation state, and authoritative evidence sinks are management-owned; raw capture crosses into participant or operator surfaces only through an explicit classified export |
 | Reset | Security reset destroys the whole guest and all mutable disks, volumes, secrets, sessions, and unexported evidence; `docker compose down -v` is not a participant security reset |
 | Upgrade | Upgrade replaces the immutable payload; in-place guest drift is unsupported |
@@ -434,16 +427,13 @@ supported participant appliance:
 | APP-003 Zone enforcement | Six distinct policy domains, target subzones, default-deny flow matrix, static topology checks, and live positive/negative reachability proof |
 | APP-004 Participant/operator separation | Participant listener has only participant routes; operator API is management-only; BFF/auth/session/CSRF/Host/WebSocket controls remain intact |
 | APP-005 Agent, MCP, and credential placement | Agent and all MCPs run in management, off Kali; model credentials are guest-only, short-lived where possible, redacted, and egress-scoped |
-| APP-006 Docker authority reduction | The smallest management owner retains guest-Docker authority through `DeploymentBackend`; no raw socket reaches participant-reachable or scenario workloads; socket-dependent optional features use fixed service-specific operations or stay disabled |
+| APP-006 Docker authority reduction | The smallest management owner uses `DeploymentBackend` for guest Docker authority. Participant-reachable workloads receive no raw socket. Optional socket-dependent features need fixed scoped operations or remain disabled |
 | APP-007 Venue and egress containment | Local loopback-only ingress, hosted authenticated TLS ingress, no bridged lab NIC, default-deny egress, destination policy, DNS policy, and resource/rate limits |
 | APP-008 Evidence and capture boundary | Management-owned storage, ADR-041/042 Kali-root isolation, classified export, redaction parity, checksums, quota handling, and no normal host synchronization |
 | APP-009 Reset, upgrade, and recovery | Cold replacement destroys mutable seat state; signed replacement upgrade; coarse health; audited break-glass taint; recovery drills prove no manual in-guest repair is required |
 | APP-010 Form parity | Local and hosted conformance reports name the same payload digest, UI build, route contract, RAES/backend manifests, scenarios, MCP tools, and participant workflow |
 
-An implementation issue is reconciled only when it names the APP controls it
-changes or proves, identifies the canonical incumbents it reuses, and states
-whether its acceptance test is static, unit, integration, live, or operator
-drill evidence. An issue that adds an event-specific Compose file, UI, image,
+An implementation issue must identify affected APP controls, reused owners, and evidence type. Static, unit, integration, live, and operator-drill results remain distinct. An issue that adds an event-specific Compose file, UI, image,
 credential path, or hosted-only workflow conflicts with this ADR.
 
 ### Explicitly deferred hardening
@@ -497,7 +487,7 @@ issues default to no authority to weaken the boundary.
 | Acceptance criterion | Decision evidence |
 | --- | --- |
 | Accepted ADR with topology and data flow | The accepted status, topology flowchart, and data-flow sequence define the participant delivery boundary and its authority paths. |
-| Complete threat model | The threat-model table covers participant compromise, Kali root, Docker socket holders, model credentials, venue LAN access, guest escape, operator recovery, blue/target compromise, and cross-seat attack. |
+| Complete threat model | The threat model covers participants, Kali root, socket holders, model credentials, venue access, guest escape, recovery, compromised targets/blue, and cross-seat attacks. |
 | Explicit host and guest contracts | The physical-host and appliance-guest tables state independently testable invariants for processes, listeners, files, devices, secrets, networks, APIs, Docker authority, evidence, reset, and upgrade. |
 | Local and hosted payload parity | The supported-forms table requires the same signed payload digest, participant UX, routes, scenarios, MCP tools, wire contracts, and guest-side credential lifecycle. |
 | Follow-on reconciliation | The reconciliation table binds issues #557 and #541, prior ADRs, and future Arsenal issues to this decision and APP-001 through APP-010 before implementation proceeds. |
@@ -578,12 +568,8 @@ issues default to no authority to weaken the boundary.
 - Creating a generic Docker API/argv proxy and calling it least privilege.
 - Treating multi-homing as firewall policy or making DNS, Suricata, Wazuh, or
   Kali an implicit inter-zone router.
-- Duplicating RAES participant/action/evidence DTOs, API response types, MCP
-  config schemas, redaction policies, ID validators, run layouts, readiness
-  taxonomies, exception hierarchies, or workflow state machines.
-- Putting secrets in images, cloud-init/user-data logs, process argv, URLs,
-  browser storage beyond the existing scoped session contract, Compose command
-  strings, healthchecks, static assets, exception text, or support bundles.
+- Duplicating portable models, API/MCP schemas, redaction, IDs, run layouts, readiness, exceptions, or workflow state machines.
+- Putting secrets in images, bootstrap logs, arguments, URLs, unapproved browser storage, Compose strings, healthchecks, assets, exceptions, or support bundles.
 - Host bind-mounting `.aptl`, run archives, evidence, Docker state, or guest
   secrets for convenience.
 - Calling episode reset, Compose volume deletion, snapshot rollback, guest

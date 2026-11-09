@@ -8,12 +8,18 @@ accepted
 
 2026-06-25
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [run Reference](../reference/experiment-runs.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 REP-001 requires every run to preserve enough information to reproduce or audit
-the run after the TechVault cutover to RAES. The risk is not missing one field;
-the risk is building a second APTL experiment manifest that duplicates RAES task,
-run, apparatus, evidence, and provenance concepts under different names.
+the run after the TechVault cutover to RAES. A missing field is not the main risk. A second local manifest would duplicate RAES task, run, apparatus, evidence, and provenance contracts.
 
 APTL already has the pieces this record must compose:
 
@@ -44,16 +50,9 @@ identity to RAES contracts where RAES has a contract, and it carries APTL-only
 data only as backend realization evidence or evidence references.
 
 When a RAES contract exists for a concept, the record stores that contract
-payload or a stable identity reference to it. APTL does not define local
-Pydantic/dataclass mirrors for RAES task, run, apparatus, evidence, provenance,
-backend manifest, operation receipt/status, runtime snapshot, workflow, or
-evaluation envelopes.
+payload or a stable identity reference to it. LilRAE must not mirror RAES task, run, apparatus, evidence, provenance, manifest, receipt/status, runtime snapshot, workflow, or evaluation models.
 
-The record may include APTL backend sections for realization evidence such as
-selected Docker Compose profiles, profile dependency closure, `AptlRealization`
-details, range snapshot identity, config and image digests, detector/rule
-content digests, tool versions, scenario parameters, seeds, and references to
-MCP-side, Kali-side, SOC, container-log, and inventory evidence. Those sections
+Backend evidence can include profiles, dependency closure, realization details, snapshot identity, configuration/image/rule digests, tools, parameters, seeds, and source-evidence references. These remain backend observations, not replacement portable models. Those sections
 must be clearly backend-owned and must not become the canonical scenario or
 runtime schema.
 
@@ -65,9 +64,7 @@ Runtime state has two distinct meanings and must stay separated:
 Both may be referenced by one run record, but neither replaces the other.
 
 Structured run-record writes go through `LocalRunStore.write_json`,
-`write_jsonl`, or `append_jsonl`. Opaque binary evidence can remain in existing
-capture/export locations, but the structured reproducibility record should store
-references and digests rather than copying bytes into a new JSON object.
+`write_jsonl`, or `append_jsonl`. Opaque evidence can stay in existing capture or export storage. Structured records should reference its paths and digests rather than copy bytes into another JSON object.
 Exporter code remains packaging-only and must not become the first redaction or
 normalization point.
 
@@ -92,7 +89,7 @@ runtime-model contract.
 | Layer | Requirement |
 | --- | --- |
 | RAES parser and validator gate | Scenario inputs continue through `raes.parse_sdl_file`, RAES semantic validation, `RuntimeManager.plan()`, and planner diagnostics. Do not structurally revalidate RAES SDL with local models. |
-| Backend manifest and conformance gate | Backend identity comes from `create_aptl_manifest()` and its serialized RAES backend-manifest-v2 payload, including supported contract versions, compatible processors, realization support, concept bindings, provisioner, orchestrator, and evaluator capability declarations. |
+| Backend manifest and conformance gate | `create_aptl_manifest()` supplies the serialized `backend-manifest-v2` identity. It declares contract versions, processors, realization, concept bindings, provisioner, orchestrator, and evaluator capabilities. |
 | Runtime contract gate | Operation receipt/status, RAES `RuntimeSnapshot`, workflow result/history, and evaluation result/history are the portable runtime surfaces. Backend exceptions are translated into redacted RAES diagnostics or `LabResult` errors at the adapter boundary. |
 | Deployment inventory gate | Docker, Compose, container, network, image, port, and host inventory flows through `DeploymentBackend` and existing snapshot helpers. Do not parse `docker-compose.yml` or call raw Docker from a record builder. |
 | Config and env binding | Durable non-secret settings come from strict `AptlConfig`; runtime secrets come from `.env` / `EnvVars`, placeholder checks, ADR-028 generated config, and ADR-034 SOC TLS material. The record may store digests and non-secret identities, not `.env` values, rendered config secrets, API tokens, cookies, private keys, or bearer material. |
@@ -143,15 +140,11 @@ backend evidence references.
 
 Future RAES contract additions for task/run/apparatus/evidence/provenance should
 replace APTL-specific placeholders at the RAES namespace, without changing the
-backend evidence namespace. Future APTL evidence sources should add a referenced
-evidence kind plus digest/path metadata under the backend evidence namespace,
-without editing RAES contract payloads or hardcoding TechVault-specific fields.
+backend evidence namespace. Another native evidence source should add a reference and digest/path metadata under the backend namespace. It should not change RAES payloads or add TechVault-only fields.
 
 The record must be parameterized by backend name, backend manifest version,
 supported contract versions, compatible processor identity, scenario identity,
-and run identity. It must not assume TechVault is the only scenario, Docker
-Compose is the only possible APTL backend forever, or that the current manifest
-profile string is static.
+and run identity. It must not assume a single scenario, permanent Docker-only deployment, or an unchanging manifest profile name.
 
 ## Non-Goals
 

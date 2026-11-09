@@ -1,5 +1,11 @@
 # Participant action enforcement
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/participant-action-enforcement.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 Status: implementation design for #1418, under ADR-065.
 
 ## Purpose and ownership
@@ -24,9 +30,11 @@ An operator connection must never acquire a fabricated participant identity from
 The architecture has two executable views.
 The component view assigns semantic owners and allowed dependencies.
 The action view defines permitted transitions and effect invariants.
+
 The core owns the action model, installed participant bindings, and shared contracts.
 The RAES adapter package owns the session and local carrier.
 Controllers receive core interfaces.
+
 The new packages and shared result/error owners are enrolled in the ADR-064 layer check.
 That check follows indirect imports and checks cycles, private imports, and Python conventions.
 The stricter component check also prevents a second runtime owner or native process execution in the session.
@@ -34,9 +42,11 @@ The stricter component check also prevents a second runtime owner or native proc
 The action view is a finite labelled transition model.
 It extends the approach used by RAE's participant-crossing models.
 It does not copy their equivalence claim or redefine participant-crossing semantics.
+
 Its states distinguish proposed, admitted, dispatched, completed, withheld, and indeterminate work.
 History commitment is separate from native completion.
 Cancellation before dispatch withholds work.
+
 Cancellation or connection loss after dispatch cannot establish rollback or successful completion.
 
 An exhaustive exploration checks the finite model for two independent calls.
@@ -66,9 +76,11 @@ Native mappings are backend configuration, not new required SDL author detail.
 An installed tool binding names one server and tool, an affordance, an action, a boundary, and an execution offer.
 It binds the complete compiled action specification and effective server configuration by canonical digest.
 The server detaches that configuration once and uses it for both admission and native execution.
+
 A trusted argument matcher selects the binding for the complete validated call.
 Zero matches and multiple matches are refusals.
 The matcher cannot dispatch work or choose authority outside its declared relation.
+
 Different argument meanings require different admitted bindings.
 A broad shell contract may declare broad effects; the adapter must not invent narrower effects from command text.
 
@@ -82,15 +94,19 @@ Controller choice does not change the authored participant's identity.
 The current RAES hosted-tool composition supports v1 autonomous execution.
 The locked dependency pair is RAES 11.0.0 and environment packs 7.2.4.
 The supported ranges are RAES `>=11.0.0` and packs `>=7.2.4,<8`.
+
 Both releases use the public contract modules after the RAES import reorganization.
 The major-version bounds require qualification before another major release.
 This retains the integration branch's TheHive/Cortex removal under ADR-063.
+
 Tool-action support requires the newer RAES lower bound.
 The bounded-participant authored freeze is unchanged.
 Comparing its RAES 9.1 and 10.2 artifacts found 199 removed empty fields and no other value changes.
+
 The integration branch already accepts that compiled digest in its bounded-agency freeze.
 The source approval digest and exact-match guard remain.
 Here, autonomous execution is the enclosing authored invocation lifecycle.
+
 It does not require every decision within that invocation to come from a model.
 It does not authorize relabelling arbitrary guest sessions as autonomous participants.
 
@@ -164,9 +180,11 @@ Compared with a remote service, local IPC adds no listener outside the host.
 Each server receives a fresh capability token through the existing private launch environment.
 The token selects a server within one invocation; it cannot select another participant or episode.
 The peer sends no participant coordinates or runtime-issued action identities.
+
 One connection carries one proposed call, dispatch permission, bounded result, and outcome receipt.
 The connection binds completion to that call.
 Frames, concurrent connections, retained request identities, and execution time are bounded.
+
 Tokens, arguments, and raw results never enter diagnostics or portable history.
 The session reuses the existing MCP result redactor before delivery.
 Typed terminal handles remain usable; API authentication values remain redacted.
@@ -174,9 +192,11 @@ Typed terminal handles remain usable; API authentication values remain redacted.
 The common MCP server validates arguments before contacting the port.
 It invokes the existing handler only after dispatch permission.
 It returns success only after the typed outcome receipt is accepted.
+
 Unclassified native exceptions, timeout, lost connections, and uncertain cleanup report unknown effects.
 Native owners identify known validation failures and fully observed unsuccessful results without parsing error text.
 Common handlers preserve that distinction in a call-local outcome context.
+
 An error payload alone cannot establish that native effects have stopped.
 An explicit unsuccessful handler result is a failed outcome, not a transport failure.
 The best-effort telemetry hook cannot grant admission or commit history.
@@ -233,12 +253,10 @@ An unsupported case passing a refusal check does not implement that composition.
 | 10. Mixed realization | `test_lilrae_tool_composition.py` checks distinct released-port refusals for crossing, resource-governed, and shared-time compositions. No general simulation/emulation equivalence is claimed. |
 | 11. Capture choice | Tool histories require no experiment collector. Redaction tests remain effective with capture redaction opt-out set. Existing workload tests retain evaluator and archival ownership. |
 
-Run the enrolled layer check with `python tools/check_architecture.py` in the project environment.
-Run the component check with `python tools/check_lilrae_participant_architecture.py` in the project environment.
-Run the finite model with `bash tools/run-targeted-tests.sh tests/test_lilrae_participant_action_model.py`.
-Run generated traces with `bash tools/run-targeted-tests.sh tests/test_lilrae_tool_model_fuzz.py -m fuzz`.
-Run the runtime and carrier tests by their explicit paths in the table.
+The [verification guide](../reference/verify-participant-actions.md) contains explicit static and behavior-check commands.
+
 The ordinary CI tests run the component and finite-model checks.
+
 The fuzz job runs generated traces; the MCP integration job runs the cross-language check.
 
 Model exploration checks only its declared finite state space.

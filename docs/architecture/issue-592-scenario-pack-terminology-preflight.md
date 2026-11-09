@@ -1,5 +1,14 @@
 # Issue #592 Scenario-Pack Terminology Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-592-scenario-pack-terminology-preflight.md).
+Its last recorded file change before this rewrite was `76024b0323cb`.
+Current interfaces and successor decisions take precedence for present use.
+The inventory includes a dated maintenance row for the #1667 architecture rewrite.
+
+
 This note fixes the terminology boundary for issue #592. It does not rename a
 runtime identifier, migrate an asset, or change pack acquisition. The issue
 predates the ACES-to-RAES project rename and the companion repository's current
@@ -41,6 +50,7 @@ prose must not accidentally rename them.
 
 | Surface | Files | Disposition |
 | --- | --- | --- |
+| Architecture rewrite (2026-11-08, issue #1667) | `docs/adrs/adr-001-docker-compose-deployment.md`, `docs/architecture/documentation-boundaries.md`, `docs/architecture/enterprise-infrastructure.md`, `docs/architecture/networking.md`, `docs/reference/compose-topology.md` | Keep admitted Scenario Pack declarations distinct from root compatibility stubs and native runtime observations. |
 | Documentation migration assignments | `docs/architecture/documentation-assignments.md` | Assign delivery ownership and reader purpose. Preserve exact source headings and pack terminology. |
 | Required trial readiness | `docs/architecture/exp-011-resource-readiness-design.md` | Keep admitted environment-pack and entry identity distinct from native resource observations and read-only source readiness. |
 | Released RAES dependency adoption | `docs/architecture/issue-1603-raes-11-module-locations-preflight.md`, `docs/architecture/issue-1603-released-module-design.md` | Keep dependency floors, exact released pack identities, installed adapter qualification, and observed runtime state distinct. |

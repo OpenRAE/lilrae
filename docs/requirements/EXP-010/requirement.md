@@ -11,6 +11,13 @@ updated_at: 2026-07-20T22:36:07.446940Z
 
 # EXP-010: Capture Plan Admission and Evidence Acquisition
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/EXP-010/requirement.md).
+
+
 ## Statement
 
 APTL shall consume ACES experiment-capture-spec-v1 artifacts and compare their required sources, scopes, windows, formats, and fidelity constraints with declared backend observation capabilities before execution. Admission shall produce a versioned capture plan. Unsupported required capture shall fail closed; optional degradation shall require an explicit limitation and comparability disclosure. Pluggable collectors shall emit raw experiment-evidence-record-v1 artifacts with source, clock, loss, sensitivity, checksum, and provenance metadata and shall never expose participant-hidden or secret-bearing data outside the authorized capture boundary.

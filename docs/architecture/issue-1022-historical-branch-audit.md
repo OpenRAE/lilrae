@@ -1,5 +1,13 @@
 # Issue #1022 historical branch audit
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1022-historical-branch-audit.md).
+Its last recorded file change before this rewrite was `35ebb3bead57`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 Assessment against `8f20007ce323`, including the uncommitted content-mode repair.
 This is a source comparison, not a claim of successful VM qualification.
 

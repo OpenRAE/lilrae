@@ -1,11 +1,19 @@
 # CI verification
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/ci-verification.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 The ordinary Python shards also qualify the packaged provider observer module.
 Those jobs install the same pinned Node version as the native transport job.
 The observer probes resolve that executable before starting their minimal child environment and pass its absolute path.
+
 They do not add ambient PATH entries to the provider process.
 In CI, [Node's built-in test runner](https://nodejs.org/download/release/v22.23.3/docs/api/test.html#coverage-reporters) emits LCOV for those exact packaged-module probes.
 The test normalizes only the copied module's source path; line coverage comes from Node.
+
 The existing Python coverage artifacts carry these reports to the combiner and SonarCloud.
 All workers retain the existing Python coverage requirements; observer reports are combined across the shards.
 Local targeted runs do not enable coverage collection.
@@ -26,21 +34,27 @@ The image matrix also selects descendants when a parent or shared input changes.
 Source changes select all coverage producers for the existing project-wide SonarCloud analysis.
 Docs and image routing remain independent.
 Linux runs the retained ordinary Python suite once with line coverage.
+
 Coverage.py uses its Python 3.12 monitoring core.
 The measured serial run exceeded the budget after pruning and shared setup.
 Split the retained cases into three complementary pytest-split groups.
+
 Each group uses four pytest-xdist workers and pytest-cov's supported worker combination.
 Keep each file on one worker to preserve module fixtures and avoid shared module state.
 Workers keep separate process environments and pytest temporary directories.
+
 Read-only pack fixtures share declarations and realization results within each process.
 Mutation tests copy their declaration fields; backends, stores, and runtime ownership stay separate.
 The existing required Python check combines all groups' data before exporting coverage.
+
 All groups and the concurrent fuzz/smoke qualification job must succeed.
 The combiner checks that all expected data files exist and uses a read-only token.
 The coverage comparison also checks the planner's measured lines with two workers.
+
 macOS and Windows run portability checks instead of repeating Linux planning tests.
 The installed-wheel boot retains its independent realization and teardown observations.
 Periodic qualification runs retained integration checks and scans unchanged dependencies and images.
+
 The periodic lane pulls the pinned Dashboard prerequisite from the production catalog before test collection.
 A missing prerequisite fails preparation.
 Live-lab checks require an explicit operator opt-in and credentials.
@@ -103,9 +117,11 @@ Scenario declarations [operator-authored input]
 Changed paths are data, never shell commands.
 Routing failures must fail existing required jobs rather than skip them successfully.
 Untrusted PRs receive no new permissions or services.
+
 Dependency caches hold downloads, not installed executable state or lab credentials.
 Existing hash pins and vulnerability thresholds remain active.
 Test collection reads no lab environment file and provisions no API key.
+
 Superseded PR cancellation uses a PR-specific group; release and branch validation have separate groups.
 Cleanup steps retain their unconditional execution conditions.
 
@@ -150,9 +166,11 @@ The target branch's Checks workflow owns the dispatched run and its Go gates.
 The Monday schedule keeps the existing default-branch Checks run.
 A separate job dispatches `checks.yml` on `go-cutover` without waiting for other jobs.
 Only a schedule on the repository's default branch can start this job.
+
 Push, pull request, tag, and manual events cannot forward a run.
 The child uses its own workflow and checks out its own branch.
 Its manual event selects all lanes, including full Go mutation and dependency scans.
+
 A failed dispatch fails the parent job.
 An accepted dispatch does not establish that the child checks passed.
 
@@ -181,9 +199,11 @@ go-cutover go.mod/go.sum files [manifest stores]
 The protected assets are workflow authority, dependency manifests, and check results.
 Only the dispatcher job has `actions: write` for this request.
 It performs no checkout and executes no repository code with that token.
+
 The token enters only the CLI environment, never command arguments or files.
 The repository comes from GitHub context; the branch is a fixed job value.
 These controls prevent untrusted code from using dispatch authority or selecting another target.
+
 Parsed workflow tests check admission and authority; a stub CLI checks the actual command and failure result.
 Existing selection tests check that dispatch selects all lanes.
 GitHub run records provide the later evidence for actual child execution.

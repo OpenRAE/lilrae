@@ -11,6 +11,13 @@ updated_at: 2026-03-20T06:18:11.648886Z
 
 # CLI-006: CLI/Core Separation for Reuse
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/CLI-006/requirement.md).
+
+
 ## Statement
 
 The CLI shall separate thin CLI layer (src/aptl/cli/) from domain logic (src/aptl/core/). Core modules shall have no dependency on Typer, Rich, or terminal I/O, enabling reuse by the web UI backend and direct scripting.
