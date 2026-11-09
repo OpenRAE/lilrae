@@ -14,7 +14,7 @@ RUN npm run build
 
 # Build the same Caddy release with patched Go dependencies and the local
 # go-jose v3 security backport documented under caddy-build/third_party.
-FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS caddy-builder
+FROM golang:1.27.3-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS caddy-builder
 
 WORKDIR /src
 COPY caddy-build/ ./
