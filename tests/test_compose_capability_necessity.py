@@ -23,6 +23,7 @@ builds both images and runs them in the python-qualification job.
 from __future__ import annotations
 
 import re
+import secrets
 import shutil
 import subprocess
 import time
@@ -46,8 +47,8 @@ _READY_MARKER = "/run/aptl-samba-provider.ready"
 _DOMAIN, _REALM = "LABTEST", "LABTEST.LOCAL"
 _SHARE_ROOT = "/var/lib/samba/sysvol"
 _SYSVOL = f"{_SHARE_ROOT}/{_REALM.lower()}"
-# Synthetic credential for a throwaway test domain.
-_PASSWORD = "Lab-Test-Pw-976!"
+# Generated per run for a throwaway test domain; meets Samba's complexity rule.
+_PASSWORD = f"Lab-{secrets.token_hex(12)}-Aa1!"
 _CAP_SYS_ADMIN_BIT = 21
 
 
