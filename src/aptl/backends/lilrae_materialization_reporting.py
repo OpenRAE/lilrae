@@ -68,10 +68,23 @@ def _describe_node(node: dict[str, Any], entry: SnapshotEntry) -> None:
         if descriptor.section != "nodes":
             continue
         observed = _value(entry.payload, descriptor.payload_path)
+        if _is_value_free(observed):
+            # A value-free readback (RAES commitments) is not SDL; the snapshot
+            # keeps the commitments, and the authored declaration stays.
+            continue
         if _is_unobserved(observed, descriptor.authored_path):
             _pop_path(node, descriptor.authored_path)
         else:
             _set_path(node, descriptor.authored_path, deepcopy(observed))
+
+
+def _is_value_free(observed: object) -> bool:
+    """Return True for a list of RAES value-free readback records."""
+    return (
+        isinstance(observed, list)
+        and bool(observed)
+        and all(isinstance(item, dict) and "value_present" in item for item in observed)
+    )
 
 
 def _is_unobserved(observed: object, authored_path: tuple[str, ...]) -> bool:
