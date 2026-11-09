@@ -104,7 +104,9 @@ def complete_backend_selections(
             payload = payload or deepcopy(operation.payload)
             target = payload
             for token in path[:-1]:
-                target = target.setdefault(token, {})
+                if not isinstance(target.get(token), dict):
+                    target[token] = {}
+                target = target[token]
             target[path[-1]] = value
         if payload is not None:
             operations[node.address] = replace(operation, payload=payload)

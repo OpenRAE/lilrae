@@ -67,7 +67,7 @@ def test_backend_selected_values_are_prepared_in_readback_form():
         ),
     ))
     operation = ProvisionOp(action=ChangeAction.CREATE, address="provision.node.misp", resource_type="node",
-                            payload={"name": "misp", "spec": {"node": {"runtime": {}}}})
+                            payload={"name": "misp", "spec": {"node": {"runtime": {"environment": None}}}})
     runtime = RuntimeConfiguration.model_validate({"environment": [
         {"name": "DISABLE_CA_REFRESH", "value": "true"},
         {"name": "ADMIN_KEY", "value_classification": "redacted"},
