@@ -383,9 +383,9 @@ mkdocs-get-deps==0.2.2 \
     --hash=sha256:8ee8d5f316cdbbb2834bc1df6e69c08fe769a83e040060de26d3c19fad3599a1 \
     --hash=sha256:e7878cbeac04860b8b5e0ca31d3abad3df9411a75a32cde82f8e44b6c16ff650
     # via mkdocs
-mkdocs-git-revision-date-localized-plugin==1.5.3 \
-    --hash=sha256:873444b54cab4d47c69bd6e85da05ef5fbe81fee27e64508114c46a0e4f81e37 \
-    --hash=sha256:cd96e432de6a7e59b31c7041574b22f84179c8636835419ff458877ecfaaaf05
+mkdocs-git-revision-date-localized-plugin==1.6.3 \
+    --hash=sha256:3e37bc5bd047063ab062c9328e10d00670d69a99dc002c3cb5823582ce6d8e60 \
+    --hash=sha256:72b7f27d780af4d9efc2eb70197404e4510ce5664de6a96e092a6050e35eab46
     # via lilrae
 mkdocs-material==9.7.7 \
     --hash=sha256:8ea9bb1737a5b524a5f9dcf2e1b4ebda8274ae3008aa7845720a97083bef708f \
@@ -447,6 +447,7 @@ packaging==26.3 \
     #   hatchling
     #   lilrae
     #   mkdocs
+    #   mkdocs-git-revision-date-localized-plugin
     #   raes
     #   univers
 paginate==0.5.7 \

@@ -37,7 +37,9 @@ theme:
 plugins:
   - search
   - git-revision-date-localized:
-      enable_creation_date: true
+      # Merge-only file additions can lack a creation commit in git log.
+      # Show revision dates without inventing a build-time creation date.
+      enable_creation_date: false
       # Page dates are best-effort, not a build gate: fall back to the
       # build date (instead of failing `mkdocs build --strict`) when git
       # history is unavailable for a page — uncommitted files, shallow
