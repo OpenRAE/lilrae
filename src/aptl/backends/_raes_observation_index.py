@@ -95,37 +95,38 @@ def _node_indexes(
         for node in realization.nodes
         if node.container_name
     }
-    planned = {
-        str(resource.payload.get("name", ""))
-        for resource in plan.resources.values()
-        if resource.resource_type == "generated-artifact"
-    }
     runtimes = {
-        node.address: _portable_runtime(node.runtime, planned)
+        node.address: _declared_environment_runtime(
+            node.runtime, plan.resources.get(node.address)
+        )
         for node in realization.nodes
         if node.runtime is not None
     }
     return containers, runtimes
 
 
-def _portable_runtime(
-    runtime: RuntimeConfiguration, planned: set[str]
+def _declared_environment_runtime(
+    runtime: RuntimeConfiguration, resource: object
 ) -> RuntimeConfiguration:
-    """Leave out variables that read a backend-owned generated artifact.
+    """Read back only the environment that the scenario declares.
 
-    Such an artifact is not in the plan, so a readback of its variable would
-    reference an artifact that the portable inventory does not contain.
+    Implementation profiles add backend detail, such as a variable that reads a
+    backend-owned artifact. Those additions are not scenario facts, so readback
+    does not report them.
     """
 
-    def portable(variable: object) -> bool:
-        artifact = getattr(getattr(variable, "value_from", None), "generated_artifact", None)
-        return artifact is None or artifact.removeprefix("generated_artifacts.") in planned
-
-    environment = list(runtime.environment or ())
-    kept = [variable for variable in environment if portable(variable)]
-    if len(kept) == len(environment):
-        return runtime
-    return runtime.model_copy(update={"environment": kept})
+    payload = getattr(resource, "payload", None) or {}
+    spec = payload.get("spec") if isinstance(payload, dict) else None
+    node = spec.get("node") if isinstance(spec, dict) else None
+    declared = node.get("runtime") if isinstance(node, dict) else None
+    environment = (declared or {}).get("environment") or []
+    return runtime.model_copy(
+        update={
+            "environment": RuntimeConfiguration.model_validate(
+                {"environment": environment}
+            ).environment
+        }
+    )
 
 
 def _non_compose_addresses(realization: AptlRealization) -> frozenset[str]:
