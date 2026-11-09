@@ -362,11 +362,10 @@ class DockerMaterializationExecutor(DockerMaterializationObservationMixin):
         self, node_address: str, op: InstallDependencyManifestOp
     ) -> None:
         directory = str(PurePosixPath(op.path).parent)
+        # Range egress is default-deny, so the node installs from what its image holds.
         self._require_ok(
             node_address,
-            manifest_install_argv(
-                op.ecosystem, directory, offline=self._offline_staged
-            ),
+            manifest_install_argv(op.ecosystem, directory, offline=True),
             "install dependency manifest",
         )
 

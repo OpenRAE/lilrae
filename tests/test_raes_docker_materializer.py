@@ -393,10 +393,14 @@ class TestDependencyManifest:
             "n.node",
             InstallDependencyManifestOp(ecosystem="pip", path="/app/pyproject.toml"),
         )
+        # Range egress is default-deny: the install never resolves from an index.
         assert fake.calls[-1][1] == [
             "pip",
             "install",
             "--break-system-packages",
+            "--no-index",
+            "--no-deps",
+            "--no-build-isolation",
             "/app",
         ]
 
