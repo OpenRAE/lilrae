@@ -30,11 +30,7 @@ if TYPE_CHECKING:
 
 
 class ScenarioStartupProvider(Protocol):
-    """Public family startup, fixed hooks, realization and observation surface.
-
-    An optional ``prepared_operating_systems`` maps node names to the
-    ``(distribution, version)`` that the adapter's fixed images provide.
-    """
+    """Public family startup, fixed hooks, realization and observation surface."""
 
     observed_runtime_concerns: Mapping[str, ObservationStrength]
 
