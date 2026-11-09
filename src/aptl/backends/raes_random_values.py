@@ -2,7 +2,8 @@
 
 LilRAE generates each value once per run and keeps it beside the scenario
 bundle, so every interpretation of the run's plan uses the same value. A
-consuming content placement receives the value as inline text.
+consuming content placement receives the value as inline text. Readback
+reads each stored value and checks it against its declared generator.
 """
 
 from __future__ import annotations
@@ -16,6 +17,9 @@ from pathlib import Path
 from typing import Any
 
 from raes_contracts.planning import PlannedResource
+from raes_processor.semantics.realization import CONCERN_PAYLOAD_PATH
+
+from aptl.backends._raes_observation_helpers import ObservedResource
 
 _ALPHABETS = {
     "hex_lower": "0123456789abcdef",
@@ -26,15 +30,30 @@ _ROOT = ".lilrae-generated-values"
 _MAX_LENGTH = 4096
 
 
-def _value(spec: Mapping[str, Any]) -> str:
+def _generator(spec: Mapping[str, Any]) -> tuple[str, int, str, str]:
     parameters = spec.get("random_value") or {}
     alphabet = _ALPHABETS.get(parameters.get("alphabet", ""))
     length = parameters.get("length")
     if alphabet is None or type(length) is not int or not 1 <= length <= _MAX_LENGTH:
         raise ValueError("random value parameters are unsupported")
     form = parameters.get("format") or {}
-    body = "".join(secrets.choice(alphabet) for _ in range(length))
-    return f"{form.get('prefix', '')}{body}{form.get('suffix', '')}"
+    return alphabet, length, str(form.get("prefix", "")), str(form.get("suffix", ""))
+
+
+def _value(spec: Mapping[str, Any]) -> str:
+    alphabet, length, prefix, suffix = _generator(spec)
+    return prefix + "".join(secrets.choice(alphabet) for _ in range(length)) + suffix
+
+
+def _conforms(value: str, spec: Mapping[str, Any]) -> bool:
+    alphabet, length, prefix, suffix = _generator(spec)
+    body = value[len(prefix) : len(value) - len(suffix)]
+    return (
+        len(value) == len(prefix) + length + len(suffix)
+        and value.startswith(prefix)
+        and value.endswith(suffix)
+        and set(body) <= set(alphabet)
+    )
 
 
 def _create_once(path: Path, spec: Mapping[str, Any]) -> str:
@@ -54,23 +73,48 @@ def is_random_value(resource: PlannedResource) -> bool:
     return isinstance(spec, Mapping) and spec.get("generator") == "random_value"
 
 
+def _value_paths(payload: Mapping[str, Any], root: Path) -> dict[tuple[str, str], Path]:
+    """Return ``(artifact name, output) -> stored value path`` for one artifact."""
+    name = str(payload.get("name", ""))
+    run = hashlib.sha256(str(payload.get("scope_binding", "")).encode()).hexdigest()[:24]
+    return {
+        (name, str(output.get("name", ""))): root
+        / _ROOT
+        / run
+        / hashlib.sha256(f"{name}/{output.get('name', '')}".encode()).hexdigest()
+        for output in payload["spec"].get("outputs") or ()
+    }
+
+
 def random_values(
     resources: Sequence[PlannedResource], root: Path
 ) -> dict[tuple[str, str], str]:
     """Return ``(artifact name, output) -> value`` for every random-value artifact."""
     values = {}
     for resource in resources:
-        if not is_random_value(resource):
-            continue
-        payload = resource.payload
-        spec = payload.get("spec")
-        name = str(payload.get("name", ""))
-        run = hashlib.sha256(str(payload.get("scope_binding", "")).encode()).hexdigest()[:24]
-        for output in spec.get("outputs") or ():
-            output_name = str(output.get("name", ""))
-            path = root / _ROOT / run / hashlib.sha256(f"{name}/{output_name}".encode()).hexdigest()
-            values[(name, output_name)] = _create_once(path, spec)
+        if is_random_value(resource):
+            spec = resource.payload["spec"]
+            for key, path in _value_paths(resource.payload, root).items():
+                values[key] = _create_once(path, spec)
     return values
+
+
+def observe_random_value(resource: PlannedResource, root: Path) -> ObservedResource:
+    """Read back each stored value; realized only when every one fits its generator."""
+    spec = resource.payload["spec"]
+    paths = _value_paths(resource.payload, root)
+    try:
+        realized = bool(paths) and all(
+            path.is_file() and not path.is_symlink() and _conforms(path.read_text(encoding="utf-8"), spec)
+            for path in paths.values()
+        )
+    except (OSError, ValueError):
+        realized = False
+    if not realized:
+        return ObservedResource(realized=False)
+    return ObservedResource(
+        realized=True, concerns={CONCERN_PAYLOAD_PATH["generated-artifact"]: dict(spec)}
+    )
 
 
 def inline_random_values(
