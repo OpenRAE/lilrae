@@ -1,5 +1,13 @@
 # Issue #1584: Go cutover branch preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1584-go-cutover-preflight.md).
+Its last recorded file change before this rewrite was `747ee91475ba`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This issue extends the existing integration controls to `go-cutover`.
 It introduces no product architecture and needs no new ADR.
 The supplied issue is the delivery contract; this note records design constraints,

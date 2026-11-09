@@ -1,5 +1,11 @@
 # Operational environment bindings
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-965-secret-bindings.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 Both container routes use the existing `EnvironmentGrant` contract: pack,
 consumer, target variable and named source. Operator grants remain in
 `aptl.json`. Startup plans declare their own grants, restricted to keys the

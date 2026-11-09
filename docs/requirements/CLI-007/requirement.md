@@ -11,6 +11,13 @@ updated_at: 2026-05-03T06:31:43.762340Z
 
 # CLI-007: Configuration Inspection Command
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/CLI-007/requirement.md).
+
+
 ## Statement
 
 The CLI shall provide an `aptl config show` command that pretty-prints the resolved APTL configuration as loaded by `core/config.find_config()` + `core/config.load_config()`, including default values for any unset fields. The command shall locate the project's `aptl.json` via the same discovery rules used by the rest of the CLI, render the validated `AptlConfig` Pydantic model in a stable human-readable form, and exit with code 0 on success or non-zero with a clear error message when no config is found or loading fails.

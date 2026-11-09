@@ -1,5 +1,13 @@
 # RPT capture boundary assessment
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1421-rpt-capture-preflight.md).
+Its last recorded file change before this rewrite was `12ddaaf33db1`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 [Issue #1421](https://github.com/OpenRAE/lilrae/issues/1421) defines the backend delivery.
 This assessment follows the user's clarified collection scope.
 The [capture design](issue-1421-capture-design.md) describes the implementation.

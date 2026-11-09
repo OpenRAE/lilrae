@@ -1,5 +1,13 @@
 # EXP-005 Safe Parameter Binding And Provenance Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/exp-005-safe-parameter-binding-provenance-preflight.md).
+Its last recorded file change before this rewrite was `15dead977ac7`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note is the architecture preflight for EXP-005 / issue #441. It is
 guidance, not an implementation plan. No new ADR is needed: ADR-025 owns the
 strict first-party configuration schema, ADR-029 owns secret handling, ADR-033

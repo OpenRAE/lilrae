@@ -11,6 +11,13 @@ updated_at: 2026-10-12T18:00:18.618385Z
 
 # CLI-005: Scenario Start/Stop/List Commands
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/CLI-005/requirement.md).
+
+
 > Historical command note (updated 2026-10-12): the rationale records the
 > removed command names and source files. The statement and traces describe
 > the current lab lifecycle.

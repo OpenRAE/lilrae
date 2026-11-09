@@ -1,5 +1,13 @@
 # Native acquisition phase boundary
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1689-native-acquisition-phase-preflight.md).
+Its last recorded file change before this rewrite was `ce5fa71c5b8b`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 Issue #1689 is the contract and delivery owner; no formal requirement applies.
 This explanation records implementation guardrails, not an implementation plan.
 Source revision: `da489388d283776b5cc77973d4a4b86d8f961538`.
