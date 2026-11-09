@@ -47,6 +47,9 @@ class DeploymentConfig(BaseModel):
     # Operator grants: the only way an operator-supplied value reaches a
     # declared scenario variable (issue #965). Locators, never values.
     environment_grants: list[EnvironmentGrant] = Field(default_factory=list)
+    # The lab host is a VM built only to run this lab, such as a BigRAE worker.
+    # Nodes may then hold host-root-equivalent authority (the Docker socket).
+    dedicated_vm: bool = False
 
     @field_validator("environment_grants")
     @classmethod

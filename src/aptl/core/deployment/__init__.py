@@ -93,6 +93,7 @@ def get_backend(
             offline_staged=offline_staged,
             environment_grants=config.deployment.environment_grants,
             range_egress_allowances=config.deployment.range_egress_allowances,
+            dedicated_vm=config.deployment.dedicated_vm,
         )
 
     if provider == "ssh-compose":

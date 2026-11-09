@@ -66,7 +66,7 @@ class ComposeNativeBoundaryMixin:
         """Check host capability after semantic admission, before deployment."""
         if not uses_native_policy(self):
             return None
-        if realization is not None and (
+        if realization is not None and not getattr(self, "_dedicated_vm", False) and (
             realization.docker_authority_admissions
             or any("SYS_ADMIN" in n.backend_run_capabilities for n in realization.nodes)
         ):
