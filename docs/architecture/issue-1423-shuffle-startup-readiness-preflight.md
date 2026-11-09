@@ -1,5 +1,13 @@
 # Issue #1423: Shuffle Startup Recovery
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1423-shuffle-startup-readiness-preflight.md).
+Its last recorded file change before this rewrite was `688fb3433082`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 ## Decision And Evidence
 
 The Shuffle backend selects `runtime-restart-policy: on_failure` through its

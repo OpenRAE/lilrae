@@ -1,5 +1,11 @@
 # Released RAES module adoption
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1603-released-module-design.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 LilRAE targets RAES 10.6.0 and environment packs 7.2.2.
 The maintainer selected these releases for issue #1603.
 The [preflight](issue-1603-raes-11-module-locations-preflight.md) defines the existing security controls and component owners.
@@ -9,18 +15,22 @@ The [preflight](issue-1603-raes-11-module-locations-preflight.md) defines the ex
 Use the public module that defines each RAES symbol.
 Do not add compatibility imports or local replacements.
 Contract digests remain owned by `raes_contracts.canonical`.
+
 Plan projections and preparation contracts come from `raes_contracts.contracts`.
 Artifact identity and explicitness come from their public contract modules.
 Serialization uses `pydantic_core.to_jsonable_python` with the existing RAES fallback.
+
 Keep the existing parser, admission, participant, evidence, and archive interfaces.
 A missing public symbol fails qualification.
 
 Project metadata declares major-version ranges with qualified release floors.
 The ranges are `raes>=10.6.0,<11` and `raes-env-packs>=7.2.2,<8`.
 The lock and generated hashed requirements select exact releases.
+
 The installed structural adapter must accept the same release set.
 The participant dependency model must name the relocated modules.
 No component changes its layer or responsibility.
+
 ADR-064 therefore needs no change.
 
 ## Data flow and security
@@ -69,7 +79,9 @@ Existing checksum and parent mismatch tests must remain green.
 The installed TechVault adapters admit exact pack versions and content digests.
 Their qualification moves to the published 7.2.2 TechVault and study identities.
 Exact pack admission remains separate from runtime readback.
+
 [ADR-066](../adrs/adr-066-runtime-readback-reports-realized-state.md) requires observations from the running implementation.
 The #1017 migration removed the local projection digest and ordering bridge.
 This change preserves that removal and its native readback interfaces.
+
 No broader version or digest declaration replaces exact pack admission.

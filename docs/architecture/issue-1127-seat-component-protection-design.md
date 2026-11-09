@@ -1,5 +1,11 @@
 # Issue #1127: Seat Component Protection Design
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1127-seat-component-protection-design.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 This design refines the
 [#1127 preflight](issue-1127-seat-component-protection-preflight.md). APP-1 is
 the governing requirement. [ADR-060](../adrs/adr-060-vm-only-seat-containment.md)
@@ -257,9 +263,7 @@ can replace the other.
 
 ## Failure Behaviour
 
-The gate fails closed when policy, realization, receipt, helper, kernel,
-daemon, workload, target readiness, probe coverage, boot identity, or process
-identity is missing, stale, unsupported, or inconsistent. It returns the
+Missing, stale, unsupported, or inconsistent policy, identity, receipts, runtime owners, readiness, or probe coverage refuses qualification. It returns the
 existing coarse diagnostic envelope. It does not include raw runtime state or
 secrets.
 
@@ -287,25 +291,17 @@ policy.
 
 ## Verification
 
-Focused unit and contract tests cover strict v3 parsing, downgrade rejection,
-digest separation, receipt-backed selection, input-only rule rendering,
-independent read-back, runtime authority rejection, evidence custody, complete
-probe coverage, and fail-closed inventory behaviour. Changed helper and
+Focused tests cover v3 parsing, downgrade refusal, digest separation, receipts, rendering, readback, authority, custody, complete probes, and inventory refusal. Changed helper and
 Compose surfaces use focused contract tests locally. Repository-wide checks,
 clean image construction, and full suites remain CI/CD work.
 
 Live acceptance uses one immutable candidate, the real signed launcher,
 first-boot service, fresh kernel and daemon read-back, and the installed
 TechVault journey. The issue asks for attack, detection, Shuffle, TheHive,
-repair, and retest. ADR-063 has since directed removal of TheHive and Cortex;
-qualification must therefore name its exact admitted pack and record that
-conflict instead of inventing a passing TheHive result. Journey names are
+repair, and retest. ADR-063 later removed TheHive and Cortex. Qualification must name its exact admitted pack and disclose that difference rather than invent a passing TheHive result. Journey names are
 qualification content, not boundary-policy values.
 
-No LilRAE lab is started on the development workstation. If a dedicated GCP
-qualification seat is needed, it uses an exact issue-owned `test-1127`
-identity in the established project, does not reuse or alter BigRAE resources,
-and is inventoried before creation. At the end, all issue-owned VM, disk,
+No LilRAE lab is started on the development workstation. A separately approved GCP seat uses exact issue-owned `test-1127` identity in the established project. Inventory precedes creation; BigRAE resources remain untouched. At the end, all issue-owned VM, disk,
 address, firewall, metadata, service-account binding, and temporary evidence
 resources are deleted and absence is verified. Pre-existing or shared
 resources are never cleanup targets.

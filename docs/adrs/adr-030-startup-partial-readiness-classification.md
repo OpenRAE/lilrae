@@ -8,18 +8,22 @@ accepted
 
 2026-05-11
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [deployment guide](../deployment.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
-`aptl lab start` deliberately treats some late startup checks as non-fatal:
-image pre-pull misses, service readiness timeouts, SSH probes, snapshot capture,
-MCP build, SOC seeding, and MCP config sync are not all equivalent. Some are
+`aptl lab start` classifies later failures by effect. Image pulls, service readiness, SSH, snapshots, MCP builds, SOC seeding, and configuration synchronization do not have identical consequences. Some are
 cosmetic or recoverable, while others materially reduce scenario usability,
 detection fidelity, telemetry, or run-data trust.
 
 The current envelope, `LabResult(success, message, error)`, cannot express that
-distinction. The result is a concept leak: the core orchestrator knows a step
-degraded, but the CLI/API/web surfaces mostly see a success boolean plus log
-warnings. Automation then has to scrape text or trust a startup that may be
+distinction. The core knew which step degraded. CLI, API, and web consumers mostly received a success Boolean and log warnings instead of structured readiness. Automation then has to scrape text or trust a startup that may be
 missing important evidence-producing services.
 
 Relevant incumbents already exist:
@@ -39,9 +43,7 @@ Relevant incumbents already exist:
 
 ## Decision
 
-Startup partial readiness must be represented as a first-class lifecycle result
-contract in the Python control plane, not as ad hoc warning text in individual
-steps.
+Partial readiness needs a first-class Python lifecycle result. Individual warning strings are not a substitute for that shared contract.
 
 The canonical structured contract belongs in `src/aptl/core/lab_types.py` and
 is then projected into API schemas, CLI output, and web types. Do not create a
@@ -78,9 +80,7 @@ security state inside the Compose-managed `wazuh-indexer-data` volume. Docker
 health only proves that the HTTP listener responds; it is not proof that the
 current `.env` credentials match the live security database.
 
-When the indexer auth probe fails with HTTP 401 while the indexer container is
-running/healthy, lab startup should emit a specific structured diagnostic on
-the existing `wait_for_services/wazuh_indexer` surface. The operator action
+A healthy running Indexer can still reject authentication with HTTP 401. Startup should report that condition through `wait_for_services/wazuh_indexer`. The operator action
 should point to the existing clean-state recovery path (`aptl lab stop -v` or
 `aptl lab start --clean`) rather than introduce a second volume-reset workflow.
 The normal start path must not mutate the persisted Wazuh security database,
@@ -91,18 +91,12 @@ Any probe that handles `.env` credentials must satisfy ADR-029: no password in
 process argv, logs, exception text, API envelopes, or diagnostics. If the
 existing readiness helper cannot distinguish HTTP status safely, extend the
 shared readiness / curl-safe boundary instead of adding one-off raw `curl`
-subprocesses. If a future credential fingerprint is stored to warn before live
-startup, it must be advisory, non-reversible, versioned service metadata under
-ignored state (for example `.aptl/`) and never a replacement for the live auth
-probe.
+subprocesses. A future credential fingerprint must be advisory, non-reversible, and versioned under ignored state. It cannot replace the live authentication probe.
 
 ### Amendment: Wazuh Readiness Is Startup-Fatal
 
 Issue #1002 reclassifies Wazuh indexer and manager API readiness from a
-telemetry-impacting warning to a fatal startup failure. A scenario that selects
-the `wazuh` profile uses Wazuh to meet its goals: without the SIEM, detection
-and evidence collection do not work, so a lab that starts without it is not
-usable for that scenario. This supersedes the non-fatal classification of the
+telemetry-impacting warning to a fatal startup failure. A scenario that selects Wazuh depends on its SIEM behavior. Startup without required detection and evidence collection is unusable for that scenario. This supersedes the non-fatal classification of the
 Wazuh readiness wait in the original decision and the `degraded_usable`
 outcome of the persisted-credential amendment above. The #623 credential
 diagnosis and its `aptl lab stop -v` recovery guidance remain, but they now
@@ -115,9 +109,7 @@ The policy is the same on every path that starts Wazuh:
   single authority. It fails the realization closed and records boolean
   `authenticated_readiness` evidence. Lab startup does not authenticate that
   service again.
-- For a Wazuh service the backend did not prove, such as one in a scenario that
-  declares no Wazuh generated artifacts, the lab `wait_for_services` step polls
-  it under the same fail-closed policy. Both paths probe the controller's
+- The lab readiness step polls any required Wazuh service not already proven by the backend. The same refusal policy applies without declared generated artifacts. Both paths probe the controller's
   published loopback ports, which is sound because `aptl lab start` refuses
   the SSH-remote backend before any container starts.
 - Each path polls within one bounded budget and does not probe again after the
@@ -195,10 +187,7 @@ reachability, MCP build, SOC seeding, and snapshot capture.
   add unvalidated config flags, environment-variable bypasses, or a second
   config schema.
 - Redact diagnostics before they cross CLI, API, log, telemetry, snapshot, or
-  persistence boundaries. Diagnostic details may name a step, component, path,
-  container, or service, but must not include `.env` values, API keys, bearer
-  tokens, cookies, private keys, generated config contents, or full command
-  lines containing credentials.
+  persistence boundaries. Diagnostics can name steps, components, paths, containers, or services. They must exclude secret values, generated configuration contents, and credential-bearing commands.
 
 ## Security Layers
 

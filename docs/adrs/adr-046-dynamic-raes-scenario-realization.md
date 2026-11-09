@@ -12,6 +12,14 @@ accepted (amended 2026-10-31)
 
 2026-10-31
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [realization Reference](../components/node-realization.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 ADR-035 adopted RAES SDL as APTL's scenario authoring surface and wired APTL in
@@ -20,12 +28,7 @@ compiles an authored SDL document into a typed `RuntimeModel`, plans a composite
 `ExecutionPlan` (provisioning, orchestration, evaluation), and applies it
 against APTL's registered `RuntimeTarget`.
 
-ADR-035 also drew a Parity Inventory Boundary that named `docker-compose.yml`
-and the `DeploymentBackend` inventory methods as the canonical source for
-topology, profiles, networks, static IPs, hostnames, volumes, health checks,
-published ports, and service dependencies. That framing was correct for the
-cutover: APTL realized one scenario (TechVault), and the compose file was both
-the realization vehicle and the de facto topology authority.
+ADR-035 originally treated Compose and deployment inventory as topology authority. That covered profiles, networks, addresses, names, volumes, health, ports, and dependencies. The cutover then realized one TechVault scenario. Compose was both its transport and its effective topology source.
 
 That framing no longer holds. APTL now realizes a compiled RAES `ExecutionPlan`
 whose `RuntimeModel` carries networks, node deployments, feature bindings,
@@ -45,9 +48,7 @@ open-taxonomy sentinel that a backend may satisfy loosely. The planner gates
 the manifest's declared realization support against each requirement through
 `realization_support_diagnostics` (`raes_processor/planner.py:957`).
 
-APTL must turn that compiled plan into a running range without reintroducing a
-second topology authority, a second SDL, a duplicate compose parser, or raw
-Docker calls. The owners that already exist are the ones this decision builds
+LilRAE must realize the compiled plan through existing typed deployment owners. It must not add another topology authority, SDL, Compose parser, or raw Docker path. The owners that already exist are the ones this decision builds
 on, not new abstractions.
 
 ## Decision
@@ -120,28 +121,16 @@ networks, participant action contracts, observation boundaries, and evaluator
 evidence surfaces. It does not call Docker, read runtime container state, branch
 on a scenario name, or construct backend argv.
 
-The driver stage is the `DeploymentBackend` boundary from ADR-037. Any new
-realization operation must be a narrow typed method on `DeploymentBackend` and
-implemented by both local and SSH Compose backends using their existing runner,
-timeout, project-name, label-filtering, and error-envelope behavior. Do not add
+The driver stage is the `DeploymentBackend` boundary from ADR-037. A new realization operation needs a narrow typed `DeploymentBackend` method. Local and SSH implementations must reuse runner, timeout, project, labels, and error contracts. Do not add
 a generic `docker(args)`, `host_run(args)`, or raw Compose-output parser to the
 RAES adapter.
 
 Participant action realization must be compiled-artifact driven. The existing
 `DEFAULT_PARTICIPANT_ACTIONS` / `PARTICIPANT_ACTION_ADDRESS` TechVault SSH probe
-is not the paper-scenario contract. The `probe-customer-portal-login` action,
-its source participant, target address, command/interaction contract, success
-classification, disclosed observation boundary, participant snapshot entries,
-and shared-state scope must come from the compiled SDL/runtime artifacts.
+is not the paper-scenario contract. Compiled SDL and runtime artifacts must supply `probe-customer-portal-login` and its actor, target, interaction, result classification, disclosure, snapshot, and shared-state scope.
 Scenario identity may select the scenario file; it must not select behavior.
 
-Wazuh evidence for the paper action is evaluator-only evidence. It may be made
-available through `AptlEvaluator`, `RuntimeSnapshot`, and `LocalRunStore`, but
-it must not be exposed as participant-visible task context or participant
-observation-boundary content, and it must not claim detection quality. Boundary
-checks must prove the participant path reaches the DMZ portal while the internal
-DB and Wazuh/evaluator surfaces are absent from the participant-visible
-workbench/task context.
+Wazuh evidence for the paper action is evaluator-only evidence. Evaluator-only evidence may use `AptlEvaluator`, `RuntimeSnapshot`, and `LocalRunStore`. It must not enter participant task context or disclosed observations, or claim detection quality. Boundary verification must show that the participant reaches the DMZ portal. Internal database, Wazuh, and evaluator surfaces must remain absent from its disclosed context.
 
 Non-secret realization knobs continue to bind through strict `AptlConfig`
 (ADR-025). Secret-bearing runtime values continue to bind through `EnvVars`,
@@ -151,9 +140,7 @@ writers or `RangeSnapshot.to_dict()` so path validation and redaction stay at
 the existing serialization boundaries.
 
 The extensibility parameter is the typed realization spec, not the paper
-scenario name. Future scenarios should be able to vary participant source node,
-target service, network boundary, evaluator-only evidence source, and backend
-project name without editing a paper-scenario branch.
+scenario name. Other scenarios should vary source nodes, services, network boundaries, evaluator sources, and project names through compiled input. They should not need a paper-scenario code branch.
 
 ## Paper Scenario Evidence Modeling Addendum
 
@@ -191,21 +178,13 @@ lowers through the existing typed content realization path to a registered,
 project-scoped backing volume. Adjudication prose that is not actually placed is
 not content and must not be relabeled as an evidence requirement.
 
-The participant projection is a security boundary, not descriptive prose. Raw
-Wazuh data, database or Wazuh endpoint identities, backend commands, evaluator
-notes, and negative-check internals must not appear in participant-visible
-output or in snapshot fields marked observable/disclosed. Evaluator evidence may
+The participant projection is a security boundary, not descriptive prose. Disclosed participant output and snapshot fields must exclude raw Wazuh data, private endpoints, backend commands, evaluator notes, and negative-probe internals. Evaluator evidence may
 be referenced from the observation boundary as `evidence_only`; its payload
 remains behind the existing run-record redaction and persistence boundaries.
 
-The static gate must prove the whole content surface, not only the three removed
-datasets: every remaining paper-scenario `content-placement` lowers to a typed
-`DeploymentContentRealization`, and interpretation emits no
-`aptl.provisioner.content-placement-rejected` diagnostic. The gate also asserts
+The static gate must cover all remaining paper content placements. Each must lower to `DeploymentContentRealization` without `aptl.provisioner.content-placement-rejected`. The gate also asserts
 the authored evidence requirements and observation-boundary projection through
-the parsed RAES models. It must not special-case the scenario in the content
-resolver, widen manifest dataset support, or treat the absence of a planner
-diagnostic as proof of backend realization.
+the parsed RAES models. It must not special-case the scenario or widen dataset support. Absence of a planner error does not prove native realization.
 
 The extensibility seams are the map-keyed RAES evidence requirement (parameterized
 by source, scope, boundary/window, channel, and handling expectations), the
@@ -252,10 +231,7 @@ Image realization has two valid outcomes:
   with a diagnostic.
 
 The image trust policy is enforced at the realization boundary before any pull,
-build, tag, or compose start can use the image. Policy is a non-secret
-first-party concern: if it becomes configurable, it belongs in strict
-`AptlConfig`; otherwise it may be a narrow code-owned policy object passed into
-the interpreter/driver seam. It must not be hidden in `.env`, Compose labels, a
+build, tag, or compose start can use the image. Configurable non-secret policy belongs in strict `AptlConfig`. A fixed policy may instead use a narrow code-owned object at the interpreter/driver boundary. It must not be hidden in `.env`, Compose labels, a
 scenario-name branch, or a backend-specific allowlist.
 
 All image side effects route through `DeploymentBackend`. APTL adapter code may
@@ -265,17 +241,12 @@ it must not call `docker pull`, `docker build`, `docker tag`, or
 runner, timeout, project-name, logging, redaction, and error-envelope behavior
 defined by ADR-037.
 
-Rejection is a structured diagnostic, not a raw backend error. Diagnostics may
-name the node address, policy reason code, and non-secret policy rule id, but
-must not echo an untrusted image reference, build arg value, registry
-credential, rendered Dockerfile text, raw backend stderr, or `.env` value. Use
+Rejection is a structured diagnostic, not a raw backend error. Diagnostics may name a node, reason code, or non-secret rule ID. They must exclude image inputs, build values, registry secrets, rendered Dockerfiles, raw errors, and environment values. Use
 the existing `aptl.backends.raes_diagnostics.diagnostic()` and
 `render_raes_diagnostics()` path so redaction and RAES operation-status
 contracts stay intact.
 
-Realization evidence is non-secret identity and provenance only: resolved image
-digest/ref, pull-or-build mode, source name/version, provenance references,
-instruction/layer digests when safe, and policy decision metadata. Persist it
+Realization evidence contains non-secret identity and provenance. Permitted examples include resolved image identity, acquisition mode, source version, provenance references, safe digests, and policy decisions. Persist it
 through `AptlRealization.details()`, `ApplyResult.details`, `LocalRunStore`, and
 `RangeSnapshot.to_dict()` as appropriate. Do not create a second run record or
 store registry credentials, build secrets, raw environment values, or rendered
@@ -284,16 +255,9 @@ secret-bearing config.
 ## Network Realization Addendum
 
 Issue #575 realizes networks and node attachments from the compiled RAES
-provisioning plan. The source of truth is `NetworkRealization` plus each
-realized node's infrastructure links and declared static addresses; the
-hand-authored `docker-compose.yml` networks are only compatibility input for
-curated/profile-backed scenarios.
+provisioning plan. `NetworkRealization`, node infrastructure links, and declared static addresses own topology. Hand-authored Compose networks are compatibility inputs only for their curated paths.
 
-Network side effects are backend responsibilities. The APTL RAES adapter may
-extend `DeploymentRealizationSpec` with a narrow typed attachment shape when
-the existing node/network tuples cannot preserve the authored
-network-to-address relationship, but it must not create a second SDL model, a
-second Compose topology parser, or an argv passthrough. Docker Compose and SSH
+Network side effects are backend responsibilities. The adapter may add a typed attachment to `DeploymentRealizationSpec` when existing tuples lose address relationships. It must not add another SDL, topology parser, or argument passthrough. Docker Compose and SSH
 Compose must implement the same typed backend operation through their existing
 runner, timeout, project-name, label-filtering, logging, redaction, and
 `LabResult` / `BackendTimeoutError` behavior.
@@ -301,36 +265,23 @@ runner, timeout, project-name, label-filtering, logging, redaction, and
 The backend must materialize each declared network with the authored CIDR,
 gateway, and `internal` flag when those values are present. `internal: true`
 maps to Docker's internal network semantics and is the dynamic-scenario parity
-for SAF-002. An authored `internal: false` is an explicit egress-allowed
-network; an omitted value is backend default and must not be silently converted
-into egress allowed when SEM-218 marks the concern exact or constrained. Docker
-network names must remain project-scoped and collision-resistant, and
-backend-created networks must carry the same project label used by
-`host_list_lab_networks()` so snapshots and cleanup do not leak across shared
-daemons.
+for SAF-002. Authored `internal: false` permits egress.
+
+Omission selects a backend default. That default must not silently widen an exact or constrained SEM-218 network concern. Backend network names must be project-scoped and collision-resistant.
+
+Created networks need the project label used by `host_list_lab_networks()` so inventory and cleanup stay scoped.
 
 Static addresses are per attachment, not per node. Flattening
 `static_addresses` loses which network owns which address and breaks
 multi-homed nodes such as `wazuh-manager`, `suricata`, `dns`, `webapp`, and
-`kali`. The typed deployment input must preserve `(node, network, address)`
-provenance so the backend can call `docker network connect --ip ...` (or the
-provider equivalent), participant binding can resolve service hosts from the
-realized topology instead of stale Compose IPs, and run evidence can explain
-which authored link produced each address.
+`kali`. Typed input must preserve node, network, address, and authored-link provenance. Backend attachment, participant endpoint resolution, and evidence must use that realized relationship.
 
 APTL relies on RAES parser/compiler validation for SDL shape and SEM-218
-explicitness. Backend-side validation is limited to provider safety and
-faithful realization: parse CIDRs, gateways, and static IPs with typed IP
-parsers; reject gateways or static addresses outside their declared network;
-reject duplicate addresses on a network; reject ambiguous normalized network
-names; and fail before side effects when an exact authored value cannot be
-honored. Rejections are RAES diagnostics via
+explicitness. Provider validation parses typed CIDRs, gateways, and addresses. It rejects out-of-network or duplicate addresses and ambiguous normalized names. Unsupported exact values fail before effects. Rejections are RAES diagnostics via
 `aptl.backends.raes_diagnostics.diagnostic()` / `render_raes_diagnostics()`,
 not raw Docker stderr, a new exception hierarchy, or English output scraping.
 
-Network realization evidence is non-secret topology data: authored network
-address, backend network name, CIDR, gateway, internal flag, node attachment,
-static IP, selected backend, and non-secret provenance rule. Persist it through
+Network evidence contains non-secret topology and provenance. Fields cover authored and backend identity, CIDR, gateway, internal policy, attachments, static addresses, and backend selection. Persist it through
 `AptlRealization.details()`, `ApplyResult.details`, `LocalRunStore`, and
 `RangeSnapshot.to_dict()` as appropriate. Do not store raw backend stderr,
 rendered Compose overrides containing unrelated config, `.env` values, or
@@ -350,17 +301,12 @@ reimplement phase ordering and provenance attachment.
 The provisioner's returned `RuntimeSnapshot` must describe backend-observed
 realization. `snapshot_after_apply()` is only the snapshot assembler; neither a
 planned resource payload, a successful lowering, nor a successful materializer
-call is evidence of runtime state. A resource may enter the successful snapshot
-only after the deployment backend has started and inspected the concrete
-project-scoped resource and verified every concern the snapshot claims. Backend
+call is evidence of runtime state. A successful snapshot requires backend startup and inspection of the concrete project resource. Every claimed concern needs verified evidence. Backend
 inspection continues through typed `DeploymentBackend` operations; the RAES
 adapter must not call Docker or parse Compose output directly.
 
 Issue #692 makes that rule explicit for every SEM-218 concern in
-`raes_processor.semantics.realization.CONCERN_PAYLOAD_PATH`. The existing
-`aptl.backends.raes_observation.observe_realization()` boundary owns the
-translation from backend evidence to concern values; APTL must not copy the
-registry, derive a second concern schema, or read a concern back from the plan:
+`raes_processor.semantics.realization.CONCERN_PAYLOAD_PATH`. `aptl.backends.raes_observation.observe_realization()` owns translation from native evidence to concern values. LilRAE must not duplicate the registry or schema, or substitute planned values:
 
 - `node-type` is disclosed only after a concrete, project-owned backend object
   of the corresponding kind is observed: a project-labelled container for
@@ -395,18 +341,14 @@ Service concepts must remain distinct while they pass through the existing
   container port, and transport protocol). It is not a Compose service name, a
   process-start command, or a host publish.
 - `runtime.health.status` is a required observed state. It is not a healthcheck
-  command. A mapped image or Compose service must provide the actual healthcheck;
-  if `healthy` is required and the backend reports no healthcheck, realization
-  fails rather than treating `running` as equivalent.
+  command. The realized service must supply any required healthcheck. A running service without a healthcheck cannot satisfy `healthy`.
 - `runtime.network.published_ports` owns host exposure and preserves host IP,
   host port, container port, and transport protocol as separate fields. Do not
   infer host publishing from `Node.services` or hardcode published ports in the
   endpoint registry. Runtime evidence comes back through backend inventory and
   the existing `ContainerSnapshot.ports` normalization.
 
-Starting, waiting for, and inspecting declared services belongs inside the
-typed deployment realization operation so a successful `LabResult` means the
-declared service topology is running and its required healthchecks have passed.
+Typed realization owns service startup, waits, and inspection. A successful `LabResult` must mean declared topology is running and required healthchecks passed.
 The later lab-orchestration readiness and live-validation gates remain
 independent operational evidence; they must not be the first place a failed
 realization is discovered. Reuse the backend runner, project name and labels,
@@ -427,78 +369,53 @@ rejected when unavailable rather than silently remapped.
 Realization provenance uses the RAES `RealizationProvenanceEntry` contract and
 its `author-declared`, `processor-derived`, and `backend-realized` vocabulary.
 APTL must not define a parallel provenance enum or infer processor provenance
-from field values. If the selected RAES dependency does not carry classifier
-provenance through `CompiledRealizationRequirement` into the runtime disclosure
-gate, that dependency contract must be updated before APTL can claim
-processor-derived provenance support.
+from field values. Processor-derived provenance requires support from `CompiledRealizationRequirement` through runtime disclosure. The dependency contract must supply that path before LilRAE claims support.
 
-The extensibility parameter is the per-node typed service binding: RAES resource
-address, backend service/container identity, container endpoint, optional host
-publish, required health state, and non-secret provenance reference. The next
-scenario can vary ports, protocols, host exposure, and health expectations by
-changing compiled input, without editing a scenario-name branch, the endpoint
-registry, or a second Compose parser.
+The extension point is a typed node/service binding. It joins resource address, backend identity, container endpoint, optional publication, required health, and non-secret provenance. Another scenario can vary ports, protocols, exposure, and health through compiled input. It does not need scenario branches, registry duplication, or another Compose parser.
 
 ## Heavy Stateful Service Realization Addendum
 
 Issue #579 applies the interpret-then-driver boundary to Wazuh manager and
 indexer, including their generated certificate material, rendered manager
 configuration, and mutable persistent volumes. These concerns form one
-addressed dependency graph but remain distinct resource concepts. Generated
-configuration is not content placement, a certificate/key bundle is not an
-ordinary copied file, and an empty mutable named volume is not a content seed.
+addressed dependency graph but remain distinct resource concepts. Generated configuration, certificate bundles, and empty mutable volumes are distinct resources.
+
+Ordinary content placement cannot substitute for their lifecycle contracts.
 RAES 0.21 left an important boundary ambiguous:
 `RuntimeConfiguration` describes `Node.runtime` as declarative required state,
 while `RuntimeMount` and its stability/sensitivity vocabulary describe observed
 runtime facts. APTL must not resolve that ambiguity by interpreting the nested
-node payload as an APTL-local desired-volume schema. The upstream contract must
+node payload as an APTL-local desired-volume schema.
+
+The upstream contract must
 clarify and compile the intended semantics while reusing the existing mount
 vocabulary where it fits.
 
-The released RAES contract remains authoritative. APTL may consume an upstream
-extension of the existing configuration/artifact feature and dependency model,
-but it must not make `metadata`, `x-aptl-*`, scenario-name branches, or a local
-Pydantic mirror authoritative for generated artifacts, consumers, mount
-destinations, sensitivity, lifecycle, or provenance. If the selected RAES
-release cannot compile those facts into addressed realization resources and
-SEM-218 requirements, the gap is blocking: file and fix it upstream, consume a
-released version in `pyproject.toml`, and lock its artifact and hash in
-`uv.lock` before advertising or accepting the capability. A sibling checkout
+The released RAES contract remains authoritative. An upstream configuration/artifact extension may supply these facts. Local metadata, `x-aptl-*`, scenario branches, or model copies must not own artifact consumers, destinations, sensitivity, lifecycle, or provenance. Missing compiled resource or SEM-218 support blocks admission. The upstream contract must be fixed and released, then selected and hash-locked before capability acceptance. A sibling checkout
 or an unpinned VCS dependency is not contract evidence.
 
 That gap was resolved upstream by RAES #780/#782 and hardened by RAES #816.
-APTL consumes the published `raes` 1.1.0 release, which provides typed,
-addressed generated-artifact and persistent-volume resources; declared outputs
-and consumers; lifecycle, access, sensitivity, provenance, and dependency
-semantics; SEM-218 realization requirements; backend capability disclosure;
-and pre-dispatch read-only/RWO admission. `pyproject.toml` requires
+The historical implementation selected `raes` 1.1.0. It supplied addressed artifacts and volumes, outputs and consumers, lifecycle, access, sensitivity, provenance, dependencies, SEM-218, disclosure, and pre-dispatch mount admission. `pyproject.toml` requires
 `raes==1.1.0`, and `uv.lock` records the published distribution and
 hashes. The earlier 0.21 limitation remains historical rationale, not an active
 APTL-local schema seam.
 
 `AptlRealization` and `DeploymentRealizationSpec` remain the single translation
-and driver DTO boundaries. They carry typed generated-artifact and
-persistent-volume records derived from compiled RAES resources; they must not
-gain an arbitrary command, shell fragment, generic hook, or provider-specific
-Compose blob. All shape, reference, dependency, controlled-vocabulary,
+and driver DTO boundaries. They carry typed records from compiled resources. Arbitrary commands, shell fragments, generic hooks, and provider-specific Compose blobs must not enter that input. All shape, reference, dependency, controlled-vocabulary,
 capability, and SEM-218 validation stays in RAES. APTL adds only backend-policy
 validation such as provider support, contained output paths, declared output
 completeness, mount safety, project-scoped volume identity, and local/SSH
 materialization feasibility.
 
 The entire addressed prerequisite and service graph is validated before the
-first side effect. The graph must express that certificate/configuration and
-volume prerequisites precede their consumers, the indexer reaches its required
-state before manager startup, and observation follows startup. The current
+first side effect. The graph orders certificate, configuration, and volume prerequisites before consumers. It orders required Indexer readiness before Manager startup, then observation after startup.
+
+The current
 operational scenario's reverse indexer-to-manager dependency is not a boot
-contract and must not be preserved. Retrying a partially completed graph must
-converge: generated artifacts are verified before reuse, named volumes survive
-ordinary restart, and project teardown with volume removal owns destructive
-cleanup. Future replace/delete behavior carries RAES `ChangeAction`; absence is
-not deletion intent. The orchestration must select compatibility ownership or
-typed-realization ownership from one validated graph before the existing
-generic credential, certificate, and container-start steps mutate anything; it
-must not compile again or introduce a second Wazuh lifecycle orchestrator.
+contract and must not be preserved. Retry must converge on verified generated artifacts and existing named volumes. Ordinary restart preserves volumes; volume-removing project teardown owns destructive cleanup.
+
+Future replace/delete behavior carries RAES `ChangeAction`; absence is
+not deletion intent. One validated graph selects compatibility or typed ownership before generic mutation steps. Startup must not recompile or add a separate Wazuh lifecycle owner.
 
 The deployment backend owns every side effect and readback. Configuration
 realization reuses ADR-028's checked-in immutable template, fixed contained
@@ -506,23 +423,17 @@ output under `.aptl/`, placeholder/env binding, symlink rejection, permissions,
 and atomic replacement. Certificate realization reuses the existing Wazuh
 generator and `config/certs.yml` subject/SAN contract plus the isolated
 generator-project cleanup, but invokes it through the ADR-037 backend runner.
-Success requires the complete declared output set, key/certificate pairing,
-chain and subject/SAN validation, and restrictive host permissions; the mere
-presence of `root-ca.pem` or a warning after failed permission repair is not
-success. Permissions must be compatible with the non-root container consumer:
-the existing private parent-directory plus read-only, container-readable file
-pattern is valid when verified, while silent or warning-only permission repair
-is not. Wazuh's chain remains separate from ADR-034's lab SOC CA.
-The generator may emit a larger administrative bundle, but the realization
-mount unit is each artifact's declared output set, not the generator directory.
+
+Certificate success needs complete outputs, matching keys, valid chain and subjects/SANs, and correct permissions. One present file or a permission-repair warning cannot prove success. Permissions must support the actual non-root consumer.
+
+A private parent and container-readable file are valid only after verification. Warning-only permission repair is insufficient. Wazuh trust stays separate from the ADR-034 SOC CA.
+
+An administrative generator bundle can be larger than each artifact's declared mount-output set.
 Indexer, manager, and dashboard therefore receive separate read-only CA and
 service-key subsets. Administrative and cross-service private keys remain
 unmounted from long-lived consumers.
 
-Persistent Wazuh storage reuses project naming, labels, runner, convergence,
-and safe mount conventions from the deployment and named-volume seed paths,
-but it is not modeled as `NamedVolumeSeed` or reported through
-`BackendSeedError`. Volume identity, consumer, container destination, access
+Persistent storage reuses project names, labels, runners, convergence, and safe mounts. It is not `NamedVolumeSeed` content and must not report through `BackendSeedError`. Volume identity, consumer, container destination, access
 mode, and lifecycle come from the typed graph. Names are stable within the
 project, never global or random per start, and the driver verifies the
 container's observed mounts after startup. Captured index contents and mutable
@@ -531,81 +442,69 @@ manager state are neither SDL content nor reproducibility evidence.
 Compose remains a realization vehicle, not an authority for Wazuh identity,
 prerequisites, mounts, volumes, dependency order, or evidence. The dynamic path
 must not receive acceptance credit by selecting the hand-authored `wazuh`
-profile or matching an existing service block. A compatibility service may
-remain temporarily for other curated startup paths, but manager/indexer
-realization must derive and drive their effective service definitions from the
-typed graph. Generated mount sources and overrides must pass the canonical bind
-and path checks after generation and before `compose up`; the earlier static
-`_step_check_bind_mounts` scan of the base file does not cover later overrides.
+profile or matching an existing service block. Compatibility services may temporarily serve other curated paths.
+
+Manager and Indexer effective definitions must still come from the typed realization graph. Generated sources and overrides need canonical bind/path validation before Compose startup. A prior base-file scan cannot cover overrides created later.
+
 The fully merged Compose model must also be inspected before startup. A partial
 overlay is insufficient because undeclared base service fields survive Compose
 merge and would leave the hand-authored service authoritative. The generated
 definition must either stand alone or deliberately reset/override every owned
-field. APTL uses service-level `!override` replacement and rejects Docker
+field.
+
+APTL uses service-level `!override` replacement and rejects Docker
 Compose versions older than 2.24.4 before artifact mutation, matching the
 [Compose merge contract](https://docs.docker.com/reference/compose-file/merge/).
 Effective-model inspection must preserve
 secret references or redact resolved values in memory; it must never print,
 log, or persist a fully interpolated model containing credentials. The generic
 lab-start certificate and manager-config steps must not also own artifacts
-selected by typed realization. Suppression is keyed by the exact admitted
-artifact address, provider, consumer service, and destination; the mere
-presence of the same generator kind in an authored scenario cannot suppress an
-unrelated compatibility step. The effective model and any ancillary override
+selected by typed realization.
+
+Suppression matches exact artifact, provider, consumer, and destination. An authored artifact of the same generator kind cannot suppress an unrelated compatibility step. The effective model and any ancillary override
 use fixed paths under `.aptl/realization/`, reject symlinked path chains, and
-are replaced atomically; callers never supply an output path. Stop/restart must
-retain the same project and effective-model identity. In particular, `stop -v`
-must remove the dynamic volumes through that model or an equivalently
-project-scoped, label-validated backend cleanup; running `down -v` against only
-the base file must not orphan state that the realization graph created.
+are replaced atomically; callers never supply an output path.
+
+Stop/restart must
+retain the same project and effective-model identity. `stop -v` must remove dynamic volumes through the admitted model or project-scoped, label-validated cleanup. Base-file-only teardown must not orphan realized state.
 
 Local and SSH backends preserve the same contract. A locally rendered file is
 not available to a remote Docker daemon merely because `DOCKER_HOST` is set.
 Until the backend has an explicit contained remote-materialization operation,
-an artifact-consuming remote realization fails closed before mutation. Secrets,
-private keys, rendered config, and resolved credential values never enter RAES
-SDL, realization details, generated Compose overrides, process argv, backend
-stderr hints, diagnostics, logs, API error envelopes, snapshots, telemetry, or
-run records. Compose receives secret references through the existing env
+an artifact-consuming remote realization fails closed before mutation.
+
+Secret values and private keys must stay outside SDL, realization details, generated overrides, arguments, errors, diagnostics, logs, snapshots, telemetry, and run records. Compose receives secret references through the existing env
 boundary rather than resolved values. Readiness and evidence collection resolve
 the existing `EnvVars` credentials at the last responsible boundary and pass
-authentication through `curl_safe`'s permissioned header file. A collector's
+authentication through `curl_safe`'s permissioned header file.
+
+A collector's
 hard-coded/default credential tuple is test convenience, not an admissible live
 gate or evaluator credential source.
 
-A successful snapshot is backend-observed, not a copy of the plan. It records
-only non-secret identities and evidence such as addressed step status,
-project-scoped volume identity and mount destination/lifecycle, configuration
-digest, public-certificate fingerprint and validated SAN/chain status, service
-health, and authenticated readiness. Static validation proves RAES
+A successful snapshot is backend-observed, not a copy of the plan. It records non-secret evidence: addressed status, scoped volume identity and lifecycle, configuration digest, public-certificate identity and validation, health, and authenticated readiness. Static validation proves RAES
 parse/compile/plan/SEM-218 lowering and typed backend inputs without Docker.
+
 `raes_observation.py` must handle each new resource type explicitly; falling
 through to content/account placement observation is not valid. A resource is
 not ready until provider readback has verified its artifact or mount claims and
 the manager/indexer authenticated readiness contract.
-The clean live gate remains the canonical runtime proof and must require both
-authenticated indexer/manager readiness and an actual Wazuh alert retrieved by
-the Wazuh collector. Container health, an evaluator condition that merely sees
-a ready node, declared `evidence_requirements`, or a Suricata-only event is not
-Wazuh evaluator evidence. The alert must be observed after the bounded trigger
-and correlated to that trigger by non-secret event identity; an arbitrary alert
-count from stale or unrelated index contents is not evidence. Only a bounded,
-redacted summary (for example rule/source identity, event time, correlation or
-action identity, and digest) may enter run artifacts. The existing
-`AptlEvaluator` result/history contracts must reflect that observation after the
-action and evidence probe; the current pre-action, node-readiness-derived
-condition result cannot receive acceptance credit, and a parallel Wazuh
-evaluator DTO or workflow is not introduced.
+The clean live gate requires authenticated Indexer and Manager readiness.
 
-The extensibility seam is a RAES-compiled, address-keyed realization resource
-graph parameterized by provider kind, target, dependencies, declared non-secret
-inputs and secret-reference names, output identities and consumers, sensitivity,
-mount target/access, persistence lifecycle, and provenance. Certificate
+It also requires an actual Wazuh alert retrieved through the collector. Container health, an evaluator condition that merely sees
+a ready node, declared `evidence_requirements`, or a Suricata-only event is not
+Wazuh evaluator evidence. The alert must follow and correlate with the bounded trigger through non-secret event identity.
+
+Stale or unrelated alert counts cannot satisfy that evidence. Only a bounded,
+redacted summary (for example rule/source identity, event time, correlation or
+action identity, and digest) may enter run artifacts. `AptlEvaluator` results and history must reflect post-action observations.
+
+Pre-action readiness cannot supply acceptance evidence. No parallel Wazuh evaluator model or workflow is added.
+
+The extension point is the compiled addressed-resource graph. It includes provider, target, dependencies, safe inputs, secret references, outputs, consumers, sensitivity, mount access, persistence, and provenance. Certificate
 subjects/SANs/consumers, config renderer/template/output/mount, and volume
 identity/destination/lifecycle remain typed parameters rather than Wazuh
-branches. A later stateful service can add SDL data and a bounded provider
-binding without editing the canonical schema, introducing a generic workflow
-engine, or copying Wazuh orchestration.
+branches. Another stateful service can add declarations and a bounded provider binding. It must not duplicate the canonical schema, Wazuh orchestration, or a workflow engine.
 
 ## Account and Identity Realization Addendum
 
@@ -613,23 +512,22 @@ Issue #577 replaces the account-placement compatibility proof introduced for
 the TechVault operational scenario with real backend-owned account
 materialization. Parsing an account placement, carrying it in
 `DeploymentRealizationSpec.accounts`, or finding the same username in
-`containers/ad/provision-users.sh` is not realization. The declared groups and
-account attributes must be applied to the resolved target through
-`DeploymentBackend`, and backend success must include a read-after-write check
-of the non-secret declared state.
+`containers/ad/provision-users.sh` is not realization. `DeploymentBackend` applies declared groups and account attributes to the resolved target. Success requires non-secret read-after-write verification.
 
 The authoritative input remains the RAES `account-placement` resource and the
 compiled SEM-218 account-feature requirements. APTL must consume the released
 RAES account-feature extraction, capability-envelope, explicitness, and
 realization-provenance contracts. It must not add a local account schema, a
-local feature classifier, or a second explicitness model. In particular,
+local feature classifier, or a second explicitness model.
+
+In particular,
 `raes_backend_protocols.account_features.provisioner_account_features` is the
 canonical mapping from an account spec to governed feature terms. APTL's
 manifest may advertise only the terms its backend materializes and verifies;
 an unsupported term is a blocking RAES diagnostic, not a silently ignored
-field. `password_strength` is non-secret policy metadata, not a credential. It
-may be claimed as realized only when the consumed RAES contract governs it and
-the target provider can enforce it without disclosing the resulting secret.
+field. `password_strength` is non-secret policy metadata, not a credential.
+
+It may be claimed only under the consumed RAES contract. The target provider must enforce it without disclosing the resulting secret.
 
 `DeploymentAccountRealization` remains the single APTL backend-facing account
 record. It carries the placement address, target-node address, governed
@@ -646,44 +544,32 @@ service/provider kind to its account materializer. The first supported binding
 is the Samba AD service on the realized `ad` node. It is not a TechVault or
 scenario-name branch. An account targeting an ambiguous node or a service with
 no registered account materializer fails validation before account side
-effects. A future POSIX, Windows-local, or directory-service provider adds one
-binding and provider implementation while consuming the same typed placement;
-it does not widen `container_exec` into a generic provisioning API.
+effects. Another POSIX, Windows-local, or directory-service provider adds a binding and implementation for the same placement. It must not turn `container_exec` into generic provisioning.
 
 Account realization is a post-start operation because the target identity
-service must be running. The Compose backend starts the selected services,
-completes topology reconciliation, waits for the target provider's bounded
-readiness condition, then applies the account batch before returning a
-successful `LabResult`. The full batch is provider-validated before the first
+service must be running. The backend starts services and reconciles topology, then waits for bounded provider readiness. It applies the account batch before returning success.
+
+The full batch is provider-validated before the first
 account mutation. Application is deterministic and convergent: ensure declared
 groups, create or update the user, reconcile every supported explicitly
 declared attribute, and verify the resulting non-secret state. A retry after a
 timeout or partial failure must converge without duplicate users/groups.
-Existing undeclared accounts and memberships are not deleted by this issue;
-future delete support must carry RAES `ChangeAction` through the typed boundary
-rather than infer desired deletion from absence.
+
+This issue does not delete undeclared accounts or memberships. Later deletion must carry RAES `ChangeAction`; absence alone cannot authorize it.
 
 Provider validation is defense in depth, not a duplicate SDL validator. RAES
 owns shape, reference, controlled-vocabulary, capability, and SEM-218 checks.
-Before mutation, the account materializer additionally rejects provider-invalid
-or ambiguous identities, duplicate declarations with conflicting attributes,
-control characters/NULs, unsafe lengths or provider syntax, and an attribute
-the selected provider cannot faithfully apply. Values travel as structured
-arguments or provider API data, never interpolated shell. Identity values such
-as usernames, group names, mail addresses, and SPNs are not control-plane
-secrets, but untrusted values still must not become shell syntax, option names,
-paths, or unbounded log fields.
+Pre-mutation validation rejects conflicting duplicates, invalid or ambiguous identities, control characters, unsafe lengths or syntax, and attributes the provider cannot faithfully apply. Values travel as structured
+arguments or provider API data, never interpolated shell. Usernames, groups, mail addresses, and SPNs are not control-plane secrets. Untrusted values must still remain outside shell syntax, option names, paths, and unbounded diagnostics.
 
 No plaintext credential crosses the RAES/APTL realization or evidence
 boundary. `DeploymentAccountRealization`, `AptlRealization.details()`,
 `ApplyResult.details`, diagnostics, snapshots, run records, logs, and telemetry
-contain only non-secret identity/policy fields and provenance. Credentials are
-generated or resolved inside the target/provider boundary and are never put in
-Docker/Compose/process argv, environment variables, exception text, raw stderr
-hints, generated Compose overrides, or persisted request/response files. A
-provider API or descriptor/stdin mechanism must be used when a credential is
-needed; invoking a CLI that requires a password as a positional argument is not
-permitted. A failure returns a bounded `LabResult` message naming the placement
+contain only non-secret identity/policy fields and provenance. Credential generation or resolution stays inside the provider boundary.
+
+Secrets must not enter arguments, environments, exceptions, raw errors, overrides, or persisted request/response files. A provider API, descriptor, or stdin carries required credentials. A CLI password positional argument is prohibited.
+
+A failure returns a bounded `LabResult` message naming the placement
 address and stable reason, reusing `BackendTimeoutError` for timeouts and the
 existing RAES diagnostic/error-envelope translation. Do not add an account-only
 exception hierarchy or expose backend stdout/stderr.
@@ -692,16 +578,10 @@ Runtime evidence reuses `snapshot_after_apply`, RAES
 `RealizationProvenanceEntry`, `RangeSnapshot.to_dict()`, and `LocalRunStore`.
 Account-feature provenance names the placement, field path, requirement kind,
 explicitness, and author-declared/backend-realized classification; it never
-contains the credential or a derived verifier/hash. Defaults and omitted fields
-must not be reconstructed locally from empty strings or false values: consume
-the upstream explicitness/provenance contract so only the fields the author made
-authoritative are claimed as such.
+contains the credential or a derived verifier/hash. Use upstream explicitness and provenance to distinguish authored fields. Empty strings and false values cannot reconstruct local defaults or prove authored intent.
 
 The static `check_account_provisioner_parity` regex scan is superseded as an
-account-realization authority. The service-owned script may remain a source of
-additional baseline lab fixtures, and the backend must reconcile cleanly when a
-declared account already exists, but script text is neither a schema nor runtime
-proof. Static validation proves RAES parse/compile/plan, capability-envelope,
+account-realization authority. A service script may supply extra baseline fixtures. Reconciliation must handle existing declared accounts, but script text is neither schema nor native proof. Static validation proves RAES parse/compile/plan, capability-envelope,
 SEM-218 lowering, target/provider binding, and typed backend input. The clean
 live gate proves users, groups, memberships, and declared attributes by querying
 the target through `DeploymentBackend` after `aptl lab stop -v && aptl lab
@@ -740,21 +620,14 @@ The manifest therefore advertises `credential_bindings` and `auth_method`.
 ## Credential-Bearing Apply Result Addendum
 
 RAES gives a plan with account credential bindings a closed result contract
-(RAES `specs/sdl/account-credential-bindings.md`, section 6). RAES checks each
-returned entry against the submitted operation, and every returned value must
-equal the plan's. raes 7.0.0 compares the whole payload and keeps the plan's
-entry. raes 8.0.0 (OpenRAE/rae#1640) exempts an observed value at an admitted
-concern path from that comparison and keeps a safe projection of the observed
-value. The provisioner's snapshot follows that contract:
+(RAES `specs/sdl/account-credential-bindings.md`, section 6). RAES compares returned entries with submitted operations. Version 7.0.0 kept the planned payload. Version 8.0.0, under OpenRAE/rae#1640, permits admitted observed concern values and keeps a safe projection. The provisioner's snapshot follows that contract:
 
 - Each entry status names what the backend did with its operation: `applied`,
   or `unchanged` for an unchanged operation. The evaluator reads both, and the
   RAES default `ready`, as a realized node.
 - An unobserved concern that the plan admits at that address (an open,
   constrained or exact authority, or a planned constraint) is still omitted, as
-  the Runtime Service and SEM-218 Execution Addendum requires. If the plan has
-  a value at that path and the snapshot omits it, the entry differs from the
-  plan and RAES refuses the whole result. A credential-bearing start therefore
+  the Runtime Service and SEM-218 Execution Addendum requires. If the plan contains a value that the snapshot omits, the entry differs. RAES then refuses the whole result. A credential-bearing start therefore
   fails unless the snapshot retains every admitted concern that has a plan value.
   Materialization plans retain compiler-generated null and empty-string values
   as absence when the concern's observation contract accepts them, without
@@ -776,18 +649,14 @@ value. The provisioner's snapshot follows that contract:
 
 ### Exception to the #692 rule
 
-The Runtime Service and SEM-218 Execution Addendum says that APTL must not read
-a concern back from the plan, and that an unobserved concern does not fall back
-to the plan. It allows a plan value only in a non-concern field that the RAES
+The earlier Runtime Service and SEM-218 amendment prohibits reading concern values from the plan. Missing observations cannot fall back to planned values. It allows a plan value only in a non-concern field that the RAES
 reconciliation contract requires. This addendum makes one narrow exception at
 concern paths:
 
 - It applies only to a plan with account credential bindings and realization
   authority.
 - It covers only a concern path that the plan closes, or that has no authority
-  at that address. RAES reads no observation there. Its closed-concern check
-  gives the same result whether the value is absent or equal to the plan, and
-  the closed result contract requires the plan's value.
+  at that address. RAES reads no observation there. The historical closed-concern check treated absence and equality alike. Its result contract still required the planned value.
 - There the snapshot keeps the plan's value. That value claims no
   observation: it gets no observation disclosure and no realization
   provenance.
@@ -825,18 +694,10 @@ TechVault startup contract. The operational SDL is the public `aptl lab start`
 target listed in `scenarios/catalog.json`; it does not depend on a deep
 captured TechVault inventory (see the Capture Inventory and Parity-Inventory
 Removal Addendum below—that review-evidence surface has since been removed
-from APTL). The operational SDL must not import or depend on captured
-`runtime-observed:` content,
-`datasets-in-services`, inventory-only filesystem manifests, logs, database
-dumps, screenshots, or runtime state that APTL cannot recreate from source on a
-clean machine.
+from APTL). Operational SDL must not depend on captured runtime state. This includes `runtime-observed:`, `datasets-in-services`, inventory manifests, logs, dumps, screenshots, and unrecreatable state.
 
 The acceptance bar is backend-guaranteed fidelity from authored RAES resources
-through APTL's interpret-then-driver path. Nodes, images, networks,
-attachments, content placements, and account placements must compile through
-RAES, enter `interpret_provisioning_plan`, appear in typed realization details,
-and be either realized by `DeploymentRealizationSpec` / `DeploymentBackend` or
-explicitly rejected by a RAES diagnostic before side effects. A placement that
+through APTL's interpret-then-driver path. RAES must compile addressed nodes, images, networks, attachments, content, and accounts. The interpreter must lower them to typed deployment input or reject them before effects. A placement that
 is merely counted in `AptlRealization.details()` is not dynamic realization.
 
 Content in the honest operational SDL is limited to realizable content, as
@@ -855,33 +716,14 @@ source-artifact mechanisms. Standup-produced keys, certificates, rendered
 configuration, and comparable outputs use RAES generated artifacts. Neither is
 ordinary scenario content.
 
-Do not encode runtime-observed files, generated service config, mutable volume
-state, database rows, index contents, captured package manifests, or arbitrary
-container filesystem trees as operational content. If #576's content
-realization seam is present, `AptlRealization` should lower those RAES
-placements into its canonical typed backend input and the Compose backend
-should reuse existing containment and named-volume/container-copy precedents,
-including `NamedVolumeSeed`, project-scoped volumes, argv-list commands,
-redacted `LabResult` failures, and `BackendSeedError` / `BackendTimeoutError`
-behavior where applicable. If that seam is absent, #689 is blocked or must add
-a narrow typed placement operation to `DeploymentBackend`; it must not add raw
-Docker calls, a second content schema, or a scenario-name special case.
+Operational content must not encode observed files, generated configuration, mutable volumes, database rows, indexes, captured package manifests, or arbitrary container trees. When #576's placement boundary exists, `AptlRealization` should use its typed backend input. Compose should reuse containment, scoped volumes, argument lists, redacted `LabResult`, and applicable seed/timeout errors. Without that boundary, #689 is blocked or needs a typed `DeploymentBackend` placement operation. It must not add raw Docker, another schema, or scenario branches.
 
-Account declarations must be equally honest. Lab fixture accounts may be
-declared only when the clean startup path actually creates or preserves them
-through an existing service-owned provisioning path or a new typed backend
-account-placement operation. They must not rely on post-capture drift. Designed
+Account declarations must be equally honest. Fixture accounts may be declared only when clean startup creates or preserves them. An existing service provider or typed account-placement owner must supply that behavior. They must not rely on post-capture drift. Designed
 weak target credentials are scenario fixture data; operator/control-plane
 secrets remain under `EnvVars`, `.env`, rendered config, and ADR-029 redaction.
-Do not serialize Wazuh, MISP, TheHive, Shuffle, registry, SSH private key,
-cookie, token, hash, or generated enrollment material into the SDL, run
-evidence, diagnostics, or snapshots.
+SDL, evidence, diagnostics, and snapshots must exclude runtime service credentials, registry secrets, SSH private keys, cookies, tokens, hashes, and generated enrollment material.
 
-The manifest honesty rule is strict: APTL may claim `file`, `directory`,
-`dataset`, account, image, or network support only to the extent that the RAES
-planner gate, interpreter, typed backend spec, deployment backend, static tests,
-and live clean-start gate prove that support for the authored TechVault
-surface. A broad `ProvisionerCapabilities` value is not a waiver for a
+Capability claims require evidence across the planner, interpreter, typed specification, backend, static checks, and live clean startup. This applies to content, accounts, images, and networks. A broad `ProvisionerCapabilities` value is not a waiver for a
 no-op interpreter branch.
 
 ## Capture Inventory and Parity-Inventory Removal Addendum
@@ -898,23 +740,14 @@ APTL is a RAES-conformant backend: it keeps only the operational SDL
 (`scenarios/techvault-operational.sdl.yaml`) as the driving contract, with no
 separate capture/parity evidence surface behind it.
 
-The removed capture output is recoverable from git history if ever needed: the
-capture SDL (`scenarios/techvault.sdl.yaml`) and its supporting tree
-(`scenarios/techvault/`, `scenarios/aces.lock.json`) were deleted in PR #745
-(`205e47d^` is the last commit carrying them); the per-asset inventory
-bundles under `docs/raes/inventory/` were deleted in the PR that closes #690
-(its parent commit carries them).
+Git history preserves removed capture sources. PR #745 deleted `scenarios/techvault.sdl.yaml`, `scenarios/techvault/`, and `scenarios/aces.lock.json`; `205e47d^` still contains them. The #690 delivery removed `docs/raes/inventory/` bundles, available in its parent revision.
 
 ## TechVault Full Dynamic Cutover Addendum
 
 Issue #581 closes the remaining compatibility gap for
 `techvault-operational`. The compiled RAES execution graph and the typed APTL
 realization derived from it are the sole deployment authority for the public
-TechVault start path. `docker-compose.yml`, `ComposeProfileIndex`, profile
-selection, `aptl.json` container switches, package discovery, and tests must no
-longer contribute otherwise-undeclared nodes, services, networks, volumes,
-mounts, ports, dependencies, commands, health contracts, or lifecycle identity
-to that path. Configuration may constrain admission or select a registered
+TechVault start path. `docker-compose.yml`, `ComposeProfileIndex`, profile selection, configuration switches, discovery, and tests must not add undeclared runtime resources or lifecycle facts. The admitted graph owns membership and behavior. Configuration may constrain admission or select a registered
 scenario/backend; it is not a second topology language.
 
 Docker Compose remains a backend wire format, not an authored model. The
@@ -929,45 +762,26 @@ input.
 
 ### Admission and ownership boundary
 
-There is one admitted scenario execution per start attempt. After existing env
-and strict config validation, the orchestration path resolves the catalog entry,
-parses, compiles, plans, interprets, and validates once, before any
-scenario-dependent artifact, volume, image, network, content, or account side
-effect. Artifact ownership, host exposure, image preparation, generated model
+There is one admitted scenario execution per start attempt. After environment and strict configuration validation, orchestration resolves, parses, compiles, plans, interprets, and validates once. It must finish admission before scenario-dependent side effects. Artifact ownership, host exposure, image preparation, generated model
 rendering, startup, observation, retry, and run evidence consume that same
 execution-plan identity and typed realization. A helper must not re-plan the
 SDL to decide whether it or typed realization owns a side effect.
 
 The existing RAES models and APTL realization DTOs are the only desired-state
-schemas. Extend `AptlRealization` and `DeploymentRealizationSpec` where a RAES
-compiled field already has runtime meaning; do not introduce an APTL SDL mirror,
-a generic Compose-service DTO, or an untyped Compose fragment/command escape
-hatch. Node `source`, `services`, and `runtime`, compiled networks and
+schemas. Extend typed realization input only for compiled fields with runtime meaning. Do not add local SDL copies, generic service models, Compose fragments, or command escape hatches. Node `source`, `services`, and `runtime`, compiled networks and
 dependencies, content/accounts, generated artifacts, and persistent volumes
 lower through those owners. `Node.services` remains container-facing service
 identity; host exposure remains `runtime.network.published_ports`; observed
 health remains distinct from the authored readiness/healthcheck mechanism.
 
-The released RAES `RuntimeConfiguration` is already the portable declarative
-owner for environment value classification/provenance, mounts, Linux
-capabilities, container entrypoint/command and security settings, namespaces,
-restart/resource policy, and runtime networking. APTL lowers those compiled
+RAES `RuntimeConfiguration` owns portable environment classification, mounts, capabilities, commands, security, namespaces, restart/resources, and networking. Native lowering consumes that contract. APTL lowers those compiled
 fields directly into its existing typed realization boundary. It must not copy
 them into a local service schema, rediscover them from Compose, or let a provider
-binding silently override an authored value. An exact runtime fact that cannot
-be compiled or faithfully lowered is an upstream-contract or backend-capability
-gap and fails admission; it is not filled from the legacy file.
+binding silently override an authored value. An unrepresentable or unrealizable exact fact fails admission. Missing upstream or backend capability cannot be supplied silently by a legacy Compose file.
 
 The generic materialization operations required by ADR-048 are derived driver
-instructions, not another desired-state schema. They may normalize an admitted
-`RuntimeConfiguration` into ordered, typed package, filesystem, identity,
-service-unit, and verification operations, but must retain the owning RAES
-resource address and authored explicitness/provenance and travel through
-`DeploymentRealizationSpec`. They must not copy RAES service-family models,
-invent product-level DTOs, or become a second parser/validator. A narrow internal
-materializer validation error is translated at the interpreter/admission
-boundary into the existing RAES diagnostic and `LabResult` envelopes; it does
-not escape as a new public exception hierarchy.
+instructions, not another desired-state schema. They may lower admitted runtime configuration into ordered typed package, filesystem, identity, service, and verification operations. Resource identity and authored provenance must survive through `DeploymentRealizationSpec`. They must not copy RAES service-family models,
+invent product-level DTOs, or become a second parser/validator. Materializer validation errors become existing RAES diagnostics and `LabResult` failures at admission. They must not create another public exception hierarchy.
 
 A source/provider binding may supply backend mechanics intrinsic to an
 addressed resource, such as generic-substrate distribution, package-repository
@@ -975,40 +789,20 @@ transport, or a provider-owned entrypoint/readiness mechanism. Per ADR-048, it
 may not select an appliance image or inject undeclared scenario topology or
 meaningful node state. Every steady-state container, network, volume, mount,
 publication, and dependency in the effective model must be attributable to an
-addressed compiled resource. A bounded one-shot backend helper is allowed only
-when it is mechanically derived from such a resource, project-labelled,
-lifecycle-owned, represented in evidence, and excluded explicitly from
-steady-state parity. A Compose profile is never permission to start an
+addressed compiled resource. A one-shot helper must derive mechanically from an admitted resource. It needs project labels, lifecycle ownership, evidence, bounds, and explicit exclusion from steady-state parity. A Compose profile is never permission to start an
 undeclared service.
 
-The preflight inventory makes this boundary concrete: 28 of the 30 operational
-TechVault VM nodes currently have no node `source`; the active legacy stack also
-contains `kali-ssh-proxy` and the one-shot `cortex-index-init` without matching
-SDL nodes, and the root Compose model declares 45 top-level volumes while the
-SDL addresses three persistent volumes. These are cutover gaps, not permission
-to retain Compose as an implicit provider catalog. Each runtime fact used by the
-admitted graph must become portable authored/compiled input or an explicit,
-bounded backend-policy/provider derivation under the ownership rules above;
-inactive legacy profiles do not become scenario scope merely because they
-appear in the old file.
+The historical inventory found 28 of 30 TechVault VM nodes without `source`. `kali-ssh-proxy` and `cortex-index-init` lacked matching SDL nodes. Compose declared 45 volumes, while SDL addressed three. These are cutover gaps, not permission
+to retain Compose as an implicit provider catalog. Each admitted runtime fact needs authored/compiled ownership or a bounded backend-policy/provider derivation. Inactive legacy profiles do not acquire scenario membership merely by existing.
 
 At the 2026-07-19 cutover baseline, the configured public profile set selects 32
-legacy service blocks, five networks, and 41 named volumes. The SDL declares 30
-VM nodes and four switches; in addition to the two undeclared services above,
-the legacy-only `aptl-control` network is therefore an explicit ownership gap.
-These counts are migration diagnostics, not a permanent parity schema. The
-static gate must derive its expected set from the admitted graph and declared
-bounded helpers, while the temporary migration comparison must account for each
-of these differences rather than accepting a healthy subset.
+legacy service blocks, five networks, and 41 named volumes. That inventory declared 30 VM nodes and four switches. Its legacy-only `aptl-control` network was another ownership gap beside the two services above.
+These counts are migration diagnostics, not a permanent parity schema. The static gate derives expected resources from admission and declared bounded helpers. Temporary migration comparison must account for every difference, rather than accept a healthy subset.
 
-Every effective backend field has exactly one inspectable provenance class:
-author-declared RAES data, RAES-processor-derived data, an APTL backend
-policy/default, or a bounded source/provider binding. Missing, ambiguous,
+Every effective field has one inspectable provenance class: authored RAES data, processor-derived data, backend policy/default, or bounded source/provider binding. Missing, ambiguous,
 unsupported, or unowned fields are admission errors before side effects. APTL
 must not widen its backend-manifest or SEM-218 claims beyond values that the
-planner gate and `observe_realization()` can prove. If RAES lacks a portable
-contract for a required exact fact, the contract is fixed upstream or the
-scenario fails closed; APTL does not create a local exactness vocabulary.
+planner gate and `observe_realization()` can prove. A missing portable exactness contract requires an upstream fix or admission refusal. LilRAE must not invent a local replacement vocabulary.
 
 ### Generated-model and lifecycle contract
 
@@ -1016,54 +810,28 @@ The standalone model is written with the containment, symlink-chain,
 atomic-replacement, and permission behavior already used for generated
 credentials and service config. It carries environment reference names and
 classification only, preserves Compose interpolation expressions, and is
-validated with interpolation disabled. Resolved secret values, private keys,
-tokens, generated sensitive config, raw backend output, and credentials never
-enter realization DTOs, process argv, logs, diagnostics, API envelopes,
-snapshots, or run records.
+validated with interpolation disabled. Realization objects, arguments, diagnostics, output, API results, snapshots, telemetry, and records must exclude secret values, private keys, sensitive configuration, and raw backend output.
 
-Rendering and validation are pure, pre-mutation admission work. The backend
-stages a complete model and non-secret identity, validates every referenced
-artifact declaration/source, planned output path, and backend field, then
-atomically publishes the admitted lifecycle artifact before creating or
-changing images, volumes, networks, content, or accounts. Generated outputs are
+Rendering and validation are pure, pre-mutation admission work. The backend stages and validates the complete model, safe identity, artifact sources, outputs, and fields. It publishes the admitted lifecycle artifact atomically before native mutation. Generated outputs are
 verified after materialization and before their consumers start. Validating only
 immediately before `compose up` is insufficient if an earlier realization step
 already mutated the Docker daemon or project files.
 
-Per-project lifecycle mutation is serialized so concurrent start/stop/kill or
-monitor actions cannot replace the fixed-path artifact underneath one another;
-promote and reuse the existing `.aptl/lifecycle/.lock` single-owner convention
-from `src/aptl/core/lifecycle_enforce.py` so manual, API, scheduled, validation,
-retry, and emergency paths share one project/backend owner. Do not add a second
-lock namespace around only the generated file. The lock implementation must
-remain effective across processes on every supported host; the current Windows
-in-process fallback is not sufficient protection for a fixed lifecycle
-artifact.
+Project lifecycle mutation has one serialized owner. Manual, API, scheduled, validation, retry, and emergency paths reuse `.aptl/lifecycle/.lock` from `src/aptl/core/lifecycle_enforce.py`. Do not add a second
+lock namespace around only the generated file. The lock must exclude other processes on every supported host. The Windows in-process fallback identified in this amendment could not protect the fixed lifecycle artifact.
 
-Before `compose up`, backend-owned validation covers the complete standalone
-model: Compose shape, generic-substrate trust and build containment, generated
-bind sources, mount destinations and access, Linux capabilities/security
-options, dependency closure, health/readiness definitions,
-network/IPAM/internal policy, static attachments, named-volume
-ownership/lifecycle, and host-published ports. An
+Before startup, validation covers the standalone Compose model and trusted contained substrate inputs. It covers generated binds, mount access, powers, dependencies, health, network policy, addresses, scoped volumes, and publications. An
 authored exact host port fails on conflict; it is not silently remapped. An
 omitted host address remains loopback by default. An SSH backend fails before
 side effects while it cannot materialize project-local artifacts safely.
 
-High-impact host/runtime powers require explicit, inspectable ownership and a
-fail-closed policy: Docker-socket/control-interface mounts, host devices or
-namespaces, `privileged`, unconfined seccomp, and added Linux capabilities are
-never inherited from the old Compose service. Build context and Dockerfile
-paths are project-contained and symlink-safe, image inputs remain subject to the
-existing trust/digest policy, and secret values are not accepted in build args.
+Docker control sockets, devices, host namespaces, privilege, unconfined seccomp, and added capabilities need explicit ownership and refusal policy. Legacy services cannot supply them implicitly. Build and Dockerfile paths require project containment and symlink protection. Image trust policy still applies. Build arguments must not contain secret values.
 Provider policy may allow only the minimum mechanics intrinsic to the addressed
 resource and must preserve read-only access where the contract requires it.
 
 The generated artifact and its non-secret deployment digest are the lifecycle
 identity for every operation. The same admitted artifact drives up, readiness,
-inspection, retry, stop, kill, and volume-aware cleanup. If it is absent or
-invalid, recovery may use only project/realization labels and bounded backend
-metadata; it must never infer broad deletion from daemon-wide names or prefixes.
+inspection, retry, stop, kill, and volume-aware cleanup. Without a valid artifact, recovery may use only project/realization labels and bounded backend metadata. Daemon-wide names or prefixes must not authorize broad deletion.
 Run evidence records the execution-plan identity, typed realization digest,
 field/resource provenance, and observed state through `LocalRunStore` and
 `RangeSnapshot`, not a secret-bearing interpolated model. `selected_profiles`
@@ -1071,40 +839,20 @@ is compatibility evidence, not TechVault realization evidence.
 
 ### Parity and cutover proof
 
-Parity is a two-boundary proof, not a resurrected inventory. The static gate
-proves that the operational SDL parses, compiles, plans, passes manifest and
-SEM-218 checks, lowers every supported addressed resource to the typed
-realization, renders a complete standalone model, contains no unowned
-steady-state object, and does not consult the legacy Compose model. Unsupported
+Parity is a two-boundary proof, not a resurrected inventory. The static gate covers parsing, compilation, planning, manifest/SEM-218 admission, typed lowering, and complete standalone rendering. It rejects unowned objects and legacy Compose authority. Unsupported
 or no-op resources are errors for the full TechVault gate. This gate is
 scenario-generic and blocking for the cutover.
 
-The static gate's `_NoStartBackend` remains a conformance harness only. Its
-simulated read-back may exercise RAES envelope plumbing, but cannot prove that a
-package, filesystem entry, identity, service unit, mount, dependency, health
-contract, content item, or account has a real backend consumer. Static cutover
+The static gate's `_NoStartBackend` remains a conformance harness only. Simulated readback tests envelope integration. It cannot prove native consumers for packages, files, identities, services, mounts, dependencies, health, content, or accounts. Static cutover
 proof comes from complete lowering plus standalone-model rendering/validation
 and explicit consumer coverage; live read-after-write supplies realization
 proof. A stub that echoes the requested graph is not acceptance evidence.
 
-The live gate exercises the public clean boot (`aptl lab stop -v && aptl lab
-start`) and compares project-labelled observed containers, networks,
-attachments, mounts, ports, volumes, health, content, and accounts with the
-admitted graph and its declared backend helpers. It retains authenticated Wazuh
+The historical live command was `aptl lab stop -v && aptl lab start`. Live comparison covers labelled containers, networks, attachments, mounts, ports, volumes, health, content, and accounts against admission. It retains authenticated Wazuh
 readiness and a post-trigger, correlated alert assertion. A healthy subset, a
-profile list, or silently started extra services is failure. The old fixed
-Compose model may be a temporary migration oracle, but neither it nor a shell
-provisioning-script regex remains a permanent authority or parity gate.
+profile list, or silently started extra services is failure. The old Compose model can support temporary migration comparison. Neither it nor provisioning-script regexes remain a permanent authority or parity gate.
 
-The whole-repository cutover boundary includes the public CLI/API orchestration
-in `src/aptl/core/lab.py`, RAES catalog/plan/realization code under
-`src/aptl/backends/`, Compose rendering and lifecycle under
-`src/aptl/core/deployment/`, config/env/credentials/certificates/host-port
-owners under `src/aptl/core/`, run evidence and endpoint discovery, the static
-and live TechVault gates, package/lab asset discovery (`hatch_build.py`,
-`src/aptl/_asset_manifest.py`, and `src/aptl/core/assets.py`), and all tests and
-operator documentation that currently parse or describe the root Compose file
-as an input. The canonical asset manifest and scenario catalog replace Compose
+The cutover includes CLI/API orchestration, RAES planning and realization, deployment rendering, and lifecycle. It includes configuration, environment, credentials, certificates, ports, evidence, endpoints, and TechVault gates. Asset discovery includes `hatch_build.py`, `_asset_manifest.py`, and `core/assets.py`. Tests and operator documents must also stop treating root Compose as an independent input. The canonical asset manifest and scenario catalog replace Compose
 as package-root and bundled-asset discovery inputs; a retained derived Compose
 file is reference output only.
 
@@ -1112,23 +860,23 @@ file is reference output only.
 
 | Layer | Requirement |
 | --- | --- |
-| Control-plane auth gate | Existing CLI and authenticated API lab-start paths converge on the same orchestration. FastAPI router dependencies in `src/aptl/api/main.py` / `src/aptl/api/deps.py` and the BFF Host, same-origin/CSRF, cookie-plus-header session checks in `src/aptl/api/middleware/bff.py` remain mandatory; stateful realization adds no endpoint, token path, or auth bypass. |
+| Control-plane auth gate | Existing CLI and authenticated API lab-start paths converge on the same orchestration. Existing FastAPI dependencies and BFF Host, same-origin, cookie, and session-header checks remain mandatory. Stateful realization adds no endpoint, credential carrier, or authentication bypass. |
 | RAES parser and compiler gate | Authored scenarios enter through `raes.parse_sdl_file` and compile through the RAES compiler and planner. APTL does not structurally revalidate RAES SDL or recompile the `RuntimeModel` with local models. |
 | Realization requirement gate | SEM-218 open and closed semantics are enforced by the RAES planner's `realization_support_diagnostics` against APTL's `RealizationSupportDeclaration`. APTL reads `realization_requirements`; it does not re-derive explicitness classes locally. |
 | Runtime observation gate | `observe_realization()` emits concern values only from project-scoped backend read-back, using RAES's `CONCERN_PAYLOAD_PATH`. Missing, malformed, timed-out, or mismatched evidence omits the concern and lets `RuntimeManager.apply()` fail an exact requirement closed; it never falls back to planned payload values. |
 | Deployment boundary gate | Curated compatibility paths outside operational TechVault may still drive `DeploymentBackend.start_lab` with profiles. The paper and operational TechVault scenarios drive typed `DeploymentBackend` realization methods, with Compose rendering confined to that backend. No RAES adapter code calls raw Docker, `docker compose`, or parses compose output directly (ADR-037). |
-| Generic substrate and software-source gate | Per ADR-048, a node's substrate resolves only from its declared OS family/version through a small, fixed, scenario-independent base-image policy. A node `Source`, provider binding, Compose service, or scenario name cannot select an appliance image that carries scenario-meaningful state. The base image and declared package/software sources pass the existing trust/digest policy before backend side effects; unsupported OS/package-manager combinations fail admission through existing RAES diagnostics without echoing registry credentials, package credentials, build inputs, or backend stderr. |
-| Network topology gate | Network creation, IPAM, `internal` egress policy, and per-node attachments come from typed realization specs. Backend validation parses CIDR/gateway/static IP values, preserves project scoping, labels backend-created networks, and fails closed before side effects when authored exact/constrained values cannot be honored. |
+| Generic substrate and software-source gate | Per ADR-048, a node's substrate resolves only from its declared OS family/version through a small, fixed, scenario-independent base-image policy. A node `Source`, provider binding, Compose service, or scenario name cannot select an appliance image that carries scenario-meaningful state. Substrates and software sources must pass trust/digest admission before effects. Unsupported OS/package-manager pairs fail through existing diagnostics without exposing credentials, build input, or raw errors. |
+| Network topology gate | Network creation, IPAM, `internal` egress policy, and per-node attachments come from typed realization specs. Backend validation parses CIDRs, gateways, and addresses, and preserves project labels and scope. Unsupported exact or constrained values fail before effects. |
 | Content placement gate | Operational TechVault content must be bounded inline text, project-contained checked-in file source, or project-contained checked-in directory source lowered into typed backend placement input. Path containment, safe relative-path validation, project-scoped volumes/copies, and redacted backend failures reuse existing deployment and seed precedents; captured runtime content is rejected. |
-| Stateful prerequisite gate | RAES shape/reference/dependency/SEM-218 checks precede backend policy validation of artifact providers, contained outputs, complete certificate sets, cryptographic relationships, mount sources/destinations, stable project-scoped volume identities, lifecycle, and local/SSH feasibility. Generated overrides are rechecked after materialization and before startup; observed mounts, authenticated Wazuh readiness, and actual alert retrieval are required runtime evidence. |
+| Stateful prerequisite gate | RAES shape, reference, dependency, and SEM-218 checks precede backend validation. The backend covers providers, paths, complete certificates, cryptographic relationships, mounts, scoped volume lifecycle, and transport feasibility. Generated overrides are rechecked after materialization and before startup; observed mounts, authenticated Wazuh readiness, and actual alert retrieval are required runtime evidence. |
 | Artifact path and permission gate | Manager configuration and certificate outputs reuse `credentials.py` containment, symlink-chain rejection, atomic replacement, and verified mode behavior. Declared certificate outputs additionally pass key-pair, CA-chain, subject/SAN, consumer, and completeness checks. No unchecked path, missing output, or warning-only permission failure reaches Compose. |
 | Effective Compose model gate | The backend renders and validates one standalone model, generated bind sources, volume declarations, dependency order, loopback publications, and health contract before `compose up`. Validation preserves secret references and runs without interpolation; it neither logs nor persists a fully interpolated model. An overlay/base merge, partial reset, or inherited hand-authored semantic is a cutover failure. |
-| Account placement gate | RAES parser/compiler, canonical account-feature extraction, manifest capability checks, and SEM-218 explicitness/provenance run before the backend. The backend resolves the placement only through its typed target node, validates the full batch and provider syntax before mutation, then creates/reconciles groups and accounts after bounded provider readiness and verifies non-secret state. Raw credentials, hashes, provider stderr, and caller-supplied container identities remain outside typed inputs and evidence. |
+| Account placement gate | RAES parser/compiler, canonical account-feature extraction, manifest capability checks, and SEM-218 explicitness/provenance run before the backend. The typed node selects the account target. Full-batch and provider validation precede mutation. Bounded readiness precedes reconciliation and non-secret state verification. Raw credentials, hashes, provider stderr, and caller-supplied container identities remain outside typed inputs and evidence. |
 | Config, env, and secret binding | Non-secret backend/admission knobs bind through strict `AptlConfig`; config toggles do not add or remove operational TechVault topology. Runtime secrets pass through `hydrate_dotenv`, `load_dotenv`, `env_vars_from_dict`, `find_placeholder_env_values`, and `EnvVars`, while the graph carries only secret-reference names and classification. Values resolve only at the existing renderer/provider/readiness boundary and are passed through the existing env or permissioned-file channels. Hard-coded collector defaults are not a live credential source. The realization record stores digests and non-secret identities, never `.env` values, rendered config, tokens, or key material. |
 | Host and process exposure | Existing loopback host-binding policy and published-port conflict checks apply to Wazuh. Docker/Compose execution uses argv lists through the shared local/SSH runner; credentials, private-key contents, and rendered config are never command arguments. An unclassified host bind or a remote artifact path the backend cannot materialize fails closed. |
-| Logging and error envelope | Provider failures collapse into bounded, stable `LabResult`, existing deployment exceptions, and RAES diagnostics after shared redaction. Raw subprocess stdout/stderr, SDL secret values, rendered config, private keys, and raw alert bodies do not cross logs, API responses, telemetry, snapshots, or run artifacts; no Wazuh-only exception hierarchy is introduced. |
-| Persistence and redaction | Realization details, selected profiles only for compatibility scenarios, typed realization digests/provenance for dynamic scenarios, and evaluator-only evidence enter JSON through `LocalRunStore` and `RangeSnapshot.to_dict()`, inheriting ADR-029 redaction and path-containment checks. Neither interpolated Compose nor secret-bearing generated configuration is evidence. |
-| Static and live validation gate | Static tests prove the SDL parses, plans, and lowers to a complete standalone realizable model without unsupported, unowned, or no-op resources, and without a legacy Compose input. The live gate remains a public clean `aptl lab stop -v && aptl lab start` plus graph-to-observation parity, authenticated readiness, and correlated evidence, not a comparison to captured inventory state. |
+| Logging and error envelope | Provider failures collapse into bounded, stable `LabResult`, existing deployment exceptions, and RAES diagnostics after shared redaction. Raw output, SDL secrets, rendered configuration, private keys, and alert bodies must not enter logs, API results, telemetry, snapshots, or artifacts. No Wazuh-only exceptions are added. |
+| Persistence and redaction | `LocalRunStore` and `RangeSnapshot.to_dict()` serialize safe realization and evaluator evidence. Compatibility profiles remain distinct from dynamic realization identity. ADR-029 redaction and containment still apply. Neither interpolated Compose nor secret-bearing generated configuration is evidence. |
+| Static and live validation gate | Static checks must establish complete typed lowering and rendering without unsupported, unowned, or no-op resources. Legacy Compose input cannot supply missing realization. The live gate remains a public clean `aptl lab stop -v && aptl lab start` plus graph-to-observation parity, authenticated readiness, and correlated evidence, not a comparison to captured inventory state. |
 
 ## Maintainability
 
@@ -1177,11 +925,7 @@ The canonical incumbents this decision builds on are:
   DTO and its ordered backend-owned side effects; do not create a Wazuh
   orchestrator beside them.
 - `src/aptl/core/deployment/_compose_port_realization.py` for typed host-port
-  exposure decisions and conflict validation. The image-pull/build behavior in
-  `src/aptl/core/deployment/_compose_image_realization.py` is compatibility code
-  superseded by ADR-048 for operational TechVault; reuse only generic image
-  trust/digest mechanics that apply to the fixed base substrate, never its
-  appliance-image or overlay/base assumptions. Move rendering behind the
+  exposure decisions and conflict validation. `_compose_image_realization.py` retains compatibility image acquisition. ADR-048 supersedes its operational TechVault appliance-image assumptions. Only generic trust/digest behavior applies to fixed base substrates. Move rendering behind the
   standalone Compose-model boundary; existing overlay/base merge behavior is
   not a cutover contract. Apply ADR-028 containment, symlink, atomic-write,
   permission, and effective-model validation rather than copying unchecked
@@ -1196,9 +940,7 @@ The canonical incumbents this decision builds on are:
   `src/aptl/validation/_live_gate_checks.py`, and
   `src/aptl/validation/_live_gate_probes.py` for shared readiness polling,
   argv-safe authentication, Wazuh alert collection, and the clean-start live
-  evidence gate. The manager probe must use the deployment backend and gain an
-  authenticated readiness check; its current raw, status-only probe and the
-  live gate's Suricata-or-Wazuh success condition are not incumbents to copy.
+  evidence gate. The Manager probe must use the backend and authenticate readiness. The earlier raw status-only probe and Suricata-or-Wazuh live condition are not acceptable templates.
 - `src/aptl/core/runstore.py`, `src/aptl/core/snapshot.py`,
   `src/aptl/core/config.py`, and `src/aptl/core/env.py` for run persistence,
   inventory evidence, config, and env binding.
@@ -1225,41 +967,21 @@ the compatibility driver may map explicitly compatible scenarios onto profiles.
 The paper and operational TechVault drivers consume the typed realization spec
 directly through `DeploymentBackend`. Standalone rendering is parameterized by
 execution-plan identity, `DeploymentRealizationSpec`, backend/provider policy,
-project identity, and target capability. A new authored resource type extends
-`SUPPORTED_RESOURCE_TYPES`, the interpreter, and a typed backend operation when
-runtime side effects are needed, without adding a second topology authority or
-branching on a specific scenario name.
+project identity, and target capability. Another authored resource extends `SUPPORTED_RESOURCE_TYPES`, interpretation, and any required typed backend operation. It must not add topology authority or scenario-name branching.
 
 The design must stay parameterized by scenario identity and backend manifest
-version. It must not assume TechVault is the only scenario, that Docker Compose
-is the only possible realization vehicle, or that the current realization
-support mode is static.
+version. It must not assume one scenario, permanent Compose-only deployment, or a fixed realization mode.
 
-For networks, the parameterized seam is the typed attachment record:
-scenario network id, backend network id, optional CIDR/gateway/internal policy,
-node id, backend container/service id, optional static address, and provenance
-for the authored link. Future scenarios should be able to vary segmentation,
+The network attachment carries scenario/backend network identity, optional CIDR/gateway/internal policy, node and native identity, optional static address, and authored-link provenance. Future scenarios should be able to vary segmentation,
 addressing, and egress policy without editing the compatibility
 `docker-compose.yml` network block or branching on scenario names.
 
-For ADR-048 node materialization, the extensibility seam is the tuple of
-declared OS family/version, fixed generic-substrate policy, compiled
-`RuntimeConfiguration`, ordered typed materialization operations, backend
-provider/target capability, and read-after-write observations. The next likely
+Node materialization joins declared OS, fixed substrate policy, compiled runtime configuration, typed ordered operations, provider capability, and observed readback. ADR-048 owns this boundary. The next likely
 change is another OS family or package manager, multi-architecture generic base
-selection, package-repository authentication, or SBOM/attestation policy. Those
-extend the fixed policy map or typed operation/provider boundary; they do not
-restore RAES `Source`, Compose service identity, or scenario names as appliance
-image selectors, and they do not add product-named materializer branches.
+selection, package-repository authentication, or SBOM/attestation policy. Extensions change the fixed policy map or typed provider operation. They must not select appliance images through RAES `Source`, Compose identity, scenario names, or product branches.
 
-For content and account realization, the seam is a typed placement record:
-RAES placement address, target node/service/container, content or account
-identity, non-secret provenance, bounded source kind, destination kind, and the
-backend materialization operation. Account provider kind is resolved from the
-typed target binding, not from scenario identity. Future scenarios should be
-able to vary which checked-in source directory, inline file, target node,
-account fixture, or provider backend is used without editing TechVault-only
-code. Future account deletion/replacement reuses RAES `ChangeAction`; it must
+Content and account placement carries its RAES address, target identity, content/account identity, safe provenance, bounded source and destination kinds, and materialization operation. Account provider kind is resolved from the
+typed target binding, not from scenario identity. Another scenario should vary source directories, inline files, target nodes, account fixtures, and providers through typed input. It should not need TechVault-only code changes. Future account deletion/replacement reuses RAES `ChangeAction`; it must
 not add an APTL-only lifecycle enum.
 
 For generated artifacts and stateful storage, the seam is the addressed
@@ -1312,10 +1034,7 @@ extended with APTL mirrors.
 - `RuntimeSnapshot.payload` participates in RAES reconciliation as well as
   disclosure. Removing non-concern fields blindly can force perpetual updates,
   while copying a sensitive planned payload can leak it into the run record.
-  Preserve only contract-required reconciliation state and keep sensitive
-  content and probe output outside the snapshot; a broader split between
-  desired-state fingerprints and observed evidence belongs in RAES, not an
-  APTL-only snapshot schema.
+  Snapshots keep only required reconciliation state, without sensitive content or probe output. A broader desired/observed split belongs in RAES rather than a local schema.
 - Disclosure failure happens after backend side effects. It rejects the apply
   and restores the baseline control-plane snapshot, but it is not transactional
   rollback of already-created containers, networks, or volumes. Do not report
@@ -1339,27 +1058,13 @@ extended with APTL mirrors.
   RBAC, secrets management, or a general directory-service API. It does not
   delete accounts/groups absent from the scenario or migrate the additional
   baseline fixtures in `provision-users.sh`.
-- Issue #579 by itself did not dynamically realize the dashboard, merge the
-  Wazuh and lab SOC certificate authorities, design certificate rotation,
-  capture or seed mutable Wazuh data, migrate existing volumes, change Wazuh
-  versions or credentials, add remote artifact synchronization, or introduce a
-  generic init-job/workflow or evaluator engine. It may sequence the existing
+- Issue #579 did not add Dashboard realization, CA merging/rotation, mutable-data capture, volume migration, version or credential changes, remote synchronization, or generic workflow/evaluator engines. It may sequence the existing
   action, evidence probe, and `AptlEvaluator` result correctly for Wazuh, but it
   does not create a parallel evaluation contract. An SSH realization may remain
   explicitly unsupported until the backend can materialize its artifacts
   safely.
-- Issue #581 does not create a new orchestration language, generic provider hook
-  or command schema, Kubernetes backend, remote artifact synchronization, API
-  endpoint, auth model, secret store, transactional rollback, or daemon-wide
-  cleanup mechanism. It does not promote services from inactive legacy Compose
-  profiles into TechVault merely because they existed in that file; the
-  operational SDL decides membership, while every service selected by the
-  pre-cutover canonical public start must be accounted for as an addressed
-  resource or an explicitly bounded backend helper.
-- Issue #692 does not add a second disclosure gate, a new runtime snapshot or
-  evidence schema, an API surface, operator-configurable probe commands,
-  content equality/integrity attestation, or transactional provisioning
-  rollback.
+- Issue #581 added no orchestration language, generic hooks or commands, Kubernetes backend, remote synchronization, API/authentication model, secret store, rollback, or daemon-wide cleanup. Inactive legacy profiles do not define TechVault membership. Operational SDL does. Each service from pre-cutover public startup still needs an addressed resource or bounded helper.
+- Issue #692 added no disclosure gate, snapshot/evidence schema, API, configurable probe commands, content-integrity attestation, or transactional rollback.
 
 ## Anti-Patterns
 
@@ -1398,60 +1103,37 @@ extended with APTL mirrors.
 - Treating a successful seed, a running/healthy target container, the typed
   placement's source kind, or `spec.type` as read-back proof of the realized
   content type.
-- Treating a matching line in `provision-users.sh`, a successful create command,
-  or an existing username as proof that groups and declared attributes were
-  realized; backend success requires non-secret read-after-write verification.
+- Treating script text, a create-command success, or an existing username as proof of all account attributes. Backend success requires non-secret read-after-write verification.
 - Keeping `check_account_provisioner_parity` as a second account authority after
   backend realization lands, or parsing shell scripts/Compose text to derive
   account state.
 - Re-implementing RAES account-feature extraction, explicitness, capability, or
   provenance rules in APTL, or advertising a manifest feature the selected
   account provider does not apply and verify.
-- Passing a plaintext credential through a realization DTO, Docker/Compose or
-  process argv, environment, generated file, log, exception, stderr hint,
-  snapshot, telemetry attribute, or run artifact.
-- Building a generic remote-command/account-service abstraction, accepting a
-  caller-supplied container id, or branching on the TechVault scenario instead
-  of resolving a registered provider from the typed target node.
+- Passing plaintext credentials through realization objects, arguments, environment, generated files, diagnostics, logs, snapshots, telemetry, or artifacts.
+- Adding generic remote-account commands or caller-selected container IDs. Provider selection must use the typed target, without a TechVault scenario branch.
 - Hiding an unrealizable content/account fact in `metadata`, comments,
   `x-aptl-*`, inventory ledger rows, or a TechVault scenario-name branch.
-- Encoding generated config, certificate/key bundles, or mutable persistence as
-  content placement; treating the ambiguous raw `runtime.mounts` payload as a
-  locally authoritative desired-volume schema instead of consuming an upstream
-  compiled contract; or adding an APTL-local stateful-service schema while RAES
-  lacks that contract.
+- Treating generated configuration, certificates, or mutable persistence as ordinary content. Raw `runtime.mounts` cannot replace an upstream compiled volume contract. Missing RAES contracts cannot justify a local stateful-service schema.
 - Claiming Wazuh realization because the `wazuh` profile or a hand-authored
   Compose service started, a plan resource was echoed into a snapshot, or only
   `root-ca.pem` exists.
 - Adding a generic `run`/hook/command field, invoking a provider-specific shell
   fragment from SDL, or copying Wazuh lifecycle ordering outside
   `DeploymentBackend`.
-- Assuming the base-file bind-mount scan covers generated overrides, that local
-  files are visible to an SSH Docker daemon, or that the operational SDL's
-  reverse manager/indexer dependency is valid boot ordering.
-- Using a partial Compose overlay that silently retains base mounts,
-  environment, dependencies, healthchecks, or commands, or relying on a
-  reset/override merge tag without enforcing its supported Compose version.
+- Assuming base-file validation covers generated overrides or local files reach a remote daemon. The original reverse Manager/Indexer dependency is not valid boot ordering.
+- Using overlays that silently inherit base mounts, environment, dependencies, healthchecks, or commands. Reset/override merge tags also require enforcement of their supported Compose version.
 - Interpolating secret values into the generated model, passing them on process
   argv, or persisting/logging the rendered effective configuration as proof.
 - Treating container health, node-ready evaluator conditions, authored evidence
   intent, or a Suricata-only event as proof of a functioning realized Wazuh.
-- Using the collector's default credentials, accepting any alert already in the
-  index, evaluating the Wazuh condition before its trigger, or recording a
-  Wazuh count without a bounded non-secret correlation to the triggering action.
-- Recreating named volumes on every start, using unscoped/global or random
-  volume names, inferring deletion from absence, or modeling mutable Wazuh state
-  as a named-volume seed.
+- Using default collector credentials, stale alerts, pre-trigger evaluation, or uncorrelated counts. Alert evidence needs a bounded non-secret join to the actual trigger.
+- Recreating volumes at every startup or using global/random identities. Absence does not authorize deletion, and mutable Wazuh storage is not a seed.
 - Starting with a generated effective Compose model but stopping with only the
   base file when that can leave realized containers, networks, or volumes
   orphaned.
-- Treating a profile set, selected-container subset, or healthy declared nodes
-  as full parity without rejecting extra project-labelled steady-state runtime
-  objects and missing mounts, publications, volumes, or dependencies.
-- Logging or persisting PEM/key material, rendered configuration, resolved env
-  secrets, raw alert bodies, or backend stderr; accepting incomplete cert
-  output, failed permission repair, or unchecked key/certificate/SAN/chain
-  relationships as success.
+- Calling a selected or healthy subset full parity. The gate must reject extra labelled steady-state objects and missing mounts, publications, volumes, or dependencies.
+- Exposing keys, sensitive configuration, secrets, raw alerts, or backend errors. Incomplete outputs, failed permissions, or unchecked certificate relationships cannot count as success.
 - Running both the generic lab-start cert/config preparation and typed
   realization for the same manager/indexer artifacts.
 - Duplicating the content schema, account schema, path-containment checks,
@@ -1462,9 +1144,7 @@ extended with APTL mirrors.
   API responses, or run records.
 - Re-evaluating SEM-218 explicitness classes with a local model rather than
   consuming `realization_requirements` and the planner gate.
-- Copying gated concern values from a `ProvisioningPlan`, or falling back to
-  them when inspection is unavailable; accepting a same-named container without
-  the configured Compose project label; or logging raw probe output.
+- Copying concerns from `ProvisioningPlan` or substituting them after failed inspection. Matching names without project labels cannot prove ownership. Raw probe output must remain private.
 - Adding a second topology authority, a duplicate compose parser, or a local
   `RuntimeModel` mirror.
 - Writing realization evidence to a new record type instead of `LocalRunStore`
@@ -1504,10 +1184,12 @@ The [owned descendant design](../architecture/issue-1130-owned-descendant-report
 Mutable native lifecycle records remain separate from sealed run evidence.
 The public native-evidence handoff retains immutable runtime state cuts and
 original materialization/archive bytes for restricted experiment collectors.
+
 Native observation and verified cleanup records remain backend-owned evidence.
 They neither grant resource authority nor replace runtime-derived provenance.
 The existing collector source and sealing interfaces retain those original bytes;
 participant-visible or byte-redacting bindings cannot consume the protected handoff.
+
 ADR-055's independent operator-grant policy remains proposed and outside this delivery.
 
 ## References

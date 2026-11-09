@@ -1,5 +1,13 @@
 # Issue #1162: Nested Virt Seat Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1162-nested-virt-seat-preflight.md).
+Its last recorded file change before this rewrite was `103ebfbcb223`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 Architecture guidance for [#1162](https://github.com/Brad-Edwards/aptl/issues/1162),
 whose supplied issue body is the delivery contract; no formal requirement
 is attached. This is not an implementation plan or a working-VM attestation.
