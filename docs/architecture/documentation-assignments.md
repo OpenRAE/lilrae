@@ -1902,7 +1902,8 @@ Edit generated prose at these maintained sources, then use the existing generato
 | `web/tests/routes/scenario-workbench.test.ts` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |
 | `web/vitest.config.ts` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |
 
-| `tools/install-ste.sh` | #1668 | Reference: pinned tool source, release, license, and checksum comments |
+| `tools/install-doc-tools.sh` | #1686 | Reference: package pin, source revision, license, and checksum boundary |
+| `tools/install-ste.sh` | #1668 | Reference: shared-package installation entry point |
 | `tools/ste-lint.sh` | #1668 | Reference: explicit-path command usage |
 
 ## Non-Markdown source records
