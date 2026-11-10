@@ -1,9 +1,10 @@
 """Trial-bound Wazuh agent ids retained across capture-source reconstruction.
 
 Core creates one record for each admitted trial during that trial's first
-provisioning capture. Only that capture may add ids; every later context only
-reads. A record that is missing after provisioning is lost evidence, so a
-post-restart observation can never become the baseline it is compared with.
+provisioning capture. A create-once marker beside the record proves that the
+trial was established. Only the establishing capture may add ids; every later
+context only reads. A record that is missing after establishment is lost
+evidence, so a post-restart observation can never become its own baseline.
 The explicit volume reset clears the records through the existing
 ``clear-wazuh-enrollment-baseline`` cleanup action.
 """
@@ -68,9 +69,11 @@ def _encode(ids: Mapping[str, str]) -> bytes:
 
 
 def _establish(project_dir: Path, relpath: Path) -> bool:
-    """Create the trial's empty record once; return whether this call made it."""
+    """Create the trial's marker and empty record once; return whether this did."""
 
     try:
+        marker = relpath.with_suffix(".established")
+        create_exclusive_nofollow(project_dir, marker, b"")
         create_exclusive_nofollow(project_dir, relpath, _encode({}))
     except (OSError, PathContainmentError):
         return False
@@ -102,8 +105,8 @@ def trial_enrollment_retainer(
 ) -> EnrollmentRetainer:
     """Return the trial's retainer; only the establishing capture may write.
 
-    With ``establish``, core creates the trial's record once. When the record
-    already exists, this context is read-only, like every other context.
+    With ``establish``, core creates the trial's record once. When the trial
+    was already established, this context is read-only, like every other one.
     The retainer returns the ids retained before the call. A writable retainer
     then adds hosts it has not retained; it never replaces a retained id.
     """

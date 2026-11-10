@@ -205,6 +205,7 @@ def _record_phase(monkeypatch):
 
     def fake(request, *, establish_enrollment=False, phase):
         recorded["phase"] = phase
+        recorded["establish_enrollment"] = establish_enrollment
         return {}
 
     monkeypatch.setattr(sc, "family_capture_sources", fake)
@@ -223,6 +224,29 @@ def test_acquire_native_evidence_selects_preparation(tmp_path, monkeypatch):
     acquisition.acquire_native_evidence(request)
 
     assert recorded["phase"] is AcquisitionPhase.PREPARATION
+    assert recorded["establish_enrollment"] is True
+
+
+def test_preparation_establishes_enrollment_after_the_plan_is_sealed(
+    tmp_path, monkeypatch
+):
+    """The transcript window seals the plan before the first native capture."""
+
+    from aptl.backends import raes_evidence_acquisition as acquisition
+    from aptl.backends._raes_native_evidence_acquisition import (
+        _persist_capture_plan,
+    )
+
+    recorded = _record_phase(monkeypatch)
+    trial = SimpleNamespace(
+        identity=lambda: {"run_id": "run-1", "plan_entry_id": "entry-1"}
+    )
+    request = _native_request(tmp_path, trial=trial, runtime_adapter=object())
+    _persist_capture_plan(request.plan, request.run_store, request.run_id)
+
+    acquisition.acquire_native_evidence(request)
+
+    assert recorded["establish_enrollment"] is True
 
 
 def test_acquire_trial_evidence_selects_measurement(tmp_path, monkeypatch):
