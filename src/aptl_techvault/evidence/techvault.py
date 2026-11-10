@@ -6,6 +6,7 @@ import json
 import time
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
+from types import MappingProxyType
 
 from aptl.core.evidence.adapters.sources import SourceResult
 from aptl_techvault.evidence.techvault_transcript import (
@@ -23,6 +24,14 @@ from aptl.core.evidence.outcomes import CollectorStatus
 SQLI_PROBE_SOURCE_IP = "172.20.1.30"  # NOSONAR S1313: admitted synthetic lab IP
 SURICATA_SQLI_SID = 1000010
 WAZUH_SQLI_RULE_ID = "303020"
+SQLI_OBSERVER_EFFECT = "one fixed POST /login containing UNION SELECT"
+SQLI_ATTEMPT_EFFECT = (
+    "one fixed POST /login containing UNION SELECT attempted; delivery unconfirmed"
+)
+#: The trigger result for a probe request that started without confirmed delivery.
+SQLI_DELIVERY_UNCONFIRMED: Mapping[str, object] = MappingProxyType(
+    {"delivery_confirmed": False}
+)
 _MAX_NATIVE_JSON_BYTES = 2 * 1024 * 1024
 _UTC_OFFSET = "+00:00"
 
@@ -67,40 +76,32 @@ class SuricataWazuhSqliSource:
 
     def fetch(self, start_iso: str, end_iso: str) -> SourceResult:
         trigger = self._trigger()
-        if trigger is None or not _valid_trigger(trigger, start_iso, end_iso):
-            return _failure(CollectorStatus.SOURCE_UNAVAILABLE)
-        pair, unavailable = self._poll_pair(trigger, end_iso)
+        pair = (
+            self._poll_pair(trigger, end_iso)
+            if sqli_probe_delivered(trigger)
+            and _valid_trigger(trigger, start_iso, end_iso)
+            else None
+        )
         if pair is None:
-            status = (
-                CollectorStatus.SOURCE_UNAVAILABLE
-                if unavailable
-                else CollectorStatus.MID_RUN_LOSS
-            )
-            return _failure(status)
+            return _sqli_failure(trigger)
         return _sqli_result(trigger, pair)
 
     def _poll_pair(
         self, trigger: Mapping[str, object], end_iso: str
-    ) -> tuple[
-        tuple[Mapping[str, object], Mapping[str, object]] | None,
-        bool,
-    ]:
+    ) -> tuple[Mapping[str, object], Mapping[str, object]] | None:
         """Poll both native stores for one exact correlated alert pair."""
 
         pair = None
-        unavailable = False
         for attempt in range(self._poll_attempts):
             suricata = self._query_suricata(str(trigger["triggered_at"]), end_iso)
             wazuh = self._query_wazuh(str(trigger["triggered_at"]), end_iso)
-            if suricata is None or wazuh is None:
-                unavailable = True
-            else:
+            if suricata is not None and wazuh is not None:
                 pair = _exact_correlated_pair(trigger, suricata, wazuh, end_iso)
             if pair is not None:
                 break
             if attempt + 1 < self._poll_attempts and self._poll_interval_seconds:
                 self._sleep(self._poll_interval_seconds)
-        return pair, unavailable
+        return pair
 
 
 def _sqli_result(
@@ -127,7 +128,7 @@ def _sqli_result(
         media_type="application/json",
         source_min_time=str(suricata_event["timestamp"]),
         source_max_time=str(wazuh_event["timestamp"]),
-        observer_effect="one fixed POST /login containing UNION SELECT",
+        observer_effect=SQLI_OBSERVER_EFFECT,
         source_pipeline={
             "source_refs": [
                 {
@@ -148,6 +149,23 @@ def _sqli_result(
             "correlation": "shared-suricata-flow-id",
         },
     )
+
+
+def _sqli_failure(trigger: Mapping[str, object] | None) -> SourceResult:
+    """Fail without evidence, keeping the effect of a probe that started."""
+
+    if trigger is None:
+        return _failure(CollectorStatus.SOURCE_UNAVAILABLE)
+    effect = (
+        SQLI_OBSERVER_EFFECT if sqli_probe_delivered(trigger) else SQLI_ATTEMPT_EFFECT
+    )
+    return SourceResult(status=CollectorStatus.MID_RUN_LOSS, observer_effect=effect)
+
+
+def sqli_probe_delivered(trigger: Mapping[str, object] | None) -> bool:
+    """Return whether a probe request started and its delivery is confirmed."""
+
+    return trigger is not None and trigger.get("delivery_confirmed") is not False
 
 
 def _valid_trigger(trigger: Mapping[str, object], start_iso: str, end_iso: str) -> bool:

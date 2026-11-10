@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
 
 from aptl.backends.scenario_capture import capture_source_context
 from aptl.core.lifecycle_cleanup import (
+    WAZUH_ENROLLMENT_BASELINE_RELPATH,
     WAZUH_TRIAL_ENROLLMENT_DIR,
     clear_wazuh_enrollment_baseline,
 )
@@ -84,9 +86,9 @@ def _provision(project_dir, trial, seen):
     selection = SimpleNamespace(
         context=SimpleNamespace(trial=trial),
         contribution=SimpleNamespace(
-            native_registration_ids=frozenset(),
+            native_registration_ids=frozenset({"example.events"}),
             runtime_environment_keys=(),
-            runtime_adapter=None,
+            runtime_adapter=SimpleNamespace(native_sources=lambda _context: {}),
         ),
     )
     request = NativeEvidenceRequest(
@@ -201,8 +203,68 @@ def test_volume_reset_cleanup_clears_trial_evidence(tmp_path):
     assert _source(tmp_path, trial)({}) is None
 
 
-def test_capability_is_absent_without_a_trial_and_exposes_only_ids(tmp_path):
-    assert _source(tmp_path, None) is None
+def test_retained_ids_are_read_only(tmp_path):
     retained = _source(tmp_path, _trial(), provisioning=True)({"db": "001"})
     with pytest.raises(TypeError):
         retained["db"] = "002"
+
+
+# --- Scenario record for a context without a trial (#1705) ---
+
+
+def _scenario_record(project_dir):
+    return project_dir / WAZUH_ENROLLMENT_BASELINE_RELPATH
+
+
+def test_a_context_without_a_trial_uses_the_legacy_scenario_record(tmp_path):
+    retain = _source(tmp_path, None, provisioning=True)
+    assert retain({"db": "001"}) == {}
+    assert json.loads(_scenario_record(tmp_path).read_text()) == {"db": "001"}
+    assert dict(_source(tmp_path, None)({})) == {"db": "001"}
+    assert not (tmp_path / WAZUH_TRIAL_ENROLLMENT_DIR).exists()
+
+
+def test_measurement_cannot_make_or_repair_the_scenario_record(tmp_path):
+    assert _source(tmp_path, None)({"db": "001"}) is None
+    assert not _scenario_record(tmp_path).exists()
+    _source(tmp_path, None, provisioning=True)({})
+    assert _source(tmp_path, None)({"db": "001"}) == {}
+    assert dict(_source(tmp_path, None)({})) == {}
+
+
+def test_a_later_startup_adds_new_hosts_but_never_replaces_an_id(tmp_path):
+    _source(tmp_path, None, provisioning=True)({"db": "001"})
+    later = _source(tmp_path, None, provisioning=True)
+    assert dict(later({"db": "009", "web": "002"})) == {"db": "001"}
+    assert dict(_source(tmp_path, None)({})) == {"db": "001", "web": "002"}
+
+
+def test_a_legacy_baseline_is_read_and_an_invalid_one_is_not_replaced(tmp_path):
+    record = _scenario_record(tmp_path)
+    record.parent.mkdir(parents=True)
+    record.write_text('{"db":"001"}\n')
+    assert dict(_source(tmp_path, None)({"db": "009"})) == {"db": "001"}
+    record.write_text('{"db": "001", "web": "001"}')
+    assert _source(tmp_path, None, provisioning=True)({"ad": "003"}) is None
+    assert record.read_text() == '{"db": "001", "web": "001"}'
+
+
+def test_volume_reset_cleanup_clears_the_scenario_record(tmp_path):
+    _source(tmp_path, None, provisioning=True)({"db": "001"})
+    clear_wazuh_enrollment_baseline(tmp_path)
+    assert not _scenario_record(tmp_path).exists()
+    assert _source(tmp_path, None)({}) is None
+
+
+def test_an_unsafe_scenario_record_write_is_unproven(tmp_path, monkeypatch):
+    from aptl.core import retained_enrollment
+    from aptl.utils.pathsafe import REASON_SYMLINK, PathContainmentError
+
+    _source(tmp_path, None, provisioning=True)({})
+
+    def reject(*args, **kwargs):
+        raise PathContainmentError(REASON_SYMLINK, "private-path-canary")
+
+    monkeypatch.setattr(retained_enrollment, "replace_private_nofollow", reject)
+    assert _source(tmp_path, None, provisioning=True)({"db": "001"}) is None
+    assert dict(_source(tmp_path, None)({})) == {}

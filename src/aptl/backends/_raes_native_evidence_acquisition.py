@@ -176,9 +176,8 @@ def acquire_native_evidence(request: NativeEvidenceRequest) -> AcquisitionResult
     first_capture = _persist_capture_plan(
         request.plan, request.run_store, request.run_id
     )
-    runtime_adapter = request.capture_selection.contribution.runtime_adapter
-    source_factory = getattr(runtime_adapter, "native_sources", None)
-    if request.capture_selection.context.trial is not None:
+    sources: Mapping[str, WindowedSource] = {}
+    if request.capture_selection.contribution.native_registration_ids:
         from aptl.backends.scenario_capture import family_capture_sources
 
         sources = family_capture_sources(
@@ -186,8 +185,6 @@ def acquire_native_evidence(request: NativeEvidenceRequest) -> AcquisitionResult
             establish_enrollment=first_capture,
             phase=AcquisitionPhase.PREPARATION,
         )
-    else:
-        sources = source_factory(request) if callable(source_factory) else {}
     collectors = {
         binding.registration_id: _OnDemandNativeCollector(
             binding.registration_id,
@@ -262,7 +259,7 @@ def _add_native_sources(
     """Preserve healthy participant sources if the native source factory fails."""
     from aptl.backends.scenario_capture import family_capture_sources
 
-    if request.capture_selection.contribution.runtime_adapter is not None:
+    if request.capture_selection.contribution.native_registration_ids:
         try:
             native = family_capture_sources(
                 request, phase=AcquisitionPhase.MEASUREMENT
