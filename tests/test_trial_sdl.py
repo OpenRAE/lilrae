@@ -155,3 +155,30 @@ def _check_variation(tmp_path, variables):
     ambiguous_scenario = parse_trial(ambiguous)
     with pytest.raises(TrialDeclarationError):
         declared_participants(ambiguous_scenario)
+
+
+def test_admitted_configurations_select_the_model_and_prompts():
+    from types import SimpleNamespace
+
+    from aptl.core.trial_sdl import TrialDeclarationError, admitted_participants
+
+    scenario = parse_trial(trial_document())
+
+    def value(target, literal, declaration=None):
+        selection = SimpleNamespace(declaration_ref=declaration) if declaration else None
+        return SimpleNamespace(target_id=target, value=SimpleNamespace(value=literal), control_context_selection=selection)
+
+    configuration = SimpleNamespace(
+        participant_address="agents.red-operator",
+        configuration=SimpleNamespace(values=[
+            value("context.preamble", "control_context_assets.red-preamble", "control_context_assets.red-preamble"),
+            value("context.task", "control_context_assets.red-task", "control_context_assets.red-task"),
+            value("model", "google-vertex/zai-org/glm-5.2-maas"),
+        ]),
+    )
+    (participant,) = admitted_participants(scenario, (configuration,))
+    assert (participant.agent, participant.role, participant.model, participant.context_assets) == (
+        "red-operator", "red", "google-vertex/zai-org/glm-5.2-maas", ("red-preamble", "red-task"))
+    stranger = SimpleNamespace(participant_address="agents.absent", configuration=configuration.configuration)
+    with pytest.raises(TrialDeclarationError):
+        admitted_participants(scenario, (stranger,))

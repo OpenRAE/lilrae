@@ -26,7 +26,7 @@ from aptl.core.runstore import LocalRunStore
 from aptl.core.trial_attempt import TrialAttempt
 from aptl.core.trial_control import TrialControl
 from aptl.core.trial_record import TrialRecord, seal_trial_record
-from aptl.core.trial_sdl import TrialDeclarationError, declared_participants
+from aptl.core.trial_sdl import TrialDeclarationError, admitted_participants, declared_participants
 from aptl.workbench.trial_launch import TrialLaunchSettings, invocation_fields, trial_executors
 from aptl.workbench.trial_run import DeclaredTrial, run_declared_trial
 
@@ -100,10 +100,14 @@ def _run_and_drain(
     """Run every participant, then remove its credentials before returning."""
     bundle = resolve_scenario_bundle(root, scenario_path, config)
     try:
-        scenario, digest = _trial_scenario(bundle, config, attempt)
+        scenario, digest, configurations = _trial_scenario(bundle, config, attempt)
         if digest != scenario_sha256:
             raise RuntimeError("the trial SDL differs from the SDL that startup admitted")
-        participants = declared_participants(scenario)
+        participants = (
+            admitted_participants(scenario, configurations)
+            if configurations is not None
+            else declared_participants(scenario)
+        )
         if not participants:
             raise TrialDeclarationError("the trial SDL declares no model-bearing participant")
         evidence: dict[str, dict[str, object]] = {}
@@ -146,17 +150,18 @@ def _run_and_drain(
         bundle.close()
 
 
-def _trial_scenario(bundle, config: AptlConfig, attempt: TrialAttempt) -> tuple[object, str]:
-    """Return the scenario the trial runs and its digest.
+def _trial_scenario(bundle, config: AptlConfig, attempt: TrialAttempt) -> tuple[object, str, tuple | None]:
+    """Return the scenario the trial runs, its digest and any admitted configurations.
 
-    An admitted plan entry runs its instantiated snapshot; otherwise the SDL file runs.
+    An admitted plan entry runs its instantiated snapshot with its participant
+    configurations; otherwise the SDL file runs with its authored participants.
     """
     if attempt.unit is not None:
         trial = bind_trial_unit(bundle, config, attempt).trial
         assert trial is not None
-        return trial.scenario, trial.snapshot_digest
+        return trial.scenario, trial.snapshot_digest, tuple(trial.participant_configuration_results)
     digest = "sha256:" + hashlib.sha256(bundle.sdl_path.read_bytes()).hexdigest()
-    return parse_sdl_file(bundle.sdl_path), digest
+    return parse_sdl_file(bundle.sdl_path), digest, None
 
 
 @contextmanager

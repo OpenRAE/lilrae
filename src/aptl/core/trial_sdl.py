@@ -69,6 +69,37 @@ def declared_participants(scenario: Scenario) -> tuple[DeclaredParticipant, ...]
     return tuple(participants)
 
 
+def admitted_participants(scenario: Scenario, configurations) -> tuple[DeclaredParticipant, ...]:
+    """Return each admitted participant with its configured model and prompt selections.
+
+    An admitted family trial owns participant configuration, so its owner-validated
+    configurations, not authored control context, select the model and prompt assets.
+    """
+    participants = []
+    for configuration in configurations:
+        address = configuration.participant_address
+        name = address.removeprefix("agents.")
+        if address != f"agents.{name}" or name not in scenario.agents:
+            raise TrialDeclarationError(f"trial participant {address} is not a scenario agent")
+        values = configuration.configuration.values
+        model = next(
+            (getattr(item.value, "value", None) for item in values if item.target_id == "model"), None
+        )
+        assets = tuple(
+            item.control_context_selection.declaration_ref.removeprefix("control_context_assets.")
+            for item in values
+            if item.control_context_selection is not None
+        )
+        if not isinstance(model, str) or not model or not assets:
+            raise TrialDeclarationError(f"trial participant {address} has no configured model or prompt")
+        participants.append(
+            DeclaredParticipant(
+                agent=name, role=_declared_role(scenario, name), model=model, context_assets=assets
+            )
+        )
+    return tuple(participants)
+
+
 def _declared_model(scenario: Scenario, agent_name: str) -> str | None:
     """Read the one model on the agent's interactive-access nodes."""
     agent = scenario.agents[agent_name]
