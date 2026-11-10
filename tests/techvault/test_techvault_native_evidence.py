@@ -7,6 +7,8 @@ import subprocess
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 from aptl_techvault.evidence import techvault_native
 
 from aptl.core.deployment.realization import (
@@ -132,13 +134,17 @@ class _Backend:
         return subprocess.CompletedProcess(cmd, 0, json.dumps(event) + "\n", "")
 
 
-def _owner(tmp_path, backend=None):
+def _owner(tmp_path, backend=None, *, may_prepare=True):
+    from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+    from aptl.core.retained_enrollment import scenario_enrollment_retainer
+
     times = iter((_TRIGGER, _FINISH, _TRIGGER))
+    realization = _realization()
     return TechVaultNativeEvidenceOwner(
-        backend=backend or _Backend(),
-        realization=_realization(),
-        project_dir=tmp_path,
-        indexer_auth=("admin", "password"),
+        operations=AdmittedRuntimeOperations(backend or _Backend(), realization.nodes),
+        realization=realization,
+        retain_enrollment_ids=scenario_enrollment_retainer(tmp_path, establish=True),
+        may_prepare=may_prepare,
         dependencies=TechVaultNativeDependencies(
             now=lambda: next(times),
             sleep=lambda _seconds: None,
@@ -294,3 +300,81 @@ def test_suricata_query_reads_recent_events_from_a_large_native_log(tmp_path):
     )
 
     assert _owner(tmp_path, backend).query_suricata(_START, _END) == [event]
+
+
+def test_measurement_owner_sends_no_sqli_probe_or_misp_write(tmp_path):
+    backend = _Backend()
+    owner = _owner(tmp_path, backend, may_prepare=False)
+
+    result = owner.sources()["aptl.collector.suricata-wazuh-sqli"].fetch(_START, _END)
+
+    assert result.status is CollectorStatus.SOURCE_UNAVAILABLE
+    assert result.observer_effect is None
+    assert backend.probe_payload == ""
+    assert backend.exec_calls == []
+    assert owner.misp_readiness_query(_START, _END) is None
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        subprocess.CompletedProcess(["curl"], 7, "", ""),
+        subprocess.TimeoutExpired("curl", 30),
+        OSError("transport-canary"),
+    ],
+)
+def test_a_started_sqli_request_that_fails_is_unconfirmed_not_absent(
+    tmp_path, outcome
+):
+    from aptl_techvault.evidence.techvault import SQLI_DELIVERY_UNCONFIRMED
+
+    backend = _Backend()
+
+    def execute(name, cmd, payload, *, timeout):
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    backend.container_exec_with_input = execute
+
+    assert _owner(tmp_path, backend).trigger_sqli() == SQLI_DELIVERY_UNCONFIRMED
+
+
+def test_a_refused_sqli_request_never_started(tmp_path):
+    from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+
+    owner = _owner(tmp_path)
+    # The realization no longer admits the Kali container: core refuses first.
+    owner._operations = AdmittedRuntimeOperations(_Backend(), ())
+
+    assert owner.trigger_sqli() is None
+
+
+@pytest.mark.parametrize(
+    ("extra", "address"),
+    [
+        ({}, "172.20.0.135"),
+        ({"bad\nname": {"IPAddress": "10.0.0.2"}}, None),
+    ],
+)
+def test_misp_address_needs_one_whole_admitted_attachment(extra, address):
+    from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+    from aptl_techvault.evidence.techvault_native_readiness import (
+        _owned_attachment_address,
+    )
+
+    networks = {"range": {"IPAddress": "172.20.0.135", "Aliases": ["misp"]}, **extra}
+    backend = SimpleNamespace(
+        container_inspect=lambda _name: {"NetworkSettings": {"Networks": networks}}
+    )
+    node = SimpleNamespace(name="misp", container_name="aptl-misp", aliases=())
+    operations = AdmittedRuntimeOperations(backend, (node,))
+
+    assert _owned_attachment_address(operations, node, "misp") == address
+
+
+def test_owner_operations_refuse_a_container_the_realization_did_not_admit(tmp_path):
+    owner = _owner(tmp_path)
+
+    with pytest.raises(ValueError, match="^runtime-node-not-admitted$"):
+        owner._operations.container_exec("aptl-outside", ["true"], timeout=30)

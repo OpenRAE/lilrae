@@ -1,10 +1,13 @@
-"""Trial-bound Wazuh agent ids retained across capture-source reconstruction.
+"""Wazuh agent ids retained across capture-source reconstruction.
 
 Core creates one record for each admitted trial during that trial's first
 provisioning capture. Only that capture may add ids; every later context only
 reads. A record that is missing after provisioning is lost evidence, so a
 post-restart observation can never become the baseline it is compared with.
-The explicit volume reset clears the records through the existing
+
+A capture without a trial uses the legacy scenario baseline record. Only a
+startup preparation capture may create it or add hosts; measurement only reads.
+The explicit volume reset clears all records through the existing
 ``clear-wazuh-enrollment-baseline`` cleanup action.
 """
 
@@ -15,7 +18,10 @@ import re
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from aptl.core.lifecycle_cleanup import WAZUH_TRIAL_ENROLLMENT_DIR
+from aptl.core.lifecycle_cleanup import (
+    WAZUH_ENROLLMENT_BASELINE_RELPATH,
+    WAZUH_TRIAL_ENROLLMENT_DIR,
+)
 from aptl.utils.pathsafe import (
     PathContainmentError,
     create_exclusive_nofollow,
@@ -97,6 +103,21 @@ def _add_new_hosts(
     return True
 
 
+def _retainer(project_dir: Path, relpath: Path, writable: bool) -> EnrollmentRetainer:
+    """Return a retainer over one record; only a writable one adds hosts."""
+
+    def retain(observed: Mapping[str, str]) -> dict[str, str] | None:
+        """Return the ids retained before this call, or ``None`` if unproven."""
+
+        prior = _read(project_dir, relpath) if _valid_ids(observed) else None
+        if prior is not None and writable:
+            if not _add_new_hosts(project_dir, relpath, prior, observed):
+                prior = None
+        return prior
+
+    return retain
+
+
 def trial_enrollment_retainer(
     project_dir: Path, trial_key: str, *, establish: bool
 ) -> EnrollmentRetainer:
@@ -113,17 +134,29 @@ def trial_enrollment_retainer(
         raise ValueError("enrollment-trial-key-invalid")
     relpath = WAZUH_TRIAL_ENROLLMENT_DIR / f"{match.group(1)}.json"
     writable = establish and _establish(project_dir, relpath)
-
-    def retain(observed: Mapping[str, str]) -> dict[str, str] | None:
-        """Return the ids retained before this call, or ``None`` if unproven."""
-
-        prior = _read(project_dir, relpath) if _valid_ids(observed) else None
-        if prior is not None and writable:
-            if not _add_new_hosts(project_dir, relpath, prior, observed):
-                prior = None
-        return prior
-
-    return retain
+    return _retainer(project_dir, relpath, writable)
 
 
-__all__ = ("EnrollmentRetainer", "trial_enrollment_retainer")
+def scenario_enrollment_retainer(
+    project_dir: Path, *, establish: bool
+) -> EnrollmentRetainer:
+    """Return the retainer for a capture without a trial.
+
+    It uses the legacy scenario baseline record. With ``establish``, core
+    creates the record when it is absent, and each startup preparation may add
+    hosts the record does not have. Without it, the context only reads. A
+    retained id is never replaced, and an invalid record is never rewritten.
+    """
+
+    relpath = WAZUH_ENROLLMENT_BASELINE_RELPATH
+    writable = establish and (
+        _establish(project_dir, relpath) or _read(project_dir, relpath) is not None
+    )
+    return _retainer(project_dir, relpath, writable)
+
+
+__all__ = (
+    "EnrollmentRetainer",
+    "scenario_enrollment_retainer",
+    "trial_enrollment_retainer",
+)

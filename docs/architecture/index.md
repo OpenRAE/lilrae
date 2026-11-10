@@ -76,6 +76,8 @@ Current explanations and successor ADRs determine which design remains applicabl
 
 
 - [Issue #1707 Admitted Participant Smoke Providers](issue-1707-participant-smoke-provider-preflight.md)
+- [Issue #1705 TechVault Capture Context](issue-1705-techvault-capture-context-preflight.md)
+- [Issue #1705 TechVault Capture Context Design](issue-1705-techvault-capture-context-design.md)
 - [Issue #1689 Native Acquisition Phase](issue-1689-native-acquisition-phase-preflight.md)
 - [Issue #1421 RPT Capture](issue-1421-rpt-capture-preflight.md)
 - [Issue #1510 Code Quality Architecture Preflight](issue-1510-code-quality-preflight.md)

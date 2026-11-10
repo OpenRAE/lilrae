@@ -129,6 +129,46 @@ def test_sqli_source_rejects_legacy_or_uncorrelated_alerts():
     ).fetch(_START, _END)
 
     assert result.status is CollectorStatus.MID_RUN_LOSS
+    assert result.observer_effect == "one fixed POST /login containing UNION SELECT"
+
+
+def test_sqli_source_keeps_the_probe_effect_when_a_store_is_unreadable():
+    """The probe ran, so the lost observation is not a source that never started."""
+
+    result = SuricataWazuhSqliSource(
+        _trigger,
+        lambda _start, _end: None,
+        lambda _start, _end: [_wazuh_event()],
+    ).fetch(_START, _END)
+
+    assert result.status is CollectorStatus.MID_RUN_LOSS
+    assert result.observer_effect == "one fixed POST /login containing UNION SELECT"
+
+
+def test_sqli_source_reports_an_unconfirmed_probe_after_a_transport_failure():
+    from aptl_techvault.evidence.techvault import SQLI_DELIVERY_UNCONFIRMED
+
+    result = SuricataWazuhSqliSource(
+        lambda: SQLI_DELIVERY_UNCONFIRMED,
+        lambda _start, _end: [_suricata_event()],
+        lambda _start, _end: [_wazuh_event()],
+    ).fetch(_START, _END)
+
+    assert result.status is CollectorStatus.MID_RUN_LOSS
+    assert result.observer_effect == (
+        "one fixed POST /login containing UNION SELECT attempted; delivery unconfirmed"
+    )
+
+
+def test_sqli_source_without_a_sent_probe_reports_no_effect():
+    result = SuricataWazuhSqliSource(
+        lambda: None,
+        lambda _start, _end: [_suricata_event()],
+        lambda _start, _end: [_wazuh_event()],
+    ).fetch(_START, _END)
+
+    assert result.status is CollectorStatus.SOURCE_UNAVAILABLE
+    assert result.observer_effect is None
 
 
 def _session(session_id="session-1"):

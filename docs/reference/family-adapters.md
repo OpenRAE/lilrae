@@ -154,6 +154,10 @@ They receive no project path.
 Family runtime callbacks use `realize_runtime(operations, nodes, *, trial)` and `observe_runtime(operations, node, *, trial)`.
 Core passes detached node data and bounds container commands and timeouts.
 Scoped inspection exposes selected container state and restart counts, without environment values.
+It also exposes `NetworkSettings.Networks`, with only a valid `IPAddress` and bounded `Aliases` for each network.
+It omits all networks when it cannot show the complete set.
+
+An operation that core refuses before the backend call raises a `ValueError` code from `RUNTIME_OPERATION_REFUSALS`.
 A scoped restart operation supports retry repair.
 
 The service and startup policy validators remain authoritative.
@@ -163,6 +167,10 @@ Its contribution gives registrations, declared credential keys, optional generat
 `native_sources(CaptureSourceContext)` receives only declared credential keys and admitted container operations.
 It receives no run store or project path.
 
+Startup and trial acquisition both call it with this context.
+`context.may_prepare` is true only for startup preparation.
+A source sends state-changing stimulus only when `context.may_prepare` is true.
+
 `read_generated_output(artifact, output)` reads only an explicitly granted, admitted output through contained file operations.
 
 On a trial, `retain_enrollment_ids(observed)` takes a node-to-Wazuh-agent-ID map.
@@ -171,6 +179,11 @@ Core creates the trial's record once, in the first provisioning capture of the t
 Only that capture adds IDs, and it does not replace a retained ID.
 All other contexts only read the record, which includes rebuilt sources and captures after a restart.
 Thus an ID that core did not retain in the first provisioning capture cannot prove continuity.
+
+Without a trial, `retain_enrollment_ids(observed)` uses the scenario record.
+Each startup preparation capture can create that record and add new hosts to it.
+It does not replace a retained ID.
+Measurement contexts only read the record.
 
 The result is `None` when the record is missing or not valid.
 It is also `None` when the input is not valid or core cannot store the IDs.

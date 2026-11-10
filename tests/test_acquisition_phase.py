@@ -167,7 +167,9 @@ def test_preparation_source_prepares(tmp_path):
     assert result.observer_effect == "preparation stimulus sent"
 
 
-def _native_request(tmp_path, *, trial, runtime_adapter):
+def _native_request(
+    tmp_path, *, trial, runtime_adapter, native_ids=frozenset({"example.events"})
+):
     from aptl.backends.raes_evidence_acquisition import NativeEvidenceRequest
     from aptl.core.runstore import LocalRunStore
 
@@ -179,7 +181,7 @@ def _native_request(tmp_path, *, trial, runtime_adapter):
     selection = SimpleNamespace(
         contribution=SimpleNamespace(
             runtime_adapter=runtime_adapter,
-            native_registration_ids=frozenset(),
+            native_registration_ids=native_ids,
             runtime_environment_keys=(),
             generated_output_refs=(),
         ),
@@ -218,11 +220,53 @@ def test_acquire_native_evidence_selects_preparation(tmp_path, monkeypatch):
     trial = SimpleNamespace(
         identity=lambda: {"run_id": "run-1", "plan_entry_id": "entry-1"}
     )
-    request = _native_request(tmp_path, trial=trial, runtime_adapter=object())
+    request = _native_request(tmp_path, trial=trial, runtime_adapter=_RecordingAdapter())
 
     acquisition.acquire_native_evidence(request)
 
     assert recorded["phase"] is AcquisitionPhase.PREPARATION
+
+
+def test_acquire_native_evidence_selects_preparation_without_a_trial(
+    tmp_path, monkeypatch
+):
+    from aptl.backends import raes_evidence_acquisition as acquisition
+
+    recorded = _record_phase(monkeypatch)
+    request = _native_request(tmp_path, trial=None, runtime_adapter=_RecordingAdapter())
+
+    acquisition.acquire_native_evidence(request)
+
+    assert recorded["phase"] is AcquisitionPhase.PREPARATION
+
+
+@pytest.mark.parametrize(
+    "trial",
+    [
+        None,
+        SimpleNamespace(
+            identity=lambda: {"run_id": "run-1", "plan_entry_id": "entry-1"}
+        ),
+    ],
+)
+def test_an_adapter_without_declared_native_sources_is_not_invoked(
+    tmp_path, monkeypatch, trial
+):
+    from aptl.backends import raes_evidence_acquisition as acquisition
+
+    recorded = _record_phase(monkeypatch)
+    adapter = _RecordingAdapter()
+    request = _native_request(
+        tmp_path, trial=trial, runtime_adapter=adapter, native_ids=frozenset()
+    )
+
+    acquisition.acquire_native_evidence(request)
+    acquisition.acquire_trial_evidence(
+        request, attempt_id="attempt-1", trial_body=lambda: None
+    )
+
+    assert recorded == {}
+    assert adapter.seen_phase is None
 
 
 def test_acquire_trial_evidence_selects_measurement(tmp_path, monkeypatch):
