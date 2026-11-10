@@ -18,9 +18,8 @@ The supported runtime handoff is now:
 
 5. Start the lab through `aptl.backends.raes.start_raes_scenario()`.
 
-The SOC recovery hook runs only for the existing retryable start diagnostic when the admitted plan selected `soc`. LilRAE then applies the same admitted `ExecutionPlan` once more. It does not parse
-the SDL or invoke the planner again. The retry decision therefore follows the
-realized profile set, not the global container configuration.
+LilRAE applies the admitted `ExecutionPlan` one time. A failed apply ends the
+start without an automatic retry.
 
 Runtime bindings are an in-process admission input, not APTL configuration or
 secrets. APTL does not source them from the environment, forward them to
