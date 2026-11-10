@@ -28,9 +28,10 @@ from aptl.core.deployment._environment_bindings import declared_environment
 from aptl.core.deployment.realization import LOOPBACK_HOST_IP
 
 # Capabilities selected by APTL itself as part of an OPEN compute-substrate
-# implementation. These are distinct from author-requested runtime capabilities
-# and remain a deliberately tiny allowlist.
-_ALLOWED_BACKEND_RUN_CAPABILITIES = frozenset({"SYS_ADMIN"})
+# implementation. These are distinct from author-requested runtime capabilities.
+# Empty since issue #976: no backend provider needs an added capability. A new
+# entry needs a measured, per-provider necessity record.
+_ALLOWED_BACKEND_RUN_CAPABILITIES: frozenset[str] = frozenset()
 
 
 class UnauthorizedCapabilityError(ValueError):

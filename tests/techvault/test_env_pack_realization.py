@@ -91,7 +91,7 @@ def test_generated_compose_covers_image_nodes_networks_and_ordering(
     ad = next(node for node in realization.nodes if node.name == "ad")
     assert ad.backend_base_image_ref == "aptl/generic-samba-ad-wazuh-agent-base:latest"
     assert ad.backend_base_use_image_command is True
-    assert ad.backend_run_capabilities == ("SYS_ADMIN",)
+    assert ad.backend_run_capabilities == ()
     assert ad.backend_provider_kind == "samba-active-directory"
     assert dict(ad.backend_provider_parameters) == {
         "domain": "TECHVAULT",
