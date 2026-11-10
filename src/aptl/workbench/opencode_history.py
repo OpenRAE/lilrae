@@ -163,12 +163,17 @@ def _read_session(
 def _validate_message_model(
     value: dict[str, object], role: str, expected_model: str
 ) -> None:
-    """Compare the recorded provider and model with the independently retained pin."""
+    """Compare the recorded provider and model with the independently retained pin.
+
+    The pin is ``<provider>/<model>``; the model part can itself contain ``/``.
+    """
+    provider, _, model_id = expected_model.partition("/")
     model = value.get("model") if role == "user" else value
     if (
-        not isinstance(model, dict)
-        or model.get("providerID") != "openrouter"
-        or model.get("modelID") != expected_model.removeprefix("openrouter/")
+        not model_id
+        or not isinstance(model, dict)
+        or model.get("providerID") != provider
+        or model.get("modelID") != model_id
     ):
         raise ValueError("native model mismatch")
 

@@ -9,7 +9,12 @@ import pytest
 
 
 def native_database(
-    work, *, prompt="exact prompt\n", model="test/model", finish="stop"
+    work,
+    *,
+    prompt="exact prompt\n",
+    model="test/model",
+    finish="stop",
+    provider="openrouter",
 ):
     path = work / "data/opencode/opencode.db"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -25,14 +30,14 @@ def native_database(
                 "msg_user",
                 {
                     "role": "user",
-                    "model": {"providerID": "openrouter", "modelID": model},
+                    "model": {"providerID": provider, "modelID": model},
                 },
             ),
             (
                 "msg_assistant",
                 {
                     "role": "assistant",
-                    "providerID": "openrouter",
+                    "providerID": provider,
                     "modelID": model,
                     "time": {"completed": 30},
                 },
@@ -105,6 +110,24 @@ def observe(work, **kwargs):
         session_id="ses_fixture",
         **kwargs,
     )
+
+
+def test_native_history_verifies_a_vertex_pin_and_refuses_another_provider(tmp_path):
+    from aptl.workbench.opencode_history import read_native_history
+
+    native_database(tmp_path, model="zai-org/glm-5.2-maas", provider="google-vertex")
+    pin = "google-vertex/zai-org/glm-5.2-maas"
+    history = read_native_history(
+        tmp_path, expected_prompt=b"exact prompt\n", expected_model=pin, session_id=None
+    )
+    assert (history.status, history.recorded_model) == ("observed", pin)
+    other = read_native_history(
+        tmp_path,
+        expected_prompt=b"exact prompt\n",
+        expected_model="openrouter/zai-org/glm-5.2-maas",
+        session_id=None,
+    )
+    assert other.status == "invalid"
 
 
 def test_native_history_verifies_prompt_model_and_separate_step_usage(tmp_path):
