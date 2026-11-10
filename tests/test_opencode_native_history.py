@@ -188,6 +188,12 @@ def test_native_history_retains_prompt_delivery_on_interrupted_generation(tmp_pa
     assert history.steps == ()
 
 
+@pytest.mark.parametrize(("finish", "status"), [("length", "observed"), ("error", "partial")])
+def test_native_history_accepts_an_output_limit_end_only(tmp_path, finish, status):
+    native_database(tmp_path, finish=finish)
+    assert observe(tmp_path).status == status
+
+
 @pytest.mark.parametrize("column", ["message", "part"])
 @pytest.mark.parametrize("value", [None, b"invalid native JSON"])
 def test_native_history_rejects_non_text_json_columns(tmp_path, column, value):

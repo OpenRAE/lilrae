@@ -20,6 +20,7 @@ from aptl.utils.pathsafe import (
     open_contained_nofollow,
 )
 from aptl.utils.strict_json import loads_strict
+from aptl.workbench.opencode_events import PARTICIPANT_END_REASONS
 
 _DATABASE = "data/opencode/opencode.db"
 _MAX_ROWS = 4096
@@ -149,7 +150,9 @@ def _read_session(
     if delivered != expected_prompt:
         raise ValueError("native prompt mismatch")
     return NativeHistoryObservation(
-        status="observed" if steps and steps[-1].finish_reason == "stop" else "partial",
+        status="observed"
+        if steps and steps[-1].finish_reason in PARTICIPANT_END_REASONS
+        else "partial",
         session_id=session,
         user_message_id=user_message_id,
         prompt_matches=True,
