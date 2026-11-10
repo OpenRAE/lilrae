@@ -21,6 +21,9 @@ _KEYCTL_GET_KEYRING_ID = 0
 _KEY_SPEC_PROCESS_KEYRING = -2
 
 
+_DETAIL = []
+
+
 def _emit(kind, probe_id, *fields):
     print("LILRAE-PROBE", kind, probe_id, *fields, flush=True)
 
@@ -74,17 +77,21 @@ def _unshare_user():
 
 
 def _inherited_descriptor():
+    found = []
     for name in os.listdir("/proc/self/fd"):
         descriptor = int(name)
         if descriptor <= 2:
             continue
         try:
             mode = os.fstat(descriptor).st_mode
+            target = os.readlink(f"/proc/self/fd/{descriptor}")
         except OSError:
             continue
         if stat.S_ISREG(mode) or stat.S_ISSOCK(mode):
-            return True
-    return False
+            found.append(f"fd{descriptor}:{stat.S_IFMT(mode):o}:{target}".replace(" ", "_"))
+    if found:
+        _DETAIL.append(",".join(found))
+    return bool(found)
 
 
 def _environment(name):
@@ -138,7 +145,7 @@ def main(probe_id, *arguments):
     _emit("reached", probe_id)
     try:
         allowed = PROBES[probe_id](*arguments)
-        detail = "ok" if allowed else "absent"
+        detail = (_DETAIL[0] if _DETAIL else "ok") if allowed else "absent"
     except OSError as exc:
         allowed, detail = False, errno.errorcode.get(exc.errno, str(exc.errno))
     _emit("result", probe_id, "allowed" if allowed else "denied", detail)

@@ -281,7 +281,9 @@ def test_escape_probe_is_denied_with_a_working_control(
     _assert_contained(report)
     assert report.target is not None
     contained = parse_probe_output(report.target.stdout, probe_id)
-    assert classify_probe(control, contained) is ProbeVerdict.CONTAINED, (control, contained, report.target)
+    assert classify_probe(control, contained) is ProbeVerdict.CONTAINED, (
+        control, contained, report.target.stdout.decode(errors="replace")
+    )
     assert list(host.canary_dir.glob("escape-*")) == []
     assert list(input_dir.glob("escape-*")) == []
 
