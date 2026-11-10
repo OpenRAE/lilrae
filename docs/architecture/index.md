@@ -96,6 +96,8 @@ Current explanations and successor ADRs determine which design remains applicabl
 - [Issue #1422 Wazuh Dashboard Owner-Declared Config Design](issue-1422-wazuh-dashboard-owned-config-design.md)
 - [Issue #1413 Configured Pack Source](issue-1413-configured-pack-source-preflight.md)
 - [Issue #955 Generic Systemd Substrate Privilege](issue-955-systemd-substrate-privilege-preflight.md)
+- [Issue #976 Service Capability](issue-976-service-capability-preflight.md)
+- [Issue #976 Samba NT ACL Store Design](issue-976-samba-acl-store-design.md)
 - [Issue #958 Execution Boundary](issue-958-execution-boundary-preflight.md)
 - [Native Docker Range Network Policy](issue-968-native-network-policy.md)
 - [Issue #601 Participant Demonstration](issue-601-participant-demonstration-preflight.md)
