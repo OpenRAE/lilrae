@@ -62,7 +62,7 @@ The contained run must print the `reached` marker and show `denied`.
 | Connect to an abstract Unix socket | Network namespace | `test_unix_connect_scope.py` | `abstract-unix-socket-connect` | Connect to a host abstract socket | `ci-full` |
 | Use a dangerous system call | Seccomp-bpf filter | `test_seccomp_policy_pins.py`, `test_seccomp_family_deny.py` | `keyctl-syscall` | `keyctl(KEYCTL_GET_KEYRING_ID)` | `ci-full` |
 | Create a nested namespace | Seccomp namespace-creation deny | `test_ns_creation_block.py` | `nested-user-namespace` | `unshare(CLONE_NEWUSER)` | `ci-full` |
-| Use an inherited descriptor | Descriptor closure and the pass-fds gate | `test_pass_fds_gate.py`, `test_death_pipe_sibling_fds.py` | `inherited-descriptor` | Use an open file or socket descriptor above 2 | `ci-full` |
+| Use an inherited descriptor | Descriptor closure and the pass-fds gate | `test_pass_fds_gate.py`, `test_death_pipe_sibling_fds.py` | `inherited-descriptor` | Hold an open file or socket descriptor above 2 at exec | `ci-full` |
 | Read a credential from the environment | Explicit worker and target environments | `test_target_env_strip.py` | `environment-canary` | Read a canary variable from the consumer environment | `ci-full` |
 | Keep a descendant alive through a new session | PID namespace teardown | `test_spawn_timeout_setsid_escape.py` | `detached-descendant` | A double-forked `setsid` heartbeat continues after the run | `ci-full` |
 | Forge a setup result with an exit status | Separate worker report and the engine setup-status pipe | `test_setup_status_integrity.py` | Report-spoof test | A target prints a report and exits with status 126 | `ci-full` |

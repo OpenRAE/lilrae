@@ -7,14 +7,35 @@ Each probe prints ``LILRAE-PROBE reached <probe-id>`` before its operation and
 observes its heartbeat instead.
 """
 
-import ctypes
-import errno
 import os
-import platform
-import socket
-import stat
-import sys
-import time
+
+
+def _descriptor_table():
+    """Describe each open descriptor above 2; the listing's own is closed by then."""
+    table = []
+    for name in sorted(os.listdir("/proc/self/fd"), key=int):
+        descriptor = int(name)
+        if descriptor <= 2:
+            continue
+        try:
+            mode = os.fstat(descriptor).st_mode
+            target = os.readlink(f"/proc/self/fd/{descriptor}")
+        except OSError:
+            continue
+        table.append((descriptor, mode, target))
+    return table
+
+
+# Read the descriptor table as the payload inherited it at exec, before any
+# import can open a file of its own. Inside the engine's seccomp filter, for
+# example, libffi keeps its own library open when memfd_create is denied.
+_INHERITED_DESCRIPTORS = _descriptor_table()
+
+import errno  # noqa: E402
+import socket  # noqa: E402
+import stat  # noqa: E402
+import sys  # noqa: E402
+import time  # noqa: E402
 
 _KEYCTL = {"x86_64": 250, "aarch64": 219}
 _KEYCTL_GET_KEYRING_ID = 0
@@ -63,6 +84,9 @@ def _unix_connect(address):
 
 
 def _keyctl():
+    import ctypes
+    import platform
+
     libc = ctypes.CDLL(None, use_errno=True)
     number = _KEYCTL[platform.machine()]
     if libc.syscall(number, _KEYCTL_GET_KEYRING_ID, _KEY_SPEC_PROCESS_KEYRING, 1) < 0:
@@ -78,15 +102,7 @@ def _unshare_user():
 
 def _inherited_descriptor():
     found = []
-    for name in os.listdir("/proc/self/fd"):
-        descriptor = int(name)
-        if descriptor <= 2:
-            continue
-        try:
-            mode = os.fstat(descriptor).st_mode
-            target = os.readlink(f"/proc/self/fd/{descriptor}")
-        except OSError:
-            continue
+    for descriptor, mode, target in _INHERITED_DESCRIPTORS:
         if stat.S_ISREG(mode) or stat.S_ISSOCK(mode):
             found.append(f"fd{descriptor}:{stat.S_IFMT(mode):o}:{target}".replace(" ", "_"))
     if found:
