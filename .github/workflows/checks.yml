@@ -132,8 +132,7 @@ jobs:
         run: bash tools/vale-lint-all.sh
       - name: STE corpus report (legacy findings are advisory)
         run: |
-          bash tools/install-ste.sh
-          git ls-files -z '*.md' | xargs -0 -r .tools/ste/0.10.1/ste lint --config .ste.yml --no-baseline --format github
+          git ls-files -z '*.md' | xargs -0 -r bash tools/ste-lint.sh --fail-over -1 --format github
       - name: STE rewritten pages (no selected findings)
         run: xargs -r bash tools/ste-lint.sh --format github < .ste-required.txt
       - name: mkdocs strict build (nav and links must resolve)

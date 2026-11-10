@@ -89,6 +89,68 @@ Application models, runtime DFDs, deployment policy, and ADR decisions need no a
 Their existing diagrams remain subject to source verification when their descriptions change.
 This design adds no runtime mechanism or executable enforcement layer.
 
+## Shared package boundary
+
+The authoring dependency is [doc-tools v0.1.0](https://github.com/OpenRAE/doc-tools/releases/tag/v0.1.0).
+[ADR-038](../adrs/adr-038-docs-style-lint-and-published-site.md#amendment-shared-documentation-package) records the pin, ownership, and gate decisions.
+The package location is `.tools/doc-tools/0.1.0/`.
+The local bootstrap prints that location for local and CI callers.
+It uses a complete staged directory and an atomic rename.
+
+Python's standard `os.rename` refuses to replace a populated destination during parallel installation.
+This avoids platform-specific shell rename options.
+
+```mermaid
+flowchart LR
+    subgraph Remote[Public release boundary]
+        Archive[doc-tools release archive]
+        Binary[ste-cli release archive]
+    end
+    subgraph Local[Contributor host or existing CI runner]
+        Pin[(Reviewed version and archive digest)] -->|Expected digest| Setup[Local bootstrap]
+        Archive -->|HTTPS archive| Setup
+        Setup -->|Verified complete files| Package[(Versioned package and notices)]
+        Package -->|Shared installer and inner pins| Install[Package installer]
+        Binary -->|HTTPS archive| Install
+        Install -->|Verified binary| Checker[Package wrapper and ste-cli]
+        Package -->|Explicit config| Checker
+        Pages[(Explicit Markdown paths or stdin)] -->|Document text| Checker
+        Checker -->|Findings and exit status| Results[Terminal or existing CI log]
+    end
+```
+
+Text alternative: the local bootstrap verifies the package archive against the reviewed digest before activation.
+The shared installer separately verifies the ste-cli archive.
+The checker reads explicit local documents and writes findings to the terminal or CI log.
+No document upload or remote analyzer is involved.
+
+| Threat or failure | Control | Verification |
+| --- | --- | --- |
+| Changed package archive executes code | Reviewed SHA-256 before extraction or execution | Wrong-digest integration case checks execution and extraction sentinels |
+| Changed ste-cli archive executes code | Package-owned platform checksums before binary extraction | Inner-checksum integration case through `tools/install-ste.sh` |
+| Failed or parallel setup exposes incomplete files | Private staging, cleanup, and atomic directory rename | Clean and parallel setup integration cases |
+| Ambient configuration changes findings | Package wrapper selects its configuration explicitly | Failing and corrected samples from another working directory |
+| A default invocation scans unrelated files | Local zero-argument refusal before installation | No-input integration case with a failing download sentinel |
+| Prose findings become advisory on rewritten pages | Strict default; advisory override confined to corpus report | Prose samples and existing CI publishing contracts |
+| A check changes exact source | Upstream Markdown parsing without fix operations | Literal-byte integration case |
+
+The bootstrap trusts only the digest-pinned release archive layout.
+The reviewed archive contains regular files and directories below `doc-tools-0.1.0/`.
+Extraction stays in private staging. Public downloads use HTTPS without credentials or privilege escalation.
+An installed cache remains trusted; same-user replacement after setup is a residual risk.
+Missing downloads, malformed archives, and checksum failures stop setup without fallback.
+
+The skill crosses the same reviewed-content boundary.
+Claude Code registers the verified local marketplace; Codex installs the recorded commit and compares its files with the verified archive.
+Existing personal skill directories remain untouched until the owner chooses migration.
+
+Product policies remain in their existing LilRAE files.
+No runtime authentication, application model, lab deployment, or estate model changes.
+The existing MkDocs model and publisher guards retain publication authority.
+`tests/test_documentation_checks.py` owns consumer integration evidence.
+`tests/test_docs_publishing.py` and the docs job retain navigation and publishing checks.
+Unknown changed inputs continue to select all checks through `tools/ci/select_checks.py`.
+
 ## Sources
 
 - [Diataxis compass](https://diataxis.fr/compass/): reader-purpose selection.

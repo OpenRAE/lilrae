@@ -50,7 +50,7 @@ That script symlinks the canonical skills into:
 
 Both Claude and Codex therefore read the same source-of-truth SKILL.md.
 Re-run the script after pulling Ground Control to refresh. Use `--copy`
-on hosts without symlink support and `--no-codex` if Codex isn't
+on hosts without symlink support and `--no-codex` if Codex is not
 installed locally.
 
 This repo intentionally does **not** ship `.claude/skills/implement/`
@@ -128,7 +128,11 @@ end-to-end loop. Summary for agents working in this repo:
 
 ### Documentation
 
-Use the shared user-level `documentation` skill for documentation changes.
+Use the shared `documentation` skill from the pinned doc-tools package for documentation changes.
+Existing user-level installations remain usable during migration.
+Follow `docs/contributing-documentation.md` for supported client setup.
+`bash tools/install-doc-tools.sh` installs the reviewed package; do not copy its tools or skill here.
+
 Select a Diataxis purpose from the reader's task. Verify technical claims
 against code, configuration, and supported interfaces. Preserve technical meaning.
 
