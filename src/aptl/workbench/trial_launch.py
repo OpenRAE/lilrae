@@ -116,6 +116,7 @@ def trial_executors(
     settings: TrialLaunchSettings,
     read_asset: AssetReader,
     evidence_sink: Callable[[str, OpenCodeInvocationEvidence], None],
+    transcript_sink: Callable[[str, Mapping[str, object]], None] | None = None,
 ) -> Iterator[Mapping[str, LilraeOpenCodeExecutor]]:
     """Yield one executor per participant address; remove credentials on exit."""
     resolver = ProcessEnvironmentCredentialResolver(settings.source_environment)
@@ -138,6 +139,9 @@ def trial_executors(
                     build=settings.build,
                     route=route,
                     evidence_sink=_address_sink(evidence_sink, participant.address),
+                    transcript_sink=_address_sink(transcript_sink, participant.address)
+                    if transcript_sink is not None
+                    else None,
                     deadline=deadline,
                     tool_governance="allowlist",
                 ),
@@ -156,9 +160,7 @@ def _timeout(deadline: datetime) -> float:
     return max(1.0, min(_MAX_INVOCATION_SECONDS, remaining))
 
 
-def _address_sink(
-    sink: Callable[[str, OpenCodeInvocationEvidence], None], address: str
-) -> Callable[[OpenCodeInvocationEvidence], None]:
+def _address_sink[T](sink: Callable[[str, T], None], address: str) -> Callable[[T], None]:
     """Bind one participant address to the shared evidence sink."""
     return lambda evidence: sink(address, evidence)
 

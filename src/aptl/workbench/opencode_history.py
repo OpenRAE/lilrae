@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from contextlib import closing
+from collections.abc import Iterator
+from contextlib import closing, contextmanager
 import hashlib
 import os
 from pathlib import Path
@@ -245,20 +246,26 @@ def read_native_history(
     return observation
 
 
-def _contained_history(
-    work: Path, prompt: bytes, model: str, session: str | None, max_bytes: int
-) -> NativeHistoryObservation:
-    """Read only a contained checkpointed database under SQLite resource limits."""
+def _wal_is_empty(work: Path) -> bool:
+    """Return whether the database has no pending write-ahead log content."""
     try:
         with open_contained_nofollow(work, _DATABASE + "-wal") as journal:
-            if journal.read(1):
-                return NativeHistoryObservation(status="uncheckpointed")
+            return not journal.read(1)
     except PathContainmentError as exc:
         if exc.reason != REASON_NOT_FOUND:
             raise
+    return True
+
+
+@contextmanager
+def _native_database(
+    work: Path, max_bytes: int, max_steps: int
+) -> Iterator[sqlite3.Connection | None]:
+    """Open the contained database read-only; yield ``None`` when it is oversized."""
     with open_contained_nofollow(work, _DATABASE) as source:
         if os.fstat(source.fileno()).st_size > max_bytes:
-            return NativeHistoryObservation(status="oversized")
+            yield None
+            return
         uri = f"file:/proc/self/fd/{source.fileno()}?mode=ro&immutable=1"
         with closing(sqlite3.connect(uri, uri=True, timeout=0)) as db:
             db.execute("PRAGMA query_only=ON")
@@ -270,7 +277,67 @@ def _contained_history(
                 """Abort native queries after a bounded number of VM steps."""
                 nonlocal calls
                 calls += 1
-                return int(calls > 1000)
+                return int(calls > max_steps)
 
             db.set_progress_handler(bounded_query, 1000)
-            return _read_session(db, prompt, model, session)
+            yield db
+
+
+def _contained_history(
+    work: Path, prompt: bytes, model: str, session: str | None, max_bytes: int
+) -> NativeHistoryObservation:
+    """Read only a contained checkpointed database under SQLite resource limits."""
+    if not _wal_is_empty(work):
+        return NativeHistoryObservation(status="uncheckpointed")
+    with _native_database(work, max_bytes, 1000) as db:
+        if db is None:
+            return NativeHistoryObservation(status="oversized")
+        return _read_session(db, prompt, model, session)
+
+
+def export_native_session(
+    work: Path, *, max_bytes: int = 256 * 1024 * 1024
+) -> dict[str, object] | None:
+    """Return every recorded session, message and part, or ``None`` when unreadable.
+
+    The export is the participant's raw chat: prompts, reasoning, replies, tool
+    calls and tool results. The caller redacts granted credentials before it
+    retains the export.
+    """
+    if sys.platform != "linux":
+        return None
+    try:
+        if not _wal_is_empty(work):
+            return None
+        with _native_database(work, max_bytes, 10_000_000) as db:
+            if db is None:
+                return None
+            return {
+                "schema_version": "lilrae-opencode-session/v1",
+                "sessions": _rows(db, "SELECT * FROM session ORDER BY id"),
+                "messages": _rows(
+                    db,
+                    "SELECT id, session_id, data, time_created, time_updated "
+                    "FROM message ORDER BY time_created, id",
+                ),
+                "parts": _rows(
+                    db,
+                    "SELECT id, message_id, session_id, data, time_created, "
+                    "time_updated FROM part ORDER BY time_created, id",
+                ),
+            }
+    except OSError, sqlite3.Error, ValueError, PathContainmentError:
+        return None
+
+
+def _rows(db: sqlite3.Connection, query: str) -> list[dict[str, object]]:
+    """Return one table's rows by column name, decoding the native JSON data."""
+    cursor = db.execute(query)
+    names = [column[0] for column in cursor.description]
+    rows = []
+    for values in cursor.fetchall():
+        row = dict(zip(names, values, strict=True))
+        if isinstance(row.get("data"), str):
+            row["data"] = loads_strict(row["data"])
+        rows.append(row)
+    return rows

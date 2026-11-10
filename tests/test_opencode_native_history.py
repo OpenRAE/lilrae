@@ -272,12 +272,15 @@ def test_executor_reduces_history_before_private_teardown(tmp_path, failed):
             )
 
     records = []
+    transcripts = []
     active = LilraeOpenCodeExecutor(
         options=synthetic_options(
             executable=Path("/bin/true"),
             work_root=tmp_path,
             runner=Runner(),
             evidence_sink=records.append,
+            environment={"OPENROUTER_API_KEY": "secret-capability"},
+            transcript_sink=transcripts.append,
         ),
         model="openrouter/test/model",
         prompt="exact prompt\n",
@@ -295,6 +298,22 @@ def test_executor_reduces_history_before_private_teardown(tmp_path, failed):
     assert history.session_id == records[0].session_id
     assert not list(tmp_path.glob("lilrae-participant-*"))
     assert "secret-capability" not in repr(records)
+    (transcript,) = transcripts
+    assert [row["id"] for row in transcript["messages"]] == ["msg_user", "msg_assistant"]
+    assert "private reasoning" in repr(transcript["parts"])
+    assert "secret-capability" not in repr(transcript)
+
+
+def test_native_session_export_returns_every_row_with_decoded_data(tmp_path):
+    from aptl.workbench.opencode_history import export_native_session
+
+    native_database(tmp_path)
+    session = export_native_session(tmp_path)
+    assert session["schema_version"] == "lilrae-opencode-session/v1"
+    assert [row["id"] for row in session["sessions"]] == ["ses_fixture"]
+    assert session["messages"][0]["data"]["role"] == "user"
+    assert {row["data"]["type"] for row in session["parts"]} >= {"text", "reasoning", "tool"}
+    assert export_native_session(tmp_path / "missing") is None
 
 
 def test_executor_refuses_mismatched_native_prompt(tmp_path):

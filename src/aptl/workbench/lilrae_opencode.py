@@ -65,9 +65,14 @@ from aptl.workbench.provider_readiness import (
     openrouter_access_ready,
     probe_opencode_version,
 )
+from aptl.workbench.opencode_history import export_native_session
 from aptl.workbench.opencode_options import OpenCodeOptions, OpenCodeToolProfile
+from aptl.workbench.provider_capture import redact_capture_value
+from aptl.utils.logging import get_logger
 
 __all__ = ["LilraeOpenCodeExecutor", "OpenCodeOptions", "OpenCodeToolProfile"]
+
+logger = get_logger("workbench.opencode")
 
 
 class LilraeOpenCodeExecutor:
@@ -114,6 +119,7 @@ class LilraeOpenCodeExecutor:
             else None
         )
         self._capture = admitted_capture(options.capture, self._configuration_result)
+        self._transcript_sink = options.transcript_sink
         self._request = options.request
         self._request_binding = options.request_binding
         validate_opencode_request(
@@ -458,6 +464,25 @@ class LilraeOpenCodeExecutor:
                 expected_controls,
                 self._request_observation_required,
                 capture_lease,
+            )
+            self._retain_transcript(work)
+
+    def _retain_transcript(self, work: Path) -> None:
+        """Pass the redacted native session to the transcript sink, if any."""
+        if self._transcript_sink is None:
+            return
+        session = export_native_session(work)
+        if session is None:
+            logger.warning("participant native session was not exported")
+            return
+        secrets = tuple(self._environment.values()) + tuple(
+            self._mcp_credentials.values()
+        )
+        try:
+            self._transcript_sink(redact_capture_value(session, secrets))
+        except Exception as exc:  # noqa: BLE001  # never mask the invocation outcome
+            logger.warning(
+                "participant native session was not retained: %s", type(exc).__name__
             )
 
     def _run(

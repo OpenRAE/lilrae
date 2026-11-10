@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import shutil
 import signal
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -116,6 +116,12 @@ def _run_and_drain(
             """Keep the latest allowlisted invocation facts of one participant."""
             evidence[address] = invocation_fields(item)
 
+        store = LocalRunStore(_run_store_base(config_path.parent, config))
+
+        def transcript_sink(address: str, session: Mapping[str, object]) -> None:
+            """Retain one participant's redacted raw chat in the run before its seal."""
+            store.create_run_json_once(attempt.run_id, f"trial/transcripts/{address}.json", session)
+
         def read_asset(asset: ParticipantControlContextAssetModel) -> bytes:
             """Read one prompt asset from the scenario pack by its artifact ID."""
             return resolve_pack_artifact(str(bundle.root), asset.content.artifact_id).data
@@ -129,6 +135,7 @@ def _run_and_drain(
             settings=_launch_settings(root, config, attempt),
             read_asset=read_asset,
             evidence_sink=sink,
+            transcript_sink=transcript_sink,
         ) as executors:
             control = TrialControl(root)
             record = run_declared_trial(
@@ -136,7 +143,7 @@ def _run_and_drain(
                 invocations=executors,
                 evidence=evidence,
                 stop_requested=lambda: terminated.is_set() or control.stop_requested(),
-                store=LocalRunStore(_run_store_base(config_path.parent, config)),
+                store=store,
                 clock=lambda: datetime.now(UTC),
             )
         cleanup = {"provider_access": "removed"}
