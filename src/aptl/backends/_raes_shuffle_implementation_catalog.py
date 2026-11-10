@@ -10,6 +10,7 @@ from aptl.backends._raes_backend_implementation_types import (
     variable as _variable,
 )
 from aptl.core.deployment._account_provider import SHUFFLE
+from aptl.core.env import SHUFFLE_API_KEY_FIXTURE
 
 SHUFFLE_APPLICATION_PROFILES = (
     BackendImplementationProfile(
@@ -48,7 +49,7 @@ SHUFFLE_APPLICATION_PROFILES = (
                 ),
                 _variable(
                     "SHUFFLE_DEFAULT_APIKEY",
-                    "31a211c4-ea5c-4a49-b022-5e2434e758a7",
+                    SHUFFLE_API_KEY_FIXTURE,
                     classification="secret_fixture",
                 ),
                 _variable("SHUFFLE_APP_SDK_TIMEOUT", "120"),
