@@ -365,34 +365,9 @@ class TechVaultNativeEvidenceOwner:
         endpoint = urlunsplit(
             ("http", f"{self._webapp_ip}:{self._webapp_port}", "/login", "", "")
         )
-        try:
-            result = execute(
-                _KALI_CONTAINER,
-                [
-                    "curl",
-                    "-sS",
-                    "-o",
-                    "/dev/null",
-                    "-X",
-                    "POST",
-                    "-H",
-                    "Content-Type: application/x-www-form-urlencoded",
-                    "--data-binary",
-                    "@-",
-                    endpoint,
-                ],
-                payload,
-                timeout=30,
-            )
-        except ValueError as exc:
-            # A refused operation never started; a failed one may have sent.
-            refused = str(exc) in RUNTIME_OPERATION_REFUSALS
-            return None if refused else SQLI_DELIVERY_UNCONFIRMED
-        # broad-except: a backend transport failure may follow a sent request.
-        except Exception:
-            return SQLI_DELIVERY_UNCONFIRMED
-        if result.returncode != 0:
-            return SQLI_DELIVERY_UNCONFIRMED
+        sent = _send_sqli_probe(execute, endpoint, payload)
+        if sent is not True:
+            return None if sent is None else SQLI_DELIVERY_UNCONFIRMED
         return {
             "trigger_id": trigger_id,
             "method": "POST",
@@ -451,6 +426,43 @@ class TechVaultNativeEvidenceOwner:
             if isinstance(item.get("rule"), Mapping)
             and str(item["rule"].get("id", "")) == WAZUH_SQLI_RULE_ID
         ]
+
+
+def _send_sqli_probe(
+    execute: Callable[..., object], endpoint: str, payload: str
+) -> bool | None:
+    """Send the probe body from Kali on stdin.
+
+    Return ``True`` when the request completed, ``False`` when it started
+    without confirmed delivery, and ``None`` when core refused it first.
+    """
+
+    try:
+        result = execute(
+            _KALI_CONTAINER,
+            [
+                "curl",
+                "-sS",
+                "-o",
+                "/dev/null",
+                "-X",
+                "POST",
+                "-H",
+                "Content-Type: application/x-www-form-urlencoded",
+                "--data-binary",
+                "@-",
+                endpoint,
+            ],
+            payload,
+            timeout=30,
+        )
+    except ValueError as exc:
+        # A refused operation never started; a failed one may have sent.
+        return None if str(exc) in RUNTIME_OPERATION_REFUSALS else False
+    # broad-except: a backend transport failure may follow a sent request.
+    except Exception:
+        return False
+    return getattr(result, "returncode", 1) == 0
 
 
 __all__ = (

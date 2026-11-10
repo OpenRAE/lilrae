@@ -76,24 +76,14 @@ class SuricataWazuhSqliSource:
 
     def fetch(self, start_iso: str, end_iso: str) -> SourceResult:
         trigger = self._trigger()
-        if trigger is None:
-            return _failure(CollectorStatus.SOURCE_UNAVAILABLE)
-        # The probe request started, so every later failure keeps its effect.
-        if not sqli_probe_delivered(trigger):
-            return SourceResult(
-                status=CollectorStatus.MID_RUN_LOSS,
-                observer_effect=SQLI_ATTEMPT_EFFECT,
-            )
         pair = (
             self._poll_pair(trigger, end_iso)
-            if _valid_trigger(trigger, start_iso, end_iso)
+            if sqli_probe_delivered(trigger)
+            and _valid_trigger(trigger, start_iso, end_iso)
             else None
         )
         if pair is None:
-            return SourceResult(
-                status=CollectorStatus.MID_RUN_LOSS,
-                observer_effect=SQLI_OBSERVER_EFFECT,
-            )
+            return _sqli_failure(trigger)
         return _sqli_result(trigger, pair)
 
     def _poll_pair(
@@ -159,6 +149,17 @@ def _sqli_result(
             "correlation": "shared-suricata-flow-id",
         },
     )
+
+
+def _sqli_failure(trigger: Mapping[str, object] | None) -> SourceResult:
+    """Fail without evidence, keeping the effect of a probe that started."""
+
+    if trigger is None:
+        return _failure(CollectorStatus.SOURCE_UNAVAILABLE)
+    effect = (
+        SQLI_OBSERVER_EFFECT if sqli_probe_delivered(trigger) else SQLI_ATTEMPT_EFFECT
+    )
+    return SourceResult(status=CollectorStatus.MID_RUN_LOSS, observer_effect=effect)
 
 
 def sqli_probe_delivered(trigger: Mapping[str, object] | None) -> bool:

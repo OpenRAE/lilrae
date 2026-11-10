@@ -134,6 +134,7 @@ def test_startup_hands_the_preparation_context_to_techvault_sources(
     context = received[0]
     assert isinstance(context, CaptureSourceContext)
     assert context.phase is AcquisitionPhase.PREPARATION
-    assert not hasattr(context, "backend") and not hasattr(context, "project_dir")
+    assert not hasattr(context, "backend")
+    assert not hasattr(context, "project_dir")
     # Preparation authority reaches the sources: the SQLi probe is sent.
     assert any("UNION" in text for text in backend.effects())
