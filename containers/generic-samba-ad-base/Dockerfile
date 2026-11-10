@@ -23,8 +23,10 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
 
 COPY provider-start.sh /usr/local/sbin/aptl-samba-provider-start
 COPY provision-domain.sh /usr/local/sbin/aptl-provision-samba-domain
+COPY acl-store.py /usr/local/sbin/aptl-samba-acl-store
 RUN chmod 0755 \
         /usr/local/sbin/aptl-samba-provider-start \
-        /usr/local/sbin/aptl-provision-samba-domain
+        /usr/local/sbin/aptl-provision-samba-domain \
+        /usr/local/sbin/aptl-samba-acl-store
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/sbin/aptl-samba-provider-start"]
