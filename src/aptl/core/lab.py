@@ -378,7 +378,6 @@ def admit_start_surface(
     startup_selection: ScenarioStartupSelection | None = None,
     run_id: str | None = None,
     trial: "FamilyTrialInput | None" = None,
-    autonomous_bindings: tuple = (),
 ) -> tuple["AdmittedScenarioStart", "AdmittedStartSurface"]:
     """Lazy RAES import for the one admitted execution lab start reuses."""
 
@@ -395,7 +394,6 @@ def admit_start_surface(
         startup_selection=startup_selection,
         run_id=run_id,
         trial=trial,
-        autonomous_bindings=autonomous_bindings,
     )
 
 
@@ -2079,12 +2077,9 @@ def _load_admitted_start_surface(
 
             # Admission binds the sealed trial itself and selects its own adapters.
             assert ctx.trial is not None
-            from aptl.backends.trial_participant_bindings import installed_participant_bindings
-
             admission_kwargs = {
                 "bundle": replace(ctx.start_selection.bundle, trial=None),
                 "trial": family_trial_input(ctx.start_selection.bundle, ctx.trial),
-                "autonomous_bindings": installed_participant_bindings(ctx.start_selection.bundle),
             }
         ctx.run_store, ctx.run_id = _resolve_run_target(ctx)
         admitted, surface = admit_start_surface(
