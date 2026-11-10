@@ -68,8 +68,10 @@ docs/adrs/adr-064-layered-architecture-and-code-conventions.md
 docs/adrs/adr-065-executable-participant-action-boundaries.md
 docs/adrs/adr-066-runtime-readback-reports-realized-state.md
 docs/adrs/adr-067-admitted-participant-smoke-providers.md
+docs/adrs/adr-068-shared-containment-wrapper.md
 docs/architecture/ci-verification.md
 docs/architecture/concurrent-participant-execution.md
+docs/architecture/containment-wrapper.md
 docs/architecture/design-checks.md
 docs/architecture/diataxis-adoption.md
 docs/architecture/documentation-assignments.md
@@ -153,6 +155,7 @@ docs/reference/architecture-decisions.md
 docs/reference/cli.md
 docs/reference/compose-topology.md
 docs/reference/configuration-migration.md
+docs/reference/containment-interface.md
 docs/reference/design-check-tools.md
 docs/reference/evidence-bundle-export.md
 docs/reference/evidence-bundle-operations.md
@@ -197,6 +200,7 @@ docs/sdl/sections.md
 docs/sdl/techvault-curated-variants.md
 docs/sdl/testing.md
 docs/sdl/validation.md
+docs/security/containment-case-ledger.md
 docs/source-image-catalog.md
 docs/specs/soc-feature-spec.md
 docs/specs/web-component-kit.md

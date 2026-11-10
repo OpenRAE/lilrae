@@ -125,6 +125,8 @@ nav:
   - Reference:
     - Root Compose declarations: reference/compose-topology.md
     - Design-check contracts: reference/design-check-tools.md
+    - Containment interface: reference/containment-interface.md
+    - Containment case ledger: security/containment-case-ledger.md
     - ADR format: reference/architecture-decisions.md
     - Web component kit: reference/web-component-kit.md
     - Architecture source checks: reviews/1667-architecture-source-checks.md
@@ -258,6 +260,7 @@ nav:
     - Trial participant configuration: architecture/trial-participant-configuration.md
     - Family adapters: architecture/family-adapter-contract.md
     - Managed OpenCode: architecture/managed-opencode.md
+    - Shared containment wrapper: architecture/containment-wrapper.md
     - CI verification: architecture/ci-verification.md
     - Design-check tools: architecture/design-checks.md
     - "Issue #1510 Code Quality Architecture Design": architecture/issue-1510-code-quality-design.md
@@ -360,6 +363,7 @@ nav:
     - ADR-064 Layered Architecture and Code Conventions: adrs/adr-064-layered-architecture-and-code-conventions.md
     - ADR-066 Runtime Readback Reports Realized State: adrs/adr-066-runtime-readback-reports-realized-state.md
     - ADR-067 Admitted Participant Smoke Providers: adrs/adr-067-admitted-participant-smoke-providers.md
+    - ADR-068 Shared Containment Wrapper: adrs/adr-068-shared-containment-wrapper.md
 
 extra:
   social:

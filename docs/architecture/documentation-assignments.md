@@ -129,6 +129,7 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 | `docs/adrs/adr-064-layered-architecture-and-code-conventions.md` | #1667 | Explanation |
 | `docs/adrs/adr-065-executable-participant-action-boundaries.md` | #1667 | Explanation |
 | `docs/adrs/adr-066-runtime-readback-reports-realized-state.md` | #1667 | Explanation |
+| `docs/adrs/adr-068-shared-containment-wrapper.md` | #1467 | Explanation |
 | `docs/architecture/ci-verification.md` | #1667 | Explanation |
 | `docs/architecture/concurrent-participant-execution.md` | #1667 | Explanation |
 | `docs/architecture/dep-003-ephemeral-lifecycle-preflight.md` | #1667 | Reference (source record) |
@@ -261,6 +262,7 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 | `docs/architecture/issue-985-owned-lab-fixture-preflight.md` | #1667 | Reference (source record) |
 | `docs/architecture/issue-992-backend-observability-ownership-preflight.md` | #1667 | Reference (source record) |
 | `docs/architecture/issue-993-boot-realization-regressions-preflight.md` | #1667 | Reference (source record) |
+| `docs/architecture/containment-wrapper.md` | #1467 | Explanation |
 | `docs/architecture/managed-opencode.md` | #1667 | Explanation |
 | `docs/architecture/networking.md` | #1667 | Explanation |
 | `docs/architecture/obs-002-correlation-identity-clock-preflight.md` | #1667 | Reference (source record) |
@@ -518,6 +520,7 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 | `docs/sdl/techvault-curated-variants.md` | #1666 | How-to guide |
 | `docs/sdl/testing.md` | #1666 | How-to guide |
 | `docs/sdl/validation.md` | #1666 | How-to guide |
+| `docs/security/containment-case-ledger.md` | #1467 | Reference |
 | `docs/security/openssf-best-practices.md` | #1668 | How-to guide |
 | `docs/source-image-catalog.md` | #1666 | Reference |
 | `docs/specs/1178-vm-seat-access-preflight.md` | #1667 | Reference (source record) |
@@ -597,6 +600,7 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 | `docs/architecture/documentation-boundaries.md` | #1667 | Explanation |
 | `docs/reference/architecture-decisions.md` | #1667 | Reference |
 | `docs/reference/compose-topology.md` | #1667 | Reference |
+| `docs/reference/containment-interface.md` | #1467 | Reference |
 | `docs/reference/design-check-tools.md` | #1667 | Reference |
 | `docs/reference/web-component-kit.md` | #1667 | Reference |
 | `docs/reference/trial-readiness-integration.md` | #1667 | How-to guide |

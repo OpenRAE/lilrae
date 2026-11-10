@@ -123,6 +123,9 @@ ci = [
     # versions through `uv run --frozen --only-group ci`.
     "grimp>=3.18",
     "ruff>=0.15.0",
+    # The containment job installs the pinned engine's own locked test
+    # environment with `uv sync --frozen` (ADR-068).
+    "uv>=0.11.8",
 ]
 
 # The PEP 517 build backend, locked like everything else. `--require-hashes`
@@ -191,6 +194,11 @@ packages = ["src/aptl", "src/aptl_techvault"]
 [tool.hatch.build.targets.wheel.hooks.custom]
 path = "hatch_build.py"
 
+# The pinned containment engine is a git submodule (ADR-068). Issue #1464
+# decides how an installed artifact carries it, so source distributions omit it.
+[tool.hatch.build.targets.sdist]
+exclude = ["/third_party"]
+
 [tool.ruff]
 # Lint only the Python control-plane source. Tests, generated files, and
 # the (TypeScript) MCP / web trees are out of scope for this check.
@@ -227,7 +235,10 @@ banned-module-level-imports = ["boto3", "pyarrow"]
 # ADR-064 conventions check (tools/check_architecture.py). The check covers
 # only the enrolled packages and modules. A refactor issue adds the code that
 # it completes. Participant tool boundaries are enrolled by issue #1418.
-enrolled = ["aptl.core.provider_observation", "aptl.core.opencode", "aptl.core.trial_participants", "aptl.core.participant_requests", "aptl.core.participant_binding", "aptl.core.participant_tools", "aptl.core.agent_errors", "aptl.core.mcp_results", "aptl.backends.participant_tools", "aptl.core.trial_readiness", "aptl.core.readiness_record", "aptl.core.readiness_observer", "aptl.utils.probe_execution", "aptl.backends.installed_readiness", "aptl.core.placement_readiness"]
+# aptl.cli.containment stays unenrolled: it injects BoundedProcessRunner, and
+# importing aptl.workbench.process runs the aptl.workbench package initializer,
+# which issues #1527 and #1530 restructure.
+enrolled = ["aptl.core.provider_observation", "aptl.core.opencode", "aptl.core.trial_participants", "aptl.core.participant_requests", "aptl.core.participant_binding", "aptl.core.participant_tools", "aptl.core.agent_errors", "aptl.core.mcp_results", "aptl.backends.participant_tools", "aptl.core.trial_readiness", "aptl.core.readiness_record", "aptl.core.readiness_observer", "aptl.utils.probe_execution", "aptl.backends.installed_readiness", "aptl.core.placement_readiness", "aptl.core.containment", "aptl.containment"]
 # Core modules that scenario adapter plugins may import (#1515 adds them).
 extension-api = []
 # Ruff rules for enrolled code. UP042 is not selected: replacing a str-mixin
@@ -300,6 +311,7 @@ deployment = [
     "aptl.core.suricata_seed",
 ]
 raes = ["aptl.backends"]
+containment = ["aptl.containment"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -308,8 +320,9 @@ markers = [
     "live_lab: operator-authorized checks against an existing lab (APTL_SMOKE=1)",
     "fuzz: property-based fuzz tests (run with: pytest -m fuzz)",
     "integration: tests that spawn subprocesses or read/write the filesystem; runnable by default but selectable via `pytest -m integration` or `pytest -m 'not integration'`",
+    "containment: shared containment proof (ADR-068); needs the engine submodule and a dedicated host phase, so only the CI containment job selects it",
 ]
-addopts = "-m 'not fuzz and not live_lab'"
+addopts = "-m 'not fuzz and not live_lab and not containment'"
 
 [tool.coverage.run]
 # Both top-level packages the wheel ships. `aptl_techvault` is a scenario
