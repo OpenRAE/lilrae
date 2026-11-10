@@ -126,6 +126,61 @@ Check current claims against candidate code. Rewrite owned descriptions in STE.
 Edit maintained generator prose at its source.
 The [assignment register](../architecture/documentation-assignments.md) records delivery ownership and reader purpose.
 
+## Amendment: Shared documentation package
+
+Issue [#1686](https://github.com/OpenRAE/lilrae/issues/1686) replaces the extracted STE tooling with [doc-tools v0.1.0](https://github.com/OpenRAE/doc-tools/releases/tag/v0.1.0).
+Its source revision is `97866fad14d7fbb0d6752788ebdc5ae4f235573a`.
+The archive `doc-tools-0.1.0.tar.gz` has this SHA-256:
+
+```text
+125104c0cc535698d1cc9bba3e57883bdf9d87db6da346ff583967c4ce42de6c
+```
+
+`tools/install-doc-tools.sh` owns the reviewed version, digest, and package location.
+It verifies the archive before extraction. It activates a complete directory through an atomic filesystem operation.
+`tools/install-ste.sh` and `tools/ste-lint.sh` remain thin local entry points.
+The package owns the shared configuration and inner ste-cli installation.
+The duplicate root `.ste.yml` is removed.
+
+The bootstrap requires Python 3. This archive adds no Python package dependency or dependency-lock change.
+
+The package selects STE-4.2, STE-5.1, and STE-6.6 at error level.
+Its wrapper passes `--no-baseline` and `--fail-over 0`.
+It disables dictionary and analyzer use. It preserves literals and refuses zero-argument invocation.
+The local wrapper also refuses zero arguments before package installation.
+
+Caller paths remain relative to the caller's directory. Installer diagnostics use stderr.
+
+CI passes `--fail-over -1` only for the tracked-Markdown corpus report.
+This explicit override preserves the existing advisory report.
+Rewritten pages in `.ste-required.txt` retain the strict wrapper default.
+The upstream pflag parser processes repeated flags in order.
+
+Options-only invocation does not scan the corpus: ste-cli refuses terminal input or reads stdin.
+Forwarded options remain the existing trusted author interface, not a new security policy parser.
+The fixed CI commands own gate settings. Do not add a local argument parser.
+
+LilRAE retains vocabulary, Vale configuration, `.ste-required.txt`, publication, reader routes, assignments, and migration policy.
+Optional package Vale rules are not enabled by this dependency change.
+Checks retain their permissions, required names, and targeted documentation integration tests.
+Behavior tests remain limited to CI or an approved isolated VM.
+Pre-commit retains staged hygiene and secret checks.
+
+The package supplies the existing documentation skill through its supported client installation routes.
+Claude Code uses the checksum-verified local marketplace. Codex uses the recorded commit and compares the installed skill with the verified archive.
+
+Existing personal installations remain usable until their owners choose to migrate.
+Package setup does not write personal skill directories or agent settings.
+[The contribution guide](../contributing-documentation.md) records setup, migration, upgrade, and rollback.
+The archive retains `LICENSE`, `THIRD_PARTY_NOTICES.md`, and `skills/documentation/LICENSE` without edits.
+Its MIT notices identify LilRAE, RAE, ste-cli, and the skill's upstream guidance.
+
+[Documentation boundaries](../architecture/documentation-boundaries.md#shared-package-boundary) describes components, data flows, threats, and verification.
+The package owns its unit tests. LilRAE retains integration checks through its public wrappers.
+Package checksum rejection, inner checksum rejection, prose outcomes, and literal preservation remain integration obligations.
+The extraction issue [OpenRAE/bigrae#2803](https://github.com/OpenRAE/bigrae/issues/2803) is the recorded GitHub blocker.
+The RAE consumer change is independent.
+
 ## Consequences
 
 - Changed Markdown must pass the selected Google error rules. CI examines the full applicable corpus to catch drift and integration differences.
