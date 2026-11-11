@@ -64,20 +64,30 @@ _TRANSPORT_FAILURE_MARKERS = (
 )
 
 
+def published_access_lines(
+    accesses: Sequence["DeploymentOperatorAccess"],
+) -> list[str]:
+    """Say where each proven access is reachable from the operator's host.
+
+    The port is the one host-port resolution selected, so a remap away from a
+    collision shows the port the operator must use, not the default.
+    """
+
+    return [
+        f"Operator access {access.access_id} ({access.channel} to "
+        f"{access.target_node}) published on {_LOOPBACK}:"
+        f"{resolved_host_port(OPERATOR_ACCESS_ENDPOINTS[access.target_node])}"
+        for access in accesses
+    ]
+
+
 def _log_published_access(
     accesses: Sequence["DeploymentOperatorAccess"],
 ) -> None:
     """Record where each proven access is reachable from the operator's host."""
 
-    for access in accesses:
-        endpoint = OPERATOR_ACCESS_ENDPOINTS[access.target_node]
-        log.info(
-            "Operator access %s (%s to %s) published on 127.0.0.1:%d",
-            access.access_id,
-            access.channel,
-            access.target_node,
-            resolved_host_port(endpoint),
-        )
+    for line in published_access_lines(accesses):
+        log.info("%s", line)
 
 
 def _prove_endpoints(

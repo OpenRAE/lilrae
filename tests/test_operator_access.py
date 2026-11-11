@@ -535,6 +535,8 @@ def test_step_fails_the_start_when_access_is_unreachable(tmp_path):
     backend = MagicMock()
     backend.activate_operator_access.return_value = ["kali did not answer SSH"]
     ctx = _lab_ctx(tmp_path, accesses=(_KALI,), backend=backend)
+    reported: list[str] = []
+    ctx.progress = reported.append
 
     result = _step_activate_operator_access(ctx)
 
@@ -543,6 +545,8 @@ def test_step_fails_the_start_when_access_is_unreachable(tmp_path):
     assert "aptl.operator-access.unreachable" in result.error
     backend.activate_operator_access.assert_called_once()
     assert backend.activate_operator_access.call_args.args[0] == (_KALI,)
+    # Nothing was proven, so nothing is announced as published.
+    assert reported == []
 
 
 def test_step_succeeds_when_every_access_is_proven(tmp_path):
@@ -553,6 +557,62 @@ def test_step_succeeds_when_every_access_is_proven(tmp_path):
     ctx = _lab_ctx(tmp_path, accesses=(_KALI,), backend=backend)
 
     assert _step_activate_operator_access(ctx) is None
+
+
+_KALI_PUBLISHED = "Operator access kali-ssh (ssh to kali) published on 127.0.0.1:32023"
+
+
+def _start_that_proves_kali(tmp_path: Path):
+    """An orchestrator stub that runs the real access step with the CLI's progress."""
+    from aptl.core.lab import LabResult, _step_activate_operator_access
+    from aptl.core.lab_types import StartupOutcome
+
+    backend = MagicMock()
+    backend.activate_operator_access.return_value = []
+
+    def start(_project_dir, *, progress, **_kwargs):
+        ctx = _lab_ctx(tmp_path, accesses=(_KALI,), backend=backend)
+        ctx.progress = progress
+        failed = _step_activate_operator_access(ctx)
+        return failed or LabResult(success=True, outcome=StartupOutcome.READY)
+
+    return start
+
+
+def test_step_reports_the_resolved_port_as_progress(monkeypatch, tmp_path):
+    """The resolved, possibly remapped, port is start progress, not only INFO."""
+    monkeypatch.setenv("APTL_HP_KALI_SSH_PROXY_2023", "32023")
+    reported: list[str] = []
+
+    result = _start_that_proves_kali(tmp_path)(tmp_path, progress=reported.append)
+
+    assert result.success is True
+    assert reported == [_KALI_PUBLISHED]
+
+
+@pytest.mark.parametrize(
+    ("flags", "shown_on", "absent_from"),
+    [((), "stdout", "stderr"), (("--json",), "stderr", "stdout")],
+)
+def test_lab_start_shows_the_published_port_at_the_default_level(
+    monkeypatch, tmp_path, flags, shown_on, absent_from
+):
+    """`aptl lab start` prints the access port without --verbose (#1323)."""
+    from typer.testing import CliRunner
+
+    from aptl.cli import lab as lab_cli
+    from aptl.cli.main import app
+
+    monkeypatch.setenv("APTL_HP_KALI_SSH_PROXY_2023", "32023")
+    start = _start_that_proves_kali(tmp_path)
+    monkeypatch.setattr(lab_cli, "orchestrate_lab_start", start)
+    monkeypatch.setattr("aptl.cli.lab_render.live_resolved_ports", lambda *_: [])
+
+    result = CliRunner().invoke(app, ["lab", "start", "-d", str(tmp_path), *flags])
+
+    assert result.exit_code == 0, result.output
+    assert f"[lab start] {_KALI_PUBLISHED}" in getattr(result, shown_on)
+    assert _KALI_PUBLISHED not in getattr(result, absent_from)
 
 
 def test_proof_failure_is_what_activation_returns(monkeypatch, tmp_path):

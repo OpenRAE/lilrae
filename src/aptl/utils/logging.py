@@ -7,6 +7,19 @@ _LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
+class _StderrHandler(logging.StreamHandler):
+    """Write each record to ``sys.stderr`` as it is when the record is emitted.
+
+    ``typer.echo(err=True)`` and ``logging.lastResort`` resolve standard error
+    per call too, so log lines follow a caller that swaps it (a CLI test runner,
+    ``contextlib.redirect_stderr``) instead of the stream current at setup.
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.stream = sys.stderr
+        super().emit(record)
+
+
 def setup_logging(level: int = logging.DEBUG) -> None:
     """Configure the aptl root logger.
 
@@ -20,7 +33,7 @@ def setup_logging(level: int = logging.DEBUG) -> None:
 
     # Avoid adding duplicate handlers on repeated calls
     if not logger.handlers:
-        handler = logging.StreamHandler(sys.stderr)
+        handler = _StderrHandler()
         handler.setLevel(level)
         formatter = logging.Formatter(_LOG_FORMAT, datefmt=_DATE_FORMAT)
         handler.setFormatter(formatter)
