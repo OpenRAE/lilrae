@@ -1,0 +1,1 @@
+The Wazuh manager restart API works again. `wazuh-execd` reads the first `<disabled>` element under `<active-response>` as the global switch, so the default-off response blocks stopped it and the restart API failed. The default-off blocks now ship commented out.
