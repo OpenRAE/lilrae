@@ -9,6 +9,7 @@ regular file in the run, including this record.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from pathlib import Path
 from typing import Literal
@@ -92,13 +93,57 @@ class TrialRecord(BaseModel):
     cleanup: dict[str, str] = Field(default_factory=dict)
 
 
-def seal_trial_record(store: LocalRunStore, record: TrialRecord) -> Path:
+def required_data_gaps(run_dir: Path, record: TrialRecord) -> list[str]:
+    """Name each piece of trial data that a complete trial must leave in its run.
+
+    Every participant ends normally and leaves its raw chat; the host audit log
+    and each trial-end capture source report ``captured``.
+    """
+    gaps = [
+        f"participant {item.address} ended {item.status}"
+        for item in record.participants
+        if item.status != "completed"
+    ]
+    gaps += [
+        f"raw chat of {item.address} is missing"
+        for item in record.participants
+        if not (run_dir / f"trial/transcripts/{item.address}.json").is_file()
+    ]
+    if _captured_status(run_dir / "trial/audit/status.json") != "captured":
+        gaps.append("the host audit log was not captured")
+    soc = run_dir / "trial/soc/manifest.json"
+    if soc.is_file():
+        sources = json.loads(soc.read_text(encoding="utf-8"))
+        gaps += [
+            f"trial-end source {name} was not captured"
+            for name, item in sorted(sources.items())
+            if item.get("status") != "captured"
+        ]
+    return gaps
+
+
+def _captured_status(path: Path) -> object:
+    """Return a capture status file's ``status``; an absent file has none."""
+    return (
+        json.loads(path.read_text(encoding="utf-8")).get("status")
+        if path.is_file()
+        else None
+    )
+
+
+def seal_trial_record(
+    store: LocalRunStore, record: TrialRecord, *, gaps: tuple[str, ...] = ()
+) -> Path:
     """Write the record once and seal every regular file in the run.
 
     Call it only after every evidence producer and credential cleanup ended.
+    ``gaps`` names trial data that the caller could not produce; the seal also
+    checks the data a complete trial must leave, and lists each gap.
     """
     run_id = record.run_id
-    store.create_run_json_once(run_id, TRIAL_RECORD_RELPATH, record.model_dump(mode="json"))
+    store.create_run_json_once(
+        run_id, TRIAL_RECORD_RELPATH, record.model_dump(mode="json")
+    )
     run_dir = store.get_run_path(run_id)
     manifest = run_dir / RUN_MANIFEST_RELPATH
     if not manifest.is_file() or manifest.is_symlink():
@@ -118,6 +163,10 @@ def seal_trial_record(store: LocalRunStore, record: TrialRecord) -> Path:
                 )
             ]
         )
+        limitations += [
+            SealLimitation("required-data-missing", gap)
+            for gap in (*gaps, *required_data_gaps(run_dir, record))
+        ]
         marker = build_seal_marker(
             SealMarkerInputs(
                 run_id=run_id,
@@ -158,9 +207,17 @@ def _run_files(run_dir: Path) -> list[SealedArtifactSpec]:
         for name in sorted(files):
             path = Path(root) / name
             relative = path.relative_to(run_dir).as_posix()
-            if path.is_symlink() or not path.is_file() or relative == SEAL_MARKER_RELPATH:
+            if (
+                path.is_symlink()
+                or not path.is_file()
+                or relative == SEAL_MARKER_RELPATH
+            ):
                 continue
-            role = "trial-record" if relative == TRIAL_RECORD_RELPATH else "evidence-record"
+            role = (
+                "trial-record"
+                if relative == TRIAL_RECORD_RELPATH
+                else "evidence-record"
+            )
             if relative == RUN_MANIFEST_RELPATH:
                 role = "manifest"
             elif relative.startswith(_CAPTURE_PREFIXES):
@@ -168,7 +225,9 @@ def _run_files(run_dir: Path) -> list[SealedArtifactSpec]:
             specs.append(
                 SealedArtifactSpec(
                     path=relative,
-                    media_type=_MEDIA_TYPES.get(path.suffix, "application/octet-stream"),
+                    media_type=_MEDIA_TYPES.get(
+                        path.suffix, "application/octet-stream"
+                    ),
                     role=role,
                 )
             )
