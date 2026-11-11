@@ -131,6 +131,9 @@ Pull requests to `dev` merge through a GitHub merge queue ([ADR-068](../adrs/adr
 `dev` does not require strict status checks. `main` and `go-cutover` keep them and have no queue.
 
 - A pull request must pass the required checks before it can enter the queue.
+- The queue squash-merges each pull request. The squash commit message is the PR title only.
+- The `main` to `dev` back-merge and the `go-cutover` to `dev` merge use a merge commit.
+  An administrator merges them with the admin bypass, outside the queue.
 - The queue then runs the required checks again on a merge group.
   A merge group contains `dev`, the queued pull requests in front of it, and the pull request.
 - `checks.yml` and `pr-title-lint.yml` run on the `merge_group` event for `dev`.

@@ -33,24 +33,28 @@ If a required check does not report, the queue does not merge the pull request.
 2. `dev` does not require strict status checks.
    The queue tests each pull request against the latest `dev`.
    `main` and `go-cutover` keep strict status checks.
-3. The queue merges with a merge commit, as `dev` pull requests did before.
+3. The queue squash-merges each pull request, as `docs/releasing.md` requires.
+   The repository sets the squash commit message to blank.
+   Thus each `dev` commit is the PR title only.
    It builds and merges up to five pull requests in one group.
    Each pull request in the group must pass its checks.
-4. Each workflow that reports a required `dev` context runs on the `merge_group` event for `dev`.
+4. The `main` to `dev` back-merge and the `go-cutover` to `dev` merge need a merge commit.
+   An administrator merges them with the admin bypass, outside the queue.
+5. Each workflow that reports a required `dev` context runs on the `merge_group` event for `dev`.
    No producer of a required context skips itself on a merge group.
    A skipped job reports success, so a skip would let a group merge without a real check.
-5. Changed-input selection compares the merge group with `merge_group.base_sha`.
+6. Changed-input selection compares the merge group with `merge_group.base_sha`.
    The diff contains each change that the group merges.
-6. The PR title lint reads the pull request number from the merge group ref name.
+7. The PR title lint reads the pull request number from the merge group ref name.
    It then validates the current title from the GitHub API.
    It fails closed on an incorrect ref, repository, or API response.
-7. The SonarCloud quality gate analyzes the merge group ref as a branch.
+8. The SonarCloud quality gate analyzes the merge group ref as a branch.
    That tree is the `dev` tree after the merge.
-8. `GitGuardian Security Checks` is not a required context for `dev`.
+9. `GitGuardian Security Checks` is not a required context for `dev`.
    The queue does not wait for it.
-9. The `/implement` and `/quickfix` readiness step adds a ready pull request to the queue.
-   The GRC workflow platform owns that step.
-10. `tests/test_platform_ci_gates.py` fails when a required producer for a queued branch has no `merge_group` trigger.
+10. The `/implement` and `/quickfix` readiness step adds a ready pull request to the queue.
+    The GRC workflow platform owns that step.
+11. `tests/test_platform_ci_gates.py` fails when a required producer for a queued branch has no `merge_group` trigger.
     It also fails when a branch has no strict status checks and no merge queue.
 
 ## Alternatives considered
@@ -58,6 +62,7 @@ If a required check does not report, the queue does not merge the pull request.
 | Alternative | Reason for rejection |
 | --- | --- |
 | Keep strict status checks on `dev` | Each merge makes every open pull request out of date, and each update runs the full CI again. |
+| Merge feature pull requests with a merge commit | Release Please reads the feature commit and the PR title in the merge commit body. Each change then shows two times in `CHANGELOG.md`, as in 10.1.0. |
 
 ## Consequences
 

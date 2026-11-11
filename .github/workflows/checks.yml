@@ -65,6 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -89,6 +90,8 @@ jobs:
           ROUTING_RESULT: ${{ needs.changes.result }}
         run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -115,6 +118,7 @@ jobs:
         run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # git-revision-date-localized needs full history for page dates
           fetch-depth: 0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -162,6 +166,7 @@ jobs:
         run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -177,9 +182,11 @@ jobs:
       - name: Ordinary tests and worker coverage
         env:
           LILRAE_OBSERVER_COVERAGE_DIR: ${{ github.workspace }}/coverage/observer
+          SHARD_TOTAL: ${{ strategy.job-total }}
+          SHARD: ${{ matrix.shard }}
         run: >-
           python -m pytest tests/ -q -n 4 --dist loadfile
-          --splits ${{ strategy.job-total }} --group ${{ matrix.shard }} --splitting-algorithm least_duration
+          --splits "$SHARD_TOTAL" --group "$SHARD" --splitting-algorithm least_duration
           -m "not integration and not fuzz and not live_lab" --durations=30
           --junitxml=python-results.xml --cov --cov-report=
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -213,6 +220,7 @@ jobs:
         run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -329,6 +337,8 @@ jobs:
           test "$SHARD_RESULT" = success
           test "$QUALIFICATION_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -377,6 +387,8 @@ jobs:
           ROUTING_RESULT: ${{ needs.changes.result }}
         run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -416,6 +428,8 @@ jobs:
           ROUTING_RESULT: ${{ needs.changes.result }}
         run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -474,6 +488,8 @@ jobs:
           ROUTING_RESULT: ${{ needs.changes.result }}
         run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -511,6 +527,7 @@ jobs:
         run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -563,6 +580,8 @@ jobs:
           ROUTING_RESULT: ${{ needs.changes.result }}
         run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -590,6 +609,8 @@ jobs:
           ROUTING_RESULT: ${{ needs.changes.result }}
         run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -729,6 +750,7 @@ jobs:
         run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
@@ -838,6 +860,7 @@ jobs:
         run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -882,6 +905,8 @@ jobs:
           ROUTING_RESULT: ${{ needs.changes.result }}
         run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -947,6 +972,8 @@ jobs:
           ROUTING_RESULT: ${{ needs.changes.result }}
         run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Record all findings (SARIF)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -1003,6 +1030,8 @@ jobs:
           ROUTING_RESULT: ${{ needs.changes.result }}
         run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Misconfiguration waivers are permanent, reviewed design decisions, so
       # the record honors them too; only unwaived misconfigurations are tracked.
       - name: Record all unwaived findings (SARIF)
@@ -1132,6 +1161,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: contains(fromJSON(needs.changes.outputs.selected_images || '[]'), matrix.name)
         with:
+          persist-credentials: false
           fetch-depth: 0
       # The `docker` driver builds in the daemon's own image store, so a child
       # build resolves the parent image built in the step before it.
@@ -1246,6 +1276,8 @@ jobs:
           ROUTING_RESULT: ${{ needs.changes.result }}
         run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install osv-scanner (checksum-verified)
         # Pin to a specific release and verify the binary against the
         # publisher's SHA256SUMS manifest before exec'ing it. Without
@@ -1310,6 +1342,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: (needs.changes.outputs.python == 'true' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.web == 'true')
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         if: (needs.changes.outputs.python == 'true' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.web == 'true')
@@ -1371,6 +1404,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"

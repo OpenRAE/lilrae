@@ -112,6 +112,9 @@ def test_dev_merges_through_a_grouping_merge_queue() -> None:
     branches = _protected_branches()
     assert set(_queued_branches()) == {"dev"}
     queue = branches["dev"]["merge_queue"]
+    # A merge commit repeats the PR title in its body, and Release Please
+    # then writes each change two times in CHANGELOG.md.
+    assert queue["merge_method"] == "SQUASH"
     assert queue["grouping_strategy"] == "ALLGREEN"
     assert queue["max_entries_to_build"] > 1
     assert queue["max_entries_to_merge"] > 1
