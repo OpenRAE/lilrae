@@ -960,3 +960,17 @@ def _executable(path: Path) -> Path:
 
 def _option_value(argv: tuple[str, ...], option: str) -> str:
     return argv[argv.index(option) + 1]
+
+
+def test_a_lab_mcp_server_keeps_the_operator_home_and_resolves_its_credentials() -> None:
+    """The lab MCP configuration names ``~/.ssh/aptl_lab_key``; the agent's private home has no key."""
+    from aptl.workbench.agent import _server_environment
+
+    environment = _server_environment({"env": {"TOKEN": "${secret}", "MODE": "lab"}}, {"secret": "s3cr3t"})
+
+    assert environment == {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": str(Path.home()),
+        "TOKEN": "s3cr3t",
+        "MODE": "lab",
+    }
