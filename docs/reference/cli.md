@@ -29,6 +29,7 @@ it. See [Move from the aptl command](../getting-started/installation.md#move-fro
 | `lilrae experiment` | Admit experiment inputs and persist an immutable trial plan. It does not execute the plan. |
 | `lilrae seat` | Run one disposable appliance seat from a published VM image. |
 | `lilrae mcp-access` | Materialize authorized MCP client access for a participant or appliance seat. |
+| `lilrae containment` | Run one command in the shared containment wrapper. See the [containment interface](containment-interface.md). |
 
 `lilrae --version` prints the installed CLI version. Hidden implementation flags
 and direct calls into Python modules are not supported interfaces.

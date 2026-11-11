@@ -38,12 +38,14 @@ import signal
 import subprocess
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
 from typing import Protocol
 
 from aptl.core.agent_errors import AgentExecutionError as AgentExecutionError
+from aptl.core.agent_errors import BoundedStopReason
+from aptl.core.bounded_process import ProcessRequest as ProcessRequest
 
 from aptl.workbench._pipe_exchange import POLL_SECONDS, PipeExchange
 
@@ -69,10 +71,11 @@ _REAP_SECONDS = 1.0
 _RELEASE_SECONDS = 1.0
 
 # Why a bounded invocation failed: BoundedProcessError.reason is one of these.
-REASON_TIMEOUT = "agent request exceeded the configured timeout"
-REASON_CANCELLED = "agent request was cancelled"
-REASON_OVERFLOW = "agent output exceeded the configured limit"
-REASON_RESIDUE = "agent process cleanup left residual processes"
+# Core owns the vocabulary, so a lower-layer consumer can read the reason.
+REASON_TIMEOUT = BoundedStopReason.TIMEOUT
+REASON_CANCELLED = BoundedStopReason.CANCELLED
+REASON_OVERFLOW = BoundedStopReason.OVERFLOW
+REASON_RESIDUE = BoundedStopReason.RESIDUE
 _RESIDUAL_AGENT_RUNNING = "agent-process-running"
 _RESIDUAL_STREAMS_HELD = "output-streams-held"
 _RESIDUAL_GROUP_UNCONFIRMED = "process-group-cleanup-unconfirmed"
@@ -144,7 +147,8 @@ class BoundedProcessError(AgentExecutionError):
             f"{reason}; withheld captured output (stdout {stdout_bytes} bytes, "
             f"stderr {stderr_bytes} bytes); {cleanup.summary()}"
         )
-        self.reason = reason
+        # Records and summaries keep the plain string; it still equals the enum member.
+        self.reason = str(reason)
         self.cleanup = cleanup
         self.stdout_bytes = stdout_bytes
         self.stderr_bytes = stderr_bytes
@@ -200,29 +204,17 @@ class CancellableProcessRunner(Protocol):
     ) -> ProcessResult: ...
 
 
-@dataclass(frozen=True)
-class ProcessRequest:
-    """One invocation's fixed inputs; private bytes never enter its repr."""
-
-    argv: tuple[str, ...]
-    env: dict[str, str] = field(repr=False)
-    cwd: Path
-    stdin: bytes = field(repr=False)
-    timeout_seconds: float
-    max_output_bytes: int
-    cancel_event: Event | None = None
-
-    def run_with(self, runner: CancellableProcessRunner) -> ProcessResult:
-        """Deliver the request through the existing cancellable runner port."""
-        return runner.run(
-            self.argv,
-            env=self.env,
-            cwd=self.cwd,
-            stdin=self.stdin,
-            timeout_seconds=self.timeout_seconds,
-            max_output_bytes=self.max_output_bytes,
-            cancel_event=self.cancel_event,
-        )
+def run_request(request: ProcessRequest, runner: CancellableProcessRunner) -> ProcessResult:
+    """Deliver ``request`` through the existing cancellable runner port."""
+    return runner.run(
+        request.argv,
+        env=request.env,
+        cwd=request.cwd,
+        stdin=request.stdin,
+        timeout_seconds=request.timeout_seconds,
+        max_output_bytes=request.max_output_bytes,
+        cancel_event=request.cancel_event,
+    )
 
 
 def _observe_failure(
@@ -289,6 +281,7 @@ class BoundedProcessRunner:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 start_new_session=True,
+                pass_fds=request.pass_fds,
             )
             try:
                 exchange.attach(process)
