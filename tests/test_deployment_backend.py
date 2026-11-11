@@ -105,6 +105,60 @@ def _apply_network_command(payload: str, command: list[str]) -> str:
     return json.dumps(data)
 
 
+_PINNED_DIGEST = "sha256:" + "a" * 64
+_PINNED = f"postgres@{_PINNED_DIGEST}"
+_LOCAL_IMAGE_ID = "sha256:" + "e" * 64
+# `docker image inspect --format EXACT_IMAGE_INSPECT_FORMAT` output for a local
+# copy that proves the pin, for one that resolves only under an alias, and for
+# one that proves the pin but was pulled for another platform than the daemon's
+# (`docker version --format {{.Server.Os}}/{{.Server.Arch}}`).
+_PROVEN_INSPECT = f'["{_PINNED}"]\t{_LOCAL_IMAGE_ID}\tlinux/amd64\n'
+_ALIAS_INSPECT = (
+    f'["mirror.example/postgres@{_PINNED_DIGEST}"]\t{_LOCAL_IMAGE_ID}\tlinux/amd64\n'
+)
+_FOREIGN_PLATFORM_INSPECT = f'["{_PINNED}"]\t{_LOCAL_IMAGE_ID}\tlinux/arm64/v8\n'
+_DAEMON_PLATFORM = "linux/amd64\n"
+
+
+def _fake_image_daemon(inspect: MagicMock, version: MagicMock | None = None):
+    """A daemon that answers its platform query and one image inspection."""
+
+    version = version or MagicMock(returncode=0, stdout=_DAEMON_PLATFORM, stderr="")
+
+    def fake_run(cmd, **kwargs):
+        del kwargs
+        if cmd[:2] == ["docker", "version"]:
+            return version
+        if cmd[:3] == ["docker", "image", "inspect"]:
+            return inspect
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    return fake_run
+
+
+def _pinned_image_spec(
+    image_ref: str = _PINNED, policy_rule: str = "allowed-digest"
+) -> DeploymentRealizationSpec:
+    """One pull-mode node image, as RAES realization resolves an allowed source."""
+
+    return DeploymentRealizationSpec(
+        profiles=(),
+        nodes=(),
+        networks=(),
+        images=(
+            DeploymentImageRealization(
+                address="provision.node.db",
+                service_name="db",
+                source_name="postgres",
+                source_version=image_ref,
+                image_ref=image_ref,
+                mode="pull",
+                policy_rule=policy_rule,
+            ),
+        ),
+    )
+
+
 class TestSelectShell:
     """Pure-logic tests for the bash/sh selection table.
 
@@ -172,6 +226,10 @@ class TestRunRaisesBackendTimeoutError:
         (["docker", "private-token"], "docker command"),
         (["docker", "exec", "private-token"], "docker exec"),
         (["docker", "compose", "-f", "private-token", "down"], "docker compose down"),
+        (["docker", "compose", "-f", "private-token"], "docker compose command"),
+        (["docker", "volume", "rm", "private-token"], "docker volume rm"),
+        (["docker", "kill", "private-token"], "docker kill"),
+        (["docker", "private-token", "up"], "docker command"),
     ],
 )
 def test_docker_timeout_operation_never_discloses_arguments(command, expected):
@@ -281,7 +339,7 @@ class TestAptlConfigDeployment:
         """Config JSON without deployment key uses defaults."""
         cfg = AptlConfig(
             lab={"name": "test"},
-            containers={"wazuh": True, "kali": False},
+            containers={'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
         )
         assert cfg.deployment.provider == "docker-compose"
 
@@ -327,11 +385,32 @@ class TestDockerComposeBackend:
             tmp_path, "test", "0" * 32, "test"
         )
         backend._docker_daemon_id = "test-daemon"
+        backend._current_docker_daemon_id = lambda: "test-daemon"
         backend._resolve_owned_container_id = lambda selector: selector  # type: ignore[method-assign]
         backend._resolve_owned_network_id = lambda selector: selector  # type: ignore[method-assign]
         backend._verify_compose_namespace_is_owned = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
         backend._record_compose_network_receipts = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
         backend._record_compose_volume_receipts = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
+        return backend
+
+    def _make_network_backend(self, tmp_path: Path) -> DockerComposeBackend:
+        """Network tests supply an already-started native inventory.
+
+        Isolate the successful startup stage instead of depending on an
+        unrelated root Compose service. Image, binding and ownership tests
+        exercise the real startup stage separately.
+        """
+
+        backend = self._make_backend(tmp_path)
+
+        def started(profiles, *, compose_files, scenario_root=None, **_kwargs):
+            command = backend._build_command(
+                "up", profiles, compose_files=compose_files, scenario_root=scenario_root
+            )
+            result = backend._run([*command, "-d"])
+            return LabResult(success=result.returncode == 0, error=result.stderr)
+
+        backend._start_with_compose_files = MagicMock(side_effect=started)
         return backend
 
     def test_rejects_unsafe_direct_project_name(self, tmp_path):
@@ -401,7 +480,9 @@ services:
         backend = self._make_backend(tmp_path)
 
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            mock_run.side_effect = lambda cmd, **kwargs: MagicMock(
+                returncode=0, stdout="2.24.4" if cmd[:3] == ["docker", "compose", "version"] else "", stderr="",
+            )
             result = backend.start(["soc"])
 
         assert result.success is True
@@ -432,7 +513,7 @@ services:
             result = backend.start(["wazuh"])
 
         assert result.success is False
-        assert "compose up failed" in result.error
+        assert result.error == "Compose start failed."
 
     def test_project_presence_counts_all_container_states_and_networks(self, tmp_path):
         backend = self._make_backend(tmp_path)
@@ -477,7 +558,7 @@ services:
         assert "raw daemon details" not in presence.error
 
     def test_realize_reconciles_project_networks_after_start(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -598,7 +679,7 @@ services:
             "aptl.core.deployment._compose_port_realization.port_available",
             lambda *_args, **_kwargs: True,
         )
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -669,7 +750,7 @@ services:
         attaches its declared network(s) directly at container creation), so
         reconciliation must not try to disconnect a network the container
         was never on."""
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -725,7 +806,7 @@ services:
         )
 
     def test_realize_creates_declared_networks_and_connects_static_ip(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("enterprise",),
             nodes=(
@@ -873,7 +954,7 @@ services:
         assert "aptl-workshop-main_default" in result.error
         assert "172.20.0.0/16" in result.error
         assert "docker network rm aptl-workshop-main_default" in result.error
-        assert "aptl lab start" in result.error
+        assert "lilrae lab start" in result.error
         commands = [call.args[0] for call in mock_run.call_args_list]
         assert all(
             command[:3] != ["docker", "network", "create"] for command in commands
@@ -886,7 +967,7 @@ services:
     def test_realize_reconnects_network_when_ip_or_dns_aliases_drift(
         self, tmp_path, observed_ip
     ):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("enterprise",),
             nodes=(
@@ -1053,7 +1134,7 @@ services:
         )
 
     def test_realize_skips_nodes_without_declared_networks(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -1096,7 +1177,7 @@ services:
         )
 
     def test_realize_returns_start_failure_without_reconciliation(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(profiles=("kali",), nodes=(), networks=())
 
         def fake_run(cmd, **_kwargs):
@@ -1115,7 +1196,7 @@ services:
         )
 
     def test_realize_reports_missing_managed_networks(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -1147,7 +1228,7 @@ services:
         assert "managed networks were not visible" in result.error
 
     def test_realize_reports_unmatched_and_uninspectable_nodes(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -1183,6 +1264,8 @@ services:
                 )
             if cmd[:2] == ["docker", "inspect"]:
                 return MagicMock(returncode=1, stdout="", stderr="missing")
+            if cmd == ["docker", "info", "--format", "{{.ID}}"]:
+                return MagicMock(returncode=0, stdout="test-daemon\n", stderr="")
             return MagicMock(returncode=0, stdout="", stderr="")
 
         with patch("subprocess.run", side_effect=fake_run):
@@ -1193,7 +1276,7 @@ services:
         assert "aptl-kali" in result.error
 
     def test_realize_reports_network_reconciliation_command_failures(self, tmp_path):
-        backend = self._make_backend(tmp_path)
+        backend = self._make_network_backend(tmp_path)
         spec = DeploymentRealizationSpec(
             profiles=("kali",),
             nodes=(
@@ -1324,6 +1407,8 @@ services:
             del kwargs
             if failing_cmd is not None and cmd[: len(failing_cmd)] == failing_cmd:
                 return MagicMock(returncode=1, stdout="", stderr="boom")
+            if cmd[:3] == ["docker", "compose", "version"]:
+                return MagicMock(returncode=0, stdout="2.24.4", stderr="")
             return MagicMock(returncode=0, stdout="", stderr="")
 
         with patch("subprocess.run", side_effect=fake_run) as mock_run:
@@ -1389,8 +1474,12 @@ services:
 
         def fake_run(cmd, **kwargs):
             del kwargs
+            if cmd[:3] == ["docker", "compose", "version"]:
+                return MagicMock(returncode=0, stdout="2.24.4", stderr="")
             if cmd[:3] == ["docker", "network", "ls"]:
                 return MagicMock(returncode=0, stdout="test_aptl-internal\n", stderr="")
+            if cmd[:2] == ["docker", "version"]:
+                return MagicMock(returncode=0, stdout=_DAEMON_PLATFORM, stderr="")
             return MagicMock(returncode=0, stdout="", stderr="")
 
         with (
@@ -1420,7 +1509,8 @@ services:
             for index, token in enumerate(compose_up)
             if token == "-f"
         ]
-        assert str(tmp_path / "docker-compose.yml") in override_paths
+        assert str(tmp_path / ".aptl/realization/compose-base.yml") in override_paths
+        assert str(tmp_path / "docker-compose.yml") not in override_paths
         override_path = tmp_path / ".aptl" / "realization" / "compose-images.yml"
         assert str(override_path) in override_paths
         override = override_path.read_text()
@@ -1503,13 +1593,12 @@ services:
     def test_stop_with_volumes_fails_when_seeded_volume_cannot_be_removed(
         self, tmp_path
     ):
-        from aptl_techvault.evidence.techvault_enrollment_baseline import (
-            enrollment_baseline,
-            record_enrollment_baseline,
-        )
+        from aptl.core.lifecycle_cleanup import WAZUH_ENROLLMENT_BASELINE_RELPATH
 
         backend = self._make_backend(tmp_path)
-        record_enrollment_baseline(tmp_path, {"db": "001"})
+        baseline = tmp_path / WAZUH_ENROLLMENT_BASELINE_RELPATH
+        baseline.parent.mkdir(parents=True, exist_ok=True)
+        baseline.write_text('{"db": "001"}\n', encoding="utf-8")
         (tmp_path / "docker-compose.yml").write_text("volumes:\n  seeded_data:\n")
         ownership = backend._resource_ownership
         assert ownership is not None
@@ -1553,7 +1642,7 @@ services:
         assert "failed to remove receipt-owned volume" in result.error
         # The identity still describes retained volume state. Clearing it on a
         # failed reset would let a later capture bless a re-enrolment as fresh.
-        assert enrollment_baseline(tmp_path) == {"db": "001"}
+        assert baseline.read_text(encoding="utf-8") == '{"db": "001"}\n'
 
     def test_stop_removes_leftover_project_networks(self, tmp_path):
         backend = self._make_backend(tmp_path)
@@ -1577,7 +1666,7 @@ services:
                     attempt_id="run-a",
                 )
             )
-        networks_present = True
+        networks_present = set(network_names)
 
         def fake_run(cmd, **kwargs):
             nonlocal networks_present
@@ -1586,7 +1675,12 @@ services:
                 return MagicMock(
                     returncode=0,
                     stdout=(
-                        "\n".join(network_names) + "\n" if networks_present else ""
+                        "\n".join(
+                            native_id
+                            for native_id in networks_present
+                            if "--filter" not in cmd
+                            or cmd[cmd.index("--filter") + 1] == f"id={native_id}"
+                        )
                     ),
                     stderr="",
                 )
@@ -1609,7 +1703,7 @@ services:
                     stderr="",
                 )
             if cmd[:3] == ["docker", "network", "rm"]:
-                networks_present = False
+                networks_present.discard(cmd[-1])
             return MagicMock(returncode=0, stdout="", stderr="")
 
         with patch("subprocess.run", side_effect=fake_run) as mock_run:
@@ -1650,7 +1744,7 @@ services:
                 events.append(cmd[-1])
                 return MagicMock(returncode=1, stdout="", stderr="raw compose error")
 
-            def remove_generic_materializer_containers(self):
+            def remove_generic_materializer_containers(self, *, remove_volumes=True):
                 events.append("generic")
                 return []
 
@@ -1658,7 +1752,7 @@ services:
                 events.append("helpers")
                 return []
 
-            def remove_project_containers(self):
+            def remove_project_containers(self, *, remove_volumes=True):
                 events.append("containers")
                 return []
 
@@ -1700,13 +1794,13 @@ services:
                 del cmd, timeout
                 return MagicMock(returncode=0, stdout="", stderr="")
 
-            def remove_generic_materializer_containers(self):
+            def remove_generic_materializer_containers(self, *, remove_volumes=True):
                 return []
 
             def remove_stranded_helpers(self):
                 return []
 
-            def remove_project_containers(self):
+            def remove_project_containers(self, *, remove_volumes=True):
                 return []
 
             def remove_project_networks(self):
@@ -1953,16 +2047,54 @@ services:
         assert success is False
         assert "docker compose kill failed" in error
 
-    def test_pull_images_success(self, tmp_path):
+    def test_pull_images_pulls_an_image_the_daemon_lacks(self, tmp_path):
         backend = self._make_backend(tmp_path)
+        image = "wazuh/wazuh-manager:4.12.0"
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=1, stdout="", stderr="No such image"),
+                MagicMock(returncode=0, stdout="", stderr=""),
+            ]
+            warnings = backend.pull_images([image])
+
+        assert warnings == []
+        assert [call.args[0] for call in mock_run.call_args_list] == [
+            ["docker", "image", "inspect", image],
+            ["docker", "pull", image],
+        ]
+
+    @pytest.mark.parametrize("offline_staged", [False, True], ids=["online", "offline"])
+    def test_pull_images_uses_a_local_image_without_the_registry(
+        self, tmp_path, offline_staged
+    ):
+        """A warm start needs no registry request for an image already held (#953)."""
+        backend = self._make_backend(tmp_path)
+        backend._offline_staged = offline_staged
+        image = "wazuh/wazuh-manager:4.12.0"
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-            warnings = backend.pull_images(["wazuh/wazuh-manager:4.12.0"])
+            warnings = backend.pull_images([image])
 
         assert warnings == []
-        cmd = mock_run.call_args[0][0]
-        assert cmd == ["docker", "pull", "wazuh/wazuh-manager:4.12.0"]
+        assert [call.args[0] for call in mock_run.call_args_list] == [
+            ["docker", "image", "inspect", image]
+        ]
+
+    def test_offline_pull_images_names_a_missing_image_and_never_pulls(self, tmp_path):
+        backend = self._make_backend(tmp_path)
+        backend._offline_staged = True
+        image = "wazuh/wazuh-manager:4.12.0"
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=1, stdout="", stderr="Error: No such image: secret-free"
+            )
+            warnings = backend.pull_images([image])
+
+        assert warnings == [f"Required staged image is missing: {image}"]
+        assert all(call.args[0][1] != "pull" for call in mock_run.call_args_list)
 
     def test_pull_images_returns_warnings(self, tmp_path):
         backend = self._make_backend(tmp_path)
@@ -1985,6 +2117,220 @@ services:
 
         assert len(warnings) == 1
 
+    _PINNED_TAG_REF = "jasonish/suricata:7.0@sha256:" + "a" * 64
+
+    def test_pull_images_points_the_tag_at_a_held_pinned_digest(self, tmp_path):
+        """A held pin needs no registry; its tag is pointed at that digest."""
+        backend = self._make_backend(tmp_path)
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            warnings = backend.pull_images([self._PINNED_TAG_REF])
+
+        assert warnings == []
+        assert [call.args[0] for call in mock_run.call_args_list] == [
+            ["docker", "image", "inspect", self._PINNED_TAG_REF],
+            ["docker", "tag", self._PINNED_TAG_REF, "jasonish/suricata:7.0"],
+        ]
+
+    def test_pull_images_pulls_a_missing_pin_by_digest_then_tags_it(self, tmp_path):
+        """A missing pin is pulled by digest, never by its mutable tag."""
+        backend = self._make_backend(tmp_path)
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=1, stdout="", stderr="No such image"),
+                MagicMock(returncode=0, stdout="", stderr=""),
+                MagicMock(returncode=0, stdout="", stderr=""),
+            ]
+            warnings = backend.pull_images([self._PINNED_TAG_REF])
+
+        assert warnings == []
+        assert [call.args[0] for call in mock_run.call_args_list] == [
+            ["docker", "image", "inspect", self._PINNED_TAG_REF],
+            ["docker", "pull", self._PINNED_TAG_REF],
+            ["docker", "tag", self._PINNED_TAG_REF, "jasonish/suricata:7.0"],
+        ]
+
+    def test_failed_pinned_pull_leaves_the_tag_alone(self, tmp_path):
+        """The tag never keeps naming an image the pin did not select."""
+        backend = self._make_backend(tmp_path)
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=1, stdout="", stderr="No such image"),
+                MagicMock(returncode=1, stdout="", stderr="429 Too Many Requests\n"),
+            ]
+            warnings = backend.pull_images([self._PINNED_TAG_REF])
+
+        assert warnings == [f"Failed to pull {self._PINNED_TAG_REF}: 429 Too Many Requests"]
+        assert all(call.args[0][1] != "tag" for call in mock_run.call_args_list)
+
+    def test_failed_tag_of_a_pinned_image_is_reported(self, tmp_path):
+        """A tag that cannot be pointed at the pin is a warning, not a pass."""
+        backend = self._make_backend(tmp_path)
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=0, stdout="", stderr=""),
+                MagicMock(returncode=1, stdout="", stderr="tag refused\n"),
+            ]
+            warnings = backend.pull_images([self._PINNED_TAG_REF])
+
+        assert warnings == [
+            f"Failed to tag {self._PINNED_TAG_REF} as jasonish/suricata:7.0: tag refused"
+        ]
+
+    @pytest.mark.parametrize("held", [True, False], ids=["staged", "missing"])
+    def test_offline_pinned_image_verifies_only_the_staged_tag(self, tmp_path, held):
+        """docker load need not keep a registry digest, so offline reads the tag."""
+        backend = self._make_backend(tmp_path)
+        backend._offline_staged = True
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0 if held else 1, stdout="", stderr=""
+            )
+            warnings = backend.pull_images([self._PINNED_TAG_REF])
+
+        expected = [] if held else [
+            "Required staged image is missing: jasonish/suricata:7.0"
+        ]
+        assert warnings == expected
+        assert [call.args[0] for call in mock_run.call_args_list] == [
+            ["docker", "image", "inspect", "jasonish/suricata:7.0"]
+        ]
+
+    @pytest.mark.parametrize(
+        ("offline_staged", "local_copy", "expected_error", "pulled"),
+        [
+            pytest.param(False, "proven", None, False, id="online-cached"),
+            pytest.param(False, "missing", None, True, id="online-missing"),
+            pytest.param(False, "mismatched", None, True, id="online-mismatched"),
+            pytest.param(
+                False, "other-platform", None, True, id="online-other-platform"
+            ),
+            pytest.param(True, "proven", None, False, id="offline-cached"),
+            pytest.param(
+                True,
+                "missing",
+                f"Staged image missing for RAES node provision.node.db: {_PINNED}",
+                False,
+                id="offline-missing",
+            ),
+            pytest.param(
+                True,
+                "mismatched",
+                (
+                    "Staged image digest-mismatched for RAES node provision.node.db: "
+                    f"{_PINNED}"
+                ),
+                False,
+                id="offline-mismatched",
+            ),
+            pytest.param(
+                True,
+                "other-platform",
+                (
+                    "Staged image platform-mismatched for RAES node "
+                    f"provision.node.db: {_PINNED}"
+                ),
+                False,
+                id="offline-other-platform",
+            ),
+        ],
+    )
+    def test_exact_realization_image_is_verified_locally_before_any_pull(
+        self, tmp_path, offline_staged, local_copy, expected_error, pulled
+    ):
+        """A digest-pinned image the daemon proves needs no registry lookup (#953).
+
+        A local copy whose repo digests do not prove the pinned digest, or one
+        pulled for another platform than the daemon's, is not the authored
+        image: online it is pulled, offline it is refused by name.
+        """
+        backend = self._make_backend(tmp_path)
+        backend._offline_staged = offline_staged
+        inspect = {
+            "proven": MagicMock(returncode=0, stdout=_PROVEN_INSPECT, stderr=""),
+            "missing": MagicMock(returncode=1, stdout="", stderr="No such image"),
+            "mismatched": MagicMock(returncode=0, stdout=_ALIAS_INSPECT, stderr=""),
+            "other-platform": MagicMock(
+                returncode=0, stdout=_FOREIGN_PLATFORM_INSPECT, stderr=""
+            ),
+        }[local_copy]
+
+        with patch("subprocess.run", side_effect=_fake_image_daemon(inspect)) as run:
+            failure, compose_files = backend._prepare_realization_images(
+                _pinned_image_spec(), tmp_path
+            )
+
+        commands = [call.args[0] for call in run.call_args_list]
+        image_commands = [cmd for cmd in commands if cmd[:2] != ["docker", "version"]]
+        assert image_commands[0][:3] == ["docker", "image", "inspect"]
+        assert image_commands[0][-1] == _PINNED
+        assert (["docker", "pull", _PINNED] in commands) is pulled
+        assert (failure.error if failure else None) == expected_error
+        assert (compose_files is None) is (expected_error is not None)
+
+    @pytest.mark.parametrize("offline_staged", [False, True], ids=["online", "offline"])
+    def test_exact_realization_image_is_unproven_without_the_daemon_platform(
+        self, tmp_path, offline_staged
+    ):
+        """A cached pin is not used, nor pulled, when the platform is unknown."""
+        backend = self._make_backend(tmp_path)
+        backend._offline_staged = offline_staged
+        daemon = _fake_image_daemon(
+            MagicMock(returncode=0, stdout=_PROVEN_INSPECT, stderr=""),
+            MagicMock(returncode=1, stdout="", stderr="Cannot connect"),
+        )
+
+        with patch("subprocess.run", side_effect=daemon) as run:
+            failure, compose_files = backend._prepare_realization_images(
+                _pinned_image_spec(), tmp_path
+            )
+
+        assert (failure.error if failure else None) == "Docker platform query failed."
+        assert compose_files is None
+        assert [call.args[0][:2] for call in run.call_args_list] == [
+            ["docker", "version"]
+        ]
+
+    def test_a_tag_is_not_identity_evidence_and_is_still_pulled(self, tmp_path):
+        """Only a digest pin can be proven locally; a mutable tag is refreshed."""
+        backend = self._make_backend(tmp_path)
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            failure, _files = backend._prepare_realization_images(
+                _pinned_image_spec("postgres:16.4", "allowed-source"), tmp_path
+            )
+
+        assert failure is None
+        commands = [call.args[0] for call in mock_run.call_args_list]
+        assert commands[0] == ["docker", "pull", "postgres:16.4"]
+
+    def test_offline_full_docker_hub_pin_is_proven_by_the_short_repo_digest(
+        self, tmp_path
+    ):
+        """Docker reports `postgres@…` for a `docker.io/library/postgres@…` pin."""
+        backend = self._make_backend(tmp_path)
+        backend._offline_staged = True
+        qualified = f"docker.io/library/{_PINNED}"
+        daemon = _fake_image_daemon(
+            MagicMock(returncode=0, stdout=_PROVEN_INSPECT, stderr="")
+        )
+
+        with patch("subprocess.run", side_effect=daemon) as run:
+            failure, _files = backend._prepare_realization_images(
+                _pinned_image_spec(qualified), tmp_path
+            )
+
+        assert failure is None
+        commands = [call.args[0] for call in run.call_args_list]
+        image_commands = [cmd for cmd in commands if cmd[:2] != ["docker", "version"]]
+        assert [command[-1] for command in image_commands] == [qualified]
+
     def test_project_dir_property(self, tmp_path):
         backend = self._make_backend(tmp_path)
         assert backend.project_dir == tmp_path
@@ -2005,6 +2351,7 @@ class TestDockerComposeBackendContainerInteraction:
     def _make_backend(self, tmp_path: Path) -> DockerComposeBackend:
         backend = DockerComposeBackend(project_dir=tmp_path, project_name="test")
         backend._resolve_owned_container_id = lambda selector: selector  # type: ignore[method-assign]
+        backend._find_owned_container_id = lambda selector: selector  # type: ignore[method-assign]
         return backend
 
     # container_list -------------------------------------------------------
@@ -2373,6 +2720,23 @@ class TestDockerComposeBackendContainerInteraction:
         assert row["health"] == "healthy"
         assert row["labels"] == {"service": "victim"}
         assert row["ports"] == ["0.0.0.0:2022->22/tcp"]
+
+    def test_inventory_never_discloses_compose_environment_fingerprints(self, tmp_path):
+        backend = self._make_backend(tmp_path)
+        fingerprint = "d" * 64
+        line = docker_ps_inventory_row(
+            "aptl-db",
+            labels=(f"com.docker.compose.config-hash={fingerprint},"
+                    "com.docker.compose.service=db,com.docker.compose.project=test"),
+        )
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=line, stderr="")
+            rows = backend.host_list_lab_containers()
+            status = backend.status()
+        assert rows[0]["labels"]["com.docker.compose.service"] == "db"
+        assert "com.docker.compose.config-hash" not in rows[0]["labels"]
+        assert fingerprint not in str(rows)
+        assert fingerprint not in str(status.containers)
 
     def test_inventory_survives_image_labels_containing_newlines(self, tmp_path):
         """Image labels are arbitrary text and some contain newlines.
@@ -2853,7 +3217,7 @@ class TestLabBackwardCompat:
 
         config = AptlConfig(
             lab={"name": "test"},
-            containers={"wazuh": True, "victim": True, "kali": False, "reverse": False},
+            containers={'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
         )
         mock_subprocess.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
@@ -2897,7 +3261,7 @@ class TestLabBackwardCompat:
 
         config = AptlConfig(
             lab={"name": "test"},
-            containers={"wazuh": True, "kali": False, "reverse": False},
+            containers={'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
         )
 
         mock_backend = MagicMock()
@@ -3032,6 +3396,8 @@ class TestSeedNamedVolumes:
         backend._resource_ownership = ownership
         backend._resource_attempt_id = "run-a"
         backend._docker_daemon_id = "test-daemon"
+        # A stale receipt retires only after a listing on its own daemon.
+        backend._current_docker_daemon_id = lambda: "test-daemon"
         for suffix in ("suricata_config_seed", "suricata_misp_rules"):
             volume = f"test_{suffix}"
             ownership.record(
@@ -3232,7 +3598,12 @@ class TestSeedNamedVolumes:
             nonlocal created
             if cmd[:3] == ["docker", "volume", "inspect"]:
                 if not created:
-                    return MagicMock(returncode=1, stdout="", stderr="missing")
+                    return MagicMock(
+                        returncode=1,
+                        stdout="",
+                        stderr="Error response from daemon: get "
+                        "test_suricata_config_seed: no such volume",
+                    )
                 return MagicMock(
                     returncode=0,
                     stdout=json.dumps(
@@ -3363,7 +3734,7 @@ class TestSeedNamedVolumes:
     def test_seed_is_idempotent_across_runs(self, tmp_path):
         # Root `cp -a` overwrites prior content, so the backend issues the
         # same command on every start regardless of the volume's state —
-        # repeated `aptl lab start` is idempotent.
+        # repeated `lilrae lab start` is idempotent.
         backend = self._backend(tmp_path)
         seed = self._config_seed()
         commands = []
@@ -3568,7 +3939,7 @@ class TestRealizeContent:
             "volume_suffix": "fileshare_data",
             "dest_relpath": "public/notice.txt",
             "source_kind": "inline-text",
-            "inline_text": "Welcome to TechVault.",
+            "inline_text": "Welcome to the range.",
         }
         fields.update(overrides)
         return DeploymentContentRealization(**fields)
@@ -3631,12 +4002,12 @@ class TestRealizeContent:
         assert "cp -a /src/notice.txt /dest/public/notice.txt" in script
 
         rendered_file = rendered_dir / "notice.txt"
-        assert rendered_file.read_text(encoding="utf-8") == "Welcome to TechVault."
+        assert rendered_file.read_text(encoding="utf-8") == "Welcome to the range."
 
     def test_project_file_source_binds_resolved_parent_directory(self, tmp_path):
         from aptl.core.deployment.realization import DeploymentContentRealization
 
-        source_dir = tmp_path / "scenarios" / "fixtures" / "techvault-content"
+        source_dir = tmp_path / "scenarios" / "fixtures" / "range-content"
         source_dir.mkdir(parents=True)
         (source_dir / "onboarding.md").write_text("hello", encoding="utf-8")
         item = DeploymentContentRealization(
@@ -3646,7 +4017,7 @@ class TestRealizeContent:
             volume_suffix="fileshare_data",
             dest_relpath="onboarding/onboarding.md",
             source_kind="project-file",
-            source_relpath="scenarios/fixtures/techvault-content/onboarding.md",
+            source_relpath="scenarios/fixtures/range-content/onboarding.md",
         )
         backend = self._backend(tmp_path)
         with patch("subprocess.run", side_effect=self._content_run_mock()) as mock_run:
@@ -3718,6 +4089,53 @@ class TestRealizeContent:
                 )
         assert "fileshare_data" in str(exc_info.value)
         assert "secret docker stderr" not in str(exc_info.value)
+
+    def test_pinned_seeder_tag_is_pointed_at_its_digest_before_seeding(self, tmp_path):
+        """A pack without Suricata skips the seed step; content still runs the pin."""
+        from aptl.core.deployment._compose_content_realization import (
+            CONTENT_SEEDER_IMAGE,
+        )
+        from aptl.core.helper_images import PINNED_HELPER_IMAGES
+
+        backend = self._backend(tmp_path)
+        with (
+            patch.object(backend, "pull_images", return_value=[]) as pull_images,
+            patch("subprocess.run", side_effect=self._content_run_mock()) as mock_run,
+        ):
+            backend.realize_content(
+                [self._inline_text_item()],
+                seeder_image=CONTENT_SEEDER_IMAGE,
+                scenario_root=tmp_path,
+            )
+
+        pull_images.assert_called_once_with([PINNED_HELPER_IMAGES[CONTENT_SEEDER_IMAGE]])
+        assert mock_run.call_args[0][0][-3] == CONTENT_SEEDER_IMAGE
+
+    def test_unavailable_pinned_seeder_stops_before_seeding(self, tmp_path):
+        """No seed runs on an unpinned image; the error carries no Docker detail."""
+        from aptl.core.deployment._compose_content_realization import (
+            CONTENT_SEEDER_IMAGE,
+        )
+        from aptl.core.deployment.errors import BackendSeedError
+        from aptl.core.helper_images import PINNED_HELPER_IMAGES
+
+        backend = self._backend(tmp_path)
+        content = [self._inline_text_item()]
+        with (
+            patch.object(
+                backend, "pull_images", return_value=["Failed to pull: secret stderr"]
+            ),
+            patch("subprocess.run") as mock_run,
+        ):
+            with pytest.raises(BackendSeedError) as exc_info:
+                backend.realize_content(
+                    content, seeder_image=CONTENT_SEEDER_IMAGE, scenario_root=tmp_path
+                )
+        assert str(exc_info.value) == (
+            "Pinned content seeder image is unavailable: "
+            + PINNED_HELPER_IMAGES[CONTENT_SEEDER_IMAGE]
+        )
+        mock_run.assert_not_called()
 
 
 class TestObserveContentType:
@@ -4146,7 +4564,11 @@ class _FakeAd:
 
 
 def _ad_node(
-    address="scenario.node.ad", *, service_name="ad", container_name="aptl-ad"
+    address="scenario.node.ad",
+    *,
+    service_name="ad",
+    container_name="aptl-ad",
+    account_provider="samba-ad",
 ):
     return DeploymentNodeRealization(
         address=address,
@@ -4155,6 +4577,7 @@ def _ad_node(
         container_name=container_name,
         networks=(),
         network_attachments=(),
+        backend_account_provider=account_provider,
     )
 
 
@@ -4204,9 +4627,9 @@ class TestRealizeAccounts:
         backend = self._backend(tmp_path)
         ad = _FakeAd()
         account = _acct(
-            "jessica.williams",
+            "alice.smith",
             groups=("Sales", "VPN-Users"),
-            mail="jessica.williams@techvault.local",
+            mail="alice.smith@range.example",
         )
         with patch.object(backend, "container_exec", ad):
             result = backend.realize_accounts((account,), (_ad_node(),))
@@ -4214,7 +4637,7 @@ class TestRealizeAccounts:
         # User created via --random-password, mail set atomically, no secret argv.
         create = ad.cmds("samba-tool", "user", "create")[0]
         assert "--random-password" in create
-        assert "--mail-address=jessica.williams@techvault.local" in create
+        assert "--mail-address=alice.smith@range.example" in create
         assert all("password123" not in tok for tok in create)
         # Groups are ensured before membership is reconciled.
         first_addmember = _index(ad.calls, lambda c: c[1:3] == ["group", "addmembers"])
@@ -4230,8 +4653,8 @@ class TestRealizeAccounts:
 
     def test_existing_user_is_not_recreated_preserving_password(self, tmp_path):
         backend = self._backend(tmp_path)
-        ad = _FakeAd(users=["jessica.williams"], groups=["Sales"])
-        account = _acct("jessica.williams", groups=("Sales",))
+        ad = _FakeAd(users=["alice.smith"], groups=["Sales"])
+        account = _acct("alice.smith", groups=("Sales",))
         with patch.object(backend, "container_exec", ad):
             result = backend.realize_accounts((account,), (_ad_node(),))
         assert result is None
@@ -4244,7 +4667,7 @@ class TestRealizeAccounts:
             "group",
             "addmembers",
             "Sales",
-            "jessica.williams",
+            "alice.smith",
         ] in ad.calls
 
     def test_authored_disabled_true_disables_and_verifies(self, tmp_path):
@@ -4304,9 +4727,9 @@ class TestRealizeAccounts:
         # converged (samba-tool user rename --mail-address), not left stale, and
         # the create path is never taken (password preserved).
         backend = self._backend(tmp_path)
-        ad = _FakeAd(users=["jessica.williams"])
-        ad.users["jessica.williams"]["mail"] = "stale@old.local"
-        account = _acct("jessica.williams", mail="jessica.williams@techvault.local")
+        ad = _FakeAd(users=["alice.smith"])
+        ad.users["alice.smith"]["mail"] = "stale@old.local"
+        account = _acct("alice.smith", mail="alice.smith@range.example")
         with patch.object(backend, "container_exec", ad):
             assert backend.realize_accounts((account,), (_ad_node(),)) is None
         assert ad.cmds("samba-tool", "user", "create") == []
@@ -4314,11 +4737,11 @@ class TestRealizeAccounts:
             "samba-tool",
             "user",
             "rename",
-            "jessica.williams",
-            "--mail-address=jessica.williams@techvault.local",
+            "alice.smith",
+            "--mail-address=alice.smith@range.example",
         ] in ad.calls
         assert (
-            ad.users["jessica.williams"]["mail"] == "jessica.williams@techvault.local"
+            ad.users["alice.smith"]["mail"] == "alice.smith@range.example"
         )
 
     def test_omitted_mail_is_not_materialized_or_verified(self, tmp_path):
@@ -4341,8 +4764,8 @@ class TestRealizeAccounts:
                 return super()._dispatch_user(cmd)
 
         ad = _PrefixSpnAd(users=["svc-sql"])
-        ad.users["svc-sql"]["spns"].add("MSSQLSvc/db.techvault.local:14330")
-        account = _acct("svc-sql", spn="MSSQLSvc/db.techvault.local:1433")
+        ad.users["svc-sql"]["spns"].add("MSSQLSvc/db.range.example:14330")
+        account = _acct("svc-sql", spn="MSSQLSvc/db.range.example:1433")
         with patch.object(backend, "container_exec", ad):
             result = backend.realize_accounts((account,), (_ad_node(),))
         assert result is not None
@@ -4359,9 +4782,9 @@ class TestRealizeAccounts:
                     return self._ok(cmd)  # pretend success, never update mail
                 return super()._dispatch_user(cmd)
 
-        ad = _IgnoreRenameAd(users=["jessica.williams"])
-        ad.users["jessica.williams"]["mail"] = "xjessica.williams@techvault.local"
-        account = _acct("jessica.williams", mail="jessica.williams@techvault.local")
+        ad = _IgnoreRenameAd(users=["alice.smith"])
+        ad.users["alice.smith"]["mail"] = "xalice.smith@range.example"
+        account = _acct("alice.smith", mail="alice.smith@range.example")
         with patch.object(backend, "container_exec", ad):
             result = backend.realize_accounts((account,), (_ad_node(),))
         assert result is not None
@@ -4411,7 +4834,7 @@ class TestRealizeAccounts:
         backend = self._backend(tmp_path)
         ad = _FakeAd()
         accounts = (
-            _acct("jessica.williams", groups=("Sales",)),
+            _acct("alice.smith", groups=("Sales",)),
             _acct("emily.chen", address="provision.account-placement.emily"),
             _acct("weak,Administrator", address="provision.account-placement.evil"),
         )
@@ -4431,11 +4854,11 @@ class TestRealizeAccounts:
         class _CaseMemberAd(_FakeAd):
             def _dispatch_group(self, cmd):
                 if cmd[2] == "listmembers":
-                    return self._ok(cmd, stdout="JESSICA.WILLIAMS\n")
+                    return self._ok(cmd, stdout="ALICE.SMITH\n")
                 return super()._dispatch_group(cmd)
 
-        ad = _CaseMemberAd(users=["jessica.williams"], groups=["Sales"])
-        account = _acct("jessica.williams", groups=("Sales",))
+        ad = _CaseMemberAd(users=["alice.smith"], groups=["Sales"])
+        account = _acct("alice.smith", groups=("Sales",))
         with patch.object(backend, "container_exec", ad):
             assert backend.realize_accounts((account,), (_ad_node(),)) is None
 
@@ -4446,11 +4869,11 @@ class TestRealizeAccounts:
         class _BadListAd(_FakeAd):
             def _dispatch_group(self, cmd):
                 if cmd[2] == "listmembers":
-                    return self._fail(cmd, stderr="jessica.williams")  # rc!=0 w/ stdout
+                    return self._fail(cmd, stderr="alice.smith")  # rc!=0 w/ stdout
                 return super()._dispatch_group(cmd)
 
-        ad = _BadListAd(users=["jessica.williams"], groups=["Sales"])
-        account = _acct("jessica.williams", groups=("Sales",))
+        ad = _BadListAd(users=["alice.smith"], groups=["Sales"])
+        account = _acct("alice.smith", groups=("Sales",))
         with patch.object(backend, "container_exec", ad):
             result = backend.realize_accounts((account,), (_ad_node(),))
         assert result is not None
@@ -4459,14 +4882,14 @@ class TestRealizeAccounts:
     def test_spn_is_added_and_verified(self, tmp_path):
         backend = self._backend(tmp_path)
         ad = _FakeAd()
-        account = _acct("svc-sql", spn="MSSQLSvc/db.techvault.local:1433")
+        account = _acct("svc-sql", spn="MSSQLSvc/db.range.example:1433")
         with patch.object(backend, "container_exec", ad):
             assert backend.realize_accounts((account,), (_ad_node(),)) is None
         assert [
             "samba-tool",
             "spn",
             "add",
-            "MSSQLSvc/db.techvault.local:1433",
+            "MSSQLSvc/db.range.example:1433",
             "svc-sql",
         ] in ad.calls
         assert ad.cmds("samba-tool", "spn", "list")
@@ -4474,14 +4897,19 @@ class TestRealizeAccounts:
     def test_unknown_provider_fails_closed_before_mutation(self, tmp_path):
         backend = self._backend(tmp_path)
         ad = _FakeAd()
-        node = _ad_node("scenario.node.db", service_name="db", container_name="aptl-db")
+        node = _ad_node(
+            "scenario.node.db",
+            service_name="db",
+            container_name="aptl-db",
+            account_provider="",
+        )
         account = _acct("x", target="scenario.node.db")
         with patch.object(backend, "container_exec", ad):
             result = backend.realize_accounts((account,), (node,))
         assert result is not None
         assert result.success is False
         assert "provision.account-placement.x" in (result.error or "")
-        assert "no-account-provider-for-service" in (result.error or "")
+        assert "no-account-provider-for-node" in (result.error or "")
         assert ad.calls == []  # no mutation happened
 
     def test_invalid_username_fails_closed_before_mutation(self, tmp_path):
@@ -4501,7 +4929,7 @@ class TestRealizeAccounts:
         monkeypatch.setattr(car, "_READINESS_TIMEOUT", 0)
         backend = self._backend(tmp_path)
         ad = _FakeAd(ready=False)
-        account = _acct("jessica.williams", groups=("Sales",))
+        account = _acct("alice.smith", groups=("Sales",))
         with patch.object(backend, "container_exec", ad):
             result = backend.realize_accounts((account,), (_ad_node(),))
         assert result is not None
@@ -4524,7 +4952,7 @@ class TestRealizeAccounts:
         monkeypatch.setattr(car, "_READINESS_TIMEOUT", 0)
         backend = self._backend(tmp_path)
         ad = _FakeAd(provisioned=False)  # service up, baseline not yet complete
-        account = _acct("jessica.williams", groups=("Sales",))
+        account = _acct("alice.smith", groups=("Sales",))
         with patch.object(backend, "container_exec", ad):
             result = backend.realize_accounts((account,), (_ad_node(),))
         assert result is not None
@@ -4583,7 +5011,7 @@ class TestAccountProvisionerOrderingContract:
 class TestDeclaredCredentialClassIsRealized:
     """Issue #1006: a declared weak account must actually hold a weak credential.
 
-    TechVault declares seven weak and four medium accounts. Creating all of them
+    A scenario can declare weak and medium accounts. Creating all of them
     with ``--random-password`` deletes the credential-guessing surface the attack
     path depends on, while every gate still reports success.
     """

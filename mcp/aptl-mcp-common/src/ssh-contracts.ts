@@ -2,6 +2,7 @@
 import { loadActiveTraceId } from './runs.js';
 import { redact } from './redaction.js';
 import type { ShellType } from './shells.js';
+import { knownToolFailure } from './lilrae-tool-outcome.js';
 
 // Mask embedded credentials before putting a command into an error message.
 // Command-timeout / failure SSHError strings can reach stderr (console.error)
@@ -43,7 +44,7 @@ export function aptlShellEnv(sessionId: string, env: NodeJS.ProcessEnv = process
 // Both throw the existing `SSHError` per ADR-004 §"Update (2026-05-12)".
 export function require_(condition: boolean, message: string): asserts condition {
   if (!condition) {
-    throw new SSHError(message);
+    throw knownToolFailure(new SSHError(message));
   }
 }
 
@@ -99,6 +100,26 @@ export class SSHError extends Error {
     super(message);
     this.name = 'SSHError';
     this.cause = cause;
+  }
+}
+
+/**
+ * The rejection of a one-shot exec whose timer fired (#1290). It names the
+ * exec's session id and the run id the exec was started under, and
+ * `channelClosed` settles once the stopped command's channel has closed, so
+ * run_command can harvest that session's Kali-side captures after the
+ * broker's final records (#1319). The close can take as long as the command:
+ * OpenSSH refuses the TERM for a forced-command session and confirms the
+ * close only once that command has exited.
+ */
+export class CommandTimeoutError extends SSHError {
+  constructor(
+    message: string,
+    public readonly sessionId: string,
+    public readonly runId: string | undefined,
+    public readonly channelClosed: Promise<void>,
+  ) {
+    super(message);
   }
 }
 

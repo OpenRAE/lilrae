@@ -2,7 +2,7 @@
 # Push one baked seat image to GHCR as an OCI artifact.
 #
 # The disk is a single blob and the config blob is the image's own
-# self-description, which is exactly what `aptl seat start` resolves: it reads
+# self-description, which is exactly what `lilrae seat start` resolves: it reads
 # the small config, then fetches the disk by digest. Publication is proven by
 # pulling the result anonymously rather than by trusting a visibility flag.
 set -euo pipefail

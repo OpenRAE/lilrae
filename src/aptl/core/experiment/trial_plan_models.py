@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import rfc8785
 from raes_contracts.contracts import (
@@ -20,6 +20,18 @@ if TYPE_CHECKING:
 
 _PLAN_ID_PREFIX = "plan-"
 _PLAN_PROJECTION_SCHEMA = "aptl-experiment-trial-plan/v3"
+
+
+class CaptureSpecPin(NamedTuple):
+    """The resolved identity of one admitted capture spec (issue #1372).
+
+    Admission hashes this identity into ``source_set_digest`` but never into
+    the canonical plan bytes, so carrying it beside the plan leaves plan IDs
+    and digests unchanged. The run traceability pins it verbatim.
+    """
+
+    capture_spec_id: str
+    spec_version: str
 
 
 @dataclass(frozen=True)

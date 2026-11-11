@@ -15,7 +15,7 @@ def _hooks(path: str = ".pre-commit-config.yaml") -> dict:
     return {hook["id"]: hook for repo in config["repos"] for hook in repo["hooks"]}
 
 
-def test_local_commit_runs_only_secrets_and_fast_hygiene() -> None:
+def test_local_commit_runs_secrets_hygiene_and_pack_ownership() -> None:
     hooks = _hooks(".pre-commit-config.yaml")
     assert set(hooks) == {
         "trailing-whitespace",
@@ -25,8 +25,16 @@ def test_local_commit_runs_only_secrets_and_fast_hygiene() -> None:
         "check-added-large-files",
         "check-merge-conflict",
         "detect-private-key",
+        "lilrae-pack-boundary",
     }
-    assert all(hook.get("pass_filenames", True) for hook in hooks.values())
+    # Ownership needs the covered paths and admitted pack facts; its files
+    # pattern selects relevant commits. Hygiene still uses staged files only.
+    assert hooks["lilrae-pack-boundary"]["pass_filenames"] is False
+    assert all(
+        hook.get("pass_filenames", True)
+        for name, hook in hooks.items()
+        if name != "lilrae-pack-boundary"
+    )
 
 
 def test_ci_retains_dependency_and_complexity_checks() -> None:
@@ -55,6 +63,7 @@ _REQUIRED_HOOKS = frozenset(
         "check-added-large-files",
         "check-merge-conflict",
         "detect-private-key",
+        "lilrae-pack-boundary",
     }
 )
 

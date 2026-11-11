@@ -44,4 +44,4 @@ RUN pip install --no-cache-dir --require-hashes -r requirements/runtime.txt \
 RUN useradd --system --uid 10001 --user-group --no-create-home --home-dir /nonexistent aptl
 USER 10001:10001
 
-ENTRYPOINT ["aptl-misp-suricata-sync"]
+ENTRYPOINT ["lilrae-misp-suricata-sync"]

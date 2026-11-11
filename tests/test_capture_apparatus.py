@@ -9,6 +9,8 @@ import pytest
 import yaml
 
 from aptl.core.deployment.docker_compose import DockerComposeBackend
+from aptl.core.deployment._ssh_key_bundle import SSH_ACCESS_PROFILE_V1
+from aptl.core.deployment.errors import CaptureReconciliationError
 from aptl.core.deployment.realization import (
     DeploymentCaptureApparatus,
     DeploymentGeneratedArtifactOutput,
@@ -33,33 +35,35 @@ def _apparatus() -> DeploymentCaptureApparatus:
     )
 
 
-def _capture_spec(project: Path) -> DeploymentRealizationSpec:
+def _capture_spec(project: Path, keys: str = "kali/.ssh") -> DeploymentRealizationSpec:
+    """Return a capture request whose key outputs the pack declares in ``keys``."""
+
     artifact = DeploymentGeneratedArtifactRealization(
-        address="provision.generated-artifact.techvault-ssh-keys",
-        name="techvault-ssh-keys",
+        address="provision.generated-artifact.range-ssh-keys",
+        name="range-ssh-keys",
         generator="ssh_key_bundle",
         lifecycle="regenerate_on_change",
-        provenance="techvault:ssh-access-profile/v1",
+        provenance=SSH_ACCESS_PROFILE_V1,
         outputs=(
             DeploymentGeneratedArtifactOutput(
                 name="kali-pivot-private-key",
-                path="kali/.ssh/kali_pivot_key",
+                path=f"{keys}/kali_pivot_key",
                 sensitivity="secret",
             ),
             DeploymentGeneratedArtifactOutput(
                 name="kali-authorized-keys",
-                path="kali/.ssh/authorized_keys",
+                path=f"{keys}/authorized_keys",
                 sensitivity="restricted",
             ),
         ),
         consumers=(),
     )
     source = artifact_source_path(project, artifact)
-    private_key = source / "kali/.ssh/kali_pivot_key"
+    private_key = source / keys / "kali_pivot_key"
     private_key.parent.mkdir(parents=True, exist_ok=True)
     private_key.write_text("private-test-key")
     Path(f"{private_key}.pub").write_text("ssh-ed25519 AAAATEST aptl-kali-pivot\n")
-    (source / "kali/.ssh/authorized_keys").write_text(
+    (source / keys / "authorized_keys").write_text(
         "ssh-ed25519 AAAAOPERATOR aptl-control-plane\n"
     )
     return DeploymentRealizationSpec(
@@ -108,12 +112,14 @@ def test_generated_realization_includes_only_admitted_capture_apparatus(tmp_path
 def test_generated_realization_omits_unadmitted_capture_apparatus(tmp_path):
     scenario = tmp_path / "pack"
     scenario.mkdir()
-    backend = DockerComposeBackend(_ROOT)
+    backend = DockerComposeBackend(tmp_path)
     spec = DeploymentRealizationSpec(profiles=("kali",), nodes=(), networks=())
 
-    files = backend._realization_compose_files(None, spec, scenario, _ROOT)
+    files = backend._realization_compose_files(None, spec, scenario, tmp_path)
 
-    assert not files
+    assert files is not None
+    assert len(files) == 1
+    assert yaml.safe_load(files[0].read_text()) == {"services": {}}
 
 
 def test_capture_apparatus_asset_is_backend_owned_and_distributed():
@@ -173,8 +179,10 @@ def test_dormant_capture_apparatus_is_verified_without_open_ingress(tmp_path):
                     "ReadonlyRootfs": True,
                     "CapDrop": ["ALL"],
                     "CapAdd": [
+                        "CAP_AUDIT_WRITE",
                         "CAP_CHOWN",
                         "CAP_DAC_OVERRIDE",
+                        "CAP_KILL",
                         "CAP_NET_BIND_SERVICE",
                         "CAP_SETGID",
                         "CAP_SETUID",
@@ -204,8 +212,10 @@ def test_dormant_capture_apparatus_is_verified_without_open_ingress(tmp_path):
     assert observed is not None
     assert observed[0]["participant_ingress_state"] == ("dormant-awaiting-run-binding")
     assert observed[0]["linux_capabilities"] == [
+        "CAP_AUDIT_WRITE",
         "CAP_CHOWN",
         "CAP_DAC_OVERRIDE",
+        "CAP_KILL",
         "CAP_NET_BIND_SERVICE",
         "CAP_SETGID",
         "CAP_SETUID",
@@ -245,6 +255,72 @@ def test_capture_activation_binds_exact_plan_and_run(tmp_path, monkeypatch):
     assert "run-1" in activation.args[1]
     status = backend.container_exec.call_args_list[-1]
     assert status.args[1][-1] == "status"
+
+
+@pytest.mark.parametrize(
+    ("binding_id", "authority_binding", "accepted"),
+    [
+        (
+            "rpt.collector.redteam-session-transcript",
+            "rpt.collector.redteam-session-transcript",
+            True,
+        ),
+        (
+            "rpt.collector.redteam-session-transcript",
+            "aptl.collector.redteam-session-transcript",
+            False,
+        ),
+        (None, "aptl.collector.redteam-session-transcript", True),
+    ],
+    ids=("adapter-binding", "adapter-binding-mismatch", "default-binding"),
+)
+def test_capture_activation_binds_the_adapter_transcript_registration(
+    binding_id, authority_binding, accepted, tmp_path, monkeypatch
+):
+    """The broker is activated for the scenario adapter's transcript binding."""
+
+    backend = DockerComposeBackend(tmp_path)
+    authority = {
+        "run_id": "run-1",
+        "plan_id": "capture-plan-1",
+        "binding_id": authority_binding,
+        "activated_at": "2026-09-14T10:00:00Z",
+    }
+    backend.container_exec = MagicMock(
+        side_effect=(
+            subprocess.CompletedProcess([], 0, "", ""),
+            subprocess.CompletedProcess([], 0, json.dumps(authority), ""),
+        )
+    )
+    monkeypatch.setattr(
+        "aptl.core.deployment._compose_capture_apparatus.time.sleep",
+        lambda _seconds: None,
+    )
+    kwargs = {} if binding_id is None else {"binding_id": binding_id}
+
+    observed = backend.activate_capture_apparatus(
+        plan_id="capture-plan-1", run_id="run-1", **kwargs
+    )
+
+    activation = backend.container_exec.call_args_list[0].args[1]
+    requested = activation[activation.index("--binding-id") + 1]
+    assert requested == (binding_id or "aptl.collector.redteam-session-transcript")
+    assert (observed == authority) is accepted
+    assert (observed is None) is not accepted
+
+
+@pytest.mark.parametrize("binding_id", ["", "../escape", "a/b", "a b"])
+def test_capture_activation_refuses_an_unsafe_binding(binding_id, tmp_path):
+    """An unsafe binding id is refused before the broker is called."""
+    backend = DockerComposeBackend(tmp_path)
+    backend.container_exec = MagicMock()
+
+    observed = backend.activate_capture_apparatus(
+        plan_id="capture-plan-1", run_id="run-1", binding_id=binding_id
+    )
+
+    assert observed is None
+    backend.container_exec.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -352,4 +428,13 @@ def test_capture_finalization_rejects_broker_inventory_mismatch(tmp_path):
     )
 
     assert backend.quiesce_capture_apparatus() is True
-    assert backend.export_capture_apparatus(expected_session_ids=("session-1",)) is None
+    with pytest.raises(CaptureReconciliationError) as raised:
+        backend.export_capture_apparatus(expected_session_ids=("session-1",))
+    counts = (
+        raised.value.census,
+        raised.value.accepted,
+        raised.value.census_only,
+        raised.value.broker_only,
+    )
+    assert counts == (1, 1, 1, 1)
+    assert "session-1" not in str(raised.value)

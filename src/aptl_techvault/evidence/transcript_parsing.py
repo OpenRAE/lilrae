@@ -6,7 +6,7 @@ import base64
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from aptl.core.evidence.adapters.sources import SourceResult, _to_outcome
+from aptl.core.evidence.adapters.sources import SourceResult, source_result_to_outcome
 from aptl_techvault.evidence.techvault import (
     RedteamSessionTranscriptSource,
     TranscriptFrame,
@@ -142,7 +142,7 @@ def _binding_schema_keys() -> tuple[str, ...]:
         sensitivity="plain",
         redaction_required=True,
         redaction_policy="redact_secrets",
-        integrity_requirements=("chain_of_custody",),
+        integrity_requirements=("checksum",),
         retention_policy="run_lifetime",
         loss_disclosure_required=True,
         visibility_class=registration.visibility_class,
@@ -185,6 +185,10 @@ def transcript_sessions(
         raise ValueError("capture export is incomplete")
     budget = _TranscriptBudget(limits, artifact_count=2 * len(expected))
     sessions = tuple(_transcript_session(raw, budget) for raw in sessions_raw)
+    if "accepted_session_ids" in payload:
+        accepted = _expected_session_ids(payload["accepted_session_ids"], limits)
+        if set(accepted) != {session.session_id for session in sessions}:
+            raise ValueError("broker ledger disagrees with exported sessions")
     return expected, sessions
 
 
@@ -291,7 +295,7 @@ class FinalizedTranscriptCollector:
                 lambda: expected,
                 lambda: sessions,
             ).fetch(handle.started_at, finished_at)
-        return _to_outcome(result, handle.started_at, finished_at)
+        return source_result_to_outcome(result, handle.started_at, finished_at)
 
 
 __all__ = (

@@ -1,26 +1,19 @@
 """Static consistency tests for APTL configuration files.
 
-These tests validate that docker-compose.yml, aptl.json, scripts, and code
-references are internally consistent. No running Docker environment needed.
+These tests check the live project-tree configuration. No running Docker
+environment is needed; the released-pack cases live with the adapter tests. The former profile
+comparison relied on inactive stubs, and the docker-exec scan matched no real
+references; both were removed for #954. Pack profile/dependency validation is
+covered by test_env_pack_realization.py and test_raes_backend.py.
 """
 
-import json
-import re
 from pathlib import Path
 
 import pytest
 import yaml
 
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-# Published host ports are parameterized (`${VAR:-default}`) so `aptl lab start`
-# can remap an in-use default to a free port. Resolve to the default so these
-# static checks compare against the value the stack publishes out of the box.
-_COMPOSE_VAR = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*(?::-([^}]*))?\}")
-
-
-def _resolve_compose_vars(text: str) -> str:
-    return _COMPOSE_VAR.sub(lambda m: m.group(1) or "", text)
 
 
 @pytest.fixture
@@ -28,21 +21,6 @@ def compose_config():
     compose_path = PROJECT_ROOT / "docker-compose.yml"
     with open(compose_path) as f:
         return yaml.safe_load(f)
-
-
-@pytest.fixture
-def aptl_config():
-    config_path = PROJECT_ROOT / "aptl.json"
-    with open(config_path) as f:
-        return json.load(f)
-
-
-@pytest.fixture(scope="module")
-def techvault_sdl(tmp_path_factory) -> Path:
-    """Staged SDL path of the default TechVault env-pack scenario (#875)."""
-    from tests.helpers import techvault_scenario_path
-
-    return techvault_scenario_path(tmp_path_factory.mktemp("techvault-consistency"))
 
 
 class TestComposeConsistency:
@@ -101,9 +79,7 @@ class TestComposeConsistency:
             for network, ip, first, second in dupes
         )
 
-    def test_misp_suricata_rules_mount_named_volume(
-        self, compose_config, techvault_sdl
-    ):
+    def test_misp_suricata_rules_mount_named_volume(self, compose_config):
         """ADR-043: MISP rules ride a shared named volume, never a host bind.
 
         Nothing checked-in or under ``.aptl/`` may be bind-mounted onto a
@@ -116,8 +92,6 @@ class TestComposeConsistency:
         is a separate, not-yet-built secrets-injection concern for
         base-container-materialized nodes (tracked alongside #809) and is not asserted here.
         """
-        from raes import parse_sdl_file
-
         services = compose_config["services"]
         suricata_volumes = services["suricata"]["volumes"]
 
@@ -134,23 +108,6 @@ class TestComposeConsistency:
         top_level = compose_config.get("volumes", {})
         assert "suricata_misp_rules" in top_level
         assert "suricata_config_seed" in top_level
-
-        scenario = parse_sdl_file(techvault_sdl)
-        consumers = {
-            volume_name: {
-                (consumer.node, consumer.mount_destination, consumer.access_mode.value)
-                for consumer in scenario.persistent_volumes[volume_name].consumers
-            }
-            for volume_name in ("suricata_misp_rules", "suricata_command_socket")
-        }
-        assert consumers["suricata_misp_rules"] == {
-            ("suricata", "/var/lib/suricata/rules/misp", "read_only"),
-            ("misp-suricata-sync", "/var/lib/suricata/rules/misp", "read_write"),
-        }
-        assert consumers["suricata_command_socket"] == {
-            ("suricata", "/var/run/suricata", "read_write"),
-            ("misp-suricata-sync", "/var/run/suricata", "read_write"),
-        }
 
     def test_suricata_config_seeded_not_bind_mounted(self, compose_config):
         """ADR-043: suricata.yaml / local.rules are seeded via a named volume
@@ -198,18 +155,6 @@ class TestComposeConsistency:
             "/etc/otelcol-contrib/config.yaml",
         ]
 
-    def test_thehive_elasticsearch_stays_writable_on_full_host(self, compose_config):
-        """Fresh TheHive and Cortex bootstrap must not depend on host usage.
-
-        Elasticsearch's percentage flood-stage can reject the first Cortex
-        organisation write while cluster health remains green. The lab store
-        is disposable and single-node, so host percentage watermarks are not
-        an appropriate readiness policy.
-        """
-        environment = compose_config["services"]["thehive-es"]["environment"]
-
-        assert "cluster.routing.allocation.disk.threshold_enabled=false" in environment
-
     def test_shuffle_opensearch_stays_writable_on_full_host(self, compose_config):
         """Shuffle's lab datastore must not use host percentage watermarks.
 
@@ -243,128 +188,21 @@ class TestComposeConsistency:
         )
 
 
-class TestKaliContainerLifecycle:
-    """Issue #293 / ADR-033 §2: the kali container must reap children and
-    its readiness must reflect the usable surface, not just port 22.
-
-    kali is realized generically from the SDL (issue #581), never
-    Compose-started, so these two properties no longer live in
-    docker-compose.yml — they are asserted against the SDL node instead.
-    """
-
-    @staticmethod
-    def _kali_node(techvault_sdl):
-        from raes import parse_sdl_file
-
-        scenario = parse_sdl_file(techvault_sdl)
-        return scenario.nodes["kali"]
-
-    def test_kali_runs_under_systemd_reaper(self, techvault_sdl):
-        """kali must declare service_manager_units so the generic
-        materializer boots it on the init-capable systemd base image
-        (`base_image_for_os`, src/aptl/backends/raes_materializer.py) —
-        systemd is PID 1 there and reaps orphaned children natively.
-        Without any service unit declared, kali would get the bare
-        non-service base image instead, with no reaper (the zombie defect
-        in issue #293, now a property of image selection, not a Compose
-        `init: true` flag)."""
-        kali = self._kali_node(techvault_sdl)
-        assert kali.runtime is not None
-        assert kali.runtime.service_manager_units, (
-            "kali must declare at least one service_manager_units entry "
-            "(ADR-033 §2 / issue #293): with none, the materializer selects "
-            "the non-service base image, which has no PID-1 reaper."
-        )
-
-    def test_kali_scenario_owns_only_native_sshd(self, techvault_sdl):
-        """Kali declares sshd; capture is admitted backend apparatus.
-
-        The scenario must not claim the backend-owned OBS-003 capture broker as
-        a guest service.  Apparatus construction, activation, and disclosure
-        are verified separately by ``test_capture_apparatus.py``.
-        """
-        kali = self._kali_node(techvault_sdl)
-        unit_names = {unit.unit_name for unit in kali.runtime.service_manager_units}
-        assert "ssh.service" in unit_names, "kali must run and verify sshd"
-        assert "kali-capture-bootstrap.service" not in unit_names
-
-    def test_kali_has_no_scenario_declared_host_proxy(self, compose_config):
-        """Kali's host-routable endpoint is backend apparatus, not a scenario node.
-
-        The old `kali-ssh-proxy` service published 127.0.0.1:2023 for host-run
-        MCP clients. TechVault declares no such node, nothing started it, and it
-        has been removed (issue #1006). Operator access is declared as
-        `agents.red-team-operator.interactive_access` and is the backend's to
-        provide and disclose; this test pins only that the scenario does not
-        reintroduce a proxy node of its own.
-        """
-        services = compose_config["services"]
-        assert "kali-ssh-proxy" not in services
-        assert "webapp-proxy" not in services
-        kali = services["kali"]
-        assert "aptl-control" not in kali.get("networks", {}), (
-            "kali must not attach to aptl-control; host-routable operator "
-            "access is published by backend apparatus, not by the node"
-        )
-
-
-class TestCodeReferencesMatchCompose:
-    """Ensure docker exec references in code match actual container_name values."""
-
-    def test_docker_exec_references(self, compose_config):
-        """All 'docker exec <name>' in .py and .sh files must reference a real container_name."""
-        services = compose_config.get("services", {})
-        valid_names = {
-            svc["container_name"]
-            for svc in services.values()
-            if "container_name" in svc
-        }
-
-        pattern = re.compile(r"docker\s+exec\s+(aptl-[\w.-]+)")
-        bad_refs = []
-
-        for ext in ("**/*.py", "**/*.sh"):
-            for fpath in PROJECT_ROOT.glob(ext):
-                if "node_modules" in str(fpath):
-                    continue
-                text = fpath.read_text(errors="replace")
-                for match in pattern.finditer(text):
-                    ref = match.group(1)
-                    if ref not in valid_names:
-                        bad_refs.append((str(fpath.relative_to(PROJECT_ROOT)), ref))
-
-        assert not bad_refs, (
-            "docker exec references to non-existent container names:\n"
-            + "\n".join(f"  {f}: {n}" for f, n in bad_refs)
-        )
-
-
-class TestProfileConsistency:
-    """Validate profiles between aptl.json and docker-compose.yml."""
-
-    def test_config_profiles_exist_in_compose(self, compose_config, aptl_config):
-        """Every profile in aptl.json containers must be used in docker-compose.yml."""
-        config_profiles = set(aptl_config.get("containers", {}).keys())
-
-        compose_profiles = set()
-        for svc in compose_config.get("services", {}).values():
-            for p in svc.get("profiles", []):
-                compose_profiles.add(p)
-
-        missing = config_profiles - compose_profiles
-        assert not missing, (
-            f"Profiles in aptl.json but not in docker-compose.yml: {missing}"
-        )
-
-
 class TestNetworkEgressControls:
-    """Validate SAF-002: attack networks must block internet egress."""
+    """Validate SAF-002: attack networks must block internet egress.
+
+    Checked on the in-tree Compose model. The released-pack tests reuse these
+    checks on the networks the planner renders for a released pack (#954).
+    """
 
     ATTACK_NETWORKS = ["aptl-dmz", "aptl-internal", "aptl-redteam"]
 
-    def test_attack_networks_are_internal(self, compose_config):
+    @pytest.fixture
+    def networks(self, compose_config):
+        return compose_config.get("networks", {})
+
+    def test_attack_networks_are_internal(self, networks):
         """Networks carrying attack traffic must use internal: true."""
-        networks = compose_config.get("networks", {})
         not_internal = []
         for name in self.ATTACK_NETWORKS:
             net = networks.get(name, {})
@@ -376,10 +214,10 @@ class TestNetworkEgressControls:
             f"internet, risking autonomous agent attacks on external targets."
         )
 
-    def test_security_network_allows_egress(self, compose_config):
+    def test_security_network_allows_egress(self, networks):
         """Security/management network must NOT be internal (SOC tools need internet)."""
-        networks = compose_config.get("networks", {})
-        security = networks.get("aptl-security", {})
+        assert "aptl-security" in networks
+        security = networks["aptl-security"]
         assert not security.get("internal", False), (
             "aptl-security must not be internal: true. "
             "SOC tools (MISP, Wazuh, Shuffle) require internet for "

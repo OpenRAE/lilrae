@@ -6,9 +6,11 @@ APTL lab (e.g., vm.max_map_count for OpenSearch/Wazuh Indexer).
 
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 
 from aptl.core import hostenv
 from aptl.utils.logging import get_logger
+from aptl.utils.probe_execution import run_bounded_probe_command
 
 log = get_logger("sysreqs")
 
@@ -34,6 +36,21 @@ class ToolReqResult:
     command: str
     error: str = ""
     install_hint: str = ""
+
+
+def docker_mode_for_containment(host_containment: str | None) -> str:
+    """Map an observed execution boundary to the sysctl owner it implies.
+
+    Only a native Linux engine on this host reads this host's
+    ``vm.max_map_count``; a Docker VM manages its own, and anything else is
+    unknown.
+    """
+
+    if host_containment == "native-docker":
+        return hostenv.DOCKER_LINUX_NATIVE
+    if host_containment == "docker-vm-unverified":
+        return hostenv.DOCKER_VM
+    return hostenv.DOCKER_UNKNOWN
 
 
 def check_max_map_count(
@@ -69,6 +86,17 @@ def check_max_map_count(
             f"vm.max_map_count is managed inside the Docker VM ({mode})",
         )
     return result
+
+
+def check_scenario_max_map_count(
+    minimum: int | None, *, selected_mode: str
+) -> SysReqResult:
+    """Probe only the admitted scenario's bounded kernel demand."""
+    if minimum is None:
+        return SysReqResult(True, 0, 0, applicable=False)
+    if type(minimum) is not int or not 1 <= minimum <= 2**31 - 1:
+        raise ValueError("invalid scenario kernel requirement")
+    return check_max_map_count(minimum, selected_mode=selected_mode)
 
 
 def check_docker_buildx() -> ToolReqResult:
@@ -154,13 +182,20 @@ def _run_max_map_count_sysctl(
 ) -> subprocess.CompletedProcess | SysReqResult:
     """Run sysctl or return a not-applicable result when it is unavailable."""
     try:
+        bounded = run_bounded_probe_command(
+            ["sysctl", "vm.max_map_count"], cwd=Path.cwd(), timeout=15
+        )
+        if bounded is not None:
+            return bounded
         return subprocess.run(
             ["sysctl", "vm.max_map_count"],
             capture_output=True,
             text=True,
         )
-    except (FileNotFoundError, OSError) as exc:
-        return _not_applicable_result(minimum, str(exc))
+    except OSError:
+        return _not_applicable_result(
+            minimum, "sysctl command not found or inaccessible"
+        )
 
 
 def _evaluate_sysctl_result(
@@ -175,12 +210,12 @@ def _evaluate_sysctl_result(
     try:
         current_value = _parse_sysctl_value(stdout)
     except ValueError:
-        log.exception("Failed to parse sysctl output '%s'", stdout)
+        log.error("Failed to parse sysctl output")
         return SysReqResult(
             passed=False,
             current_value=0,
             required_value=minimum,
-            error=f"Failed to parse sysctl output: {stdout}",
+            error="Failed to parse sysctl output",
         )
     return _max_map_count_result(current_value, minimum)
 
@@ -190,14 +225,20 @@ def _failed_sysctl_result(stderr: str, minimum: int) -> SysReqResult:
     error_msg = stderr.strip() or "sysctl command failed"
     if _sysctl_not_applicable(error_msg):
         return _not_applicable_result(
-            minimum, f"vm.max_map_count sysctl not applicable: {error_msg}"
+            minimum,
+            "vm.max_map_count check not applicable: key unavailable on this host",
         )
-    log.error("sysctl returned non-zero: %s", error_msg)
+    error = (
+        "sysctl permission denied"
+        if "permission denied" in error_msg.lower()
+        else "sysctl command failed"
+    )
+    log.error("%s", error)
     return SysReqResult(
         passed=False,
         current_value=0,
         required_value=minimum,
-        error=error_msg,
+        error=error,
     )
 
 

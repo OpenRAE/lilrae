@@ -13,7 +13,7 @@ Handing it to another backend would be meaningless, which is why it belongs to
 the backend rather than to the scenario author: an author cannot write the
 adapter for a backend they have never seen, and many backends are private.
 
-It ships inside the ``aptl-labs`` distribution and releases with it, so one
+It ships inside the ``lilrae`` distribution and releases with it, so one
 install gives an operator every extension surface the scenario owns. What stays
 true is the separation, not the packaging: no module under ``aptl.`` holds
 scenario knowledge, and a second scenario adds a package like this one rather

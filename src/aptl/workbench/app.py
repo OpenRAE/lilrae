@@ -103,7 +103,6 @@ _BOOKMARKS = {
     "aptl-guide": {"label": "APTL guide", "href": "/guide/"},
     "kali-desktop": {"label": "Kali terminal", "href": "/desktop/kali/"},
     "soc-wazuh": {"label": "Wazuh", "href": "/soc/wazuh/"},
-    "soc-thehive": {"label": "TheHive", "href": "/soc/thehive/"},
     "soc-misp": {"label": "MISP", "href": "/soc/misp/"},
     "soc-shuffle": {"label": "Shuffle", "href": "/soc/shuffle/"},
 }
@@ -236,7 +235,7 @@ def _attach_views(
                 "mcp_servers": [],
                 "allowed_profiles": list(principal.profiles),
             }
-        profile = profile_for(launch.profile)
+        profile = profile_for(launch.profile, server_ids=launch.server_ids)
         return {
             "allowed_profiles": list(principal.profiles),
             "profile": profile.profile_id.value,
@@ -294,9 +293,11 @@ def _attach_commands(
             with access.guard:
                 access.require_owner(principal)
                 response = runtime.respond(message.message)
-        except WorkbenchStateError:
+        except WorkbenchStateError as exc:
+            # The cause is safe to show (see WorkbenchStateError) and tells the
+            # participant whether the request timed out or left residue.
             raise HTTPException(
-                status_code=409, detail="Agent request unavailable"
+                status_code=409, detail=f"Agent request unavailable: {exc}"
             ) from None
         return {"response": response}
 

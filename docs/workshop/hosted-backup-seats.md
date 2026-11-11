@@ -1,110 +1,28 @@
-# Hosted Backup Seats For A Workshop
+<a id="hosted-backup-seats-for-a-workshop"></a>
 
-> Historical pinned-payload procedure. Its local `--scenario` commands belong
-> to the recorded release and are not current catalog selectors. For a current
-> checkout-only guided fixture, use the explicit staging and `--scenario-path`
-> procedure in [Lab Walkthrough](walkthrough.md).
+# Prepare Historical Hosted Backup Seats
 
-Historical contingency from `origin/825-hosted-backup-seats` (`2db0f8ac`).
-Statements about the "current" release below describe the July 28, 2026
-trial, not today's code. This recipe uses a pinned reduced guided profile;
-it is not the August full-TechVault fleet or qualification for `aptl seat`.
-See the [branch audit](../architecture/issue-1022-historical-branch-audit.md)
-and [August reference archive](arsenal-2026/README.md). Do not run cloud or
-host-provisioning commands without separately authorizing that deployment.
+Use this guide only for a separately approved reconstruction of the July 28, 2026 contingency.
+You need the exact pinned payload, an approved AWS account, private operator storage, and authorized cloud budget.
+Do not provision hosts, transfer payloads, or create public endpoints without approval for that deployment.
+Run lab operations and semantic checks only in approved isolated hosts or CI.
 
-This is the contingency procedure for giving up to twelve participants an
-isolated APTL workstation when their own laptop cannot run the lab. It is
-deliberately a runbook, not a fleet platform.
-
-The unit of work is one seat:
-
-```text
-participant browser
-        |
-        | HTTPS, seat01.<event-domain>
-        v
-one Ubuntu EC2 VM
-  Caddy :80/:443
-        |
-        | verified TLS, loopback only
-        v
-  Amazon DCV :8443
-        |
-        | PAM login as seat01
-        v
-  GNOME desktop + coding agent + APTL
-```
-
-Repeat that unit for `seat01` through `seat12`. Each participant receives one
-URL, one matching username, and one independent passphrase. There is no VPN,
-RDP, participant SSH, shared Linux account, claim page, load balancer, or
-shared application gateway.
+The result is one independently admitted browser seat per participant, up to twelve seats.
+This procedure does not qualify the current LilRAE appliance or development branch.
+Read the [pinned trial reference](hosted-backup-reference.md) before selecting it.
+Its legacy `aptl` commands belong to the pinned payload; do not replace them mechanically with current selectors.
+For the supported desktop-seat route, use [Workshop setup](setup.md).
 
 ## Current Go/No-Go Truth
 
-The hosted access design and one complete seat were proven on July 28, 2026 in
-`us-east-2`. The proof covered:
-
-- an Ubuntu 24.04 `m6i.4xlarge` host with 16 vCPUs, 64 GiB RAM, and a 200 GiB
-  root disk;
-- a public certificate for the exact seat hostname and HTTP-to-HTTPS redirect;
-- Caddy as the only public web listener and DCV bound to loopback;
-- rejection of a wrong participant password and acceptance of the right one;
-- a rendered 1440 by 900 GNOME desktop, not just a reachable DCV login page;
-- a terminal owned by `seat01` and Claude Code `2.1.220`;
-- the guided APTL lab reporting every required container healthy;
-- the real bounded red operation, failed-SSH operation, indexer investigation,
-  and Wazuh investigation;
-- a stop/start recovery in 95 seconds followed by the same four passing
-  semantic operations.
-
-This is a **conditional go**, not a claim that the current APTL development
-branch is event-ready. The exact tested payload is pinned below because the
-current release paths found during the proof did not produce the required
-participant lab:
-
-- PyPI `aptl-labs==5.1.1` does not contain the guided participant profile.
-- The current development scenario materialization starts base-container-materialized
-  Debian placeholders that exit instead of the required Kali and victim services.
-- The older working Kali Dockerfile uses a stale NodeSource installation path.
-- A desktop install can start NetworkManager and interrupt an EC2 host that is
-  using `systemd-networkd`.
-- Avahi claims UDP port 5353, which conflicts with an APTL-published service.
-
-Do not improvise around those facts on the event morning. Stage the exact
-tested payload, build the class canary, and preserve its Docker image cache
-before deciding that twelve seats are available.
-
-Model authentication is a separate go/no-go item. The proof installed and
-launched the coding-agent binary, but did not place a model credential on the
-host or make a billed model call. Before the event, decide whether each
-participant signs in with their own account or whether an approved event
-credential broker will be used. Never bake model credentials into an AMI,
-user data, a participant handout, or the seat-state directory.
+Review the [trial outcome and limitations](hosted-backup-reference.md#trial-outcome).
+Obtain an explicit event decision for provider authentication and the historical payload.
+Do not infer readiness from the existence of these commands.
 
 ## Tested Recipe
 
-| Component | Pinned proof input |
-| --- | --- |
-| AWS CLI profile and region | `catalyst-dev`, `us-east-2`, no SSO |
-| Ubuntu AMI | `ami-0dc6aa44dbcdd872e`, Canonical owner `099720109477`, `ubuntu-noble-24.04-amd64-server-20260714` |
-| Instance size | `m6i.4xlarge` |
-| Event root volume | 200 GiB encrypted gp3, delete on termination |
-| Amazon DCV | `nice-dcv-server` and `nice-dcv-web-viewer` `2025.0.20103-1` |
-| Caddy | `2.11.4` |
-| Docker | Engine `29.6.2`, Compose plugin `5.3.1` |
-| Host Node.js | `20.20.2` |
-| Coding agent | Claude Code `2.1.220` |
-| Working APTL payload | commit `e9373f5bec57b2c315c4a9c5d7ab837983b19595` |
-| Wazuh certificate helper | `config/wazuh-certs-tool.sh` from commit `ec54ee2da2cd59c58eb17f1dd7737483901b1838` |
-| Guided profile and semantic validator | commit `583e100853ac42240de4827678a20d94edb93d7d` |
-| Kali build repair | `tools/workshop/hosted-seat-kali-node.patch`, SHA-256 `71ea3832154d25ce8004e9bd9da8275282f4ff33bdf771ae7e50a8bf34376f4c` |
-| APTL host ports | Wazuh dashboard `9443`, MISP `9444`; Caddy keeps `443`, DCV keeps `8443` |
-
-The reused proof host predated this runbook and had an unencrypted root volume.
-That proves the workload and access path, not encrypted EC2 launch. Every
-newly created event seat must use the encrypted block-device mapping below.
+Use the exact [proof inputs](hosted-backup-reference.md#proof-inputs) when reconstructing this trial.
+Validate their availability and integrity before launching an event seat.
 
 ## Two Days Before The Event
 
@@ -119,9 +37,9 @@ Complete these gates while there is still time to change course:
    harmless model call through the intended credential boundary.
 5. Run the four semantic MCP checks.
 6. Stop and start the lab once using the recovery gate in this runbook.
-7. Preserve the canary and its Docker cache. An optional event AMI can reduce
-   launch time, but it is a mutable contingency image, not an ADR-049 sealed
-   APTL appliance.
+7. Preserve the canary and its Docker cache.
+   An event AMI can reduce launch time.
+   It remains a mutable contingency image, not a sealed appliance.
 8. Check that 192 Standard On-Demand vCPUs, plus replacement headroom, are
    available if all twelve `m6i.4xlarge` seats may run at once.
 
@@ -185,9 +103,8 @@ uv run python tools/workshop/stage_hosted_seat_payload.py \
 sha256sum "$PAYLOAD_DIR/manifest.json"
 ```
 
-The stager resolves all three commits from Git, replaces the certificate
-helper, requires the admitted Kali patch to apply cleanly, copies the semantic
-smoke helper, and writes a manifest. It refuses to overwrite a prior payload.
+The stager resolves the three pinned Git commits and replaces the certificate helper.
+It checks and applies the admitted Kali patch, copies the smoke helper, and writes a manifest. It refuses to overwrite a prior payload.
 Build it before the event and keep that exact directory for every seat.
 
 ## Create The Shared Event Security Group
@@ -424,14 +341,14 @@ ssh -i "$KEY_DIR/operator" ubuntu@"$PUBLIC_IP" '
   set -e
   cd /tmp
   curl -fLO \
-    https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz
+    https://nodejs.org/dist/v22.23.4/node-v22.23.4-linux-x64.tar.xz
   printf "%s  %s\n" \
-    df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d \
-    node-v20.20.2-linux-x64.tar.xz | sha256sum --check
-  sudo tar -xJf node-v20.20.2-linux-x64.tar.xz -C /opt
-  sudo ln -s /opt/node-v20.20.2-linux-x64/bin/node /usr/local/bin/node
-  sudo ln -s /opt/node-v20.20.2-linux-x64/bin/npm /usr/local/bin/npm
-  sudo ln -s /opt/node-v20.20.2-linux-x64/bin/npx /usr/local/bin/npx
+    1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce \
+    node-v22.23.4-linux-x64.tar.xz | sha256sum --check
+  sudo tar -xJf node-v22.23.4-linux-x64.tar.xz -C /opt
+  sudo ln -s /opt/node-v22.23.4-linux-x64/bin/node /usr/local/bin/node
+  sudo ln -s /opt/node-v22.23.4-linux-x64/bin/npm /usr/local/bin/npm
+  sudo ln -s /opt/node-v22.23.4-linux-x64/bin/npx /usr/local/bin/npx
   node --version
   npm --version
 '
@@ -670,7 +587,7 @@ A seat is assignable only when every item passes:
 - `id -nG seatNN` contains only `seatNN`;
 - the coding-agent version is the admitted version and the approved
   authentication path completes;
-- `aptl lab status` reports the required containers healthy;
+- the pinned runtime's lab status reports the required containers healthy;
 - all four semantic MCP checks pass;
 - public 80 and 443 are reachable;
 - public 8443, 3389, 8080, 9200, 9443, 9444, and 55000 are not reachable;
@@ -697,10 +614,11 @@ For each row, change only `SEAT_ID`, derive `SEAT_HOSTNAME`, and repeat
 unreviewed launch loop. Two operators can divide the rows, but one operator
 must audit the final instance, DNS, credential, and admission mappings.
 
-If time is short, launch from the already-proven event image, then rotate the
-seat password, create the seat-specific DCV certificate/configuration, update
-DNS, and rerun every admission check. An image does not make a copied seat
-ready.
+If time is short, use the proven event image.
+Rotate the seat password.
+Create its exact DCV certificate and configuration.
+Update DNS, then repeat every admission check.
+An image alone does not make a copied seat ready.
 
 ## Recovery During The Event
 
@@ -729,10 +647,10 @@ The wait is mandatory. In the proof, one immediate restart saw Docker's old
 failed both blue MCP checks. The gated retry kept 9200, reached APTL ready in
 79 seconds, and passed all four operations.
 
-If the VM itself is suspect, withdraw the seat, terminate it, launch the same
-recipe under the same logical seat ID, issue a new passphrase, update its DNS
-record, and rerun admission. Do not preserve or repair participant state under
-event pressure.
+If the VM is suspect, withdraw its assignment and terminate that event VM.
+Launch the same recipe under the same logical seat ID.
+Issue a new passphrase, update DNS, and repeat admission.
+Do not preserve or repair participant state under event pressure.
 
 ## Teardown
 
@@ -755,23 +673,19 @@ Delete the twelve DNS records, then delete the exact event security group.
 Remove the temporary EC2 Instance Connect key directory and the owner-only
 credential/state directory with an explicit, reviewed path.
 
-Independently search the expected account and region for the `aptl-trial`
-value. The final audit must find no running or stopped instances, available
-volumes, snapshots, AMIs, ENIs, elastic IPs, security groups, DNS records,
-temporary IAM resources, AWS key pairs, participant credentials, model
-authentication state, or operator SSH material created for the trial.
+Independently search the expected account and region for the `aptl-trial` value.
+Check for running or stopped instances, available volumes, snapshots, AMIs, ENIs, and elastic IPs.
+Also check security groups, DNS, temporary IAM resources, and AWS key pairs.
+Remove participant credentials, model authentication state, and operator SSH material created for the trial.
+The final audit must find none of these event resources.
 
-For a reused host, do not terminate it. Stop the lab with `aptl lab stop -v`,
-close the DCV session, remove the participant account and its home, restore
-the baseline DCV/Caddy/service/package state from the change ledger, remove
-the exact event directories, and prove the original public listeners,
-accounts, security-group rules, and unrelated checkout are unchanged.
+For a reused host, do not terminate it.
+Use the pinned runtime's destructive project stop after retaining required data.
+Close its DCV session and remove the event participant account and home.
+Restore DCV, Caddy, services, and packages from the change ledger.
+Remove only the reviewed event directories.
+Verify the original public listeners, accounts, security-group rules, and unrelated checkout against that ledger.
 
 ## Vendor References
 
-- [Install Amazon DCV on Ubuntu](https://docs.aws.amazon.com/dcv/latest/adminguide/setting-up-installing-linux-server.html)
-- [Amazon DCV server parameter reference](https://docs.aws.amazon.com/dcv/latest/adminguide/config-param-ref.html)
-- [Amazon DCV authentication](https://docs.aws.amazon.com/dcv/latest/adminguide/security-authentication.html)
-- [Caddy installation](https://caddyserver.com/docs/install)
-- [Caddy reverse proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)
-- [Claude Code setup](https://docs.anthropic.com/en/docs/claude-code/getting-started)
+Use the [vendor references](hosted-backup-reference.md#vendor-references) for the pinned recipe's external interfaces.

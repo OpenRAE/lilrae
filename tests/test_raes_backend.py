@@ -1,8 +1,11 @@
 """Tests for the APTL RAES runtime handoff."""
 
 import inspect
+import shutil
 import subprocess
 from pathlib import Path
+
+from raes import Scenario
 from unittest.mock import ANY, MagicMock
 
 import pytest
@@ -23,9 +26,9 @@ from aptl.core.config import AptlConfig, ScenarioSourceConfig
 from aptl.core.deployment._compose_realization_networks import _concrete_network_name
 from aptl.core.lab_types import LabResult
 from aptl.core.scenario_bundle import ScenarioBundle, project_tree_bundle
+from tests.fixture_pack import FIXTURE_PACK_IDENTITY, FIXTURE_PACK_SOURCE
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CONFORMANCE_SCENARIO = PROJECT_ROOT / "scenarios" / "techvault-defensive-min.sdl.yaml"
 
 
 def _bundle(root: Path) -> ScenarioBundle:
@@ -55,7 +58,7 @@ def _write_compose(project_dir: Path, services: dict[str, list[str]]) -> None:
     (project_dir / "docker-compose.yml").write_text("\n".join(lines))
     scenario_dir = project_dir / "scenarios"
     scenario_dir.mkdir(exist_ok=True)
-    (scenario_dir / "techvault-operational.sdl.yaml").write_text(
+    (scenario_dir / "fixture-operational.sdl.yaml").write_text(
         "name: test-scenario\nversion: '1.0'\n"
     )
 
@@ -198,6 +201,13 @@ class _RealizedBackend(MagicMock):
         self._content_types = content_types or {}
         self.realize.return_value = LabResult(success=True, message="ok")
 
+    def runtime_descendant_inventory(self, attempt_id):
+        from aptl.core.deployment.lilrae_recorded_inventory import (
+            RecordedInventorySnapshot,
+        )
+
+        return RecordedInventorySnapshot(())
+
     def container_exists(self, name: str) -> bool:
         return name in self._containers
 
@@ -286,7 +296,7 @@ def _execution_plan_with_realization_requirements():
     return plan(
         compile_runtime_model(scenario),
         create_aptl_manifest(),
-        scope=PlanScope(target_name=APTL_RAES_TARGET_NAME),
+        scope=PlanScope(target_name=APTL_RAES_TARGET_NAME, run_id="disclosure"),
     )
 
 
@@ -333,7 +343,7 @@ def _execution_plan_with_derived_realization_requirements():
     return plan(
         compile_runtime_model(scenario),
         create_aptl_manifest(),
-        scope=PlanScope(target_name=APTL_RAES_TARGET_NAME),
+        scope=PlanScope(target_name=APTL_RAES_TARGET_NAME, run_id="disclosure"),
     )
 
 
@@ -369,7 +379,7 @@ def _execution_plan_with_content_realization_requirement():
     return plan(
         compile_runtime_model(scenario),
         create_aptl_manifest(),
-        scope=PlanScope(target_name=APTL_RAES_TARGET_NAME),
+        scope=PlanScope(target_name=APTL_RAES_TARGET_NAME, run_id="disclosure"),
     )
 
 
@@ -391,7 +401,7 @@ def _diagnostic_codes_for_resources(
         bundle=_bundle(tmp_path),
         config=AptlConfig(
             lab={"name": "test"},
-            containers={"kali": True, "victim": True},
+            containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
         ),
     )
     return {diagnostic.code for diagnostic in realization.diagnostics}
@@ -443,17 +453,7 @@ def test_public_start_profiles_match_start_lab_backend_call():
     backend.start.return_value = LabResult(success=True)
     config = AptlConfig(
         lab={"name": "test"},
-        containers={
-            "wazuh": True,
-            "victim": False,
-            "kali": True,
-            "reverse": False,
-            "enterprise": True,
-            "soc": False,
-            "mail": False,
-            "fileshare": True,
-            "dns": False,
-        },
+        containers={'profiles': ['wazuh', 'kali', 'enterprise', 'fileshare']},
     )
 
     result = start_lab(config, project_dir=Path("."), backend=backend)
@@ -468,17 +468,7 @@ def test_realization_accepts_core_otel_as_public_start_profile(tmp_path):
     _write_compose(tmp_path, {"aptl-otel-collector": ["otel"]})
     config = AptlConfig(
         lab={"name": "test"},
-        containers={
-            "wazuh": False,
-            "victim": False,
-            "kali": False,
-            "reverse": False,
-            "enterprise": False,
-            "soc": False,
-            "mail": False,
-            "fileshare": False,
-            "dns": False,
-        },
+        containers={'profiles': []},
     )
 
     realization = interpret_provisioning_plan(
@@ -564,9 +554,10 @@ class _FakeRuntimeManager:
     results, evaluator failures) still read.
     """
 
-    def __init__(self, target, *, initial_snapshot=None):
+    def __init__(self, target, *, initial_snapshot=None, supervision=None):
         self.target = target
         self._initial_snapshot = initial_snapshot
+        self.supervision = supervision
 
     def plan(self, parsed_scenario, *, parameters=None, artifact_availability=None):
         raise NotImplementedError
@@ -575,6 +566,26 @@ class _FakeRuntimeManager:
         return _drive_plan_through_target(
             self.target, execution_plan, self._initial_snapshot
         )
+
+    def close(self):
+        """Match the real manager, which admission and retry close."""
+
+
+def _patch_runtime(mocker, manager_cls):
+    """Route both apply and controller-free planning through one fake runtime."""
+
+    mocker.patch("aptl.backends.raes.RuntimeManager", manager_cls)
+
+    def _plan(target, scenario, options):
+        parameters = options.parameters
+        return manager_cls(target).plan(
+            scenario,
+            parameters=dict(parameters) if parameters is not None else None,
+            artifact_availability=options.artifact_availability,
+        )
+
+    mocker.patch("aptl.backends.raes_runtime.plan_for_target", _plan)
+    return manager_cls
 
 
 def test_create_aptl_manifest_is_canonical_backend_manifest_v2():
@@ -661,7 +672,7 @@ def test_manifest_provisioner_declares_only_realized_capabilities():
         {"dataset", "directory", "file"}
     )
     assert provisioner.supported_account_features == frozenset(
-        {"disabled", "groups", "mail", "spn"}
+        {"auth_method", "credential_bindings", "disabled", "groups", "mail", "spn"}
     )
     assert provisioner.supports_accounts is True
     assert provisioner.supports_acls is True
@@ -673,18 +684,20 @@ def test_manifest_realization_support_matches_exercised_concerns():
         APTL_PROCESS_RESOURCE_LIMITS,
         create_aptl_manifest,
     )
-    from aptl.backends.raes_planning_compat import DAEMON_READBACK_RUNTIME_CONCERNS
+    from aptl.backends._raes_manifest_realization import DAEMON_READBACK_RUNTIME_CONCERNS
 
     (support,) = create_aptl_manifest().realization_support
 
     assert support.domain == "runtime-realization"
     assert support.supported_constraint_kinds == frozenset(
-        {"os-family", "source-artifact"}
+        {"os-family", "source-artifact", "runtime-packages", "runtime-local-identity"}
     )
     assert support.supported_exact_requirement_kinds == frozenset(
         {
             *DAEMON_READBACK_RUNTIME_CONCERNS,
             "declared-capability-match",
+            "process-resource-limits",
+            "runtime-software-components",
             "forwarding-agents",
             "runtime-dependency-manifests",
             "runtime-filesystem-inventory",
@@ -695,6 +708,8 @@ def test_manifest_realization_support_matches_exercised_concerns():
         }
     )
     for kind in (
+        "forwarding-agents",
+        "runtime-software-components",
         "runtime-dependency-manifests",
         "runtime-filesystem-inventory",
         "runtime-local-identity",
@@ -745,7 +760,7 @@ def test_manifest_realization_support_matches_exercised_concerns():
 
 def test_derived_realization_fixture_exercises_manifest_constrained_claim():
     """The retained constrained claim has a compiled runtime requirement."""
-    from raes.explicitness import ExplicitnessClass
+    from raes_contracts.explicitness import ExplicitnessClass
 
     execution_plan = _execution_plan_with_derived_realization_requirements()
 
@@ -755,27 +770,6 @@ def test_derived_realization_fixture_exercises_manifest_constrained_claim():
         if requirement.explicitness is ExplicitnessClass.CONSTRAINED
     }
     assert constrained == {"os-family": "nodes.vm.os"}
-
-
-def test_current_backend_docs_cover_declared_manifest_components():
-    from raes_backend_protocols.manifest import backend_manifest_payload
-
-    from aptl.backends.raes_manifest import create_aptl_manifest
-
-    payload = backend_manifest_payload(create_aptl_manifest())
-    documentation = " ".join(
-        (PROJECT_ROOT / "docs" / "raes" / "techvault-static-validation-gate.md")
-        .read_text()
-        .split()
-    )
-
-    assert "full-remote-control-plane" in documentation
-    for component in payload["capabilities"]:
-        assert f"`{component}`" in documentation
-    assert "standalone observation component" in documentation
-    assert "compatible processors" in documentation
-    assert "concept-authority bindings" in documentation
-    assert "supported contract versions" in documentation
 
 
 def test_backend_adapter_docstrings_describe_component_scope():
@@ -801,190 +795,9 @@ def test_backend_adapter_docstrings_describe_component_scope():
     assert "Provisioning-only" not in (inspect.getdoc(AptlProvisioner) or "")
 
 
-@pytest.mark.parametrize(
-    "relative_path",
-    [
-        "docs/raes/dsl-008-realization-preflight.md",
-        "docs/raes/dsl-010-participant-runtime-preflight.md",
-        "docs/raes/orchestration-capable-profile-preflight.md",
-        "docs/raes/techvault-live-validation-preflight.md",
-        "docs/raes/techvault-static-validation-preflight.md",
-    ],
-)
-def test_dated_profile_preflights_direct_readers_to_current_truth(relative_path):
-    documentation = (PROJECT_ROOT / relative_path).read_text()
-
-    assert '!!! warning "Historical backend-profile milestone"' in documentation
-    assert "techvault-static-validation-gate.md#backend-manifest" in documentation
-
-
-# techvault-defensive-min.sdl.yaml's realized containers and network (issue
-# #578): the reference scenario declares six ``vm`` nodes and one ``switch``
-# node, and the provisioner now reads its snapshot back from what the backend
-# was actually *observed* to have realized rather than echoing the plan. A
-# bare ``MagicMock`` realizes nothing observable, so the conformance target
-# has to model the lab it genuinely brings up.
-_CONFORMANCE_SCENARIO_CONTAINERS = (
-    "aptl-wazuh-manager",
-    "aptl-wazuh-indexer",
-    "aptl-wazuh-dashboard",
-    "aptl-otel-collector",
-    "aptl-tempo",
-    "aptl-grafana-otel",
-)
-_CONFORMANCE_SCENARIO_NETWORKS = ("security-net",)
-
-
-def test_aptl_target_passes_provisioning_only_conformance():
-    from raes_conformance.conformance import run_target_conformance
-
-    from aptl.backends.raes import create_aptl_runtime_target
-
-    backend = _RealizedBackend(
-        containers=_CONFORMANCE_SCENARIO_CONTAINERS,
-        networks=_CONFORMANCE_SCENARIO_NETWORKS,
-    )
-    config = AptlConfig(lab={"name": "test"})
-    target = create_aptl_runtime_target(
-        project_dir=PROJECT_ROOT,
-        bundle=_bundle(PROJECT_ROOT),
-        config=config,
-        backend=backend,
-    )
-
-    report = run_target_conformance(
-        target,
-        profile="provisioning-only",
-        reference_scenario=CONFORMANCE_SCENARIO,
-    )
-
-    # The realization-envelope constructive case is live-harness-only and is
-    # proven at the live lab-boot gate (issue #889); the static target must pass
-    # every other conformance case. This mirrors the backend-conformance gate's
-    # own toleration in _gate_checks._target_conformance_diagnostics.
-    from aptl.validation._gate_checks import _target_conformance_diagnostics
-
-    assert _target_conformance_diagnostics(report) == [], (
-        report.passed,
-        [d.code for d in report.diagnostics],
-    )
-    assert report.unsupported_contract_gaps == ()
-    assert report.unsupported_capability_gaps == ()
-
-
-def test_aptl_target_passes_orchestration_evaluation_conformance():
-    from raes_conformance.conformance import run_target_conformance
-
-    from aptl.backends.raes import create_aptl_runtime_target
-
-    backend = _RealizedBackend(
-        containers=_CONFORMANCE_SCENARIO_CONTAINERS,
-        networks=_CONFORMANCE_SCENARIO_NETWORKS,
-    )
-    config = AptlConfig(lab={"name": "test"})
-    target = create_aptl_runtime_target(
-        project_dir=PROJECT_ROOT,
-        bundle=_bundle(PROJECT_ROOT),
-        config=config,
-        backend=backend,
-    )
-
-    report = run_target_conformance(
-        target,
-        profile="orchestration-evaluation",
-        reference_scenario=CONFORMANCE_SCENARIO,
-    )
-
-    # The realization-envelope constructive case is live-harness-only and is
-    # proven at the live lab-boot gate (issue #889); the static target must pass
-    # every other conformance case. This mirrors the backend-conformance gate's
-    # own toleration in _gate_checks._target_conformance_diagnostics.
-    from aptl.validation._gate_checks import _target_conformance_diagnostics
-
-    assert _target_conformance_diagnostics(report) == [], (
-        report.passed,
-        [d.code for d in report.diagnostics],
-    )
-    assert report.unsupported_contract_gaps == ()
-    assert report.unsupported_capability_gaps == ()
-    from aptl.validation._gate_checks import _requires_live_realization_harness
-
-    assert all(
-        case.passed
-        for case in report.cases
-        if not _requires_live_realization_harness(case)
-    ), [
-        (case.name, [d.message for d in case.diagnostics])
-        for case in report.cases
-        if not case.passed and not _requires_live_realization_harness(case)
-    ]
-    case_names = {case.name for case in report.cases}
-    # With a realization envelope declared, target realization is covered by the
-    # realization-envelope conformance cases; RAES supersedes the legacy
-    # target-provisioning / target-snapshot adapter probes (the temporary
-    # runner-parameter bridge) with the envelope design (#667/#668, issue #889).
-    assert "realization-envelope-constructive" in case_names
-
-
-def test_aptl_target_passes_full_remote_control_plane_conformance():
-    from raes_conformance.conformance import run_target_conformance
-
-    from aptl.backends.raes import create_aptl_runtime_target
-
-    backend = _RealizedBackend(
-        containers=_CONFORMANCE_SCENARIO_CONTAINERS,
-        networks=_CONFORMANCE_SCENARIO_NETWORKS,
-    )
-    config = AptlConfig(lab={"name": "test"})
-    target = create_aptl_runtime_target(
-        project_dir=PROJECT_ROOT,
-        bundle=_bundle(PROJECT_ROOT),
-        config=config,
-        backend=backend,
-    )
-
-    report = run_target_conformance(
-        target,
-        profile="full-remote-control-plane",
-        reference_scenario=CONFORMANCE_SCENARIO,
-    )
-
-    # The realization-envelope constructive case is live-harness-only and is
-    # proven at the live lab-boot gate (issue #889); the static target must pass
-    # every other conformance case. This mirrors the backend-conformance gate's
-    # own toleration in _gate_checks._target_conformance_diagnostics.
-    from aptl.validation._gate_checks import _target_conformance_diagnostics
-
-    assert _target_conformance_diagnostics(report) == [], (
-        report.passed,
-        [d.code for d in report.diagnostics],
-    )
-    assert report.unsupported_contract_gaps == ()
-    assert report.unsupported_capability_gaps == ()
-    from aptl.validation._gate_checks import _requires_live_realization_harness
-
-    assert all(
-        case.passed
-        for case in report.cases
-        if not _requires_live_realization_harness(case)
-    ), [
-        (case.name, [d.message for d in case.diagnostics])
-        for case in report.cases
-        if not case.passed and not _requires_live_realization_harness(case)
-    ]
-    case_names = {case.name for case in report.cases}
-    # With a realization envelope declared, target realization is covered by the
-    # realization-envelope conformance cases; RAES supersedes the legacy
-    # target-provisioning / target-snapshot adapter probes (the temporary
-    # runner-parameter bridge) with the envelope design (#667/#668, issue #889).
-    assert "realization-envelope-constructive" in case_names
-
-
 def test_participant_runtime_lifecycle_updates_control_plane_snapshot(tmp_path):
-    from raes_contracts.participant_episode import (
-        ParticipantEpisodeTerminalReason,
-        iter_participant_episode_snapshot_violations,
-    )
+    from raes_contracts.participant_episode import ParticipantEpisodeTerminalReason
+    from raes_contracts.participant_episode_snapshot import iter_participant_episode_snapshot_violations
     from raes_contracts.runtime_state import OperationState
     from raes_runtime.control_plane import RuntimeControlPlane
 
@@ -1137,7 +950,7 @@ def test_paper_participant_action_uses_compiled_addresses_and_boundary_markers(
     model = compile_runtime_model(scenario)
     config = AptlConfig(
         lab={"name": "test"},
-        containers={"enterprise": True, "kali": True, "wazuh": True},
+        containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
     )
     plan_target = create_aptl_runtime_target(
         project_dir=project_root,
@@ -1221,7 +1034,7 @@ def test_runtime_model_without_paper_artifacts_registers_no_paper_action():
     project_root = Path(__file__).resolve().parents[1]
     config = AptlConfig(
         lab={"name": "test"},
-        containers={"enterprise": True, "kali": True, "wazuh": True},
+        containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
     )
     scenario = parse_sdl_file(project_root / "scenarios" / "paper-agent-loop.sdl.yaml")
     target = create_aptl_runtime_target(
@@ -1319,7 +1132,7 @@ def _compile_paper_model_plan_config():
     model = compile_runtime_model(scenario)
     config = AptlConfig(
         lab={"name": "test"},
-        containers={"enterprise": True, "kali": True, "wazuh": True},
+        containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
     )
     target = create_aptl_runtime_target(
         project_dir=PROJECT_ROOT,
@@ -1516,7 +1329,7 @@ def test_start_helper_returns_specs_from_compiled_scenario(mocker):
 
     expected = {"participant.behavior.paper-agent": MagicMock()}
     model = object()
-    scenario = object()
+    scenario = Scenario(name="test", version="1.0")
     provisioning_plan = object()
     bundle = _bundle(Path(__file__).resolve().parents[1])
     config = AptlConfig(lab={"name": "test"})
@@ -1591,7 +1404,7 @@ def _participant_admission_request(
         ParticipantImplementationManifestModel,
         ParticipantImplementationSelectionModel,
     )
-    from raes_contracts.participant_binding import ParticipantActionAdmissionRequest
+    from raes_contracts.contracts.participant_action_admission import ParticipantActionAdmissionRequest
 
     manifest = ParticipantImplementationManifestModel.model_validate(
         {
@@ -1746,7 +1559,7 @@ def test_start_raes_scenario_uses_parser_runtime_manager_and_backend(
             "aptl-otel-collector": ["otel"],
         },
     )
-    scenario = object()
+    scenario = Scenario(name="test", version="1.0")
     parser = mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=scenario)
     calls: dict[str, object] = {}
 
@@ -1754,19 +1567,19 @@ def test_start_raes_scenario_uses_parser_runtime_manager_and_backend(
         def plan(self, parsed_scenario, *, parameters=None, artifact_availability=None):
             calls["planned_scenario"] = parsed_scenario
             return _FakeExecutionPlan(
-                _plan_for_nodes("techvault.wazuh-manager", "techvault.kali")
+                _plan_for_nodes("range.wazuh-manager", "range.kali")
             )
 
-    mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
+    _patch_runtime(mocker, FakeRuntimeManager)
     backend = MagicMock()
     backend.realize.return_value = LabResult(success=True, message="ok")
     config = AptlConfig(
         lab={"name": "test"},
-        containers={"wazuh": True, "kali": True, "victim": False},
+        containers={'profiles': ['wazuh', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
         # This exercises project-tree default resolution to the SDL
         # ``_write_compose`` staged in the tmp project (#875).
         scenario=ScenarioSourceConfig(
-            source="project-tree", identity="techvault-operational"
+            source="project-tree", identity="fixture-operational"
         ),
     )
 
@@ -1774,7 +1587,7 @@ def test_start_raes_scenario_uses_parser_runtime_manager_and_backend(
 
     assert result.lab_result.success is True
     parser.assert_called_once_with(
-        tmp_path / "scenarios" / "techvault-operational.sdl.yaml"
+        tmp_path / "scenarios" / "fixture-operational.sdl.yaml"
     )
     assert calls == {"planned_scenario": scenario}
     assert _realize_profiles(backend.realize.call_args) == ["wazuh", "kali"]
@@ -1784,18 +1597,18 @@ def test_start_raes_scenario_uses_selected_scenario_path(mocker, tmp_path):
     from aptl.backends import raes
 
     _write_compose(tmp_path, {"wazuh.manager": ["wazuh"]})
-    scenario = object()
+    scenario = Scenario(name="test", version="1.0")
     parser = mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=scenario)
 
     class FakeRuntimeManager(_FakeRuntimeManager):
         def plan(self, parsed_scenario, *, parameters=None, artifact_availability=None):
             assert parsed_scenario is scenario
-            return _FakeExecutionPlan(_plan_for_nodes("techvault.wazuh-manager"))
+            return _FakeExecutionPlan(_plan_for_nodes("range.wazuh-manager"))
 
-    mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
+    _patch_runtime(mocker, FakeRuntimeManager)
     backend = MagicMock()
     backend.realize.return_value = LabResult(success=True, message="ok")
-    config = AptlConfig(lab={"name": "test"}, containers={"wazuh": True})
+    config = AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']})
     selected = tmp_path / "scenarios" / "custom.sdl.yaml"
     selected.write_text("name: custom-test-scenario\nversion: '1.0'\n")
 
@@ -1814,7 +1627,7 @@ def test_admission_preserves_valid_plan_when_backend_cannot_materialize(
     from aptl.backends import raes
 
     _write_compose(tmp_path, {"victim": ["victim"]})
-    scenario = object()
+    scenario = Scenario(name="test", version="1.0")
     mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=scenario)
     materialization_modes: list[bool] = []
 
@@ -1832,7 +1645,7 @@ def test_admission_preserves_valid_plan_when_backend_cannot_materialize(
             assert parsed_scenario is scenario
             return _FakeExecutionPlan(_plan_for_nodes("victim"))
 
-    mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
+    _patch_runtime(mocker, FakeRuntimeManager)
     backend = MagicMock()
     backend.bind_local_docker_socket.return_value = LabResult(success=True)
     backend.qualify_runtime_materialization.return_value = LabResult(
@@ -1842,7 +1655,7 @@ def test_admission_preserves_valid_plan_when_backend_cannot_materialize(
 
     admitted = raes.admit_raes_scenario(
         tmp_path,
-        AptlConfig(lab={"name": "test"}, containers={"victim": True}),
+        AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}, scenario={"source": "project-tree", "identity": "fixture-operational"}),
         backend,
     )
 
@@ -1864,7 +1677,7 @@ def test_start_raes_scenario_passes_runtime_parameters_to_raes_planner(
     from aptl.backends import raes_pack_interaction
 
     _write_compose(tmp_path, {"aptl-victim": ["victim"]})
-    scenario = object()
+    scenario = Scenario(name="test", version="1.0")
     mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=scenario)
     calls: dict[str, object] = {}
     interaction_resolver = mocker.spy(
@@ -1877,10 +1690,20 @@ def test_start_raes_scenario_passes_runtime_parameters_to_raes_planner(
             calls["parameters"] = parameters
             return _FakeExecutionPlan(_plan_for_nodes("victim"))
 
-    mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
+    _patch_runtime(mocker, FakeRuntimeManager)
     backend = MagicMock()
     backend.realize.return_value = LabResult(success=True, message="ok")
-    config = AptlConfig(lab={"name": "test"}, containers={"victim": True})
+    # The owned fixture pack exercises env-pack admission without a released
+    # pack; capture adapter selection is outside this test (#1700).
+    shutil.copytree(FIXTURE_PACK_SOURCE, tmp_path / "fixture-source")
+    mocker.patch(
+        "aptl.backends._raes_admission_helpers.resolve_scenario_capture",
+        return_value=None,
+    )
+    config = AptlConfig(
+        lab={"name": "test"},
+        scenario={"identity": FIXTURE_PACK_IDENTITY, "pack_directory": "fixture-source"},
+    )
     parameters = {"victim_os": "linux", "instance_count": 1}
 
     result = raes.start_raes_scenario(
@@ -1902,7 +1725,7 @@ def test_start_raes_scenario_threads_resolved_run_target(mocker, tmp_path):
     from aptl.backends.raes_start_model import AcesRunTarget, AcesStartOutcome
 
     _write_compose(tmp_path, {"aptl-victim": ["victim"]})
-    scenario = object()
+    scenario = Scenario(name="test", version="1.0")
     mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=scenario)
 
     class FakeRuntimeManager(_FakeRuntimeManager):
@@ -1910,9 +1733,9 @@ def test_start_raes_scenario_threads_resolved_run_target(mocker, tmp_path):
             assert parsed_scenario is scenario
             return _FakeExecutionPlan(_plan_for_nodes("victim"))
 
-    mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
+    _patch_runtime(mocker, FakeRuntimeManager)
     mocker.patch(
-        "aptl.backends.raes.participant_action_specs_from_runtime_model",
+        "aptl.backends._raes_admission_helpers.participant_action_specs_from_runtime_model",
         return_value={},
     )
     outcome = AcesStartOutcome(
@@ -1930,13 +1753,17 @@ def test_start_raes_scenario_threads_resolved_run_target(mocker, tmp_path):
 
     result = raes.start_raes_scenario(
         tmp_path,
-        AptlConfig(lab={"name": "test"}, containers={"victim": True}),
+        AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}, scenario={"source": "project-tree", "identity": "fixture-operational"}),
         MagicMock(),
         run_target=run_target,
     )
 
     assert result is outcome
-    assert run_plan.call_args.kwargs == {"run_store": store, "run_id": "run-1"}
+    assert run_plan.call_args.kwargs == {
+        "run_store": store,
+        "run_id": "run-1",
+        "runtime_options": {},
+    }
 
 
 def test_start_raes_scenario_uses_planned_runtime_model_for_participant_actions(
@@ -1945,7 +1772,7 @@ def test_start_raes_scenario_uses_planned_runtime_model_for_participant_actions(
     from aptl.backends import raes
 
     _write_compose(tmp_path, {"aptl-victim": ["victim"]})
-    scenario = object()
+    scenario = Scenario(name="test", version="1.0")
     planned_model = object()
     mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=scenario)
 
@@ -1954,20 +1781,18 @@ def test_start_raes_scenario_uses_planned_runtime_model_for_participant_actions(
             assert parsed_scenario is scenario
             return _FakeExecutionPlan(_plan_for_nodes("victim"), model=planned_model)
 
-    mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
-    planned_specs = mocker.patch.object(
-        raes,
-        "participant_action_specs_from_runtime_model",
-        create=True,
+    _patch_runtime(mocker, FakeRuntimeManager)
+    planned_specs = mocker.patch(
+        "aptl.backends._raes_admission_helpers.participant_action_specs_from_runtime_model",
         return_value={},
     )
     backend = MagicMock()
     backend.realize.return_value = LabResult(success=True, message="ok")
     config = AptlConfig(
         lab={"name": "test"},
-        containers={"victim": True},
+        containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
         scenario=ScenarioSourceConfig(
-            source="project-tree", identity="techvault-operational"
+            source="project-tree", identity="fixture-operational"
         ),
     )
 
@@ -1978,7 +1803,7 @@ def test_start_raes_scenario_uses_planned_runtime_model_for_participant_actions(
         planned_model,
         provisioning_plan=ANY,
         bundle=project_tree_bundle(
-            tmp_path, tmp_path / "scenarios" / "techvault-operational.sdl.yaml"
+            tmp_path, tmp_path / "scenarios" / "fixture-operational.sdl.yaml"
         ),
         config=config,
         realization=ANY,
@@ -2020,29 +1845,26 @@ def test_start_raes_scenario_projects_instantiation_failure_without_values(
         config,
         backend,
         scenario_path=scenario_path,
-        before_backend_retry=before_retry,
     )
 
     assert result.lab_result.success is False
     assert "runtime variable" in result.lab_result.error.lower()
     assert supplied_value not in result.lab_result.error
-    assert result.retryable is False
     backend.realize.assert_not_called()
-    before_retry.assert_not_called()
 
 
-def test_start_raes_scenario_retries_soc_apply_without_replanning(mocker, tmp_path):
+def test_a_failed_apply_ends_the_start_without_a_second_apply(mocker, tmp_path):
+    """RAES treats a failed apply's backend effects as unknown (rae#1660)."""
     from aptl.backends import raes
 
     _write_compose(tmp_path, {"aptl-soc": ["soc"]})
-    scenario = object()
+    scenario = Scenario(name="test", version="1.0")
     mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=scenario)
     calls = {"plan": 0, "apply": 0}
 
     class FakeRuntimeManager(_FakeRuntimeManager):
         def plan(self, parsed_scenario, *, parameters=None, artifact_availability=None):
             assert parsed_scenario is scenario
-            assert parameters == {"victim_os": "linux"}
             calls["plan"] += 1
             return _FakeExecutionPlan(_plan_for_nodes("aptl-soc"))
 
@@ -2050,43 +1872,113 @@ def test_start_raes_scenario_retries_soc_apply_without_replanning(mocker, tmp_pa
             calls["apply"] += 1
             return super().apply(execution_plan)
 
-    mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
+    _patch_runtime(mocker, FakeRuntimeManager)
     backend = MagicMock()
-    backend.realize.side_effect = [
-        LabResult(success=False, error="backend still starting"),
-        LabResult(success=True, message="ok"),
-    ]
-    before_retry = MagicMock()
+    backend.realize.return_value = LabResult(
+        success=False, error="backend still starting"
+    )
+    config = AptlConfig(
+        lab={"name": "test"},
+        containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
+        scenario=ScenarioSourceConfig(
+            source="project-tree", identity="fixture-operational"
+        ),
+    )
 
     result = raes.start_raes_scenario(
         tmp_path,
-        AptlConfig(
-            lab={"name": "test"},
-            containers={"soc": True},
-            scenario=ScenarioSourceConfig(
-                source="project-tree", identity="techvault-operational"
-            ),
-        ),
+        config,
         backend,
-        admitted=raes.admit_raes_scenario(
-            tmp_path,
-            AptlConfig(
-                lab={"name": "test"},
-                containers={"soc": True},
-                scenario=ScenarioSourceConfig(
-                    source="project-tree", identity="techvault-operational"
-                ),
-            ),
-            backend,
-            parameters={"victim_os": "linux"},
-        ),
-        before_backend_retry=before_retry,
+        admitted=raes.admit_raes_scenario(tmp_path, config, backend),
     )
 
-    assert result.lab_result.success is True
-    assert calls == {"plan": 1, "apply": 2}
-    assert backend.realize.call_count == 2
-    before_retry.assert_called_once_with()
+    assert result.lab_result.success is False
+    assert calls == {"plan": 1, "apply": 1}
+    assert backend.realize.call_count == 1
+
+
+# A neutral one-node scenario: the fake backend can realize and observe it
+# without any scenario-specific container (#1700).
+_OWNED_RUN_SDL = "name: owned-run\nnodes:\n  owned-box:\n    type: compute\n    os: linux\n"
+
+
+def _owned_run_scenario(tmp_path: Path) -> Path:
+    _write_compose(tmp_path, {"owned-box": ["owned"]})
+    path = tmp_path / "scenarios" / "owned-run.sdl.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_OWNED_RUN_SDL, encoding="utf-8")
+    return path
+
+
+def _start_with_owning_managers(mocker, tmp_path, realize_results):
+    """Admit and start a neutral scenario through the real RAES runtime.
+
+    Construction, ``apply``, and ``close`` stay real, so a second runtime
+    owner over the same target fails the way RAES fails in a live lab. The
+    spy holds a strong reference to every runtime, so garbage collection
+    cannot release a claim.
+    """
+
+    from aptl.backends import raes
+    from aptl.backends.raes_runtime import AptlRuntimeManager
+
+    apply_spy = mocker.spy(AptlRuntimeManager, "apply")
+    backend = _RealizedBackend(containers=("owned-box",))
+    backend.realize.side_effect = realize_results
+    config = AptlConfig(lab={"name": "test"})
+    scenario = _owned_run_scenario(tmp_path)
+    admitted = raes.admit_raes_scenario(
+        tmp_path, config, backend, scenario_path=scenario
+    )
+    result = raes.start_raes_scenario(
+        tmp_path, config, backend, admitted=admitted
+    )
+    applies = [call.args for call in apply_spy.call_args_list]
+    return result, admitted, backend, applies
+
+
+def test_admission_plans_without_a_runtime_owner(tmp_path):
+    """Planning acts on no backend, so it takes no runtime claim (rae#1660)."""
+    from aptl.backends import raes
+    from aptl.backends.raes_runtime import AptlRuntimeManager
+
+    admitted = raes.admit_raes_scenario(
+        tmp_path,
+        AptlConfig(lab={"name": "test"}),
+        _RealizedBackend(),
+        scenario_path=_owned_run_scenario(tmp_path),
+    )
+
+    AptlRuntimeManager(admitted.target).close()
+
+
+def test_a_started_run_keeps_its_one_runtime(mocker, tmp_path):
+    result, admitted, backend, applies = _start_with_owning_managers(
+        mocker, tmp_path, [LabResult(success=True, message="ok")]
+    )
+    try:
+        assert result.lab_result.success is True, result.lab_result.error
+        ((runtime, plan),) = applies
+        assert plan is admitted.execution_plan
+        assert result.runtime_manager is runtime
+        assert result.final_snapshot is runtime.snapshot
+        assert backend.realize.call_count == 1
+    finally:
+        result.runtime_manager.close()
+
+
+def test_a_failed_real_apply_is_terminal(mocker, tmp_path):
+    result, _admitted, backend, applies = _start_with_owning_managers(
+        mocker, tmp_path, [LabResult(success=False, error="backend still starting")]
+    )
+    try:
+        assert result.lab_result.success is False
+        assert "backend still starting" in result.lab_result.error
+        assert backend.realize.call_count == 1
+        assert len(applies) == 1
+        assert result.runtime_manager is applies[0][0]
+    finally:
+        result.runtime_manager.close()
 
 
 def _raes_started_outcome():
@@ -2119,12 +2011,16 @@ def test_start_raes_scenario_applies_a_supplied_admission_without_replanning(
     _write_compose(tmp_path, {"aptl-soc": ["soc"]})
     admit = mocker.patch("aptl.backends.raes.admit_raes_scenario")
     apply_plan = mocker.patch(
-        "aptl.backends.raes._apply_with_backend_retry",
+        "aptl.backends.raes._run_execution_plan",
         return_value=_raes_started_outcome(),
     )
     bundle = project_tree_bundle(tmp_path, tmp_path / "scenarios" / "x.sdl.yaml")
     admitted = SimpleNamespace(
-        bundle=bundle, target=object(), execution_plan=object(), realization=None
+        bundle=bundle,
+        target=object(),
+        execution_plan=_FakeExecutionPlan(ProvisioningPlan()),
+        realization=None,
+        participant_delivery_plan=None,
     )
 
     result = raes.start_raes_scenario(
@@ -2161,46 +2057,6 @@ def test_lab_start_handoff_forwards_the_admission_to_the_backend(mocker, tmp_pat
     )
 
     assert handoff.call_args.kwargs["admitted"] is admitted
-
-
-def test_start_raes_scenario_retries_without_named_profile_branch(mocker, tmp_path):
-    """A retryable apply uses the admitted hook without inspecting profile names."""
-    from aptl.backends import raes
-
-    _write_compose(tmp_path, {"aptl-victim": ["victim"]})
-    scenario = object()
-    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=scenario)
-    calls = {"plan": 0, "apply": 0}
-
-    class FakeRuntimeManager(_FakeRuntimeManager):
-        def plan(self, parsed_scenario, *, parameters=None, artifact_availability=None):
-            assert parsed_scenario is scenario
-            calls["plan"] += 1
-            return _FakeExecutionPlan(_plan_for_nodes("victim"))
-
-        def apply(self, execution_plan):
-            calls["apply"] += 1
-            return super().apply(execution_plan)
-
-    mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
-    backend = MagicMock()
-    backend.realize.return_value = LabResult(
-        success=False, error="backend still starting"
-    )
-    before_retry = MagicMock()
-
-    result = raes.start_raes_scenario(
-        tmp_path,
-        AptlConfig(lab={"name": "test"}, containers={"victim": True}),
-        backend,
-        before_backend_retry=before_retry,
-    )
-
-    assert result.lab_result.success is False
-    assert result.retryable is True
-    assert calls == {"plan": 1, "apply": 2}
-    assert backend.realize.call_count == 2
-    before_retry.assert_called_once_with()
 
 
 def _workflow_and_evaluation_execution_plan():
@@ -2300,7 +2156,7 @@ def test_start_raes_scenario_submits_orchestration_for_workflow_scenario(
     from aptl.backends.raes_orchestrator import AptlOrchestrator
 
     _write_compose(tmp_path, {"victim": ["victim"]})
-    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=object())
+    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
     orchestration = _workflow_orchestration_plan()
     assert (
         orchestration.actionable_operations
@@ -2314,10 +2170,10 @@ def test_start_raes_scenario_submits_orchestration_for_workflow_scenario(
                 _plan_for_nodes("victim"), orchestration=orchestration
             )
 
-    mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
+    _patch_runtime(mocker, FakeRuntimeManager)
     backend = MagicMock()
     backend.realize.return_value = LabResult(success=True, message="ok")
-    config = AptlConfig(lab={"name": "test"}, containers={"victim": True})
+    config = AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}, scenario={"source": "project-tree", "identity": "fixture-operational"})
 
     result = raes.start_raes_scenario(tmp_path, config, backend)
 
@@ -2333,22 +2189,21 @@ def test_start_raes_scenario_fails_when_provisioning_backend_fails(mocker, tmp_p
     from aptl.backends import raes
 
     _write_compose(tmp_path, {"victim": ["victim"]})
-    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=object())
+    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
 
     class FakeRuntimeManager(_FakeRuntimeManager):
         def plan(self, parsed_scenario, *, parameters=None, artifact_availability=None):
             return _FakeExecutionPlan(_plan_for_nodes("victim"))
 
-    mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
+    _patch_runtime(mocker, FakeRuntimeManager)
     backend = MagicMock()
     backend.realize.return_value = LabResult(success=False, error="backend boom")
-    config = AptlConfig(lab={"name": "test"}, containers={"victim": True})
+    config = AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}, scenario={"source": "project-tree", "identity": "fixture-operational"})
 
     result = raes.start_raes_scenario(tmp_path, config, backend)
 
     assert result.lab_result.success is False
     assert result.lab_result.error
-    assert result.retryable is True
 
 
 def test_start_raes_scenario_fails_when_orchestration_fails(mocker, tmp_path):
@@ -2359,7 +2214,7 @@ def test_start_raes_scenario_fails_when_orchestration_fails(mocker, tmp_path):
     from aptl.backends import raes
 
     _write_compose(tmp_path, {"victim": ["victim"]})
-    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=object())
+    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
     # A workflow op with no compiled result_contract makes AptlOrchestrator.start
     # fail closed, which the runtime-manager apply reports as a failed phase.
     bad_orchestration = OrchestrationPlan(
@@ -2380,23 +2235,16 @@ def test_start_raes_scenario_fails_when_orchestration_fails(mocker, tmp_path):
                 _plan_for_nodes("victim"), orchestration=bad_orchestration
             )
 
-    mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
+    _patch_runtime(mocker, FakeRuntimeManager)
     backend = MagicMock()
     backend.realize.return_value = LabResult(success=True, message="ok")
-    config = AptlConfig(lab={"name": "test"}, containers={"victim": True})
+    config = AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}, scenario={"source": "project-tree", "identity": "fixture-operational"})
     before_retry = MagicMock()
 
-    result = raes.start_raes_scenario(
-        tmp_path,
-        config,
-        backend,
-        before_backend_retry=before_retry,
-    )
+    result = raes.start_raes_scenario(tmp_path, config, backend)
 
     assert result.lab_result.success is False
     assert result.lab_result.error
-    assert result.retryable is False
-    before_retry.assert_not_called()
     backend.realize.assert_called_once()
 
 
@@ -2419,7 +2267,7 @@ def test_start_raes_scenario_submits_evaluation_for_objective_scenario(
     from aptl.backends.raes_evaluator import AptlEvaluator
 
     _write_compose(tmp_path, {"victim": ["victim"]})
-    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=object())
+    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
     compiled = _workflow_and_evaluation_execution_plan()
     orchestration = compiled.orchestration
     evaluation = compiled.evaluation
@@ -2435,10 +2283,10 @@ def test_start_raes_scenario_submits_evaluation_for_objective_scenario(
                 evaluation=evaluation,
             )
 
-    mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
+    _patch_runtime(mocker, FakeRuntimeManager)
     backend = MagicMock()
     backend.realize.return_value = LabResult(success=True, message="ok")
-    config = AptlConfig(lab={"name": "test"}, containers={"victim": True})
+    config = AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}, scenario={"source": "project-tree", "identity": "fixture-operational"})
 
     result = raes.start_raes_scenario(tmp_path, config, backend)
 
@@ -2453,7 +2301,7 @@ def test_start_raes_scenario_drives_workflows_after_registration(mocker, tmp_pat
     from aptl.backends.raes_orchestrator import AptlOrchestrator
 
     _write_compose(tmp_path, {"victim": ["victim"]})
-    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=object())
+    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
     orchestration = _workflow_orchestration_plan()
     drive_calls: list[dict[str, object]] = []
 
@@ -2497,11 +2345,11 @@ def test_start_raes_scenario_drives_workflows_after_registration(mocker, tmp_pat
         )
         return target
 
-    mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
+    _patch_runtime(mocker, FakeRuntimeManager)
     mocker.patch("aptl.backends.raes.create_aptl_runtime_target", fake_create_target)
     backend = MagicMock()
     backend.realize.return_value = LabResult(success=True, message="ok")
-    config = AptlConfig(lab={"name": "test"}, containers={"victim": True})
+    config = AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}, scenario={"source": "project-tree", "identity": "fixture-operational"})
 
     result = raes.start_raes_scenario(tmp_path, config, backend)
 
@@ -2570,7 +2418,7 @@ def test_start_raes_scenario_fails_closed_on_evaluator_plan_error(mocker, tmp_pa
     from aptl.backends import raes
 
     _write_compose(tmp_path, {"victim": ["victim"]})
-    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=object())
+    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
 
     evaluator_error = Diagnostic(
         code="evaluator.unsupported-section",
@@ -2588,9 +2436,9 @@ def test_start_raes_scenario_fails_closed_on_evaluator_plan_error(mocker, tmp_pa
                 diagnostics=[evaluator_error],
             )
 
-    mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
+    _patch_runtime(mocker, FakeRuntimeManager)
     backend = MagicMock()
-    config = AptlConfig(lab={"name": "test"}, containers={"victim": True})
+    config = AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}, scenario={"source": "project-tree", "identity": "fixture-operational"})
 
     result = raes.start_raes_scenario(tmp_path, config, backend)
 
@@ -2606,12 +2454,12 @@ def test_start_raes_scenario_fails_closed_on_provisioning_plan_error(mocker, tmp
     from aptl.backends import raes
 
     _write_compose(tmp_path, {"victim": ["victim"]})
-    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=object())
+    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
 
     provisioning_error = Diagnostic(
         code="provisioning.ordering.cycle",
         domain="provisioning",
-        address="provision.node.techvault.victim",
+        address="provision.node.range.victim",
         message="Provisioning ordering cycle detected.",
         severity=Severity.ERROR,
     )
@@ -2624,9 +2472,9 @@ def test_start_raes_scenario_fails_closed_on_provisioning_plan_error(mocker, tmp
                 diagnostics=[provisioning_error],
             )
 
-    mocker.patch("aptl.backends.raes.RuntimeManager", FakeRuntimeManager)
+    _patch_runtime(mocker, FakeRuntimeManager)
     backend = MagicMock()
-    config = AptlConfig(lab={"name": "test"}, containers={"victim": True})
+    config = AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}, scenario={"source": "project-tree", "identity": "fixture-operational"})
 
     result = raes.start_raes_scenario(tmp_path, config, backend)
 
@@ -2650,7 +2498,7 @@ def test_provisioner_profiles_are_derived_from_plan_content(tmp_path):
     backend.realize.return_value = LabResult(success=True, message="ok")
     config = AptlConfig(
         lab={"name": "test"},
-        containers={"kali": True, "victim": True, "wazuh": False},
+        containers={'profiles': ['victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
     )
     provisioner = AptlProvisioner(
         project_dir=tmp_path,
@@ -2727,7 +2575,7 @@ def test_provisioner_passes_typed_realization_spec_to_backend(tmp_path):
     )
     backend = MagicMock()
     backend.realize.return_value = LabResult(success=True, message="ok")
-    config = AptlConfig(lab={"name": "test"}, containers={"kali": True})
+    config = AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']})
     provisioner = AptlProvisioner(
         project_dir=tmp_path,
         bundle=_bundle(tmp_path),
@@ -2765,7 +2613,7 @@ def test_provisioner_captures_failure_diagnostics_for_handoff(tmp_path):
         success=False,
         error="APTL cannot create realized network dmz-net: 172.20.0.0/16 in use",
     )
-    config = AptlConfig(lab={"name": "test"}, containers={"kali": True})
+    config = AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']})
     provisioner = AptlProvisioner(
         project_dir=tmp_path,
         bundle=_bundle(tmp_path),
@@ -2798,7 +2646,7 @@ def test_provisioner_reports_backend_realization_value_error(tmp_path):
     provisioner = AptlProvisioner(
         project_dir=tmp_path,
         bundle=_bundle(tmp_path),
-        config=AptlConfig(lab={"name": "test"}, containers={"kali": True}),
+        config=AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
         deployment_backend=backend,
     )
 
@@ -2821,8 +2669,7 @@ def test_apply_failure_reattaches_backend_diagnostics_after_gate_flood(
 
     When the backend apply fails, ``raes_runtime`` gates the unrealized
     snapshot and returns only ``runtime.backend-contract-invalid`` diagnostics,
-    which both hides the actionable backend error (e.g. a Docker subnet
-    conflict) and severs the retryable-code signal the SOC retry keys on.
+    which hides the actionable backend error (e.g. a Docker subnet conflict).
     """
     from aptl.backends import raes
     from aptl.backends.raes_diagnostics import diagnostic
@@ -2846,19 +2693,18 @@ def test_apply_failure_reattaches_backend_diagnostics_after_gate_flood(
                 diagnostics=[gate_diag],
             )
 
-    mocker.patch("aptl.backends.raes.RuntimeManager", MaskingRuntimeManager)
+    _patch_runtime(mocker, MaskingRuntimeManager)
     target = MagicMock()
     target.provisioner.last_failure_diagnostics = (backend_diag,)
 
-    failure, _snapshot, retryable, _manager = raes._apply_execution_plan(
-        target, MagicMock()
+    failure, _snapshot, _manager = raes._apply_execution_plan(
+        target, _FakeExecutionPlan(ProvisioningPlan())
     )
 
     assert failure is not None
     assert failure.success is False
     assert "172.20.0.0/16" in failure.error
     assert "node-type" in failure.error
-    assert retryable is True
 
 
 def test_realization_preserves_network_static_address_assignments(tmp_path):
@@ -2887,7 +2733,7 @@ def test_realization_preserves_network_static_address_assignments(tmp_path):
     realization = interpret_provisioning_plan(
         plan=_plan_for_resources(node, dmz, redteam),
         bundle=_bundle(tmp_path),
-        config=AptlConfig(lab={"name": "test"}, containers={"kali": True}),
+        config=AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
     )
 
     assert [diagnostic.code for diagnostic in realization.diagnostics] == []
@@ -3041,7 +2887,7 @@ def test_realization_rejects_static_address_outside_declared_network(tmp_path):
     realization = interpret_provisioning_plan(
         plan=_plan_for_resources(node, dmz),
         bundle=_bundle(tmp_path),
-        config=AptlConfig(lab={"name": "test"}, containers={"kali": True}),
+        config=AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
     )
 
     assert any(
@@ -3065,7 +2911,7 @@ def test_realization_resolves_digest_pinned_source_image(tmp_path):
     realization = interpret_provisioning_plan(
         plan=_plan_for_resources(node),
         bundle=_bundle(tmp_path),
-        config=AptlConfig(lab={"name": "test"}, containers={"enterprise": True}),
+        config=AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
     )
 
     assert [diagnostic.code for diagnostic in realization.diagnostics] == []
@@ -3079,15 +2925,16 @@ def test_realization_resolves_digest_pinned_source_image(tmp_path):
     assert image.source_version == f"postgres@{digest}"
 
 
-def test_realization_uses_allowed_source_when_upstream_build_path_is_note(tmp_path):
+def test_realization_uses_catalog_when_upstream_build_path_is_note(tmp_path):
+    from dataclasses import replace
+    from raes_contracts.planning import PlannedRealizationConstraint
     from aptl.backends.raes_realization import interpret_provisioning_plan
 
     _write_compose(tmp_path, {"wazuh-manager": ["wazuh"]})
     node = _node_resource("wazuh-manager")
     node.payload["spec"]["node"]["source"] = {
-        # Full image name + pinned tag: the backend no longer substitutes a
-        # concrete image for a vague version, so the allow-check resolves the
-        # SDL-declared image verbatim when the build path is unavailable (#875).
+        # Build notes grant no executable authority. The open substrate allows
+        # backend policy to bind this selector to a reviewed digest (#1097).
         "name": "wazuh/wazuh-manager",
         "version": "4.12.0",
         "build": {
@@ -3099,9 +2946,15 @@ def test_realization_uses_allowed_source_when_upstream_build_path_is_note(tmp_pa
     }
 
     realization = interpret_provisioning_plan(
-        plan=_plan_for_resources(node),
+        plan=replace(_plan_for_resources(node), realization_constraints=(
+            PlannedRealizationConstraint(
+                address=node.address, field_path="nodes.wazuh-manager.realization.compute_substrate",
+                concern="compute-substrate", posture="open", value_domain=None,
+                governing_scope="#/realization", provenance="author-declared",
+            ),
+        )),
         bundle=_bundle(tmp_path),
-        config=AptlConfig(lab={"name": "test"}, containers={"wazuh": True}),
+        config=AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
     )
 
     assert [diagnostic.code for diagnostic in realization.diagnostics] == []
@@ -3109,8 +2962,8 @@ def test_realization_uses_allowed_source_when_upstream_build_path_is_note(tmp_pa
     assert len(spec.images) == 1
     image = spec.images[0]
     assert image.mode == "pull"
-    assert image.policy_rule == "allowed-source"
-    assert image.image_ref == "wazuh/wazuh-manager:4.12.0"
+    assert image.policy_rule == "trusted-source-catalog"
+    assert image.image_ref.startswith("wazuh/wazuh-manager@sha256:")
 
 
 def test_realization_resolves_project_build_provenance(tmp_path):
@@ -3140,7 +2993,7 @@ def test_realization_resolves_project_build_provenance(tmp_path):
     realization = interpret_provisioning_plan(
         plan=_plan_for_resources(node),
         bundle=_bundle(tmp_path),
-        config=AptlConfig(lab={"name": "test"}, containers={"enterprise": True}),
+        config=AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
     )
 
     assert [diagnostic.code for diagnostic in realization.diagnostics] == []
@@ -3174,7 +3027,7 @@ def test_realization_rejects_untrusted_source_without_value_leakage(tmp_path):
     realization = interpret_provisioning_plan(
         plan=_plan_for_resources(node),
         bundle=_bundle(tmp_path),
-        config=AptlConfig(lab={"name": "test"}, containers={"enterprise": True}),
+        config=AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
     )
 
     diagnostics = list(realization.diagnostics)
@@ -3203,7 +3056,7 @@ def test_realization_rejects_digest_ref_outside_allowed_source_policy(tmp_path):
     realization = interpret_provisioning_plan(
         plan=_plan_for_resources(node),
         bundle=_bundle(tmp_path),
-        config=AptlConfig(lab={"name": "test"}, containers={"enterprise": True}),
+        config=AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
     )
 
     diagnostics = list(realization.diagnostics)
@@ -3232,7 +3085,7 @@ def test_realization_rejects_unresolved_source_without_default_fallback(tmp_path
     realization = interpret_provisioning_plan(
         plan=_plan_for_resources(node),
         bundle=_bundle(tmp_path),
-        config=AptlConfig(lab={"name": "test"}, containers={"enterprise": True}),
+        config=AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
     )
 
     assert any(
@@ -3256,7 +3109,7 @@ def test_realization_accepts_compose_owned_reference_source_without_override(tmp
     realization = interpret_provisioning_plan(
         plan=_plan_for_resources(node),
         bundle=_bundle(tmp_path),
-        config=AptlConfig(lab={"name": "test"}, containers={"enterprise": True}),
+        config=AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
     )
 
     assert [diagnostic.code for diagnostic in realization.diagnostics] == []
@@ -3290,7 +3143,7 @@ def test_realization_prefers_unique_node_alias_over_shared_source_alias(tmp_path
     realization = interpret_provisioning_plan(
         plan=_plan_for_resources(node),
         bundle=_bundle(tmp_path),
-        config=AptlConfig(lab={"name": "test"}, containers={"wazuh": True}),
+        config=AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}),
     )
 
     assert [diagnostic.code for diagnostic in realization.diagnostics] == []
@@ -3314,7 +3167,7 @@ def test_provisioner_closes_subset_dependency_profiles_before_start(tmp_path):
     backend.realize.return_value = LabResult(success=True, message="ok")
     config = AptlConfig(
         lab={"name": "test"},
-        containers={"enterprise": True, "soc": True, "wazuh": True},
+        containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
     )
     provisioner = AptlProvisioner(
         project_dir=tmp_path,
@@ -3324,7 +3177,7 @@ def test_provisioner_closes_subset_dependency_profiles_before_start(tmp_path):
     )
 
     result = provisioner.apply(
-        _plan_for_resources(_node_resource_with_dependencies("techvault.webapp", "db")),
+        _plan_for_resources(_node_resource_with_dependencies("range.webapp", "db")),
         RuntimeSnapshot(),
     )
 
@@ -3350,7 +3203,7 @@ def test_provisioner_treats_compose_network_dependency_as_network_support(tmp_pa
     )
     backend = MagicMock()
     backend.realize.return_value = LabResult(success=True, message="ok")
-    config = AptlConfig(lab={"name": "test"}, containers={"enterprise": True})
+    config = AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']})
     provisioner = AptlProvisioner(
         project_dir=tmp_path,
         bundle=_bundle(tmp_path),
@@ -3360,7 +3213,7 @@ def test_provisioner_treats_compose_network_dependency_as_network_support(tmp_pa
 
     result = provisioner.apply(
         _plan_for_resources(
-            _node_resource_with_dependencies("techvault.webapp", "internal-net")
+            _node_resource_with_dependencies("range.webapp", "internal-net")
         ),
         RuntimeSnapshot(),
     )
@@ -3388,7 +3241,7 @@ def test_provisioner_rejects_disabled_dependency_profile(tmp_path):
     backend.realize.return_value = LabResult(success=True, message="ok")
     config = AptlConfig(
         lab={"name": "test"},
-        containers={"enterprise": True, "wazuh": False},
+        containers={'profiles': ['victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
     )
     provisioner = AptlProvisioner(
         project_dir=tmp_path,
@@ -3398,7 +3251,7 @@ def test_provisioner_rejects_disabled_dependency_profile(tmp_path):
     )
 
     result = provisioner.apply(
-        _plan_for_resources(_node_resource_with_dependencies("techvault.webapp", "db")),
+        _plan_for_resources(_node_resource_with_dependencies("range.webapp", "db")),
         RuntimeSnapshot(),
     )
 
@@ -3435,7 +3288,7 @@ def test_provisioner_rejects_invalid_compose_project(tmp_path):
     backend.realize.return_value = LabResult(success=True, message="ok")
     config = AptlConfig(
         lab={"name": "test"},
-        containers={"enterprise": True, "wazuh": False},
+        containers={'profiles': ['victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
     )
     provisioner = AptlProvisioner(
         project_dir=tmp_path,
@@ -3445,7 +3298,7 @@ def test_provisioner_rejects_invalid_compose_project(tmp_path):
     )
 
     result = provisioner.apply(
-        _plan_for_resources(_node_resource("techvault.webapp")), RuntimeSnapshot()
+        _plan_for_resources(_node_resource("range.webapp")), RuntimeSnapshot()
     )
 
     assert result.success is False
@@ -3468,7 +3321,7 @@ def test_provisioner_rejects_missing_declared_dependency(tmp_path):
     )
     backend = MagicMock()
     backend.realize.return_value = LabResult(success=True, message="ok")
-    config = AptlConfig(lab={"name": "test"}, containers={"enterprise": True})
+    config = AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']})
     provisioner = AptlProvisioner(
         project_dir=tmp_path,
         bundle=_bundle(tmp_path),
@@ -3477,7 +3330,7 @@ def test_provisioner_rejects_missing_declared_dependency(tmp_path):
     )
 
     result = provisioner.apply(
-        _plan_for_resources(_node_resource_with_dependencies("techvault.webapp", "db")),
+        _plan_for_resources(_node_resource_with_dependencies("range.webapp", "db")),
         RuntimeSnapshot(),
     )
 
@@ -3501,7 +3354,7 @@ def test_provisioner_rejects_missing_compose_dependency(tmp_path):
     )
     backend = MagicMock()
     backend.realize.return_value = LabResult(success=True, message="ok")
-    config = AptlConfig(lab={"name": "test"}, containers={"enterprise": True})
+    config = AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']})
     provisioner = AptlProvisioner(
         project_dir=tmp_path,
         bundle=_bundle(tmp_path),
@@ -3510,7 +3363,7 @@ def test_provisioner_rejects_missing_compose_dependency(tmp_path):
     )
 
     result = provisioner.apply(
-        _plan_for_resources(_node_resource("techvault.webapp")),
+        _plan_for_resources(_node_resource("range.webapp")),
         RuntimeSnapshot(),
     )
 
@@ -3538,7 +3391,7 @@ def test_provisioner_rejects_ambiguous_declared_dependency(tmp_path):
     backend.realize.return_value = LabResult(success=True, message="ok")
     config = AptlConfig(
         lab={"name": "test"},
-        containers={"enterprise": True, "soc": True, "wazuh": True},
+        containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
     )
     provisioner = AptlProvisioner(
         project_dir=tmp_path,
@@ -3548,7 +3401,7 @@ def test_provisioner_rejects_ambiguous_declared_dependency(tmp_path):
     )
 
     result = provisioner.apply(
-        _plan_for_resources(_node_resource_with_dependencies("techvault.webapp", "db")),
+        _plan_for_resources(_node_resource_with_dependencies("range.webapp", "db")),
         RuntimeSnapshot(),
     )
 
@@ -3575,7 +3428,7 @@ def test_provisioner_realization_details_follow_distinct_plan_content(tmp_path):
     backend.realize.return_value = LabResult(success=True, message="ok")
     config = AptlConfig(
         lab={"name": "test"},
-        containers={"kali": True, "victim": True, "wazuh": False},
+        containers={'profiles': ['victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']},
     )
     provisioner = AptlProvisioner(
         project_dir=tmp_path,
@@ -3611,7 +3464,7 @@ def test_provisioner_realization_details_follow_distinct_plan_content(tmp_path):
     ]
 
 
-def test_provisioner_rejects_missing_node_realization_even_with_techvault_metadata(
+def test_provisioner_rejects_missing_node_realization_even_with_scenario_metadata(
     tmp_path,
 ):
     from aptl.backends.raes import AptlProvisioner
@@ -3626,12 +3479,12 @@ def test_provisioner_rejects_missing_node_realization_even_with_techvault_metada
         deployment_backend=backend,
     )
     resource = PlannedResource(
-        address="provision.node.techvault",
+        address="provision.node.range",
         domain=RuntimeDomain.PROVISIONING,
         resource_type="node",
         payload={
-            "name": "techvault",
-            "metadata": {"scenario": "techvault"},
+            "name": "range",
+            "metadata": {"scenario": "range"},
             "spec": {"node": {"description": "metadata-only node"}},
         },
     )
@@ -3708,7 +3561,7 @@ def _content_resource(
         "target": target_node,
         "path": "public/notice.txt",
         "destination": "",
-        "text": "Welcome to TechVault.",
+        "text": "Welcome to the range.",
         "source": None,
         "format": "",
         "items": [],
@@ -3744,7 +3597,7 @@ def _account_resource(
         "password_strength": "weak",
         "auth_method": "password",
         "description": "",
-        "mail": "operator@techvault.local",
+        "mail": "operator@range.example",
         "spn": "",
         "shell": "",
         "home": "",
@@ -3837,11 +3690,14 @@ def test_provisioner_records_supported_placement_realizations(tmp_path):
         "username": "operator",
         "groups": ["IT-Admins"],
         "spn": "",
-        "mail": "operator@techvault.local",
+        "mail": "operator@range.example",
         "disabled": False,
         # The authored credential class is reported back with the placement, so
         # the runtime sees which class the backend realized (issue #1006).
         "password_strength": "weak",
+        # A declared credential is reported by id only, never by value (#1273).
+        "auth_method": "password",
+        "credential_id": None,
     }
 
     # Real lowering, not counting: the typed backend spec actually passed
@@ -3849,7 +3705,7 @@ def test_provisioner_records_supported_placement_realizations(tmp_path):
     deployment_spec = backend.realize.call_args[0][0]
     assert len(deployment_spec.content) == 1
     assert deployment_spec.content[0].dest_relpath == "public/notice.txt"
-    assert deployment_spec.content[0].inline_text == "Welcome to TechVault."
+    assert deployment_spec.content[0].inline_text == "Welcome to the range."
     assert len(deployment_spec.accounts) == 1
     assert deployment_spec.accounts[0].username == "operator"
 
@@ -3872,7 +3728,7 @@ def test_account_lowering_preserves_disabled_explicitness():
             resource=resource,
             payload={"spec": spec},
             target_address="scenario.node.ad",
-            target_service="ad",
+            target_account_provider="samba-ad",
         )
         return account
 
@@ -3887,13 +3743,16 @@ def test_account_lowering_preserves_disabled_explicitness():
 def test_manifest_account_features_match_realized_dto_fields():
     """Manifest honesty (#577, ADR-046 addendum): advertise only the account
     features the backend actually materializes AND verifies — the non-secret
-    fields the typed ``DeploymentAccountRealization`` carries. ``auth_method`` /
+    fields the typed ``DeploymentAccountRealization`` carries, plus one authored
+    ``secret_fixture`` credential binding and its auth method (#1273).
     ``home`` / ``shell`` are neither carried nor realized, so they are not
     claimed."""
     from aptl.backends.raes_manifest import create_aptl_manifest
 
     manifest = create_aptl_manifest()
     assert set(manifest.provisioner.supported_account_features) == {
+        "auth_method",
+        "credential_bindings",
         "disabled",
         "groups",
         "mail",
@@ -4284,7 +4143,20 @@ def _apply_disclosure_scenario(tmp_path, backend, execution_plan=None):
     # so container-name resolution binds to it). Use an explicitly enabled
     # ordinary scenario profile; backend apparatus is never a default profile.
     _write_compose(tmp_path, {"vm": ["victim"]})
-    config = AptlConfig(lab={"name": "test"}, containers={"victim": True})
+    config = AptlConfig(
+        lab={"name": "test"},
+        containers={
+            "profiles": [
+                "wazuh",
+                "victim",
+                "kali",
+                "enterprise",
+                "soc",
+                "fileshare",
+                "dns",
+            ]
+        },
+    )
     target = create_aptl_runtime_target(
         project_dir=tmp_path,
         bundle=_bundle(tmp_path),
@@ -4293,8 +4165,15 @@ def _apply_disclosure_scenario(tmp_path, backend, execution_plan=None):
     )
     if execution_plan is None:
         execution_plan = _execution_plan_with_realization_requirements()
-    manager = RuntimeManager(target, initial_snapshot=execution_plan.base_snapshot)
-    return manager.apply(execution_plan)
+    from raes_operations.run_artifacts import RunMaterializationArchive
+
+    with RuntimeManager(
+        target,
+        initial_snapshot=execution_plan.base_snapshot,
+        run_scope="run:disclosure",
+        materialization_archive=RunMaterializationArchive(tmp_path / "materialization"),
+    ) as manager:
+        return manager.apply(execution_plan)
 
 
 def _apply_content_disclosure_scenario(tmp_path, observed_content_type):
@@ -4314,23 +4193,41 @@ def _apply_content_disclosure_scenario(tmp_path, observed_content_type):
     target = create_aptl_runtime_target(
         project_dir=tmp_path,
         bundle=_bundle(tmp_path),
-        config=AptlConfig(lab={"name": "test"}, containers={"fileshare": True}),
+        config=AptlConfig(
+            lab={"name": "test"},
+            containers={
+                "profiles": [
+                    "wazuh",
+                    "victim",
+                    "kali",
+                    "enterprise",
+                    "soc",
+                    "fileshare",
+                    "dns",
+                ]
+            },
+        ),
         backend=backend,
     )
-    return RuntimeManager(target, initial_snapshot=execution_plan.base_snapshot).apply(
-        execution_plan
-    )
+    from raes_operations.run_artifacts import RunMaterializationArchive
+
+    with RuntimeManager(
+        target,
+        initial_snapshot=execution_plan.base_snapshot,
+        run_scope="run:disclosure",
+        materialization_archive=RunMaterializationArchive(tmp_path / "materialization"),
+    ) as manager:
+        return manager.apply(execution_plan)
 
 
 def test_apply_provisioning_populates_realization_and_profiles(tmp_path):
     """A scenario that realizes nodes reports non-empty realization details."""
-    from unittest.mock import MagicMock as _MagicMock
 
     from aptl.backends.raes_provisioner import AptlProvisioner
     from aptl.core.config import AptlConfig
 
     _write_compose(tmp_path, {"victim": ["victim"]})
-    config = AptlConfig(lab={"name": "test"}, containers={"victim": True})
+    config = AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']})
     provisioner = AptlProvisioner(
         project_dir=tmp_path,
         bundle=_bundle(tmp_path),
@@ -4338,7 +4235,7 @@ def test_apply_provisioning_populates_realization_and_profiles(tmp_path):
         deployment_backend=_RealizedBackend(containers=("victim",)),
     )
 
-    plan = _plan_for_resources(_node_resource("techvault.victim"))
+    plan = _plan_for_resources(_node_resource("range.victim"))
     result = provisioner.apply(plan, RuntimeSnapshot())
 
     assert result.success is True
@@ -4526,7 +4423,7 @@ def test_apply_provisioning_discloses_author_declared_provenance(tmp_path):
     below: the two values must be distinguishable, which is exactly what RAES
     #760 fixed upstream.
     """
-    from raes.explicitness import ExplicitnessProvenance
+    from raes_contracts.explicitness import ExplicitnessProvenance
 
     backend = _RealizedBackend(containers=("vm",), platform="linux")
 
@@ -4555,7 +4452,7 @@ def test_apply_provisioning_discloses_processor_derived_provenance(tmp_path):
     unreachable at the runtime gate, so this test is the regression guard on the
     dependency floor.
     """
-    from raes.explicitness import ExplicitnessClass, ExplicitnessProvenance
+    from raes_contracts.explicitness import ExplicitnessClass, ExplicitnessProvenance
 
     backend = _RealizedBackend(containers=("vm",), platform="linux")
 
@@ -4730,3 +4627,24 @@ def test_runtime_selection_evidence_reports_the_admitted_provider() -> None:
         }
     ]
     assert runtime_selection_evidence(SimpleNamespace(provisioner=None)) == []
+
+
+def test_the_run_runtime_allows_a_full_lab_apply(mocker):
+    """RAES's 30 s default abandons a lab apply that takes minutes (#1407)."""
+    from aptl.backends import raes
+
+    captured = {}
+
+    class CapturingRuntimeManager(_FakeRuntimeManager):
+        def __init__(self, target, **options):
+            captured.update(options)
+            super().__init__(target, initial_snapshot=options.get("initial_snapshot"))
+
+        def apply(self, execution_plan):
+            return ApplyResult(success=False, snapshot=RuntimeSnapshot(), diagnostics=[])
+
+    mocker.patch("aptl.backends.raes.RuntimeManager", CapturingRuntimeManager)
+
+    raes._apply_execution_plan(MagicMock(), _FakeExecutionPlan(ProvisioningPlan()))
+
+    assert captured["supervision"].execution_ms >= 60 * 60 * 1000

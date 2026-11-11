@@ -8,6 +8,14 @@ accepted
 
 2026-05-18
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [Wazuh Reference](../components/wazuh-siem.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 SEC-006 requires MISP, TheHive, Cortex, and Shuffle to serve certificates
@@ -46,16 +54,12 @@ certificate exceptions or per-client trust workarounds.
 The SOC CA, public CA bundle, server certificates, and server private keys are
 generated runtime artifacts. They must be produced during `aptl lab start`
 before bind-mount validation and container startup, using the existing
-`core.certs` / `core.lab` orchestration shape. The CA private key and server
-private keys must never be committed, archived, logged, printed, copied into
-MCP config, or exposed through CLI/API result envelopes. Public certificates
+`core.certs` / `core.lab` orchestration shape. CA and server private keys must remain outside commits, archives, logs, output, MCP configuration, and CLI/API results. Public certificates
 may be mounted read-only where needed.
 
 Certificate generation must be parameterized by a small service certificate
 registry: service name, output filenames, key/cert permissions, and SANs. The
-SAN list is the extensibility seam. A future SOC HTTPS service should be added
-by registering another certificate subject/SAN set, not by adding a second
-generator, a second CA, or an ad hoc openssl command in Docker Compose.
+SAN list is the extensibility seam. Another SOC HTTPS service should register a subject and SAN set with the existing generator. It should not add another CA or ad hoc Compose generator.
 
 SANs must cover both in-network Docker DNS names and host-facing names used by
 clients. For example, MISP needs `misp` for containers such as
@@ -90,18 +94,13 @@ active.
 - **First-party config shape:** Durable, repo-owned knobs belong in
   `AptlConfig` with `extra="forbid"` or in the existing MCP `LabConfig` shape.
   Do not introduce pass-through dictionaries or duplicate per-MCP schemas.
-- **Generated artifact containment:** Generated cert artifacts must use
-  canonical project-relative paths owned by the generating module, with
-  symlink/containment checks matching ADR-028 before reads, writes, chmods, or
-  bind-mount references.
+- **Generated artifact containment:** The generator owns canonical project-relative certificate paths. ADR-028 containment and symlink checks apply before file access, permission changes, and bind-mount references.
 - **Secret at rest:** CA private key and server private keys are
   control-plane/operator secrets under ADR-029. Store them only in ignored
   generated state with restrictive permissions; mount private keys only into
   the server containers that require them.
 - **OS/process exposure:** API tokens keep using `curl_safe` header temp files.
-  Private keys, API keys, CA material, and auth headers must not appear in
-  process argv, Docker healthcheck command strings, MCP config output, or
-  command-line error messages.
+  Process arguments, healthcheck strings, MCP output, and command errors must exclude private keys, API credentials, and authentication headers.
 - **TLS policy gate:** Python clients pass through `curl_safe`'s
   `insecure`/`ca_cert_path` decision. TypeScript clients pass through
   `HTTPClient`'s `verify_ssl`/CA decision. The allowed insecure override is an
@@ -133,15 +132,10 @@ active.
 - Node's `fetch` path cannot simply accept a custom CA bundle. If a custom CA is
   configured, the common HTTP client needs an HTTPS transport path that supplies
   the CA without process-global TLS mutation.
-- The current per-query MCP code creates a temporary `HTTPClient`; if the CA
-  option is not copied there, predefined queries will regress even when generic
-  API calls verify correctly.
+- Per-query MCP calls construct temporary `HTTPClient` instances. Those instances must copy CA settings so predefined queries keep the same verification as generic API calls.
 - Host-run clients using `localhost` and container-run clients using Docker DNS
   names exercise different SANs against the same server certificate.
-- Shuffle has both user-facing and backend/OpenSearch TLS surfaces. SEC-006 is
-  about SOC consumers of Shuffle; do not conflate that with Shuffle's internal
-  OpenSearch trust unless the implementation deliberately brings that surface
-  under the same CA.
+- Shuffle has both user-facing and backend/OpenSearch TLS surfaces. SEC-006 covers SOC clients of Shuffle. Shuffle's internal OpenSearch trust remains separate unless an explicit change brings it under the same CA.
 - `docker compose up` directly from a fresh checkout is not the supported
   generation path. `aptl lab start` must remain the entrypoint that materializes
   generated cert artifacts.
@@ -172,26 +166,13 @@ active.
 Host-published SOC management surfaces are operator control-plane surfaces, not
 deliberately vulnerable victim targets. When a SOC service is published only so
 the operator can use the lab locally, its Compose mapping must bind to
-`127.0.0.1` by default. This applies especially to services that also hold
-host-equivalent orchestration authority, such as Cortex or Shuffle components
-with `/var/run/docker.sock`, but the same default should cover TheHive, Wazuh,
-MISP, Shuffle frontend, and future SOC management UIs unless a separate
-requirement explicitly declares remote operator access.
+`127.0.0.1` by default. This includes services with host-equivalent Docker authority, such as the historical Cortex and Shuffle components. The default also covers other SOC management interfaces unless a requirement explicitly permits remote access.
 
-The host bind address is the exposure-policy seam. A future documented
-multi-operator or remote-lab mode may parameterize that value at the deployment
-boundary, but it must not scatter `0.0.0.0` literals across Compose, scripts,
-tests, and docs. Host-side scripts and MCP clients should continue to use
-`localhost` URLs and the existing CA / auth helpers; loopback binding does not
-change the in-container Docker-network URLs that SOC services use to talk to
-each other.
+The host bind address is the exposure-policy seam. A future remote or multi-operator mode can parameterize the deployment boundary. It must not scatter wildcard host publications across Compose, scripts, tests, and documents. Host clients should keep localhost URLs and shared CA/authentication helpers. Loopback publication does not change the Docker-network URLs used between containers.
 
 Loopback binding is a network guardrail, not a substitute for authentication,
 TLS verification, generated-secret handling, or least-privilege Docker
-orchestration. Replacing raw Docker socket mounts with a scoped socket proxy is
-the follow-up hardening seam for SOC tools that need to launch analyzers,
-responders, or workers; it should be designed as a shared Docker API boundary,
-not as per-service ad hoc volume tweaks.
+orchestration. A scoped Docker socket proxy is a separate shared API-boundary design. Per-service volume changes cannot replace that design and verification.
 
 ## Non-Goals
 
@@ -207,9 +188,7 @@ not as per-service ad hoc volume tweaks.
   first place where secrets are sanitized.
 - Do not make remote LAN exposure of SOC management ports the default lab
   posture. Remote access needs an explicit deployment-mode decision.
-- Do not replace raw Docker socket mounts as part of a loopback-only exposure
-  fix unless the issue explicitly covers the socket proxy design and validation
-  surface.
+- A loopback-only fix must not also replace Docker socket mounts. Socket-proxy design and validation need explicit issue scope.
 
 ## Anti-Patterns
 

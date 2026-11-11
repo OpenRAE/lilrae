@@ -7,11 +7,11 @@ import { LabConfig } from '../config.js';
  * Canonical `session_id` validation schema, shared across every tool
  * argument that accepts one (OBS-003 / ADR-033 / codex pre-push cycle
  * 3 finding-4 + finding-10). Matches the Python `_ID_RE` in
- * `src/aptl/core/runstore.py`, the TS `ID_RE` in
- * `mcp/aptl-mcp-common/src/runs.ts`, and the shell `valid_id()` in
- * `containers/kali/scripts/aptl-wrap-shell.sh`. Enforcing the
- * contract at MCP ingress means downstream layers (PTY tee, Kali
- * wrapper, harvest) all see the same id — no more split-brain where
+ * `src/aptl/core/runstore_internals.py`, the TS `ID_RE` in
+ * `mcp/aptl-mcp-common/src/runs.ts`, and the capture broker's `_ID_RE` in
+ * `containers/kali-capture/broker.py`. Enforcing the
+ * contract at MCP ingress means downstream layers (PTY tee, capture
+ * broker, harvest) all see the same id — no more split-brain where
  * each layer applies its own fallback substitution and captures end
  * up under different paths.
  *
@@ -27,6 +27,20 @@ const SESSION_ID_SCHEMA = {
   type: 'string' as const,
   pattern: '^[A-Za-z0-9_][A-Za-z0-9._-]*$',
   maxLength: 128,
+};
+
+/**
+ * Millisecond timeouts run on Node timers, which accept 1 to 2^31-1 ms and
+ * fire after 1 ms for any other delay. A new session would then close at once,
+ * and a raw-mode command would end immediately and report its partial output
+ * as a success. A command timeout of 0 sets no timer, so a raw-mode command
+ * would not return until its session closed. The bounds make the server
+ * refuse such a value before dispatch (#967).
+ */
+const TIMER_MS_SCHEMA = {
+  type: 'number' as const,
+  minimum: 1,
+  maximum: 2_147_483_647,
 };
 
 export function generateToolDefinitions(serverConfig: LabConfig['server']): Tool[] {
@@ -64,7 +78,7 @@ export function generateToolDefinitions(serverConfig: LabConfig['server']): Tool
           description: 'Unique session identifier (optional, auto-generated if not provided)',
         },
         timeout_ms: {
-          type: 'number',
+          ...TIMER_MS_SCHEMA,
           description: 'Session timeout in milliseconds before automatic closure (default: 600000 = 10 minutes)',
           default: 600000,
         },
@@ -88,7 +102,7 @@ export function generateToolDefinitions(serverConfig: LabConfig['server']): Tool
           default: false,
         },
         timeout_ms: {
-          type: 'number',
+          ...TIMER_MS_SCHEMA,
           description: 'Session timeout in milliseconds before automatic closure (default: 600000 = 10 minutes)',
           default: 600000,
         },
@@ -111,7 +125,7 @@ export function generateToolDefinitions(serverConfig: LabConfig['server']): Tool
           description: 'Command to execute',
         },
         timeout: {
-          type: 'number',
+          ...TIMER_MS_SCHEMA,
           description: 'Command timeout in milliseconds (default: 30000)',
           default: 30000,
         },
@@ -163,7 +177,10 @@ export function generateToolDefinitions(serverConfig: LabConfig['server']): Tool
           description: 'Session identifier to get output from',
         },
         lines: {
+          // 0 would return the whole buffer, and a negative count would drop
+          // its oldest lines instead.
           type: 'number',
+          minimum: 1,
           description: 'Number of recent lines to retrieve (optional, default: all)',
         },
         clear: {

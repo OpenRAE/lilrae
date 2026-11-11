@@ -1,3 +1,4 @@
+import { knownToolFailure } from './lilrae-tool-outcome.js';
 
 
 import { existsSync, readFileSync } from 'fs';
@@ -15,6 +16,11 @@ export interface LabConfig {
     toolPrefix: string;
     targetName: string;
     configKey: string;
+    /**
+     * Budget for one tool result, in estimated tokens (4 characters each).
+     * A larger result is cut to fit (see tool-output-cap.ts). Default 4000.
+     */
+    maxToolResultTokens?: number;
   };
   lab: {
     name: string;
@@ -22,7 +28,6 @@ export interface LabConfig {
   };
   containers?: {
     [key: string]: {
-      container_name: string;
       container_ip: string;
       ssh_key: string;
       ssh_user: string;
@@ -33,11 +38,12 @@ export interface LabConfig {
       enabled: boolean;
       shell?: 'bash' | 'sh' | 'powershell' | 'cmd';
       /**
-       * ADR-041 / issue #305: container to harvest per-session captures from,
-       * when it differs from the workload container. The Kali capture sidecar
-       * (`aptl-kali-capture`) owns the captures volume; the workload container
-       * does not mount it, so harvest must target the sidecar. Defaults to
-       * `container_name` when unset (workload also owns its captures).
+       * ADR-041 / issue #305: the capture sidecar to harvest per-session
+       * captures from. The Kali capture sidecar owns the captures volume; the
+       * workload container does not mount it. Unset means the server has no
+       * capture sidecar and does no harvest. The red config names it as
+       * `${LILRAE_MCP_CAPTURE_CONTAINER}`, the workspace-scoped name that lab
+       * start resolves (#1242); the harvest validates the resolved name.
        */
       capture_container_name?: string;
     };
@@ -79,11 +85,25 @@ export interface LabConfig {
         auth_url?: string;
       };
       params?: Record<string, any>;
+      /** JSON Schema for the merged template and caller query parameters. */
+      params_schema?: Record<string, unknown>;
+      /**
+       * Regular expressions that each `{name}` path parameter value must
+       * match in full. A value without a pattern still must not be empty,
+       * `.` or `..`.
+       */
+      path_param_patterns?: Record<string, string>;
       body?: any;
       description: string;
       response_type?: 'json' | 'text';
       verify_ssl?: boolean;
       ca_cert_path?: string;
+      /**
+       * Result budget for this tool, in estimated tokens. It replaces
+       * `server.maxToolResultTokens`. `null` returns the whole result: use it
+       * for a document that the agent writes back whole, such as a rule file.
+       */
+      max_result_tokens?: number | null;
     };
   };
 }
@@ -169,6 +189,27 @@ export function environmentForConfig(
   return processEnv;
 }
 
+function isPositiveInteger(value: unknown): boolean {
+  return Number.isInteger(value) && (value as number) > 0;
+}
+
+/**
+ * Check the tool result budgets. An error names the setting, never its value
+ * (#1273 preflight).
+ */
+function validateResultBudgets(config: LabConfig): void {
+  const serverBudget = config.server.maxToolResultTokens;
+  if (serverBudget !== undefined && !isPositiveInteger(serverBudget)) {
+    throw new Error('server.maxToolResultTokens must be a positive integer');
+  }
+  for (const [queryName, query] of Object.entries(config.queries ?? {})) {
+    const budget = query.max_result_tokens;
+    if (budget !== undefined && budget !== null && !isPositiveInteger(budget)) {
+      throw new Error(`queries.${queryName}.max_result_tokens must be a positive integer or null`);
+    }
+  }
+}
+
 /**
  * Load Docker lab configuration from JSON file
  */
@@ -194,6 +235,8 @@ async function loadDockerLabConfig(configPath: string): Promise<LabConfig> {
   if (!config.server) {
     throw new Error('Server configuration is required in docker-lab-config.json');
   }
+
+  validateResultBudgets(config);
 
   // Validate that at least one capability is configured
   if (!config.containers && !config.api) {
@@ -264,18 +307,18 @@ export async function loadLabConfig(configPath: string): Promise<LabConfig> {
  */
 export function getTargetCredentials(config: LabConfig): { sshKey: string; username: string; port: number; target: string } {
   if (!config.containers) {
-    throw new Error('SSH containers not configured - use API tools instead');
+    throw knownToolFailure(new Error('SSH containers not configured - use API tools instead'));
   }
 
   const configKey = config.server.configKey;
   const container = config.containers[configKey];
 
   if (!container) {
-    throw new Error(`Container '${configKey}' not found in configuration`);
+    throw knownToolFailure(new Error(`Container '${configKey}' not found in configuration`));
   }
 
   if (!container.enabled) {
-    throw new Error(`${config.server.targetName} instance is not enabled`);
+    throw knownToolFailure(new Error(`${config.server.targetName} instance is not enabled`));
   }
 
   return {

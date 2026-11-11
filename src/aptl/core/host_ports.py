@@ -2,12 +2,12 @@
 
 Docker Compose aborts an entire ``up`` if it cannot bind a requested host
 port, and on Windows/macOS other software routinely holds ports the lab wants
-— mDNS on UDP 5353, an editor's automatic port-forwarding, another service on
-3100, and so on. On Windows a held IPv6 ``::1:PORT`` even blocks Docker's IPv4
+— an editor's automatic port-forwarding, another service on 3100, and so on.
+On Windows a held IPv6 ``::1:PORT`` even blocks Docker's IPv4
 ``127.0.0.1:PORT`` publish, so the clash is easy to hit and fails the whole
 start.
 
-To keep ``aptl lab start`` robust, the published host ports in
+To keep ``lilrae lab start`` robust, the published host ports in
 ``docker-compose.yml`` are written through a ``${VAR:-default}`` indirection.
 Before Compose runs, :func:`resolve_host_ports` parses those ports, probes each
 one, and for any that are already in use picks a free port and exports the
@@ -89,10 +89,12 @@ def _proto_socktype(proto: str) -> int:
 def port_available(port: int, proto: str, host_ip: str | None) -> bool:
     """Return True if *port* looks free to publish for *proto*.
 
-    Probes both IPv4 and IPv6 loopback (and the wildcard when the publish has
-    no host-IP) because on Windows a process holding ``::1:PORT`` blocks
-    Docker's ``127.0.0.1:PORT`` publish; an *address-in-use* failure on either
-    family is the same conflict Docker would hit.
+    Probes both IPv4 and IPv6 loopback because on Windows a process holding
+    ``::1:PORT`` blocks Docker's ``127.0.0.1:PORT`` publish; an
+    *address-in-use* failure on either family is the same conflict Docker
+    would hit. The probe never binds a wildcard address. A loopback bind
+    already fails when a process holds the wildcard, and ADR-034 pins every
+    host publication to loopback.
 
     Only ``EADDRINUSE`` counts as occupied. A privileged-port ``EACCES`` (ports
     below 1024 on Linux/macOS cannot be bound by an unprivileged probe, but the
@@ -105,11 +107,7 @@ def port_available(port: int, proto: str, host_ip: str | None) -> bool:
     if host_ip and ":" not in host_ip:
         targets.append((socket.AF_INET, host_ip))
     else:
-        # Loopback-only publish is probed on both stacks; an all-interfaces
-        # publish (no host_ip) is probed on the wildcards.
-        if host_ip is None:
-            targets.append((socket.AF_INET, "0.0.0.0"))
-            targets.append((socket.AF_INET6, "::"))
+        # Probe loopback on both stacks, including for a publish with no host IP.
         targets.append((socket.AF_INET, "127.0.0.1"))
         targets.append((socket.AF_INET6, "::1"))
 

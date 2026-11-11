@@ -29,23 +29,35 @@ def authored_service_hosts(
 
     hosts: dict[str, set[str]] = {}
     for node in realization.nodes:
-        found = _node_service_hosts(node.runtime)
+        found = node_service_hosts(node.runtime)
         if found:
             hosts.setdefault(node.name, set()).update(found)
     return {name: tuple(sorted(found)) for name, found in hosts.items()}
 
 
-def _node_service_hosts(runtime: object) -> set[str]:
+def node_service_hosts(runtime: object) -> set[str]:
     """Return canonical HTTPS hosts authored by one node runtime."""
+
+    return {
+        host
+        for value in node_service_origins(runtime)
+        if (host := _secure_host(value)) is not None
+    }
+
+
+def node_service_origins(runtime: object, service: str | None = None) -> set[str]:
+    """Return canonical URLs, optionally bound to one declared service."""
 
     found: set[str] = set()
     for application in getattr(runtime, "platform_applications", ()) or ():
+        if service is not None and getattr(application, "service", None) != service:
+            continue
         for setting in getattr(application, "settings", ()) or ():
             setting_id = str(getattr(setting, "setting_id", ""))
             if setting_id.endswith(_CANONICAL_URL_SUFFIX):
-                host = _secure_host(str(getattr(setting, "value", "")))
-                if host is not None:
-                    found.add(host)
+                value = str(getattr(setting, "value", ""))
+                if _secure_host(value) is not None:
+                    found.add(value)
     return found
 
 
@@ -58,4 +70,4 @@ def _secure_host(value: str) -> str | None:
     return parsed.hostname if parsed.scheme == _SECURE_SCHEME else None
 
 
-__all__ = ("authored_service_hosts",)
+__all__ = ("authored_service_hosts", "node_service_hosts", "node_service_origins")

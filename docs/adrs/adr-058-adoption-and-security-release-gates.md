@@ -8,6 +8,14 @@ proposed
 
 2026-09-05
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [CI explanation](../architecture/ci-verification.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 APTL has substantial tests, pinned dependencies, CI scans and release tooling.
@@ -34,10 +42,7 @@ host jobs for release-level realization, failure/recovery and journey evidence.
 Expensive advanced-profile tests need not run on every prose edit, but a release
 cannot claim that profile without matching evidence.
 
-The release report names exact CLI, RAES, env-packs, pack/plugin, image and
-runtime versions; OS/architecture; resource and timing assumptions; conformance
-results; scenario readback; limitations; reset/teardown results; and residual
-state. Keep native diagnostics private while exporting bounded operator help.
+Release evidence names exact software/runtime versions, OS/architecture, resources/timing, conformance, scenario observations, limits, reset/teardown, and remaining state. Keep native diagnostics private while exporting bounded operator help.
 
 The Hub journey has one discoverable entry point and uses normal released
 acquisition. It must demonstrate useful readiness, one meaningful action,

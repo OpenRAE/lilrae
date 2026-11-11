@@ -17,9 +17,9 @@ checkout's materialized set can never drift.
 from __future__ import annotations
 
 # Top-level asset roots bundled into the wheel and materialized by
-# ``aptl lab init``. Each tracked file maps to the same relative path.
+# ``lilrae lab init``. Each tracked file maps to the same relative path.
 # Derived from docker-compose.yml build contexts and bind mounts plus the
-# host-side steps in ``aptl lab start`` (issue #659):
+# host-side steps in ``lilrae lab start`` (issue #659):
 #   - several services build with ``context: .`` and
 #     ``COPY pyproject.toml README.md src`` + ``pip install .``
 #     (misp-suricata-sync, web API), so those + ``hatch_build.py`` (a declared

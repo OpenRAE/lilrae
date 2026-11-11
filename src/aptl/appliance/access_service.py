@@ -47,17 +47,37 @@ from aptl.workbench.guest_binding import (
     observe_guest,
     verify_guest_observation,
 )
-from aptl.workbench.preparation import TransportPreparation, prepare_guest_transport
+from aptl.workbench.preparation import (
+    TransportPreparation,
+    load_run_admission,
+    prepare_guest_transport,
+)
 from aptl.workbench.profiles import WorkbenchConfigurationError
+
+
+def _cli_executable() -> Path:
+    """Return the CLI that new guest forced-command policy runs.
+
+    New policy names ``lilrae`` (ADR-062 successor clause, #1402). Policy that
+    an earlier generation wrote with ``aptl`` keeps working through the
+    deprecated alias until 10.0.0 (#1403).
+    """
+    return Path(shutil.which("lilrae") or "/usr/local/bin/lilrae")
 
 
 def _run_qualification_attempt(
     project_dir: Path,
+    run_id: str,
 ) -> tuple[QualificationCheckEvidence, ...]:
-    """Exercise every packaged TechVault MCP registration against the live lab."""
+    """Exercise every admitted packaged MCP registration against the live lab.
+
+    The run admission selects the servers and supplies the admitted inputs that
+    an installed smoke provider resolves against (ADR-067).
+    """
 
     from aptl.validation.participant_mcp_smoke import (
         McpRegistration,
+        admitted_mcp_server_ids,
         run_participant_mcp_smoke,
     )
     from aptl.validation.participant_profile import load_participant_profile
@@ -65,13 +85,14 @@ def _run_qualification_attempt(
     profile = load_participant_profile(
         project_dir, Path("participant-profiles/techvault-full-v1/profile.json")
     )
+    admission = load_run_admission(project_dir, run_id)
     document = loads_strict((project_dir / ".mcp.json").read_bytes())
     servers = document.get("mcpServers") if isinstance(document, dict) else None
     if not isinstance(servers, dict):
         raise WorkbenchConfigurationError("guest MCP qualification config is invalid")
     node = Path(shutil.which("node") or "/usr/bin/node")
     registrations = {}
-    for server_id in profile.mcp_server_ids:
+    for server_id in admitted_mcp_server_ids(profile, admission):
         specification = servers.get(server_id)
         if not isinstance(specification, dict) or not isinstance(
             specification.get("env"), dict
@@ -107,11 +128,12 @@ def _run_qualification_attempt(
                 },
             },
         )
-    return run_participant_mcp_smoke(profile, registrations)
+    return run_participant_mcp_smoke(profile, registrations, admission=admission)
 
 
 def _qualification_checks(
     project_dir: Path,
+    run_id: str,
     *,
     timeout_seconds: float = 120,
     retry_interval_seconds: float = 2,
@@ -122,7 +144,7 @@ def _qualification_checks(
         raise WorkbenchConfigurationError("guest qualification deadline is invalid")
     deadline = time.monotonic() + timeout_seconds
     while True:
-        checks = _run_qualification_attempt(project_dir)
+        checks = _run_qualification_attempt(project_dir, run_id)
         if checks and all(check.status == "passed" for check in checks):
             return checks
         remaining = deadline - time.monotonic()
@@ -160,7 +182,7 @@ def _load_runtime_evidence(
             run_record=run_record,
             snapshot=snapshot,
             qualification_checks=(
-                _qualification_checks(project_dir) if qualification else ()
+                _qualification_checks(project_dir, run_id) if qualification else ()
             ),
         )
     except (OSError, TypeError, ValueError) as exc:
@@ -272,7 +294,7 @@ def serve_appliance_access(
         project_dir=project_dir,
         management_home=Path(account.pw_dir),
         node_executable=Path(shutil.which("node") or "/usr/bin/node"),
-        aptl_executable=Path(shutil.which("aptl") or "/usr/local/bin/aptl"),
+        aptl_executable=_cli_executable(),
         host_key=host_key,
         host_public_key=host_key.with_suffix(host_key.suffix + ".pub"),
         username=username,

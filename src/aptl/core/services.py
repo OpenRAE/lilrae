@@ -268,12 +268,13 @@ def test_ssh_connection(host: str, port: int, user: str, key_path: Path) -> bool
     """Test SSH connectivity to a lab container.
 
     Reachability means the transport came up and the key authenticated, not
-    that the probe obtained a shell. A capture-wrapped target refuses one on
-    purpose: kali's sshd runs the capture wrapper as its ``ForceCommand``, and a
-    session carrying no control-plane-issued capture capability is denied with
-    exit 70, because an authenticated participant must never receive an
-    unrecorded shell. Requiring exit 0 therefore reported every such target as
-    unreachable, degrading a lab whose SSH was working.
+    that the probe obtained a shell. A capture-brokered target refuses one on
+    purpose: the Kali capture sidecar's sshd runs ``broker.py`` as its
+    ``ForceCommand``, and the broker refuses a session that has no active
+    capture authority or issued session identity, because an authenticated
+    participant must never receive an unrecorded shell. The broker exits
+    non-zero (``1``) in that case. Requiring exit 0 therefore reported every
+    such target as unreachable, degrading a lab whose SSH was working.
 
     A remote exit status of any kind only exists because ssh connected and
     authenticated first, so only ssh's own ``255`` means the transport or the

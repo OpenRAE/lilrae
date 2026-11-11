@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import re
 from importlib import metadata
+from copy import deepcopy
+from collections.abc import Mapping
+from aptl.backends.identity import BackendIdentity
+from aptl.core.scenario_bundle import PackIdentity
 
 from aptl.backends.scenario_capture import (
     ENTRY_POINT_GROUP,
@@ -11,6 +15,8 @@ from aptl.backends.scenario_capture import (
     ResolvedScenarioCapture,
     ScenarioCaptureContext,
     ScenarioCaptureContribution,
+    ScenarioCaptureResumeContext,
+    GeneratedOutputReference,
 )
 from aptl.core.experiment.capture_registry import CollectorRegistry
 from aptl.utils.logging import get_logger
@@ -91,11 +97,31 @@ def _validate_contribution(value: object) -> ScenarioCaptureContribution:
 
     if not isinstance(value, ScenarioCaptureContribution):
         raise ScenarioCaptureProviderError("provider-result-invalid")
+    if not isinstance(value.registrations, tuple) or len(value.registrations) > 256:
+        raise ScenarioCaptureProviderError("provider-result-invalid")
     try:
         registry = CollectorRegistry(value.registrations)
     except (TypeError, ValueError):
         raise ScenarioCaptureProviderError("provider-result-invalid") from None
     ids = frozenset(item.registration_id for item in registry.registrations)
+    _validate_capture_bindings(value, ids)
+    _validate_output_references(value.generated_output_refs)
+    return ScenarioCaptureContribution(
+        registrations=deepcopy(value.registrations),
+        native_registration_ids=value.native_registration_ids,
+        runtime_environment_keys=value.runtime_environment_keys,
+        transcript_registration_id=value.transcript_registration_id,
+        runtime_adapter=value.runtime_adapter,
+        proposition_interpreter=value.proposition_interpreter,
+        generated_output_refs=value.generated_output_refs,
+    )
+
+
+def _validate_capture_bindings(
+    value: ScenarioCaptureContribution, ids: frozenset[str]
+) -> None:
+    """Validate registration references and declared credential key names."""
+
     if (
         not isinstance(value.native_registration_ids, frozenset)
         or not value.native_registration_ids.issubset(ids)
@@ -112,13 +138,61 @@ def _validate_contribution(value: object) -> ScenarioCaptureContribution:
         )
     ):
         raise ScenarioCaptureProviderError("provider-result-invalid")
-    return value
+
+
+def _validate_output_references(refs: object) -> None:
+    """Require unique bounded references to declared generated outputs."""
+
+    if (
+        not isinstance(refs, tuple)
+        or len(refs) > 64
+        or any(
+            not isinstance(item, GeneratedOutputReference)
+            or not isinstance(item.artifact, str)
+            or not isinstance(item.output, str)
+            or _SAFE_ID.fullmatch(item.artifact) is None
+            or _SAFE_ID.fullmatch(item.output) is None
+            for item in refs
+        )
+        or len(set(refs)) != len(refs)
+    ):
+        raise ScenarioCaptureProviderError("provider-result-invalid")
 
 
 def resolve_scenario_capture(
     context: ScenarioCaptureContext,
 ) -> ResolvedScenarioCapture:
     """Resolve exactly one compatible installed capture provider."""
+
+    if context.trial is not None:
+        from aptl.backends.scenario_family import resolve_family_contribution
+
+        try:
+            selected, contribution = resolve_family_contribution(
+                ENTRY_POINT_GROUP,
+                context.trial,
+                context,
+                _validate_contribution,
+            )
+            _validate_family_runtime(selected.provider, contribution)
+        except ValueError as exc:
+            raise ScenarioCaptureProviderError(str(exc)) from None
+        return ResolvedScenarioCapture(
+            CollectorRegistry(contribution.registrations),
+            contribution,
+            context,
+            selected.provider_id,
+            EXTENSION_API_VERSION,
+            selected.distribution,
+            selected.distribution_version,
+            selected.entry_point,
+        )
+
+    return _resolve_installed_capture(context)
+
+
+def _resolve_installed_capture(context: ScenarioCaptureContext) -> ResolvedScenarioCapture:
+    """Resolve the ordinary exact-pack capture adapter without family input."""
 
     selector = f"{context.pack.pack_id}.{context.backend.target_name}"
     compatible: list[tuple[metadata.EntryPoint, object]] = []
@@ -156,4 +230,112 @@ def resolve_scenario_capture(
     )
 
 
-__all__ = ["ScenarioCaptureProviderError", "resolve_scenario_capture"]
+def _validate_family_runtime(
+    provider: object, contribution: ScenarioCaptureContribution
+) -> None:
+    """Require callable runtime hooks for the declared capture capabilities."""
+
+    if contribution.native_registration_ids and not callable(
+        getattr(contribution.runtime_adapter, "native_sources", None)
+    ):
+        raise ValueError("family-provider-result-invalid")
+    if contribution.proposition_interpreter is not None and not callable(
+        contribution.proposition_interpreter
+    ):
+        raise ValueError("family-provider-result-invalid")
+    if contribution.transcript_registration_id is not None:
+        methods = (
+            "binding_from_projection",
+            "finalized_transcript_collector",
+            "validate_retained_transcript",
+        )
+        if not callable(getattr(provider, "resume_capture", None)) or any(
+            not callable(getattr(contribution.runtime_adapter, name, None))
+            for name in methods
+        ):
+            raise ValueError("family-provider-result-invalid")
+
+
+def resolve_family_capture_resume(
+    context: ScenarioCaptureResumeContext,
+    distribution: str,
+    distribution_version: str,
+    provider_id: str,
+) -> ResolvedScenarioCapture:
+    """Rebind only the exact recorded installation for transcript finalization."""
+
+    from aptl.backends.scenario_family import select_family_provider
+
+    try:
+        selected = select_family_provider(
+            ENTRY_POINT_GROUP,
+            f"{context.pack.pack_id}.{context.backend.target_name}",
+            EXTENSION_API_VERSION,
+            "resolve",
+            context.target,
+        )
+        if (
+            selected.distribution,
+            selected.distribution_version,
+            selected.provider_id,
+        ) != (distribution, distribution_version, provider_id):
+            raise ScenarioCaptureProviderError("family-provider-installation-mismatch")
+        contribution = _validate_contribution(selected.provider.resume_capture(context))
+    except ScenarioCaptureProviderError:
+        raise
+    except Exception:
+        raise ScenarioCaptureProviderError("family-capture-resume-invalid") from None
+    return ResolvedScenarioCapture(
+        CollectorRegistry(contribution.registrations),
+        contribution,
+        context,
+        selected.provider_id,
+        EXTENSION_API_VERSION,
+        selected.distribution,
+        selected.distribution_version,
+        selected.entry_point,
+    )
+
+
+def _resolve_family_capture_receipt(
+    adapter: Mapping[str, object], family: object
+) -> ResolvedScenarioCapture:
+    """Restore safe trial lineage and reject malformed family receipts."""
+
+    from aptl.backends.scenario_family import QualifiedFamilyTarget
+    from aptl.backends.scenario_capture import ScenarioCaptureResumeContext
+
+    try:
+        if not isinstance(family, Mapping) or family.get("api_version") != "1":
+            raise ValueError
+        target = QualifiedFamilyTarget(
+            PackIdentity(
+                adapter["pack_id"],
+                adapter["pack_version"],
+                adapter["pack_set_digest"],
+            ),
+            family["family_id"],
+            family["family_digest"],
+            BackendIdentity(
+                adapter["backend_target_name"],
+                adapter["backend_target_version"],
+                adapter["backend_profile"],
+                provider=family["backend_provider"],
+                transport=adapter["backend_transport"],
+            ),
+        )
+        return resolve_family_capture_resume(
+            ScenarioCaptureResumeContext(target, family["trial_identity"]),
+            adapter["distribution"],
+            adapter["distribution_version"],
+            adapter["provider_id"],
+        )
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("active authority family adapter invalid") from None
+
+
+__all__ = [
+    "ScenarioCaptureProviderError",
+    "resolve_scenario_capture",
+    "resolve_family_capture_resume",
+]

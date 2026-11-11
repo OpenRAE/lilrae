@@ -11,6 +11,13 @@ updated_at: 2026-07-26T04:44:22.303558Z
 
 # APP-3: Signed disposable appliance release envelope
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/APP-3/requirement.md).
+
+
 ## Statement
 
 APTL shall assemble and verify a signed, versioned appliance release envelope that binds an immutable golden guest disk to the exact APTL source revision and version, staged participant profile and asset-lock identities, accepted qualification evidence, appliance boundary policy and helper-image digests, supported delivery adapters, and explicit host prerequisites; release verification shall fail closed on unsafe references, unknown fields, duplicate artifacts, digest or signature mismatch, missing offline inputs, golden-state contamination, insufficient multi-machine qualification, or an attempted in-place upgrade.
@@ -21,8 +28,10 @@ For current VM-only seats, ADR-060 defines the signed containment policy.
 Issue #1162 replaces the bespoke release transport with the owner-approved
 GHCR/Cosign delivery in ADR-060. Traceability below names the replacement
 artifacts; ACTIVE status does not assert complete multi-machine qualification.
-APP-1 internal-zone implementation is deferred to #1127; the release must name
-its actual containment contract and must not claim internal-isolation evidence.
+#1127 adds APP-1 seat-component protection as the distinct V3 signed contract.
+V2 releases remain VM-only and must not claim V3 evidence. V3 binds the policy,
+participant-route identity, admitted runtime-plan identity, and helper wire
+version separately so an older image or observation cannot acquire the claim.
 
 Issue #823 supplies the release artifact consumed by the host launcher in issue #824 and the hosted per-seat adapter in issue #825. APP-1 remains the boundary-enforcement authority and APP-2 remains the bounded participant-profile authority; this requirement binds those existing contracts into one immutable release unit without duplicating their schemas.
 

@@ -25,7 +25,6 @@ SERVERS = (
     "wazuh",
     "network",
     "soar",
-    "casemgmt",
     "threatintel",
 )
 

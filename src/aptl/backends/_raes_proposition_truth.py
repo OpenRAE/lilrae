@@ -18,8 +18,11 @@ APTL evaluates exactly the observed-state shapes it actually observes.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
 from typing import Any, Callable
+
+import rfc8785
 
 from raes_contracts.contracts import ExperimentEvidenceRecordModel
 from raes_contracts.planning import EvaluationPlan
@@ -27,7 +30,6 @@ from raes_contracts.runtime_state import RuntimeSnapshot
 
 from aptl.backends.raes_manifest import APTL_RAES_TARGET_NAME, APTL_RAES_TARGET_VERSION
 from aptl.backends.raes_service_index_schema import INTERFACE_PROFILE
-from aptl.core.experiment.trial_plan import compute_source_set_digest
 
 _OBSERVED_STATE = "observed_state"
 _DECLARED_STATE = "declared_state"
@@ -46,6 +48,12 @@ _BACKEND_MANIFEST_REF = f"{APTL_RAES_TARGET_NAME}@{APTL_RAES_TARGET_VERSION}"
 # APTL's readback occurs in scenario time (matching the evaluator's declared
 # supported_time_domains); the backend manifest is the clock authority.
 _TIME_DOMAIN = "scenario_time"
+
+
+def _declared_artifact_digest(projection: Mapping[str, object]) -> str:
+    """Return the ``sha256:`` RFC 8785 digest of one declared-state projection."""
+
+    return f"sha256:{hashlib.sha256(rfc8785.dumps(dict(projection))).hexdigest()}"
 
 
 def _invert(outcome: str) -> str:
@@ -180,7 +188,7 @@ def _declared_node_presence_result(
         "proposition_outcome": outcome,
         "assertion_outcome": outcome if polarity == _POSITIVE else _invert(outcome),
         "evaluation_basis": _DECLARED_STATE,
-        "declared_artifact_digest": compute_source_set_digest(
+        "declared_artifact_digest": _declared_artifact_digest(
             {
                 "proposition_address": proposition_address,
                 "subject_addresses": list(subjects),

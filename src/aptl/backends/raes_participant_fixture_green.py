@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 
 from aptl.backends.raes_participant_fixture_core import (
@@ -163,11 +164,16 @@ def _update_profile(context: _OperationContext) -> VerifiedParticipantOperation:
     change = _scalar(context.arguments, "change")
     allowed = {
         "department:Research": (_PROFILE_DEPARTMENT, "Research"),
-        "contact_email:green.user+validated@techvault.local": (
-            _PROFILE_CONTACT_EMAIL,
-            "green.user+validated@techvault.local",
-        ),
     }
+    # The admitted action supplies the contact value. Core constrains the
+    # editable field and its shape rather than carrying a scenario domain.
+    contact = change.removeprefix("contact_email:")
+    if (
+        change.startswith("contact_email:")
+        and len(contact) <= 254
+        and re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", contact)
+    ):
+        allowed[change] = (_PROFILE_CONTACT_EMAIL, contact)
     if change not in allowed:
         return _failed("profile change is outside the realized domain")
     field, value = allowed[change]

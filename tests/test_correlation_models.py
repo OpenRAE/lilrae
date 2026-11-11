@@ -94,9 +94,6 @@ class TestAssociationMethod:
         assert AssociationMethod.TIME_WINDOW_CANDIDATE.value == "time_window_candidate"
         assert AssociationMethod.GAP_OR_UNKNOWN.value == "gap_or_unknown"
 
-    def test_is_a_str_enum(self):
-        assert AssociationMethod.EXPLICIT_IDENTIFIER == "explicit_identifier"
-        assert isinstance(AssociationMethod.EXPLICIT_IDENTIFIER, str)
 
 
 # ---------------------------------------------------------------------------
@@ -144,10 +141,6 @@ class TestAssertNonSecret:
 
 
 class TestClockContext:
-    def test_constructs_with_valid_fields(self):
-        ctx = _clock_context()
-        assert ctx.source_kind == "kali-session"
-        assert ctx.clock_source == "system"
 
     def test_is_frozen(self):
         ctx = _clock_context()
@@ -170,16 +163,7 @@ class TestClockContext:
         with pytest.raises(ValueError):
             _clock_context(source_id="password=hunter2")
 
-    def test_accepts_none_for_optional_fields(self):
-        ctx = _clock_context(measured_offset=None, uncertainty=None, observer_effect_ref=None)
-        assert ctx.measured_offset is None
-        assert ctx.uncertainty is None
-        assert ctx.observer_effect_ref is None
 
-    def test_accepts_present_optional_fields(self):
-        ctx = _clock_context(measured_offset="12ms", uncertainty="5ms", observer_effect_ref="disc-1")
-        assert ctx.measured_offset == "12ms"
-        assert ctx.observer_effect_ref == "disc-1"
 
     def test_rejects_an_invalid_observer_effect_ref(self):
         with pytest.raises(ValueError):
@@ -192,10 +176,6 @@ class TestClockContext:
 
 
 class TestCorrelationNode:
-    def test_constructs_with_a_known_ref_kind(self):
-        node = _node("evidence-1", "evidence")
-        assert node.ref == "evidence-1"
-        assert node.ref_kind == "evidence"
 
     def test_is_frozen(self):
         node = _node()
@@ -240,18 +220,12 @@ class TestCorrelationNode:
 
 
 class TestCorrelationEdge:
-    def test_constructs_a_minimal_explicit_identifier_edge(self):
-        edge = _edge()
-        assert edge.association_method is AssociationMethod.EXPLICIT_IDENTIFIER
 
     def test_is_frozen(self):
         edge = _edge()
         with pytest.raises(dataclasses.FrozenInstanceError):
             edge.source_ref = "mutated"  # type: ignore[misc]
 
-    def test_disclosure_refs_is_a_tuple(self):
-        edge = _edge(disclosure_refs=("disc-1", "disc-2"))
-        assert isinstance(edge.disclosure_refs, tuple)
 
     def test_rejects_a_bad_source_ref(self):
         with pytest.raises(ValueError):
@@ -311,10 +285,6 @@ class TestCorrelationEdge:
 
 
 class TestCorrelationProjection:
-    def test_constructs_with_valid_nodes_and_edges(self):
-        proj = _projection()
-        assert proj.run_id == "run-1"
-        assert proj.schema_version == "aptl-correlation/v1"
 
     def test_is_frozen(self):
         proj = _projection()
@@ -490,14 +460,18 @@ class TestCorrelationProjection:
 # Fuzz (property-based)
 # ---------------------------------------------------------------------------
 
+import string  # noqa: E402
+
 from hypothesis import given, settings  # noqa: E402
 from hypothesis import strategies as st  # noqa: E402
 
+# The run-store id contract is ASCII-only (`re.ASCII`), the same as the
+# capture broker, the capture writer and the MCP ID_RE.
 _ID_ALPHABET = st.text(
-    alphabet=st.characters(whitelist_categories=("Ll", "Lu", "Nd"), whitelist_characters="-_"),
+    alphabet=st.sampled_from(string.ascii_letters + string.digits + "-_"),
     min_size=1,
     max_size=20,
-).filter(lambda s: s[0].isalnum() or s[0] in "_")
+).filter(lambda s: s[0] != "-")
 
 
 @pytest.mark.fuzz

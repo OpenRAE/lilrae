@@ -9,14 +9,17 @@ vs project-tree bundle choice. Both names are re-exported from
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from aptl.core.config import AptlConfig
 from aptl.core.scenario_bundle import (
+    EnvPackError,
     ScenarioBundle,
     env_pack_bundle,
     project_tree_bundle,
 )
+from aptl.utils.pathsafe import PathContainmentError, open_private_dir_contained_nofollow
 
 _PACK_STAGING_RELPATH = Path(".aptl/staged-packs")
 
@@ -31,7 +34,7 @@ def _resolve_scenario_path(
     An explicit project-contained path is a development override. Otherwise a
     project-tree source must be configured explicitly; there is no implicit
     in-tree scenario fallback. A backend is handed a scenario rather than
-    owning one, so the operator chooses it before ``aptl lab start``.
+    owning one, so the operator chooses it before ``lilrae lab start``.
     """
 
     if scenario_path is not None:
@@ -42,6 +45,8 @@ def _resolve_scenario_path(
         )
     if config is not None:
         selection = config.scenario
+        if selection.identity is None:
+            raise ValueError("scenario selection requires an explicit scenario identity or path")
         relative = Path(f"{selection.identity}.sdl.yaml")
         base = Path(selection.root) if selection.root else Path("scenarios")
         return project_dir / base / relative
@@ -54,6 +59,8 @@ def resolve_scenario_bundle(
     project_dir: Path,
     scenario_path: Path | None,
     config: AptlConfig | None = None,
+    *,
+    staging_root: Path | None = None,
 ) -> ScenarioBundle:
     """Resolve the scenario bundle: a staged env-pack when selected, else in-tree.
 
@@ -63,13 +70,32 @@ def resolve_scenario_bundle(
     inside :func:`env_pack_bundle`; the pack is never read in place.
     """
 
+    # The operator selects this trusted anchor; only appended source/staging
+    # components are untrusted locators and must retain no-follow traversal.
+    project_dir = project_dir.resolve()
+    if scenario_path is None and config is not None and config.scenario.identity is None:
+        raise ValueError("scenario selection requires an explicit scenario identity or path")
     if (
         scenario_path is None
         and config is not None
         and config.scenario.source == "env-pack"
     ):
+        directory = config.scenario.pack_directory
+        source = project_dir / directory if directory is not None else None
+        if staging_root is None:
+            try:
+                fd = open_private_dir_contained_nofollow(
+                    project_dir, _PACK_STAGING_RELPATH
+                )
+                os.close(fd)
+            except (OSError, PathContainmentError) as exc:
+                raise EnvPackError("env-pack staging unavailable") from exc
         return env_pack_bundle(
-            project_dir / _PACK_STAGING_RELPATH, config.scenario.identity
+            staging_root
+            if staging_root is not None
+            else project_dir / _PACK_STAGING_RELPATH,
+            config.scenario.identity,
+            source_pack=source,
         )
     return project_tree_bundle(
         project_dir, _resolve_scenario_path(project_dir, scenario_path, config)

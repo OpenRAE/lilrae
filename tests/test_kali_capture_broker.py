@@ -1,0 +1,521 @@
+"""Unit tests for the sidecar-owned Kali PTY broker."""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import signal
+import stat
+import sys
+from pathlib import Path
+
+import pytest
+
+
+_BROKER_PATH = Path(__file__).parent.parent / "containers/kali-capture/broker.py"
+
+
+def _load_broker():
+    spec = importlib.util.spec_from_file_location("kali_capture_broker", _BROKER_PATH)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(scope="module")
+def broker():
+    return _load_broker()
+
+
+def test_activation_is_create_once_and_idempotent(broker, tmp_path):
+    runtime = tmp_path / "runtime"
+    first = broker.activate_authority(
+        runtime,
+        run_id="run-1",
+        plan_id="capture-plan-1",
+        binding_id="aptl.collector.redteam-session-transcript",
+        now=lambda: "2026-09-14T10:00:00Z",
+    )
+    second = broker.activate_authority(
+        runtime,
+        run_id="run-1",
+        plan_id="capture-plan-1",
+        binding_id="aptl.collector.redteam-session-transcript",
+        now=lambda: "2026-09-14T10:00:01Z",
+    )
+
+    assert first == second
+    assert first["activated_at"] == "2026-09-14T10:00:00Z"
+    assert stat.S_IMODE((runtime / "authority.json").stat().st_mode) == 0o600
+
+
+def test_activation_refuses_changed_authority(broker, tmp_path):
+    runtime = tmp_path / "runtime"
+    broker.activate_authority(
+        runtime,
+        run_id="run-1",
+        plan_id="capture-plan-1",
+        binding_id="aptl.collector.redteam-session-transcript",
+    )
+
+    with pytest.raises(ValueError, match="authority conflict"):
+        broker.activate_authority(
+            runtime,
+            run_id="run-2",
+            plan_id="capture-plan-1",
+            binding_id="aptl.collector.redteam-session-transcript",
+        )
+
+
+@pytest.mark.parametrize("value", ["", ".hidden", "../escape", "a/b", "a b"])
+def test_activation_rejects_unsafe_ids(broker, tmp_path, value):
+    with pytest.raises(ValueError):
+        broker.activate_authority(
+            tmp_path / "runtime",
+            run_id=value,
+            plan_id="capture-plan-1",
+            binding_id="aptl.collector.redteam-session-transcript",
+        )
+
+
+def test_activation_accepts_an_adapter_transcript_binding(broker, tmp_path):
+    """The broker records the scenario adapter's own transcript registration."""
+    runtime = tmp_path / "runtime"
+    authority = broker.activate_authority(
+        runtime,
+        run_id="run-1",
+        plan_id="capture-plan-1",
+        binding_id="rpt.collector.redteam-session-transcript",
+    )
+
+    assert authority["binding_id"] == "rpt.collector.redteam-session-transcript"
+    assert broker.read_authority(runtime)["binding_id"] == authority["binding_id"]
+
+
+@pytest.mark.parametrize("value", ["", ".hidden", "../escape", "a/b", "a b"])
+def test_activation_rejects_unsafe_binding_ids(broker, tmp_path, value):
+    """A binding id must be one safe path segment, like the run and plan ids."""
+    runtime = tmp_path / "runtime"
+    with pytest.raises(ValueError):
+        broker.activate_authority(
+            runtime,
+            run_id="run-1",
+            plan_id="capture-plan-1",
+            binding_id=value,
+        )
+
+
+@pytest.mark.parametrize("value", ["", ".hidden", "../escape", "a/b", "a b"])
+def test_read_authority_rejects_an_unsafe_binding_id(broker, tmp_path, value):
+    """A stored authority with an unsafe binding id is not served."""
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    authority = {"run_id": "run-1", "plan_id": "capture-plan-1", "binding_id": value}
+    (runtime / "authority.json").write_text(json.dumps(authority), encoding="utf-8")
+    with pytest.raises(ValueError):
+        broker.read_authority(runtime)
+
+
+def test_export_refuses_accepted_session_without_final_metadata(broker, tmp_path):
+    authority = {
+        "run_id": "run-1",
+        "plan_id": "capture-plan-1",
+        "binding_id": "aptl.collector.redteam-session-transcript",
+        "activated_at": "2026-09-14T10:00:00Z",
+    }
+    broker.SessionRecorder(tmp_path / "captures", authority, session_id="session-1")
+
+    with pytest.raises(ValueError, match="not finalized"):
+        broker.export_capture(tmp_path / "captures", authority)
+
+
+def test_inner_ssh_command_uses_only_loopback_target_and_preserves_original_as_one_arg(
+    broker,
+):
+    original = "printf '%s' 'hello world'"
+
+    command = broker.inner_ssh_command(original)
+
+    assert command[-2] == "kali@127.0.0.1"
+    assert "2222" in command
+    assert command[-1] == original
+    assert command.count(original) == 1
+    assert "StrictHostKeyChecking=yes" in command
+
+
+def test_session_identity_preserves_mcp_correlation_ids(broker):
+    authority = {"run_id": "run-1"}
+
+    session_id = broker.session_identity_from_environment(
+        authority,
+        {
+            "APTL_SESSION_ID": "session-1",
+            "APTL_RUN_ID": "run-1",
+            "APTL_TRACE_ID": "run-1",
+        },
+    )
+
+    assert session_id == "session-1"
+
+
+@pytest.mark.parametrize(
+    "environment",
+    [
+        {
+            "APTL_SESSION_ID": "session-1",
+            "APTL_RUN_ID": "other-run",
+            "APTL_TRACE_ID": "other-run",
+        },
+        {
+            "APTL_SESSION_ID": "session-1",
+            "APTL_RUN_ID": "run-1",
+            "APTL_TRACE_ID": "other-run",
+        },
+        {
+            "APTL_SESSION_ID": "../unsafe",
+            "APTL_RUN_ID": "run-1",
+            "APTL_TRACE_ID": "run-1",
+        },
+    ],
+)
+def test_session_identity_rejects_invalid_correlation(broker, environment):
+    with pytest.raises(ValueError):
+        broker.session_identity_from_environment({"run_id": "run-1"}, environment)
+
+
+def test_broker_rejects_new_session_after_quiesce_closes_admission(
+    broker, tmp_path, monkeypatch
+):
+    runtime = tmp_path / "runtime"
+    captures = tmp_path / "captures"
+    broker.activate_authority(
+        runtime,
+        run_id="run-1",
+        plan_id="capture-plan-1",
+        binding_id="aptl.collector.redteam-session-transcript",
+    )
+    broker.quiesce(runtime)
+    monkeypatch.setattr(broker, "_RUNTIME_ROOT", runtime)
+    monkeypatch.setattr(broker, "_CAPTURE_ROOT", captures)
+    monkeypatch.setenv("APTL_SESSION_ID", "session-1")
+    monkeypatch.setenv("APTL_RUN_ID", "run-1")
+    monkeypatch.setenv("APTL_TRACE_ID", "run-1")
+    monkeypatch.setattr(broker.signal, "signal", lambda *_args: None)
+
+    with pytest.raises(ValueError, match="admission is closed"):
+        broker.run_broker()
+
+    assert not (captures / "run-1/accepted-sessions.jsonl").exists()
+
+
+def test_broker_source_contains_no_shell_execution_or_legacy_capture_privileges():
+    source = _BROKER_PATH.read_text(encoding="utf-8")
+
+    assert "shell=True" not in source
+    assert "auditd" not in source
+    assert "tcpdump" not in source
+    assert "accton" not in source
+
+
+def test_export_payload_is_json_serializable(broker, tmp_path):
+    authority = {
+        "run_id": "run-1",
+        "plan_id": "capture-plan-1",
+        "binding_id": "aptl.collector.redteam-session-transcript",
+        "activated_at": "2026-09-14T10:00:00Z",
+    }
+    recorder = broker.SessionRecorder(
+        tmp_path / "captures", authority, session_id="session-1"
+    )
+    recorder.finish("remote-eof")
+
+    json.dumps(broker.export_capture(tmp_path / "captures", authority))
+
+
+def test_recorder_discloses_loss_instead_of_exceeding_run_quota(
+    broker,
+    tmp_path,
+    monkeypatch,
+):
+    authority = {
+        "run_id": "run-1",
+        "plan_id": "capture-plan-1",
+        "binding_id": "aptl.collector.redteam-session-transcript",
+        "activated_at": "2026-09-14T10:00:00Z",
+    }
+    monkeypatch.setattr(broker, "_MAX_CAPTURE_BYTES", 1024)
+    recorder = broker.SessionRecorder(
+        tmp_path / "captures",
+        authority,
+        session_id="session-1",
+    )
+
+    recorder.append("output", b"one byte exceeds the reserved envelope")
+    recorder.finish("clean-exit")
+
+    session = broker.export_capture(tmp_path / "captures", authority)["sessions"][0]
+    assert session["frames"] == []
+    assert session["loss_count"] == 1
+
+
+def test_leading_option_command_cannot_configure_inner_ssh(broker):
+    import subprocess
+
+    command = broker.inner_ssh_command("-oProxyCommand=printf option-injected")
+    result = subprocess.run(
+        [command[0], "-G", "-F", "none", *command[1:]],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "proxycommand printf option-injected" not in result.stdout
+
+
+def _prepare_broker_session(broker, tmp_path, monkeypatch):
+    runtime = tmp_path / "runtime"
+    broker.activate_authority(
+        runtime,
+        run_id="run-1",
+        plan_id="plan-1",
+        binding_id="aptl.collector.redteam-session-transcript",
+    )
+    monkeypatch.setattr(broker, "_RUNTIME_ROOT", runtime)
+    monkeypatch.setattr(broker, "_CAPTURE_ROOT", tmp_path / "captures")
+    for name, value in (
+        ("APTL_SESSION_ID", "session-1"),
+        ("APTL_RUN_ID", "run-1"),
+        ("APTL_TRACE_ID", "run-1"),
+    ):
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(broker.signal, "signal", lambda *_args: None)
+    return runtime
+
+
+def test_duplicate_session_preserves_original_pid_registration(
+    broker, tmp_path, monkeypatch
+):
+    runtime = _prepare_broker_session(broker, tmp_path, monkeypatch)
+    record = runtime / "sessions" / "session-1.pid"
+    record.parent.mkdir(exist_ok=True)
+    record.write_text("12345\n")
+    with pytest.raises(FileExistsError):
+        broker.run_broker()
+    assert record.read_text() == "12345\n"
+
+
+def test_broker_relays_characters_and_interrupt_bytes_and_restores_outer_terminal(
+    broker, tmp_path, monkeypatch, mocker
+):
+    import os
+    import pty
+    import select
+    import termios
+
+    _prepare_broker_session(broker, tmp_path, monkeypatch)
+    master, slave = pty.openpty()
+    saved = termios.tcgetattr(slave)
+    child = mocker.Mock()
+    child.poll.return_value = 0
+    monkeypatch.setattr(broker.subprocess, "Popen", lambda *_args, **_kwargs: child)
+    monkeypatch.setattr(broker.sys, "stdin", mocker.Mock(fileno=lambda: slave))
+
+    def relay(*_args):
+        flags = termios.tcgetattr(slave)[3]
+        assert not flags & (termios.ICANON | termios.ECHO | termios.ISIG)
+        os.write(master, b"x\x03")
+        assert select.select([slave], [], [], 1)[0]
+        assert os.read(slave, 2) == b"x\x03"
+        return 0
+
+    monkeypatch.setattr(broker, "_relay", relay)
+    try:
+        assert broker.run_broker() == 0
+        restored = termios.tcgetattr(slave)
+        # Darwin may report PENDIN after switching back to canonical mode.
+        # It is kernel-maintained input state, not a configured terminal mode.
+        for attributes in (saved, restored):
+            attributes[3] &= ~getattr(termios, "PENDIN", 0)
+        assert restored == saved
+    finally:
+        os.close(master)
+        os.close(slave)
+
+
+def test_hung_up_pty_session_still_finishes_and_releases_its_registration(
+    broker, tmp_path, monkeypatch, mocker
+):
+    """Closing a PTY session sends the broker SIGHUP; teardown must still run."""
+    import os
+    import signal
+
+    runtime = _prepare_broker_session(broker, tmp_path, monkeypatch)
+    handlers = {}
+    monkeypatch.setattr(broker.signal, "signal", handlers.__setitem__)
+    child = mocker.Mock(pid=4321)
+    child.poll.return_value = None
+    monkeypatch.setattr(broker.subprocess, "Popen", lambda *_args, **_kwargs: child)
+    killed = []
+    monkeypatch.setattr(broker.os, "killpg", lambda *args: killed.append(args))
+    stdin_read, stdin_write = os.pipe()
+    monkeypatch.setattr(broker.sys, "stdin", mocker.Mock(fileno=lambda: stdin_read))
+
+    def hang_up(*_args):
+        teardown_handler = handlers[signal.SIGTERM]
+
+        def wait_during_teardown(**_kwargs):
+            assert handlers[signal.SIGTERM] is signal.SIG_IGN
+            # Even a callback already dispatched before SIG_IGN was installed
+            # cannot interrupt cleanup once teardown has begun.
+            teardown_handler(signal.SIGTERM, None)
+            return 0
+
+        child.wait.side_effect = wait_during_teardown
+        handlers[signal.SIGHUP](signal.SIGHUP, None)
+
+    monkeypatch.setattr(broker, "_relay", hang_up)
+    try:
+        returncode = broker.run_broker()
+    finally:
+        os.close(stdin_read)
+        os.close(stdin_write)
+    metadata = json.loads(
+        (tmp_path / "captures/run-1/sessions/session-1/metadata.json").read_text()
+    )
+
+    assert returncode == 129
+    assert not (runtime / "sessions/session-1.pid").exists()
+    assert metadata["close_reason"] == "signal"
+    assert killed == [(4321, signal.SIGTERM)]
+    # A quiesce SIGTERM arriving during teardown cannot cut it short.
+    assert handlers[signal.SIGTERM] is signal.SIG_IGN
+    assert handlers[signal.SIGHUP] is signal.SIG_IGN
+
+
+@pytest.mark.parametrize("action", ["stop_session", "await_session"])
+def test_session_finalization_checks_authority_before_signalling(
+    broker, tmp_path, monkeypatch, action
+):
+    runtime = tmp_path / "runtime"
+    broker.activate_authority(
+        runtime, run_id="run-1", plan_id="plan-1", binding_id="binding-1"
+    )
+    signals = []
+    monkeypatch.setattr(broker.os, "kill", lambda *args: signals.append(args))
+    finalize = getattr(broker, action)
+    with pytest.raises(ValueError, match="authority mismatch"):
+        finalize("other-run", "session-1", runtime, tmp_path / "captures")
+    with pytest.raises(ValueError, match="invalid session"):
+        finalize("run-1", "../escape", runtime, tmp_path / "captures")
+    assert signals == []
+
+
+def test_stop_session_only_signals_the_selected_registration(
+    broker, tmp_path, monkeypatch
+):
+    runtime = tmp_path / "runtime"
+    broker.activate_authority(
+        runtime, run_id="run-1", plan_id="plan-1", binding_id="binding-1"
+    )
+    sessions = runtime / "sessions"
+    sessions.mkdir(exist_ok=True)
+    selected = sessions / "selected.pid"
+    selected.write_text("1234")
+    peer = sessions / "peer.pid"
+    peer.write_text("5678")
+    signals = []
+
+    def terminate(pid, signum):
+        signals.append((pid, signum))
+        selected.unlink()
+
+    monkeypatch.setattr(broker.os, "kill", terminate)
+    captures = tmp_path / "captures"
+    _finalized_session(captures, "selected")
+    broker.stop_session("run-1", "selected", runtime, captures)
+    broker.stop_session("run-1", "selected", runtime, captures)
+    assert signals == [(1234, signal.SIGTERM)]
+    assert peer.exists()
+    assert not (runtime / "quiesce").exists()
+
+
+def _finalized_session(captures, session_id, *, metadata=True):
+    root = captures / "run-1" / "sessions" / session_id
+    root.mkdir(parents=True)
+    (root / "frames.jsonl").write_text("")
+    if metadata:
+        (root / "metadata.json").write_text("{}")
+    return root
+
+
+def _activated_runtime(broker, tmp_path):
+    runtime = tmp_path / "runtime"
+    broker.activate_authority(
+        runtime, run_id="run-1", plan_id="plan-1", binding_id="binding-1"
+    )
+    (runtime / "sessions").mkdir(exist_ok=True)
+    return runtime
+
+
+def test_await_session_waits_for_finalization_without_signalling(
+    broker, tmp_path, monkeypatch
+):
+    runtime = _activated_runtime(broker, tmp_path)
+    captures = tmp_path / "captures"
+    registration = runtime / "sessions" / "remote.pid"
+    registration.write_text("1234")
+    root = _finalized_session(captures, "remote", metadata=False)
+    signals = []
+    monkeypatch.setattr(broker.os, "kill", lambda *args: signals.append(args))
+
+    def broker_finalizes(_seconds):
+        (root / "metadata.json").write_text("{}")
+        registration.unlink()
+
+    monkeypatch.setattr(broker.time, "sleep", broker_finalizes)
+    broker.await_session("run-1", "remote", runtime, captures)
+    assert signals == []
+
+
+@pytest.mark.parametrize("action", ["stop_session", "await_session"])
+@pytest.mark.parametrize(
+    ("state", "error"),
+    [
+        ("missing", "CaptureSessionMissing"),
+        ("frames-only", "CaptureSessionUnfinished"),
+        ("registered", "CaptureSessionUnfinished"),
+    ],
+)
+def test_session_finalization_requires_final_metadata(
+    broker, tmp_path, monkeypatch, action, state, error
+):
+    runtime = _activated_runtime(broker, tmp_path)
+    captures = tmp_path / "captures"
+    if state != "missing":
+        _finalized_session(captures, "session-1", metadata=False)
+    if state == "registered":
+        (runtime / "sessions" / "session-1.pid").write_text("1234")
+    monkeypatch.setattr(broker.os, "kill", lambda *_args: None)
+    finalize = getattr(broker, action)
+    expected = getattr(broker, error)
+    with pytest.raises(expected):
+        finalize("run-1", "session-1", runtime, captures, 0)
+
+
+@pytest.mark.parametrize("action", ["stop-session", "await-session"])
+@pytest.mark.parametrize(
+    ("state", "code"), [("finalized", 0), ("missing", 3), ("frames-only", 4)]
+)
+def test_session_finalization_exit_codes(
+    broker, tmp_path, monkeypatch, action, state, code
+):
+    runtime = _activated_runtime(broker, tmp_path)
+    captures = tmp_path / "captures"
+    if state != "missing":
+        _finalized_session(captures, "session-1", metadata=state == "finalized")
+    monkeypatch.setattr(broker, "_RUNTIME_ROOT", runtime)
+    monkeypatch.setattr(broker, "_CAPTURE_ROOT", captures)
+    argv = [action, "--run-id", "run-1", "--session-id", "session-1"]
+    assert broker.main(argv) == code

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 from pathlib import Path
@@ -12,7 +13,8 @@ from fastapi.testclient import TestClient
 
 from aptl.core.runstore import LocalRunStore
 from aptl.core.session import ScenarioSession
-from aptl.workbench.runtime import WorkbenchPaths
+from aptl.workbench.runtime import GuestRuntimeBinding, WorkbenchPaths
+from aptl.workbench.profiles import profile_for
 
 
 def _runtime_paths(payload_root: Path, generated_config_dir: Path) -> WorkbenchPaths:
@@ -34,7 +36,6 @@ def test_profiles_expose_exactly_the_allowed_mcp_servers() -> None:
         "aptl-wazuh",
     )
     assert profile_for(ProfileId.BLUE).server_ids == (
-        "aptl-casemgmt",
         "aptl-indexer",
         "aptl-network",
         "aptl-soar",
@@ -56,13 +57,6 @@ def test_profiles_expose_exactly_the_allowed_mcp_servers() -> None:
         server.server_id: server.tool_names
         for server in profile_for(ProfileId.BLUE).servers
     } == {
-        "aptl-casemgmt": (
-            "cases_list_cases",
-            "cases_create_case",
-            "cases_add_observable",
-            "cases_update_case",
-            "cases_create_alert",
-        ),
         "aptl-indexer": (
             "indexer_query",
             "indexer_create_rule",
@@ -125,7 +119,6 @@ def test_profile_renderer_keeps_credentials_out_of_client_config(
         "mcp/mcp-wazuh/build/index.js",
         "mcp/mcp-network/build/index.js",
         "mcp/mcp-threatintel/build/index.js",
-        "mcp/mcp-casemgmt/build/index.js",
         "mcp/mcp-soar/build/index.js",
     ):
         target = payload_root / entrypoint
@@ -145,7 +138,6 @@ def test_profile_renderer_keeps_credentials_out_of_client_config(
             "API_USERNAME",
             "API_PASSWORD",
             "MISP_API_KEY",
-            "THEHIVE_API_KEY",
             "SHUFFLE_API_KEY",
         },
     )
@@ -153,7 +145,6 @@ def test_profile_renderer_keeps_credentials_out_of_client_config(
     rendered = config_path.read_text(encoding="utf-8")
     parsed = json.loads(rendered)
     assert set(parsed["mcpServers"]) == {
-        "aptl-casemgmt",
         "aptl-indexer",
         "aptl-network",
         "aptl-soar",
@@ -190,7 +181,6 @@ def test_profile_renderer_rejects_missing_required_credential_alias(
             "INDEXER_PASSWORD",
             "API_USERNAME",
             "API_PASSWORD",
-            "THEHIVE_API_KEY",
             "SHUFFLE_API_KEY",
         },
     }
@@ -234,7 +224,7 @@ def test_profile_switch_closes_the_previous_runtime_and_records_the_active_trace
     from aptl.workbench import ProfileId, WorkbenchRuntime
 
     session_manager = ScenarioSession(tmp_path / "state")
-    active_session = session_manager.start("techvault")
+    active_session = session_manager.start("fixture-range")
     adapter = _FakeAdapter()
     credentials = _FakeCredentials()
     payload_root = _payload_with_all_artifacts(tmp_path / "payload")
@@ -242,6 +232,7 @@ def test_profile_switch_closes_the_previous_runtime_and_records_the_active_trace
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(payload_root, tmp_path / "generated"),
         credential_broker=credentials,
         model="claude-sonnet-4-5-20250929",
@@ -276,6 +267,7 @@ def test_profile_runtime_fails_closed_without_an_active_scenario(
         ScenarioSession(tmp_path / "state"),
         _FakeAdapter(),
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -294,12 +286,13 @@ def test_runtime_creates_its_managed_config_parent_on_fresh_state(
     from aptl.workbench import ProfileId, WorkbenchRuntime
 
     session_manager = ScenarioSession(tmp_path / "state")
-    session_manager.start("techvault")
+    session_manager.start("fixture-range")
     generated = tmp_path / "state" / "workbench" / "mcp-config"
     runtime = WorkbenchRuntime(
         session_manager,
         _FakeAdapter(),
         LocalRunStore(tmp_path / "state" / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             generated,
@@ -320,12 +313,13 @@ def test_failed_agent_start_revokes_credentials_and_removes_generated_config(
     from aptl.workbench import ProfileId, WorkbenchRuntime
 
     session_manager = ScenarioSession(tmp_path / "state")
-    session_manager.start("techvault")
+    session_manager.start("fixture-range")
     credentials = _FakeCredentials()
     runtime = WorkbenchRuntime(
         session_manager,
         _FailingAdapter(),
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -347,13 +341,14 @@ def test_runtime_rejects_a_profile_with_an_unexpected_mcp_tool_inventory(
     from aptl.workbench import ProfileId, WorkbenchRuntime, WorkbenchStateError
 
     session_manager = ScenarioSession(tmp_path / "state")
-    session_manager.start("techvault")
+    session_manager.start("fixture-range")
     adapter = _UnexpectedInventoryAdapter()
     credentials = _FakeCredentials()
     runtime = WorkbenchRuntime(
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -376,13 +371,14 @@ def test_runtime_keeps_a_rejected_agent_until_failed_cleanup_is_retried(
     from aptl.workbench import ProfileId, WorkbenchRuntime, WorkbenchStateError
 
     session_manager = ScenarioSession(tmp_path / "state")
-    session_manager.start("techvault")
+    session_manager.start("fixture-range")
     adapter = _InventoryFailureWithFailedCloseAdapter()
     credentials = _FakeCredentials()
     runtime = WorkbenchRuntime(
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -419,13 +415,14 @@ def test_runtime_validates_a_switch_target_before_closing_the_active_profile(
     )
 
     session_manager = ScenarioSession(tmp_path / "state")
-    session_manager.start("techvault")
+    session_manager.start("fixture-range")
     adapter = _FakeAdapter()
     credentials = _FakeCredentials()
     runtime = WorkbenchRuntime(
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -450,12 +447,13 @@ def test_profile_switch_waits_for_an_active_agent_turn(tmp_path: Path) -> None:
     from aptl.workbench import ProfileId, WorkbenchRuntime
 
     session_manager = ScenarioSession(tmp_path / "state")
-    session_manager.start("techvault")
+    session_manager.start("fixture-range")
     adapter = _BlockingAdapter()
     runtime = WorkbenchRuntime(
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -495,11 +493,12 @@ def test_browser_workbench_is_a_separate_authenticated_profile_surface(
     from aptl.workbench.app import BrowserPrincipal, create_participant_workbench_app
 
     session_manager = ScenarioSession(tmp_path / "state")
-    session_manager.start("techvault")
+    session_manager.start("fixture-range")
     runtime = WorkbenchRuntime(
         session_manager,
         _FakeAdapter(),
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -602,6 +601,148 @@ def test_browser_workbench_is_a_separate_authenticated_profile_surface(
     )
 
 
+@pytest.mark.skipif(os.name != "posix", reason="the bounded runner is POSIX-only")
+def test_a_timed_out_turn_keeps_the_runner_report_in_the_record_and_the_409(
+    tmp_path: Path,
+) -> None:
+    """A provider timeout reaches the turn record and the participant (#963).
+
+    The turn runs through the real bounded runner with a child that writes a
+    little output and then hangs. The regression: ``agent_turn_failed`` held
+    only the request hash and the 409 said only "Agent request unavailable",
+    so the timeout, the withheld output and the cleanup never reached anyone.
+    """
+
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    answer, events = _send_one_message(tmp_path, _HangingAgentAdapter(work_dir))
+
+    failed = json.loads(events.splitlines()[-1])
+    process = failed["process"]
+    cleanup = process["cleanup"]
+    assert failed["event"] == "agent_turn_failed"
+    assert process["reason"] == "agent request exceeded the configured timeout"
+    assert (process["withheld_stdout_bytes"], process["withheld_stderr_bytes"]) == (
+        len(_HANGING_AGENT_OUTPUT),
+        0,
+    )
+    assert cleanup["residual"] == []
+    assert answer.status_code == 409
+    assert answer.json()["detail"] == (
+        "Agent request unavailable: participant agent request failed: agent "
+        "request exceeded the configured timeout; withheld captured output "
+        f"(stdout {len(_HANGING_AGENT_OUTPUT)} bytes, stderr 0 bytes); process "
+        f"group {cleanup['process_group']} cleanup took {cleanup['seconds']:.2f}s; "
+        "residual: none observed"
+    )
+    for secret in ("inspect the target", _HANGING_AGENT_OUTPUT, _CANARY):
+        assert secret not in events
+        assert secret not in answer.text
+
+
+def test_other_agent_failures_keep_the_fixed_turn_record_and_409(
+    tmp_path: Path,
+) -> None:
+    """Only the bounded runner's report is added; other failures stay fixed."""
+
+    answer, events = _send_one_message(tmp_path, _RejectingAgentAdapter())
+
+    failed = json.loads(events.splitlines()[-1])
+    assert failed["event"] == "agent_turn_failed"
+    assert "process" not in failed
+    assert answer.status_code == 409
+    assert answer.json()["detail"] == (
+        "Agent request unavailable: participant agent request failed"
+    )
+
+
+def _send_one_message(tmp_path: Path, adapter: object) -> tuple[object, str]:
+    """Start the red profile, send one message, return the answer and events."""
+
+    from aptl.workbench import WorkbenchRuntime
+    from aptl.workbench.app import BrowserPrincipal, create_participant_workbench_app
+
+    session_manager = ScenarioSession(tmp_path / "state")
+    session_manager.start("fixture-range")
+    runtime = WorkbenchRuntime(
+        session_manager,
+        adapter,
+        LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
+        paths=_runtime_paths(
+            _payload_with_all_artifacts(tmp_path / "payload"),
+            tmp_path / "generated",
+        ),
+        credential_broker=_FakeCredentials(),
+        model="claude-sonnet-4-5-20250929",
+    )
+    client = TestClient(
+        create_participant_workbench_app(
+            runtime, lambda _request: BrowserPrincipal("seat", ("red",))
+        )
+    )
+    assert client.post("/workbench/profiles/red").status_code == 200
+    answer = client.post("/workbench/messages", json={"message": "inspect the target"})
+    events = (
+        tmp_path
+        / "runs"
+        / session_manager.get_active().trace_id
+        / "workbench"
+        / "events.jsonl"
+    ).read_text(encoding="utf-8")
+    return answer, events
+
+
+# Written by the hanging agent child before it stalls, and by nobody else.
+_HANGING_AGENT_OUTPUT = "partial-output-963"
+_CANARY = "canary-963-workbench"
+
+
+class _HangingAgentAdapter:
+    """Run each turn through the real bounded runner; the child never ends."""
+
+    def __init__(self, work_dir: Path) -> None:
+        self._work_dir = work_dir
+        self._inner = _FakeAdapter()
+        self.launch = self._inner.launch
+        self.close = self._inner.close
+        self.list_tools = self._inner.list_tools
+
+    def respond(self, handle: object, message: str) -> str:
+        from aptl.workbench.process import BoundedProcessRunner
+
+        del handle
+        result = BoundedProcessRunner.run(
+            (
+                sys.executable,
+                "-c",
+                "import sys, time; sys.stdout.write(sys.argv[1]);"
+                " sys.stdout.flush(); time.sleep(30)",
+                _HANGING_AGENT_OUTPUT,
+            ),
+            env={"PATH": "/usr/bin:/bin", "CANARY": _CANARY},
+            cwd=self._work_dir,
+            stdin=message.encode(),
+            timeout_seconds=1.0,
+            max_output_bytes=1024,
+        )
+        return result.stdout.decode()
+
+
+class _RejectingAgentAdapter(_HangingAgentAdapter):
+    """Fail each turn the way an adapter rejects a provider result."""
+
+    def __init__(self) -> None:
+        super().__init__(Path("."))
+
+    def respond(self, handle: object, message: str) -> str:
+        from aptl.workbench.process import AgentExecutionError
+
+        del handle, message
+        raise AgentExecutionError("agent request failed")
+
+
 class _FakeAdapter:
     def __init__(self) -> None:
         self.launches: list[object] = []
@@ -695,7 +836,6 @@ def _payload_with_all_artifacts(payload_root: Path) -> Path:
         "wazuh",
         "network",
         "threatintel",
-        "casemgmt",
         "soar",
     ):
         artifact = payload_root / "mcp" / f"mcp-{profile}" / "build" / "index.js"

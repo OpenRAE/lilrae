@@ -30,10 +30,15 @@ from aptl.utils._pathsafe_core import (
 
 
 def _open_dir_traverse_nofollow(component: str, parent_fd: int) -> int:
-    """Open an intermediate directory without requiring listing permission."""
+    """Open an intermediate directory without requiring listing permission.
+
+    Linux has ``O_PATH`` and macOS has ``O_SEARCH``. Each opens a directory
+    that grants only search (execute) permission. ``O_RDONLY`` needs read
+    permission, so it is the last choice.
+    """
 
     flags = (
-        getattr(os, "O_PATH", os.O_RDONLY)
+        getattr(os, "O_PATH", getattr(os, "O_SEARCH", os.O_RDONLY))
         | os.O_DIRECTORY
         | os.O_NOFOLLOW
         | os.O_CLOEXEC
@@ -48,8 +53,12 @@ def _open_dir_traverse_nofollow(component: str, parent_fd: int) -> int:
 
 
 def _open_leaf_read_nofollow(component: str, parent_fd: int) -> int:
-    """Open component read-only under parent_fd, no-follow, rejecting a non-regular-file target."""
-    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC
+    """Open component read-only under parent_fd, no-follow, rejecting a non-regular-file target.
+
+    ``O_NONBLOCK`` keeps a FIFO from blocking the open until a writer appears
+    (#1615). The descriptor of a regular file goes back to blocking mode.
+    """
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
     try:
         fd = os.open(component, flags, dir_fd=parent_fd)
     except OSError as exc:
@@ -63,6 +72,7 @@ def _open_leaf_read_nofollow(component: str, parent_fd: int) -> int:
         raise PathContainmentError(
             REASON_NOT_REGULAR_FILE, "target is not a regular file"
         )
+    os.set_blocking(fd, True)
     return fd
 
 

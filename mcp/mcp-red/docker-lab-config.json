@@ -14,8 +14,7 @@
   },
   "containers": {
     "kali": {
-      "container_name": "aptl-kali",
-      "capture_container_name": "aptl-kali-capture",
+      "capture_container_name": "${LILRAE_MCP_CAPTURE_CONTAINER}",
       "container_ip": "localhost",
       "ssh_key": "~/.ssh/aptl_lab_key",
       "ssh_user": "kali",

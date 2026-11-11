@@ -7,8 +7,8 @@ build and run. This hook bundles every *git-tracked* asset a lab needs —
 ``docker-compose.yml``, the scenario/config/container trees, the web
 frontend, helper scripts, and the Python source that several container
 images build from — into the wheel under ``aptl/_labdata/<relpath>`` so
-that ``pipx install aptl-labs`` + ``aptl lab init <dir>`` +
-``aptl lab start`` works without a clone. ``aptl.core.assets`` resolves
+that ``pipx install lilrae`` + ``lilrae lab init <dir>`` +
+``lilrae lab start`` works without a clone. ``aptl.core.assets`` resolves
 the bundle via ``importlib.resources``.
 
 Only git-tracked files are bundled. That is the mechanism that keeps

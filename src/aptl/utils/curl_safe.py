@@ -38,9 +38,11 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from aptl.utils.logging import get_logger
+from aptl.utils.probe_execution import run_bounded_probe_command
 
 log = get_logger("curl_safe")
 
@@ -109,9 +111,7 @@ def curl_json(
         try:
             result = _run_curl([*cmd, *secret_args], timeout)
             if result.returncode != 0:
-                log.warning(
-                    "curl_safe: curl exit %d for %s", result.returncode, url
-                )
+                log.warning("curl_safe: curl exit %d for %s", result.returncode, url)
             else:
                 parsed = json.loads(result.stdout)
         except (subprocess.TimeoutExpired, OSError) as exc:
@@ -207,8 +207,8 @@ def _tls_args(insecure: bool, ca_cert_path: str | None) -> list[str]:
 def _json_headers(body: dict | list | None) -> list[str]:
     """Request JSON and describe JSON content only when content exists.
 
-    Some APIs, including Cortex, interpret a JSON content type on a bodyless
-    GET as a promise of a JSON entity and reject the empty body. ``Accept`` is
+    Some APIs interpret a JSON content type on a bodyless GET as a promise of
+    a JSON entity and reject the empty body. ``Accept`` is
     valid on every request; ``Content-Type`` is valid only when this helper is
     also sending ``body``.
     """
@@ -253,6 +253,9 @@ def _secret_file_args(
 def _run_curl(cmd: list[str], timeout: int) -> subprocess.CompletedProcess[str]:
     """Run a list-form curl command with the module's fixed capture settings."""
 
+    bounded = run_bounded_probe_command(cmd, cwd=Path.cwd(), timeout=timeout)
+    if bounded is not None:
+        return bounded
     return subprocess.run(
         cmd,
         capture_output=True,

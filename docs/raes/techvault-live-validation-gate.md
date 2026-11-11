@@ -1,188 +1,85 @@
 # TechVault live validation gate
 
-The live validation gate (`aptl.validation.techvault_live_gate`) is the
-operational counterpart to the [static validation
-gate](techvault-static-validation-gate.md). The static gate parses, compiles,
-conformance-checks, and interprets the scenario without starting Docker. The
-live gate boots the full TechVault lab through APTL's public start path and
-proves the running range is realized from the interpreted RAES model rather than
-from a TechVault preset, then captures operational and provenance evidence in
-the run archive. It implements requirement SCN-010 (issue #323).
+`aptl.validation.techvault_live_gate.validate_live_deployment()` validates the admitted deployment through the public startup path.
+It returns a `VerificationReport` with scenario, backend, run, attempt, and check identities.
+The gate uses TechVault as its reference input for issue #323.
 
-The gate is scenario-generic by construction. `validate_live_deployment()` takes
-a scenario path, a backend profile, the project directory, and a run id, so the
-next scenario in APTL's `full-remote-control-plane` expressivity class passes
-through by changing inputs rather than by editing the gate. TechVault is the
-proving input, never a hardcoded branch (ADR-035).
-
-APTL's public start path (`orchestrate_lab_start()`) accepts the selected RAES
-scenario path and passes it through the same `_step_start_containers()` handoff
-used by the default boot. The backend capability profile remains the public
-default, so the gate still fails loud before destructive boot when a caller
-requests a profile the public start path will not realize.
+The default gate removes project volumes before startup.
+The [live validation procedure](live-validation.md) requires CI or an approved isolated lab VM.
+A profile mismatch stops validation before destructive boot.
 
 ## What the gate checks
 
-`validate_live_deployment()` composes existing lifecycle, snapshot, and
-collector owners and returns a `LiveGateReport`. Each stage is one
-`LiveGateCheck` tagged with a stable failure category so a failure names the
-layer that broke:
+| Stage | Contract |
+| --- | --- |
+| Run identity | Reject an invalid requested run ID before native work. |
+| Static prerequisite | Parse, compile, and conformance must pass before boot. |
+| Boot-input agreement | The requested profile must match the public startup profile. |
+| RAES-driven boot | Interpret admitted content, compute dependency closure, and start through `orchestrate_lab_start()`. |
+| Readiness | Compare admitted nodes and apparatus with running resources. |
+| Semantic verification | Invoke the exact qualified scenario verifier through bounded operations. |
+| Orchestration containment | Recheck runtime authority after semantic work. Include dynamically created children. |
+| Scenario variation | Distinct declared node content must produce distinct realization details. |
+| Archive | Persist the completed checks, provenance, snapshot, and evidence summary. |
 
-1. **Static prerequisite** (`raes_specification`). The static gate runs first. A
-   parse, compile, or conformance failure blocks the live boot rather than
-   degrading to a warning.
-2. **Boot-input agreement** (`backend_instantiation`). The selected scenario is
-   passed through to public startup. The profile under validation must still be
-   the public start path's capability profile (`full-remote-control-plane`). A
-   profile mismatch is a hard failure raised before any destructive boot, so the
-   gate never validates a profile the boot path will not realize.
-3. **RAES-driven boot** (`backend_interpretation` or `backend_instantiation`).
-   The gate computes the realization matrix from `RuntimeManager.plan()` and
-   `interpret_provisioning_plan()`, the same interpretation `AptlProvisioner`
-   performs, so the expected node, service, network, and profile surface is
-   keyed by RAES resource addresses. Realization expands selected-node
-   dependencies through RAES provisioning edges and Compose `depends_on`
-   metadata before the backend starts; missing, ambiguous, or config-disabled
-   support services fail as `backend_interpretation` instead of booting an
-   incomplete range. It then runs `stop_lab(remove_volumes)` cleanup and
-   `orchestrate_lab_start()`, whose only container-start path is the RAES
-   handoff in `_step_start_containers()`. A realization with errors fails as
-   `backend_interpretation`; a failed boot fails as `backend_instantiation`.
-4. **Defensive-stack readiness** (`defensive_stack_readiness`). Every
-   RAES-realized node maps to a running, healthy container in the post-boot
-   snapshot. Pass or fail is keyed to the realized node surface, not a hardcoded
-   container list. Unhealthy non-node infrastructure is a degraded note rather
-   than a hard failure of the scenario surface.
-5. **Kali reachability** (`kali_reachability`). From Kali, the gate reaches every
-   lab host it shares a declared network with. Targets come from network
-   co-membership in the snapshot (the realized network attachments), not a
-   hardcoded host list. Every probe runs through
-   `DeploymentBackend.container_exec()`.
-6. **Telemetry evidence path** (`evidence_capture`). The gate generates one
-   representative event from Kali against a reachable host, then collects
-   Suricata EVE and Wazuh alerts in a bounded window through the existing
-   collectors. At least one evidence artifact must traverse the defensive stack.
-7. **Scenario variation** (`backend_interpretation`). Two declared RAES nodes
-   from the booted scenario run through the same interpreter path and must yield
-   distinct realization details. This is the anti-collapse property of #324
-   (SCN-010G) generalized as a live diagnostic.
-8. **Run-archive manifest** (`evidence_capture`). Written last so the persisted
-   archive reflects the complete check set, the gate writes scenario identity,
-   RAES provenance (realization details with resource addresses preserved), the
-   selected profiles, validation evidence, the post-boot snapshot, and the
-   telemetry summary through `LocalRunStore`'s redacting boundary (ADR-029).
+A failed boot skips later checks that require a usable range.
+The gate still attempts to archive the available evidence.
+The gate resolves the acquired bundle before validation.
+Startup keeps the original pack selector so associated artifacts use the correct resolver.
 
 ## Failure categories
 
-A failing report names the layers that broke, drawn from this closed set:
-`raes_specification`, `backend_interpretation`, `backend_instantiation`,
-`defensive_stack_readiness`, `kali_reachability`, and `evidence_capture`. The
-categories map onto existing RAES diagnostics and APTL startup diagnostics. The
-gate adds no parallel exception hierarchy.
+The closed categories are `raes_specification`, `backend_interpretation`, `backend_instantiation`,
+`defensive_stack_readiness`, `kali_reachability`, and `evidence_capture`.
+Diagnostics identify the failed layer without raw backend errors or secret-bearing payloads.
+A blocked verification has no semantic verdict.
+It is not a pass or a detection failure.
 
 ## Run-archive manifest
 
-The manifest lands at `<run-store>/<run-id>/live-gate/manifest.json` under the
-schema `aptl.live-gate.manifest/v1`. It records:
+The gate writes `<run-store>/<run-id>/live-gate/manifest.json` with schema `aptl.live-gate.manifest/v1`.
+The manifest contains these sections:
 
-- **`scenario`**: the scenario identity (path and name).
-- **`raes_provenance`**: the realization details verbatim (node addresses,
-  aliases, profiles, services, rendered configs, evidence and telemetry paths,
-  networks, static addresses, and placements), the RAES-selected compose
-  profiles, and the interpretation diagnostic count. This is the auditable proof
-  that the lab was realized by interpreting RAES content rather than by a preset.
-- **`validation`**: each check's name, category, outcome, and diagnostics.
-- **`snapshot`**: the post-boot range snapshot (containers, networks, health,
-  endpoints).
-- **`evidence`**: the telemetry-path summary (event types and counts, never raw
-  payloads).
-- **`evaluator_surfaces`**: the evaluator component of the declared
-  `full-remote-control-plane` backend profile and its RAES evaluation
-  result/history contracts for conditions and
-  objectives. This is an evidence index, not a score source; live evaluator
-  progression belongs in RAES `evaluation_results` and `evaluation_history`
-  derived from observed run state.
+| Section | Meaning |
+| --- | --- |
+| `scenario` | This section records the admitted scenario path and identity. |
+| `raes_provenance` | This section records resource-addressed realization details, selected profiles, and interpretation diagnostics. |
+| `validation` | This section records identities, categories, outcomes, and diagnostics. |
+| `snapshot` | This section records post-boot containers, networks, health, and endpoints. |
+| `evidence` | This section records a bounded telemetry summary without raw payloads. |
+| `evaluator_surfaces` | This section indexes declared condition/objective result and history contracts. This index is not a score. |
+
+The run store applies redaction before persistence.
+An archive describes the observed execution. It cannot replace authored SDL or prove unobserved behavior.
 
 ## Observable surface
 
-The live gate validates the operational startup contract. The public boot
-SDL from the validated acquired `techvault` bundle is the contract: it names
-the steady-state Compose services and networks the range actually realizes at
-range granularity, and there is no separate capture/parity evidence surface
-behind it (ADR-046). Evaluator contracts are part of the declared
-`full-remote-control-plane` surface; #606 narrows that surface to
-condition/objective evaluation after RAES ADR-073 moved SDL scoring-chain
-semantics out of scope. The run archive is proof of what the operational model
-realized; it does not substitute for SDL encoding or for RAES evaluation
-result/history envelopes.
+The acquired bundle gives the startup contract.
+The interpreter derives its node, network, service, and apparatus surface.
+A reduced research fixture has a separate [curated proof](techvault-curated-live-validation-gate.md).
+Historical full-range results do not qualify a current reduced fixture.
 
 ## Prerequisites
 
-The gate boots the full lab, so the runner needs:
-
-- Docker with enough memory and disk for the full TechVault stack (the SOC tools
-  alone need several gigabytes).
-- A populated `.env` with real secrets. The boot refuses to start while
-  sensitive values are still `.env.example` placeholders.
-- The installed `raes` wheel and the `raes` command for the static
-  prerequisite.
-- An isolated, project-scoped Docker daemon. The destructive cleanup removes the
-  `aptl` compose project's volumes, so do not run it against a shared daemon.
+See [live validation prerequisites](live-validation.md#prerequisites).
 
 ## Where the semantic verdict comes from
 
-The gate's framework holds no scenario knowledge: which node is the attacker and
-which nodes make up the defensive stack is knowledge about one scenario on one
-backend. That lives in a per-scenario adapter package, discovered through the
-`aptl.scenario_verifiers` entry-point group. For TechVault it is `aptl_techvault`,
-which ships inside `aptl-labs`, so there is nothing extra to install.
+The `aptl.scenario_verifiers` entry point selects one compatible installed adapter.
+The bundled TechVault adapter examines attacker reachability to its shared-network peers.
+Its verifier does not generate the former Nmap and failed-SSH attack probes.
 
-A scenario with no adapter of its own reports terminal `blocked` and the gate
-reaches no verdict. That is deliberate, and it is not a pass, a skip, or a
-detection failure: a range whose verification could not run has not been
-verified. The same outcome covers an adapter whose declared qualification does
-not match the range. Admission requires an exact match on the extension API, the
-admitted pack's identity, version and content digest, and the backend's target,
-version, profile and transport. Empty declarations are not wildcards.
-`src/aptl_techvault/README.md` states which combinations this release admits and
-what a pack change requires of it.
+Startup still performs required native evidence checks.
+Those checks can generate SQL-injection, MISP, and log-producer activity.
+The result is not a zero-event baseline.
+See the [adapter reference](https://github.com/OpenRAE/lilrae/blob/dev/src/aptl_techvault/README.md).
 
-The gate does not generate attack traffic. It establishes that the declared range
-is realized, that its nodes are healthy, and that the attacker node reaches its
-shared-network peers. Proving an event traverses the sensor and the SIEM would
-mean generating that event and reading it back, which leaves its alerts and
-sensor records in the range after the run.
+A live-gate pass alone does not prove that a new attack traversed every detection path.
+
+Qualification binds the exact pack identity, version, digest, extension API, backend target, profile, and transport.
+Missing, empty, incompatible, or ambiguous adapter declarations produce `blocked`.
+Package version ranges do not establish qualification.
 
 ## Running the gate
 
-The gate is destructive and minutes long. It targets maintainers and a
-documented CI runner rather than fast CI or pre-commit. The fast gate-logic
-tests that cover the orchestrator and every check branch run in the default
-suite without a lab:
-
-```
-pytest tests/test_techvault_live_gate.py -m "not integration"
-```
-
-Run the full destructive boot through the CLI:
-
-```
-aptl lab validate-live
-```
-
-The command warns and prompts before destroying lab data. Pass `--yes` to skip
-the prompt in automation, or `--skip-clean-boot` to validate an already-running
-lab without the destructive `stop -v` and reboot. `--scenario` accepts an
-explicit RAES SDL path for the live gate and is passed through to public lab
-startup. `--profile` must remain the public startup capability profile
-(`full-remote-control-plane`); profile mismatches fail the boot-input agreement
-check before boot. `--run-id` sets the run-archive id.
-
-The same boot runs as the explicitly gated integration test:
-
-```
-APTL_LIVE_GATE=1 pytest tests/test_techvault_live_gate.py -m integration
-```
-
-Without `APTL_LIVE_GATE=1` the destructive test stays skipped, so an ordinary
-`pytest -m integration` run never tears down a lab.
+See [validate a running scenario](live-validation.md).

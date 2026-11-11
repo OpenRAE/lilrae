@@ -10,6 +10,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from aptl.core.config import AptlConfig
+from aptl.core.deployment._compose_resource_ownership import WorkspaceOwnership
 from aptl.workbench import guest_binding, preparation
 from aptl.workbench.dispatch import DispatchSelector
 from aptl.workbench.guest_binding import GuestAdmission, GuestDispatchBinding
@@ -30,7 +31,7 @@ def _observation(record, run_id):
 def test_guest_rejects_pack_switch_after_study_enrollment(tmp_path, monkeypatch):
     record = access_record(
         scenario_pack={
-            "pack_id": "techvault-participant-study",
+            "pack_id": "fixture-range-study",
             "pack_version": "0.1.0",
             "set_digest": "b" * 64,
         }
@@ -50,9 +51,10 @@ def test_guest_rejects_pack_switch_after_study_enrollment(tmp_path, monkeypatch)
         guest_binding._observe_stable_guest(binding)
 
 
-@pytest.mark.parametrize("pack_id", ["techvault", "techvault-participant-study"])
+@pytest.mark.parametrize("admitted_projection", [False, True])
+@pytest.mark.parametrize("pack_id", ["fixture-range", "fixture-range-study"])
 def test_guest_enrollment_publishes_private_forced_keys_and_rejects_bad_inventory(
-    tmp_path, monkeypatch, pack_id
+    tmp_path, monkeypatch, pack_id, admitted_projection
 ):
     record = access_record(
         container_ids={"aptl-kali": "a" * 64},
@@ -95,6 +97,7 @@ def test_guest_enrollment_publishes_private_forced_keys_and_rejects_bad_inventor
         preparation, "observe_guest_containers", lambda _: record.container_ids
     )
     def staged_pack(_root, identity):
+        assert not admitted_projection, "must not reparse the full source pack"
         assert identity == pack_id
         return SimpleNamespace(pack_identity=record.scenario_pack)
 
@@ -140,9 +143,23 @@ def test_guest_enrollment_publishes_private_forced_keys_and_rejects_bad_inventor
         ),
         delivery="rootful-integration",
     )
+    if admitted_projection:
+        from aptl.core.mcp_policy import McpRunAdmission
+        from aptl.core._soc_ca_io import _atomic_write
+
+        selected = ("aptl-red",)
+        (tmp_path / ".mcp.json").write_text(json.dumps({
+            "mcpServers": {"aptl-red": {"env": {"APTL_MCP_ADMITTED_RUN_ID": run_id}}},
+        }))
+        admission = McpRunAdmission(
+            run_id=run_id, pack=record.scenario_pack,
+            server_ids=selected, container_aliases=(("aptl-kali",),),
+        )
+        _atomic_write(tmp_path / ".aptl/mcp-admission.json", admission.model_dump_json().encode(), mode=0o600)
     output = tmp_path / "transport"
     binding = preparation.prepare_guest_transport(request, output)
     assert binding.run_id == run_id
+    assert binding.access.mcp_server_ids == (("aptl-red",) if admitted_projection else ())
     assert binding.access.container_ids == record.container_ids
     assert "restrict,command=" in (output / "authorized_keys").read_text()
     assert "ForceCommand" not in (output / "sshd_config").read_text()
@@ -206,11 +223,14 @@ def test_guest_launch_binds_native_kali_and_keeps_provider_auth_out(
     (tmp_path / "aptl.json").write_text(
         '{"run_storage":{"local_path":"./custom-runs"}}'
     )
+    workspace_id = WorkspaceOwnership.ensure(tmp_path, "aptl").workspace_id
     monkeypatch.setattr(
         "aptl.core.lab._server_config_port_refs", lambda *a: ("APTL_TEST_PORT",)
     )
     monkeypatch.setattr(guest_binding, "load_config", lambda _: AptlConfig())
     backend = SimpleNamespace(
+        project_dir=tmp_path,
+        logical_project_name="aptl",
         bind_local_docker_socket=lambda: SimpleNamespace(success=True),
         _docker_socket_path=tmp_path / "unused.sock",
         container_inspect=lambda _: {"fixture": True},
@@ -227,6 +247,9 @@ def test_guest_launch_binds_native_kali_and_keeps_provider_auth_out(
     assert argv == (str(executable), str(artifact))
     assert cwd == tmp_path
     assert environment["APTL_MCP_KALI_HOST"] == "192.0.2.44"
+    assert environment["LILRAE_MCP_CAPTURE_CONTAINER"] == (
+        f"aptl-w{workspace_id[:12]}-kali-capture"
+    )
     assert environment["DOCKER_HOST"] == "unix://" + str(tmp_path / "unused.sock")
     assert environment["APTL_MCP_ADMITTED_RUN_ID"] == binding.run_id
     assert environment["APTL_MCP_RUN_STORE_BASE"] == str(tmp_path / "custom-runs")

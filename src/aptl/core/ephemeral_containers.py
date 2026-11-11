@@ -68,15 +68,24 @@ _DISCARD_TIMEOUT = 30
 Runner = Callable[..., subprocess.CompletedProcess]
 
 
-def remove_container_command(reference: str, *, force: bool = True) -> list[str]:
-    """Return the argv that removes one container and its anonymous volumes.
+def remove_container_command(
+    reference: str, *, force: bool = True, remove_volumes: bool = True
+) -> list[str]:
+    """Return removal argv, optionally preserving anonymous node volumes.
 
     ``force=False`` keeps ``docker rm``'s refusal to remove a running container,
     for a caller whose contract is to remove only a container that has already
-    completed; ``-v`` applies either way.
+    completed. Helpers discard their temporary volumes by default; node
+    cleanup passes the lifecycle operation's explicit volume policy.
     """
 
-    return ["docker", "rm", *(["-f"] if force else []), "-v", reference]
+    return [
+        "docker",
+        "rm",
+        *(["-f"] if force else []),
+        *(["-v"] if remove_volumes else []),
+        reference,
+    ]
 
 
 def stranded_helpers_command(project: str) -> list[str]:

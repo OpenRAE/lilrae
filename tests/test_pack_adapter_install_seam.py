@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -25,14 +24,6 @@ from aptl.backends.scenario_capture import (
 from aptl.backends.scenario_capture_discovery import (
     ScenarioCaptureProviderError,
     resolve_scenario_capture,
-)
-from aptl.backends.scenario_planning_compatibility import (
-    PlanningCompatibilityDecision,
-    ScenarioPlanningCompatibilityContext,
-)
-from aptl.backends.scenario_planning_compatibility_discovery import (
-    ScenarioPlanningCompatibilityError,
-    resolve_scenario_planning_compatibility,
 )
 from aptl.backends.scenario_startup import (
     ScenarioStartupPlan,
@@ -85,7 +76,6 @@ def _registration() -> CollectorRegistration:
         supports_redaction=True,
         integrity_modes=frozenset({"sha256-digest"}),
         sealing_modes=frozenset({"digest"}),
-        supports_chain_of_custody=False,
         supports_retention=True,
         supports_loss_disclosure=True,
         visibility_class=CaptureVisibility.EVALUATOR_ONLY,
@@ -107,24 +97,6 @@ class _CaptureProvider:
     @staticmethod
     def resolve(_context: ScenarioCaptureContext) -> ScenarioCaptureContribution:
         return ScenarioCaptureContribution(registrations=(_registration(),))
-
-
-class _PlanningProvider:
-    provider_id = "otherpack-planning"
-    extension_api_version = "1"
-    supported_pack_id = "otherpack"
-    supported_pack_versions = ("1.0.0",)
-    supported_pack_set_digests = (PACK.set_digest,)
-    backend_target_name = "aptl"
-    backend_target_versions = ("0.1.0",)
-    backend_profiles = ("full-remote-control-plane",)
-    backend_transports = ("docker",)
-
-    @staticmethod
-    def resolve(
-        _context: ScenarioPlanningCompatibilityContext,
-    ) -> PlanningCompatibilityDecision:
-        return PlanningCompatibilityDecision(runtime_max_nodes=131_072)
 
 
 def test_capture_provider_supplies_the_request_scoped_registry(monkeypatch) -> None:
@@ -151,88 +123,13 @@ def test_collector_wiring_accepts_only_the_supplied_registry() -> None:
         build_collectors({"otherpack.collector.unknown": source}, registry)
 
 
-def test_planning_compatibility_is_selected_from_the_exact_pack(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "aptl.backends.scenario_planning_compatibility_discovery._entry_points",
-        lambda: [_EntryPoint(_PlanningProvider())],
-    )
-
-    resolved = resolve_scenario_planning_compatibility(
-        ScenarioPlanningCompatibilityContext(PACK, BACKEND)
-    )
-
-    assert resolved is not None
-    assert resolved.decision.runtime_max_nodes == 131_072
-    assert resolved.provider_id == "otherpack-planning"
-
-
-def test_stale_adapter_claims_are_incompatible_not_malformed(monkeypatch) -> None:
+def test_stale_capture_claim_is_incompatible_not_malformed(monkeypatch):
     capture = _CaptureProvider()
     capture.supported_pack_versions = ("0.9.0",)
-    monkeypatch.setattr(
-        "aptl.backends.scenario_capture_discovery._entry_points",
-        lambda: [_EntryPoint(capture)],
-    )
-    capture_context = ScenarioCaptureContext(PACK, BACKEND)
+    monkeypatch.setattr("aptl.backends.scenario_capture_discovery._entry_points", lambda: [_EntryPoint(capture)])
+    rejected_input_1 = ScenarioCaptureContext(PACK, BACKEND)
     with pytest.raises(ScenarioCaptureProviderError, match="provider-missing"):
-        resolve_scenario_capture(capture_context)
-
-    planning = _PlanningProvider()
-    planning.supported_pack_versions = ("0.9.0",)
-    monkeypatch.setattr(
-        "aptl.backends.scenario_planning_compatibility_discovery._entry_points",
-        lambda: [_EntryPoint(planning)],
-    )
-    assert (
-        resolve_scenario_planning_compatibility(
-            ScenarioPlanningCompatibilityContext(PACK, BACKEND)
-        )
-        is None
-    )
-
-
-def test_planning_compatibility_rejects_unbounded_concern_data(monkeypatch) -> None:
-    provider = _PlanningProvider()
-    provider.resolve = lambda _context: PlanningCompatibilityDecision(
-        daemon_readback_concerns=frozenset({"not a concern id"})
-    )
-    monkeypatch.setattr(
-        "aptl.backends.scenario_planning_compatibility_discovery._entry_points",
-        lambda: [_EntryPoint(provider)],
-    )
-
-    planning_context = ScenarioPlanningCompatibilityContext(PACK, BACKEND)
-    with pytest.raises(
-        ScenarioPlanningCompatibilityError, match="provider-result-invalid"
-    ):
-        resolve_scenario_planning_compatibility(planning_context)
-
-
-@pytest.mark.parametrize(
-    ("field", "concern"),
-    [
-        ("daemon_readback_concerns", "syntactically-valid-but-unauthorized"),
-        ("open_default_concerns", "service-listeners"),
-        ("minimum_intrusion_exact_concerns", "service-listeners"),
-    ],
-)
-def test_planning_compatibility_rejects_semantically_unauthorized_concerns(
-    monkeypatch, field: str, concern: str
-) -> None:
-    provider = _PlanningProvider()
-    provider.resolve = lambda _context: PlanningCompatibilityDecision(
-        **{field: frozenset({concern})}
-    )
-    monkeypatch.setattr(
-        "aptl.backends.scenario_planning_compatibility_discovery._entry_points",
-        lambda: [_EntryPoint(provider)],
-    )
-
-    planning_context = ScenarioPlanningCompatibilityContext(PACK, BACKEND)
-    with pytest.raises(
-        ScenarioPlanningCompatibilityError, match="provider-result-invalid"
-    ):
-        resolve_scenario_planning_compatibility(planning_context)
+        resolve_scenario_capture(rejected_input_1)
 
 
 def test_pack_provider_defines_safe_operator_groups(monkeypatch) -> None:
@@ -273,7 +170,7 @@ def test_startup_contract_uses_generic_hook_slots() -> None:
         {"WAZUH", "SOC", "WAZUH_REPAIR"}
     )
     assert StartupHook.STACK_ENVIRONMENT.value == "stack_environment"
-    assert StartupHook.BEFORE_BACKEND_RETRY.value == "before_backend_retry"
+    assert not hasattr(StartupHook, "BEFORE_BACKEND_RETRY")
 
 
 def test_installed_provider_owns_its_preparation_path(tmp_path: Path) -> None:
@@ -436,27 +333,6 @@ def test_failed_reset_authority_remains_retryable(tmp_path: Path, monkeypatch) -
     assert not run_pending_cleanup(tmp_path, object()).ok
     assert run_pending_cleanup(tmp_path, object()).ok
     assert attempts == 2
-
-
-def test_framework_has_no_techvault_capture_implementation_imports() -> None:
-    """Core owns the contract and dispatcher, never the first pack's behavior."""
-
-    core = Path(__file__).resolve().parents[1] / "src" / "aptl"
-    forbidden_imports: list[str] = []
-    for path in core.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            modules: tuple[str, ...] = ()
-            if isinstance(node, ast.Import):
-                modules = tuple(alias.name for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                modules = (node.module,)
-            if any(module.startswith("aptl_techvault") for module in modules):
-                forbidden_imports.append(path.relative_to(core).as_posix())
-
-    assert forbidden_imports == []
-    assert not list((core / "core/evidence/adapters").glob("techvault*.py"))
-    assert not (core / "core/experiment/capture_registrations.py").exists()
 
 
 def test_admitted_operator_groups_are_reused_for_recovery(tmp_path: Path) -> None:

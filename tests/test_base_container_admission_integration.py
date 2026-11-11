@@ -54,6 +54,32 @@ def _docker_available() -> bool:
     )
 
 
+def _stage_build_context(dockerfile: str, project_dir: Path) -> None:
+    """Copy a Dockerfile's directory and every repo path it COPYs or ADDs.
+
+    The staged project holds the same files a real lab directory holds for this
+    build. Reading the sources from the Dockerfile keeps the stage in step when
+    the Dockerfile gains a COPY.
+    """
+
+    source = _REPO_ROOT / dockerfile
+    shutil.copytree(source.parent, project_dir / source.parent.relative_to(_REPO_ROOT))
+    for line in source.read_text(encoding="utf-8").splitlines():
+        words = line.split()
+        if not words or words[0].upper() not in {"COPY", "ADD"}:
+            continue
+        if any(word.startswith("--from=") for word in words):
+            continue
+        for relative in [word for word in words[1:-1] if not word.startswith("--")]:
+            origin = _REPO_ROOT / relative
+            staged = project_dir / relative
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            if origin.is_dir():
+                shutil.copytree(origin, staged, dirs_exist_ok=True)
+            else:
+                shutil.copyfile(origin, staged)
+
+
 @pytest.mark.skipif(not _docker_available(), reason="docker daemon not available")
 def test_admit_and_realize_base_container_scenario_on_real_docker(tmp_path):
     bundle = admit_fixture_pack(tmp_path / "staged-packs")
@@ -62,15 +88,8 @@ def test_admit_and_realize_base_container_scenario_on_real_docker(tmp_path):
     # the init-capable generic substrate, which the backend builds from the
     # Dockerfile its own project dir ships (issue #1006). Stage that context
     # exactly as a real lab directory holds it.
-    shutil.copytree(
-        _REPO_ROOT / "containers" / "generic-systemd-base-debian",
-        tmp_path / "containers" / "generic-systemd-base-debian",
-    )
-    (tmp_path / "requirements").mkdir()
-    shutil.copyfile(
-        _REPO_ROOT / "requirements" / "runtime.txt",
-        tmp_path / "requirements" / "runtime.txt",
-    )
+    _stage_build_context("containers/generic-systemd-base-debian/Dockerfile", tmp_path)
+    _stage_build_context("containers/operator-access-proxy/Dockerfile", tmp_path)
     container = "aptl-smoke-box"
     subprocess.run(["docker", "rm", "-f", container], capture_output=True, text=True)
 
@@ -101,6 +120,14 @@ def test_admit_and_realize_base_container_scenario_on_real_docker(tmp_path):
     try:
         result = backend.realize(spec, scenario_root=bundle.root)
         assert result.success, result.error
+        # Docker drops direct publications on internal-only networks. The
+        # owned relay must prove its target and preserve the declared host port.
+        published = backend.node_publication_bindings("aptl-smoke-box")
+        assert published["2022/tcp"] == [{"HostIp": "127.0.0.1", "HostPort": "32022"}]
+        import socket
+
+        with socket.create_connection(("127.0.0.1", 32022), timeout=5) as connection:
+            assert connection.recv(256).startswith(b"SSH-")
         # Observe actual endpoints independently of the reconcile return code.
         from aptl.core.deployment._compose_realization_networks import (
             _node_network_attachments,
@@ -117,7 +144,7 @@ def test_admit_and_realize_base_container_scenario_on_real_docker(tmp_path):
             endpoints = backend.container_inspect(node.container_name)[
                 "NetworkSettings"
             ]["Networks"]
-            assert set(desired).issubset(endpoints)
+            assert set(desired) == set(endpoints)
             for name, attachment in desired.items():
                 assert endpoints[name]["IPAddress"]
                 if attachment.ipv4_address:
@@ -160,18 +187,5 @@ def test_admit_and_realize_base_container_scenario_on_real_docker(tmp_path):
         assert listeners is not None
         assert 2022 in {port for _protocol, _address, port in listeners.sockets}
     finally:
-        subprocess.run(
-            ["docker", "rm", "-f", realized_container_name(backend, container)],
-            capture_output=True,
-            text=True,
-        )
-        subprocess.run(
-            [
-                "docker",
-                "network",
-                "rm",
-                f"{realized_project_name(backend)}_aptl-smoke",
-            ],
-            capture_output=True,
-            text=True,
-        )
+        cleaned = backend.stop([], remove_volumes=True)
+        assert cleaned.success, cleaned.error

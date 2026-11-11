@@ -15,6 +15,21 @@ import {
 } from '../src/redaction.js';
 
 describe('redact - sensitive scalars', () => {
+  it('treats Compose service fingerprints as secret material', () => {
+    const label = 'com.docker.compose.config-hash';
+    const fingerprint = 'a'.repeat(64);
+    const payload = {
+      labels: { [label]: fingerprint, 'com.docker.compose.service': 'db' },
+      image_digest: `sha256:${'b'.repeat(64)}`,
+    };
+    expect(redact(payload)).toEqual({
+      labels: { [label]: REDACTED, 'com.docker.compose.service': 'db' },
+      image_digest: payload.image_digest,
+    });
+    expect(redact(JSON.stringify(payload))).not.toContain(fingerprint);
+    expect(redact(`${label}=${fingerprint},service=db`)).toBe(`${label}=${REDACTED},service=db`);
+  });
+
   it('replaces password value', () => {
     expect(redact({ password: 'hunter2' })).toEqual({ password: REDACTED });
   });
@@ -904,5 +919,21 @@ describe('redactor defense-in-depth bounds (issue #386, ARCH-386-01)', () => {
     expect(redact({ blob: Buffer.from('api_key=AKIA1234567890') })).toEqual({
       blob: `api_key=${REDACTED}`,
     });
+  });
+});
+describe('numeric model limits and usage', () => {
+  it.each(["max_output_tokens", "max_tokens", "max_completion_tokens", "input_tokens", "output_tokens", "prompt_tokens", "completion_tokens", "total_tokens", "reasoning_tokens", "cache_read_tokens", "cache_write_tokens", "cached_tokens", "known_input_tokens_subtotal", "known_output_tokens_subtotal", "effective_token_limit"])('preserves typed %s without exposing credential replacements', (name) => {
+    for (const value of [0, 128, null]) expect(redact({ [name]: value })).toEqual({ [name]: value });
+    for (const value of ['private-credential', { api_key: 'private-credential' }, true, -1, 2 ** 53]) {
+      expect(redact({ [name]: value })).toEqual({ [name]: '[REDACTED]' });
+    }
+    const declaration = { target_id: name, value_type: 'integer', allowed_value_kinds: ['literal'], sensitivity: 'internal' };
+    expect(redact({ [name]: declaration })).toEqual({ [name]: declaration });
+    const withDefault = { ...declaration, default: { kind: 'literal', value: 0 } };
+    expect(redact({ [name]: withDefault })).toEqual({ [name]: withDefault });
+    for (const fallback of [null, [], { kind: 'literal', value: 'private-credential' }, { kind: 'literal', value: true }, { kind: 'environment', value: 0 }]) {
+      expect(redact({ [name]: { ...declaration, default: fallback } })).toEqual({ [name]: '[REDACTED]' });
+    }
+    expect(redact({ [name]: { ...declaration, api_key: 'private-credential' } })).toEqual({ [name]: '[REDACTED]' });
   });
 });

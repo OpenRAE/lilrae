@@ -29,6 +29,87 @@ def test_package_release_only_publishes_python_artifacts() -> None:
     assert set(jobs["backmerge"]["needs"]) == {"release-please", "publish"}
 
 
+def test_backmerge_binds_values_and_fails_closed() -> None:
+    """The back-merge reaches shell values only through env and reports failures.
+
+    The step once interpolated the tag into its script and ended with
+    ``|| echo``, so an auth or network failure read as "dev already up to date".
+    """
+    (step,) = _jobs()["backmerge"]["steps"]
+    run = step["run"]
+    assert "${{" not in run
+    assert step["env"]["TAG"] == "${{ needs.release-please.outputs.tag_name }}"
+    assert "|| echo" not in run
+    assert "|| true" not in run
+    assert "compare/dev...main" in run
+    assert '--title "chore: back-merge ${TAG} into dev"' in run
+    # A squashed back-merge leaves main's release commit out of dev's history,
+    # so the next promotion replays the version bump and can conflict (#1375).
+    assert 'Admin-merge it with \\"Create a merge commit\\"' in run
+    assert "Do not squash" in run
+
+
+_GH_STUB = """#!/bin/sh
+echo "$*" >> "$GH_CALLS"
+case "$1 $2" in
+  "pr list") [ -n "$GH_LIST_FAIL" ] && exit 1; echo "${GH_OPEN:-0}" ;;
+  "api repos/OpenRAE/lilrae/compare/dev...main") echo "${GH_AHEAD:-0}" ;;
+  "pr create") exit 0 ;;
+  *) exit 2 ;;
+esac
+"""
+
+
+def _run_backmerge(tmp_path: Path, **stub_env: str) -> tuple[int, list[str]]:
+    """Run the back-merge step's script against a stub ``gh``."""
+
+    (step,) = _jobs()["backmerge"]["steps"]
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub = bin_dir / "gh"
+    stub.write_text(_GH_STUB)
+    stub.chmod(0o755)
+    calls = tmp_path / "calls"
+    calls.touch()
+    environment = {
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        "GH_REPO": "OpenRAE/lilrae",
+        "TAG": "v8.0.0",
+        "GH_CALLS": str(calls),
+        **stub_env,
+    }
+    completed = subprocess.run(
+        ["bash", "-c", step["run"]], env=environment, capture_output=True, text=True
+    )
+    return completed.returncode, calls.read_text().splitlines()
+
+
+@pytest.mark.parametrize(
+    ("stub_env", "expected_status", "creates_pr"),
+    [
+        pytest.param({"GH_LIST_FAIL": "1"}, "fail", False, id="list-fails"),
+        pytest.param({"GH_OPEN": "1"}, "ok", False, id="already-open"),
+        pytest.param({"GH_AHEAD": "0"}, "ok", False, id="dev-current"),
+        pytest.param({"GH_AHEAD": "2"}, "ok", True, id="creates-pr"),
+    ],
+)
+def test_backmerge_script_outcomes(
+    tmp_path: Path, stub_env: dict[str, str], expected_status: str, creates_pr: bool
+) -> None:
+    status, calls = _run_backmerge(tmp_path, **stub_env)
+    assert (status == 0) is (expected_status == "ok")
+    created = [call for call in calls if call.startswith("pr create")]
+    assert bool(created) is creates_pr
+    if creates_pr:
+        assert "--title chore: back-merge v8.0.0 into dev" in created[0]
+
+
+def test_release_attestation_bundle_is_named_for_the_distribution() -> None:
+    publish = _jobs()["publish"]
+    upload = next(s for s in publish["steps"] if "gh release upload" in s.get("run", ""))
+    assert 'cp "$BUNDLE" "dist/lilrae-${TAG}.intoto.jsonl"' in upload["run"]
+
+
 def test_every_project_owned_image_is_still_published() -> None:
     # The seat image is what a participant boots, but the lab's own container
     # images are still published; deleting the golden pipeline must not have

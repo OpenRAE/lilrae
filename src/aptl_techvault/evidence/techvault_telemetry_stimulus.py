@@ -14,6 +14,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from urllib.parse import quote
 
+from aptl_techvault.evidence.techvault import sqli_probe_delivered
 from aptl_techvault.evidence.techvault_native_support import webapp_endpoint
 
 _SAFE_SHARE = re.compile(r"[A-Za-z0-9_.-]+")
@@ -148,7 +149,7 @@ def _stimulate(
     elif node == "webapp":
         emitted = _stimulate_webapp(backend, realization, marker)
     elif node == "suricata":
-        emitted = trigger_sqli() is not None
+        emitted = sqli_probe_delivered(trigger_sqli())
     return emitted
 
 

@@ -26,6 +26,7 @@ from aptl.appliance.download import (
     fetch_https_metadata,
     stage_https_artifact,
 )
+from aptl.appliance.seat import image_token
 from aptl.appliance.seat.image_config import (
     SEAT_IMAGE_CONFIG_MEDIA_TYPE,
     SeatImageConfig,
@@ -139,24 +140,19 @@ def parse_seat_image_reference(reference: str) -> SeatImageReference:
 
 
 def _anonymous_token(reference: SeatImageReference) -> str | None:
-    """Obtain a pull token, returning ``None`` when the registry needs none."""
+    """Obtain a pull token from the token service the registry advertises.
 
-    query = urllib.parse.urlencode(
-        {
-            "service": reference.registry,
-            "scope": f"repository:{reference.repository}:pull",
-        }
+    The registry names that service in the ``WWW-Authenticate: Bearer``
+    challenge it answers an unauthenticated request with; a registry that
+    sends no challenge needs no token, so the pull proceeds without one.
+    """
+
+    return image_token.anonymous_token(
+        reference.registry,
+        reference.repository,
+        fetch_https_metadata,
+        max_bytes=_MAX_METADATA_BYTES,
     )
-    url = f"https://{reference.registry}/token?{query}"
-    try:
-        payload = fetch_https_metadata(url, max_bytes=_MAX_METADATA_BYTES)
-        document = json.loads(payload)
-    except (ApplianceDownloadError, ValueError):
-        return None
-    if not isinstance(document, dict):
-        return None
-    token = document.get("token") or document.get("access_token")
-    return token if isinstance(token, str) and token else None
 
 
 def _registry_headers(token: str | None, accept: str) -> dict[str, str]:

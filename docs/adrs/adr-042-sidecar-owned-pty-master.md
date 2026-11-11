@@ -8,6 +8,14 @@ accepted
 
 2026-06-20
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [capture explanation](../components/red-side-capture-boundary.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 ADR-033 made the MCP-side PTY tee the authoritative record of red-side
@@ -18,23 +26,13 @@ modify captured evidence. That sidecar boundary protects the capture volume and
 the genuinely Kali-side witnesses the workload does not feed directly: pcap,
 auditd, and process accounting.
 
-ADR-041 deliberately left one residual. The Kali-side PTY `typescript` is still
-fed by the workload session path: `script(1)` in the Kali wrapper writes to a
-FIFO, `aptl-capture-client` forwards those bytes, and the sidecar persists
-them. Connection ownership prevents one session from appending to another
-session, and single-use session IDs prevent reopening a finalized session, but
-the in-flight session can still forge its own transcript by writing to its
-wrapper/FIFO/client path or by generating fake transcript bytes before the
-sidecar sees them.
+ADR-041 deliberately left one residual. The earlier wrapper used `script(1)` and a FIFO. `aptl-capture-client` forwarded those workload-origin bytes to the sidecar for storage. Connection ownership blocks cross-session append, and single-use IDs block reopening. The active workload can still forge bytes before they enter its FIFO or client path.
 
 ADR-041's "PTY transcript authenticity (residual)" section deferred closing
 this gap to a future ADR that moves PTY-master ownership into the sidecar. This
 ADR is that follow-up and supersedes that residual.
 
-The acceptance criterion for issue #516 is stronger: a sudo-capable Kali
-workload must not be able to forge or omit its own Kali-side recorded PTY
-transcript without detection, while interactive red-team tooling keeps PTY
-semantics, exit-code propagation, and environment passthrough.
+Issue #516 requires detection of self-forgery or omission by a sudo-capable workload. Interactive tools must keep PTY behavior, exit status, and environment delivery.
 
 ## Decision
 
@@ -48,39 +46,26 @@ sidecar-fronted PTY broker with equivalent isolation, owns:
 - the session lifecycle event that finalizes the transcript.
 
 The Kali workload may receive only the PTY slave attached as the shell's
-controlling terminal. Bytes written by the workload to the slave are then real
-terminal output and are recorded by the sidecar-owned master; the workload must
-not hold a writable handle to the transcript file, the sidecar recording
-stream, or a workload-fed FIFO/client path that is treated as authentic
-transcript input.
+controlling terminal. The sidecar records slave output at its owned PTY master. The workload must not hold a writable transcript or recording handle. A workload-fed FIFO cannot supply authenticated transcript input.
 
 The user-facing execution model remains the existing MCP SSH session model.
 `mcp/aptl-mcp-common/src/ssh.ts` continues to own `PersistentSession`, command
 queueing, raw/normal mode semantics, delimiter handling, remote-close
 awaiting, `APTL_SESSION_ID` / `APTL_RUN_ID` / `APTL_TRACE_ID` propagation, and
-the MCP-side `createPtyTeeWriter` cross-check. The implementation may move the
-SSH endpoint into the sidecar or place an SSH-compatible PTY proxy in front of
-the Kali shell, but the boundary that allocates the PTY master and records the
-transcript must be outside the Kali workload container.
+the MCP-side `createPtyTeeWriter` cross-check. Implementation may relocate SSH or add an SSH-compatible PTY proxy. The PTY-master allocator and recorder must remain outside the Kali workload container.
 
 `script(1)` remains acceptable only as an output compatibility format or as a
 tool running in the sidecar-owned PTY path. Running `script(1)` in the Kali
 workload, then forwarding its log to the sidecar, does not satisfy this ADR.
 
 The sidecar-produced transcript should preserve the existing
-`pty/typescript` and `pty/timing` artifact contract where practical. If
-detection metadata is needed, it belongs beside those artifacts under the same
-sidecar-owned per-session directory, for example sequence numbers, byte counts,
-directions, close reason, and a running hash. Do not move this into a new run
+`pty/typescript` and `pty/timing` artifact contract where practical. Detection metadata belongs beside the session artifacts under sidecar ownership. Examples include sequence, byte count, direction, close reason, and running hash. Do not move this into a new run
 archive root or a second harvest path.
 
 ## Attacker Model
 
 The attacker is the normal Kali workload user with passwordless sudo inside the
-Kali workload container. The design must assume the attacker can become root in
-that container, inspect its processes and file descriptors, write to the PTY
-slave, kill its own shell, emit terminal escape sequences, and attempt denial
-of service.
+Kali workload container. The threat model permits root in the workload. That actor can inspect descriptors, write the PTY slave, stop its shell, emit escapes, and attempt denial of service.
 
 The attacker must not be able to:
 
@@ -93,9 +78,7 @@ The attacker must not be able to:
   anomaly.
 
 This ADR does not claim that terminal output is truthful. A shell can always
-print misleading text. The claim is narrower and testable: the recorded
-Kali-side transcript is the byte stream observed at the sidecar-owned PTY
-master, plus sidecar-owned lifecycle metadata, not a workload-supplied log.
+print misleading text. The claim covers bytes observed at the sidecar-owned PTY master and sidecar lifecycle metadata. It does not authenticate a workload-supplied log.
 
 ## Security Layers
 
@@ -115,20 +98,11 @@ master, plus sidecar-owned lifecycle metadata, not a workload-supplied log.
   MCP handler checks, and ADR-041 sidecar code: `^[A-Za-z0-9_][A-Za-z0-9._-]*$`
   and no `..`.
 - **Config shape:** keep durable user config out of `aptl.json` unless
-  `AptlConfig` gets a real field and consumer per ADR-025. Sidecar runtime
-  knobs such as socket name, PTY launch adapter, capture root, enabled capture
-  classes, or pcap rotation limits belong in sidecar environment variables
-  with explicit parser/shape checks and safe defaults.
-- **Secret handling:** ADR-029 remains canonical. Transcript, pcap, audit, and
-  pacct files are raw evidence and may contain target secrets by design; logs,
-  MCP responses, OTel attributes, readiness diagnostics, and error messages
-  must not echo transcript bytes, command lines with credentials, private keys,
-  tokens, cookies, or raw audit records.
+  `AptlConfig` gets a real field and consumer per ADR-025. Sidecar runtime settings need parsed environment variables and safe defaults. These include socket, launch adapter, capture root, enabled classes, and rotation limits.
+- **Secret handling:** ADR-029 remains canonical. Raw transcripts, pcaps, audit, and accounting evidence can contain intentional target secrets. Diagnostics, MCP results, and telemetry must exclude raw evidence and credentials.
 - **OS and mount exposure:** `kali_captures` stays mounted read-write only in
   the sidecar and not mounted in Kali, even read-only. Do not share the
-  sidecar PID namespace with Kali. Do not mount the Docker socket into a
-  network-reachable sidecar as a shortcut for spawning shells unless a later
-  ADR explicitly accepts that host-root control-plane exposure.
+  sidecar PID namespace with Kali. A network-reachable sidecar must not mount the Docker socket merely to launch shells. Such host-equivalent authority needs an explicit later ADR.
 - **Process argv:** do not pass secrets, command lines, transcript bytes, or
   user-controlled tcpdump expressions through shell strings or process argv.
   Use fixed recorder arguments and structured APIs.
@@ -136,8 +110,12 @@ master, plus sidecar-owned lifecycle metadata, not a workload-supplied log.
   `mcp/aptl-mcp-common/src/runs.ts`, and
   `mcp/aptl-mcp-common/src/captures.ts` as the run-layout and harvest
   boundaries. Harvest still targets the configured `capture_container_name`
-  and preserves chmod repair, global `_audit` / `_proc-acct` collection, and
-  fail-loud missing-source behavior.
+  and preserves chmod repair and fail-loud missing-source behavior.
+  Update (2026-10-11, #1242): the sidecar runs no auditd or process
+  accounting, so the harvest no longer copies global `_audit` /
+  `_proc-acct` directories. A failed harvest writes a named
+  `capture-harvest-failure.json` record into the session's kali-side
+  evidence.
 - **Error envelopes and observability:** preserve existing `SSHError`, MCP
   JSON result envelopes, `harvest_warning`, stderr logging style, and degraded
   readiness patterns. Do not introduce a second exception hierarchy or make
@@ -181,9 +159,7 @@ presence as proof that another layer is authentic.
 ## Extensibility
 
 The seam belongs at the sidecar's session-launch adapter and recorder
-configuration, not in MCP tool arguments. The next reasonable variation is a
-different way to attach the sidecar-owned PTY slave to a workload process, or
-the same PTY-master ownership pattern for another SSH-controlled workload.
+configuration, not in MCP tool arguments. An extension can attach the owned PTY slave through another launch mechanism. Another SSH-controlled workload can reuse the same ownership pattern.
 That should require adding or swapping a sidecar-internal adapter, not editing
 the run archive layout, creating another session ID vocabulary, or duplicating
 MCP session management.
@@ -201,21 +177,14 @@ Parameterize only the parts that are real variation points:
 
 Tests should prove the ownership boundary, not only artifact creation:
 
-- static Compose tests: Kali does not mount `kali_captures`; sidecar owns the
-  volume; sidecar does not share Kali PID namespace; capture-only capabilities
-  stay off the Kali workload service; no host ports expose the capture control
-  surface.
+- static Compose tests: Kali has no `kali_captures` mount, and the sidecar owns that volume. PID namespaces remain separate. Capture-only capabilities and control listeners remain outside workload exposure.
 - MCP/common tests: `capture_container_name` remains the harvest target;
   close-session and close-all warnings keep the existing envelopes; invalid
   IDs fail at ingress.
 - sidecar unit tests: invalid IDs, path-bearing frames, delete/truncate/chmod
   requests, duplicate/finalized session IDs, spoofed finalize attempts,
   dropped connections, and transcript integrity metadata.
-- live OBS-003 tests: a `sudo su -` Kali shell cannot read, list, delete,
-  modify, append to, or directly feed its own sidecar transcript; killing the
-  wrapper or shell produces a visible close/degraded/integrity signal; PTY
-  behavior, raw interactive tooling, non-echoed input recording, env
-  passthrough, and exit-code propagation still work.
+- live OBS-003 tests: a root Kali shell cannot directly read, modify, or feed its sidecar transcript. Wrapper or shell termination must produce visible lifecycle or integrity evidence. PTY behavior, raw tools, non-echoed input, environment delivery, and exit status remain required.
 
 Changes under `mcp/aptl-mcp-common` still require rebuilding and testing every
 dependent MCP package per the repo plan rules.
@@ -259,3 +228,38 @@ dependent MCP package per the repo plan rules.
 - [ADR-033: Red-Side Behavioural Capture and Non-Contamination Boundary](adr-033-agent-reasoning-trace-boundary.md)
 - [ADR-029: Control-Plane Secret Handling in Run Data and Local State](adr-029-control-plane-secret-handling.md)
 - [ADR-037: Docker Compose Backend Cohesion](adr-037-docker-compose-backend-cohesion.md)
+
+## Session finalization at MCP shutdown (#1541)
+
+The common SSH manager stops accepting new sessions and waits for pending
+session creation before shutdown. It tracks one-shot exec channels as well as
+persistent shells. All harvest triggers share one result per run and session;
+remote-close failures remain visible to the shutdown owner.
+
+The MCP server starts this shutdown when stdin closes, or when it receives
+`SIGTERM` or `SIGINT`. A closed stdin is the first shutdown signal of the MCP
+stdio transport. The server starts at that signal because the MCP client can
+send `SIGKILL` soon after `SIGTERM`.
+
+The trusted host invokes `broker.py stop-session --run-id ... --session-id ...`
+through the configured capture container. The broker validates the run against
+its active authority and signals only that session's registration. It records
+`forced-teardown` without injecting an agent `exit` command or quiescing other
+MCP servers. Normal agent closes retain their existing shell exit semantics.
+
+`metadata.json` is the commit marker of a session. Before the host copies a
+session, it invokes `broker.py await-session` with the same arguments. This
+action sends no signal.
+
+It waits until the broker releases the session
+registration, then requires `metadata.json`. The host copies the session one
+time, after this check passes. It does not poll with repeated copies.
+
+When the
+check fails, the host writes the harvest-failure record and copies no frames.
+
+A finalization, harvest, or SSH teardown failure makes MCP shutdown exit
+non-zero. The MCP client can stop the server before this work completes. Lab
+stop does not use this copy: broker quiescence and export supply the full-run
+transcript. This decision adds no workload-accessible control endpoint or
+capture-volume mount.

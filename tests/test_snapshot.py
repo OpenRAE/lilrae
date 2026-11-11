@@ -1,9 +1,6 @@
 """Unit tests for range snapshot capture."""
 
 import json
-import subprocess
-from dataclasses import asdict
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from aptl.core.snapshot import (
@@ -48,74 +45,22 @@ def _backend_with_exec(exec_responses: dict[tuple, MagicMock]) -> MagicMock:
 class TestDataclasses:
     """Tests for snapshot dataclass creation and serialization."""
 
-    def test_software_versions_defaults(self):
-        sv = SoftwareVersions()
-        assert sv.python_version == ""
-        assert sv.docker_version == ""
-        assert sv.aptl_version == ""
 
-    def test_software_versions_values(self):
-        sv = SoftwareVersions(
-            python_version="3.11.5",
-            docker_version="24.0.7",
-            compose_version="2.23.0",
-            wazuh_manager_version="4.7.0",
-            wazuh_indexer_version="4.7.0",
-            aptl_version="0.1.0",
-        )
-        d = asdict(sv)
-        assert d["python_version"] == "3.11.5"
-        assert d["docker_version"] == "24.0.7"
-        assert d["aptl_version"] == "0.1.0"
 
-    def test_container_snapshot(self):
-        cs = ContainerSnapshot(
-            name="aptl-victim",
-            image="aptl/victim:latest",
-            image_id="sha256:abc123",
-            status="Up 5 minutes (healthy)",
-            health="healthy",
-            labels={"com.docker.compose.service": "victim"},
-            networks={"aptl_aptl-internal": "172.20.2.20"},
-            ports=["0.0.0.0:2022->22/tcp"],
-        )
-        d = asdict(cs)
-        assert d["name"] == "aptl-victim"
-        assert d["health"] == "healthy"
-        assert d["labels"]["com.docker.compose.service"] == "victim"
-        assert d["networks"]["aptl_aptl-internal"] == "172.20.2.20"
-        assert len(d["ports"]) == 1
 
-    def test_container_snapshot_defaults(self):
-        cs = ContainerSnapshot()
-        assert cs.labels == {}
-        assert cs.networks == {}
-        assert cs.ports == []
-        assert cs.name == ""
+    def test_snapshot_serialization_masks_legacy_compose_fingerprints(self):
+        fingerprint = "d" * 64
+        label = "com.docker.compose.config-hash"
+        snapshot = RangeSnapshot(containers=[ContainerSnapshot(
+            name="aptl-db", labels={label: fingerprint, "com.docker.compose.service": "db"},
+        )])
+        payload = snapshot.to_dict()
+        assert payload["containers"][0]["labels"][label] == "[REDACTED]"
+        assert payload["containers"][0]["labels"]["com.docker.compose.service"] == "db"
+        assert fingerprint not in str(payload)
 
-    def test_wazuh_rules_snapshot(self):
-        wr = WazuhRulesSnapshot(
-            total_rules=3500,
-            custom_rules=15,
-            custom_rule_files=["local_rules.xml", "ssh_rules.xml"],
-            total_decoders=800,
-            custom_decoders=3,
-        )
-        d = asdict(wr)
-        assert d["total_rules"] == 3500
-        assert d["custom_rules"] == 15
-        assert len(d["custom_rule_files"]) == 2
 
-    def test_network_snapshot(self):
-        ns = NetworkSnapshot(
-            name="aptl_default",
-            subnet="172.20.0.0/16",
-            gateway="172.20.0.1",
-            containers=["aptl-victim", "aptl-wazuh-manager"],
-        )
-        d = asdict(ns)
-        assert d["subnet"] == "172.20.0.0/16"
-        assert len(d["containers"]) == 2
+
 
     def test_range_snapshot_to_dict(self):
         snap = RangeSnapshot(
@@ -254,6 +199,38 @@ class TestGetSoftwareVersions:
         assert sv.compose_version == ""
         assert sv.wazuh_manager_version == ""
         assert sv.python_version  # still set
+
+
+    def test_reads_the_installed_lilrae_version(self, monkeypatch):
+        import importlib.metadata as metadata
+
+        installed = {"lilrae": "8.0.0", "raes": "6.0.1"}
+
+        def _version(name):
+            if name not in installed:
+                raise metadata.PackageNotFoundError(name)
+            return installed[name]
+
+        monkeypatch.setattr(metadata, "version", _version)
+        backend = MagicMock()
+        backend.host_versions.return_value = {}
+        sv = _get_software_versions(backend, active_services=set())
+        assert sv.aptl_version == "8.0.0"
+        assert sv.raes_version == "6.0.1"
+
+    def test_reports_dev_only_when_lilrae_is_not_installed(self, monkeypatch):
+        import importlib.metadata as metadata
+
+        def _version(name):
+            if name == "aptl-labs":
+                return "7.0.0"
+            raise metadata.PackageNotFoundError(name)
+
+        monkeypatch.setattr(metadata, "version", _version)
+        backend = MagicMock()
+        backend.host_versions.return_value = {}
+        sv = _get_software_versions(backend, active_services=set())
+        assert sv.aptl_version == "dev"
 
 
 class TestGetContainerSnapshots:

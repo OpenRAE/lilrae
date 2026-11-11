@@ -3,15 +3,11 @@
     "provider": "docker-compose"
   },
   "containers": {
-    "wazuh": true,
-    "victim": true,
-    "kali": true,
-    "reverse": false,
-    "enterprise": false,
-    "soc": false,
-    "mail": false,
-    "fileshare": false,
-    "dns": false
+    "profiles": [
+      "wazuh",
+      "victim",
+      "kali"
+    ]
   },
   "run_storage": {
     "backend": "local",
@@ -32,5 +28,9 @@
         "variable": "APTL_PARTICIPANT_CODEX_CREDENTIAL"
       }
     }
+  },
+  "scenario": {
+    "source": "project-tree",
+    "identity": "techvault-attacker-target"
   }
 }

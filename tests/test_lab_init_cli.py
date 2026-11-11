@@ -1,4 +1,4 @@
-"""CLI tests for ``aptl lab init`` (DEP-008, issue #659).
+"""CLI tests for ``lilrae lab init`` (DEP-008, issue #659).
 
 Materialization is redirected at a small synthetic bundle so the command is
 exercised end-to-end without copying the real scenario tree.
@@ -33,7 +33,7 @@ def test_lab_init_success(fake_bundle: Path, tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert "Initialized lab project" in result.output
-    assert "aptl lab start" in result.output
+    assert "lilrae lab start" in result.output
     assert (
         "Installed participant credentials are not configured by default"
         in result.output

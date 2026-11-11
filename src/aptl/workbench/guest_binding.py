@@ -302,13 +302,16 @@ class GuestAdmission:
         expected = {
             "policy_digest": descriptor.boundary_policy_digest,
             "payload_digest": descriptor.image_digest,
-            "raes_plan_digest": descriptor.participant_routes_digest,
+            (
+                "participant_routes_digest"
+                if policy.seat_component_protection
+                else "raes_plan_digest"
+            ): descriptor.participant_routes_digest,
             "boundary_helper_image": descriptor.boundary_helper_image,
             "egress_proxy_image": descriptor.egress_proxy_image,
             "host_observation_id": descriptor.host_observation_id,
             "guest_boot_id": self.binding.access.guest_boot_id,
             "guest_daemon_id": self.binding.access.guest_daemon_id,
-            "raes_boundary_required": policy.internal_zone_isolation,
         }
         if any(
             getattr(observed.binding, key) != value for key, value in expected.items()
@@ -398,11 +401,19 @@ class GuestAdmission:
         if endpoint is not None:
             env["DOCKER_HOST"] = "unix://" + str(endpoint)
         if self.server.server_id == "aptl-red":
-            from aptl.core.mcp_ingress import native_kali_ingress
+            from aptl.core.mcp_ingress import (
+                kali_capture_container,
+                native_kali_ingress,
+            )
 
             expected = self.binding.access.container_ids.get("aptl-kali", "")
             env.update(
                 native_kali_ingress(backend.container_inspect("aptl-kali"), expected)
+            )
+            env.update(
+                kali_capture_container(
+                    backend.project_dir, backend.logical_project_name
+                )
             )
         self.authorize()
         return (str(node), str(artifact)), project, env

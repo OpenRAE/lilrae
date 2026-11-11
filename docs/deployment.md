@@ -1,163 +1,192 @@
-# Deployment And Lifecycle
+<a id="deployment-and-lifecycle"></a>
 
-APTL supports a released local project, a source checkout for contributors,
-and a prebuilt disposable appliance. All three use the CLI lifecycle boundary;
-raw Compose commands are not an equivalent deployment path.
+# Deploy And Manage A Lab
+
+Use this guide for operating tasks after installation.
+Start with an initialized project, its selected pack, and permission to operate the chosen Docker engine.
+Use an approved isolated VM or dedicated lab host.
+Do not run lab operations or behavior tests on the developer workstation.
 
 ## Released Local Project
 
-Install the released package and materialize its lab assets:
+Complete [Installation](getting-started/installation.md) to create the project.
+Open its `aptl.json` and set the existing scenario object:
 
-```shell
-pipx install aptl-labs
-aptl lab init my-lab
-cd my-lab
-aptl lab start --scenario techvault
+```json
+"scenario": {"source": "env-pack", "identity": "techvault"}
 ```
 
-The project directory owns its `aptl.json`, generated private state, run store,
-and Docker resources. Keep lifecycle commands rooted in that directory, or use
-their documented project-directory option.
+From that project, check and start the selected pack:
 
-`aptl lab start` performs the deployment work as one operation: it validates
-configuration and scenario input, realizes the topology, generates project
-credentials and service configuration, resolves host ports, builds required
-MCP artifacts, starts containers, waits for required readiness, updates client
-configuration, and records the run.
+```shell
+lilrae config validate
+lilrae lab scenarios
+lilrae doctor
+lilrae lab start --scenario techvault
+```
 
-Do not replace it with `docker compose up`. That bypasses control-plane work
-needed by a fresh project and can start a topology that does not match the
-selected scenario.
+Expected result: the final startup report passes required readiness checks.
+Resolve each failed preflight before repeating startup.
+Use the printed diagnostic for a degraded result.
+Do not substitute `docker compose up` for this operation.
+It omits scenario admission, generated state, readiness, and run recording.
 
 ## Source Checkout
 
-A source checkout is for contributors. Follow the
-[contribution setup](https://github.com/OpenRAE/lilrae/blob/dev/CONTRIBUTING.md#development-setup)
-to create a virtual environment and editable install. The checkout itself is
-the project directory; do not run `aptl lab init` over it.
+Follow the [contribution setup](https://github.com/OpenRAE/lilrae/blob/dev/CONTRIBUTING.md#development-setup) for a source installation.
+Use the checkout as the project directory.
+Do not run `lilrae lab init` over the checkout.
+Run the lab and targeted tests only in CI or an approved isolated VM.
 
 ## Disposable Appliance
 
-The appliance path puts rootful Docker and the complete lab inside a disposable
-KVM guest booted from a published image. See the
-[appliance seat launcher](reference/appliance-seat-launcher.md) for operator
-use, including how updates are adopted and rolled back.
-
-Offline appliance startup accepts only the staged wheels, project assets, and
-OCI images bound by its launch descriptor and trust anchors. Missing inputs
-fail closed instead of pulling or building from the network.
+Follow the [seat launcher guide](reference/appliance-seat-launcher.md) for image verification, startup, update, and rollback.
+Use the signed launch inputs and trust anchors required by that release.
+Expected result: the launcher admits a disposable KVM guest and reports its participant access.
+Offline startup refuses missing staged inputs instead of downloading or building replacements.
 
 ## Configuration
 
-`aptl.json` is the strict, non-secret project configuration. Inspect and
-validate it through the CLI:
+From the project, inspect and validate the non-secret configuration:
 
 ```shell
-aptl config show
-aptl config validate
+lilrae config show
+lilrae config validate
 ```
 
-Scenario selection belongs to the acquired environment-pack catalog, not an
-ad hoc list of enabled containers. Use `aptl lab scenarios` and pass a catalog
-identity to `aptl lab start --scenario <id>`. Project-local SDL paths are an
-explicit development surface.
+Expected result: the strict `aptl.json` configuration validates.
+Select packs with [Install a scenario pack](getting-started/installing-packs.md).
+Keep credentials in their declared private sources, outside `aptl.json`.
+Generated `.env` and `.mcp.json` files must not be committed.
 
-Runtime credentials and generated client bindings belong in private files such
-as `.env` and `.mcp.json`; they are not `aptl.json` fields and must not be
-committed. Wazuh `INDEXER_*` and `API_*` values are credentials declared by the
-admitted scenario, not APTL control-plane or operator login credentials.
+### Scenario Environment Grants
+
+Use this task when an admitted pack declares a secret without an authored value.
+First identify the exact pack ID, consuming node, variable, and classification in its SDL.
+Check the [environment-binding rules](getting-started/environment-bindings.md) before choosing a source.
+
+Add the grant to `deployment.environment_grants` in `aptl.json`:
+
+```json
+{
+  "deployment": {
+    "environment_grants": [
+      {
+        "pack": "example-pack",
+        "consumer": "webapp",
+        "variable": "DB_PASSWORD",
+        "source": {"kind": "process-environment", "variable": "LAB_DB_PASSWORD"}
+      },
+      {
+        "pack": "example-pack",
+        "consumer": "worker",
+        "variable": "API_TOKEN",
+        "source": {"kind": "project-env-file", "variable": "WORKER_API_TOKEN"}
+      }
+    ]
+  }
+}
+```
+
+Replace these example names with declarations from your admitted pack.
+Provide a nonempty source value through the named process environment or private project `.env` key.
+Do not put the value in the grant.
+Validate the configuration, then start the lab.
+Expected result: only the named consumer receives the binding.
+Missing sources and invalid authority stop preflight before scenario resource mutation.
+
+For a project-tree scenario, use authored fixtures or declared generated-artifact consumers.
+Pack grants do not apply without an acquired pack identity.
 
 ## Observe A Deployment
 
-Use APTL's runtime projections after startup:
+Inspect the project after startup:
 
 ```shell
-aptl lab status
-aptl lab info
-aptl container list
+lilrae lab status
+lilrae lab info
+lilrae container list
 ```
 
-`aptl lab status` reports current running and container state. The structured
-`aptl lab start` result remains the readiness authority. `aptl lab info` prints
-URLs, remapped host ports, usernames, and credential locations for the realized
-scenario. `aptl container list` reports project-owned containers. These results
-replace fixed port, service, and credential tables.
+Use the URLs and credential locations from your own `lab info` output.
+For remote Docker, check reachability on the remote daemon host.
+The [execution-boundary explanation](getting-started/execution-boundaries.md) describes the separate host observation.
 
-Both `lab start` and `lab info` print a separate execution-boundary observation:
-selected transport, whether the daemon appears native, VM-backed, remote or
-unknown, and whether an override selected the endpoint. `info` re-observes the
-backend even when `.env` is absent. Unknown or conflicting facts are reported
-as such. A remote daemon's published ports belong to its host; the CLI does not
-claim they are reachable on the operator's `localhost`. This host-boundary
-observation is separate from RAES-authored scenario VM/container requirements
-and is disclosed in RAES-validated backend-owned `ApplyResult.details` for a run.
-See [tested profiles and limits](getting-started/prerequisites.md#tested-execution-profiles-and-limits).
-
-Inspect one realized service with:
+For a container returned by the list, inspect bounded logs or open a shell:
 
 ```shell
-aptl container logs <container-name>
-aptl container shell <container-name>
+lilrae container logs <container-name> --tail 50
+lilrae container shell <container-name>
 ```
 
-Use a name returned by `aptl container list`. A container in Docker's `running`
-state does not by itself prove that the scenario is ready.
+Expected result: the commands inspect only a project-owned container.
+A running container alone does not prove readiness.
+Use the final startup result for that decision.
+
+## Host Docker Socket Access
+
+Before admitting a scenario, review its declared Docker control authority.
+A socket holder has root-equivalent control over the daemon host.
+For TechVault, verify that the admitted worker manager is the intended authority.
+See the [socket authority explanation](getting-started/environment-bindings.md#docker-socket-authority).
+Do not add socket mounts to bypass model validation.
 
 ## Manage The Lifecycle
 
+For an ordinary end of session, stop the project:
+
 ```shell
-aptl lab start --scenario <id>  # validate, realize, start, and await readiness
-aptl lab status                 # inspect lifecycle and realized state
-aptl lab info                   # discover current access information
-aptl lab stop                   # stop while preserving volumes
-aptl lab stop -v                # confirm and destroy project volumes
-aptl lab start --clean --scenario <id>  # confirm a clean boot
+lilrae lab stop
 ```
 
-Lifecycle mutations are single-owner per project. If another start, stop,
-clean boot, policy tick, or container kill owns the project, a second mutation
-fails without removing resources under the active operation. Wait for the
-owner to finish, or stop it and use `aptl lab stop` to reconcile the project.
+Expected result: project containers and networks are removed while volumes remain.
+Wait for any active lifecycle operation before retrying a busy project.
+Mutations share one project lock.
 
-`aptl lab stop -v` also clears host-side state that described the removed
-volumes, such as the Wazuh agent enrollment baseline. That cleanup is recorded
-at start and survives APTL upgrades. If Docker teardown fails, or the volumes
-are gone but host cleanup remains, the stop names the failed step and the
-retry command. See [pending host cleanup](troubleshooting/index.md#aptl-lab-stop-v-reports-pending-host-cleanup).
+If you intend to destroy all project volume data, retain required evidence first.
+Then run:
 
-`aptl kill` is an emergency process-control surface. It is not normal teardown,
-a data reset, or a replacement for the structured startup result.
+```shell
+lilrae lab reset
+```
+
+Read and confirm the destruction warning.
+Expected result: project containers, networks, volumes, and pending host cleanup are removed.
+Configuration, `.env`, keys, certificates, and run records remain, except host state named by cleanup records.
+`lilrae lab stop -v` performs the same teardown.
+For a clean boot in one operation, use `lilrae lab start --clean` with the selected scenario.
+
+If host cleanup remains, follow [pending host cleanup](troubleshooting/index.md#lilrae-lab-stop-v-reports-pending-host-cleanup).
+Do not delete lifecycle records or use daemon-wide prune commands.
+Use `lilrae kill` only for emergency process or container termination.
+It does not replace normal teardown or reset credentials.
 
 ## Automatic Lifecycle Policy
 
-APTL can enforce project time-to-live, idle-timeout, and scheduled provisioning
-rules declared in the validated `lifecycle_policy` configuration. Inspect the
-installed command contract before enabling automation:
+Use this task when the project needs time-to-live, idle, or scheduled provisioning rules.
+Inspect the installed command options first:
 
 ```shell
-aptl lab policy --help
-aptl lab enforce --help
-aptl lab monitor --help
+lilrae lab policy --help
+lilrae lab enforce --help
+lilrae lab monitor --help
 ```
 
-Policy actions use the same per-project lifecycle lock as manual and API
-operations, so they cannot interleave with another mutation. See
-[ADR-045](adrs/adr-045-ephemeral-lifecycle-policy-enforcement.md) for the
-design and failure model.
+Configure the intended `lifecycle_policy` in `aptl.json` and validate it.
+Use the installed help to select enforcement or monitoring options.
+Expected result: policy actions use the same project lock as manual operations.
+For policy behavior and failures, see [ADR-045](adrs/adr-045-ephemeral-lifecycle-policy-enforcement.md).
 
 ## Recovery
 
-Use the project-scoped sequence first:
+Retain logs and required evidence before recovery.
+From the affected project, try a volume-preserving restart:
 
 ```shell
-aptl lab stop
-aptl lab start --scenario <id>
+lilrae lab stop
+lilrae lab start
 ```
 
-Use `aptl lab stop -v` only when you intend to destroy the project's
-volume-backed data. Do not use daemon-wide prune commands as routine recovery;
-they can remove images, caches, networks, and volumes owned by unrelated
-projects.
-
-Continue with the [troubleshooting guide](troubleshooting/index.md) for
-component diagnostics and platform-specific failures.
+Expected result: the selected configuration starts with its retained data.
+If it still fails, use [Troubleshooting](troubleshooting/index.md) for the named failure.
+Reset volumes only after an explicit backup or data-discard decision.

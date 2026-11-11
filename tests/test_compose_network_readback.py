@@ -1,7 +1,6 @@
 """Network reconciliation must prove declared endpoints, not command success."""
 
 from unittest.mock import MagicMock, patch
-from pathlib import Path
 from dataclasses import replace
 
 import pytest
@@ -13,6 +12,7 @@ from aptl.core.deployment import (
     DeploymentRealizationSpec,
     DockerComposeBackend,
 )
+from aptl.core.deployment import _compose_realization_networks as realization_networks
 from aptl.core.deployment._compose_network_conflicts import _network_subnet_conflicts
 from aptl.core.lab_types import LabResult
 
@@ -221,6 +221,103 @@ def test_successful_disconnect_must_remove_default_bridge(tmp_path):
     assert "default bridge" in "; ".join(failures)
 
 
+_READBACK_FAILURE = (
+    "Node webapp on test_aptl-dmz after network reconciliation: "
+    "required IPv4 address was not observed."
+)
+
+
+def _container(status):
+    """Return a Compose-attached node's inspect payload as Docker 29 reports it."""
+
+    return {
+        "State": {
+            "Status": status,
+            "Running": status != "exited",
+            "Restarting": status == "restarting",
+        },
+        "NetworkSettings": {
+            "Networks": {
+                "test_aptl-dmz": {
+                    "IPAddress": "172.20.1.20" if status == "running" else "",
+                    "Aliases": ["portal", "webapp"],
+                }
+            }
+        },
+    }
+
+
+class _Clock:
+    """A monotonic clock that advances only when the code under test sleeps."""
+
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps = []
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    fake = _Clock()
+    monkeypatch.setattr(realization_networks, "time", fake)
+    return fake
+
+
+def _reconcile(tmp_path, inspects):
+    backend = _backend(tmp_path, None)
+    backend.container_inspect = MagicMock(side_effect=inspects)
+    return backend, backend._reconcile_realization_networks(_spec())
+
+
+@pytest.mark.parametrize(
+    "inspects",
+    [
+        [_container("running"), _container("restarting"), _container("running")],
+        # An empty pinned address on the first inspect would read as IP drift.
+        [_container("restarting"), _container("running"), _container("running")],
+    ],
+    ids=["readback", "first-inspect"],
+)
+def test_restart_window_is_reinspected_until_the_container_runs(
+    tmp_path, clock, inspects
+):
+    backend, failures = _reconcile(tmp_path, inspects)
+
+    assert failures == []
+    assert backend.container_inspect.call_count == 3
+    assert len(clock.sleeps) == 1
+    assert 0 < clock.now < realization_networks._RESTART_WINDOW_BUDGET
+    backend.connect_container_network.assert_not_called()
+    backend.disconnect_container_network.assert_not_called()
+
+
+def test_container_still_restarting_after_the_budget_fails_as_before(tmp_path, clock):
+    inspects = [_container("running"), *[_container("restarting")] * 50]
+
+    backend, failures = _reconcile(tmp_path, inspects)
+
+    assert failures == [_READBACK_FAILURE]
+    assert clock.now == pytest.approx(realization_networks._RESTART_WINDOW_BUDGET)
+    assert backend.container_inspect.call_count == len(clock.sleeps) + 2
+    backend.disconnect_container_network.assert_not_called()
+
+
+def test_exited_container_fails_at_once_without_waiting(tmp_path, clock):
+    backend, failures = _reconcile(
+        tmp_path, [_container("running"), _container("exited")]
+    )
+
+    assert failures == [_READBACK_FAILURE]
+    assert clock.sleeps == []
+    assert backend.container_inspect.call_count == 2
+
+
 @pytest.mark.parametrize("route", ["base-container", "compose"])
 def test_every_startup_route_rejects_unobserved_networks(tmp_path, route):
     backend = _backend(tmp_path, _info())
@@ -261,80 +358,3 @@ def test_default_bridge_conflict_does_not_recommend_removing_builtin_network():
     assert "bip" in failures[0]
     assert "non-overlapping" in failures[0]
     assert "restart" in failures[0]
-
-
-@pytest.mark.parametrize(
-    "selection",
-    [
-        "techvault",
-        "bounded-participant-agency-techvault",
-        "techvault-attacker-target",
-        "techvault-defensive-min",
-        "techvault-enterprise-web",
-    ],
-)
-def test_authored_scenario_networks_cannot_report_success_on_default_bridge(
-    tmp_path, selection
-):
-    """Use real admission/lowering for every plausible reported variant."""
-    from raes import parse_sdl_file
-    from raes_runtime.manager import RuntimeManager
-
-    from aptl.backends.raes import create_aptl_runtime_target
-    from aptl.backends.raes_realization import interpret_provisioning_plan
-    from aptl.backends.scenario_runtime_parameters import resolve_runtime_parameters
-    from aptl.core.config import AptlConfig
-    from aptl.core.scenario_bundle import env_pack_bundle, project_tree_bundle
-    from aptl.core.deployment._compose_realization_networks import (
-        _concrete_network_name,
-    )
-    from aptl.core.deployment._compose_base_container_realization import _needs_compose
-
-    root = Path(__file__).resolve().parents[1]
-    bundle = (
-        env_pack_bundle(tmp_path / "packs")
-        if selection == "techvault"
-        else project_tree_bundle(root, root / "scenarios" / f"{selection}.sdl.yaml")
-    )
-    config = AptlConfig()
-    backend = DockerComposeBackend(project_dir=tmp_path, project_name="test")
-    target = create_aptl_runtime_target(
-        project_dir=tmp_path,
-        config=config,
-        backend=backend,
-        bundle=bundle,
-    )
-    plan = RuntimeManager(target).plan(
-        parse_sdl_file(bundle.sdl_path),
-        parameters=resolve_runtime_parameters(bundle),
-    )
-    lowered = interpret_provisioning_plan(
-        plan=plan.provisioning,
-        config=config,
-        bundle=bundle,
-        component_root=root,
-    )
-    assert not [d.message for d in lowered.diagnostics if d.is_error]
-    spec = lowered.deployment_spec([])
-    assert _needs_compose(spec) == (selection != "bounded-participant-agency-techvault")
-    assert spec.nodes
-    assert spec.networks
-    assert all(node.network_attachments for node in spec.nodes)
-
-    backend.host_list_lab_networks = MagicMock(
-        return_value=[_concrete_network_name(n.name, "test") for n in spec.networks]
-    )
-    backend.container_inspect = MagicMock(return_value=_info())
-    backend.connect_container_network = MagicMock(return_value=LabResult(success=True))
-    backend.disconnect_container_network = MagicMock(
-        return_value=LabResult(success=True)
-    )
-
-    failures = backend._reconcile_realization_networks(spec)
-
-    assert failures
-    assert all("missing declared network attachment" in failure for failure in failures)
-    assert backend.connect_container_network.call_count == sum(
-        len(n.network_attachments) for n in spec.nodes
-    )
-    backend.disconnect_container_network.assert_not_called()

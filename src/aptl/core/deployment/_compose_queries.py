@@ -1,9 +1,6 @@
-"""Host- and container-level docker query/inspect operations.
+"""Docker query operations mixed into DockerComposeBackend.
 
-Split out of ``docker_compose.py`` (module-length budget) as a mixin so the
-deployment backend stays under the size limit. ``ComposeQueryMixin`` is mixed
-into ``DockerComposeBackend``, which supplies ``_run``, ``_run_streaming``, and
-``_project_name``.
+The backend supplies command execution and project ownership checks.
 """
 
 import json
@@ -14,27 +11,20 @@ import tempfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from aptl.core.deployment._cleanup_budget import cleanup_command_timeout
 from aptl.core.deployment._proc_net_listeners import (
     ContainerListeners,
     read_container_listeners,
 )
+from aptl.core.deployment._compose_capture_config import KALI_CONTAINER
+from aptl.core.deployment._compose_network_query import network_bridge
 from aptl.core.deployment._compose_resource_ownership import OwnershipConflictError
 from aptl.utils.logging import get_logger
 
 log = get_logger("deployment.docker_compose")
 
-# Bound for snapshot / host-inventory probes. A stalled docker daemon
-# (especially the SSH transport) must not hang `aptl lab status --json`
-# or the lab-start snapshot step indefinitely.
-# A single `docker inspect` / host-inventory read is normally sub-second, but the
-# realization-observation pass runs it against every container right after a
-# clean `aptl lab start` — when the docker daemon is at its busiest pulling
-# base images, building components, and starting ~30 containers with their JVMs.
-# Under that first-boot load `docker inspect` can take tens of seconds, and a
-# 15s cap made observation raise BackendTimeoutError and fail the SEM-218 gate
-# for a container that was actually healthy (issue #889 fresh-machine boot). The
-# cap only exists to stop a genuinely stalled daemon hanging observation forever,
-# so it is set generously; a healthy daemon always answers well within it.
+# Bound stalled local/SSH daemon probes. Healthy first-boot inventory can be
+# slow while Docker pulls images and starts containers (issue #889).
 _HOST_INVENTORY_TIMEOUT = 90
 
 
@@ -112,19 +102,6 @@ def _read_copied_file(destination: Path, max_bytes: int) -> bytes | None:
     except OSError:
         pass
     return payload
-
-
-def _network_bridge(
-    payload: dict[str, Any],
-    options: dict[str, str],
-    network_id: str,
-) -> str:
-    """Return the explicit or deterministic default bridge interface name."""
-
-    bridge = options.get("com.docker.network.bridge.name", "")
-    if not bridge and payload.get("Driver") == "bridge" and network_id:
-        return f"br-{network_id[:12]}"
-    return bridge
 
 
 def _decode_compose_ps(stdout: str) -> list[dict[str, Any]]:
@@ -224,11 +201,16 @@ class ComposeQueryMixin(object):
         labels = _string_mapping(payload.get("Labels"))
         options = _string_mapping(payload.get("Options"))
         network_id = str(payload.get("Id", ""))
-        bridge = _network_bridge(payload, options, network_id)
+        bridge = network_bridge(payload, options, network_id)
         subnets = [
             str(config.get("Subnet", ""))
             for config in ipam_configs
             if isinstance(config, dict) and config.get("Subnet")
+        ]
+        gateways = [
+            str(config.get("Gateway", ""))
+            for config in ipam_configs
+            if isinstance(config, dict) and config.get("Gateway")
         ]
         return {
             "name": str(payload.get("Name", name)),
@@ -239,6 +221,7 @@ class ComposeQueryMixin(object):
             "subnet": ipam.get("Subnet", ""),
             "subnets": subnets,
             "gateway": ipam.get("Gateway", ""),
+            "gateways": gateways,
             "labels": labels,
             "options": options,
             "containers": sorted(c.get("Name", "") for c in containers_map.values()),
@@ -285,6 +268,7 @@ class ComposeQueryMixin(object):
         since: str | None = None,
         until: str | None = None,
         timeout: int | None = None,
+        max_bytes: int | None = None,
     ) -> subprocess.CompletedProcess:
         native_id = self._resolve_owned_container_id(name)
         cmd = ["docker", "logs"]
@@ -293,15 +277,34 @@ class ComposeQueryMixin(object):
         if until is not None:
             cmd.extend(["--until", until])
         cmd.append(native_id)
-        return self._run(cmd, timeout=timeout)
+        if max_bytes is None:
+            return self._run(cmd, timeout=timeout)
+        if type(max_bytes) is not int or not 1 <= max_bytes <= 8 * 1024 * 1024:
+            raise ValueError("log capture byte limit is invalid")
+        from aptl.core.deployment._compose_log_capture import capture_logs
+
+        timeout = cleanup_command_timeout(timeout)
+        kwargs = self._command_kwargs(cmd, streaming=False, timeout=timeout)
+        return capture_logs(
+            cmd,
+            cwd=kwargs["cwd"],
+            env=kwargs.get("env"),
+            timeout=timeout if timeout is not None else 30,
+            max_bytes=max_bytes,
+        )
 
     def container_shell(self, name: str, *, shell: str | None = None) -> int:
-        if name == "aptl-kali" and _kali_capture_active(self._project_dir):
+        native_id = self._resolve_owned_container_id(name)
+        # Compare resolved native IDs, not selectors: Kali's semantic name,
+        # workspace-scoped name and native ID resolve to the same container.
+        # An unverifiable Kali identity raises, so the shell fails closed.
+        if _kali_capture_active(self._project_dir) and (
+            native_id == self._resolve_owned_container_id(KALI_CONTAINER)
+        ):
             log.error(
                 "Direct Kali container TTY refused while admitted session capture is active"
             )
             return 1
-        native_id = self._resolve_owned_container_id(name)
         chosen = shell
         if chosen is None:
             # Probe non-interactively for bash before launching the TTY,
@@ -397,7 +400,8 @@ class ComposeQueryMixin(object):
             )
 
     def container_exists(self, name: str) -> bool:
-        info = self.container_inspect(name)
+        native_id = self._find_owned_container_id(name)
+        info = self._raw_container_inspect(native_id) if native_id else {}
         if not info:
             return False
         labels = info.get("Config", {}).get("Labels") or {}
@@ -407,6 +411,25 @@ class ComposeQueryMixin(object):
         # com.docker.compose.project label. On a shared daemon this
         # rejects names that exist but belong to a different project.
         return labels.get("com.docker.compose.project") == self._project_name
+
+    def _find_owned_container_id(self, name: str) -> str | None:
+        """Return the verified native ID of a recorded container, or ``None``.
+
+        A read-only membership lookup: like ``container_list`` it loads, never
+        creates, the workspace scope. A name with no receipt, or whose recorded
+        container is gone, has no ID; a changed identity, label, semantic
+        binding or daemon still raises.
+        """
+
+        ownership = self._load_resource_ownership()
+        if ownership is None:
+            return None
+        candidates = ownership.candidates(
+            name, kind="container", daemon_id=self._ownership_daemon_id()
+        )
+        if not candidates:
+            return None
+        return self._verified_container_id(ownership, candidates)
 
     def container_inspect(self, name: str) -> dict[str, Any]:
         return self._raw_container_inspect(self._resolve_owned_container_id(name))
@@ -419,6 +442,10 @@ class ComposeQueryMixin(object):
             timeout=_HOST_INVENTORY_TIMEOUT,
         )
         if result.returncode != 0:
+            # A failed inspect alone cannot prove absence: Docker may have
+            # become unreachable since receipt resolution cached its identity.
+            # Check the same daemon before treating a recorded ID as gone.
+            self._verify_cached_docker_daemon()
             log.debug(
                 "container_inspect failed for native id %s: %s",
                 name[:12],

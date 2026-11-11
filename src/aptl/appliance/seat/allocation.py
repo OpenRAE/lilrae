@@ -12,7 +12,7 @@ import tempfile
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
-from typing import Iterator, TypeVar
+from typing import Iterator
 from pathlib import Path
 
 from aptl.appliance.seat.errors import SeatLauncherError
@@ -22,7 +22,6 @@ _LOCK_NAME = "\0aptl-seat-mapping-allocation-v1"
 _RESOURCE_PREFIX = b"name=opt/aptl/resource-reservation,string="
 _RESOURCE_VALUE = re.compile(rb"^(\d+):(\d+):(\d+)$")
 _MIN_HOST_MEMORY_HEADROOM_BYTES = 8 * 1024**3
-T = TypeVar("T")
 
 
 class _FileAllocatorLock:
@@ -249,7 +248,7 @@ def _require_resource_capacity(
         )
 
 
-def launch_with_reserved_mappings(
+def launch_with_reserved_mappings[T](
     mappings: tuple[BoundaryEndpoint, ...],
     launcher: Callable[[], T],
     *,
@@ -309,7 +308,7 @@ def launch_with_reserved_mappings(
         lock.close()
 
 
-def launch_with_automatic_mappings(
+def launch_with_automatic_mappings[T](
     publications: tuple[BoundaryEndpoint, ...],
     launcher: Callable[[tuple[BoundaryEndpoint, ...]], T],
     *,

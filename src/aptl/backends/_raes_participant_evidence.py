@@ -13,12 +13,27 @@ from aptl.backends._raes_participant_models import (
 from aptl.core.evidence._persist import EvidenceRef
 from aptl.core.evidence.outcomes import CollectorStatus
 from aptl.core.evidence.protocol import CollectorContext, CollectorOutcome
-from aptl.workbench.process import AgentExecutionError
+from aptl.workbench.process import (
+    REASON_OVERFLOW,
+    REASON_RESIDUE,
+    REASON_TIMEOUT,
+    AgentExecutionError,
+    BoundedProcessError,
+)
 
 if TYPE_CHECKING:
     from aptl.backends._raes_participant_transport import (
         ClaudeCodeHostParticipantAdapter,
     )
+
+# A bounded provider failure keeps its own capture status, so the acquisition
+# report and its diagnostic code say whether the turn timed out, overflowed or
+# left residue. Any other delivery failure stays a mid-run loss.
+_RUNNER_FAILURE_STATUS = {
+    REASON_TIMEOUT: CollectorStatus.TIMEOUT,
+    REASON_OVERFLOW: CollectorStatus.TRUNCATION,
+    REASON_RESIDUE: CollectorStatus.FINALIZATION_FAILURE,
+}
 
 
 class _ParticipantDeliveryCollector:
@@ -32,6 +47,7 @@ class _ParticipantDeliveryCollector:
         self._started_at = ""
         self._payload: dict[str, object] = {}
         self.result: ParticipantTurnResult | None = None
+        self.runner_failure: BoundedProcessError | None = None
         self._failed = False
 
     @property
@@ -56,6 +72,10 @@ class _ParticipantDeliveryCollector:
 
         try:
             self.result = adapter.deliver(**kwargs)  # type: ignore[arg-type]
+        except BoundedProcessError as exc:
+            self._failed = True
+            self.runner_failure = exc
+            raise
         except Exception:
             self._failed = True
             raise
@@ -74,12 +94,7 @@ class _ParticipantDeliveryCollector:
             )
         now = self._context.clock.now()
         if self._failed or self.result is None:
-            return CollectorOutcome(
-                status=CollectorStatus.MID_RUN_LOSS,
-                started_at=self._started_at,
-                finished_at=now,
-                detail="participant provider delivery failed",
-            )
+            return self._failed_outcome(now)
         result = self.result
         provider_metadata = {
             key: value
@@ -95,6 +110,9 @@ class _ParticipantDeliveryCollector:
             "provider_metadata": provider_metadata,
             "model": self._payload["model"],
             "session_id": result.session_id,
+            "process_cleanup": (
+                None if result.cleanup is None else result.cleanup.record()
+            ),
             "delivery_status": "delivered",
             "observation_status": "not-asserted",
         }
@@ -110,6 +128,19 @@ class _ParticipantDeliveryCollector:
                 "realization_profile_ref": payload["realization_profile_ref"],
                 "delivery_address": payload["delivery_address"],
             },
+        )
+
+    def _failed_outcome(self, now: str) -> CollectorOutcome:
+        """Report a failed turn, with the runner's reason when it has one."""
+
+        status = CollectorStatus.MID_RUN_LOSS
+        if self.runner_failure is not None:
+            status = _RUNNER_FAILURE_STATUS.get(self.runner_failure.reason, status)
+        return CollectorOutcome(
+            status=status,
+            started_at=self._started_at,
+            finished_at=now,
+            detail="participant provider delivery failed",
         )
 
     def bind_payload(self, turn: ParticipantInjectTurn, model: str) -> None:

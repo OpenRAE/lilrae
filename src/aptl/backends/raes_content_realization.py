@@ -3,7 +3,7 @@
 Issue #689 / ADR-046's TechVault addendum: a `content-placement` resource
 must lower into typed backend realization (:class:`DeploymentContentRealization`
 or :class:`ParticipantDatasetRealization`)
-or fail closed with an error diagnostic before any `aptl lab start` side
+or fail closed with an error diagnostic before any `lilrae lab start` side
 effect. Mirrors the worked pattern in `raes_image_realization.py`: parse,
 apply a narrow policy, and lower one resource, emitting redacted diagnostics
 rather than silently counting an unrealizable placement.

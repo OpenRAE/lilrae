@@ -4,8 +4,9 @@ vi.mock('ssh2', () => ({
   Client: vi.fn(),
 }));
 
-import { PersistentSession, SSHConnectionManager, SSHError } from '../src/ssh.js';
+import { CommandTimeoutError, PersistentSession, SSHConnectionManager, SSHError } from '../src/ssh.js';
 import { ShellType } from '../src/shells.js';
+import { generateToolHandlers } from '../src/tools/handlers.js';
 import { EventEmitter } from 'events';
 
 // Test our business logic, not the ssh2 library
@@ -149,6 +150,52 @@ describe('Buffer Management Logic', () => {
     // The earliest entries are gone — proof that overflow trimming ran.
     expect(buffer).not.toContain('line 0');
     expect(buffer).not.toContain('line 5000');
+  });
+
+  it('get_session_output names the chunks the buffer limit dropped (#967)', async () => {
+    // Real chain: session buffer -> manager -> tool handler, with no mocks
+    // between them. MAX_SIZE=10000 and TRIM_TO=5000, so each trim drops 5001.
+    const manager = new SSHConnectionManager();
+    const session = new PersistentSession('bg-overflow', 'host', 'user', 'background', {} as any, { port: 22 });
+    (manager as any).sessions.set('bg-overflow', session);
+    const handlers = generateToolHandlers({ toolPrefix: 'test', targetName: 'Test', configKey: 'test' });
+    const push = (from: number, to: number) => {
+      for (let i = from; i < to; i++) {
+        (session as any).handleShellOutput(`line ${i}\n`);
+      }
+    };
+    const read = async (args: Record<string, unknown>) => {
+      const result = await handlers.test_get_session_output(
+        { session_id: 'bg-overflow', ...args },
+        { sshManager: manager, labConfig: {} as any },
+      );
+      return JSON.parse(result.content[0].text);
+    };
+
+    // Under the limit nothing is dropped and the envelope is unchanged.
+    push(0, 9000);
+    const intact = await read({});
+    expect(intact).toMatchObject({ success: true, lines_returned: 9000 });
+    expect(intact).not.toHaveProperty('truncated');
+    expect(intact).not.toHaveProperty('dropped_chunks');
+
+    // Two trims, at chunk 10001 and chunk 15002, drop 10002 chunks in total.
+    // A tail read still says older output is gone.
+    push(9000, 16000);
+    expect(await read({ lines: 10 })).toMatchObject({
+      success: true, lines_returned: 10, truncated: true, dropped_chunks: 10002,
+    });
+
+    // A clearing read reports the drop, then resets it with the buffer.
+    const cleared = await read({ clear: true });
+    expect(cleared).toMatchObject({
+      success: true, lines_returned: 5998, buffer_cleared: true, truncated: true, dropped_chunks: 10002,
+    });
+    expect(cleared.output.startsWith('line 10002\n')).toBe(true);
+    const after = await read({});
+    expect(after).toMatchObject({ success: true, lines_returned: 0 });
+    expect(after).not.toHaveProperty('truncated');
+    expect(after).not.toHaveProperty('dropped_chunks');
   });
 });
 
@@ -397,6 +444,197 @@ describe('OBS-003: SendEnv + continuous PTY tee', () => {
     expect(Buffer.from(r2.b64, 'base64').toString()).toBe('second chunk\n');
 
     session.close();
+  });
+});
+
+describe('#1290: one-shot exec timeout stops the remote command', () => {
+  // SSHConnectionManager.executeCommand backs run_command. When its timer
+  // fires, the remote command must be stopped and its channel closed, not
+  // left running and streaming into a buffer nobody reads.
+  let tmp = '';
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    const { mkdtempSync } = require('node:fs');
+    const { tmpdir } = require('node:os');
+    const { join } = require('node:path');
+    // The exec path tees every chunk into a per-session JSONL under the
+    // state directory; keep it out of the source tree.
+    tmp = mkdtempSync(join(tmpdir(), 'aptl-ssh-exec-timeout-'));
+    process.env.APTL_STATE_DIR = tmp;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    const { rmSync } = require('node:fs');
+    rmSync(tmp, { recursive: true, force: true });
+    delete process.env.APTL_STATE_DIR;
+  });
+
+  // Stand-in for ssh2's ClientChannel. A real server answers close() later
+  // with the channel's 'close' event, so the tests emit that themselves.
+  const execChannel = () =>
+    Object.assign(new EventEmitter(), {
+      stderr: new EventEmitter(),
+      signal: vi.fn(),
+      close: vi.fn(),
+    });
+
+  type OpenChannel = (err: Error | undefined, channel: unknown) => void;
+
+  // Runs a command through a connection whose exec() hands its callback to
+  // `open`, so each test decides when the server opens the channel.
+  const run = (open: (callback: OpenChannel) => void) => {
+    const manager = new SSHConnectionManager();
+    (manager as any).createConnection = vi.fn(async () => ({
+      exec: vi.fn((_command: string, _options: unknown, callback: OpenChannel) => open(callback)),
+    }));
+    return manager
+      .executeCommand('target', 'kali', '/key', 'nmap -sV 10.0.0.5', 22, 5000, { sessionId: 'exec-timeout' })
+      .catch((e: unknown) => e);
+  };
+
+  // Directions of the chunks the exec path teed into its capture JSONL.
+  const teed = (): string[] => {
+    const { readFileSync } = require('node:fs');
+    const { join } = require('node:path');
+    const file = join(tmp, 'runs', '_unbound', 'mcp-side', 'sessions', 'exec-timeout.jsonl');
+    return readFileSync(file, 'utf-8').split('\n').filter(Boolean).map((line: string) => JSON.parse(line).dir);
+  };
+
+  it('signals the command, closes the channel and stops buffering when the timer fires', async () => {
+    const channel = execChannel();
+    const outcome = run((open) => open(undefined, channel));
+    await vi.advanceTimersByTimeAsync(4999);
+    const early = Buffer.from('Starting Nmap\n');
+    const decodeEarly = vi.spyOn(early, 'toString');
+    channel.emit('data', early);
+    expect(decodeEarly).toHaveBeenCalled();
+    expect(channel.close).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    const err = await outcome;
+    expect(err).toBeInstanceOf(SSHError);
+    expect((err as SSHError).message).toBe('Command timeout after 5000ms: nmap -sV 10.0.0.5');
+    expect(channel.signal).toHaveBeenCalledWith('TERM');
+    expect(channel.close).toHaveBeenCalledTimes(1);
+    // ssh2 sends a signal only on an open channel, so it has to come first.
+    expect(channel.signal.mock.invocationCallOrder[0]).toBeLessThan(channel.close.mock.invocationCallOrder[0]);
+
+    // Output still in flight before the server's close is not buffered, but
+    // the capture tee keeps every chunk the channel delivered.
+    const late = Buffer.from('Discovered open port 22/tcp\n');
+    const decodeLate = vi.spyOn(late, 'toString');
+    channel.emit('data', late);
+    channel.stderr.emit('data', late);
+    channel.emit('close', null, 'TERM');
+    expect(decodeLate).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(teed()).toEqual(['out', 'out', 'err']));
+  });
+
+  it('stops a channel the server opens only after the timer fired', async () => {
+    const channel = execChannel();
+    let openLate: OpenChannel | undefined;
+    const outcome = run((open) => {
+      openLate = open;
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await outcome).toBeInstanceOf(SSHError);
+
+    openLate?.(undefined, channel);
+    expect(channel.signal).toHaveBeenCalledWith('TERM');
+    expect(channel.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('still rejects when ssh2 throws because the connection is already gone', async () => {
+    // ssh2 throws from signal() and close() once its connection is torn
+    // down. That must not escape the timer callback and crash the server.
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const channel = execChannel();
+    channel.signal.mockImplementation(() => {
+      throw new Error('Instance unusable after fatal error');
+    });
+    const outcome = run((open) => open(undefined, channel));
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(await outcome).toBeInstanceOf(SSHError);
+    expect(log).toHaveBeenCalledWith('[SSH] could not stop a timed-out command:', expect.any(Error));
+  });
+
+  it('leaves a command that finishes in time alone', async () => {
+    const channel = execChannel();
+    const outcome = run((open) => open(undefined, channel));
+    await vi.advanceTimersByTimeAsync(0);
+    channel.emit('data', Buffer.from('Nmap done\n'));
+    channel.stderr.emit('data', Buffer.from('warning\n'));
+    channel.emit('close', 0, null);
+
+    expect(await outcome).toEqual({
+      stdout: 'Nmap done\n', stderr: 'warning\n', code: 0, signal: null, sessionId: 'exec-timeout', mode: 'normal',
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(channel.signal).not.toHaveBeenCalled();
+    expect(channel.close).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(teed()).toEqual(['out', 'err']));
+  });
+
+  describe('#1319: the timeout names the session and reports when its channel closed', () => {
+    // run_command harvests a timed-out exec's captures from the rejection, and
+    // must wait for the channel to close so the broker's final records exist.
+    // The harvest reads the run the exec was started under, not the one that
+    // is active when the channel finally closes.
+    beforeEach(() => {
+      process.env.APTL_MCP_ADMITTED_RUN_ID = 'run-1319';
+    });
+
+    afterEach(() => {
+      delete process.env.APTL_MCP_ADMITTED_RUN_ID;
+    });
+
+    const timedOut = async (outcome: Promise<unknown>) => {
+      await vi.advanceTimersByTimeAsync(5000);
+      const err = (await outcome) as CommandTimeoutError;
+      expect(err).toBeInstanceOf(CommandTimeoutError);
+      expect(err.sessionId).toBe('exec-timeout');
+      expect(err.runId).toBe('run-1319');
+      const state = { settled: false };
+      void err.channelClosed.then(() => {
+        state.settled = true;
+      });
+      return state;
+    };
+
+    it('settles channelClosed when the server confirms the close', async () => {
+      const channel = execChannel();
+      const closed = await timedOut(run((open) => open(undefined, channel)));
+      // A forced-command session's close can come as late as the command's exit.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(closed.settled).toBe(false);
+
+      channel.emit('close', null, 'TERM');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(closed.settled).toBe(true);
+    });
+
+    it.each([
+      ['opens the channel and then closes it', (open: OpenChannel, channel: ReturnType<typeof execChannel>) => {
+        open(undefined, channel);
+        channel.emit('close', null, 'TERM');
+      }],
+      ['refuses to open the channel', (open: OpenChannel) => open(new Error('channel open failure'), undefined)],
+    ])('settles channelClosed when, after the timer fired, the server %s', async (_label, answer) => {
+      const channel = execChannel();
+      let openLate: OpenChannel = () => {};
+      const closed = await timedOut(run((open) => {
+        openLate = open;
+      }));
+      expect(closed.settled).toBe(false);
+
+      answer(openLate, channel);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(closed.settled).toBe(true);
+    });
   });
 });
 
@@ -1699,5 +1937,193 @@ describe('#304: PersistentSession.close() awaits remote stream-close', () => {
     await disconnectP;
     expect(resolved).toBe(true);
     expect((manager as any).sessions.size).toBe(0);
+  });
+});
+
+describe('harvest on remote close (#campaign: harvest-at-shutdown)', () => {
+  function mockStreamSession(sessionId: string, runId: string) {
+    const mockStream = Object.assign(new EventEmitter(), {
+      write: vi.fn(),
+      end: vi.fn(() => mockStream.emit('close')),
+      stderr: new EventEmitter(),
+    });
+    const mockClient = {
+      shell: vi.fn((_opts: any, callback: any) => {
+        callback(null, mockStream);
+        return mockStream;
+      }),
+    } as any;
+    const session = new PersistentSession(sessionId, 'victim', 'kali', 'background', mockClient, {
+      port: 22,
+      mode: 'normal',
+      timeoutMs: 60000,
+    });
+    // Pin the bound run id the harvest uses, as the real open path does.
+    (session as any).boundRunId = runId;
+    return { session, mockStream };
+  }
+
+  it('harvests a remotely-closed session before dropping it from the map', async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new SSHConnectionManager();
+      const listedAtHarvest: string[][] = [];
+      const hook = vi.fn(async (id: string, runId: string | undefined) => {
+        listedAtHarvest.push(manager.listSessions().map((s) => s.sessionId));
+        expect(id).toBe('hydra-victim');
+        expect(runId).toBe('run-x');
+        return true;
+      });
+      manager.setHarvestHook(hook);
+
+      const { session, mockStream } = mockStreamSession('hydra-victim', 'run-x');
+      const initP = session.initialize();
+      await vi.advanceTimersByTimeAsync(1000);
+      await initP;
+      // Adopt the session exactly as createSession does.
+      (manager as any).attachSessionLifecycle('hydra-victim', session);
+      (manager as any).sessions.set('hydra-victim', session);
+      expect(manager.listSessions().map((s) => s.sessionId)).toContain('hydra-victim');
+
+      // The remote side dies: the kernel closes the PTY stream.
+      mockStream.emit('close');
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.waitFor(() => expect(hook).toHaveBeenCalledTimes(1));
+
+      // Harvested while still listed, then removed.
+      expect(listedAtHarvest[0]).toContain('hydra-victim');
+      expect(manager.listSessions()).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['close_session', 'close_all_sessions'])('deduplicates remote events with the real %s handler', async (tool) => {
+    vi.useFakeTimers();
+    try {
+      const manager = new SSHConnectionManager();
+      const hook = vi.fn().mockResolvedValue(true);
+      manager.setHarvestHook(hook);
+      const { session } = mockStreamSession('agent', 'run-a');
+      const init = session.initialize();
+      await vi.advanceTimersByTimeAsync(1000);
+      await init;
+      (session as any).boundRunId = 'run-a';
+      (manager as any).sessions.set('agent', session);
+      (manager as any).attachSessionLifecycle('agent', session);
+      const handlers = generateToolHandlers({ toolPrefix: 'test', targetName: 'Test' });
+      const result = await handlers[`test_${tool}`]({ session_id: 'agent' }, {
+        sshManager: manager, labConfig: { server: {} } as any,
+      });
+      expect(JSON.parse(result.content[0].text).success).toBe(true);
+      expect(hook).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('awaits a remote harvest already running when shutdown begins', async () => {
+    const manager = new SSHConnectionManager();
+    let finish!: (ok: boolean) => void;
+    manager.setHarvestHook(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+    const harvest = manager.harvestSession('remote', 'run-x');
+    await Promise.resolve();
+    let exited = false;
+    const shutdown = manager.shutdown(vi.fn()).then((ok) => { exited = true; return ok; });
+    await Promise.resolve();
+    expect(exited).toBe(false);
+    finish(false);
+    await harvest;
+    expect(await shutdown).toBe(false);
+  });
+
+  it('shares a harvest across remote close, agent close and shutdown', async () => {
+    const manager = new SSHConnectionManager();
+    const hook = vi.fn().mockResolvedValue(true);
+    manager.setHarvestHook(hook);
+    const { session } = mockStreamSession('once', 'run-z');
+    const first = (manager as any).harvestRemoteClose(session);
+    const second = manager.harvestSession('once', 'run-z', hook);
+    await Promise.all([first, second]);
+    expect(await manager.shutdown(vi.fn())).toBe(true);
+    expect(hook).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains a failed remote harvest after removing the session', async () => {
+    const manager = new SSHConnectionManager();
+    const hook = vi.fn().mockResolvedValue(false);
+    manager.setHarvestHook(hook);
+    const { session } = mockStreamSession('failed', 'run-x');
+    await (manager as any).harvestRemoteClose(session);
+    expect(manager.listSessions()).toHaveLength(0);
+    expect(await manager.shutdown(vi.fn())).toBe(false);
+    expect(hook).toHaveBeenCalledTimes(1);
+  });
+
+  it('drains a pending create before forced finalization and refuses new work', async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new SSHConnectionManager();
+      const { session, mockStream } = mockStreamSession('pending', 'run-x');
+      let created!: (session: PersistentSession) => void;
+      (manager as any).pendingSessions.set('pending', new Promise<PersistentSession>((resolve) => { created = resolve; }));
+      const finalize = vi.fn(async () => { mockStream.emit('close'); return true; });
+      const shutdown = manager.shutdown(finalize);
+      await expect(manager.createSession('late', 'h', 'u', 'background', '/k')).rejects.toThrow('shutting down');
+      await expect(manager.executeCommand('h', 'u', '/k', 'id')).rejects.toThrow('shutting down');
+      expect(finalize).not.toHaveBeenCalled();
+      const init = session.initialize();
+      await vi.advanceTimersByTimeAsync(1000);
+      await init;
+      (session as any).boundRunId = 'run-x';
+      (manager as any).sessions.set('pending', session);
+      (manager as any).attachSessionLifecycle('pending', session);
+      created(session);
+      expect(await shutdown).toBe(true);
+      expect(finalize).toHaveBeenCalledWith('pending', 'run-x');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('harvests a session that dies during initialization', async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new SSHConnectionManager();
+      const stream = Object.assign(new EventEmitter(), { write: vi.fn(), end: vi.fn(), stderr: new EventEmitter() });
+      (manager as any).getConnection = vi.fn().mockResolvedValue({ shell: (_options: unknown, cb: any) => cb(null, stream) });
+      const hook = vi.fn().mockResolvedValue(true);
+      manager.setHarvestHook(hook);
+      const creation = manager.createSession('init-death', 'h', 'u', 'background', '/k');
+      const failure = expect(creation).rejects.toThrow('Shell closed during initialization');
+      await Promise.resolve();
+      stream.emit('close');
+      await vi.advanceTimersByTimeAsync(0);
+      await failure;
+      expect(hook).toHaveBeenCalledTimes(1);
+      expect(hook.mock.calls[0][0]).toBe('init-death');
+      expect(manager.listSessions()).toHaveLength(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('releases startup when the SSH client rejects an exec synchronously', async () => {
+    const manager = new SSHConnectionManager();
+    (manager as any).getConnection = vi.fn().mockResolvedValue({ exec: () => { throw new Error('connection closed'); } });
+    await expect(manager.executeCommand('h', 'u', '/k', 'id')).rejects.toThrow('connection closed');
+    const finalize = vi.fn();
+    expect(await manager.shutdown(finalize)).toBe(true);
+    expect(finalize).not.toHaveBeenCalled();
+  });
+
+  it('finalizes an in-flight exec and waits for its single harvest at shutdown', async () => {
+    const manager = new SSHConnectionManager();
+    const stream = Object.assign(new EventEmitter(), { signal: vi.fn(), close: vi.fn(), stderr: new EventEmitter() });
+    const client = { exec: vi.fn((_cmd: unknown, _opts: unknown, cb: any) => cb(null, stream)) };
+    (manager as any).getConnection = vi.fn().mockResolvedValue(client);
+    const hook = vi.fn().mockResolvedValue(true);
+    manager.setHarvestHook(hook);
+    const command = manager.executeCommand('h', 'u', '/k', 'sleep 300', 22, 60000, { sessionId: 'exec-active' });
+    await Promise.resolve();
+    const finalize = vi.fn(async () => { stream.emit('close', 143, null); return true; });
+    expect(await manager.shutdown(finalize)).toBe(true);
+    await command;
+    expect(finalize.mock.calls[0][0]).toBe('exec-active');
+    expect(hook).toHaveBeenCalledTimes(1);
   });
 });

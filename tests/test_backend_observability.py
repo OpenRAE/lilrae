@@ -1,14 +1,21 @@
 """Backend apparatus must not depend on, or silently extend, scenario topology."""
 
 from pathlib import Path
+from dataclasses import replace
 import shutil
 import subprocess
+import uuid
 
 import pytest
 import yaml
 
 from aptl.core.deployment.docker_compose import DockerComposeBackend
-from aptl.core.deployment.realization import DeploymentRealizationSpec
+from aptl.core.deployment.realization import (
+    DeploymentNetworkRealization,
+    DeploymentNodeRealization,
+    DeploymentPersistentVolumeRealization,
+    DeploymentRealizationSpec,
+)
 from aptl.core.host_ports import published_port_specs
 
 
@@ -24,7 +31,10 @@ def engine(tmp_path, monkeypatch):
     asset = _ROOT / "docker-compose.observability.yml"
     if asset.exists():
         shutil.copyfile(asset, root / asset.name)
-    monkeypatch.setenv("GRAFANA_ADMIN_PASSWORD", "local-fixture-password-992")
+    (root / ".env").write_text(
+        f"GRAFANA_ADMIN_PASSWORD=fixture-{uuid.uuid4().hex[:12]}\n", encoding="utf-8"
+    )
+    monkeypatch.delenv("GRAFANA_ADMIN_PASSWORD", raising=False)
     return root
 
 
@@ -53,6 +63,21 @@ def test_generated_compose_includes_isolated_backend_apparatus(engine, tmp_path)
     assert not list(scenario.iterdir()), "apparatus must not write into the pack"
 
 
+def test_apparatus_mount_paths_are_literal_under_a_dollar_directory(engine):
+    from aptl.core.deployment._compose_observability import observability_compose_file
+    from aptl.core.deployment._compose_runtime_config import compose_readback
+
+    root = engine.with_name("engine${INDEXER_PASSWORD}")
+    engine.rename(root)
+    path = observability_compose_file(root)
+    model = compose_readback(yaml.safe_load(path.read_text()))
+    for service in model["services"].values():
+        for mount in service.get("volumes", []):
+            if mount["type"] == "bind":
+                assert Path(mount["source"]).is_relative_to(root.resolve())
+    assert "engine$${INDEXER_PASSWORD}" in path.read_text()
+
+
 @pytest.mark.parametrize(
     "section,name,definition",
     [
@@ -67,30 +92,55 @@ def test_reserved_ownership_collision_rejects_before_backend_mutation(
 ):
     scenario = tmp_path / "pack"
     scenario.mkdir()
-    (scenario / "docker-compose.yml").write_text(
-        yaml.safe_dump({section: {name: definition}})
-    )
+    spec = DeploymentRealizationSpec(profiles=("otel",), nodes=(), networks=())
+    if section == "services":
+        node = DeploymentNodeRealization(
+            address=f"provision.node.{name}", name=name, service_name=name,
+            container_name=definition.get("container_name"), networks=(),
+        )
+        spec = replace(spec, nodes=(node,))
+    elif section == "networks":
+        spec = replace(spec, networks=(DeploymentNetworkRealization(name=name),))
+    else:
+        volume = DeploymentPersistentVolumeRealization(
+            address=f"provision.volume.{name}", name=name, lifecycle="retain",
+            access_mode="read_write_many", consumers=(),
+        )
+        spec = replace(spec, persistent_volumes=(volume,))
     backend = DockerComposeBackend(engine)
     backend._docker_daemon_id = "test-daemon"
     monkeypatch.setattr(
         backend, "_run", lambda *args, **kwargs: pytest.fail("mutated colliding world")
     )
     result = backend.realize(
-        DeploymentRealizationSpec(profiles=("otel",), nodes=(), networks=()),
+        spec,
         scenario_root=scenario,
     )
     assert not result.success
     assert "observability-ownership-conflict" in result.error
 
 
+def test_an_unused_root_model_cannot_claim_backend_apparatus(engine, tmp_path):
+    scenario = tmp_path / "scenario"
+    scenario.mkdir()
+    (scenario / "docker-compose.yml").write_text(
+        "services:\n  aptl-tempo:\n    image: example/other:1\n", encoding="utf-8"
+    )
+    backend = DockerComposeBackend(engine)
+    spec = DeploymentRealizationSpec(profiles=("otel",), nodes=(), networks=())
+    assert backend._observability_preflight(spec) is None
+
+
 @pytest.mark.parametrize("password", [None, "", "CHANGE_ME"])
 def test_missing_or_placeholder_operator_credential_rejects_before_mutation(
     engine, tmp_path, monkeypatch, password
 ):
-    if password is None:
-        monkeypatch.delenv("GRAFANA_ADMIN_PASSWORD", raising=False)
-    else:
-        monkeypatch.setenv("GRAFANA_ADMIN_PASSWORD", password)
+    (engine / ".env").write_text(
+        "" if password is None else f"GRAFANA_ADMIN_PASSWORD={password}\n",
+        encoding="utf-8",
+    )
+    # An ambient value no longer reaches Compose, so it cannot satisfy this check.
+    monkeypatch.setenv("GRAFANA_ADMIN_PASSWORD", f"ambient-{uuid.uuid4().hex[:12]}")
     scenario = tmp_path / "pack"
     scenario.mkdir()
     backend = DockerComposeBackend(engine)

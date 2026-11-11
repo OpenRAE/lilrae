@@ -5,12 +5,13 @@ so every project-ownership check that filters containers by the
 `com.docker.compose.project` label (container_exists, the host snapshot
 listing, observation) would otherwise never see a node the generic
 materializer realized directly. Caught by a real local live-gate boot of
-the full TechVault range, not by any unit test - this file exists so it
+the full range, not by any unit test - this file exists so it
 cannot regress silently again.
 """
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -420,7 +421,6 @@ def test_start_base_container_can_retain_the_provider_image_command(tmp_path):
         image_ref="aptl/generic-samba-ad-base:latest",
         runs_services=False,
         use_image_command=True,
-        backend_run_capabilities=("SYS_ADMIN",),
     )
 
     with patch("subprocess.run") as mock_run:
@@ -435,7 +435,8 @@ def test_start_base_container_can_retain_the_provider_image_command(tmp_path):
     argv = run_call.args[0]
     image_index = argv.index("aptl/generic-samba-ad-base:latest")
     assert argv[image_index:] == ["aptl/generic-samba-ad-base:latest"]
-    assert argv[image_index - 2 : image_index] == ["--cap-add", "SYS_ADMIN"]
+    # Issue #976: the Samba provider adds no capability.
+    assert "--cap-add" not in argv
 
 
 def test_start_base_container_with_init_still_carries_the_label(tmp_path):
@@ -1282,6 +1283,11 @@ class TestInitRunFlagsPosture:
         assert flags[flags.index("--cap-add") + 1] == "NET_ADMIN"
 
 
+# Grant values built at run time, so no password-shaped literal is in the source.
+_CURRENT = f"current-{uuid.uuid4().hex[:12]}"
+_PREVIOUS = f"previous-{uuid.uuid4().hex[:12]}"
+
+
 class TestBaseContainerReuseRejectsDrift:
     """issue #955: a running container is reused only when it still matches the
     spec that would be created now.
@@ -1449,15 +1455,14 @@ class TestBaseContainerReuseRejectsDrift:
         )
 
     def _provider_spec(self) -> BaseContainerSpec:
-        # A backend-selected provider substrate (the Samba AD base) carries its
-        # own measured capability minimum, separate from any authored grant.
+        # A backend-selected provider substrate (the Samba AD base). Since
+        # issue #976 it adds no capability of its own.
         return BaseContainerSpec(
             node_address="provision.node.ad",
             container_name="aptl-ad",
             image_ref="aptl/generic-samba-ad-base:latest",
             runs_services=False,
             use_image_command=True,
-            backend_run_capabilities=("SYS_ADMIN",),
         )
 
     def _provider_inspect(self, cap_add):
@@ -1465,10 +1470,10 @@ class TestBaseContainerReuseRejectsDrift:
         info["HostConfig"]["CapAdd"] = cap_add
         return info
 
-    def test_a_backend_selected_capability_is_expected_state(self, tmp_path):
+    def test_a_provider_without_added_capabilities_is_expected_state(self, tmp_path):
         backend = _backend(tmp_path)
         backend._raw_container_inspect = MagicMock(
-            return_value=self._provider_inspect(["CAP_SYS_ADMIN"])
+            return_value=self._provider_inspect(None)
         )
 
         assert backend._base_container_already_realized(
@@ -1478,14 +1483,14 @@ class TestBaseContainerReuseRejectsDrift:
     @pytest.mark.parametrize(
         "cap_add",
         [
-            pytest.param(None, id="backend-grant-missing"),
-            pytest.param(["SYS_ADMIN", "NET_ADMIN"], id="extra-grant"),
+            pytest.param(["CAP_SYS_ADMIN"], id="stale-pre-976-grant"),
+            pytest.param(["NET_ADMIN"], id="extra-grant"),
         ],
     )
     def test_capability_drift_is_checked_on_plain_nodes_too(self, tmp_path, cap_add):
         # The capability set is compared for every base container, not only
-        # init-capable ones: a provider substrate's grant is realized state
-        # APTL chose, so anything more or less is a different policy.
+        # init-capable ones: a provider container that holds any added
+        # capability, such as the grant retired by #976, is a different policy.
         backend = _backend(tmp_path)
         backend._raw_container_inspect = MagicMock(
             return_value=self._provider_inspect(cap_add)
@@ -1494,6 +1499,88 @@ class TestBaseContainerReuseRejectsDrift:
         assert not backend._base_container_already_realized(
             _CONTAINER_ID, self._provider_spec(), "aptl/generic-samba-ad-base:latest"
         )
+
+    def _granted(self, tmp_path):
+        """A backend whose preflight granted db's DB_PASSWORD from LAB_DB_PASSWORD."""
+
+        import os
+
+        from aptl.core.config import EnvironmentGrant
+        from aptl.core.deployment._environment_bindings import (
+            EnvironmentBindingContext,
+        )
+
+        grant = EnvironmentGrant(
+            pack="fixture-range",
+            consumer="db",
+            variable="DB_PASSWORD",
+            source={"kind": "process-environment", "variable": "LAB_DB_PASSWORD"},
+        )
+        backend = _backend(tmp_path)
+        backend._environment_binding_context = EnvironmentBindingContext(
+            pack_id="fixture-range", grants=(grant,), process_environment=os.environ
+        )
+        backend._environment_consumers = {"provision.node.db": "db"}
+        spec = replace(
+            self._spec(),
+            environment_names=("DB_PASSWORD",),
+            environment_sourced=("DB_PASSWORD",),
+        )
+        return backend, spec
+
+    @pytest.mark.parametrize(
+        ("realized", "label", "reused"),
+        [
+            pytest.param(f"DB_PASSWORD={_CURRENT}", "DB_PASSWORD", True, id="same"),
+            pytest.param(
+                f"DB_PASSWORD={_PREVIOUS}", "DB_PASSWORD", False, id="changed-source"
+            ),
+            pytest.param(None, "DB_PASSWORD", False, id="variable-missing"),
+            pytest.param(
+                f"DB_PASSWORD={_CURRENT}",
+                "DB_PASSWORD,OLD_TOKEN",
+                False,
+                id="still-carries-an-unbound-variable",
+            ),
+            pytest.param(f"DB_PASSWORD={_CURRENT}", None, False, id="unlabelled"),
+        ],
+    )
+    def test_a_changed_source_is_not_reused_with_the_old_value(
+        self, tmp_path, monkeypatch, realized, label, reused
+    ):
+        # Changed source (#965): the posture check leaves environment out, so a
+        # container started with an old grant value would otherwise be kept.
+        # The bound-names label also catches a variable that is no longer bound.
+        monkeypatch.setenv("LAB_DB_PASSWORD", _CURRENT)
+        backend, spec = self._granted(tmp_path)
+        info = self._inspect()
+        info["Config"]["Env"] = ["PATH=/usr/bin", *([realized] if realized else [])]
+        if label is not None:
+            info["Config"]["Labels"]["aptl.environment.names"] = label
+        backend._raw_container_inspect = MagicMock(return_value=info)
+
+        assert (
+            backend._base_container_already_realized(
+                _CONTAINER_ID, spec, "aptl/generic-systemd-base-debian:latest"
+            )
+            is reused
+        )
+
+    def test_a_missing_binding_fails_before_the_recreate_path_removes_anything(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.delenv("LAB_DB_PASSWORD", raising=False)
+        backend, spec = self._granted(tmp_path)
+        backend._raw_container_inspect = MagicMock()
+        backend._run = MagicMock()
+
+        with pytest.raises(BackendSeedError, match="has no value"):
+            backend._base_container_already_realized(
+                _CONTAINER_ID, spec, "aptl/generic-systemd-base-debian:latest"
+            )
+
+        backend._raw_container_inspect.assert_not_called()
+        backend._run.assert_not_called()
 
 
 class TestSubstrateDaemonGateInStartPath:

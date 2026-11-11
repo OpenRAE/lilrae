@@ -120,7 +120,7 @@ def pin_terminal_host_keys(
     Each endpoint is probed independently; a probe that fails (endpoint
     not yet reachable, auth issue, timeout) is logged and skipped rather
     than aborting lab start. An unpinned endpoint simply makes the relay
-    fail closed for that container until the next ``aptl lab start``. The
+    fail closed for that container until the next ``lilrae lab start``. The
     ``known_hosts`` file is always (re)written atomically with whatever
     pins succeeded — including an empty file when nothing was reachable,
     so the relay sees a present-but-unmatched file rather than a missing
