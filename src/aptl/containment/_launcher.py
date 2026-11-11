@@ -202,7 +202,7 @@ def _add_grant(libc: ctypes.CDLL, ruleset: int, grant: dict[str, str], handled: 
     # Sonar S2083 is a false positive here. The grant paths come from the policy file that the
     # adapter wrote owner-only and bound read-only; no untrusted party writes that file.
     try:
-        fd = os.open(grant["path"], os.O_PATH | os.O_CLOEXEC)  # NOSONAR(pythonsecurity:S2083) - see above
+        fd = os.open(grant["path"], os.O_PATH | os.O_CLOEXEC)  # NOSONAR
     except FileNotFoundError:
         return False
     try:
@@ -307,7 +307,7 @@ def main(argv: list[str]) -> int:
     # requested target, which is its purpose. The adapter builds the argument vector and the
     # owner-only policy file, so the inputs cross no trust boundary.
     try:
-        with open(argv[2], encoding="utf-8") as stream:  # NOSONAR(pythonsecurity:S8707) - see above
+        with open(argv[2], encoding="utf-8") as stream:  # NOSONAR
             policy = json.load(stream)
         if argv[3] != "--" or not target:
             raise LayerError("arguments", "no target command")
@@ -319,8 +319,9 @@ def main(argv: list[str]) -> int:
         status.fail("policy", type(exc).__name__)
         return 126
     status.write("exec")
+    # Sonar S8701, S8705 and S6547 are false positives here, for the reason at the start of main().
     try:
-        os.execve(target[0], target, policy["environment"])  # NOSONAR(pythonsecurity:S8701,S8705,S6547) - see above
+        os.execve(target[0], target, policy["environment"])  # NOSONAR
     except OSError as exc:
         status.fail("exec", _errno_name(exc.errno))
     return 127

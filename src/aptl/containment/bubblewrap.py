@@ -15,7 +15,7 @@ POLICY_IN_SANDBOX = f"{_SANDBOX_RUN}/policy.json"
 INPUT_IN_SANDBOX = f"{_SANDBOX_RUN}/input"
 # Sonar S5443 is a false positive on the next line. The path names the fresh tmpfs that
 # Bubblewrap mounts in the run's own mount namespace. No other user or process can reach it.
-SANDBOX_TMP = "/tmp"  # NOSONAR(python:S5443) - private tmpfs of one sandbox, not the shared host /tmp
+SANDBOX_TMP = "/tmp"  # NOSONAR(S5443)
 SANDBOX_HOME = f"{SANDBOX_TMP}/home"
 REQUIRED_NAMESPACES = frozenset({
     "pid-namespace", "mnt-namespace", "net-namespace", "ipc-namespace", "uts-namespace",
