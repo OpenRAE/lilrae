@@ -23,12 +23,15 @@ from aptl.core.lab import finalize_trial_capture
 from aptl.core.mcp_policy import configured_server_ids
 from aptl.core.opencode import OpenCodeInvocationEvidence
 from aptl.core.runstore import LocalRunStore
+from aptl.utils.logging import get_logger
 from aptl.core.trial_attempt import TrialAttempt
 from aptl.core.trial_control import TrialControl
 from aptl.core.trial_record import TrialRecord, seal_trial_record
 from aptl.core.trial_sdl import TrialDeclarationError, admitted_participants, declared_participants
 from aptl.workbench.trial_launch import TrialLaunchSettings, invocation_fields, trial_executors
 from aptl.workbench.trial_run import DeclaredTrial, run_declared_trial
+
+log = get_logger("lab_trial")
 
 __all__ = ["refuse_existing_trial_run", "run_lab_trial", "trial_summary"]
 
@@ -100,7 +103,7 @@ def _run_and_drain(
     """Run every participant, then remove its credentials before returning."""
     bundle = resolve_scenario_bundle(root, scenario_path, config)
     try:
-        scenario, digest, configurations = _trial_scenario(bundle, config, attempt)
+        scenario, digest, configurations, bound = _trial_scenario(bundle, config, attempt)
         if digest != scenario_sha256:
             raise RuntimeError("the trial SDL differs from the SDL that startup admitted")
         participants = (
@@ -146,6 +149,10 @@ def _run_and_drain(
                 store=store,
                 clock=lambda: datetime.now(UTC),
             )
+        try:
+            _retain_trial_end_data(root, config, bound, scenario, store, record)
+        except Exception as exc:  # noqa: BLE001  # trial-end data never blocks the seal
+            log.warning("trial-end data was not retained: %s", type(exc).__name__)
         cleanup = {"provider_access": "removed"}
         # An attached account has no delivered key to remove; record that it was used.
         if isinstance(
@@ -157,18 +164,45 @@ def _run_and_drain(
         bundle.close()
 
 
-def _trial_scenario(bundle, config: AptlConfig, attempt: TrialAttempt) -> tuple[object, str, tuple | None]:
-    """Return the scenario the trial runs, its digest and any admitted configurations.
+def _trial_scenario(bundle, config: AptlConfig, attempt: TrialAttempt) -> tuple[object, str, tuple | None, object]:
+    """Return the scenario, its digest, any admitted configurations and the bound bundle.
 
     An admitted plan entry runs its instantiated snapshot with its participant
     configurations; otherwise the SDL file runs with its authored participants.
     """
     if attempt.unit is not None:
-        trial = bind_trial_unit(bundle, config, attempt).trial
+        bound = bind_trial_unit(bundle, config, attempt)
+        trial = bound.trial
         assert trial is not None
-        return trial.scenario, trial.snapshot_digest, tuple(trial.participant_configuration_results)
+        return trial.scenario, trial.snapshot_digest, tuple(trial.participant_configuration_results), bound
     digest = "sha256:" + hashlib.sha256(bundle.sdl_path.read_bytes()).hexdigest()
-    return parse_sdl_file(bundle.sdl_path), digest, None
+    return parse_sdl_file(bundle.sdl_path), digest, None, bundle
+
+
+def _retain_trial_end_data(root: Path, config: AptlConfig, bound, scenario, store: LocalRunStore, record) -> None:
+    """Keep the scenario's product dump and the host audit log before the seal."""
+    from aptl.backends._raes_admission_helpers import resolve_admission_adapters
+    from aptl.backends.trial_end_capture import retain_host_audit, retain_soc_dump
+    from aptl.core.env import load_dotenv
+    from aptl.core.lab import _configured_backend
+
+    adapter = backend = None
+    try:
+        _, capture = resolve_admission_adapters(bound, config, None)
+        adapter = capture.contribution.runtime_adapter if capture is not None else None
+        backend, _failure = _configured_backend(root, config, command="trial")
+    except Exception as exc:  # noqa: BLE001  # a missing adapter is recorded, never fatal to the seal
+        log.warning("trial-end capture adapter is unavailable: %s", type(exc).__name__)
+    env_path = root / ".env"
+    retain_soc_dump(
+        store,
+        record.run_id,
+        adapter=adapter,
+        backend=backend,
+        node_names=tuple(getattr(scenario, "nodes", {}) or {}),
+        environment=load_dotenv(env_path) if env_path.is_file() else {},
+    )
+    retain_host_audit(store, record.run_id, started_at=record.started_at, ended_at=record.ended_at)
 
 
 @contextmanager

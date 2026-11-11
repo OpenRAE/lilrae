@@ -198,6 +198,17 @@ A participant status is `completed`, `cancelled`, `failed`, or `not-started`.
 A trial without a deadline or stop ends `failed` when a participant failed.
 Participant output is under `trial/participants/` after secret redaction.
 
+The run also keeps the data that the trial leaves behind:
+
+| Path | Content |
+| --- | --- |
+| `trial/transcripts/<address>.json` | The participant's native session: prompts, reasoning, replies, tool calls and results, without granted credentials |
+| `trial/soc/` | The scenario adapter's product dump after the participants end, without granted credentials |
+| `trial/audit/audit.log` | The host audit records of the trial window, when the host runs auditd |
+
+`trial/soc/status.json` and `trial/audit/status.json` record each capture as
+`captured`, `unavailable`, or `failed`. A capture failure does not stop the seal.
+
 The seal marker lists every regular file in the run. Its run status is
 `completed`, or `aborted` for a deadline or a stop, or `failed`. Its outcome
 status is `not-evaluated`. A trial that did not complete adds the

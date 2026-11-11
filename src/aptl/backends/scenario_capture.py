@@ -86,6 +86,18 @@ class ScenarioCaptureRuntimeAdapter(Protocol):
     ) -> None: ...
 
 
+@dataclass(frozen=True)
+class TrialEndCaptureContext:
+    """Admitted container operations for the data a trial leaves behind.
+
+    A runtime adapter may define ``trial_end_capture(context)``. The trial
+    runner calls it after every participant ended and before the seal. It
+    returns file names and bytes that the runner keeps under ``trial/soc/``.
+    """
+
+    operations: ScenarioRuntimeOperations = field(repr=False)
+
+
 class ScenarioPropositionInterpreter(Protocol):
     """Interpret retained records for one exact proposition and polarity."""
 
@@ -353,6 +365,7 @@ __all__ = [
     "ResolvedScenarioCapture",
     "ScenarioCaptureContext",
     "ScenarioCaptureContribution",
+    "TrialEndCaptureContext",
     "ScenarioCaptureProvider",
     "CaptureSourceContext",
     "ScenarioCaptureRuntimeAdapter",
