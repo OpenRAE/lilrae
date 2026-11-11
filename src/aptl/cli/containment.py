@@ -10,15 +10,12 @@ from typing import Annotated
 import typer
 from pydantic import ValidationError
 
-from aptl.containment import EngineInstallation, RaptorContainmentAdapter, load_engine_pin
+from aptl.containment import BubblewrapContainmentAdapter
 from aptl.core.containment import MAX_REQUEST_BYTES, ExecutionRequest
 from aptl.utils.strict_json import model_validate_json_strict
 from aptl.workbench.process import BoundedProcessRunner
 
 app = typer.Typer(help="Run one command in the shared containment wrapper.", no_args_is_help=True)
-
-# A source checkout carries the pinned engine as the third_party/raptor submodule.
-_SOURCE_CHECKOUT_ENGINE = Path(__file__).resolve().parents[3] / "third_party" / "raptor"
 
 
 def _fail(message: str) -> typer.Exit:
@@ -42,19 +39,11 @@ def _read_request() -> ExecutionRequest:
 @app.command("run")
 def run_command(
     state_root: Annotated[Path, typer.Option("--state-root", help="Private directory for run directories.")],
-    engine_root: Annotated[
-        Path | None, typer.Option("--engine-root", help="Engine checkout; default is the source-checkout submodule.")
-    ] = None,
 ) -> None:
     """Read one request on standard input; write one report on standard output."""
     request = _read_request()
-    root = engine_root if engine_root is not None else _SOURCE_CHECKOUT_ENGINE
     try:
-        adapter = RaptorContainmentAdapter(
-            engine=EngineInstallation(root, load_engine_pin()),
-            state_root=state_root,
-            runner=BoundedProcessRunner(),
-        )
+        adapter = BubblewrapContainmentAdapter(state_root=state_root, runner=BoundedProcessRunner())
     except ValueError as exc:
         raise _fail(str(exc)) from None
     cancel = Event()

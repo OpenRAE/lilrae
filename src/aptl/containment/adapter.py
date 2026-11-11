@@ -1,99 +1,52 @@
-"""The shared containment wrapper around the pinned engine (ADR-068).
+"""The shared containment wrapper around the Bubblewrap engine (ADR-068).
 
-Each run gets a private directory and a new worker process. The worker imports
-the engine; this process never does. The canonical bounded runner starts the
-worker with an outer deadline, a report-size bound and cancellation, and
-cleans up the worker's process group.
+Each run checks every property on the host, writes a private launcher policy,
+and starts one Bubblewrap process through the canonical bounded runner. The
+launcher and Bubblewrap report on two private status descriptors; the report
+claims containment only when both confirm every property.
 """
 
 import json
 import os
 import secrets
 import stat
-import sys
-from dataclasses import dataclass
+import time
+from collections.abc import Callable
 from pathlib import Path
 from threading import Event
 
-from pydantic import ValidationError
-
-from aptl.containment._worker_report import WorkerReport
-from aptl.containment.engine import EngineInstallation
+from aptl.containment.bubblewrap import BUBBLEWRAP, SandboxLayout, parse_status, run_arguments
+from aptl.containment.host import HostFacts, HostInspector
+from aptl.containment.launch_status import parse_launch_status
+from aptl.containment.outcome import (
+    Evidence,
+    Outcome,
+    classify,
+    host_properties,
+    refusal,
+    setup_failure,
+    stopped_before_launch,
+)
+from aptl.containment.policy import denied_environment_names, launcher_policy
 from aptl.core.agent_errors import AgentExecutionError
 from aptl.core.containment import (
     REPORT_SCHEMA,
     AppliedBounds,
-    CleanupObservation,
+    EngineIdentity,
     ExecutionReport,
     ExecutionRequest,
-    FailureOrigin,
     HostIdentity,
-    PropertyObservation,
     PropertyState,
     ReasonCode,
-    RunStatus,
-    WorkerCleanup,
     WorkerRunner,
     WorkerRunnerFailure,
-    profile_properties,
 )
-from aptl.utils.pathsafe import (
-    open_private_dir_contained_nofollow,
-    remove_tree_contained_nofollow,
-)
-from aptl.utils.strict_json import model_validate_json_strict
+from aptl.utils.pathsafe import PathContainmentError, open_private_dir_contained_nofollow
 
-# Worker start-up, the engine probes and namespace setup happen before the
-# target deadline starts. No measurement exists yet, so the allowance is wide;
-# the engine enforces the target deadline itself.
-SETUP_ALLOWANCE_SECONDS = 120.0
-# The fork spawn backend's per-stream drain bound (_spawn._CAPTURE_CAP) at the
-# pinned commit. It bounds the worker's memory while it captures output.
-TRANSIENT_CAPTURE_BYTES_PER_STREAM = 64 * 1024 * 1024
-_REPORT_OVERHEAD_BYTES = 1024 * 1024
-_WORKER_SCRIPT = Path(__file__).with_name("_worker.py")
-_WORKER_MESSAGE_SCHEMA = "lilrae.containment.worker-message/v1"
-_WORKER_PATH = "/usr/bin:/bin"
+_LAUNCHER = Path(__file__).with_name("_launcher.py")
 _GROUP_OR_OTHER_WRITE = 0o022
-
-
-@dataclass(frozen=True)
-class _RunDirectory:
-    """The private paths of one run; only ``output`` is granted to the target."""
-
-    root: Path
-
-    @property
-    def output(self) -> Path:
-        return self.root / "output"
-
-    @property
-    def worker(self) -> Path:
-        return self.root / "worker"
-
-    @property
-    def log(self) -> Path:
-        return self.root / "engine.log"
-
-    def worker_environment(self) -> dict[str, str]:
-        home = self.worker / "home"
-        return {
-            "PATH": _WORKER_PATH,
-            "LANG": "C.UTF-8",
-            "HOME": str(home),
-            "TMPDIR": str(self.worker / "tmp"),
-            "XDG_CONFIG_HOME": str(home / ".config"),
-            "XDG_CACHE_HOME": str(home / ".cache"),
-            "XDG_STATE_HOME": str(home / ".local" / "state"),
-            "XDG_DATA_HOME": str(home / ".local" / "share"),
-        }
-
-
-def _create_run_directory(state_root: Path, run_id: str) -> _RunDirectory:
-    """Create owner-only directories without following links."""
-    for relative in ("", "/output", "/worker", "/worker/home", "/worker/tmp"):
-        os.close(open_private_dir_contained_nofollow(state_root, Path(run_id + relative)))
-    return _RunDirectory(state_root / run_id)
+_STATUS_BYTES = 65536
+_HOST_PATH = {"PATH": "/usr/bin:/bin"}
 
 
 def _require_private_root(state_root: Path) -> None:
@@ -108,128 +61,170 @@ def _require_private_root(state_root: Path) -> None:
         raise ValueError("the containment state root must not be writable by group or other users")
 
 
-def _report_limit(request: ExecutionRequest) -> int:
-    """Base64 of the bounded output, plus the report and diagnostics."""
-    return 4 * (request.limits.max_output_bytes // 3 + 2) + _REPORT_OVERHEAD_BYTES
+def _drain(fd: int) -> bytes:
+    """Read what a status descriptor holds now, without waiting for writers."""
+    os.set_blocking(fd, False)
+    data = b""
+    try:
+        while len(data) < _STATUS_BYTES and (chunk := os.read(fd, 4096)):
+            data += chunk
+    except BlockingIOError:
+        pass
+    finally:
+        os.close(fd)
+    return data
 
 
-def _cleanup(observed: WorkerCleanup | None) -> CleanupObservation | None:
-    if observed is None:
-        return None
-    return CleanupObservation(residual=tuple(observed.residual), seconds=observed.seconds)
+class _Channels:
+    """The launcher and Bubblewrap status pipes of one run."""
+
+    def __init__(self) -> None:
+        self._fds: list[int] = []
+
+    def open(self) -> None:
+        for _ in range(2):
+            self._fds.extend(os.pipe())
+
+    @property
+    def status_write(self) -> int:
+        return self._fds[1]
+
+    @property
+    def json_write(self) -> int:
+        return self._fds[3]
+
+    def collect(self) -> tuple[bytes, bytes]:
+        """Close the write ends, then read what each status pipe holds."""
+        os.close(self._fds[1])
+        os.close(self._fds[3])
+        launch, bubblewrap = _drain(self._fds[0]), _drain(self._fds[2])
+        self._fds.clear()
+        return launch, bubblewrap
+
+    def close(self) -> None:
+        for fd in self._fds:
+            os.close(fd)
+        self._fds.clear()
 
 
-@dataclass(frozen=True)
-class _Outcome:
-    """The worker facts for one report, before identity and bounds are added."""
-
-    status: RunStatus
-    origin: FailureOrigin
-    reason: ReasonCode | None = None
-    detail: str | None = None
-    worker: WorkerReport | None = None
-    cleanup: CleanupObservation | None = None
+def _write_private(path: Path, data: bytes) -> None:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
+    with os.fdopen(os.open(path, flags, 0o600), "wb") as stream:
+        stream.write(data)
 
 
-class RaptorContainmentAdapter:
-    """Run requests through the pinned engine, one isolated worker per run."""
+class BubblewrapContainmentAdapter:
+    """Run requests in the Bubblewrap engine, one sandbox per run."""
 
     def __init__(
         self,
         *,
-        engine: EngineInstallation,
         state_root: Path,
         runner: WorkerRunner,
-        python: Path = Path(sys.executable),
+        bubblewrap: Path = BUBBLEWRAP,
+        host: HostInspector | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        # Bubblewrap starts in the run directory, so every bind source is absolute.
+        state_root = state_root.absolute()
         _require_private_root(state_root)
-        self._engine = engine
         self._state_root = state_root
         self._runner = runner
-        self._python = python
-        self._snapshot: Path | None = None
+        self._bubblewrap = bubblewrap
+        self._clock = clock
+        self._host = host or HostInspector(runner, bubblewrap, cwd=state_root, clock=clock)
 
     def execute(
         self, request: ExecutionRequest, *, cancel_event: Event | None = None
     ) -> ExecutionReport:
-        """Run ``request``; every outcome, including refusal, is a report."""
-        run_id = secrets.token_hex(16)
-        if self._snapshot is None:
-            verification = self._engine.prepare(self._state_root)
-            if verification.snapshot is None:
-                refusal = _Outcome(RunStatus.REFUSED, FailureOrigin.SETUP, verification.reason, verification.detail)
-                return self._report(run_id, request, refusal, None)
-            # The snapshot is read-only and owner-only under the private state
-            # root, so later runs import the same verified bytes.
-            self._snapshot = verification.snapshot
-        if request.input_dir is not None and not request.input_dir.is_dir():
-            refusal = _Outcome(
-                RunStatus.REFUSED, FailureOrigin.SETUP, ReasonCode.INPUT_UNAVAILABLE,
-                "the input directory does not exist",
-            )
-            return self._report(run_id, request, refusal, None)
-        directory = _create_run_directory(self._state_root, run_id)
-        try:
-            outcome = self._run_worker(directory, request, self._snapshot, cancel_event)
-        finally:
-            remove_tree_contained_nofollow(directory.root, Path("worker"))
-        return self._report(run_id, request, outcome, directory.root)
+        """Run ``request``; every outcome, including refusal, is a report.
 
-    def _run_worker(
+        One deadline covers the host checks, the setup, and the target.
+        """
+        run_id = secrets.token_hex(16)
+        deadline = self._clock() + request.limits.deadline_seconds
+        facts = self._host.observe(deadline=deadline, cancel_event=cancel_event)
+        denied = denied_environment_names(request.env)
+        properties = host_properties(facts, denied)
+        stopped = stopped_before_launch(properties, deadline - self._clock(), cancel_event)
+        if stopped is not None:
+            return self._report(run_id, request, facts, stopped, None)
+        if any(item.state is not PropertyState.DELIVERED for item in properties):
+            return self._report(run_id, request, facts, refusal(properties, denied_names=denied), None)
+        if request.input_dir is not None and not request.input_dir.is_dir():
+            outcome = refusal(properties, ReasonCode.INPUT_UNAVAILABLE, "the input directory does not exist")
+            return self._report(run_id, request, facts, outcome, None)
+        run_dir = self._state_root / run_id
+        channels = _Channels()
+        try:
+            layout = self._prepare(run_id, request)
+            channels.open()
+        except (OSError, PathContainmentError) as exc:
+            channels.close()
+            outcome = setup_failure(properties, f"setup resources failed: {type(exc).__name__}")
+            return self._report(run_id, request, facts, outcome, run_dir if run_dir.exists() else None)
+        argv = run_arguments(
+            self._bubblewrap, layout, status_fd=channels.status_write, json_fd=channels.json_write,
+            argv=request.argv,
+        )
+        # The last deadline check before the payload leaves this process.
+        remaining = deadline - self._clock()
+        stopped = stopped_before_launch(properties, remaining, cancel_event)
+        if stopped is not None:
+            channels.close()
+            return self._report(run_id, request, facts, stopped, run_dir)
+        outcome = classify(self._run(argv, request, layout, remaining, channels, cancel_event), cancel_event)
+        return self._report(run_id, request, facts, outcome, run_dir)
+
+    def _prepare(self, run_id: str, request: ExecutionRequest) -> SandboxLayout:
+        """Create the owner-only run directory and write the launcher policy."""
+        for relative in (run_id, f"{run_id}/output"):
+            os.close(open_private_dir_contained_nofollow(self._state_root, Path(relative)))
+        run_dir = self._state_root / run_id
+        policy = run_dir / "policy.json"
+        _write_private(policy, json.dumps(launcher_policy(request, run_dir / "output")).encode())
+        return SandboxLayout(_LAUNCHER, policy, run_dir / "output", request.input_dir)
+
+    def _run(
         self,
-        directory: _RunDirectory,
+        argv: tuple[str, ...],
         request: ExecutionRequest,
-        snapshot: Path,
+        layout: SandboxLayout,
+        remaining: float,
+        channels: _Channels,
         cancel_event: Event | None,
-    ) -> _Outcome:
-        message = {
-            "schema_version": _WORKER_MESSAGE_SCHEMA,
-            "engine_root": str(snapshot),
-            "output_dir": str(directory.output),
-            "log_path": str(directory.log),
-            "request": request.model_dump(mode="json"),
-        }
+    ) -> Evidence:
+        result, failure = None, None
         try:
             result = self._runner.run(
-                (str(self._python), "-I", "-S", "-B", str(_WORKER_SCRIPT)),
-                env=directory.worker_environment(),
-                cwd=directory.worker,
-                stdin=json.dumps(message).encode("utf-8"),
-                timeout_seconds=request.limits.deadline_seconds + SETUP_ALLOWANCE_SECONDS,
-                max_output_bytes=_report_limit(request),
+                argv,
+                env=dict(_HOST_PATH),
+                cwd=layout.output_dir.parent,
+                stdin=request.stdin,
+                timeout_seconds=remaining,
+                max_output_bytes=request.limits.max_output_bytes,
                 cancel_event=cancel_event,
+                pass_fds=(channels.status_write, channels.json_write),
             )
-        except AgentExecutionError as exc:
-            return _runner_failure(exc, cancel_event)
-        cleanup = _cleanup(result.cleanup)
-        if result.returncode != 0:
-            return _Outcome(
-                RunStatus.WORKER_FAILED, FailureOrigin.SUPERVISOR, ReasonCode.WORKER_PROCESS_FAILED,
-                f"the worker exited with status {result.returncode}", cleanup=cleanup,
-            )
-        try:
-            worker = model_validate_json_strict(WorkerReport, result.stdout)
-        except (ValueError, ValidationError):
-            return _Outcome(
-                RunStatus.WORKER_FAILED, FailureOrigin.SUPERVISOR, ReasonCode.WORKER_REPORT_INVALID,
-                "the worker report is absent or invalid", cleanup=cleanup,
-            )
-        return _Outcome(
-            worker.status, worker.failure_origin, worker.reason, worker.detail, worker, cleanup
+        except (AgentExecutionError, OSError) as exc:
+            failure = exc
+        launch, bubblewrap = channels.collect()
+        return Evidence(
+            launch=parse_launch_status(launch),
+            bubblewrap=parse_status(bubblewrap),
+            result=result,
+            failure=failure if isinstance(failure, WorkerRunnerFailure) else None,
+            error=failure,
         )
 
     def _report(
-        self, run_id: str, request: ExecutionRequest, outcome: _Outcome, run_dir: Path | None
+        self,
+        run_id: str,
+        request: ExecutionRequest,
+        facts: HostFacts,
+        outcome: Outcome,
+        run_dir: Path | None,
     ) -> ExecutionReport:
-        worker = outcome.worker
-        properties = worker.properties if worker is not None else tuple(
-            PropertyObservation(property=item, state=PropertyState.UNKNOWN, basis="not observed")
-            for item in profile_properties(request.profile)
-        )
-        target = worker.target if worker is not None else None
-        contained = target is not None and all(
-            item.state is PropertyState.DELIVERED for item in properties
-        )
         return ExecutionReport(
             schema_version=REPORT_SCHEMA,
             run_id=run_id,
@@ -238,15 +233,20 @@ class RaptorContainmentAdapter:
             failure_origin=outcome.origin,
             reason=outcome.reason,
             detail=outcome.detail,
-            contained=contained,
-            properties=properties,
-            target=target,
-            engine=self._engine.identity(worker.containment_tier if worker is not None else None),
+            contained=outcome.target is not None
+            and all(item.state is PropertyState.DELIVERED for item in outcome.properties),
+            properties=outcome.properties,
+            target=outcome.target,
+            engine=EngineIdentity(
+                implementation="lilrae.containment.bubblewrap/v1",
+                bubblewrap_version=facts.bubblewrap_version,
+                landlock_abi=facts.landlock_abi,
+                libseccomp_version=facts.libseccomp_version,
+            ),
             host=HostIdentity(kernel_release=os.uname().release),
             bounds=AppliedBounds(
                 deadline_seconds=request.limits.deadline_seconds,
                 max_output_bytes=request.limits.max_output_bytes,
-                transient_capture_bytes_per_stream=TRANSIENT_CAPTURE_BYTES_PER_STREAM,
                 cpu_seconds=request.limits.cpu_seconds,
                 max_file_mb=request.limits.max_file_mb,
                 address_space_mb=request.limits.address_space_mb,
@@ -254,19 +254,3 @@ class RaptorContainmentAdapter:
             cleanup=outcome.cleanup,
             run_dir=run_dir,
         )
-
-
-def _runner_failure(exc: AgentExecutionError, cancel_event: Event | None) -> _Outcome:
-    """Translate a runner error; cancellation is the consumer's own request."""
-    failure = exc if isinstance(exc, WorkerRunnerFailure) else None
-    cleanup = _cleanup(failure.cleanup) if failure is not None else None
-    if cancel_event is not None and cancel_event.is_set():
-        return _Outcome(
-            RunStatus.CANCELLED, FailureOrigin.SUPERVISOR, ReasonCode.CANCELLED,
-            "the consumer cancelled the run", cleanup=cleanup,
-        )
-    reason = failure.reason if failure is not None else str(exc)
-    return _Outcome(
-        RunStatus.WORKER_FAILED, FailureOrigin.SUPERVISOR, ReasonCode.WORKER_PROCESS_FAILED,
-        reason[:512], cleanup=cleanup,
-    )

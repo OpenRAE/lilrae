@@ -1,9 +1,0 @@
-{
-  "schema_version": "lilrae.containment.engine-pin/v1",
-  "repository": "https://github.com/OpenRAE/raptor",
-  "upstream": "https://github.com/gadievron/raptor",
-  "commit": "28c996ca997c0aeaf94080c88733788a3b26c9e5",
-  "source_tree": "core",
-  "source_digest": "sha256:45b09d9e897eece64ba184627907e2db6d93419a9dbcf43b52f0249bf618475e",
-  "license_file": "LICENSE"
-}

@@ -52,6 +52,12 @@ class WorkerRunnerFailure(Protocol):
     @property
     def cleanup(self) -> WorkerCleanup: ...
 
+    @property
+    def stdout_bytes(self) -> int: ...
+
+    @property
+    def stderr_bytes(self) -> int: ...
+
 
 class WorkerRunner(Protocol):
     """Implemented by the canonical cancellable ``BoundedProcessRunner``."""
@@ -66,4 +72,5 @@ class WorkerRunner(Protocol):
         timeout_seconds: float,
         max_output_bytes: int,
         cancel_event: Event | None = None,
+        pass_fds: tuple[int, ...] = (),
     ) -> WorkerResult: ...

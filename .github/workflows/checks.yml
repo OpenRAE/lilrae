@@ -307,15 +307,12 @@ jobs:
 
   # The shared containment wrapper proof (ADR-068, issue #1467). Only this job
   # selects the `containment` marker; the default run and the catch-all
-  # integration lane exclude it. The refusal
-  # test runs first, while the runner still restricts unprivileged user
-  # namespaces. The proof and the retained engine regressions run after this
-  # ephemeral runner allows them. Each proof test checks its host precondition
+  # integration lane exclude it. Each proof test checks its host precondition
   # and fails, rather than skips, when it does not hold.
   containment-proof:
-    name: Containment wrapper proof and retained engine regressions
+    name: Containment wrapper proof
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 30
     needs: [changes]
     if: always() && (needs.changes.result != 'success' || needs.changes.outputs.python == 'true')
     concurrency:
@@ -327,48 +324,22 @@ jobs:
           ROUTING_RESULT: ${{ needs.changes.result }}
         run: test "$ROUTING_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/*.txt
       - run: |
-          pip install --require-hashes -r requirements/dev.txt -r requirements/ci.txt
+          pip install --require-hashes -r requirements/dev.txt
           pip install -e . --no-deps --no-build-isolation
-      - name: Engine pin and refusal before payload on the restricted runner
+      - name: Install the supported host profile
         run: |
-          test "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = 1
-          python -m pytest -q -m containment tests/containment/test_containment_engine.py \
-            tests/containment/test_containment_proof.py -k "pin or refusal"
-      - name: Allow unprivileged user namespaces on this ephemeral runner
-        run: |
-          sudo apt-get install -y --no-install-recommends uidmap
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          unshare --user --map-root-user true
-      - name: Wrapper proof and escape probes
-        run: >-
-          python -m pytest -q -m containment tests/containment/test_containment_proof.py
-          -k "not refusal" --durations=20
-      - name: Install the engine's locked test environment
-        env:
-          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/raptor-venv
-        run: uv sync --frozen --no-default-groups --group test --project third_party/raptor
-      # The fork's CI runs these two passes for core/sandbox on Linux; its
-      # macOS, WSL, and kernel-feature matrices are outside the LilRAE profile.
-      - name: Retained engine regressions (default tier)
-        working-directory: third_party/raptor
-        env:
-          PYTEST_ADDOPTS: "-o faulthandler_timeout=120"
-          RAPTOR_MAX_TEST_SECONDS: "10"
-        run: ${{ runner.temp }}/raptor-venv/bin/python -m pytest core/sandbox/tests
-      - name: Retained engine regressions (slow and integration tier)
-        working-directory: third_party/raptor
-        env:
-          PYTEST_ADDOPTS: "-o faulthandler_timeout=120"
-          RAPTOR_MAX_TEST_SECONDS: ""
-        run: ${{ runner.temp }}/raptor-venv/bin/python -m pytest -m "slow or integration" core/sandbox
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap libseccomp2 python3
+          bwrap --version
+          bwrap --unshare-all --unshare-user --disable-userns --ro-bind / / -- /usr/bin/true
+      - name: Containment proof, escape probes, and launcher layers
+        run: python -m pytest -q -m containment tests/containment --durations=20
 
   python-tests:
     name: Python tests + coverage

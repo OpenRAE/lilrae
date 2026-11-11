@@ -20,7 +20,7 @@ class RunStatus(StrEnum):
     TIMED_OUT = "timed_out"
     CANCELLED = "cancelled"
     OUTPUT_LIMIT_EXCEEDED = "output_limit_exceeded"
-    WORKER_FAILED = "worker_failed"
+    SUPERVISOR_FAILED = "supervisor_failed"
 
 
 class FailureOrigin(StrEnum):
@@ -43,17 +43,15 @@ class PropertyState(StrEnum):
 class ReasonCode(StrEnum):
     """A stable reason for a status other than a clean completion."""
 
-    ENGINE_UNAVAILABLE = "engine_unavailable"
-    ENGINE_UNVERIFIED = "engine_unverified"
-    INPUT_UNAVAILABLE = "input_unavailable"
     PROPERTY_UNAVAILABLE = "property_unavailable"
     ENVIRONMENT_NAME_DENIED = "environment_name_denied"
+    INPUT_UNAVAILABLE = "input_unavailable"
     ENGINE_SETUP_FAILED = "engine_setup_failed"
     DEADLINE_EXCEEDED = "deadline_exceeded"
     OUTPUT_LIMIT_EXCEEDED = "output_limit_exceeded"
     CANCELLED = "cancelled"
-    WORKER_REPORT_INVALID = "worker_report_invalid"
-    WORKER_PROCESS_FAILED = "worker_process_failed"
+    CLEANUP_UNCONFIRMED = "cleanup_unconfirmed"
+    SUPERVISOR_FAILED = "supervisor_failed"
     CONTAINMENT_UNCONFIRMED = "containment_unconfirmed"
 
 
@@ -73,10 +71,12 @@ class PropertyObservation(_Closed):
 
 
 class TargetOutcome(_Closed):
-    """The target's exit and its bounded output; null fields mean not observed."""
+    """The target's exit and its bounded output; null means not observed.
+
+    ``exit_code`` uses shell encoding: 128 + n means signal n or exit status 128 + n.
+    """
 
     exit_code: int | None
-    signal: int | None
     stdout: Base64Payload = Field(repr=False)
     stderr: Base64Payload = Field(repr=False)
     stdout_bytes: int = Field(ge=0)
@@ -84,13 +84,16 @@ class TargetOutcome(_Closed):
     truncated: bool
 
 
-class EngineIdentity(_Closed):
-    """The pinned engine and the tier that the engine reported for this run."""
+type Version = Annotated[str, StringConstraints(max_length=32)]
 
-    repository: str
-    commit: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}$")]
-    source_digest: Annotated[str, StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$")]
-    containment_tier: Annotated[str, StringConstraints(max_length=32)] | None
+
+class EngineIdentity(_Closed):
+    """The engine implementation and the host components that this run used."""
+
+    implementation: Literal["lilrae.containment.bubblewrap/v1"]
+    bubblewrap_version: Version | None
+    landlock_abi: int | None
+    libseccomp_version: Version | None
 
 
 class HostIdentity(_Closed):
@@ -104,7 +107,6 @@ class AppliedBounds(_Closed):
 
     deadline_seconds: float
     max_output_bytes: int
-    transient_capture_bytes_per_stream: int
     cpu_seconds: int | None
     max_file_mb: int | None
     address_space_mb: int | None

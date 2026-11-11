@@ -83,6 +83,48 @@ def _unix_connect(address):
     return True
 
 
+_SOCKET = {"x86_64": 41, "aarch64": 198}
+
+
+def _raw_domain_connect(path):
+    """socket(2) with upper domain bits set; the kernel reads only the low 32 bits."""
+    import ctypes
+    import platform
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    fd = libc.syscall(_SOCKET[platform.machine()], ctypes.c_long(0x100000001), 1, 0)
+    if fd < 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code))
+    with socket.socket(fileno=fd) as client:
+        client.settimeout(2)
+        client.connect(path)
+    return True
+
+
+def _dgram_pair_send(path, sock_type=socket.SOCK_DGRAM):
+    """A datagram socketpair can name another destination in sendto(2)."""
+    first, second = socket.socketpair(socket.AF_UNIX, sock_type)
+    with first, second:
+        first.sendto(b"probe", path)
+    return True
+
+
+def _raw_pair_send(path):
+    """AF_UNIX accepts SOCK_RAW as an alias for SOCK_DGRAM."""
+    return _dgram_pair_send(path, socket.SOCK_RAW)
+
+
+def _fifo_write(path):
+    """Opening a FIFO for writing reaches its host reader without changing the filesystem."""
+    fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK)
+    try:
+        os.write(fd, b"probe")
+    finally:
+        os.close(fd)
+    return True
+
+
 def _keyctl():
     import ctypes
     import platform
@@ -114,7 +156,7 @@ def _environment(name):
     return name in os.environ
 
 
-def _heartbeat(path, seconds):
+def _heartbeat(path, seconds, ready):
     os.setsid()
     if os.fork():
         os._exit(0)
@@ -126,16 +168,28 @@ def _heartbeat(path, seconds):
     while time.monotonic() < ends:
         with open(path, "a", encoding="utf-8") as stream:
             stream.write(".")
+        if ready is not None:
+            os.write(ready, b"r")
+            os.close(ready)
+            ready = None
         time.sleep(0.05)
     os._exit(0)
 
 
 def _detached(probe_id, path, seconds):
+    """End only after the detached grandchild has written its first heartbeat."""
+    import select
+
     _emit("reached", probe_id)
+    read_end, write_end = os.pipe()
     child = os.fork()
     if child == 0:
-        _heartbeat(path, seconds)
+        os.close(read_end)
+        _heartbeat(path, seconds, write_end)
+    os.close(write_end)
     os.waitpid(child, 0)
+    select.select([read_end], [], [], 5.0)
+    os.close(read_end)
 
 
 PROBES = {
@@ -146,6 +200,11 @@ PROBES = {
     "host-process-signal": _signal,
     "host-loopback-connect": _tcp_connect,
     "host-unix-socket-connect": _unix_connect,
+    "input-unix-socket-connect": _unix_connect,
+    "raw-domain-unix-connect": _raw_domain_connect,
+    "input-unix-dgram-send": _dgram_pair_send,
+    "input-unix-raw-pair-send": _raw_pair_send,
+    "input-fifo-write": _fifo_write,
     "abstract-unix-socket-connect": lambda name: _unix_connect("\0" + name),
     "keyctl-syscall": _keyctl,
     "nested-user-namespace": _unshare_user,

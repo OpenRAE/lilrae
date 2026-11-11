@@ -10,6 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parents[2]
@@ -38,27 +39,32 @@ def _collected(*marker_arguments: str) -> set[str]:
         cwd=REPO, capture_output=True, text=True, check=False,
     )
     assert completed.returncode in {0, 5}, completed.stdout + completed.stderr
-    return {line.split("::")[0] for line in completed.stdout.splitlines() if "::" in line}
+    return {line for line in completed.stdout.splitlines() if "::" in line}
 
 
-def _proof_selected(nodes: set[str]) -> bool:
-    return "tests/containment/test_containment_proof.py" in nodes
+def _containment_tests() -> set[str]:
+    selected = _collected("-m", "containment")
+    files = {node.split("::")[0] for node in selected}
+    assert {"tests/containment/test_containment_proof.py", "tests/containment/test_containment_launcher.py"} <= files
+    return selected
 
 
-def test_the_default_run_excludes_the_containment_proof() -> None:
-    assert not _proof_selected(_collected())
+def _lane_expression(job: str) -> str:
+    (expression,) = [item for item in _marker_expressions(job) if "integration" in item]
+    return expression
 
 
-def test_the_catch_all_integration_lane_excludes_the_containment_proof() -> None:
-    (expression,) = [
-        item for item in _marker_expressions("integration-qualification") if "integration" in item
-    ]
-
-    assert not _proof_selected(_collected("-m", expression))
+def test_the_default_run_excludes_every_containment_test() -> None:
+    assert not _collected() & _containment_tests()
 
 
-def test_the_containment_job_selects_the_proof() -> None:
+@pytest.mark.parametrize("job", ["python-test-shards", "integration-qualification"])
+def test_other_ci_lanes_exclude_every_containment_test(job: str) -> None:
+    assert not _collected("-m", _lane_expression(job)) & _containment_tests()
+
+
+def test_the_containment_job_selects_every_containment_test() -> None:
     expressions = _marker_expressions("containment-proof")
 
     assert expressions and set(expressions) == {"containment"}
-    assert _proof_selected(_collected("-m", "containment"))
+    assert _containment_tests()

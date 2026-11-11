@@ -8,20 +8,21 @@ The [architecture](../architecture/containment-wrapper.md) explains the componen
 ## Command
 
 ```shell
-lilrae containment run --state-root DIR [--engine-root DIR] < request.json > report.json
+lilrae containment run --state-root DIR < request.json > report.json
 ```
 
 | Option | Meaning |
 | --- | --- |
-| `--state-root DIR` | Required. An existing directory that only the current user can write. It holds the read-only engine snapshot under `engine/` and one private subdirectory for each run. |
-| `--engine-root DIR` | Optional. The engine checkout. The default is the `third_party/raptor` submodule of a source checkout. |
+| `--state-root DIR` | Required. An existing directory that only the current user can write. Each run creates a private subdirectory here. |
+
+The supported host provides Bubblewrap 0.8 or later at `/usr/bin/bwrap`, libseccomp 2.5 or later, Landlock, and `/usr/bin/python3`.
 
 The command reads one request document from standard input.
 The request can have at most 16 MiB.
 The command writes one report document to standard output and exits with status 0.
 An invalid request or option writes a message to standard error and exits with status 2.
 
-The Python interface is `aptl.containment.RaptorContainmentAdapter.execute(request, *, cancel_event=None)`.
+The Python interface is `aptl.containment.BubblewrapContainmentAdapter.execute(request, *, cancel_event=None)`.
 It returns the same report model.
 
 ## Request
@@ -45,9 +46,13 @@ Schema: `lilrae.containment.request/v1`. Unknown fields and duplicate keys are r
 | `network` | string | `none` |
 
 The target starts in the run's output directory.
-The target environment contains `PATH=/usr/bin:/bin`, `LANG=C.UTF-8`, and the `env` entries.
-The worker refuses an `env` name that the engine classifies as dangerous.
-The engine then replaces `HOME` and the XDG home variables with an empty directory in the output directory.
+The target environment contains `PATH=/usr/bin:/bin`, `LANG=C.UTF-8`, `HOME=/tmp/home`, and the `env` entries.
+The adapter refuses an `env` name that loads code, changes configuration, or sets a proxy.
+
+The target sees the host system directories read-only, public TLS certificates, a private `/tmp`, a fresh `/proc` and `/dev`, the input directory, and its output directory.
+The input directory is mounted read-only at `/run/lilrae/input`, outside every writable grant. Its host path is a symbolic link to that mount.
+The target cannot create Unix sockets or datagram socket pairs, so a host socket in a granted directory is not reachable.
+The datagram deny also covers `SOCK_RAW`, because `AF_UNIX` accepts it as a datagram type. Stream `socketpair` stays available.
 
 ## Report
 
@@ -57,18 +62,21 @@ Schema: `lilrae.containment.report/v1`.
 | --- | --- |
 | `run_id` | 32 hexadecimal characters. |
 | `label` | The request label. |
-| `status` | `completed`, `refused`, `timed_out`, `cancelled`, `output_limit_exceeded`, or `worker_failed`. |
+| `status` | `completed`, `refused`, `timed_out`, `cancelled`, `output_limit_exceeded`, or `supervisor_failed`. |
 | `failure_origin` | `none`, `setup`, `target`, or `supervisor`. |
 | `reason` | A stable reason code, or null. |
 | `detail` | At most 512 characters, or null. It never repeats request values. |
-| `contained` | True only when the worker delivered every required property. |
+| `contained` | True only when the target started and the run's own status confirmed every required property. |
 | `properties` | One entry for each required property: `property`, `state`, and `basis`. |
-| `target` | Null when the target did not start. Otherwise the exit code, signal, output, byte counts, and truncation flag. |
-| `engine` | Repository, commit, source digest, and the containment tier that the engine reported. |
+| `target` | Null when the target did not start. Otherwise the exit code, output, captured byte counts, and truncation flag. The exit code uses shell encoding: 128 + n can mean signal n. After a stop, the output is withheld and only the byte counts remain. |
+| `engine` | `implementation` (`lilrae.containment.bubblewrap/v1`), the Bubblewrap version, the Landlock ABI, and the libseccomp version. |
 | `host` | The kernel release. |
-| `bounds` | The applied deadline, output bounds, and resource limits, and `peak_memory: not-enforced`. |
-| `cleanup` | The runner's cleanup observation for the worker process group, or null. |
-| `run_dir` | The private run directory, or null when the run refused before it made one. The `output` subdirectory holds target files. `engine.log` holds engine diagnostics. |
+| `bounds` | The applied deadline, combined output bound, and resource limits, and `peak_memory: not-enforced`. One deadline covers the host checks, the setup, and the target. |
+| `cleanup` | The runner's cleanup observation for the Bubblewrap process group, or null. |
+| `run_dir` | The private run directory, or null when the run refused before it made one. The `output` subdirectory holds target files. `policy.json` holds the launcher policy. |
+
+If Bubblewrap reports no target exit after the target starts, the status is `supervisor_failed` and the origin is `supervisor`.
+Then `target` is null, and `detail` gives the runner's exit status.
 
 The consumer owns `run_dir` after the run and removes it.
 Treat a report with `contained: false` as a containment failure.
@@ -76,34 +84,31 @@ Treat target output and files as untrusted data.
 
 ### Properties
 
-| Property | Meaning | Check before the target starts |
-| --- | --- | --- |
-| `namespaces` | User, PID, IPC, network, and mount namespaces with a fresh procfs. | Engine mount, network, and PID-namespace supervision probes. |
-| `filesystem_policy` | Landlock filesystem restriction with a read allowlist. | Engine Landlock probe. |
-| `syscall_socket_filter` | The engine seccomp-bpf filter, which includes socket family rules. | Engine seccomp probe. |
-| `descriptor_environment_hygiene` | No inherited descriptors and an explicit environment. | Environment names pass the engine classifier. |
-| `supervision` | The PID namespace ends every descendant with the run. | Engine spawn-backend and PID-namespace supervision probes. |
+| Property | Meaning | Host check before the run | Evidence after the run |
+| --- | --- | --- | --- |
+| `namespaces` | User, PID, mount, network, IPC, UTS, and cgroup namespaces with a fresh procfs. | Bubblewrap version and a namespace probe. | Bubblewrap status names the PID, mount, network, IPC, and UTS namespaces. |
+| `filesystem_policy` | Landlock filesystem and TCP restriction. | Kernel Landlock ABI. | Launcher `landlock` status. |
+| `syscall_socket_filter` | `no_new_privs` and the seccomp filter, with socket family, `AF_UNIX`, and ioctl rules. | libseccomp version. | Launcher `no_new_privs` and `seccomp` status. |
+| `descriptor_environment_hygiene` | No inherited descriptors and an explicit environment. | Launcher interpreter and environment names. | Launcher `descriptors` status. |
+| `supervision` | New session, PID 1 reaper, `--die-with-parent`, and resource limits. | Bubblewrap namespace probe. | Launcher `limits` status, a Bubblewrap child, and a cleanup with no residue. |
 
 A property state is `delivered`, `refused`, or `unknown`.
-After the run, the worker compares the engine's posture record with the profile.
-A difference sets the state to `unknown` and `contained` to false.
-A timeout gives no posture record, so the same downgrade applies.
+A failed host check or a failed launcher layer sets `refused`.
+Missing evidence after the run sets `unknown`.
 
 ### Reason codes
 
 | Code | Status |
 | --- | --- |
-| `engine_unavailable` | `refused` |
-| `engine_unverified` | `refused` |
-| `input_unavailable` | `refused` |
 | `property_unavailable` | `refused` |
 | `environment_name_denied` | `refused` |
+| `input_unavailable` | `refused` |
 | `engine_setup_failed` | `refused` |
 | `deadline_exceeded` | `timed_out` |
 | `output_limit_exceeded` | `output_limit_exceeded` |
 | `cancelled` | `cancelled` |
-| `worker_report_invalid` | `worker_failed` |
-| `worker_process_failed` | `worker_failed` |
+| `cleanup_unconfirmed` | `supervisor_failed` |
+| `supervisor_failed` | `supervisor_failed` |
 | `containment_unconfirmed` | `completed` |
 
 ## Escape-probe protocol

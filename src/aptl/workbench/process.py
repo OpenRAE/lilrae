@@ -44,6 +44,7 @@ from threading import Event
 from typing import Protocol
 
 from aptl.core.agent_errors import AgentExecutionError as AgentExecutionError
+from aptl.core.agent_errors import BoundedStopReason
 
 from aptl.workbench._pipe_exchange import POLL_SECONDS, PipeExchange
 
@@ -69,10 +70,11 @@ _REAP_SECONDS = 1.0
 _RELEASE_SECONDS = 1.0
 
 # Why a bounded invocation failed: BoundedProcessError.reason is one of these.
-REASON_TIMEOUT = "agent request exceeded the configured timeout"
-REASON_CANCELLED = "agent request was cancelled"
-REASON_OVERFLOW = "agent output exceeded the configured limit"
-REASON_RESIDUE = "agent process cleanup left residual processes"
+# Core owns the vocabulary, so a lower-layer consumer can read the reason.
+REASON_TIMEOUT = BoundedStopReason.TIMEOUT
+REASON_CANCELLED = BoundedStopReason.CANCELLED
+REASON_OVERFLOW = BoundedStopReason.OVERFLOW
+REASON_RESIDUE = BoundedStopReason.RESIDUE
 _RESIDUAL_AGENT_RUNNING = "agent-process-running"
 _RESIDUAL_STREAMS_HELD = "output-streams-held"
 _RESIDUAL_GROUP_UNCONFIRMED = "process-group-cleanup-unconfirmed"
@@ -144,7 +146,8 @@ class BoundedProcessError(AgentExecutionError):
             f"{reason}; withheld captured output (stdout {stdout_bytes} bytes, "
             f"stderr {stderr_bytes} bytes); {cleanup.summary()}"
         )
-        self.reason = reason
+        # Records and summaries keep the plain string; it still equals the enum member.
+        self.reason = str(reason)
         self.cleanup = cleanup
         self.stdout_bytes = stdout_bytes
         self.stderr_bytes = stderr_bytes
@@ -211,6 +214,7 @@ class ProcessRequest:
     timeout_seconds: float
     max_output_bytes: int
     cancel_event: Event | None = None
+    pass_fds: tuple[int, ...] = ()
 
     def run_with(self, runner: CancellableProcessRunner) -> ProcessResult:
         """Deliver the request through the existing cancellable runner port."""
@@ -253,11 +257,23 @@ class BoundedProcessRunner:
         timeout_seconds: float,
         max_output_bytes: int,
         cancel_event: Event | None = None,
+        pass_fds: tuple[int, ...] = (),
     ) -> ProcessResult:
-        """Execute a child with strict time and combined-output limits."""
+        """Execute a child with strict time and combined-output limits.
+
+        ``pass_fds`` names the only descriptors besides standard I/O that the
+        child inherits.
+        """
         return BoundedProcessRunner.run_observed(
             ProcessRequest(
-                argv, env, cwd, stdin, timeout_seconds, max_output_bytes, cancel_event
+                argv,
+                env,
+                cwd,
+                stdin,
+                timeout_seconds,
+                max_output_bytes,
+                cancel_event,
+                pass_fds,
             )
         )
 
@@ -289,6 +305,7 @@ class BoundedProcessRunner:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 start_new_session=True,
+                pass_fds=request.pass_fds,
             )
             try:
                 exchange.attach(process)

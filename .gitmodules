@@ -1,3 +1,0 @@
-[submodule "third_party/raptor"]
-	path = third_party/raptor
-	url = https://github.com/OpenRAE/raptor.git

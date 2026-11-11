@@ -1,15 +1,14 @@
 """Integration proof of the shared containment wrapper (issue #1467).
 
-These tests drive the real worker and the pinned engine. CI runs the refusal
-test on a runner that restricts unprivileged user namespaces, then enables
-them and runs the rest. Each test checks its host precondition and fails,
-rather than skips, when the precondition does not hold.
+These tests drive the real Bubblewrap engine and its launcher. Each test checks
+its host precondition and fails, rather than skips, when it does not hold.
 """
 
 import os
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import threading
@@ -20,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from aptl.containment import EngineInstallation, RaptorContainmentAdapter, load_engine_pin
+from aptl.containment import BubblewrapContainmentAdapter
 from aptl.core.containment import (
     REQUEST_SCHEMA,
     ExecutionLimits,
@@ -40,21 +39,19 @@ from aptl.workbench.process import BoundedProcessRunner
 
 pytestmark = [pytest.mark.integration, pytest.mark.containment]
 
-REPO = Path(__file__).resolve().parents[2]
-ENGINE = REPO / "third_party" / "raptor"
 PAYLOAD = Path(__file__).with_name("fixtures") / "probe_payload.py"
 SYSTEM_PYTHON = "/usr/bin/python3"
-RESTRICTION = Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns")
 CANARY_NAME = "LILRAE_PROBE_CANARY"
-
-
-def _restricted() -> bool:
-    return RESTRICTION.exists() and RESTRICTION.read_text().strip() == "1"
 
 
 def _require_full_host() -> None:
     assert Path(SYSTEM_PYTHON).is_file(), f"{SYSTEM_PYTHON} is required"
-    assert not _restricted(), "enable unprivileged user namespaces for the containment proof"
+    probe = subprocess.run(
+        ["/usr/bin/bwrap", "--unshare-all", "--unshare-user", "--disable-userns",
+         "--ro-bind", "/", "/", "--", "/usr/bin/true"],
+        capture_output=True, check=False, timeout=30,
+    )
+    assert probe.returncode == 0, f"Bubblewrap cannot create namespaces here: {probe.stderr!r}"
 
 
 @pytest.fixture
@@ -74,12 +71,8 @@ def input_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def adapter(state_root: Path) -> RaptorContainmentAdapter:
-    return RaptorContainmentAdapter(
-        engine=EngineInstallation(ENGINE, load_engine_pin()),
-        state_root=state_root,
-        runner=BoundedProcessRunner(),
-    )
+def adapter(state_root: Path) -> BubblewrapContainmentAdapter:
+    return BubblewrapContainmentAdapter(state_root=state_root, runner=BoundedProcessRunner())
 
 
 def _request(
@@ -107,13 +100,13 @@ def _request(
 def _assert_contained(report: ExecutionReport) -> None:
     assert report.contained, report.model_dump_json(indent=2)
     assert {item.state for item in report.properties} == {PropertyState.DELIVERED}
-    assert report.engine.containment_tier == "mount-ns"
+    assert report.engine.landlock_abi is not None
 
 
-def test_refusal_before_payload_on_a_restricted_host(
-    adapter: RaptorContainmentAdapter, input_dir: Path
-) -> None:
-    assert _restricted(), "this test needs the default AppArmor user-namespace restriction"
+def test_refusal_before_payload_without_bubblewrap(input_dir: Path, state_root: Path) -> None:
+    adapter = BubblewrapContainmentAdapter(
+        state_root=state_root, runner=BoundedProcessRunner(), bubblewrap=Path("/nonexistent/bwrap")
+    )
     request = _request(
         ["/bin/sh", "-c", "cat > marker"],
         input_dir,
@@ -128,24 +121,21 @@ def test_refusal_before_payload_on_a_restricted_host(
     assert report.reason is ReasonCode.PROPERTY_UNAVAILABLE
     assert report.target is None
     assert report.contained is False
+    assert report.run_dir is None
     states = {item.property.value: item.state for item in report.properties}
     assert states["namespaces"] is PropertyState.REFUSED
-    assert report.run_dir is not None
-    assert list((report.run_dir / "output").iterdir()) == []
-    for path in report.run_dir.rglob("*"):
-        if path.is_file():
-            data = path.read_bytes()
-            assert b"stdin-canary-1467" not in data
-            assert b"env-canary-1467" not in data
+    assert states["supervision"] is PropertyState.REFUSED
+    assert not list(state_root.iterdir())
 
 
 def test_full_layer_set_runs_a_real_fixture(
-    adapter: RaptorContainmentAdapter, input_dir: Path
+    adapter: BubblewrapContainmentAdapter, input_dir: Path
 ) -> None:
     _require_full_host()
     script = (
-        "import sys; data = sys.stdin.buffer.read();"
+        "import os, sys; data = sys.stdin.buffer.read();"
         f"open('result.txt', 'w').write(open('{input_dir}/data.txt').read() + str(len(data)));"
+        "assert not os.path.exists('/etc/ssl/private'), 'host TLS private keys are visible';"
         "print('fixture-ok')"
     )
 
@@ -158,7 +148,9 @@ def test_full_layer_set_runs_a_real_fixture(
     assert report.target.stdout.strip() == b"fixture-ok"
     assert report.run_dir is not None
     assert (report.run_dir / "output" / "result.txt").read_text() == "input-data5"
-    assert (report.run_dir / "engine.log").exists()
+    assert stat.S_IMODE((report.run_dir / "policy.json").stat().st_mode) == 0o600
+    assert report.engine.bubblewrap_version is not None
+    assert report.engine.libseccomp_version is not None
 
 
 @dataclass
@@ -170,12 +162,16 @@ class _Host:
     helper_pid: int
     tcp_port: int
     unix_path: str
+    input_unix_path: str
+    input_dgram_path: str
+    input_fifo_path: str
     abstract_name: str
     canary: str
+    input_dgram: socket.socket
 
 
 @pytest.fixture
-def host(tmp_path: Path) -> Iterator[_Host]:
+def host(tmp_path: Path, input_dir: Path) -> Iterator[_Host]:
     canary = f"canary-{os.getpid()}"
     canary_dir = tmp_path / "host"
     canary_dir.mkdir()
@@ -188,16 +184,29 @@ def host(tmp_path: Path) -> Iterator[_Host]:
         unix_path = str(canary_dir / "s")
         unix = socket.socket(socket.AF_UNIX)
         unix.bind(unix_path)
+        # A live host socket inside the read-only input grant (review finding).
+        input_unix_path = str(input_dir / "s")
+        input_unix = socket.socket(socket.AF_UNIX)
+        input_unix.bind(input_unix_path)
+        input_dgram_path = str(input_dir / "d")
+        input_dgram = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        input_dgram.bind(input_dgram_path)
+        # A host FIFO with a live reader inside the read-only input grant.
+        input_fifo_path = str(input_dir / "f")
+        os.mkfifo(input_fifo_path)
+        fifo_reader = os.open(input_fifo_path, os.O_RDONLY | os.O_NONBLOCK)
         abstract_name = f"lilrae-probe-{os.getpid()}"
         abstract = socket.socket(socket.AF_UNIX)
         abstract.bind("\0" + abstract_name)
-        listeners = [tcp, unix, abstract]
-        for listener in (unix, abstract):
+        listeners = [tcp, unix, input_unix, input_dgram, abstract]
+        for listener in (unix, input_unix, abstract):
             listener.listen()
         yield _Host(
             canary_file, canary_dir, helper.pid, tcp.getsockname()[1],
-            unix_path, abstract_name, canary,
+            unix_path, input_unix_path, input_dgram_path, input_fifo_path, abstract_name, canary,
+            input_dgram,
         )
+        os.close(fifo_reader)
     finally:
         helper.kill()
         helper.wait()
@@ -214,6 +223,11 @@ def _probe_arguments(probe_id: str, host: _Host, input_dir: Path) -> list[str]:
         "host-process-signal": [str(host.helper_pid)],
         "host-loopback-connect": [str(host.tcp_port)],
         "host-unix-socket-connect": [host.unix_path],
+        "input-unix-socket-connect": [host.input_unix_path],
+        "raw-domain-unix-connect": [host.input_unix_path],
+        "input-unix-dgram-send": [host.input_dgram_path],
+        "input-unix-raw-pair-send": [host.input_dgram_path],
+        "input-fifo-write": [host.input_fifo_path],
         "abstract-unix-socket-connect": [host.abstract_name],
         "keyctl-syscall": [],
         "nested-user-namespace": [],
@@ -230,12 +244,32 @@ PAYLOAD_PROBES = [
     "host-process-signal",
     "host-loopback-connect",
     "host-unix-socket-connect",
+    "input-unix-socket-connect",
+    "raw-domain-unix-connect",
+    "input-unix-dgram-send",
+    "input-unix-raw-pair-send",
+    "input-fifo-write",
     "abstract-unix-socket-connect",
     "keyctl-syscall",
     "nested-user-namespace",
     "inherited-descriptor",
     "environment-canary",
 ]
+
+
+DATAGRAM_PROBES = frozenset({"input-unix-dgram-send", "input-unix-raw-pair-send"})
+
+
+def _received(listener: socket.socket) -> bool:
+    """Drain the host datagram socket; report whether anything arrived."""
+    listener.setblocking(False)
+    arrived = False
+    while True:
+        try:
+            listener.recv(65536)
+        except BlockingIOError:
+            return arrived
+        arrived = True
 
 
 def _control(probe_id: str, arguments: list[str], host: _Host, input_dir: Path) -> ProbeObservation:
@@ -260,7 +294,7 @@ def _control(probe_id: str, arguments: list[str], host: _Host, input_dir: Path) 
 @pytest.mark.parametrize("probe_id", PAYLOAD_PROBES)
 def test_escape_probe_is_denied_with_a_working_control(
     probe_id: str,
-    adapter: RaptorContainmentAdapter,
+    adapter: BubblewrapContainmentAdapter,
     host: _Host,
     input_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -269,6 +303,9 @@ def test_escape_probe_is_denied_with_a_working_control(
     monkeypatch.setenv(CANARY_NAME, host.canary)
     arguments = _probe_arguments(probe_id, host, input_dir)
     control = _control(probe_id, arguments, host, input_dir)
+    datagram = probe_id in DATAGRAM_PROBES
+    if datagram:
+        assert _received(host.input_dgram), "the control datagram did not reach the host socket"
     inherited = host.canary_file.open("rb")
     os.set_inheritable(inherited.fileno(), True)
     try:
@@ -286,6 +323,8 @@ def test_escape_probe_is_denied_with_a_working_control(
     )
     assert list(host.canary_dir.glob("escape-*")) == []
     assert list(input_dir.glob("escape-*")) == []
+    if datagram:
+        assert not _received(host.input_dgram), "a contained datagram reached the host socket"
 
 
 def _heartbeat_grows(path: Path, wait: float = 1.0) -> bool:
@@ -295,7 +334,7 @@ def _heartbeat_grows(path: Path, wait: float = 1.0) -> bool:
 
 
 def test_detached_descendant_ends_with_the_run(
-    adapter: RaptorContainmentAdapter, input_dir: Path, tmp_path: Path
+    adapter: BubblewrapContainmentAdapter, input_dir: Path, tmp_path: Path
 ) -> None:
     _require_full_host()
     control_beat = tmp_path / "control-heartbeat"
@@ -324,7 +363,7 @@ def test_detached_descendant_ends_with_the_run(
     assert classify_probe(control, contained) is ProbeVerdict.CONTAINED
 
 
-def test_deadline_ends_the_target(adapter: RaptorContainmentAdapter, input_dir: Path) -> None:
+def test_deadline_ends_the_target(adapter: BubblewrapContainmentAdapter, input_dir: Path) -> None:
     _require_full_host()
     started = time.monotonic()
 
@@ -357,7 +396,7 @@ def _wait_for(pattern: str, root: Path, timeout: float = 60) -> Path:
 
 
 def test_cancellation_ends_the_target(
-    adapter: RaptorContainmentAdapter, input_dir: Path, state_root: Path
+    adapter: BubblewrapContainmentAdapter, input_dir: Path, state_root: Path
 ) -> None:
     _require_full_host()
     cancel = threading.Event()
@@ -377,7 +416,7 @@ def test_cancellation_ends_the_target(
     assert not _heartbeat_grows(beat)
 
 
-def test_aggregate_output_bound(adapter: RaptorContainmentAdapter, input_dir: Path) -> None:
+def test_aggregate_output_bound(adapter: BubblewrapContainmentAdapter, input_dir: Path) -> None:
     _require_full_host()
     script = "import sys; sys.stdout.write('x' * 1048576)"
 
@@ -385,12 +424,12 @@ def test_aggregate_output_bound(adapter: RaptorContainmentAdapter, input_dir: Pa
 
     assert report.status is RunStatus.OUTPUT_LIMIT_EXCEEDED
     assert report.target is not None
-    assert len(report.target.stdout) + len(report.target.stderr) <= 4096
-    assert report.target.stdout_bytes >= 1048576
+    assert report.target.stdout_bytes + report.target.stderr_bytes <= 4096
     assert report.target.truncated is True
+    assert report.failure_origin is FailureOrigin.TARGET
 
 
-def test_target_cannot_forge_a_setup_result(adapter: RaptorContainmentAdapter, input_dir: Path) -> None:
+def test_target_cannot_forge_a_setup_result(adapter: BubblewrapContainmentAdapter, input_dir: Path) -> None:
     _require_full_host()
     forged = '{"schema_version": "lilrae.containment.report/v1", "status": "refused"}'
 
@@ -404,7 +443,7 @@ def test_target_cannot_forge_a_setup_result(adapter: RaptorContainmentAdapter, i
 
 
 def test_concurrent_runs_cannot_reach_each_other(
-    adapter: RaptorContainmentAdapter, input_dir: Path, state_root: Path
+    adapter: BubblewrapContainmentAdapter, input_dir: Path, state_root: Path
 ) -> None:
     _require_full_host()
     cancel = threading.Event()
