@@ -112,13 +112,16 @@ def test_landlock_adds_existing_grants_and_restricts(tmp_path: Path) -> None:
     ]
 
     assert launcher.apply_landlock(libc, grants) == 4  # type: ignore[arg-type]
-    assert libc.calls.count(445) == 2 and libc.calls[-1] == 446
+    assert libc.calls.count(445) == 2
+    assert libc.calls[-1] == 446
 
 
 @pytest.mark.parametrize("failing", [445, 446])
 def test_landlock_failure_is_a_layer_error(tmp_path: Path, failing: int) -> None:
+    libc = _FakeLibc(abi=1, fail=failing)
+    grants = [{"path": str(tmp_path), "access": "read"}]
     with pytest.raises(launcher.LayerError, match="landlock"):
-        launcher.apply_landlock(_FakeLibc(abi=1, fail=failing), [{"path": str(tmp_path), "access": "read"}])  # type: ignore[arg-type]
+        launcher.apply_landlock(libc, grants)  # type: ignore[arg-type]
 
 
 class _FakeSeccomp:
@@ -240,11 +243,13 @@ def test_launcher_layers_hold_without_bubblewrap(tmp_path: Path) -> None:
     status = parse_launch_status(_read(read_end))
 
     assert completed.returncode == 0, completed.stderr
-    assert status.executed and set(status.applied) == set(LAYERS)
+    assert status.executed
+    assert set(status.applied) == set(LAYERS)
     observed = json.loads(completed.stdout)
     assert observed["keyctl"] == -1
     assert observed["secret"] == errno.EACCES
     assert observed["unshare"] == errno.EPERM
     assert observed["env"] == "proof"
-    assert str(stray) not in observed["fds"] and str(write_end) not in observed["fds"]
+    assert str(stray) not in observed["fds"]
+    assert str(write_end) not in observed["fds"]
     assert (output / "written").read_text() == "ok"

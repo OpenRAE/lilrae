@@ -103,7 +103,8 @@ def test_launch_status_requires_every_layer_before_exec() -> None:
     complete = parse_launch_status(_status(*(f"ok {layer} detail" for layer in LAYERS), "exec"))
     partial = parse_launch_status(_status("ok descriptors", "exec"))
 
-    assert complete.executed is True and set(complete.applied) == set(LAYERS)
+    assert complete.executed is True
+    assert set(complete.applied) == set(LAYERS)
     assert partial.executed is False
 
 

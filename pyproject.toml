@@ -231,7 +231,7 @@ banned-module-level-imports = ["boto3", "pyarrow"]
 # aptl.cli.containment stays unenrolled: it injects BoundedProcessRunner, and
 # importing aptl.workbench.process runs the aptl.workbench package initializer,
 # which issues #1527 and #1530 restructure.
-enrolled = ["aptl.core.provider_observation", "aptl.core.opencode", "aptl.core.trial_participants", "aptl.core.participant_requests", "aptl.core.participant_binding", "aptl.core.participant_tools", "aptl.core.agent_errors", "aptl.core.mcp_results", "aptl.backends.participant_tools", "aptl.core.trial_readiness", "aptl.core.readiness_record", "aptl.core.readiness_observer", "aptl.utils.probe_execution", "aptl.backends.installed_readiness", "aptl.core.placement_readiness", "aptl.core.containment", "aptl.containment"]
+enrolled = ["aptl.core.provider_observation", "aptl.core.opencode", "aptl.core.trial_participants", "aptl.core.participant_requests", "aptl.core.participant_binding", "aptl.core.participant_tools", "aptl.core.agent_errors", "aptl.core.mcp_results", "aptl.backends.participant_tools", "aptl.core.trial_readiness", "aptl.core.readiness_record", "aptl.core.readiness_observer", "aptl.utils.probe_execution", "aptl.backends.installed_readiness", "aptl.core.placement_readiness", "aptl.core.containment", "aptl.containment", "aptl.core.bounded_process"]
 # Core modules that scenario adapter plugins may import (#1515 adds them).
 extension-api = []
 # Ruff rules for enrolled code. UP042 is not selected: replacing a str-mixin

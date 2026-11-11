@@ -59,6 +59,8 @@ type Detail = Annotated[str, StringConstraints(max_length=512)]
 
 
 class _Closed(BaseModel):
+    """A frozen model that refuses unknown fields."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 

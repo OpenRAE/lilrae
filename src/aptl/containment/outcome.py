@@ -22,6 +22,7 @@ from aptl.core.containment import (
 )
 
 _STDERR_LINE = 200
+_CANCELLED = "the consumer cancelled the run"
 
 
 @dataclass(frozen=True)
@@ -49,14 +50,17 @@ class Outcome:
 
 
 def _state(answer: bool | None) -> PropertyState:
+    """Map a check answer to a property state; None is unknown."""
     return {True: PropertyState.DELIVERED, False: PropertyState.REFUSED}.get(answer, PropertyState.UNKNOWN)
 
 
 def _observation(item: RequiredProperty, answer: bool | None, basis: str) -> PropertyObservation:
+    """Build one property observation from a check answer."""
     return PropertyObservation(property=item, state=_state(answer), basis=basis)
 
 
 def _both(first: bool | None, second: bool | None) -> bool | None:
+    """Combine two checks: one failure fails, and one unknown stays unknown."""
     if first is False or second is False:
         return False
     return None if first is None or second is None else True
@@ -100,7 +104,7 @@ def stopped_before_launch(
     if cancel_event is not None and cancel_event.is_set():
         return Outcome(
             RunStatus.CANCELLED, FailureOrigin.SUPERVISOR, properties,
-            ReasonCode.CANCELLED, "the consumer cancelled the run",
+            ReasonCode.CANCELLED, _CANCELLED,
         )
     if remaining <= 0:
         return Outcome(
@@ -158,12 +162,14 @@ def run_properties(evidence: Evidence, cleanup: CleanupObservation | None) -> tu
 
 
 def _cleanup(observed: WorkerCleanup | None) -> CleanupObservation | None:
+    """Copy the runner's cleanup observation into the report model."""
     if observed is None:
         return None
     return CleanupObservation(residual=tuple(observed.residual), seconds=observed.seconds)
 
 
 def _setup_detail(evidence: Evidence) -> str:
+    """Name the failed launcher layer, or the first Bubblewrap error line."""
     if evidence.launch.failure is not None:
         layer, detail = evidence.launch.failure
         return f"launcher layer {layer} failed: {detail}"[:512]
@@ -173,6 +179,7 @@ def _setup_detail(evidence: Evidence) -> str:
 
 
 def _completed(evidence: Evidence, result: WorkerResult) -> Outcome:
+    """Classify a run that the runner finished with an exit status."""
     cleanup = _cleanup(result.cleanup)
     properties = run_properties(evidence, cleanup)
     if not evidence.launch.executed:
@@ -206,6 +213,7 @@ _STOPS = {
 
 
 def _stopped(evidence: Evidence, failure: WorkerRunnerFailure, cancel_event: Event | None) -> Outcome:
+    """Classify a run that the runner stopped: deadline, output bound, cancellation, or residue."""
     cleanup = _cleanup(failure.cleanup)
     properties = run_properties(evidence, cleanup)
     started = evidence.launch.executed
@@ -219,7 +227,7 @@ def _stopped(evidence: Evidence, failure: WorkerRunnerFailure, cancel_event: Eve
     if cancel_event is not None and cancel_event.is_set():
         return Outcome(
             RunStatus.CANCELLED, FailureOrigin.SUPERVISOR, properties,
-            ReasonCode.CANCELLED, "the consumer cancelled the run", target, cleanup,
+            ReasonCode.CANCELLED, _CANCELLED, target, cleanup,
         )
     status, reason = _STOPS.get(failure.reason, (RunStatus.SUPERVISOR_FAILED, ReasonCode.SUPERVISOR_FAILED))
     if status is RunStatus.SUPERVISOR_FAILED:
@@ -229,20 +237,24 @@ def _stopped(evidence: Evidence, failure: WorkerRunnerFailure, cancel_event: Eve
     return Outcome(status, origin, properties, reason, str(failure.reason)[:512], target, cleanup)
 
 
-def classify(evidence: Evidence, cancel_event: Event | None) -> Outcome:
-    """Classify one run from its evidence."""
-    if evidence.result is not None:
-        return _completed(evidence, evidence.result)
-    if evidence.failure is not None:
-        return _stopped(evidence, evidence.failure, cancel_event)
+def _runner_error(evidence: Evidence, cancel_event: Event | None) -> Outcome:
+    """Classify a run that the runner ended with neither a result nor a stop reason."""
     properties = run_properties(evidence, None)
     if cancel_event is not None and cancel_event.is_set():
-        return Outcome(
-            RunStatus.CANCELLED, FailureOrigin.SUPERVISOR, properties,
-            ReasonCode.CANCELLED, "the consumer cancelled the run",
-        )
+        return Outcome(RunStatus.CANCELLED, FailureOrigin.SUPERVISOR, properties, ReasonCode.CANCELLED, _CANCELLED)
     detail = type(evidence.error).__name__ if evidence.error is not None else "no runner result"
     return Outcome(
         RunStatus.SUPERVISOR_FAILED, FailureOrigin.SUPERVISOR, properties,
         ReasonCode.SUPERVISOR_FAILED, f"the runner failed: {detail}",
     )
+
+
+def classify(evidence: Evidence, cancel_event: Event | None) -> Outcome:
+    """Classify one run from its evidence."""
+    if evidence.result is not None:
+        outcome = _completed(evidence, evidence.result)
+    elif evidence.failure is not None:
+        outcome = _stopped(evidence, evidence.failure, cancel_event)
+    else:
+        outcome = _runner_error(evidence, cancel_event)
+    return outcome

@@ -66,5 +66,6 @@ def test_other_ci_lanes_exclude_every_containment_test(job: str) -> None:
 def test_the_containment_job_selects_every_containment_test() -> None:
     expressions = _marker_expressions("containment-proof")
 
-    assert expressions and set(expressions) == {"containment"}
+    assert expressions
+    assert set(expressions) == {"containment"}
     assert _containment_tests()

@@ -11,6 +11,7 @@ from threading import Event
 
 from aptl.containment.bubblewrap import LAUNCHER_PYTHON, parse_version, probe_arguments
 from aptl.core.agent_errors import AgentExecutionError
+from aptl.core.bounded_process import ProcessRequest
 from aptl.core.containment import WorkerRunner
 
 MINIMUM_BUBBLEWRAP = (0, 8, 0)  # --disable-userns
@@ -23,6 +24,8 @@ _HOST_PATH = {"PATH": "/usr/bin:/bin"}
 
 
 class _SeccompVersion(ctypes.Structure):
+    """The ``struct scmp_version`` that ``seccomp_version()`` returns."""
+
     _fields_ = (("major", ctypes.c_uint), ("minor", ctypes.c_uint), ("micro", ctypes.c_uint))
 
 
@@ -98,10 +101,12 @@ class HostInspector:
         if budget <= 0:
             return None
         try:
-            result = self._runner.run(
-                argv, env=dict(_HOST_PATH), cwd=self._cwd, stdin=b"",
-                timeout_seconds=budget, max_output_bytes=_PROBE_OUTPUT_BYTES,
-                cancel_event=cancel_event,
+            result = self._runner.run_observed(
+                ProcessRequest(
+                    argv, env=dict(_HOST_PATH), cwd=self._cwd, stdin=b"",
+                    timeout_seconds=budget, max_output_bytes=_PROBE_OUTPUT_BYTES,
+                    cancel_event=cancel_event,
+                )
             )
         except (AgentExecutionError, OSError):
             return None

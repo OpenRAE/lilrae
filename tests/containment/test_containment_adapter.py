@@ -18,6 +18,7 @@ import pytest
 from aptl.containment import BubblewrapContainmentAdapter, HostFacts
 from aptl.containment.launch_status import LAYERS
 from aptl.core.agent_errors import AgentExecutionError, BoundedStopReason
+from aptl.core.bounded_process import ProcessRequest
 from aptl.core.containment import (
     REQUEST_SCHEMA,
     ExecutionLimits,
@@ -65,20 +66,18 @@ class FakeRunner:
     cancel_during_run: bool = False
     calls: list[dict[str, object]] = field(default_factory=list)
 
-    def run(
-        self, argv: tuple[str, ...], *, env: dict[str, str], cwd: Path, stdin: bytes,
-        timeout_seconds: float, max_output_bytes: int, cancel_event: Event | None = None,
-        pass_fds: tuple[int, ...] = (),
-    ) -> FakeResult:
-        status_fd, json_fd = pass_fds
+    def run_observed(self, request: ProcessRequest) -> FakeResult:
+        argv, cancel_event = request.argv, request.cancel_event
+        status_fd, json_fd = request.pass_fds
         os.write(status_fd, self.launch.encode())
         os.write(json_fd, self.bubblewrap)
         policy = Path(argv[argv.index("/run/lilrae/policy.json") - 1])
         self.calls.append({
-            "argv": argv, "env": env, "cwd": cwd, "stdin": stdin, "timeout": timeout_seconds,
-            "limit": max_output_bytes, "cancel_event": cancel_event, "pass_fds": pass_fds,
+            "argv": argv, "env": request.env, "cwd": request.cwd, "stdin": request.stdin,
+            "timeout": request.timeout_seconds, "limit": request.max_output_bytes,
+            "cancel_event": cancel_event, "pass_fds": request.pass_fds,
             "policy": json.loads(policy.read_text()), "policy_mode": stat.S_IMODE(policy.stat().st_mode),
-            "run_mode": stat.S_IMODE(cwd.stat().st_mode),
+            "run_mode": stat.S_IMODE(request.cwd.stat().st_mode),
         })
         if self.cancel_during_run and cancel_event is not None:
             cancel_event.set()
@@ -162,13 +161,18 @@ def test_a_confirmed_run_reports_containment(state_root: Path, monkeypatch: pyte
     assert call["policy"]["environment"]["FIXTURE_MODE"] == "proof"
     assert call["policy"]["limits"]["cpu_seconds"] == 9
     argv = call["argv"]
-    assert isinstance(argv, tuple) and argv[-3:] == ("/usr/bin/python3", "-c", "print(1)")
+    assert isinstance(argv, tuple)
+    assert argv[-3:] == ("/usr/bin/python3", "-c", "print(1)")
     assert report.status is RunStatus.COMPLETED
     assert report.failure_origin is FailureOrigin.NONE
     assert report.contained is True
-    assert report.target is not None and report.target.stdout == b"hello" and report.target.exit_code == 0
-    assert report.engine.bubblewrap_version == "0.9.0" and report.engine.landlock_abi == 4
-    assert report.run_dir is not None and report.run_dir.parent == state_root
+    assert report.target is not None
+    assert report.target.stdout == b"hello"
+    assert report.target.exit_code == 0
+    assert report.engine.bubblewrap_version == "0.9.0"
+    assert report.engine.landlock_abi == 4
+    assert report.run_dir is not None
+    assert report.run_dir.parent == state_root
     assert (report.run_dir / "output").is_dir()
     assert report.host.kernel_release == os.uname().release
 
@@ -178,7 +182,8 @@ def test_each_run_gets_its_own_directory(state_root: Path) -> None:
 
     first, second = adapter.execute(_request()), adapter.execute(_request())
 
-    assert first.run_id != second.run_id and first.run_dir != second.run_dir
+    assert first.run_id != second.run_id
+    assert first.run_dir != second.run_dir
 
 
 @pytest.mark.parametrize(
@@ -198,10 +203,12 @@ def test_a_missing_host_layer_refuses_before_any_run(state_root: Path, change: d
     report = _adapter(state_root, runner, FakeHost(facts)).execute(_request())
 
     assert runner.calls == []
-    assert report.status is RunStatus.REFUSED and report.failure_origin is FailureOrigin.SETUP
+    assert report.status is RunStatus.REFUSED
+    assert report.failure_origin is FailureOrigin.SETUP
     assert report.reason is ReasonCode.PROPERTY_UNAVAILABLE
     assert {name for name, state in _states(report).items() if state is not PropertyState.DELIVERED} == refused
-    assert report.run_dir is None and not list(state_root.iterdir())
+    assert report.run_dir is None
+    assert not list(state_root.iterdir())
 
 
 def test_a_denied_environment_name_refuses(state_root: Path) -> None:
@@ -225,10 +232,12 @@ def test_a_launcher_layer_failure_is_a_setup_refusal(state_root: Path) -> None:
 
     report = _adapter(state_root, runner).execute(_request())
 
-    assert report.status is RunStatus.REFUSED and report.failure_origin is FailureOrigin.SETUP
+    assert report.status is RunStatus.REFUSED
+    assert report.failure_origin is FailureOrigin.SETUP
     assert report.reason is ReasonCode.ENGINE_SETUP_FAILED
     assert report.detail == "launcher layer landlock failed: EINVAL"
-    assert report.target is None and report.contained is False
+    assert report.target is None
+    assert report.contained is False
     assert _states(report)["filesystem_policy"] is PropertyState.REFUSED
 
 
@@ -247,8 +256,11 @@ def test_a_target_failure_and_a_forged_report_stay_target_output(state_root: Pat
 
     report = _adapter(state_root, runner).execute(_request())
 
-    assert report.status is RunStatus.COMPLETED and report.failure_origin is FailureOrigin.TARGET
-    assert report.target is not None and report.target.exit_code == 126 and report.target.stdout == forged
+    assert report.status is RunStatus.COMPLETED
+    assert report.failure_origin is FailureOrigin.TARGET
+    assert report.target is not None
+    assert report.target.exit_code == 126
+    assert report.target.stdout == forged
 
 
 def test_missing_namespace_evidence_is_unconfirmed(state_root: Path) -> None:
@@ -280,7 +292,8 @@ def test_runner_stops_map_to_stable_outcomes(
 
     assert (report.status, report.failure_origin, report.reason) == (status, origin, code)
     if launch == LAUNCHED:
-        assert report.target is not None and report.target.truncated is True
+        assert report.target is not None
+        assert report.target.truncated is True
         assert (report.target.stdout_bytes, report.target.stderr_bytes) == (11, 2)
     else:
         assert report.target is None
@@ -326,8 +339,9 @@ def test_a_shared_state_root_is_refused(tmp_path: Path) -> None:
     shared.mkdir()
     shared.chmod(0o777)
 
+    runner = FakeRunner()
     with pytest.raises(ValueError, match="group or other"):
-        _adapter(shared, FakeRunner())
+        _adapter(shared, runner)
 
 
 def test_one_deadline_covers_host_checks_and_the_run(state_root: Path) -> None:
@@ -352,7 +366,8 @@ def test_a_deadline_spent_in_host_checks_is_a_setup_timeout(state_root: Path) ->
     assert (report.status, report.failure_origin, report.reason) == (
         RunStatus.TIMED_OUT, FailureOrigin.SETUP, ReasonCode.DEADLINE_EXCEEDED,
     )
-    assert report.target is None and report.run_dir is None
+    assert report.target is None
+    assert report.run_dir is None
 
 
 def test_a_cancellation_during_host_checks_stops_before_launch(state_root: Path) -> None:
@@ -371,11 +386,13 @@ def test_a_relative_state_root_becomes_absolute(tmp_path: Path, monkeypatch: pyt
 
     report = _adapter(Path("state"), runner).execute(_request())
 
-    assert report.run_dir is not None and report.run_dir.is_absolute()
+    assert report.run_dir is not None
+    assert report.run_dir.is_absolute()
     argv = runner.calls[0]["argv"]
     assert isinstance(argv, tuple)
     output = argv[argv.index("--bind") + 1]
-    assert Path(output).is_absolute() and Path(output).is_dir()
+    assert Path(output).is_absolute()
+    assert Path(output).is_dir()
     assert Path(runner.calls[0]["cwd"]).is_absolute()  # type: ignore[arg-type]
 
 
@@ -403,7 +420,8 @@ def test_a_setup_directory_failure_is_a_report(state_root: Path) -> None:
     assert (report.status, report.failure_origin, report.reason) == (
         RunStatus.SUPERVISOR_FAILED, FailureOrigin.SETUP, ReasonCode.SUPERVISOR_FAILED,
     )
-    assert report.detail is not None and "setup resources" in report.detail
+    assert report.detail is not None
+    assert "setup resources" in report.detail
     assert report.target is None
 
 
@@ -426,7 +444,8 @@ def test_a_pipe_allocation_failure_is_a_report_and_leaks_nothing(
     report = _adapter(state_root, runner).execute(_request())
 
     assert runner.calls == []
-    assert report.status is RunStatus.SUPERVISOR_FAILED and report.failure_origin is FailureOrigin.SETUP
+    assert report.status is RunStatus.SUPERVISOR_FAILED
+    assert report.failure_origin is FailureOrigin.SETUP
     for fd in opened:
         with pytest.raises(OSError):
             os.fstat(fd)
@@ -440,5 +459,6 @@ def test_a_run_without_a_terminal_status_is_a_supervisor_failure(state_root: Pat
     assert (report.status, report.failure_origin, report.reason) == (
         RunStatus.SUPERVISOR_FAILED, FailureOrigin.SUPERVISOR, ReasonCode.SUPERVISOR_FAILED,
     )
-    assert report.detail is not None and "-9" in report.detail
+    assert report.detail is not None
+    assert "-9" in report.detail
     assert report.contained is False

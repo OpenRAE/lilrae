@@ -353,7 +353,8 @@ def test_detached_descendant_ends_with_the_run(
     )
 
     _assert_contained(report)
-    assert report.run_dir is not None and report.target is not None
+    assert report.run_dir is not None
+    assert report.target is not None
     beat = report.run_dir / "output" / "heartbeat"
     reached = parse_probe_output(report.target.stdout, "detached-descendant").reached and beat.exists()
     contained = ProbeObservation(

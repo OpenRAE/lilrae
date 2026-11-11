@@ -23,6 +23,7 @@ import os
 import resource
 import stat
 import sys
+from typing import Any
 
 _PR_SET_NO_NEW_PRIVS = 38
 _SYS_LANDLOCK_CREATE_RULESET = 444
@@ -39,8 +40,10 @@ _FS_REFER = 1 << 13
 _FS_TRUNCATE = 1 << 14
 _FS_IOCTL_DEV = 1 << 15
 _FS_FILE_ONLY = _FS_EXECUTE | _FS_WRITE_FILE | _FS_READ_FILE | _FS_TRUNCATE | _FS_IOCTL_DEV
-_NET_ALL = (1 << 0) | (1 << 1)  # LANDLOCK_ACCESS_NET_BIND_TCP | CONNECT_TCP
-_SCOPE_ALL = (1 << 0) | (1 << 1)  # LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET | SIGNAL
+# LANDLOCK_ACCESS_NET_BIND_TCP | LANDLOCK_ACCESS_NET_CONNECT_TCP
+_NET_ALL = (1 << 0) | (1 << 1)
+# LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET | LANDLOCK_SCOPE_SIGNAL
+_SCOPE_ALL = (1 << 0) | (1 << 1)
 
 _SCMP_ACT_ALLOW = 0x7FFF0000
 _SCMP_COMPARE = {"eq": 4, "masked_eq": 7}
@@ -64,6 +67,8 @@ class LayerError(Exception):
 
 
 class _RulesetAttr(ctypes.Structure):
+    """``struct landlock_ruleset_attr``; older ABIs read only a prefix of it."""
+
     _fields_ = (
         ("handled_access_fs", ctypes.c_uint64),
         ("handled_access_net", ctypes.c_uint64),
@@ -72,6 +77,8 @@ class _RulesetAttr(ctypes.Structure):
 
 
 class _PathBeneathAttr(ctypes.Structure):
+    """``struct landlock_path_beneath_attr``: the access rights and a directory descriptor."""
+
     # struct landlock_path_beneath_attr is packed: 8 + 4 bytes, no padding.
     _pack_ = 1
     _layout_ = "ms"
@@ -79,6 +86,8 @@ class _PathBeneathAttr(ctypes.Structure):
 
 
 class _ScmpArgCmp(ctypes.Structure):
+    """libseccomp ``struct scmp_arg_cmp``: one argument comparison."""
+
     _fields_ = (
         ("arg", ctypes.c_uint),
         ("op", ctypes.c_int),
@@ -104,6 +113,7 @@ class Status:
 
 
 def _errno_name(code: int | None) -> str:
+    """The symbolic errno name, for example ``EPERM``."""
     return errno.errorcode.get(code or 0, str(code))
 
 
@@ -125,11 +135,13 @@ def close_descriptors(keep: int) -> int:
 
 
 def no_new_privs(libc: ctypes.CDLL) -> None:
+    """Set ``no_new_privs``, so that no later exec gains privileges."""
     if libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise LayerError("no_new_privs", _errno_name(ctypes.get_errno()))
 
 
 def set_limits(limits: dict[str, int]) -> None:
+    """Set each named resource limit as both the soft and the hard limit."""
     for name, value in limits.items():
         try:
             resource.setrlimit(_LIMITS[name], (value, value))
@@ -138,6 +150,7 @@ def set_limits(limits: dict[str, int]) -> None:
 
 
 def _syscall(libc: ctypes.CDLL, number: int, *args: object) -> int:
+    """Call a raw system call; a negative result raises ``OSError`` with errno."""
     result = libc.syscall(number, *args)
     if result < 0:
         raise OSError(ctypes.get_errno(), "")
@@ -145,6 +158,7 @@ def _syscall(libc: ctypes.CDLL, number: int, *args: object) -> int:
 
 
 def _fs_rights(abi: int) -> int:
+    """The filesystem access rights that this Landlock ABI can handle."""
     rights = (1 << 13) - 1
     if abi >= 2:
         rights |= _FS_REFER
@@ -156,6 +170,7 @@ def _fs_rights(abi: int) -> int:
 
 
 def _grant_mask(access: str, handled: int) -> int:
+    """The access rights of one grant kind, limited to the handled rights."""
     read = _FS_READ_FILE | _FS_READ_DIR
     masks = {
         "read": read,
@@ -166,15 +181,28 @@ def _grant_mask(access: str, handled: int) -> int:
     return masks[access] & handled
 
 
+def _ruleset_size(abi: int) -> int:
+    """The ruleset struct size that the ABI reads: network rights from ABI 4, scopes from ABI 6."""
+    if abi >= 6:
+        return 24
+    if abi >= 4:
+        return 16
+    return 8
+
+
 def _ruleset(libc: ctypes.CDLL, abi: int) -> tuple[int, int]:
+    """Create the Landlock ruleset; return its descriptor and the handled filesystem rights."""
     attr = _RulesetAttr(_fs_rights(abi), _NET_ALL if abi >= 4 else 0, _SCOPE_ALL if abi >= 6 else 0)
-    size = 24 if abi >= 6 else 16 if abi >= 4 else 8
-    return _syscall(libc, _SYS_LANDLOCK_CREATE_RULESET, ctypes.byref(attr), size, 0), attr.handled_access_fs
+    ruleset = _syscall(libc, _SYS_LANDLOCK_CREATE_RULESET, ctypes.byref(attr), _ruleset_size(abi), 0)
+    return ruleset, attr.handled_access_fs
 
 
 def _add_grant(libc: ctypes.CDLL, ruleset: int, grant: dict[str, str], handled: int) -> bool:
+    """Add one path grant; return False when the path does not exist in this sandbox."""
+    # Sonar S2083 is a false positive here. The grant paths come from the policy file that the
+    # adapter wrote owner-only and bound read-only; no untrusted party writes that file.
     try:
-        fd = os.open(grant["path"], os.O_PATH | os.O_CLOEXEC)
+        fd = os.open(grant["path"], os.O_PATH | os.O_CLOEXEC)  # NOSONAR(pythonsecurity:S2083) - see above
     except FileNotFoundError:
         return False
     try:
@@ -206,6 +234,7 @@ def apply_landlock(libc: ctypes.CDLL, grants: list[dict[str, str]]) -> int:
 
 
 def load_libseccomp() -> ctypes.CDLL:
+    """Load libseccomp and declare the functions that the launcher calls."""
     try:
         library = ctypes.CDLL(ctypes.util.find_library("seccomp") or "libseccomp.so.2")
     except OSError as exc:
@@ -225,7 +254,8 @@ def load_libseccomp() -> ctypes.CDLL:
     return library
 
 
-def _add_seccomp_rule(library: ctypes.CDLL, context: int, rule: dict) -> bool:
+def _add_seccomp_rule(library: ctypes.CDLL, context: int, rule: dict[str, Any]) -> bool:
+    """Add one deny rule; return False when this architecture has no such system call."""
     number = library.seccomp_syscall_resolve_name(rule["syscall"].encode())
     if number < 0:
         return False
@@ -239,7 +269,7 @@ def _add_seccomp_rule(library: ctypes.CDLL, context: int, rule: dict) -> bool:
     return True
 
 
-def apply_seccomp(library: ctypes.CDLL, rules: list[dict]) -> int:
+def apply_seccomp(library: ctypes.CDLL, rules: list[dict[str, Any]]) -> int:
     """Install the deny rules; return how many applied on this architecture."""
     context = library.seccomp_init(_SCMP_ACT_ALLOW)
     if not context:
@@ -253,7 +283,7 @@ def apply_seccomp(library: ctypes.CDLL, rules: list[dict]) -> int:
     return added
 
 
-def apply_layers(status: Status, policy: dict) -> None:
+def apply_layers(status: Status, policy: dict[str, Any]) -> None:
     """Apply every layer in order and report each one."""
     libc = ctypes.CDLL(None, use_errno=True)
     library = load_libseccomp()
@@ -272,8 +302,12 @@ def main(argv: list[str]) -> int:
     os.set_inheritable(status_fd, False)
     status = Status(status_fd)
     target = argv[4:]
+    # Sonar S8707, S8701, S8705 and S6547 are false positives here. The launcher has no
+    # privilege: it runs with its caller's authority, removes authority, and then executes the
+    # requested target, which is its purpose. The adapter builds the argument vector and the
+    # owner-only policy file, so the inputs cross no trust boundary.
     try:
-        with open(argv[2], encoding="utf-8") as stream:
+        with open(argv[2], encoding="utf-8") as stream:  # NOSONAR(pythonsecurity:S8707) - see above
             policy = json.load(stream)
         if argv[3] != "--" or not target:
             raise LayerError("arguments", "no target command")
@@ -286,7 +320,7 @@ def main(argv: list[str]) -> int:
         return 126
     status.write("exec")
     try:
-        os.execve(target[0], target, policy["environment"])
+        os.execve(target[0], target, policy["environment"])  # NOSONAR(pythonsecurity:S8701,S8705,S6547) - see above
     except OSError as exc:
         status.fail("exec", _errno_name(exc.errno))
     return 127

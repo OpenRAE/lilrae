@@ -29,6 +29,7 @@ from aptl.containment.outcome import (
 )
 from aptl.containment.policy import denied_environment_names, launcher_policy
 from aptl.core.agent_errors import AgentExecutionError
+from aptl.core.bounded_process import ProcessRequest
 from aptl.core.containment import (
     REPORT_SCHEMA,
     AppliedBounds,
@@ -36,6 +37,7 @@ from aptl.core.containment import (
     ExecutionReport,
     ExecutionRequest,
     HostIdentity,
+    PropertyObservation,
     PropertyState,
     ReasonCode,
     WorkerRunner,
@@ -108,6 +110,7 @@ class _Channels:
 
 
 def _write_private(path: Path, data: bytes) -> None:
+    """Create ``path`` owner-only and exclusively, without following a link."""
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
     with os.fdopen(os.open(path, flags, 0o600), "wb") as stream:
         stream.write(data)
@@ -144,16 +147,35 @@ class BubblewrapContainmentAdapter:
         run_id = secrets.token_hex(16)
         deadline = self._clock() + request.limits.deadline_seconds
         facts = self._host.observe(deadline=deadline, cancel_event=cancel_event)
+        properties, refused = self._admit(request, facts, deadline, cancel_event)
+        if refused is not None:
+            outcome, run_dir = refused, None
+        else:
+            outcome, run_dir = self._launch(run_id, request, properties, deadline, cancel_event)
+        return self._report(run_id, request, facts, outcome, run_dir)
+
+    def _admit(
+        self, request: ExecutionRequest, facts: HostFacts, deadline: float, cancel_event: Event | None
+    ) -> tuple[tuple[PropertyObservation, ...], Outcome | None]:
+        """Check the host facts, the environment names, and the input before any setup."""
         denied = denied_environment_names(request.env)
         properties = host_properties(facts, denied)
-        stopped = stopped_before_launch(properties, deadline - self._clock(), cancel_event)
-        if stopped is not None:
-            return self._report(run_id, request, facts, stopped, None)
-        if any(item.state is not PropertyState.DELIVERED for item in properties):
-            return self._report(run_id, request, facts, refusal(properties, denied_names=denied), None)
-        if request.input_dir is not None and not request.input_dir.is_dir():
-            outcome = refusal(properties, ReasonCode.INPUT_UNAVAILABLE, "the input directory does not exist")
-            return self._report(run_id, request, facts, outcome, None)
+        refused = stopped_before_launch(properties, deadline - self._clock(), cancel_event)
+        if refused is None and any(item.state is not PropertyState.DELIVERED for item in properties):
+            refused = refusal(properties, denied_names=denied)
+        if refused is None and request.input_dir is not None and not request.input_dir.is_dir():
+            refused = refusal(properties, ReasonCode.INPUT_UNAVAILABLE, "the input directory does not exist")
+        return properties, refused
+
+    def _launch(
+        self,
+        run_id: str,
+        request: ExecutionRequest,
+        properties: tuple[PropertyObservation, ...],
+        deadline: float,
+        cancel_event: Event | None,
+    ) -> tuple[Outcome, Path | None]:
+        """Prepare the run directory and status pipes, then start Bubblewrap."""
         run_dir = self._state_root / run_id
         channels = _Channels()
         try:
@@ -162,19 +184,27 @@ class BubblewrapContainmentAdapter:
         except (OSError, PathContainmentError) as exc:
             channels.close()
             outcome = setup_failure(properties, f"setup resources failed: {type(exc).__name__}")
-            return self._report(run_id, request, facts, outcome, run_dir if run_dir.exists() else None)
-        argv = run_arguments(
-            self._bubblewrap, layout, status_fd=channels.status_write, json_fd=channels.json_write,
-            argv=request.argv,
-        )
+            return outcome, run_dir if run_dir.exists() else None
         # The last deadline check before the payload leaves this process.
         remaining = deadline - self._clock()
         stopped = stopped_before_launch(properties, remaining, cancel_event)
         if stopped is not None:
             channels.close()
-            return self._report(run_id, request, facts, stopped, run_dir)
-        outcome = classify(self._run(argv, request, layout, remaining, channels, cancel_event), cancel_event)
-        return self._report(run_id, request, facts, outcome, run_dir)
+            return stopped, run_dir
+        process = ProcessRequest(
+            run_arguments(
+                self._bubblewrap, layout, status_fd=channels.status_write, json_fd=channels.json_write,
+                argv=request.argv,
+            ),
+            env=dict(_HOST_PATH),
+            cwd=run_dir,
+            stdin=request.stdin,
+            timeout_seconds=remaining,
+            max_output_bytes=request.limits.max_output_bytes,
+            cancel_event=cancel_event,
+            pass_fds=(channels.status_write, channels.json_write),
+        )
+        return classify(self._run(process, channels), cancel_event), run_dir
 
     def _prepare(self, run_id: str, request: ExecutionRequest) -> SandboxLayout:
         """Create the owner-only run directory and write the launcher policy."""
@@ -185,27 +215,11 @@ class BubblewrapContainmentAdapter:
         _write_private(policy, json.dumps(launcher_policy(request, run_dir / "output")).encode())
         return SandboxLayout(_LAUNCHER, policy, run_dir / "output", request.input_dir)
 
-    def _run(
-        self,
-        argv: tuple[str, ...],
-        request: ExecutionRequest,
-        layout: SandboxLayout,
-        remaining: float,
-        channels: _Channels,
-        cancel_event: Event | None,
-    ) -> Evidence:
+    def _run(self, process: ProcessRequest, channels: _Channels) -> Evidence:
+        """Start Bubblewrap through the runner and collect both status channels."""
         result, failure = None, None
         try:
-            result = self._runner.run(
-                argv,
-                env=dict(_HOST_PATH),
-                cwd=layout.output_dir.parent,
-                stdin=request.stdin,
-                timeout_seconds=remaining,
-                max_output_bytes=request.limits.max_output_bytes,
-                cancel_event=cancel_event,
-                pass_fds=(channels.status_write, channels.json_write),
-            )
+            result = self._runner.run_observed(process)
         except (AgentExecutionError, OSError) as exc:
             failure = exc
         launch, bubblewrap = channels.collect()
@@ -217,14 +231,15 @@ class BubblewrapContainmentAdapter:
             error=failure,
         )
 
+    @staticmethod
     def _report(
-        self,
         run_id: str,
         request: ExecutionRequest,
         facts: HostFacts,
         outcome: Outcome,
         run_dir: Path | None,
     ) -> ExecutionReport:
+        """Assemble the version 1 report from the run's outcome."""
         return ExecutionReport(
             schema_version=REPORT_SCHEMA,
             run_id=run_id,

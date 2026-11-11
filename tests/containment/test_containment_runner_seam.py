@@ -7,7 +7,12 @@ from pathlib import Path
 import pytest
 
 from aptl.core.agent_errors import BoundedStopReason
+from aptl.core.bounded_process import ProcessRequest
 from aptl.workbench import process
+
+
+def test_the_runner_uses_the_core_process_request() -> None:
+    assert process.ProcessRequest is ProcessRequest
 
 
 def test_runner_reasons_are_the_core_vocabulary() -> None:
@@ -28,14 +33,16 @@ def test_runner_passes_only_the_named_descriptors(tmp_path: Path) -> None:
         f"os.write({write_end}, b'ok'); print(' '.join(map(str, fds)))"
     )
     try:
-        result = process.BoundedProcessRunner.run(
-            (sys.executable, "-I", "-c", script),
-            env={"PATH": "/usr/bin:/bin"},
-            cwd=tmp_path,
-            stdin=b"",
-            timeout_seconds=30,
-            max_output_bytes=4096,
-            pass_fds=(write_end,),
+        result = process.BoundedProcessRunner.run_observed(
+            ProcessRequest(
+                (sys.executable, "-I", "-c", script),
+                env={"PATH": "/usr/bin:/bin"},
+                cwd=tmp_path,
+                stdin=b"",
+                timeout_seconds=30,
+                max_output_bytes=4096,
+                pass_fds=(write_end,),
+            )
         )
     finally:
         os.close(write_end)

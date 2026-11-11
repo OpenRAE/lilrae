@@ -64,16 +64,19 @@ def parse_probe_output(stdout: bytes, probe_id: str) -> ProbeObservation:
     return ProbeObservation(reached=reached, result=next(iter(results), None))
 
 
+_CONTAINED_RESULTS = {ProbeResult.DENIED: ProbeVerdict.CONTAINED, ProbeResult.ALLOWED: ProbeVerdict.ESCAPED}
+
+
 def classify_probe(
     control: ProbeObservation, contained: ProbeObservation
 ) -> ProbeVerdict:
     """Combine the unsandboxed control with the contained observation."""
     if not control.reached or control.result is not ProbeResult.ALLOWED:
-        return ProbeVerdict.CONTROL_FAILED
-    if not contained.reached:
-        return ProbeVerdict.NOT_REACHED
-    if contained.result is ProbeResult.DENIED:
-        return ProbeVerdict.CONTAINED
-    if contained.result is ProbeResult.ALLOWED:
-        return ProbeVerdict.ESCAPED
-    return ProbeVerdict.INCONCLUSIVE
+        verdict = ProbeVerdict.CONTROL_FAILED
+    elif not contained.reached:
+        verdict = ProbeVerdict.NOT_REACHED
+    elif contained.result is None:
+        verdict = ProbeVerdict.INCONCLUSIVE
+    else:
+        verdict = _CONTAINED_RESULTS[contained.result]
+    return verdict

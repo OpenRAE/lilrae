@@ -18,6 +18,7 @@ def _decode(value: object) -> object:
 
 
 def _encode(value: bytes) -> str:
+    """Encode bytes as standard Base64 text."""
     return base64.b64encode(value).decode("ascii")
 
 

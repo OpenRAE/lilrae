@@ -13,6 +13,10 @@ POLICY_IN_SANDBOX = f"{_SANDBOX_RUN}/policy.json"
 # The input mounts outside every writable grant: a Landlock grant on a writable
 # ancestor such as /tmp would otherwise also cover the input (for example a FIFO).
 INPUT_IN_SANDBOX = f"{_SANDBOX_RUN}/input"
+# Sonar S5443 is a false positive on the next line. The path names the fresh tmpfs that
+# Bubblewrap mounts in the run's own mount namespace. No other user or process can reach it.
+SANDBOX_TMP = "/tmp"  # NOSONAR(python:S5443) - private tmpfs of one sandbox, not the shared host /tmp
+SANDBOX_HOME = f"{SANDBOX_TMP}/home"
 REQUIRED_NAMESPACES = frozenset({
     "pid-namespace", "mnt-namespace", "net-namespace", "ipc-namespace", "uts-namespace",
 })
@@ -44,7 +48,7 @@ def _system_view() -> list[str]:
     for path in _ETC_ENTRIES:
         if os.path.lexists(path):
             view += ["--ro-bind", path, path]
-    return [*view, "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--dir", "/tmp/home"]
+    return [*view, "--proc", "/proc", "--dev", "/dev", "--tmpfs", SANDBOX_TMP, "--dir", SANDBOX_HOME]
 
 
 @dataclass(frozen=True)
@@ -109,7 +113,9 @@ def parse_status(data: bytes) -> BubblewrapStatus:
             continue
         if isinstance(document.get("child-pid"), int):
             started = True
-            namespaces = frozenset(key for key, value in document.items() if key.endswith("-namespace") and isinstance(value, int))
+            namespaces = frozenset(
+                key for key, value in document.items() if key.endswith("-namespace") and isinstance(value, int)
+            )
         if isinstance(document.get("exit-code"), int):
             exit_code = document["exit-code"]
     return BubblewrapStatus(started, namespaces, exit_code)

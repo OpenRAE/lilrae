@@ -16,11 +16,13 @@ The [case ledger](../security/containment-case-ledger.md) links each known bypas
 | `aptl.containment.policy` | Adapter | The seccomp rules, the denied environment names, and the launcher policy document. |
 | `aptl.containment._launcher` | Launcher | Runs inside the sandbox before the target. It applies the descriptor, privilege, limit, Landlock, and seccomp layers. |
 | `aptl.cli.containment` | Entry | The `lilrae containment run` command. It builds the adapter and injects the runner. |
+| `aptl.core.bounded_process` | Core | The `ProcessRequest` that the adapter builds and the runner executes. |
 | `BoundedProcessRunner` | Application | The existing runner. It starts Bubblewrap with a deadline, an output bound, cancellation, cleanup, and the status descriptors. |
 | Bubblewrap | Host | Namespaces, the mount view, a fresh procfs, a new session, the PID 1 reaper, `--die-with-parent`, and the JSON status. |
 
 The adapter imports only core and foundation code.
 It receives the runner through the `WorkerRunner` Protocol in core.
+It builds one `ProcessRequest` for each start and passes it to the runner's `run_observed` method.
 The launcher imports only the standard library. It runs under the host's `/usr/bin/python3`.
 
 ## Data flow

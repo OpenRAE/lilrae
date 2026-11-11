@@ -10,11 +10,10 @@ import errno
 from collections.abc import Mapping
 from pathlib import Path
 
-from aptl.containment.bubblewrap import INPUT_IN_SANDBOX
+from aptl.containment.bubblewrap import INPUT_IN_SANDBOX, SANDBOX_HOME, SANDBOX_TMP
 from aptl.core.containment import ExecutionRequest
 
 LAUNCHER_POLICY_SCHEMA = "lilrae.containment.launcher-policy/v1"
-SANDBOX_HOME = "/tmp/home"
 _BASE_ENVIRONMENT = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "HOME": SANDBOX_HOME}
 _OPEN_FILES = 4096
 _MEBIBYTE = 1024 * 1024
@@ -54,11 +53,13 @@ _CLONE_NAMESPACE_FLAGS = (
 )
 # AF_UNIX is denied too: a read-only bind does not stop a connect to a host
 # socket inside a granted directory. Stream socketpair() stays allowed for local IPC.
-_DENIED_SOCKET_FAMILIES = (1, 15, 17, 38, 40)  # AF_UNIX, AF_KEY, AF_PACKET, AF_ALG, AF_VSOCK
+# AF_UNIX, AF_KEY, AF_PACKET, AF_ALG, AF_VSOCK
+_DENIED_SOCKET_FAMILIES = (1, 15, 17, 38, 40)
 _SOCK_TYPE_MASK, _SOCK_DGRAM, _SOCK_RAW = 0xF, 2, 3
 # The kernel reads int arguments from the low 32 bits only; compare those bits.
 _INT_MASK = 0xFFFFFFFF
-_DENIED_TTY_IOCTLS = (0x5412, 0x541C)  # TIOCSTI, TIOCLINUX
+# TIOCSTI, TIOCLINUX
+_DENIED_TTY_IOCTLS = (0x5412, 0x541C)
 _AT_EMPTY_PATH = 0x1000
 
 type Rule = dict[str, object]
@@ -75,10 +76,12 @@ def denied_environment_names(environment: Mapping[str, str]) -> tuple[str, ...]:
 
 
 def _rule(syscall: str, *args: dict[str, object], code: int = errno.EPERM) -> Rule:
+    """One seccomp rule: the system call, the errno to return, and the argument tests."""
     return {"syscall": syscall, "errno": code, "args": list(args)}
 
 
 def _arg(index: int, op: str, a: int, b: int = 0) -> dict[str, object]:
+    """One libseccomp argument comparison."""
     return {"arg": index, "op": op, "a": a, "b": b}
 
 
@@ -94,19 +97,20 @@ def seccomp_rules() -> list[Rule]:
     # AF_UNIX accepts SOCK_RAW as a SOCK_DGRAM alias, so deny both type values.
     for sock_type in (_SOCK_DGRAM, _SOCK_RAW):
         rules.append(_rule("socketpair", _arg(1, "masked_eq", _SOCK_TYPE_MASK, sock_type)))
-    rules += [_rule("ioctl", _arg(1, "masked_eq", 0xFFFFFFFF, request)) for request in _DENIED_TTY_IOCTLS]
+    rules += [_rule("ioctl", _arg(1, "masked_eq", _INT_MASK, request)) for request in _DENIED_TTY_IOCTLS]
     # An empty-path execveat executes a descriptor, which no Landlock path rule covers.
     rules.append(_rule("execveat", _arg(4, "masked_eq", _AT_EMPTY_PATH, _AT_EMPTY_PATH)))
     return rules
 
 
 def _grants(request: ExecutionRequest, output_dir: Path) -> list[dict[str, str]]:
+    """The Landlock grants; ``/tmp`` here is the sandbox's private tmpfs."""
     grants = [{"path": path, "access": "read_exec"} for path in ("/usr", "/bin", "/sbin", "/lib", "/lib64")]
     grants += [
         {"path": "/etc", "access": "read"},
         {"path": "/proc", "access": "read"},
         {"path": "/dev", "access": "device"},
-        {"path": "/tmp", "access": "write"},
+        {"path": SANDBOX_TMP, "access": "write"},
         {"path": str(output_dir), "access": "write"},
     ]
     if request.input_dir is not None:
@@ -115,6 +119,7 @@ def _grants(request: ExecutionRequest, output_dir: Path) -> list[dict[str, str]]
 
 
 def _limits(request: ExecutionRequest) -> dict[str, int]:
+    """The resource limits; a core dump is always off."""
     limits = {"core_bytes": 0, "open_files": _OPEN_FILES}
     if request.limits.cpu_seconds is not None:
         limits["cpu_seconds"] = request.limits.cpu_seconds

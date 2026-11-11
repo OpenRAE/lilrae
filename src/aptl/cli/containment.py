@@ -19,11 +19,13 @@ app = typer.Typer(help="Run one command in the shared containment wrapper.", no_
 
 
 def _fail(message: str) -> typer.Exit:
+    """Print ``message`` on standard error and return the usage-error exit."""
     typer.echo(message, err=True)
     return typer.Exit(2)
 
 
 def _read_request() -> ExecutionRequest:
+    """Read and validate at most one bounded, strict JSON request from standard input."""
     payload = sys.stdin.buffer.read(MAX_REQUEST_BYTES + 1)
     if len(payload) > MAX_REQUEST_BYTES:
         raise _fail(f"invalid containment request: exceeds {MAX_REQUEST_BYTES} bytes")
@@ -49,6 +51,7 @@ def run_command(
     cancel = Event()
 
     def _cancel(_number: int, _frame: FrameType | None) -> None:
+        """Cancel the run when the process receives SIGTERM."""
         cancel.set()
 
     previous = signal.signal(signal.SIGTERM, _cancel)

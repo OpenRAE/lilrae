@@ -37,30 +37,35 @@ def profile_properties(profile: Profile) -> tuple[RequiredProperty, ...]:
 
 
 def _without_nul(value: str) -> str:
+    """Refuse a string that contains a NUL character."""
     if "\x00" in value:
         raise ValueError("value contains a NUL character")
     return value
 
 
 def _absolute(value: str) -> str:
+    """Refuse an executable that is not an absolute path."""
     if not value.startswith("/"):
         raise ValueError("the executable must be an absolute path")
     return value
 
 
 def _absolute_path(value: Path | None) -> Path | None:
+    """Refuse an input directory that is not an absolute path."""
     if value is not None and not value.is_absolute():
         raise ValueError("input_dir must be an absolute path")
     return value
 
 
 def _bounded_stdin(value: bytes) -> bytes:
+    """Refuse standard input that is larger than the request bound."""
     if len(value) > MAX_STDIN_BYTES:
         raise ValueError(f"stdin exceeds {MAX_STDIN_BYTES} bytes")
     return value
 
 
 def _absolute_executable(argv: tuple[str, ...]) -> tuple[str, ...]:
+    """Require an absolute path as the first argument."""
     _absolute(argv[0])
     return argv
 

@@ -10,6 +10,7 @@ import pytest
 from aptl.containment import host
 from aptl.containment.host import HostInspector
 from aptl.core.agent_errors import AgentExecutionError
+from aptl.core.bounded_process import ProcessRequest
 
 
 @dataclass(frozen=True)
@@ -28,13 +29,10 @@ class _Runner:
     calls: list[tuple[str, ...]] = field(default_factory=list)
     controls: list[tuple[float, Event | None]] = field(default_factory=list)
 
-    def run(
-        self, argv: tuple[str, ...], *, env: dict[str, str], cwd: Path, stdin: bytes,
-        timeout_seconds: float, max_output_bytes: int, cancel_event: Event | None = None,
-        pass_fds: tuple[int, ...] = (),
-    ) -> _Result:
+    def run_observed(self, request: ProcessRequest) -> _Result:
+        argv = request.argv
         self.calls.append(argv)
-        self.controls.append((timeout_seconds, cancel_event))
+        self.controls.append((request.timeout_seconds, request.cancel_event))
         if argv[1] == "--version":
             return _Result(0, self.version)
         if self.fail_probe:
@@ -125,4 +123,5 @@ def test_host_checks_skip_probes_without_budget(bwrap: Path, tmp_path: Path) -> 
     facts = HostInspector(runner, bwrap, cwd=tmp_path, clock=lambda: 100.0).observe(deadline=100.0)
 
     assert runner.calls == []
-    assert facts.bubblewrap_version is None and facts.namespaces is None
+    assert facts.bubblewrap_version is None
+    assert facts.namespaces is None

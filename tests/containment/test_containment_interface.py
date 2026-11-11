@@ -78,15 +78,17 @@ def test_request_round_trips_with_base64_stdin() -> None:
     ],
 )
 def test_request_refuses_invalid_documents(overrides: dict[str, object]) -> None:
+    document = _request_document(**overrides)
     with pytest.raises(ValidationError):
-        _parse(_request_document(**overrides))
+        _parse(document)
 
 
 def test_request_refuses_stdin_over_the_bound() -> None:
     oversized = base64.b64encode(b"x" * (8 * 1024 * 1024 + 1)).decode()
 
+    document = _request_document(stdin=oversized)
     with pytest.raises(ValidationError):
-        _parse(_request_document(stdin=oversized))
+        _parse(document)
 
 
 def test_request_refuses_duplicate_keys() -> None:

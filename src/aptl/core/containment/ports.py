@@ -1,9 +1,9 @@
 """Ports of the shared containment interface."""
 
-from pathlib import Path
 from threading import Event
 from typing import Protocol, runtime_checkable
 
+from aptl.core.bounded_process import ProcessRequest
 from aptl.core.containment.report import ExecutionReport
 from aptl.core.containment.request import ExecutionRequest
 
@@ -62,15 +62,4 @@ class WorkerRunnerFailure(Protocol):
 class WorkerRunner(Protocol):
     """Implemented by the canonical cancellable ``BoundedProcessRunner``."""
 
-    def run(
-        self,
-        argv: tuple[str, ...],
-        *,
-        env: dict[str, str],
-        cwd: Path,
-        stdin: bytes,
-        timeout_seconds: float,
-        max_output_bytes: int,
-        cancel_event: Event | None = None,
-        pass_fds: tuple[int, ...] = (),
-    ) -> WorkerResult: ...
+    def run_observed(self, request: ProcessRequest) -> WorkerResult: ...

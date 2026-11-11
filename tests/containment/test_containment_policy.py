@@ -49,7 +49,8 @@ def test_seccomp_rules_deny_the_escape_surface() -> None:
     clone3 = next(rule for rule in rules if rule["syscall"] == "clone3")
     assert clone3["errno"] == 38
     clone_flags = {rule["args"][0]["a"] for rule in rules if rule["syscall"] == "clone"}
-    assert 0x10000000 in clone_flags and 0x20000000 in clone_flags
+    assert 0x10000000 in clone_flags
+    assert 0x20000000 in clone_flags
     # The kernel reads the domain as a 32-bit int, so the rule masks the upper bits.
     socket_families = {
         rule["args"][0]["b"] for rule in rules
