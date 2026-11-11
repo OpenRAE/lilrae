@@ -287,11 +287,6 @@ def _symlink_manifest(run_path: Path) -> None:
     manifest.symlink_to(copy)
 
 
-def _reported(result) -> str:
-    """What the command printed, plus the error that ended it, if any."""
-    return f"{result.output}{result.exception!r}"
-
-
 class TestRefusedExportCreatesNoDirectory:
     """A run that export refuses leaves no new output directory (#1334)."""
 
@@ -337,7 +332,13 @@ class TestRefusedExportCreatesNoDirectory:
         )
 
         assert result.exit_code == 1
-        assert "manifest does not match the marker digest" in _reported(result)
+        # A clean typer.Exit with one refusal line, not a traceback.
+        assert isinstance(result.exception, SystemExit), result.exception
+        assert result.stdout == ""
+        assert result.stderr == (
+            f"Error: refused to export run {run_id}: sealed run '{run_id}' "
+            "manifest does not match the marker digest\n"
+        )
         # Neither ./exports, ./out nor anything else appeared beside the project.
         assert [path.name for path in tmp_path.iterdir()] == ["project"]
         boto3.client.assert_not_called()
