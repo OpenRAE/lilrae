@@ -17,6 +17,11 @@ on:
   workflow_dispatch:
   pull_request:
     branches: [main, dev, go-cutover]
+  # The dev merge queue (ADR-068) requires every required context on each
+  # merge group. A context that does not report keeps the group from merging.
+  merge_group:
+    types: [checks_requested]
+    branches: [dev]
 
 env:
   COVERAGE_CORE: sysmon
@@ -1343,6 +1348,9 @@ jobs:
         with:
           name: web-coverage
           path: web/coverage/
+      # A merge group runs as a branch analysis of its gh-readonly-queue ref.
+      # That tree is the dev tree after the merge, so the gate judges it as it
+      # judges a push to dev (ADR-068).
       - uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8.4.1
         if: (needs.changes.outputs.python == 'true' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.web == 'true')
         env:

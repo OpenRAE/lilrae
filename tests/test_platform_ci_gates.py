@@ -89,6 +89,73 @@ def test_pull_request_workflows_run_for_every_protected_branch(workflow: str) ->
     )
 
 
+def _context_producers() -> dict[str, list[tuple[str, dict]]]:
+    """Map each job name to the workflows and jobs that report it."""
+    producers: dict[str, list[tuple[str, dict]]] = {}
+    for path in sorted(WORKFLOW.parent.glob("*.yml")):
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for key, job in data.get("jobs", {}).items():
+            producers.setdefault(job.get("name", key), []).append((path.name, job))
+    return producers
+
+
+def _queued_branches() -> dict[str, dict]:
+    return {
+        name: branch
+        for name, branch in _protected_branches().items()
+        if "merge_queue" in branch
+    }
+
+
+def test_dev_merges_through_a_grouping_merge_queue() -> None:
+    """ADR-068: dev uses a merge queue that merges groups; main does not."""
+    branches = _protected_branches()
+    assert set(_queued_branches()) == {"dev"}
+    queue = branches["dev"]["merge_queue"]
+    assert queue["grouping_strategy"] == "ALLGREEN"
+    assert queue["max_entries_to_build"] > 1
+    assert queue["max_entries_to_merge"] > 1
+
+
+def test_strict_status_checks_are_dropped_only_under_a_merge_queue() -> None:
+    """Without a queue, a non-strict branch merges pull requests tested on stale bases."""
+    for name, branch in _protected_branches().items():
+        strict = branch["required_status_checks"]["strict"]
+        assert strict is ("merge_queue" not in branch), name
+    assert _protected_branches()["main"]["required_status_checks"]["strict"] is True
+
+
+def test_required_producers_report_on_each_merge_group() -> None:
+    """A required context that never reports on a merge group blocks the queue.
+
+    A job skipped by a condition reports success, so no producer of a required
+    context may skip itself on merge groups.
+    """
+    producers = _context_producers()
+    for branch_name, branch in _queued_branches().items():
+        for context in branch["required_status_checks"]["contexts"]:
+            assert producers.get(context), f"no workflow job reports {context!r}"
+            for workflow, job in producers[context]:
+                trigger = _triggers(workflow).get("merge_group")
+                assert trigger is not None, (
+                    f"{workflow} reports required {branch_name} context {context!r} "
+                    "but has no merge_group trigger"
+                )
+                assert branch_name in trigger.get("branches", [branch_name]), workflow
+                condition = str(job.get("if", ""))
+                assert "event_name == 'pull_request'" not in condition, context
+
+
+def test_pr_title_lint_keeps_merge_groups_in_separate_concurrency_groups() -> None:
+    data = yaml.safe_load(
+        (WORKFLOW.parent / "pr-title-lint.yml").read_text(encoding="utf-8")
+    )
+    assert "github.event.merge_group.head_ref" in data["concurrency"]["group"]
+    assert data["concurrency"]["cancel-in-progress"] != True  # noqa: E712
+    checkout = data["jobs"]["title-guard"]["steps"][0]["with"]["ref"]
+    assert "github.event.merge_group.base_sha" in checkout
+
+
 def test_checks_analyze_every_protected_branch_on_push() -> None:
     branches = set(_triggers("checks.yml")["push"]["branches"])
     assert set(_protected_branches()) <= branches
