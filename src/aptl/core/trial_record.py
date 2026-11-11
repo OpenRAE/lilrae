@@ -36,7 +36,13 @@ __all__ = [
 TRIAL_RECORD_SCHEMA = "lilrae-trial-record/v1"
 TRIAL_RECORD_RELPATH = "trial/record.json"
 _RUN_VERSION = "1"
-_MEDIA_TYPES = {".json": "application/json", ".jsonl": "application/x-ndjson"}
+_MEDIA_TYPES = {
+    ".json": "application/json",
+    ".jsonl": "application/x-ndjson",
+    ".ndjson": "application/x-ndjson",
+}
+#: Raw captures a trial leaves behind; consumers keep them as opaque blobs.
+_CAPTURE_PREFIXES = ("trial/transcripts/", "trial/soc/", "trial/audit/")
 
 TerminalCause = Literal["completed", "deadline", "stopped", "failed"]
 ParticipantStatus = Literal["completed", "cancelled", "failed", "not-started"]
@@ -157,6 +163,8 @@ def _run_files(run_dir: Path) -> list[SealedArtifactSpec]:
             role = "trial-record" if relative == TRIAL_RECORD_RELPATH else "evidence-record"
             if relative == RUN_MANIFEST_RELPATH:
                 role = "manifest"
+            elif relative.startswith(_CAPTURE_PREFIXES):
+                role = "evidence-blob"
             specs.append(
                 SealedArtifactSpec(
                     path=relative,

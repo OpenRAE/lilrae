@@ -155,3 +155,17 @@ def _check_stop(tmp_path, cause):
     assert sealed is not None
     assert TRIAL_RECORD_RELPATH in sealed.inventory_paths
     assert control.active() is None
+
+
+def test_seal_declares_raw_trial_captures_as_evidence_blobs(tmp_path):
+    from aptl.core.trial_record import _run_files
+
+    store = _store(tmp_path, "R2")
+    for relative in ("trial/transcripts/agents.red.json", "trial/soc/wazuh.ndjson", "trial/audit/audit.log"):
+        store.write_file("R2", relative, b"{}")
+    store.write_file("R2", "evidence/records/record.json", b"{}")
+    specs = {spec.path: (spec.role, spec.media_type) for spec in _run_files(store.get_run_path("R2"))}
+    assert specs["trial/transcripts/agents.red.json"] == ("evidence-blob", "application/json")
+    assert specs["trial/soc/wazuh.ndjson"] == ("evidence-blob", "application/x-ndjson")
+    assert specs["trial/audit/audit.log"] == ("evidence-blob", "application/octet-stream")
+    assert specs["evidence/records/record.json"] == ("evidence-record", "application/json")
