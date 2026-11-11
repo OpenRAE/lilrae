@@ -1,4 +1,4 @@
-"""The ``lilrae containment`` command: the CLI and standard-I/O seam (ADR-068)."""
+"""The ``lilrae containment`` command: the CLI and standard-I/O seam (ADR-069)."""
 
 import signal
 import sys

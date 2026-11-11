@@ -2,7 +2,7 @@
 
 Reader purpose: Reference.
 This page describes version 1 of the shared containment interface.
-[ADR-068](../adrs/adr-068-shared-containment-wrapper.md) records the decision.
+[ADR-069](../adrs/adr-069-shared-containment-wrapper.md) records the decision.
 The [architecture](../architecture/containment-wrapper.md) explains the components and threats.
 
 ## Command

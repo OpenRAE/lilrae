@@ -1,4 +1,4 @@
-"""In-sandbox launcher for the Bubblewrap containment engine (ADR-068).
+"""In-sandbox launcher for the Bubblewrap containment engine (ADR-069).
 
 Bubblewrap starts this file with the host's ``/usr/bin/python3 -I -S`` inside
 the namespaces. It applies the remaining layers in order, reports each one on

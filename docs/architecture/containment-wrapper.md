@@ -1,7 +1,7 @@
 # Shared containment wrapper
 
 Reader purpose: Explanation.
-[ADR-068](../adrs/adr-068-shared-containment-wrapper.md) records the decision.
+[ADR-069](../adrs/adr-069-shared-containment-wrapper.md) records the decision.
 The [interface Reference](../reference/containment-interface.md) gives the exact fields.
 The [case ledger](../security/containment-case-ledger.md) links each known bypass to its tests.
 

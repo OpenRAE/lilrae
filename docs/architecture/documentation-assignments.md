@@ -131,7 +131,7 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 | `docs/adrs/adr-064-layered-architecture-and-code-conventions.md` | #1667 | Explanation |
 | `docs/adrs/adr-065-executable-participant-action-boundaries.md` | #1667 | Explanation |
 | `docs/adrs/adr-066-runtime-readback-reports-realized-state.md` | #1667 | Explanation |
-| `docs/adrs/adr-068-shared-containment-wrapper.md` | #1467 | Explanation |
+| `docs/adrs/adr-069-shared-containment-wrapper.md` | #1467 | Explanation |
 | `docs/architecture/ci-verification.md` | #1667 | Explanation |
 | `docs/architecture/concurrent-participant-execution.md` | #1667 | Explanation |
 | `docs/architecture/dep-003-ephemeral-lifecycle-preflight.md` | #1667 | Reference (source record) |

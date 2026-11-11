@@ -1,4 +1,4 @@
-"""The shared containment wrapper around the Bubblewrap engine (ADR-068).
+"""The shared containment wrapper around the Bubblewrap engine (ADR-069).
 
 Each run checks every property on the host, writes a private launcher policy,
 and starts one Bubblewrap process through the canonical bounded runner. The

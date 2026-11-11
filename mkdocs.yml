@@ -367,7 +367,8 @@ nav:
     - ADR-064 Layered Architecture and Code Conventions: adrs/adr-064-layered-architecture-and-code-conventions.md
     - ADR-066 Runtime Readback Reports Realized State: adrs/adr-066-runtime-readback-reports-realized-state.md
     - ADR-067 Admitted Participant Smoke Providers: adrs/adr-067-admitted-participant-smoke-providers.md
-    - ADR-068 Shared Containment Wrapper: adrs/adr-068-shared-containment-wrapper.md
+    - ADR-068 Merge Queue for the dev Branch: adrs/adr-068-dev-merge-queue.md
+    - ADR-069 Shared Containment Wrapper: adrs/adr-069-shared-containment-wrapper.md
 
 extra:
   social:

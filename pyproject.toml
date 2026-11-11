@@ -313,7 +313,7 @@ markers = [
     "live_lab: operator-authorized checks against an existing lab (APTL_SMOKE=1)",
     "fuzz: property-based fuzz tests (run with: pytest -m fuzz)",
     "integration: tests that spawn subprocesses or read/write the filesystem; runnable by default but selectable via `pytest -m integration` or `pytest -m 'not integration'`",
-    "containment: shared containment proof (ADR-068); needs bubblewrap and real kernel enforcement, so only an explicit `-m containment` run selects it",
+    "containment: shared containment proof (ADR-069); needs bubblewrap and real kernel enforcement, so only an explicit `-m containment` run selects it",
 ]
 addopts = "-m 'not fuzz and not live_lab and not containment'"
 

@@ -1,4 +1,4 @@
-"""Version 1 of the shared containment interface (ADR-068)."""
+"""Version 1 of the shared containment interface (ADR-069)."""
 
 from aptl.core.containment.ports import (
     ContainmentAdapter,
