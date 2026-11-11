@@ -22,6 +22,8 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 
 | Path | Issue | Reader purpose |
 | --- | --- | --- |
+| `docs/architecture/issue-1705-techvault-capture-context-preflight.md` | #1705 | Explanation |
+| `docs/architecture/issue-1705-techvault-capture-context-design.md` | #1705 | Explanation |
 | `.claude/skills/gh-workflow-monitor/SKILL.md` | #1668 | How-to guide |
 | `.claude/skills/ship/SKILL.md` | #1668 | How-to guide |
 | `.claude/skills/stage/SKILL.md` | #1668 | How-to guide |
@@ -1834,7 +1836,6 @@ Edit generated prose at these maintained sources, then use the existing generato
 | `src/aptl_techvault/evidence/__init__.py` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |
 | `src/aptl_techvault/evidence/proposition_truth.py` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |
 | `src/aptl_techvault/evidence/techvault.py` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |
-| `src/aptl_techvault/evidence/techvault_enrollment_baseline.py` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |
 | `src/aptl_techvault/evidence/techvault_manager_alerts.py` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |
 | `src/aptl_techvault/evidence/techvault_misp_readiness.py` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |
 | `src/aptl_techvault/evidence/techvault_native.py` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 from aptl_techvault.evidence.techvault_telemetry_stimulus import (
     _SOURCES,
@@ -139,18 +140,22 @@ def test_webapp_stimulus_requires_the_declared_endpoint(monkeypatch):
     assert not any(command[0] == "curl" for _container, command in backend.commands)
 
 
+@pytest.mark.parametrize("may_prepare", [True, False])
 def test_native_owner_stimulates_only_silent_agents_and_waits_for_ingestion(
-    monkeypatch,
+    monkeypatch, may_prepare
 ):
     from aptl_techvault.evidence import techvault_native
 
-    owner = object.__new__(techvault_native.TechVaultNativeEvidenceOwner)
-    owner._backend = object()
-    owner._realization = object()
-    owner._project_dir = Path("/tmp/aptl-readiness-test")
-    owner._now = lambda: "2026-01-01T00:00:01Z"
     sleeps = []
-    owner._sleep = sleeps.append
+    owner = techvault_native.TechVaultNativeEvidenceOwner(
+        operations=object(),
+        realization=object(),
+        retain_enrollment_ids=None,
+        may_prepare=may_prepare,
+        dependencies=techvault_native.TechVaultNativeDependencies(
+            now=lambda: "2026-01-01T00:00:01Z", sleep=sleeps.append
+        ),
+    )
     observations = iter(
         (
             {"hosts": [{"node_ref": "dns", "telemetry_fresh": False}]},
@@ -178,6 +183,12 @@ def test_native_owner_stimulates_only_silent_agents_and_waits_for_ingestion(
         "2026-01-01T00:00:00Z", "2026-01-01T00:05:00Z"
     )
 
+    if not may_prepare:
+        # Measurement observes only: a stale host stays stale and fails.
+        assert result == {"hosts": [{"node_ref": "dns", "telemetry_fresh": False}]}
+        assert emitted == []
+        assert sleeps == []
+        return
     assert result == {"hosts": [{"node_ref": "dns", "telemetry_fresh": True}]}
     assert emitted == [(["dns"], {"dns": (_SOURCES["dns"],)})]
     assert sleeps == [2.0]

@@ -97,6 +97,8 @@ docs/architecture/issue-1603-released-module-design.md
 docs/architecture/issue-1646-scoped-tool-affordances-design.md
 docs/architecture/issue-1667-documentation-preflight.md
 docs/architecture/issue-1707-participant-smoke-provider-preflight.md
+docs/architecture/issue-1705-techvault-capture-context-preflight.md
+docs/architecture/issue-1705-techvault-capture-context-design.md
 docs/architecture/issue-435-declared-cleanup-design.md
 docs/architecture/issue-965-secret-bindings.md
 docs/architecture/issue-968-native-network-policy.md

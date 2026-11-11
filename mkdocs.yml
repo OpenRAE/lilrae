@@ -191,6 +191,8 @@ nav:
       - Native request observation assessment: architecture/issue-1420-request-observation-decision.md
       - Participant architecture assessment: architecture/participant-tool-admission.md
       - "Issue #1707 Admitted Participant Smoke Providers": architecture/issue-1707-participant-smoke-provider-preflight.md
+      - "Issue #1705 TechVault Capture Context": architecture/issue-1705-techvault-capture-context-preflight.md
+      - "Issue #1705 TechVault Capture Context Design": architecture/issue-1705-techvault-capture-context-design.md
       - "Issue #1689 Native Acquisition Phase": architecture/issue-1689-native-acquisition-phase-preflight.md
       - "Issue #1584 Go Cutover Branch Preflight": architecture/issue-1584-go-cutover-preflight.md
       - "Issue #1510 Code Quality Architecture Preflight": architecture/issue-1510-code-quality-preflight.md

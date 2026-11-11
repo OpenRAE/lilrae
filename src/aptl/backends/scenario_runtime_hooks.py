@@ -72,6 +72,67 @@ def _validate_log_timestamp(value: str | None) -> None:
         raise ValueError("runtime-operation-invalid") from None
 
 
+#: Admitted-operation refusals. Core raises them before it calls the backend,
+#: so the operation never started.
+RUNTIME_OPERATION_REFUSALS = frozenset(
+    {"runtime-node-not-admitted", "runtime-operation-invalid"}
+)
+
+_MAX_NETWORKS = 16
+_MAX_ALIASES = 32
+_MAX_NAME_LENGTH = 253
+
+
+def _bounded_name(value: object) -> bool:
+    """Accept one bounded, printable network or alias name."""
+
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= _MAX_NAME_LENGTH
+        and value.isprintable()
+    )
+
+
+def _attachment(raw: object) -> dict[str, object]:
+    """Keep only a valid IP address and bounded aliases of one attachment."""
+
+    from ipaddress import ip_address
+
+    projected: dict[str, object] = {}
+    if not isinstance(raw, Mapping):
+        return projected
+    address = raw.get("IPAddress")
+    try:
+        if isinstance(address, str) and address:
+            projected["IPAddress"] = str(ip_address(address))
+    except ValueError:
+        pass
+    aliases = raw.get("Aliases")
+    if isinstance(aliases, list):
+        kept = [alias for alias in aliases if _bounded_name(alias)]
+        if kept:
+            projected["Aliases"] = kept[:_MAX_ALIASES]
+    return projected
+
+
+def _network_attachments(settings: object) -> dict[str, dict[str, object]] | None:
+    """Project network attachments without endpoint, driver, or host fields.
+
+    The projection is whole or absent. When a network name cannot be shown or
+    the count exceeds the bound, it withholds every attachment, so a consumer
+    cannot read a partial set as the complete set.
+    """
+
+    networks = settings.get("Networks") if isinstance(settings, Mapping) else None
+    if (
+        not isinstance(networks, Mapping)
+        or len(networks) > _MAX_NETWORKS
+        or not all(_bounded_name(name) for name in networks)
+    ):
+        return None
+    return {name: _attachment(raw) for name, raw in networks.items()}
+
+
 class ScenarioRuntimeOperations(Protocol):
     """Container-only operations delegated for admitted scenario nodes."""
 
@@ -187,7 +248,11 @@ class AdmittedRuntimeOperations:
             raise ValueError("runtime-operation-failed") from None
 
     def container_inspect(self, name: str) -> Mapping[str, object]:
-        """Expose bounded process state without environment or host configuration."""
+        """Expose bounded state and network attachments, without host configuration.
+
+        Each attachment keeps only a valid IP address and bounded aliases. An
+        ambiguous attachment set stays visible so the caller can refuse it.
+        """
 
         self._validate(name, ["inspect"], 30)
         try:
@@ -221,6 +286,9 @@ class AdmittedRuntimeOperations:
                     and -255 <= value <= 1_000_000_000
                 ):
                     destination[key] = value
+            networks = _network_attachments(info.get("NetworkSettings"))
+            if networks is not None:
+                result["NetworkSettings"] = {"Networks": networks}
             return result
         except Exception:
             raise ValueError("runtime-operation-failed") from None
