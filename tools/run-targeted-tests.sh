@@ -2,8 +2,13 @@
 # Run changed or explicitly named tests without falling back to a full suite.
 set -euo pipefail
 
+# Sync the dependency selection of requirements/dev.txt, which CI installs.
+# The installed-artifact tests build wheels with `python -m build
+# --no-isolation`, so they need the hatchling backend from the build group.
+uv_test_env=(--group build --no-default-groups --extra dev --extra web)
+
 if (($#)); then
-    exec uv run pytest "$@"
+    exec uv run "${uv_test_env[@]}" pytest "$@"
 fi
 
 declare -A seen=()
@@ -64,7 +69,7 @@ for path in "${test_paths[@]}"; do
 done
 
 if ((${#python_tests[@]})); then
-    uv run pytest "${python_tests[@]}"
+    uv run "${uv_test_env[@]}" pytest "${python_tests[@]}"
 fi
 
 for package in "${!vitest_packages[@]}"; do

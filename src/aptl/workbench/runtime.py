@@ -5,16 +5,20 @@ from __future__ import annotations
 import hashlib
 import os
 from collections.abc import Callable, Collection, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from threading import RLock
 from typing import Protocol
 
+from aptl.core.mcp_policy import configured_server_ids, configured_runtime_environment
 from aptl.core.runstore import RunStorageBackend
 from aptl.core.session import ScenarioSession
+from aptl.core.participant_requests.request import ParticipantRequest
+from aptl.core.participant_requests.binding import ParticipantRequestBinding
 from aptl.workbench.process import BoundedProcessError
 from aptl.workbench.profiles import (
     ProfileId,
+    WorkbenchProfile,
     profile_for,
     render_profile_config,
     verify_profile_tool_inventory,
@@ -38,6 +42,8 @@ class ProfileLaunch:
     client_config_path: Path
     policy_version: str
     model: str
+    server_ids: tuple[str, ...] = ()
+    run_store: RunStorageBackend | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -48,6 +54,9 @@ class DecisionAgentLaunch:
     run_id: str
     model: str
     policy_version: str = "aptl-participant-decision-provider/v1"
+    request: ParticipantRequest | None = None
+    request_binding: ParticipantRequestBinding | None = None
+    run_store: RunStorageBackend | None = field(default=None, repr=False, compare=False)
 
 
 AgentLaunch = ProfileLaunch | DecisionAgentLaunch
@@ -107,8 +116,9 @@ class _ActiveProfile:
 class GuestRuntimeBinding:
     """Trusted guest admission and matching configuration renderer."""
 
-    admit_run: Callable[[], str]
-    config_renderer: Callable[[ProfileId, str], Path]
+    admit_run: Callable[[], str] | None = None
+    config_renderer: Callable[[ProfileId, str], Path] | None = None
+    profile_resolver: Callable[[ProfileId, str], WorkbenchProfile] | None = None
 
 
 class WorkbenchRuntime:
@@ -125,6 +135,9 @@ class WorkbenchRuntime:
         model: str,
         guest_binding: GuestRuntimeBinding | None = None,
     ) -> None:
+        self._profile_resolver = (
+            guest_binding.profile_resolver if guest_binding else None
+        )
         self._admit_run = guest_binding.admit_run if guest_binding else None
         self._config_renderer = guest_binding.config_renderer if guest_binding else None
         self._session_manager = session_manager
@@ -172,8 +185,15 @@ class WorkbenchRuntime:
     def _start(self, profile: ProfileId | str) -> ProfileLaunch:
         if self._current is not None:
             raise WorkbenchStateError("a participant profile is already running")
-        selected = profile_for(profile)
+        role = ProfileId(profile)
         run_id = self._active_trace_id()
+        selected = (
+            self._profile_resolver(role, run_id)
+            if self._profile_resolver is not None
+            else profile_for(
+                role, server_ids=configured_server_ids(self._payload_root, run_id)
+            )
+        )
         credentials = self._credential_broker.prepare(
             selected.profile_id, run_id, selected.credential_aliases
         )
@@ -181,8 +201,14 @@ class WorkbenchRuntime:
             if self._config_renderer is not None:
                 config_path = self._config_renderer(selected.profile_id, run_id)
             else:
+                selected = replace(
+                    selected,
+                    runtime_environment=configured_runtime_environment(
+                        self._payload_root, run_id
+                    ),
+                )
                 config_path = render_profile_config(
-                    profile=selected.profile_id,
+                    profile=selected,
                     payload_root=self._payload_root,
                     output_dir=self._generated_config_dir,
                     state_dir=self._session_manager.state_dir,
@@ -199,6 +225,8 @@ class WorkbenchRuntime:
             client_config_path=config_path,
             policy_version=selected.policy_version,
             model=self._model,
+            server_ids=selected.server_ids,
+            run_store=self._run_store,
         )
         try:
             handle = self._adapter.launch(launch, credentials)
@@ -211,9 +239,7 @@ class WorkbenchRuntime:
             raise
         self._current = _ActiveProfile(launch, handle)
         try:
-            verify_profile_tool_inventory(
-                launch.profile, self._adapter.list_tools(handle)
-            )
+            verify_profile_tool_inventory(selected, self._adapter.list_tools(handle))
         except Exception as exc:
             self._record("inventory_failed", launch)
             try:

@@ -31,27 +31,6 @@ def _script(name: str):
     return module
 
 
-def test_realized_techvault_image_inventory_includes_helpers_and_children(
-    tmp_path: Path,
-) -> None:
-    from aptl.appliance.input_images import canonical_image_references
-    from aptl.core.scenario_bundle import env_pack_bundle
-    from aptl.validation.curated_live_proof import expected_bundle_matrix
-    from aptl.core.config import AptlConfig
-
-    bundle = env_pack_bundle(tmp_path / "packs")
-    references = canonical_image_references(ROOT, bundle)
-    matrix = expected_bundle_matrix(ROOT, AptlConfig(), bundle)
-
-    assert {
-        "scenario." + service for service in matrix.expected_services
-    } <= references.keys()
-    assert references["scenario.ad"].split("/", 1)[0] == "aptl"
-    assert references["child.shuffle-worker"].split("/", 1)[0] == "ghcr.io"
-    assert references["helper.certs"].split("/", 1)[0] == "wazuh"
-    assert "@sha256:" in references["scenario.misp"]
-
-
 def test_saved_archive_must_match_inspected_image_roles(tmp_path: Path) -> None:
     import io
 
@@ -111,21 +90,22 @@ def test_seat_archive_omits_abandoned_web_profile(tmp_path: Path, monkeypatch) -
 def test_generated_config_validates_against_the_launcher_contract() -> None:
     # The bake writes this and the launcher parses it; a declaration the
     # launcher would refuse must fail the bake, not a participant's start.
-    from aptl.appliance.policy import full_techvault_boundary_policy
+    from tests.seat_policy_fixture import protected_seat_policy
     from aptl.appliance.seat.image_config import parse_seat_image_config
 
     resources = _script("write-seat-image-config.py").RESOURCES
 
     payload = json.dumps(
         {
-            "schema_version": "aptl.seat-image/v1",
+            "schema_version": "aptl.seat-image/v3",
+            "desktop_privilege_contract": "aptl.desktop-privileges/v1",
             "resources": resources,
-            "boundary": full_techvault_boundary_policy().model_dump(mode="json"),
+            "boundary": protected_seat_policy().model_dump(mode="json"),
             "binding": {
                 "boundary_helper_image": "aptl-network-boundary-helper@sha256:"
                 + "c" * 64,
                 "egress_proxy_image": "aptl-appliance-egress-proxy@sha256:" + "d" * 64,
-                "raes_plan_digest": "sha256:" + "e" * 64,
+                "participant_routes_digest": "sha256:" + "e" * 64,
             },
         }
     ).encode()
@@ -143,7 +123,13 @@ def test_generated_config_reserves_the_baked_disks_virtual_size(
     disk = tmp_path / "seat.qcow2"
     disk.write_bytes(b"fixture")
     output = tmp_path / "config.json"
-    monkeypatch.setattr(module, "image_digest", lambda _ref: "image@sha256:" + "a" * 64)
+    image_references: list[str] = []
+
+    def pinned_image(reference: str) -> str:
+        image_references.append(reference)
+        return reference.rsplit(":", 1)[0] + "@sha256:" + "a" * 64
+
+    monkeypatch.setattr(module, "image_digest", pinned_image)
     monkeypatch.setattr(module, "file_digest", lambda _path: "sha256:" + "b" * 64)
     monkeypatch.setattr(
         module.subprocess,
@@ -159,13 +145,21 @@ def test_generated_config_reserves_the_baked_disks_virtual_size(
     assert module.main() == 0
     written = json.loads(output.read_bytes())
     assert written["resources"]["disk_bytes"] == 210 * 1024**3
-    assert written["schema_version"] == "aptl.seat-image/v2"
+    assert written["schema_version"] == "aptl.seat-image/v3"
     assert written["desktop_privilege_contract"] == "aptl.desktop-privileges/v1"
+    assert written["boundary"]["schema_version"] == "aptl.appliance-boundary/v3"
+    assert written["binding"]["participant_routes_digest"] == "sha256:" + "b" * 64
+    assert "raes_plan_digest" not in written["binding"]
+    assert written["binding"]["boundary_helper_image"].startswith(
+        "aptl-network-boundary-helper@sha256:"
+    )
+    assert "aptl-network-boundary-helper:7" in image_references
 
 
 def test_bake_uses_the_proven_offline_guest_provisioning() -> None:
     bake = BAKE.read_text()
     provision = PROVISION.read_text()
+    scan = (ROOT / "appliance/guest/scan-golden.sh").read_text()
     first_boot = (ROOT / "appliance/guest/aptl-appliance-first-boot").read_text()
     stage_cleanup = 'rm -rf "$stage"'
 
@@ -175,8 +169,16 @@ def test_bake_uses_the_proven_offline_guest_provisioning() -> None:
     # suppressed during the offline install and enabled for first boot.
     assert "provision-offline.sh" in bake
     assert "acquire-guest-system-packages.sh" in bake
+    assert "acquire-guest-node-runtime.sh" in bake
     assert "system-packages.sha256" in provision
+    assert "node-runtime.sha256" in provision
     assert "policy-rc.d" in provision
+    assert 'test "$(node --version)" = v22.23.4' in provision
+    assert "/opt/node-v22.23.4-linux-x64" in provision
+    assert 'chown -R root:root "$node_root"' in provision
+    assert 'chmod -R a+rX "$node_root"' in provision
+    assert 'test "$(/usr/local/bin/node --version)" = v22.23.4' in scan
+    assert "/usr/local/bin/npm --version" in scan
     assert "systemctl enable docker.service" in provision
     assert "lilrae-*.whl" in provision
     assert "aptl_labs" not in provision
@@ -189,12 +191,16 @@ def test_bake_uses_the_proven_offline_guest_provisioning() -> None:
     assert "guest_services surfaces" not in first_boot
     desktop = yaml.safe_load((ROOT / "appliance/guest/desktop-compose.yml").read_text())
     assert desktop["services"]["gateway"]["ports"] == ["127.0.0.1:8080:80"]
-    assert all("ports" not in desktop["services"][name]
-               for name in ("guacamole", "guacd", "database"))
+    assert all(
+        "ports" not in desktop["services"][name]
+        for name in ("guacamole", "guacd", "database")
+    )
     assert "APTL_WEB_LAUNCH_TOKEN" not in first_boot
     assert "APTL_API_TOKEN" not in first_boot
     assert "start-seat-desktop" in first_boot
-    assert first_boot.index("seat-privileges.py") < first_boot.index("start-seat-desktop")
+    assert first_boot.index("seat-privileges.py") < first_boot.index(
+        "start-seat-desktop"
+    )
     assert "usermod --append --groups docker aptl" not in provision
     assert "gpasswd --delete aptl docker" in provision
     assert "gpasswd --delete aptl sudo" in provision
@@ -203,10 +209,11 @@ def test_bake_uses_the_proven_offline_guest_provisioning() -> None:
     assert "test ! -e /etc/sudoers.d/90-aptl-desktop" in scan
     assert "docker|sudo" in scan
     from aptl.appliance.loopback_proxy import build_proxy_bindings
-    from aptl.appliance.policy import full_techvault_boundary_policy
+    from tests.seat_policy_fixture import protected_seat_policy
     from aptl.appliance.seat.vm import DEFAULT_QEMU_GUEST_ADDRESS
+
     bindings = build_proxy_bindings(
-        full_techvault_boundary_policy(), adapter_address=DEFAULT_QEMU_GUEST_ADDRESS
+        protected_seat_policy(), adapter_address=DEFAULT_QEMU_GUEST_ADDRESS
     )
     assert all(item.listen_address == "10.0.2.15" for item in bindings)
     assert all(item.target_address == "127.0.0.1" for item in bindings)
@@ -253,10 +260,10 @@ def test_bake_uses_checkout_config_writer_and_configured_disk_scan() -> None:
     bake = BAKE.read_text()
     assert '"$source_root/scripts/appliance/write-seat-image-config.py"' in bake
     assert '--disk "$disk"' in bake
-    assert 'APTL_SEAT_DISK_GIB=$disk_gib /tmp/scan-golden.sh' in bake
+    assert "APTL_SEAT_DISK_GIB=$disk_gib /tmp/scan-golden.sh" in bake
     scan = (ROOT / "appliance/guest/scan-golden.sh").read_text()
-    assert 'expected_disk_gib=${APTL_SEAT_DISK_GIB:-128}' in scan
-    assert 'expected_disk_gib * 1024 * 1024 * 1024 * 19 / 20' in scan
+    assert "expected_disk_gib=${APTL_SEAT_DISK_GIB:-128}" in scan
+    assert "expected_disk_gib * 1024 * 1024 * 1024 * 19 / 20" in scan
 
 
 def _wheel_requirement_writer() -> str:
@@ -299,3 +306,32 @@ def test_bake_pins_exactly_one_application_wheel_by_metadata_name(
     assert completed.returncode == 0, completed.stderr
     digest = hashlib.sha256(b"py3-none-any").hexdigest()
     assert output.read_text() == f"lilrae==8.0.0 --hash=sha256:{digest}\n"
+
+
+def test_seat_image_runs_lilrae_and_keeps_the_deprecated_alias_launchers() -> None:
+    """New images call ``lilrae``; ``aptl`` launchers stay until 10.0.0 (#1402)."""
+
+    provision = PROVISION.read_text()
+    for name in (
+        "lilrae",
+        "lilrae-misp-suricata-sync",
+        "aptl",
+        "aptl-misp-suricata-sync",
+    ):
+        assert f"cat > /usr/local/bin/{name} <<'EOF'" in provision
+        # Each launcher runs its own console script, so the alias keeps its
+        # deprecation notice instead of silently becoming ``lilrae``.
+        assert f'/opt/aptl/app/bin/{name} "$@"' in provision
+        assert f"/usr/local/bin/{name}" in provision.split("chmod 0755", 1)[1]
+    guest = ROOT / "appliance/guest"
+    first_boot = (guest / "aptl-appliance-first-boot").read_text()
+    scan = (guest / "scan-golden.sh").read_text()
+    assert "/usr/local/bin/aptl " not in first_boot
+    assert "/usr/local/bin/lilrae kill --containers" in first_boot
+    assert "/usr/local/bin/lilrae lab start" in first_boot
+    assert "test -x /opt/aptl/app/bin/lilrae\n" in scan
+    assert "test -x /usr/local/bin/aptl\n" in scan
+    assert "/usr/local/bin/aptl --version" not in scan
+    assert scan.count("/usr/local/bin/lilrae --version >/dev/null") == 2
+    qualify = (ROOT / "scripts/appliance/qualify-seat-privileges.sh").read_text()
+    assert "${APTL_SEAT_CLI:-$source_root/.venv/bin/lilrae}" in qualify

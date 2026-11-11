@@ -162,14 +162,14 @@ class TestMaterializeNode:
             os="linux", os_version="", runtime=_full_runtime()
         )
         ex = _RecordingExecutor()
-        result = materialize_node("techvault.wazuh-manager", ops, ex)
+        result = materialize_node("range.wazuh-manager", ops, ex)
         assert result is None
         # Every op was actually executed against the backend surface.
-        assert ex.base["techvault.wazuh-manager"]
-        assert ex.installed[("techvault.wazuh-manager", "apt")] == {"wazuh-manager"}
-        assert ("techvault.wazuh-manager", "wazuh") in ex.groups
-        assert ("techvault.wazuh-manager", "wazuh") in ex.users
-        assert ("techvault.wazuh-manager", "wazuh-manager.service") in ex.active
+        assert ex.base["range.wazuh-manager"]
+        assert ex.installed[("range.wazuh-manager", "apt")] == {"wazuh-manager"}
+        assert ("range.wazuh-manager", "wazuh") in ex.groups
+        assert ("range.wazuh-manager", "wazuh") in ex.users
+        assert ("range.wazuh-manager", "wazuh-manager.service") in ex.active
 
     def test_unverifiable_package_fails_closed(self):
         ops = plan_node_materialization(
@@ -180,10 +180,10 @@ class TestMaterializeNode:
             def install_packages(self, node_address, manager, packages):
                 pass  # runs but materializes nothing; observation stays empty
 
-        result = materialize_node("techvault.wazuh-manager", ops, _SilentInstall())
+        result = materialize_node("range.wazuh-manager", ops, _SilentInstall())
         assert result is not None
         assert result.success is False
-        assert "techvault.wazuh-manager" in (result.error or "")
+        assert "range.wazuh-manager" in (result.error or "")
         assert "wazuh-manager" in (result.error or "")
 
     def test_unverifiable_service_fails_closed(self):
@@ -195,7 +195,7 @@ class TestMaterializeNode:
             def start_service_unit(self, node_address, unit_name):
                 pass  # never becomes active
 
-        result = materialize_node("techvault.wazuh-manager", ops, _SilentStart())
+        result = materialize_node("range.wazuh-manager", ops, _SilentStart())
         assert result is not None
         assert result.success is False
         assert "wazuh-manager.service" in (result.error or "")
@@ -210,10 +210,10 @@ class TestMaterializeNode:
                 raise RuntimeError("apt exploded internally with secret=hunter2")
 
         # No exception escapes; a fail-closed LabResult naming the node is returned.
-        result = materialize_node("techvault.wazuh-manager", ops, _Broken())
+        result = materialize_node("range.wazuh-manager", ops, _Broken())
         assert result is not None
         assert result.success is False
-        assert "techvault.wazuh-manager" in (result.error or "")
+        assert "range.wazuh-manager" in (result.error or "")
         # The raw internal detail is not echoed verbatim into the envelope.
         assert "hunter2" not in (result.error or "")
         assert "hunter2" not in caplog.text
@@ -261,9 +261,9 @@ class TestMaterializeNode:
         )
         ops = plan_node_materialization(os="linux", os_version="", runtime=runtime)
         ex = _RecordingExecutor()
-        result = materialize_node("techvault.dns", ops, ex)
+        result = materialize_node("range.dns", ops, ex)
         assert result is None
-        assert ("techvault.dns", "/var/log/named") in ex.directories
+        assert ("range.dns", "/var/log/named") in ex.directories
 
     def test_unverifiable_directory_fails_closed(self):
         runtime = RuntimeConfiguration(
@@ -280,7 +280,7 @@ class TestMaterializeNode:
             def ensure_directory(self, node_address, op):
                 pass  # runs but materializes nothing
 
-        result = materialize_node("techvault.dns", ops, _SilentDirectory())
+        result = materialize_node("range.dns", ops, _SilentDirectory())
         assert result is not None
         assert result.success is False
         assert "/var/log/named" in (result.error or "")
@@ -295,9 +295,9 @@ class TestMaterializeNode:
         )
         ops = plan_node_materialization(os="linux", os_version="", runtime=runtime)
         ex = _RecordingExecutor()
-        result = materialize_node("techvault.sync", ops, ex)
+        result = materialize_node("range.sync", ops, ex)
         assert result is None
-        assert ("techvault.sync", "/app/pyproject.toml") in ex.dependency_manifests
+        assert ("range.sync", "/app/pyproject.toml") in ex.dependency_manifests
 
     def test_unverifiable_dependency_manifest_fails_closed(self):
         runtime = RuntimeConfiguration(
@@ -313,7 +313,7 @@ class TestMaterializeNode:
             def install_dependency_manifest(self, node_address, op):
                 pass  # runs but materializes nothing
 
-        result = materialize_node("techvault.sync", ops, _SilentInstall())
+        result = materialize_node("range.sync", ops, _SilentInstall())
         assert result is not None
         assert result.success is False
         assert "/app/pyproject.toml" in (result.error or "")
@@ -335,10 +335,10 @@ class TestMaterializeNode:
         ops = plan_node_materialization(os="linux", os_version="", runtime=runtime)
         ex = _RecordingExecutor()
 
-        result = materialize_node("techvault.soc", ops, ex)
+        result = materialize_node("range.soc", ops, ex)
 
         assert result is None
-        assert ("techvault.soc", "/opt/mcp/common/package-lock.json") in (
+        assert ("range.soc", "/opt/mcp/common/package-lock.json") in (
             ex.software_components
         )
 
@@ -362,7 +362,7 @@ class TestMaterializeNode:
             def install_software_component(self, node_address, op):
                 pass
 
-        result = materialize_node("techvault.soc", ops, _SilentInstall())
+        result = materialize_node("range.soc", ops, _SilentInstall())
 
         assert result is not None
         assert result.success is False
@@ -389,5 +389,5 @@ class TestMaterializeNode:
     def test_empty_runtime_only_needs_base_substrate(self):
         ops = plan_node_materialization(os="linux", os_version="", runtime=None)
         ex = _RecordingExecutor()
-        assert materialize_node("techvault.switch", ops, ex) is None
-        assert ex.base["techvault.switch"]
+        assert materialize_node("range.switch", ops, ex) is None
+        assert ex.base["range.switch"]

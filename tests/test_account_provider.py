@@ -47,7 +47,7 @@ def _account(
     *,
     address: str = "provision.account-placement.jessica",
     target_address: str = "scenario.node.ad",
-    username: str = "jessica.williams",
+    username: str = "alice.smith",
     groups: tuple[str, ...] = (),
     spn: str = "",
     mail: str = "",
@@ -89,10 +89,10 @@ class TestPlanAccountTargets:
     def test_resolves_target_and_groups_by_container(self):
         node = _node(address="scenario.node.ad")
         accounts = (
-            _account(username="jessica.williams", target_address="scenario.node.ad"),
+            _account(username="alice.smith", target_address="scenario.node.ad"),
             _account(
                 address="provision.account-placement.emily",
-                username="emily.chen",
+                username="bob.jones",
                 target_address="scenario.node.ad",
             ),
         )
@@ -102,8 +102,8 @@ class TestPlanAccountTargets:
         assert targets[0].container_name == "aptl-ad"
         assert targets[0].provider == provider.SAMBA_AD
         assert {a.username for a in targets[0].accounts} == {
-            "jessica.williams",
-            "emily.chen",
+            "alice.smith",
+            "bob.jones",
         }
 
     def test_unresolved_target_node_fails_closed(self):
@@ -175,9 +175,9 @@ class TestPlanAccountTargets:
         [
             {"groups": ("Domain Admins",)},  # AD group names may contain spaces
             {"username": "svc-sql"},
-            {"username": "jessica.williams"},
-            {"mail": "jessica.williams@techvault.local"},
-            {"spn": "MSSQLSvc/db.techvault.local:1433"},
+            {"username": "alice.smith"},
+            {"mail": "alice.smith@range.example"},
+            {"spn": "MSSQLSvc/db.range.example:1433"},
         ],
     )
     def test_accepts_valid_provider_identifiers(self, field_kwargs):
@@ -231,7 +231,7 @@ class TestPlanAccountTargets:
         assert errors == []
         assert len(targets) == 1
 
-    @pytest.mark.parametrize("kind", [provider.SAMBA_AD, provider.THEHIVE])
+    @pytest.mark.parametrize("kind", [provider.SAMBA_AD, provider.SHUFFLE])
     @pytest.mark.parametrize(
         "changed",
         [
@@ -263,7 +263,7 @@ class TestPlanAccountTargets:
         assert result.success is False
         mutate.assert_not_called()
 
-    @pytest.mark.parametrize("kind", [provider.SAMBA_AD, provider.THEHIVE])
+    @pytest.mark.parametrize("kind", [provider.SAMBA_AD, provider.SHUFFLE])
     def test_equivalent_duplicate_credentials_are_accepted(self, kind):
         node = _node(address="scenario.node.ad", account_provider=kind)
         first = replace(
@@ -284,36 +284,36 @@ class TestPlanAccountTargets:
 
 class TestSambaCommandBuilders:
     def test_user_create_uses_random_password_never_positional_secret(self):
-        cmd = provider.samba_user_create("jessica.williams")
+        cmd = provider.samba_user_create("alice.smith")
         assert cmd == [
             "samba-tool",
             "user",
             "create",
-            "jessica.williams",
+            "alice.smith",
             "--random-password",
         ]
 
     def test_user_create_sets_mail_when_declared(self):
         cmd = provider.samba_user_create(
-            "emily.chen", mail="emily.chen@techvault.local"
+            "bob.jones", mail="bob.jones@range.example"
         )
         assert cmd == [
             "samba-tool",
             "user",
             "create",
-            "emily.chen",
+            "bob.jones",
             "--random-password",
-            "--mail-address=emily.chen@techvault.local",
+            "--mail-address=bob.jones@range.example",
         ]
 
     def test_user_set_mail_updates_existing_without_rename_or_secret(self):
-        cmd = provider.samba_user_set_mail("jessica.williams", "j@techvault.local")
+        cmd = provider.samba_user_set_mail("alice.smith", "a@range.example")
         assert cmd == [
             "samba-tool",
             "user",
             "rename",
-            "jessica.williams",
-            "--mail-address=j@techvault.local",
+            "alice.smith",
+            "--mail-address=a@range.example",
         ]
         # No new username positional and no password token: mail-only update.
         assert all(not t.startswith("--random-password") for t in cmd)
@@ -331,12 +331,12 @@ class TestSambaCommandBuilders:
             "add",
             "Sales",
         ]
-        assert provider.samba_group_addmembers("Sales", "jessica.williams") == [
+        assert provider.samba_group_addmembers("Sales", "alice.smith") == [
             "samba-tool",
             "group",
             "addmembers",
             "Sales",
-            "jessica.williams",
+            "alice.smith",
         ]
         assert provider.samba_group_listmembers("Sales") == [
             "samba-tool",
@@ -401,9 +401,9 @@ class TestSambaCommandBuilders:
         # never reproduces them.
         weak_passwords = {"password123", "Summer2024", "Welcome1!", "SqlService2024!"}
         built = [
-            provider.samba_user_create("jessica.williams", mail="j@x"),
+            provider.samba_user_create("alice.smith", mail="j@x"),
             provider.samba_group_add("Sales"),
-            provider.samba_group_addmembers("Sales", "jessica.williams"),
+            provider.samba_group_addmembers("Sales", "alice.smith"),
             provider.samba_spn_add("MSSQLSvc/db:1433", "svc-sql"),
             provider.samba_user_disable("former.employee"),
         ]
@@ -421,7 +421,7 @@ class TestApplicationAccountFields:
             address="provision.node.console",
             service_name="console",
             container_name="aptl-console",
-            account_provider=provider.THEHIVE,
+            account_provider=provider.SHUFFLE,
         )
         account = DeploymentAccountRealization(
             address="provision.account.console-admin",
@@ -435,7 +435,7 @@ class TestApplicationAccountFields:
     def test_an_enabled_or_default_principal_is_accepted(self, disabled):
         targets, errors = self._plan(disabled=disabled)
         assert errors == []
-        assert targets[0].provider == provider.THEHIVE
+        assert targets[0].provider == provider.SHUFFLE
 
     @pytest.mark.parametrize(
         "fields",

@@ -17,7 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from raes.explicitness import ExplicitnessClass, ExplicitnessProvenance
+from raes_contracts.explicitness import ExplicitnessClass, ExplicitnessProvenance
 from raes.runtime_configuration import RuntimeConfiguration
 from raes_contracts.planning import (
     ChangeAction,
@@ -50,7 +50,7 @@ from aptl.backends.raes_manifest import (
     create_aptl_realization_envelope,
 )
 from aptl.backends.raes_observation import observe_realization
-from aptl.backends.raes_planning_compat import DAEMON_READBACK_RUNTIME_CONCERNS
+from aptl.backends._raes_manifest_realization import DAEMON_READBACK_RUNTIME_CONCERNS
 from aptl.backends.raes_realization_model import AptlRealization, NodeRealization
 from aptl.core.deployment.errors import BackendTimeoutError
 from aptl.core.deployment.observation import (
@@ -579,22 +579,27 @@ def test_environment_probe_missing_config_fails_closed():
 # --------------------------------------------------------------------------- #
 
 
-def test_restart_policy_is_disclosed_from_daemon_state():
-    runtime = _runtime(operational_policy={"restart": "always"})
-    backend = _Backend({_CONTAINER: _inspect(restart="always")})
+@pytest.mark.parametrize("policy", ["always", "on-failure"])
+def test_restart_policy_is_disclosed_from_daemon_state(policy):
+    runtime = _runtime(operational_policy={"restart": policy.replace("-", "_")})
+    backend = _Backend({_CONTAINER: _inspect(restart=policy)})
 
     codes, _provenance, observations = _gate(runtime, backend, "runtime-restart-policy")
 
     assert codes == []
     assert (
         observations[_ADDRESS].concerns[CONCERN_PAYLOAD_PATH["runtime-restart-policy"]]
-        == "always"
+        == policy.replace("-", "_")
     )
 
 
-def test_restart_policy_mismatch_is_rejected():
-    runtime = _runtime(operational_policy={"restart": "always"})
-    backend = _Backend({_CONTAINER: _inspect(restart="unless-stopped")})
+@pytest.mark.parametrize(
+    ("expected", "observed"),
+    [("always", "unless-stopped"), ("on_failure", "no")],
+)
+def test_restart_policy_mismatch_is_rejected(expected, observed):
+    runtime = _runtime(operational_policy={"restart": expected})
+    backend = _Backend({_CONTAINER: _inspect(restart=observed)})
 
     codes, _provenance, _observations = _gate(
         runtime, backend, "runtime-restart-policy"
@@ -991,75 +996,6 @@ def _redis_acl_runtime() -> RuntimeConfiguration:
     )
 
 
-def test_techvault_redis_authorization_requires_bounded_live_acl():
-    from aptl_techvault.startup import TechVaultStartupProvider
-
-    backend = _Backend(
-        {_CONTAINER: _inspect()},
-        exec_results={
-            _CONTAINER: {
-                "sh": (
-                    0,
-                    "config=exact\nauth=PONG\nrw=verified\nadmin=denied\n",
-                )
-            }
-        },
-    )
-
-    observed = TechVaultStartupProvider.observe_runtime(
-        backend,
-        SimpleNamespace(
-            name="misp-redis",
-            container_name=_CONTAINER,
-            runtime=_redis_acl_runtime(),
-        ),
-    )
-
-    assert _APP_AUTH_PATH in observed
-
-
-def test_techvault_redis_authorization_rejects_admin_access():
-    from aptl_techvault.startup import TechVaultStartupProvider
-
-    backend = _Backend(
-        {_CONTAINER: _inspect()},
-        exec_results={
-            _CONTAINER: {
-                "sh": (
-                    0,
-                    "config=exact\nauth=PONG\nrw=verified\nadmin=allowed\n",
-                )
-            }
-        },
-    )
-
-    observed = TechVaultStartupProvider.observe_runtime(
-        backend,
-        SimpleNamespace(
-            name="misp-redis",
-            container_name=_CONTAINER,
-            runtime=_redis_acl_runtime(),
-        ),
-    )
-
-    assert _APP_AUTH_PATH not in observed
-
-
-@pytest.mark.parametrize(
-    "readback",
-    [
-        "config=exact\nauth=PONG\nrw=verified\nadmin=allowed\n",
-        "config=exact\nauth=PONG\nrw=verified\nadmin=denied\nextra=value\n",
-        "config=exact\nauth=PONG\nrw=verified\nadmin=denied\nadmin=denied\n",
-        "config=exact\nauth=PONG\nrw=verified\nadmin\n",
-    ],
-)
-def test_techvault_redis_authorization_rejects_malformed_readback(readback):
-    from aptl_techvault.redis_acl_observation import _readback_verified
-
-    assert not _readback_verified(SimpleNamespace(stdout=readback))
-
-
 def test_wazuh_software_component_requires_guest_version_and_agent_type():
     runtime = _runtime(
         software_components=[
@@ -1125,7 +1061,8 @@ def test_wazuh_software_component_rejects_wrong_guest_version():
     assert _SOFTWARE_PATH not in observations[_ADDRESS].concerns
 
 
-def test_declared_package_is_disclosed_only_after_guest_query_matches():
+@pytest.mark.parametrize("explicitness", [ExplicitnessClass.EXACT, ExplicitnessClass.CONSTRAINED])
+def test_declared_package_is_disclosed_only_after_guest_query_matches(explicitness):
     runtime = _runtime(packages=[{"manager": "apt", "name": "curl", "version": "*"}])
     query = (
         "dpkg-query",
@@ -1137,7 +1074,7 @@ def test_declared_package_is_disclosed_only_after_guest_query_matches():
         exec_results={_CONTAINER: {query: (0, "ii \tcurl\t8.10.1-1\tamd64\t\n")}},
     )
 
-    codes, _provenance, observations = _gate(runtime, backend, "runtime-packages")
+    codes, _provenance, observations = _gate(runtime, backend, "runtime-packages", explicitness=explicitness)
 
     assert codes == []
     assert _PACKAGES_PATH in observations[_ADDRESS].concerns
@@ -1217,11 +1154,12 @@ def test_declared_package_with_no_provider_is_still_rejected():
     assert _PACKAGES_PATH not in observations[_ADDRESS].concerns
 
 
-def test_missing_declared_package_is_omitted_and_rejected():
+@pytest.mark.parametrize("explicitness", [ExplicitnessClass.EXACT, ExplicitnessClass.CONSTRAINED])
+def test_missing_declared_package_is_omitted_and_rejected(explicitness):
     runtime = _runtime(packages=[{"manager": "apt", "name": "curl", "version": "*"}])
     backend = _Backend({_CONTAINER: _inspect()})
 
-    codes, _provenance, observations = _gate(runtime, backend, "runtime-packages")
+    codes, _provenance, observations = _gate(runtime, backend, "runtime-packages", explicitness=explicitness)
 
     assert _PACKAGES_PATH not in observations[_ADDRESS].concerns
     assert _GATE_REJECT in codes
@@ -1372,7 +1310,8 @@ def test_mismatched_systemd_unit_state_is_omitted_and_rejected():
     assert _GATE_REJECT in codes
 
 
-def test_local_identity_is_disclosed_only_after_guest_account_readback():
+@pytest.mark.parametrize("explicitness", [ExplicitnessClass.EXACT, ExplicitnessClass.CONSTRAINED])
+def test_local_identity_is_disclosed_only_after_guest_account_readback(explicitness):
     runtime = _runtime(
         local_identity={
             "groups": [{"name": "analyst"}],
@@ -1400,7 +1339,7 @@ def test_local_identity_is_disclosed_only_after_guest_account_readback():
         },
     )
 
-    codes, _provenance, observations = _gate(runtime, backend, "runtime-local-identity")
+    codes, _provenance, observations = _gate(runtime, backend, "runtime-local-identity", explicitness=explicitness)
 
     assert codes == []
     assert (
@@ -1447,7 +1386,8 @@ def test_local_identity_observes_backend_selected_primary_group_and_membership()
     )
 
 
-def test_local_identity_group_mismatch_is_omitted_and_rejected():
+@pytest.mark.parametrize("explicitness", [ExplicitnessClass.EXACT, ExplicitnessClass.CONSTRAINED])
+def test_local_identity_group_mismatch_is_omitted_and_rejected(explicitness):
     runtime = _runtime(
         local_identity={
             "groups": [{"name": "analyst"}],
@@ -1475,7 +1415,7 @@ def test_local_identity_group_mismatch_is_omitted_and_rejected():
         },
     )
 
-    codes, _provenance, observations = _gate(runtime, backend, "runtime-local-identity")
+    codes, _provenance, observations = _gate(runtime, backend, "runtime-local-identity", explicitness=explicitness)
 
     assert (
         CONCERN_PAYLOAD_PATH["runtime-local-identity"]
@@ -2793,8 +2733,6 @@ def test_service_listener_readback_binds_daemon_observation_disclosure():
         plan=plan,
         observations=observations,
         previous=(),
-        concern_kinds=frozenset({"service-listeners"}),
-        observation_strength=ObservationStrength.DAEMON_OBSERVED,
     )
 
     assert len(result) == 1

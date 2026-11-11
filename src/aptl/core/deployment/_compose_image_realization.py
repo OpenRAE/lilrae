@@ -19,6 +19,7 @@ from aptl.core.deployment._docker_image_identity import (
     is_exact_image_reference,
     local_image_state,
 )
+from aptl.core.deployment._companion_realization import companion_images
 from aptl.core.deployment.realization import (
     DeploymentImageRealization,
     DeploymentRealizationSpec,
@@ -30,7 +31,7 @@ from aptl.core.lab_types import LabResult
 # single component build step (the AD image's package install) alone measured
 # ~745s, so the whole cold build exceeds ~800s — and a modest local dev machine
 # (the lab's primary target) can be markedly slower still. The prior 600s cap
-# failed a clean `aptl lab start` on a fresh machine (BackendTimeoutError mid
+# failed a clean `lilrae lab start` on a fresh machine (BackendTimeoutError mid
 # `docker build`). This is set generously so a legitimately slow cold build or a
 # large base-image pull never trips it; a docker op that genuinely exceeds this
 # is a broken environment, not a too-tight timeout. Inspect/tag ops finish in
@@ -60,6 +61,19 @@ _ImageOverrideDumper.add_representer(
 )
 
 
+def image_override_text(images: tuple[DeploymentImageRealization, ...]) -> str:
+    """Render the same merge features for preflight and the persisted model."""
+    services = {
+        image.service_name: {"image": image.image_ref, "build": _ResetValue()}
+        for image in images
+    }
+    return yaml.dump(
+        compose_literal({"services": services}),
+        Dumper=_ImageOverrideDumper,
+        sort_keys=True,
+    )
+
+
 class ComposeRealizationImageMixin:
     """Realize typed scenario image operations through Docker Compose."""
 
@@ -79,10 +93,12 @@ class ComposeRealizationImageMixin:
         realization_root = realization_root or scenario_root
         if not realization.images:
             return None, None
-        exact = any(is_exact_image_reference(i.image_ref) for i in realization.images)
+        # A node's backend companions are obtained and verified like its image.
+        images = (*realization.images, *companion_images(realization))
+        exact = any(is_exact_image_reference(i.image_ref) for i in images)
         # A cached pin must also run on the daemon's platform, as a child must.
         platform, failure = _daemon_platform(self) if exact else (None, None)
-        for image in realization.images:
+        for image in images:
             if failure is not None:
                 break
             failure = (
@@ -92,7 +108,7 @@ class ComposeRealizationImageMixin:
             )
         if failure is not None:
             return failure, None
-        override_path = self._write_image_override(realization.images, realization_root)
+        override_path = self._write_image_override(images, realization_root)
         base = base_compose_file(realization, scenario_root, realization_root)
         return None, (base, override_path)
 
@@ -432,16 +448,8 @@ class ComposeRealizationImageMixin:
 
         override_path = scenario_root / _IMAGE_OVERRIDE_RELATIVE_PATH
         override_path.parent.mkdir(parents=True, exist_ok=True)
-        services = {
-            image.service_name: {"image": image.image_ref, "build": _ResetValue()}
-            for image in images
-        }
         override_path.write_text(
-            yaml.dump(
-                compose_literal({"services": services}),
-                Dumper=_ImageOverrideDumper,
-                sort_keys=True,
-            ),
+            image_override_text(images),
             encoding="utf-8",
             newline="\n",
         )

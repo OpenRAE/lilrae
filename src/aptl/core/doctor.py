@@ -1,4 +1,4 @@
-"""Read-only host and container-runtime checks for ``aptl doctor`` (#1218).
+"""Read-only host and container-runtime checks for ``lilrae doctor`` (#1218).
 
 Each check observes one documented prerequisite and, when it is not met, names
 the fix. Nothing here writes to the host, the workspace or the Docker daemon:
@@ -29,8 +29,10 @@ from aptl.core._doctor_common import (
     CheckStatus,
     DoctorCheck,
     Which,
-    major_minor,
+    node_version,
+    node_version_supported,
     skipped,
+    supported_node_releases_text,
 )
 from aptl.core._doctor_runtime import runtime_checks
 from aptl.core.config import AptlConfig, find_config, load_config
@@ -39,12 +41,10 @@ from aptl.core.lifecycle_guard import canonical_lifecycle_project_root
 # CheckStatus and DoctorCheck are defined in _doctor_common and re-exported.
 __all__ = ["CheckStatus", "DoctorCheck", "DoctorReport", "run_doctor"]
 
-_MIN_NODE_MAJOR = 20
-
 
 @dataclass(frozen=True)
 class DoctorReport:
-    """Every check from one ``aptl doctor`` run, in a stable order."""
+    """Every check from one ``lilrae doctor`` run, in a stable order."""
 
     checks: tuple[DoctorCheck, ...]
 
@@ -79,7 +79,7 @@ def _workspace_checks(
 ) -> tuple[AptlConfig, Path | None, list[DoctorCheck]]:
     """Check the project configuration and that the workspace is writable.
 
-    The project root is found the way ``aptl lab start`` and ``stop`` find it:
+    The project root is found the way ``lilrae lab start`` and ``stop`` find it:
     the nearest directory, from ``project_dir`` up, that holds aptl.json. The
     root is ``None`` when the project directory does not exist.
     """
@@ -91,7 +91,7 @@ def _workspace_checks(
             CheckStatus.FAILED,
             "The project directory does not exist or is not a directory.",
             "Pass an existing project directory with `--project-dir`, or create "
-            "one with `aptl lab init <directory>`.",
+            "one with `lilrae lab init <directory>`.",
         )
         return (
             AptlConfig(),
@@ -111,7 +111,7 @@ def _config_check(project_root: Path) -> tuple[AptlConfig, DoctorCheck]:
             "project-config",
             CheckStatus.FAILED,
             "No aptl.json was found in the project directory or its parents.",
-            "Run `aptl lab init <directory>`, then run `aptl doctor` there or "
+            "Run `lilrae lab init <directory>`, then run `lilrae doctor` there or "
             "pass `--project-dir`.",
         )
     try:
@@ -121,7 +121,7 @@ def _config_check(project_root: Path) -> tuple[AptlConfig, DoctorCheck]:
             "project-config",
             CheckStatus.FAILED,
             "aptl.json is not valid.",
-            "Run `aptl config validate` to see why, then repair aptl.json.",
+            "Run `lilrae config validate` to see why, then repair aptl.json.",
         )
     return config, DoctorCheck(
         "project-config", CheckStatus.PASSED, "aptl.json is valid."
@@ -142,16 +142,14 @@ def _writable_check(project_root: Path) -> DoctorCheck:
         CheckStatus.FAILED,
         "The project directory is not writable by this user.",
         "Run aptl as a user that can write the project directory, or create "
-        "a project you own with `aptl lab init <directory>`.",
+        "a project you own with `lilrae lab init <directory>`.",
     )
 
 
 def _host_tool_checks(which: Which) -> list[DoctorCheck]:
     """Check the host tools that lab start invokes directly."""
 
-    docker = DoctorCheck(
-        "docker-cli", CheckStatus.PASSED, "The Docker CLI is on PATH."
-    )
+    docker = DoctorCheck("docker-cli", CheckStatus.PASSED, "The Docker CLI is on PATH.")
     if which("docker") is None:
         docker = DoctorCheck(
             "docker-cli",
@@ -160,15 +158,12 @@ def _host_tool_checks(which: Which) -> list[DoctorCheck]:
             "Install Docker Desktop, or Docker Engine 28.0 or newer with the "
             "Compose and Buildx plugins (see Prerequisites).",
         )
-    ssh_keygen = DoctorCheck(
-        "ssh-keygen", CheckStatus.PASSED, "ssh-keygen is on PATH."
-    )
+    ssh_keygen = DoctorCheck("ssh-keygen", CheckStatus.PASSED, "ssh-keygen is on PATH.")
     if which("ssh-keygen") is None:
         ssh_keygen = DoctorCheck(
             "ssh-keygen",
             CheckStatus.FAILED,
-            "ssh-keygen is not on PATH; lab start generates the lab SSH keys "
-            "with it.",
+            "ssh-keygen is not on PATH; lab start generates the lab SSH keys with it.",
             _ssh_keygen_fix(),
         )
     return [docker, ssh_keygen, _node_check(which)]
@@ -188,7 +183,8 @@ def _ssh_keygen_fix() -> str:
 def _node_check(which: Which) -> DoctorCheck:
     """Warn when the MCP servers cannot be built; the lab still starts."""
 
-    fix = f"Install Node.js {_MIN_NODE_MAJOR} or newer with npm."
+    supported = supported_node_releases_text()
+    fix = f"Install Node.js {supported} with npm."
     node = which("node")
     if node is None or which("npm") is None:
         return DoctorCheck(
@@ -198,19 +194,21 @@ def _node_check(which: Which) -> DoctorCheck:
             "MCP servers and reports degraded.",
             fix,
         )
-    version = major_minor(_local_output([node, "--version"]))
-    if version is None or version[0] < _MIN_NODE_MAJOR:
+    raw_version = _local_output([node, "--version"])
+    version = node_version(raw_version)
+    if not node_version_supported(raw_version):
         return DoctorCheck(
             "node-npm",
             CheckStatus.WARNING,
-            f"Node.js {_MIN_NODE_MAJOR} or newer was not found, so the MCP "
-            "servers may not build.",
+            f"A supported Node.js release ({supported}) was not found, so the "
+            "MCP servers may be vulnerable or may not build.",
             fix,
         )
+    assert version is not None
     return DoctorCheck(
         "node-npm",
         CheckStatus.PASSED,
-        f"Node.js {version[0]}.{version[1]} and npm are on PATH.",
+        f"Node.js {'.'.join(str(part) for part in version)} and npm are on PATH.",
     )
 
 

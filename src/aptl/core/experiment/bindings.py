@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import rfc8785
 from pydantic import BaseModel
 from raes import Scenario
+from raes_contracts.canonical import canonical_contract_digest
 from raes_contracts.bounded_domains import scalar_in_domain
 from raes.variables import VariableType
 from raes.variation import ParameterVariationPoint
@@ -35,8 +36,9 @@ from raes_contracts.experiment_bindings import (
     ScenarioBindingResolution,
     validate_experiment_binding_targets,
 )
-from raes_contracts.participant_configuration import (
+from raes_contracts.contracts.participant_configuration import (
     ConfigurationOverrideModel,
+    ParticipantConfigurationValidator,
     realize_participant_configuration,
 )
 
@@ -72,6 +74,11 @@ class ParticipantManifestBinding:
     manifest: ParticipantImplementationManifestModel
     manifest_ref: str
     manifest_digest: str
+    validator: ParticipantConfigurationValidator | None = None
+
+    def __post_init__(self) -> None:
+        if self.manifest_digest != canonical_contract_digest(self.manifest):
+            raise ValueError("participant manifest digest is inconsistent")
 
 
 @dataclass(frozen=True)
@@ -259,6 +266,8 @@ def _participant_configurations(
     digests_by_binding: dict[str, str] = {}
     for key in sorted(grouped):
         manifest_binding = participant_manifests[key]
+        if manifest_binding.validator is None:
+            raise ValueError("participant configuration owner validation is required")
         group = sorted(grouped[key], key=lambda item: item.binding_id)
         result = realize_participant_configuration(
             participant_address=key[0],
@@ -272,6 +281,7 @@ def _participant_configurations(
                 )
                 for descriptor in group
             ],
+            validator=manifest_binding.validator,
         )
         results.append(result)
         for descriptor in group:

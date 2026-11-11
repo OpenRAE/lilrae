@@ -1,5 +1,13 @@
 # Issue #1273: Participant Desktop Adapter Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1273-participant-desktop-adapter-preflight.md).
+Its last recorded file change before this rewrite was `0a3b13c4bdc8`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 The supplied issue is the contract; this note records design guardrails, not an
 implementation plan. It extends the adapter boundary in the
 [issue #980 preflight](issue-980-pack-adapter-install-seam-preflight.md) and
@@ -117,7 +125,9 @@ coercion; require an actual string, bounded length, and a params mapping before
 merging. Validate overwrite's supported shape and reject unsafe/missing names
 before even the JWT authentication request. A TypeScript interface is not a
 runtime validator. Catch malformed input within the existing MCP error envelope;
-do not echo supplied values or raw validation/HTTP exceptions.
+do not echo supplied values or raw validation/HTTP exceptions. Exception
+(issue #1488): a failed API call also returns the API's own error message in
+`api_error`, redacted and bounded. That message can echo supplied values.
 
 The existing participant narrative/profile and managed-client schemas have no
 rule-default field. Supply defaults as validated tool arguments through the

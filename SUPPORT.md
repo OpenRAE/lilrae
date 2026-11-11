@@ -8,7 +8,8 @@ APTL is community supported and maintained on a best-effort basis.
   feature requests.
 - Use GitHub discussions if they are enabled for design questions or broader
   usage questions.
-- For security issues, do not open a public issue. See [SECURITY.md](SECURITY.md).
+- For security issues, do not put details in a public issue, pull request, or
+  discussion. See [SECURITY.md](SECURITY.md).
 
 ## What to Include
 

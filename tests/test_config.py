@@ -51,73 +51,23 @@ class TestLabSettings:
             LabSettings()
 
 
-# Canonical expected defaults for ContainerSettings. Any new field
-# added to ContainerSettings MUST be added here as well, or the
-# ``test_defaults_*`` tests below will fail. That coupling is the
-# point: a new container type accidentally defaulting to ``True`` must
-# not slip past the test suite (it would otherwise enable that
-# container in every lab start).
-_EXPECTED_CONTAINER_DEFAULTS = {
-    "wazuh": True,
-    "victim": True,
-    "kali": True,
-    "reverse": False,
-    "enterprise": True,
-    "soc": True,
-    "mail": False,
-    "fileshare": True,
-    "dns": True,
-}
+_EXPECTED_CONTAINER_DEFAULTS = {"profiles": None}
 
 
 class TestContainerSettings:
-    """Tests for the ContainerSettings Pydantic model."""
-
     def test_defaults_match_canonical_set(self):
-        """Every ContainerSettings field defaults to its canonical value.
-
-        Compares the full ``model_dump()`` against
-        ``_EXPECTED_CONTAINER_DEFAULTS`` so adding a new field to
-        ``ContainerSettings`` without updating the expected set fails
-        this test loudly — preventing an accidental new-container
-        default-True from shipping silently.
-        """
         from aptl.core.config import ContainerSettings
-
         assert ContainerSettings().model_dump() == _EXPECTED_CONTAINER_DEFAULTS
 
-    def test_can_disable_containers(self):
-        """User can selectively disable containers."""
+    def test_can_select_operator_groups(self):
         from aptl.core.config import ContainerSettings
+        assert ContainerSettings(profiles=["example-group"]).enabled_profiles() == ["example-group"]
 
-        settings = ContainerSettings(wazuh=False, kali=False)
-        assert settings.wazuh is False
-        assert settings.kali is False
-        assert settings.victim is True
-
-    def test_enabled_profiles_returns_only_enabled(self):
-        """enabled_profiles() returns exactly the set of enabled container names.
-
-        Asserts an exact set equality, not a few `in`/`not in` checks,
-        so a new field accidentally defaulting to ``True`` would show
-        up in the profile list and trip this assertion.
-        """
+    @pytest.mark.parametrize("groups", [["--all"], ["a", "a"], ["a/b"], [""], ["has space"]])
+    def test_invalid_group_tokens_are_rejected(self, groups):
         from aptl.core.config import ContainerSettings
-
-        # Set every field explicitly so this exercises enabled_profiles() itself
-        # rather than the model defaults.
-        settings = ContainerSettings(
-            wazuh=True,
-            victim=False,
-            kali=True,
-            reverse=False,
-            enterprise=False,
-            soc=False,
-            mail=False,
-            fileshare=False,
-            dns=False,
-        )
-        assert set(settings.enabled_profiles()) == {"wazuh", "kali"}
+        with pytest.raises(ValidationError):
+            ContainerSettings(profiles=groups)
 
 
 class TestExperimentSettings:
@@ -178,8 +128,6 @@ class TestExperimentSettings:
             "sonnet",
             "claude-sonnet-4-5",
             "claude-haiku-4-5@latest",
-            "gpt-4o",
-            "gpt-5.2-codex",
             "bad model",
             "bad\nmodel",
             "x" * 129,
@@ -218,6 +166,16 @@ class TestExperimentSettings:
 
         with pytest.raises(ValidationError):
             ExperimentSettings(participant_models={provider: model})
+
+    @pytest.mark.parametrize(("provider", "model"), [
+        ("codex", "gpt-5.2-codex"), ("codex", "gpt-4o"),
+        ("claude", "claude-sonnet-4-5"), ("claude", "claude-sonnet-5-5"),
+        ("opencode", "openrouter/author/model:free"),
+    ])
+    def test_current_model_ids_do_not_require_snapshot_shaped_names(self, provider, model):
+        from aptl.core.config import ExperimentSettings
+
+        assert ExperimentSettings(participant_models={provider: model}).participant_models.model_for(provider) == model
 
     @pytest.mark.parametrize(
         "model",
@@ -303,7 +261,7 @@ class TestExperimentSettings:
 
 
 _GRANT = {
-    "pack": "techvault",
+    "pack": "fixture-range",
     "consumer": "webapp",
     "variable": "DB_PASSWORD",
     "source": {"kind": "process-environment", "variable": "LAB_DB_PASSWORD"},
@@ -342,7 +300,7 @@ class TestEnvironmentGrants:
         config = DeploymentConfig(environment_grants=[{**_GRANT, "source": source}])
         grant = config.environment_grants[0]
 
-        assert grant.key == ("techvault", "webapp", "DB_PASSWORD")
+        assert grant.key == ("fixture-range", "webapp", "DB_PASSWORD")
         assert grant.source_identity == identity
 
     @pytest.mark.parametrize(
@@ -352,7 +310,7 @@ class TestEnvironmentGrants:
             {"source": {"kind": "process-environment", "variable": "lab-db"}},
             {"source": {"kind": "process-environment"}},
             {"variable": "DB-PASSWORD"},
-            {"pack": "../techvault"},
+            {"pack": "../fixture-range"},
             {"consumer": ""},
             {"value": "s3cret"},
         ],
@@ -391,14 +349,14 @@ class TestAptlConfig:
 
         config = AptlConfig(**valid_config_dict)
         assert config.lab.name == "test-lab"
-        assert config.containers.wazuh is True
-        assert config.containers.reverse is False
+        assert "wazuh" in config.containers.enabled_profiles()
+        assert "reverse" not in config.containers.enabled_profiles()
 
     def test_missing_lab_section_uses_default(self):
         """Config without a lab section should use default lab settings."""
         from aptl.core.config import AptlConfig
 
-        config = AptlConfig(containers={"wazuh": True})
+        config = AptlConfig(containers={"profiles": ["wazuh"]})
         assert config.lab.name == "aptl"
 
     def test_containers_default_when_omitted(self):

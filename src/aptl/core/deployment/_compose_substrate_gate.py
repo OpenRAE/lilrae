@@ -42,7 +42,7 @@ mutation instead of letting the create fail with an opaque start error.
 not support rootless Docker at all, not only for systemd nodes, so
 :func:`require_rootful_daemon` asks the same security-options question before
 any SSH key, credential render, volume, certificate, image pull or Compose
-change, and before ``aptl lab start --clean`` tears anything down, whatever the
+change, and before ``lilrae lab start --clean`` tears anything down, whatever the
 scenario selects. userns-remap stays refused only where the substrate posture
 needs writable cgroups.
 

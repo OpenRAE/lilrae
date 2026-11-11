@@ -1,5 +1,13 @@
 # Issue #1194: Seat Network Investigation
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/reviews/1194-seat-network-investigation.md).
+Its last recorded file change before this rewrite was `d9c35e6c11ee`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This records the investigation and network fix for
 [issue #1194](https://github.com/Brad-Edwards/aptl/issues/1194). The historical
 omitted reconciliation call reproduces the reported symptom. The current

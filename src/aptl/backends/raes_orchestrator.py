@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from raes_backend_protocols.capabilities import BackendManifest
 from raes_contracts.diagnostics import Diagnostic, Severity
 from raes_contracts.planning import ChangeAction, OrchestrationPlan, RuntimeDomain
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotEntry
@@ -42,6 +43,7 @@ from raes_contracts.workflow import (
 )
 
 from aptl.core.runtime.workflow_engine import WorkflowEngine
+from aptl.core.trial_readiness import TrialReadinessGate
 from aptl.utils.redaction import redact
 
 if TYPE_CHECKING:
@@ -121,13 +123,23 @@ class AptlOrchestrator(object):
     """Orchestration component of APTL's ``full-remote-control-plane`` target."""
 
     _engine: WorkflowEngine = field(default_factory=WorkflowEngine, init=False)
-    _workflow_payloads: dict[str, dict[str, object]] = field(default_factory=dict, init=False)
+    _workflow_payloads: dict[str, dict[str, object]] = field(
+        default_factory=dict, init=False
+    )
     _results: dict[str, dict[str, object]] = field(default_factory=dict, init=False)
-    _history: dict[str, list[dict[str, object]]] = field(default_factory=dict, init=False)
+    _history: dict[str, list[dict[str, object]]] = field(
+        default_factory=dict, init=False
+    )
+    reporting_manifest: BackendManifest | None = field(default=None, repr=False)
+    readiness: TrialReadinessGate | None = field(default=None, repr=False)
 
     def start(self, plan: object, snapshot: object) -> ApplyResult:
         """Load a RAES orchestration plan and register its workflows."""
-        working_snapshot = snapshot if isinstance(snapshot, RuntimeSnapshot) else RuntimeSnapshot()
+        if self.readiness is not None:
+            self.readiness.require_live()
+        working_snapshot = (
+            snapshot if isinstance(snapshot, RuntimeSnapshot) else RuntimeSnapshot()
+        )
         if not isinstance(plan, OrchestrationPlan):
             return ApplyResult(
                 success=False,
@@ -183,7 +195,7 @@ class AptlOrchestrator(object):
             )
 
         self._sync_from_engine()
-        return ApplyResult(
+        result = ApplyResult(
             success=True,
             snapshot=working_snapshot.with_entries(
                 entries,
@@ -191,6 +203,17 @@ class AptlOrchestrator(object):
                 orchestration_history=self._history,
             ),
             changed_addresses=changed,
+        )
+        from aptl.backends.lilrae_materialization_reporting import (
+            materialization_result,
+        )
+        from aptl.backends.raes_manifest import create_aptl_manifest
+
+        return materialization_result(
+            plan,
+            working_snapshot,
+            result,
+            self.reporting_manifest or create_aptl_manifest(),
         )
 
     def drive_workflows(
@@ -215,7 +238,9 @@ class AptlOrchestrator(object):
             if state.workflow_status != WorkflowStatus.PENDING:
                 continue
             try:
-                self._engine.drive(address, payload, objective_outcomes=resolved_outcomes)
+                self._engine.drive(
+                    address, payload, objective_outcomes=resolved_outcomes
+                )
             except ValueError as exc:
                 diagnostics.append(
                     _orchestration_diagnostic(
@@ -253,7 +278,9 @@ class AptlOrchestrator(object):
 
     def stop(self, snapshot: object) -> ApplyResult:
         """Stop orchestration and clear orchestration state."""
-        working_snapshot = snapshot if isinstance(snapshot, RuntimeSnapshot) else RuntimeSnapshot()
+        working_snapshot = (
+            snapshot if isinstance(snapshot, RuntimeSnapshot) else RuntimeSnapshot()
+        )
         retained_entries = {
             address: entry
             for address, entry in working_snapshot.entries.items()

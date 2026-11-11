@@ -1,9 +1,8 @@
 # Contributing to APTL
 
 APTL is an active purple-team lab and autonomous cyber-operations research
-project. Contributions are useful when they make the lab safer, more
-reproducible, easier to operate, easier to test, or more precise for scenario
-authors and agent integrations.
+project. Contributions can make the lab safer, more reproducible, easier to operate, or easier to test.
+They can also improve precision for scenario authors and agent integrations.
 
 ## Before Opening a Pull Request
 
@@ -26,7 +25,7 @@ authors and agent integrations.
 
 Prerequisites:
 
-- Python 3.12 or newer
+- Python 3.14 or newer
 - Docker and Docker Compose
 - Node.js and npm for MCP server and web UI work
 - [pre-commit](https://pre-commit.com/)
@@ -35,7 +34,7 @@ Set up the Python control plane:
 
 ```shell
 git clone https://github.com/OpenRAE/lilrae.git
-cd aptl
+cd lilrae
 python -m venv .venv
 . .venv/bin/activate
 pip install -e ".[dev]"
@@ -60,13 +59,14 @@ npm install
 1. Fork the repository and create a branch from `dev`.
 2. Make the smallest coherent change that satisfies all of the issue's
    acceptance criteria.
-3. Add or update tests when behavior changes.
+3. Verify changed behavior and risk. Reuse adequate existing tests; add tests
+   only for uncovered behavior. Remove redundant or obsolete cases.
 4. Update scenarios, schemas, documentation, or examples when the public
    surface changes.
 5. Give the PR a [Conventional Commit](https://www.conventionalcommits.org)
    title (`feat:`, `fix:`, etc.); release-please derives the changelog and
    version from it. Do not edit `CHANGELOG.md`.
-6. Run the relevant checks locally.
+6. Run staged hygiene locally. Run behavior tests in CI or an approved isolated VM.
 7. Open the issue's single pull request against `dev`, or update its existing
    PR. Describe what changed, why, and how each acceptance criterion was
    verified. Follow the [coding standards](docs/CODING_STANDARDS.md).
@@ -82,11 +82,11 @@ pre-commit run
 
 Local commit hooks run secret detection and fast file hygiene only. Full Python,
 MCP and web suites, dependency-lock freshness, complexity and prose checks run in
-CI/CD. Run only the exact tests relevant to a change while developing. Do not
+CI/CD. Run targeted tests only in CI or an approved isolated VM. Do not
 run bare `pytest`, package-wide `npm test`, `pre-commit run --all-files`, or the
 whole-tree `.pre-commit-ci.yaml` configuration locally.
 
-Examples of targeted checks:
+Examples of targeted checks in CI or an approved isolated VM:
 
 ```shell
 pytest tests/test_specific_behavior.py
@@ -105,26 +105,38 @@ When changing files under `mcp/aptl-mcp-common`, run targeted common and
 dependent-server tests while iterating. CI/CD rebuilds and tests every dependent
 MCP because they consume the local package.
 
-CI also runs the non-Docker Python suite plus `aptl --help` and
-`aptl lab init` on Ubuntu and macOS. Windows runs the portable Python contract
-suite plus the same CLI smoke commands, excluding POSIX-only file-mode,
-ownership, signal, and Unix-socket tests. Hosted runners do not provide the
-Docker Desktop/nested-virtualization environment needed to prove full lab boot
-on macOS or Windows, so `aptl lab start` remains a manual platform-validation
-gate.
+CI runs the ordinary Python suite once on Linux with line coverage.
+macOS and Windows run focused portability tests and CLI smoke commands.
+Changed inputs select relevant jobs; unknown paths select all checks.
+Weekly, manual, and release-tag qualification select the full retained checks.
+Superseded PR jobs are cancelled, while an active lab boot completes teardown.
+
+Full lab startup on macOS and Windows remains an operator qualification.
+See [CI verification](docs/architecture/ci-verification.md) for routing and budgets.
 
 When changing `docker-compose.yml`, container Dockerfiles, or files under
-`config/`, run only focused contract tests locally. CI/CD owns the clean lab
-stop/start validation so local verification does not expand into a full system
-run.
+`config/`, run focused contract tests in CI or an approved isolated VM.
+CI/CD owns clean lab stop/start validation.
+
+## Documentation changes
+
+Start with the reader's task. Select Tutorial, How-to guide, Reference, or
+Explanation. Verify rewritten claims against code and configuration.
+Preserve facts, conditions, obligations, commands, identifiers, and useful URLs.
+
+Use the shared `documentation` skill from the pinned doc-tools package in Claude Code or Codex.
+Existing user-level installations remain usable during migration.
+Do not commit a copy of that skill into this repository.
+Follow the [documentation guide](docs/contributing-documentation.md) for
+STE writing steps, explicit-path checks, migration assignments, and CI gates.
+Record source paths, revision, checks, and corrected differences in the PR.
 
 ## Safety Boundaries
 
 APTL intentionally runs vulnerable services and gives agents access to
 penetration-testing tools. Keep contributions bounded to authorized lab use.
-Do not include real credentials, production secrets, private target data, or
-instructions for using the project against systems you do not own or have
-permission to test.
+Do not include real credentials, production secrets, or private target data.
+Do not include instructions for systems unless you own them or have permission to test them.
 
 The repository contains intentional test credentials for lab functionality.
 Those are not production secrets. New credentials should be dummy values unless
@@ -133,9 +145,8 @@ the design explicitly renders or generates them at runtime.
 ## Host Privilege Escalation
 
 Host-side APTL code must not silently escalate privileges. Do not add `sudo -n`,
-passwordless-sudo assumptions, or hidden sudo repair paths. If a host action
-truly needs elevated privileges, either prompt for explicit consent before
-running it or stop and print the exact command for the user to run. Scenario
+passwordless-sudo assumptions, or hidden sudo repair paths. If a host action needs elevated privileges, prompt for explicit consent before running it.
+Alternatively, stop and print the exact command for the user to run. Scenario
 containers may still model sudo behavior as lab content; that is separate from
 operator host escalation.
 
@@ -148,8 +159,8 @@ Commit PR titles. Do not hand-edit `CHANGELOG.md`. See
 
 ## Security Reports
 
-Do not open public issues for suspected security vulnerabilities. See
-[SECURITY.md](SECURITY.md).
+Do not put vulnerability details in public issues, pull requests, or
+discussions. See [SECURITY.md](SECURITY.md).
 
 ## Community Expectations
 

@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import urllib.parse
 from pathlib import Path
 
 import pytest
 
-from aptl.appliance.download import ApplianceDownloadError, StagedDownload
+from aptl.appliance.download import (
+    ApplianceAuthenticationRequired,
+    ApplianceDownloadError,
+    StagedDownload,
+)
 from aptl.appliance.seat import image as seat_image
+from aptl.appliance.seat import image_token
 from aptl.appliance.seat.image import (
     DISK_MEDIA_TYPE,
     SeatImageError,
@@ -35,17 +41,68 @@ def _disk_layer(size: int = len(DISK_BYTES)) -> dict[str, object]:
     return {"mediaType": DISK_MEDIA_TYPE, "digest": DISK_DIGEST, "size": size}
 
 
+# ghcr.io's challenge as it answers ``GET https://ghcr.io/v2/``, scope included.
+GHCR_CHALLENGE = (
+    'Bearer realm="https://ghcr.io/token",service="ghcr.io",'
+    'scope="repository:user/image:pull"'
+)
+PULL_SCOPE = "repository:owner/seat:pull"
+
+
 @pytest.fixture
 def registry(monkeypatch: pytest.MonkeyPatch):
-    """Serve canned registry documents and record what was requested."""
+    """Serve canned registry documents behind a token challenge.
+
+    Like a real registry, it answers a request that lacks the token with 401
+    and its ``WWW-Authenticate`` challenge.  The token service answers only at
+    its realm, for its own service name and the repository pull scope, and
+    ``framed=False`` makes it reply without ``Content-Length`` (chunked), as
+    Docker Hub's does.  No challenges is a registry that needs no token.
+    """
 
     # Transport fixtures have passed signature admission, covered separately.
     monkeypatch.setattr("aptl.appliance.seat.image_trust.verify_remote_image", lambda *a: None)
     monkeypatch.setattr("aptl.appliance.seat.image_trust.publish_verified_image", lambda *a: None)
-    state: dict[str, object] = {"documents": {}, "requests": [], "staged": []}
+    state: dict[str, object] = {
+        "documents": {},
+        "requests": [],
+        "staged": [],
+        "challenges": (GHCR_CHALLENGE,),
+        "token_service": {
+            "realm": "https://ghcr.io/token",
+            "service": "ghcr.io",
+            "token": "pull-token",
+            "framed": True,
+        },
+    }
 
-    def fake_metadata(url: str, *, max_bytes: int, headers=None, **_: object) -> bytes:
-        state["requests"].append((url, dict(headers or {})))
+    def authorized(headers: dict[str, str]) -> bool:
+        service = state["token_service"]
+        return not state["challenges"] or (
+            service is not None
+            and headers.get("Authorization") == f"Bearer {service['token']}"
+        )
+
+    def token_reply(url: str, require_length: bool) -> bytes | None:
+        service = state["token_service"]
+        if service is None or url.partition("?")[0] != service["realm"]:
+            return None
+        expected = {"service": [service["service"]], "scope": [PULL_SCOPE]}
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+        if query != expected or (require_length and not service["framed"]):
+            raise ApplianceDownloadError("token request refused")
+        return json.dumps({"token": service["token"]}).encode()
+
+    def fake_metadata(
+        url: str, *, max_bytes: int, headers=None, require_length: bool = True
+    ) -> bytes:
+        headers = dict(headers or {})
+        state["requests"].append((url, headers))
+        token = token_reply(url, require_length)
+        if token is not None:
+            return token
+        if not authorized(headers):
+            raise ApplianceAuthenticationRequired(state["challenges"])
         documents: dict[str, bytes] = state["documents"]  # type: ignore[assignment]
         for suffix, payload in documents.items():
             if url.endswith(suffix):
@@ -54,6 +111,8 @@ def registry(monkeypatch: pytest.MonkeyPatch):
 
     def fake_stage(*, url, cache_dir, filename, sha256, size_bytes, headers=None):
         state["staged"].append((url, sha256, size_bytes, dict(headers or {})))
+        if not authorized(dict(headers or {})):
+            raise ApplianceDownloadError("blob request was not authorized")
         path = Path(cache_dir) / sha256.removeprefix("sha256:") / filename
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(DISK_BYTES)
@@ -65,12 +124,12 @@ def registry(monkeypatch: pytest.MonkeyPatch):
 
 
 def _serve(registry, *, manifest: bytes, token: str | None = "pull-token") -> None:
-    documents = {"/manifests/latest": manifest}
-    if token is not None:
-        documents["/token?service=ghcr.io&scope=repository%3Aowner%2Fseat%3Apull"] = (
-            json.dumps({"token": token}).encode()
-        )
-    registry["documents"] = documents
+    registry["documents"] = {"/manifests/latest": manifest}
+    if token is None:
+        registry["challenges"] = ()
+        registry["token_service"] = None
+    else:
+        registry["token_service"]["token"] = token
 
 
 @pytest.mark.parametrize(
@@ -137,8 +196,11 @@ def test_manifest_request_is_authenticated_and_accepts_oci_types(
     assert "application/vnd.oci.image.manifest.v1+json" in headers["Accept"]
 
 
-def test_registry_without_token_endpoint_still_resolves(registry, tmp_path) -> None:
-    # A registry that needs no token must not be treated as unreachable.
+def test_registry_that_sends_no_challenge_is_pulled_without_a_token(
+    registry, tmp_path
+) -> None:
+    # A registry that needs no token must not be treated as unreachable, and
+    # no token service is guessed for it.
     _serve(registry, manifest=_manifest([_disk_layer()]), token=None)
 
     staged = resolve_seat_image("ghcr.io/owner/seat:latest", cache_dir=tmp_path)
@@ -146,6 +208,126 @@ def test_registry_without_token_endpoint_still_resolves(registry, tmp_path) -> N
     assert staged.digest == DISK_DIGEST
     _, _, _, headers = registry["staged"][0]
     assert "Authorization" not in headers
+    requested = [url for url, _ in registry["requests"]]
+    assert all(url.startswith("https://ghcr.io/v2/") for url in requested)
+    assert all("Authorization" not in sent for _, sent in registry["requests"])
+
+
+DOCKER_HUB_CHALLENGE = (
+    'Bearer realm="https://auth.docker.io/token",service="registry.docker.io"'
+)
+
+
+@pytest.mark.parametrize(
+    ("reference", "challenge", "realm", "service", "framed"),
+    [
+        pytest.param(
+            "ghcr.io/owner/seat:latest",
+            GHCR_CHALLENGE,
+            "https://ghcr.io/token",
+            "ghcr.io",
+            True,
+            id="ghcr-io",
+        ),
+        pytest.param(
+            "quay.io/owner/seat:latest",
+            'Bearer realm="https://quay.io/v2/auth",service="quay.io"',
+            "https://quay.io/v2/auth",
+            "quay.io",
+            True,
+            id="quay-io-v2-auth-path",
+        ),
+        pytest.param(
+            "registry-1.docker.io/owner/seat:latest",
+            DOCKER_HUB_CHALLENGE,
+            "https://auth.docker.io/token",
+            "registry.docker.io",
+            False,
+            id="docker-hub-own-token-host-service-and-chunked-reply",
+        ),
+        pytest.param(
+            "gcr.io/owner/seat:latest",
+            'bearer Realm="https://gcr.io/v2/token", Service=gcr.io',
+            "https://gcr.io/v2/token",
+            "gcr.io",
+            True,
+            id="gcr-io-unquoted-service-any-case",
+        ),
+    ],
+)
+def test_pull_token_comes_from_the_challenged_realm_and_service(
+    registry, tmp_path, reference, challenge, realm, service, framed
+) -> None:
+    host = reference.partition("/")[0]
+    registry["challenges"] = (challenge,)
+    registry["token_service"] = {
+        "realm": realm,
+        "service": service,
+        "token": "realm-token",
+        "framed": framed,
+    }
+    registry["documents"] = {"/manifests/latest": _manifest([_disk_layer()])}
+
+    staged = resolve_seat_image(reference, cache_dir=tmp_path)
+
+    assert staged.digest == DISK_DIGEST
+    first, second, manifest = registry["requests"][:3]
+    # An unauthenticated request draws the challenge; the token request
+    # carries no credential of its own.
+    assert first == (f"https://{host}/v2/", {})
+    assert second[0].partition("?")[0] == realm
+    assert "Authorization" not in second[1]
+    assert manifest[0] == f"https://{host}/v2/owner/seat/manifests/latest"
+    assert manifest[1]["Authorization"] == "Bearer realm-token"
+    assert registry["staged"][0][3]["Authorization"] == "Bearer realm-token"
+
+
+@pytest.mark.parametrize(
+    "challenges",
+    [
+        pytest.param(('Basic realm="registry"',), id="no-bearer-scheme"),
+        pytest.param(('Bearer service="ghcr.io"',), id="no-realm"),
+        pytest.param((GHCR_CHALLENGE, DOCKER_HUB_CHALLENGE), id="two-bearer-challenges"),
+        pytest.param(
+            ('Bearer realm="https://ghcr.io/token",realm="https://auth.example/t"',),
+            id="repeated-realm",
+        ),
+        pytest.param(('Bearer realm="https://ghcr.io/token" service',), id="malformed"),
+    ],
+)
+def test_unusable_challenge_requests_no_token(registry, tmp_path, challenges) -> None:
+    # Guessing a token service for an unreadable challenge would send the
+    # request somewhere the registry never named.
+    _serve(registry, manifest=_manifest([_disk_layer()]))
+    registry["challenges"] = challenges
+
+    with pytest.raises(SeatImageError, match="manifest is unavailable"):
+        resolve_seat_image("ghcr.io/owner/seat:latest", cache_dir=tmp_path)
+
+    requested = [url for url, _ in registry["requests"]]
+    assert requested == [
+        "https://ghcr.io/v2/",
+        "https://ghcr.io/v2/owner/seat/manifests/latest",
+    ]
+
+
+def test_cleartext_token_realm_is_refused(registry, tmp_path) -> None:
+    _serve(registry, manifest=_manifest([_disk_layer()]))
+    registry["challenges"] = ('Bearer realm="http://ghcr.io/token",service="ghcr.io"',)
+    registry["token_service"]["realm"] = "http://ghcr.io/token"
+
+    with pytest.raises(SeatImageError, match="not HTTPS"):
+        resolve_seat_image("ghcr.io/owner/seat:latest", cache_dir=tmp_path)
+
+    assert [url for url, _ in registry["requests"]] == ["https://ghcr.io/v2/"]
+
+
+def test_quoted_pairs_in_a_challenge_are_unescaped() -> None:
+    parameters = image_token.bearer_parameters(
+        'Bearer realm="https://auth.example/t\\"x",error="invalid_token"'
+    )
+
+    assert parameters == {"realm": 'https://auth.example/t"x', "error": "invalid_token"}
 
 
 def test_ordinary_container_image_is_refused(registry, tmp_path) -> None:
@@ -232,9 +414,6 @@ def test_index_resolves_to_its_single_x86_64_manifest(registry, tmp_path) -> Non
         }
     ).encode()
     registry["documents"] = {
-        "/token?service=ghcr.io&scope=repository%3Aowner%2Fseat%3Apull": json.dumps(
-            {"token": "pull-token"}
-        ).encode(),
         "/manifests/latest": index,
         f"/manifests/{child_digest}": child,
     }
@@ -242,6 +421,8 @@ def test_index_resolves_to_its_single_x86_64_manifest(registry, tmp_path) -> Non
     staged = resolve_seat_image("ghcr.io/owner/seat:latest", cache_dir=tmp_path)
 
     assert staged.digest == DISK_DIGEST
+    _, child_headers = registry["requests"][-1]
+    assert child_headers["Authorization"] == "Bearer pull-token"
 
 
 def test_ambiguous_index_is_refused(registry, tmp_path) -> None:

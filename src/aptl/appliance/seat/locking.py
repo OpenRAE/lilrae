@@ -10,13 +10,11 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager, nullcontext
 from functools import wraps
 from pathlib import Path
-from typing import ParamSpec, TypeVar, cast
+from typing import cast
 
 from aptl.appliance.seat.errors import SeatLauncherError
 from aptl.appliance.seat.persistence import _ensure_seat_root
 
-P = ParamSpec("P")
-R = TypeVar("R")
 _LOCK_NAME = ".lifecycle.lock"
 _THREAD_STATE = threading.local()
 
@@ -93,7 +91,7 @@ def seat_mutation_lock(seat_root: Path) -> Iterator[None]:
             os.close(descriptor)
 
 
-def serialized_seat_mutation(
+def serialized_seat_mutation[**P, R](
     function: Callable[P, R],
 ) -> Callable[P, R]:
     """Serialize a lifecycle function whose first argument is ``seat_root``."""
@@ -113,7 +111,7 @@ def serialized_seat_mutation(
     return wrapped
 
 
-def serialized_image_cache(function: Callable[P, R]) -> Callable[P, R]:
+def serialized_image_cache[**P, R](function: Callable[P, R]) -> Callable[P, R]:
     """Use the same reentrant lock for cache selection, acquisition and retirement."""
 
     @wraps(function)

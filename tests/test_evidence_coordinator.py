@@ -262,6 +262,10 @@ class TestTerminalSemantics:
         with pytest.raises(KeyboardInterrupt):
             _acquire(tmp_path, [first, second], collectors)
         assert ("stop", first.registration_id) in log
+        # Interruption cannot discard the earlier collector's accepted evidence.
+        assert list(
+            (tmp_path / "runs" / "run-1" / "evidence" / "records").glob("*.json")
+        )
         if phase == "stop":
             assert log[-2:] == [
                 ("stop", second.registration_id),

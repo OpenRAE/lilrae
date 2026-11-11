@@ -11,7 +11,6 @@ from aptl import __version__
 from aptl.api.deps import get_config, get_project_dir
 from aptl.api.middleware.bff import effective_allowed_hosts
 from aptl.api.schemas import ConfigResponse, WebServeInfo
-from aptl.core.config import ContainerSettings
 from aptl.utils.logging import get_logger
 
 log = get_logger("api.config")
@@ -44,10 +43,7 @@ def _load_config_response(project_dir: Path) -> ConfigResponse:
     return ConfigResponse(
         lab_name=config.lab.name,
         network_subnet=config.lab.network_subnet,
-        containers={
-            name: getattr(config.containers, name)
-            for name in ContainerSettings.model_fields
-        },
+        containers=dict.fromkeys(config.containers.enabled_profiles(), True),
         run_storage_backend=config.run_storage.backend,
         web=_web_serve_info(config.deployment.provider),
     )

@@ -382,44 +382,6 @@ def test_the_hosts_publisher_runs_without_lilrae_installed(tmp_path):
 # --- seam -------------------------------------------------------------------
 
 
-def test_the_techvault_provider_supplies_every_field():
-    from aptl_techvault.participant_desktop import TECHVAULT_DESKTOP
-
-    spec = seam.validated_spec(TECHVAULT_DESKTOP)
-
-    assert [item.label for item in spec.consoles] == [
-        "Wazuh",
-        "TheHive",
-        "Cortex",
-        "Shuffle",
-        "MISP",
-    ]
-    assert {item.account for item in spec.credentials} == {
-        "wazuh-indexer-admin",
-        "thehive-administrator",
-        "cortex-administrator",
-        "shuffle-administrator",
-        "misp-administrator",
-    }
-    assert spec.guide == "docs/attack-path.md"
-    assert spec.hostnames == ("misp",)
-
-
-def test_the_techvault_references_resolve_against_the_released_pack(tmp_path):
-    from tests.techvault_pack import _pack_root
-
-    from aptl.backends.raes_declared_credentials import scenario_accounts
-    from aptl.core.scenario_bundle import env_pack_bundle
-    from aptl_techvault.participant_desktop import TECHVAULT_DESKTOP
-
-    bundle = env_pack_bundle(tmp_path, identity="techvault", source_pack=_pack_root())
-    accounts = scenario_accounts(bundle.sdl_path)
-    for item in TECHVAULT_DESKTOP.credentials:
-        desktop._login(accounts, item)
-    assert bundle.read_asset(TECHVAULT_DESKTOP.guide)
-    assert seam.select_participant_desktop(bundle) == TECHVAULT_DESKTOP
-
-
 @pytest.mark.parametrize(
     "spec",
     [

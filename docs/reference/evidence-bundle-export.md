@@ -1,11 +1,8 @@
 # Portable Evidence Bundle Export
 
-The evidence bundle exporter packages a run's research evidence into a portable,
-self-describing archive that a third party can validate without importing APTL
-internals. It is the EXP-008 counterpart to the legacy `aptl runs export`
-convenience tarball: instead of scanning the run directory, it packages a
-verified artifact closure with a machine-readable inventory, the exact published
-RAES schemas, and optional loss-accounted projections.
+The evidence bundle exporter packages a run's research evidence into a portable archive with a description of its contents.
+A third party can validate this archive without APTL imports.
+The exporter is the EXP-008 counterpart to `lilrae runs export`. It packages a verified artifact closure, a machine-readable inventory, exact published RAES schemas, and optional projections with loss disclosures. It does not scan arbitrary run-directory content.
 
 Export is packaging and projection only. It performs no statistical analysis, no
 claim selection, and no publishability certification, and it is never the first
@@ -14,58 +11,11 @@ redaction boundary. Redaction happens upstream at the persistence boundary
 
 ## Build a bundle
 
-```bash
-# Local, offline bundle with the JSONL and Parquet projections.
-aptl runs export-bundle <run_id> -o ./exports -p jsonl -p parquet
-
-# Canonical artifacts only (no projections).
-aptl runs export-bundle <run_id> -o ./exports
-```
-
-Options:
-
-- `--projection / -p` selects a derived projection: `jsonl`, `parquet`, or
-  `ocsf`. Repeat the flag for more than one. Parquet requires the optional
-  `pyarrow` dependency of the `parquet` extra (`pipx inject lilrae pyarrow`
-  for a pipx install, or `pip install -e ".[parquet]"` in a source checkout);
-  without it, the bundle records a `projection-unavailable` limitation instead
-  of failing.
-- `--output-dir / -o` is the destination directory, `./exports` by default. It
-  must be outside the run tree, and the exporter never overwrites an existing
-  bundle. Because a bundle carries restricted evidence, an existing directory
-  must be a real directory, not a symlink, that the current user owns and that
-  grants no group or other permissions; otherwise the command fails and writes
-  nothing. A missing directory is created with mode 0700. `aptl runs export`
-  creates a missing output directory, including its default `./exports`, with
-  mode 0700 as well, so the two commands can share it. To reuse a directory
-  with wider permissions, such as one that an earlier release of
-  `aptl runs export` created, run `chmod 700` on it first.
-- `--verify / --no-verify` controls the local self-verification pass that runs
-  after the archive is written (on by default).
-
-Plain `aptl runs export` archives have mode 0600. Exporting again replaces
-the archive atomically; readers of an older archive keep access only to the
-older bytes.
-
-The command reports the bundle path, the reproducible root identity, the member
-count, the seal state, and any disclosed limitations.
+See [Export and verify an evidence bundle](evidence-bundle-operations.md#build-a-bundle).
 
 ## Verify a bundle
 
-```bash
-aptl runs verify-bundle ./exports/<run_id>.evidence-bundle.tar
-```
-
-Verification streams the archive, enforces its own resource bounds, recomputes
-every member digest and size against the inventory, and recomputes the
-reproducible root identity. It does not compare a seal with that root. A bundle
-carries no attestation material that a third party could authenticate, so the
-verifier fails every bundle whose seal scope is `verified`, whatever root the
-seal names, with the issue `seal claims 'verified' but carries no verifiable
-attestation material`. The exporter writes only `unsealed` bundles; see
-[Seal state and partial runs](#seal-state-and-partial-runs). The verifier
-depends only on the standard library and the JSON canonicalization library, so
-a third party can lift it out of the tree and run it anywhere.
+See [Export and verify an evidence bundle](evidence-bundle-operations.md#verify-a-bundle).
 
 ## Bundle layout
 
@@ -83,27 +33,18 @@ a third party can lift it out of the tree and run it anywhere.
   projections/ocsf/mcp-side-ocsf.jsonl
 ```
 
-Every regular file except the envelope has one inventory row that references it
-by bundle path, logical role, canonical-versus-derived classification, source
-reference, contract or mapping version, SHA-256 digest, byte size, media type,
-and, where applicable, sensitivity, redaction, and loss disclosures. The
+Each regular file except the envelope has one inventory row. The row records bundle path, logical role, canonical-or-derived classification, source reference, contract or mapping version, SHA-256 digest, size, and media type. The row also records applicable sensitivity, redaction, and loss disclosures. The
 envelope never lists itself: a checksum surface does not include or rewrite
 itself.
 
 ## The `aptl-evidence-bundle/v1` envelope
 
 The envelope is the one APTL packaging schema the bundle adds. It never restates
-a field a RAES artifact already owns; an inventory row references the canonical
-artifact rather than copying its fields. The envelope carries the bundle
-profile, the resource-limit profile, the seal state, the inventory, the data
-dictionary, the projection descriptors, the validation disclosures, and the
-limitations.
+a field a RAES artifact already owns. An inventory row references the canonical
+artifact. It does not copy that artifact's fields. The envelope carries bundle and resource-limit profiles, seal state, inventory, and data dictionary. It also carries projection descriptors, validation disclosures, and limitations.
 
 The data dictionary references the included RAES JSON Schema for each canonical
-artifact. For a projection it additionally records the source contract and
-field, the target field and physical type, the null and missing treatment, the
-timestamp and integer encoding, the nested-reference handling, the mapping
-identifier and version, and every known loss.
+artifact. For a projection, it records the source contract and field, target field and physical type, and null and missing treatment. It also records timestamp and integer encoding, nested-reference handling, mapping identity and version, and every known loss.
 
 ## Determinism
 
@@ -112,52 +53,85 @@ excluded creation metadata. Inventory and packaging metadata use RFC 8785
 canonical JSON with normalized `sha256:<hex>` identities and deterministic
 ordering. The archive is an uncompressed USTAR with normalized member metadata
 (owner, mode, and modification time) and members sorted by bundle path. The
-reproducible root identity excludes wall-clock creation time; the default build
+reproducible root identity excludes wall-clock creation time. The default build
 records no creation metadata at all, so its bytes are fully reproducible.
 
 ## Projections
 
-Canonical source records and their references are always retained. Projections
+The exporter always keeps canonical source records and their references. Projections
 are optional, derived, and admitted only through a closed, versioned mapping:
 
-- **JSONL** emits one RFC 8785 canonical JSON object per row, so missing, null,
-  unavailable, withheld, and redacted values, string identifiers, exact
-  timestamps, and nested references are all preserved.
+- **JSONL** emits one RFC 8785 canonical JSON object per row. It keeps missing, null, unavailable, withheld, and redacted values. It also keeps string identifiers, exact timestamps, and nested references.
 - **Parquet** keeps identifiers as strings even when digit-shaped, keeps
   timestamps as their exact source instant, encodes nested references as
   canonical JSON, and uses exact `int64`. Any integer outside `int64` becomes
   an exact decimal string with a declared loss disclosure rather than a
   floating-point value.
-- **OCSF-aligned** includes the run's existing `mcp-side/ocsf.jsonl` derivative
-  verbatim with an explicit APTL mapping and taxonomy version and its source
-  tool-call references. It is aligned through the mcp-red taxonomy, not
+- **OCSF-aligned** keeps `mcp-side/ocsf.jsonl` verbatim. It includes the LilRAE mapping, taxonomy version, and source tool-call references. It is aligned through the mcp-red taxonomy, not
   certified OCSF-conformant.
 
 An unknown projection format fails closed.
 
 ## Security posture
 
-Every source file is read through descriptor-relative, no-follow, one-open
-containment, so a symlinked or traversing component is rejected rather than
-followed. Bundle paths are code-owned and derived from validated identifiers and
-content digests; a raw filename, URI, media type, or Unicode spelling never
-becomes an archive path. Archive entry count, member size, total size, path
-length and depth, and decompression ratio are bounded before allocation, and the
-verifier never extracts to disk. Secret-shaped values in generated bundle
-metadata are redacted with the shared ADR-029 redactor; canonical bytes are
-never rewritten.
+The exporter reads every source file through descriptor-relative, no-follow, one-open containment.
+It rejects symlinked components and path-traversal components. Code-owned bundle paths derive from validated identifiers and content digests. Raw filenames, URIs, media types, and Unicode spellings do not become archive paths.
+
+Resource bounds apply before allocation. They cover entry count, member size, total size, path length and depth, and decompression ratio. The verifier never extracts to disk. The shared ADR-029 redactor masks secret-shaped values in generated bundle metadata.
+It never rewrites canonical bytes.
+
+## Run store permissions
+
+See [Export and verify an evidence bundle](evidence-bundle-operations.md#run-store-permissions).
 
 ## Seal state and partial runs
 
-The bundle consumes a verified seal produced by the run-finalization boundary
-(issue #444). Until that boundary lands, the exporter reports the bundle as
+The bundle has a separate interface for seal verification.
+The current default closure verifier reports the bundle as
 `UNSEALED` with an explicit `seal-absent` limitation. A `ready-to-seal`
 provenance state, a `SEALED_READY` disposition, a run manifest, or a
 `checksums.sha256` file is never treated as a verified seal.
 
-Partial, failed, invalid, and inconclusive runs remain exportable. Their
-capture outcomes, provenance limitations, missing references, and redaction and
-loss disclosures stay intact, and the exporter never upgrades such a run to
-complete, successful, or publishable. A missing referenced source becomes a
+Partial, failed, invalid, and inconclusive runs remain exportable. Capture outcomes, provenance limitations, missing references, redaction, and loss disclosures remain intact. Export does not make a run complete, successful, or publishable. A missing referenced source becomes a
 stable `missing-source` limitation rather than a substituted or fabricated
 artifact.
+
+## Export options
+
+| Option | Meaning |
+| --- | --- |
+| `--projection`, `-p` | Select `jsonl`, `parquet`, or `ocsf`. Repeat for multiple projections. |
+| `--output-dir`, `-o` | This option selects the destination directory, default `./exports`. Existing bundles are never overwritten. |
+| `--verify`, `--no-verify` | Enable or disable local self-verification after the export write. Self-verification is enabled by default. |
+
+## Output and source permissions
+
+A bundle output directory must be outside the run tree, owned by the caller, and inaccessible to group and other users.
+It must be a real directory rather than a symlink.
+The exporter creates a missing directory with mode `0700` and never overwrites an existing bundle.
+
+The ordinary tar.gz exporter also creates missing output directories with mode `0700`.
+Its archives use mode `0600`. A repeated export replaces them atomically.
+Readers of an already open archive keep its original bytes.
+
+The configured source store is `run_storage.local_path`, default `./runs` relative to the project.
+The local store creates directories with mode `0700` and files with mode `0600`, independent of umask.
+New parent directories receive mode `0700`.
+Copied artifacts keep bytes and timestamps, but not source modes.
+
+Each write removes group and other permissions from its owned run, namespace or locks directory, and written file.
+Existing roots and other entries keep their modes.
+These POSIX modes do not apply on Windows.
+Permission restrictions do not replace redaction before persistence.
+
+## Verification contract
+
+The verifier streams bounded archive members. It does not extract them.
+It recomputes member digests, sizes, inventory membership, and the reproducible root identity.
+It uses the standard library and JSON canonicalization library.
+It does not authenticate an external attestation.
+
+The exporter currently writes `unsealed` bundles.
+The verifier rejects every `verified` seal claim because the bundle contains no verifiable attestation material.
+A successful integrity check does not establish completeness, scientific validity, or permission to publish.
+Missing Parquet support records `projection-unavailable` and does not fail canonical export.

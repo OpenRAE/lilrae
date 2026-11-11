@@ -10,7 +10,7 @@ which for a sealed attempt is immutable.
 
 An archive carries restricted run evidence, so export creates a missing output
 directory with mode 0700 and the archive with mode 0600, whatever the umask.
-``aptl runs export-bundle`` shares the default ``./exports`` directory and
+``lilrae runs export-bundle`` shares the default ``./exports`` directory and
 refuses a parent with group or other permission bits (issue #1282).
 """
 
@@ -55,11 +55,10 @@ def _restrict_open_archive(fd: int) -> None:
     """Set mode 0600 on the temporary archive, independent of the umask.
 
     ``mkstemp`` creates an owner-only file but still applies the process umask.
-    Python 3.12 on Windows has no ``os.fchmod``, and Windows has no group or
-    other permission bits to drop.
+    On Windows ``os.fchmod`` only sets the read-only flag, and there are no
+    group or other permission bits to drop.
     """
-    if hasattr(os, "fchmod"):
-        os.fchmod(fd, _EXPORT_FILE_MODE)
+    os.fchmod(fd, _EXPORT_FILE_MODE)
 
 
 def _sha256_file(path: Path) -> str:

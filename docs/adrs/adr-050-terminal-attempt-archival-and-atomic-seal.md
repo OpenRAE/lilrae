@@ -8,6 +8,27 @@ accepted
 
 2026-07-28
 
+## Released-producer successor boundary (issue #1465)
+
+For adoption under [issue #1465's preflight](../architecture/issue-1465-released-experiment-tuple-preflight.md),
+released RAE run/study record producers own portable record composition and
+runtime outcome semantics. LilRAE supplies owner-native evidence, provenance,
+clock and evaluator facts and retains the local archival transaction, atomic
+seal, recovery index and read-only export. Do not maintain a second portable
+record builder or terminal-state policy beside the released producer. Public
+trial identity and distinct execution attempts must retain explicit lineage
+under the released contracts, without rewriting existing archives. These
+guardrails do not claim the adoption is implemented or relax any seal,
+validation, redaction or immutability rule below.
+
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [run Reference](../reference/experiment-runs.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 EXP-009 requires one conformant `experiment-run-v1` record for every terminal
@@ -31,10 +52,7 @@ APTL already has the contract and collection pieces:
 
 Two incumbent choices cannot be carried into EXP-009 unchanged:
 
-- ADR-047 says a planned-trial ID becomes the execution `run_id`. A retry is a
-  new execution attempt of the same planned trial, so reusing that ID would
-  either overwrite the first attempt or make the second finalization conflict
-  with it.
+- ADR-047 says a planned-trial ID becomes the execution `run_id`. Retry creates another execution attempt of the same planned trial. Reusing its identity would overwrite evidence or conflict with first-attempt finalization.
 - Lab startup currently writes an overwrite-capable APTL
   `aptl.run-record/v2` payload to `manifest.json`, labels it successful, and
   treats archival failure as non-fatal. Startup does not own a terminal
@@ -83,11 +101,7 @@ not emit both permanent models for a new attempt.
 ### One terminal-attempt coordinator owns finalization
 
 The execution lifecycle invokes one archival coordinator exactly once when an
-attempt reaches any terminal cause. The coordinator receives the immutable
-admitted plan/trial, the distinct attempt identity and retry predecessor, the
-observed runtime/apparatus and participant state, evidence-acquisition result,
-evaluator-supplied summaries, lifecycle terminal cause, clock provider, and
-the injected run store. It does not rediscover any of those facts from current
+attempt reaches any terminal cause. The coordinator receives admission, trial/attempt and predecessor identity, observed apparatus/participants, acquisition results, evaluator summaries, terminal cause, clock, and injected storage. It does not rediscover any of those facts from current
 configuration, active-session state, timestamps, or arbitrary archive paths.
 
 The coordinator composes public RAES records from owner-native values. It does
@@ -121,9 +135,7 @@ been atomically published. The marker binds:
 - the applicable seal/profile and contract versions; and
 - an explicit completeness/limitation statement.
 
-The store must write and verify complete bytes, `fsync` files and the containing
-directory as required by the local durability contract, then publish the marker
-with no-follow, no-replace semantics. A crash before the marker leaves an
+The store writes and verifies complete bytes and performs required file/directory `fsync`. Marker publication then uses no-follow and no-replace semantics. A crash before the marker leaves an
 unsealed recovery candidate, never a partially sealed run. Identical
 finalization is idempotent; differing bytes for the same attempt/version are a
 conflict. Once the marker exists, every structured, opaque, Python, MCP, and

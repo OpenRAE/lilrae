@@ -27,6 +27,26 @@ class SemanticRuntimeSelector:
 
 
 @dataclass(frozen=True)
+class BackendCompanionContainer:
+    """One backend-owned container that serves part of a node's surface.
+
+    It joins the owner node's network namespace, so the node keeps one network
+    identity and its declared listeners. ``environment`` holds literal values;
+    ``inherited_environment`` names plain variables copied from the owner's
+    selected runtime, so an authored value is never restated here.
+    """
+
+    role: str
+    source_name: str
+    source_version: str
+    image_ref: str
+    provenance_refs: tuple[str, ...] = ()
+    environment: tuple[tuple[str, str], ...] = ()
+    inherited_environment: tuple[str, ...] = ()
+    tmpfs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class BackendImplementationProfile:
     """One immutable image and the minimum mechanics needed to run it."""
 
@@ -58,11 +78,19 @@ class BackendImplementationProfile:
             "supported_os": [list(os) for os in self.supported_os],
             "runtime_selector": asdict(selector) if selector is not None else None,
             "provenance_refs": list(self.provenance_refs),
+            # Absent for companion-free profiles, so their revisions are stable.
+            **(
+                {"companions": [asdict(item) for item in self.companions]}
+                if self.companions
+                else {}
+            ),
         })
     #: The account provider that realizes and verifies SDL accounts placed on a
     #: node this profile runs. It is an image fact, so the binding never depends
     #: on a scenario's node name. Empty means the image has no account provider.
     account_provider: str = ""
+    #: Backend-owned containers that run beside the selected image.
+    companions: tuple[BackendCompanionContainer, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -115,6 +143,7 @@ def published_port(
 
 __all__ = (
     "BackendBaseSelection",
+    "BackendCompanionContainer",
     "BackendImplementationProfile",
     "SemanticRuntimeSelector",
     "environment",

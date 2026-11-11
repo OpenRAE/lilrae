@@ -79,12 +79,8 @@ def published_port_conflicts(
 
     ``owned_host_ports`` carries the ``(host_ip, host_port, protocol)`` triples
     this compose project's own containers already publish. A probe cannot tell
-    a foreign holder from one of ours, and the RAES handoff retries a retryable
-    backend-start failure by re-applying the same plan *without* tearing the
-    range down -- the usual cause is a SOC dependency still initializing. On
-    that pass every declared port is held by our own container, which Compose
-    is about to reconcile, so treating it as a conflict failed the retry every
-    time and reported failure over a lab that had come up.
+    a foreign holder from one of ours. A port that our own container holds is
+    one Compose is about to reconcile, so it is not a conflict.
     """
 
     conflicts: list[str] = []

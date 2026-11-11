@@ -31,18 +31,11 @@ def check():
 @pytest.fixture(scope="module")
 def facts(check):
     owners = check.owner_packs()
-    assert {"techvault", "techvault-participant-study"} <= owners
+    assert owners, "no installed adapter claims a pack"
     collected = {}
     for pack_id in sorted(owners):
         collected.update(check.pack_facts(pack_id))
     return collected
-
-
-def test_the_owner_facts_come_from_the_pack_sdl(facts):
-    kinds = set(facts.values())
-
-    assert {"hostname", "credential", "account username"} <= kinds
-    assert "misp.techvault.local" in facts
 
 
 def test_the_covered_generic_paths_carry_no_pack_fact(check, facts):
@@ -81,7 +74,7 @@ def test_the_cli_reports_kind_and_path_only(check, facts, tmp_path, monkeypatch,
     secret = next(value for value, kind in facts.items() if kind == "credential")
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "x.sh").write_text(secret, encoding="utf-8")
-    monkeypatch.setattr(check, "pack_facts", lambda _pack: facts)
+    monkeypatch.setattr(check, "pack_facts", lambda _pack, **_kwargs: facts)
 
     assert check.main(["check", str(tmp_path)]) == 1
     err = capsys.readouterr().err
@@ -105,3 +98,112 @@ def test_staged_hook_runs_the_same_boundary_checker():
     assert hook is not None
     assert "tools/check_pack_boundary.py" in hook["entry"]
     assert hook["pass_filenames"] is False
+    import re
+
+    for changed in ("tests/test_generic.py", "web/tests/routes/page.test.ts"):
+        assert re.match(hook["files"], changed), changed
+
+
+def test_boundary_check_accepts_explicit_owner_sources(check, tmp_path, monkeypatch):
+    from tests.fixture_pack import FIXTURE_PACK_IDENTITY
+
+    monkeypatch.setattr(check, "owner_packs", lambda: {FIXTURE_PACK_IDENTITY})
+    found = []
+
+    def observe(pack_id, *, project_dir, pack_directory=None):
+        found.append((pack_id, project_dir, pack_directory))
+        return {"owned.example.test": "hostname"}
+
+    monkeypatch.setattr(check, "pack_facts", observe)
+    assert check.main([
+        "check", str(tmp_path), "--pack-directory",
+        f"{FIXTURE_PACK_IDENTITY}=releases/{FIXTURE_PACK_IDENTITY}",
+    ]) == 0
+    assert found == [(FIXTURE_PACK_IDENTITY, tmp_path, f"releases/{FIXTURE_PACK_IDENTITY}")]
+
+
+def test_missing_owner_source_has_a_value_free_diagnostic(
+    check, tmp_path, monkeypatch, capsys,
+):
+    monkeypatch.setattr(check, "owner_packs", lambda: {"unavailable-owner"})
+    assert check.main(["check", str(tmp_path)]) == 1
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def test_owner_identity_is_a_fact_even_without_authored_hosts(check, monkeypatch):
+    from types import SimpleNamespace
+    from pathlib import Path
+    bundle = SimpleNamespace(sdl_path=Path('unused'))
+    monkeypatch.setattr('aptl.backends._raes_scenario_resolution.resolve_scenario_bundle', lambda *args, **kwargs: bundle)
+    monkeypatch.setattr('aptl.backends.raes.parse_sdl_file', lambda *args: SimpleNamespace(nodes={}, accounts={}))
+    assert check.pack_facts('different-owner')['different-owner'] == 'pack identifier'
+
+
+def test_reviewed_exception_does_not_allow_a_new_identifier_line(check, tmp_path):
+    import hashlib
+    import json
+    path = tmp_path / 'src/aptl/compatibility.py'
+    path.parent.mkdir(parents=True)
+    original = 'LEGACY = "another-owner:old-contract/v1"\n'
+    path.write_text(original)
+    policy = tmp_path / '.gc/pack-ownership.json'
+    policy.parent.mkdir()
+    policy.write_text(json.dumps({'schema': 'lilrae-pack-ownership/v1', 'exceptions': [{
+        'path': 'src/aptl/compatibility.py', 'owner': 'external_adapter',
+        'symbol': 'LEGACY', 'kind': 'pack identifier', 'count': 1,
+        'line_digest': 'sha256:' + hashlib.sha256(original.rstrip('\n').encode()).hexdigest(),
+        'purpose': 'Preserve one old serialized contract.',
+        'allowed_use': 'Only that retained compatibility constant.',
+        'retirement': 'Remove with the old contract reader.',
+    }]}))
+    facts = {'another-owner': 'pack identifier'}
+    assert check.findings(tmp_path, facts) == []
+    path.write_text(original + 'DEFAULT = "another-owner"\n')
+    assert check.findings(tmp_path, facts) == [('src/aptl/compatibility.py', 'pack identifier')]
+    path.write_text(original + original)
+    assert check.findings(tmp_path, facts) == [('src/aptl/compatibility.py', 'pack identifier')]
+
+
+def test_owner_path_detects_a_dependency_without_a_pack_literal(check, tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+    module = tmp_path / 'src/aptl/backends/fixture_policy.py'
+    module.parent.mkdir(parents=True)
+    module.write_text('def read_policy():\n    return ()\n')
+    (tmp_path / '.gc').mkdir()
+    (tmp_path / '.gc/pack-ownership.json').write_text(json.dumps({
+        'schema': 'lilrae-pack-ownership/v1', 'exceptions': [],
+        'owned_paths': [{'path': 'src/aptl/backends/fixture_policy.py', 'owner_path': 'src/independent_adapter'}],
+    }))
+    monkeypatch.setattr(check, 'owner_declarations', lambda: {'independent-pack': {'independent_adapter'}})
+    monkeypatch.setattr('aptl.backends._raes_scenario_resolution.resolve_scenario_bundle', lambda *args, **kwargs: SimpleNamespace(sdl_path=tmp_path / 'unused'))
+    monkeypatch.setattr('aptl.backends.raes.parse_sdl_file', lambda *args: SimpleNamespace(nodes={}, accounts={}))
+    facts = check.pack_facts('independent-pack', project_dir=tmp_path)
+    caller = tmp_path / 'src/aptl/backends/another.py'
+    caller.write_text('from aptl.backends.fixture_policy import read_policy\n')
+    assert check.findings(tmp_path, facts) == [('src/aptl/backends/another.py', 'pack identifier')]
+
+
+def test_generic_tests_carry_no_pack_identifier(check, tmp_path):
+    """Generic test paths are covered; the adapter test subtree is not (#1700)."""
+    planted = {
+        "tests/test_generic.py",
+        "tests/conftest.py",
+        "tests/fixtures/data.json",
+        "web/tests/components/Card.test.ts",
+        f"{check.ADAPTER_TESTS}test_adapter.py",
+        f"{check.ADAPTER_TESTS}conftest.py",
+    }
+    for relative in planted:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('PACK = "another-owner"\n', encoding="utf-8")
+
+    found = check.findings(tmp_path, {"another-owner": "pack identifier"})
+
+    assert found == [
+        ("tests/conftest.py", "pack identifier"),
+        ("tests/fixtures/data.json", "pack identifier"),
+        ("tests/test_generic.py", "pack identifier"),
+        ("web/tests/components/Card.test.ts", "pack identifier"),
+    ]

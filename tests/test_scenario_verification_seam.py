@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from importlib import metadata
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -35,7 +34,7 @@ from aptl.validation.scenario_verification import (
 from aptl.validation import scenario_verification_discovery as discovery
 
 SCENARIO = ScenarioIdentity(
-    identity="techvault",
+    identity="fixture-range",
     content_digest="sha256:" + "a" * 64,
     source_kind="env-pack",
     version="0.1.0",
@@ -112,7 +111,7 @@ def _install(monkeypatch, *verifiers):
 
     class _EP:
         def __init__(self, verifier, index):
-            self.name = "techvault.aptl"
+            self.name = "fixture-range.aptl"
             self.dist = _Dist(f"aptl-verifier-{index}")
             self._verifier = verifier
             self.loaded = False
@@ -171,7 +170,7 @@ def test_the_framework_holds_no_scenario_knowledge():
         for entry_point in metadata.entry_points(group=ENTRY_POINT_GROUP)
     }
 
-    assert "techvault.aptl" in targets
+    assert targets, "no scenario verifier is registered"
     for name, value in targets.items():
         assert not value.startswith("aptl."), (
             f"{name} resolves into the framework package; a scenario adapter "
@@ -213,7 +212,7 @@ def test_unrelated_entry_points_are_filtered_before_loading(monkeypatch):
     """Installed code outside the exact scenario/backend family is not executed."""
 
     unrelated = _EntryPoint("other-scenario.aptl", RuntimeError("must not load"))
-    exact = _EntryPoint("techvault.aptl", _Verifier())
+    exact = _EntryPoint("fixture-range.aptl", _Verifier())
     _install_entry_points(monkeypatch, unrelated, exact)
 
     report = discovery.verify_scenario(_context())
@@ -229,7 +228,7 @@ def test_unrelated_entry_points_are_filtered_before_loading(monkeypatch):
         ("qualified_targets", ()),
         ("qualified_targets", [TARGET]),
         ("qualified_targets", (TARGET, TARGET)),
-        ("qualified_targets", ("techvault.aptl",)),
+        ("qualified_targets", ("fixture-range.aptl",)),
         (
             "qualified_targets",
             (replace(TARGET, scenario=replace(SCENARIO, content_digest="any")),),
@@ -506,7 +505,7 @@ def test_an_elapsed_deadline_blocks_without_running_the_plugin(monkeypatch):
     ],
 )
 def test_invalid_context_blocks_before_loading_installed_code(monkeypatch, context):
-    entry_point = _EntryPoint("techvault.aptl", RuntimeError("must not load"))
+    entry_point = _EntryPoint("fixture-range.aptl", RuntimeError("must not load"))
     _install_entry_points(monkeypatch, entry_point)
 
     report = discovery.verify_scenario(context)
@@ -547,7 +546,7 @@ def test_a_single_compatible_verifier_runs_and_its_provenance_is_host_observed(
     assert report.distribution_version == "9.9.9"
     assert report.distribution != "self-reported-and-untrusted"
     assert report.plugin_id == "test-verifier"
-    assert report.entry_point == "techvault.aptl"
+    assert report.entry_point == "fixture-range.aptl"
 
 
 def test_a_failing_verifier_reports_failed_not_blocked(monkeypatch):
@@ -580,102 +579,3 @@ def test_blocked_is_distinct_from_both_other_outcomes(status):
     """Three states, never collapsed to two."""
 
     assert VerificationStatus.BLOCKED is not status
-
-
-def test_the_techvault_adapter_is_its_own_package_in_the_one_distribution():
-    """One release, and the adapter is reached only through its entry points.
-
-    All three entry points TechVault owns are declared by this distribution and
-    resolve into ``aptl_techvault``. That is the shape the seam needs: a single
-    install gives an operator every extension surface the scenario owns, while
-    no framework module is ever named as an extension target.
-    """
-
-    import tomllib
-
-    root = Path(__file__).resolve().parents[1]
-    core = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
-    entry_points = core["project"]["entry-points"]
-
-    assert core["project"]["name"] == "lilrae"
-    assert entry_points[ENTRY_POINT_GROUP] == {
-        "techvault.aptl": "aptl_techvault.verification:verifier",
-        "techvault-participant-study.aptl": "aptl_techvault.study:verifier",
-    }
-    assert entry_points["aptl.pack_backend_interactions"] == {
-        "techvault.aptl": "aptl_techvault.serving:provider",
-        "techvault-participant-study.aptl": "aptl_techvault.study:serving",
-    }
-    assert entry_points["aptl.participant_mcp_smoke_plans"] == {
-        "guided-purple.techvault-attacker-target": (
-            "aptl_techvault.participant_smoke:PARTICIPANT_SMOKE_OPERATIONS"
-        ),
-        "techvault-full.techvault": (
-            "aptl_techvault.participant_smoke:FULL_TECHVAULT_SMOKE_OPERATIONS"
-        ),
-    }
-    # A sibling of the framework in the wheel, never inside it.
-    assert core["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"] == [
-        "src/aptl",
-        "src/aptl_techvault",
-    ]
-    assert (root / "src" / "aptl_techvault").is_dir()
-    assert not any((root / "plugins").rglob("*.py"))
-
-
-def test_core_holds_no_techvault_answer_key_behind_the_seam():
-    """The point of extracting (#879): core must not know who the attacker is.
-
-    The seam and the operations surface it hands a plugin are both
-    scenario-neutral by construction. If a scenario constant -- the attacker
-    node, the defensive stack's product names -- appeared in either, the plugin
-    quadrant would have leaked back into core, and a second scenario would need
-    core edits rather than a second installed plugin. The in-core semantic module
-    that used to hold these answer keys is now deleted; the TechVault knowledge
-    lives only in aptl-techvault-verifier.
-    """
-
-    import re
-    from pathlib import Path
-
-    seam_modules = (
-        "scenario_verification.py",
-        "scenario_verification_discovery.py",
-        "_live_gate_operations.py",
-    )
-    answer_keys = re.compile(r"aptl-kali|wazuh|suricata|thehive|misp", re.I)
-    root = Path(__file__).resolve().parent.parent / "src" / "aptl" / "validation"
-
-    offenders = {
-        name: sorted(set(answer_keys.findall((root / name).read_text())))
-        for name in seam_modules
-        if answer_keys.search((root / name).read_text())
-    }
-
-    assert not offenders, f"scenario knowledge leaked into the seam: {offenders}"
-
-    # And the retired in-core scenario module is gone, not merely bypassed.
-    assert not (root / "_live_gate_semantic.py").exists()
-
-
-def test_core_source_contains_no_known_verification_answer_keys():
-    """The wheel bundles all of ``src``, so ownership must cover the whole tree."""
-
-    root = Path(__file__).resolve().parent.parent / "src" / "aptl"
-    # Every marker below is a real string in `aptl_techvault` today. A marker
-    # that exists nowhere would make this assertion vacuous, which is what
-    # happened to the removed detection check's `aptl-live-gate-invalid`.
-    markers = (
-        "provision.node.wazuh-manager",
-        "mcp.red.ssh-authentication-attack",
-        "ATTACKER_NODE",
-        "TECHVAULT_PACK_SET_DIGEST",
-    )
-    offenders = {
-        str(path.relative_to(root)): [marker for marker in markers if marker in text]
-        for path in root.rglob("*.py")
-        if (text := path.read_text(encoding="utf-8"))
-        and any(marker in text for marker in markers)
-    }
-
-    assert not offenders, f"verification answer keys remain in core: {offenders}"

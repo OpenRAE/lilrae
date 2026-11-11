@@ -1,5 +1,13 @@
 # Issue #1186: Desktop Seat Privilege Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1186-seat-privilege-preflight.md).
+Its last recorded file change before this rewrite was `089bb459b56c`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 > Historical source references (scope notice added 2026-10-12): the host
 > tailnet relay files and tests named for removal below have been removed.
 > Those cleanup instructions are retained as the dated design record. See the
@@ -142,14 +150,16 @@ and no new participant-facing publication. Preserve root lab startup in both
 modes. Recovery must not depend on the event account regaining Docker or sudo.
 
 Use the existing `build-seat-image.sh` / `provision-offline.sh` /
-`scan-golden.sh` baseline gate and `qualify-seat-image.sh` /
-`seat-qualification-smoke.sh` qualification owner. The current qualification
-disables first-boot and runs root-only lab checks: it cannot attest launch-mode
-application or unprivileged desktop behavior. Extend evidence through the
-actual launcher, systemd startup and Guacamole/xrdp path for both modes and
-both administrative password choices. Preserve offline closure, clean-source
-`seat-build-record.py`, Cosign publication and fresh anonymous boot evidence.
-Image cuts remain independent of package release workflows.
+`scan-golden.sh` baseline gate and `qualify-seat-image.sh` qualification owner.
+At this preflight's baseline, the retired `seat-qualification-smoke.sh`
+disabled first boot and could not attest launch-mode application or
+unprivileged desktop behavior. The qualifier now accepts only an immutable
+signed image and uses the actual launcher, first boot, readiness, reset, and
+second clean start. Privilege evidence must additionally cover the
+Guacamole/xrdp path for both modes and both administrative password choices.
+Preserve offline closure, clean-source `seat-build-record.py`, Cosign
+publication and fresh anonymous boot evidence. Image cuts remain independent
+of package release workflows.
 
 Targeted tests extend the existing CLI, lifecycle, persistence, launch-descriptor,
 image-config/build/trust and desktop suites in `tests/`. Required evidence covers

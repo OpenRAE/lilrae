@@ -10,7 +10,6 @@ import pytest
 from aptl.core.collectors import (
     collect_container_logs,
     collect_suricata_eve,
-    collect_thehive_cases,
     collect_misp_events,
     collect_shuffle_executions,
     collect_traces,
@@ -303,74 +302,6 @@ class TestCollectSuricataEve:
         assert result[0]["event_type"] == "alert"
 
 
-class TestCollectTheHiveCases:
-    """Tests for TheHive case collection."""
-
-    @patch("aptl.core.collectors._curl_json")
-    def test_returns_empty_without_api_key(self, mock_curl):
-        """Missing API key short-circuits the collector BEFORE any HTTP
-        call. Mock `_curl_json` and assert it was never invoked — a
-        regression where the collector fires an unauthenticated request
-        would otherwise still return [] and slip through."""
-        result = collect_thehive_cases(
-            "2025-01-01T00:00:00+00:00",
-            "2025-01-01T23:59:59+00:00",
-            api_key="",
-        )
-        assert result == []
-        mock_curl.assert_not_called()
-
-    @patch("aptl.core.collectors._curl_json")
-    def test_returns_cases(self, mock_curl):
-        mock_curl.return_value = [{"_id": "case1"}, {"_id": "case2"}]
-
-        result = collect_thehive_cases(
-            "2025-01-01T00:00:00+00:00",
-            "2025-01-01T23:59:59+00:00",
-            api_key="test-key",
-        )
-        assert len(result) == 2
-
-    @patch("aptl.core.collectors._curl_json")
-    def test_query_includes_end_iso_upper_bound(self, mock_curl):
-        mock_curl.return_value = []
-        end = "2025-01-01T23:59:59+00:00"
-
-        collect_thehive_cases(
-            "2025-01-01T00:00:00+00:00",
-            end,
-            api_key="test-key",
-        )
-
-        body = mock_curl.call_args[1]["body"]
-        filter_clause = body["query"][1]
-        assert "_and" in filter_clause
-        lte_found = any(
-            "_lte" in clause and clause["_lte"]["_value"] == end
-            for clause in filter_clause["_and"]
-        )
-        assert lte_found, "Query must include _lte filter with end_iso"
-
-    @patch("aptl.core.collectors._curl_json")
-    def test_query_bounds_both_start_and_end(self, mock_curl):
-        mock_curl.return_value = [
-            {"_id": "in-window", "_createdAt": "2025-01-01T12:00:00+00:00"},
-        ]
-        start = "2025-01-01T00:00:00+00:00"
-        end = "2025-01-01T23:59:59+00:00"
-
-        collect_thehive_cases(start, end, api_key="test-key")
-
-        body = mock_curl.call_args[1]["body"]
-        filter_clause = body["query"][1]
-        and_clauses = filter_clause["_and"]
-        gte_found = any(
-            "_gte" in c and c["_gte"]["_value"] == start for c in and_clauses
-        )
-        lte_found = any("_lte" in c and c["_lte"]["_value"] == end for c in and_clauses)
-        assert gte_found and lte_found
-
-
 class TestCollectMISPEvents:
     """Tests for MISP event collection."""
 
@@ -496,39 +427,6 @@ class TestSocCollectorTLSPosture:
         # parsed response, not silently swallow it.
         assert len(result) == 1
         assert result[0]["Event"]["id"] == "1"
-
-    @patch("aptl.core.collectors._curl_json")
-    def test_thehive_collector_verifies_against_lab_ca_by_default(self, mock_curl):
-        mock_curl.return_value = [{"_id": "case-tls-1"}]
-
-        result = collect_thehive_cases(
-            "2025-01-01T00:00:00+00:00",
-            "2025-01-01T23:59:59+00:00",
-            api_key="test-key",
-        )
-
-        kwargs = mock_curl.call_args[1]
-        assert kwargs.get("insecure", False) is False
-        assert kwargs.get("ca_cert_path")
-        # Return value must propagate, not collapse.
-        assert result == [{"_id": "case-tls-1"}]
-
-    @patch("aptl.core.collectors._curl_json")
-    def test_thehive_collector_uses_https_url_by_default(self, mock_curl):
-        mock_curl.return_value = [{"_id": "case-https-1"}]
-
-        result = collect_thehive_cases(
-            "2025-01-01T00:00:00+00:00",
-            "2025-01-01T23:59:59+00:00",
-            api_key="test-key",
-        )
-
-        url = mock_curl.call_args[0][0]
-        assert url.startswith("https://"), (
-            "TheHive collector must use HTTPS by default; "
-            "the lab CA chain only signs HTTPS surfaces"
-        )
-        assert result == [{"_id": "case-https-1"}]
 
     @patch("aptl.core.collectors._curl_json")
     def test_shuffle_collector_verifies_against_lab_ca_by_default(self, mock_curl):

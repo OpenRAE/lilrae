@@ -119,14 +119,23 @@ class ComposeOwnedStartMixin:
     ) -> LabResult:
         """Preflight, run, and receipt one Compose up operation."""
 
-        refused = self._compose_substrate_daemon_refusal(
-            compose_files, profiles, exclude_services, only_services
+        from aptl.core.deployment._lilrae_compose_capabilities import (
+            compose_capability_refusal,
         )
+
+        refused = compose_capability_refusal(self._run, compose_files)
+        if refused is None:
+            refused = self._compose_substrate_daemon_refusal(
+                compose_files, profiles, exclude_services, only_services
+            )
         prepared = (
             refused if refused is not None else self._prepare_owned_start(compose_files)
         )
         if isinstance(prepared, LabResult):
             return prepared
+        native_refusal = self._native_range_preflight()
+        if native_refusal is not None:
+            return native_refusal
         command = self._owned_up_command(
             profiles,
             scope=prepared,
@@ -135,6 +144,15 @@ class ComposeOwnedStartMixin:
             only_services=only_services,
             scenario_root=scenario_root,
         )
+        return self._execute_owned_compose_up(prepared, profiles, command)
+
+    def _execute_owned_compose_up(
+        self, prepared: _OwnedStartScope, profiles: list[str], command: list[str]
+    ) -> LabResult:
+        """Apply the native floor, run Compose, and capture or compensate."""
+        floor_failure = self._native_compose_floor(prepared, profiles, command)
+        if floor_failure is not None:
+            return floor_failure
         result = self._run(command)
         if result.returncode != 0:
             log.error("Compose start failed")
@@ -153,6 +171,67 @@ class ComposeOwnedStartMixin:
                 )
             return LabResult(success=False, error="Compose start failed.")
         return self._capture_started_resources(prepared, profiles)
+
+    def _native_compose_floor(
+        self, scope: _OwnedStartScope, profiles: list[str], up_command: list[str]
+    ) -> LabResult | None:
+        """Create stopped containers before protecting every owned bridge."""
+        from aptl.core.deployment._compose_native_boundary import uses_native_policy
+        from aptl.core.deployment._native_range_publications import (
+            refresh_native_policy,
+        )
+
+        if not uses_native_policy(self):
+            return None
+        failure = self._native_compose_model_refusal(scope, profiles)
+        if failure is not None:
+            return failure
+        failure = self._create_native_compose_resources(scope, profiles, up_command)
+        if failure is None:
+            failure = refresh_native_policy(self, required=True)
+        if failure is not None:
+            self._roll_back_started_project(scope, profiles, remove_volumes=False)
+        return failure
+
+    def _native_compose_model_refusal(
+        self, scope: _OwnedStartScope, profiles: list[str]
+    ) -> LabResult | None:
+        """Refuse Compose namespace and mount paths that bypass filtering."""
+        import json
+        from aptl.core.deployment._native_range_model import validate_native_services
+
+        command = self._build_command(
+            "config", profiles, compose_files=scope.compose_files
+        )
+        result = self._run([*command, "--format", "json"])
+        try:
+            model = json.loads(result.stdout) if result.returncode == 0 else {}
+            validate_native_services(
+                model["services"], self._resolve_owned_container_id
+            )
+        except ValueError, KeyError, TypeError, AttributeError, OwnershipConflictError:
+            return LabResult(
+                success=False,
+                error="Native Docker range policy requires bridge networking without "
+                "privileged devices or host authority mounts.",
+            )
+        return None
+
+    def _create_native_compose_resources(
+        self, scope: _OwnedStartScope, profiles: list[str], up_command: list[str]
+    ) -> LabResult | None:
+        """Create and receipt dormant resources without running participants."""
+        create = list(up_command)
+        create[create.index("up")] = "create"
+        create = [part for part in create if part != "-d"]
+        result = self._run(create)
+        if result.returncode != 0:
+            return LabResult(
+                success=False,
+                error="Native range stopped-container preparation failed.",
+            )
+        captured = self._capture_started_resources(scope, profiles, report_start=False)
+        return None if captured.success else captured
 
     def _compose_substrate_daemon_refusal(
         self,
@@ -248,7 +327,7 @@ class ComposeOwnedStartMixin:
         return command
 
     def _capture_started_resources(
-        self, scope: _OwnedStartScope, profiles: list[str]
+        self, scope: _OwnedStartScope, profiles: list[str], *, report_start: bool = True
     ) -> LabResult:
         """Record all Compose resources, or roll the whole attempt back.
 
@@ -293,8 +372,12 @@ class ComposeOwnedStartMixin:
                     "retained; repair ownership before retrying cleanup or start."
                 ),
             )
-        log.info("Lab started successfully")
-        return LabResult(success=True, message="Lab started")
+        if report_start:
+            log.info("Lab started successfully")
+        return LabResult(
+            success=True,
+            message="Lab started" if report_start else "Stopped resources captured",
+        )
 
     def _roll_back_started_project(
         self,
@@ -318,7 +401,7 @@ class ComposeOwnedStartMixin:
                 command,
                 timeout=300,
             )
-        except (OSError, ValueError):
+        except OSError, ValueError:
             log.exception("Compose rollback of a failed start did not complete")
         # Receipted containers may include directly-run resources Compose does
         # not know about, so this still runs — now as the remainder, not the

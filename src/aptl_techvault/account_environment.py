@@ -10,6 +10,7 @@ reaches the lab without an adapter edit.
 from __future__ import annotations
 
 from aptl.backends.scenario_startup import AccountCredentialFixture
+from aptl.core.config import EnvironmentGrant
 
 #: ``(account, credential id, ((variable, part), ...))`` for each declared login.
 _ACCOUNT_VARIABLES = (
@@ -36,27 +37,6 @@ _ACCOUNT_VARIABLES = (
             ("SHUFFLE_DEFAULT_PASSWORD", "secret"),
         ),
     ),
-    (
-        "thehive-administrator",
-        "thehive-administrator-primary",
-        (("THEHIVE_ADMIN_USER", "username"), ("THEHIVE_ADMIN_PASS", "secret")),
-    ),
-    (
-        "cortex-administrator",
-        "cortex-administrator-primary",
-        (
-            ("CORTEX_SUPERADMIN_USER", "username"),
-            ("CORTEX_SUPERADMIN_PASSWORD", "secret"),
-        ),
-    ),
-)
-
-#: Variables the seed scripts read to act as the declared console administrators.
-SEED_ADMINISTRATOR_KEYS = (
-    "THEHIVE_ADMIN_USER",
-    "THEHIVE_ADMIN_PASS",
-    "CORTEX_SUPERADMIN_USER",
-    "CORTEX_SUPERADMIN_PASSWORD",
 )
 
 
@@ -70,4 +50,26 @@ def techvault_account_environment() -> tuple[AccountCredentialFixture, ...]:
     )
 
 
-__all__ = ("SEED_ADMINISTRATOR_KEYS", "techvault_account_environment")
+def techvault_environment_grants(pack_id: str) -> tuple[EnvironmentGrant, ...]:
+    """Authorize only each SOC service's required startup credentials."""
+
+    wazuh = ("INDEXER_USERNAME", "INDEXER_PASSWORD", "API_USERNAME", "API_PASSWORD")
+    consumers = {
+        "wazuh-manager": wazuh,
+        "wazuh-dashboard": (*wazuh, "DASHBOARD_USERNAME", "DASHBOARD_PASSWORD"),
+        "misp": ("ADMIN_KEY",),
+        "shuffle-backend": ("SHUFFLE_DEFAULT_USERNAME", "SHUFFLE_DEFAULT_PASSWORD"),
+    }
+    return tuple(
+        EnvironmentGrant(
+            pack=pack_id,
+            consumer=consumer,
+            variable=name,
+            source={"kind": "project-env-file", "variable": name},
+        )
+        for consumer, names in consumers.items()
+        for name in names
+    )
+
+
+__all__ = ("techvault_account_environment",)

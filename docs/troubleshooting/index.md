@@ -1,449 +1,294 @@
-# Troubleshooting
+<a id="troubleshooting"></a>
 
-Start with APTL's project-aware diagnostics. They preserve the selected
-backend, realized scenario, runtime port mapping, and redaction boundaries.
+# Recover A Lab
+
+Use this guide when a project reports a startup, access, or teardown failure.
+You need its project directory and authorized operator access on an approved lab machine.
+Do not run lab operations or behavior tests on the developer workstation.
+Retain required evidence before changing state.
 
 ## Quick Checks
 
-```shell
-aptl lab status
-aptl lab info
-aptl container list
-aptl config validate
-```
-
-Read the final `aptl lab start` result before investigating an individual
-container. It distinguishes ready, usable degradation, unusable degradation,
-and failure, and names the component and safe operator action when available.
-
-Inspect logs only for a container returned by `aptl container list`:
+From the affected project, inspect its configuration and runtime:
 
 ```shell
-aptl container logs <container-name>
+lilrae config validate
+lilrae lab status
+lilrae lab info
+lilrae container list
 ```
 
-Do not attach `.env`, `.mcp.json`, private keys, authentication headers, or
-unredacted generated configuration to a support report.
+Read the final startup result for the failed component and proposed action.
+Inspect only a container returned by the project list:
+
+```shell
+lilrae container logs <container-name> --tail 50
+```
+
+Expected result: a named failure and bounded evidence for the next task.
+Do not include private configuration, keys, credentials, or authentication headers in support reports.
 
 ## Common First-Run Problems
 
 ### A service URL does not open
 
-Run `aptl lab info` again and use the reported URL. Host ports can be remapped
-when a default is already occupied, and the selected scenario can omit a
-service entirely. If the service exists, compare `aptl lab status` with its
-bounded logs:
+Run `lilrae lab info` again and use its current service URL.
+Check whether the selected scenario includes that service.
+For a remote daemon, verify reachability on the remote host.
+Inspect the service's project-scoped logs if access still fails.
 
-```shell
-aptl lab status
-aptl container logs <container-name>
-```
-
-Use the generated trust root and service hostname reported for the project. Do
-not bypass a certificate warning, use a client option that disables TLS
-verification, or substitute a fixed port from an older document.
+Use the project's generated trust root and reported service hostname.
+Do not disable TLS verification or accept an unexplained certificate warning.
+Expected result: access uses the actual service endpoint and trusted certificate.
 
 ### Startup reports insufficient resources
 
-The acquired TechVault stack can require more than 20GB of RAM, while smaller
-curated scenarios use less. Increase the Docker engine's memory allocation or
-choose another identity from `aptl lab scenarios`.
+Check the engine's memory allocation against the [host requirements](../getting-started/host-requirements.md).
+Allocate sufficient resources for the selected pack before retrying startup.
+To choose a smaller pack, configure its identity and verify its catalog first.
+`lilrae lab scenarios` lists the configured pack; it is not a menu of all installed packs.
 
-On a native Linux Docker Engine, startup also checks the OpenSearch
-`vm.max_map_count` requirement. Apply the exact remediation printed by the
-failed preflight. Docker Desktop and WSL2 manage the value inside their Linux
-VM and do not use the host setting.
+For a kernel-limit failure, apply the exact diagnostic on the selected engine host.
+Docker Desktop manages its Linux VM settings separately from the physical host.
+Expected result: the named preflight passes on the next start.
 
 ### A container shell fails
 
-Container names depend on scenario realization. Confirm the target first:
+Confirm the target with `lilrae container list`.
+Open only a container in that project:
 
 ```shell
-aptl container list
-aptl container shell <container-name>
+lilrae container shell <container-name>
 ```
 
-Use `--shell /bin/sh` only when the image does not provide the default shell.
-Host SSH is available only for a service that the scenario realizes and that
-`aptl lab info` reports.
+The default tries `/bin/bash`, then `/bin/sh`.
+Use `--shell` only when you need another installed shell.
+Kali shell access is refused while required session capture runs.
+Use the admitted captured tool route instead.
+See [Kali host access](../components/kali-redteam.md#host-access).
 
 ### MCP servers are unavailable
 
-Confirm that startup completed the MCP phase and that the target exists in the
-realized scenario. Start the client from the project root so it reads the
-generated `.mcp.json`. Then inspect the client's connected-server and tool
-list. A built server is not necessarily enabled for the selected scenario.
-
-Contributors can rebuild all tracked artifacts with
-`./mcp/build-all-mcps.sh`; released-package operators should let
-`aptl lab start` own the build and configuration. See the
-[MCP reference](../reference/mcp.md).
+Check the startup report's MCP phase and the scenario's realized services.
+Run the client from the project directory so it can find its generated configuration.
+Inspect its connected servers and exact tool inventory.
+For released projects, let `lilrae lab start` own builds and configuration.
+For source development, use the existing `mcp/build-all-mcps.sh` build on the approved development path.
+See the [MCP reference](../reference/mcp.md) for enabled and built surfaces.
 
 ## Project-Scoped Recovery
 
-Retry a normal lifecycle through the control plane:
+Close affected agents and preserve required logs.
+Retry a volume-preserving lifecycle:
 
 ```shell
-aptl lab stop
-aptl lab start --scenario <id>
+lilrae lab stop
+lilrae lab start
 ```
 
-For a confirmed full reset of this project's volume-backed data:
+Expected result: the configured scenario starts with its retained data.
+For an explicit SDL fixture, repeat the original `--scenario-path` option.
+
+If a full reset is intended, retain required data first:
 
 ```shell
-aptl lab stop -v
-aptl lab start --scenario <id>
+lilrae lab stop -v
+lilrae lab start
 ```
 
-The destructive stop asks for confirmation. It removes project volumes but
-does not prune the Docker daemon. Do not use `docker system prune` as APTL
-recovery: it can remove resources belonging to other projects.
+The destructive stop asks for confirmation and removes all project volumes.
+It does not prune the Docker daemon.
+Do not use daemon-wide prune commands or raw Compose startup for recovery.
+`lilrae kill` is emergency termination, not normal teardown.
 
-### `aptl lab stop -v` reports pending host cleanup
+### `lilrae lab stop -v` reports pending host cleanup
 
-After it removes the volumes, the destructive stop also clears host-side state
-that described them, such as the recorded Wazuh agent enrollment baseline. Each
-lab start records that work under `.aptl/lifecycle/`, and the installed APTL
-release finishes it, including records written by earlier releases. The
-stop reports the two failure classes separately:
+Read the reported failure class before retrying.
+`[lifecycle-docker-teardown-failed]` means Docker teardown failed; host cleanup was not attempted.
+Resolve the Docker error first.
+`[lifecycle-host-cleanup-pending]` means volumes are gone but a listed host action remains.
+Use the [cleanup reason reference](diagnostics.md#host-cleanup-reasons) to identify its repair.
 
-- `[lifecycle-docker-teardown-failed]` means Docker teardown failed. Host
-  cleanup was not attempted, because the host state still describes the
-  retained volumes. Resolve the Docker error first.
-- `[lifecycle-host-cleanup-pending]` means Docker teardown completed and the
-  volumes are gone, but the listed cleanup actions did not finish. Each entry
-  names the action, the admitted pack, the record, and a reason code.
+After resolving the cause, repeat:
 
-Retry with `aptl lab stop -v --yes` after resolving the cause. A repeat stop is
-safe when the Docker resources are already gone: completed actions are not
-repeated, and pending ones run again. Do not delete or edit the files under
-`.aptl/lifecycle/` to clear the error; the records are the audit trail.
+```shell
+lilrae lab stop -v --yes
+```
 
-| Reason | Meaning and action |
-| --- | --- |
-| `provider-reset-authority-unavailable` | No installed adapter declares support for that pack's cleanup. Install an adapter release that supports the recorded pack version and digest. |
-| `provider-reset-authority-ambiguous` | More than one installed adapter claims the cleanup. Uninstall the duplicate. |
-| `provider-hook-failed` | The pack's cleanup handler failed. Check the log, then retry. |
-| `host-state-unsafe` | A symlink or non-file sits at the cleanup path. APTL refuses to follow it. Inspect and remove it manually. |
-| `cleanup-record-malformed`, `cleanup-action-unsupported` | The record cannot be read or was written by a newer APTL release. Upgrade APTL, or report the record name. |
-
-Do not replace recovery with raw `docker compose up`. `aptl lab start` owns
-scenario realization, generated configuration, credentials, port selection,
-readiness, MCP setup, and run recording. `aptl kill` is reserved for emergency
-process or container termination; it is not normal teardown.
+Use `--yes` only when the destruction decision still applies.
+Completed actions are not repeated; pending actions retry.
+Do not delete or edit `.aptl/lifecycle/` records to hide an error.
+Expected result: teardown completes and no host cleanup remains pending.
 
 ## Platform Issues
 
 ### Linux
-```bash
-# Docker permissions
-sudo usermod -aG docker $USER
-# Logout/login required
+
+If Docker denies operator access, check the approved daemon access policy.
+If that policy uses the Docker group, an administrator can add the operator:
+
+```shell
+sudo usermod -aG docker "$USER"
 ```
+
+Sign out and back in, then check access again.
+Docker-group membership grants root-equivalent control over that daemon host.
 
 ### macOS
 
-Docker Desktop owns the Linux VM and its kernel settings. If another macOS
-service occupies a requested host port, let APTL remap it and use the URL from
-`aptl lab info`. Change or disable the other service only when you explicitly
-need to pin that port.
+Start the selected Docker VM before retrying.
+Allocate enough VM memory for the selected scenario.
+If another service owns a default port, use the remapped URL from `lilrae lab info`.
+Do not disable unrelated host services merely to reuse a copied port number.
 
-### A container is `Up` but reports `unhealthy`, blocking `aptl lab start`
+### A container is `Up` but reports `unhealthy`, blocking `lilrae lab start`
 
-When `aptl lab start` fails with `dependency <name> failed to start:
-container aptl-<name> is unhealthy` and `docker ps` shows the container
-as `Up (unhealthy)`, there are two very different failure modes worth
-distinguishing before assuming the tool is broken:
+Use the project list to identify the affected container.
+On the approved lab host, inspect its memory limit, exit state, and restart count:
 
-**1. Memory too tight—the service is being kernel-killed during warm-up.**
-Check the deploy limit vs the service's needs:
-
-```bash
-docker inspect aptl-<name> --format 'Mem={{.HostConfig.Memory}} OOMKilled={{.State.OOMKilled}} RestartCount={{.RestartCount}}'
-docker logs --tail 30 aptl-<name>
+```shell
+docker inspect <container-name> --format 'Mem={{.HostConfig.Memory}} OOMKilled={{.State.OOMKilled}} RestartCount={{.RestartCount}}'
+lilrae container logs <container-name> --tail 50
 ```
 
-Signs: `RestartCount` climbing, entrypoint lines like `Killed  su ... bin/<service>`,
-`OOMKilled` may stay `false` if the JVM/child was killed outside docker's
-tracking. The fix is to raise `deploy.resources.limits.memory` on that
-service in `docker-compose.yml`. Cortex 3.1.8 at 512m was one confirmed
-case ([#723](https://github.com/Brad-Edwards/aptl/issues/723), fixed on
-`dev`); watch for similar behavior on any service whose limit is 128m /
-256m / 512m if its images are non-trivial (JVM, Play, Elasticsearch,
-Cassandra, etc.).
+Check for repeated restarts, killed child processes, and service-specific errors.
+`OOMKilled=false` does not exclude a killed child process.
+A surviving PID 1 also does not establish that the intended daemon is alive.
+Use a project container shell to inspect its service logs and process status.
 
-**2. Container is running but the intended daemons have died silently.**
-The container's PID 1 (often `s6` or a shell) survives, so docker still
-reports `Up`, but the workload processes are gone and the healthcheck
-port is closed.
+If memory is insufficient, increase available resources or correct the owning scenario's supported resource declaration.
+Do not edit the root `docker-compose.yml` as a substitute for the admitted scenario model.
+Expected result: the intended service starts and passes authenticated readiness.
 
-```bash
-docker exec aptl-<name> sh -c 'ls /proc/[0-9]*/comm | while read f; do read n < "$f"; echo "$(basename $(dirname $f)) $n"; done | sort -k2'
+### Shuffle exits during OpenSearch initialization
+
+Inspect `lilrae container logs aptl-shuffle-backend --tail 50` when that container belongs to the project.
+Check datastore readiness, resources, and credentials.
+The default `on-failure` policy retries an error exit when the scenario leaves restart policy open.
+An authored restart policy takes precedence.
+It does not repair datastore failures or restart an orderly exit.
+Repeat normal startup only after resolving the cause.
+
+### `lilrae lab start` fails because a Wazuh service did not become ready
+
+Read the diagnostic phase and reason.
+The [Wazuh diagnostic reference](diagnostics.md#wazuh-readiness) defines these fields.
+
+For `transport`, inspect the named container's logs, restarts, and API listener.
+In an existing manager container, inspect `/var/ossec/bin/wazuh-control status` through its project shell.
+If the API is absent, use `wazuh-control start` there and investigate the daemon's exit cause.
+The normal authenticated readiness check must still pass.
+Certificate generation alone does not establish API readiness.
+
+For `authentication`, compare the private configured credentials with the retained service state.
+If data must remain, restore the original credential rather than resetting the volume.
+For `manager_status`, inspect the manager's daemon status and service logs.
+Expected result: the API authenticates and reports running manager daemons.
+Do not disclose credentials in a support report.
+
+### `lilrae lab start` fails with "Existing network aptl_aptl-... does not match realized network"
+
+Use a project-scoped stop to remove stale project networks, then retry:
+
+```shell
+lilrae lab stop
+lilrae lab start
 ```
 
-Compare the live process list against what the container is supposed to
-run (for example, wazuh-manager should show `wazuh-analysisd`, `wazuh-modulesd`,
-`wazuh-execd`, and a python API process—not just `s6-supervise` +
-`filebeat`). If the intended daemons are missing, check the service's
-own log directory (for example, `/var/ossec/logs/ossec.log` for Wazuh) for the
-crash cause. Wazuh-manager silent-crash after startup is tracked in
-[#725](https://github.com/Brad-Edwards/aptl/issues/725).
+If `lifecycle-owner-busy` appears, wait for the active operation to finish.
+If cleanup observation fails, restore the selected local or SSH Docker connection and repeat stop.
+Do not prune unrelated networks.
+Expected result: the next realization creates networks with the required ownership labels.
 
-### `aptl lab start` fails because a Wazuh service did not become ready
+### An older TechVault seat stops before it is ready
 
-A scenario that starts Wazuh needs it working, so Wazuh readiness is fatal.
-After the containers start, `aptl lab start` authenticates to the Wazuh
-indexer and manager APIs. It retries quietly while the APIs warm up. A clean
-boot normally spends a few seconds in that state, because the manager API
-starts listening after its container is already running. If a service is
-still unready when the readiness budget ends, startup fails and names the
-phase and reason for that service:
+Old images can contain TheHive's expired trial.
+Current releases omit TheHive and Cortex.
+Retain required guest files before adopting a replacement image.
+An image update deletes overlay data.
 
-```
-Authenticated Wazuh readiness validation failed after 300s:
-  wazuh.manager at https://localhost:55000 transport phase failed:
-  tls_handshake (curl exit 35). Inspect `aptl container logs aptl-wazuh-manager`.
+As the seat owner, stop it.
+Then use the administrator rescue path if files must be recovered:
+
+```shell
+lilrae seat stop --seat-root <seat-root>
+sudo lilrae seat rescue --seat-root <seat-root>
 ```
 
-Scenarios that don't declare Wazuh certificate or configuration artifacts
-report the same reason in a slightly different form:
+The host needs `virt-rescue` for this task.
+Exit rescue before updating and starting the same selected seat in event mode:
 
-```
-Wazuh Manager API did not become ready within 120s:
-  wazuh.manager at https://localhost:55000 transport phase failed:
-  tls_handshake (curl exit 35). Inspect `aptl container logs aptl-wazuh-manager`.
-```
-
-Read the phase first:
-
-- **`transport`**: no HTTP response arrived. `tls_handshake` (curl exit 35) or
-  `connection_reset` from a published port usually means nothing inside the
-  container is listening yet. Docker accepts the connection on the host and
-  then closes it. When this state lasts for the whole budget, the API never
-  started. Inspect the container logs, and check that the container is not
-  restarting or running out of memory. If the manager container and other
-  Wazuh daemons are running but `wazuh-apid` is absent, TechVault's single
-  backend retry starts the missing API daemon in that same container. On an
-  older running seat, use `docker exec` to run
-  `/var/ossec/bin/wazuh-control status` in the existing manager container,
-  then run `wazuh-control start` there if the API is absent. This preserves the
-  container and retained volumes. The normal authenticated readiness check
-  still decides whether the lab is ready. Establish the cause of an API exit
-  from its logs; certificate generation alone does not prove it.
-- **`authentication`**: the API answered but did not issue a session.
-  `credentials_rejected` (HTTP 401 or 403) means the API rejected the
-  `INDEXER_USERNAME`/`INDEXER_PASSWORD` or `API_USERNAME`/`API_PASSWORD`
-  values from `.env`. For the indexer, a retained `wazuh-indexer-data` volume
-  can still hold an earlier admin password. Restore the original
-  `INDEXER_PASSWORD` if the data must be kept. `aptl lab stop -v` removes
-  retained lab volumes and is a destructive reset, so use it only after an
-  intentional backup and reset decision.
-- **`manager_status`**: the manager API authenticated but reported no running
-  manager daemons. See the silent-daemon failure mode in the previous section.
-
-The message never includes credentials, tokens, or response bodies.
-
-### `aptl lab start` fails with "Existing network aptl_aptl-... does not match realized network"
-
-Symptom on a machine that has run an older aptl-labs release before the
-`org.aptl.realization.network=true` label was introduced:
-
-```
-Lab start failed: RAES runtime handoff failed: ...
-  Existing network aptl_aptl-dmz does not match realized network dmz-net:
-  label org.aptl.realization.network expected 'true', found ''.
+```shell
+lilrae seat update --seat-root <seat-root> --desktop-mode event
+lilrae seat start --seat-root <seat-root> --desktop-mode event
 ```
 
-The stale networks were created without the realization label the current
-version expects. Current APTL teardown removes all networks carrying the
-validated Compose project label, including older networks without the newer
-realization label. Use the project-scoped reset and retry:
+See the [seat launcher](../reference/appliance-seat-launcher.md) for seat selection and image trust requirements.
+Expected result: the replacement image starts without the retired services.
+Their case and analyzer state is not restored automatically.
 
-```bash
-aptl lab stop
-aptl lab start
+### `lilrae lab start` reports an unowned search index
+
+The diagnostic names an index that lacks the expected content ownership marker.
+LilRAE refuses to adopt, delete, or overwrite that index.
+Current adapters map no schema to a native index, so this is a conditional recovery path.
+
+Keep the failed-start containers and retained volumes while investigating.
+Open a project shell in the named container and query read-only:
+
+```shell
+lilrae container shell <container>
 ```
 
-If stop reports `lifecycle-owner-busy`, another start/stop/clean/kill or policy
-operation still owns the project; wait for it to exit before retrying. If stop
-reports a cleanup-verification or observation failure, restore the configured
-local/SSH Docker connection and run stop again. Do not use a daemon-wide prune:
-APTL cleanup is deliberately bounded by the validated project labels.
+From that shell, for a service with the reported local HTTP endpoint:
 
-Tracked in [#722](https://github.com/Brad-Edwards/aptl/issues/722).
-
-### `aptl lab start` reports an unowned search index
-
-A scenario can declare a search-index schema as initial service state. APTL
-creates that index in the target search service and marks it with the scenario
-content that owns it. When the service already holds an index of the same name
-without that content's marker, for example in a data volume kept from an
-earlier lab, APTL can't prove that the index holds disposable data. It never
-adopts, deletes, or overwrites such an index. Startup stops before the workload
-starts, and the error names the index and its container.
-
-The Cortex job-index schema is the only schema that APTL maps to a native index
-name (`cortex_6`). For example, with the search service in container
-`aptl-thehive-es`, the error reads:
-
-```
-Lab start failed.
-  error: Lab start failed: RAES runtime handoff failed:
-  aptl.provisioner.backend-start-failed at runtime.apply.provisioning: service
-  materialization failed for provision.content.cortex-job-index-schema
-  (reason=unowned-collision): search index cortex_6 in container
-  aptl-thehive-es lacks this content's ownership marker, ...
+```shell
+curl -fsS 'http://localhost:9200/<index>/_count'
+curl -fsS 'http://localhost:9200/<index>/_mapping'
 ```
 
-Recover in this order, with the index and container names from your error:
+Use the service's configured TLS and authentication if required.
+Before resetting, back up every service whose data must remain.
+Follow [Back up a conflicting search index](search-index-backup.md) for the Elasticsearch snapshot procedure.
+A filesystem copy of its data directory is not a supported snapshot.
 
-1.  Inspect the index without changing it. A failed start leaves its
-    containers running, so open a shell in the container that the error names:
+Only after successful restoration checks or an explicit data-discard decision, reset the project:
 
-    ```shell
-    aptl container shell <container>
-    ```
-
-    Then query the index read-only from that shell:
-
-    ```shell
-    curl -s 'http://localhost:9200/<index>/_count'
-    curl -s 'http://localhost:9200/<index>/_mapping'
-    ```
-
-2.  Back up any data that you need before you reset anything. Use
-    [Elasticsearch snapshots](https://www.elastic.co/guide/en/elasticsearch/reference/7.17/snapshot-restore.html#warnings).
-    A copy or tar archive of the service's data directory is not a supported
-    backup, even when the service is stopped.
-
-    APTL does not configure a snapshot repository. Use an existing registered
-    repository or follow Elasticsearch's
-    [repository setup](https://www.elastic.co/guide/en/elasticsearch/reference/7.17/snapshots-register-repository.html#snapshots-filesystem-repository).
-    For local filesystem storage, mount a separate backup directory into the
-    search container, set `path.repo`, and restart the service before
-    registering it. Keep the repository outside every lab volume that
-    `aptl lab stop --volumes` deletes.
-    On a remote Docker host, that directory belongs on the remote host.
-    Until backup is available, keep the existing volumes; `aptl lab stop`
-    without `--volumes` preserves them.
-
-    With the search service running and a repository registered, run these
-    commands from its container shell. Replace `<repository>` with that
-    repository's name and `<snapshot>` with a new snapshot name:
-
-    ```shell
-    curl -fsS -X POST 'http://localhost:9200/_snapshot/<repository>/_verify'
-    curl -fsS -X PUT 'http://localhost:9200/_snapshot/<repository>/<snapshot>?wait_for_completion=true'
-    curl -fsS 'http://localhost:9200/_snapshot/<repository>/<snapshot>'
-    ```
-
-    The snapshot includes all open indices by default. Before any reset,
-    check that its `state` is `SUCCESS`, `shards.failed` is `0`, and `indices`
-    includes the conflicting index and every other index you need. Then
-    [test restoration](https://www.elastic.co/guide/en/elasticsearch/reference/7.17/snapshots-restore-snapshot.html#restore-different-cluster)
-    in a separate compatible cluster with the repository registered read-only.
-    Verify the restored data before deleting the original volumes. Preserve
-    any required data in other lab services with their own backup procedures;
-    an Elasticsearch snapshot does not cover those services.
-
-3.  Reset only when all lab data is disposable or its required backups have
-    passed restoration checks:
-
-    ```shell
-    aptl lab stop --volumes
-    ```
-
-    This is a destructive reset. It permanently deletes all of this project's
-    lab volumes, not only the conflicting index. The command asks for
-    confirmation first. Then start the lab again with the same `--scenario` or
-    `--scenario-path` option. Restore required data separately; restoring the
-    conflicting index unchanged also restores its unowned state.
-
-### `aptl lab start` reports a search index whose mapping drifted
-
-The search service already holds an index with the scenario content's
-ownership marker, but its mapping differs from the mapping that this release
-creates. For example, a data volume kept from an earlier lab can hold an index
-that an earlier release created with another mapping. APTL doesn't
-change the mapping of an index that it finds, and it doesn't delete or
-re-create the index. Startup stops before the workload starts, and the error
-names the index and its container:
-
-```
-Lab start failed.
-  error: Lab start failed: RAES runtime handoff failed:
-  aptl.provisioner.backend-start-failed at runtime.apply.provisioning: service
-  materialization failed for provision.content.cortex-job-index-schema
-  (reason=native-product-contract-mismatch): search index cortex_6 in
-  container aptl-thehive-es carries this content's ownership marker, ...
+```shell
+lilrae lab stop --volumes
 ```
 
-`aptl lab stop` keeps the volume, so a later start finds the same index and
-fails the same way. Recover in this order, with the index and container names
-from your error:
-
-1.  Inspect the index read-only, then take an Elasticsearch snapshot of the
-    data that you need and test its restoration, as steps 1 and 2 of
-    [the unowned index section](#aptl-lab-start-reports-an-unowned-search-index)
-    describe. Keep the snapshot repository outside every lab volume, and
-    back up required data in other lab services with their own procedures.
-
-2.  Reset only when all lab data is disposable or its required backups have
-    passed restoration checks:
-
-    ```shell
-    aptl lab stop --volumes
-    ```
-
-    This is a destructive reset. It permanently deletes all of this project's
-    lab volumes, not only the drifted index. The command asks for confirmation
-    first. Then start the lab again with the same `--scenario` or
-    `--scenario-path` option. The search service then starts without the
-    index, so APTL creates it with this release's mapping. Restore required
-    data separately; restoring the drifted index unchanged also restores its
-    drifted mapping, and the next start fails the same way.
+Confirm the warning, then repeat the original scenario start.
+Expected result: a new disposable index can receive its ownership marker.
+Restoring the old index unchanged also restores its unowned state.
 
 ### macOS: Docker Desktop uninstall leftovers
 
-If you uninstalled Docker Desktop and switched to Colima (or brew-installed
-Docker), two leftover pieces silently break `aptl lab start`:
+Use this task after switching from Docker Desktop to Colima or Homebrew Docker.
+Check `~/.docker/cli-plugins/` for links to the removed application.
+After installing the intended plugins, replace the two known links:
 
-**Dead CLI plugin symlinks** in `~/.docker/cli-plugins/*` still point at
-`/Applications/Docker.app/Contents/Resources/cli-plugins/...`. `docker
-buildx` and `docker compose` then fail with `unknown command` even after
-`brew install docker-buildx docker-compose`. Repoint them at the brew
-binaries and drop the other dead symlinks:
-
-```bash
+```shell
+mkdir -p ~/.docker/cli-plugins
 ln -sf "$(brew --prefix docker-buildx)/bin/docker-buildx" ~/.docker/cli-plugins/docker-buildx
 ln -sf "$(brew --prefix docker-compose)/bin/docker-compose" ~/.docker/cli-plugins/docker-compose
-for f in ~/.docker/cli-plugins/*; do [ -L "$f" ] && [ ! -e "$f" ] && rm "$f"; done
 ```
 
-**Stale `credsStore` in `~/.docker/config.json`.** Docker Desktop's
-installer sets `"credsStore": "desktop"`, and `docker pull` on any image
-requiring a credential lookup then fails with:
-
-```
-error getting credentials - err: exec: "docker-credential-desktop": executable file not found in $PATH
-```
-
-Remove that key from `~/.docker/config.json`. A minimal working config after
-switching to Colima looks like:
-
-```json
-{
-  "auths": {},
-  "currentContext": "colima"
-}
-```
+Review other broken links individually before removing them.
+If Docker cannot find `docker-credential-desktop`, inspect its `credsStore` setting in `~/.docker/config.json`.
+Replace or remove only the obsolete helper setting using your approved credential-storage policy.
+Keep unrelated registry authentication and contexts.
+Expected result: Compose, Buildx, and registry authentication use installed tools.
 
 ### WSL2
-```bash
-# Restart WSL2
+
+Save work in all WSL sessions before restarting WSL.
+From Windows, run:
+
+```powershell
 wsl --shutdown
-# Edit ~/.wslconfig:
-[wsl2]
-memory=8GB
-processors=4
 ```
+
+Configure `%UserProfile%\.wslconfig` with enough memory and processors for the selected scenario.
+Restart the Docker Desktop WSL2 backend and check its resources.
+An 8 GB allocation is insufficient for full TechVault.

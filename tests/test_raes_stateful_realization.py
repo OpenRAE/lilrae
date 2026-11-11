@@ -19,6 +19,7 @@ from raes_contracts.planning import (
 from aptl.backends.raes_manifest import create_aptl_manifest
 from aptl.backends.raes_realization import interpret_provisioning_plan
 from aptl.core.config import AptlConfig
+from aptl.core.deployment._misp_cache_credential import MISP_CACHE_CREDENTIAL_PROFILE
 from aptl.core.scenario_bundle import ScenarioBundle, project_tree_bundle
 
 
@@ -86,7 +87,7 @@ def _write_compose(project_dir: Path) -> None:
 
 
 def _config() -> AptlConfig:
-    return AptlConfig(lab={"name": "test"}, containers={"wazuh": True})
+    return AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']})
 
 
 def test_manifest_advertises_released_stateful_contract() -> None:
@@ -197,15 +198,15 @@ def test_interpreter_lowers_generated_environment_consumers(tmp_path: Path) -> N
     _write_compose(tmp_path)
     artifact = _resource(
         "generated-artifact",
-        "cortex-service-credentials",
+        "misp-cache-credential",
         {
             "generator": "rendered_config",
             "lifecycle": "reuse_valid",
-            "provenance": "techvault:cortex-service-credentials/v1",
+            "provenance": MISP_CACHE_CREDENTIAL_PROFILE,
             "outputs": [
                 {
-                    "name": "connector-api-key",
-                    "path": "cortex/connector-api-key",
+                    "name": "cache-password",
+                    "path": "cache-password",
                     "sensitivity": "secret",
                 }
             ],
@@ -215,8 +216,8 @@ def test_interpreter_lowers_generated_environment_consumers(tmp_path: Path) -> N
                     "node": "wazuh-indexer",
                     "target_address": "provision.node.wazuh-indexer",
                     "delivery_mode": "environment",
-                    "output": "connector-api-key",
-                    "environment_variable": "TH_CORTEX_KEYS",
+                    "output": "cache-password",
+                    "environment_variable": "REDIS_PASSWORD",
                 }
             ],
         },
@@ -231,8 +232,8 @@ def test_interpreter_lowers_generated_environment_consumers(tmp_path: Path) -> N
     assert [item.code for item in realization.diagnostics] == []
     generated = realization.generated_artifacts[0]
     assert generated.consumers == ()
-    assert generated.environment_consumers[0].environment_variable == "TH_CORTEX_KEYS"
-    assert generated.environment_consumers[0].output_name == "connector-api-key"
+    assert generated.environment_consumers[0].environment_variable == "REDIS_PASSWORD"
+    assert generated.environment_consumers[0].output_name == "cache-password"
 
 
 def test_interpreter_rejects_environment_consumer_name_injection(
@@ -241,15 +242,15 @@ def test_interpreter_rejects_environment_consumer_name_injection(
     _write_compose(tmp_path)
     artifact = _resource(
         "generated-artifact",
-        "cortex-service-credentials",
+        "misp-cache-credential",
         {
             "generator": "rendered_config",
             "lifecycle": "reuse_valid",
-            "provenance": "techvault:cortex-service-credentials/v1",
+            "provenance": MISP_CACHE_CREDENTIAL_PROFILE,
             "outputs": [
                 {
-                    "name": "connector-api-key",
-                    "path": "cortex/connector-api-key",
+                    "name": "cache-password",
+                    "path": "cache-password",
                     "sensitivity": "secret",
                 }
             ],
@@ -259,7 +260,7 @@ def test_interpreter_rejects_environment_consumer_name_injection(
                     "node": "wazuh-indexer",
                     "target_address": "provision.node.wazuh-indexer",
                     "delivery_mode": "environment",
-                    "output": "connector-api-key",
+                    "output": "cache-password",
                     "environment_variable": "SAFE\nINJECTED",
                 }
             ],

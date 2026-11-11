@@ -9,7 +9,7 @@
 # once per overlay, so a participant's seat resolves nothing and pulls nothing.
 #
 # The output is a standalone read-only qcow2 plus the config blob describing
-# it; `aptl seat start` pulls both from a registry and overlays the disk.
+# it; `lilrae seat start` pulls both from a registry and overlays the disk.
 set -euo pipefail
 
 # Refuse an accidental multi-hour software-emulated bake.
@@ -96,6 +96,12 @@ done <"$APTL_LOCAL_IMAGE_LOCK_FILE"
 "$source_root/scripts/appliance/acquire-guest-system-packages.sh" \
   "$payload/system-packages"
 cp "$source_root/appliance/guest/system-packages.sha256" "$payload/"
+
+# Node.js is an authenticated upstream runtime artifact rather than an Ubuntu
+# package: Ubuntu 26.04 does not yet provide the fixed Node 22 release.
+"$source_root/scripts/appliance/acquire-guest-node-runtime.sh" \
+  "$payload/node-runtime"
+cp "$source_root/appliance/guest/node-runtime.sha256" "$payload/"
 
 # --- guest runtime -----------------------------------------------------
 target_python=$(command -v "python${APTL_GUEST_PYTHON_VERSION}" || true)

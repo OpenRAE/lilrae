@@ -1,5 +1,5 @@
 {
-  "source": "APTL required merge checks (issues #502, #852, #969, #1193); platform dependency audit, Trivy filesystem/IaC/image gates, OSV-scanner, and the RAES scenario gate are required on dev per ADR-026",
+  "source": "APTL required merge checks (issues #502, #852, #969, #1193); platform dependency audit, Trivy filesystem/IaC/image gates, OSV-scanner, and the RAES scenario gate are required on dev per ADR-026; go-cutover requires the same checks as dev for the Go port (#1584); dev merges through a merge queue without strict status checks per ADR-068 (#1735)",
   "branches": {
     "main": {
       "admin_bypass_allowed": true,
@@ -18,6 +18,38 @@
       }
     },
     "dev": {
+      "admin_bypass_allowed": true,
+      "changes_land_via_pull_request": true,
+      "merge_queue": {
+        "merge_method": "SQUASH",
+        "grouping_strategy": "ALLGREEN",
+        "max_entries_to_build": 5,
+        "min_entries_to_merge": 1,
+        "max_entries_to_merge": 5,
+        "min_entries_to_merge_wait_minutes": 5,
+        "check_response_timeout_minutes": 120
+      },
+      "required_status_checks": {
+        "strict": false,
+        "contexts": [
+          "Pre-commit hooks",
+          "Docs (Vale prose lint + mkdocs strict build)",
+          "Python tests + coverage",
+          "MCP TypeScript tests + coverage",
+          "Dependency vulnerability scan",
+          "Clean-install lab boot and teardown (DEP-008)",
+          "Web frontend tests + coverage",
+          "Trivy filesystem scan",
+          "Trivy IaC / config scan",
+          "Trivy image scan",
+          "OSV-scanner (uv.lock)",
+          "RAES scenario validation gate",
+          "SonarCloud quality gate",
+          "PR title lint"
+        ]
+      }
+    },
+    "go-cutover": {
       "admin_bypass_allowed": true,
       "changes_land_via_pull_request": true,
       "required_status_checks": {

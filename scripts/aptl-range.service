@@ -6,7 +6,7 @@
 # up. Progress/result: /tmp/provision-range.log (look for RANGE_PROVISION_OK).
 # Re-run manually any time with: sudo systemctl start aptl-range.service
 [Unit]
-Description=APTL Arsenal range provisioning (aptl lab start + env-pack fixups)
+Description=APTL Arsenal range provisioning (lilrae lab start + env-pack fixups)
 Wants=docker.service
 After=docker.service network-online.target
 Wants=network-online.target

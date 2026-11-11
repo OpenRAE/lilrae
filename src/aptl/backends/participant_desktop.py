@@ -20,7 +20,6 @@ import re
 from dataclasses import dataclass
 from importlib import metadata
 from pathlib import PurePosixPath
-from typing import TypeVar
 
 from aptl.core.scenario_bundle import ScenarioBundle
 from aptl.utils.logging import get_logger
@@ -33,7 +32,6 @@ EXTENSION_API_VERSION = "1"
 _SDL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 _LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._()/-]{0,63}")
 _MAX_ITEMS = 32
-_Item = TypeVar("_Item")
 
 
 class ParticipantDesktopProviderError(RuntimeError):
@@ -115,7 +113,7 @@ def _compatible(provider: object, bundle: ScenarioBundle) -> bool:
     return identity.pack_version in versions and identity.set_digest in digests
 
 
-def _bounded(items: object, kind: type[_Item]) -> tuple[_Item, ...]:
+def _bounded[_Item](items: object, kind: type[_Item]) -> tuple[_Item, ...]:
     """Return a bounded tuple whose every item is ``kind``, or refuse."""
 
     if not isinstance(items, tuple) or len(items) > _MAX_ITEMS:

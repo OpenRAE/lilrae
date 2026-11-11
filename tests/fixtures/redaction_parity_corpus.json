@@ -285,5 +285,247 @@
     "name": "empty_list",
     "input": [],
     "expected": []
+  },
+  {
+    "name": "model_numeric_usage",
+    "input": {
+      "input_tokens": 12,
+      "output_tokens": 0,
+      "max_output_tokens": 128
+    },
+    "expected": {
+      "input_tokens": 12,
+      "output_tokens": 0,
+      "max_output_tokens": 128
+    }
+  },
+  {
+    "name": "model_unknown_usage",
+    "input": {
+      "input_tokens": null
+    },
+    "expected": {
+      "input_tokens": null
+    }
+  },
+  {
+    "name": "model_credential_replacements",
+    "input": {
+      "input_tokens": "private-credential",
+      "max_output_tokens": {
+        "api_key": "private-credential"
+      }
+    },
+    "expected": {
+      "input_tokens": "[REDACTED]",
+      "max_output_tokens": "[REDACTED]"
+    }
+  },
+  {
+    "name": "model_count_fraction",
+    "input": {
+      "output_tokens": 0.5
+    },
+    "expected": {
+      "output_tokens": "[REDACTED]"
+    }
+  },
+  {
+    "name": "model_count_integral_json_number",
+    "input": {
+      "output_tokens": 12.0
+    },
+    "expected": {
+      "output_tokens": 12.0
+    }
+  },
+  {
+    "name": "model_malformed_count_declaration",
+    "input": {
+      "max_output_tokens": {
+        "target_id": "max_output_tokens",
+        "value_type": "integer",
+        "allowed_value_kinds": [
+          "literal"
+        ],
+        "sensitivity": []
+      }
+    },
+    "expected": {
+      "max_output_tokens": "[REDACTED]"
+    }
+  },
+  {
+    "name": "authorization_scope_labels",
+    "input": {
+      "authorization_scope": [
+        "run:read",
+        "run:stop"
+      ]
+    },
+    "expected": {
+      "authorization_scope": [
+        "run:read",
+        "run:stop"
+      ]
+    }
+  },
+  {
+    "name": "authorization_scope_inline_credential",
+    "input": {
+      "authorization_scope": [
+        "Bearer scope-test-credential"
+      ]
+    },
+    "expected": {
+      "authorization_scope": [
+        "Bearer [REDACTED]"
+      ]
+    }
+  },
+  {
+    "name": "authorization_scope_scalar_credential",
+    "input": {
+      "authorization_scope": "private-credential"
+    },
+    "expected": {
+      "authorization_scope": "[REDACTED]"
+    }
+  },
+  {
+    "name": "authorization_scope_nested_credential",
+    "input": {
+      "authorization_scope": {
+        "token": "private-credential"
+      }
+    },
+    "expected": {
+      "authorization_scope": "[REDACTED]"
+    }
+  },
+  {
+    "name": "authorization_scope_compound_credential",
+    "input": {
+      "authorization_scope_token": [
+        "private-credential"
+      ]
+    },
+    "expected": {
+      "authorization_scope_token": "[REDACTED]"
+    }
+  },
+  {
+    "name": "authorization_scope_keeps_authorization_header_private",
+    "input": {
+      "authorization_scope": [
+        "run:read"
+      ],
+      "Authorization": "Bearer private-credential"
+    },
+    "expected": {
+      "authorization_scope": [
+        "run:read"
+      ],
+      "Authorization": "[REDACTED]"
+    }
+  },
+  {
+    "name": "capture_usage_counts",
+    "input": {
+      "max_output_tokens": 7,
+      "max_tokens": 7,
+      "max_completion_tokens": 7,
+      "input_tokens": 7,
+      "output_tokens": 7,
+      "prompt_tokens": 7,
+      "completion_tokens": 7,
+      "total_tokens": 7,
+      "reasoning_tokens": 7,
+      "cache_read_tokens": 7,
+      "cache_write_tokens": 7,
+      "cached_tokens": 7,
+      "known_input_tokens_subtotal": 7,
+      "known_output_tokens_subtotal": 7,
+      "effective_token_limit": 7
+    },
+    "expected": {
+      "max_output_tokens": 7,
+      "max_tokens": 7,
+      "max_completion_tokens": 7,
+      "input_tokens": 7,
+      "output_tokens": 7,
+      "prompt_tokens": 7,
+      "completion_tokens": 7,
+      "total_tokens": 7,
+      "reasoning_tokens": 7,
+      "cache_read_tokens": 7,
+      "cache_write_tokens": 7,
+      "cached_tokens": 7,
+      "known_input_tokens_subtotal": 7,
+      "known_output_tokens_subtotal": 7,
+      "effective_token_limit": 7
+    }
+  },
+  {
+    "name": "capture_usage_secret_replacements",
+    "input": {
+      "max_output_tokens": "private-credential",
+      "max_tokens": "private-credential",
+      "max_completion_tokens": "private-credential",
+      "input_tokens": "private-credential",
+      "output_tokens": "private-credential",
+      "prompt_tokens": "private-credential",
+      "completion_tokens": "private-credential",
+      "total_tokens": "private-credential",
+      "reasoning_tokens": "private-credential",
+      "cache_read_tokens": "private-credential",
+      "cache_write_tokens": "private-credential",
+      "cached_tokens": "private-credential",
+      "known_input_tokens_subtotal": "private-credential",
+      "known_output_tokens_subtotal": "private-credential",
+      "effective_token_limit": "private-credential"
+    },
+    "expected": {
+      "max_output_tokens": "[REDACTED]",
+      "max_tokens": "[REDACTED]",
+      "max_completion_tokens": "[REDACTED]",
+      "input_tokens": "[REDACTED]",
+      "output_tokens": "[REDACTED]",
+      "prompt_tokens": "[REDACTED]",
+      "completion_tokens": "[REDACTED]",
+      "total_tokens": "[REDACTED]",
+      "reasoning_tokens": "[REDACTED]",
+      "cache_read_tokens": "[REDACTED]",
+      "cache_write_tokens": "[REDACTED]",
+      "cached_tokens": "[REDACTED]",
+      "known_input_tokens_subtotal": "[REDACTED]",
+      "known_output_tokens_subtotal": "[REDACTED]",
+      "effective_token_limit": "[REDACTED]"
+    }
+  },
+  {
+    "name": "capture_usage_completeness",
+    "input": {
+      "input_tokens_complete": false,
+      "output_tokens_complete": true
+    },
+    "expected": {
+      "input_tokens_complete": false,
+      "output_tokens_complete": true
+    }
+  },
+  {
+    "name": "unfinished_pem_block",
+    "input": "public\\n-----BEGIN PRIVATE KEY-----\\nQUJDREVGR0g=\\n",
+    "expected": "public\\n-----BEGIN PRIVATE KEY-----[REDACTED]"
+  },
+  {
+    "name": "unfinished_pem_in_payload",
+    "input": {
+      "output": "-----BEGIN PRIVATE KEY-----\nQUJDREVGR0g=\n"
+    },
+    "expected": {
+      "output": "-----BEGIN PRIVATE KEY-----[REDACTED]"
+    }
   }
 ]

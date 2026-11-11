@@ -35,7 +35,7 @@ from aptl.backends._raes_participant_transport import (
     _render_runtime_profile_config,
 )
 from aptl.backends.raes_manifest import create_aptl_manifest
-from aptl.backends.raes_planning_compat import AptlRuntimeManager
+from aptl.backends.raes_runtime import AptlRuntimeManager
 from aptl.core.correlation.clock import FixedClockProvider
 from aptl.core.evidence.coordinator import acquire_evidence
 from aptl.core.evidence.protocol import RunScope
@@ -45,7 +45,6 @@ from aptl.core.experiment.capture_registry import (
     CaptureVisibility,
 )
 from aptl.core.runstore import LocalRunStore
-from aptl_techvault.study import StudyCapture
 from aptl.core.evidence.outcomes import CollectorStatus
 from aptl.workbench.process import (
     REASON_OVERFLOW,
@@ -320,7 +319,7 @@ def _binding(role: str, phase: str) -> CaptureBinding:
         sensitivity="plain",
         redaction_required=True,
         redaction_policy="redact_secrets",
-        integrity_requirements=("chain_of_custody",),
+        integrity_requirements=("checksum",),
         retention_policy="run_lifetime",
         loss_disclosure_required=True,
         visibility_class=CaptureVisibility.APPARATUS_ONLY,
@@ -356,20 +355,6 @@ def test_plan_binds_each_turn_to_its_exact_admitted_capture() -> None:
         "aptl.collector.participant-delivery.blue-start",
         "aptl.collector.participant-delivery.blue-stop",
     ]
-
-
-def test_study_capture_declares_all_four_delivery_collectors() -> None:
-    contribution = StudyCapture.resolve(SimpleNamespace())
-    registration_ids = {
-        registration.registration_id for registration in contribution.registrations
-    }
-
-    assert {
-        "aptl.collector.participant-delivery.red-start",
-        "aptl.collector.participant-delivery.red-stop",
-        "aptl.collector.participant-delivery.blue-start",
-        "aptl.collector.participant-delivery.blue-stop",
-    } <= registration_ids
 
 
 def test_delivery_collector_uses_public_coordinator_for_content_addressed_evidence(
@@ -623,8 +608,8 @@ def test_runtime_profile_carries_workspace_capture_container(tmp_path: Path) -> 
 
 
 class _FakeRuntimeManager(AptlRuntimeManager):
-    def __init__(self) -> None:
-        self._snapshot = RuntimeSnapshot()
+    def __init__(self, target, **options: object) -> None:
+        super().__init__(target, **options)
         self.advances: list[tuple[str, int, int]] = []
 
     def advance_time(
@@ -660,7 +645,24 @@ def _execute_study_plan(
     project.mkdir()
     (project / ".mcp.json").write_text('{"mcpServers":{}}\n', encoding="utf-8")
     store = LocalRunStore(tmp_path / "runs")
-    manager = _FakeRuntimeManager()
+    target = replace(
+        create_stub_target(),
+        manifest=replace(
+            create_aptl_manifest(participant_inject_delivery=True),
+            supported_contract_versions=create_aptl_manifest(
+                participant_inject_delivery=True
+            ).supported_contract_versions
+            - {
+                "backend-runtime-descendants-v1",
+                "backend-materialization-attestation-v1",
+            },
+        ),
+    )
+    # Production builds the run's one runtime with the plan's participant
+    # configuration before any turn (OpenRAE/rae#1660).
+    from aptl.backends._raes_participant_crossing import participant_runtime_options
+
+    manager = _FakeRuntimeManager(target, **participant_runtime_options(plan, target))
     selected_profiles: list[ProfileId] = []
 
     def render(**kwargs: object) -> tuple[Path, tuple[str, ...]]:
@@ -688,10 +690,7 @@ def _execute_study_plan(
             model="claude-sonnet-5",
             run_store=store,
             run_id="run-coordinator",
-            target=replace(
-                create_stub_target(),
-                manifest=create_aptl_manifest(participant_inject_delivery=True),
-            ),
+            target=target,
             runtime_manager=manager,
             initial_snapshot=manager.snapshot,
             runner=runner,

@@ -1,54 +1,87 @@
 # Platform pull-request gates
 
-Pull requests to `dev` require the existing **Pre-commit hooks**, **Python
-tests + coverage**, **MCP TypeScript tests + coverage**, **Dependency
-vulnerability scan**, **Clean-install lab boot and teardown (DEP-008)**,
-**Trivy filesystem scan**, **Trivy IaC / config scan**, **Trivy image scan**,
-**OSV-scanner (uv.lock)**, and **RAES scenario validation gate** contexts. Other established required quality and governance checks remain in
-the branch rule. The exact context names are recorded in
-`.github/branch-protection-baseline.json`; the live GitHub branch settings are
-the enforcement authority.
+Pull requests to `dev` require these existing contexts:
 
-The dependency job fails on known Python findings in the generated CLI/runtime,
-API/web, and CI/build exports and on high or critical production dependency
-findings in the web and all MCP package locks. It also fails when a lock,
-install, or scanner fails. ADR-026 records the boundary and the format for any
-temporary platform exception. There are currently no such exceptions.
+- **Pre-commit hooks**
+- **Python tests + coverage**
+- **MCP TypeScript tests + coverage**
+- **Dependency vulnerability scan**
+- **Clean-install lab boot and teardown (DEP-008)**
+- **Trivy filesystem scan**
+- **Trivy IaC / config scan**
+- **Trivy image scan**
+- **OSV-scanner (uv.lock)**
+- **RAES scenario validation gate**
 
-The Trivy filesystem, IaC, and image scans fail on any CRITICAL, HIGH, or
-MEDIUM vulnerability that has an available fix, on any secret, and on any IaC
-misconfiguration. Each scan also records every finding, including
-vulnerabilities that have no upstream fix yet, in GitHub code scanning, where an
-alert stays open until a scan stops reporting it. `.trivyignore.yaml` holds the
-only waivers, each scoped to exact Dockerfiles with its reason. OSV-scanner
-fails on any `uv.lock` finding. The ADR-026 amendment for issue #1193 records
-the policy.
+Other established required quality and governance checks stay in the branch
+rule. `.github/branch-protection-baseline.json` records the exact context
+names. The live GitHub branch settings are the enforcement authority. While the
+Go port is in progress, pull requests to `go-cutover` require the same contexts
+as `dev`. See [CI verification](../architecture/ci-verification.md#go-cutover-branch).
 
-The clean-install job builds a wheel, installs it in an empty virtual
-environment, materializes a fresh project, and starts only the product-neutral
-`materialization-envelope.sdl.yaml` scenario from APTL's owned
-[lab fixture pack](lab-fixture-pack.md). It checks native effects in the
-project's running container, stops the lab with volumes, and proves that the
-effective workspace project has no remaining containers, networks, or volumes.
-Anonymous volumes and ephemeral helper containers carry no project identity, so
-the job also records what the daemon holds before the lab starts and fails on
-any of either that teardown leaves behind. That comparison only observes; it
-deletes nothing.
+Pull requests to `dev` merge through a merge queue. Each required context
+also runs on the merge group. A failed context keeps the pull request from
+merging. See [CI verification](../architecture/ci-verification.md#dev-merge-queue)
+and [ADR-068](../adrs/adr-068-dev-merge-queue.md).
 
-The scenario carries one causal realization chain, so none of those checks can
-pass on a declaration alone: inline content moves the SSH daemon off its
-package default port, the declared service unit starts it, the declared
-listener binds the moved port, and that port is published on an exact loopback
-host binding. `scripts/ci/assert_boot_realization.py` reads the placed bytes
-inside the container, queries the service manager for the unit's enabled,
-active and result state, observes the live listener from outside the
-container's trust boundary, requires the exact published-port tuple and no
-wider one, opens a connection to it, and parses the persisted workflow with
-the RAES execution-state contract. `docs/testing/boot-realization-coverage.md`
-maps every concern APTL's realization envelope advertises to the tests that
-hold it, and names the concerns this small boot deliberately does not claim.
+The dependency job fails on known Python findings in three generated exports:
+CLI/runtime, API/web, and CI/build. It also fails on high or critical
+production dependency findings in the web package lock and all MCP package
+locks. It also fails when a lock, install, or scanner fails. ADR-026 records
+the boundary and the format for a temporary platform exception. There are
+currently no such exceptions.
+
+The Trivy filesystem, IaC, and image scans fail on these findings:
+
+- A CRITICAL, HIGH, or MEDIUM vulnerability that has an available fix.
+- A secret.
+- An IaC misconfiguration.
+
+Each scan also records every finding in GitHub code scanning. This includes
+vulnerabilities that have no upstream fix yet. An alert stays open until a scan
+stops reporting it.
+
+`.trivyignore.yaml` holds the only waivers. Each waiver is
+scoped to exact Dockerfiles and gives its reason. OSV-scanner fails on any
+`uv.lock` finding. The ADR-026 amendment for issue #1193 records the policy.
+
+The clean-install job builds a wheel and installs it in an empty virtual
+environment. It then materializes a fresh project. It starts only the
+product-neutral `materialization-envelope.sdl.yaml` scenario from APTL's owned
+[lab fixture pack](lab-fixture-pack.md). The job checks native effects in the
+project's running container and stops the lab with volumes. It then proves
+that the effective workspace project has no remaining containers, networks, or
+volumes.
+
+Anonymous volumes and ephemeral helper containers carry no project identity.
+Thus the job also records what the daemon holds before the lab starts. It
+fails when teardown leaves behind an anonymous volume or an ephemeral helper
+container. That comparison only observes; it deletes nothing.
+
+The scenario carries one causal realization chain. Thus none of those checks
+can pass on a declaration alone. The chain has these links:
+
+1. Inline content moves the SSH daemon off its package default port.
+2. The declared service unit starts the daemon.
+3. The declared listener binds the moved port.
+4. An exact loopback host binding publishes that port.
+
+`scripts/ci/assert_boot_realization.py` does these checks:
+
+- It reads the placed bytes inside the container.
+- It queries the service manager for the enabled, active, and result state of
+  the unit.
+- It observes the live listener from outside the trust boundary of the
+  container.
+- It requires the exact published-port tuple and no wider one.
+- It opens a connection to that port.
+- It parses the persisted workflow with the RAES execution-state contract.
+
+`docs/testing/boot-realization-coverage.md` maps each concern that APTL's
+realization envelope advertises to the tests that hold it. It also names the
+concerns that this small boot deliberately does not claim.
 
 These checks support the **generic installed-wheel materialization and lab
 lifecycle profile on a GitHub-hosted Ubuntu runner with local Docker**. They do
-not qualify the full TechVault or LilRAE journey. Those qualifications are
-tracked in APTL #870 and #685, and OpenRAE/lilrae #1214, #1219, and #1220.
+not qualify the full TechVault or LilRAE journey. APTL #870 and #685, and
+OpenRAE/lilrae #1214, #1219, and #1220 track those qualifications.

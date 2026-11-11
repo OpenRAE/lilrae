@@ -34,6 +34,10 @@ from aptl.core.evidence.adapters.sources import SourceResult
 from aptl.core.evidence.outcomes import CollectorStatus
 
 _MAX_READINESS_BYTES = 256 * 1024
+MISP_OBSERVER_EFFECT = "one MISP readiness event created, read, and deleted"
+MISP_ATTEMPT_EFFECT = (
+    "one MISP readiness event write attempted; creation and deletion unconfirmed"
+)
 
 #: Every fact the pack's scope requires, and the type each one must carry. A
 #: payload missing a key, or carrying the wrong shape for one, is contradictory
@@ -113,17 +117,19 @@ class MispAuthenticatedApiReadinessSource:
     def fetch(self, start_iso: str, end_iso: str) -> SourceResult:
         payload = self._query(start_iso, end_iso)
         raw = _readiness_document(payload, self._admitted)
+        effect = _write_effect(payload)
         if raw is None:
             status = (
                 CollectorStatus.SOURCE_UNAVAILABLE
                 if payload is None
                 else CollectorStatus.MID_RUN_LOSS
             )
-            return _failure(status)
+            return _failure(status, effect)
         return SourceResult(
             status=CollectorStatus.OK,
             chunks=(raw,),
             media_type="application/json",
+            observer_effect=effect,
             source_pipeline={
                 "source_refs": [
                     {"ref_kind": "other", "ref_id": ref}
@@ -170,10 +176,25 @@ def _valid_readiness_payload(payload: Mapping[str, object]) -> bool:
     return all(payload[name] is True for name in _REQUIRED_TRUE)
 
 
-def _failure(status: CollectorStatus = CollectorStatus.MID_RUN_LOSS) -> SourceResult:
+def _write_effect(payload: Mapping[str, object] | None) -> str | None:
+    """Name the write effect the probe reported, without claiming more."""
+
+    if payload is None or payload.get("api_write_attempted") is not True:
+        return None
+    if payload.get("api_write_completed") is True:
+        return MISP_OBSERVER_EFFECT
+    return MISP_ATTEMPT_EFFECT
+
+
+def _failure(status: CollectorStatus, effect: str | None) -> SourceResult:
     """Return one bounded, secret-free failure with no partial evidence."""
 
-    return SourceResult(status=status, chunks=(), media_type="application/json")
+    return SourceResult(
+        status=status,
+        chunks=(),
+        media_type="application/json",
+        observer_effect=effect,
+    )
 
 
 __all__ = ("AdmittedMispState", "MispAuthenticatedApiReadinessSource")

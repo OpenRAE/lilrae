@@ -1,741 +1,106 @@
 # Default Defensive Posture
 
-> Historical baseline record (scope notice added 2026-10-12): the sections
-> below retain the earlier defensive baseline description. The Active Directory
-> and Shuffle references now identify the acquired pack and backend owners.
-> Baseline intent does not establish the state of a running lab. Use the
-> admitted scenario configuration and
-> [deployment observations](../deployment.md#observe-a-deployment) for that.
-> The current [Kali guide](kali-redteam.md) describes the red-team node.
+This reference distinguishes authored weaknesses, enabled detection, and disabled response coupling.
+The admitted pack and runtime observations determine a run's actual state.
+A historical baseline cannot establish that state.
 
-The lab ships with an **intentionally weak** starting posture. Every
-defensive surface is either off, empty, or runs in detect-only mode at
-first boot. Every target weakness is intentional and unhardened.
-
-This document is the source of truth for *what ships in what state* so
-researchers reading run results can tell the difference between:
-
-- A gap that **blue closed during the run** (for example, enabled an
-  active-response block), and
-- A gap that **was already wired but inactive** (for example, the
-  active-response block existed in the config but stayed disabled).
-
-Issue [#251](https://github.com/OpenRAE/lilrae/issues/251)
-introduced this contract. ADRs
-[019](../adrs/adr-019-suricata-ids-only-prevention-via-wazuh-ar.md),
-[021](../adrs/adr-021-active-response-whitelist-via-wrapper.md), and
-[022](../adrs/adr-022-misp-driven-suricata-rules.md) anchor the architectural
-decisions behind individual surfaces.
+The [source record](records/default-defensive-posture-2026-11-06.txt) keeps the earlier baseline at revision `28fc8f18`.
+It includes original design reasons and proposed mode behavior.
+Status reviewed: 2026-11-06.
 
 ## How to read this doc
 
-Every section in this document is tagged with one of three banners:
+| Term | Meaning |
+| --- | --- |
+| `WEAKNESS BY DESIGN` | This term means an intentional scenario weakness, such as a planted credential or excessive account privilege. |
+| `STARTING POSTURE` | This term means response coupling that is disabled, absent, or empty before a participant changes it. |
+| `BASELINE ENABLED` | This term means detection or collection that already operates at startup. |
 
-- **WEAKNESS BY DESIGN**: the *target's* intentional vulnerability.
-  The lab ships these unhardened on purpose so red has something to
-  attack. Blue defends *against* them by hardening (for example, rotating to
-  strong passwords) or detecting-then-blocking. Examples: AD weak
-  passwords, Kerberoastable service accounts.
-- **STARTING POSTURE**: a *defensive tool* that ships installed and
-  wired but **disabled, empty, or absent**. Blue *enables, configures,
-  or populates* these per iteration to raise the posture. Examples:
-  Wazuh active-response blocks (all `<disabled>yes</disabled>`), MISP
-  IOC store (empty), and blue-authored rules files (absent until blue
-  writes one).
-- **BASELINE ENABLED**: a *defensive tool* that **is on at first
-  boot** and produces output (alerts, logs, traces). Blue does **not**
-  need to enable these; they fire on their own. What blue *does*
-  control is the downstream coupling: which baseline detections feed
-  enforcement (active-response) or workflow (Shuffle → TheHive).
-  Examples: Wazuh detection rules, Suricata IDS alerting.
-
-If you can't tell whether a surface is `WEAKNESS BY DESIGN`,
-`STARTING POSTURE`, or `BASELINE ENABLED`, ask:
-
-- "*Is the per-iteration blue task to turn it on?*" → STARTING POSTURE.
-- "*Is the per-iteration blue task to harden the thing it points at?*"
-  → WEAKNESS BY DESIGN.
-- "*Is the tool already producing output that blue couples downstream?*"
-  → BASELINE ENABLED.
-
-Each section follows the same template:
-
-- **Tag**: `WEAKNESS BY DESIGN`, `STARTING POSTURE`, or `BASELINE ENABLED`.
-- **Default state**: what ships, with file:line citations.
-- **Why it ships this way**: design rationale.
-- **What blue would do to raise it**: the per-iteration action.
-- **Source of truth**: files a developer can grep to confirm.
-
----
+Detection and response are separate facts.
+A rule can generate alerts while its response block remains disabled.
+Startup verification activity can leave events before participant work begins.
 
 ## Suricata IDS
 
-**Tag:** `BASELINE ENABLED` for the IDS itself + bundled / local alert
-rules. `STARTING POSTURE` for the MISP-driven IOC chain (empty until
-blue graduates IOCs).
+Suricata uses passive packet capture.
+It does not give inline packet drops.
+The checked configuration loads bundled rules, `local.rules`, and generated `misp/misp-iocs.rules`.
+The local rules use `alert` actions.
 
-**Default state**
+MISP synchronization selects `aptl:enforce` attributes by default.
+It writes alert rules and hash lists to the admitted runtime volume.
+Its default interval is 300 seconds.
+Empty checked-in seeds do not prove an empty running MISP instance.
 
-- IDS-only mode. Suricata runs with `command: ["-c",
-  "/etc/suricata/suricata.yaml", "--pcap"]`
-  ([`docker-compose.yml:199`](https://github.com/OpenRAE/lilrae/blob/main/docker-compose.yml))—no NFQ, no
-  `inline:`, no `nfqueue:`. Per [ADR-019](../adrs/adr-019-suricata-ids-only-prevention-via-wazuh-ar.md),
-  packet-level prevention is delivered by Wazuh active-response, **not**
-  Suricata.
-- Loaded rule files
-  ([`config/suricata/suricata.yaml:97-104`](https://github.com/OpenRAE/lilrae/blob/main/config/suricata/suricata.yaml)):
-  - `suricata.rules` (bundled ET Open ruleset).
-  - `local.rules`: APTL-authored network detection rules.
-  - `misp/misp-iocs.rules`: generated by `aptl-misp-suricata-sync` from
-    MISP attributes tagged `aptl:enforce`.
-- `local.rules` ships **16 `alert` rules and zero `drop` rules**
-  ([`config/suricata/rules/local.rules`](https://github.com/OpenRAE/lilrae/blob/main/config/suricata/rules/local.rules)).
-  Examples: Nmap SYN scan (sid 1000001), SQL injection via UNION
-  (sid 1000010), XSS (sid 1000020), Kerberoasting (sid 1000040).
-- `misp/misp-iocs.rules` ships **empty** (header `ioc_count=0`).
-  Hash-list sidecars `misp-md5.list`, `misp-sha1.list`,
-  `misp-sha256.list` ship empty too. These checked-in files are baseline
-  seeds; `aptl lab start` seeds them into the `aptl_suricata_misp_rules` named
-  volume (ADR-043, mounted at `/var/lib/suricata/rules/misp`), and the sync
-  service writes generated runtime state there.
-
-**Why it ships this way**
-
-ADR-019 records the deliberate constraint that Suricata stays
-alert-only in this lab—Docker's anti-spoof and bridge+NFQ both block
-clean Suricata IPS, and Wazuh active-response is a cleaner prevention
-path that already integrates with the agent layer. The MISP→Suricata
-sync is detection, not prevention. An empty IOC store is the *default
-contract*, not a misconfiguration.
-
-**What blue would do to raise it**
-
-- Tag MISP attributes with `aptl:enforce`. The sync service
-  ([`src/aptl/services/misp_suricata_sync/main.py`](https://github.com/OpenRAE/lilrae/blob/main/src/aptl/services/misp_suricata_sync/main.py))
-  picks them up at the next interval (default 300 s) and writes them
-  to `misp-iocs.rules` as `alert` rules. See
-  [ADR-022](../adrs/adr-022-misp-driven-suricata-rules.md).
-- Author additional `alert` rules in `local.rules`. **Do not add `drop`
-  rules**—they violate ADR-019 and the
-  `test_action_is_always_alert_never_drop` regression guard in
-  `tests/test_misp_suricata_sync.py`.
-
-**Source of truth**
-
-| Surface | File |
-|---|---|
-| IDS-only invocation | [`docker-compose.yml:199`](https://github.com/OpenRAE/lilrae/blob/main/docker-compose.yml) |
-| Rule file load order | [`config/suricata/suricata.yaml:97-104`](https://github.com/OpenRAE/lilrae/blob/main/config/suricata/suricata.yaml) |
-| Local alert rules | [`config/suricata/rules/local.rules`](https://github.com/OpenRAE/lilrae/blob/main/config/suricata/rules/local.rules) |
-| MISP baseline seeds | [`config/suricata/rules/misp/`](https://github.com/OpenRAE/lilrae/tree/main/config/suricata/rules/misp) |
-| MISP generated rule output | `aptl_suricata_misp_rules` volume → `/var/lib/suricata/rules/misp/misp-iocs.rules` |
-| Hash-list sidecars | `aptl_suricata_misp_rules` volume → `/var/lib/suricata/rules/misp/` |
-
----
+See [ADR-019](../adrs/adr-019-suricata-ids-only-prevention-via-wazuh-ar.md) and [ADR-043](../adrs/adr-043-suricata-runtime-config-ownership-boundary.md).
 
 ## Wazuh detection rules
 
-**Tag:** `BASELINE ENABLED`. Detection rules are loaded and active at
-first boot—they generate alerts on matching events. What is **not**
-coupled at first boot is the *downstream response*: every
-`<active-response>` block ships `<disabled>yes</disabled>` (see next
-section), and no blue-authored rules file exists until blue writes one.
+The manager loads the bundled ruleset and declared custom rules.
+The acquired pack owns scenario-specific decoders and content.
+Red-side self-reports do not feed the defensive SIEM under ADR-033.
 
-**Default state**
-
-- Manager loads bundled Wazuh rules plus seven custom rule files via
-  `<rule_include>` in
-  [`config/wazuh_cluster/wazuh_manager.conf:356-368`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf).
-- Two rule directories are watched
-  ([`config/wazuh_cluster/wazuh_manager.conf:345-346`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf)):
-  - `ruleset/rules`: bundled Wazuh ruleset (read-only).
-  - `etc/rules`: APTL custom rules **and** the hot directory where
-    blue writes its own rules files at runtime.
-
-| Custom file | Catches | Severity range |
-|---|---|---|
-| `local_rules.xml` | local overrides | varies |
-| `falco_rules.xml` | Falco runtime behaviour | varies |
-| `ad_rules.xml` | brute force, Kerberoasting, AD enumeration, Domain Admin mods | 3–12 |
-| `webapp_rules.xml` | SQLi, XSS, command injection, brute force | 0–12 |
-| `suricata_rules.xml` | network-side correlation against Suricata alerts | 0–10 |
-| `database_rules.xml` | DB brute force, schema mods, large exports | 5–12 |
-
-`kali_redteam_rules.xml` (the prior "SSH session boundary events
-from kali" row) was removed under ADR-033 (OBS-003
-non-contamination): red activity must not be ingested by the
-defensive stack via the SIEM. Red-side captures live in the
-per-run experimental record under `.aptl/runs/<run_id>/`.
-
-- Decoders for postgresql and samba ship in the acquired TechVault pack as
-  [`postgresql_decoders.xml` and `samba_decoders.xml`](https://github.com/OpenRAE/env-packs/tree/main/packs/techvault/assets/content),
-  which the pack installs under `/var/ossec/etc/decoders/`.
-  (`kali_decoders.xml` deleted under ADR-033.)
-- **No blue-authored rules file ships.** Blue writes one at runtime
-  with the `create_rule` tool of the `mcp-indexer` MCP server, or the
-  `create_detection_rule` tool of the `mcp-wazuh` MCP server. Both tools
-  PUT to `/rules/files/{filename}` on the Wazuh Manager API (auth via
-  `wazuh-jwt`). The caller names the file in `params.filename`. The name
-  must end in `.xml` and contain only letters, digits, `_`, `.` or `-`;
-  the tools refuse any other name before they send a request. An upload
-  replaces the whole file, and the API refuses an existing file unless
-  the caller sets `params.overwrite` to `true`. Then blue calls the
-  `restart_manager` tool, which hits `/manager/restart`. The manager
-  is unavailable for ~30-90 s while daemons cycle, then the new rules
-  take effect. See
-  [`mcp/mcp-indexer/docker-lab-config.json`](https://github.com/OpenRAE/lilrae/blob/main/mcp/mcp-indexer/docker-lab-config.json).
-  The manager loads rules files in name order. A file whose child rules
-  `<if_sid>` into the 302xxx parents in `webapp_rules.xml` must have a
-  name that sorts after `webapp_rules.xml`.
-
-**Why it ships this way**
-
-Detection content is part of the lab's static surface—rules don't
-move during a run, and the Wazuh manager would have to restart to
-pick up changes. What *is* dynamic is whether their detections lead
-to enforcement (active-response) or to incident workflow (Shuffle →
-TheHive). Both of those are wired but disabled at first boot.
-
-**What blue would do to raise it**
-
-- Write a rules file with the `mcp-indexer` MCP server's `create_rule`
-  tool, then call `restart_manager` to apply it. The ~30-90 s manager
-  downtime is the cost of a rule update during an iteration.
-- Add custom rules to `etc/rules/` (manager image rebuild + `lab
-  start`) and reference them from `<active-response>` blocks (see
-  next section) to couple detection to enforcement.
-
-**Source of truth**
-
-| Surface | File |
-|---|---|
-| Rule include order | [`config/wazuh_cluster/wazuh_manager.conf:356-368`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf) |
-| Hot rule directory | [`config/wazuh_cluster/wazuh_manager.conf:345-346`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf) |
-| Custom rule files | `*_rules.xml` in the acquired [`techvault` environment pack](https://github.com/OpenRAE/env-packs/tree/main/packs/techvault/assets/content) |
-| Custom decoders | `*_decoders.xml` in the acquired [`techvault` environment pack](https://github.com/OpenRAE/env-packs/tree/main/packs/techvault/assets/content) |
-| Blue-authored rules files (runtime-only) | not shipped; written by the caller through `create_rule` |
-
----
+A blue-authored rule upload must have an explicit XML filename.
+Replacement must have an explicit overwrite choice.
+The connected server's schema defines the installed tool contract.
+See [MCP reference](../reference/mcp.md).
 
 ## Wazuh active-response
 
-**Tag:** `STARTING POSTURE`
-
-**Default state**
-
-- Five `<active-response>` blocks are wired in the manager config and
-  **all five ship `<disabled>yes</disabled>`**
-  ([`config/wazuh_cluster/wazuh_manager.conf:262-304`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf)):
-
-  | Rule | Catches | Timeout |
-  |---|---|---|
-  | 5763   | SSH brute force | 120 s |
-  | 302060 | webapp brute force | 120 s |
-  | 302010 | webapp SQL injection | 120 s |
-  | 301002 | AD Kerberos attack | 120 s |
-  | 304040 | database exfiltration | 120 s |
-
-- All five reference the `aptl-firewall-drop` wrapper command (declared
-  at
-  [`wazuh_manager.conf:229-234`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf))—
-  not bare `firewall-drop`. The wrapper consults a kali-IP whitelist
-  before forwarding to upstream `firewall-drop` and unconditionally
-  passes `delete` (cleanup) commands through.
-- Whitelist file
-  ([`config/wazuh_cluster/etc/lists/active-response-whitelist`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/etc/lists/active-response-whitelist))
-  pre-seeds the kali IPs `172.20.4.30`, `172.20.1.30`, `172.20.2.35`.
-- Companion ADRs:
-  [ADR-021](../adrs/adr-021-active-response-whitelist-via-wrapper.md) (wrapper
-  rationale), [ADR-019](../adrs/adr-019-suricata-ids-only-prevention-via-wazuh-ar.md)
-  (why AR is the prevention path), and the
-  [Wazuh active-response component reference](wazuh-active-response.md)
-  (architecture, severity gate, timeout strategy).
-
-**Why it ships this way**
-
-Issue [#249](https://github.com/OpenRAE/lilrae/issues/249)
-established the rule that all active-response blocks ship disabled by
-default—researchers reading a run result can then distinguish "blue
-turned this on during iteration N" from "blue inherited an active
-block from the lab." Even the previously on rule-5763 SSH brute-force
-block was **deliberately weakened** to `<disabled>yes</disabled>` in
-v6.6.0 to make the starting posture uniformly off. The `aptl-firewall-drop`
-wrapper plus whitelist prevents a runaway AR block from blocking
-kali's own IPs and wedging the purple loop.
-
-**What blue would do to raise it**
-
-- Delete the `<disabled>yes</disabled>` line on a chosen
-  `<active-response>` block per iteration.
-- Author additional blocks pointing at custom rule IDs (for example, new
-  rule IDs in a blue-authored rules file).
-- Update the kali whitelist if red ever moves out of the seeded IPs;
-  re-running `aptl lab stop -v && aptl lab start` re-renders agent
-  carve-outs.
-
-**Source of truth**
-
-| Surface | File |
-|---|---|
-| AR block declarations (all disabled) | [`config/wazuh_cluster/wazuh_manager.conf:262-304`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf) |
-| AR command declaration | [`config/wazuh_cluster/wazuh_manager.conf:229-234`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf) |
-| Wrapper script | [`containers/_wazuh-agent/aptl-firewall-drop.sh`](https://github.com/OpenRAE/lilrae/blob/main/containers/_wazuh-agent/aptl-firewall-drop.sh) |
-| Kali whitelist | [`config/wazuh_cluster/etc/lists/active-response-whitelist`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/etc/lists/active-response-whitelist) |
-| Architectural reference | [`docs/components/wazuh-active-response.md`](wazuh-active-response.md) |
-
----
+The five response blocks in `config/wazuh_cluster/wazuh_manager.conf` start disabled.
+They select rules 5763, 302060, 302010, 301002, and 304040, with 120-second timeouts.
+Only `aptl-firewall-drop` enforces the Kali source-IP whitelist.
+See the [response reference](wazuh-active-response.md) for command and matcher semantics.
 
 ## MISP IOCs
 
-**Tag:** `STARTING POSTURE` for the `aptl:enforce` graduation lane.
-The MISP store itself ships **empty at first lab boot**, but a prime
-research scenario seed exists out-of-band—see below.
-
-**Default state**
-
-- The MISP container starts with upstream image defaults. **At first
-  `aptl lab start`, no APTL-side IOCs are loaded**: there are no
-  pre-existing events, no `aptl:enforce`-tagged attributes, no
-  graduated indicators.
-- An optional seed script
-  ([`scripts/seed-misp.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-misp.sh)) creates an
-  "APTL Lab - Known Threat Actors" event with kali-IP indicators and
-  injection-pattern signatures. It is **not run automatically by
-  `aptl lab start`**—it must be invoked explicitly (or via
-  [`scripts/seed-prime.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh), which is
-  the prime-scenario master seed). The seed script is idempotent.
-  IOCs created by `seed-misp.sh` are **not tagged `aptl:enforce`** at
-  seed time—graduation to enforcement is still blue's per-iteration
-  decision.
-- The `aptl-misp-suricata-sync` daemon
-  ([`src/aptl/services/misp_suricata_sync/main.py`](https://github.com/OpenRAE/lilrae/blob/main/src/aptl/services/misp_suricata_sync/main.py))
-  runs continuously and polls MISP for attributes tagged
-  `aptl:enforce` (default tag in
-  [`src/aptl/services/misp_suricata_sync/config.py:150`](https://github.com/OpenRAE/lilrae/blob/main/src/aptl/services/misp_suricata_sync/config.py)).
-  An empty MISP—or a seeded MISP with no `aptl:enforce` tags—
-  returns zero matching attributes; the sync service writes an empty
-  rule file (`ioc_count=0`) and reloads Suricata.
-- If MISP is briefly unreachable, the sync service preserves
-  last-known-good rules
-  ([`src/aptl/services/misp_suricata_sync/main.py:74-75`](https://github.com/OpenRAE/lilrae/blob/main/src/aptl/services/misp_suricata_sync/main.py))
-  rather than wiping enforcement.
-
-**Why it ships this way**
-
-[ADR-022](../adrs/adr-022-misp-driven-suricata-rules.md) defines a
-**tag-graduated enforcement model**: an indicator's presence in MISP
-does not by itself trigger enforcement. Blue must add the
-`aptl:enforce` tag to graduate it. This separates
-"intelligence-curation" (which seed scripts can prime) from
-"enforcement" (which the default posture leaves empty). At first
-boot, and even after the optional seed runs, the enforcement lane
-has zero graduated indicators on purpose.
-
-**What blue would do to raise it**
-
-- Submit IOCs to MISP via the `aptl-threatintel` MCP server (or the
-  MISP UI/REST API) and tag the ones blue is willing to enforce with
-  `aptl:enforce`. Wait one sync interval (default 300 s) for them to
-  appear in `misp-iocs.rules`.
-- Customize the tag filter (`IOC_TAG_FILTER` env var) if iteration
-  runbooks use a different graduation tag.
-
-**Source of truth**
-
-| Surface | File |
-|---|---|
-| Sync service config | [`src/aptl/services/misp_suricata_sync/config.py`](https://github.com/OpenRAE/lilrae/blob/main/src/aptl/services/misp_suricata_sync/config.py) |
-| Sync service main loop | [`src/aptl/services/misp_suricata_sync/main.py`](https://github.com/OpenRAE/lilrae/blob/main/src/aptl/services/misp_suricata_sync/main.py) |
-| Baseline rule seed | [`config/suricata/rules/misp/misp-iocs.rules`](https://github.com/OpenRAE/lilrae/blob/main/config/suricata/rules/misp/misp-iocs.rules) |
-| Generated rule output | `aptl_suricata_misp_rules` volume → `/var/lib/suricata/rules/misp/misp-iocs.rules` |
-| ADR | [ADR-022](../adrs/adr-022-misp-driven-suricata-rules.md) |
-
----
+The checked rule seeds start empty.
+The admitted pack, startup checks, and participant actions can add runtime data.
+An authenticated startup write/read check is distinct from participant IOC promotion.
+MISP's current identity and credentials come from the admitted SDL and generated private configuration.
 
 ## Shuffle SOAR
 
-**Tag:** `STARTING POSTURE`
-
-**Default state**
-
-- Wazuh declares an `<integration>` block forwarding level-≥10 alerts
-  to Shuffle
-  ([`config/wazuh_cluster/wazuh_manager.conf:316-320`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf)).
-- The integration is gated by a **runtime-written webhook URL**. The
-  custom forwarder script, `custom-shuffle`, ships in the acquired
-  TechVault pack's [`wazuh-integrations.tar`](https://github.com/OpenRAE/env-packs/blob/main/packs/techvault/assets/content/wazuh-integrations.tar), which the pack
-  installs in `/var/ossec/integrations`. It
-  reads the URL from `/var/ossec/etc/shuffle_webhook_url` inside the
-  manager container and **silently exits if the file does not exist**.
-  Until that file is written, Wazuh's `<integration>` block is wired
-  but inert.
-- The seed flow runs in two scripts:
-  1. [`scripts/seed-shuffle.sh:265-266`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-shuffle.sh)
-     creates the `APTL Alert to Case` workflow inside the running
-     Shuffle instance via Shuffle's REST API and writes its webhook
-     URL to a **host-side staging file** at
-     `/tmp/aptl_shuffle_webhook_url`. **This step alone is not enough
-     — the Wazuh `custom-shuffle` forwarder reads from inside the
-     manager container, not the host.**
-  2. [`scripts/seed-prime.sh:165-169`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh)
-     reads the host staging file and `docker exec`s the URL into the
-     Wazuh manager container at
-     `/var/ossec/etc/shuffle_webhook_url`. **This step is what
-     activates the Wazuh→Shuffle forwarder.**
-  Both scripts are idempotent.
-- **Neither script is run by `aptl lab start`.** Until an operator
-  runs `seed-prime.sh` (or runs `seed-shuffle.sh` followed by the
-  manual `docker exec` to copy the URL into the manager), the
-  Wazuh→Shuffle forwarder no-ops.
-
-**Why it ships this way**
-
-The integration boundary (Wazuh's `<integration>` block, the
-`custom-shuffle` forwarder, the webhook-file gate) is in source
-control. The workflow *content* is created by an explicit seed step
-so iteration runbooks can choose whether to prime the prime-scenario
-defaults or start fresh. The `custom-shuffle` script's silent-exit
-behaviour means a freshly started lab has no half-wired forwarder
-firing into a missing webhook.
-
-**What blue would do to raise it**
-
-- Run `scripts/seed-prime.sh` for the full prime-scenario seed
-  (recommended—handles both the Shuffle-side workflow creation and
-  the Wazuh-side webhook-URL copy in one shot). Running
-  `seed-shuffle.sh` alone leaves the Wazuh forwarder still inert.
-- Author additional Shuffle workflows that consume Wazuh alerts,
-  query MISP for context, enrich TheHive cases, or trigger automated
-  containment outside the Wazuh AR path. Workflow content lives in
-  Shuffle's own DB; check exports into `scripts/seed-*.sh` patterns
-  if a workflow becomes part of the permanent baseline.
-- Lower the `<level>` threshold in the manager `<integration>` block
-  if blue wants Shuffle to see medium-severity alerts.
-
-**Source of truth**
-
-| Surface | File |
-|---|---|
-| Wazuh→Shuffle forwarder (declaration) | [`config/wazuh_cluster/wazuh_manager.conf:316-320`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf) |
-| Forwarder script (gated by webhook file) | `custom-shuffle` in the acquired TechVault pack's [`wazuh-integrations.tar`](https://github.com/OpenRAE/env-packs/blob/main/packs/techvault/assets/content/wazuh-integrations.tar) |
-| Workflow seed script | [`scripts/seed-shuffle.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-shuffle.sh) |
-| Prime master seed | [`scripts/seed-prime.sh`](https://github.com/OpenRAE/lilrae/blob/main/scripts/seed-prime.sh) |
-
----
-
-## TheHive case templates
-
-**Tag:** `STARTING POSTURE`
-
-**Default state**
-
-- TheHive starts with **upstream defaults**—no APTL-side seeded case
-  templates, observable types, or custom case fields.
-- Case structure is driven by what `APTL Alert to Case` (Shuffle
-  workflow) posts: title from the Wazuh rule, observables from the
-  alert payload, severity from `level`.
-
-**Why it ships this way**
-
-Case workflow design is part of blue's per-iteration content. A
-prescriptive template would steer the experiment.
-
-**What blue would do to raise it**
-
-- Define case templates in TheHive (categories, severity ladder,
-  required observable fields) per scenario.
-- Customize the Shuffle workflow that creates cases to populate those
-  fields from Wazuh + MISP.
-
-**Source of truth**
-
-| Surface | File |
-|---|---|
-| Wazuh→Shuffle→TheHive integration | [`config/wazuh_cluster/wazuh_manager.conf:316-320`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf) |
-| Case templates | none in repo; configured in TheHive UI per iteration |
-
----
+The manager declares a `custom-shuffle` integration for level-10 alerts.
+A declaration alone does not prove webhook delivery or an enabled workflow.
+The admitted pack and backend own Shuffle services and runtime configuration.
+See the [scenario reference](../reference/techvault-scenario-overview.md).
 
 ## Identity controls (Active Directory)
 
-**Tag:** This section mixes both banners. The intentional account-side
-weaknesses are `WEAKNESS BY DESIGN`. The account-lockout state is
-documented separately below.
-
-**Default state—account weaknesses (`WEAKNESS BY DESIGN`)**
-
-The acquired TechVault pack declares the domain's accounts in the
-`accounts` section of its SDL
-([`techvault.sdl.yaml`](https://github.com/OpenRAE/env-packs/blob/main/packs/techvault/sdl/techvault.sdl.yaml)).
-Each account has a `password_strength`, its groups and, for a service
-account, an SPN. LilRAE's Samba AD provider creates the accounts on the
-`ad` node. These declarations are the intentional vulnerabilities:
-
-| Surface | What ships | SDL account |
-|---|---|---|
-| Weak password—`Administrator` | built-in domain administrator, declared `weak` | `ad-administrator` |
-| Weak password—`michael.thompson` | seasonal password, declared `weak` | `ad-michael-thompson` |
-| Weak password—`jessica.williams` | declared `weak` | `ad-jessica-williams` |
-| Default-issued—`contractor.temp` | abandoned contractor account with a default password, declared `weak`, in `VPN-Users`, `Remote-Desktop` and `Engineering` | `ad-contractor-temp` |
-| Stale account—`former.employee` | still enabled, declared `weak` | `ad-former-employee` |
-| Over-privilege—`emily.chen` | DevOps account in `Domain Admins` | `ad-emily-chen` |
-| Over-privilege—`svc-backup` | service account in `Domain Admins` | `ad-svc-backup` |
-| Kerberoastable—`svc-sql` | SPN `MSSQLSvc/db.techvault.local:1433`, declared `weak` | `ad-svc-sql` |
-| Kerberoastable—`svc-web` | SPN `HTTP/webapp.techvault.local`, declared `weak` | `ad-svc-web` |
-
-The pack declares no password values. For each `weak` or `medium`
-account, LilRAE mints a password of the declared class, proves it by
-authenticating as that account, and writes it only to the project's
-`.aptl/realization/account-credentials/` directory: mode 0600 files under
-a 0700 directory. A `strong` account gets a password that the target
-generates with `samba-tool user create --random-password`, and nothing
-reads it back. When any declared account is `weak`, LilRAE first relaxes
-the domain password policy with `samba-tool domain passwordsettings set
---complexity=off --min-pwd-length=1 --min-pwd-age=0 --history-length=0`,
-so that the weak passwords hold
-([`_compose_account_realization.py`](https://github.com/OpenRAE/lilrae/blob/main/src/aptl/core/deployment/_compose_account_realization.py),
-[`_account_provider.py`](https://github.com/OpenRAE/lilrae/blob/main/src/aptl/core/deployment/_account_provider.py)).
-Running labs are intended to be isolated by `internal: true` Docker
-networks. If a deployment exposes the AD container externally, the weak
-passwords become a credential-guessing risk against that deployment.
-
-**Default state—account lockout**
-
-Neither the pack nor LilRAE sets an account-lockout policy. The domain
-keeps the lockout settings that `samba-tool domain provision` writes,
-and the password-policy change above leaves them unchanged.
-
-**Samba configuration baseline**
-
-The AD DC's `smb.conf` is generated by `samba-tool domain provision` on
-the Samba provider's first start
-([`containers/generic-samba-ad-base/provision-domain.sh:21-28`](https://github.com/OpenRAE/lilrae/blob/main/containers/generic-samba-ad-base/provision-domain.sh))
-with stock provisioning parameters (`--server-role=dc`,
-`--use-rfc2307`, `--dns-backend=SAMBA_INTERNAL`). Neither the repository
-nor the pack ships an override `smb.conf` for the `ad` node, an
-`extra_smb_conf` snippet, or any post-provision sed/append that locks
-down anonymous null-session policy, RPC pipe access, or SMB1 fallback.
-Whether the running DC permits anonymous SMB enumeration depends on
-Samba's stock defaults for the AD DC role at the version in the
-provider image
-([`containers/generic-samba-ad-base/Dockerfile`](https://github.com/OpenRAE/lilrae/blob/main/containers/generic-samba-ad-base/Dockerfile),
-Ubuntu's Samba packages). Those defaults historically have been
-permissive enough that a SOC-101 "check what an unauthenticated
-null-session can list" exercise produces meaningful output.
-
-If blue rotates this from a passive baseline to a hardened one, the
-expected per-iteration action is to drop an override `smb.conf` (or
-`samba-tool` post-provision step) into the AD container that
-explicitly sets `restrict anonymous = 2`, removes guest fallback, and
-disables SMB1—and check that override into the repo so the new
-baseline is verifiable.
-
-**Why it ships this way**
-
-These are the *target's* deliberate flaws. Red exploits them
-(Kerberoasting, password spraying, lateral movement via over-priv
-accounts, anonymous SMB enumeration) and blue defends against them by
-detecting (Wazuh AD rules), responding (active-response), or
-hardening (rotating to strong passwords, removing Domain Admin
-membership, disabling null-sessions). Each account's SDL `description`
-names its intentional weakness.
-
-**What blue would do to raise it**
-
-- *Observe:* the admitted TechVault pack's AD detection rules are loaded and
-  fire on matches by default (BASELINE ENABLED).
-  Blue does not need to enable them—they observe automatically.
-- *Couple to enforcement:* enable the `301002` AD Kerberos
-  `<active-response>` block (delete `<disabled>yes</disabled>` in
-  [`config/wazuh_cluster/wazuh_manager.conf:289-295`](https://github.com/OpenRAE/lilrae/blob/main/config/wazuh_cluster/wazuh_manager.conf))
-  to convert detections of rule 301002 into an `aptl-firewall-drop`
-  action.
-- *Harden the target:* rotate weak passwords, remove `emily.chen` /
-  `svc-backup` from `Domain Admins`, set SPN protections on
-  `svc-sql`/`svc-web`, override the Samba default to disable
-  anonymous null-session policy.
-
-**Source of truth**
-
-| Surface | File |
-|---|---|
-| Account declarations (weak passwords, over-privilege, SPNs) | `accounts` in the acquired pack's [`techvault.sdl.yaml`](https://github.com/OpenRAE/env-packs/blob/main/packs/techvault/sdl/techvault.sdl.yaml) |
-| Account realization and password disclosure | [`src/aptl/core/deployment/_compose_account_realization.py`](https://github.com/OpenRAE/lilrae/blob/main/src/aptl/core/deployment/_compose_account_realization.py) |
-| Domain provisioning | [`containers/generic-samba-ad-base/provision-domain.sh`](https://github.com/OpenRAE/lilrae/blob/main/containers/generic-samba-ad-base/provision-domain.sh) |
-| Wazuh AD detection rules | Acquired [`techvault` environment pack](https://github.com/OpenRAE/env-packs/tree/main/packs/techvault) |
-
----
+The admitted SDL owns account names, group membership, SPNs, credential fixtures, and disabled state.
+The backend realizes and reads back those declarations.
+A planted weak credential is scenario content, separate from an operator credential.
+The static account-parity check detects differences between declarations and provisioner behavior.
 
 ## Network segmentation
 
-**Tag:** `STARTING POSTURE` *(structural isolation only—no policy enforcement)*
-
-**Default state**
-
-Four Docker bridges
-([`docker-compose.yml:1357-1398`](https://github.com/OpenRAE/lilrae/blob/main/docker-compose.yml)):
-
-| Network | Subnet | `internal: true`? | Multi-homed containers |
-|---|---|---|---|
-| `aptl-security` | 172.20.0.0/24 | no (egress for image pulls) | Wazuh, SOC tools |
-| `aptl-dmz` | 172.20.1.0/24 | yes (no internet egress) | webapp, mail, DNS, **Suricata**, **Wazuh manager**, **kali** |
-| `aptl-internal` | 172.20.2.0/24 | yes | AD, DB, fileshare, app server, **Suricata**, **Wazuh manager**, **kali** |
-| `aptl-redteam` | 172.20.4.0/24 | yes | **kali** (its primary attachment) |
-
-`internal: true` blocks internet egress at the Docker bridge level
-(per the inline `SAF-002` comment). Multi-homed containers cross
-zones; the lab's notable multi-home decisions:
-
-- **Suricata** sits on dmz / internal / security so it can passively
-  observe all three subnets via pcap.
-- **Wazuh manager** sits on all three so agents in any subnet can
-  reach `1514/1515`.
-- **Kali** is multi-homed onto dmz (172.20.1.30) and internal
-  (172.20.2.35) in addition to redteam (172.20.4.30). This is
-  **deliberate**: red traffic is not forced through a pivot, so
-  packet captures of an attack reflect direct kali→target flows. It
-  also means the lab's "network segmentation" is more about traffic
-  *labeling* than enforcement: kali can talk to dmz and internal
-  targets without a compromised intermediary.
-
-There are **no iptables/nftables rules in the repo**. Inter-subnet
-isolation is structural (Docker bridges) plus naming/labeling
-(scenario IPs, MITRE technique mapping). It is not policy-enforced.
-
-**Why it ships this way**
-
-The lab models segmentation realistically (real networks isolate
-subnets, real attackers move via dual-homed pivots) but does not
-attempt to encode every enterprise firewall rule. Realism vs.
-researcher cognitive load.
-
-**What blue would do to raise it**
-
-- Add explicit container-level network policy via Docker plugins,
-  iptables on host, or service-mesh sidecars.
-- Reduce dual-homing on existing pivot containers (or move purposeful
-  pivots to dedicated minimal containers).
-
-**Source of truth**
-
-| Surface | File |
-|---|---|
-| Network bridge definitions | [`docker-compose.yml:1357-1398`](https://github.com/OpenRAE/lilrae/blob/main/docker-compose.yml) |
-| Per-service network attachments | [`docker-compose.yml`](https://github.com/OpenRAE/lilrae/blob/main/docker-compose.yml) (per service block) |
-
----
+Declared networks and attachments determine peer reachability.
+Kali's multiple attachments permit direct access to several target zones.
+A network name does not prove firewall enforcement or participant containment.
+See [appliance boundary](appliance-boundary.md) for the separate workload-to-management controls.
 
 ## Cross-references
 
-- [ADR-019: Suricata stays IDS-only; prevention via Wazuh AR](../adrs/adr-019-suricata-ids-only-prevention-via-wazuh-ar.md)
-- [ADR-020: Wazuh agents in-process vs sidecar](../adrs/adr-020-wazuh-agents-in-process-vs-sidecar.md)
-- [ADR-021: Active-response whitelist via wrapper](../adrs/adr-021-active-response-whitelist-via-wrapper.md)
-- [ADR-022: MISP-driven Suricata rules](../adrs/adr-022-misp-driven-suricata-rules.md)
-- [Wazuh Active Response component reference](wazuh-active-response.md)
-- [Wazuh SIEM component reference](wazuh-siem.md)
-
----
+- [Wazuh SIEM](wazuh-siem.md)
+- [Node realization](node-realization.md)
+- [Observe a deployment](../deployment.md#observe-a-deployment)
 
 ## How to extend
 
-When adding a new defensive surface (a new SOAR playbook, a new
-active-response command, a new Suricata rule family, a new MISP tag
-graduation lane), the contract is:
-
-1. **Default to inert downstream coupling.** New *detection content*
-   (Wazuh rules, Suricata `alert` rules) may ship enabled—that's
-   BASELINE ENABLED—but the *response coupling* (active-response
-   blocks, Shuffle workflows, MISP `aptl:enforce` graduation, AR
-   webhook URLs) must ship disabled, empty, or absent. The rule of
-   thumb: *raising baseline detection sensitivity is fine; coupling a
-   detection to automated action by default is not*. Blue's per-iter
-   work is to flip the coupling on.
-2. **Tag it.** Edit this document and add a section (or row) under
-   the right banner: `STARTING POSTURE` for new wired-but-inactive
-   coupling; `BASELINE ENABLED` for new always-on detection;
-   `WEAKNESS BY DESIGN` for new intentional target flaws.
-3. **Cite source of truth.** Every new section must cite the
-   files/lines where the default is set so a developer can grep to
-   confirm.
-4. **Cross-reference the ADR.** If the new surface has architectural
-   weight (drop-vs-alert, in-process-vs-sidecar, single-graduation-tag-vs-many),
-   write an ADR first and link it from the section.
-
-The goal is researchers reading a run result should always be able to
-look up *exactly* what the lab gave blue at first boot—no surprises,
-no hidden enforcement, no "this rule already fires on its own."
-
----
+See [change defensive posture](defensive-posture-operations.md).
 
 ## Appendix: forward-looking notes (NOT current contract)
 
-This section captures contracts that **do not yet exist in the code**.
-Read it as design intent, not as documentation of today's behavior.
-
 ### Per-run mode-gated posture (SCN-001)
 
-[SCN-001](https://github.com/OpenRAE/lilrae/issues/263)'s statement
-in the GRC workflow platform describes a `mode (red/blue/purple)` field on each
-scenario YAML that would gate which posture defaults apply per run.
-
-**Today's reality is RAES-only for supported startup:** APTL acquires the
-configured pack, validates its associated-artifact identity, and projects its
-catalog metadata. There is no APTL-local catalog, archived scenario tree, or
-curated TechVault SDL input.
-
-**No runtime mode-gating exists.** Even when a scenario YAML's `mode:`
-appears in an external authored scenario, supported startup code does not read it
-and no code branches on the value to apply per-mode posture defaults. Any
-future posture-mode feature must be designed against RAES SDL and the catalog
-handoff, not by reviving the archived YAML format.
-
-When mode lands as a real SDL feature, the intended contract is:
-
-- `red` runs—full WEAKNESS-BY-DESIGN baseline; STARTING POSTURE
-  surfaces stay disabled. Red exploits; defenders observe.
-- `blue` runs—same baseline, plus blue-side MCP surfaces
-  (`aptl-wazuh`, `aptl-threatintel`, `aptl-casemgmt`, `aptl-soar`,
-  `aptl-network`, `aptl-indexer`) so blue can enable, configure, and
-  graduate STARTING POSTURE surfaces.
-- `purple` runs—both red and blue MCP surfaces exposed. Each
-  iteration alternates: red attacks under the current posture; blue
-  raises the posture (enables AR, adds an IOC, writes a rules
-  file); red attacks again.
-
-**Until #263 is resolved, the per-run posture is whatever this
-document describes**—the same baseline regardless of any `mode:`
-value present in scenario YAML.
+The earlier proposed `mode` policy remains in the source record.
+It is not a supported local scenario schema or an automatic posture switch.
+Current authoring uses [RAES SDL](../sdl/index.md).
 
 ### Orchestrator-side continuity carve-out (RTE-001 / #252)
 
-Issue [#252](https://github.com/OpenRAE/lilrae/issues/252) ships a second,
-out-of-band continuity mechanism: between purple-team iterations, the
-researcher (or the future scenario runtime engine's orchestration domain)
-audits target `iptables` state and removes blanket source-IP bans against
-kali that would wedge the next iteration. This is the complement to
-ADR-021's in-band `aptl-firewall-drop` whitelist. See
-[ADR-024](../adrs/adr-024-orchestrator-side-purple-continuity-carve-out.md)
-for the full design.
-
-The audit is invoked manually today via `aptl lab continuity-audit`. The
-behavioral contract:
-
-- runs **unconditionally** today—APTL is the purple-team lab and every
-  shipped scenario is purple by design. The audit does not *read* `mode`
-  from filenames, fixtures, agents, or CLI defaults (codex's "no inference"
-  guardrail in the SDL runtime architecture);
-- once SDL adds an authoritative `mode` field (#263) the audit gains a
-  `scenario.mode == PURPLE` gate at the orchestration call site, so `red`
-  and `blue` runs are explicitly skipped (a defender's source-IP ban
-  remains a valid outcome there);
-- logs each reversion as a structured `KaliCarveOutEvent` to a
-  specific run's `continuity-events.jsonl` when invoked with
-  `--run-id <existing-run>` (and always emits a stdout summary). The
-  session-bound archival path is plumbed but inactive until the
-  runtime engine populates `ScenarioSession.run_id` (#263);
-- preserves ADR-021's in-band whitelist as the first defense rather than
-  moving whitelist semantics into the Wazuh manager or bare
-  `firewall-drop`;
-- detects only coarse kali source-IP drops on the `INPUT` chain, not
-  granular payload-, port-, behavior-, or timeout-bounded defensive
-  actions, and not subnet-mask bans (`/24` and other non-`/32`).
+`lilrae lab continuity-audit` is a separate operator-invoked continuity check.
+It removes coarse Kali source-IP bans within its declared scope.
+It does not establish general rollback or override granular defensive changes.
+See [ADR-024](../adrs/adr-024-orchestrator-side-purple-continuity-carve-out.md) for the original decision.

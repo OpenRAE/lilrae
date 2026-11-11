@@ -1,4 +1,4 @@
-"""Main entry point for the APTL CLI."""
+"""Main entry point for the LilRAE CLI (``lilrae``, formerly ``aptl``)."""
 
 import logging
 from typing import Optional
@@ -9,6 +9,7 @@ import aptl
 from aptl.cli import (
     config,
     container,
+    containment,
     doctor,
     experiment,
     kill,
@@ -18,11 +19,12 @@ from aptl.cli import (
     seat,
     web,
 )
+from aptl.cli._command_alias import warn_deprecated_command
 from aptl.utils.logging import setup_logging
 
 app = typer.Typer(
-    name="aptl",
-    help="Advanced Purple Team Lab CLI",
+    name="lilrae",
+    help="LilRAE CLI",
     no_args_is_help=True,
 )
 
@@ -35,6 +37,7 @@ app.add_typer(kill.app, name="kill")
 app.add_typer(experiment.app, name="experiment")
 app.add_typer(seat.app, name="seat")
 app.add_typer(mcp_access.app, name="mcp-access")
+app.add_typer(containment.app, name="containment")
 app.command("doctor")(doctor.doctor)
 
 
@@ -52,7 +55,7 @@ def _cli_log_level(verbose: int) -> int:
 def _version_callback(value: bool) -> None:
     """Print the installed version and exit when ``--version`` is passed."""
     if value:
-        typer.echo(f"aptl {aptl.__version__}")
+        typer.echo(f"lilrae {aptl.__version__}")
         raise typer.Exit()
 
 
@@ -79,5 +82,16 @@ def main(
         ),
     ),
 ) -> None:
-    """Advanced Purple Team Lab CLI."""
+    """LilRAE CLI."""
     setup_logging(_cli_log_level(verbose))
+
+
+def legacy_main() -> None:
+    """Run the deprecated ``aptl`` alias of the ``lilrae`` command.
+
+    The notice goes to stderr before Typer parses anything, so it also covers
+    ``--help``, ``--version``, and usage errors. ``prog_name`` keeps help and
+    usage stdout identical to ``lilrae``.
+    """
+    warn_deprecated_command("aptl", "lilrae")
+    app(prog_name="lilrae")

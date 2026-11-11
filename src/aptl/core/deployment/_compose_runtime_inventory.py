@@ -27,6 +27,10 @@ class _InventoryBackend(Protocol):
 
         ...
 
+    def _recorded_child_ids(self) -> set[str]:
+        """Return only freshly verified recorded child incarnations."""
+        ...
+
 
 def _nonempty_lines(output: str) -> set[str]:
     """Return the distinct identifiers from bounded line-oriented output."""
@@ -64,6 +68,7 @@ class ComposeRuntimeInventoryMixin(object):
                         "docker",
                         "ps",
                         "-aq",
+                        "--no-trunc",
                         "--filter",
                         f"label={project_label}={self._project_name}",
                     ],
@@ -74,6 +79,7 @@ class ComposeRuntimeInventoryMixin(object):
                     break
                 container_ids.update(_nonempty_lines(containers.stdout))
             if not error:
+                container_ids.update(self._recorded_child_ids())
                 networks = self._run(
                     [
                         "docker",
@@ -90,7 +96,7 @@ class ComposeRuntimeInventoryMixin(object):
                     error = "network observation failed"
                 else:
                     network_count = len(_nonempty_lines(networks.stdout))
-        except (BackendTimeoutError, OSError):
+        except BackendTimeoutError, OSError, OwnershipConflictError:
             error = "runtime observation failed"
         if error:
             return ProjectRuntimePresence(error=error)

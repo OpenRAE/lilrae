@@ -1,0 +1,16 @@
+# zizmor configuration. Each ignore entry records why its finding is false.
+rules:
+  cache-poisoning:
+    ignore:
+      # The audit flags dependency caches because checks.yml also runs on
+      # `v*` tag pushes, a trigger often used to publish artifacts. That
+      # condition is false here:
+      # - checks.yml publishes no release artifact. Its uploads are CI
+      #   reports and SARIF only. release-please.yml builds and publishes the
+      #   release, and its publish job restores no cache.
+      # - A tag run restores caches from its own tag or from the default
+      #   branch only. Pull request runs write to their merge ref, and merge
+      #   groups write to their queue ref. Neither scope is visible to a tag
+      #   run or to main. See "Restrictions for accessing a cache" in
+      #   https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching
+      - checks.yml

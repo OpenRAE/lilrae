@@ -17,12 +17,16 @@ import {
 import Ajv2020, { type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js';
 import { type LabConfig } from './config.js';
 import { SSHConnectionManager } from './ssh.js';
+import { finalizeCaptureSession } from './captures.js';
 import { HTTPClient } from './http.js';
-import { initTracing, shutdownTracing, traceToolCall } from './telemetry.js';
+import { initTracing, recordToolResultSize, shutdownTracing, traceToolCall } from './telemetry.js';
+import { boundToolResult, toolResultBudgets, type ToolResult } from './tool-output-cap.js';
 import { generateToolDefinitions } from './tools/definitions.js';
 import { errorMessage, generateToolHandlers, type ToolHandler, type ToolContext } from './tools/handlers.js';
 import { generateAPIToolDefinitions } from './tools/api-definitions.js';
 import { generateAPIToolHandlers, type APIToolHandler, type APIToolContext } from './tools/api-handlers.js';
+import { maybeHarvest, resolveCaptureContainer } from './tools/session-capture.js';
+import { participantToolAdmission, participantToolRefusal } from './lilrae-tool-admission.js';
 
 /**
  * Information passed to a `postToolHook` after a tool call resolves or rejects.
@@ -30,6 +34,7 @@ import { generateAPIToolHandlers, type APIToolHandler, type APIToolContext } fro
 export interface PostToolHookInfo {
   toolName: string;
   args: Record<string, unknown>;
+  /** The result as the client receives it, after the tool result size limit. */
   result?: unknown;
   durationMs: number;
   error?: Error;
@@ -135,10 +140,12 @@ function lookUpTool(
   name: string,
   handlers: Record<string, ToolHandler | APIToolHandler>,
   validators: Map<string, ValidateFunction>,
-): { handler: ToolHandler | APIToolHandler; validateArguments: ValidateFunction } {
+  governed: boolean,
+): { handler: ToolHandler | APIToolHandler; validateArguments: ValidateFunction } | undefined {
   const handler = handlers[name];
   const validateArguments = validators.get(name);
   if (!handler || !validateArguments) {
+    if (governed) return undefined;
     throw new Error(`Unknown tool: ${name}`);
   }
   return { handler, validateArguments };
@@ -177,11 +184,36 @@ function invalidArgumentsResult(toolName: string, errors: ErrorObject[] | null |
   };
 }
 
+/** Select the already-installed native client for the validated tool. */
+function toolContext(
+  name: string, labConfig: LabConfig,
+  sshManager: SSHConnectionManager | null, httpClient: HTTPClient | null,
+): ToolContext | APIToolContext {
+  const query = Object.keys(labConfig.queries ?? {}).some(q => name.endsWith(`_${q}`));
+  if (name.includes('_api_') || query) {
+    if (!httpClient) throw new Error('API tool requested but HTTP client not configured');
+    return { httpClient, labConfig };
+  }
+  if (!sshManager) throw new Error('SSH tool requested but SSH manager not configured');
+  return { sshManager, labConfig };
+}
+
 export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOptions = {}) {
+  // Admission and handlers must use the same detached installation. A caller
+  // changing its original object must not retarget an already admitted server.
+  labConfig = structuredClone(labConfig);
+  const participantAdmission = participantToolAdmission(labConfig);
   const { postToolHook } = options;
   const hookTimeoutMs = options.postToolHookTimeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS;
+  const resultBudget = toolResultBudgets(labConfig);
   // Initialize clients and OTel tracing based on config
   const sshManager = labConfig.containers ? new SSHConnectionManager() : null;
+  // Let the manager harvest a session whose remote side closes on its own,
+  // before it drops the session: otherwise the shutdown sweep below never sees
+  // it. The manager cannot resolve the capture container, so it calls back here.
+  if (sshManager) {
+    sshManager.setHarvestHook((sessionId, runId) => maybeHarvest(labConfig, sessionId, runId));
+  }
   const httpClient = labConfig.api ? new HTTPClient(labConfig.api) : null;
   initTracing(labConfig.server.name);
 
@@ -231,47 +263,49 @@ export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOp
 
   server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
     const { name, arguments: args } = request.params;
-    const { handler, validateArguments } = lookUpTool(name, cachedHandlers, argumentValidators);
+    const selected = lookUpTool(name, cachedHandlers, argumentValidators, participantAdmission !== undefined);
+    if (!selected) return participantToolRefusal();
+    const { handler, validateArguments } = selected;
 
     // Refuse arguments outside the tool's schema before the context, the
     // trace span, the hook, any session or any backend call.
-    const safeArgs: Record<string, unknown> = args ?? {};
+    const safeArgs: Record<string, unknown> = structuredClone(args ?? {});
     if (!validateArguments(safeArgs)) {
+      if (participantAdmission) return participantToolRefusal();
       return invalidArgumentsResult(name, validateArguments.errors);
     }
 
-    // Determine context type based on tool name and available clients
-    let context: ToolContext | APIToolContext;
-
-    if (name.includes('_api_') || (labConfig.queries && Object.keys(labConfig.queries).some(q => name.endsWith(`_${q}`)))) {
-      // API tool context
-      if (!httpClient) {
-        throw new Error('API tool requested but HTTP client not configured');
-      }
-      context = {
-        httpClient,
-        labConfig,
-      };
-    } else {
-      // SSH tool context
-      if (!sshManager) {
-        throw new Error('SSH tool requested but SSH manager not configured');
-      }
-      context = {
-        sshManager,
-        labConfig,
-      };
-    }
+    const context = toolContext(name, labConfig, sshManager, httpClient);
 
     const t0 = Date.now();
     try {
       // Context is narrowed to the correct type above based on tool name
-      const result = await traceToolCall<{ content: { type: string; text: string }[] }>(
+      const native = () => traceToolCall<ToolResult>(
         name,
         labConfig.server.name,
         safeArgs,
-        () => (handler as any)(safeArgs, context),
+        async () => {
+          const bounded = boundToolResult<ToolResult>(
+            await (handler as any)(safeArgs, context),
+            resultBudget(name),
+          );
+          recordToolResultSize(bounded);
+          if (bounded.truncated) {
+            console.error(
+              `[MCP] tool result truncated: tool=${name} ` +
+                `chars=${bounded.originalChars}->${bounded.returnedChars}`,
+            );
+          }
+          return bounded.result;
+        },
       );
+      const result = participantAdmission
+        ? await participantAdmission.execute(name, safeArgs, native, async () => {
+          // Trusted cleanup remains available after participant authority ends.
+          // HTTP clients observe the call-local abort signal directly.
+          await sshManager?.disconnectAll();
+        })
+        : await native();
       if (postToolHook) {
         // Fire-and-forget: telemetry must NEVER add latency to the tool
         // response. Errors and timeouts are logged to stderr so a bad
@@ -282,9 +316,7 @@ export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOp
           postToolHook,
           { toolName: name, args: safeArgs, result, durationMs: Date.now() - t0 },
           hookTimeoutMs,
-        ).catch((hookErr) => {
-          console.error('[MCP] postToolHook error:', hookErr);
-        });
+        ).catch(reportHookFailure);
       }
       return result;
     } catch (err) {
@@ -294,13 +326,15 @@ export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOp
           postToolHook,
           { toolName: name, args: safeArgs, durationMs: Date.now() - t0, error },
           hookTimeoutMs,
-        ).catch((hookErr) => {
-          console.error('[MCP] postToolHook error:', hookErr);
-        });
+        ).catch(reportHookFailure);
       }
       throw err;
     }
   });
+
+  function reportHookFailure(error: unknown): void {
+    console.error('[MCP] postToolHook error:', participantAdmission ? 'Hook failed.' : error);
+  }
 
   // Setup graceful shutdown handlers (once per process)
   let handlersSetup = false;
@@ -314,27 +348,25 @@ export function createMCPServer(labConfig: LabConfig, options: CreateMCPServerOp
 
       // Setup graceful shutdown only once
       if (!handlersSetup) {
+        let shuttingDown = false;
         const gracefulShutdown = async (signal: string): Promise<void> => {
+          if (shuttingDown) return;
+          shuttingDown = true;
           console.error(`[MCP] Shutting down gracefully (${signal})...`);
+          const clean = sshManager ? await sshManager.shutdown(async (sessionId, runId) => {
+            const containerName = resolveCaptureContainer(labConfig);
+            if (containerName === undefined) return true;
+            return finalizeCaptureSession({ containerName, runId }, sessionId);
+          }) : true;
           await shutdownTracing();
-          if (sshManager) {
-            // disconnectAll now propagates SSHError on teardown contract
-            // failures so callers can detect unclean shutdown. The signal
-            // handler still needs to exit; log the failure non-zero rather
-            // than letting an unhandled rejection terminate Node abruptly.
-            try {
-              await sshManager.disconnectAll();
-            } catch (err) {
-              console.error('[MCP] disconnectAll failed during shutdown:', err);
-              process.exit(1);
-              return;
-            }
-          }
-          process.exit(0);
+          process.exit(clean ? 0 : 1);
         };
 
         process.on('SIGINT', () => { void gracefulShutdown('SIGINT'); });
         process.on('SIGTERM', () => { void gracefulShutdown('SIGTERM'); });
+        // A closed stdin is the MCP stdio client's first shutdown signal. The
+        // client can send SIGKILL soon after SIGTERM, so start here.
+        process.stdin.once('end', () => { void gracefulShutdown('stdin EOF'); });
 
         handlersSetup = true;
       }

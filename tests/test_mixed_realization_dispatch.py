@@ -1,6 +1,6 @@
 """Unit tests for mixed-realization node partitioning (ADR-048).
 
-TechVault's real shape is permanently mixed: some nodes convert to the
+A realistic range is permanently mixed: some nodes convert to the
 generic materializer (`runtime:`), others stay on a declared vendor
 `source:`. These pure functions decide which nodes materialize directly and
 which Compose service names must be scaled to zero so neither side starts,

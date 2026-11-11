@@ -56,7 +56,7 @@ def readiness_failure(observations: Mapping[str, object], timeout: int) -> str |
         for item in failed
         if getattr(item, "container_name", None)
     ]
-    logs = " and ".join(f"`aptl container logs {name}`" for name in containers)
+    logs = " and ".join(f"`lilrae container logs {name}`" for name in containers)
     action = f" Inspect {logs}." if logs else ""
     return (
         f"Authenticated Wazuh readiness validation failed after {timeout}s: "

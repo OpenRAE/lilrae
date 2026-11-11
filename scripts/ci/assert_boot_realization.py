@@ -575,7 +575,10 @@ def _observe_bindings(
     """Return the host bindings the daemon reports for the node's container."""
 
     inspected = backend.container_inspect(container_name)
-    return published_bindings((inspected.get("NetworkSettings") or {}).get("Ports"))
+    ports = backend.node_publication_bindings(container_name)
+    if ports is None:
+        ports = (inspected.get("NetworkSettings") or {}).get("Ports")
+    return published_bindings(ports)
 
 
 def _probe_endpoint(host_ip: str, host_port: int, protocol: str) -> tuple[bool, str]:

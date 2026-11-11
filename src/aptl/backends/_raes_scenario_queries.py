@@ -68,6 +68,7 @@ def admit_start_surface(
     *,
     bundle: ScenarioBundle | None = None,
     startup_selection: ScenarioStartupSelection | None = None,
+    run_id: str | None = None,
 ) -> tuple["AdmittedScenarioStart", AdmittedStartSurface]:
     """Admit the scenario once and project the pre-start facts off it.
 
@@ -76,14 +77,18 @@ def admit_start_surface(
     """
 
     from aptl.backends.raes import admit_raes_scenario
+    from aptl.backends.raes_start_model import (
+        ScenarioAdmissionRun,
+        ScenarioAdmissionSource,
+    )
 
     admitted = admit_raes_scenario(
         project_dir,
         config,
         backend,
         scenario_path=scenario_path,
-        bundle=bundle,
-        startup_selection=startup_selection,
+        source=ScenarioAdmissionSource(bundle, startup_selection),
+        run=ScenarioAdmissionRun(run_id=run_id),
     )
     return admitted, start_surface_of(admitted, config)
 

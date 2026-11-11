@@ -24,7 +24,6 @@ from aptl_techvault.runtime_parameters import (
 
 _PROJECTS = (
     "aptl-mcp-common",
-    "mcp-casemgmt",
     "mcp-indexer",
     "mcp-network",
     "mcp-red",

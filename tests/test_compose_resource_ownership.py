@@ -239,6 +239,123 @@ def test_shared_volume_creation_waits_for_ownership_receipt(tmp_path: Path) -> N
     assert len(ownership.receipts("volume")) == 1
 
 
+def _seed_backend_with_stale_receipt(
+    tmp_path: Path, inspect_stderr: str, *, listed: bool = False
+):
+    """Leave a receipt from an earlier attempt whose volume no longer exists."""
+
+    backend = DockerComposeBackend(tmp_path)
+    ownership = backend._ensure_resource_ownership(attempt_id="run-old")
+    backend._docker_daemon_id = "daemon-a"
+    backend._current_docker_daemon_id = lambda: "daemon-a"
+    volume = f"{ownership.project_name}_shared"
+    ownership.record(
+        ResourceReceipt(
+            kind="volume",
+            native_id=volume,
+            external_name=volume,
+            semantic_name="shared",
+            node_address="shared",
+            workspace_id=ownership.workspace_id,
+            project_name=ownership.project_name,
+            daemon_id="daemon-a",
+            attempt_id="run-old",
+            managed_by="direct",
+        )
+    )
+    backend._resource_attempt_id = "run-new"
+    state: dict[str, object] = {}
+    creates = []
+
+    def run(command, *, timeout):
+        if command[:3] == ["docker", "volume", "inspect"]:
+            labels = state.get("labels")
+            if labels is None:
+                return subprocess.CompletedProcess(command, 1, "", inspect_stderr)
+            return subprocess.CompletedProcess(command, 0, json.dumps(labels), "")
+        if command[:3] == ["docker", "volume", "ls"]:
+            return subprocess.CompletedProcess(
+                command, 0, f"{volume}\n" if listed else "", ""
+            )
+        assert command[:3] == ["docker", "volume", "create"]
+        creates.append(command)
+        state["labels"] = {
+            command[index + 1].split("=", 1)[0]: command[index + 1].split("=", 1)[1]
+            for index, value in enumerate(command)
+            if value == "--label"
+        }
+        return subprocess.CompletedProcess(command, 0, volume + "\n", "")
+
+    backend._run = run
+    backend._raw_volume_inspect = lambda _name: (
+        {"Name": volume, "Labels": state["labels"]} if "labels" in state else {}
+    )
+    return backend, ownership, creates
+
+
+def test_seed_volume_retires_a_receipt_whose_volume_was_removed(
+    tmp_path: Path,
+) -> None:
+    """A volume deleted outside ``stop -v`` does not block the next start (#1407).
+
+    Volume names are reused across attempts. Before this fix the new attempt
+    created the volume and then failed to record it, which left the new
+    volume orphaned and the lab unstartable.
+    """
+
+    backend, ownership, creates = _seed_backend_with_stale_receipt(
+        tmp_path, "Error response from daemon: get x: no such volume"
+    )
+
+    backend._ensure_labeled_project_volume("shared")
+
+    assert len(creates) == 1
+    (receipt,) = ownership.receipts("volume")
+    assert receipt.attempt_id == "run-new"
+    roles = [role for role, _ in backend.native_evidence_artifacts("run-old")]
+    assert roles == ["native-resource-receipt/v1", "native-cleanup/v1"]
+
+
+def test_seed_volume_keeps_a_receipt_that_the_daemon_still_lists(
+    tmp_path: Path,
+) -> None:
+    """An inspect error alone does not retire a receipt the listing still shows."""
+
+    from aptl.core.deployment.errors import BackendSeedError
+
+    backend, ownership, creates = _seed_backend_with_stale_receipt(
+        tmp_path,
+        "Error response from daemon: get x: no such volume",
+        listed=True,
+    )
+
+    with pytest.raises(BackendSeedError):
+        backend._ensure_labeled_project_volume("shared")
+
+    assert creates == []
+    (receipt,) = ownership.receipts("volume")
+    assert receipt.attempt_id == "run-old"
+
+
+def test_seed_volume_keeps_a_receipt_when_absence_is_not_proven(
+    tmp_path: Path,
+) -> None:
+    """A daemon error is not proof that the recorded volume is gone."""
+
+    from aptl.core.deployment.errors import BackendSeedError
+
+    backend, ownership, creates = _seed_backend_with_stale_receipt(
+        tmp_path, "Cannot connect to the Docker daemon"
+    )
+
+    with pytest.raises(BackendSeedError):
+        backend._ensure_labeled_project_volume("shared")
+
+    assert creates == []
+    (receipt,) = ownership.receipts("volume")
+    assert receipt.attempt_id == "run-old"
+
+
 def test_compose_preflight_ignores_retired_network_identity(tmp_path: Path) -> None:
     """A restarted network is accepted only through its one live native ID."""
 
@@ -349,6 +466,7 @@ def test_container_action_uses_recorded_id_and_rejects_replacement(
 
 def test_cleanup_targets_only_receipt_owned_native_ids(tmp_path: Path) -> None:
     backend = DockerComposeBackend(tmp_path, project_name="aptl")
+    backend._current_docker_daemon_id = lambda: "daemon-a"
     ownership = backend._ensure_resource_ownership(attempt_id="run-a")
     external = ownership.container_name("aptl-victim")
     ownership.record(
@@ -383,8 +501,9 @@ def test_cleanup_targets_only_receipt_owned_native_ids(tmp_path: Path) -> None:
     assert backend.remove_generic_materializer_containers() == []
     # ``-v`` removes the container's anonymous volumes with it; receipt-owned
     # named volumes are untouched by it and retired separately.
-    assert backend._run.call_args.args[0] == ["docker", "rm", "-f", "-v", _ID_A]
-    assert all("--filter" not in call.args[0] for call in backend._run.call_args_list)
+    commands = [call.args[0] for call in backend._run.call_args_list]
+    assert ["docker", "rm", "-f", "-v", _ID_A] in commands
+    assert all(cmd[-1] == _ID_A for cmd in commands if cmd[:2] == ["docker", "rm"])
 
 
 @pytest.mark.parametrize("remove_volumes", [False, True])
@@ -431,6 +550,17 @@ def test_stop_applies_volume_policy_to_receipt_owned_nodes(
     )
 
     def run(cmd, *, timeout=None):
+        if cmd[:3] == ["docker", "container", "ls"]:
+            return subprocess.CompletedProcess(
+                cmd,
+                0,
+                "\n".join(
+                    item
+                    for item in containers
+                    if item == cmd[cmd.index("--filter") + 1].removeprefix("id=")
+                ),
+                "",
+            )
         if cmd[:2] == ["docker", "rm"]:
             assert cmd[-1] == _ID_A
             containers.remove(_ID_A)
@@ -441,6 +571,7 @@ def test_stop_applies_volume_policy_to_receipt_owned_nodes(
         return subprocess.CompletedProcess(cmd, 1, "", "")
 
     backend._run = run
+    backend._current_docker_daemon_id = lambda: "daemon-a"
     backend._build_command = lambda *args, **kwargs: ["docker", "compose", "down"]
     backend.remove_stranded_helpers = lambda: []
     backend.remove_project_networks = lambda: []
@@ -632,10 +763,14 @@ def test_network_creation_records_native_id_and_cleanup_uses_only_that_id(
     )
     backend._run.reset_mock()
     backend._run.return_value = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+    backend._current_docker_daemon_id = lambda: "daemon-a"
 
     assert backend.remove_project_networks() == []
-    assert backend._run.call_args.args[0] == ["docker", "network", "rm", _ID_A]
-    assert all("--filter" not in call.args[0] for call in backend._run.call_args_list)
+    commands = [call.args[0] for call in backend._run.call_args_list]
+    assert ["docker", "network", "rm", _ID_A] in commands
+    assert all(
+        cmd[-1] == _ID_A for cmd in commands if cmd[:3] == ["docker", "network", "rm"]
+    )
 
 
 def test_network_namespace_discovery_uses_full_receipted_native_ids(
@@ -766,7 +901,9 @@ def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(
                 "Name": volume,
                 "Labels": {
                     "com.docker.compose.project": (
-                        "foreign" if outcome == "foreign-label" else ownership.project_name
+                        "foreign"
+                        if outcome == "foreign-label"
+                        else ownership.project_name
                     )
                 },
             }
@@ -777,6 +914,10 @@ def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(
 
     def fake_run(argv, **_kwargs):
         nonlocal present
+        if argv[:3] == ["docker", "volume", "ls"]:
+            return subprocess.CompletedProcess(
+                argv, 0, stdout=volume if present else "", stderr=""
+            )
         if argv[:3] == ["docker", "volume", "rm"]:
             if outcome == "remove-failed":
                 return subprocess.CompletedProcess(argv, 1, stdout="", stderr="")
@@ -788,6 +929,7 @@ def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(
         )
 
     backend._run = MagicMock(side_effect=fake_run)
+    backend._current_docker_daemon_id = lambda: "daemon-a"
 
     failures = backend._remove_owned_volumes()
     expected_failures = {
@@ -798,8 +940,14 @@ def test_volume_cleanup_uses_receipt_and_never_prefix_discovery(
     }
     assert failures == expected_failures[outcome]
     commands = [call.args[0] for call in backend._run.call_args_list]
-    assert (["docker", "volume", "rm", volume] in commands) == (outcome != "foreign-label")
-    assert all("ls" not in command for command in commands)
+    assert (["docker", "volume", "rm", volume] in commands) == (
+        outcome != "foreign-label"
+    )
+    assert all(
+        command[command.index("--filter") + 1] == f"name={volume}"
+        for command in commands
+        if command[:3] == ["docker", "volume", "ls"]
+    )
     assert bool(ownership.receipts("volume")) == (outcome != "removed")
 
 
@@ -821,8 +969,14 @@ def test_clean_volume_cleanup_retires_already_absent_receipt(tmp_path: Path) -> 
     )
     ownership.record(receipt)
     backend._run = MagicMock(
-        return_value=subprocess.CompletedProcess([], 1, stdout="", stderr="")
+        side_effect=lambda argv, **_: subprocess.CompletedProcess(
+            argv,
+            0 if argv[:3] == ["docker", "volume", "ls"] else 1,
+            stdout="",
+            stderr="",
+        )
     )
+    backend._current_docker_daemon_id = lambda: "daemon-a"
 
     assert backend._remove_owned_volumes() == []
     assert ownership.receipts("volume") == ()
@@ -1307,6 +1461,7 @@ def test_a_failed_compose_up_receipts_and_rolls_back_partial_runtime(
     from aptl.core.deployment._compose_owned_start import _OwnedStartScope
 
     backend = DockerComposeBackend(tmp_path, project_name="aptl")
+    (tmp_path / "docker-compose.yml").write_text("services: {}\n")
     scope = _OwnedStartScope(
         ownership=backend._ensure_resource_ownership(),
         attempt_id="attempt-under-test",

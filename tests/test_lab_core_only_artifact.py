@@ -8,13 +8,16 @@ import shutil
 import subprocess
 import sys
 import zipfile
+
+import pytest
 from pathlib import Path
 
-
+from tests.declared_adapters import adapter_packages
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.integration
 def test_core_only_wheel_prepares_tiny_start_without_optional_experience(
     tmp_path: Path,
 ) -> None:
@@ -26,15 +29,17 @@ def test_core_only_wheel_prepares_tiny_start_without_optional_experience(
         shutil.copy2(ROOT / name, source / name)
     shutil.copytree(ROOT / "src" / "aptl", source / "src" / "aptl")
 
-    # Build a genuine wheel from the current framework source with the optional
-    # scenario package and its entry points omitted. The main distribution
-    # continues to ship the qualified legacy TechVault route until its released
-    # replacement passes parity; this variant proves the core import boundary.
+    # Build a genuine wheel from the current framework source with every
+    # scenario adapter package and its entry points omitted. The main
+    # distribution continues to ship its bundled adapter; this variant proves
+    # the core import boundary.
+    adapters = adapter_packages()
+    assert adapters, "the distribution declares no adapter to omit"
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    pyproject = pyproject.replace(
-        'packages = ["src/aptl", "src/aptl_techvault"]',
-        'packages = ["src/aptl"]',
+    pyproject, replaced = re.subn(
+        r'(?m)^packages = \[[^\]]*\]$', 'packages = ["src/aptl"]', pyproject
     )
+    assert replaced == 1
     pyproject = re.sub(
         r'(?ms)^\[project\.entry-points\."aptl\.[^"]+"\]\n.*?(?=^\[|\Z)',
         "",
@@ -62,10 +67,10 @@ def test_core_only_wheel_prepares_tiny_start_without_optional_experience(
     assert len(wheels) == 1
     with zipfile.ZipFile(wheels[0]) as archive:
         assert not any(
-            name.startswith("aptl_techvault/") for name in archive.namelist()
+            name.split("/", 1)[0] in adapters for name in archive.namelist()
         )
 
-    probe = r"""
+    probe = f"ADAPTERS = {tuple(sorted(adapters))!r}\n" + r"""
 import importlib.abc
 import sys
 from pathlib import Path
@@ -73,7 +78,7 @@ from unittest.mock import patch
 
 class DenyOptional(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname.startswith(("aptl_techvault", "mcp", "aptl.workbench")):
+        if fullname.startswith((*ADAPTERS, "mcp", "aptl.workbench")):
             raise ImportError("optional module is unavailable")
         return None
 
@@ -100,7 +105,7 @@ assert "_step_start_containers" in selected
 assert "_step_attest_project_containers" in selected
 assert "_step_sync_credentials" not in selected
 assert "_step_seed_soc" not in selected
-assert "aptl_techvault" not in sys.modules
+assert not any(name.split(".", 1)[0] in ADAPTERS for name in sys.modules)
 """
     environment = os.environ.copy()
     environment["PYTHONPATH"] = str(wheels[0])

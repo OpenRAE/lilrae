@@ -4,6 +4,7 @@ from pathlib import Path
 
 import typer
 
+from aptl.cli._common import PROJECT_DIR_HELP
 from aptl.core.kill import execute_kill
 from aptl.utils.logging import get_logger
 
@@ -24,7 +25,7 @@ def kill_command(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
 ) -> None:
     """Immediately terminate all MCP server processes and agent activity.

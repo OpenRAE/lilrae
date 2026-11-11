@@ -422,7 +422,6 @@ def test_failed_source_evidence_reaches_the_run_outcome(tmp_path, monkeypatch):
         return (
             LabResult(success=False, error="catalog-image-unverified"),
             RuntimeSnapshot(),
-            False,
             None,
         )
 

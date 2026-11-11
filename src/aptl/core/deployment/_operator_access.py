@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from aptl.core.deployment._compose_resource_ownership import WorkspaceOwnership
-    from aptl.core.deployment.realization import DeploymentOperatorAccess
+    from aptl.core.deployment._realization_access import DeploymentOperatorAccess
 
 OPERATOR_ACCESS_NETWORK_SUFFIX = "aptl-operator-access"
 
@@ -117,10 +117,7 @@ class ComposeOperatorAccessMixin(object):
         failures = self._start_declared_relays(accesses, operator_public_key)
         if not failures:
             failures = _prove_endpoints(
-                (
-                    OPERATOR_ACCESS_ENDPOINTS[access.target_node]
-                    for access in accesses
-                ),
+                (OPERATOR_ACCESS_ENDPOINTS[access.target_node] for access in accesses),
                 key_path=operator_key_path,
             )
         if not failures:
@@ -185,7 +182,7 @@ class ComposeOperatorAccessMixin(object):
                 ],
                 timeout=60,
             )
-        except (BackendTimeoutError, OwnershipConflictError, OSError):
+        except BackendTimeoutError, OwnershipConflictError, OSError:
             installed = None
         authorized = installed is not None and installed.returncode == 0
         return (
@@ -250,7 +247,12 @@ class ComposeOperatorAccessMixin(object):
         except OwnershipConflictError:
             self._run(["docker", "network", "rm", native_id], timeout=60)
             return None, ["could not record ownership of the operator access network"]
-        return external, []
+        from aptl.core.deployment._native_range_publications import (
+            refresh_native_policy,
+        )
+
+        failure = refresh_native_policy(self)
+        return (None, [failure.error]) if failure is not None else (external, [])
 
     def _start_operator_relay(
         self, access: "DeploymentOperatorAccess", network: str
@@ -353,7 +355,7 @@ class ComposeOperatorAccessMixin(object):
 
         try:
             inspected = self.container_inspect(semantic_name)
-        except (BackendTimeoutError, OwnershipConflictError, OSError, ValueError):
+        except BackendTimeoutError, OwnershipConflictError, OSError, ValueError:
             return None
         name = str(inspected.get("Name", "")).removeprefix("/") if inspected else ""
         settings = inspected.get("NetworkSettings") if inspected else None

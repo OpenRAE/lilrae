@@ -430,7 +430,14 @@ def plan_condition_feasibility(
     """
     manifest = backend_manifest if backend_manifest is not None else create_aptl_manifest()
     try:
-        return run_reference_processor(scenario, manifest, parameters=parameters, profile=profile)
+        from raes_contracts.planning import PlanScope
+
+        # This feasibility plan is never executed. Execution admission supplies
+        # the real run identity and protected archive before any mutation.
+        return run_reference_processor(
+            scenario, manifest, parameters=parameters, profile=profile,
+            scope=PlanScope(target_name=manifest.name, run_id="planning-feasibility"),
+        )
     except SDLInstantiationError as exc:
         raise AdmissionRejection(
             normalize_raes_failure(
