@@ -6,7 +6,7 @@ import hashlib
 import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from threading import Event
 from typing import Protocol
 
@@ -21,6 +21,8 @@ __all__ = ["DeclaredTrial", "ParticipantInvocation", "run_declared_trial"]
 _OUTPUT_DIR = "trial/participants"
 # A cancelled child gets this long to exit before the trial seals without it.
 _DRAIN_SECONDS = 60.0
+# The supervisor's cause when the shared episode ended; the trial completed.
+_EPISODE_END = "episode-end"
 
 Clock = Callable[[], datetime]
 
@@ -62,8 +64,11 @@ def run_declared_trial(
     store: LocalRunStore,
     clock: Clock,
     poll_seconds: float = 1.0,
+    episode_seconds: int | None = None,
 ) -> TrialRecord:
-    """Start every participant and stop them at the deadline or on request.
+    """Start every participant and stop them at the episode end, the deadline, or on request.
+
+    The episode end is the trial's normal end: a participant cancelled there completed.
 
     The returned record is not sealed. The caller drains credentials and
     capture first, records their cleanup, and then seals the run.
@@ -92,7 +97,14 @@ def run_declared_trial(
     ]
     for thread in threads:
         thread.start()
-    cause = _supervise(threads, trial.attempt, stop_requested, clock, poll_seconds)
+    episode_end = (
+        None
+        if episode_seconds is None
+        else clock() + timedelta(seconds=episode_seconds)
+    )
+    cause = _supervise(
+        threads, trial.attempt, stop_requested, clock, poll_seconds, episode_end
+    )
     cancellation.set()
     for thread in threads:
         thread.join(_DRAIN_SECONDS)
@@ -108,6 +120,8 @@ def run_declared_trial(
         )
         for item in participants
     )
+    if cause == _EPISODE_END:
+        cause = "completed"
     if cause == "completed" and any(item.status == "failed" for item in records):
         cause = "failed"
     return TrialRecord(
@@ -128,14 +142,22 @@ def _supervise(
     stop_requested: Callable[[], bool],
     clock: Clock,
     poll_seconds: float,
+    episode_end: datetime | None,
 ) -> str:
-    """Wait for every participant, the deadline, or a stop request."""
+    """Wait for every participant, the episode end, the deadline, or a stop request."""
     while any(thread.is_alive() for thread in threads):
         if stop_requested():
             return "stopped"
         remaining = (attempt.deadline - clock()).total_seconds()
         if remaining <= 0:
             return "deadline"
+        if episode_end is not None and clock() >= episode_end:
+            return _EPISODE_END
+        remaining = (
+            min(remaining, max((episode_end - clock()).total_seconds(), 0.0))
+            if episode_end
+            else remaining
+        )
         for thread in threads:
             thread.join(min(poll_seconds, remaining) / max(len(threads), 1))
     return "completed"
@@ -152,7 +174,9 @@ def _invoke(
     """Run one invocation and keep its output or failure, never its credentials."""
     outcome.started_at = _timestamp(clock())
     try:
-        outcome.output = invocation(f"{attempt.attempt_id}-{participant.agent}", cancellation)
+        outcome.output = invocation(
+            f"{attempt.attempt_id}-{participant.agent}", cancellation
+        )
     except Exception as exc:
         # A participant failure is a recorded outcome, not a trial failure.
         outcome.failure = redact(str(exc)) or type(exc).__name__
@@ -176,7 +200,9 @@ def _participant_record(
         output_path = f"{_OUTPUT_DIR}/{participant.agent}-{name}.txt"
         store.write_file(attempt.run_id, output_path, redact(outcome.output).encode())
     if outcome.started_at is not None and outcome.ended_at is None:
-        outcome.failure = f"participant did not stop within {_DRAIN_SECONDS:.0f} seconds"
+        outcome.failure = (
+            f"participant did not stop within {_DRAIN_SECONDS:.0f} seconds"
+        )
     status = _status(outcome, cause)
     return TrialParticipantRecord(
         address=participant.address,
@@ -197,7 +223,9 @@ def _status(outcome: _Outcome, cause: str) -> str:
     """Classify one participant from its outcome and the trial's end."""
     if outcome.started_at is None:
         return "not-started"
-    if outcome.failure is None and outcome.output is not None:
+    if (outcome.failure is None and outcome.output is not None) or (
+        cause == _EPISODE_END and outcome.ended_at is not None
+    ):
         return "completed"
     return "cancelled" if cause in {"deadline", "stopped"} else "failed"
 

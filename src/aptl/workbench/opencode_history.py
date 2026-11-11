@@ -8,8 +8,10 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import shutil
 import sqlite3
 import sys
+import tempfile
 
 from aptl.core.opencode import (
     NativeHistoryObservation,
@@ -283,13 +285,40 @@ def _native_database(
             yield db
 
 
+@contextmanager
+def _checkpointed_root(work: Path) -> Iterator[Path]:
+    """Yield a root whose database has no pending log.
+
+    A cancelled participant can leave write-ahead log content. Its process has
+    ended, so a private copy of the database and its log is checkpointed and
+    read instead of the work tree.
+    """
+    if _wal_is_empty(work):
+        yield work
+        return
+    with tempfile.TemporaryDirectory(prefix="opencode-history-") as private:
+        target = Path(private) / _DATABASE
+        target.parent.mkdir(parents=True)
+        for suffix in ("", "-wal"):
+            with (
+                open_contained_nofollow(work, _DATABASE + suffix) as source,
+                open(f"{target}{suffix}", "wb") as copy,
+            ):
+                shutil.copyfileobj(source, copy)
+        with closing(sqlite3.connect(target, timeout=0)) as db:
+            db.execute("PRAGMA trusted_schema=OFF")
+            db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        yield Path(private)
+
+
 def _contained_history(
     work: Path, prompt: bytes, model: str, session: str | None, max_bytes: int
 ) -> NativeHistoryObservation:
     """Read only a contained checkpointed database under SQLite resource limits."""
-    if not _wal_is_empty(work):
-        return NativeHistoryObservation(status="uncheckpointed")
-    with _native_database(work, max_bytes, 1000) as db:
+    with (
+        _checkpointed_root(work) as root,
+        _native_database(root, max_bytes, 1000) as db,
+    ):
         if db is None:
             return NativeHistoryObservation(status="oversized")
         return _read_session(db, prompt, model, session)
@@ -307,9 +336,10 @@ def export_native_session(
     if sys.platform != "linux":
         return None
     try:
-        if not _wal_is_empty(work):
-            return None
-        with _native_database(work, max_bytes, 10_000_000) as db:
+        with (
+            _checkpointed_root(work) as root,
+            _native_database(root, max_bytes, 10_000_000) as db,
+        ):
             if db is None:
                 return None
             return {

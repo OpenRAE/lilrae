@@ -188,7 +188,9 @@ def test_native_history_retains_prompt_delivery_on_interrupted_generation(tmp_pa
     assert history.steps == ()
 
 
-@pytest.mark.parametrize(("finish", "status"), [("length", "observed"), ("error", "partial")])
+@pytest.mark.parametrize(
+    ("finish", "status"), [("length", "observed"), ("error", "partial")]
+)
 def test_native_history_accepts_an_output_limit_end_only(tmp_path, finish, status):
     native_database(tmp_path, finish=finish)
     assert observe(tmp_path).status == status
@@ -227,12 +229,31 @@ def test_native_usage_does_not_invent_or_coerce_counts(tmp_path, token_value):
         assert history.steps == ()
 
 
-def test_native_history_missing_corrupt_or_uncheckpointed_is_explicit(tmp_path):
+def test_a_cancelled_participants_pending_log_is_read_from_a_checkpointed_copy(
+    tmp_path,
+):
+    """A cancelled opencode leaves its session in the write-ahead log, not in the database file."""
+    from aptl.workbench.opencode_history import export_native_session
+
+    path = tmp_path / "data/opencode/opencode.db"
+    path.parent.mkdir(parents=True)
+    holder = sqlite3.connect(path)
+    holder.execute("PRAGMA journal_mode=WAL")
+    holder.execute("PRAGMA wal_autocheckpoint=0")
+    try:
+        native_database(tmp_path)
+        assert path.with_name("opencode.db-wal").stat().st_size > 0
+        assert observe(tmp_path).status == "observed"
+        assert [row["id"] for row in export_native_session(tmp_path)["sessions"]] == [
+            "ses_fixture"
+        ]
+    finally:
+        holder.close()
+
+
+def test_native_history_missing_or_corrupt_is_explicit(tmp_path):
     assert observe(tmp_path).status == "missing"
     path = native_database(tmp_path)
-    path.with_name("opencode.db-wal").write_bytes(b"uncheckpointed")
-    assert observe(tmp_path).status == "uncheckpointed"
-    path.with_name("opencode.db-wal").unlink()
     path.write_bytes(b"not a SQLite database; secret-capability")
     history = observe(tmp_path)
     assert history.status == "invalid"
@@ -299,7 +320,10 @@ def test_executor_reduces_history_before_private_teardown(tmp_path, failed):
     assert not list(tmp_path.glob("lilrae-participant-*"))
     assert "secret-capability" not in repr(records)
     (transcript,) = transcripts
-    assert [row["id"] for row in transcript["messages"]] == ["msg_user", "msg_assistant"]
+    assert [row["id"] for row in transcript["messages"]] == [
+        "msg_user",
+        "msg_assistant",
+    ]
     assert "private reasoning" in repr(transcript["parts"])
     assert "secret-capability" not in repr(transcript)
 
@@ -312,7 +336,11 @@ def test_native_session_export_returns_every_row_with_decoded_data(tmp_path):
     assert session["schema_version"] == "lilrae-opencode-session/v1"
     assert [row["id"] for row in session["sessions"]] == ["ses_fixture"]
     assert session["messages"][0]["data"]["role"] == "user"
-    assert {row["data"]["type"] for row in session["parts"]} >= {"text", "reasoning", "tool"}
+    assert {row["data"]["type"] for row in session["parts"]} >= {
+        "text",
+        "reasoning",
+        "tool",
+    }
     assert export_native_session(tmp_path / "missing") is None
 
 

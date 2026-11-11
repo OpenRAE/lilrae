@@ -180,6 +180,7 @@ def _run_and_drain(
                 stop_requested=lambda: terminated.is_set() or control.stop_requested(),
                 store=store,
                 clock=lambda: datetime.now(UTC),
+                episode_seconds=config.experiment.trial_episode_seconds,
             )
         gaps: tuple[str, ...] = ()
         try:

@@ -18,8 +18,12 @@ from aptl.core.trial_sdl import DeclaredParticipant
 from aptl.workbench.trial_run import DeclaredTrial, run_declared_trial
 
 _PARTICIPANTS = (
-    DeclaredParticipant("red-operator", "red", "openrouter/vendor-a/model-a", ("red-task",)),
-    DeclaredParticipant("blue-operator", "blue", "openrouter/vendor-b/model-b", ("blue-task",)),
+    DeclaredParticipant(
+        "red-operator", "red", "openrouter/vendor-a/model-a", ("red-task",)
+    ),
+    DeclaredParticipant(
+        "blue-operator", "blue", "openrouter/vendor-b/model-b", ("blue-task",)
+    ),
 )
 
 
@@ -49,7 +53,10 @@ class PartialInvocation:
         }
         self.started.set()
         cancellation.wait(30)
-        self.evidence[self.address] = {**self.evidence[self.address], "status": "cancelled"}
+        self.evidence[self.address] = {
+            **self.evidence[self.address],
+            "status": "cancelled",
+        }
         raise RuntimeError("participant invocation cancelled after partial output")
 
 
@@ -60,7 +67,9 @@ def _store(tmp_path, run_id):
     return store
 
 
-def _run(tmp_path, attempt, invocations, *, stop_requested=lambda: False, evidence=None):
+def _run(
+    tmp_path, attempt, invocations, *, stop_requested=lambda: False, evidence=None
+):
     store = _store(tmp_path, attempt.run_id)
     record = run_declared_trial(
         DeclaredTrial(attempt, "sha256:" + "1" * 64, _PARTICIPANTS),
@@ -96,14 +105,20 @@ def test_sealed_trial_run_uses_caller_run_and_attempt_ids(tmp_path, monkeypatch)
     assert record.terminal_cause == "completed"
     assert {item.status for item in record.participants} == {"completed"}
 
-    for bad in (("R1", None, None), ("../escape", "A1", "2026-11-06T00:00:00Z"), ("R1", "A1", "tomorrow")):
+    for bad in (
+        ("R1", None, None),
+        ("../escape", "A1", "2026-11-06T00:00:00Z"),
+        ("R1", "A1", "tomorrow"),
+    ):
         with pytest.raises(ValueError):
             parse_trial_attempt(*bad)
 
     from aptl.cli import lab as lab_cli
 
     started = []
-    monkeypatch.setattr(lab_cli, "orchestrate_lab_start", lambda *a, **k: started.append(k))
+    monkeypatch.setattr(
+        lab_cli, "orchestrate_lab_start", lambda *a, **k: started.append(k)
+    )
     result = CliRunner().invoke(lab_cli.app, ["start", "--run-id", "R1"])
     assert result.exit_code == 2
     assert started == []
@@ -119,10 +134,15 @@ def _check_stop(tmp_path, cause):
 
     tmp_path.mkdir()
     now = datetime.now(UTC)
-    deadline = now + (timedelta(seconds=1) if cause == "deadline" else timedelta(minutes=5))
+    deadline = now + (
+        timedelta(seconds=1) if cause == "deadline" else timedelta(minutes=5)
+    )
     attempt = TrialAttempt("R2", "A2", deadline)
     evidence: dict[str, dict[str, object]] = {}
-    invocations = {item.address: PartialInvocation(item.address, evidence) for item in _PARTICIPANTS}
+    invocations = {
+        item.address: PartialInvocation(item.address, evidence)
+        for item in _PARTICIPANTS
+    }
     control = TrialControl(tmp_path)
     stop_results = []
     control.claim(attempt)
@@ -138,7 +158,11 @@ def _check_stop(tmp_path, cause):
         stopper.start()
 
     store, record = _run(
-        tmp_path, attempt, invocations, stop_requested=control.stop_requested, evidence=evidence
+        tmp_path,
+        attempt,
+        invocations,
+        stop_requested=control.stop_requested,
+        evidence=evidence,
     )
     control.release(attempt)
     if cause == "stopped":
@@ -161,11 +185,52 @@ def test_seal_declares_raw_trial_captures_as_evidence_blobs(tmp_path):
     from aptl.core.trial_record import _run_files
 
     store = _store(tmp_path, "R2")
-    for relative in ("trial/transcripts/agents.red.json", "trial/soc/wazuh.ndjson", "trial/audit/audit.log"):
+    for relative in (
+        "trial/transcripts/agents.red.json",
+        "trial/soc/wazuh.ndjson",
+        "trial/audit/audit.log",
+    ):
         store.write_file("R2", relative, b"{}")
     store.write_file("R2", "evidence/records/record.json", b"{}")
-    specs = {spec.path: (spec.role, spec.media_type) for spec in _run_files(store.get_run_path("R2"))}
-    assert specs["trial/transcripts/agents.red.json"] == ("evidence-blob", "application/json")
+    specs = {
+        spec.path: (spec.role, spec.media_type)
+        for spec in _run_files(store.get_run_path("R2"))
+    }
+    assert specs["trial/transcripts/agents.red.json"] == (
+        "evidence-blob",
+        "application/json",
+    )
     assert specs["trial/soc/wazuh.ndjson"] == ("evidence-blob", "application/x-ndjson")
-    assert specs["trial/audit/audit.log"] == ("evidence-blob", "application/octet-stream")
-    assert specs["evidence/records/record.json"] == ("evidence-record", "application/json")
+    assert specs["trial/audit/audit.log"] == (
+        "evidence-blob",
+        "application/octet-stream",
+    )
+    assert specs["evidence/records/record.json"] == (
+        "evidence-record",
+        "application/json",
+    )
+
+
+def test_the_shared_episode_end_cancels_both_participants_and_completes_the_trial(
+    tmp_path,
+):
+    """At the episode end both participants stop; that is the trial's normal end, not a failure."""
+    attempt = TrialAttempt("R3", "A3", datetime.now(UTC) + timedelta(minutes=5))
+    evidence: dict[str, dict[str, object]] = {}
+    invocations = {
+        item.address: PartialInvocation(item.address, evidence)
+        for item in _PARTICIPANTS
+    }
+    record = run_declared_trial(
+        DeclaredTrial(attempt, "sha256:" + "1" * 64, _PARTICIPANTS),
+        invocations=invocations,
+        evidence=evidence,
+        stop_requested=lambda: False,
+        store=_store(tmp_path, attempt.run_id),
+        clock=lambda: datetime.now(UTC),
+        poll_seconds=0.05,
+        episode_seconds=1,
+    )
+    assert record.terminal_cause == "completed"
+    assert {item.status for item in record.participants} == {"completed"}
+    assert all(item.failure is None for item in record.participants)
