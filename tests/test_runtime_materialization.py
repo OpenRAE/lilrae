@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -422,10 +420,9 @@ def test_runtime_qualification_precedes_ownership_and_mixed_materialization(
     assert "backend=shared-docker" in result.error
 
 
-def test_static_effective_model_is_compared_before_ownership(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_a_root_model_does_not_override_runtime_qualification(tmp_path, monkeypatch):
+    """Only the generated scenario model is qualified before mutation."""
+
     (tmp_path / "docker-compose.yml").write_text(
         "services:\n  workload:\n    image: example/workload\n",
         encoding="utf-8",
@@ -434,78 +431,108 @@ def test_static_effective_model_is_compared_before_ownership(
         {"container": {"read_only_rootfs": True}}
     )
     backend = DockerComposeBackend(tmp_path)
-    ownership_calls: list[str] = []
     monkeypatch.setattr(
-        backend,
-        "_ensure_resource_ownership",
-        lambda *args, **kwargs: ownership_calls.append("ownership"),
+        backend, "_run", lambda *_args, **_kwargs: pytest.fail("read unused root model")
     )
-    monkeypatch.setattr(
-        backend,
-        "_run",
-        lambda argv, **kwargs: subprocess.CompletedProcess(
-            argv,
-            0,
-            json.dumps({"services": {"workload": {"image": "example/workload"}}}),
-            "",
-        ),
-    )
-
-    result = backend.realize(_spec(runtime), scenario_root=tmp_path)
-
-    assert result.success is False
-    assert ownership_calls == []
-    assert "field=runtime.container.read_only_rootfs" in result.error
-    assert "effective Compose model" in result.error
+    result = backend.qualify_runtime_materialization(_spec(runtime), scenario_root=tmp_path)
+    assert result.success
 
 
-def test_static_undeclared_host_bind_is_rejected_before_ownership(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_a_root_model_cannot_add_undeclared_host_authority(tmp_path, monkeypatch):
     (tmp_path / "docker-compose.yml").write_text(
-        "services:\n  workload:\n    image: example/workload\n",
+        "services:\n  workload:\n    image: example/workload\n"
+        "    volumes: [/:/host]\n",
         encoding="utf-8",
     )
     backend = DockerComposeBackend(tmp_path)
-    ownership_calls: list[str] = []
     monkeypatch.setattr(
-        backend,
-        "_ensure_resource_ownership",
-        lambda *args, **kwargs: ownership_calls.append("ownership"),
+        backend, "_run", lambda *_args, **_kwargs: pytest.fail("read unused root model")
     )
-    monkeypatch.setattr(
-        backend,
-        "_run",
-        lambda argv, **kwargs: subprocess.CompletedProcess(
-            argv,
-            0,
-            json.dumps(
-                {
-                    "services": {
-                        "workload": {
-                            "image": "example/workload",
-                            "volumes": [
-                                {
-                                    "type": "bind",
-                                    "source": "/",
-                                    "target": "/host",
-                                }
-                            ],
-                        }
-                    }
-                }
-            ),
-            "",
+    result = backend.qualify_runtime_materialization(
+        _spec(RuntimeConfiguration.model_validate({})), scenario_root=tmp_path
+    )
+    assert result.success
+
+
+def _companion_spec() -> DeploymentRealizationSpec:
+    from dataclasses import replace
+
+    from aptl.core.deployment.realization import DeploymentCompanionRealization
+
+    spec = _spec(RuntimeConfiguration.model_validate({}))
+    companion = DeploymentCompanionRealization(
+        role="web",
+        image=DeploymentImageRealization(
+            address="provision.node.workload",
+            service_name="workload-web",
+            source_name="web",
+            source_version="1",
+            image_ref="example/web@" + _DIGEST_A,
+            mode="pull",
+            policy_rule="backend-open-profile",
         ),
+        tmpfs=("/tmp:mode=1777",),
+    )
+    (node,) = spec.nodes
+    return replace(spec, nodes=(replace(node, backend_companions=(companion,)),))
+
+
+def test_effective_model_accepts_the_rendered_companion_contract() -> None:
+    from aptl.core.deployment._compose_node_generation import (
+        render_realization_compose,
     )
 
-    result = backend.realize(
-        _spec(RuntimeConfiguration.model_validate({})),
-        scenario_root=tmp_path,
+    spec = _companion_spec()
+
+    issues = effective_runtime_contract_issues(
+        render_realization_compose(spec), spec, profile=SHARED_DOCKER_PROFILE
     )
 
-    assert result.success is False
-    assert ownership_calls == []
-    assert "field=runtime.mounts" in result.error
-    assert "undeclared runtime authority" in result.error
+    assert issues == ()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("privileged", True),
+        ("cap_add", ["NET_ADMIN"]),
+        ("network_mode", "host"),
+        ("read_only", False),
+        ("user", "0"),
+        ("volumes", [{"type": "bind", "source": "/", "target": "/host"}]),
+    ],
+)
+def test_effective_model_refuses_added_companion_authority(field, value) -> None:
+    """A backend companion has no authored runtime, so nothing may widen it (#1407)."""
+
+    from aptl.core.deployment._compose_node_generation import (
+        render_realization_compose,
+    )
+
+    spec = _companion_spec()
+    payload = render_realization_compose(spec)
+    payload["services"]["workload-web"][field] = value
+
+    issues = effective_runtime_contract_issues(
+        payload, spec, profile=SHARED_DOCKER_PROFILE
+    )
+
+    assert len(issues) == 1
+    assert "backend companion authority" in issues[0].limitation
+
+
+def test_effective_model_refuses_a_missing_companion() -> None:
+    from aptl.core.deployment._compose_node_generation import (
+        render_realization_compose,
+    )
+
+    spec = _companion_spec()
+    payload = render_realization_compose(spec)
+    del payload["services"]["workload-web"]
+
+    issues = effective_runtime_contract_issues(
+        payload, spec, profile=SHARED_DOCKER_PROFILE
+    )
+
+    assert len(issues) == 1
+    assert "companion is absent" in issues[0].limitation

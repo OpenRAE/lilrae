@@ -6,10 +6,17 @@ type: FUNCTIONAL
 priority: MUST
 wave: 1
 created_at: 2026-03-24T02:44:23.438740Z
-updated_at: 2026-10-09T00:00:00.000000Z
+updated_at: 2026-10-22T00:00:00.000000Z
 ---
 
 # DSL-008: APTL Realization of ACES Infrastructure Topology
+
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/DSL-008/requirement.md).
+
 
 ## Statement
 
@@ -23,6 +30,11 @@ NOT DEPRECATED 2026-10-09: ADR-035 deprecates DSL-002 to DSL-009 as requirements
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/_raes_runtime_target.py` (Installed components for the admitted scenario target)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/_raes_manifest_realization.py` (Realization and independent readback capabilities)
+
+- TESTS → TEST `tests/test_lilrae_composed_participants.py` (Parameterized packages and accounts reach generic node composition)
+
 - IMPLEMENTS → CODE_FILE `src/aptl/core/deployment/_compose_network_realization.py` (Shared declared-network reconciliation and fresh endpoint readback across startup routes)
 - IMPLEMENTS → CODE_FILE `src/aptl/core/deployment/_compose_realization_networks.py` (Typed attachment resolution and required address/alias observation)
 - TESTS → TEST `tests/test_compose_network_readback.py` (Endpoint drift, both startup routes and real default/bounded/curated SDL lowering)
@@ -31,7 +43,7 @@ NOT DEPRECATED 2026-10-09: ADR-035 deprecates DSL-002 to DSL-009 as requirements
 - DOCUMENTS → GITHUB_ISSUE `#422` (DSL-008: Infrastructure Topology Declaration in Scenario DSL)
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/techvault_live_gate.py` (Live conformance gate: validate the running lab satisfies ACES declarations)
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/_live_gate_readiness.py` (Node-readiness / declared-health conformance comparison against the running range)
-- TESTS → TEST `tests/test_techvault_live_gate.py` (Tests for live conformance gate incl. declared-health readiness enforcement)
+- TESTS → TEST `tests/techvault/test_techvault_live_gate.py` (Tests for live conformance gate incl. declared-health readiness enforcement)
 - IMPLEMENTS → CODE_FILE `src/aptl/backends/raes_realization.py`
 - IMPLEMENTS → CODE_FILE `src/aptl/backends/raes_realization_values.py`
 - IMPLEMENTS → CODE_FILE `src/aptl/backends/raes_profiles.py`
@@ -56,14 +68,36 @@ NOT DEPRECATED 2026-10-09: ADR-035 deprecates DSL-002 to DSL-009 as requirements
 - IMPLEMENTS → CODE_FILE `src/aptl/backends/scenario_startup_policy.py` (Pack-qualified, declared-edge-only startup health policy)
 - IMPLEMENTS → CODE_FILE `src/aptl/core/deployment/_compose_model_realization.py` (Validated startup overlay in the generated Compose file set)
 - IMPLEMENTS → CODE_FILE `src/aptl_techvault/startup.py` (TechVault-specific health probes through the adapter seam)
-- TESTS → TEST `tests/test_techvault_startup_adapter.py` (Content-qualified startup policy and undeclared-edge rejection)
+- TESTS → TEST `tests/techvault/test_techvault_startup_adapter.py` (Content-qualified startup policy and undeclared-edge rejection)
 - TESTS → TEST `tests/test_base_container_admission_integration.py` (Product-neutral real-Docker materialization envelope)
 - IMPLEMENTS → CODE_FILE `src/aptl/backends/_raes_backend_implementation_catalog.py` (Redis runtime config staged outside a publicly writable directory)
 - IMPLEMENTS → CODE_FILE `src/aptl_techvault/log_sources.py` (Native log configuration staged under a root-owned guest path)
 - TESTS → TEST `tests/test_misp_redis_realization_contract.py` (Credential-free argv and protected Redis staging path)
-- TESTS → TEST `tests/test_techvault_log_sources.py` (Protected rsyslog staging and native producer behavior)
+- TESTS → TEST `tests/techvault/test_techvault_log_sources.py` (Protected rsyslog staging and native producer behavior)
 - IMPLEMENTS → CODE_FILE `src/aptl/core/deployment/_misp_cache_credential.py` (Shared protected Redis runtime config path contract)
 - IMPLEMENTS → CODE_FILE `src/aptl_techvault/redis_acl_observation.py` (Live authorization readback from the selected config path)
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/_gate_raes_cli.py` (Resolve the installed RAES CLI from the active Python environment for source and wheel validation)
-- TESTS → TEST `tests/test_techvault_static_gate.py` (RAES CLI resolution with and without virtual-environment PATH activation)
+- TESTS → TEST `tests/techvault/test_techvault_static_gate.py` (RAES CLI resolution with and without virtual-environment PATH activation)
 - IMPLEMENTS → DOCUMENTATION `docs/testing/smoke-test-plan.md` (Capture the user-facing startup inventory and validate both installation paths)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/deployment/_account_provider.py` (Account providers bound to the realizing implementation, not to a scenario node name)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/raes_account_realization.py` (Authored secret_fixture credential bindings lowered or refused)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/deployment/_compose_application_accounts.py` (Declared SOC console accounts realized and proven by authentication)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/raes_declared_credentials.py` (Account credential references resolved from the admitted SDL only)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/participant_desktop.py` (Participant desktop resolved from the admitted SDL and the realized lab)
+- IMPLEMENTS → CODE_FILE `tools/check_pack_boundary.py` (Pack-owned facts refused in generic files, derived from the owning pack's SDL)
+- TESTS → TEST `tests/test_declared_account_credentials.py` (Credential binding lowering and refusal)
+- TESTS → TEST `tests/test_account_provider.py` (Conflicting duplicate identities or credentials refuse the entire batch before mutation)
+- TESTS → TEST `tests/test_seat_desktop.py` (Desktop delivery waits for both private files and successful management-owned hostname publication)
+- TESTS → TEST `tests/test_application_accounts.py` (Application account providers, stdin-only secrets, and fail-closed proofs)
+- TESTS → TEST `tests/test_participant_desktop.py` (Desktop resolution from the owned fixture pack and private publication)
+- TESTS → TEST `tests/test_pack_boundary_policy.py` (Boundary check over the repository and planted facts)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/participant_desktop.py` (Exact pack-qualified desktop reference admission)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/participant_hosts.py` (Validated hostname projection applied through management-owned publication)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/_participant_desktop_files.py` (Participant-only inactive credential and guide files)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/_participant_desktop_endpoints.py` (Declared endpoint resolution and bounded hostname mappings)
+- IMPLEMENTS → CODE_FILE `src/aptl/core/_participant_desktop_tls.py` (Verify the served chain, hostname and exact backend-issued leaf)
+- TESTS → TEST `tests/test_participant_desktop_tls.py` (Live TLS refusal, private-material isolation and released certificate bindings)
+- TESTS → TEST `tests/test_participant_desktop_lifecycle.py` (Start, failed-start, stop and reset withdraw stale desktop state)
+- TESTS → TEST `tests/test_participant_hosts.py` (Hostname conflicts, unsafe paths and metadata-preserving removal)
+- TESTS → TEST `tests/test_owned_content_install.py` (Declared content ownership reaches the realized node)
+- IMPLEMENTS → GITHUB_ISSUE `1273` (Move participant desktop and rule-file scenario facts behind the TechVault adapter)

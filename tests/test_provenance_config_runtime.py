@@ -116,6 +116,20 @@ class TestSafeConfigProjection:
         assert source["descriptor_sha256"].startswith("sha256:")
         assert "PRIVATE_SOURCE_LOCATOR" not in repr(projection)
 
+    def test_attached_vertex_source_identity_is_included(self):
+        config = AptlConfig(
+            experiment={
+                "participant_credential_sources": {
+                    "vertex": {"kind": "attached-service-account", "project": "attached-project"}
+                }
+            }
+        )
+
+        source = safe_config_projection(config)["participant_source_descriptors"]["vertex"]
+
+        assert source["kind"] == "attached-service-account"
+        assert source["descriptor_sha256"].startswith("sha256:")
+
     def test_projection_never_contains_a_secret_shaped_value(self):
         from aptl.utils.redaction import redact
 
@@ -143,7 +157,7 @@ class TestSafeConfigProjection:
             assert raw_section not in projection
         for value in projection.values():
             assert not isinstance(value, BaseModel)
-        assert all(isinstance(flag, bool) for flag in projection["containers"].values())
+        assert projection["containers"] == {"profiles": None}
 
     def test_projection_still_carries_the_fields_it_promises(self):
         """Guards the exclusion test above from passing on an empty projection."""

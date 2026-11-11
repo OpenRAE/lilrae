@@ -60,12 +60,12 @@ update_env_var() {
     chmod 600 "$ENV_FILE"
 }
 
-# Manual reruns start in a fresh shell, unlike `aptl lab start`, which passes
+# Manual reruns start in a fresh shell, unlike `lilrae lab start`, which passes
 # the hydrated lab environment explicitly. Reuse the running lab's credentials
 # so recovery cannot replace a randomized service key with a baked-in default.
 source "$SCRIPT_DIR/aptl-env.sh"
 for key in \
-    INDEXER_USERNAME INDEXER_PASSWORD MISP_API_KEY SHUFFLE_API_KEY CORTEX_API_KEY
+    INDEXER_USERNAME INDEXER_PASSWORD MISP_API_KEY SHUFFLE_API_KEY
 do
     aptl_load_env_key "$ENV_FILE" "$key"
 done
@@ -74,13 +74,11 @@ done
 # through the scenario adapter. The legacy defaults keep a manual invocation
 # useful for an older, unscoped checkout without teaching this script how to
 # query or infer deployment ownership.
-CORTEX_CONTAINER="${CORTEX_CONTAINER:-aptl-cortex}"
-THEHIVE_CONTAINER="${THEHIVE_CONTAINER:-aptl-thehive}"
 MISP_CONTAINER="${MISP_CONTAINER:-aptl-misp}"
 SHUFFLE_CONTAINER="${SHUFFLE_CONTAINER:-aptl-shuffle-frontend}"
 KALI_CONTAINER="${KALI_CONTAINER:-aptl-kali}"
 WAZUH_MANAGER_CONTAINER="${WAZUH_MANAGER_CONTAINER:-aptl-wazuh-manager}"
-export CORTEX_CONTAINER THEHIVE_CONTAINER MISP_CONTAINER SHUFFLE_CONTAINER
+export MISP_CONTAINER SHUFFLE_CONTAINER
 export KALI_CONTAINER WAZUH_MANAGER_CONTAINER
 export MISP_API_KEY="${MISP_API_KEY:-JHxBbGPnAtyut0FTwkeuhVFnbMksGRCRwsE0V9Xw}"
 
@@ -92,7 +90,7 @@ echo ""
 # ---------------------------------------------------------------------------
 # 0. Wait for SOC tools to be healthy
 # ---------------------------------------------------------------------------
-echo "[0/6] Waiting for SOC tools to be healthy..."
+echo "[0/5] Waiting for SOC tools to be healthy..."
 
 # SEC-006 / ADR-034: seed-shuffle.sh now talks to the HTTPS frontend
 # at https://localhost:3443. The readiness gate waits for
@@ -100,8 +98,6 @@ echo "[0/6] Waiting for SOC tools to be healthy..."
 # rather than the headless `aptl-shuffle-backend` container that
 # Docker reports without a `.State.Health.Status`.
 for svc in \
-    "$CORTEX_CONTAINER" \
-    "$THEHIVE_CONTAINER" \
     "$MISP_CONTAINER" \
     "$SHUFFLE_CONTAINER"
 do
@@ -130,59 +126,24 @@ done
 echo ""
 
 # ---------------------------------------------------------------------------
-# 1. Provision TheHive API key
+# 1. Persist SOC API keys for MCP servers
 # ---------------------------------------------------------------------------
-echo "[1/6] Provisioning TheHive API key..."
+echo "[1/5] Persisting SOC API keys..."
 
-if [ -x "$SCRIPT_DIR/thehive-apikey.sh" ]; then
-    if THEHIVE_API_KEY=$("$SCRIPT_DIR/thehive-apikey.sh" 2>/dev/null) && \
-        [ -n "$THEHIVE_API_KEY" ]; then
-        export THEHIVE_API_KEY
-        echo "  TheHive API key provisioned"
-
-        # Persist provisioned + default seed keys back to .env so MCP servers
-        # (which spawn fresh per tool call and load .env at startup) can
-        # authenticate to TheHive, MISP, and Shuffle without manual rewiring.
-        # The shared aptl-mcp-common library walks up the directory tree from
-        # each MCP server's docker-lab-config.json and merges .env defaults
-        # under process.env, so the values land in every MCP child process.
-        update_env_var THEHIVE_API_KEY "$THEHIVE_API_KEY"
-        # MISP and Shuffle use stable defaults baked into the lab; persist them
-        # too so future MCP startups read a single canonical source.
-        update_env_var MISP_API_KEY "${MISP_API_KEY:-JHxBbGPnAtyut0FTwkeuhVFnbMksGRCRwsE0V9Xw}"
-        update_env_var SHUFFLE_API_KEY "${SHUFFLE_API_KEY:-31a211c4-ea5c-4a49-b022-5e2434e758a7}"
-        echo "  TheHive/MISP/Shuffle API keys written to .env (mode 600)"
-    else
-        record_seed_failure "TheHive API key" "Could not provision TheHive API key"
-    fi
-else
-    record_seed_failure "TheHive API key" "thehive-apikey.sh not found"
-fi
+# MCP servers spawn fresh per tool call and load .env at startup. The shared
+# aptl-mcp-common library walks up the directory tree from each MCP server's
+# docker-lab-config.json and merges .env defaults under process.env. MISP and
+# Shuffle use stable defaults baked into the lab; persist them so every MCP
+# startup reads a single canonical source.
+update_env_var MISP_API_KEY "${MISP_API_KEY:-JHxBbGPnAtyut0FTwkeuhVFnbMksGRCRwsE0V9Xw}"
+update_env_var SHUFFLE_API_KEY "${SHUFFLE_API_KEY:-31a211c4-ea5c-4a49-b022-5e2434e758a7}"
+echo "  MISP/Shuffle API keys written to .env (mode 600)"
 
 # ---------------------------------------------------------------------------
-# 2. Provision Cortex API key for TheHive connector
+# 2. Wait for Wazuh Indexer to be healthy
 # ---------------------------------------------------------------------------
 echo ""
-echo "[2/6] Provisioning Cortex API key..."
-
-if [ -x "$SCRIPT_DIR/cortex-apikey.sh" ]; then
-    if CORTEX_API_KEY=$("$SCRIPT_DIR/cortex-apikey.sh") && \
-        [ -n "$CORTEX_API_KEY" ]; then
-        export CORTEX_API_KEY
-        update_env_var CORTEX_API_KEY "$CORTEX_API_KEY"
-        echo "  Cortex API key provisioned and written to .env (mode 600)"
-    else
-        record_seed_failure "Cortex API key" "Could not provision Cortex API key"
-    fi
-else
-    record_seed_failure "Cortex API key" "cortex-apikey.sh not found"
-fi
-
-# ---------------------------------------------------------------------------
-# 3. Wait for Wazuh Indexer to be healthy
-# ---------------------------------------------------------------------------
-echo ""
-echo "[3/6] Waiting for Wazuh Indexer to be healthy..."
+echo "[2/5] Waiting for Wazuh Indexer to be healthy..."
 
 INDEXER_PORT="${APTL_HP_WAZUH_INDEXER_9200:-9200}"
 INDEXER_URL="${INDEXER_URL:-https://localhost:${INDEXER_PORT}}"
@@ -215,10 +176,10 @@ if [ $elapsed -ge $max_wait ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 4. Seed MISP with threat intelligence
+# 3. Seed MISP with threat intelligence
 # ---------------------------------------------------------------------------
 echo ""
-echo "[4/6] Seeding MISP with lab threat intelligence..."
+echo "[3/5] Seeding MISP with lab threat intelligence..."
 
 if [ -x "$SCRIPT_DIR/seed-misp.sh" ]; then
     if ! "$SCRIPT_DIR/seed-misp.sh"; then
@@ -229,10 +190,10 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 5. Seed Shuffle with SOAR workflows
+# 4. Seed Shuffle with SOAR workflows
 # ---------------------------------------------------------------------------
 echo ""
-echo "[5/6] Seeding Shuffle with SOAR workflows..."
+echo "[4/5] Seeding Shuffle with SOAR workflows..."
 
 if [ -x "$SCRIPT_DIR/seed-shuffle.sh" ]; then
     if ! "$SCRIPT_DIR/seed-shuffle.sh"; then
@@ -243,10 +204,10 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 6. Configure Wazuh -> Shuffle integration
+# 5. Configure Wazuh -> Shuffle integration
 # ---------------------------------------------------------------------------
 echo ""
-echo "[6/6] Configuring Wazuh -> Shuffle integration..."
+echo "[5/5] Configuring Wazuh -> Shuffle integration..."
 
 WEBHOOK_FILE="${APTL_SHUFFLE_WEBHOOK_FILE:-/tmp/aptl_shuffle_webhook_url}"
 if [ -f "$WEBHOOK_FILE" ]; then
@@ -266,7 +227,7 @@ else
 fi
 
 # Workstation -> victim SSH trust (Prime scenario lateral movement) is
-# provisioned declaratively at `aptl lab start` time now (the workstation
+# provisioned declaratively at `lilrae lab start` time now (the workstation
 # pivot keypair placed by src/aptl/core/ssh.py + the SDL's
 # workstation-pivot-key/victim-authorized-keys content), not seeded here
 # (issue #581 — this used to plant the legacy workstation entrypoint's
@@ -293,11 +254,10 @@ echo "  Prime Scenario Seed Complete"
 echo "============================================="
 echo ""
 echo "Seeded state:"
-echo "  - TheHive API key: provisioned and stored in .env"
-echo "  - Cortex API key: provisioned for TheHive connector"
+echo "  - MISP/Shuffle API keys: stored in .env"
 echo "  - Wazuh Indexer: healthy"
 echo "  - MISP: Kali IOCs and attack patterns"
-echo "  - Shuffle: Alert-to-Case workflow (webhook -> MISP enrichment -> TheHive case)"
+echo "  - Shuffle: Alert Enrichment workflow (webhook -> MISP enrichment)"
 echo "  - Wazuh -> Shuffle: integration configured (level 10+ alerts)"
 echo ""
 echo "Ready for: aptl scenario start prime-enterprise"

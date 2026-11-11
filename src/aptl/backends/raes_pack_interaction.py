@@ -44,7 +44,9 @@ def apply_pack_interaction(
         return nodes, None
     context = PackBackendInteractionContext(
         pack=pack_identity,
-        backend=BackendIdentity(
+        backend=bundle.trial.target.backend
+        if bundle.trial
+        else BackendIdentity(
             target_name=APTL_RAES_TARGET_NAME,
             target_version=APTL_RAES_TARGET_VERSION,
             profile=APTL_RAES_TARGET_PROFILE,
@@ -53,7 +55,11 @@ def apply_pack_interaction(
         component_addresses=tuple(sorted(node.address for node in nodes)),
     )
     try:
-        resolved = resolve_pack_backend_interaction(context)
+        resolved = (
+            resolve_pack_backend_interaction(context, trial=bundle.trial)
+            if bundle.trial is not None
+            else resolve_pack_backend_interaction(context)
+        )
     except PackBackendInteractionError as exc:
         diagnostics.append(
             diagnostic(

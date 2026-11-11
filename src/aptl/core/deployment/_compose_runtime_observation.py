@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from aptl.core.deployment._compose_runtime_observation_helpers import (
     authority_mount_is_valid as _authority_mount_is_valid,
     inspect_has_endpoint_override as _inspect_has_endpoint_override,
@@ -115,6 +117,9 @@ class ComposeRuntimeOrchestrationObservationMixin:
         """Whether one holder exposes only the admitted endpoint to the same daemon."""
 
         info = self.container_inspect(container_name)
+        recording_source = self.recorded_docker_source(container_name)
+        if recording_source is not None:
+            admission = replace(admission, endpoint_source=recording_source)
         daemon_id = getattr(self, "_docker_daemon_id", None)
         configuration_ok = bool(
             _authority_mount_is_valid(_inspect_mounts(info), admission)

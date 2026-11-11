@@ -11,15 +11,26 @@ updated_at: 2026-07-26T01:35:18.580567Z
 
 # APP-1: Scenario-independent appliance boundary materialization
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/APP-1/requirement.md).
+
+
 ## Statement
 
 The APTL backend shall materialize admitted ACES infrastructure ACLs and narrow appliance-platform boundary controls through typed, scenario-independent deployment contracts; fail closed when network, egress, Docker-authority, or host-exposure policy is unsupported or unverifiable; and produce a redacted observed inventory used by image qualification and every appliance start.
 
 ## Rationale
 
-Internal security review and implementation are deferred to #1127 by the owner
-on 2026-09-20 (ADR-060). This requirement is not a #1022 VM-only delivery gate
-and is not claimed verified by VM-only qualification.
+Issue #1127 implements the internal seat-component protection separately from
+the outer #1022 VM-only boundary. A protected V3 seat default-denies ordinary
+range workloads from guest-host management/control, evidence custody, Docker
+authority, and platform credentials. V2 remains VM-only and cannot satisfy this
+claim. Qualification and every start require current kernel, daemon, workload,
+probe, boot, and host evidence; a signed image or VM-only qualification alone
+is insufficient.
 
 Issue #822 establishes the general materializability and qualification surface consumed by the disposable appliance artifact (#823) and host launcher (#824). Scenario topology and exercise effects remain authoritative in admitted ACES realization; the appliance platform policy must not duplicate current or future scenario nodes, networks, services, or zone membership.
 
@@ -61,3 +72,6 @@ Issue #822 establishes the general materializability and qualification surface c
 - TESTS → TEST `tests/test_raes_backend.py`
 - IMPLEMENTS → CODE_FILE `src/aptl/backends/raes_realization.py`
 - DOCUMENTS → DOCUMENTATION `docs/raes/app-1-appliance-boundary-materialization-preflight.md`
+- IMPLEMENTS → CODE_FILE `src/aptl/appliance/guest_observation.py` (Receipt-owned workload, authority, custody, and active probe observation)
+- TESTS → TEST `tests/test_appliance_guest_observation.py` (Protected-seat runtime and probe coverage)
+- DOCUMENTS → DOCUMENTATION `docs/architecture/issue-1127-seat-component-protection-design.md` (V3 threat model, components, flows, and residual risk)

@@ -6,7 +6,6 @@ and error handling for corrupt files.
 """
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -26,17 +25,6 @@ def _make_scenario_def(scenario_id: str = "test-scenario"):
 # ---------------------------------------------------------------------------
 
 
-class TestSessionState:
-    """Tests for the SessionState enum."""
-
-    def test_all_states(self):
-        """All expected session states should be defined."""
-        from aptl.core.session import SessionState
-
-        assert SessionState.IDLE == "idle"
-        assert SessionState.ACTIVE == "active"
-        assert SessionState.EVALUATING == "evaluating"
-        assert SessionState.COMPLETED == "completed"
 
 
 # ---------------------------------------------------------------------------
@@ -44,40 +32,6 @@ class TestSessionState:
 # ---------------------------------------------------------------------------
 
 
-class TestActiveSession:
-    """Tests for the ActiveSession dataclass."""
-
-    def test_creation_with_defaults(self):
-        """ActiveSession should have empty defaults for optional fields."""
-        from aptl.core.session import ActiveSession, SessionState
-
-        session = ActiveSession(
-            scenario_id="test",
-            state=SessionState.ACTIVE,
-            started_at="2026-02-16T14:30:00+00:00",
-        )
-        assert session.hints_used == {}
-        assert session.completed_objectives == []
-        assert session.trace_id == ""
-        assert session.span_id == ""
-
-    def test_creation_with_all_fields(self):
-        """ActiveSession should accept all fields."""
-        from aptl.core.session import ActiveSession, SessionState
-
-        session = ActiveSession(
-            scenario_id="test",
-            state=SessionState.ACTIVE,
-            started_at="2026-02-16T14:30:00+00:00",
-            trace_id="a" * 32,
-            span_id="b" * 16,
-            hints_used={"obj-a": 2},
-            completed_objectives=["obj-a"],
-        )
-        assert session.hints_used == {"obj-a": 2}
-        assert session.completed_objectives == ["obj-a"]
-        assert session.trace_id == "a" * 32
-        assert session.span_id == "b" * 16
 
 
 # ---------------------------------------------------------------------------

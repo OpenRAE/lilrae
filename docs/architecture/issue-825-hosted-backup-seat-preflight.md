@@ -1,5 +1,13 @@
 # Issue #825 Hosted Desktop Seat Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-825-hosted-backup-seat-preflight.md).
+Its last recorded file change before this rewrite was `103ebfbcb223`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note sets the design guardrails for the Black Hat Arsenal hosted-seat
 proof. It is guidance, not an implementation plan. The GitHub issue owns the
 delivery shape: one Ubuntu EC2 VM, one Linux account, one Amazon DCV session,

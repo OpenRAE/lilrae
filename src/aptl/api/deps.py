@@ -167,7 +167,7 @@ def get_web_asset_root(explicit: Optional[str] = None) -> Optional[Path]:
 
     Returns the resolved :class:`~pathlib.Path` when it exists and contains
     ``index.html``; otherwise returns ``None``. A ``None`` result is fatal for
-    ``aptl web serve`` unless ``--api-only`` is passed (see the CLI): APTL ships
+    ``lilrae web serve`` unless ``--api-only`` is passed (see the CLI): APTL ships
     clone-and-run, so the GUI is delivered either by the Docker ``aptl-web-ui``
     (Caddy) image or by a local ``cd web && npm run build`` that populates the
     repo-relative ``web/build``. Candidate 3 (``aptl/web_static``) is forward-

@@ -15,6 +15,7 @@ class CompletedContainerReceipt:
     image_digest: str | None = None
     image_config_id: str | None = None
     files: dict[str, bytes] = field(default_factory=dict, repr=False)
+    selected_image_ref: str | None = None
 
 
 @dataclass
@@ -40,6 +41,7 @@ class DeploymentObservationContext:
             image_digest=receipt.image_digest,
             image_config_id=receipt.image_config_id,
             files=deepcopy(receipt.files),
+            selected_image_ref=receipt.selected_image_ref,
         )
 
     def autoremove_verified(self, name: str) -> bool:
@@ -64,6 +66,21 @@ class DeploymentObservationContext:
 
         receipt = self.completed_autoremove.get(name)
         return receipt.image_config_id if receipt is not None else None
+
+    def completed_selected_image_identity(
+        self, name: str, expected_ref: str
+    ) -> tuple[str, str] | None:
+        """Return correlated proof only for the exact pin checked before removal."""
+
+        receipt = self.completed_autoremove.get(name)
+        if (
+            receipt is None
+            or receipt.selected_image_ref != expected_ref
+            or receipt.image_config_id is None
+            or receipt.image_digest is None
+        ):
+            return None
+        return receipt.image_config_id, receipt.image_digest
 
     def completed_file_read(
         self,

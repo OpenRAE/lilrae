@@ -68,7 +68,7 @@ _DEFAULTS: dict = dict(
     selected_profiles=["wazuh"],
     pack_interaction_evidence={},
     scenario_path=None,
-    scenario_display_name="techvault-operational",
+    scenario_display_name="fixture-operational",
     range_snapshot_dict={"timestamp": "2026-01-01T00:00:00Z", "containers": []},
     config_digests={"aptl.json": "abc123"},
     container_image_digests={},
@@ -167,16 +167,16 @@ class TestReproRecord:
     def test_pack_interaction_is_backend_evidence_not_portable_realization(self):
         evidence = {
             "pack": {
-                "pack_id": "techvault",
+                "pack_id": "fixture-range",
                 "pack_version": "0.1.0",
                 "set_digest": "sha256:" + "a" * 64,
             },
             "provider": {
-                "provider_id": "techvault-aptl-serving",
+                "provider_id": "fixture-range-aptl-serving",
                 "extension_api_version": "1",
-                "distribution": "aptl-techvault-pack-interaction",
+                "distribution": "aptl-fixture-range-pack-interaction",
                 "distribution_version": "0.1.0",
-                "entry_point": "techvault.aptl",
+                "entry_point": "fixture-range.aptl",
                 "mapping_digest": "sha256:" + "b" * 64,
             },
             "selected_profiles": ["soc", "otel"],
@@ -204,11 +204,11 @@ class TestReproRecord:
         assert _dummy_record()["backend_evidence"]["scenario_runtime_selections"] == []
 
     def test_acquired_pack_record_uses_bounded_locator_not_staging_path(self, tmp_path):
-        staged = tmp_path / ".aptl" / "staged-packs" / "random" / "techvault"
-        scenario = staged / "sdl" / "techvault.sdl.yaml"
+        staged = tmp_path / ".aptl" / "staged-packs" / "random" / "fixture-range"
+        scenario = staged / "sdl" / "fixture-range.sdl.yaml"
         evidence = {
             "pack": {
-                "pack_id": "techvault",
+                "pack_id": "fixture-range",
                 "pack_version": "0.1.0",
                 "set_digest": "sha256:" + "a" * 64,
             }
@@ -222,7 +222,7 @@ class TestReproRecord:
 
         scenario_record = record["raes"]["scenario"]
         assert scenario_record["sdl_path"] == (
-            "env-pack://techvault@0.1.0/sdl/techvault.sdl.yaml"
+            "env-pack://fixture-range@0.1.0/sdl/fixture-range.sdl.yaml"
         )
         assert str(tmp_path) not in json.dumps(record)
 
@@ -230,7 +230,7 @@ class TestReproRecord:
         scenario = tmp_path / "explicit.sdl.yaml"
         evidence = {
             "pack": {
-                "pack_id": "techvault",
+                "pack_id": "fixture-range",
                 "pack_version": "0.1.0",
                 "set_digest": "sha256:not-a-digest",
             }
@@ -249,11 +249,11 @@ class TestReproRecord:
         assert record["schema_version"] == "aptl.run-record/v2"
 
     def test_raes_lock_digest_none_when_no_lock(self, tmp_path):
-        record = _dummy_record(scenario_path=tmp_path / "techvault.sdl.yaml")
+        record = _dummy_record(scenario_path=tmp_path / "fixture-range.sdl.yaml")
         assert record["raes"]["scenario"]["raes_lock_digest"] is None
 
     def test_raes_lock_digest_computed_when_lock_present(self, tmp_path):
-        scenario = tmp_path / "scenarios" / "techvault.sdl.yaml"
+        scenario = tmp_path / "scenarios" / "fixture-range.sdl.yaml"
         scenario.parent.mkdir()
         scenario.touch()
         lock = scenario.parent / LOCKFILE_NAME

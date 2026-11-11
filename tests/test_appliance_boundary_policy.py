@@ -12,6 +12,7 @@ from aptl.core.appliance_boundary import (
     load_boundary_policy,
     render_egress_proxy_policy,
 )
+from tests.seat_policy_fixture import protected_seat_policy
 from aptl.workbench import ProfileId, profile_for
 
 
@@ -185,3 +186,66 @@ def test_proxy_policy_rejects_an_empty_authority_projection() -> None:
 
     with pytest.raises(ValueError, match="at least one"):
         render_egress_proxy_policy(policy)
+
+
+def test_seat_component_policy_rejects_incomplete_or_ambiguous_coverage() -> None:
+    payload = protected_seat_policy().model_dump(mode="json")
+    payload["protected_components"] = payload["protected_components"][:-1]
+
+    with pytest.raises(ValidationError, match="protected component classes"):
+        ApplianceBoundaryPolicy.model_validate(payload)
+
+    payload = protected_seat_policy().model_dump(mode="json")
+    payload["protected_components"][1]["probe_identity"] = payload[
+        "protected_components"
+    ][0]["probe_identity"]
+
+    with pytest.raises(ValidationError, match="probe identities"):
+        ApplianceBoundaryPolicy.model_validate(payload)
+
+    payload = protected_seat_policy().model_dump(mode="json")
+    payload["permitted_host_flows"] = [
+        {
+            "source": "ordinary-range-workload",
+            "destination": "management-control",
+            "protocol": "tcp",
+            "ports": [8444, 8443],
+            "purpose": "reviewed callback",
+            "probe_identity": "reviewed-callback",
+        }
+    ]
+
+    with pytest.raises(ValidationError, match="sorted unique"):
+        ApplianceBoundaryPolicy.model_validate(payload)
+
+
+def test_vm_only_policy_cannot_claim_seat_component_protection() -> None:
+    payload = protected_seat_policy().model_dump(mode="json")
+    payload["schema_version"] = "aptl.appliance-boundary/v2"
+    payload["default_deny"] = False
+
+    with pytest.raises(ValidationError, match="VM-only"):
+        ApplianceBoundaryPolicy.model_validate(payload)
+
+
+def test_boundary_binding_keeps_route_and_runtime_plan_identities_distinct() -> None:
+    binding = ApplianceBoundaryBinding(
+        policy_digest="sha256:" + "a" * 64,
+        payload_digest="sha256:" + "b" * 64,
+        participant_routes_digest="sha256:" + "c" * 64,
+        raes_plan_digest=None,
+        raes_boundary_required=False,
+        boundary_helper_image="example.test/aptl-boundary@sha256:" + "d" * 64,
+        egress_proxy_image="example.test/aptl-egress@sha256:" + "e" * 64,
+        boot_id="boot-42",
+        guest_daemon_id="daemon-42",
+        host_observation_id="host-42",
+    )
+
+    assert binding.participant_routes_digest == "sha256:" + "c" * 64
+    assert binding.raes_plan_digest is None
+
+    conflated = binding.model_dump()
+    conflated["raes_plan_digest"] = binding.participant_routes_digest
+    with pytest.raises(ValidationError, match="different artifacts"):
+        ApplianceBoundaryBinding.model_validate(conflated)

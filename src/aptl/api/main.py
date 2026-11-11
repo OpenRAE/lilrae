@@ -73,7 +73,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     # Launch handshake (UI-008a / ADR-039): the operator opens this URL (printed
-    # to their terminal by `aptl web serve`) with the one-time launch token. On a
+    # to their terminal by `lilrae web serve`) with the one-time launch token. On a
     # valid token, set the HttpOnly SameSite=Strict session cookie AND hand the
     # SPA the port-scoped header token, then redirect to the app. This is the ONLY
     # unauthenticated /api route — it mints the browser's two-factor session
@@ -108,7 +108,7 @@ def create_app() -> FastAPI:
         # surfaced here via uvicorn's loopback-trusted X-Forwarded-Proto) it is
         # mandatory. Over plain HTTP it must be OFF, or the browser withholds the
         # cookie and the two-factor session never completes: that covers the
-        # default loopback `aptl web serve` (no wire to protect) and an opt-in
+        # default loopback `lilrae web serve` (no wire to protect) and an opt-in
         # remote bind whose confidentiality comes from the transport (e.g.
         # Tailscale/WireGuard). request.url.scheme is trustworthy because
         # forwarded headers are honoured only from a loopback proxy.

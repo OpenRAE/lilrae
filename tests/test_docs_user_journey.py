@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+import shlex
 
 import yaml
 from typer.main import get_command
 
 from aptl.api.routers import config, kill, lab, scenarios, terminal
 from aptl.cli.main import app as cli_app
+from aptl.core.opencode import SUPPORTED_OPENCODE_BUILD
 
 
 ROOT = Path(__file__).parents[1]
@@ -69,9 +71,9 @@ def test_navigation_puts_operator_tasks_before_design_records() -> None:
     nav = yaml.safe_load(mkdocs)["nav"]
     top_level = [next(iter(item)) for item in nav]
 
-    assert top_level[:4] == ["Home", "Lab Guide", "Interfaces", "Operations"]
-    assert top_level.index("Lab Guide") < top_level.index("Architecture")
-    assert top_level.index("Interfaces") < top_level.index("Decisions")
+    assert top_level[:4] == ["Home", "Tutorials", "How-to guides", "Reference"]
+    assert top_level.index("How-to guides") < top_level.index("Explanation")
+    assert top_level.index("Reference") < top_level.index("Decisions")
 
 
 def test_home_links_directly_to_the_complete_first_time_journey() -> None:
@@ -121,12 +123,151 @@ def test_quick_start_follows_the_operator_workflow_in_order() -> None:
     assert [heading for heading in headings if heading in required_order] == required_order
 
 
+def test_workshop_routes_separate_setup_from_learning() -> None:
+    """A learner can reach setup, recovery and cleanup without design records."""
+    tutorial = _links(_document("docs/workshop/walkthrough.md"))
+    setup = _links(_document("docs/workshop/setup.md"))
+    assert "setup.md" in tutorial.values()
+    assert "setup.md#recover-a-session" in tutorial.values()
+    assert "setup.md#clean-up" in tutorial.values()
+    assert "walkthrough.md" in setup.values()
+    for document in ("docs/workshop/walkthrough.md", "docs/workshop/setup.md"):
+        for target in _links(_document(document)).values():
+            if "://" in target:
+                continue
+            path, _, fragment = target.partition("#")
+            destination = ROOT / document
+            destination = destination.parent / path if path else destination
+            assert destination.is_file(), target
+            if fragment:
+                headings = re.findall(
+                    r"(?m)^#{1,6} (.+)$", destination.read_text(encoding="utf-8")
+                )
+                assert fragment in {_slug(heading) for heading in headings}, target
+
+
+def reader_routes() -> dict[str, set[str]]:
+    """Return each top-level reader section's page set from ``mkdocs.yml``."""
+    mkdocs = _document("mkdocs.yml").replace(
+        "!!python/name:pymdownx.superfences.fence_code_format",
+        "'pymdownx.superfences.fence_code_format'",
+    )
+
+    def targets(value: object) -> set[str]:
+        if isinstance(value, str):
+            return {value}
+        if isinstance(value, list):
+            return set().union(*(targets(item) for item in value))
+        if isinstance(value, dict):
+            return set().union(*(targets(item) for item in value.values()))
+        return set()
+
+    nav = yaml.safe_load(mkdocs)["nav"]
+    return {next(iter(item)): targets(item) for item in nav}
+
+
+def assert_split_pages_cross_link(split_pages: dict[str, str]) -> None:
+    """Fail unless each split source page and its guide link to each other."""
+    for source, guide in split_pages.items():
+        for origin, destination in ((source, guide), (guide, source)):
+            links = {
+                (DOCS / origin).parent / target.split("#", 1)[0]
+                for target in _links(_document(f"docs/{origin}")).values()
+                if "://" not in target
+            }
+            assert (DOCS / destination) in links, (origin, destination)
+
+
+def test_split_operator_pages_are_reachable_from_reader_navigation() -> None:
+    """Every split page has a reader route; source archives remain separate."""
+    routes = reader_routes()
+    assert {
+        "getting-started/host-requirements.md",
+        "getting-started/installation-reference.md",
+        "getting-started/pack-reference.md",
+        "troubleshooting/diagnostics.md",
+        "components/wazuh-siem.md",
+        "components/wazuh-active-response.md",
+        "components/victim-containers.md",
+        "reference/opencode-participants.md",
+        "reference/windows-endpoint.md",
+        "sdl/curated-variant-reference.md",
+        "workshop/reference.md",
+        "workshop/hosted-backup-reference.md",
+    } <= routes["Reference"]
+    assert {
+        "workshop/setup.md",
+        "troubleshooting/search-index-backup.md",
+        "sdl/index.md",
+        "containers/victim-template-guide.md",
+        "components/victim-operations.md",
+        "components/kali-operations.md",
+        "reference/source-image-maintenance.md",
+        "components/wazuh-operations.md",
+        "components/wazuh-response-operations.md",
+        "components/defensive-posture-operations.md",
+        "components/appliance-qualification.md",
+        "raes/scenario-validation.md",
+        "raes/live-validation.md",
+        "raes/install-cleanup.md",
+        "reference/appliance-seat-operations.md",
+        "reference/evidence-bundle-operations.md",
+        "reference/host-mcp-operations.md",
+        "reference/mcp-operations.md",
+        "reference/opencode-operations.md",
+        "reference/project-configuration.md",
+        "reference/migrate-configuration.md",
+        "reference/run-operations.md",
+        "reference/web-proxy.md",
+        "reference/family-adapter-operations.md",
+        "reference/participant-request-operations.md",
+        "components/workbench-composition.md",
+    } <= routes["How-to guides"]
+    assert {"sdl/paper-walkthrough.md", "workshop/walkthrough.md"} <= routes["Tutorials"]
+    assert {
+        "getting-started/execution-boundaries.md",
+        "getting-started/environment-bindings.md",
+        "reference/seat-containment.md",
+        "components/red-side-capture-boundary.md",
+        "sdl/runtime-architecture.md",
+    } <= routes["Explanation"]
+    for target in set().union(*routes.values()):
+        assert (DOCS / target).is_file(), target
+
+    split_pages = {
+        "reference/appliance-seat-launcher.md": "reference/appliance-seat-operations.md",
+        "reference/host-mcp-access.md": "reference/host-mcp-operations.md",
+        "reference/evidence-bundle-export.md": "reference/evidence-bundle-operations.md",
+        "reference/opencode-participants.md": "reference/opencode-operations.md",
+        "reference/family-adapters.md": "reference/family-adapter-operations.md",
+        "reference/participant-request-manifests.md": "reference/participant-request-operations.md",
+    }
+    assert_split_pages_cross_link(split_pages)
+
+
 def test_cli_reference_tracks_every_registered_command_group() -> None:
     rows = _table("docs/reference/cli.md", "Command Groups")
-    documented = {row["Command"].removeprefix("aptl ") for row in rows}
+    documented = {row["Command"].removeprefix("lilrae ") for row in rows}
     registered = set(get_command(cli_app).commands)
 
     assert documented == registered
+
+    # Check the documented command paths and flags against the real CLI.
+    # This detects renamed/removed subcommands and options without running a lab.
+    root = get_command(cli_app)
+    for row in _table("docs/reference/cli.md", "First-Lab Commands"):
+        arguments = shlex.split(row["Command"])[1:]
+        command = root
+        while arguments and hasattr(command, "commands"):
+            name = arguments.pop(0)
+            assert name in command.commands, row["Command"]
+            command = command.commands[name]
+        options = {
+            option
+            for parameter in command.params
+            for option in (*parameter.opts, *parameter.secondary_opts)
+        }
+        assert {value for value in arguments if value.startswith("-")} <= options
 
 
 def test_mcp_reference_tracks_built_and_enabled_server_surfaces() -> None:
@@ -193,3 +334,10 @@ def test_support_and_security_actions_use_the_canonical_repository_policies() ->
         assert links["Report a vulnerability privately"] == (
             "https://github.com/OpenRAE/lilrae/security/advisories/new"
         )
+
+
+def test_opencode_reference_matches_the_supported_executable() -> None:
+    rows = _table("docs/reference/opencode-participants.md", "Supported build and route")
+    values = {row["Identity"]: row["Supported value"] for row in rows}
+    assert values["OpenCode"].split(",", 1)[0] == SUPPORTED_OPENCODE_BUILD.version
+    assert values["Executable SHA-256"] == SUPPORTED_OPENCODE_BUILD.executable_sha256

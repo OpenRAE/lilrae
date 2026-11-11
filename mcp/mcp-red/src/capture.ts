@@ -10,6 +10,9 @@
  * the raw command, args, and result text are preserved (modulo
  * credential redaction via the shared `redact()` helper, with an
  * experimenter-side opt-out via `APTL_EXPERIMENT_NO_REDACT=1`).
+ * The result text is the text the agent received: the common tool
+ * result size limit can cut long output. The per-run PTY tee keeps the
+ * full command output.
  *
  * When no scenario context is active (no `trace-context.json` in the
  * state dir), capture falls back to the `_unbound` sentinel
@@ -89,7 +92,8 @@ export interface ToolCallCaptureRecord {
   args: unknown; // redacted
   /** Redacted command result, only when `APTL_RED_CAPTURE_INCLUDE_RESULT=true`. Free-form
    * stdout from red-team tools can contain unlabelled credentials that
-   * pattern-based redaction cannot reliably mask, so this is opt-in. */
+   * pattern-based redaction cannot reliably mask, so this is opt-in. It is
+   * the result the agent received, after the common tool result size limit. */
   result?: unknown;
   error?: string; // redacted error message
   exit_code?: number;

@@ -11,6 +11,13 @@ updated_at: 2026-10-12T17:30:00.000000Z
 
 # SCN-010: ACES SDL as APTL's Canonical Scenario Authoring Surface
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/SCN-010/requirement.md).
+
+
 ## Statement
 
 APTL shall consume the external Agentic Cyber Environment System (ACES) SDL (sibling repository at ../aces-sdl) as its canonical scenario authoring surface. All authored scenarios shall be ACES SDL documents validated by the ACES reference parser, compiled through the ACES runtime model, and executed via an APTL-implemented ACES backend target. APTL shall not maintain a parallel in-tree scenario specification language. APTL's backend implementation shall publish a backend-manifest-v2 declaring conformance to a named ACES backend capability profile from contracts/profiles/backend/, with `provisioning-only` as the initial target, and shall pass the `aces conformance backend` suite for that profile. The legacy `aptl.core.sdl` and `scenarios/*.yaml` paths shall remain functional until the ACES-authored `techvault.sdl.yaml` scenario reaches capability parity with the existing scenario set (same node/service/vulnerability/feature surfaces, injects, scenario flow shapes, objectives, scoring outputs, and run-archive surfaces); once parity holds, the default scenario flips to the ACES TechVault, `scenarios/*.yaml` moves to `scenarios/archive/` as reference-only material, `aptl.core.sdl` is deleted, and Pydantic ScenarioDefinition models are deleted, all in a single cutover PR. This requirement supersedes DSL-001 and SCN-001 (both transitioned to DEPRECATED at cutover) and deprecates DSL-002 through DSL-009 at cutover. RTE-001's input source changes from APTL's in-tree DSL to the ACES RuntimeModel.
@@ -20,6 +27,9 @@ APTL shall consume the external Agentic Cyber Environment System (ACES) SDL (sib
 UPDATED 2026-10-12: b4b9c04d (#757) removed the aptl aces-inventory command and the docs/aces/inventory/ records on 2026-07-12, so the ten TESTS entries that ran it against those records are gone. ced66dcc (#846) renamed bin/install-aces-inventory-skill.sh to bin/install-raes-inventory-skill.sh on 2026-07-26, and the installer entries name the new script and its --raes-repo option. See GitHub issue #954. --- Original rationale: APTL and ACES are co-developed inside a single research agenda. ACES's core research claim is that the same authored scenario can be realized across multiple range backends; APTL is the first production-style backend that exercises the ACES contract surface end-to-end. Maintaining a parallel APTL-local SDL fragments authoring tools, drifts grammar versus ACES, and prevents cross-backend scenario comparison, collapsing the reproducibility claim the program rests on. Better-specified scenarios (typed ACES runtime model, planned reconciliation with explicit ordering and refresh dependencies, contract-validated runtime envelopes, OCI module distribution with lockfiles via `aces sdl resolve`/`verify-imports`/`publish`) directly support reproducibility of experimental runs across backends, time, and authors. Carrying two SDLs is also duplicate engineering: every DSL-002..DSL-009 feature is already on the ACES roadmap, and ACES has tooling APTL would otherwise rebuild in-tree. Adoption is structured as a two-phase migration (parallel ACES path during Phase A; single cutover PR for Phase B) so APTL is not broken during the transition. ADR-035 records the decision. The remaining work is not just to make TechVault trigger through ACES; APTL must implement a scenario-generic ACES backend interpreter/realizer for any scenario within APTL's supported expressivity class. TechVault is the comprehensive proving case. This work is tracked by GitHub issue series #317-#324; profile-upgrade follow-ons remain #311 and #312.
 
 ## Traceability
+
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/_raes_runtime_target.py` (Scenario runtime target construction)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/_raes_manifest_realization.py` (Scenario realization capabilities)
 
 - IMPLEMENTS → GITHUB_ISSUE `330` (SCN-010 inventory: webapp container (steady-state asset spec))
 - IMPLEMENTS → PULL_REQUEST `361` (Add webapp ACES inventory)
@@ -31,7 +41,7 @@ UPDATED 2026-10-12: b4b9c04d (#757) removed the aptl aces-inventory command and 
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/techvault_gate.py` (ACES TechVault static validation gate (public API + orchestrator))
 - IMPLEMENTS → PULL_REQUEST `326` (Land SCN-010 parity inventory (#318))
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/_gate_checks.py` (ACES static validation gate check implementations)
-- TESTS → TEST `tests/test_techvault_static_gate.py` (ACES static validation gate tests)
+- TESTS → TEST `tests/techvault/test_techvault_static_gate.py` (ACES static validation gate tests)
 - IMPLEMENTS → PULL_REQUEST `359` (Add ACES inventory methodology tooling)
 - DOCUMENTS → ADR `ADR-035` (Adopt ACES SDL as APTL's Scenario Authoring Surface)
 - IMPLEMENTS → GITHUB_ISSUE `311` (Upgrade APTL backend conformance to orchestration-capable profile)
@@ -74,7 +84,6 @@ UPDATED 2026-10-12: b4b9c04d (#757) removed the aptl aces-inventory command and 
 - IMPLEMENTS → GITHUB_ISSUE `343` (SCN-010 inventory: wazuh-sidecar-db container (steady-state asset spec))
 - IMPLEMENTS → PULL_REQUEST `396` (added: SCN-010 wazuh-sidecar-db ACES steady-state inventory (+ #388 secret-redaction reconciliation))
 - IMPLEMENTS → GITHUB_ISSUE `357` (SCN-010 inventory: cortex container (steady-state asset spec))
-- TESTS → TEST `tests/test_cortex_integration_config.py` (TheHive/Cortex integration configuration checks)
 - IMPLEMENTS → PULL_REQUEST `409` ([codex] Integrate and inventory Cortex)
 - IMPLEMENTS → GITHUB_ISSUE `341` (SCN-010 inventory: wazuh.indexer container (steady-state asset spec))
 - IMPLEMENTS → PULL_REQUEST `392` (added: SCN-010 wazuh.indexer ACES steady-state inventory)
@@ -90,7 +99,7 @@ UPDATED 2026-10-12: b4b9c04d (#757) removed the aptl aces-inventory command and 
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/techvault_live_gate.py` (ACES live validation gate orchestrator (SCN-010F))
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/_live_gate_checks.py` (ACES live validation gate checks (SCN-010F))
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/_live_gate_probes.py` (ACES live validation gate probe helpers (SCN-010F))
-- TESTS → TEST `tests/test_techvault_live_gate.py` (ACES live validation gate tests (SCN-010F))
+- TESTS → TEST `tests/techvault/test_techvault_live_gate.py` (ACES live validation gate tests (SCN-010F))
 - IMPLEMENTS → CODE_FILE `src/aptl/core/runtime/workflow_engine.py` (RTE-001 workflow execution engine)
 - TESTS → TEST `tests/test_workflow_engine.py` (RTE-001 workflow engine tests)
 - IMPLEMENTS → GITHUB_ISSUE `514` (APTL ACES orchestrator: report real RTE-001 workflow execution state)

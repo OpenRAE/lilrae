@@ -14,9 +14,6 @@ from aptl.core.deployment._compose_stateful_constants import (
 from aptl.core.deployment._flag_signing_keys import FLAG_SIGNING_PROFILE_V2
 from aptl.core.deployment._misp_cache_credential import MISP_CACHE_CREDENTIAL_PROFILE
 from aptl.core.deployment._misp_server_tls import MISP_SERVER_TLS_PROFILE
-from aptl.core.deployment._cortex_service_credentials import (
-    CORTEX_SERVICE_CREDENTIALS_PROFILE,
-)
 from aptl.core.deployment._wazuh_identity import wazuh_cluster_identity
 
 # Certificate-bundle provenances APTL can realize: the in-tree provenance file
@@ -136,7 +133,6 @@ def _one_artifact_errors(artifact: object) -> list[str]:
         and artifact.provenance
         not in {
             FLAG_SIGNING_PROFILE_V2,
-            CORTEX_SERVICE_CREDENTIALS_PROFILE,
             MISP_CACHE_CREDENTIAL_PROFILE,
             MISP_SERVER_TLS_PROFILE,
         }

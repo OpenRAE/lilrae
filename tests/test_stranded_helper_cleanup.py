@@ -146,7 +146,7 @@ class _RecordingBackend:
         self.events.append(cmd[-1])
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
-    def remove_generic_materializer_containers(self):
+    def remove_generic_materializer_containers(self, *, remove_volumes=True):
         self.events.append("generic")
         return []
 
@@ -154,7 +154,7 @@ class _RecordingBackend:
         self.events.append("helpers")
         return []
 
-    def remove_project_containers(self):
+    def remove_project_containers(self, *, remove_volumes=True):
         self.events.append("containers")
         return []
 

@@ -34,7 +34,6 @@ cat > blue.mcp.json <<JSON
   "aptl-indexer":{"command":"node","args":["$M/mcp-indexer/build/index.js"]},
   "aptl-network":{"command":"node","args":["$M/mcp-network/build/index.js"]},
   "aptl-threatintel":{"command":"node","args":["$M/mcp-threatintel/build/index.js"]},
-  "aptl-casemgmt":{"command":"node","args":["$M/mcp-casemgmt/build/index.js"]},
   "aptl-soar":{"command":"node","args":["$M/mcp-soar/build/index.js"]}
 }}
 JSON
@@ -46,7 +45,7 @@ tmux kill-session -t purple 2>/dev/null || true
 tmux new-session -d -s red -x 200 -y 50
 tmux send-keys -t red "cd ~/aptl3 && $BEDROCK && clear && echo '### RED TEAM (attacker: aptl-red / kali) ###' && $RED_CMD" Enter
 tmux new-session -d -s blue -x 200 -y 50
-tmux send-keys -t blue "cd ~/aptl3 && $BEDROCK && clear && echo '### BLUE TEAM (SOC: wazuh/indexer/suricata/misp/thehive/shuffle) ###' && $BLUE_CMD" Enter
+tmux send-keys -t blue "cd ~/aptl3 && $BEDROCK && clear && echo '### BLUE TEAM (SOC: wazuh/indexer/suricata/misp/shuffle) ###' && $BLUE_CMD" Enter
 # clear any first-run MCP-approval prompt
 sleep 16; tmux send-keys -t red Enter; tmux send-keys -t blue Enter
 

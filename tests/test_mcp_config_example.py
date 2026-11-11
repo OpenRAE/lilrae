@@ -14,7 +14,6 @@ EXPECTED_SERVERS = {
     "aptl-wazuh": "mcp/mcp-wazuh/build/index.js",
     "aptl-network": "mcp/mcp-network/build/index.js",
     "aptl-threatintel": "mcp/mcp-threatintel/build/index.js",
-    "aptl-casemgmt": "mcp/mcp-casemgmt/build/index.js",
     "aptl-soar": "mcp/mcp-soar/build/index.js",
 }
 
@@ -42,7 +41,6 @@ def test_mcp_sync_creates_private_config_and_injects_seeded_keys(tmp_path) -> No
         EXAMPLE_PATH.read_text(encoding="utf-8"), encoding="utf-8"
     )
     (tmp_path / ".env").write_text(
-        "THEHIVE_API_KEY=thehive-test-key\n"
         "MISP_API_KEY=misp-test-key\n"
         "SHUFFLE_API_KEY=shuffle-test-key\n",
         encoding="utf-8",
@@ -54,9 +52,6 @@ def test_mcp_sync_creates_private_config_and_injects_seeded_keys(tmp_path) -> No
     generated = json.loads(generated_path.read_text(encoding="utf-8"))
     servers = generated["mcpServers"]
     assert generated_path.stat().st_mode & 0o777 == 0o600
-    assert servers["aptl-casemgmt"]["env"]["THEHIVE_API_KEY"] == (
-        "thehive-test-key"
-    )
     assert servers["aptl-threatintel"]["env"]["MISP_API_KEY"] == (
         "misp-test-key"
     )
@@ -71,16 +66,16 @@ def test_mcp_sync_preserves_existing_client_entries(tmp_path) -> None:
     existing = {
         "mcpServers": {
             "operator-tool": {"command": "operator-mcp"},
-            "aptl-casemgmt": {
+            "aptl-threatintel": {
                 "command": "node",
-                "args": ["./custom-casemgmt.js"],
-                "env": {"THEHIVE_API_KEY": "stale"},
+                "args": ["./custom-threatintel.js"],
+                "env": {"MISP_API_KEY": "stale"},
             },
         }
     }
     (tmp_path / ".mcp.json").write_text(json.dumps(existing), encoding="utf-8")
     (tmp_path / ".env").write_text(
-        "THEHIVE_API_KEY=fresh\n", encoding="utf-8"
+        "MISP_API_KEY=fresh\n", encoding="utf-8"
     )
 
     _sync_mcp_config_keys(tmp_path, [])
@@ -89,9 +84,9 @@ def test_mcp_sync_preserves_existing_client_entries(tmp_path) -> None:
     assert updated["mcpServers"]["operator-tool"] == {
         "command": "operator-mcp"
     }
-    casemgmt = updated["mcpServers"]["aptl-casemgmt"]
-    assert casemgmt["args"] == ["./custom-casemgmt.js"]
-    assert casemgmt["env"]["THEHIVE_API_KEY"] == "fresh"
+    threatintel = updated["mcpServers"]["aptl-threatintel"]
+    assert threatintel["args"] == ["./custom-threatintel.js"]
+    assert threatintel["env"]["MISP_API_KEY"] == "fresh"
 
 
 def _resolved(env_var: str, default_port: int, resolved_port: int):

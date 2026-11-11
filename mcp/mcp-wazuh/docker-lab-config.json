@@ -41,7 +41,13 @@
           "match_all": {}
         },
         "size": 100,
-        "sort": [{ "@timestamp": { "order": "desc" } }]
+        "sort": [
+          {
+            "@timestamp": {
+              "order": "desc"
+            }
+          }
+        ]
       },
       "description": "Search processed Wazuh alerts with filters. Use Elasticsearch query DSL in body parameter. Example: {\"body\": {\"query\": {\"range\": {\"@timestamp\": {\"gte\": \"now-1h\"}}}}}"
     },
@@ -59,7 +65,13 @@
           "match_all": {}
         },
         "size": 50,
-        "sort": [{ "@timestamp": { "order": "desc" } }]
+        "sort": [
+          {
+            "@timestamp": {
+              "order": "desc"
+            }
+          }
+        ]
       },
       "description": "Search raw log data (archives) before rule processing. Requires logall_json=yes in ossec.conf and the archives fileset enabled in the Filebeat wazuh module. Use Elasticsearch query DSL in body parameter. Example: {\"body\": {\"query\": {\"match\": {\"data.srcip\": \"192.168.1.1\"}}}}"
     },
@@ -74,9 +86,27 @@
       },
       "verify_ssl": false,
       "path_param_patterns": {
-        "filename": "[A-Za-z0-9][A-Za-z0-9_.-]*\\.xml"
+        "filename": "[A-Za-z0-9][A-Za-z0-9_.-]{0,250}\\.xml"
       },
-      "description": "Upload a custom Wazuh rules file through the authenticated rules-file API. Put the file name in params.filename and the complete rules XML in body as a raw string. The file name must end in .xml and contain only letters, digits, '_', '.' or '-'. Set params.overwrite to true to replace an existing file. Example: {\"params\": {\"filename\": \"custom_rules.xml\", \"overwrite\": true}, \"body\": \"<group name=\\\"custom,\\\">...</group>\"}"
+      "description": "Upload a custom Wazuh rules file through the authenticated rules-file API. Put the file name in params.filename and the complete rules XML in body as a raw string. The file name must end in .xml and contain only letters, digits, '_', '.' or '-'. Set params.overwrite to true to replace an existing file. Example: {\"params\": {\"filename\": \"custom_rules.xml\", \"overwrite\": true}, \"body\": \"<group name=\\\"custom,\\\">...</group>\"}",
+      "params_schema": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 255
+          },
+          "overwrite": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "filename"
+        ],
+        "additionalProperties": false
+      }
     }
   }
 }

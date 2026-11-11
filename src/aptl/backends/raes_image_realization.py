@@ -10,6 +10,7 @@ from typing import Any
 
 from pydantic import ValidationError
 from raes.artifact_requirements import ArtifactRequirement
+from raes.runtime_configuration import RuntimeConfiguration
 from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.planning import PlannedResource
 
@@ -19,7 +20,6 @@ from aptl.backends._raes_image_policy import (
     _DIGEST_RE,
     _PROJECT_DOCKERFILE_PATH_RE,
     _allowed_digest_pinned_ref,
-    _allowed_exact_tag_ref,
     _is_compose_owned_source,
     _local_build_ref,
     _policy_diagnostic,
@@ -27,6 +27,10 @@ from aptl.backends._raes_image_policy import (
     _safe_image_name,
 )
 from aptl.core.deployment.realization import DeploymentImageRealization
+from aptl.backends._raes_backend_implementation_profiles import (
+    BackendImplementationProfile,
+    matching_source_implementation_profile,
+)
 
 
 @dataclass(frozen=True)
@@ -52,6 +56,9 @@ def resolve_node_image(
     image: DeploymentImageRealization | None = None
     source = _node_source(payload, resource.address, diagnostics)
     if source is not None:
+        if source.name == "windows-server":
+            diagnostics.append(_policy_diagnostic(resource.address, "unsupported-windows-source"))
+            return None
         if _is_dynamic_composition_source(source):
             # An admitted dynamic-composition node intentionally has no node image
             # (ADR-051 route 3): it composes onto the generic substrate and proves
@@ -334,7 +341,7 @@ def _resolve_trusted_image(
             diagnostics=diagnostics,
         )
     if image is None:
-        image = _pull_image(resource.address, source, service_name)
+        image = _pull_image(resource, source, service_name, diagnostics)
     return image
 
 
@@ -378,20 +385,24 @@ def _build_image(
 
 
 def _pull_image(
-    address: str,
+    resource: PlannedResource,
     source: _NodeSource,
     service_name: str,
+    diagnostics: list[Diagnostic],
 ) -> DeploymentImageRealization | None:
     """Resolve allowed pull policies into an image operation."""
 
     policy_rule = "allowed-digest"
     image_ref = _allowed_digest_pinned_ref(source.name, source.version)
-    if image_ref is None:
-        policy_rule = "allowed-source"
-        image_ref = _allowed_exact_tag_ref(source.name, source.version)
+    profile = None
+    if image_ref is None and not _is_compose_owned_source(source.name, source.version):
+        profile = _catalog_source_profile(resource, source, diagnostics)
+        if profile is not None:
+            policy_rule = "trusted-source-catalog"
+            image_ref = profile.image_ref
     if image_ref is not None:
         return DeploymentImageRealization(
-            address=address,
+            address=resource.address,
             service_name=service_name,
             source_name=source.name,
             source_version=source.version,
@@ -399,8 +410,32 @@ def _pull_image(
             mode="pull",
             policy_rule=policy_rule,
             provenance=_provenance_counts(source.build),
+            catalog_record=profile.profile_id if profile is not None else None,
+            catalog_revision=profile.source_catalog_revision if profile is not None else None,
+            provenance_refs=profile.provenance_refs if profile is not None else (),
         )
     return None
+
+
+def _catalog_source_profile(
+    resource: PlannedResource, source: _NodeSource, diagnostics: list[Diagnostic]
+) -> BackendImplementationProfile | None:
+    """Validate runtime facts before selecting one source catalog profile."""
+
+    node = resource.payload.get("spec", {}).get("node", {})
+    try:
+        runtime = RuntimeConfiguration.model_validate(node.get("runtime") or {})
+    except ValidationError:
+        diagnostics.append(_policy_diagnostic(resource.address, "incompatible-source"))
+        return None
+    profile, reason = matching_source_implementation_profile(
+        source.name, source.version, runtime,
+        os=_source_string(node.get("os")) or "",
+        os_version=_source_string(node.get("os_version")) or "",
+    )
+    if reason is not None:
+        diagnostics.append(_policy_diagnostic(resource.address, reason))
+    return profile
 
 
 def _project_dockerfile_candidate(build: Mapping[str, Any]) -> str | None:

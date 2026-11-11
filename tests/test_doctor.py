@@ -1,4 +1,4 @@
-"""`aptl doctor` checks prerequisites without changing anything (#1218).
+"""`lilrae doctor` checks prerequisites without changing anything (#1218).
 
 The checks are driven through the real `run_doctor` against a fake selected
 daemon: a list-form runner answering the same read-only Docker queries a real
@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from aptl.core import hostenv
+from aptl.core._doctor_common import node_version_supported
 from aptl.core.deployment import get_backend as real_get_backend
 from aptl.core.doctor import CheckStatus, run_doctor
 from aptl.core.execution_boundary import ExecutionBoundaryObservation
@@ -59,6 +60,28 @@ _BOUNDARIES = {
     "remote-unverified": ("remote-ssh", "unknown", "partial"),
     "unknown": ("unknown", "unknown", "unknown"),
 }
+
+
+@pytest.mark.parametrize(
+    ("version", "allowed"),
+    [
+        ("v22.23.4", True),
+        ("22.24.0", True),
+        ("v24.22.1", True),
+        ("v26.12.1", True),
+        ("v22.23.3", False),
+        ("v24.22.0", False),
+        ("v26.12.0", False),
+        ("v20.20.2", False),
+        ("v25.9.0", False),
+        ("22", False),
+        ("v22.23", False),
+        ("v22.23.4-rc.1", False),
+        ("not-a-version", False),
+    ],
+)
+def test_node_runtime_policy_fails_closed(version, allowed):
+    assert node_version_supported(version) is allowed
 
 
 class _FakeDaemon:
@@ -157,15 +180,16 @@ def host(mocker):
             passed=True, current_value=262144, required_value=262144
         ),
         "buildx": ToolReqResult(passed=True, command="docker buildx version"),
-        "node": "v20.11.1\n",
+        "node": "v22.23.4\n",
     }
 
-    def check_max_map_count(*, selected_mode):
+    def check_max_map_count(minimum=262144, *, selected_mode):
         canned = state["max_map_count"]
         if selected_mode == hostenv.DOCKER_LINUX_NATIVE and canned is not None:
             return canned
-        return real_check_max_map_count(selected_mode=selected_mode)
+        return real_check_max_map_count(minimum, selected_mode=selected_mode)
 
+    mocker.patch("aptl.core._doctor_runtime._selected_kernel_demand", return_value=(262144, False))
     state["get_backend"] = mocker.patch(
         "aptl.core.deployment.get_backend",
         side_effect=lambda *_args, **_kwargs: _FakeBackend(state["daemon"]),
@@ -235,13 +259,18 @@ def test_doctor_changes_nothing_and_only_queries(tmp_path, host):
         pytest.param(
             {"config": None},
             (),
-            ("project-config", CheckStatus.FAILED, "No aptl.json", "aptl lab init"),
+            ("project-config", CheckStatus.FAILED, "No aptl.json", "lilrae lab init"),
             id="no-config",
         ),
         pytest.param(
             {"config": "{not json"},
             (),
-            ("project-config", CheckStatus.FAILED, "not valid", "aptl config validate"),
+            (
+                "project-config",
+                CheckStatus.FAILED,
+                "not valid",
+                "lilrae config validate",
+            ),
             id="invalid-config",
         ),
         pytest.param(
@@ -259,14 +288,30 @@ def test_doctor_changes_nothing_and_only_queries(tmp_path, host):
         pytest.param(
             {},
             ("npm",),
-            ("node-npm", CheckStatus.WARNING, "degraded", "Node.js 20"),
+            ("node-npm", CheckStatus.WARNING, "degraded", "Node.js 22.23.4"),
             id="no-npm",
         ),
         pytest.param(
-            {"node": "v18.19.0\n"},
+            {"node": "v22.23.3\n"},
             (),
-            ("node-npm", CheckStatus.WARNING, "Node.js 20 or newer", "Node.js 20"),
-            id="old-node",
+            (
+                "node-npm",
+                CheckStatus.WARNING,
+                "supported Node.js release",
+                "Node.js 22.23.4",
+            ),
+            id="vulnerable-node",
+        ),
+        pytest.param(
+            {"node": "v25.9.0\n"},
+            (),
+            (
+                "node-npm",
+                CheckStatus.WARNING,
+                "supported Node.js release",
+                "Node.js 22.23.4",
+            ),
+            id="end-of-life-node",
         ),
         pytest.param(
             {"config": _SSH_WITHOUT_HOST, "real_backend": True},
@@ -428,16 +473,11 @@ def test_memory_is_not_compared_to_a_threshold_no_scenario_declares(tmp_path, ho
 
 
 def _lab_start_compose_refusal(tmp_path, daemon, mocker):
-    """Ask lab start's own Compose check about a scenario with Wazuh state."""
-    from aptl.core.deployment.docker_compose import DockerComposeBackend
-
-    mocker.patch(
-        "aptl.core.deployment._compose_stateful_realization.owned_wazuh_services",
-        return_value={"wazuh-manager"},
-    )
-    backend = DockerComposeBackend(tmp_path / "start", project_name="doctor")
-    backend._run = daemon
-    return backend._validate_stateful_compose_capability(None)
+    """Ask the actual start gate about an emitted replacement feature."""
+    from aptl.core.deployment._lilrae_compose_capabilities import compose_capability_refusal
+    path = tmp_path / "feature.yml"
+    path.write_text("services:\n  example:\n    ports: !override []\n")
+    return compose_capability_refusal(daemon, (path,))
 
 
 @pytest.mark.parametrize(
@@ -467,8 +507,9 @@ def _lab_start_compose_refusal(tmp_path, daemon, mocker):
         pytest.param(
             "2.24.3",
             CheckStatus.WARNING,
-            "Docker Compose 2.24.3 is older than 2.24.4, which lab start requires "
-            "for a scenario that consumes generated certificates or volumes.",
+            "Docker Compose 2.24.3 is older than 2.24.4. Lab start requires "
+            "that floor only when the selected rendered model uses !reset "
+            "or !override merge features.",
             "Upgrade the Docker Compose plugin to 2.24.4 or newer.",
             id="below-the-compose-floor",
         ),
@@ -657,7 +698,7 @@ def test_max_map_count_is_asked_of_the_host_that_runs_the_engine(
 
     check = _by_id(run_doctor(_project(tmp_path), which=_which()))["max-map-count"]
 
-    host["check_max_map_count"].assert_called_once_with(selected_mode=mode)
+    host["check_max_map_count"].assert_called_once_with(262144, selected_mode=mode)
     assert check.status is status
     assert summary in check.summary
     assert fix in check.fix

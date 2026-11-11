@@ -1,20 +1,15 @@
-# Lab Guide
+<a id="lab-guide"></a>
 
-This guide takes a first-time operator from the released package to a running,
-inspectable lab and then through project-scoped teardown.
+# Prepare A Lab Project
+
+Use these guides to prepare an isolated machine and install the released lab.
+Do not run lab operations or behavior tests on the developer workstation.
 
 1. [Check the prerequisites](prerequisites.md).
-2. [Install the released package](installation.md) and initialize a project.
-3. [Run the lab](quick-start.md): choose a scenario, start it, inspect the
-   realized services, generate safe activity, inspect results, and stop it.
-4. Use the [troubleshooting guide](../troubleshooting/index.md) when startup or
-   a service reports a problem.
+2. [Install LilRAE](installation.md) and create a project.
+3. Follow [Run your first lab](quick-start.md) to learn the operating sequence.
+4. Use [Troubleshooting](../troubleshooting/index.md) to recover from a failure.
 
-The lab project created by `aptl lab init` is the working directory for normal
-commands. It contains the released Compose assets and project configuration;
-it is not a source checkout. Keep its generated `.env`, `.mcp.json`, `.aptl/`,
-keys, and run artifacts private.
-
-APTL runs intentionally vulnerable systems. Review the
-[execution-boundary choice](quick-start.md#choose-the-execution-boundary) before
-starting it on a host that contains other workloads or credentials.
+Run normal lab commands from the project created by `lilrae lab init`.
+Keep `.env`, `.mcp.json`, `.aptl/`, keys, and run artifacts private.
+Use [Deployment](../deployment.md) for later operating tasks.

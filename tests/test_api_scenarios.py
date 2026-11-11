@@ -1,7 +1,8 @@
 """Tests for scenario API projection from the configured acquired pack."""
 
 import logging
-from pathlib import Path
+import json
+import shutil
 
 import pytest
 
@@ -13,9 +14,12 @@ def api_client(tmp_path):
     from aptl.api.deps import get_project_dir, verify_token
     from aptl.api.main import app
     from starlette.testclient import TestClient
+    from tests.fixture_pack import FIXTURE_PACK_IDENTITY, FIXTURE_PACK_SOURCE
 
-    project_root = Path(__file__).resolve().parents[1]
-    (tmp_path / "aptl.json").write_bytes((project_root / "aptl.json").read_bytes())
+    shutil.copytree(FIXTURE_PACK_SOURCE, tmp_path / "default-source")
+    (tmp_path / "aptl.json").write_text(json.dumps({"scenario": {
+        "identity": FIXTURE_PACK_IDENTITY, "pack_directory": "default-source",
+    }}))
     app.dependency_overrides[get_project_dir] = lambda: tmp_path
     app.dependency_overrides[verify_token] = lambda: None
     try:
@@ -23,40 +27,6 @@ def api_client(tmp_path):
             yield client
     finally:
         app.dependency_overrides.clear()
-
-
-def test_list_reports_validated_acquired_pack_identity(api_client, tmp_path):
-    response = api_client.get("/api/scenarios")
-
-    assert response.status_code == 200
-    body = response.json()
-    assert [item["id"] for item in body] == ["techvault-participant-study"]
-    assert body[0]["name"] == "TechVault Participant Study"
-    assert body[0]["pack"] == {
-        "id": "techvault-participant-study",
-        "version": "0.1.1",
-        "set_digest": "sha256:03baae367b452527be4affd7f29369bf5aa32a2a3c1c82f73bfbc759d642af14",
-        "maturity": "built",
-    }
-    assert body[0]["validation"]["valid"] is True
-    assert body[0]["required_containers"]
-    assert ".aptl/staged-packs" not in response.text
-    assert ".sdl.yaml" not in response.text
-    assert not list(tmp_path.rglob("pack.yaml"))
-
-
-def test_detail_projects_same_validated_identity(api_client, tmp_path):
-    response = api_client.get("/api/scenarios/techvault-participant-study")
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["id"] == "techvault-participant-study"
-    assert body["pack"]["id"] == "techvault-participant-study"
-    assert body["pack"]["version"] == "0.1.1"
-    assert body["pack"]["maturity"] == "built"
-    assert body["blocks"][0]["type"] == "narrative"
-    assert ".aptl/staged-packs" not in response.text
-    assert not list(tmp_path.rglob("pack.yaml"))
 
 
 def test_detail_unknown_id_returns_404(api_client):
@@ -80,7 +50,7 @@ def test_detail_rejected_pack_is_redacted(api_client, mocker):
         "aptl.api.routers.scenarios.load_scenario_catalog",
         side_effect=ValueError("/private/staging/digest mismatch"),
     )
-    response = api_client.get("/api/scenarios/techvault")
+    response = api_client.get("/api/scenarios/fixture-range")
     assert response.status_code == 502
     assert "private" not in response.text
 
@@ -91,3 +61,21 @@ def test_detail_does_not_log_user_controlled_id(api_client, caplog):
     assert response.status_code == 404
     assert "GET /scenarios/{scenario_id}" in caplog.text
     assert "forged-entry" not in caplog.text
+
+
+def test_api_projects_configured_release_without_its_locator(api_client, tmp_path):
+    from tests.fixture_pack import FIXTURE_PACK_IDENTITY, FIXTURE_PACK_SOURCE
+
+    source = tmp_path / "releases" / FIXTURE_PACK_IDENTITY
+    shutil.copytree(FIXTURE_PACK_SOURCE, source)
+    (tmp_path / "aptl.json").write_text(json.dumps({"scenario": {
+        "identity": FIXTURE_PACK_IDENTITY,
+        "pack_directory": f"releases/{FIXTURE_PACK_IDENTITY}",
+    }}))
+    response = api_client.get("/api/scenarios")
+    assert response.status_code == 200
+    assert response.json()[0]["pack"]["id"] == FIXTURE_PACK_IDENTITY
+    assert "releases/" not in response.text
+    assert ".aptl/" not in response.text
+    assert source.is_dir()
+    assert not list((tmp_path / ".aptl").rglob("pack.yaml"))

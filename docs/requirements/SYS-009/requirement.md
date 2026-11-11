@@ -11,6 +11,13 @@ updated_at: 2026-03-20T06:18:11.648456Z
 
 # SYS-009: Code Quality and Security Practices
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/SYS-009/requirement.md).
+
+
 ## Statement
 
 The system shall maintain continuous code quality analysis, automated test coverage, and secure credential handling across both Python and TypeScript codebases.
@@ -22,6 +29,12 @@ A security training lab that has poor code quality or leaks credentials undermin
 ## Traceability
 
 - IMPLEMENTS → CONFIG `eslint.config.js` (Root ESLint flat config: per-function TypeScript complexity gate (issue #286))
-- IMPLEMENTS → CONFIG `.pre-commit-ci.yaml` (Python and TypeScript complexity gates run by CI)
+- IMPLEMENTS → CONFIG `.pre-commit-ci.yaml` (Python and TypeScript complexity gates and the ADR-064 architecture check run by CI)
 - IMPLEMENTS → CONFIG `.github/workflows/checks.yml` (Continuous Python and TypeScript tests, pre-commit, and security checks)
 - DOCUMENTS → ADR `ADR-010` (ADR-010 SonarCloud quality: TypeScript complexity gate section + backlog)
+- IMPLEMENTS → CODE `tools/check_architecture.py` (ADR-064 layer, cycle, private-import, Typer, and Ruff checks for enrolled code)
+- IMPLEMENTS → CONFIG `pyproject.toml` (ADR-064 layer map, enrolled scope, and Ruff rules in [tool.lilrae.architecture])
+- TESTS → TEST `tests/test_check_architecture.py` (Activation and rejection of the ADR-064 checks on fixture trees)
+- TESTS → TEST `tests/test_sonar_project_properties.py` (SonarCloud ignore entries name existing files)
+- DOCUMENTS → ADR `ADR-064` (ADR-064 layered architecture and code conventions)
+- IMPLEMENTS → GITHUB_ISSUE `1510` (Record the target architecture and code conventions for the code quality refactor)

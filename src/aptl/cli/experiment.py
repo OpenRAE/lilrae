@@ -1,7 +1,7 @@
 """CLI for RAES experiment admission (ADR-047 "Experiment-controller
 boundary", EXP-002 / issue #438).
 
-This module exposes ONLY the admission phase — ``aptl experiment admit``
+This module exposes ONLY the admission phase — ``lilrae experiment admit``
 resolves the authoring-input spec and its associated-artifact manifest,
 runs :class:`~aptl.core.experiment.controller.ExperimentController`, and
 prints the result. It never starts the lab: it does not import

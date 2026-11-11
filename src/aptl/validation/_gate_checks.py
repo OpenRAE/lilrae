@@ -37,7 +37,7 @@ from aptl.backends.raes_evidence import admit_sdl_evidence
 from aptl.backends.raes_manifest import APTL_RAES_TARGET_NAME
 from aptl.core.experiment.capture_plan import empty_capture_plan
 from aptl.backends._raes_conformance_probe import APTL_TARGET_CONFORMANCE_SCENARIO
-from aptl.backends.raes_planning_compat import AptlPlanningOptions, plan_aptl_scenario
+from aptl.backends.raes_runtime import AptlPlanningOptions, plan_aptl_scenario
 from aptl.backends.raes_profiles import public_start_profiles, select_backend_profiles
 from aptl.backends.raes_realization import interpret_provisioning_plan
 from aptl.core.scenario_bundle import project_tree_bundle
@@ -292,7 +292,6 @@ def _static_provisioning_realization(
     )
     execution_plan = plan_aptl_scenario(
         target=target,
-        bundle=bundle,
         scenario=static_scenario,
         options=AptlPlanningOptions(artifact_availability=availability),
     )

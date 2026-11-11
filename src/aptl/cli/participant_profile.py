@@ -24,7 +24,7 @@ def qualify_profile(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the materialized APTL project directory.",
+        help="Path to the materialized LilRAE project directory.",
     ),
     profile: Path = typer.Option(
         DEFAULT_PARTICIPANT_PROFILE,

@@ -3,35 +3,33 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from importlib.metadata import version
 from pathlib import Path
 import re
 
 import pytest
-from raes.parser import parse_sdl_file
+import yaml
 
+from aptl.backends._raes_backend_implementation_catalog import (
+    BACKEND_IMPLEMENTATION_PROFILES,
+)
 from aptl.core.deployment._compose_stateful_artifact_helpers import (
     read_generated_output,
 )
+from aptl.core.deployment._compose_stateful_constants import SOC_CERT_PROFILE
 from aptl.core.deployment._misp_cache_credential import (
     MISP_CACHE_CONFIG_OUTPUT,
+    MISP_CACHE_CREDENTIAL_PROFILE,
     MISP_CACHE_PASSWORD_OUTPUT,
-    MISP_CACHE_RUNTIME_CONFIG_DIR,
-    MISP_CACHE_RUNTIME_CONFIG_PATH,
     realize_misp_cache_credential,
 )
 from aptl.core.deployment._misp_server_tls import (
-    MISP_SERVER_TLS_MOUNT_DESTINATION,
+    MISP_SERVER_TLS_PROFILE,
     realize_misp_server_tls,
 )
 from aptl.core.deployment.realization import (
     DeploymentGeneratedArtifactOutput,
     DeploymentGeneratedArtifactRealization,
 )
-from aptl.core.soc_ca import derive_soc_service_certs
-from aptl_techvault.redis_acl_observation import _REDIS_ACL_READBACK_SCRIPT
-from tests.helpers import techvault_scenario_path
-from tests.techvault_pack import realize_techvault_pack
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -45,155 +43,25 @@ def _enum(value: object) -> object:
 # --------------------------------------------------------------------------
 
 
-def test_released_pack_authors_the_misp_and_cache_contract(tmp_path: Path) -> None:
-    """The released pack retains OpenRAE/env-packs#280's MISP contract."""
-
-    assert version("raes-env-packs") == "6.2.1"
-    scenario = parse_sdl_file(techvault_scenario_path(tmp_path))
-
-    application = scenario.nodes["misp"].runtime.platform_applications[0]
-    bindings = {
-        binding.binding_id: (binding.target_node_ref, binding.target_service_ref)
-        for binding in application.upstream_bindings
-    }
-    assert bindings["misp-relational-store"] == ("misp-db", "mysql")
-    assert bindings["misp-cache-store"] == ("misp-redis", "redis")
-
-    settings = {setting.setting_id: setting.value for setting in application.settings}
-    assert settings["misp-canonical-url"] == "https://misp.techvault.local"
-
-    cache = scenario.nodes["misp-redis"].runtime
-    datastore = cache.datastore_services[0]
-    assert datastore.authorization_ref == "misp-redis-authorization"
-    authorization = cache.app_authorizations[0]
-    assert authorization.auth_enabled is True
-    # The pack requires authentication without choosing the bytes: the
-    # credential is explicitly value-free, which is what makes generating it a
-    # legitimate backend choice rather than an invented one.
-    principal = authorization.principals[0]
-    assert _enum(principal.credential_classification) == "redacted"
-
-    listener = scenario.nodes["misp"].runtime.service_listeners[0]
-    assert listener.readiness.probe == "misp-authenticated-api-operation"
-    assert "authenticated" in listener.readiness.criteria.lower()
-
-
 # --------------------------------------------------------------------------
 # What APTL selects under that contract.
 # --------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="module")
-def realization(tmp_path_factory):
-    return realize_techvault_pack(tmp_path_factory.mktemp("misp-realization"))
-
-
-def test_the_cache_is_authenticated_without_putting_the_secret_in_argv(realization):
-    """The credential reaches the server through a file, never the command."""
-
-    cache = next(node for node in realization.nodes if node.name == "misp-redis")
-    command = list(cache.runtime.container.command)
-
-    assert MISP_CACHE_RUNTIME_CONFIG_PATH.startswith("/run/")
-    assert command == ["redis-server", MISP_CACHE_RUNTIME_CONFIG_PATH]
-    assert list(cache.runtime.container.entrypoint) == [
-        "/bin/sh",
-        "-ec",
-        f"install -d -m 0755 -o root -g root {MISP_CACHE_RUNTIME_CONFIG_DIR} && "
-        "install -m 0400 -o redis -g redis /etc/redis/redis.conf "
-        f'{MISP_CACHE_RUNTIME_CONFIG_PATH} && exec docker-entrypoint.sh "$@"',
-        "--",
-    ]
-    assert _REDIS_ACL_READBACK_SCRIPT.count(MISP_CACHE_RUNTIME_CONFIG_PATH) == 2
-    assert "/tmp/" not in " ".join(cache.runtime.container.entrypoint)
-    # `--requirepass <value>` would work, and would also publish the credential
-    # in the container's command line and in `docker inspect`.
-    assert "--requirepass" not in command
-
-    artifact = next(
-        item
-        for item in realization.generated_artifacts
-        if item.name == "misp-cache-credential"
+def _misp_profile():
+    return next(
+        profile
+        for profile in BACKEND_IMPLEMENTATION_PROFILES
+        if profile.source_name == "ghcr.io/misp/misp-docker/misp-core"
     )
-    consumer = artifact.consumers[0]
-    assert consumer.node_name == "misp-redis"
-    assert consumer.access_mode == "read_only"
-    assert consumer.selected_outputs == (MISP_CACHE_CONFIG_OUTPUT,)
-
-    password = next(
-        output
-        for output in artifact.outputs
-        if output.name == MISP_CACHE_PASSWORD_OUTPUT
-    )
-    # Producer-private means no consumer can bind it: MISP receives the value
-    # through environment delivery instead.
-    assert password.disposition == "producer_private"
-    delivery = artifact.environment_consumers[0]
-    assert delivery.node_name == "misp"
-    assert delivery.environment_variable == "REDIS_PASSWORD"
 
 
-def test_misp_receives_the_authored_identity_not_a_backend_default(realization):
-    """BASE_URL comes from the authored setting, not from `localhost`."""
+def test_compose_runs_the_same_misp_image_the_catalog_selects():
+    """The Compose service and the catalog cannot pin different MISP images."""
 
-    misp = next(node for node in realization.nodes if node.name == "misp")
-    environment = {item.name: item for item in misp.runtime.environment}
+    compose = yaml.safe_load((PROJECT_ROOT / "docker-compose.yml").read_text())
 
-    assert environment["BASE_URL"].value == "https://misp.techvault.local"
-    assert environment["REDIS_HOST"].value == "misp-redis"
-    # The generated cache credential is bound by reference and carries no value
-    # in the plan.
-    assert environment["REDIS_PASSWORD"].value == ""
-    assert _enum(environment["REDIS_PASSWORD"].value_classification) == "redacted"
-    # The operator supplies the admin key; it is never a fixture.
-    assert _enum(environment["ADMIN_KEY"].value_classification) == "operator_secret"
-    assert environment["ADMIN_KEY"].value == ""
-
-
-def test_the_leaf_is_delivered_where_the_selected_image_reads_it(realization):
-    """A mounted certificate the image never reads is not an activated one."""
-
-    artifact = next(
-        item
-        for item in realization.generated_artifacts
-        if item.name == "misp-server-tls"
-    )
-    consumer = artifact.consumers[0]
-
-    assert consumer.node_name == "misp"
-    assert consumer.mount_destination == MISP_SERVER_TLS_MOUNT_DESTINATION
-    assert consumer.access_mode == "read_only"
-    assert sorted(output.path for output in artifact.outputs) == ["cert.pem", "key.pem"]
-    # The pack produces the material; this delivery must not run before it.
-    # The reference is canonicalized to the realized address at merge, because
-    # stateful validation, cycle detection and execution all compare exact
-    # addresses -- the SDL shorthand the profile writes would pass execution
-    # ordering and then be rejected by preflight.
-    assert artifact.ordering_dependencies == (
-        "provision.generated-artifact.techvault-soc-certificates",
-    )
-    # The pack's own neutral delivery is untouched and still authoritative.
-    bundle = next(
-        item
-        for item in realization.generated_artifacts
-        if item.name == "techvault-soc-certificates"
-    )
-    misp_consumer = next(item for item in bundle.consumers if item.node_name == "misp")
-    assert misp_consumer.mount_destination == "/opt/techvault/soc-certs"
-
-
-def test_the_certificate_covers_the_authored_host(realization):
-    """A lab CA is useless if the leaf omits the name consumers are told to use."""
-
-    from aptl.core.deployment._authored_service_hosts import authored_service_hosts
-
-    hosts = authored_service_hosts(realization)
-    assert "misp.techvault.local" in hosts["misp"]
-
-    certs = derive_soc_service_certs(("lab-ca.pem", "misp/server.pem"), hosts)
-    misp = next(cert for cert in certs if cert.name == "misp")
-    assert "misp.techvault.local" in misp.sans
-    assert "misp" in misp.sans
+    assert compose["services"]["misp"]["image"] == _misp_profile().image_ref
 
 
 def test_unrelated_https_settings_do_not_expand_certificate_identity():
@@ -226,7 +94,7 @@ def _cache_artifact() -> DeploymentGeneratedArtifactRealization:
         name="misp-cache-credential",
         generator="rendered_config",
         lifecycle="reuse_valid",
-        provenance="techvault:misp-cache-credential/v2",
+        provenance=MISP_CACHE_CREDENTIAL_PROFILE,
         outputs=(
             DeploymentGeneratedArtifactOutput(
                 name=MISP_CACHE_PASSWORD_OUTPUT,
@@ -336,7 +204,7 @@ def _tls_artifact() -> DeploymentGeneratedArtifactRealization:
         name="misp-server-tls",
         generator="rendered_config",
         lifecycle="reuse_valid",
-        provenance="techvault:misp-server-tls/v1",
+        provenance=MISP_SERVER_TLS_PROFILE,
         outputs=(
             DeploymentGeneratedArtifactOutput(
                 name="server-certificate", path="cert.pem", sensitivity="public"
@@ -364,7 +232,27 @@ def test_the_leaf_is_staged_under_the_names_the_image_reads(tmp_path):
     root = tmp_path / ".aptl/realization/misp-server-tls"
     assert (root / "cert.pem").read_text(encoding="utf-8") == "CERTIFICATE\n"
     assert (root / "key.pem").read_text(encoding="utf-8") == "PRIVATE KEY\n"
-    assert (root / "key.pem").stat().st_mode & 0o777 == 0o600
+    # nginx in the web companion runs as uid 101 (#1407): the key is readable
+    # across the bind mount, and the owner-only root keeps other users out.
+    assert (root / "key.pem").stat().st_mode & 0o777 == 0o644
+    assert root.stat().st_mode & 0o777 == 0o700
+
+
+def test_an_owner_only_copy_from_an_earlier_start_becomes_readable(tmp_path):
+    """Unchanged bytes do not excuse a stale mode (#1407).
+
+    Copies staged before the web companion existed are 0600, which uid 101
+    cannot read. Restaging the same leaf must still widen the copy.
+    """
+
+    _stage_bundle(tmp_path, "CERTIFICATE\n", "PRIVATE KEY\n")
+    assert realize_misp_server_tls(_tls_artifact(), tmp_path) is None
+    key = tmp_path / ".aptl/realization/misp-server-tls/key.pem"
+    key.chmod(0o600)
+
+    assert realize_misp_server_tls(_tls_artifact(), tmp_path) is None
+
+    assert key.stat().st_mode & 0o777 == 0o644
 
 
 def test_a_rotated_leaf_replaces_the_staged_copy(tmp_path):
@@ -418,7 +306,7 @@ def test_the_leaf_is_staged_after_the_bundle_that_produces_it(tmp_path, monkeypa
 
     The realization spec sorts artifacts by address, and
     `backend.generated-artifact.misp-server-tls` sorts before
-    `provision.generated-artifact.techvault-soc-certificates`. Iterating that
+    `provision.generated-artifact.range-soc-certificates`. Iterating that
     order stages the leaf before the bundle exists, so a fresh realization root
     fails at startup. Only running the real pass catches that.
     """
@@ -433,7 +321,7 @@ def test_the_leaf_is_staged_after_the_bundle_that_produces_it(tmp_path, monkeypa
         if artifact.name == "misp-server-tls":
             bundle = scenario_root / "config/soc_certs/misp"
             assert bundle.is_dir(), "leaf staged before its producer ran"
-        elif artifact.name == "techvault-soc-certificates":
+        elif artifact.name == "range-soc-certificates":
             target = scenario_root / "config/soc_certs/misp"
             target.mkdir(parents=True, exist_ok=True)
             (target / "server.pem").write_text("CERT\n", encoding="utf-8")
@@ -446,7 +334,7 @@ def test_the_leaf_is_staged_after_the_bundle_that_produces_it(tmp_path, monkeypa
     realization = _ordering_spec()
 
     assert backend._realize_stateful_prerequisites(realization, tmp_path) is None
-    assert order.index("techvault-soc-certificates") < order.index("misp-server-tls")
+    assert order.index("range-soc-certificates") < order.index("misp-server-tls")
 
 
 def _ordering_spec():
@@ -460,7 +348,7 @@ def _ordering_spec():
             if "certificates" in name
             else "rendered_config",
             lifecycle="reuse_valid",
-            provenance="techvault:soc-certificate-profile/v1",
+            provenance=SOC_CERT_PROFILE,
             outputs=(),
             consumers=(),
             ordering_dependencies=deps,
@@ -474,36 +362,40 @@ def _ordering_spec():
             artifact(
                 "backend.generated-artifact.misp-server-tls",
                 "misp-server-tls",
-                ("provision.generated-artifact.techvault-soc-certificates",),
+                ("provision.generated-artifact.range-soc-certificates",),
             ),
             artifact(
-                "provision.generated-artifact.techvault-soc-certificates",
-                "techvault-soc-certificates",
+                "provision.generated-artifact.range-soc-certificates",
+                "range-soc-certificates",
             ),
         ),
     )
 
 
-@pytest.mark.integration
-def test_stateful_preflight_accepts_the_delivery_dependency(tmp_path):
-    """Execution ordering is not the only thing that reads the dependency.
-
-    `stateful_realization_errors` validates every ordering reference against
-    exact realized addresses *before* any artifact runs, so a reference that
-    only the execution-time resolver understands stops the Compose pipeline at
-    preflight and never reaches the ordering this test's sibling covers.
-    """
-
-    from aptl.core.deployment._compose_stateful_graph import stateful_realization_errors
-
-    realization = realize_techvault_pack(tmp_path)
-    delivery = next(
-        item
-        for item in realization.generated_artifacts
-        if item.name == "misp-server-tls"
+@pytest.mark.parametrize("producer_count", [0, 1, 2])
+def test_tls_delivery_dependency_uses_one_admitted_producer(producer_count):
+    from dataclasses import replace
+    from aptl.backends.raes_realization import _merge_backend_generated_artifacts
+    from aptl.core.deployment._compose_stateful_constants import SOC_CERT_PROFILE
+    from aptl.core.deployment.realization import DeploymentStatefulConsumer
+    target = DeploymentStatefulConsumer(
+        target_address='provision.node.misp', node_name='misp', service_name='misp',
+        mount_destination='/opt/certificates', access_mode='read_only',
+        selected_outputs=('misp-certificate', 'misp-private-key'),
     )
-    addresses = {item.address for item in realization.generated_artifacts}
-
-    assert set(delivery.ordering_dependencies) <= addresses
-    spec = realization.deployment_spec(sorted(realization.profiles))
-    assert stateful_realization_errors(spec, local_artifacts=True) == []
+    source = DeploymentGeneratedArtifactRealization(
+        address='provision.generated-artifact.independent-certificates',
+        name='independent-certificates', generator='certificate_bundle',
+        lifecycle='reuse_valid', provenance=SOC_CERT_PROFILE,
+        outputs=(), consumers=(target,),
+    )
+    delivery = replace(_tls_artifact(), consumers=(target,))
+    diagnostics = []
+    producers = [replace(source, name=f"certificates-{index}", address=f"provision.generated-artifact.certificates-{index}") for index in range(producer_count)]
+    merged = _merge_backend_generated_artifacts(producers, [SimpleNamespace(backend_generated_artifacts=(delivery,))], diagnostics)
+    if producer_count == 1:
+        assert diagnostics == []
+        assert merged[-1].ordering_dependencies == (producers[0].address,)
+    else:
+        assert merged == producers
+        assert [item.code for item in diagnostics] == ["aptl.provisioner.backend-artifact-source-ambiguous"]

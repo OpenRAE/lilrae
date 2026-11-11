@@ -35,10 +35,12 @@ roots").
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from enum import Enum
 
+import rfc8785
 from raes_backend_protocols.capabilities import (
     ObservationCapabilities,
     ObservationCaptureOffer,
@@ -52,13 +54,12 @@ from aptl.core.experiment._capture_matching import (
     registration_covers,
     window_kinds_by_ref,
 )
-from aptl.core.experiment.trial_plan import compute_source_set_digest
 
 #: Versioned identity of the registry declaration shape itself. A change to
 #: the fields a registration declares, or to how the observation projection or
 #: binding is computed, bumps this so a persisted plan records which registry
 #: shape admitted it.
-REGISTRY_SCHEMA_VERSION = "aptl-collector-registry/v2"
+REGISTRY_SCHEMA_VERSION = "aptl-collector-registry/v3"
 
 #: Fixed ``ObservationCapabilities.name`` for APTL's aggregate declaration.
 _OBSERVATION_NAME = "aptl-observation"
@@ -148,7 +149,7 @@ class CollectorRegistration:
     supported RAES capture-spec contract version, the observation channel kind
     (a governed ``observation-channel-kinds`` term), capture kind/scope, window
     semantics, media types, required artifact roles, sensitivities,
-    redaction/integrity/sealing/chain-of-custody/retention support, loss
+    redaction/integrity/sealing/retention support, loss
     disclosure, visibility class, and limits. It carries NO factory, import
     path, or executable reference — the trusted adapter wiring is composed
     separately (EXP-010 PR 2).
@@ -173,7 +174,6 @@ class CollectorRegistration:
     supports_redaction: bool
     integrity_modes: frozenset[str]
     sealing_modes: frozenset[str]
-    supports_chain_of_custody: bool
     supports_retention: bool
     supports_loss_disclosure: bool
     visibility_class: CaptureVisibility
@@ -181,10 +181,16 @@ class CollectorRegistration:
     redaction_policies: frozenset[str] = frozenset()
     retention_policies: frozenset[str] = frozenset()
     capture_offer: ObservationCaptureOffer | None = None
+    clock_accuracy_ms: int | None = None
 
     def __post_init__(self) -> None:
         """Validate the registration ID is a safe non-executable slug at construction."""
         validate_registration_id(self.registration_id)
+        if self.clock_accuracy_ms is not None and (
+            type(self.clock_accuracy_ms) is not int
+            or not 0 <= self.clock_accuracy_ms <= 2**31 - 1
+        ):
+            raise ValueError("collector-clock-accuracy-invalid")
 
     def declaration_projection(self) -> dict[str, object]:
         """Return the canonical-JSON-ready projection of this registration's declaration.
@@ -201,6 +207,7 @@ class CollectorRegistration:
             "channel_kind": self.channel_kind,
             "capture_kind": self.capture_kind,
             "capture_scope": self.capture_scope,
+            "clock_accuracy_ms": self.clock_accuracy_ms,
             "window_kinds": sorted(self.window_kinds),
             "media_types": sorted(self.media_types),
             "required_artifact_roles": sorted(self.required_artifact_roles),
@@ -208,7 +215,6 @@ class CollectorRegistration:
             "supports_redaction": self.supports_redaction,
             "integrity_modes": sorted(self.integrity_modes),
             "sealing_modes": sorted(self.sealing_modes),
-            "supports_chain_of_custody": self.supports_chain_of_custody,
             "supports_retention": self.supports_retention,
             "redaction_policies": sorted(self.redaction_policies),
             "retention_policies": sorted(self.retention_policies),
@@ -231,7 +237,8 @@ class CollectorRegistration:
         verify the registration has not silently changed (preflight: "Runtime
         verifies the pinned registration and digest and never re-matches").
         """
-        return compute_source_set_digest(self.declaration_projection())
+        canonical = rfc8785.dumps(self.declaration_projection())
+        return f"sha256:{hashlib.sha256(canonical).hexdigest()}"
 
 
 @dataclass(frozen=True)
@@ -412,9 +419,6 @@ class CollectorRegistry:
             supports_redaction=any(r.supports_redaction for r in self.registrations),
             supports_loss_disclosure=any(
                 r.supports_loss_disclosure for r in self.registrations
-            ),
-            supports_chain_of_custody=any(
-                r.supports_chain_of_custody for r in self.registrations
             ),
             capture_offers=tuple(
                 registration.capture_offer

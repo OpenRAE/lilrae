@@ -1,6 +1,6 @@
 """Run pending host-side cleanup after an explicit lab volume reset.
 
-``aptl lab stop -v`` removes the project's Docker volumes first; host state
+``lilrae lab stop -v`` removes the project's Docker volumes first; host state
 that described those volumes must then be cleared too. Each pending record
 names a stable action. APTL-owned actions run here, in core, with whatever
 APTL version is installed now. Pack-owned actions dispatch to the one
@@ -10,8 +10,8 @@ Every action is idempotent and treats already-absent state as done, so a crash
 between an effect and its completion marker is safe: the next reset repeats
 the effect and records the completion exactly once. A failed, unauthorized,
 unsupported, or unreadable record is never retired or removed; it is reported
-with a bounded reason and retried by the next ``aptl lab stop -v`` or
-``aptl lab reset``.
+with a bounded reason and retried by the next ``lilrae lab stop -v`` or
+``lilrae lab reset``.
 """
 
 from __future__ import annotations
@@ -28,7 +28,12 @@ from aptl.core.startup_reset_state import (
     load_pending_cleanup,
 )
 from aptl.utils.logging import get_logger
-from aptl.utils.pathsafe import PathContainmentError, remove_contained_nofollow
+from aptl.utils.pathsafe import (
+    REASON_NOT_FOUND,
+    PathContainmentError,
+    remove_contained_nofollow,
+    remove_tree_contained_nofollow,
+)
 
 log = get_logger("lifecycle-cleanup")
 
@@ -38,13 +43,15 @@ log = get_logger("lifecycle-cleanup")
 WAZUH_ENROLLMENT_BASELINE_RELPATH = Path(
     ".aptl/realization/wazuh-agent-identity/baseline.json"
 )
+#: The same identities, retained per admitted trial for capture sources.
+WAZUH_TRIAL_ENROLLMENT_DIR = Path(".aptl/realization/wazuh-agent-identity/trials")
 
 REASON_HOST_STATE_UNSAFE = "host-state-unsafe"
 REASON_HOST_STATE_UNAVAILABLE = "host-state-unavailable"
 REASON_COMPLETION_FAILED = "completion-record-failed"
 REASON_STATE_UNAVAILABLE = "cleanup-state-unavailable"
 
-RETRY_COMMAND = "aptl lab stop -v --yes"
+RETRY_COMMAND = "lilrae lab stop -v --yes"
 
 
 class CleanupActionError(RuntimeError):
@@ -81,11 +88,16 @@ class CleanupReport:
 
 
 def clear_wazuh_enrollment_baseline(project_dir: Path) -> None:
-    """Remove the enrollment baseline under the lab project, if present."""
+    """Remove the enrollment baseline and trial records, if present."""
 
     try:
         remove_contained_nofollow(project_dir, WAZUH_ENROLLMENT_BASELINE_RELPATH)
+        remove_tree_contained_nofollow(project_dir, WAZUH_TRIAL_ENROLLMENT_DIR)
+    except FileNotFoundError:
+        pass
     except PathContainmentError as exc:
+        if exc.reason == REASON_NOT_FOUND:
+            return
         raise CleanupActionError(REASON_HOST_STATE_UNSAFE) from exc
     except OSError as exc:
         raise CleanupActionError(REASON_HOST_STATE_UNAVAILABLE) from exc
@@ -109,6 +121,7 @@ def _run_pack_reset(action: CleanupAction, backend: object) -> None:
                 action.distribution,
                 action.distribution_version,
                 action.entry_point,
+                action.family_target,
             ),
             StartupHookContext(backend),
             action_version=action.action_version,
@@ -238,6 +251,7 @@ def docker_teardown_failed_message(
 __all__ = [
     "RETRY_COMMAND",
     "WAZUH_ENROLLMENT_BASELINE_RELPATH",
+    "WAZUH_TRIAL_ENROLLMENT_DIR",
     "CleanupActionError",
     "CleanupReport",
     "PendingCleanupFailure",

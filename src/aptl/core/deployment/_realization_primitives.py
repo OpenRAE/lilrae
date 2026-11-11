@@ -1,4 +1,4 @@
-"""Primitive image, network, and environment realization values."""
+"""Primitive image, network, ACL, and environment realization values."""
 
 from __future__ import annotations
 
@@ -128,6 +128,9 @@ class DeploymentImageRealization:
     dockerfile_path: str | None = None
     context_path: str | None = None
     provenance: dict[str, int] | None = None
+    catalog_record: str | None = None
+    catalog_revision: str | None = None
+    provenance_refs: tuple[str, ...] = ()
 
     def details(self) -> dict[str, object]:
         """Return a serializable image realization projection."""
@@ -147,7 +150,48 @@ class DeploymentImageRealization:
             details["context_path"] = self.context_path
         if self.provenance is not None:
             details["provenance"] = dict(self.provenance)
+        if self.catalog_record is not None:
+            details["catalog_record"] = self.catalog_record
+            details["catalog_revision"] = self.catalog_revision
+            details["provenance_refs"] = list(self.provenance_refs)
         return details
+
+
+AclDirection = Literal["in", "out", "inout"]
+AclAction = Literal["allow", "deny"]
+AclProtocol = Literal["any", "tcp", "udp", "icmp"]
+
+
+@dataclass(frozen=True)
+class DeploymentAclRealization(object):
+    """One admitted RAES infrastructure ACL lowered for backend enforcement."""
+
+    owner_address: str
+    owner_resource_type: Literal["node", "network"]
+    owner_name: str
+    name: str
+    order: int
+    direction: AclDirection
+    from_network: str | None
+    to_network: str | None
+    protocol: AclProtocol
+    ports: tuple[int, ...]
+    action: AclAction
+
+    def details(self) -> dict[str, object]:
+        return {
+            "owner_address": self.owner_address,
+            "owner_resource_type": self.owner_resource_type,
+            "owner_name": self.owner_name,
+            "name": self.name,
+            "order": self.order,
+            "direction": self.direction,
+            "from_network": self.from_network,
+            "to_network": self.to_network,
+            "protocol": self.protocol,
+            "ports": list(self.ports),
+            "action": self.action,
+        }
 
 
 @dataclass(frozen=True)
@@ -172,6 +216,10 @@ class DeploymentNetworkAttachment:
 
 
 __all__ = (
+    "AclAction",
+    "AclDirection",
+    "AclProtocol",
+    "DeploymentAclRealization",
     "DeploymentImageRealization",
     "DeploymentNetworkAttachment",
     "DeploymentNetworkRealization",

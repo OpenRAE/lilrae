@@ -4,7 +4,6 @@ from typing import Optional
 
 import typer
 
-from aptl.api.deps import get_web_asset_root
 from aptl.api.session import (
     LAUNCH_TOKEN_ENV,
     SESSION_SECRET_ENV,
@@ -55,18 +54,23 @@ def serve(
         ),
     ),
 ) -> None:
-    """Start the APTL web API server."""
+    """Start the LilRAE web API server."""
     try:
         import uvicorn
     except ImportError:
         typer.echo(
             "Web dependencies not installed. "
-            'Install with: pip install -e ".[web]"',
+            'Install them with: pipx inject lilrae "lilrae[web]" '
+            '(source checkout: pip install -e ".[web]")',
             err=True,
         )
         raise typer.Exit(1)
 
     import os
+
+    # Every lilrae command loads this module, and aptl.api.deps imports
+    # fastapi, which only the web extra declares. Load it after the check above.
+    from aptl.api.deps import get_web_asset_root
 
     if project_dir:
         os.environ["APTL_PROJECT_DIR"] = project_dir
@@ -122,7 +126,7 @@ def serve(
     os.environ.setdefault(SESSION_SECRET_ENV, generate_secret())
 
     # The login URL must point at the origin the OPERATOR'S BROWSER uses. In the
-    # single-origin `aptl web serve` model that is this process's bind address;
+    # single-origin `lilrae web serve` model that is this process's bind address;
     # but in the split aptl-web-api + aptl-web-ui delivery the API runs --api-only
     # behind the Caddy UI origin, so printing the API bind URL would send the
     # operator to an unreachable origin and store the session header token in the
@@ -134,7 +138,7 @@ def serve(
         if public_origin
         else f"http://{display_host}:{port}"
     )
-    typer.echo(f"Starting APTL web API on {host}:{port}")
+    typer.echo(f"Starting LilRAE web API on {host}:{port}")
     typer.echo("")
     typer.echo("To open the GUI, visit this one-time login URL (keep it secret):")
     typer.echo(f"  {login_base}/api/auth/login?token={launch_token}")

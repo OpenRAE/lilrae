@@ -1,4 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { pathToFileURL } from 'url';
+import { describe, it, expect, vi } from 'vitest';
 import { getTargetCredentials } from '../src/config.js';
 
 describe('getTargetCredentials', () => {
@@ -118,5 +122,84 @@ describe('getTargetCredentials', () => {
 
     expect(creds.target).toBe('172.20.0.20');
     expect(creds.username).toBe('labadmin');
+  });
+});
+
+describe('startServer config path (#1344)', () => {
+  it('loads docker-lab-config.json from a server directory whose path has a space and a non-ASCII character', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'aptl-start-server-'));
+    const serverDir = join(root, 'lab checkout', 'mcp-café');
+    mkdirSync(join(serverDir, 'build'), { recursive: true });
+    writeFileSync(join(serverDir, 'docker-lab-config.json'), JSON.stringify({
+      server: { name: 'test' }, lab: { name: 'spaced-lab' },
+      api: { base_url: 'https://127.0.0.1:9200', ca_cert_path: 'certs/ca.pem' },
+    }));
+    // A server's import.meta.url percent-encodes the space and the "é".
+    const callerMetaUrl = pathToFileURL(join(serverDir, 'build', 'index.js')).href;
+    expect(callerMetaUrl).toContain('lab%20checkout/mcp-caf%C3%A9/build/index.js');
+    const start = vi.fn(async () => undefined);
+    const createMCPServer = vi.fn((_config: unknown) => ({ start }));
+    vi.doMock('../src/server.js', () => ({ createMCPServer }));
+    try {
+      vi.stubEnv('APTL_MCP_DISABLE_DOTENV', '1');
+      const { startServer } = await import('../src/index.js');
+      await startServer(callerMetaUrl);
+      const config = createMCPServer.mock.calls[0][0] as any;
+      expect(config.lab.name).toBe('spaced-lab');
+      // Paths that the loader resolves against the config file's directory use the decoded path too.
+      expect(config.api.ca_cert_path).toBe(join(serverDir, 'certs', 'ca.pem'));
+      expect(start).toHaveBeenCalledOnce();
+    } finally {
+      vi.doUnmock('../src/server.js');
+      vi.unstubAllEnvs();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('loadLabConfig tool result budget', () => {
+  async function loadWithServer(server: Record<string, unknown>, queries?: Record<string, unknown>) {
+    const root = mkdtempSync(join(tmpdir(), 'aptl-result-budget-'));
+    const configPath = join(root, 'docker-lab-config.json');
+    writeFileSync(configPath, JSON.stringify({
+      server, lab: { name: 'budget-lab' }, api: { base_url: 'https://127.0.0.1:9200' }, queries,
+    }));
+    vi.stubEnv('APTL_MCP_DISABLE_DOTENV', '1');
+    try {
+      const { loadLabConfig } = await import('../src/config.js');
+      return await loadLabConfig(configPath);
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it('accepts a positive integer budget', async () => {
+    const config = await loadWithServer({ name: 'test', maxToolResultTokens: 2000 });
+
+    expect(config.server.maxToolResultTokens).toBe(2000);
+  });
+
+  it.each([0, -1, 1.5, '4000'])('rejects %j without echoing it', async (value) => {
+    await expect(loadWithServer({ name: 'test', maxToolResultTokens: value })).rejects.toThrow(
+      /^server\.maxToolResultTokens must be a positive integer$/,
+    );
+  });
+
+  function queryWithBudget(value: unknown) {
+    return { get_rule_file: { url: 'https://127.0.0.1:55000/rules/files/{filename}', method: 'GET',
+      description: 'Fetch a rule file', max_result_tokens: value } };
+  }
+
+  it.each([500, null])('accepts a query budget of %j', async (value) => {
+    const config = await loadWithServer({ name: 'test' }, queryWithBudget(value));
+
+    expect(config.queries?.get_rule_file.max_result_tokens).toBe(value);
+  });
+
+  it.each([0, -1, 1.5, '4000', true])('rejects a query budget of %j without echoing it', async (value) => {
+    await expect(loadWithServer({ name: 'test' }, queryWithBudget(value))).rejects.toThrow(
+      /^queries\.get_rule_file\.max_result_tokens must be a positive integer or null$/,
+    );
   });
 });

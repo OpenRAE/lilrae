@@ -10,7 +10,7 @@ if ! [[ "$image" =~ @sha256:[a-f0-9]{64}$ ]]; then
   echo 'qualify an exact signed image digest, not a mutable tag' >&2
   exit 2
 fi
-aptl_cli=${APTL_SEAT_CLI:-$source_root/.venv/bin/aptl}
+aptl_cli=${APTL_SEAT_CLI:-$source_root/.venv/bin/lilrae}
 test -x "$aptl_cli" || {
   echo 'installed APTL CLI is required' >&2
   exit 2

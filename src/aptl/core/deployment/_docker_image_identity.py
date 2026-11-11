@@ -153,6 +153,24 @@ def local_image_state(
     return state
 
 
+def selected_container_image_digest(
+    run: Callable[..., Any], image_id: str, image_ref: str, *, timeout: int
+) -> str | None:
+    """Correlate a selected repo pin with the container's observed config ID."""
+
+    inspected = run(
+        ["docker", "image", "inspect", "--format", EXACT_IMAGE_INSPECT_FORMAT, image_id],
+        timeout=timeout,
+    )
+    identity = (
+        exact_inspected_image_identity(inspected.stdout, image_ref)
+        if inspected.returncode == 0 else None
+    )
+    if identity is None or identity.image_id != image_id:
+        return None
+    return image_ref.rsplit("@", 1)[1]
+
+
 def authored_tag_reference(image_ref: str) -> str | None:
     """Return the ``repository:tag`` a reference names, or ``None``.
 

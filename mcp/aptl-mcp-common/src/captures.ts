@@ -10,25 +10,30 @@
  * evidence (ADR-041). The volume is invisible to the host filesystem to
  * prevent cross-scenario tampering (codex pre-push cycle 1 finding-10).
  *
- * When an SSH session closes, the MCP server invokes `harvestSession()` which
- * runs `docker cp` against the capture container (the sidecar — see
- * `resolveCaptureContainer` / `capture_container_name`) to copy the
- * per-session subtree out into `<run_store_base>/<run_id>/kali-side/<session_id>/`
- * on the host, then sets 0600 permissions on every file. The harvest is
+ * When an SSH session closes, the MCP server invokes `harvestSession()`. It
+ * first runs `broker.py await-session` in the capture container (the sidecar —
+ * see `resolveCaptureContainer` / `capture_container_name`), which waits until
+ * the broker has finalized the session and written `metadata.json`. Only then
+ * does it run one `docker cp` to copy the per-session subtree out into
+ * `<run_store_base>/<run_id>/kali-side/<session_id>/` on the host, and set 0600
+ * permissions on every file. The harvest is
  * best-effort — a missing container / docker / missing subdir logs to stderr
  * but does not throw out of the close path. Each of those failures also
  * leaves a named failure record in the session's kali-side evidence (#1242).
+ * An unresolved or invalid container name is recorded the same way, and
+ * docker cp does not run.
  */
 
 import { spawn } from 'node:child_process';
 import { chmod, mkdir, readdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { redact } from './redaction.js';
 import { kaliSideSessionDir, loadActiveTraceId } from './runs.js';
 
 export interface HarvestOptions {
   /** Docker container to harvest from. Per ADR-041 this is the capture
-   * sidecar (e.g. `aptl-kali-capture`), which owns the captures volume. */
+   * sidecar (e.g. `aptl-w<id>-kali-capture`), which owns the captures volume. */
   containerName: string;
   /** Path inside the container that holds per-run capture subdirs.
    * Defaults to `/var/log/aptl/captures` to match the capture broker. */
@@ -51,7 +56,19 @@ const DEFAULT_CONTAINER_CAPTURES_ROOT = '/var/log/aptl/captures';
 const CONTAINER_MISSING = 'aptl.capture-harvest.container-missing';
 const SESSION_MISSING = 'aptl.capture-harvest.session-missing';
 const COPY_FAILED = 'aptl.capture-harvest.copy-failed';
-type HarvestFailure = typeof CONTAINER_MISSING | typeof SESSION_MISSING | typeof COPY_FAILED;
+// The broker did not finalize the session with its metadata.json in its time
+// limit. No frames are copied, so a frames-only directory never stands in for
+// a session.
+const METADATA_MISSING = 'aptl.capture-harvest.metadata-missing';
+const FINALIZE_FAILED = 'aptl.capture-harvest.finalize-failed';
+const CONTAINER_UNRESOLVED = 'aptl.capture-harvest.container-unresolved';
+type HarvestFailure =
+  | typeof CONTAINER_MISSING
+  | typeof SESSION_MISSING
+  | typeof COPY_FAILED
+  | typeof METADATA_MISSING
+  | typeof FINALIZE_FAILED
+  | typeof CONTAINER_UNRESOLVED;
 /** Evidence record for a failure, inside the session's kali-side dir. */
 const HARVEST_FAILURE_FILE = 'capture-harvest-failure.json';
 
@@ -70,7 +87,19 @@ function dockerBin(env: NodeJS.ProcessEnv = process.env): string {
   return DEFAULT_DOCKER_BIN;
 }
 
-function execDockerCp(
+// Docker stderr comes from another trust zone. Keep only its start, which
+// holds the error the failure classification reads.
+const MAX_DOCKER_STDERR_CHARS = 2048;
+
+// containers/kali-capture/broker.py: the session finalization actions, and
+// their exit codes for a session with no directory and for a session that did
+// not finalize with metadata.json.
+const BROKER = '/usr/local/bin/broker.py';
+const BROKER_SESSION_MISSING = 3;
+const BROKER_SESSION_UNFINISHED = 4;
+type BrokerSessionAction = 'stop-session' | 'await-session';
+
+function execDocker(
   args: string[],
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<{ code: number; stderr: string }> {
@@ -80,10 +109,12 @@ function execDockerCp(
   // "no PATH lookup" contract was unverifiable. (Test-quality review
   // cycle 1 T-002.)
   return new Promise((res) => {
-    const child = spawn(dockerBin(env), args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(dockerBin(env), args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 45000, killSignal: 'SIGKILL' });
     let stderr = '';
     child.stderr.on('data', (b) => {
-      stderr += b.toString();
+      if (stderr.length < MAX_DOCKER_STDERR_CHARS) {
+        stderr = (stderr + b.toString()).slice(0, MAX_DOCKER_STDERR_CHARS);
+      }
     });
     child.on('error', (err) => {
       res({ code: -1, stderr: String(err) });
@@ -94,6 +125,11 @@ function execDockerCp(
   });
 }
 
+/** Redacted Docker stderr as one JSON string, so it cannot forge log lines. */
+function dockerErrorText(stderr: string): string {
+  return JSON.stringify(redact(stderr.trim()));
+}
+
 async function chmodTreeBestEffort(root: string, fileMode: number, dirMode: number): Promise<void> {
   // Recursively chmod every file/dir under root. Best-effort: a
   // missing path or permission denied is logged, not thrown.
@@ -102,6 +138,8 @@ async function chmodTreeBestEffort(root: string, fileMode: number, dirMode: numb
     for (const entry of entries) {
       const full = join(root, entry.name);
       try {
+        // chmod follows links, so a copied link would change a host file.
+        if (entry.isSymbolicLink()) continue;
         if (entry.isDirectory()) {
           await chmod(full, dirMode);
           await chmodTreeBestEffort(full, fileMode, dirMode);
@@ -145,8 +183,17 @@ function resolveHarvestParams(opts: HarvestOptions): ResolvedHarvestParams {
 /** Outcome of one per-session copy: `null` on success, else the failure. */
 interface CopyFailure {
   failure: HarvestFailure;
-  exitCode: number;
+  // null when the failure is not a docker exit (e.g. metadata never finalized).
+  exitCode: number | null;
 }
+
+/**
+ * Docker's container-name grammar, `[a-zA-Z0-9][a-zA-Z0-9_.-]+`. It also keeps
+ * a leading `-` out of the `docker cp` argv. An unresolved `${VAR}` reference
+ * from the lab config, such as an unbound `LILRAE_MCP_CAPTURE_CONTAINER`, does
+ * not match.
+ */
+const DOCKER_CONTAINER_NAME = /^[a-zA-Z\d][\w.-]+$/;
 
 /**
  * Copy one session's per-session capture subtree out of the container.
@@ -161,7 +208,7 @@ async function copyPerSessionCaptures(
   env: NodeJS.ProcessEnv,
   sessionId: string,
 ): Promise<CopyFailure | null> {
-  const cpResult = await execDockerCp(['cp', `${containerName}:${src}`, destDir], env);
+  const cpResult = await execDocker(['cp', `${containerName}:${src}`, destDir], env);
   if (cpResult.code === 0) return null;
   const exitCode = cpResult.code;
   // Docker reports `No such container: <name>`; a missing path inside an
@@ -187,11 +234,75 @@ async function copyPerSessionCaptures(
     );
     return { failure: SESSION_MISSING, exitCode };
   }
-  console.error(
-    `[captures] docker cp failed (rc=${cpResult.code}):`,
-    cpResult.stderr.trim(),
-  );
+  console.error(`[captures] docker cp failed (rc=${cpResult.code}): ${dockerErrorText(cpResult.stderr)}`);
   return { failure: COPY_FAILED, exitCode };
+}
+
+/**
+ * Run one broker session action in the capture container. Returns `null` when
+ * the broker reports the session finalized with its metadata.json, else the
+ * named failure.
+ */
+async function runBrokerSessionAction(
+  containerName: string,
+  action: BrokerSessionAction,
+  runId: string,
+  sessionId: string,
+  env: NodeJS.ProcessEnv,
+): Promise<CopyFailure | null> {
+  if (!DOCKER_CONTAINER_NAME.test(containerName)) return unresolvedContainer(containerName);
+  const result = await execDocker([
+    'exec', '--user', 'root', containerName, 'python3', BROKER,
+    action, '--run-id', runId, '--session-id', sessionId,
+  ], env);
+  if (result.code === 0) return null;
+  const exitCode = result.code;
+  if (/No such container: /i.test(result.stderr)) {
+    console.error(`[captures] capture container ${containerName} is missing (${CONTAINER_MISSING})`);
+    return { failure: CONTAINER_MISSING, exitCode };
+  }
+  if (exitCode === BROKER_SESSION_MISSING) {
+    console.error(`[captures] capture broker has no session ${sessionId} (${SESSION_MISSING})`);
+    return { failure: SESSION_MISSING, exitCode };
+  }
+  if (exitCode === BROKER_SESSION_UNFINISHED) {
+    console.error(`[captures] session ${sessionId} did not finalize with metadata (${METADATA_MISSING})`);
+    return { failure: METADATA_MISSING, exitCode };
+  }
+  console.error(`[captures] capture broker ${action} failed (rc=${exitCode}): ${dockerErrorText(result.stderr)}`);
+  return { failure: FINALIZE_FAILED, exitCode };
+}
+
+/**
+ * Copy one finalized session. The broker's metadata.json is the commit marker
+ * of a complete session: the copy runs once, only after the broker confirms
+ * it, and a copy that arrives without it is a failure.
+ */
+async function copyFinalizedSession(
+  containerName: string,
+  paths: { src: string; destDir: string },
+  ids: { runId: string; sessionId: string },
+  env: NodeJS.ProcessEnv,
+): Promise<CopyFailure | null> {
+  const unfinished = await runBrokerSessionAction(
+    containerName, 'await-session', ids.runId, ids.sessionId, env,
+  );
+  if (unfinished) return unfinished;
+  const copyFailed = await copyPerSessionCaptures(containerName, paths.src, paths.destDir, env, ids.sessionId);
+  if (copyFailed) return copyFailed;
+  return (await metadataPresent(paths.destDir)) ? null : { failure: METADATA_MISSING, exitCode: null };
+}
+
+/**
+ * Refuse a capture container name that is not a resolved Docker name. Lab
+ * start binds the workspace-scoped sidecar name; without it no fixed name
+ * stands in, so a legacy container can never supply the evidence.
+ */
+function unresolvedContainer(containerName: string): CopyFailure {
+  console.error(
+    `[captures] capture container ${JSON.stringify(containerName)} is not resolved (${CONTAINER_UNRESOLVED})`,
+  );
+  return { failure: CONTAINER_UNRESOLVED, exitCode: null };
 }
 
 /**
@@ -267,10 +378,32 @@ export async function harvestSession(opts: HarvestOptions, sessionId: string): P
   // copies the source directory itself into dest, producing
   // dest/<session_id>/... which would nest one level too deep.
   const src = `${containerCapturesRoot}/${tid}/sessions/${sessionId}/.`;
-  const failed = await copyPerSessionCaptures(opts.containerName, src, destDir, env, sessionId);
+  const failed = await copyFinalizedSession(
+    opts.containerName, { src, destDir }, { runId: tid, sessionId }, env,
+  );
   if (failed) {
     await recordHarvestFailure(destDir, failed, opts.containerName, tid, sessionId);
+    return finalizeHarvest(destDir, false);
   }
+  return finalizeHarvest(destDir, true);
+}
 
-  return finalizeHarvest(destDir, failed === null);
+/** Whether the harvested session directory now holds the broker's metadata. */
+async function metadataPresent(destDir: string): Promise<boolean> {
+  try {
+    return (await stat(join(destDir, 'metadata.json'))).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** Ask the sidecar to finalize only this run/session, without shell interpolation. */
+export async function finalizeCaptureSession(opts: HarvestOptions, sessionId: string): Promise<boolean> {
+  const { env, stateDir, tid } = resolveHarvestParams(opts);
+  const destDir = kaliSideSessionDir(stateDir, tid, sessionId, env);
+  await mkdir(destDir, { recursive: true, mode: 0o700 });
+  const failed = await runBrokerSessionAction(opts.containerName, 'stop-session', tid, sessionId, env);
+  if (!failed) return true;
+  await recordHarvestFailure(destDir, failed, opts.containerName, tid, sessionId);
+  return false;
 }

@@ -2,28 +2,25 @@
 
 The APTL web interface is the local operator control plane for one lab project.
 It is separate from the intentionally vulnerable target web application and
-from third-party SOC interfaces such as the Wazuh Dashboard. Discover every
-realized URL with `aptl lab info`.
+from third-party SOC interfaces such as the Wazuh Dashboard. `lilrae lab info` reports the observed URLs.
 
 ## Supported Delivery
 
 The supported direct command is:
 
 ```shell
-aptl web serve
+lilrae web serve
 ```
 
 It serves the built single-page application and FastAPI control plane from one
-origin. The command prints a one-time login URL. Open that private URL in the
-operator's browser; the server exchanges it for the two-part browser session.
-Do not paste the URL into chat, logs, issues, or another user's browser.
+origin. The command prints a one-time login URL. The private launch URL is exchanged for a two-part browser session.
+It is a secret-bearing access value.
+See [run the web control plane](web-proxy.md#start-the-local-interface) for operating steps.
 
 The command requires the Python `web` extra and built frontend assets. A source
 or initialized lab project can build the frontend with its locked Node package
-metadata. The Compose `web` profile supplies the other supported delivery: a
-static UI container and an API container behind one same-origin proxy. Use only
-a web surface realized by the selected scenario or an explicitly started local
-development setup.
+metadata. The Compose `web` profile gives the other supported delivery: a
+static UI container and an API container behind one same-origin proxy. A supported web deployment is scenario-realized or an explicitly started local development setup.
 
 ## Serve Defaults
 
@@ -34,16 +31,17 @@ development setup.
 | Browser login | one-time URL | Exchanges a terminal-visible launch token for a two-part session. |
 | Workers | `1` | Keeps the in-process session and terminal-ticket stores consistent. |
 
-Use `aptl web serve --help` for the exact options in the installed release.
-`--api-only` is for the split Compose delivery behind its static UI proxy; it
-does not provide a browser interface by itself.
+`lilrae web serve --help` lists the installed options.
+`--api-only` is for the split Compose delivery behind its static UI proxy. It
+does not give a browser interface by itself.
 
-The split delivery's API container never runs as root. Set
-`APTL_WEB_API_USER` to the project owner's `uid:gid` and
-`APTL_DOCKER_SOCKET_GID` to the Docker socket's group in the project's `.env`.
-`.env.example` shows the commands. The container then reads the owner-only lab
-state under `.aptl/` and reaches the daemon with no other privilege. It refuses
-to start while either value is unset.
+The split delivery's API container runs as the project owner rather than root.
+`APTL_WEB_API_USER` identifies the owner's `uid:gid`.
+`APTL_DOCKER_SOCKET_GID` identifies the Docker socket group.
+
+Both values are required. An unset value prevents container startup.
+The account can read private `.aptl/` state and access the selected daemon without another privilege grant.
+See [configure split delivery](web-proxy.md#configure-split-delivery).
 
 ## Operator Surfaces
 
@@ -63,7 +61,7 @@ terminal output, or operator notes.
 
 These routes support the shipped UI. They are not an unauthenticated public
 automation API. Except for the one-time login exchange, HTTP routes require the
-web control-plane authentication boundary; mutating browser requests also pass
+web control-plane authentication boundary. Mutating browser requests also pass
 the same-origin gate.
 
 | Method and path | Purpose |
@@ -72,7 +70,7 @@ the same-origin gate.
 | `GET /api/auth/login` | One-time launch-token exchange and browser-session bootstrap. |
 | `GET /api/lab/status` | Current running, error, and container state. |
 | `POST /api/lab/start` | Start the selected project scenario. |
-| `POST /api/lab/stop` | Stop the project and keep its volumes. The route takes no parameters; `aptl lab stop -v` removes volumes. |
+| `POST /api/lab/stop` | Stop the project and keep its volumes. The route takes no parameters. `lilrae lab stop -v` removes volumes. |
 | `GET /api/lab/events` | Server-sent lifecycle updates. |
 | `POST /api/lab/kill` | Emergency project process or container termination. |
 | `GET /api/config` | Redacted non-secret configuration projection. |
@@ -81,42 +79,35 @@ the same-origin gate.
 | `GET /api/terminal/ticket` | Short-lived ticket for an allowed terminal target. |
 | `WEBSOCKET /api/terminal/ws/{container}` | Bounded terminal session for a server-approved container. |
 
-Use the browser interface rather than calling these routes directly unless you
-are developing or testing the web client against the typed API contracts.
+These routes serve the browser client.
+Direct development consumers remain subject to the same typed contracts and authentication.
 
 ## Safe Exposure
 
-Loopback is the default and recommended operator boundary. For access from
-another device, keep the APTL server on loopback and place a same-host TLS proxy
-in front of it. Two settings then apply:
-
-- `--public-origin` (or `APTL_WEB_PUBLIC_ORIGIN`) sets the browser-facing origin
-  of the printed one-time login URL. `aptl web serve --help` documents it.
-- `APTL_ALLOWED_HOSTS` sets the allowed host. It is an environment variable
-  only, with no `aptl web serve` option. It takes a comma-separated list of
-  hostnames, without ports, that the API accepts in the `Host` header in
-  addition to `127.0.0.1`, `localhost`, and `::1`.
-
-Behind a proxy that forwards the browser's `Host` header, every HTTP request
-under `/api/` fails with `403` and `{"detail": "Host not allowed"}` until that
-hostname is in `APTL_ALLOWED_HOSTS`. The `/config` page lists the effective
-allowed hosts.
-
-The browser's start, stop, and kill requests must also come from the server's
-own origin, which the server builds from the `Host` it receives. A proxy that
-rewrites `Host` to the loopback address therefore gets `403` and
-`{"detail": "Cross-origin API request rejected"}` for them.
-
-For example, behind `tailscale serve` on the same host:
-
-```shell
-APTL_ALLOWED_HOSTS=<machine>.<tailnet>.ts.net aptl web serve \
-  --public-origin https://<machine>.<tailnet>.ts.net
-```
-
-Do not expose the control plane through a plain non-loopback bind, rely on CORS
-as authorization, disable TLS validation, or put API tokens in URLs.
+See [configure a web control-plane proxy](web-proxy.md).
+Loopback remains the default operator boundary.
 
 For design rationale and contributor contracts, see the
 [web GUI specification](../specs/web-gui-design.md) and
 [authentication ADR](../adrs/adr-039-web-control-plane-authentication.md).
+
+## Proxy configuration
+
+| Setting | Contract |
+| --- | --- |
+| `--public-origin`, `APTL_WEB_PUBLIC_ORIGIN` | Browser-facing origin used in the printed launch URL. |
+| `APTL_ALLOWED_HOSTS` | Comma-separated hostnames without ports. This setting has no CLI option. |
+| Built-in hosts | `127.0.0.1`, `localhost`, and `::1` remain allowed. |
+| Proxy location | TLS termination is on the same host. The API remains on loopback. |
+| Forwarded host | The API uses the received `Host` to build its origin for mutating-request checks. |
+
+## Proxy failures
+
+| Observation | Meaning |
+| --- | --- |
+| HTTP 403 with `Host not allowed` | The forwarded hostname is absent from the allowed-host list. |
+| HTTP 403 with `Cross-origin API request rejected` | The browser's mutation origin differs from the origin built from the received host. |
+
+A proxy that rewrites `Host` to loopback can cause the second failure.
+CORS does not establish authorization.
+A non-loopback plain HTTP bind does not replace the supported TLS proxy boundary.

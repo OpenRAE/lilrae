@@ -26,6 +26,8 @@ drift from the set of concerns the gate actually enforces.
 
 from __future__ import annotations
 
+from aptl.backends._lilrae_catalog_image_observation import observe_catalog_images
+
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -55,9 +57,6 @@ from aptl.backends._raes_observation_index import (
     RealizationObservationIndex,
     build_observation_index,
 )
-from aptl.backends._raes_observation_ordering import (
-    align_techvault_identity_collection_observations,
-)
 from aptl.backends._raes_stateful_observation import (
     _observe_generated_artifact,
     _observe_persistent_volume,
@@ -66,13 +65,9 @@ from aptl.backends.raes_realization_model import (
     AptlRealization,
     ParticipantDatasetRealization,
 )
-from aptl.backends.raes_runtime_attestation import (
-    observe_techvault_attested_concerns,
-)
 from aptl.backends.raes_runtime_observation import observe_runtime_concerns
 from aptl.backends.scenario_startup import observe_scenario_runtime_concerns
 from aptl.core.deployment._compose_service_health import runtime_expects_completion
-from aptl.core.deployment.errors import BackendTimeoutError
 from aptl.utils.logging import get_logger
 
 log = get_logger("realization-observe")
@@ -127,18 +122,14 @@ def observe_realization(
         )
         for address, resource in plan.resources.items()
     }
-    _add_techvault_runtime_attestations(
+    observe_catalog_images(backend, realization, observations, observation_context)
+    _add_adapter_runtime_observations(
         backend,
         realization,
         observations,
-        observation_context,
         startup_selection,
     )
-    return align_techvault_identity_collection_observations(
-        plan=plan,
-        observations=observations,
-        pack_identity=realization.pack_identity,
-    )
+    return observations
 
 
 def _observe_planned_resource(
@@ -196,78 +187,60 @@ def _observe_planned_resource(
     return observed
 
 
-def _add_techvault_runtime_attestations(
+def _add_adapter_runtime_observations(
     backend: "DeploymentBackend",
     realization: AptlRealization,
     observations: dict[str, ObservedResource],
-    observation_context: DeploymentObservationContext | None,
     startup_selection: ScenarioStartupSelection | None,
 ) -> None:
-    """Attach only implementation-bound TechVault configuration disclosures."""
+    """Merge independent adapter readings and retain their actual source."""
 
     for node in realization.nodes:
-        observed_node = observations.get(node.address)
-        if observed_node is None or not observed_node.realized:
+        observed = observations.get(node.address)
+        if observed is None or not observed.realized:
             continue
-        content, content_verified = _node_content_verification(
-            realization, node.address, observations
-        )
-        if content and not content_verified:
-            continue
-        try:
-            concerns = observe_techvault_attested_concerns(
-                backend,
-                node,
-                realization.pack_identity,
-                content_verified=content_verified,
-                observation_context=observation_context,
-            )
-        except (BackendTimeoutError, OSError, TypeError, ValueError):
-            concerns = {}
-        if concerns:
-            observed_node.concerns.update(concerns)
-        adapter_concerns = observe_scenario_runtime_concerns(
+        readings = observe_scenario_runtime_concerns(
             realization.pack_identity,
             backend,
             node,
             selection=startup_selection,
         )
-        if adapter_concerns:
-            observed_node.concerns.update(adapter_concerns)
+        for path, reading in readings.items():
+            native = reading.value
+            if path in observed.concerns:
+                core_value = observed.concerns[path]
+                native = _combined_runtime_value(reading.kind, core_value, native)
+                if native is None:
+                    observed.concerns.pop(path, None)
+                    observed.concern_sources.pop(path, None)
+                    continue
+            observed.concerns[path] = native
+            observed.concern_sources[path] = reading.source
 
 
-def _node_content_verification(
-    realization: AptlRealization,
-    node_address: str,
-    observations: Mapping[str, ObservedResource],
-) -> tuple[tuple[object, ...], bool]:
-    """Return node content and whether every placement was read back."""
+def _combined_runtime_value(kind: str, core_value: object, native: object) -> object:
+    """Merge disjoint component owners and reject conflicting observations."""
 
-    content = tuple(
-        placement
-        for placement in realization.placements
-        if placement.target_address == node_address and placement.content is not None
-    )
-    verified = bool(content) and all(
-        (
-            (observed := observations.get(placement.address)) is not None
-            and observed.realized
-            and _CONTENT_TYPE_PATH in observed.concerns
-        )
-        for placement in content
-    )
-    return content, verified
+    if (
+        kind == "runtime-software-components"
+        and isinstance(core_value, list)
+        and isinstance(native, list)
+    ):
+        core_ids = {item.get("component_id") for item in core_value}
+        adapter_ids = {item.get("component_id") for item in native}
+        return None if core_ids.intersection(adapter_ids) else [*core_value, *native]
+    return native if core_value == native else None
 
 
 def observation_evidence(
     observations: Mapping[str, ObservedResource],
 ) -> dict[str, dict[str, object]]:
-    """Return only non-secret evidence for successfully observed resources."""
+    """Return non-secret readback evidence, including failed identity checks."""
 
     return {
         address: dict(observed.evidence)
         for address, observed in observations.items()
-        if observed.realized and observed.evidence
+        if observed.evidence
     }
 
 

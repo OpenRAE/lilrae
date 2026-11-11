@@ -5,12 +5,13 @@ from collections.abc import Callable
 from dataclasses import asdict
 from functools import partial
 from pathlib import Path
-from typing import Optional
+from typing import NoReturn, Optional
 
 import typer
 
 from aptl.cli import lab_init, lifecycle
 from aptl.cli._common import (
+    PROJECT_DIR_HELP,
     EXIT_FAILED,
     emit_json_result,
     exit_status,
@@ -40,6 +41,8 @@ from aptl.core.lab_types import (
     LabStatus,
     describe_project_runtime,
 )
+from aptl.cli.lab_trial import refuse_existing_trial_run, run_lab_trial, trial_summary
+from aptl.core.trial_attempt import TrialAttempt, parse_trial_attempt
 from aptl.core.scenario_catalog import (
     load_scenario_catalog,
     resolve_scenario_selection,
@@ -53,16 +56,16 @@ app = typer.Typer(help="Lab lifecycle management.")
 
 # `continuity-audit` lives in aptl.cli.continuity (issue #252) so this
 # module stays focused on lifecycle commands. Register it under `lab`
-# so the command stays at `aptl lab continuity-audit` (no UX change).
+# so the command stays at `lilrae lab continuity-audit` (no UX change).
 app.command("continuity-audit")(continuity_audit)
 
 # `init` (DEP-008) lives in aptl.cli.lab_init so this module stays the focused
-# lifecycle facade; registered here so the command remains `aptl lab init`.
+# lifecycle facade; registered here so the command remains `lilrae lab init`.
 lab_init.register(app)
 
 # Ephemeral lifecycle policy commands (DEP-003) live in aptl.cli.lifecycle so
 # this module stays focused; register them under `lab` (no UX change:
-# `aptl lab enforce` / `monitor` / `policy show`).
+# `lilrae lab enforce` / `monitor` / `policy show`).
 lifecycle.register(app)
 app.command("qualify-profile")(qualify_profile)
 
@@ -74,10 +77,12 @@ _DESTRUCTIVE_DATA_WARNING = (
     "\n  WARNING: This will destroy all lab data including:\n"
     "    - Wazuh SIEM indexes and configuration\n"
     "    - MISP threat intelligence data\n"
-    "    - TheHive cases and analysis\n"
     "    - Shuffle SOAR workflows\n"
     "    - All container logs and state\n"
 )
+
+
+_START_COMMAND = "lab start"
 
 
 def _emit_lab_start_progress(message: str, *, err: bool = False) -> None:
@@ -118,7 +123,7 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     skip_seed: bool = typer.Option(
         False,
@@ -211,13 +216,39 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
         "-j",
         help="Print the result as one JSON object; progress goes to stderr.",
     ),
+    run_id: Optional[str] = typer.Option(
+        None,
+        "--run-id",
+        help="Run ID of the trial that the SDL declares. Needs --attempt-id and --deadline.",
+    ),
+    attempt_id: Optional[str] = typer.Option(
+        None,
+        "--attempt-id",
+        help="Attempt ID of the trial. Needs --run-id and --deadline.",
+    ),
+    deadline: Optional[str] = typer.Option(
+        None,
+        "--deadline",
+        help="UTC deadline of the trial, for example 2026-11-06T12:00:00Z.",
+    ),
 ) -> None:
-    """Start the APTL lab environment.
+    """Start the LilRAE lab environment.
+
+    With --run-id, --attempt-id and --deadline, also run the trial that the
+    SDL declares, then seal the run.
 
     Exit status: 0 when the lab started (read the outcome for degraded
     states), 1 when the start failed, 2 for invalid options.
     """
     log.info("Starting lab from %s (clean=%s)", project_dir, clean)
+
+    try:
+        trial_attempt = parse_trial_attempt(run_id, attempt_id, deadline)
+        if trial_attempt is not None:
+            refuse_existing_trial_run(project_dir, trial_attempt)
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2)
 
     try:
         selected_scenario = resolve_scenario_selection(
@@ -284,6 +315,7 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
             access_output_dir=appliance_access_output_dir,
             candidate_trust=appliance_candidate_trust,
         )
+    trial_kwargs = {"trial": trial_attempt} if trial_attempt else {}
     if clean:
         if not _confirm_destructive(yes, output_json=output_json, option="--clean"):
             raise typer.Exit(code=0)
@@ -294,6 +326,7 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
             scenario_path=selected_scenario,
             progress=_start_progress(output_json),
             teardown_on_failure=teardown_on_failure,
+            **trial_kwargs,
             **appliance_kwargs,
         )
     else:
@@ -303,9 +336,13 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
             scenario_path=selected_scenario,
             progress=_start_progress(output_json),
             teardown_on_failure=teardown_on_failure,
+            **trial_kwargs,
             **appliance_kwargs,
         )
-    _report_start_result(project_dir, result, output_json)
+    if trial_attempt is None or not result.success:
+        _report_start_result(project_dir, result, output_json)
+        return
+    _report_trial_result(project_dir, result, trial_attempt, selected_scenario, output_json)
 
 
 def _start_result_fields(project_dir: Path, result: LabResult) -> dict[str, object]:
@@ -376,7 +413,7 @@ def _report_start_result(
     """Print the start result as text or JSON and exit with its status."""
     if output_json:
         fields = _start_result_fields(project_dir, result)
-        emit_json_result("lab start", result.success, fields)
+        emit_json_result(_START_COMMAND, result.success, fields)
     else:
         render_start_result(result, project_dir)
         if result.success:
@@ -389,13 +426,64 @@ def _report_start_result(
         raise typer.Exit(code=EXIT_FAILED)
 
 
+def _report_trial_result(
+    project_dir: Path,
+    result: LabResult,
+    attempt: TrialAttempt,
+    scenario_path: Optional[Path],
+    output_json: bool,
+) -> None:
+    """Run the declared trial on a usable lab, then report its sealed record.
+
+    Exit status 0 means the sealed trial completed, met its deadline, or was
+    stopped. A trial failure, or a lab that is not usable, exits with 1.
+    """
+    if not output_json:
+        render_start_result(result, project_dir)
+    try:
+        if result.run_id != attempt.run_id or result.scenario_sha256 is None:
+            raise RuntimeError("the lab is not usable for the trial; no participant started")
+        record = run_lab_trial(
+            project_dir,
+            attempt,
+            scenario_path=scenario_path,
+            scenario_sha256=result.scenario_sha256,
+            progress=_start_progress(output_json),
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        _report_trial_failure(project_dir, result, redact_text(str(exc)), output_json)
+    succeeded = record.terminal_cause != "failed"
+    if output_json:
+        fields = _start_result_fields(project_dir, result)
+        emit_json_result(_START_COMMAND, succeeded, {**fields, "trial": trial_summary(record)})
+    else:
+        typer.echo(
+            f"Trial {record.run_id} attempt {record.attempt_id} sealed: "
+            f"{record.terminal_cause}."
+        )
+    if not succeeded:
+        raise typer.Exit(code=EXIT_FAILED)
+
+
+def _report_trial_failure(
+    project_dir: Path, result: LabResult, message: str, output_json: bool
+) -> NoReturn:
+    """Report a trial that did not reach a seal and exit with status 1."""
+    if output_json:
+        fields = _start_result_fields(project_dir, result)
+        emit_json_result(_START_COMMAND, False, {**fields, "trial": {"error": message}})
+    else:
+        typer.echo(f"error: trial did not run to a seal: {message}", err=True)
+    raise typer.Exit(code=EXIT_FAILED)
+
+
 @app.command("info")
 def info(
     project_dir: Path = typer.Option(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
 ) -> None:
     """Show lab access URLs and credential locations."""
@@ -404,7 +492,7 @@ def info(
     env_path = project_dir / ".env"
     if not env_path.exists():
         typer.echo(
-            f"Credentials file not found at {env_path}; run `aptl lab start` first.",
+            f"Credentials file not found at {env_path}; run `lilrae lab start` first.",
             err=True,
         )
         raise typer.Exit(code=1)
@@ -423,7 +511,7 @@ def scenarios(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
 ) -> None:
     """List validated acquired-pack identities."""
@@ -461,7 +549,7 @@ def stop(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     output_json: bool = typer.Option(
         False,
@@ -470,7 +558,7 @@ def stop(
         help="Print the result as one JSON object.",
     ),
 ) -> None:
-    """Stop the APTL lab environment.
+    """Stop the LilRAE lab environment.
 
     Exit status: 0 when the project is stopped, also when it was not running,
     1 when the stop failed, 2 for invalid options.
@@ -507,7 +595,7 @@ def reset(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     output_json: bool = typer.Option(
         False,
@@ -518,13 +606,13 @@ def reset(
 ) -> None:
     """Reset the lab: remove its containers, networks and volumes.
 
-    It also finishes pending host-side cleanup, so the next `aptl lab start`
+    It also finishes pending host-side cleanup, so the next `lilrae lab start`
     begins clean. Configuration, .env, SSH keys, certificates and run records
     are kept. Exit status: 0 when the project is reset, also when nothing was
     running, 1 when the reset failed or host cleanup is still pending, 2 for
     invalid options.
     """
-    if not _confirm_destructive(yes, output_json=output_json, option="aptl lab reset"):
+    if not _confirm_destructive(yes, output_json=output_json, option="lilrae lab reset"):
         raise typer.Exit(code=0)
     log.info("Resetting lab")
     _report_reset_result(reset_lab(project_dir), output_json)
@@ -564,7 +652,10 @@ def _emit_snapshot_json(project_dir: Path, output_file: Optional[Path]) -> None:
 
     Writes to ``output_file`` (mode 0600) when given, otherwise prints it.
     """
-    from aptl.cli._common import resolve_config_for_cli
+    from aptl.cli._common import (
+        exit_on_invalid_deployment_settings,
+        resolve_config_for_cli,
+    )
     from aptl.core.deployment import get_backend
     from aptl.core.deployment.errors import BackendObservationError
     from aptl.core.snapshot import capture_snapshot
@@ -574,7 +665,8 @@ def _emit_snapshot_json(project_dir: Path, output_file: Optional[Path]) -> None:
     # or invalid, so a misconfigured SSH lab doesn't get snapshotted
     # against the local daemon.
     config, project_root = resolve_config_for_cli(project_dir)
-    backend = get_backend(config, project_root)
+    with exit_on_invalid_deployment_settings():
+        backend = get_backend(config, project_root)
 
     try:
         snapshot = capture_snapshot(config_dir=project_root, backend=backend)
@@ -616,7 +708,7 @@ def status(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     output_json: bool = typer.Option(
         False,
@@ -648,9 +740,9 @@ def status(
 
 
 _LIVE_GATE_WARNING = (
-    "\n  WARNING: the live validation gate runs `aptl lab stop -v` and then\n"
+    "\n  WARNING: the live validation gate runs `lilrae lab stop -v` and then\n"
     "  re-boots the lab through the RAES start path. This DESTROYS all lab\n"
-    "  data (Wazuh/MISP/TheHive/Shuffle volumes). Pass --skip-clean-boot to\n"
+    "  data (Wazuh/MISP/Shuffle volumes). Pass --skip-clean-boot to\n"
     "  validate the already-running lab without destroying it.\n"
 )
 
@@ -661,7 +753,7 @@ def validate_live(
         Path("."),
         "--project-dir",
         "-d",
-        help="Path to the APTL project directory.",
+        help=PROJECT_DIR_HELP,
     ),
     scenario: Optional[Path] = typer.Option(
         None,

@@ -22,8 +22,9 @@
 #   4. Send a synthetic Wazuh AR `delete` command with srcip=kali —
 #      assert the wrapper still forwards (cleanup must always run).
 #
-# Idempotent — the wrapper appends a line per invocation; the script
-# uses unique sentinels per run so re-running is safe.
+# Idempotent — the wrapper appends a line per invocation, and each step
+# judges only the lines appended after it started, so lines left by an
+# earlier run (or an earlier step) cannot satisfy a check.
 #
 # Exit 0 = pass; non-zero = fail.
 
@@ -35,7 +36,6 @@ WHITELIST="${WHITELIST:-/var/ossec/etc/lists/active-response-whitelist}"
 LOG="${LOG:-/var/ossec/logs/active-responses.log}"
 KALI_IP="${KALI_IP:-172.20.4.30}"
 ATTACKER_IP="${ATTACKER_IP:-10.99.99.99}"
-RUN_ID="$(date -u +%s)-$$"
 
 log()  { echo "[test-wazuh-ar-whitelist] $*"; }
 fail() { log "FAIL: $*"; exit 1; }
@@ -43,7 +43,7 @@ pass() { log "PASS: $*"; }
 
 # --- preflight --------------------------------------------------------------
 if ! docker ps --format '{{.Names}}' | grep -q "^${TARGET}$"; then
-    fail "${TARGET} not running. Run: aptl lab start"
+    fail "${TARGET} not running. Run: lilrae lab start"
 fi
 if ! docker exec "${TARGET}" test -x "${WRAPPER}"; then
     fail "${WRAPPER} missing/not-executable inside ${TARGET}. Image rebuild needed?"
@@ -52,6 +52,25 @@ if ! docker exec "${TARGET}" test -f "${WHITELIST}"; then
     fail "${WHITELIST} missing inside ${TARGET}. Image rebuild needed?"
 fi
 log "preflight ok: ${TARGET} has wrapper + whitelist"
+
+# Number of lines in ${LOG} on ${TARGET} (0 when it does not exist yet).
+# Record it before a step, then judge the step with log_has_new_line.
+log_line_count() {
+    local count
+    count=$(docker exec "${TARGET}" grep -c '' "${LOG}" 2>/dev/null) || true
+    echo "${count:-0}"
+}
+
+# log_has_new_line OFFSET MESSAGE: true when a line after line OFFSET of
+# ${LOG} ends with MESSAGE. The wrapper prefixes each line with a timestamp;
+# matching the end keeps 10.0.0.1 from matching a line about 10.0.0.10.
+log_has_new_line() {
+    docker exec "${TARGET}" tail -n "+$(( $1 + 1 ))" "${LOG}" 2>/dev/null \
+        | awk -v msg="$2" '
+            length($0) >= length(msg) && substr($0, length($0) - length(msg) + 1) == msg { found = 1 }
+            END { exit !found }
+        '
+}
 
 ar_payload() {
     local cmd="$1"
@@ -64,6 +83,7 @@ EOF
 # --- step 1: kali srcip on `add` -- expect short-circuit + log entry --------
 log "step 1: AR add with srcip=${KALI_IP} (kali, whitelisted) — expect skip"
 PAYLOAD=$(ar_payload add "${KALI_IP}")
+offset1=$(log_line_count)
 docker exec -i "${TARGET}" \
     env APTL_AR_IPTABLES=/bin/false "${WRAPPER}" <<<"${PAYLOAD}" \
     && rc1=0 || rc1=$?
@@ -72,10 +92,9 @@ if [ "${rc1}" -ne 0 ]; then
 fi
 pass "wrapper short-circuited on whitelisted ${KALI_IP}"
 
-# Verify the log entry — match anywhere in the file (the wrapper
-# appends; we don't tail-follow because the previous tests may have
-# logged too).
-if ! docker exec "${TARGET}" grep -F "SKIPPED for whitelisted ${KALI_IP}" "${LOG}" >/dev/null; then
+# Verify the log entry among the lines this step appended only: the log
+# keeps every earlier run's lines, which would otherwise satisfy the check.
+if ! log_has_new_line "${offset1}" "SKIPPED for whitelisted ${KALI_IP}"; then
     fail "no 'SKIPPED for whitelisted ${KALI_IP}' line in ${LOG} on ${TARGET}"
 fi
 pass "log entry present in ${LOG}"
@@ -94,13 +113,14 @@ pass "wrapper invoked iptables for non-whitelisted ${ATTACKER_IP} (rc=${rc2})"
 # --- step 3: kali srcip on `delete` -- delete branch must run unconditionally
 log "step 3: AR delete with srcip=${KALI_IP} — expect delete branch to run (cleanup unconditional)"
 PAYLOAD=$(ar_payload delete "${KALI_IP}")
+offset3=$(log_line_count)
 docker exec -i "${TARGET}" \
     env APTL_AR_IPTABLES=/bin/false "${WRAPPER}" <<<"${PAYLOAD}" \
     && rc3=0 || rc3=$?
 # With /bin/false, iptables -C returns 1 (rule not present), wrapper
 # exits 0 and logs 'removed 0 DROP rule(s)'. The CRITICAL check: did
 # we hit the delete branch (proves the whitelist didn't short-circuit)?
-if ! docker exec "${TARGET}" grep -F "removed" "${LOG}" | grep -F "${KALI_IP}" >/dev/null; then
+if ! log_has_new_line "${offset3}" " DROP rule(s) for ${KALI_IP}"; then
     fail "no 'removed N DROP rule(s) for ${KALI_IP}' line in ${LOG}; wrapper short-circuited on delete (cleanup must always run)"
 fi
 pass "wrapper ran delete branch for ${KALI_IP} (rc=${rc3})"

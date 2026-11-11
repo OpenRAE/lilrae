@@ -8,12 +8,18 @@ proposed
 
 2026-09-05
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [pack-boundary explanation](../architecture/pack-boundary-design.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 A scenario can describe privileged behavior without being authorized to grant
-it. The reviewed backend copies some container security settings directly into
-Compose, grants powerful init privileges implicitly, binds requested names from
-the host environment, and can reuse or replace a foreign same-name container.
+it. The reviewed backend copied security settings into Compose, granted init powers implicitly, used ambient host values, and could replace foreign same-name containers.
 
 Single-user operation still needs boundaries between workspaces, the host,
 operator credentials, range participants, and evidence. Loopback publications
@@ -62,9 +68,7 @@ authority is not a narrow broker merely because its mount is read-only.
 
 Native Docker remains the normal solo-user delivery path, with the actual
 Linux kernel or Docker VM boundary disclosed. A sealed VM seat is optional
-for stronger participant delivery. Elevated systemd capability requirements
-must be measured and minimized for each supported platform; this ADR does not
-assume a private cgroup namespace or rootless mode works with every pack.
+for stronger participant delivery. Elevated systemd powers require measurement and minimization per supported platform. Private cgroups and rootless mode are not assumed compatible with every pack.
 
 ## Failure and recovery
 

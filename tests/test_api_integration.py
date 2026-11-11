@@ -28,12 +28,7 @@ def integration_client(tmp_path):
         json.dumps(
             {
                 "lab": {"name": "test-lab"},
-                "containers": {
-                    "wazuh": True,
-                    "victim": True,
-                    "kali": False,
-                    "reverse": False,
-                },
+                "containers": {'profiles': ['wazuh', 'victim', 'enterprise', 'soc', 'fileshare', 'dns']},
             }
         )
     )

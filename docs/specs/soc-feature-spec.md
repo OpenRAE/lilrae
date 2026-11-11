@@ -11,9 +11,7 @@
 ### 1.1 Purpose
 
 The Scenario & Observability Core (SOC) adds structured experiment execution to
-APTL. It provides the ability to define attack scenarios as YAML, execute them
-against the lab, and capture **all** telemetry into a self-contained run archive
-for post-hoc analysis.
+APTL. The historical design specified YAML exercises and complete telemetry archives for later analysis. It does not prove capture completeness or current runtime support.
 
 ### 1.2 Use Cases
 
@@ -25,9 +23,7 @@ for post-hoc analysis.
 
 ### 1.3 Design Principles
 
-1. **Match existing patterns**—Pydantic v2 for validation, dataclasses for
-   results, `get_logger()` per module, subprocess for external tools, thin CLI
-   over core logic.
+1. **Match existing patterns**: Pydantic v2 validation, dataclass results, `get_logger()`, subprocess tools, and a thin CLI over core logic.
 2. **Minimal new dependencies**—Only `PyYAML` and `requests` are added.
 3. **Scenarios are data, not code**—YAML files authored, shared, and
    version-controlled independently of the engine.
@@ -330,29 +326,19 @@ class RunManifest(TypedDict):
 
 ## 8. Testing
 
-### 8.1 Test Modules
+### 8.1 Verification
 
-| Test File | Covers |
-|-----------|--------|
-| `tests/test_runstore.py` | LocalRunStore CRUD operations |
-| `tests/test_collectors.py` | Collector mocking, fault tolerance |
-| `tests/test_run_assembler.py` | End-to-end assembly with mocked collectors |
-| `tests/test_cli_scenario.py` | CLI scenario commands |
-| `tests/test_integration.py` | Full lifecycle (start -> status -> stop) |
-| `tests/test_smoke.py` | Basic import and schema validation |
+Use the retained run-store, collector, API, and CLI tests for focused changes.
+CI selects the relevant suites and owns full verification.
 
-### 8.2 Running Tests
+The legacy fixed-name live smoke and range suites were removed in #1468.
+They targeted static container names and duplicated the scenario-owned live gate.
+Use the admitted scenario's verifier for live qualification:
 
 ```bash
-# All tests
-pytest tests/ -v
-
-# Just the run storage/assembly tests
-pytest tests/test_runstore.py tests/test_collectors.py tests/test_run_assembler.py -v
-
-# Integration tests (require scenario files on disk)
-pytest tests/test_integration.py -v
-
-# Range integration tests (require running lab)
-pytest tests/test_range_integration.py -v
+lilrae lab validate-live --skip-clean-boot --run-id <startup-run-id>
 ```
+
+Keep native active-response and continuity probes for their distinct effects.
+Select them explicitly with `-m live_lab` and `APTL_SMOKE=1`.
+See [CI verification](../architecture/ci-verification.md) for execution policy.

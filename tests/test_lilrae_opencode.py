@@ -1,0 +1,297 @@
+"""The OpenCode harness receives independent, explicitly selected inputs."""
+
+import json
+import os
+from pathlib import Path
+from threading import Event
+
+import pytest
+
+from aptl.workbench.lilrae_opencode import OpenCodeToolProfile
+from aptl.workbench.process import AgentExecutionError, ProcessCleanup, ProcessResult
+from tests.opencode_fixture import synthetic_options
+
+
+class RecordingRunner:
+    def __init__(self):
+        self.calls = []
+
+    def run(self, argv, **options):
+        self.calls.append(
+            (
+                argv,
+                options,
+                json.loads(Path(options["env"]["OPENCODE_CONFIG"]).read_text()),
+            )
+        )
+        return ProcessResult(
+            0,
+            b'{"type":"text","part":{"text":"done"}}\n{"type":"step_finish","part":{"reason":"stop"}}\n',
+            b"",
+        )
+
+
+@pytest.mark.parametrize(
+    "version,available,passes",
+    [
+        (b"1.19.5\n", True, True),
+        (b"2.0.0\n", True, False),
+        (b"1.19.5\n", False, False),
+    ],
+)
+def test_readiness_checks_selected_build_and_approved_provider(
+    tmp_path, version, available, passes
+):
+    from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor
+
+    calls = []
+
+    class VersionRunner:
+        def run(self, argv, **options):
+            calls.append((argv, options))
+            return ProcessResult(0, version, b"", ProcessCleanup(1, 0))
+
+    executor = LilraeOpenCodeExecutor(
+        options=synthetic_options(
+            executable=Path("/bin/true"),
+            work_root=tmp_path,
+            runner=VersionRunner(),
+            environment={"OPENROUTER_API_KEY": "synthetic-key"},
+        ),
+        model="openrouter/model",
+        prompt="private selected task",
+        timeout_seconds=30,
+    )
+    from aptl.utils.probe_execution import bounded_probe_commands
+    from tests.test_provider_readiness import ProviderRunner
+
+    with bounded_probe_commands(
+        ProviderRunner(None if available else "transport"), 65536
+    ):
+        assert executor.check_readiness("1.19.5") is passes
+    assert calls[0][0] == (str(Path("/bin/true").resolve()), "--version")
+    assert calls[0][1]["stdin"] == b""
+    assert calls[0][1]["max_output_bytes"] == 4096
+    assert "private selected task" not in repr(calls)
+
+
+def test_build_probe_residue_keeps_the_readiness_scope_unconfirmed(tmp_path):
+    from aptl.utils.probe_execution import bounded_probe_commands
+    from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor
+
+    class ResidualRunner:
+        def run(self, argv, **options):
+            return ProcessResult(
+                0, b"1.19.5", b"", ProcessCleanup(1, 0, ("unconfirmed",))
+            )
+
+    runner = ResidualRunner()
+    executor = LilraeOpenCodeExecutor(
+        options=synthetic_options(
+            executable=Path("/bin/true"),
+            work_root=tmp_path,
+            runner=runner,
+            environment={"OPENROUTER_API_KEY": "synthetic-key"},
+        ),
+        model="openrouter/model",
+        prompt="private task",
+        timeout_seconds=1,
+    )
+    with bounded_probe_commands(runner, 4096) as scope:
+        assert not executor.check_readiness("1.19.5")
+        assert not scope.cessation_confirmed
+
+
+def test_independent_models_prompts_and_fresh_contexts(tmp_path):
+    from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor
+
+    runner = RecordingRunner()
+    executable = tmp_path / "opencode"
+    executable.write_text("#!/bin/sh\nexit 0\n")
+    executable.chmod(0o700)
+    contexts = []
+    for model, prompt in (
+        ("openrouter/red", "red only"),
+        ("openrouter/blue", "blue only"),
+        ("openrouter/red", "changed red"),
+    ):
+        executor = LilraeOpenCodeExecutor(
+            options=synthetic_options(
+                executable=executable,
+                work_root=tmp_path,
+                environment={"OPENROUTER_API_KEY": "test-private-token"},
+                runner=runner,
+            ),
+            model=model,
+            prompt=prompt,
+            timeout_seconds=30,
+        )
+        assert executor("action-1", Event()) == "done"
+        argv, options, config = runner.calls[-1]
+        assert options["stdin"] == prompt.encode()
+        assert "--model" in argv
+        assert model in argv
+        assert prompt not in " ".join(argv)
+        assert "test-private-token" not in repr(argv)
+        assert options["env"]["OPENCODE_DISABLE_PROJECT_CONFIG"] == "true"
+        assert options["env"]["OPENCODE_DISABLE_CLAUDE_CODE"] == "true"
+        assert config["permission"]["*"] == "deny"
+        assert config["share"] == "disabled"
+        assert options["env"]["HOME"] != os.environ.get("HOME")
+        contexts.append(options["cwd"])
+        assert not options["cwd"].exists()
+    assert len(set(contexts)) == 3
+
+
+def test_harness_rejects_ambient_configuration_environment(tmp_path):
+    from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor
+
+    options = synthetic_options(
+        executable=Path("/bin/true"),
+        work_root=tmp_path,
+        environment={"OPENCODE_CONFIG": "/untrusted/config"},
+    )
+    with pytest.raises(ValueError, match="environment"):
+        LilraeOpenCodeExecutor(
+            options=options,
+            model="openrouter/model",
+            prompt="prompt",
+            timeout_seconds=30,
+        )
+
+
+def test_only_verified_profile_tools_reach_opencode(tmp_path):
+    from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor
+    from aptl.workbench.profiles import ProfileId, profile_for
+
+    profile = profile_for(ProfileId.RED)
+    servers = {
+        server.server_id: {
+            "command": "/usr/bin/node",
+            "args": ["/admitted/server.js"],
+            "env": {},
+        }
+        for server in profile.servers
+    }
+    path = tmp_path / "profile.json"
+    path.write_text(json.dumps({"mcpServers": servers}))
+    path.chmod(0o600)
+    inventory = {server.server_id: server.tool_names for server in profile.servers}
+    runner = RecordingRunner()
+    executor = LilraeOpenCodeExecutor(
+        options=synthetic_options(
+            executable=Path("/bin/true"),
+            work_root=tmp_path,
+            environment={},
+            runner=runner,
+            tools=OpenCodeToolProfile(
+                profile=ProfileId.RED,
+                config=path,
+                credentials={},
+                inventory_probe=lambda server, *args: inventory[server],
+            ),
+        ),
+        model="openrouter/model",
+        prompt="red task",
+        timeout_seconds=30,
+    )
+    cancellation = Event()
+    with pytest.raises(AgentExecutionError, match="tool session"):
+        executor("action", cancellation)
+    assert runner.calls == []
+    from dataclasses import replace
+
+    from aptl.backends.participant_tools.session import LilraeToolSession
+    from tests.test_lilrae_participant_tools import binding, port
+
+    cancellation = Event()
+    session = LilraeToolSession(
+        port(),
+        tuple(
+            replace(binding(), server_id=server, tool_name=tool)
+            for server, tools in inventory.items()
+            for tool in tools
+        ),
+        cancellation,
+    )
+    executor.invoke_with_tools("outer-red", cancellation, session)
+    config = runner.calls[0][2]
+    assert set(config["mcp"]) == set(servers)
+    expected = {
+        f"{server}_{tool}" for server, tools in inventory.items() for tool in tools
+    }
+    assert {
+        tool for tool, value in config["permission"].items() if value == "allow"
+    } == expected
+    assert config["permission"]["*"] == "deny"
+    for server in config["mcp"].values():
+        assert len(server["environment"]["LILRAE_TOOL_TOKEN"]) == 64
+        assert not Path(server["environment"]["LILRAE_TOOL_SOCKET"]).exists()
+    # Replacing the admitted file cannot widen the next invocation's tools.
+    path.write_text(
+        json.dumps({"mcpServers": {**servers, "peer": servers[next(iter(servers))]}})
+    )
+    with pytest.raises(AgentExecutionError, match="changed"):
+        executor.invoke_with_tools("outer-red", cancellation, session)
+    assert len(runner.calls) == 1
+
+
+def test_unknown_profile_server_is_rejected_before_probe(tmp_path):
+    from unittest.mock import Mock
+
+    from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor
+    from aptl.workbench.profiles import ProfileId
+
+    probe = Mock()
+    path = tmp_path / "profile.json"
+    path.write_text(
+        json.dumps(
+            {"mcpServers": {"unknown": {"command": "/bin/true", "args": [], "env": {}}}}
+        )
+    )
+    path.chmod(0o600)
+    options = synthetic_options(
+        executable=Path("/bin/true"),
+        work_root=tmp_path,
+        tools=OpenCodeToolProfile(
+            profile=ProfileId.RED, config=path, inventory_probe=probe
+        ),
+    )
+    with pytest.raises(ValueError, match="servers"):
+        LilraeOpenCodeExecutor(
+            options=options,
+            model="openrouter/model",
+            prompt="task",
+            timeout_seconds=30,
+        )
+    probe.assert_not_called()
+
+
+def test_real_child_receives_stdin_and_private_configuration(tmp_path):
+    import sys
+
+    from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor
+
+    executable = tmp_path / "harness"
+    executable.write_text(
+        f"#!{sys.executable}\n"
+        "import json,os,sys\n"
+        "assert sys.argv[1:] == ['run','--format','json','--model','openrouter/model','--title','lilrae-participant']\n"
+        "assert os.environ['HOME'] == os.getcwd()\n"
+        "config = json.load(open(os.environ['OPENCODE_CONFIG']))\n"
+        "assert config['permission'] == {'*':'deny'}\n"
+        "assert sys.stdin.buffer.read() == b'exact prompt'\n"
+        "print(json.dumps({'type':'text','part':{'text':'bounded completion'}}))\n"
+        "print(json.dumps({'type':'step_finish','part':{'reason':'stop'}}))\n"
+    )
+    executable.chmod(0o700)
+    executor = LilraeOpenCodeExecutor(
+        options=synthetic_options(
+            executable=executable, work_root=tmp_path, environment={}
+        ),
+        model="openrouter/model",
+        prompt="exact prompt",
+        timeout_seconds=15,
+    )
+    assert executor("action", Event()) == "bounded completion"
+    assert not list(tmp_path.glob("lilrae-participant-*"))

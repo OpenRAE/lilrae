@@ -12,6 +12,7 @@ ExecStart=/usr/local/libexec/aptl-appliance-first-boot
 Environment=HOME=/var/lib/aptl
 Environment=APTL_SEAT_DESKTOP_HANDOFF=1
 Environment=APTL_SEAT_DESKTOP_MCP_SMOKE=1
+Environment=LILRAE_PARTICIPANT_DESKTOP_ACCOUNT=aptl
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
