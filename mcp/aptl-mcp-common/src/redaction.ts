@@ -178,16 +178,25 @@ const AUTHORIZATION_PATTERN = new RegExp(
 // punctuation all count as separators.
 const KEY_LB = String.raw`(?<![a-zA-Z0-9])`;
 const KEY_RB = String.raw`(?![a-zA-Z0-9])`;
-// `key=value` or `key: value` for any sensitive token. Stops at common
-// delimiters so URL query strings and shell key/value pairs mask only
-// the value, not the surrounding context. Capture leading and trailing
-// quotes as separate groups so the replacement preserves them
-// (otherwise wrapping `'<value>'` / `"<value>"` loses the closing
-// quote, corrupting downstream diagnostic structure).
+// `key=value` or `key: value` for any sensitive token. A quote can close the
+// key, so a quoted key in text that is not valid JSON (truncated JSON, a log
+// prefix, Python dict text) is matched too. A quoted value is masked up to
+// its closing quote, also when it holds white space or a delimiter; a
+// backslash escapes the next character in it. Another value stops at a quote,
+// white space, or a delimiter, so URL query strings and shell pairs mask only
+// the value. The replacement keeps the quotes. Mirrors `redaction.py`.
 const SENSITIVE_KV_PATTERN = new RegExp(
-  String.raw`(${KEY_LB}${SENSITIVE_KEY_PATTERN}${KEY_RB}\s*[=:]\s*['"]?)([^'"&\s,;|]+)(['"]?)`,
+  String.raw`(${KEY_LB}${SENSITIVE_KEY_PATTERN}${KEY_RB}['"]?\s*[=:]\s*)` +
+    String.raw`(?:"((?:\\.|[^"\\])+)"|'((?:\\.|[^'\\])+)'|(['"]?)([^'"&\s,;|]+)(['"]?))`,
   'gi',
 );
+
+function redactKeyValue(...args: unknown[]): string {
+  const [, key, doubleQuoted, singleQuoted, open, , close] = args as (string | undefined)[];
+  if (doubleQuoted !== undefined) return `${key}"${REDACTED}"`;
+  if (singleQuoted !== undefined) return `${key}'${REDACTED}'`;
+  return `${key}${open ?? ''}${REDACTED}${close ?? ''}`;
+}
 // Bare `Bearer <token>` (no Authorization: prefix).
 const BARE_BEARER_PATTERN = new RegExp(
   String.raw`(${KEY_LB}bearer\s+)${VALUE_PATTERN}`,
@@ -256,7 +265,7 @@ const LINEAR_REDACTION_TABLE: ReplaceEntry[] = [
   // Authorization next so it wins over the more general patterns.
   [AUTHORIZATION_PATTERN, redactAuthorizationHeader as (...args: unknown[]) => string],
   [COOKIE_HEADER_PATTERN, `$1${REDACTED}$3`],
-  [SENSITIVE_KV_PATTERN, `$1${REDACTED}$3`],
+  [SENSITIVE_KV_PATTERN, redactKeyValue],
   [BARE_BEARER_PATTERN, `$1${REDACTED}`],
   [URL_USERINFO_PATTERN, `$1${REDACTED}$2`],
 ];

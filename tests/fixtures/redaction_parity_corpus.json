@@ -692,5 +692,45 @@
       "hydra",
       "x; nmap -p [REDACTED] host -p [REDACTED]"
     ]
+  },
+  {
+    "name": "kv_quoted_key_truncated_json",
+    "input": "{\"password\":\"hunter2\",\"data\":\"x\"",
+    "expected": "{\"password\":\"[REDACTED]\",\"data\":\"x\""
+  },
+  {
+    "name": "kv_quoted_key_trailing_comma",
+    "input": "{\"password\": \"hunter2\",}",
+    "expected": "{\"password\": \"[REDACTED]\",}"
+  },
+  {
+    "name": "kv_python_dict_text",
+    "input": "{'password': 'hunter2'}",
+    "expected": "{'password': '[REDACTED]'}"
+  },
+  {
+    "name": "kv_json_after_log_prefix",
+    "input": "log: {\"token\": \"abc123\", \"n\": 1",
+    "expected": "log: {\"token\": \"[REDACTED]\", \"n\": 1"
+  },
+  {
+    "name": "kv_quoted_value_with_space",
+    "input": "password=\"correct horse\"",
+    "expected": "password=\"[REDACTED]\""
+  },
+  {
+    "name": "kv_quoted_value_with_escaped_quote",
+    "input": "pw \"password\": \"a\\\"b c\" end",
+    "expected": "pw \"password\": \"[REDACTED]\" end"
+  },
+  {
+    "name": "kv_quoted_value_with_delimiter",
+    "input": "token='a&b;c' next",
+    "expected": "token='[REDACTED]' next"
+  },
+  {
+    "name": "kv_empty_quoted_value_kept",
+    "input": "password=\"\"",
+    "expected": "password=\"\""
   }
 ]
