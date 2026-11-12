@@ -457,6 +457,7 @@ class _Start(provisioner_start.ProvisionerStartMixin):
     deployment_backend = object()
     bundle = MagicMock()
     startup_selection = None
+    reporting_manifest = None
     _lilrae_apparatus_resources = ()
 
     def selected_profiles(self, *_):
@@ -472,7 +473,10 @@ class _Start(provisioner_start.ProvisionerStartMixin):
         return {}
 
 
-def _readback(monkeypatch, plan, nodes, *, disclosed=(), clock=(0.0, 0.0, 0.0)):
+def _readback(
+    monkeypatch, plan, nodes, *, disclosed=(), clock=(0.0, 0.0, 0.0),
+    reporting_manifest=None,
+):
     """Run the readback loop over successive node observations."""
 
     sleeps: list[float] = []
@@ -486,11 +490,13 @@ def _readback(monkeypatch, plan, nodes, *, disclosed=(), clock=(0.0, 0.0, 0.0)):
             _ACCOUNT: ObservedResource(realized=True),
         },
     )
-    monkeypatch.setattr(
-        provisioner_start,
-        "realization_authority_disclosure",
-        lambda *args, **kwargs: (list(disclosed), ()),
-    )
+    def disclose(*args, manifest):
+        if reporting_manifest is not None:
+            assert manifest is reporting_manifest
+        return list(disclosed), ()
+
+    monkeypatch.setattr(provisioner_start, "realization_authority_disclosure", disclose)
+    monkeypatch.setattr(_Start, "reporting_manifest", reporting_manifest)
     monkeypatch.setattr(
         provisioner_start, "operational_realization_observations", lambda **_: ()
     )
@@ -513,6 +519,24 @@ def test_readback_waits_for_an_admitted_concern_it_missed(monkeypatch):
 
     assert result.success
     assert sleeps == [2.0]
+
+
+def test_readback_uses_the_admitted_manifest_with_installed_readers(monkeypatch):
+    from aptl.backends.raes_manifest import create_aptl_manifest
+    from raes_contracts.vocabulary import ObservationStrength
+
+    selected = create_aptl_manifest(
+        runtime_concern_sources={
+            "runtime-applications": ObservationStrength.DRIVER_REPORTED
+        }
+    )
+    result, sleeps = _readback(
+        monkeypatch, _readback_plan(),
+        [ObservedResource(realized=True, concerns=_OBSERVED)],
+        reporting_manifest=selected,
+    )
+    assert result.success
+    assert sleeps == []
 
 
 @pytest.mark.parametrize("kind", ["runtime-environment", "linux-capabilities"])

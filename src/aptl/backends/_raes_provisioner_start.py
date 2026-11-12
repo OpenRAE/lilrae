@@ -280,7 +280,7 @@ class ProvisionerStartMixin(object):
             readback_diagnostics, _ = realization_authority_disclosure(
                 plan,
                 validation_snapshot,
-                manifest=create_aptl_manifest(),
+                manifest=self.reporting_manifest or create_aptl_manifest(),
             )
             settling, unobserved = _unsettled_readback(
                 plan, validation_snapshot, readback_diagnostics
