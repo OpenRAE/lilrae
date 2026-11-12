@@ -29,7 +29,16 @@ def _is_word(ch: str) -> bool:
 
 
 def _is_host(ch: str) -> bool:
+    """A character of the host part, ``[\\w.-]``."""
     return _is_word(ch) or ch in ".-"
+
+
+def _host_end(text: str, at: int) -> int | None:
+    """Return the end of the host after ``@`` at ``at``, if a boundary follows it."""
+    end = at + 1
+    while end < len(text) and _is_host(text[end]):
+        end += 1
+    return end if end > at + 1 and _ends_target(text, end) else None
 
 
 def _ends_target(text: str, index: int) -> bool:
@@ -45,12 +54,15 @@ class _TargetMatch:
         self._spans = spans
 
     def start(self) -> int:
+        """Index of the first character of the match."""
         return self._spans[0][0]
 
     def end(self) -> int:
+        """Index after the last character of the match."""
         return self._spans[0][1]
 
     def group(self, index: int = 0) -> str:
+        """Text of the match (0), the user (1), the value (2), or the host (3)."""
         start, end = self._spans[index]
         return self._text[start:end]
 
@@ -60,6 +72,8 @@ class ImpacketTargetPattern:
 
     def __init__(self, quote: str) -> None:
         self._quote = quote
+        # A quoted value with no closing quote fails; a bare value just stops.
+        self._no_unit = -1 if quote else 0
 
     def sub(self, repl: Callable[[_TargetMatch], str], text: str) -> str:
         """Replace each match as ``re.Pattern.sub`` with a callable does."""
@@ -73,6 +87,7 @@ class ImpacketTargetPattern:
         return "".join(parts)
 
     def _matches(self, text: str) -> list[_TargetMatch]:
+        """Return the matches that do not overlap, from left to right."""
         matches: list[_TargetMatch] = []
         ends: dict[int, int] = {}
         cursor = 0
@@ -92,31 +107,28 @@ class ImpacketTargetPattern:
     def _match_at(
         self, text: str, start: int, user_end: int, ends: dict[int, int]
     ) -> _TargetMatch | None:
-        if user_end >= len(text) or text[user_end] != ":":
+        """Return the target that starts at ``start``, if one does."""
+        value = self._value_span(text, user_end, ends)
+        host_end = _host_end(text, value[2]) if value else None
+        if value is None or host_end is None:
             return None
-        if self._quote:
-            value_start = user_end + 2
-            if text[user_end + 1 : value_start] != self._quote:
-                return None
-            value_end = self._value_end(text, value_start, ends)
-            if value_end < 0:
-                return None
-            at = value_end + 1
-        else:
-            value_start = user_end + 1
-            value_end = self._value_end(text, value_start, ends)
-            if value_end == value_start:
-                return None
-            at = value_end
-        if text[at : at + 1] != "@":
-            return None
-        host_end = at + 1
-        while host_end < len(text) and _is_host(text[host_end]):
-            host_end += 1
-        if host_end == at + 1 or not _ends_target(text, host_end):
-            return None
-        spans = ((start, host_end), (start, user_end), (value_start, value_end), (at + 1, host_end))
+        spans = ((start, host_end), (start, user_end), value[:2], (value[2] + 1, host_end))
         return _TargetMatch(text, spans)
+
+    def _value_span(
+        self, text: str, user_end: int, ends: dict[int, int]
+    ) -> tuple[int, int, int] | None:
+        """Return the value start, the value end, and the index of ``@``."""
+        opening = text[user_end + 1 : user_end + 1 + len(self._quote)]
+        if text[user_end : user_end + 1] != ":" or opening != self._quote:
+            return None
+        value_start = user_end + 1 + len(self._quote)
+        value_end = self._value_end(text, value_start, ends)
+        at = value_end + len(self._quote)
+        empty_bare = not self._quote and value_end == value_start
+        if value_end < 0 or empty_bare or text[at : at + 1] != "@":
+            return None
+        return value_start, value_end, at
 
     def _value_end(self, text: str, start: int, ends: dict[int, int]) -> int:
         """Return where the value that starts at ``start`` stops.
@@ -142,12 +154,10 @@ class ImpacketTargetPattern:
     def _step(self, text: str, index: int) -> int:
         """Characters that one value unit at ``index`` holds; 0 stops, -1 fails."""
         if index >= len(text):
-            return -1 if self._quote else 0
+            return self._no_unit
         ch = text[index]
         if ch == "\\":
-            if index + 1 < len(text) and text[index + 1] != "\n":
-                return 2
-            return -1 if self._quote else 0
-        if self._quote:
-            return 0 if ch == self._quote else 1
-        return 0 if ch == "@" or ch.isspace() else 1
+            escaped = index + 1 < len(text) and text[index + 1] != "\n"
+            return 2 if escaped else self._no_unit
+        stops = ch == (self._quote or "@") or (not self._quote and ch.isspace())
+        return 0 if stops else 1

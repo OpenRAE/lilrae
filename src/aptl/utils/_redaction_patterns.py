@@ -284,4 +284,4 @@ _IMPACKET_POSITIONAL_BARE = ImpacketTargetPattern("")
 _URL_PREFIX_RE = re.compile(r"^(?:https?|ftp|ldap|ldaps|smb|smbs)://", re.IGNORECASE)
 # ASCII digits only: a port is never written in other scripts, so a value in
 # other digits is a password and is masked.
-_PORT_LIKE_RE = re.compile(r"^[0-9]{1,5}(?:[,-][0-9]{1,5})*$")
+_PORT_LIKE_RE = re.compile(r"^\d{1,5}(?:[,-]\d{1,5})*$", re.ASCII)

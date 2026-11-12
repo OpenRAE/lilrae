@@ -50,31 +50,48 @@ def _split_top_level_segments(command: str) -> list[tuple[int, int]]:
     """
     segments: list[tuple[int, int]] = []
     start = 0
-    in_single = in_double = False
+    quotes = _ShellQuotes()
     next_free = 0
     for match in _SEGMENT_SPECIAL_RE.finditer(command):
         i = match.start()
         if i < next_free:
             continue
-        ch = command[i]
-        if ch == "\\":
+        if command[i] == "\\":
             next_free = i + 2
-        elif ch == "'" and not in_double:
-            in_single = not in_single
-        elif ch == '"' and not in_single:
-            in_double = not in_double
-        elif in_single or in_double:
             continue
-        elif ch in "|;":
+        if quotes.consumes(command[i]):
+            continue
+        advance = _separator_advance(command, i)
+        if advance:
             segments.append((start, i))
-            start = i + 1
-        else:
-            advance = _ampersand_step(command, i)
-            if advance > 0:
-                segments.append((start, i))
-                start = next_free = i + advance
+            start = next_free = i + advance
     segments.append((start, len(command)))
     return segments
+
+
+class _ShellQuotes:
+    """Single- and double-quote state of a shell command."""
+
+    def __init__(self) -> None:
+        self.single = False
+        self.double = False
+
+    def consumes(self, ch: str) -> bool:
+        """Toggle on a quote; whether ``ch`` is a quote or quoted text."""
+        if ch == "'" and not self.double:
+            self.single = not self.single
+            return True
+        if ch == '"' and not self.single:
+            self.double = not self.double
+            return True
+        return self.single or self.double
+
+
+def _separator_advance(command: str, i: int) -> int:
+    """How far a top-level separator at ``i`` moves the segment start (0 = none)."""
+    if command[i] in "|;":
+        return 1
+    return _ampersand_step(command, i)
 
 
 def _segment_hits(text: str, segment_test: SegmentTest) -> bool:

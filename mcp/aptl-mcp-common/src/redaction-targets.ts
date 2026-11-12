@@ -23,12 +23,13 @@ export interface TargetMatch {
   offset: number;
 }
 
-const WORD = /[A-Za-z0-9_]/;
+// JavaScript `\w` without the `u` flag is ASCII, as in the former regexes.
+const WORD = /\w/;
 const SPACE = /\s/;
 const LINE_TERMINATORS = '\n\r\u2028\u2029';
 
 function isUser(ch: string): boolean {
-  return WORD.test(ch) || '\\/.-'.includes(ch);
+  return WORD.test(ch) || String.raw`\/.-`.includes(ch);
 }
 
 function isHost(ch: string): boolean {
