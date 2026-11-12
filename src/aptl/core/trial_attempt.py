@@ -86,10 +86,26 @@ def load_trial_unit(path: Path) -> TrialUnit:
     binds the plan entry, the installed family and the snapshot bytes.
     """
     from raes_contracts.canonical import canonical_json_bytes
-    from raes_contracts.json_ingress import parse_bounded_json_object
     from raes_contracts.contracts.admitted_trial_plan_ingress import (
         parse_admitted_trial_plan_json,
     )
+
+    document = _read_trial_document(path)
+    material = document.get("material")
+    entry = document["plan_entry_id"]
+    if not isinstance(entry, str) or not _IDENTIFIER.fullmatch(entry):
+        raise ValueError("--trial-input plan entry ID is invalid")
+    plan = parse_admitted_trial_plan_json(canonical_json_bytes(document["plan"]))
+    if entry not in plan.entries:
+        raise ValueError("--trial-input plan has no such entry")
+    if material is not None:
+        _validate_material(plan, material)
+    return TrialUnit(plan, entry, canonical_json_bytes(document["snapshot"]), material)
+
+
+def _read_trial_document(path: Path) -> dict[str, Any]:
+    """Read the bounded trial input object and check its top-level shape."""
+    from raes_contracts.json_ingress import parse_bounded_json_object
 
     if (
         path.is_symlink()
@@ -112,15 +128,7 @@ def load_trial_unit(path: Path) -> TrialUnit:
         or set(material) != {"experiment", "task", "capture_specs", "authority"}
     ):
         raise ValueError("--trial-input has incomplete retained scientific contracts")
-    entry = document["plan_entry_id"]
-    if not isinstance(entry, str) or not _IDENTIFIER.fullmatch(entry):
-        raise ValueError("--trial-input plan entry ID is invalid")
-    plan = parse_admitted_trial_plan_json(canonical_json_bytes(document["plan"]))
-    if entry not in plan.entries:
-        raise ValueError("--trial-input plan has no such entry")
-    if material is not None:
-        _validate_material(plan, material)
-    return TrialUnit(plan, entry, canonical_json_bytes(document["snapshot"]), material)
+    return document
 
 
 def _validate_material(plan: AdmittedTrialPlanModel, material: dict[str, Any]) -> None:

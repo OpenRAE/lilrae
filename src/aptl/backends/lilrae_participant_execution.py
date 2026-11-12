@@ -481,6 +481,37 @@ class LilraeParticipantExecution:
         } == set(offer.constraint_refs)
 
     @staticmethod
+    def _end_proofs(
+        request: ParticipantActionAdmissionRequest, snapshot: RuntimeSnapshot
+    ) -> list[ParticipantTemporalEvidenceModel]:
+        """Prove each bound end point at the clock coordinate of the snapshot."""
+        # The stepped clock stays at the admitted coordinate during this call.
+        # This observes native completion, not elapsed wall time or rollback.
+        evidence_refs = (
+            request.evidence_refs or request.observation_boundary_evidence_refs
+        )
+        state = snapshot.time_model_state
+        if state is None or not evidence_refs:
+            return []
+        proofs = []
+        for context in request.temporal_contexts:
+            bound = context.shared_time
+            if bound is None or bound.binding.event_point != "end":
+                continue
+            clock = state.clocks.get(bound.binding.clock_address)
+            if clock is not None:
+                proofs.append(
+                    ParticipantTemporalEvidenceModel(
+                        context=bound,
+                        observation_boundary_address=request.observation_boundary_address,
+                        event_point="end",
+                        coordinate=clock.coordinate,
+                        evidence_refs=evidence_refs,
+                    )
+                )
+        return proofs
+
+    @staticmethod
     def _outcome(
         request: ParticipantActionAdmissionRequest,
         snapshot: RuntimeSnapshot,
@@ -490,30 +521,11 @@ class LilraeParticipantExecution:
         *,
         end_observed: bool = False,
     ) -> ParticipantNativeActionExecution:
-        # The stepped clock stays at the admitted coordinate during this call.
-        # This observes native completion, not elapsed wall time or rollback.
-        proofs = []
-        evidence_refs = (
-            request.evidence_refs or request.observation_boundary_evidence_refs
+        proofs = (
+            LilraeParticipantExecution._end_proofs(request, snapshot)
+            if end_observed
+            else []
         )
-        if end_observed and snapshot.time_model_state is not None:
-            for context in request.temporal_contexts:
-                bound = context.shared_time
-                if bound is None or bound.binding.event_point != "end":
-                    continue
-                clock = snapshot.time_model_state.clocks.get(
-                    bound.binding.clock_address
-                )
-                if clock is not None and evidence_refs:
-                    proofs.append(
-                        ParticipantTemporalEvidenceModel(
-                            context=bound,
-                            observation_boundary_address=request.observation_boundary_address,
-                            event_point="end",
-                            coordinate=clock.coordinate,
-                            evidence_refs=evidence_refs,
-                        )
-                    )
         result = ParticipantActionResultModel(
             status="failed" if failure else "succeeded",
             failure_class=failure,

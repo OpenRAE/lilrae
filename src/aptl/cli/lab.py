@@ -352,7 +352,7 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
     if trial_attempt is None or not result.success:
         _report_start_result(project_dir, result, output_json)
         return
-    _report_trial_result(project_dir, result, trial_attempt, selected_scenario, output_json)
+    _report_trial_result(project_dir, result, trial_attempt, output_json)
 
 
 def _start_result_fields(project_dir: Path, result: LabResult) -> dict[str, object]:
@@ -440,7 +440,6 @@ def _report_trial_result(
     project_dir: Path,
     result: LabResult,
     attempt: TrialAttempt,
-    scenario_path: Optional[Path],
     output_json: bool,
 ) -> None:
     """Run the declared trial on a usable lab, then report its sealed record.
@@ -456,7 +455,6 @@ def _report_trial_result(
         record = run_lab_trial(
             project_dir,
             attempt,
-            scenario_path=scenario_path,
             scenario_sha256=result.scenario_sha256,
             started=result.trial_runtime,
             progress=_start_progress(output_json),

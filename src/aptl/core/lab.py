@@ -2088,9 +2088,17 @@ def _load_admitted_start_surface(
 
         from raes_contracts.contracts import ExperimentCaptureSpecModel
 
+        material = (
+            ctx.trial.unit.material
+            if ctx.trial is not None and ctx.trial.unit is not None
+            else None
+        )
         capture_specs = (
-            tuple(ExperimentCaptureSpecModel.model_validate(spec) for spec in ctx.trial.unit.material["capture_specs"].values())
-            if ctx.trial is not None and ctx.trial.unit is not None and ctx.trial.unit.material is not None
+            tuple(
+                ExperimentCaptureSpecModel.model_validate(spec)
+                for spec in material["capture_specs"].values()
+            )
+            if material is not None
             else ()
         )
 
@@ -4834,7 +4842,8 @@ def _orchestrate_lab_start_owned(
                 ctx.run_store,
                 tuple(getattr(ctx.native_evidence_acquisition, "records", ())),
             )
-            ctx.run_runtime = None  # Ownership passes to the trial CLI.
+            # Ownership passes to the trial CLI.
+            ctx.run_runtime = None
     finally:
         _close_run_runtime(ctx)
     return result

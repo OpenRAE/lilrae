@@ -12,11 +12,14 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, TypeGuard
 
 from pydantic import BaseModel, ConfigDict, Field
 import rfc8785
 from raes_contracts.contracts import ExperimentEvidenceRecordModel
+from raes_contracts.contracts.experiment_capture import (
+    ExperimentRawEvidenceContentModel,
+)
 
 from aptl.core.archival import DiscoveryIndex, IndexEntry, SealedArtifactSpec
 from aptl.core.archival.layout import RUN_MANIFEST_RELPATH, SEAL_MARKER_RELPATH
@@ -180,7 +183,7 @@ def required_data_gaps(run_dir: Path, record: TrialRecord) -> list[str]:
         ]
 
 
-def _capture_json(run_dir: Path, path: str) -> dict:
+def _capture_json(run_dir: Path, path: str) -> dict[str, Any]:
     """Read one bounded capture carrier without following links."""
     with open_contained_nofollow(run_dir, path) as source:
         data = source.read(4 * 1024 * 1024 + 1)
@@ -193,38 +196,59 @@ def _capture_record_present(
     run_dir: Path, trial: TrialRecord, requirement: str, record_id: object
 ) -> bool:
     """Verify the acquisition record's identity and original content checksum."""
-    if (
-        not isinstance(record_id, str)
-        or not record_id
-        or Path(record_id).name != record_id
-    ):
+    if not _is_record_name(record_id):
         return False
     try:
         evidence = ExperimentEvidenceRecordModel.model_validate(
             _capture_json(run_dir, f"evidence/records/{record_id}.json")
         )
-        content = evidence.raw_content
-        if (
-            evidence.evidence_record_id != record_id
-            or evidence.run_ref.ref_id != trial.run_id
-            or evidence.capture_spec_ref.ref_id != trial.capture_plan_id
-            or evidence.capture_requirement_ref != requirement
-            or not any(
-                ref.ref_id == f"attempt:{trial.attempt_id}"
-                for ref in evidence.source_refs
-            )
-            or content.content_uri is None
-            or content.content_checksum is None
-            or content.content_checksum.algorithm != "sha256"
-        ):
-            return False
-        with open_contained_nofollow(run_dir, content.content_uri) as source:
-            return (
-                hashlib.file_digest(source, "sha256").hexdigest()
-                == content.content_checksum.value
-            )
+        return _evidence_identity_matches(
+            evidence, trial, requirement, record_id
+        ) and _content_checksum_matches(run_dir, evidence.raw_content)
     except OSError, ValueError, TypeError, PathContainmentError:
         return False
+
+
+def _is_record_name(record_id: object) -> TypeGuard[str]:
+    """Accept only a non-empty record identifier that is one plain file name."""
+    return (
+        isinstance(record_id, str)
+        and bool(record_id)
+        and Path(record_id).name == record_id
+    )
+
+
+def _evidence_identity_matches(
+    evidence: ExperimentEvidenceRecordModel,
+    trial: TrialRecord,
+    requirement: str,
+    record_id: str,
+) -> bool:
+    """Match the record to this run, capture plan, requirement and attempt."""
+    return (
+        evidence.evidence_record_id == record_id
+        and evidence.run_ref.ref_id == trial.run_id
+        and evidence.capture_spec_ref.ref_id == trial.capture_plan_id
+        and evidence.capture_requirement_ref == requirement
+        and any(
+            ref.ref_id == f"attempt:{trial.attempt_id}" for ref in evidence.source_refs
+        )
+    )
+
+
+def _content_checksum_matches(
+    run_dir: Path, content: ExperimentRawEvidenceContentModel
+) -> bool:
+    """Compare the retained content with its recorded SHA-256 checksum."""
+    checksum = content.content_checksum
+    if (
+        content.content_uri is None
+        or checksum is None
+        or checksum.algorithm != "sha256"
+    ):
+        return False
+    with open_contained_nofollow(run_dir, content.content_uri) as source:
+        return hashlib.file_digest(source, "sha256").hexdigest() == checksum.value
 
 
 def seal_trial_record(

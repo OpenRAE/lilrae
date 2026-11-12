@@ -54,7 +54,8 @@ def test_cli_uses_one_owner_and_does_not_turn_complete_capture_into_success(tmp_
 
     class Runtime:
         def collect_evidence(self, selected, **options):
-            assert selected.plan is request.plan and selected.run_store is store
+            assert selected.plan is request.plan
+            assert selected.run_store is store
             assert selected.capture_selection is selection
             events.append("collect")
             return acquire_trial_evidence(
@@ -85,8 +86,11 @@ def test_cli_uses_one_owner_and_does_not_turn_complete_capture_into_success(tmp_
         events.append("drained")
 
     def run(trial, **options):
-        assert options["runtime"] is runtime and options["native"] is native
-        assert options["policy"] is policy and trial.episode_seconds == 600
+        release = options["release"]
+        assert release.runtime is runtime
+        assert release.native is native
+        assert release.policy is policy
+        assert trial.episode_seconds == 600
         events.append("participants")
         return TrialRecord(
             run_id=attempt.run_id, attempt_id=attempt.attempt_id, scenario_sha256=digest,
@@ -95,9 +99,11 @@ def test_cli_uses_one_owner_and_does_not_turn_complete_capture_into_success(tmp_
         )
 
     def evaluate(**options):
-        assert options["runtime_manager"] is runtime and options["target"] is admitted.target
+        assert options["runtime_manager"] is runtime
+        assert options["target"] is admitted.target
         before, measurement = options["evidence_records"]
-        assert before is initial and measurement.run_ref.ref_id == request.run_id
+        assert before is initial
+        assert measurement.run_ref.ref_id == request.run_id
         events.append("evaluate")
 
     monkeypatch.setattr(lab_trial, "admitted_participants", lambda *args: ())
@@ -108,7 +114,8 @@ def test_cli_uses_one_owner_and_does_not_turn_complete_capture_into_success(tmp_
     monkeypatch.setattr(raes_repro, "runtime_snapshot_record_payload", lambda value: value.evaluation_results)
     record, gaps = lab_trial._run_and_drain(tmp_path, AptlConfig(), attempt, digest, lambda text: None, started)
     assert events == ["collect", "participants", "observe", "drained", "evaluate"]
-    assert gaps == () and record.outcome_status == "failed"
+    assert gaps == ()
+    assert record.outcome_status == "failed"
     seal = json.loads(seal_trial_record(store, record).read_bytes())
     assert seal["completeness"]["complete"] is True
     assert seal["outcome_status"] == "failed"

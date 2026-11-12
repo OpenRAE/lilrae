@@ -15,7 +15,7 @@ from aptl.core.trial_attempt import TrialAttempt, parse_trial_attempt
 from aptl.core.trial_control import TrialControl
 from aptl.core.trial_record import TRIAL_RECORD_RELPATH, seal_trial_record
 from aptl.core.trial_sdl import DeclaredParticipant
-from aptl.workbench.trial_run import DeclaredTrial
+from aptl.workbench.trial_run import DeclaredTrial, TrialSupervision
 from tests.native_trial_runtime import run_native_trial as run_declared_trial
 
 _PARTICIPANTS = (
@@ -76,10 +76,10 @@ def _run(
         DeclaredTrial(attempt, "sha256:" + "1" * 64, _PARTICIPANTS),
         invocations=invocations,
         evidence=evidence if evidence is not None else {},
-        stop_requested=stop_requested,
         store=store,
-        clock=lambda: datetime.now(UTC),
-        poll_seconds=0.05,
+        supervision=TrialSupervision(
+            stop_requested, lambda: datetime.now(UTC), poll_seconds=0.05
+        ),
     )
     seal_trial_record(store, record)
     return store, record
@@ -226,10 +226,10 @@ def test_the_shared_episode_end_cancels_both_participants_and_completes_the_tria
         DeclaredTrial(attempt, "sha256:" + "1" * 64, _PARTICIPANTS, episode_seconds=1),
         invocations=invocations,
         evidence=evidence,
-        stop_requested=lambda: False,
         store=_store(tmp_path, attempt.run_id),
-        clock=lambda: datetime.now(UTC),
-        poll_seconds=0.05,
+        supervision=TrialSupervision(
+            lambda: False, lambda: datetime.now(UTC), poll_seconds=0.05
+        ),
     )
     assert record.terminal_cause == "completed"
     assert {item.status for item in record.participants} == {"cancelled"}

@@ -123,24 +123,31 @@ def _validate_capture_bindings(
 ) -> None:
     """Validate registration references and declared credential key names."""
 
+    transcript = value.transcript_registration_id
     if (
-        not isinstance(value.native_registration_ids, frozenset)
-        or not value.native_registration_ids.issubset(ids)
-        or not isinstance(value.measurement_registration_ids, frozenset)
-        or not value.measurement_registration_ids.issubset(ids)
-        or not isinstance(value.runtime_environment_keys, tuple)
-        or len(set(value.runtime_environment_keys))
-        != len(value.runtime_environment_keys)
-        or any(
-            not isinstance(key, str) or _SAFE_ENV_KEY.fullmatch(key) is None
-            for key in value.runtime_environment_keys
-        )
-        or (
-            value.transcript_registration_id is not None
-            and value.transcript_registration_id not in ids
-        )
+        not _is_registration_subset(value.native_registration_ids, ids)
+        or not _is_registration_subset(value.measurement_registration_ids, ids)
+        or not _are_safe_environment_keys(value.runtime_environment_keys)
+        or (transcript is not None and transcript not in ids)
     ):
         raise ScenarioCaptureProviderError("provider-result-invalid")
+
+
+def _is_registration_subset(selected: object, ids: frozenset[str]) -> bool:
+    """Accept only a frozen set of known registration identifiers."""
+    return isinstance(selected, frozenset) and selected.issubset(ids)
+
+
+def _are_safe_environment_keys(keys: object) -> bool:
+    """Accept only a tuple of unique, safe environment variable names."""
+    return (
+        isinstance(keys, tuple)
+        and len(set(keys)) == len(keys)
+        and all(
+            isinstance(key, str) and _SAFE_ENV_KEY.fullmatch(key) is not None
+            for key in keys
+        )
+    )
 
 
 def _validate_output_references(refs: object) -> None:

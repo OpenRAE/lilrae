@@ -1,6 +1,6 @@
 """Code-owned capture of native participant exports and the worker audit log."""
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from datetime import datetime
 from pathlib import Path
 import re
@@ -37,6 +37,7 @@ def trial_capture_registrations(
 def _registration(
     name: str, role: str, source_refs: frozenset[str]
 ) -> CollectorRegistration:
+    """Describe one redacted, run-scoped log source and its capture offer."""
     offer = ObservationCaptureOffer(
         offer_id=name,
         offer_version="1.0.0",
@@ -91,6 +92,7 @@ def participant_session_source(
     """Retain every expected native export, including original per-call usage."""
 
     def fetch(_start: str, _end: str) -> SourceResult:
+        """Report every native export, and a loss when one participant has none."""
         complete = bool(participants) and set(sessions) == set(participants)
         return SourceResult(
             status=CollectorStatus.OK if complete else CollectorStatus.MID_RUN_LOSS,
@@ -107,36 +109,49 @@ def host_audit_source(log_dir: Path = Path("/var/log/audit")) -> CallableWindowe
     """Read only the audit service's fixed log directory, within the trial window."""
 
     def fetch(start: str, end: str) -> SourceResult:
+        """Return the audit lines whose event time falls inside the trial window."""
         files = sorted(log_dir.glob("audit.log*"), key=_rotation_order)
         if not files:
             return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
-        start_time = datetime.fromisoformat(start.replace("Z", "+00:00")).timestamp()
-        end_time = datetime.fromisoformat(end.replace("Z", "+00:00")).timestamp()
-        lines, size = [], 0
-        for path in files:
-            if path.is_symlink() or not path.is_file():
-                return SourceResult(status=CollectorStatus.MID_RUN_LOSS)
-            with path.open("rb") as source:
-                for line in source:
-                    match = _AUDIT_TIME.search(line)
-                    if match is None or not int(start_time) <= int(match[1]) <= int(
-                        end_time
-                    ):
-                        continue
-                    size += len(line)
-                    if size > _MAX_BYTES:
-                        return SourceResult(
-                            status=CollectorStatus.TRUNCATION, dropped_count=1
-                        )
-                    lines.append(line.decode("utf-8", errors="strict"))
-        return SourceResult(
-            status=CollectorStatus.OK if lines else CollectorStatus.EMPTY_OK,
-            records=[{"audit_log": "".join(lines)}] if lines else [],
-        )
+        return _read_audit_window(files, (_epoch_seconds(start), _epoch_seconds(end)))
 
     return CallableWindowedSource(fetch)
 
 
+def _read_audit_window(files: list[Path], window: tuple[int, int]) -> SourceResult:
+    """Collect the in-window lines of each rotated file, within the size limit."""
+    lines: list[str] = []
+    size = 0
+    for path in files:
+        if path.is_symlink() or not path.is_file():
+            return SourceResult(status=CollectorStatus.MID_RUN_LOSS)
+        for line in _window_lines(path, window):
+            size += len(line)
+            if size > _MAX_BYTES:
+                return SourceResult(status=CollectorStatus.TRUNCATION, dropped_count=1)
+            lines.append(line.decode("utf-8", errors="strict"))
+    return SourceResult(
+        status=CollectorStatus.OK if lines else CollectorStatus.EMPTY_OK,
+        records=[{"audit_log": "".join(lines)}] if lines else [],
+    )
+
+
+def _window_lines(path: Path, window: tuple[int, int]) -> Iterator[bytes]:
+    """Yield the lines of one audit file whose event second is inside the window."""
+    first, last = window
+    with path.open("rb") as source:
+        for line in source:
+            match = _AUDIT_TIME.search(line)
+            if match is not None and first <= int(match[1]) <= last:
+                yield line
+
+
+def _epoch_seconds(value: str) -> int:
+    """Convert one RFC 3339 time to whole seconds since the epoch."""
+    return int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp())
+
+
 def _rotation_order(path: Path) -> int:
+    """Sort rotated audit files from the oldest to the current log."""
     suffix = path.name.removeprefix("audit.log").lstrip(".")
     return -int(suffix) if suffix.isdecimal() else 0

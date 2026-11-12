@@ -53,24 +53,34 @@ def adapter_runtime_concern_sources(
         raise ValueError("runtime-reader-declaration-invalid")
     if sources and not callable(getattr(provider, "observe_runtime", None)):
         raise ValueError("runtime-reader-declaration-invalid")
-    result = {}
-    for kind, source in sources.items():
-        if kind not in CONCERN_PAYLOAD_PATH or source not in {
-            ObservationStrength.DRIVER_REPORTED,
-            ObservationStrength.DAEMON_OBSERVED,
-            ObservationStrength.GUEST_OBSERVED,
-        }:
-            raise ValueError("runtime-reader-declaration-invalid")
-        selected = ObservationStrength(source)
-        if (
-            kind in CORE_RUNTIME_CONCERN_SOURCES
-            and selected != CORE_RUNTIME_CONCERN_SOURCES[kind]
-            # Installed image adapters may declare their baked software inventory.
-            and not (
-                kind == "runtime-software-components"
-                and selected is ObservationStrength.DRIVER_REPORTED
-            )
-        ):
-            raise ValueError("runtime-reader-source-conflict")
-        result[kind] = selected
-    return result
+    return {
+        kind: _admitted_concern_source(kind, source, CONCERN_PAYLOAD_PATH)
+        for kind, source in sources.items()
+    }
+
+
+_DECLARABLE_SOURCES = frozenset(
+    {
+        ObservationStrength.DRIVER_REPORTED,
+        ObservationStrength.DAEMON_OBSERVED,
+        ObservationStrength.GUEST_OBSERVED,
+    }
+)
+
+
+def _admitted_concern_source(
+    kind: object, source: object, known_kinds: Mapping[str, object]
+) -> ObservationStrength:
+    """Admit one declared concern source unless it conflicts with the core source."""
+    if kind not in known_kinds or source not in _DECLARABLE_SOURCES:
+        raise ValueError("runtime-reader-declaration-invalid")
+    selected = ObservationStrength(source)
+    core = CORE_RUNTIME_CONCERN_SOURCES.get(kind)
+    # Installed image adapters may declare their baked software inventory.
+    baked_inventory = (
+        kind == "runtime-software-components"
+        and selected is ObservationStrength.DRIVER_REPORTED
+    )
+    if core is not None and selected != core and not baked_inventory:
+        raise ValueError("runtime-reader-source-conflict")
+    return selected

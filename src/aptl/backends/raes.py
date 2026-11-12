@@ -94,6 +94,12 @@ from aptl.core.lab_types import LabResult
 if TYPE_CHECKING:
     from raes_processor.models import ExecutionPlan
 
+    from aptl.backends.scenario_capture import ResolvedScenarioCapture
+    from aptl.backends.scenario_startup import ScenarioStartupSelection
+    from aptl.core.experiment.capture_plan import CapturePlan
+    from aptl.core.participant_binding import LilraeParticipantBinding
+    from aptl.core.scenario_bundle import ScenarioBundle
+
     from aptl.core.deployment.backend import DeploymentBackend
     from aptl.core.runstore import RunStorageBackend
 
@@ -227,20 +233,9 @@ def admit_raes_scenario(
     scenario, parameters, capture_plan = prepare_admission_scenario(
         bundle, parameters, capture_selection, parser=parse_sdl_file
     )
-    bindings = selected.autonomous_bindings
-    factory = getattr(
-        startup_selection.provider if startup_selection is not None else None,
-        "trial_participant_bindings",
-        None,
+    bindings = _trial_participant_bindings(
+        bundle, startup_selection, admission_run, selected.autonomous_bindings
     )
-    if bundle.trial is not None and not bindings and callable(factory):
-        bindings = factory(bundle, family=admission_run.trial.family)
-        from aptl.core.participant_binding import LilraeParticipantBinding
-
-        if not isinstance(bindings, tuple) or not all(
-            isinstance(item, LilraeParticipantBinding) for item in bindings
-        ):
-            raise ValueError("installed trial participant bindings are invalid")
     from aptl.core.mcp_policy import select_scenario_servers
 
     mcp_server_ids = select_scenario_servers(scenario, config.mcp)
@@ -277,19 +272,8 @@ def admit_raes_scenario(
             ),
         ),
     )
-    from aptl.core.experiment.capture_plan import admit_capture_demands
-
-    from raes_processor.capture_admission import compile_capture_spec_demands
-
-    measurement_demands = compile_capture_spec_demands(admission_run.trial_capture_specs)
-    trial_capture_plan = (
-        admit_capture_demands(
-            measurement_demands,
-            source_identity=capture_plan.source_identity,
-            registry=capture_selection.registry,
-        )
-        if measurement_demands and capture_selection is not None
-        else None
+    trial_capture_plan = _admitted_trial_capture_plan(
+        admission_run, capture_plan, capture_selection
     )
     target.provisioner.trial_capture_plan = trial_capture_plan
     # Planning needs no runtime owner. The one runtime for the run is created
@@ -341,6 +325,50 @@ def admit_raes_scenario(
         scenario=scenario,
         participant_delivery_plan=participant_delivery_plan,
         mcp_server_ids=mcp_server_ids,
+    )
+
+
+def _trial_participant_bindings(
+    bundle: ScenarioBundle,
+    startup_selection: ScenarioStartupSelection,
+    admission_run: ScenarioAdmissionRun,
+    bindings: tuple[LilraeParticipantBinding, ...],
+) -> tuple[LilraeParticipantBinding, ...]:
+    """Return the caller's bindings, or the installed trial adapter's bindings."""
+    factory = getattr(
+        startup_selection.provider if startup_selection is not None else None,
+        "trial_participant_bindings",
+        None,
+    )
+    if bundle.trial is None or bindings or not callable(factory):
+        return bindings
+    from aptl.core.participant_binding import LilraeParticipantBinding
+
+    installed = factory(bundle, family=admission_run.trial.family)
+    if not isinstance(installed, tuple) or not all(
+        isinstance(item, LilraeParticipantBinding) for item in installed
+    ):
+        raise ValueError("installed trial participant bindings are invalid")
+    return installed
+
+
+def _admitted_trial_capture_plan(
+    admission_run: ScenarioAdmissionRun,
+    capture_plan: CapturePlan,
+    capture_selection: ResolvedScenarioCapture | None,
+) -> CapturePlan | None:
+    """Admit the trial's measurement demands against the selected capture registry."""
+    from aptl.core.experiment.capture_plan import admit_capture_demands
+
+    from raes_processor.capture_admission import compile_capture_spec_demands
+
+    measurement_demands = compile_capture_spec_demands(admission_run.trial_capture_specs)
+    if not measurement_demands or capture_selection is None:
+        return None
+    return admit_capture_demands(
+        measurement_demands,
+        source_identity=capture_plan.source_identity,
+        registry=capture_selection.registry,
     )
 
 

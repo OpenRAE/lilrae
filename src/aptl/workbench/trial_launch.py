@@ -41,6 +41,7 @@ from aptl.workbench.process import CancellableProcessRunner
 __all__ = [
     "AssetReader",
     "TrialLaunchSettings",
+    "TrialSinks",
     "invocation_fields",
     "participant_prompt",
     "participant_tool_servers",
@@ -63,6 +64,14 @@ class TrialLaunchSettings:
     build: OpenCodeBuild = SUPPORTED_OPENCODE_BUILD
     runner: CancellableProcessRunner | None = None
     inventory_probe: InventoryProbe = probe_mcp_server
+
+
+@dataclass(frozen=True)
+class TrialSinks:
+    """Receivers of each participant's invocation evidence and native session export."""
+
+    evidence: Callable[[str, OpenCodeInvocationEvidence], None]
+    transcript: Callable[[str, Mapping[str, object]], None] | None = None
 
 
 def participant_prompt(
@@ -108,8 +117,7 @@ def trial_executors(
     bindings: Mapping[str, object],
     settings: TrialLaunchSettings,
     read_asset: AssetReader,
-    evidence_sink: Callable[[str, OpenCodeInvocationEvidence], None],
-    transcript_sink: Callable[[str, Mapping[str, object]], None] | None = None,
+    sinks: TrialSinks,
 ) -> Iterator[Mapping[str, LilraeOpenCodeExecutor]]:
     """Use the existing managed native adapter for each sealed participant request."""
     from aptl.workbench.opencode_bootstrap import (
@@ -152,9 +160,9 @@ def trial_executors(
                 tools=_tool_profile(participant, settings, stack),
                 build=settings.build,
                 route=participant_route(request.profile, source),
-                evidence_sink=_address_sink(evidence_sink, participant.address),
-                transcript_sink=_address_sink(transcript_sink, participant.address)
-                if transcript_sink
+                evidence_sink=_address_sink(sinks.evidence, participant.address),
+                transcript_sink=_address_sink(sinks.transcript, participant.address)
+                if sinks.transcript
                 else None,
                 deadline=attempt.deadline,
                 request=request,
@@ -189,6 +197,7 @@ def trial_executors(
 def _address_sink[T](
     sink: Callable[[str, T], None], address: str
 ) -> Callable[[T], None]:
+    """Bind one participant address to a trial-wide sink."""
     return lambda evidence: sink(address, evidence)
 
 

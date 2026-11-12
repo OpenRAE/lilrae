@@ -6,7 +6,7 @@ import yaml
 
 from raes import parse_sdl
 from aptl.backends.raes_runtime import AptlRuntimeManager
-from aptl.workbench.trial_run import run_declared_trial
+from aptl.workbench.trial_run import NativeTrialRelease, run_declared_trial
 from tests.lilrae_concurrent_fixture import scenario
 from tests.test_lilrae_concurrent_participants import bindings, target_for
 
@@ -51,8 +51,6 @@ def run_native_trial(trial, **options):
         ].autonomous_execution
         return run_declared_trial(
             replace(trial, episode_seconds=trial.episode_seconds or 60),
-            runtime=runtime,
-            native=native,
-            policy=policy,
+            release=NativeTrialRelease(runtime, native, policy),
             **options,
         )
