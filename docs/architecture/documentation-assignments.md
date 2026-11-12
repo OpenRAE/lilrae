@@ -517,6 +517,7 @@ A requirement's front matter determines lifecycle state; Reference classificatio
 | [`docs/requirements/SEC-006/requirement.md`](../requirements/SEC-006/requirement.md) | #1667 | Reference (source record) | Repository entry | Earlier reader routes |
 | [`docs/requirements/SEC-007/requirement.md`](../requirements/SEC-007/requirement.md) | #1667 | Reference (source record) | Repository entry | Earlier reader routes |
 | [`docs/requirements/SEC-008/requirement.md`](../requirements/SEC-008/requirement.md) | #1667 | Reference (source record) | Repository entry | Earlier reader routes |
+| [`docs/requirements/SEC-009/requirement.md`](../requirements/SEC-009/requirement.md) | #1767 | Reference (source record) | Repository entry | Earlier reader routes |
 | [`docs/requirements/SIEM-001/requirement.md`](../requirements/SIEM-001/requirement.md) | #1667 | Reference (source record) | Repository entry | Earlier reader routes |
 | [`docs/requirements/SIEM-002/requirement.md`](../requirements/SIEM-002/requirement.md) | #1667 | Reference (source record) | Repository entry | Earlier reader routes |
 | [`docs/requirements/SIEM-003/requirement.md`](../requirements/SIEM-003/requirement.md) | #1667 | Reference (source record) | Repository entry | Earlier reader routes |
