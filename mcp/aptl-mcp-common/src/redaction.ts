@@ -13,12 +13,7 @@
 
 import { REDACTED } from './redaction-command-patterns.js';
 import {
-  unquoteOptionsInCredentialSegments,
-  redactShortPasswordFlag,
-  redactNtlmHashFlag,
-  redactLdapPasswordFlag,
-  redactBasicAuthUser,
-  redactImpacketPositionalAuth,
+  redactCommandFlags,
   argvCredentialModes,
   argvShortFlagSkipIndices,
 } from './redaction-commands.js';
@@ -40,8 +35,9 @@ export {
 //
 // MAX_SCAN_LEN bounds the polynomial-backtracking command-flag passes (the
 // `--<word>*<sensitive>` flag matcher and the per-segment shell scanners).
-// Strings longer than this skip those passes (the linear key/value/header/
-// PEM/bearer/URL passes still run), keeping CPU bounded.
+// A longer string is scanned in windows of at most this many code points
+// (see `commandScanWindows`), so the work stays linear in the length and
+// every part of the string is scanned. Python counts the same unit.
 const MAX_SCAN_LEN = 64 * 1024;
 // MAX_DEPTH bounds recursion through nested objects/arrays/JSON-in-strings so
 // a deeply nested artifact collapses to a bounded marker instead of
@@ -200,8 +196,13 @@ const BARE_BEARER_PATTERN = new RegExp(
 // `--password value` / `--client-secret value` / `--access-token value`
 // style (long CLI flags). The `[\w-]*` prefix allows compound flag
 // names; regex backtracking finds the embedded sensitive token.
+// A match starts only where a run of `[\w-]` characters starts, and group 1
+// keeps the run text before its first `--`. A start at a later `--` of the
+// same run cannot match when the first `--` does not, so the output is the
+// same as for `--[\w-]*...` alone. Without this anchor the regex re-scanned
+// the run from every `--` in it, which is quadratic on long dash runs.
 const CLI_FLAG_PATTERN = new RegExp(
-  String.raw`(--[\w-]*${SENSITIVE_KEY_PATTERN}${KEY_RB}\s+)${VALUE_PATTERN}`,
+  String.raw`((?<![\w-])(?:\w|-(?!-))*--[\w-]*${SENSITIVE_KEY_PATTERN}${KEY_RB}\s+)${VALUE_PATTERN}`,
   'gi',
 );
 // Cookie / Set-Cookie header: redact the entire body so multi-segment
@@ -274,7 +275,42 @@ function tryRedactJsonString(value: string, depth: number): string | null {
   return null;
 }
 
-function redactString(value: string, depth: number): string {
+/**
+ * Split `text` into windows for the command-flag passes. A window holds at
+ * most MAX_SCAN_LEN code points. A window that does not reach the end of
+ * `text` ends after its last newline; with no newline, after its last
+ * space; with neither, at the length limit. Mirrors `redaction.py`.
+ */
+export function commandScanWindows(text: string): string[] {
+  if (text.length <= MAX_SCAN_LEN) return text === '' ? [] : [text];
+  const codePoints = Array.from(text);
+  const windows: string[] = [];
+  let start = 0;
+  while (start < codePoints.length) {
+    let end = Math.min(start + MAX_SCAN_LEN, codePoints.length);
+    if (end < codePoints.length) {
+      let cut = codePoints.lastIndexOf('\n', end - 1);
+      if (cut < start) cut = codePoints.lastIndexOf(' ', end - 1);
+      if (cut >= start) end = cut + 1;
+    }
+    windows.push(codePoints.slice(start, end).join(''));
+    start = end;
+  }
+  return windows;
+}
+
+/**
+ * Run the long-flag matcher and the tool-context-aware command passes on
+ * each window of `commandScanWindows`, so the polynomial-backtracking passes
+ * stay bounded (ARCH-386-01) and no part of the input skips them.
+ */
+function redactCommandText(value: string, context: string): string {
+  return commandScanWindows(value)
+    .map((window) => redactCommandFlags(window.replaceAll(CLI_FLAG_PATTERN, `$1${REDACTED}`), context))
+    .join('');
+}
+
+function redactString(value: string, depth: number, context = ''): string {
   const jsonRedacted = tryRedactJsonString(value, depth);
   if (jsonRedacted !== null) return jsonRedacted;
   let out = value;
@@ -284,33 +320,19 @@ function redactString(value: string, depth: number): string {
       replacement as Parameters<typeof out.replaceAll>[1],
     );
   }
-  // Polynomial-backtracking passes are length-gated to cap worst-case CPU at
-  // the secret boundary (ARCH-386-01). Oversized strings skip them; the
-  // linear passes above already masked the key/value/header/PEM/bearer/URL
-  // secret shapes. Tool-context-aware short flags run last so the simpler
-  // kv/flag patterns have first claim on overlapping shapes. The
-  // segment-scoped quote-strip unquotes `'-X'`/`"-X"` option tokens *only*
-  // within credential-bearing segments so `hydra '-p' hunter2` triggers the
-  // per-flag matcher while `echo '-p' hunter2` is preserved verbatim.
-  if (out.length <= MAX_SCAN_LEN) {
-    out = out.replaceAll(CLI_FLAG_PATTERN, `$1${REDACTED}`);
-    out = unquoteOptionsInCredentialSegments(out);
-    out = redactShortPasswordFlag(out);
-    out = redactNtlmHashFlag(out);
-    out = redactLdapPasswordFlag(out);
-    out = redactBasicAuthUser(out);
-    out = redactImpacketPositionalAuth(out);
-  }
-  return out;
+  // The polynomial-backtracking passes run last so the simpler kv/flag
+  // patterns have first claim on overlapping shapes. `context` is the
+  // leading token of the argv list that holds the string, or empty.
+  return redactCommandText(out, context);
 }
 
 function redactArray(items: unknown[], depth: number): unknown[] {
-  // Argv-shape detection: when the leading token is a credential-family
-  // tool, mark indices whose values should be redacted as short-flag
-  // credentials (-p/-H/-w/-u/-U). Without this, a structured
-  // `args = ["hydra", "-p", "hunter2", ...]` payload bypasses the
-  // short-flag redactors that only run on scalar command strings
-  // (ADR-029 / codex review cycle 3, finding 2).
+  // Argv-shape detection: a structured `args = ["hydra", "-p", "hunter2"]`
+  // payload must get the result of the scalar command string (ADR-029 /
+  // codex review cycle 3, finding 2). Flag and value pairs use the rule
+  // table; each later string element is scanned in the shell context of
+  // the leading token, which catches attached forms, `=` forms, and
+  // impacket targets.
   const first = items[0];
   const leading = typeof first === 'string' ? first : '';
   const modes = argvCredentialModes(leading);
@@ -327,7 +349,12 @@ function redactArray(items: unknown[], depth: number): unknown[] {
       out.push(REDACTED);
       continue;
     }
-    out.push(redactInner(items[i], depth + 1));
+    const element = items[i];
+    out.push(
+      i > 0 && typeof element === 'string' && depth + 1 < MAX_DEPTH
+        ? redactString(element, depth + 1, leading)
+        : redactInner(element, depth + 1),
+    );
     // Pair-form CLI args: ["--password", "hunter2"]. If this string is a
     // long-flag whose name is sensitive AND the next element is a string,
     // redact the next element as the value-of-flag.

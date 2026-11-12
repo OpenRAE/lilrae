@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import re
 
+from ._redaction_targets import ImpacketTargetPattern
+
 REDACTED = "[REDACTED]"
 
 # Inline-secret patterns for plain-text strings (command lines, headers,
@@ -49,8 +51,14 @@ _BARE_BEARER_RE = re.compile(rf"({_KEY_LB}bearer\s+){_VALUE_PATTERN}", re.IGNORE
 # style (long CLI flags). The `[\w-]*` prefixes allow compound flag
 # names like `--client-secret`; regex backtracking finds the embedded
 # sensitive token.
+# A match starts only where a run of `[\w-]` characters starts, and group 1
+# keeps the run text before its first `--`. A start at a later `--` of the
+# same run cannot match when the first `--` does not, so the output is the
+# same as for `--[\w-]*...` alone. Without this anchor the regex re-scanned
+# the run from every `--` in it, which is quadratic on long dash runs.
 _CLI_FLAG_RE = re.compile(
-    rf"(--[\w-]*{_SENSITIVE_KEY_PATTERN}{_KEY_RB}\s+){_VALUE_PATTERN}",
+    rf"((?<![\w-])(?:\w|-(?!-))*--[\w-]*{_SENSITIVE_KEY_PATTERN}{_KEY_RB}\s+)"
+    rf"{_VALUE_PATTERN}",
     re.IGNORECASE,
 )
 # Cookie / Set-Cookie header: redact the entire body so multi-segment
@@ -161,6 +169,12 @@ _IMPACKET_TOOL_REGEXES: tuple["re.Pattern[str]", ...] = (
         re.IGNORECASE,
     ),
 )
+# Tools whose ``-hashes`` / ``--hashes`` option carries an NTLM hash: the
+# ``-H`` hash tools and the impacket family.
+_HASHES_FLAG_TOOL_REGEXES: tuple["re.Pattern[str]", ...] = (
+    _HASH_TOOLS_RE,
+    *_IMPACKET_TOOL_REGEXES,
+)
 # Tools where the short flags ``-u`` / ``-U`` carry a username (often
 # paired with an embedded password — Basic-auth ``user:pass`` for HTTP
 # clients, Samba ``user%pass`` for the SMB family). The short forms are
@@ -258,29 +272,16 @@ _BASIC_AUTH_USER_ATTACHED_UNQUOTED = re.compile(
 # Impacket positional `user:password@host` / `domain/user:password@host`.
 # Mirrors impacket's own `parse_target` (`[^@]*` for the password), so the
 # bare form can't contain a literal `@`; users with `@`/whitespace in the
-# password MUST quote. `(?=\s|$|[;|&])` requires a token boundary after the
-# host so we don't eat into the rest of the command line.
-# A leading token-boundary lookbehind eliminates the O(n^2) ReDoS these
-# patterns exhibited (ARCH-386-01 / redact-01). Without it, `re.sub` re-tried
-# the match at *every* offset inside a long flag-like token (`hydra --aaaa…`
-# or `aaaa:bbbb` with no `@`), and each attempt scanned the rest of the token
-# — quadratic. `(?<![\w\\/.:@-])` forbids starting a match in the middle of a
-# target token, so attempts collapse from O(n) offsets to O(tokens); the
-# match can still begin after whitespace, `;`/`|`/`&`, `=`, or a quote, which
-# is exactly where an impacket positional target legitimately starts. The
-# lookbehind is zero-width and non-capturing, so groups 1/2/3 stay
-# user/value/host. Portable to the TS mirror (JS supports lookbehind); parity
-# is verified by the shared golden corpus.
-_IMPACKET_LEAD = r"(?<![\w\\/.:@-])"
-_IMPACKET_POSITIONAL_DQUOTE = re.compile(
-    rf'{_IMPACKET_LEAD}([\w\\/.-]+):"([^"\\]*(?:\\.[^"\\]*)*)"@([\w.-]+)(?=\s|$|[;|&])'
-)
-_IMPACKET_POSITIONAL_SQUOTE = re.compile(
-    rf"{_IMPACKET_LEAD}([\w\\/.-]+):'([^'\\]*(?:\\.[^'\\]*)*)'@([\w.-]+)(?=\s|$|[;|&])"
-)
-_IMPACKET_POSITIONAL_BARE = re.compile(
-    rf"{_IMPACKET_LEAD}([\w\\/.-]+):((?:\\.|[^\\@\s])+)@([\w.-]+)(?=\s|$|[;|&])"
-)
+# password MUST quote. A token boundary must follow the host so we don't eat
+# into the rest of the command line, and a match cannot start in the middle
+# of a target token. ``ImpacketTargetPattern`` gives the matches of the
+# former regexes in linear time (ARCH-386-01); groups 1/2/3 stay
+# user/value/host.
+_IMPACKET_POSITIONAL_DQUOTE = ImpacketTargetPattern('"')
+_IMPACKET_POSITIONAL_SQUOTE = ImpacketTargetPattern("'")
+_IMPACKET_POSITIONAL_BARE = ImpacketTargetPattern("")
 
 _URL_PREFIX_RE = re.compile(r"^(?:https?|ftp|ldap|ldaps|smb|smbs)://", re.IGNORECASE)
-_PORT_LIKE_RE = re.compile(r"^\d{1,5}(?:[,-]\d{1,5})*$")
+# ASCII digits only: a port is never written in other scripts, so a value in
+# other digits is a password and is masked.
+_PORT_LIKE_RE = re.compile(r"^\d{1,5}(?:[,-]\d{1,5})*$", re.ASCII)
