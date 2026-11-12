@@ -152,7 +152,8 @@ def _rendered_ruleset(policy: SeatProtectionBoundarySpec) -> str:
 
     path = Path(__file__).parents[1] / "containers/network-boundary-helper/helper.py"
     spec = importlib.util.spec_from_file_location("boundary_helper", path)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.render_ruleset(policy.details(), existing_families=())

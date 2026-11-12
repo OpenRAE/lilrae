@@ -675,9 +675,10 @@ def test_cleanup_fails_when_nft_cannot_list_the_tables(helper, monkeypatch) -> N
         raise RuntimeError("nft operation failed")
 
     monkeypatch.setattr(helper, "_nft_json", unavailable)
+    policy = _raes_policy()
 
     with pytest.raises(RuntimeError):
-        helper._cleanup(_raes_policy())
+        helper._cleanup(policy)
 
 
 def test_cleanup_fails_when_an_owned_table_remains(helper, monkeypatch) -> None:
@@ -732,9 +733,10 @@ def test_a_foreign_table_with_the_owned_name_is_an_ownership_conflict(
         return {"nftables": [{"table": {"name": table}}]}
 
     monkeypatch.setattr(helper, "_nft_json", nft)
+    policy = _raes_policy()
 
     with pytest.raises(RuntimeError, match="ownership conflict"):
-        helper._owned_families(_raes_policy())
+        helper._owned_families(policy)
 
 
 @pytest.mark.parametrize("protocol", ["tcp", "udp"])
