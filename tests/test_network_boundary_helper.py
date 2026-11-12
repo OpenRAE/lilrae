@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib.util
+import json
 import ipaddress
 from pathlib import Path
 
@@ -747,3 +748,23 @@ def test_a_portless_transport_rule_matches_the_protocol(helper, protocol) -> Non
     assert f" {protocol} return" not in rendered.replace(
         f"meta l4proto {protocol} return", ""
     )
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [_raes_policy, _platform_policy, _seat_protection_policy],
+    ids=["raes", "platform", "seat-protection"],
+)
+def test_each_rendered_comment_fits_the_nft_limit(helper, policy) -> None:
+    """nft refuses a comment longer than 128 characters (NFTNL_UDATA_COMMENT_MAXLEN)."""
+
+    rendered = helper.render_ruleset(policy(), existing_families=())
+    # Table comments and rule comments both end their line.
+    comments = [
+        json.loads(line.rsplit(" comment ", 1)[1])
+        for line in rendered.splitlines()
+        if " comment " in line
+    ]
+
+    assert comments
+    assert max(len(comment) for comment in comments) <= 128

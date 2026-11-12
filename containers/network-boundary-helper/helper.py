@@ -803,20 +803,13 @@ def _raes_rule_expressions(
 def _raes_table(
     policy: Mapping[str, object], family: str, table_name: str
 ) -> list[str]:
-    owner = str(policy["owner"])
-    digest = _digest(policy)
     bindings = policy["owner_bindings"]
     rules = policy["rules"]
     assert isinstance(bindings, list)
     assert isinstance(rules, list)
     lines = [
         f"table {family} {table_name} {{",
-        (
-            "  comment "
-            + _quoted(
-                f"aptl-owner={_owner_marker(owner)},authority=raes,digest={digest}"
-            )
-        ),
+        "  comment " + _quoted(_expected_table_comment(policy)),
     ]
     chain_by_owner: dict[str, str] = {}
     for binding in bindings:
@@ -913,18 +906,11 @@ def _workload_ipv4(workload: Mapping[str, object]) -> dict[str, str]:
 def _platform_table(
     policy: Mapping[str, object], family: str, table_name: str
 ) -> list[str]:
-    owner = str(policy["owner"])
-    digest = _digest(policy)
     anchors = _platform_index(policy)
     networks = _network_index(policy)
     lines = [
         f"table {family} {table_name} {{",
-        (
-            "  comment "
-            + _quoted(
-                f"aptl-owner={_owner_marker(owner)},authority=platform,digest={digest}"
-            )
-        ),
+        "  comment " + _quoted(_expected_table_comment(policy)),
         "  chain forward {",
         "    type filter hook forward priority -300; policy accept;",
     ]
@@ -1054,18 +1040,11 @@ def _seat_protection_table(
 ) -> list[str]:
     """Render only guest-host input protection; never range forwarding."""
 
-    owner = str(policy["owner"])
-    digest = _digest(policy)
     networks = _network_index(policy)
     ingress = "ibrname" if family == "bridge" else "iifname"
     lines = [
         f"table {family} {table_name} {{",
-        (
-            "  comment "
-            + _quoted(
-                f"aptl-owner={_owner_marker(owner)},authority=seat-protection,digest={digest}"
-            )
-        ),
+        "  comment " + _quoted(_expected_table_comment(policy)),
         "  chain host_input {",
         "    type filter hook input priority -300; policy accept;",
     ]
@@ -1927,15 +1906,18 @@ def _receipt(
     }
 
 
+# nft refuses a comment longer than 128 characters. With the `sha256:` prefix,
+# the table comment of these authorities is longer, so it holds the bare hex.
+_BARE_DIGEST_AUTHORITIES = frozenset({"native-range", "seat-protection"})
+
+
 def _expected_table_comment(policy: Mapping[str, object]) -> str:
+    digest = _digest(policy)
+    if policy["authority"] in _BARE_DIGEST_AUTHORITIES:
+        digest = digest.removeprefix("sha256:")
     return (
         f"aptl-owner={_owner_marker(str(policy['owner']))},"
-        f"authority={policy['authority']},digest="
-        + (
-            _digest(policy).removeprefix("sha256:")
-            if policy["authority"] == "native-range"
-            else _digest(policy)
-        )
+        f"authority={policy['authority']},digest={digest}"
     )
 
 
