@@ -892,6 +892,16 @@ describe('redactor defense-in-depth bounds (issue #386, ARCH-386-01)', () => {
     expect(out).toBe(payload);
   });
 
+  it('repeated impacket targets are linear, not ReDoS', () => {
+    // The bare target regex scanned the value again from each `u:` start.
+    const payload = 'psexec.py ' + 'u:x!'.repeat(15000);
+    let out = '';
+    expect(elapsedMs(() => {
+      out = redact(payload) as string;
+    })).toBeLessThan(500);
+    expect(out).toBe(payload);
+  });
+
   it('oversized input still runs the command-flag passes', () => {
     const payload = ('x'.repeat(100) + '\n').repeat(2000) + 'hydra -l admin -p 1234 ssh://host';
     let out = '';

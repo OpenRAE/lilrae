@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import re
 
+from ._redaction_targets import ImpacketTargetPattern
+
 REDACTED = "[REDACTED]"
 
 # Inline-secret patterns for plain-text strings (command lines, headers,
@@ -270,29 +272,14 @@ _BASIC_AUTH_USER_ATTACHED_UNQUOTED = re.compile(
 # Impacket positional `user:password@host` / `domain/user:password@host`.
 # Mirrors impacket's own `parse_target` (`[^@]*` for the password), so the
 # bare form can't contain a literal `@`; users with `@`/whitespace in the
-# password MUST quote. `(?=\s|$|[;|&])` requires a token boundary after the
-# host so we don't eat into the rest of the command line.
-# A leading token-boundary lookbehind eliminates the O(n^2) ReDoS these
-# patterns exhibited (ARCH-386-01 / redact-01). Without it, `re.sub` re-tried
-# the match at *every* offset inside a long flag-like token (`hydra --aaaa…`
-# or `aaaa:bbbb` with no `@`), and each attempt scanned the rest of the token
-# — quadratic. `(?<![\w\\/.:@-])` forbids starting a match in the middle of a
-# target token, so attempts collapse from O(n) offsets to O(tokens); the
-# match can still begin after whitespace, `;`/`|`/`&`, `=`, or a quote, which
-# is exactly where an impacket positional target legitimately starts. The
-# lookbehind is zero-width and non-capturing, so groups 1/2/3 stay
-# user/value/host. Portable to the TS mirror (JS supports lookbehind); parity
-# is verified by the shared golden corpus.
-_IMPACKET_LEAD = r"(?<![\w\\/.:@-])"
-_IMPACKET_POSITIONAL_DQUOTE = re.compile(
-    rf'{_IMPACKET_LEAD}([\w\\/.-]+):"([^"\\]*(?:\\.[^"\\]*)*)"@([\w.-]+)(?=\s|$|[;|&])'
-)
-_IMPACKET_POSITIONAL_SQUOTE = re.compile(
-    rf"{_IMPACKET_LEAD}([\w\\/.-]+):'([^'\\]*(?:\\.[^'\\]*)*)'@([\w.-]+)(?=\s|$|[;|&])"
-)
-_IMPACKET_POSITIONAL_BARE = re.compile(
-    rf"{_IMPACKET_LEAD}([\w\\/.-]+):((?:\\.|[^\\@\s])+)@([\w.-]+)(?=\s|$|[;|&])"
-)
+# password MUST quote. A token boundary must follow the host so we don't eat
+# into the rest of the command line, and a match cannot start in the middle
+# of a target token. ``ImpacketTargetPattern`` gives the matches of the
+# former regexes in linear time (ARCH-386-01); groups 1/2/3 stay
+# user/value/host.
+_IMPACKET_POSITIONAL_DQUOTE = ImpacketTargetPattern('"')
+_IMPACKET_POSITIONAL_SQUOTE = ImpacketTargetPattern("'")
+_IMPACKET_POSITIONAL_BARE = ImpacketTargetPattern("")
 
 _URL_PREFIX_RE = re.compile(r"^(?:https?|ftp|ldap|ldaps|smb|smbs)://", re.IGNORECASE)
 # ASCII digits only: a port is never written in other scripts, so a value in

@@ -42,6 +42,7 @@ import {
   ARGV_SHORT_FLAG_RULES,
 } from './redaction-command-patterns.js';
 import type { ArgvCredentialModes, ArgvValueTest } from './redaction-command-patterns.js';
+import { ImpacketTargetPattern } from './redaction-targets.js';
 
 // `&&` / `||` / `&` / `;` / `|` boundaries split a command line into
 // independent shell segments (used for per-segment credential-tool
@@ -258,10 +259,18 @@ function lazySegmentPredicate(
  * `replacerFactory(inSeg)` returns the actual `String.replace` callback;
  * the factory closes over the freshly-computed predicate for that pass.
  */
+type Replacer = (...args: unknown[]) => string;
+
+/** Replace each match of `pattern`, giving `replacer` the arguments of a regex replacer. */
+function replaceMatches(text: string, pattern: RegExp | ImpacketTargetPattern, replacer: Replacer): string {
+  if (pattern instanceof RegExp) return text.replace(pattern, replacer as Parameters<typeof text.replace>[1]);
+  return pattern.replace(text, (t) => replacer(t.match, t.user, t.value, t.host, t.offset));
+}
+
 function segmentAwareReplace(
   command: string,
   hasTool: (segment: string) => boolean,
-  passes: ReadonlyArray<[RegExp, (inSeg: (offset: number) => boolean) => (...args: unknown[]) => string]>,
+  passes: ReadonlyArray<[RegExp | ImpacketTargetPattern, (inSeg: (offset: number) => boolean) => Replacer]>,
   context: string,
 ): string {
   let out = command;
@@ -274,7 +283,7 @@ function segmentAwareReplace(
       inSeg = lazySegmentPredicate(out, hasTool, context);
       scanned = out;
     }
-    out = out.replace(pattern, factory(inSeg) as Parameters<typeof out.replace>[1]);
+    out = replaceMatches(out, pattern, factory(inSeg));
   }
   return out;
 }

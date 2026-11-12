@@ -849,6 +849,13 @@ class TestRedactorBounds:
         assert elapsed < self._BUDGET_S
         assert out == payload
 
+    def test_repeated_impacket_targets_are_linear_not_redos(self):
+        # The bare target regex scanned the value again from each `u:` start.
+        payload = "psexec.py " + "u:x!" * 15000
+        out, elapsed = self._redact_within_budget(payload)
+        assert elapsed < self._BUDGET_S
+        assert out == payload
+
     def test_oversized_input_still_runs_command_flag_passes(self):
         from aptl.utils.redaction import _MAX_SCAN_LEN
 

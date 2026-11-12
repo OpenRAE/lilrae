@@ -1,4 +1,6 @@
 /** Credential patterns for shell redaction; mirror Python's pattern module. */
+import { ImpacketTargetPattern } from './redaction-targets.js';
+
 export const REDACTED = '[REDACTED]';
 
 // Per-segment tool detection. Originally a single big alternation
@@ -118,37 +120,12 @@ export const URL_PREFIX_RE = /^(?:https?|ftp|ldap|ldaps|smb|smbs):\/\//i;
 //              whitespace in passwords MUST quote.
 //   - dquot:   `user:"VALUE"@host`          — quoted value (any char).
 //   - squot:   `user:'VALUE'@host`          — single-quoted.
-// Split into per-value-form patterns to keep each regex under Sonar's
-// regex-complexity threshold (S5843). The combined form was ~28; each
-// split form is ~15-18.
-//
-// DQUOTE / SQUOTE use the unrolled-loop quoted-string form
-// (`[^Q\\]*(?:\\.[^Q\\]*)*`) instead of the alternation form
-// (`(?:[^Q\\]|\\.)*`). Both match the same language, but the unrolled
-// form has no inner alternation so the regex engine cannot pick
-// between two alternatives that could match the same character —
-// eliminating the ReDoS risk at the engine level (Sonar S5852).
-//
-// BARE uses exclusive alternatives `\\.|[^\\@\s]` instead of `\\.|\S`.
-// `\S` overlaps with `\\.` (both can match the leading backslash of an
-// escape), creating ambiguous backtracking; `[^\\@\s]` excludes the
-// backslash so the alternatives are mutually exclusive. `@` is also
-// excluded so the pattern stops at the host separator without needing
-// laziness, which removes another backtracking source.
-// A leading token-boundary lookbehind `(?<![\w\\/.:@-])` eliminates the
-// O(n^2) ReDoS these patterns exhibited (ARCH-386-01 / redact-01): without
-// it the engine re-tried the match at every offset inside a long flag-like
-// token (`hydra --aaaa…` or `aaaa:bbbb` with no `@`), each attempt scanning
-// the rest of the token. The lookbehind forbids starting a match in the
-// middle of a target token, collapsing attempts from O(n) offsets to
-// O(tokens), while still allowing a match to begin after whitespace,
-// `;`/`|`/`&`, `=`, or a quote — exactly where an impacket positional target
-// legitimately starts. Zero-width and non-capturing, so groups 1/2/3 stay
-// user/value/host. Mirrors `redaction.py`; parity is verified by the shared
-// golden corpus.
-export const IMPACKET_POSITIONAL_DQUOTE = /(?<![\w\\/.:@-])([\w\\/.-]+):"([^"\\]*(?:\\.[^"\\]*)*)"@([\w.-]+)(?=\s|$|[;|&])/g;
-export const IMPACKET_POSITIONAL_SQUOTE = /(?<![\w\\/.:@-])([\w\\/.-]+):'([^'\\]*(?:\\.[^'\\]*)*)'@([\w.-]+)(?=\s|$|[;|&])/g;
-export const IMPACKET_POSITIONAL_BARE = /(?<![\w\\/.:@-])([\w\\/.-]+):((?:\\.|[^\\@\s])+)@([\w.-]+)(?=\s|$|[;|&])/g;
+// `ImpacketTargetPattern` gives the matches of the former lookbehind regexes
+// in linear time (ARCH-386-01); the replacer still receives user, value,
+// host, and offset in the order of the regex groups.
+export const IMPACKET_POSITIONAL_DQUOTE = new ImpacketTargetPattern('"');
+export const IMPACKET_POSITIONAL_SQUOTE = new ImpacketTargetPattern("'");
+export const IMPACKET_POSITIONAL_BARE = new ImpacketTargetPattern('');
 
 export const IMPACKET_TOOL_REGEXES: readonly RegExp[] = [
   /(^|[\s|;&])(?:[\w./-]+\/)?(impacket-[\w-]+)(?:\s|$)/i,
