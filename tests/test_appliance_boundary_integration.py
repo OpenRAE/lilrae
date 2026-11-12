@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import subprocess
 import time
@@ -10,7 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from aptl.core.deployment._compose_boundary import _helper_command
+from aptl.core.deployment._compose_boundary import (
+    DEFAULT_BOUNDARY_HELPER_IMAGE,
+    _helper_command,
+)
 from aptl.core.deployment.boundary import (
     AcesAclOwnerBinding,
     AcesBoundarySpec,
@@ -18,6 +22,9 @@ from aptl.core.deployment.boundary import (
     BoundaryWorkload,
     PlatformBoundarySpec,
     PlatformCrossing,
+    SeatPermittedFlow,
+    SeatProtectedComponent,
+    SeatProtectionBoundarySpec,
 )
 from aptl.core.deployment.docker_compose import DockerComposeBackend
 from aptl.core.deployment.realization import DeploymentAclRealization
@@ -55,6 +62,54 @@ def _run(argv: list[str], *, timeout: int = 30) -> subprocess.CompletedProcess:
         check=False,
         timeout=timeout,
     )
+
+
+def _nft(*args: str) -> subprocess.CompletedProcess:
+    """Run nft in the helper image against the host network namespace."""
+
+    return _run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "host",
+            "--cap-drop=ALL",
+            "--cap-add=NET_ADMIN",
+            "--security-opt=no-new-privileges",
+            "--entrypoint",
+            "nft",
+            DEFAULT_BOUNDARY_HELPER_IMAGE,
+            *args,
+        ]
+    )
+
+
+def _replace_rule_keeping_comment(
+    table: str, comment: str, statement: str, chain: str = "forward"
+) -> None:
+    """Change one owned rule's expressions but keep its claimed identity."""
+
+    listing = _nft("-j", "list", "chain", "inet", table, chain)
+    assert listing.returncode == 0, listing.stderr
+    handle = next(
+        item["rule"]["handle"]
+        for item in json.loads(listing.stdout)["nftables"]
+        if item.get("rule", {}).get("comment") == comment
+    )
+    replaced = _nft(
+        "replace",
+        "rule",
+        "inet",
+        table,
+        chain,
+        "handle",
+        str(handle),
+        *statement.split(),
+        "comment",
+        json.dumps(comment),
+    )
+    assert replaced.returncode == 0, replaced.stderr
 
 
 def _docker_available() -> bool:
@@ -128,6 +183,16 @@ def _policy() -> PlatformBoundarySpec:
             ),
         ),
         egress_ports=(),
+    )
+
+
+def _observe(
+    backend: DockerComposeBackend, policy: PlatformBoundarySpec
+) -> subprocess.CompletedProcess:
+    return backend._run_with_input(
+        _helper_command("observe"),
+        policy.canonical_json(),
+        timeout=30,
     )
 
 
@@ -283,33 +348,20 @@ def test_platform_floor_allows_declared_crossing_and_blocks_other_source() -> No
         assert allowed.returncode == 0
         assert denied.returncode != 0
 
-        drift = _run(
-            [
-                "docker",
-                "run",
-                "--rm",
-                "--network",
-                "host",
-                "--cap-drop=ALL",
-                "--cap-add=NET_ADMIN",
-                "--security-opt=no-new-privileges",
-                "--entrypoint",
-                "nft",
-                "aptl-network-boundary-helper:7",
-                "flush",
-                "chain",
-                "inet",
-                _table_name(policy.owner, policy.authority),
-                "forward",
-            ]
+        table = _table_name(policy.owner, policy.authority)
+        assert _observe(backend, policy).returncode == 0
+        marker = "platform/default-ingress/" + _BRIDGES[0]
+        _replace_rule_keeping_comment(
+            table,
+            "aptl-rule=" + hashlib.sha256(marker.encode()).hexdigest()[:24],
+            f"iifname {_BRIDGES[0]} accept",
         )
+        assert _observe(backend, policy).returncode != 0
+
+        assert backend.realize_boundary(policy).success is True
+        drift = _nft("flush", "chain", "inet", table, "forward")
         assert drift.returncode == 0
-        observation = backend._run_with_input(
-            _helper_command("observe"),
-            policy.canonical_json(),
-            timeout=30,
-        )
-        assert observation.returncode != 0
+        assert _observe(backend, policy).returncode != 0
     finally:
         _cleanup(backend, policy)
 
@@ -476,4 +528,96 @@ def test_raes_owner_acl_allows_declared_port_and_denies_remainder() -> None:
         )
         for container in (source, target):
             _run(["docker", "rm", "-f", container])
+        _run(["docker", "network", "rm", network_name])
+
+
+_SEAT_COMPONENTS = (
+    "management-control",
+    "evidence-capture",
+    "evidence-store",
+    "docker-authority",
+    "credentials",
+)
+
+
+def _seat_policy(bridge: str) -> SeatProtectionBoundarySpec:
+    return SeatProtectionBoundarySpec(
+        owner="aptl-1742-seat-proof",
+        policy_digest="sha256:" + "f" * 64,
+        networks=(
+            BoundaryNetwork(
+                name="range",
+                bridge=bridge,
+                ipv4_cidr="10.252.28.0/24",
+                ipv4_gateway="10.252.28.1",
+            ),
+        ),
+        protected_components=tuple(
+            SeatProtectedComponent(
+                component_class=component,
+                probe_identity="seat-" + component,
+                protocol="tcp",
+                port=43101 + index,
+                purpose=component + " boundary",
+            )
+            for index, component in enumerate(_SEAT_COMPONENTS)
+        ),
+        permitted_flows=(
+            SeatPermittedFlow(
+                source="ordinary-range-workload",
+                destination="management-control",
+                protocol="tcp",
+                ports=(9443, 8443),
+                purpose="reviewed management callback",
+                probe_identity="reviewed-management-callback",
+            ),
+        ),
+    )
+
+
+@pytest.mark.skipif(not _docker_available(), reason="docker daemon not available")
+def test_seat_protection_readback_matches_the_kernel_and_detects_drift() -> None:
+    project_dir = Path(__file__).parents[1]
+    backend = DockerComposeBackend(project_dir, project_name="aptl-1742-seat-proof")
+    network_name, bridge = "aptl-1742-seat-proof", "ap1742seat0"
+    policy = _seat_policy(bridge)
+
+    def helper(action: str) -> subprocess.CompletedProcess:
+        return backend._run_with_input(
+            _helper_command(action), policy.canonical_json(), timeout=30
+        )
+
+    helper("cleanup")
+    _run(["docker", "network", "rm", network_name])
+    try:
+        created = _run(
+            [
+                "docker",
+                "network",
+                "create",
+                "--driver",
+                "bridge",
+                "--opt",
+                f"com.docker.network.bridge.name={bridge}",
+                "--subnet",
+                "10.252.28.0/24",
+                "--gateway",
+                "10.252.28.1",
+                network_name,
+            ]
+        )
+        assert created.returncode == 0, created.stderr
+        assert backend.realize_boundary(policy).success is True
+        assert helper("observe").returncode == 0
+
+        marker = f"seat-protection/default/{bridge}"
+        _replace_rule_keeping_comment(
+            _table_name(policy.owner, policy.authority),
+            "aptl-rule=" + hashlib.sha256(marker.encode()).hexdigest()[:24],
+            f"iifname {bridge} accept",
+            chain="host_input",
+        )
+        assert helper("observe").returncode != 0
+    finally:
+        helper("cleanup")
         _run(["docker", "network", "rm", network_name])

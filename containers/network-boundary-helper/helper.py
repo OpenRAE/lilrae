@@ -28,6 +28,19 @@ _PROTECTED_COMPONENTS = frozenset(
         "credentials",
     }
 )
+_EGRESS_DENIED_IPV4 = (
+    "0.0.0.0/8",
+    "10.0.0.0/8",
+    "100.64.0.0/10",
+    "127.0.0.0/8",
+    "169.254.0.0/16",
+    "172.16.0.0/12",
+    "192.0.0.0/24",
+    "192.168.0.0/16",
+    "198.18.0.0/15",
+    "224.0.0.0/4",
+    "240.0.0.0/4",
+)
 
 
 def _canonical(policy: Mapping[str, object]) -> str:
@@ -49,6 +62,10 @@ def _owner_marker(owner: str) -> str:
 
 def _rule_marker(identity: str) -> str:
     return "aptl-rule=" + hashlib.sha256(identity.encode()).hexdigest()[:24]
+
+
+def _raes_owner_chain(owner_address: str) -> str:
+    return "owner_" + hashlib.sha256(owner_address.encode()).hexdigest()[:12]
 
 
 def _quoted(value: str) -> str:
@@ -667,15 +684,15 @@ def _transport(rule: Mapping[str, object]) -> str:
     protocol = str(rule["protocol"])
     if protocol in {"tcp", "udp"}:
         ports = rule["ports"]
-        suffix = ""
         if isinstance(ports, list) and ports:
             rendered = (
                 str(ports[0])
                 if len(ports) == 1
                 else "{ " + ", ".join(str(port) for port in ports) + " }"
             )
-            suffix = f" dport {rendered}"
-        return f"{protocol}{suffix}"
+            return f"{protocol} dport {rendered}"
+        # A bare protocol keyword is not nftables syntax; match every port.
+        return f"meta l4proto {protocol}"
     if protocol == "icmp":
         return "meta l4proto icmp"
     return ""
@@ -806,7 +823,7 @@ def _raes_table(
         if not isinstance(binding, Mapping):
             continue
         owner_address = str(binding["owner_address"])
-        chain = "owner_" + hashlib.sha256(owner_address.encode()).hexdigest()[:12]
+        chain = _raes_owner_chain(owner_address)
         chain_by_owner[owner_address] = chain
         lines.append(f"  chain {chain} {{")
         for rule in rules:
@@ -969,12 +986,7 @@ def _platform_table(
                 if len(egress_ports) == 1
                 else "{ " + ", ".join(str(port) for port in egress_ports) + " }"
             )
-            denied_ipv4 = (
-                "{ 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, "
-                "127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, "
-                "192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, "
-                "224.0.0.0/4, 240.0.0.0/4 }"
-            )
+            denied_ipv4 = "{ " + ", ".join(_EGRESS_DENIED_IPV4) + " }"
             zone_networks = policy["zone_networks"]
             assert isinstance(zone_networks, list)
             egress_network = next(
@@ -1228,28 +1240,37 @@ def _nft_json(*args: str, input_text: str | None = None) -> dict[str, object]:
     return parsed
 
 
-def _table_comment(family: str, table_name: str) -> str | None:
-    try:
-        payload = _nft_json("list", "table", family, table_name)
-    except RuntimeError:
-        return None
+def _table_objects(payload: Mapping[str, object]) -> list[Mapping[str, object]]:
     nftables = payload.get("nftables", [])
     if not isinstance(nftables, list):
-        return None
-    for item in nftables:
-        if not isinstance(item, dict):
-            continue
-        table = item.get("table")
-        if isinstance(table, dict) and isinstance(table.get("comment"), str):
-            return table["comment"]
+        raise RuntimeError("nft observation was invalid")
+    return [
+        item["table"]
+        for item in nftables
+        if isinstance(item, dict) and isinstance(item.get("table"), dict)
+    ]
+
+
+def _present_families(table_name: str) -> set[str]:
+    """Return the families that nft confirms hold this table; never guess."""
+
+    return {
+        str(table.get("family"))
+        for table in _table_objects(_nft_json("list", "tables"))
+        if table.get("name") == table_name
+    }
+
+
+def _table_comment(family: str, table_name: str) -> str | None:
+    for table in _table_objects(_table_payload(family, table_name)):
+        comment = table.get("comment")
+        if isinstance(comment, str):
+            return comment
     return None
 
 
 def _table_payload(family: str, table_name: str) -> dict[str, object]:
-    try:
-        return _nft_json("list", "table", family, table_name)
-    except RuntimeError:
-        return {}
+    return _nft_json("list", "table", family, table_name)
 
 
 def _expected_chains(
@@ -1281,44 +1302,329 @@ def _expected_chains(
     expected = {"forward": ("forward", -200, "accept")}
     for binding in bindings:
         if isinstance(binding, Mapping):
-            address = str(binding["owner_address"])
-            chain = "owner_" + hashlib.sha256(address.encode()).hexdigest()[:12]
+            chain = _raes_owner_chain(str(binding["owner_address"]))
             expected[chain] = (None, None, None)
     return expected
 
 
-def _expected_rule_comments(
+# The helpers below give each rendered match in the JSON form that `nft -j list`
+# returns. nft drops the protocol matches that a later match implies, sorts the
+# elements of an anonymous set, merges adjacent intervals, and lists the
+# conntrack state flags as an array.
+_ESTABLISHED_OR_RELATED = {
+    "match": {
+        "op": "in",
+        "left": {"ct": {"key": "state"}},
+        "right": ["established", "related"],
+    }
+}
+
+
+def _json_match(left: object, right: object) -> dict[str, object]:
+    return {"match": {"op": "==", "left": left, "right": right}}
+
+
+def _json_meta(key: str, value: object) -> dict[str, object]:
+    return _json_match({"meta": {"key": key}}, value)
+
+
+def _json_payload(protocol: str, field: str, value: object) -> dict[str, object]:
+    return _json_match({"payload": {"protocol": protocol, "field": field}}, value)
+
+
+def _json_values(values: Sequence[object]) -> object:
+    numbers = [value for value in values if isinstance(value, int)]
+    if len(numbers) == len(values):
+        ordered: list[object] = sorted(set(numbers))
+    else:
+        addresses = sorted({ipaddress.ip_address(str(value)) for value in values})
+        ordered = [str(address) for address in addresses]
+    return ordered[0] if len(ordered) == 1 else {"set": ordered}
+
+
+def _json_prefix(cidr: str) -> object:
+    network = ipaddress.ip_network(cidr, strict=False)
+    if network.prefixlen == network.max_prefixlen:
+        return str(network.network_address)
+    return {"prefix": {"addr": str(network.network_address), "len": network.prefixlen}}
+
+
+def _interface_keys(family: str) -> tuple[str, str]:
+    if family == "bridge":
+        return "ibrname", "obrname"
+    return "iifname", "oifname"
+
+
+def _json_transport(rule: Mapping[str, object]) -> list[dict[str, object]]:
+    protocol = str(rule["protocol"])
+    ports = rule["ports"]
+    if protocol in {"tcp", "udp"} and isinstance(ports, list) and ports:
+        return [_json_payload(protocol, "dport", _json_values(ports))]
+    if protocol in {"tcp", "udp", "icmp"}:
+        return [_json_meta("l4proto", protocol)]
+    return []
+
+
+ExpectedRules = dict[str, list[tuple[str, list[dict[str, object]]]]]
+
+
+def _expected_raes_rule(
     policy: Mapping[str, object],
+    rule: Mapping[str, object],
+    binding: Mapping[str, object],
+    family: str,
+) -> list[tuple[str, list[dict[str, object]]]]:
+    networks = _network_index(policy)
+    ingress, egress = _interface_keys(family)
+    directions = (
+        ("in", "out") if rule["direction"] == "inout" else (str(rule["direction"]),)
+    )
+    source = rule["from_network"] if isinstance(rule["from_network"], str) else None
+    target = rule["to_network"] if isinstance(rule["to_network"], str) else None
+    expected = []
+    for direction in directions:
+        expressions = [
+            _json_meta(key, networks[reference]["bridge"])
+            for key, reference in ((ingress, source), (egress, target))
+            if reference is not None
+        ]
+        if family == "inet":
+            for field, reference in (("saddr", source), ("daddr", target)):
+                cidr = networks[reference].get("ipv4_cidr") if reference else None
+                if isinstance(cidr, str):
+                    expressions.append(_json_payload("ip", field, _json_prefix(cidr)))
+        if binding["owner_resource_type"] == "network":
+            owner_bridge = networks[str(rule["owner_name"])]["bridge"]
+            key = egress if direction == "in" else ingress
+            expressions.append(_json_meta(key, owner_bridge))
+        else:
+            owner_network = target if direction == "in" else source
+            addresses = _binding_addresses(binding, owner_network)
+            field = "daddr" if direction == "in" else "saddr"
+            expressions.append(_json_payload("ip", field, _json_values(addresses)))
+        expressions.extend(_json_transport(rule))
+        expressions.append(
+            {"return": None} if rule["action"] == "allow" else {"drop": None}
+        )
+        identity = f"{rule['owner_address']}/{rule['name']}/{direction}"
+        expected.append((_rule_marker(identity), expressions))
+    return expected
+
+
+def _expected_raes_rules(policy: Mapping[str, object], family: str) -> ExpectedRules:
+    networks = _network_index(policy)
+    ingress, egress = _interface_keys(family)
+    raw_bindings = policy["owner_bindings"]
+    raw_rules = policy["rules"]
+    assert isinstance(raw_bindings, list)
+    assert isinstance(raw_rules, list)
+    bindings = [item for item in raw_bindings if isinstance(item, Mapping)]
+    rules = [item for item in raw_rules if isinstance(item, Mapping)]
+    expected: ExpectedRules = {}
+    forward: list[tuple[str, list[dict[str, object]]]] = []
+    for binding in bindings:
+        owner_address = str(binding["owner_address"])
+        chain = _raes_owner_chain(owner_address)
+        owner_rules = [rule for rule in rules if rule["owner_address"] == owner_address]
+        entries = [
+            entry
+            for rule in owner_rules
+            for entry in _expected_raes_rule(policy, rule, binding, family)
+        ]
+        entries.append((_rule_marker(f"{owner_address}/default"), [{"return": None}]))
+        expected[chain] = entries
+        jump = {"jump": {"target": chain}}
+        inbound = _rule_marker(f"{owner_address}/dispatch/in")
+        outbound = _rule_marker(f"{owner_address}/dispatch/out")
+        if binding["owner_resource_type"] == "node":
+            addresses = _json_values(_binding_addresses(binding, None))
+            forward.append((inbound, [_json_payload("ip", "daddr", addresses), jump]))
+            forward.append((outbound, [_json_payload("ip", "saddr", addresses), jump]))
+            continue
+        for owner_name in sorted({str(rule["owner_name"]) for rule in owner_rules}):
+            bridge = networks[owner_name]["bridge"]
+            forward.append((inbound, [_json_meta(egress, bridge), jump]))
+            forward.append((outbound, [_json_meta(ingress, bridge), jump]))
+    expected["forward"] = forward
+    return expected
+
+
+def _expected_platform_crossings(
+    policy: Mapping[str, object], family: str
+) -> list[tuple[str, list[dict[str, object]]]]:
+    anchors = _platform_index(policy)
+    networks = _network_index(policy)
+    ingress, egress = _interface_keys(family)
+    expected = []
+    crossings = policy["crossings"]
+    assert isinstance(crossings, list)
+    for crossing in crossings:
+        if not isinstance(crossing, Mapping):
+            continue
+        sources = _workload_ipv4(anchors[str(crossing["source"])])
+        destinations = _workload_ipv4(anchors[str(crossing["destination"])])
+        ports = _json_values(crossing["ports"])
+        identity = f"platform/{crossing['purpose']}"
+        for network_name in sorted(set(sources) & set(destinations)):
+            bridge = networks[network_name]["bridge"]
+            path = [_json_meta(ingress, bridge), _json_meta(egress, bridge)]
+            source, destination = sources[network_name], destinations[network_name]
+            expected.append(
+                (
+                    _rule_marker(identity),
+                    path
+                    + [
+                        _json_payload("ip", "saddr", source),
+                        _json_payload("ip", "daddr", destination),
+                        _json_payload(str(crossing["protocol"]), "dport", ports),
+                        {"accept": None},
+                    ],
+                )
+            )
+            expected.append(
+                (
+                    _rule_marker(identity + "/reply"),
+                    path
+                    + [
+                        _json_payload("ip", "saddr", destination),
+                        _json_payload("ip", "daddr", source),
+                        _ESTABLISHED_OR_RELATED,
+                        {"accept": None},
+                    ],
+                )
+            )
+    return expected
+
+
+def _expected_platform_egress(
+    policy: Mapping[str, object],
+) -> list[tuple[str, list[dict[str, object]]]]:
+    egress_anchor = _platform_index(policy).get("egress")
+    egress_ports = policy["egress_ports"]
+    if egress_anchor is None or not egress_ports:
+        return []
+    networks = _network_index(policy)
+    zone_networks = policy["zone_networks"]
+    assert isinstance(egress_ports, list)
+    assert isinstance(zone_networks, list)
+    egress_network = next(
+        str(item["network"])
+        for item in zone_networks
+        if isinstance(item, Mapping) and item["zone"] == "egress"
+    )
+    denied = {
+        "set": [
+            _json_prefix(str(network))
+            for network in ipaddress.collapse_addresses(
+                ipaddress.ip_network(cidr) for cidr in _EGRESS_DENIED_IPV4
+            )
+        ]
+    }
+    expected = []
+    for network_name, source in sorted(_workload_ipv4(egress_anchor).items()):
+        if network_name != egress_network:
+            continue
+        bridge = networks[network_name]["bridge"]
+        expected += [
+            (
+                _rule_marker("platform/egress-broker-reply/" + network_name),
+                [
+                    _json_meta("oifname", bridge),
+                    _json_payload("ip", "daddr", source),
+                    _ESTABLISHED_OR_RELATED,
+                    {"accept": None},
+                ],
+            ),
+            (
+                _rule_marker("platform/egress-denied-range/" + network_name),
+                [
+                    _json_meta("iifname", bridge),
+                    _json_payload("ip", "saddr", source),
+                    _json_payload("ip", "daddr", denied),
+                    {"drop": None},
+                ],
+            ),
+            (
+                _rule_marker("platform/egress-broker/" + network_name),
+                [
+                    _json_meta("iifname", bridge),
+                    _json_payload("ip", "saddr", source),
+                    _json_payload("tcp", "dport", _json_values(egress_ports)),
+                    {"accept": None},
+                ],
+            ),
+        ]
+    return expected
+
+
+def _expected_platform_rules(
+    policy: Mapping[str, object], family: str
+) -> ExpectedRules:
+    networks = _network_index(policy)
+    bridges = sorted(str(item["bridge"]) for item in networks.values())
+    ingress, egress = _interface_keys(family)
+    forward: list[tuple[str, list[dict[str, object]]]] = []
+    if family == "bridge":
+        for bridge in bridges:
+            path = [_json_meta(ingress, bridge), _json_meta(egress, bridge)]
+            neighbor = {"set": ["nd-neighbor-solicit", "nd-neighbor-advert"]}
+            forward += [
+                (
+                    "platform/arp",
+                    path + [_json_payload("ether", "type", "arp"), {"accept": None}],
+                ),
+                (
+                    "platform/nd",
+                    path
+                    + [_json_payload("icmpv6", "type", neighbor), {"accept": None}],
+                ),
+            ]
+    forward += _expected_platform_crossings(policy, family)
+    if family == "inet":
+        forward += _expected_platform_egress(policy)
+    for bridge in bridges:
+        forward += [
+            (
+                _rule_marker(f"platform/default-ingress/{bridge}"),
+                [_json_meta(ingress, bridge), {"drop": None}],
+            ),
+            (
+                _rule_marker(f"platform/default-egress/{bridge}"),
+                [_json_meta(egress, bridge), {"drop": None}],
+            ),
+        ]
+    expected: ExpectedRules = {"forward": forward}
+    if family == "inet":
+        for chain, key in (("host_input", "iifname"), ("host_output", "oifname")):
+            expected[chain] = [
+                (
+                    _rule_marker(f"platform/{chain}/{bridge}"),
+                    [_json_meta(key, bridge), {"drop": None}],
+                )
+                for bridge in bridges
+            ]
+    return expected
+
+
+def _verify_chain_rules(
+    expected: ExpectedRules,
     family: str,
     table_name: str,
-) -> list[str]:
-    renderer = {
-        "raes": _raes_table,
-        "platform": _platform_table,
-        "seat-protection": _seat_protection_table,
-        "native-range": _native_range_table,
-    }[str(policy["authority"])]
-    comments: list[str] = []
-    for line in renderer(policy, family, table_name):
-        if not line.startswith("    ") or " comment " not in line:
-            continue
-        raw = line.rsplit(" comment ", 1)[1]
-        value = json.loads(raw)
-        if not isinstance(value, str):
-            raise RuntimeError("boundary expected rule identity was invalid")
-        comments.append(value)
-    return sorted(comments)
+    rules: Sequence[Mapping[str, object]],
+) -> bool:
+    """Compare the ordered expressions of each chain, not only rule identities."""
+
+    observed: dict[str, list[tuple[object, object]]] = {}
+    for rule in rules:
+        if rule.get("family") != family or rule.get("table") != table_name:
+            return False
+        entries = observed.setdefault(str(rule.get("chain")), [])
+        entries.append((rule.get("comment"), rule.get("expr")))
+    return observed == {chain: items for chain, items in expected.items() if items}
 
 
 def _seat_interface_match(family: str, bridge: str) -> dict[str, object]:
-    key = "ibrname" if family == "bridge" else "iifname"
-    return {
-        "match": {
-            "op": "==",
-            "left": {"meta": {"key": key}},
-            "right": bridge,
-        }
-    }
+    return _json_meta(_interface_keys(family)[0], bridge)
 
 
 def _expected_seat_rules(
@@ -1334,17 +1640,7 @@ def _expected_seat_rules(
         expected.append(
             (
                 _rule_marker(f"seat-protection/reply/{bridge}"),
-                [
-                    interface_match,
-                    {
-                        "match": {
-                            "op": "in",
-                            "left": {"ct": {"key": "state"}},
-                            "right": {"set": ["established", "related"]},
-                        }
-                    },
-                    {"accept": None},
-                ],
+                [interface_match, _ESTABLISHED_OR_RELATED, {"accept": None}],
             )
         )
     flows = policy["permitted_flows"]
@@ -1354,7 +1650,7 @@ def _expected_seat_rules(
             continue
         ports = flow["ports"]
         assert isinstance(ports, list)
-        right: object = ports[0] if len(ports) == 1 else {"set": ports}
+        right = _json_values(ports)
         for network in ordered_networks:
             bridge = str(network["bridge"])
             for address_family, gateway in (
@@ -1571,7 +1867,6 @@ def _verify_observed_family(
     if not isinstance(nftables, list):
         return False
     chains: dict[str, tuple[str | None, int | None, str | None]] = {}
-    comments: list[str] = []
     rules: list[Mapping[str, object]] = []
     for item in nftables:
         if not isinstance(item, dict):
@@ -1585,7 +1880,6 @@ def _verify_observed_family(
             )
         rule = item.get("rule")
         if isinstance(rule, dict) and isinstance(rule.get("comment"), str):
-            comments.append(str(rule["comment"]))
             rules.append(rule)
         elif isinstance(rule, dict):
             return False
@@ -1595,7 +1889,11 @@ def _verify_observed_family(
         return _verify_native_rules(policy, family, table_name, rules)
     if policy["authority"] == "seat-protection":
         return _verify_seat_rules(policy, family, table_name, rules)
-    return sorted(comments) == _expected_rule_comments(policy, family, table_name)
+    expected_rules = {
+        "raes": _expected_raes_rules,
+        "platform": _expected_platform_rules,
+    }[str(policy["authority"])](policy, family)
+    return _verify_chain_rules(expected_rules, family, table_name, rules)
 
 
 def _owned_families(policy: Mapping[str, object]) -> tuple[str, ...]:
@@ -1604,11 +1902,12 @@ def _owned_families(policy: Mapping[str, object]) -> tuple[str, ...]:
     table_name = _table_name(owner, authority)
     owned: list[str] = []
     prefix = f"aptl-owner={_owner_marker(owner)},authority={authority},"
+    present = _present_families(table_name)
     for family in ("bridge", "inet"):
-        comment = _table_comment(family, table_name)
-        if comment is None:
+        if family not in present:
             continue
-        if not comment.startswith(prefix):
+        comment = _table_comment(family, table_name)
+        if comment is None or not comment.startswith(prefix):
             raise RuntimeError("boundary table ownership conflict")
         owned.append(family)
     return tuple(owned)
@@ -1668,8 +1967,8 @@ def _cleanup(policy: dict[str, object]) -> dict[str, object]:
             f"delete table {family} {table_name}" for family in existing
         )
         _nft_json("-f", "-", input_text=rendered + "\n")
-    if policy["authority"] == "native-range" and _owned_families(policy):
-        raise RuntimeError("native range cleanup was not observed")
+    if _owned_families(policy):
+        raise RuntimeError("boundary cleanup was not observed")
     return _receipt(policy, ())
 
 
