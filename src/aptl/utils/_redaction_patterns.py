@@ -38,14 +38,28 @@ _AUTHORIZATION_RE = re.compile(
 _KEY_LB = r"(?<![a-zA-Z0-9])"
 # Right boundary.
 _KEY_RB = r"(?![a-zA-Z0-9])"
-# Capture leading and trailing quotes as separate groups so the
-# replacement preserves them (otherwise wrapping `'<value>'` /
-# `"<value>"` loses the closing quote, corrupting downstream
-# diagnostic structure).
+# A quote can close the key, so a quoted key in text that is not valid JSON
+# (truncated JSON, a log prefix, Python dict text) is matched too. A quoted
+# value is masked up to its closing quote, also when it holds white space or a
+# delimiter; a backslash escapes the next character in it. Another value
+# stops at a quote, white space, or a delimiter, so URL query strings and
+# shell pairs mask only the value. The replacement keeps the quotes.
 _SENSITIVE_KV_RE = re.compile(
-    rf"({_KEY_LB}{_SENSITIVE_KEY_PATTERN}{_KEY_RB}\s*[=:]\s*['\"]?)([^'\"&\s,;|]+)(['\"]?)",
+    rf"({_KEY_LB}{_SENSITIVE_KEY_PATTERN}{_KEY_RB}['\"]?\s*[=:]\s*)"
+    r"(?:\"((?:\\.|[^\"\\])+)\"|'((?:\\.|[^'\\])+)'|(['\"]?)([^'\"&\s,;|]+)(['\"]?))",
     re.IGNORECASE,
 )
+
+
+def _redact_key_value(match: "re.Match[str]") -> str:
+    """Mask the value of a sensitive key while keeping its quotes."""
+    if match.group(2) is not None:
+        return f'{match.group(1)}"{REDACTED}"'
+    if match.group(3) is not None:
+        return f"{match.group(1)}'{REDACTED}'"
+    return f"{match.group(1)}{match.group(4)}{REDACTED}{match.group(6)}"
+
+
 _BARE_BEARER_RE = re.compile(rf"({_KEY_LB}bearer\s+){_VALUE_PATTERN}", re.IGNORECASE)
 # `--password value` / `--client-secret value` / `--access-token value`
 # style (long CLI flags). The `[\w-]*` prefixes allow compound flag

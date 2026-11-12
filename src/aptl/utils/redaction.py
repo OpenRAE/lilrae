@@ -26,6 +26,7 @@ from ._redaction_patterns import (
     _LDAP_TOOL_RE,
     _redact_pem_blocks,
     _SENSITIVE_KV_RE,
+    _redact_key_value,
     _URL_USERINFO_RE,
     _redact_authorization,
 )
@@ -292,7 +293,7 @@ def _redact_string(value: str, depth: int = 0, context: str = "") -> str:
     # Cookie before SENSITIVE_KV so the full header body is masked in one
     # pass (otherwise SENSITIVE_KV stops at `;` and leaves later segments).
     out = _COOKIE_HEADER_RE.sub(rf"\1{REDACTED}\3", out)
-    out = _SENSITIVE_KV_RE.sub(rf"\1{REDACTED}\3", out)
+    out = _SENSITIVE_KV_RE.sub(_redact_key_value, out)
     out = _BARE_BEARER_RE.sub(rf"\1{REDACTED}", out)
     out = _URL_USERINFO_RE.sub(rf"\1{REDACTED}\2", out)
     # The polynomial-backtracking passes run last so the simpler kv/flag
