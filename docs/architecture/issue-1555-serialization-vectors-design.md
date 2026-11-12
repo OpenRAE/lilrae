@@ -53,7 +53,7 @@ model change.
    file or states why the scheme has none, such as a random identifier.
 6. **Current behavior.** A vector records what the Python code does now,
    including a rejection that a strict Go decoder would also give and a
-   leniency that it would not. A conflict with the strict decoding of ADR-065
+   leniency that it would not. A conflict with the strict decoding of ADR-070
    is a row in the inventory with its disposition. The Parquet vector records
    the current failure; when `go-cutover` takes #1599, the vector changes with
    it.
@@ -74,7 +74,7 @@ model change.
    without vectors, the reason.
 10. **Strict corpus.** The tests read each corpus file with `loads_strict`,
     which rejects a duplicate member and a non-finite constant, as the Go
-    decoders of ADR-065 do.
+    decoders of ADR-070 do.
 
 ## Data flows and threat model
 

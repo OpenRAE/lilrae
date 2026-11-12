@@ -29,7 +29,7 @@ model_changes:
 # Issue #1554: Conformance Design
 
 This design adds the black-box conformance suite of
-[ADR-065](../adrs/adr-065-go-implementation-and-engineering-standards.md). It
+[ADR-070](../adrs/adr-070-go-implementation-and-engineering-standards.md). It
 refines the [preflight](issue-1554-conformance-preflight.md). The suite runs an
 installed `lilrae` binary and checks the contracts of the CLI, the
 configuration, and the persisted files. The front matter of this note is its
@@ -45,7 +45,7 @@ design record.
 | `aptl.json`, the execution boundary, and the bundle manifest have Pydantic models. The configuration models reject unknown fields. | `core/config.py`, `core/execution_boundary.py`, `core/evidence_bundle/envelope.py`. |
 | RAES publishes the schemas of `experiment-run-v1` and `experiment-evidence-record-v1`. | `raes_contracts` package data. |
 | `lab init` and `config validate` and `config show` run without a lab. | Probe with the installed release. |
-| ADR-065 selects `testscript` for the CLI contract suite and `github.com/santhosh-tekuri/jsonschema/v6` for JSON Schema. Tests that need a Docker daemon carry the `integration` build tag, and the linters read it. | ADR-065; `.golangci.yml`. |
+| ADR-070 selects `testscript` for the CLI contract suite and `github.com/santhosh-tekuri/jsonschema/v6` for JSON Schema. Tests that need a Docker daemon carry the `integration` build tag, and the linters read it. | ADR-070; `.golangci.yml`. |
 | The `clean-install-lab-boot` job installs the wheel in a clean environment and starts a product-neutral scenario on a dedicated daemon. | `.github/workflows/checks.yml`. |
 | gojq v0.12.19 runs jq queries in Go. Its input can hold `json.Number`, so a large integer stays exact, and it loads jq modules from a directory. | gojq source; experiment with a 2^53 + 1 integer. |
 | goldmark v1.8.7 parses GitHub Flavored Markdown tables into table, row, and cell nodes. | goldmark `extension/ast`. |

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Run Vale over the full lintable markdown corpus (ADR-038) and the comments
-# of the first-party Go code (ADR-065).
+# of the first-party Go code (ADR-070).
 #
 # Single source of truth for which tracked .md and .go files are prose-linted.
 # The exclusions mirror the per-path `BasedOnStyles =` resets in

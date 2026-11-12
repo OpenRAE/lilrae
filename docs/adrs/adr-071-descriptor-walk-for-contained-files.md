@@ -1,4 +1,4 @@
-# ADR-066: Descriptor Walk for Contained Files on Unix
+# ADR-071: Descriptor Walk for Contained Files on Unix
 
 ## Status
 
@@ -10,7 +10,7 @@ accepted
 
 ## Context
 
-[ADR-065](adr-065-go-implementation-and-engineering-standards.md) states:
+[ADR-070](adr-070-go-implementation-and-engineering-standards.md) states:
 "Use `os.Root` for contained file access. Replace a file atomically with
 `github.com/google/renameio/v2` inside the root (`WithRoot`)."
 
@@ -52,7 +52,7 @@ permits internal links; Windows offers no-follow opens through
 [`NtCreateFile` with `FILE_OPEN_REPARSE_POINT`](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ntcreatefile).
 This corrects the mechanism without lowering the original protection.
 
-This record supersedes the `os.Root` and renameio clause of ADR-065 for
+This record supersedes the `os.Root` and renameio clause of ADR-070 for
 `internal/securefile` on Linux and macOS. Other code keeps that clause.
 
 ## Consequences

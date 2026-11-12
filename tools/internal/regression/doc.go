@@ -1,4 +1,4 @@
-// Package regression implements the regression test check of ADR-065.
+// Package regression implements the regression test check of ADR-070.
 //
 // A regression test carries the line "regression: #<issue>" in the doc
 // comment of its test function. For the issue of a pull request, the check

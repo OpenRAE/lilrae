@@ -614,7 +614,7 @@ _GO_GATE_JOBS = ("go-lint", "go-tests", "go-mutation", "go-regression", "go-vuln
 
 
 def test_go_gates_block_and_are_required_on_go_cutover() -> None:
-    """Each ADR-065 Go gate is a required go-cutover context (#1553).
+    """Each ADR-070 Go gate is a required go-cutover context (#1553).
 
     A gate runs when routing fails or selects Go, checks the routing result
     first, and never reports success after a failure.
@@ -667,7 +667,7 @@ def test_go_product_tests_and_mutation_run_on_macos_and_windows() -> None:
 
 
 def test_go_architecture_runs_on_every_change_and_is_required_on_go_cutover() -> None:
-    """The architecture check of ADR-065 runs whatever routing selects (#1583).
+    """The architecture check of ADR-070 runs whatever routing selects (#1583).
 
     The model covers web/caddy-build and the design notes, which routing does
     not send to the Go lane. Only a pull request from a protected branch of
@@ -689,7 +689,7 @@ def test_go_architecture_runs_on_every_change_and_is_required_on_go_cutover() ->
 
 
 def test_go_tests_run_each_fuzz_test_for_a_bounded_time() -> None:
-    """The fuzz tests of ADR-065 run on each change, for 30 seconds each (#1604)."""
+    """The fuzz tests of ADR-070 run on each change, for 30 seconds each (#1604)."""
 
     runs = [step.get("run", "") for step in _jobs()["go-tests"]["steps"]]
     assert "bash tools/ci/go-gates.sh fuzz 30s" in runs

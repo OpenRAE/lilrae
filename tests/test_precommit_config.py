@@ -28,7 +28,7 @@ def test_local_commit_runs_secrets_hygiene_pack_ownership_and_gofmt() -> None:
         "lilrae-pack-boundary",
         "go-format",
     }
-    # gofmt reads only the staged first-party Go files (ADR-065).
+    # gofmt reads only the staged first-party Go files (ADR-070).
     assert hooks["go-format"]["files"] == r"\.go$"
     assert hooks["go-format"]["exclude"] == "^web/caddy-build/"
     # Ownership needs the covered paths and admitted pack facts; its files

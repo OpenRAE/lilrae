@@ -106,7 +106,7 @@ whole-tree lint, dependency checks, and prose/build gates.
 Milestone 44 adds the Go implementation on the `go-cutover` branch. Its pull
 requests target `go-cutover`, not `dev`
 ([CI verification](docs/architecture/ci-verification.md#go-cutover-branch)).
-[ADR-065](docs/adrs/adr-065-go-implementation-and-engineering-standards.md)
+[ADR-070](docs/adrs/adr-070-go-implementation-and-engineering-standards.md)
 gives the rules.
 
 - Install the Go release that `go.mod` names. With `GOTOOLCHAIN=auto`, the go

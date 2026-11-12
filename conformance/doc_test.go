@@ -1,4 +1,4 @@
-// Package conformance_test runs the black-box contract cases of ADR-065
+// Package conformance_test runs the black-box contract cases of ADR-070
 // against an installed lilrae binary.
 //
 // LILRAE_CONFORMANCE_BINARY names the binary by an absolute path. The cases in

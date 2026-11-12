@@ -197,7 +197,7 @@ def test_go_changes_select_the_go_and_docs_lanes_and_the_coverage_closure():
     # The Caddy build keeps its own module and its web checks.
     caddy = select(["web/caddy-build/main.go"])
     assert caddy["web"]
-    # Python tools still select all lanes, and Go source outside the ADR-065
+    # Python tools still select all lanes, and Go source outside the ADR-070
     # layout keeps the routing of its directory.
     assert all(select(["tools/check_pack_boundary.py"]).values())
     assert select(["scripts/tool/main.go"])["lab"]

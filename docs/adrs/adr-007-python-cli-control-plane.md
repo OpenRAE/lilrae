@@ -4,9 +4,9 @@
 
 ## Status
 
-superseded in part by ADR-065
+superseded in part by ADR-070
 
-[ADR-065](adr-065-go-implementation-and-engineering-standards.md) replaces Python as the language of the control plane with
+[ADR-070](adr-070-go-implementation-and-engineering-standards.md) replaces Python as the language of the control plane with
 Go. The CLI stays the primary control plane. The Python CLI stays in force until
 Go port 31 removes it.
 

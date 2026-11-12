@@ -61,7 +61,7 @@ results. A parse result that JSON cannot carry has a tag in the corpus: `$float`
 `$int`, `$date`, `$datetime`, `$bytes_hex`, and `$map` for a mapping with a key
 that is not a string.
 
-The Go ports decode YAML and JSON strictly (ADR-065). Where a Python reader
+The Go ports decode YAML and JSON strictly (ADR-070). Where a Python reader
 accepts more, such as a duplicate key in a Compose file, the vector records the
 current result, and the Go port that owns the reader states its compatibility
 decision.

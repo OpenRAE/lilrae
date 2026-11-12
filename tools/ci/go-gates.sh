@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run one Go gate of ADR-065 over each first-party Go module.
+# Run one Go gate of ADR-070 over each first-party Go module.
 #
 # Usage:
 #   tools/ci/go-gates.sh modules

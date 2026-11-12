@@ -15,7 +15,7 @@ and fact kind, never by value. #1273 covers the participant desktop, the rule
 tools, and the account providers, including the generic core directory. #1700
 covers the tests of generic code; tests of the adapter or the released pack
 live in :data:`ADAPTER_TESTS`, which the check does not scan. #1553 adds the
-Go source of the ADR-065 layout, where a pack identifier is also a finding.
+Go source of the ADR-070 layout, where a pack identifier is also a finding.
 
 Usage: ``python tools/check_pack_boundary.py [root] [--pack-directory ID=PATH]``
 """

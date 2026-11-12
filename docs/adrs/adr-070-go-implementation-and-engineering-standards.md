@@ -1,10 +1,10 @@
-# ADR-065: Go Implementation, Architecture Model, and Engineering Standards
+# ADR-070: Go Implementation, Architecture Model, and Engineering Standards
 
 ## Status
 
-superseded in part by ADR-066
+superseded in part by ADR-071
 
-[ADR-066](adr-066-descriptor-walk-for-contained-files.md) supersedes the
+[ADR-071](adr-071-descriptor-walk-for-contained-files.md) supersedes the
 `os.Root` and renameio clause of this record for `internal/securefile` on
 Linux and macOS. The other rules continue.
 

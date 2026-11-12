@@ -1,5 +1,5 @@
 // Command archcheck checks a repository and its design notes against the
-// architecture model of ADR-065 (architecture/model.yaml).
+// architecture model of ADR-070 (architecture/model.yaml).
 //
 // Usage:
 //

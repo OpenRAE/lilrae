@@ -6,7 +6,7 @@
 // package checks the lexical rules of the path before any system call, and
 // it opens each component without following a link, so a link anywhere in
 // the path is an error, also a link that stays inside the directory. On
-// Linux and macOS it walks directory descriptors (ADR-066). On Windows it
+// Linux and macOS it walks directory descriptors (ADR-071). On Windows it
 // walks through [os.Root] one component at a time and refuses each link.
 //
 // The rules and the reason codes are those of the Python utils/pathsafe.py

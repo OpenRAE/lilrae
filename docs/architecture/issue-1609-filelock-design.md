@@ -58,7 +58,7 @@ its design record.
    `FILE_OPEN_IF` and `FILE_OPEN_REPARSE_POINT`. Existing metadata and
    directory opens keep `FILE_OPEN`; all reject reparse points through the
    opened handle. A following open followed by a path check cannot establish
-   this guarantee (ADR-066). Windows modes do not establish a private ACL.
+   this guarantee (ADR-071). Windows modes do not establish a private ACL.
 7. **Tests.** Tests take real locks on Linux, macOS, and Windows: two opens
    exclude each other, a shared lock excludes an exclusive lock on Unix, and
    `Lock` waits and times out in `testing/synctest`. A test runs a Python

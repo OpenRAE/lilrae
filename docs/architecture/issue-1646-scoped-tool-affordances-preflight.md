@@ -166,7 +166,7 @@ Reuse `.ground-control.yaml`, `.gc/plan-rules.md`,
 and `.github/workflows/checks.yml`; full suites and installed-lab qualification
 belong to CI. Changes to shared MCP code select all its consumers. ADR-064
 layering and existing public interfaces apply; do not add private cross-layer
-imports to reach profile validation. ADR-065 leaves Python rules active until
+imports to reach profile validation. ADR-070 leaves Python rules active until
 cutover; this repair does not require a second implementation in Go. Any actual
 Go change also needs its existing architecture model/design gate.
 

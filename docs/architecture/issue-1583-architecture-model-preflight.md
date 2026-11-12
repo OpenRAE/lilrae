@@ -2,7 +2,7 @@
 
 The supplied issue is the delivery contract. This note constrains its design;
 it does not implement the model or prescribe an implementation sequence.
-[ADR-065](../adrs/adr-065-go-implementation-and-engineering-standards.md)
+[ADR-070](../adrs/adr-070-go-implementation-and-engineering-standards.md)
 now selects YAML, `architecture/model.yaml`, a source checker in `tools/`,
 Go's parser plus `golang.org/x/mod`, and design-note front matter. It explicitly
 replaces go-arch-lint. The existing
@@ -32,7 +32,7 @@ as executable configuration. Schema validation and graph/reference validation
 serve different purposes; do not copy their rules into each command.
 
 Permissions must satisfy both layer direction and component edges. An explicit
-edge must not override a forbidden layer crossing. Reconcile ADR-065's rules
+edge must not override a forbidden layer crossing. Reconcile ADR-070's rules
 for consumer-owned interfaces, adapter isolation, and registration only in
 `cmd/lilrae` with this model. A layer label alone cannot enforce those rules.
 Same-layer imports are not automatic permission to couple separate adapters.
@@ -138,13 +138,13 @@ existing design-completion and PR-review responsibilities.
 
 | Layer and incumbent | Required passage |
 | --- | --- |
-| Tool layout and parsing: `tools/cmd/{regressioncheck,mutationcheck}`, `tools/internal/`, ADR-065 | Keep the CLI thin, share validated model semantics, use `go.yaml.in/yaml/v3`, Go parsing and `golang.org/x/mod` already in the tools module graph. Do not add a second parser, graph framework or product service. |
+| Tool layout and parsing: `tools/cmd/{regressioncheck,mutationcheck}`, `tools/internal/`, ADR-070 | Keep the CLI thin, share validated model semantics, use `go.yaml.in/yaml/v3`, Go parsing and `golang.org/x/mod` already in the tools module graph. Do not add a second parser, graph framework or product service. |
 | Git and identity: `tools/internal/git`, `tools/internal/gittest`, `tools/ci/select_checks.py` | Reuse commit resolution, NUL-delimited paths, no-rename diff conventions, and disposable test repositories. Keep paths/revisions as argv data, with option termination and explicit cwd. Do not use regression replay: design comparison reads source and metadata without running target code. |
-| File and configuration admission: ADR-065 strict decoding and `os.Root` | Contain model, design, source and output paths within the selected repo. Reject traversal, absolute-path escape and symlink escape. Keep generation outputs fixed/validated, not arbitrary write destinations from model text. Explicit generation uses atomic replacement; checking is read-only. Do not fetch remote schema references or execute `go generate`, tests, plugins, or project binaries. |
+| File and configuration admission: ADR-070 strict decoding and `os.Root` | Contain model, design, source and output paths within the selected repo. Reject traversal, absolute-path escape and symlink escape. Keep generation outputs fixed/validated, not arbitrary write destinations from model text. Explicit generation uses atomic replacement; checking is read-only. Do not fetch remote schema references or execute `go generate`, tests, plugins, or project binaries. |
 | Runner authority and environment: `checks.yml`, Go module/tool pins, `tests/test_supply_chain_pinning.py` | Keep read-only permissions, SHA-pinned actions and nonpersistent checkout credentials. Set `GOWORK=off`, `GOTOOLCHAIN=local`, and controlled build flags; do not inherit injected `GOFLAGS`, overlays or a package-driver command. Separate established pinned-tool installation from target analysis. An unresolved dependency or tool failure fails the check. No operator dotenv loading, new credentials, privileged event, listener or Docker access. |
 | Errors and outputs: existing Go check `Report`/finding patterns and command exit handling | Preserve exit 0 for success, 1 for findings, 2 for inability to check. Return contextual errors and render at the CLI through injected writers; no parallel exception hierarchy or product error DTO. Print rule ID, safe relative location, import/symbol identifier, and model fix-it text. Use the declaration/model location for non-import findings. Never echo source lines, literals, parser excerpts or raw analyzer stderr. Escape control characters and Actions command syntax in untrusted names/messages. |
-| Logs, secrets and persistence: ADR-065 and existing CI output/artifact owners | Findings need no runtime telemetry or new logger. Treat parser errors, subprocess errors, paths and model messages as potential leak/annotation inputs. Existing Git errors include raw stderr: sanitize at this boundary rather than blindly printing wrapped errors. Use synthetic secret canaries to verify every failure sink. Persist only reviewed source/generated docs and existing disposable CI state, not an audit database or a new service. |
-| Runtime auth, env grants, schemas and storage: `api/deps.py`, MCP common validators, `core/config.py`, `core/env.py`, deployment environment bindings, `utils/{pathsafe,strict_json,redaction}.py`, `core/runstore.py` | These product layers are not traversed by static architecture tooling. Do not import them to obtain validation/redaction, reproduce their DTOs, load lab secrets or change their behavior. The Go tool follows ADR-065's file/input/output rules in its own module. Import compliance is no evidence of authentication, secret protection or persistence safety. |
+| Logs, secrets and persistence: ADR-070 and existing CI output/artifact owners | Findings need no runtime telemetry or new logger. Treat parser errors, subprocess errors, paths and model messages as potential leak/annotation inputs. Existing Git errors include raw stderr: sanitize at this boundary rather than blindly printing wrapped errors. Use synthetic secret canaries to verify every failure sink. Persist only reviewed source/generated docs and existing disposable CI state, not an audit database or a new service. |
+| Runtime auth, env grants, schemas and storage: `api/deps.py`, MCP common validators, `core/config.py`, `core/env.py`, deployment environment bindings, `utils/{pathsafe,strict_json,redaction}.py`, `core/runstore.py` | These product layers are not traversed by static architecture tooling. Do not import them to obtain validation/redaction, reproduce their DTOs, load lab secrets or change their behavior. The Go tool follows ADR-070's file/input/output rules in its own module. Import compliance is no evidence of authentication, secret protection or persistence safety. |
 
 ## Enforcement evidence and limits
 
@@ -171,7 +171,7 @@ as model evaluation; a generated config snapshot alone proves no enforcement.
 
 The existing design removes generated analyzer configuration altogether. The
 issue explicitly asks for a model compiler and generated-configuration parity.
-ADR-065 supports direct checking, but that does not silently remove an issue
+ADR-070 supports direct checking, but that does not silently remove an issue
 criterion. Delivery must reconcile the contract with this choice, naming which
 model-derived artifacts constitute compilation and what CI compares. Do not add
 an unused generated file just to claim compliance. The preflight does not

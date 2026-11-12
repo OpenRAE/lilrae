@@ -1,5 +1,5 @@
 // Package architecture checks a repository and its design notes against the
-// architecture model of ADR-065.
+// architecture model of ADR-070.
 //
 // The model (architecture/model.yaml) names the layers, the components with
 // their packages, the components and modules that each component can use,

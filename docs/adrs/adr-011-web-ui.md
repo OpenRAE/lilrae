@@ -2,9 +2,9 @@
 
 ## Status
 
-superseded in part by ADR-065
+superseded in part by ADR-070
 
-[ADR-065](adr-065-go-implementation-and-engineering-standards.md) replaces the FastAPI backend with the Go web server. The
+[ADR-070](adr-070-go-implementation-and-engineering-standards.md) replaces the FastAPI backend with the Go web server. The
 Svelte UI stays, and its API types come from the OpenAPI document of the Go
 server. The FastAPI backend stays in force until Go port 31 removes it.
 

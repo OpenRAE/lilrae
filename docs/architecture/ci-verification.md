@@ -184,7 +184,7 @@ flowchart LR
 
 ## Go checks
 
-[ADR-065](../adrs/adr-065-go-implementation-and-engineering-standards.md) gives
+[ADR-070](../adrs/adr-070-go-implementation-and-engineering-standards.md) gives
 the Go gates, and [the #1553 design](issue-1553-go-toolchain-design.md) gives
 their mechanics. `tools/ci/go-gates.sh` runs each gate over the first-party Go
 modules: the tracked `go.mod` files, except `web/caddy-build` and test data.

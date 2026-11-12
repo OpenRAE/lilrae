@@ -12,7 +12,7 @@ import subprocess
 
 LANES = ("python", "mcp", "web", "docs", "dependencies", "lab", "images", "iac", "go")
 
-# The Go modules of ADR-065: the product module at the root, the tool modules
+# The Go modules of ADR-070: the product module at the root, the tool modules
 # below tools/, and the architecture model. web/caddy-build keeps its own
 # module and checks.
 _GO_PREFIXES = (

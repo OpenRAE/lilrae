@@ -1,7 +1,7 @@
 # Issue #1553: Go Toolchain and CI Gates Design
 
 This design adds the Go modules and the CI gates of
-[ADR-065](../adrs/adr-065-go-implementation-and-engineering-standards.md). It
+[ADR-070](../adrs/adr-070-go-implementation-and-engineering-standards.md). It
 refines the [preflight](issue-1553-go-toolchain-preflight.md). The
 architecture model and the design check belong to Go port 02b.
 
@@ -39,7 +39,7 @@ architecture model and the design check belong to Go port 02b.
 | `tools/go.mod` | The developer tools module. It holds the regression and mutation checks and pins Gremlins and govulncheck with `tool` directives. |
 | `tools/lint/go.mod` | Pins golangci-lint alone, so that its dependency versions stay as upstream tests them. |
 | `tools/gates/go.mod` | The fixture tests of the gates. It is a separate module, so the mutation coverage run of `tools` does not run them. |
-| `.golangci.yml` | The lint rules of the ADR-065 style table. |
+| `.golangci.yml` | The lint rules of the ADR-070 style table. |
 | `tools/ci/go-gates.sh` | Finds the first-party modules and runs one gate over them. CI and the fixtures call it. |
 | `tools/internal/regression`, `tools/cmd/regressioncheck` | Selects and replays the regression tests of a pull request. |
 | `tools/internal/mutation`, `tools/cmd/mutationcheck` | Runs Gremlins and applies the thresholds. |
@@ -67,7 +67,7 @@ flowchart LR
 
 ## Decisions
 
-1. **Separate tool modules.** golangci-lint has a module of its own (ADR-065).
+1. **Separate tool modules.** golangci-lint has a module of its own (ADR-070).
    The gate fixtures have a module of their own, because Gremlins sets each
    mutant timeout from the test time of the whole module.
 2. **Patched release in the go directive.** Each `go.mod` sets `go 1.27.3`, so

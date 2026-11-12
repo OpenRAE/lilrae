@@ -2,13 +2,13 @@
 
 This note constrains the design for #1553. It is not an implementation plan
 or evidence that a gate works. Inspection used `f327d760`, after the local
-ADR-065 change. The supplied issue is the delivery contract; no formal
+ADR-070 change. The supplied issue is the delivery contract; no formal
 requirement is attached. The [#1552 preflight](issue-1552-go-architecture-preflight.md)
 and [CI verification](ci-verification.md) retain their authority.
 
 ## Contract and scope
 
-- Follow [ADR-065](../adrs/adr-065-go-implementation-and-engineering-standards.md)'s
+- Follow [ADR-070](../adrs/adr-070-go-implementation-and-engineering-standards.md)'s
   separate developer-tool modules under `tools/`, including a module solely
   for golangci-lint. Keep `tool`, versioned `require`, and checksums together in
   each owning module. The root product module is `github.com/OpenRAE/lilrae`.
@@ -16,7 +16,7 @@ and [CI verification](ci-verification.md) retain their authority.
   issue's older wording. Standard Go commands come from the pinned toolchain;
   they do not need third-party tool directives. An empty product module does
   not need a fabricated dependency just to produce `go.sum`.
-- ADR-065 specifies the latest stable Go release, not Caddy's version.
+- ADR-070 specifies the latest stable Go release, not Caddy's version.
   [Go's download page](https://go.dev/dl/) lists 1.27.3 at this preflight.
   Resolve and commit the exact supported toolchain at implementation time;
   CI reads the module declarations rather than a floating `latest` selector.
@@ -27,15 +27,15 @@ and [CI verification](ci-verification.md) retain their authority.
   competing layer map, design-front-matter schema, or placeholder green
   architecture status. Whole-repository architecture enforcement remains a
   dependency on 02b before product packages arrive. A fixture import rejection
-  does not establish that all of ADR-065 is enforced.
-- ADR-065 defines two mutation metrics, but no numeric thresholds. Measure
+  does not establish that all of ADR-070 is enforced.
+- ADR-070 defines two mutation metrics, but no numeric thresholds. Measure
   both thresholds and time limits on the fixture packages, recording compiler,
   tool version, runner, counts, concurrency, and cold/warm durations. Thresholds
   can only rise. Zero, an assumed percentage, and the tool's default timeout
   are not substitutes for this evidence.
 - [ADR-026's #1193 amendment](../adrs/adr-026-advisory-ci-vulnerability-scanning.md)
   makes Trivy and OSV blocking. Its original advisory text is historical.
-  ADR-065 extends Vale to Go doc comments; ADR-038's original Markdown-only
+  ADR-070 extends Vale to Go doc comments; ADR-038's original Markdown-only
   scope no longer describes the Go gate. Preserve all Python and TypeScript
   gates until port 31.
 
@@ -45,7 +45,7 @@ and [CI verification](ci-verification.md) retain their authority.
 | --- | --- |
 | Routing and status | `.github/workflows/checks.yml`, `tools/ci/select_checks.py`, and `.github/branch-protection-baseline.json` own jobs, Boolean selections, and required names. Extend these together. Retain unknown-input and unavailable-diff selection of all checks. Regression discovery must run on every PR, including test-only changes and every commit type. |
 | Tool and package scope | Go module declarations own dependency versions; Go package discovery owns buildable packages. Separate product, developer tools, Caddy, vendored dependencies, and negative fixtures. A shared module/package selection seam belongs in developer tooling, not a second architecture schema or copied workflow globs. 02b owns component assignments and import permissions. |
-| Lint configuration | Use the pinned golangci-lint v2 schema and its configuration validation. Pass the repository configuration explicitly. Map ADR-065 to supported settings, including non-default staticcheck/revive rules, cognitive complexity 15, tests, and the `integration` tag. Keep gofmt/goimports in the formatter configuration. No copied reference config with example exclusions, blanket test exemptions, or changed-lines-only lint. |
+| Lint configuration | Use the pinned golangci-lint v2 schema and its configuration validation. Pass the repository configuration explicitly. Map ADR-070 to supported settings, including non-default staticcheck/revive rules, cognitive complexity 15, tests, and the `integration` tag. Keep gofmt/goimports in the formatter configuration. No copied reference config with example exclusions, blanket test exemptions, or changed-lines-only lint. |
 | Pack ownership | `tools/check_pack_boundary.py`, `.gc/pack-ownership.json`, and `tests/test_pack_boundary_policy.py` own owner discovery, admitted facts, exact historical exceptions, and safe diagnostics. Extend their source selection and identifier classification. Do not introduce another fact list, ownership schema, or Go SDL parser. |
 | Coverage | `sonar-project.properties`, the existing coverage producers, and `tools/sonar/assert_no_new_issues.py` own project analysis and the no-new-issues gate. Add native Go coverage and retain the existing project/organization, quality-gate wait, and issue check. |
 | Supply chain | `.github/dependabot.yml`, the existing OSV/Trivy/dependency jobs, `.trivyignore.yaml`, and `tests/test_supply_chain_pinning.py` own refresh, scanning, waivers, and integrity. Include root and tool modules without merging Caddy's graph. Keep `uv.lock`/hashed exports and npm locks as their languages' authorities. |
@@ -124,7 +124,7 @@ must not manufacture a compile failure that is counted as success. The same
 selected test must pass at head. Do not use cached test results or a failing
 unrelated test as evidence.
 
-The bug-label requirement needs explicit scope during coexistence: ADR-065
+The bug-label requirement needs explicit scope during coexistence: ADR-070
 governs the Go implementation, while Python/TypeScript still ship. Check every
 PR for Go regressions, and enforce the matching issue marker for Go bug fixes.
 Do not silently demand Go tests for Python-only bugs or add a second language's
@@ -142,7 +142,7 @@ native selection and report rather than another mutation engine. Keep efficacy
 `(killed + lived) / (killed + lived + uncovered)`. Noncompiling mutants do not
 count; report timeouts separately and never turn incomplete execution into a
 passing score. Equivalent-mutant claims do not authorize suppressions. An empty
-result with changed production Go fails under ADR-065, including changes with
+result with changed production Go fails under ADR-070, including changes with
 no supported mutation operator; do not silently classify these as no input.
 Changing that rule requires an explicit ADR correction, not a wrapper bypass.
 Verify behavior against the pinned release; upstream
