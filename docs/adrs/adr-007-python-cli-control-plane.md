@@ -4,9 +4,9 @@
 
 ## Status
 
-superseded in part by ADR-065
+superseded in part by ADR-070
 
-[ADR-065](adr-065-go-implementation-and-engineering-standards.md) replaces Python as the language of the control plane with
+[ADR-070](adr-070-go-implementation-and-engineering-standards.md) replaces Python as the language of the control plane with
 Go. The CLI stays the primary control plane. The Python CLI stays in force until
 Go port 31 removes it.
 
@@ -16,19 +16,22 @@ Go port 31 removes it.
 
 ## Context
 
-From v2.0 through v3.x, the lab lifecycle was managed by `start-lab.sh`—a 273-line bash script that handled SSH key generation, environment setup, certificate management, Docker Compose orchestration, credential synchronization, and health checking. While functional, it had accumulated serious limitations:
+From v2.0 through v3.x, the 273-line `start-lab.sh` script managed lab lifecycle.
+It generated SSH keys, prepared the environment and certificates, and ran Compose.
+It also synchronized credentials and examined service health.
+The script had the following limitations.
 
 ### Problems with start-lab.sh
 
-1. **No error handling**: Commands that failed silently left the lab in an inconsistent state. A failed certificate generation didn't stop the startup sequence—containers would start without valid certs and fail with cryptic TLS errors.
+1. **No error handling**: Commands that failed silently left the lab in an inconsistent state. Certificate-generation failure did not stop startup. Containers could then start without valid certificates and fail with TLS errors.
 
 2. **No parallelism**: Every operation ran sequentially. Docker image pulling, health checking, and SSH testing all blocked the main thread. Startup took longer than necessary.
 
 3. **No state management**: The script had no concept of lab state. Running it twice could produce duplicate certificate generation, conflicting Docker Compose processes, or orphaned containers. There was no `stop` or `status` command.
 
-4. **Only 4 of 9 profiles**: The script hardcoded `--profile` flags for only 4 Docker Compose profiles (wazuh, victim, kali, reverse). As the SOC stack and enterprise infrastructure were added, the script couldn't deploy them. Users had to manually add `--profile soc --profile enterprise` flags.
+4. **Only 4 of 9 profiles**: The script hardcoded `--profile` flags for only 4 Docker Compose profiles (wazuh, victim, kali, reverse). As the SOC stack and enterprise infrastructure were added, the script could not deploy them. Users had to manually add `--profile soc --profile enterprise` flags.
 
-5. **No configuration validation**: The script read `aptl.json` for container enable/disable state but didn't validate the configuration. Invalid JSON, missing fields, or impossible combinations (SOC without Wazuh) passed silently.
+5. **No configuration validation**: The script read `aptl.json` for container enable/disable state but did not validate the configuration. Invalid JSON, missing fields, or impossible combinations (SOC without Wazuh) passed silently.
 
 6. **Bash limitations**: Complex operations like NDJSON parsing (`docker compose ps --format json` outputs one JSON object per line, not a JSON array), credential file manipulation with regex, and structured logging were awkward or fragile in bash.
 
@@ -46,7 +49,11 @@ From v2.0 through v3.x, the lab lifecycle was managed by `start-lab.sh`—a 273-
 
 ## Decision
 
-Implement a Python CLI (`aptl`) as the primary control plane, replacing `start-lab.sh`.
+Use the Python CLI as the primary control plane instead of `start-lab.sh`.
+The original command name was `aptl`; [ADR-062](adr-062-lilrae-name-and-naming-convention.md) records the later `lilrae` name.
+The tree and sequence below describe the original design.
+[ADR-064](adr-064-layered-architecture-and-code-conventions.md) defines the later staged layer refactor.
+The [CLI reference](../reference/cli.md) owns supported current commands.
 
 ### Technology Choices
 
@@ -92,11 +99,11 @@ The separation between `cli/` and `core/` is intentional—the core domain logic
 
 > **Superseded in part by [ADR-030](adr-030-startup-partial-readiness-classification.md)
 > (issue #1018).** The fixed 12-step list and the rule that every step fails the
-> sequence no longer describe `aptl lab start`. The step order is now
-> `_LAB_START_STEPS` in `src/aptl/core/lab.py`, containers start through the
-> RAES realization handoff rather than a direct `docker compose up`, and
-> late-startup failures are classified as fatal, `degraded_unusable`, or
-> `degraded_usable` per ADR-030. Requirement
+> sequence no longer describe `aptl lab start`. The source defines step order in
+> `_LAB_START_STEPS` in `src/aptl/core/lab.py`.
+> Startup uses the RAES realization handoff rather than direct `docker compose up`.
+>
+> ADR-030 classifies later failures as fatal, `degraded_unusable`, or `degraded_usable`. Requirement
 > [CLI-003](../requirements/CLI-003/requirement.md) states the current ordering
 > invariants and failure policy. The list below is the original decision.
 
@@ -120,7 +127,8 @@ Each step reports its status and fails the entire sequence on error, with a clea
 
 ### Test Coverage
 
-587+ tests across 12 test files covering all core modules. Tests use mocking for Docker and subprocess calls to run without a live lab environment.
+The historical delivery recorded more than 587 tests across 12 files.
+This count is not current coverage or qualification evidence. Tests use mocking for Docker and subprocess calls to run without a live lab environment.
 
 ### Security Guardrail: Project-Rooted Credential Writes
 
@@ -132,17 +140,15 @@ Each step reports its status and fails the entire sequence on error, with a clea
 > mounts that rendered copy. The project-rooting boundary below still applies,
 > now to *both* the source template path and the rendered output path.
 
-Wazuh credential synchronization is part of lab startup. The synchronization API
-owns construction of the canonical project-relative source path (under
-`config/wazuh_dashboard/` and `config/wazuh_cluster/`) and the canonical
-project-relative rendered output path (under `.aptl/config/`) from the caller's
-`project_dir`, resolves each target, and rejects any path that is not contained
-by the resolved project root before reading or writing.
+Wazuh credential synchronization is part of startup.
+The API constructs source and rendered paths from the caller's `project_dir`.
+Source templates belong under `config/wazuh_dashboard/` and `config/wazuh_cluster/`.
+Rendered output belongs under `.aptl/config/`.
+The core owner resolves each path and refuses access outside the resolved project root before I/O.
 
-Do not expose arbitrary caller-provided output paths for these credential
-writers. If future startup steps need to write project-owned files, keep the
-same boundary: accept a project root plus a hardcoded project-relative target,
-validate containment at the core-module boundary, then perform I/O.
+Caller-provided arbitrary output paths are not part of this writer contract.
+Future project-owned writers must accept a project root and fixed relative target.
+They must validate containment at the core boundary before I/O.
 
 ## Consequences
 

@@ -20,8 +20,6 @@
         "inspector": "npx @modelcontextprotocol/inspector build/index.js",
         "test": "vitest run --passWithNoTests",
         "test:watch": "vitest",
-        "lint": "eslint src/**/*.ts",
-        "lint:fix": "eslint src/**/*.ts --fix",
         "format": "prettier --write src/**/*.ts",
         "format:check": "prettier --check src/**/*.ts"
     },
@@ -32,11 +30,8 @@
     },
     "devDependencies": {
         "@types/node": "^20.11.24",
-        "@typescript-eslint/eslint-plugin": "^8.65.0",
-        "@typescript-eslint/parser": "^8.65.0",
-        "eslint": "^10.8.0",
         "prettier": "^3.6.2",
         "typescript": "^5.3.3",
-        "vitest": "^4.1.10"
+        "vitest": "^4.1.12"
     }
 }

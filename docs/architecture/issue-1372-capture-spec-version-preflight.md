@@ -1,5 +1,13 @@
 # Issue #1372 Capture Spec Version Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1372-capture-spec-version-preflight.md).
+Its last recorded file change before this rewrite was `5a84a099a1f3`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 Run capture-spec pins must come from the admitted specifications, independently
 of whether a collector produced a record. Preserve canonical trial-plan bytes
 for identical admission inputs. This is a contract repair within
@@ -65,8 +73,9 @@ default a version, or let first-wins deduplication hide disagreement.
 Check admitted metadata completeness and lifecycle identity collisions at the
 execution handoff before running a workload; check record agreement in assembly.
 
-Normal execution and `ExperimentExecutor.recover_interrupted_attempt` must use
-the same admitted snapshot. Recovery cannot reconstruct versions from a digest
+Execution and recovery must use the same admitted snapshot.
+Issue #437 retires `ExperimentExecutor.recover_interrupted_attempt`; assigned
+trials use `aptl.backends.trial_recovery` and the original RAES ledger. Recovery cannot reconstruct versions from a digest
 or consult current config, the collector registry, or newly resolved files.
 The recovery caller must supply the original admitted metadata; unavailable
 metadata is a failure to finalize, not permission to guess historical identity.
@@ -79,7 +88,7 @@ Paths below are relative to `src/aptl/` unless otherwise stated.
 | --- | --- |
 | Input and policy gates | `core/experiment/resolver.py`, `spec_loading.load_capture_spec`, `AdmissionPolicy`, and `admission_steps` own authorized bounded bytes, duplicate-key rejection, RAES model validation, identity/version/scope joins, and duplicate spec-ID rejection. `capture_mapping.bind_capture_requirements` and `CollectorRegistry` retain capability admission. Transport already-admitted values; add only the missing cross-owner joins, without a second parser or schema validator. |
 | Portable reference and run shapes | Public RAES `ExperimentCaptureSpecReferenceModel`, `ExperimentRunTraceabilityModel`, and `ExperimentRunModel` own field validation and serialization. Capture refs support `ref_version` but forbid `ref_digest` and `ref_path`, including explicit null fields. Use their serialization conventions; keep resolved-byte digests in their existing internal authority. |
-| Seal validation | `core/archival/run_record.py:build_experiment_run_model` retains all current public validators; `finalize_terminal_attempt` remains the single seal owner. Failed identity joins cannot yield a manifest/seal claiming valid pins. Pin equality is a narrower claim than full content validation. |
+| Seal validation | `core/archival/run_record.py:build_experiment_run_model` retains all current public validators; `finalize_terminal_attempt` and `seal_produced_run` share the same archival commit owner. Failed identity joins cannot yield a manifest/seal claiming valid pins. Pin equality is a narrower claim than full content validation. |
 | Secrets and persistence | `core/runstore.py:LocalRunStore` and `utils/redaction.py` retain canonical create-once writes and the no-secret-drift check. Reject secret-shaped identity material rather than redacting it into a different pin. Keep record ledgers, content digests, manifest digest, seal inventory, finalization locks, and discovery index under their existing owners. |
 | Filesystem and host | `utils/pathsafe.py` and the injected run store retain validated IDs/relative paths, descriptor-relative no-follow access, atomic publication, and sealed-state guards. Pin transport requires no new path, URI reader, subprocess, host probe, or network access; spec IDs and versions remain inert data. No credentials enter argv. |
 | Config, env, and auth | No new setting or env binding is needed. Strict `core/config.py:AptlConfig`, `core/env.py`, deployment `_environment_bindings.py`, and API `deps.py:WebAuthSettings`/`verify_token` remain outside pin lookup. Do not source versions from env, credentials, API requests, Docker, or session state, or introduce a new endpoint. |

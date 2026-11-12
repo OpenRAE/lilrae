@@ -8,7 +8,7 @@ set -euo pipefail
 uv_test_env=(--group build --no-default-groups --extra dev --extra web)
 
 # run_go_tests runs the packages of Go test files, each from its module, with
-# the flags of the CI test gate (ADR-065). A package runs whole, because a
+# the flags of the CI test gate (ADR-070). A package runs whole, because a
 # single test file can need the other files of its package.
 run_go_tests() {
     local file dir module rel

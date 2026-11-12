@@ -1,159 +1,71 @@
-# Deployment And Lifecycle
+<a id="deployment-and-lifecycle"></a>
 
-APTL supports a released local project, a source checkout for contributors,
-and a prebuilt disposable appliance. All three use the CLI lifecycle boundary;
-raw Compose commands are not an equivalent deployment path.
+# Deploy And Manage A Lab
+
+Use this guide for operating tasks after installation.
+Start with an initialized project, its selected pack, and permission to operate the chosen Docker engine.
+Use an approved isolated VM or dedicated lab host.
+Do not run lab operations or behavior tests on the developer workstation.
 
 ## Released Local Project
 
-Install the released package and materialize its lab assets:
+Complete [Installation](getting-started/installation.md) to create the project.
+Open its `aptl.json` and set the existing scenario object:
+
+```json
+"scenario": {"source": "env-pack", "identity": "techvault"}
+```
+
+From that project, check and start the selected pack:
 
 ```shell
-pipx install lilrae
-lilrae lab init my-lab
-cd my-lab
+lilrae config validate
+lilrae lab scenarios
+lilrae doctor
 lilrae lab start --scenario techvault
 ```
 
-The project directory owns its `aptl.json`, generated private state, run store,
-and Docker resources. Keep lifecycle commands rooted in that directory, or use
-their documented project-directory option.
-
-`lilrae lab start` performs the deployment work as one operation: it validates
-configuration and scenario input, realizes the topology, generates project
-credentials and service configuration, resolves host ports, builds required
-MCP artifacts, starts containers, waits for required readiness, updates client
-configuration, and records the run.
-
-Do not replace it with `docker compose up`. That bypasses control-plane work
-needed by a fresh project and can start a topology that does not match the
-selected scenario.
+Expected result: the final startup report passes required readiness checks.
+Resolve each failed preflight before repeating startup.
+Use the printed diagnostic for a degraded result.
+Do not substitute `docker compose up` for this operation.
+It omits scenario admission, generated state, readiness, and run recording.
 
 ## Source Checkout
 
-A source checkout is for contributors. Follow the
-[contribution setup](https://github.com/OpenRAE/lilrae/blob/dev/CONTRIBUTING.md#development-setup)
-to create a virtual environment and editable install. The checkout itself is
-the project directory; do not run `lilrae lab init` over it.
+Follow the [contribution setup](https://github.com/OpenRAE/lilrae/blob/dev/CONTRIBUTING.md#development-setup) for a source installation.
+Use the checkout as the project directory.
+Do not run `lilrae lab init` over the checkout.
+Run the lab and targeted tests only in CI or an approved isolated VM.
 
 ## Disposable Appliance
 
-The appliance path puts rootful Docker and the complete lab inside a disposable
-KVM guest booted from a published image. See the
-[appliance seat launcher](reference/appliance-seat-launcher.md) for operator
-use, including how updates are adopted and rolled back.
-
-Offline appliance startup accepts only the staged wheels, project assets, and
-OCI images bound by its launch descriptor and trust anchors. Missing inputs
-fail closed instead of pulling or building from the network.
+Follow the [seat launcher guide](reference/appliance-seat-launcher.md) for image verification, startup, update, and rollback.
+Use the signed launch inputs and trust anchors required by that release.
+Expected result: the launcher admits a disposable KVM guest and reports its participant access.
+Offline startup refuses missing staged inputs instead of downloading or building replacements.
 
 ## Configuration
 
-`aptl.json` is the strict, non-secret project configuration. Inspect and
-validate it through the CLI:
+From the project, inspect and validate the non-secret configuration:
 
 ```shell
 lilrae config show
 lilrae config validate
 ```
 
-Scenario selection belongs to the acquired environment-pack catalog, not an
-ad hoc list of enabled containers. Use `lilrae lab scenarios` and pass a catalog
-identity to `lilrae lab start --scenario <id>`. Project-local SDL paths are an
-explicit development surface.
-
-Runtime credentials and generated client bindings belong in private files such
-as `.env` and `.mcp.json`; they are not `aptl.json` fields and must not be
-committed. Wazuh `INDEXER_*` and `API_*` values are credentials declared by the
-admitted scenario, not APTL control-plane or operator login credentials.
+Expected result: the strict `aptl.json` configuration validates.
+Select packs with [Install a scenario pack](getting-started/installing-packs.md).
+Keep credentials in their declared private sources, outside `aptl.json`.
+Generated `.env` and `.mcp.json` files must not be committed.
 
 ### Scenario Environment Grants
 
-A scenario node can declare runtime environment variables. These rules cover
-both node realization routes (see
-[Node Realization Routes](components/node-realization.md)): a base-container
-node, which declares runtime desired state and has no node image of its own, so
-APTL starts it from a base image, and an image-backed node, which runs as a
-service of the Compose model that APTL generates for the scenario. APTL
-generates that model for every environment pack. On either route, APTL
-delivers each variable from a single explicit source:
+Use this task when an admitted pack declares a secret without an authored value.
+First identify the exact pack ID, consuming node, variable, and classification in its SDL.
+Check the [environment-binding rules](getting-started/environment-bindings.md) before choosing a source.
 
-- A value the scenario authors is delivered exactly as written.
-- A generated-artifact output reaches only the node that declares it with
-  `value_from`.
-- An `operator_secret`, `redacted` or `secret_fixture` variable declared
-  without a value needs an environment grant in `aptl.json` or a value that the
-  admitted pack's own startup adapter supplies.
-- Any other variable declared without a value is delivered empty, even when the
-  image sets a default for it. That is the value RAES expects such a
-  declaration to have.
-
-A value-less `secret_fixture` also needs **open `runtime-environment`
-authority**. Under exact authority RAES expects that fixture to be empty, so
-an external value cannot satisfy the contract. APTL refuses that declaration
-in the binding preflight, before realization creates or changes any network,
-volume or container. The error names the node and variable, without reading
-back or disclosing a value or commitment. Missing authority also refuses it.
-For an external operational credential under exact authority, declare an
-`operator_secret` or `redacted` variable instead; its readback proves presence
-without a commitment. Authored fixture values still work under exact authority.
-
-**This changes earlier behavior.** APTL used to fill a declared variable from
-any same-named variable in its own process environment or in `.env`, and a
-shell variable overrode an authored value. A matching name is not authority to
-read a credential, so neither happens now. If you passed a value to a scenario
-node by exporting it before `lilrae lab start`, or by adding it to `.env`, add a
-grant. A value-less variable that is not `operator_secret`, `redacted` or
-`secret_fixture` takes no grant, so the scenario must author its value or give
-it one of those classifications. A missing or empty source stops
-`lilrae lab start` before realization creates or changes any scenario network,
-volume or container. The error names the node and the variable, and either the
-pack, when no grant or adapter value applies, or the source that has no value.
-
-**The `docker compose` process no longer inherits APTL's whole environment.**
-It keeps the Docker client's own settings, such as `PATH`, `HOME`,
-`DOCKER_HOST`, `DOCKER_CONTEXT`, `SSL_CERT_FILE`, Compose client options like
-`COMPOSE_HTTP_TIMEOUT`, and proxy variables. It also keeps the `APTL_*`
-settings, such as the `APTL_HP_*` host-port pins, and the `BUILDKIT_*` and
-`BUILDX_*` build settings. Any other `${NAME}` in a Compose file therefore
-resolves only from the project `.env`. A shell variable no longer overrides a
-`.env` value such as `GRAFANA_ADMIN_PASSWORD` or `INDEXER_PASSWORD`, so change
-the value in `.env` instead.
-
-A Compose service receives each grant or startup-adapter value through its own
-owner-only env file under `.aptl/realization/sourced-environment/`, which a
-generated override attaches to that service alone. That file cannot carry a
-value that contains a single quote or ends in an odd number of backslashes, so
-such a value stops `lilrae lab start` at the same point as a missing source. The
-value is never written as a `${NAME}` reference. Compose resolves those
-references from one environment that every service and every Compose file of
-the project share, so a reference would let a value granted to one node reach
-another service, or APTL's own Grafana.
-
-In the Compose model that APTL generates, no text that the scenario or its
-pack authors names a variable for Compose to fill. APTL writes each `$` in such
-text as `$$`, which Compose reads as one literal `$`. This covers a command, an
-environment value, a mount path, a content destination, the name of a file in
-a pack directory, an image reference and a host address. A
-`${INDEXER_PASSWORD}` in a node's command or in a content path therefore
-reaches the container as written instead of as the `.env` value, and a
-container-shell `"$@"` reaches the shell unchanged.
-
-Every scenario realization uses the Compose model generated from its admitted
-declarations, including a project-tree scenario. A root `docker-compose.yml`
-does not supply services, commands, environment values or content mounts to
-that model. This removes the compatibility path that could read `.env` values
-without a binding. A project-tree scenario has no pack identity, so neither a
-grant nor a pack startup adapter applies to it. A value-less `operator_secret`,
-`redacted` or `secret_fixture` therefore stops its start on either container
-route. Declare authored fixtures or generated-artifact consumers in the SDL,
-or use an acquired pack with explicit grants for operational credentials.
-Generated outputs still reach only their declared consumers. APTL refuses an
-environment pack that ships a `docker-compose.yml` at its root.
-
-A grant names the admitted pack's identifier, the consuming node, the variable
-that node declares, and the source. The source is either an exact variable of
-the process that runs `lilrae lab start`, or an exact key of the project `.env`:
+Add the grant to `deployment.environment_grants` in `aptl.json`:
 
 ```json
 {
@@ -176,29 +88,19 @@ the process that runs `lilrae lab start`, or an exact key of the project `.env`:
 }
 ```
 
-A grant applies only to the pack, node and variable it names. A project-tree
-scenario has no pack identity, so no grant applies to it. `lilrae lab start`
-reads each grant's source once, when it checks the scenario, and logs a warning
-for a grant that matches no value-less secret. Logs and errors name each source,
-such as `grant:process-environment:LAB_DB_PASSWORD`, and never its value.
-`aptl.json` stores only these names.
+Replace these example names with declarations from your admitted pack.
+Provide a nonempty source value through the named process environment or private project `.env` key.
+Do not put the value in the grant.
+Validate the configuration, then start the lab.
+Expected result: only the named consumer receives the binding.
+Missing sources and invalid authority stop preflight before scenario resource mutation.
 
-The run's evidence holds no grant or startup-adapter value and no digest of
-one. After the start, APTL reads back a value-less `operator_secret` or
-`redacted` variable by presence only. It leaves a value-less `secret_fixture`
-out of the realized environment that it records, because RAES would record
-that value as an unsalted SHA-256 digest, which a guessed value can be checked
-against. A value that the scenario authors is recorded as RAES's digest of
-that value, as before.
-
-Docker Compose's `com.docker.compose.config-hash` label also fingerprints the
-resolved service environment. APTL omits it from container inventory and status.
-Python and MCP serialization mask that label in older snapshots and in text,
-so archived evidence cannot use it to confirm a guess at a bound credential.
+For a project-tree scenario, use authored fixtures or declared generated-artifact consumers.
+Pack grants do not apply without an acquired pack identity.
 
 ## Observe A Deployment
 
-Use APTL's runtime projections after startup:
+Inspect the project after startup:
 
 ```shell
 lilrae lab status
@@ -206,96 +108,63 @@ lilrae lab info
 lilrae container list
 ```
 
-`lilrae lab status` reports current running and container state. The structured
-`lilrae lab start` result remains the readiness authority. `lilrae lab info` prints
-URLs, remapped host ports, usernames, and credential locations for the realized
-scenario. `lilrae container list` reports project-owned containers. These results
-replace fixed port, service, and credential tables.
+Use the URLs and credential locations from your own `lab info` output.
+For remote Docker, check reachability on the remote daemon host.
+The [execution-boundary explanation](getting-started/execution-boundaries.md) describes the separate host observation.
 
-Both `lab start` and `lab info` print a separate execution-boundary observation:
-selected transport, whether the daemon appears native, VM-backed, remote or
-unknown, and whether an override selected the endpoint. `info` re-observes the
-backend even when `.env` is absent. Unknown or conflicting facts are reported
-as such. A remote daemon's published ports belong to its host; the CLI does not
-claim they are reachable on the operator's `localhost`. This host-boundary
-observation is separate from RAES-authored scenario VM/container requirements
-and is disclosed in RAES-validated backend-owned `ApplyResult.details` for a run.
-See [tested profiles and limits](getting-started/prerequisites.md#tested-execution-profiles-and-limits).
-
-Inspect one realized service with:
+For a container returned by the list, inspect bounded logs or open a shell:
 
 ```shell
-lilrae container logs <container-name>
+lilrae container logs <container-name> --tail 50
 lilrae container shell <container-name>
 ```
 
-Use a name returned by `lilrae container list`. A container in Docker's `running`
-state does not by itself prove that the scenario is ready.
+Expected result: the commands inspect only a project-owned container.
+A running container alone does not prove readiness.
+Use the final startup result for that decision.
 
 ## Host Docker Socket Access
 
-A container that holds the host's Docker socket controls the Docker daemon,
-which is equivalent to root on the Docker host. `lilrae lab start` mounts the
-socket only into a node that the admitted scenario declares as a Docker
-control authority:
-
-- In the acquired `techvault` pack, that node is `shuffle-orborus`, Shuffle's
-  worker manager. The pack declares `/var/run/docker.sock` as its read-write
-  control interface because Shuffle runs workflows in worker and app
-  containers. No other TechVault node gets the socket. Before startup, LilRAE
-  prepares the exact worker and app images that the pack's spawn templates
-  name, and the rendered service sets `SHUFFLE_AUTO_IMAGE_DOWNLOAD=false`.
-- Whenever a scenario starts Compose services, `lilrae lab start` validates their
-  effective Compose model before startup. It refuses the model when any other
-  service binds the socket, or when the admitted service lacks exactly one
-  read-write `/var/run/docker.sock` bind or sets `DOCKER_HOST` or
-  `DOCKER_CONTEXT`.
-- LilRAE's own Kali capture sidecar and operator-access relays get no socket.
-  Containers that Orborus creates through the daemon are outside these checks,
-  because anything that holds the socket can create further containers.
-
-The root `docker-compose.yml`, which explicit project-tree scenarios start as
-written, also declares the socket for `shuffle-backend` and `shuffle-orborus` in the
-`soc` profile, and for `aptl-web-api` in the `web` profile. No
-in-tree scenario selects the `soc` profile, and the check above refuses those
-binds unless the scenario admits them. The web API container uses the socket
-for the browser's lifecycle controls; it runs as the project owner and joins
-only the socket's group (see [Web](reference/web.md)).
-
-The [issue #949](architecture/issue-949-orborus-control-authority-preflight.md)
-and [issue #974](architecture/issue-974-shuffle-worker-docker-images-preflight.md)
-preflights record the admission rules.
+Before admitting a scenario, review its declared Docker control authority.
+A socket holder has root-equivalent control over the daemon host.
+For TechVault, verify that the admitted worker manager is the intended authority.
+See the [socket authority explanation](getting-started/environment-bindings.md#docker-socket-authority).
+Do not add socket mounts to bypass model validation.
 
 ## Manage The Lifecycle
 
+For an ordinary end of session, stop the project:
+
 ```shell
-lilrae lab start --scenario <id>  # validate, realize, start, and await readiness
-lilrae lab status                 # inspect lifecycle and realized state
-lilrae lab info                   # discover current access information
-lilrae lab stop                   # stop while preserving volumes
-lilrae lab stop -v                # confirm and destroy project volumes
-lilrae lab start --clean --scenario <id>  # confirm a clean boot
+lilrae lab stop
 ```
 
-Lifecycle mutations are single-owner per project. If another start, stop,
-clean boot, policy tick, or container kill owns the project, a second mutation
-fails without removing resources under the active operation. Wait for the
-owner to finish, or stop it and use `lilrae lab stop` to reconcile the project.
+Expected result: project containers and networks are removed while volumes remain.
+Wait for any active lifecycle operation before retrying a busy project.
+Mutations share one project lock.
 
-`lilrae lab stop -v` also clears host-side state that described the removed
-volumes, such as the Wazuh agent enrollment baseline. That cleanup is recorded
-at start and survives APTL upgrades. If Docker teardown fails, or the volumes
-are gone but host cleanup remains, the stop names the failed step and the
-retry command. See [pending host cleanup](troubleshooting/index.md#lilrae-lab-stop-v-reports-pending-host-cleanup).
+If you intend to destroy all project volume data, retain required evidence first.
+Then run:
 
-`lilrae kill` is an emergency process-control surface. It is not normal teardown,
-a data reset, or a replacement for the structured startup result.
+```shell
+lilrae lab reset
+```
+
+Read and confirm the destruction warning.
+Expected result: project containers, networks, volumes, and pending host cleanup are removed.
+Configuration, `.env`, keys, certificates, and run records remain, except host state named by cleanup records.
+`lilrae lab stop -v` performs the same teardown.
+For a clean boot in one operation, use `lilrae lab start --clean` with the selected scenario.
+
+If host cleanup remains, follow [pending host cleanup](troubleshooting/index.md#lilrae-lab-stop-v-reports-pending-host-cleanup).
+Do not delete lifecycle records or use daemon-wide prune commands.
+Use `lilrae kill` only for emergency process or container termination.
+It does not replace normal teardown or reset credentials.
 
 ## Automatic Lifecycle Policy
 
-APTL can enforce project time-to-live, idle-timeout, and scheduled provisioning
-rules declared in the validated `lifecycle_policy` configuration. Inspect the
-installed command contract before enabling automation:
+Use this task when the project needs time-to-live, idle, or scheduled provisioning rules.
+Inspect the installed command options first:
 
 ```shell
 lilrae lab policy --help
@@ -303,24 +172,21 @@ lilrae lab enforce --help
 lilrae lab monitor --help
 ```
 
-Policy actions use the same per-project lifecycle lock as manual and API
-operations, so they cannot interleave with another mutation. See
-[ADR-045](adrs/adr-045-ephemeral-lifecycle-policy-enforcement.md) for the
-design and failure model.
+Configure the intended `lifecycle_policy` in `aptl.json` and validate it.
+Use the installed help to select enforcement or monitoring options.
+Expected result: policy actions use the same project lock as manual operations.
+For policy behavior and failures, see [ADR-045](adrs/adr-045-ephemeral-lifecycle-policy-enforcement.md).
 
 ## Recovery
 
-Use the project-scoped sequence first:
+Retain logs and required evidence before recovery.
+From the affected project, try a volume-preserving restart:
 
 ```shell
 lilrae lab stop
-lilrae lab start --scenario <id>
+lilrae lab start
 ```
 
-Use `lilrae lab stop -v` only when you intend to destroy the project's
-volume-backed data. Do not use daemon-wide prune commands as routine recovery;
-they can remove images, caches, networks, and volumes owned by unrelated
-projects.
-
-Continue with the [troubleshooting guide](troubleshooting/index.md) for
-component diagnostics and platform-specific failures.
+Expected result: the selected configuration starts with its retained data.
+If it still fails, use [Troubleshooting](troubleshooting/index.md) for the named failure.
+Reset volumes only after an explicit backup or data-discard decision.

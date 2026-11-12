@@ -10,7 +10,7 @@
 #   https://github.com/vale-cli/vale/releases/download/v3.26.0/vale_3.26.0_checksums.txt
 #
 # v3.23.0 and later read Go doc comments by the Go convention: the name a doc
-# comment opens with, [links], and tool directives are not prose (ADR-065).
+# comment opens with, [links], and tool directives are not prose (ADR-070).
 
 set -eu
 

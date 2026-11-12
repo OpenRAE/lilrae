@@ -38,8 +38,13 @@ from raes_contracts.contracts.experiment_capture import (
 )
 
 from aptl.core.evidence.content_store import ContentInsertion
+from aptl.core.evidence.outcomes import AcquisitionPhase
 from aptl.core.evidence.protocol import CollectorOutcome
 from aptl.core.experiment.capture_registry import CaptureBinding
+
+#: Bound for the observer-effect reference so a source cannot write an
+#: unbounded string into the portable evidence record.
+_OBSERVER_EFFECT_REF_LIMIT = 500
 
 #: Versioned domain separator for evidence-record ID derivation (independent
 #: of the trial-plan / seed domains so an algorithm revision never collides).
@@ -48,6 +53,15 @@ _EVIDENCE_ID_PREFIX = "evidence-"
 _RECORD_VERSION = "1.0.0"
 _DEFAULT_REDACTION_POLICY = "aptl.redact-secrets/v1"
 _DEFAULT_WITHHOLDING_POLICY = "aptl.evaluator-only-withholding/v1"
+
+
+@dataclass(frozen=True)
+class RecordScope:
+    """Run and trial identity, with an optional attempt for older record producers."""
+
+    run_id: str
+    planned_trial_id: str
+    attempt_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -70,13 +84,21 @@ def _bare_hex(prefixed_digest: str) -> str:
 
 
 def derive_evidence_record_id(
-    *, run_id: str, planned_trial_id: str, binding: CaptureBinding, content_digest: str
+    *,
+    run_id: str,
+    planned_trial_id: str,
+    binding: CaptureBinding,
+    content_digest: str,
+    attempt_id: str | None = None,
+    phase: AcquisitionPhase | None = None,
 ) -> str:
     """Derive one evidence record's stable ID from identity inputs only.
 
     Excludes ``captured_at`` and any ingestion/filesystem order — two
     acquisitions of the same bytes for the same trial/requirement/window
     yield the same ID, and different retained content yields a different ID.
+    The acquisition ``phase`` participates in identity when present, so a
+    preparation record and a measurement record never alias each other.
     """
     projection = {
         "domain": _EVIDENCE_ID_DOMAIN,
@@ -88,6 +110,10 @@ def derive_evidence_record_id(
         "effective_config_digest": binding.effective_config_digest,
         "content_digest": content_digest,
     }
+    if attempt_id is not None:
+        projection["attempt_id"] = attempt_id
+    if phase is not None:
+        projection["acquisition_phase"] = phase.value
     return _EVIDENCE_ID_PREFIX + hashlib.sha256(rfc8785.dumps(projection)).hexdigest()
 
 
@@ -108,12 +134,12 @@ def _raw_content(
 def build_evidence_record(
     *,
     binding: CaptureBinding,
-    run_id: str,
-    planned_trial_id: str,
+    scope: RecordScope,
     content: ContentInsertion,
     outcome: CollectorOutcome,
     captured_at: str,
     disclosure: RecordDisclosure,
+    phase: AcquisitionPhase | None = None,
 ) -> ExperimentEvidenceRecordModel:
     """Assemble one RAES :class:`ExperimentEvidenceRecordModel` for a captured binding.
 
@@ -123,6 +149,11 @@ def build_evidence_record(
     channel the evidence satisfies; identity is derived deterministically from
     the binding + retained-content digest.
     """
+    run_id, planned_trial_id, attempt_id = (
+        scope.run_id,
+        scope.planned_trial_id,
+        scope.attempt_id,
+    )
     window_ref = (
         binding.window_refs[0] if binding.window_refs else binding.requirement_id
     )
@@ -131,6 +162,8 @@ def build_evidence_record(
         planned_trial_id=planned_trial_id,
         binding=binding,
         content_digest=content.digest,
+        attempt_id=attempt_id,
+        phase=phase,
     )
     redaction_policy = binding.redaction_policy
     if disclosure.redaction_state == "withheld" and redaction_policy is None:
@@ -156,6 +189,41 @@ def build_evidence_record(
                 ref_kind="measurement-channel",
                 ref_id=binding.channel_ref_id,
                 ref_version=binding.channel_ref_version,
+            ),
+            *(
+                [
+                    ExperimentReferenceModel(
+                        ref_kind="other", ref_id=f"planned-trial:{planned_trial_id}"
+                    ),
+                    ExperimentReferenceModel(
+                        ref_kind="other", ref_id=f"attempt:{attempt_id}"
+                    ),
+                ]
+                if attempt_id is not None
+                else []
+            ),
+            *(
+                [
+                    ExperimentReferenceModel(
+                        ref_kind="other",
+                        ref_id=f"acquisition-phase:{phase.value}",
+                    )
+                ]
+                if phase is not None
+                else []
+            ),
+            *(
+                [
+                    ExperimentReferenceModel(
+                        ref_kind="other",
+                        ref_id=(
+                            "observer-effect:"
+                            + outcome.observer_effect[:_OBSERVER_EFFECT_REF_LIMIT]
+                        ),
+                    )
+                ]
+                if outcome.observer_effect
+                else []
             ),
         ],
         evidence_kind=binding.capture_kind,

@@ -1,21 +1,22 @@
 # Architecture Decision Records
 
-This directory contains Architecture Decision Records (ADRs) for APTL. ADRs capture significant architectural decisions along with their context, rationale, and consequences.
+These records explain significant design choices and their reasons.
+Each decision keeps its original identifier, date, status, and amendment history.
+An accepted record can describe an earlier implementation without proving current behavior.
+Current interfaces belong to the linked maintained Reference pages.
 
 ## Format
 
-We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each ADR includes:
-
-- **Status**: `proposed`, `accepted`, `deprecated`, or `superseded by ADR-XXX`
-- **Context**: The problem or situation driving the decision
-- **Decision**: What we chose and why
-- **Consequences**: Trade-offs (positive, negative, risks)
+The project uses its existing MADR structure.
+The [format reference](../reference/architecture-decisions.md) contains the template.
+[ADR-000](adr-000-use-adrs.md) explains the decision and its governance.
 
 ## Principles
 
-- ADRs are **immutable** once accepted. To reverse a decision, create a new ADR that supersedes it.
-- ADRs are **numbered sequentially** and never reused.
-- ADRs are **versioned with code**—they live in the repo, not a wiki.
+An editorial rewrite preserves decision meaning.
+A successor ADR states which earlier clauses it replaces.
+Historical examples and measurements keep their original scope.
+A proposal remains proposed until a recorded decision changes its status.
 
 ## Index
 
@@ -24,15 +25,15 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [000](adr-000-use-adrs.md) | Use Architecture Decision Records | accepted | 2026-03-20 |
 | [001](adr-001-docker-compose-deployment.md) | Migrate from AWS/Terraform to Local Docker Compose | accepted | 2025-08-06 |
 | [002](adr-002-wazuh-siem.md) | Wazuh SIEM over Splunk and qRadar | accepted | 2025-08-06 |
-| [003](adr-003-mcp-common-library.md) | MCP Common Library with Config-Driven Server Generation | superseded in part by ADR-065 | 2025-08-30 |
+| [003](adr-003-mcp-common-library.md) | MCP Common Library with Config-Driven Server Generation | superseded in part by ADR-070 | 2025-08-30 |
 | [004](adr-004-persistent-ssh-sessions.md) | Persistent SSH Session Architecture with Command Queuing | accepted | 2025-08-30 |
 | [005](adr-005-docker-compose-profiles.md) | Docker Compose Profiles for Selective Deployment | accepted | 2025-09-01 |
 | [006](adr-006-four-network-segmentation.md) | Four-Network Segmentation Architecture | accepted | 2026-02-07 |
-| [007](adr-007-python-cli-control-plane.md) | Python CLI as Primary Control Plane | superseded in part by ADR-065 | 2026-02-07 |
+| [007](adr-007-python-cli-control-plane.md) | Python CLI as Primary Control Plane | superseded in part by ADR-070 | 2026-02-07 |
 | [008](adr-008-soc-stack-integration.md) | Integrated SOC Stack (MISP, TheHive, Cortex, Shuffle, Suricata) | superseded in part by ADR-063 | 2026-02-22 |
 | [009](adr-009-scenario-engine.md) | Scenario Engine with YAML Specs and Run Archive Collectors | accepted | 2026-03-02 |
-| [010](adr-010-sonarcloud-quality.md) | SonarCloud for Continuous Code Quality | superseded in part by ADR-064 and ADR-065 | 2026-03-07 |
-| [011](adr-011-web-ui.md) | Notebook-Style Web UI (SvelteKit + FastAPI) | superseded in part by ADR-065 | 2026-03-20 |
+| [010](adr-010-sonarcloud-quality.md) | SonarCloud for Continuous Code Quality | superseded in part by ADR-064 and ADR-070 | 2026-03-07 |
+| [011](adr-011-web-ui.md) | Notebook-Style Web UI (SvelteKit + FastAPI) | superseded in part by ADR-070 | 2026-03-20 |
 | [012](adr-012-opentelemetry-integration.md) | OpenTelemetry Integration | accepted | 2026-03-21 |
 | [013](adr-013-deployment-abstraction.md) | Deployment Backend Abstraction Layer | accepted | 2026-03-22 |
 | [014](adr-014-scenario-description-language.md) | Scenario Description Language (SDL) | accepted | 2026-03-29 |
@@ -46,9 +47,9 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [022](adr-022-misp-driven-suricata-rules.md) | MISP-driven Suricata rules via a tag-graduated sync service | accepted | 2026-05-03 |
 | [023](adr-023-container-interaction-in-deployment-backend.md) | Container interaction (list/logs/shell/exec/inspect) on the DeploymentBackend Protocol | accepted | 2026-05-03 |
 | [024](adr-024-orchestrator-side-purple-continuity-carve-out.md) | Orchestrator-side purple-team continuity carve-out | accepted | 2026-05-03 |
-| [025](adr-025-strict-first-party-config-schema.md) | Strict first-party config schema | superseded in part by ADR-065 | 2026-05-05 |
+| [025](adr-025-strict-first-party-config-schema.md) | Strict first-party config schema | superseded in part by ADR-070 | 2026-05-05 |
 | [026](adr-026-advisory-ci-vulnerability-scanning.md) | Advisory CI Vulnerability Scanning (scanners made blocking by the #1193 amendment) | accepted (amended) | 2026-05-09 |
-| [027](adr-027-red-team-structured-logging.md) | Red Team Structured Logging Boundary (SIEM-transport superseded by ADR-033) | accepted (amended) | 2026-05-09 |
+| [027](adr-027-red-team-structured-logging.md) | Red Team Structured Logging Boundary (SIEM-transport superseded by ADR-033) | accepted (amended 2026-05-17 by [ADR-033](adr-033-agent-reasoning-trace-boundary.md)) | 2026-05-09 |
 | [028](adr-028-runtime-rendered-service-config.md) | Runtime-Rendered Service Config | accepted | 2026-05-10 |
 | [029](adr-029-control-plane-secret-handling.md) | Control-Plane Secret Handling in Run Data and Local State | accepted | 2026-05-10 |
 | [030](adr-030-startup-partial-readiness-classification.md) | Startup Partial-Readiness Classification | accepted | 2026-05-11 |
@@ -56,9 +57,9 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [032](adr-032-conversation-surface-hardening.md) | Conversation Surface Hardening | accepted | 2026-05-17 |
 | [033](adr-033-agent-reasoning-trace-boundary.md) | Red-Side Behavioural Capture and Non-Contamination Boundary | accepted | 2026-05-17 |
 | [034](adr-034-lab-managed-soc-tls-ca.md) | Lab-Managed CA for Verified SOC Stack TLS | accepted | 2026-05-18 |
-| [035](adr-035-raes-sdl-adoption.md) | Adopt RAES SDL as APTL's Scenario Authoring Surface (realization model superseded by ADR-046) | accepted (amended) | 2026-05-18 |
+| [035](adr-035-raes-sdl-adoption.md) | Adopt RAES SDL as APTL's Scenario Authoring Surface (realization model superseded by ADR-046) | accepted (amended 2026-06-29, 2026-07-12, and 2026-07-19 by [ADR-046](adr-046-dynamic-raes-scenario-realization.md)) | 2026-05-18 |
 | [036](adr-036-snapshot-endpoint-registry.md) | Snapshot Endpoint Registry Boundary | accepted | 2026-05-18 |
-| [037](adr-037-docker-compose-backend-cohesion.md) | Docker Compose Backend Cohesion | superseded in part by ADR-065 | 2026-05-18 |
+| [037](adr-037-docker-compose-backend-cohesion.md) | Docker Compose Backend Cohesion | superseded in part by ADR-070 | 2026-05-18 |
 | [038](adr-038-docs-style-lint-and-published-site.md) | Documentation Style Lint and Published Docs Site | accepted | 2026-06-11 |
 | [039](adr-039-web-control-plane-authentication.md) | Web Control Plane Authentication and Loopback Exposure | accepted | 2026-06-14 |
 | [040](adr-040-terminal-ssh-host-key-verification-boundary.md) | Terminal SSH Host-Key Verification Boundary | accepted | 2026-06-13 |
@@ -67,13 +68,13 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [043](adr-043-suricata-runtime-config-ownership-boundary.md) | Suricata Runtime Config Ownership Boundary | accepted | 2026-06-20 |
 | [044](adr-044-raes-aligned-run-reproducibility-record.md) | RAES-Aligned Run Reproducibility Record | accepted | 2026-06-25 |
 | [045](adr-045-ephemeral-lifecycle-policy-enforcement.md) | Ephemeral Lifecycle Policy Enforcement | accepted | 2026-06-28 |
-| [046](adr-046-dynamic-raes-scenario-realization.md) | Dynamic RAES Scenario Realization (Image Realization Addendum superseded by ADR-048) | accepted (amended) | 2026-06-29 |
+| [046](adr-046-dynamic-raes-scenario-realization.md) | Dynamic RAES Scenario Realization (Image Realization Addendum superseded by ADR-048) | accepted (amended 2026-10-31) | 2026-06-29 |
 | [047](adr-047-raes-experiment-admission-and-trial-plan-boundary.md) | RAES Experiment Admission and Trial-Plan Boundary | accepted | 2026-07-19 |
-| [048](adr-048-image-free-placement-realization.md) | APTL Image-Free, Placement-Based Realization Envelope (historical term; see [Node Realization Routes](../components/node-realization.md)) | superseded in part by ADR-051 | 2026-07-20 |
-| [049](adr-049-sealed-disposable-lab-appliance.md) | Sealed, Disposable Lab Appliance Delivery Boundary | superseded in part by ADR-060 | 2026-07-25 |
+| [048](adr-048-image-free-placement-realization.md) | APTL Image-Free, Placement-Based Realization Envelope (historical term; see [Node Realization Routes](../components/node-realization.md)) | accepted; superseded in part by ADR-051 | 2026-07-20 |
+| [049](adr-049-sealed-disposable-lab-appliance.md) | Sealed, Disposable Lab Appliance Delivery Boundary | accepted; superseded in part by ADR-060 | 2026-07-25 |
 | [050](adr-050-terminal-attempt-archival-and-atomic-seal.md) | Terminal Attempt Archival And Atomic Seal Boundary | accepted | 2026-07-28 |
 | [051](adr-051-component-level-raes-realization.md) | Component-Level RAES Realization | accepted | 2026-07-28 |
-| [052](adr-052-configured-participant-credential-sourcing.md) | Configured Participant Credential Sourcing | proposed | 2026-08-12 |
+| [052](adr-052-configured-participant-credential-sourcing.md) | Configured Participant Credential Sourcing | accepted | 2026-08-12 |
 | [053](adr-053-pack-backend-deployment-serving-interaction-seam.md) | Pack-Backend Deployment-Serving Interaction Seam | accepted | 2026-08-10 |
 | [054](adr-054-lilrae-core-and-experience-ownership.md) | APTL-to-LilRAE Identity Continuity and Capability Ownership | proposed | 2026-09-05 |
 | [055](adr-055-local-runtime-authority-and-ownership.md) | Local Runtime Authority and Ownership | proposed | 2026-09-05 |
@@ -85,6 +86,11 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [061](adr-061-gateless-vm-seat-access.md) | Browser Desktop for VM Seats | accepted | 2026-09-30 |
 | [062](adr-062-lilrae-name-and-naming-convention.md) | LilRAE Name and Naming Convention for New Code | superseded in part by ADR-064 | 2026-10-05 |
 | [063](adr-063-remove-thehive-and-cortex.md) | Remove TheHive and Cortex from the TechVault SOC Stack | accepted | 2026-10-30 |
-| [064](adr-064-layered-architecture-and-code-conventions.md) | Layered Architecture and Code Conventions | superseded in part by ADR-065 | 2026-10-31 |
-| [065](adr-065-go-implementation-and-engineering-standards.md) | Go Implementation, Architecture Model, and Engineering Standards | superseded in part by ADR-066 | 2026-10-31 |
-| [066](adr-066-descriptor-walk-for-contained-files.md) | Descriptor Walk for Contained Files on Unix | accepted | 2026-11-01 |
+| [064](adr-064-layered-architecture-and-code-conventions.md) | Layered Architecture and Code Conventions | superseded in part by ADR-070 | 2026-10-31 |
+| [065](adr-065-executable-participant-action-boundaries.md) | Executable Participant Action Boundaries | Proposed for the #1418 delivery PR. | 2026-10-31 |
+| [066](adr-066-runtime-readback-reports-realized-state.md) | Runtime Readback Reports Realized State | accepted | 2026-10-31 |
+| [067](adr-067-admitted-participant-smoke-providers.md) | Admitted Participant Smoke Providers | accepted | 2026-11-07 |
+| [068](adr-068-dev-merge-queue.md) | Merge Queue for the dev Branch | accepted | 2026-11-11 |
+| [069](adr-069-shared-containment-wrapper.md) | Shared Containment Wrapper | accepted | 2026-11-10 |
+| [070](adr-070-go-implementation-and-engineering-standards.md) | Go Implementation, Architecture Model, and Engineering Standards | superseded in part by ADR-071 | 2026-10-31 |
+| [071](adr-071-descriptor-walk-for-contained-files.md) | Descriptor Walk for Contained Files on Unix | accepted | 2026-11-01 |

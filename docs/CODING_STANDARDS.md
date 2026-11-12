@@ -36,7 +36,7 @@ When an issue completes the refactor of a package or a module:
 
 ## Go Code
 
-[ADR-065](adrs/adr-065-go-implementation-and-engineering-standards.md) defines
+[ADR-070](adrs/adr-070-go-implementation-and-engineering-standards.md) defines
 the architecture, the architecture model, the design step, the style, and the
 gates of the Go implementation. Apply it to all Go code. ADR-064 stays in force
 for the Python code until Go port 31 removes that code.

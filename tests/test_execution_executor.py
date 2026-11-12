@@ -59,7 +59,7 @@ def _minimal_task() -> ExperimentTaskModel:
         description="Minimal task exercised by the execution-controller integration test.",
         scenario_ref=ExperimentScenarioReferenceModel(
             ref_kind="scenario-snapshot",
-            ref_id="scenario-techvault",
+            ref_id=reference_run().scenario_snapshot_ref.ref_id,
             ref_version="2026-05-26",
             ref_digest="sha256:" + "1" * 64,
         ),
@@ -171,14 +171,8 @@ class TestProductionSealPath:
         )
         ExperimentRunModel.model_validate(manifest)
 
-    def test_execute_seals_every_trial_once(self, tmp_path):
-        store = _store(tmp_path)
-        executor = ExperimentExecutor(
-            store=store, clock=_CLOCK, collectors={}, workload=_completed_workload
-        )
-        results = executor.execute(_admitted())
-        assert len(results) == 1
-        assert all(not r.idempotent for r in results)
+    def test_archival_executor_does_not_schedule_an_experiment(self):
+        assert not hasattr(ExperimentExecutor, "execute")
 
     def test_dangling_evaluator_evidence_reference_is_rejected(self, tmp_path):
         """A summary citing an artifact that was never sealed fails the seal."""
@@ -210,39 +204,6 @@ class TestProductionSealPath:
         with pytest.raises(ValidationError):
             executor.execute_trial(admitted, trial)
         assert not store.is_sealed("trial-0001-attempt-1")
-
-    def test_recovers_an_interrupted_attempt(self, tmp_path):
-        """An attempt with a durable intent but no seal recovers to interrupted."""
-        store = _store(tmp_path)
-        admitted = _admitted()
-        trial = admitted.plan.trials[0]
-        # Simulate a crash mid-workload: the intent is written, nothing sealed.
-        attempt_id = "trial-0001-attempt-1"
-        store.create_run(attempt_id)
-        store.create_run_json_once(
-            attempt_id,
-            "attempt-intent.json",
-            {
-                "schema_version": "aptl.attempt-intent/v1",
-                "attempt_id": attempt_id,
-                "planned_trial_id": trial.planned_trial_id,
-                "plan_id": admitted.plan.plan_id,
-                "plan_digest": admitted.plan.plan_digest,
-                "started_at": "2026-05-26T00:10:00Z",
-            },
-        )
-        assert not store.is_sealed(attempt_id)
-
-        executor = ExperimentExecutor(
-            store=store, clock=_CLOCK, collectors={}, workload=_completed_workload
-        )
-        result = executor.recover_interrupted_attempt(admitted, trial, attempt_id)
-        assert result is not None
-        assert result.run.run_status == "aborted"  # infrastructure interruption
-        assert store.is_sealed(attempt_id)
-        # Already-sealed / never-started attempts recover to None.
-        assert executor.recover_interrupted_attempt(admitted, trial, attempt_id) is None
-
 
 class TestTerminalCauses:
     @pytest.mark.parametrize(

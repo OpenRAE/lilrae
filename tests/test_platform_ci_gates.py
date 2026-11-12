@@ -51,30 +51,6 @@ def _shell(
     )
 
 
-def test_capture_lifecycle_lane_requires_docker_and_propagates_test_failure(tmp_path):
-    script = "set -e\n" + _run_step(
-        "mcp-tests", "Extracted MCP shutdown through the real capture sidecar"
-    )
-    for name in ("node", "ssh", "ssh-keygen"):
-        _stub(tmp_path, name, "exit 0")
-    probe = tmp_path / "pytest-invocation"
-    for daemon_status, test_status in ((19, 0), (0, 23), (0, 0)):
-        probe.unlink(missing_ok=True)
-        _stub(tmp_path, "docker", f"exit {daemon_status}")
-        _stub(
-            tmp_path,
-            "python",
-            f'printf "%s\\n" "$*" > "$LILRAE_TEST_CAPTURE_PROBE"\nexit {test_status}',
-        )
-        result = _shell(script, tmp_path, LILRAE_TEST_CAPTURE_PROBE=str(probe))
-        assert result.returncode == (daemon_status or test_status)
-        if daemon_status:
-            assert not probe.exists()
-        else:
-            assert "tests/test_mcp_capture_lifecycle.py" in probe.read_text()
-            assert "-m integration" in probe.read_text()
-
-
 def test_dev_requires_existing_platform_job_contexts() -> None:
     jobs = _jobs()
     contexts = set(
@@ -113,6 +89,76 @@ def test_pull_request_workflows_run_for_every_protected_branch(workflow: str) ->
     )
 
 
+def _context_producers() -> dict[str, list[tuple[str, dict]]]:
+    """Map each job name to the workflows and jobs that report it."""
+    producers: dict[str, list[tuple[str, dict]]] = {}
+    for path in sorted(WORKFLOW.parent.glob("*.yml")):
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for key, job in data.get("jobs", {}).items():
+            producers.setdefault(job.get("name", key), []).append((path.name, job))
+    return producers
+
+
+def _queued_branches() -> dict[str, dict]:
+    return {
+        name: branch
+        for name, branch in _protected_branches().items()
+        if "merge_queue" in branch
+    }
+
+
+def test_dev_merges_through_a_grouping_merge_queue() -> None:
+    """ADR-068: dev uses a merge queue that merges groups; main does not."""
+    branches = _protected_branches()
+    assert set(_queued_branches()) == {"dev"}
+    queue = branches["dev"]["merge_queue"]
+    # A merge commit repeats the PR title in its body, and Release Please
+    # then writes each change two times in CHANGELOG.md.
+    assert queue["merge_method"] == "SQUASH"
+    assert queue["grouping_strategy"] == "ALLGREEN"
+    assert queue["max_entries_to_build"] > 1
+    assert queue["max_entries_to_merge"] > 1
+
+
+def test_strict_status_checks_are_dropped_only_under_a_merge_queue() -> None:
+    """Without a queue, a non-strict branch merges pull requests tested on stale bases."""
+    for name, branch in _protected_branches().items():
+        strict = branch["required_status_checks"]["strict"]
+        assert strict is ("merge_queue" not in branch), name
+    assert _protected_branches()["main"]["required_status_checks"]["strict"] is True
+
+
+def test_required_producers_report_on_each_merge_group() -> None:
+    """A required context that never reports on a merge group blocks the queue.
+
+    A job skipped by a condition reports success, so no producer of a required
+    context may skip itself on merge groups.
+    """
+    producers = _context_producers()
+    for branch_name, branch in _queued_branches().items():
+        for context in branch["required_status_checks"]["contexts"]:
+            assert producers.get(context), f"no workflow job reports {context!r}"
+            for workflow, job in producers[context]:
+                trigger = _triggers(workflow).get("merge_group")
+                assert trigger is not None, (
+                    f"{workflow} reports required {branch_name} context {context!r} "
+                    "but has no merge_group trigger"
+                )
+                assert branch_name in trigger.get("branches", [branch_name]), workflow
+                condition = str(job.get("if", ""))
+                assert "event_name == 'pull_request'" not in condition, context
+
+
+def test_pr_title_lint_keeps_merge_groups_in_separate_concurrency_groups() -> None:
+    data = yaml.safe_load(
+        (WORKFLOW.parent / "pr-title-lint.yml").read_text(encoding="utf-8")
+    )
+    assert "github.event.merge_group.head_ref" in data["concurrency"]["group"]
+    assert data["concurrency"]["cancel-in-progress"] != True  # noqa: E712
+    checkout = data["jobs"]["title-guard"]["steps"][0]["with"]["ref"]
+    assert "github.event.merge_group.base_sha" in checkout
+
+
 def test_checks_analyze_every_protected_branch_on_push() -> None:
     branches = set(_triggers("checks.yml")["push"]["branches"])
     assert set(_protected_branches()) <= branches
@@ -127,6 +173,82 @@ def test_go_cutover_requires_at_least_the_dev_checks() -> None:
     assert set(dev["required_status_checks"]["contexts"]) <= set(
         cutover["required_status_checks"]["contexts"]
     )
+
+
+@pytest.mark.parametrize("directory", ["/", "/tools", "/tools/lint", "/tools/gates"])
+def test_dependabot_updates_each_cutover_go_module(directory: str) -> None:
+    updates = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())["updates"]
+    entries = [
+        entry
+        for entry in updates
+        if entry["package-ecosystem"] == "gomod"
+        and entry.get("target-branch") == "go-cutover"
+        and directory in entry.get("directories", [entry.get("directory")])
+    ]
+    assert len(entries) == 1, f"expected one cutover updater for {directory}"
+    assert entries[0]["schedule"]["interval"] == "weekly"
+    assert entries[0].get("open-pull-requests-limit", 5) > 0
+    assert any(
+        entry["package-ecosystem"] == "gomod"
+        and entry.get("directory") == "/web/caddy-build"
+        and entry.get("target-branch") == "dev"
+        for entry in updates
+    )
+
+
+def test_cutover_dispatch_has_only_trusted_schedule_authority() -> None:
+    workflow = yaml.safe_load(WORKFLOW.read_text())
+    job = workflow["jobs"]["dispatch-go-cutover"]
+    assert job["if"] == (
+        "github.event_name == 'schedule' && "
+        "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)"
+    )
+    assert workflow[True]["schedule"] == [{"cron": "17 3 * * 1"}]
+    assert "workflow_dispatch" in workflow[True]
+    assert "needs" not in job
+    assert job["permissions"] == {"actions": "write"}
+    assert "write" not in workflow["permissions"].values()
+    assert job["runs-on"] == "ubuntu-latest"
+    assert len(job["steps"]) == 1
+    step = job["steps"][0]
+    assert "uses" not in step  # No checkout or third-party action with write authority.
+    assert step["env"] == {
+        "GH_TOKEN": "${{ github.token }}",
+        "GH_REPO": "${{ github.repository }}",
+    }
+    assert job["env"] == {"TARGET_BRANCH": "go-cutover"}
+
+
+@pytest.mark.parametrize("status", [0, 17])
+def test_cutover_dispatch_targets_child_and_propagates_api_failure(tmp_path, status):
+    job = _jobs()["dispatch-go-cutover"]
+    step = job["steps"][0]
+    log = tmp_path / "dispatch-args"
+    _stub(
+        tmp_path,
+        "gh",
+        'test "$GH_TOKEN" = fixture-token || exit 91\n'
+        'test "$GH_REPO" = fixture-owner/fixture-repo || exit 92\n'
+        'printf "%s\\n" "$@" > "$DISPATCH_LOG"\n'
+        f"exit {status}",
+    )
+    result = _shell(
+        step["run"],
+        tmp_path,
+        GH_TOKEN="fixture-token",
+        GH_REPO="fixture-owner/fixture-repo",
+        DISPATCH_LOG=str(log),
+        **job["env"],
+    )
+    assert result.returncode == status
+    assert log.read_text().splitlines() == [
+        "workflow",
+        "run",
+        "checks.yml",
+        "--ref",
+        "go-cutover",
+    ]
+    assert "fixture-token" not in result.stdout + result.stderr + log.read_text()
 
 
 def test_combined_python_coverage_refuses_a_missing_group(tmp_path: Path) -> None:
@@ -145,15 +267,29 @@ def test_combined_python_coverage_refuses_a_missing_group(tmp_path: Path) -> Non
     for path in files:
         path.parent.mkdir(parents=True)
         path.write_bytes(b"measurement")
+    reports = []
+    for index, path in enumerate(files[:2]):
+        report = path.parent / "coverage" / "observer" / f"{index}.lcov"
+        report.parent.mkdir(parents=True)
+        report.write_text(
+            f"SF:src/aptl/workbench/request_observer.mjs\nDA:{index + 1},1\nend_of_record\n"
+        )
+        reports.append(report)
     env = {"RUNNER_TEMP": str(tmp_path), "COMBINE_LOG": str(log)}
     assert _shell(script, tmp_path, **env).returncode == 0
     assert set(log.read_text(encoding="utf-8").splitlines()[1:]) == {
         str(path.relative_to(tmp_path)) for path in files
     }
+    assert (tmp_path / "coverage" / "observer-lcov.info").read_text() == "".join(
+        p.read_text() for p in reports
+    )
     for path in files:
         path.unlink()
         assert _shell(script, tmp_path, **env).returncode != 0
         path.write_bytes(b"measurement")
+    for report in reports:
+        report.unlink()
+    assert _shell(script, tmp_path, **env).returncode != 0
 
 
 def test_python_audit_covers_shipped_exports_and_fails_closed(tmp_path: Path) -> None:
@@ -478,7 +614,7 @@ _GO_GATE_JOBS = ("go-lint", "go-tests", "go-mutation", "go-regression", "go-vuln
 
 
 def test_go_gates_block_and_are_required_on_go_cutover() -> None:
-    """Each ADR-065 Go gate is a required go-cutover context (#1553).
+    """Each ADR-070 Go gate is a required go-cutover context (#1553).
 
     A gate runs when routing fails or selects Go, checks the routing result
     first, and never reports success after a failure.
@@ -531,7 +667,7 @@ def test_go_product_tests_and_mutation_run_on_macos_and_windows() -> None:
 
 
 def test_go_architecture_runs_on_every_change_and_is_required_on_go_cutover() -> None:
-    """The architecture check of ADR-065 runs whatever routing selects (#1583).
+    """The architecture check of ADR-070 runs whatever routing selects (#1583).
 
     The model covers web/caddy-build and the design notes, which routing does
     not send to the Go lane. Only a pull request from a protected branch of
@@ -553,7 +689,7 @@ def test_go_architecture_runs_on_every_change_and_is_required_on_go_cutover() ->
 
 
 def test_go_tests_run_each_fuzz_test_for_a_bounded_time() -> None:
-    """The fuzz tests of ADR-065 run on each change, for 30 seconds each (#1604)."""
+    """The fuzz tests of ADR-070 run on each change, for 30 seconds each (#1604)."""
 
     runs = [step.get("run", "") for step in _jobs()["go-tests"]["steps"]]
     assert "bash tools/ci/go-gates.sh fuzz 30s" in runs

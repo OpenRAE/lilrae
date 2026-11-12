@@ -1,5 +1,14 @@
 # Issue #592 Scenario-Pack Terminology Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-592-scenario-pack-terminology-preflight.md).
+Its last recorded file change before this rewrite was `76024b0323cb`.
+Current interfaces and successor decisions take precedence for present use.
+The inventory includes a dated maintenance row for the #1667 architecture rewrite.
+
+
 This note fixes the terminology boundary for issue #592. It does not rename a
 runtime identifier, migrate an asset, or change pack acquisition. The issue
 predates the ACES-to-RAES project rename and the companion repository's current
@@ -43,8 +52,15 @@ prose must not accidentally rename them.
 
 | Surface | Files | Disposition |
 | --- | --- | --- |
+| Architecture rewrite (2026-11-08, issue #1667) | `docs/adrs/adr-001-docker-compose-deployment.md`, `docs/architecture/documentation-boundaries.md`, `docs/architecture/enterprise-infrastructure.md`, `docs/architecture/networking.md`, `docs/reference/compose-topology.md` | Keep admitted Scenario Pack declarations distinct from root compatibility stubs and native runtime observations. |
+| Documentation migration assignments | `docs/architecture/documentation-assignments.md` | Assign delivery ownership and reader purpose. Preserve exact source headings and pack terminology. |
+| Required trial readiness | `docs/architecture/exp-011-resource-readiness-design.md` | Keep admitted environment-pack and entry identity distinct from native resource observations and read-only source readiness. |
+| Released RAES dependency adoption | `docs/architecture/issue-1603-raes-11-module-locations-preflight.md`, `docs/architecture/issue-1603-released-module-design.md` | Keep dependency floors, exact released pack identities, installed adapter qualification, and observed runtime state distinct. |
+| Scoped participant tool qualification | `docs/architecture/issue-1646-scoped-tool-affordances-preflight.md`, `docs/testing/scoped-tools-1646-candidate.md` | Keep released environment-pack identity distinct from the installed tool authority and tested candidate artifact. |
+| Participant tool admission | `docs/architecture/participant-action-enforcement.md` | Keep environment-pack release identity distinct from installed native tool mappings and RAES action authority. |
 | Native realization reporting and runtime dependencies | `docs/adrs/adr-007-python-cli-control-plane.md`, `docs/architecture/issue-1130-owned-descendant-reporting-design.md`, `docs/architecture/issue-1130-runtime-realization-attestation-preflight.md` | Keep the released environment-pack identity distinct from the RAES reporting contract, Python dependency boundary, native ownership and protected evidence handoff. |
 | Pack boundary enforcement | `docs/architecture/issue-1121-pack-boundary-preflight.md` | Preserve original and independent RPT adapter ownership, exact compatibility exceptions, and selected host requirements. |
+| Native runtime readback | `docs/architecture/issue-1017-native-runtime-attestation-design.md`, `docs/architecture/issue-1017-techvault-bridge-retirement-preflight.md` | Keep released pack identity and author authority distinct from backend native observations and installed reader capabilities. |
 | PHP image re-pin | `docs/architecture/issue-1407-php-image-repin-preflight.md` | Keep the released environment-pack MISP and Roundcube selectors distinct from the backend-selected image digests and the MISP web companion. |
 | Configured pack source | `docs/architecture/issue-1413-configured-pack-source-preflight.md` | Keep release-directory acquisition distinct from portable pack semantics, content identity, installed adapters, and backend realization. |
 | TechVault SOC dependency removal | `docs/adrs/adr-063-remove-thehive-and-cortex.md`, `docs/architecture/issue-1411-thehive-license-readiness-preflight.md` | Keep the pack's service declarations and release decision distinct from LilRAE's adoption and realization of that release. |
@@ -61,7 +77,7 @@ prose must not accidentally rename them.
 | Historical seat implementation audit | `docs/architecture/issue-1022-historical-branch-audit.md` | Distinguish historical pack inputs from current APTL guest realization and delivery policy. |
 | TechVault database realization | `docs/architecture/issue-1183-techvault-postgresql-startup-preflight.md` | Keep the pack's declared database, schema, and seed content distinct from APTL's backend-selected client-authentication posture and initialization bookkeeping. |
 | Wazuh API cold-boot recovery | `docs/architecture/issue-1188-wazuh-api-cold-boot-preflight.md` | Keep the exact-pack recovery boundary and observed process failure distinct from the pack's authored content and an unproven API exit trigger. |
-| Canonical participant delivery and host access | `docs/adrs/adr-059-canonical-techvault-delivery-and-host-mcp-access.md`, `docs/raes/issue-601-participant-demonstration.md`, `docs/reference/host-mcp-access.md`, `docs/reference/participant-profile.md` | Keep the TechVault pack identity distinct from the APTL-owned delivery, transport and qualification contracts. |
+| Canonical participant delivery and host access | `docs/adrs/adr-059-canonical-techvault-delivery-and-host-mcp-access.md`, `docs/raes/issue-601-participant-demonstration.md`, `docs/reference/host-mcp-access.md`, `docs/reference/mcp.md`, `docs/reference/participant-profile.md` | Keep the TechVault pack identity distinct from the APTL-owned delivery, transport and qualification contracts. |
 | Current user and authoring guidance | `README.md`, `docs/deployment.md`, `docs/index.md`, `docs/reference/cli.md`, `docs/reference/techvault-scenario-overview.md`, `docs/sdl/index.md`, `docs/sdl/techvault-curated-variants.md`, `docs/testing/smoke-test-plan.md` | Treat `docs/sdl/index.md` as the exemplar: companion authoring and format links are separate from the APTL-owned operator catalog and runtime section. Qualify nearby catalog prose as APTL startup selection when context is not explicit. |
 | Accepted realization and pack-boundary decisions | `docs/adrs/adr-012-opentelemetry-integration.md`, `docs/adrs/adr-035-raes-sdl-adoption.md`, `docs/adrs/adr-046-dynamic-raes-scenario-realization.md`, `docs/adrs/adr-053-pack-backend-deployment-serving-interaction-seam.md` | Preserve decision history. Add current clarification around historical names instead of mechanically rewriting accepted records. |
 | Proposed product and release decisions | `docs/adrs/adr-054-lilrae-core-and-experience-ownership.md`, `docs/adrs/adr-058-adoption-and-security-release-gates.md` | Keep TechVault pack-specific and APTL runtime-specific concerns distinct. Replace ambiguous ownership by unnamed "catalogs" only when editing current prose. |
@@ -71,10 +87,14 @@ prose must not accidentally rename them.
 | Historical requirements and review evidence | `docs/requirements/SCN-010/requirement.md`, `docs/reviews/962-lilrae-readiness/` | Preserve historical names and exact recorded links. The review's backlog and identity dispositions provide current interpretation without changing the underlying evidence. |
 | Code quality architecture | `docs/architecture/issue-1510-code-quality-preflight.md` | Keep env-pack validation and pack admission authority unchanged while the refactor moves code between layers. |
 | Go foundation | `docs/architecture/issue-1557-go-foundation-preflight.md` | The RAES and env-packs Go APIs own SDL, packs, and plans. The foundation packages change the implementation language, not pack ownership or admission authority. |
-| Go implementation decision | `docs/adrs/adr-065-go-implementation-and-engineering-standards.md` | The RAES and env-packs Go modules keep the SDL, pack, and planning semantics. The Go port changes the implementation language, not pack ownership or admission authority. |
+| Go implementation decision | `docs/adrs/adr-070-go-implementation-and-engineering-standards.md` | The RAES and env-packs Go modules keep the SDL, pack, and planning semantics. The Go port changes the implementation language, not pack ownership or admission authority. |
 | RAES and env-packs Go boundary | `docs/architecture/issue-1556-raes-go-boundary-preflight.md`, `docs/architecture/raes-consumer-inventory.md` | Env-packs keeps pack structure, content identity, artifact resolution, and catalog semantics. The inventory lists the names that LilRAE consumes and changes no pack ownership. |
+| Developer and CI tools architecture | `docs/architecture/issue-1580-developer-ci-tools-preflight.md` | Keep env-packs admission and the pack boundary checker's owner-derived facts unchanged when the tools change language. |
 | Terminology record and navigation labels | `docs/architecture/issue-592-scenario-pack-terminology-preflight.md`, `docs/architecture/index.md`, `mkdocs.yml` | Titles may preserve an issue's or file's historical locator. Descriptive labels for current contracts use the terminology above. |
+| User and workshop rewrite | `docs/getting-started/environment-bindings.md`, `docs/getting-started/pack-reference.md` | Keep admitted pack identity, adapter behavior, runtime observations, and historical qualification distinct. |
 | Scenario pack installation guide | `docs/getting-started/installing-packs.md` | Keep the content-pack and adapter distinction and the env-pack identity and source selection; do not rename the pack, RAES, or backend contracts. |
+| Interface and scenario rewrite | `docs/containers/victim-template-guide.md`, `docs/reference/interface-source-checks.md` | Keep upstream environment-pack authoring distinct from backend realization and observed evidence. |
+| Lab start trials | `docs/reference/lab-start-trials.md` | Keep the trial SDL declarations and the scenario pack's prompt assets distinct from the LilRAE trial record. |
 
 The inventory identified three current-prose hazards for issue #592 to resolve:
 the tautological rename sentence at the start of the issue #589 preflight, the

@@ -1,5 +1,10 @@
 # TechVault curated live validation gate
 
+> Source record: The last source change was 2026-09-21. Its status review date is 2026-11-06.
+> The original text below keeps historical proposals, decisions, and evidence.
+> It does not establish current runtime behavior or authorize external publication.
+> See the [current validation reference](techvault-static-validation-gate.md) and [live validation reference](techvault-live-validation-gate.md).
+
 > Historical evidence notice: these 2026-06-24/25 records predate issue #992.
 > OTel and Kali capture are now backend apparatus, the observability-only SDL
 > variant has been retired, and current TechVault native evidence does not
@@ -9,7 +14,7 @@
 This gate live-proves the small curated RAES startup variants from
 [curated variants](../sdl/techvault-curated-variants.md). The
 [static validation gate](techvault-static-validation-gate.md) and
-[`tests/test_techvault_curated_variants.py`](https://github.com/Brad-Edwards/aptl/blob/main/tests/test_techvault_curated_variants.py)
+[`tests/techvault/test_techvault_curated_variants.py`](https://github.com/Brad-Edwards/aptl/blob/main/tests/techvault/test_techvault_curated_variants.py)
 already prove each variant parses, compiles, and realizes to a bounded Compose
 profile set without starting Docker. This gate goes one step further: it boots
 each variant through APTL's public start path and proves the running containers
@@ -125,7 +130,7 @@ targets maintainers and a documented CI runner, not fast CI or pre-commit. The
 fast unit suite that covers the matrix and comparison runs without a lab:
 
 ```bash
-pytest tests/test_curated_live_proof.py
+pytest tests/techvault/test_curated_live_proof.py
 ```
 
 Reproduce one variant's recorded live boot with the committed driver, which sets

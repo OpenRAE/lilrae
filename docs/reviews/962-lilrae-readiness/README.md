@@ -1,5 +1,13 @@
 # APTL Readiness for LilRAE
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/reviews/962-lilrae-readiness/README.md).
+Its last recorded file change before this rewrite was `ef9fa93294f7`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 Review: [#962](https://github.com/Brad-Edwards/aptl/issues/962).
 Baseline: `dev` at `f35f86ee3bcc41f0b918fd209a944bf91e83f659`.
 Assessment date: 2026-09-05. Initial findings refer to that commit. The

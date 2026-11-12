@@ -5,7 +5,7 @@ files through public operations; it does not import either implementation.
 The supplied issue is the delivery contract, with no formal requirement
 transition. This note records guardrails, not an implementation plan or a claim
 that conformance already passes. No new ADR is needed: ADR-025, ADR-029,
-ADR-030, ADR-031, and ADR-065 already establish the relevant boundaries.
+ADR-030, ADR-031, and ADR-070 already establish the relevant boundaries.
 
 ## Contract authority and schema ownership
 
@@ -41,7 +41,7 @@ Existing Pydantic models can produce candidate schemas during authoring; the
 suite must not regenerate expectations from the implementation under test.
 Declare each schema dialect and identity, resolve references from a closed local
 registry, and reject unresolved references without HTTP or arbitrary file reads.
-Use ADR-065's JSON Schema dependency rather than writing a validator. Preserve
+Use ADR-070's JSON Schema dependency rather than writing a validator. Preserve
 the published RAES dialect, bytes, version, and provenance when including its
 schemas. Publishing schemas must make the same artifacts available to readers
 and the harness, not create a documentation copy that can drift.
@@ -67,12 +67,12 @@ JSON Schema does not describe parser behavior or Python coercion. The existing
 `utils/strict_json.py` rejects duplicate members and non-finite numbers at its
 security-sensitive callers; `load_config` currently uses ordinary JSON parsing.
 Do not silently apply a stricter decoder to the product here. Any conflict
-between accepted Python input and ADR-065's strict Go decoding needs an explicit
+between accepted Python input and ADR-070's strict Go decoding needs an explicit
 compatibility disposition, not a Python-only expectation or a hidden exception.
 
 ## Process, security, and persistence boundaries
 
-ADR-065 places the testscript suite in `conformance/` in the root Go module.
+ADR-070 places the testscript suite in `conformance/` in the root Go module.
 Keep it test tooling with no product imports. `tools/gates/gates_test.go` is the
 existing testscript example and dependency pin, not a home for CLI cases or a
 reason to introduce another module. Before Go code, the implementation must

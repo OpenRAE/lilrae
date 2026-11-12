@@ -403,9 +403,69 @@ class SeatProtectionBoundarySpec:
         return _digest(self.canonical_json())
 
 
+@dataclass(frozen=True)
+class NativeRangeAllowance:
+    """An exact operator-approved external transport destination."""
+
+    destination: str
+    protocol: Literal["tcp", "udp"]
+    port: int
+
+    def __post_init__(self) -> None:
+        address = ipaddress.ip_address(self.destination)
+        if address.is_loopback or address.is_multicast or address.is_unspecified:
+            raise ValueError("external allowance requires a unicast destination")
+        if (
+            self.protocol not in {"tcp", "udp"}
+            or type(self.port) is not int
+            or not 0 < self.port <= 65535
+        ):
+            raise ValueError("external allowance requires TCP/UDP and a valid port")
+
+    def details(self) -> dict[str, object]:
+        return {
+            "destination": self.destination,
+            "protocol": self.protocol,
+            "port": self.port,
+        }
+
+
+@dataclass(frozen=True)
+class NativeRangeBoundarySpec:
+    """Default deny for every observed native range bridge."""
+
+    owner: str
+    networks: tuple[BoundaryNetwork, ...]
+    allowances: tuple[NativeRangeAllowance, ...] = ()
+    authority: Literal["native-range"] = "native-range"
+
+    def __post_init__(self) -> None:
+        _validate_owner(self.owner)
+        _validate_networks(self.networks)
+        if not self.networks or len({n.bridge for n in self.networks}) != len(
+            self.networks
+        ):
+            raise ValueError("native range requires distinct observed bridges")
+
+    def details(self) -> dict[str, object]:
+        return {
+            "authority": self.authority,
+            "owner": self.owner,
+            "networks": [n.details() for n in self.networks],
+            "allowances": [a.details() for a in self.allowances],
+        }
+
+    def canonical_json(self) -> str:
+        return _canonical(self.details())
+
+    def digest(self) -> str:
+        return _digest(self.canonical_json())
+
+
 BoundaryEnforcementSpec = (
     AcesBoundarySpec
     | PlatformBoundarySpec
     | PlatformBoundaryBootstrapSpec
     | SeatProtectionBoundarySpec
+    | NativeRangeBoundarySpec
 )

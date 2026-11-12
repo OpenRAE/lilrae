@@ -1,5 +1,10 @@
 # TechVault Solutions - Infrastructure Plan
 
+> Source record: The last source change was 2026-06-11. Its status review date is 2026-11-06.
+> The original text below keeps historical proposals, decisions, and evidence.
+> It does not establish current runtime behavior or authorize external publication.
+> See the [current TechVault reference](techvault-scenario-overview.md).
+
 **Fictional Company for Security Testing**
 
 ---

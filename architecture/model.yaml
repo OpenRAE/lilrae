@@ -1,4 +1,4 @@
-# The architecture of the LilRAE Go code (ADR-065). tools/cmd/archcheck checks
+# The architecture of the LilRAE Go code (ADR-070). tools/cmd/archcheck checks
 # the repository and each design note against this model. A change here is an
 # architecture decision: record it in the design note of the issue.
 version: 1
@@ -162,7 +162,7 @@ rules:
     and record it in the design note.
   forbidden-module: >-
     Use a module that the model permits for the component (see the dependency
-    table of ADR-065), or add the module to the component through a recorded
+    table of ADR-070), or add the module to the component through a recorded
     model change.
   unresolved-import: >-
     Require the module in go.mod with go get, or correct the import path.

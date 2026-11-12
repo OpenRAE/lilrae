@@ -5,7 +5,7 @@ from raes_contracts.contracts import (
     ParticipantImplementationManifestModel,
     ParticipantImplementationSelectionModel,
 )
-from raes_contracts.satisfiability import canonical_contract_digest
+from raes_contracts.canonical import canonical_contract_digest
 import yaml
 
 

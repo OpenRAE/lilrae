@@ -37,7 +37,7 @@
       "asset_id": "workbench-registry",
       "kind": "project-file",
       "source": "src/aptl/workbench/profiles.py",
-      "sha256": "c8b737b6b9f868c611aeb816da20bc92fb420b0cef1df24da46a277ac5eacdc9"
+      "sha256": "e05919ea0f2604f5aa7e0b2bcc05f752da0f44e5e0c3cd936f3fc974dfc7053c"
     },
     {
       "asset_id": "compose-model",
@@ -55,7 +55,7 @@
       "asset_id": "mcp-red-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-red/package-lock.json",
-      "sha256": "6b73c871d2d7d3ab27fe05a09930765464601b3e4c7f1fdded8f7cd7fb3abd22"
+      "sha256": "cbae644631a76a59e00e1bfaaa8be9dd0e212150c51f6c4842bc142cf1e7a249"
     },
     {
       "asset_id": "mcp-red-config",
@@ -67,13 +67,13 @@
       "asset_id": "mcp-indexer-build",
       "kind": "mcp-artifact",
       "source": "mcp/mcp-indexer/build/index.js",
-      "sha256": "11014137cc5f31553cf9a7e104c0e230dbe849b16fcbb52c6c15c15f03820ccb"
+      "sha256": "a336fa7be5e41ca091afb5fc7ae177a3442d5e55fa512d7078581ee9e5080696"
     },
     {
       "asset_id": "mcp-indexer-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-indexer/package-lock.json",
-      "sha256": "69a15997264527688d6381830466f1919f2f1218dc71a459af400c390791a5ad"
+      "sha256": "00b13858f757271d99b38f939714913e7b36d8d3a19f92559ab7d8f947e2f038"
     },
     {
       "asset_id": "mcp-indexer-config",
@@ -91,7 +91,7 @@
       "asset_id": "mcp-wazuh-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-wazuh/package-lock.json",
-      "sha256": "f5cce4754036d3e3830858bb3593743dadb566cb156441ddf6c2db61f8577c0a"
+      "sha256": "3e1fb963fbdab9385346d67e405d489731fa83404785bb4317034262f7f3245e"
     },
     {
       "asset_id": "mcp-wazuh-config",
@@ -143,6 +143,18 @@
       "services": [
         "wazuh.dashboard"
       ]
+    },
+    {
+      "asset_id": "workbench-policy",
+      "kind": "project-file",
+      "source": "src/aptl/core/mcp_policy.py",
+      "sha256": "022cf730e9af87375884b77b91853591a413a8a48ec2e9583f6233d2dea93866"
+    },
+    {
+      "asset_id": "workbench-catalog",
+      "kind": "project-file",
+      "source": "src/aptl/core/participant_mcp_policy.json",
+      "sha256": "ad109a685e54ad6cddd6bd6bae06a67ed8b82d995651eb0960d7353c0d08328b"
     }
   ]
 }

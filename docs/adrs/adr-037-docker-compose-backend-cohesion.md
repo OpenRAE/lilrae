@@ -2,9 +2,9 @@
 
 ## Status
 
-superseded in part by ADR-065
+superseded in part by ADR-070
 
-[ADR-065](adr-065-go-implementation-and-engineering-standards.md) replaces the Python runner and backend class with the Go
+[ADR-070](adr-070-go-implementation-and-engineering-standards.md) replaces the Python runner and backend class with the Go
 deployment boundary. The guardrails stay: one runner for local and SSH
 transports, project scoping, typed backend methods, and no command
 passthrough.
@@ -13,15 +13,19 @@ passthrough.
 
 2026-05-18
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [pack-boundary explanation](../architecture/pack-boundary-design.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 Issue #262 asks whether `DockerComposeBackend` should be split after
 ADR-023 grew the `DeploymentBackend` surface from lifecycle-only into
-lifecycle, host inventory, and container interaction. The class is now
-large, but the methods still share one operational boundary: one Docker
-daemon reached through the Docker CLI, with local and SSH transports
-sharing the same runner, timeout, parse, logging, and project-scoping
-rules.
+lifecycle, host inventory, and container interaction. The methods share one Docker-daemon boundary through the Docker CLI. Local and SSH transports use common runner, timeout, parsing, logging, and project-scope rules.
 
 The existing architecture already names the three responsibilities in
 `DeploymentBackend` and routes callers through typed methods rather than
@@ -52,18 +56,13 @@ public responsibility boundary; the backend class may keep matching
 method-group comments and private pure helpers for parsing or decision
 tables.
 
-The extensibility seam is the runner boundary, not a mixin hierarchy:
-future Docker-CLI transports should reuse or override the smallest
-runner hook that carries cwd/env/capture/streaming/timeout behavior.
+The extension point is the smallest runner hook for directory, environment, capture, streaming, and timeout. More Docker transports do not require a mixin hierarchy.
 Today that hook is `_subprocess_kwargs`, with `_run` and
 `_run_streaming` preserving the backend-defined timeout exception.
 
 ## Guardrails
 
-- Keep all Docker/Compose access for lifecycle, host inventory, and
-  container interaction behind `DeploymentBackend`; do not add raw Docker
-  subprocess calls in CLI, API, snapshot, continuity, flags, or
-  collector callers.
+- `DeploymentBackend` owns lifecycle, inventory, and container interaction. CLI, API, snapshot, continuity, flags, and collector callers must not bypass it with raw Docker subprocesses.
 - Keep host inventory typed. Do not add a generic `host_run(args)`,
   `docker(args)`, or command-passthrough escape hatch.
 - Preserve argv-list subprocess construction. Do not concatenate
@@ -94,9 +93,7 @@ Today that hook is `_subprocess_kwargs`, with `_run` and
 ### Negative
 
 - `DockerComposeBackend` remains a large concrete class.
-- Future substantial behavior growth may still require extraction, but
-  that extraction should be driven by duplicated logic or a second real
-  transport/provider, not by method count alone.
+- Substantial growth can require extraction when logic repeats or another provider exists. Method count alone does not justify another abstraction.
 
 ### Risks
 

@@ -2,9 +2,9 @@
 
 ## Status
 
-superseded in part by ADR-065
+superseded in part by ADR-070
 
-[ADR-065](adr-065-go-implementation-and-engineering-standards.md) replaces the FastAPI backend with the Go web server. The
+[ADR-070](adr-070-go-implementation-and-engineering-standards.md) replaces the FastAPI backend with the Go web server. The
 Svelte UI stays, and its API types come from the OpenAPI document of the Go
 server. The FastAPI backend stays in force until Go port 31 removes it.
 
@@ -12,19 +12,26 @@ server. The FastAPI backend stays in force until Go port 31 removes it.
 
 2026-03-20
 
+## Applicability
+
+This record explains the selected workbench direction.
+Its proposed libraries and views do not establish the shipped dependency or route inventory.
+The [web reference](../reference/web.md) describes the current interface.
+The [component design](../specs/web-component-kit.md) explains the implemented local kit.
+
 ## Context
 
 APTL's primary interface is a Python CLI ([ADR-007](adr-007-python-cli-control-plane.md)). While effective for lab lifecycle management and scenario execution, the CLI has limitations for:
 
 1. **Scenario execution**: Following multi-step attack/defense scenarios requires switching between terminal windows (Kali SSH, victim SSH, SIEM queries) and mentally correlating events across them.
-2. **SIEM data visualization**: Wazuh Dashboard provides some visualization, but correlating SIEM alerts with scenario steps, network IDS events, and case management data requires multiple browser tabs.
+2. **SIEM data visualization**: The Dashboard supplies SIEM views. Correlating those views with scenario steps, network events, and historical case-management data required multiple tabs.
 3. **Data collection review**: Run archives from the scenario engine ([ADR-009](adr-009-scenario-engine.md)) are JSON files on disk. Comparing runs requires manual inspection.
 
 ### Design Constraint
 
-The UI must be **visually distinct from enterprise SOC/XDR-style mission control dashboards**—the dark tile grids with icon sidebars, status dot matrices, and pill buttons used by products like Cortex XDR, Splunk SOAR, or SecurityOnion. Those suit enterprise demo platforms but are the wrong paradigm for a personal training lab. APTL needs something that feels like a different product category entirely.
+The UI must differ visually from enterprise SOC and XDR dashboards. The rejected pattern used dark tile grids, icon sidebars, status matrices, and pill buttons. Those suit enterprise demo platforms but are the wrong paradigm for a personal training lab. APTL needs something that feels like a different product category entirely.
 
-This constraint comes from the user's concurrent work on an enterprise security product (`../shifter`)—APTL's UI must not look or feel like a second version of the same thing.
+The owner also worked on an enterprise security product, `../shifter`. This lab needed a distinct interface and product identity.
 
 ## Decision (Proposed)
 

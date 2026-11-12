@@ -1,4 +1,4 @@
-// Command regressioncheck runs the regression test check of ADR-065 on the
+// Command regressioncheck runs the regression test check of ADR-070 on the
 // change from a base revision to HEAD.
 //
 // Usage:

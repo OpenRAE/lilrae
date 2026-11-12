@@ -1,4 +1,4 @@
-// Package mutation implements the mutation test gate of ADR-065.
+// Package mutation implements the mutation test gate of ADR-070.
 //
 // The gate runs Gremlins in each Go module that has changed production files,
 // with --diff at the base revision, or in each module for a full run. It reads

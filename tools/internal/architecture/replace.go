@@ -9,7 +9,7 @@ import (
 	"github.com/google/renameio/v2"
 )
 
-// replaceFile replaces the file name in root atomically (ADR-065), and keeps
+// replaceFile replaces the file name in root atomically (ADR-070), and keeps
 // the permissions of the existing file.
 func replaceFile(root *os.Root, name string, data []byte) error {
 	if err := renameio.WriteFile(name, data, 0o600, renameio.WithRoot(root)); err != nil {

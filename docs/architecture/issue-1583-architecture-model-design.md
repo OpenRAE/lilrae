@@ -53,7 +53,7 @@ model_changes:
 # Issue #1583: Architecture Model Design
 
 This design adds the architecture model of
-[ADR-065](../adrs/adr-065-go-implementation-and-engineering-standards.md), its
+[ADR-070](../adrs/adr-070-go-implementation-and-engineering-standards.md), its
 checks, and the design check. It refines the
 [preflight](issue-1583-architecture-model-preflight.md). The front matter of
 this note is the first design record. It uses the schema that the note
@@ -88,10 +88,10 @@ defines.
    the vendored directories and the paths that the go command ignores
    (`tools/internal/golayout`). It runs no project code. The model is the
    only policy input, so no generated configuration exists.
-2. **go-arch-lint leaves ADR-065.** Its dependency graph fails the vulnerability
+2. **go-arch-lint leaves ADR-070.** Its dependency graph fails the vulnerability
    gates, and the checker would have to wrap it for modules, layers, fix-it
    messages, and stale entries. The parser and `golang.org/x/mod` give the
-   import facts. ADR-065 records the change. depguard and arch-go are not
+   import facts. ADR-070 records the change. depguard and arch-go are not
    the checker either: depguard checks import prefixes for file globs, and
    arch-go reads no test file. Neither has the components, layers, stale
    entries, or design records of the model, and the design-record check needs

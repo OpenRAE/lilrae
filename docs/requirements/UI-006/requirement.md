@@ -11,6 +11,13 @@ updated_at: 2026-06-23T04:30:19.228322Z
 
 # UI-006: Web GUI Product Scope
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/UI-006/requirement.md).
+
+
 ## Statement
 
 The APTL web GUI shall have a documented product scope that defines its target users, the jobs it serves beyond the MCP-driven purple loop and the CLI, the in-scope capabilities for a v1 surface, its authentication and security posture, and its shipping model (in particular whether the built app is served by `aptl web serve`). The scope shall serve as the acceptance baseline for the web GUI design (UI-007) and implementation (UI-008).

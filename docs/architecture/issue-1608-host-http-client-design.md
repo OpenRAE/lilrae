@@ -11,7 +11,7 @@ model_changes:
 # Issue #1608: Host HTTP client design
 
 This design implements the [HTTP preflight](issue-1608-host-http-client-preflight.md).
-The [foundation design](issue-1557-go-foundation-design.md) and ADR-065 apply.
+The [foundation design](issue-1557-go-foundation-design.md) and ADR-070 apply.
 The architecture model adds only `host-http` in the foundation layer.
 The package uses only the standard library.
 Consumers define their small HTTP interfaces.
@@ -151,7 +151,7 @@ The client starts no goroutine to abandon such a reader.
 
 The model and generated component diagram describe package dependencies.
 The data flow and threat table describe the network boundary and its controls.
-No new ADR is needed: these choices implement ADR-065 and the accepted foundation boundary.
+No new ADR is needed: these choices implement ADR-070 and the accepted foundation boundary.
 No deployment diagram changes: this package creates no service or deployment resource.
 The architecture model and existing CI gates provide the policy checks.
 The Sonar configuration includes `internal/` as source and test scope.

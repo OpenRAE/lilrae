@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import ValidationError
 
-from aptl.appliance.policy import full_techvault_boundary_policy
+from tests.seat_policy_fixture import protected_seat_policy
 from aptl.appliance.guest_observation import collect_guest_observation
 from aptl.core.appliance_boundary import ApplianceBoundaryPolicy
 from aptl.core.appliance_boundary_inventory import qualify_appliance_boundary
@@ -19,7 +19,7 @@ def _vm_policy():
     return ApplianceBoundaryPolicy.model_validate(
         {
             "schema_version": "aptl.appliance-boundary/v2",
-            "policy_id": "techvault-vm-only-fixture",
+            "policy_id": "vm-only-fixture",
             "generation": 3,
             "workbench_policy_version": "participant-workbench-profile/v1",
             "default_deny": False,
@@ -141,7 +141,7 @@ def test_vm_evidence_cannot_claim_internal_platform_isolation(field):
 
 
 def test_signed_policy_versions_cannot_silently_change_containment():
-    vm = full_techvault_boundary_policy().model_dump(mode="json")
+    vm = protected_seat_policy().model_dump(mode="json")
     with pytest.raises(ValidationError):
         ApplianceBoundaryPolicy.model_validate(
             {**vm, "schema_version": "aptl.appliance-boundary/v1"}

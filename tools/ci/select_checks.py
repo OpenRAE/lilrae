@@ -12,7 +12,7 @@ import subprocess
 
 LANES = ("python", "mcp", "web", "docs", "dependencies", "lab", "images", "iac", "go")
 
-# The Go modules of ADR-065: the product module at the root, the tool modules
+# The Go modules of ADR-070: the product module at the root, the tool modules
 # below tools/, and the architecture model. web/caddy-build keeps its own
 # module and checks.
 _GO_PREFIXES = (
@@ -115,6 +115,11 @@ def select_images(paths: list[str], rows: list[dict], root: Path) -> list[str]:
 def changed_paths(event: dict, event_name: str) -> list[str] | None:
     if event_name == "pull_request":
         base = event["pull_request"]["base"]["sha"]
+        revision = base + "...HEAD"
+    elif event_name == "merge_group":
+        # The group holds the queued pull requests ahead of this one, so the
+        # diff against the queue base covers every change that the group merges.
+        base = event["merge_group"]["base_sha"]
         revision = base + "...HEAD"
     elif event_name == "push":
         base = event.get("before", "")

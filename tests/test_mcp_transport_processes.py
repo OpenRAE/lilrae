@@ -1,7 +1,7 @@
 """Real OpenSSH and built MCP interoperability, without a deployed lab.
 
 Run after mcp/build-all-mcps.sh. Runtime identity/capture observations are test
-fixtures, not evidence of full TechVault boot or production qualification.
+fixtures, not evidence of a full scenario boot or production qualification.
 """
 
 import json
@@ -436,6 +436,7 @@ def test_blue_indexer_process_queries_controlled_https_service(transport):
         stderr=subprocess.DEVNULL,
     )
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(root / "https.crt", root / "https.key")
     upstream = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     upstream.socket = context.wrap_socket(upstream.socket, server_side=True)

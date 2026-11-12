@@ -2,6 +2,7 @@
 import { loadActiveTraceId } from './runs.js';
 import { redact } from './redaction.js';
 import type { ShellType } from './shells.js';
+import { knownToolFailure } from './lilrae-tool-outcome.js';
 
 // Mask embedded credentials before putting a command into an error message.
 // Command-timeout / failure SSHError strings can reach stderr (console.error)
@@ -43,7 +44,7 @@ export function aptlShellEnv(sessionId: string, env: NodeJS.ProcessEnv = process
 // Both throw the existing `SSHError` per ADR-004 §"Update (2026-05-12)".
 export function require_(condition: boolean, message: string): asserts condition {
   if (!condition) {
-    throw new SSHError(message);
+    throw knownToolFailure(new SSHError(message));
   }
 }
 

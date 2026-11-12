@@ -17,7 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from raes.explicitness import ExplicitnessClass, ExplicitnessProvenance
+from raes_contracts.explicitness import ExplicitnessClass, ExplicitnessProvenance
 from raes.runtime_configuration import RuntimeConfiguration
 from raes_contracts.planning import (
     ChangeAction,
@@ -50,7 +50,7 @@ from aptl.backends.raes_manifest import (
     create_aptl_realization_envelope,
 )
 from aptl.backends.raes_observation import observe_realization
-from aptl.backends.raes_planning_compat import DAEMON_READBACK_RUNTIME_CONCERNS
+from aptl.backends._raes_manifest_realization import DAEMON_READBACK_RUNTIME_CONCERNS
 from aptl.backends.raes_realization_model import AptlRealization, NodeRealization
 from aptl.core.deployment.errors import BackendTimeoutError
 from aptl.core.deployment.observation import (
@@ -994,75 +994,6 @@ def _redis_acl_runtime() -> RuntimeConfiguration:
             }
         ]
     )
-
-
-def test_techvault_redis_authorization_requires_bounded_live_acl():
-    from aptl_techvault.startup import TechVaultStartupProvider
-
-    backend = _Backend(
-        {_CONTAINER: _inspect()},
-        exec_results={
-            _CONTAINER: {
-                "sh": (
-                    0,
-                    "config=exact\nauth=PONG\nrw=verified\nadmin=denied\n",
-                )
-            }
-        },
-    )
-
-    observed = TechVaultStartupProvider.observe_runtime(
-        backend,
-        SimpleNamespace(
-            name="misp-redis",
-            container_name=_CONTAINER,
-            runtime=_redis_acl_runtime(),
-        ),
-    )
-
-    assert _APP_AUTH_PATH in observed
-
-
-def test_techvault_redis_authorization_rejects_admin_access():
-    from aptl_techvault.startup import TechVaultStartupProvider
-
-    backend = _Backend(
-        {_CONTAINER: _inspect()},
-        exec_results={
-            _CONTAINER: {
-                "sh": (
-                    0,
-                    "config=exact\nauth=PONG\nrw=verified\nadmin=allowed\n",
-                )
-            }
-        },
-    )
-
-    observed = TechVaultStartupProvider.observe_runtime(
-        backend,
-        SimpleNamespace(
-            name="misp-redis",
-            container_name=_CONTAINER,
-            runtime=_redis_acl_runtime(),
-        ),
-    )
-
-    assert _APP_AUTH_PATH not in observed
-
-
-@pytest.mark.parametrize(
-    "readback",
-    [
-        "config=exact\nauth=PONG\nrw=verified\nadmin=allowed\n",
-        "config=exact\nauth=PONG\nrw=verified\nadmin=denied\nextra=value\n",
-        "config=exact\nauth=PONG\nrw=verified\nadmin=denied\nadmin=denied\n",
-        "config=exact\nauth=PONG\nrw=verified\nadmin\n",
-    ],
-)
-def test_techvault_redis_authorization_rejects_malformed_readback(readback):
-    from aptl_techvault.redis_acl_observation import _readback_verified
-
-    assert not _readback_verified(SimpleNamespace(stdout=readback))
 
 
 def test_wazuh_software_component_requires_guest_version_and_agent_type():
@@ -2802,8 +2733,6 @@ def test_service_listener_readback_binds_daemon_observation_disclosure():
         plan=plan,
         observations=observations,
         previous=(),
-        concern_kinds=frozenset({"service-listeners"}),
-        observation_strength=ObservationStrength.DAEMON_OBSERVED,
     )
 
     assert len(result) == 1

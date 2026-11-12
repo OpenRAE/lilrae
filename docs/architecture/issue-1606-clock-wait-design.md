@@ -25,11 +25,11 @@ record.
 | `correlation.clock.utc_now` writes `datetime.now(UTC).isoformat()` with `Z` in place of `+00:00`. `continuity._utc_now_iso` writes the same text with `+00:00`. | Source; `utc-now` and `continuity-now` vectors. |
 | `isoformat` writes the seconds, then a six-digit microsecond fraction only when the microseconds are not zero. A `datetime` holds whole microseconds. | Python documentation of `datetime.isoformat`; vectors `trailing-zero-microseconds`, `whole-second`. |
 | `core/services.py:wait_for_service` checks at once, treats a check that raises as not ready, never sleeps past the deadline, and checks once more at the deadline (#1002). Its progress messages are a caller concern. | Source and its tests. |
-| `testing/synctest` runs code in a bubble with a fake clock, so a test of a wait needs no injected clock. | Go 1.25 release notes; ADR-065. |
+| `testing/synctest` runs code in a bubble with a fake clock, so a test of a wait needs no injected clock. | Go 1.25 release notes; ADR-070. |
 
 ## Decisions
 
-1. **The clock is a concrete type.** ADR-065 puts each interface at its
+1. **The clock is a concrete type.** ADR-070 puts each interface at its
    consumer. `clock.System` reads the host clock and returns UTC; a consumer
    that needs a fake clock defines `interface{ Now() time.Time }`, and
    `System` satisfies it.

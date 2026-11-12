@@ -23,6 +23,10 @@ from cryptography.x509.oid import NameOID
 from aptl.core.credentials import PathContainmentError
 from aptl.core.certs import CertResult
 from aptl.core.deployment.docker_compose import DockerComposeBackend
+from aptl.core.deployment._misp_cache_credential import MISP_CACHE_CREDENTIAL_PROFILE
+from aptl.core.deployment._compose_stateful_constants import SOC_CERT_PROFILE
+from aptl.core.deployment._flag_signing_keys import FLAG_SIGNING_PROFILE_V2
+from aptl.core.deployment._ssh_key_bundle import SSH_ACCESS_PROFILE_V1
 from aptl.core.deployment._compose_stateful_artifact_helpers import (
     base_container_environment_bindings,
     write_artifact_environment_files,
@@ -212,7 +216,7 @@ def _cache_credential_spec() -> DeploymentRealizationSpec:
         name="misp-cache-credential",
         generator="rendered_config",
         lifecycle="reuse_valid",
-        provenance="techvault:misp-cache-credential/v2",
+        provenance=MISP_CACHE_CREDENTIAL_PROFILE,
         outputs=(
             DeploymentGeneratedArtifactOutput(
                 name="cache-password",
@@ -2010,14 +2014,14 @@ _EMPTY_REALIZATION = DeploymentRealizationSpec(profiles=(), nodes=(), networks=(
 
 
 def _ssh_artifact(consumers=()) -> DeploymentGeneratedArtifactRealization:
-    """An ssh_key_bundle artifact shaped like the TechVault declaration."""
+    """An ssh_key_bundle artifact shaped like a scenario declaration."""
 
     return DeploymentGeneratedArtifactRealization(
-        address="provision.generated-artifact.techvault-ssh-keys",
-        name="techvault-ssh-keys",
+        address="provision.generated-artifact.range-ssh-keys",
+        name="range-ssh-keys",
         generator="ssh_key_bundle",
         lifecycle="regenerate_on_change",
-        provenance="techvault:ssh-access-profile/v1",
+        provenance=SSH_ACCESS_PROFILE_V1,
         outputs=(
             DeploymentGeneratedArtifactOutput(
                 name="operator-private-key",
@@ -2082,7 +2086,7 @@ def test_ssh_key_bundle_is_generated_under_its_canonical_contained_root(
     )
 
     assert staged == [
-        tmp_path.resolve() / SSH_KEY_BUNDLE_ROOT_RELPATH / "techvault-ssh-keys"
+        tmp_path.resolve() / SSH_KEY_BUNDLE_ROOT_RELPATH / "range-ssh-keys"
     ]
 
 
@@ -2293,7 +2297,7 @@ def _soc_artifact(
         name="soc-certs",
         generator="certificate_bundle",
         lifecycle="regenerate_on_change",
-        provenance="techvault:soc-certificate-profile/v1",
+        provenance=SOC_CERT_PROFILE,
         outputs=tuple(
             DeploymentGeneratedArtifactOutput(
                 name=path.replace("/", "-"), path=path, sensitivity="restricted"
@@ -2390,7 +2394,7 @@ def _flag_artifact():
         name="flag-keys",
         generator="rendered_config",
         lifecycle="regenerate_on_change",
-        provenance="techvault:flag-signing-profile/v2",
+        provenance=FLAG_SIGNING_PROFILE_V2,
         outputs=(
             DeploymentGeneratedArtifactOutput(
                 name="webapp-key", path="webapp/flag.key", sensitivity="secret"

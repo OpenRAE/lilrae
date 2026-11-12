@@ -67,7 +67,38 @@ def validate_policy(policy: object) -> dict[str, object]:
         return _validate_platform(policy)
     if authority == "seat-protection":
         return _validate_seat_protection(policy)
+    if authority == "native-range":
+        return _validate_native_range(policy)
     raise ValueError("policy authority is invalid")
+
+
+def _validate_native_range(policy: dict[str, object]) -> dict[str, object]:
+    _validate_common(policy, {"authority", "owner", "networks", "allowances"})
+    networks = policy["networks"]
+    allowances = policy["allowances"]
+    if (
+        not isinstance(networks, list)
+        or not networks
+        or not isinstance(allowances, list)
+    ):
+        raise ValueError("native range collections are invalid")
+    index = _validated_network_index(networks, authority="native-range")
+    if len({n["bridge"] for n in index.values()}) != len(index):
+        raise ValueError("native range bridges must be unique")
+    for allowance in allowances:
+        if not isinstance(allowance, dict) or set(allowance) != {
+            "destination",
+            "protocol",
+            "port",
+        }:
+            raise ValueError("native range allowance is invalid")
+        address = ipaddress.ip_address(allowance["destination"])
+        if address.is_loopback or address.is_multicast or address.is_unspecified:
+            raise ValueError("native range allowance must be unicast")
+        if allowance["protocol"] not in {"tcp", "udp"}:
+            raise ValueError("native range allowance protocol is invalid")
+        _validate_ports([allowance["port"]], allowance["protocol"], required=True)
+    return policy
 
 
 def _validate_common(policy: Mapping[str, object], fields: set[str]) -> None:
@@ -1072,6 +1103,87 @@ def _seat_protection_table(
     return lines
 
 
+def _native_range_table(
+    policy: Mapping[str, object], family: str, table_name: str
+) -> list[str]:
+    """Filter before DNAT so host publications cannot bypass host protection."""
+    networks = _network_index(policy)
+    bridges = sorted(str(n["bridge"]) for n in networks.values())
+    ingress = "ibrname" if family == "bridge" else "iifname"
+    egress = "obrname" if family == "bridge" else "oifname"
+    lines = [
+        f"table {family} {table_name} {{",
+        "  comment " + _quoted(_expected_table_comment(policy)),
+    ]
+    for chain, hook, priority in (
+        ("host_input", "input", -150),
+        ("forward", "forward", -150),
+    ):
+        lines += [
+            f"  chain {chain} {{",
+            f"    type filter hook {hook} priority {priority}; policy accept;",
+        ]
+        for bridge in bridges:
+            prefix = f"    {ingress} {_quoted(bridge)} "
+            rules = []
+            if chain == "host_input" and family == "bridge":
+                rules.extend(
+                    [
+                        "ether type arp accept",
+                        "ether type ip accept",
+                        "ether type ip6 accept",
+                    ]
+                )
+            elif chain == "host_input":
+                rules.extend(
+                    [
+                        f"ip6 hoplimit 255 icmpv6 type {kind} accept"
+                        for kind in ("nd-neighbor-solicit", "nd-neighbor-advert")
+                    ]
+                )
+                rules.append("ct direction reply ct state established accept")
+            else:
+                # Replies to operator loopback publications keep their original
+                # destination in conntrack; range-initiated published-port
+                # connections are denied in prerouting before DNAT.
+                rules.append("ct direction reply ct state established accept")
+                for target in bridges:
+                    rules.append(f"{egress} {_quoted(target)} accept")
+                for allowance in policy["allowances"]:
+                    address = ipaddress.ip_address(allowance["destination"])
+                    selector = "ip" if address.version == 4 else "ip6"
+                    rules.append(
+                        f"{selector} daddr {address} {allowance['protocol']} dport {allowance['port']} accept"
+                    )
+            rules.append("drop")
+            for order, rule in enumerate(rules):
+                lines.append(
+                    prefix
+                    + rule
+                    + " comment "
+                    + _quoted(_rule_marker(f"native-range/{chain}/{bridge}/{order}"))
+                )
+        lines.append("  }")
+    if family == "inet":
+        lines += [
+            "  chain host_destination {",
+            "    type filter hook prerouting priority -110; policy accept;",
+        ]
+        for bridge in bridges:
+            for kind in ("nd-neighbor-solicit", "nd-neighbor-advert"):
+                lines.append(
+                    f"    iifname {_quoted(bridge)} ip6 hoplimit 255 icmpv6 type {kind} accept comment "
+                    + _quoted(_rule_marker(f"native-range/nd/{bridge}/{kind}"))
+                )
+            lines.append(
+                f"    iifname {_quoted(bridge)} fib daddr type local ct direction original drop comment "
+                + _quoted(_rule_marker(f"native-range/local/{bridge}"))
+            )
+        lines.append("  }")
+    lines.append("}")
+    return lines
+
+
 def render_ruleset(
     raw_policy: object,
     *,
@@ -1090,6 +1202,7 @@ def render_ruleset(
         "raes": _raes_table,
         "platform": _platform_table,
         "seat-protection": _seat_protection_table,
+        "native-range": _native_range_table,
     }[authority]
     lines.extend(renderer(policy, "inet", table_name))
     lines.extend(renderer(policy, "bridge", table_name))
@@ -1143,6 +1256,14 @@ def _expected_chains(
     policy: Mapping[str, object],
     family: str,
 ) -> dict[str, tuple[str | None, int | None, str | None]]:
+    if policy["authority"] == "native-range":
+        expected = {
+            "host_input": ("input", -150, "accept"),
+            "forward": ("forward", -150, "accept"),
+        }
+        if family == "inet":
+            expected["host_destination"] = ("prerouting", -110, "accept")
+        return expected
     if policy["authority"] == "seat-protection":
         return {"host_input": ("input", -300, "accept")}
     if policy["authority"] == "platform":
@@ -1175,6 +1296,7 @@ def _expected_rule_comments(
         "raes": _raes_table,
         "platform": _platform_table,
         "seat-protection": _seat_protection_table,
+        "native-range": _native_range_table,
     }[str(policy["authority"])]
     comments: list[str] = []
     for line in renderer(policy, family, table_name):
@@ -1314,6 +1436,131 @@ def _verify_seat_rules(
     return observed == expected
 
 
+def _verify_native_rules(
+    policy: Mapping[str, object],
+    family: str,
+    table_name: str,
+    rules: Sequence[Mapping[str, object]],
+) -> bool:
+    """Compare ordered native expressions, not just claimed rule identities."""
+    expected = []
+    ingress = "ibrname" if family == "bridge" else "iifname"
+    egress = "obrname" if family == "bridge" else "oifname"
+    bridges = sorted(str(n["bridge"]) for n in _network_index(policy).values())
+
+    def match(left, right, op="=="):
+        return {"match": {"op": op, "left": left, "right": right}}
+
+    def meta(key, value):
+        return match({"meta": {"key": key}}, value)
+
+    for chain in ("host_input", "forward"):
+        for bridge in bridges:
+            prefix = [meta(ingress, bridge)]
+            variants = []
+            established = match({"ct": {"key": "state"}}, "established", "in")
+            reply = match({"ct": {"key": "direction"}}, "reply")
+            if chain == "host_input" and family == "bridge":
+                variants += [
+                    [
+                        match(
+                            {"payload": {"protocol": "ether", "field": "type"}}, kind
+                        ),
+                        {"accept": None},
+                    ]
+                    for kind in ("arp", "ip", "ip6")
+                ]
+            else:
+                if chain == "host_input":
+                    variants += [
+                        [
+                            match(
+                                {"payload": {"protocol": "ip6", "field": "hoplimit"}},
+                                255,
+                            ),
+                            match(
+                                {"payload": {"protocol": "icmpv6", "field": "type"}},
+                                kind,
+                            ),
+                            {"accept": None},
+                        ]
+                        for kind in ("nd-neighbor-solicit", "nd-neighbor-advert")
+                    ]
+                variants.append([reply, established, {"accept": None}])
+            if chain == "forward":
+                variants += [
+                    [meta(egress, target), {"accept": None}] for target in bridges
+                ]
+                for allowance in policy["allowances"]:
+                    address = ipaddress.ip_address(allowance["destination"])
+                    protocol = "ip" if address.version == 4 else "ip6"
+                    variants.append(
+                        [
+                            match(
+                                {"payload": {"protocol": protocol, "field": "daddr"}},
+                                str(address),
+                            ),
+                            match(
+                                {
+                                    "payload": {
+                                        "protocol": allowance["protocol"],
+                                        "field": "dport",
+                                    }
+                                },
+                                allowance["port"],
+                            ),
+                            {"accept": None},
+                        ]
+                    )
+            variants.append([{"drop": None}])
+            for order, expressions in enumerate(variants):
+                expected.append(
+                    (
+                        chain,
+                        _rule_marker(f"native-range/{chain}/{bridge}/{order}"),
+                        prefix + expressions,
+                    )
+                )
+    if family == "inet":
+        for bridge in bridges:
+            for kind in ("nd-neighbor-solicit", "nd-neighbor-advert"):
+                expected.append(
+                    (
+                        "host_destination",
+                        _rule_marker(f"native-range/nd/{bridge}/{kind}"),
+                        [
+                            meta("iifname", bridge),
+                            match(
+                                {"payload": {"protocol": "ip6", "field": "hoplimit"}},
+                                255,
+                            ),
+                            match(
+                                {"payload": {"protocol": "icmpv6", "field": "type"}},
+                                kind,
+                            ),
+                            {"accept": None},
+                        ],
+                    )
+                )
+            expected.append(
+                (
+                    "host_destination",
+                    _rule_marker(f"native-range/local/{bridge}"),
+                    [
+                        meta("iifname", bridge),
+                        match({"fib": {"result": "type", "flags": ["daddr"]}}, "local"),
+                        match({"ct": {"key": "direction"}}, "original"),
+                        {"drop": None},
+                    ],
+                )
+            )
+    return [
+        (r.get("chain"), r.get("comment"), r.get("expr"))
+        for r in rules
+        if r.get("family") == family and r.get("table") == table_name
+    ] == expected and len(rules) == len(expected)
+
+
 def _verify_observed_family(
     policy: Mapping[str, object],
     family: str,
@@ -1344,6 +1591,8 @@ def _verify_observed_family(
             return False
     if chains != _expected_chains(policy, family):
         return False
+    if policy["authority"] == "native-range":
+        return _verify_native_rules(policy, family, table_name, rules)
     if policy["authority"] == "seat-protection":
         return _verify_seat_rules(policy, family, table_name, rules)
     return sorted(comments) == _expected_rule_comments(policy, family, table_name)
@@ -1374,14 +1623,20 @@ def _receipt(
         "owner": policy["owner"],
         "enforcement_digest": _digest(policy),
         "families": list(families),
-        "default_deny": policy["authority"] in {"platform", "seat-protection"},
+        "default_deny": policy["authority"]
+        in {"platform", "seat-protection", "native-range"},
     }
 
 
 def _expected_table_comment(policy: Mapping[str, object]) -> str:
     return (
         f"aptl-owner={_owner_marker(str(policy['owner']))},"
-        f"authority={policy['authority']},digest={_digest(policy)}"
+        f"authority={policy['authority']},digest="
+        + (
+            _digest(policy).removeprefix("sha256:")
+            if policy["authority"] == "native-range"
+            else _digest(policy)
+        )
     )
 
 
@@ -1413,6 +1668,8 @@ def _cleanup(policy: dict[str, object]) -> dict[str, object]:
             f"delete table {family} {table_name}" for family in existing
         )
         _nft_json("-f", "-", input_text=rendered + "\n")
+    if policy["authority"] == "native-range" and _owned_families(policy):
+        raise RuntimeError("native range cleanup was not observed")
     return _receipt(policy, ())
 
 
@@ -1429,16 +1686,30 @@ def _observe(policy: dict[str, object]) -> dict[str, object]:
     return _receipt(policy, families)
 
 
+def _check(policy: dict[str, object]) -> dict[str, object]:
+    """Check kernel support and permissions without installing any rule."""
+    _nft_json(
+        "--check",
+        "-f",
+        "-",
+        input_text=render_ruleset(policy, existing_families=_owned_families(policy)),
+    )
+    return {"supported": True}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("apply", "observe", "cleanup"))
+    parser.add_argument("action", choices=("apply", "observe", "cleanup", "check"))
     parser.add_argument("--stdin", action="store_true", required=True)
     args = parser.parse_args()
     try:
         policy = validate_policy(json.load(sys.stdin))
-        action = {"apply": _apply, "observe": _observe, "cleanup": _cleanup}[
-            args.action
-        ]
+        action = {
+            "apply": _apply,
+            "observe": _observe,
+            "cleanup": _cleanup,
+            "check": _check,
+        }[args.action]
         print(json.dumps(action(policy), sort_keys=True, separators=(",", ":")))
         return 0
     except (

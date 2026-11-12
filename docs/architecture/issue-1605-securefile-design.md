@@ -23,7 +23,7 @@ model_changes:
 This design adds the foundation package for contained file access, atomic
 writes, and file modes of Go port 06
 ([#1557](issue-1557-go-foundation-design.md)). The front matter of this note is
-its design record. [ADR-066](../adrs/adr-066-descriptor-walk-for-contained-files.md)
+its design record. [ADR-071](../adrs/adr-071-descriptor-walk-for-contained-files.md)
 records the decision about `os.Root`.
 
 ## Evidence
@@ -53,7 +53,7 @@ records the decision about `os.Root`.
    rules first, and then `filepath.Localize`. A name that `Localize` refuses
    is `invalid_name`. On Linux and macOS this refuses only invalid UTF-8.
 2. **The Unix walk.** On Linux and macOS, the package opens each component
-   with `golang.org/x/sys/unix.Openat` and `O_NOFOLLOW` (ADR-066). A read
+   with `golang.org/x/sys/unix.Openat` and `O_NOFOLLOW` (ADR-071). A read
    traverses each directory with `O_PATH` or `O_SEARCH`. A write opens each
    directory with read access, so that the package can sync it, and creates a
    missing directory with the mode `0700`. A read opens the leaf with
@@ -70,7 +70,7 @@ records the decision about `os.Root`.
    a following open are insufficient: a link can be replaced by its target
    between the open and the check. Reparse tags must be checked on the
    opened object, including junctions, rather than assuming every reparse
-   point has the symbolic-link mode bit. See ADR-066.
+   point has the symbolic-link mode bit. See ADR-071.
    A directory's no-follow handle stays open until the new `os.Root` has
    the same file identity. Reads use the no-follow file handle directly.
 4. **Operations.** Each operation keeps the rules in the evidence.
@@ -128,7 +128,7 @@ records the decision about `os.Root`.
    categories into their existing safe envelopes without parsing prose.
 9. **No renameio on Unix.** renameio contains a write only through an
    `*os.Root`. The descriptor walk publishes with `linkat` and `renameat`
-   instead (ADR-066).
+   instead (ADR-071).
 10. **Tests.** Tests use real files on Linux, macOS, and Windows, including
    links, execute-only directories, FIFOs, and the race lessons of #966. A
    test without root cannot make a directory that another user owns, so a
@@ -178,7 +178,7 @@ This package is a byte-level mechanism in the existing `secure-file`
 foundation component. It owns no configuration, credential discovery,
 authorization, serialization, or persistence policy. Paths below are relative
 to `src/aptl/` unless another root is named. The shared
-[#1557 preflight](issue-1557-go-foundation-preflight.md) and ADR-065 continue
+[#1557 preflight](issue-1557-go-foundation-preflight.md) and ADR-070 continue
 to apply; existing source is evidence, not certification that these contracts
 or the issue's gates have passed.
 
@@ -189,8 +189,8 @@ or the issue's gates have passed.
 | Secret sources and environment shapes: `core/_credential_sources.py`, `core/env.py`, `utils/placeholders.py`, `core/deployment/{_environment_bindings,_realization_primitives,_compose_environment}.py` | Preserve exact pack/consumer/variable grants and authored/generated/granted/adapter distinctions. Validate Docker versus Compose env-file representability before writes. Accept already-rendered bytes; do not read ambient environment or substitute secrets in this package. |
 | At-rest exposure: `utils/pathsafe.py`, `core/credentials.py`, `core/_soc_ca_io.py`, `core/_soc_ca_generation.py`, `core/ssh.py`; ADR-028/029/034 | Keep generated paths separate from checked-in templates. Preserve `0700` directories, `0600` keys/passwords, and deliberate `0644` bind-mounted configs, certificates and keystores. Require exact POSIX modes despite umask and recheck reused files. Windows read-only attributes do not replace the SSH DACL. File bytes must never become argv, shell text, logs, or temporary-file names. |
 | Persistence and identity: `core/runstore.py`, `core/evidence/content_store.py`, `core/archival/`, `core/lilrae_config_migration.py` | Owners retain configured roots, canonical bytes/digests, structural redaction, compare-on-exists, post-write verification, finalization locks and reserved seal-marker authority. A create-once conflict is not success until the owner compares bytes. Opaque securefile writes do not sanitize run records or create a multi-file transaction. |
-| Errors and observability: `core/experiment/errors.py`, `core/deployment/errors.py`, `core/lab_types.py`, `api/schemas.py`, MCP `isError`, `utils/{logging,redaction}.py`, `core/telemetry_export.py` | Reuse current diagnostic/result projections and the redaction parity corpus. Do not export raw `Error.Path`, OS/parser causes or formatted errors into responses, spans or logs. No foundation logger setup, second error hierarchy or copied redaction patterns. Go callers use explicit `slog` and stderr under ADR-065; return an error without also logging it here. |
-| OS and runtime: ADR-066, `internal/securefile` platform files, `core/hostenv.py` | Use retained parent/file handles, no-follow opens, regular-file checks and non-inherited descriptors. Preserve execute-only traversal and nonblocking refusal of FIFOs. Metadata changes need only metadata rights. Root trust includes mount layout and protection against foreign directory mutation; containment is not an OS sandbox or proof that a hard link has no other name. |
+| Errors and observability: `core/experiment/errors.py`, `core/deployment/errors.py`, `core/lab_types.py`, `api/schemas.py`, MCP `isError`, `utils/{logging,redaction}.py`, `core/telemetry_export.py` | Reuse current diagnostic/result projections and the redaction parity corpus. Do not export raw `Error.Path`, OS/parser causes or formatted errors into responses, spans or logs. No foundation logger setup, second error hierarchy or copied redaction patterns. Go callers use explicit `slog` and stderr under ADR-070; return an error without also logging it here. |
+| OS and runtime: ADR-071, `internal/securefile` platform files, `core/hostenv.py` | Use retained parent/file handles, no-follow opens, regular-file checks and non-inherited descriptors. Preserve execute-only traversal and nonblocking refusal of FIFOs. Metadata changes need only metadata rights. Root trust includes mount layout and protection against foreign directory mutation; containment is not an OS sandbox or proof that a hard link has no other name. |
 
 The reuse inventory also includes seat persistence/image/trust writers in
 `appliance/seat/`, `core/{env,host_keys,participant_hosts,exporter}.py`, service
@@ -222,7 +222,7 @@ no-follow and regular-file rules through the change, including a racing leaf
 swap on macOS. Cleanup owns only its temporary names and handles; it must not
 mask the primary error or turn a missing target into an error for idempotent
 removal. Concurrent `Close` must not let a reused descriptor reach another
-directory. Follow ADR-065's context rule at I/O boundaries, without promising
+directory. Follow ADR-070's context rule at I/O boundaries, without promising
 that context cancellation can interrupt every filesystem syscall or abandoning
 owned cleanup in a background goroutine.
 The Linux `/proc/self/fd` metadata mechanism depends on procfs availability;

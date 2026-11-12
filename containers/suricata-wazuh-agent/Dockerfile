@@ -1,4 +1,4 @@
-FROM jasonish/suricata:8.0@sha256:7ca2546f7f2735f621b981b6a5ec84fb962984636f7629a1a2fa6a324d4b6840
+FROM jasonish/suricata:8.0@sha256:d5a3a1785299ab40918d465e54fedf8e3afeeedba76bb64b0cc74dbc20bda2c3
 
 # Apply published AlmaLinux fixes to the OS libraries Suricata links against.
 # Suricata itself is built from source in this image, not an RPM, so the

@@ -19,6 +19,7 @@ from raes_contracts.planning import (
 from aptl.backends.raes_manifest import create_aptl_manifest
 from aptl.backends.raes_realization import interpret_provisioning_plan
 from aptl.core.config import AptlConfig
+from aptl.core.deployment._misp_cache_credential import MISP_CACHE_CREDENTIAL_PROFILE
 from aptl.core.scenario_bundle import ScenarioBundle, project_tree_bundle
 
 
@@ -201,7 +202,7 @@ def test_interpreter_lowers_generated_environment_consumers(tmp_path: Path) -> N
         {
             "generator": "rendered_config",
             "lifecycle": "reuse_valid",
-            "provenance": "techvault:misp-cache-credential/v2",
+            "provenance": MISP_CACHE_CREDENTIAL_PROFILE,
             "outputs": [
                 {
                     "name": "cache-password",
@@ -245,7 +246,7 @@ def test_interpreter_rejects_environment_consumer_name_injection(
         {
             "generator": "rendered_config",
             "lifecycle": "reuse_valid",
-            "provenance": "techvault:misp-cache-credential/v2",
+            "provenance": MISP_CACHE_CREDENTIAL_PROFILE,
             "outputs": [
                 {
                     "name": "cache-password",

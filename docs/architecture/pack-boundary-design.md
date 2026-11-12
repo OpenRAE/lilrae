@@ -1,5 +1,11 @@
 # Pack boundary
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/pack-boundary-design.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 LilRAE keeps its original TechVault adapter.
 RPT maintains an independent copy for its PurpleTeam scenario family.
 The two packages can change and release independently.
@@ -10,29 +16,36 @@ RPT issue #15 owns its copy and delivery PR.
 Core owns configuration, source admission, installed-provider discovery, lifecycle order, backend effects, and evidence storage.
 Purpose-specific `aptl.*` entry points select installed providers for exact admitted identities.
 The original provider package remains `aptl_techvault`.
+
 The RPT distribution uses `rpt-techvault-adapter` and package `rpt_techvault`.
 RPT entry names select `techvault-purpleteam`, not the original pack or participant-study pack.
 The copy imports public LilRAE contracts and its own modules.
+
 RPT capture IDs use `rpt.collector.*` so evidence payload selectors remain distinct.
 It does not import the original adapter package.
 Each distribution retains its own source lineage, dependency range, release version, and qualification claims.
+
 Changed pack bytes require an explicit qualification update.
 A copied implementation alone does not qualify future experiment variations or capture requirements.
 
 Configuration has no implicit scenario identity.
 Initialization can create an unselected workspace.
 Admission requires an explicit source before backend effects.
+
 Container settings contain bounded profile selection rather than topology booleans.
 An explicit migration preserves existing settings and rejects ambiguous conversion.
 The existing lifecycle owner lock covers reading, backup, and replacement.
+
 Loading configuration never rewrites it.
 
 Startup and doctor use the selected provider's validated host demand.
 A missing kernel demand performs no kernel probe.
 Kernel demand applies independently of optional host-tool checks.
+
 Compose version checks derive from rendered features.
 Image preflight inspects the same rendered override before artifact and image operations.
 Backend authority and validation of remote artifacts precede feature probes.
+
 No product name or pack name determines a generic version check.
 
 ## Security and failure behavior
@@ -40,15 +53,19 @@ No product name or pack name determines a generic version check.
 Installed adapters are trusted Python code.
 Pack content cannot choose executable imports or install packages.
 Core filters entry names before loading and rejects ambiguous compatible providers.
+
 Atomic pack identity and family qualification prevent accidental cross-release admission.
 The RPT copy cannot claim original pack selectors.
 Public operations retain node ownership, bounded commands, credential grants, and output containment.
+
 Adapter failures retain the existing bounded error envelopes.
 Migration validates original JSON before replacement and preserves recoverable original bytes.
 No migration runs as a side effect of a read.
+
 Unknown settings and malformed capability values fail before mutation.
 Original and RPT adapter tests run against installed metadata and built distributions.
 Fixture startup must avoid importing or selecting an unrelated adapter.
+
 Live qualification remains separate from import and packaging evidence.
 
 ## Data flow
@@ -80,14 +97,63 @@ No new evidence store, network service, or runtime installer is introduced.
 ## Policy and executable architecture
 
 The existing owner-derived boundary checker remains the policy owner.
-It checks all generic source paths and derives identifiers from adapter ownership metadata.
+It checks all generic source and test paths and derives identifiers from adapter ownership metadata.
 Specific retained compatibility references require file and symbol ownership entries.
+
 Exceptions cannot cover whole directories or hide new identifiers.
 Existing protocols and typed DTOs remain the executable architecture.
 The new RPT package has its own build metadata and import boundary checks.
+
 No new plugin registry or catch-all adapter interface is introduced.
 Compose assets lose undriven mail and reverse services.
 Existing deployment ownership and effective-model checks continue to validate rendered services.
+
+## Test ownership
+
+Issue #1700 applies the pack boundary to tests.
+Each test belongs to one of two groups.
+The behavior under test decides the group, not the file name or the input.
+
+| Group | Location | Input |
+| --- | --- | --- |
+| TechVault adapter or released-pack contract | `tests/techvault/` | The installed adapter, the released pack, and independent expectations |
+| Generic code | All other test paths, including `web/tests/` | The owned fixture pack, or small neutral models and values |
+
+The first group includes installed-adapter ownership and absence contracts.
+It also includes tests of a retained TechVault-named API in the ownership ledger.
+A mixed file is split by test function or class.
+A released-pack case cannot keep the generic cases in its file on TechVault data.
+
+`tests/techvault/conftest.py` holds the shared released-pack fixtures.
+Pytest makes a directory `conftest.py` fixture available only to tests in that directory.
+Thus, generic test collection cannot acquire the released pack or load its adapter.
+
+The repository-wide `tests/conftest.py` holds no TechVault fixture.
+Pytest 9.1.1 loses these fixtures when file arguments interleave the subtree with its parent.
+The development dependency therefore requires pytest 9.2.0 or later (pytest-dev/pytest#14971).
+
+Production code does not import tests, and ADR-064 keeps tests outside the layers.
+
+The boundary checker also covers `tests/` and `web/tests/`, except `tests/techvault/`.
+In those test paths, it also rejects pack identifiers.
+The ownership ledger accepts no test-path exceptions.
+The `tests/techvault/` location is the group record.
+
+```mermaid
+flowchart LR
+  M[(Installed distribution metadata)] -->|Owner pack identities| K[Boundary checker]
+  P[(Admitted owner pack SDL)] -->|Hosts, zones, accounts, credentials| K
+  G[(Generic source and test files)] -->|File lines| K
+  T[(tests/techvault)] -.->|Not scanned| K
+  K -->|Path and fact kind, never the value| R[Pre-commit and CI result]
+```
+
+The checker reports a finding by path and fact kind.
+It never prints a credential value from the pack.
+The checker detects only facts that the pack SDL authors.
+Review must still find other topology names, such as node names, in generic tests.
+Generic tests use synthetic secrets and isolated environment mappings.
+A neutral test input grants no new runtime authority and changes no persisted format.
 
 ## Decisions and references
 
@@ -122,8 +188,10 @@ Full standard compliance is not claimed from a general prose check.
 The ownership ledger records exact existing source occurrences and their permitted counts.
 It also identifies implementation modules owned by a family and retained at historical import paths.
 New dependencies on those modules fail the same owner-derived policy check.
+
 An adapter-free start cannot load those implementations.
 The clean installed-wheel lifecycle uses an import guard derived from the same ownership paths.
 The guard runs the actual public CLI and does not replace backend results with test successes.
+
 Crypto producer identifiers remain closed backend compatibility contracts for existing authored profiles.
 No new shared producer interface is promoted merely because RPT copied the original family.

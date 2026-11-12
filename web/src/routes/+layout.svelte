@@ -1,10 +1,10 @@
 <script lang="ts">
 	import '../app.css';
-	import NavBar from '$lib/components/NavBar.svelte';
-	import SettingsDialog from '$lib/components/SettingsDialog.svelte';
-	import PrivacyDetailsPanel from '$lib/components/PrivacyDetailsPanel.svelte';
-	import LocalUseNoticeDialog from '$lib/components/LocalUseNoticeDialog.svelte';
-	import { initLabStore, destroyLabStore } from '$lib/stores/lab';
+	import NavBar from '#lib/components/NavBar.svelte';
+	import SettingsDialog from '#lib/components/SettingsDialog.svelte';
+	import PrivacyDetailsPanel from '#lib/components/PrivacyDetailsPanel.svelte';
+	import LocalUseNoticeDialog from '#lib/components/LocalUseNoticeDialog.svelte';
+	import { initLabStore, destroyLabStore } from '#lib/stores/lab.ts';
 	import {
 		settingsOpen,
 		privacyOpen,
@@ -12,7 +12,7 @@
 		openPrivacy,
 		acknowledgeAndRun,
 		dismissNotice
-	} from '$lib/stores/ui';
+	} from '#lib/stores/ui.ts';
 	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
 

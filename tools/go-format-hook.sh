@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # pre-commit check of the staged Go files with the gofmt of the toolchain that
-# go.mod pins (ADR-065). "go env GOROOT" resolves that toolchain, so an older
+# go.mod pins (ADR-070). "go env GOROOT" resolves that toolchain, so an older
 # gofmt on the PATH cannot accept or reject other code than CI does.
 set -euo pipefail
 

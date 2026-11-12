@@ -4,7 +4,6 @@ from typing import Optional
 
 import typer
 
-from aptl.api.deps import get_web_asset_root
 from aptl.api.session import (
     LAUNCH_TOKEN_ENV,
     SESSION_SECRET_ENV,
@@ -68,6 +67,10 @@ def serve(
         raise typer.Exit(1)
 
     import os
+
+    # Every lilrae command loads this module, and aptl.api.deps imports
+    # fastapi, which only the web extra declares. Load it after the check above.
+    from aptl.api.deps import get_web_asset_root
 
     if project_dir:
         os.environ["APTL_PROJECT_DIR"] = project_dir

@@ -1,4 +1,4 @@
-// Command mutationcheck runs the mutation test gate of ADR-065.
+// Command mutationcheck runs the mutation test gate of ADR-070.
 //
 // Usage:
 //

@@ -12,3 +12,6 @@ Current validation flows through RAES:
 
 Do not add new APTL-local scenario validation rules here. Put current
 validation policy in the RAES gate documentation.
+
+Status reviewed: 2026-11-06.
+Use the [current authoring guide](index.md) for supported scenario work.

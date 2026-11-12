@@ -3,7 +3,7 @@
 Issue #1555 is the delivery contract; there is no requirement
 transition. This note records boundaries, not an implementation plan or the
 scheme inventory itself. No new ADR is needed: ADR-029, ADR-044, ADR-047,
-ADR-050, and ADR-065 already assign the relevant ownership.
+ADR-050, and ADR-070 already assign the relevant ownership.
 
 ## Contract and compatibility
 
@@ -13,7 +13,7 @@ domain/version, hash, digest spelling, truncation, and consuming record fields.
 Sharing SHA-256 or RFC 8785 does not make two schemes interchangeable. Do not
 consolidate product helpers or correct product behavior in this issue.
 
-There is a real policy tension: ADR-065 requires strict Go JSON/YAML decoding,
+There is a real policy tension: ADR-070 requires strict Go JSON/YAML decoding,
 but some Python readers accept duplicates or non-finite values. Inventory
 accepted and rejected inputs per boundary; do not label all malformed inputs
 as universally rejected. `utils/strict_json.py` rejects duplicate members and
@@ -178,7 +178,7 @@ Target `go-cutover` and retain one delivery PR. Run only selected tests through
 suites, coverage, builds, and whole-tree prose checks stay in CI. Older dated
 preflights' `pre-commit run --all-files` instructions are superseded by
 `.gc/plan-rules.md`. Go test/implementation changes are later ports; any such
-scope change first requires ADR-065's issue design and architecture-model gate.
+scope change first requires ADR-070's issue design and architecture-model gate.
 
 Non-goals are Go implementations, production refactoring or normalization,
 new schemas for RAES records, new config/validation/redaction/error services,

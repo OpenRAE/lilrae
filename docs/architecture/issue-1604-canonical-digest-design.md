@@ -162,7 +162,7 @@ contain `$int` or `$float` keys.
   map iteration order as canonical order. Test escaped duplicate names and
   malformed surrogate escapes as well as invalid raw UTF-8. The strict Go
   reader rejects malformed Unicode even where Python accepts an escaped
-  lone surrogate; record this as ADR-065 strictness, not an encoding repair.
+  lone surrogate; record this as ADR-070 strictness, not an encoding repair.
   Outputs have no BOM or final LF. Owners add their own framing where their
   vectors require it.
 - **Keep values stable during a call.** No input map, slice or `*big.Int` is

@@ -1,7 +1,7 @@
 # Go Architecture
 
 `architecture/model.yaml` is the architecture model of
-[ADR-065](../adrs/adr-065-go-implementation-and-engineering-standards.md). It
+[ADR-070](../adrs/adr-070-go-implementation-and-engineering-standards.md). It
 gives the layers, the components, the packages of each component, and the
 components and modules that each component can use. The
 [#1583 design](issue-1583-architecture-model-design.md) gives the schema and the

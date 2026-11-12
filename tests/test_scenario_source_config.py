@@ -37,12 +37,12 @@ def test_an_operator_can_select_a_scenario_and_its_root(tmp_path):
     config = load_config(
         _write(
             tmp_path,
-            {"scenario": {"identity": "bounded-participant-agency-techvault",
+            {"scenario": {"identity": "fixture-operational",
                           "root": "environments/bounded-participant"}},
         )
     )
 
-    assert config.scenario.identity == "bounded-participant-agency-techvault"
+    assert config.scenario.identity == "fixture-operational"
     assert config.scenario.root == "environments/bounded-participant"
 
 
@@ -87,12 +87,12 @@ def test_the_configured_scenario_is_what_the_start_path_resolves(tmp_path):
     from aptl.backends.raes import _resolve_scenario_path
 
     config = AptlConfig.model_validate(
-        {"scenario": {"identity": "bounded-participant-agency-techvault"}}
+        {"scenario": {"identity": "fixture-operational"}}
     )
 
     resolved = _resolve_scenario_path(tmp_path, None, config)
 
-    assert resolved.name == "bounded-participant-agency-techvault.sdl.yaml"
+    assert resolved.name == "fixture-operational.sdl.yaml"
 
 
 def test_an_explicit_scenario_path_still_wins(tmp_path):

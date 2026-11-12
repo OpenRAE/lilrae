@@ -8,6 +8,8 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Literal, Optional
 
+from aptl.core._deployment_config import DeploymentConfig, validate_compose_project_name
+
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -18,39 +20,40 @@ from pydantic import (
 )
 
 from aptl.core._credential_sources import (
+    AttachedServiceAccountSource,
     EnvironmentGrant,
     ProcessEnvironmentCredentialSource,
 )
+from aptl.core.mcp_policy import McpPolicy
+from aptl.core._participant_model_ids import validate_installed_participant_model_id
 from aptl.utils.logging import get_logger
+
+__all__ = [
+    "AptlConfig",
+    "ContainerSettings",
+    "DeploymentConfig",
+    "EnvironmentGrant",
+    "ExperimentSettings",
+    "InstalledParticipantCredentialSources",
+    "InstalledParticipantModels",
+    "LabLifecyclePolicyConfig",
+    "LabSettings",
+    "LifecycleScheduleEntry",
+    "McpPolicy",
+    "ProcessEnvironmentCredentialSource",
+    "RunStorageConfig",
+    "ScenarioSourceConfig",
+    "SeatSettings",
+    "find_config",
+    "load_config",
+    "validate_compose_project_name",
+    "validate_installed_participant_model_id",
+]
 
 log = get_logger("config")
 
 _NAME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
-_COMPOSE_PROJECT_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
-_PARTICIPANT_MODEL_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:/@-]{0,127}$")
-_IMMUTABLE_PARTICIPANT_MODEL_PATTERNS = {
-    "claude": re.compile(
-        r"^claude-(?:[a-z0-9-]+[-@]\d{8}|(?:sonnet|opus|haiku)-[1-9]\d*)$",
-        flags=re.ASCII,
-    ),
-    "codex": re.compile(
-        r"^(?:codex-[a-z0-9._-]+|gpt-[a-z0-9._-]+|o\d[a-z0-9._-]*)"
-        r"-\d{4}-\d{2}-\d{2}$",
-        flags=re.ASCII,
-    ),
-}
 _CONFIG_FILENAMES = ["aptl.json"]
-
-
-def validate_compose_project_name(value: str) -> str:
-    """Return a bounded Compose project token or raise ``ValueError``."""
-
-    if not _COMPOSE_PROJECT_NAME_PATTERN.fullmatch(value):
-        raise ValueError(
-            "deployment.project_name must be 1-63 lowercase letters, "
-            "digits, hyphens, or underscores and start with a letter or digit"
-        )
-    return value
 
 
 class LabSettings(BaseModel):
@@ -89,7 +92,10 @@ class ContainerSettings(BaseModel):
         if value is not None and (
             len(value) > 128
             or len(set(value)) != len(value)
-            or any(not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}", item) for item in value)
+            or any(
+                not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}", item)
+                for item in value
+            )
         ):
             raise ValueError("invalid operator group selection")
         return value
@@ -204,61 +210,6 @@ class ScenarioSourceConfig(BaseModel):
         return cleaned
 
 
-class DeploymentConfig(BaseModel):
-    """Configuration for deployment backend selection.
-
-    Controls which deployment backend is used for lab lifecycle
-    operations (start, stop, status, kill).  Defaults to local
-    Docker Compose.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    # "docker-compose" or "ssh-compose"
-    provider: str = "docker-compose"
-    project_name: str = "aptl"
-
-    # SSH-specific fields (only used when provider == "ssh-compose")
-    ssh_host: str | None = None
-    ssh_user: str | None = None
-    ssh_key: str | None = None
-    ssh_port: int = 22
-    remote_dir: str | None = None
-
-    # Operator grants: the only way an operator-supplied value reaches a
-    # declared scenario variable (issue #965). Locators, never values.
-    environment_grants: list[EnvironmentGrant] = Field(default_factory=list)
-
-    @field_validator("environment_grants")
-    @classmethod
-    def validate_unique_grants(
-        cls, grants: list[EnvironmentGrant]
-    ) -> list[EnvironmentGrant]:
-        """Refuse two grants for the same pack, consumer and variable."""
-
-        keys = [grant.key for grant in grants]
-        if len(keys) != len(set(keys)):
-            raise ValueError("environment grants must be unique per variable")
-        return grants
-
-    @field_validator("provider")
-    @classmethod
-    def validate_provider(cls, v: str) -> str:
-        allowed = {"docker-compose", "ssh-compose"}
-        if v not in allowed:
-            raise ValueError(
-                f"Unknown deployment provider '{v}'. "
-                f"Supported: {', '.join(sorted(allowed))}"
-            )
-        return v
-
-    @field_validator("project_name")
-    @classmethod
-    def validate_project_name(cls, value: str) -> str:
-        """Validate the identity used by Compose and destructive label queries."""
-
-        return validate_compose_project_name(value)
-
 _TIME_PATTERN = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 _WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
@@ -327,20 +278,6 @@ class LabLifecyclePolicyConfig(BaseModel):
         return v
 
 
-def validate_installed_participant_model_id(provider: str, value: str) -> str:
-    """Validate one explicit, non-secret installed-provider model identity."""
-
-    immutable_pattern = _IMMUTABLE_PARTICIPANT_MODEL_PATTERNS.get(provider)
-    if (
-        immutable_pattern is None
-        or not isinstance(value, str)
-        or not _PARTICIPANT_MODEL_PATTERN.fullmatch(value)
-        or not immutable_pattern.fullmatch(value)
-    ):
-        raise ValueError("installed participant model identifier is invalid")
-    return value
-
-
 class InstalledParticipantModels(BaseModel):
     """Closed model selections for APTL's installed participant providers."""
 
@@ -348,8 +285,9 @@ class InstalledParticipantModels(BaseModel):
 
     claude: str | None = Field(default=None, strict=True, max_length=128)
     codex: str | None = Field(default=None, strict=True, max_length=128)
+    opencode: str | None = Field(default=None, strict=True, max_length=128)
 
-    @field_validator("claude", "codex")
+    @field_validator("claude", "codex", "opencode")
     @classmethod
     def validate_model(cls, value: str | None, info: ValidationInfo) -> str | None:
         """Reject implicit, ambiguous, or unsafe provider model identities."""
@@ -362,7 +300,7 @@ class InstalledParticipantModels(BaseModel):
     def model_for(self, provider: str) -> str:
         """Return one configured model or fail closed for installed use."""
 
-        if provider not in {"claude", "codex"}:
+        if provider not in {"claude", "codex", "opencode"}:
             raise ValueError("unknown installed participant provider")
         model = getattr(self, provider)
         if model is None:
@@ -379,11 +317,19 @@ class InstalledParticipantCredentialSources(BaseModel):
 
     claude: ProcessEnvironmentCredentialSource | None = None
     codex: ProcessEnvironmentCredentialSource | None = None
+    opencode: ProcessEnvironmentCredentialSource | None = None
+    #: A Google Cloud service account key, or the host's attached account, for
+    #: Vertex AI participant models.
+    vertex: ProcessEnvironmentCredentialSource | AttachedServiceAccountSource | None = Field(
+        default=None, discriminator="kind"
+    )
 
-    def source_for(self, provider: str) -> ProcessEnvironmentCredentialSource:
+    def source_for(
+        self, provider: str
+    ) -> ProcessEnvironmentCredentialSource | AttachedServiceAccountSource:
         """Return one explicitly configured source or fail closed."""
 
-        if provider not in {"claude", "codex"}:
+        if provider not in {"claude", "codex", "opencode", "vertex"}:
             raise ValueError("unknown installed participant provider")
         source = getattr(self, provider)
         if source is None:
@@ -410,6 +356,20 @@ class ExperimentSettings(BaseModel):
     participant_credential_sources: InstalledParticipantCredentialSources = Field(
         default_factory=InstalledParticipantCredentialSources
     )
+    #: The operator-approved OpenRouter serving provider for each trial model.
+    participant_serving_providers: dict[str, str] = Field(
+        default_factory=dict, max_length=64
+    )
+    #: The absolute path of the installed, pinned OpenCode executable.
+    opencode_executable: str | None = Field(default=None, min_length=2, max_length=4096)
+
+    @field_validator("opencode_executable")
+    @classmethod
+    def validate_opencode_executable(cls, value: str | None) -> str | None:
+        """Admit only an absolute executable path."""
+        if value is not None and not Path(value).is_absolute():
+            raise ValueError("opencode_executable must be an absolute path")
+        return value
 
 
 class SeatSettings(BaseModel):
@@ -440,6 +400,7 @@ class AptlConfig(BaseModel):
     lifecycle_policy: LabLifecyclePolicyConfig | None = None
     experiment: ExperimentSettings = ExperimentSettings()
     seat: SeatSettings = SeatSettings()
+    mcp: McpPolicy = McpPolicy()
 
 
 def load_config(path: Path) -> AptlConfig:

@@ -2,9 +2,9 @@
 
 ## Status
 
-superseded in part by ADR-065
+superseded in part by ADR-070
 
-[ADR-065](adr-065-go-implementation-and-engineering-standards.md) supersedes two parts of this record for the Go code: the
+[ADR-070](adr-070-go-implementation-and-engineering-standards.md) supersedes two parts of this record for the Go code: the
 Python mechanisms (grimp, Ruff, and the enrolled list), and the rule that no
 first-party package imports a plugin. In Go, `cmd/lilrae` imports each plugin
 to register it. The layers and the other rules continue.
@@ -19,6 +19,14 @@ This record supersedes two clauses of earlier records:
 ## Date
 
 2026-10-31
+
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [design-check explanation](../architecture/design-checks.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
 
 ## Context
 
@@ -159,9 +167,7 @@ moves give each package one layer:
 
 ### Reuse rules
 
-1. Each shared concern has one implementation, for example atomic writes,
-   path containment, digests, time, strict JSON, locks, waits, process runs,
-   HTTP, and redaction.
+1. Each shared concern must have one implementation and one owner. Examples include atomic writes, containment, digests, time, strict JSON, locks, waits, subprocesses, HTTP, and redaction.
 2. Use the standard library or an established dependency before custom code.
 3. Use the existing schema, validator, error type, or result envelope. Do not
    copy it.

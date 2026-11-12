@@ -1,4 +1,4 @@
-"""Inputs and entry point for one adjusted RAES planning operation."""
+"""Inputs and entry point for one RAES planning operation."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class AptlPlanningOptions:
-    """Optional inputs to one APTL-adjusted RAES planning operation."""
+    """Optional inputs to one RAES planning operation."""
 
     snapshot: RuntimeSnapshot | None = None
     parameters: Mapping[str, object] | None = None
@@ -40,14 +40,21 @@ def planning_run_scope(
     selected = requested or PlanScope()
     trial = bundle.trial if isinstance(bundle, ScenarioBundle) else None
     run_id = selected.run_id
+    instantiation_id = selected.instantiation_id
     if trial is not None:
         if run_id is not None and run_id != trial.provenance.run_id:
             raise ValueError("family-run-identity-mismatch")
         run_id = trial.provenance.run_id
+        if (
+            instantiation_id is not None
+            and instantiation_id != trial.provenance.plan_entry_id
+        ):
+            raise ValueError("family-entry-identity-mismatch")
+        instantiation_id = trial.provenance.plan_entry_id
     return PlanScope(
         target_name=selected.target_name,
         run_id=run_id or (uuid4().hex if required else None),
-        instantiation_id=selected.instantiation_id,
+        instantiation_id=instantiation_id,
     )
 
 
@@ -57,10 +64,10 @@ def plan_aptl_scenario(
     scenario: object,
     options: AptlPlanningOptions | None = None,
 ) -> ExecutionPlan:
-    """Compile and plan through APTL's temporary TechVault compatibility seam."""
+    """Compile and plan through the public RAES contracts."""
 
     # Planning needs no runtime owner; the one runtime for the run is created
     # for apply (OpenRAE/rae#1660).
-    from aptl.backends.raes_planning_compat import plan_for_target
+    from aptl.backends.raes_runtime import plan_for_target
 
     return plan_for_target(target, scenario, options or AptlPlanningOptions())

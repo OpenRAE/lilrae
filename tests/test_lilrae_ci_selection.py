@@ -28,7 +28,7 @@ def test_api_and_common_changes_select_their_consumers():
     for path in (
         "mcp/aptl-mcp-common/src/server.ts",
         "containers/kali-capture/broker.py",
-        "tests/test_mcp_capture_lifecycle.py",
+        "tests/test_kali_capture_broker.py",
     ):
         assert select([path])["mcp"]
     assert select(["uv.lock"])["dependencies"]
@@ -44,6 +44,51 @@ def test_project_wide_analysis_has_complete_current_coverage():
     ):
         lanes = select([path])
         assert all(lanes[name] for name in ("python", "mcp", "web"))
+
+
+def test_scheduled_and_dispatched_checks_select_all_lanes():
+    module = selector()
+    for event in ("schedule", "workflow_dispatch"):
+        paths = module.changed_paths({}, event)
+        assert paths is None
+        assert all(module.select_lanes(paths or [], full=paths is None).values())
+
+
+def _git(repo, *args):
+    import subprocess
+
+    return subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", *args],
+        cwd=repo, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+
+
+def test_merge_group_selects_every_queued_change_since_the_queue_base(
+    tmp_path, monkeypatch
+):
+    """A merge group carries the pull requests ahead of it (ADR-068)."""
+    module = selector()
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "ci")
+    _git(tmp_path, "config", "user.email", "ci@example.invalid")
+    (tmp_path / "README.md").write_text("base\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "base")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    for path in ("docs/ahead.md", "src/aptl/queued.py"):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text("change\n")
+        _git(tmp_path, "add", ".")
+        _git(tmp_path, "commit", "-qm", path)
+    monkeypatch.chdir(tmp_path)
+
+    paths = module.changed_paths({"merge_group": {"base_sha": base}}, "merge_group")
+
+    assert sorted(paths) == ["docs/ahead.md", "src/aptl/queued.py"]
+    assert module.select_lanes(paths)["python"]
+    assert module.changed_paths(
+        {"merge_group": {"base_sha": "not-a-sha"}}, "merge_group"
+    ) is None
 
 
 def test_every_dockerfile_selects_the_iac_gate():
@@ -152,7 +197,7 @@ def test_go_changes_select_the_go_and_docs_lanes_and_the_coverage_closure():
     # The Caddy build keeps its own module and its web checks.
     caddy = select(["web/caddy-build/main.go"])
     assert caddy["web"]
-    # Python tools still select all lanes, and Go source outside the ADR-065
+    # Python tools still select all lanes, and Go source outside the ADR-070
     # layout keeps the routing of its directory.
     assert all(select(["tools/check_pack_boundary.py"]).values())
     assert select(["scripts/tool/main.go"])["lab"]

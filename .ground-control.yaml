@@ -6,7 +6,7 @@ workflow:
   # requests against this branch. dev keeps the default base. Go port 31
   # removes this key before it merges go-cutover into dev (#1584).
   base_branch: go-cutover
-  # Local verification is deliberately change-scoped. The helper runs only
+  # Run behavior tests only in CI or an approved isolated VM. The helper runs only
   # changed test files (or explicit paths supplied by the caller); it refuses
   # to fall back to a bare/full suite. CI/CD owns full suites and coverage.
   test_command: bash tools/run-targeted-tests.sh
@@ -18,116 +18,8 @@ workflow:
   format_command: pre-commit run
   codex_review:
     pre_push_cap: 1
-  review_disposition:
-    enabled: false
-    mode: shadow
-    max_auto_overrides: 0
-    judge:
-      enabled: false
 sonarcloud:
   project_key: Brad-Edwards_aptl
   organization: brad-edwards
-routing:
-  # Per-step model routing (ADR-036). When enabled, each /implement step is
-  # dispatched on the model its tier hint maps to (low->haiku, medium->sonnet,
-  # high->opus) instead of always running on the parent session model.
-  enabled: true
-  default_provider: claude
 rules:
   plan_rules: .gc/plan-rules.md
-# Canonical boundary model declarations (GC-GRC-004 / GC-GRC-023). These are the
-# eight trust boundaries of the aptl platform + contained cyber range, declared
-# so the in-loop /implement GRC screening reuses them. They were the basis of
-# the GRC baseline bootstrap (issue #597, GC-GRC-018).
-#
-# `surfaces` is adapter-routing metadata, NOT aptl's attack-surface ontology: each
-# token must be a Ground Control derivation-adapter surface so GRC screening can
-# derive facts. Registered adapters (code-verified against Ground Control, see
-# issue #634 / autarchy-ai/Ground-Control#1326): CodeQL -> `application`
-# (python/js/ts); IaC/pipeline & Boundary -> `dockerfile`, `docker-compose`,
-# `terraform`, `github-actions`. Each boundary lists only the surfaces its actual
-# `paths` content warrants. `config/**` (suricata, wazuh_*, otel)
-# and network topology have NO derivation adapter — they stay owned by their
-# boundary via `paths` but contribute no `surfaces` (accept-as-uncovered rather
-# than declaring a token that silently derives nothing).
-grc:
-  boundaries:
-    - key: range-perimeter
-      name: Range Containment Perimeter
-      description: Outermost trust boundary — the contained range vs. the external internet; egress firewall (SAF-002) is the primary safety boundary.
-      paths:
-        - docker-compose.yml
-        - containers/appliance-egress-proxy/**
-        - src/aptl/core/**
-        - config/suricata/**
-      # src/aptl/core and appliance-egress-proxy (python) -> application;
-      # docker-compose.yml -> docker-compose; the egress proxy Dockerfile ->
-      # dockerfile; config/suricata uncovered.
-      surfaces: [application, docker-compose, dockerfile]
-    - key: host-boundary
-      name: Docker Host Boundary
-      description: Docker host vs. range containers — kill switch (SAF-001), resource limits (INF-004), health checks (INF-003).
-      paths:
-        - docker-compose.yml
-        - containers/base/**
-        - containers/network-boundary-helper/**
-        - appliance/guest/**
-        - src/aptl/appliance/**
-        - src/aptl/cli/**
-      # src/aptl/cli (python) -> application; docker-compose.yml -> docker-compose;
-      # containers/base and network-boundary-helper Dockerfiles -> dockerfile.
-      surfaces: [application, docker-compose, dockerfile]
-    - key: mcp-control-plane
-      name: MCP Control Plane
-      description: Red/blue MCP servers and orchestrator that AI agents drive — the agent authorization and command-filtering surface.
-      paths:
-        - mcp/**
-        - src/aptl/workbench/**
-      # mcp/** is first-party TypeScript -> application (Dockerfiles under mcp/ are
-      # vendored node_modules only).
-      surfaces: [application]
-    - key: redteam-zone
-      name: Red Team Zone (aptl-redteam)
-      description: Attacker network hosting Kali and the reverse-engineering container.
-      paths:
-        - containers/kali/**
-        - containers/kali-capture/**
-        - containers/reverse/**
-      # kali / kali-capture / reverse Dockerfiles -> dockerfile.
-      surfaces: [dockerfile]
-    - key: dmz-zone
-      name: DMZ Zone (aptl-dmz)
-      description: Semi-exposed victim network — generic component build contexts.
-      paths:
-        - containers/mailserver/**
-      surfaces: [dockerfile]
-    - key: internal-zone
-      name: Internal Zone (aptl-internal)
-      description: Internal enterprise network — Active Directory, PostgreSQL, SMB fileshare, victim/workstation hosts.
-      paths:
-        - containers/ad/**
-        - containers/victim/**
-        - containers/workstation/**
-        - containers/windows-victim/**
-      # fileshare / victim / workstation Dockerfiles -> dockerfile.
-      surfaces: [dockerfile]
-    - key: security-zone
-      name: Security/SOC Zone (aptl-security)
-      description: Defensive stack — Wazuh, Suricata, MISP, Shuffle; zone isolation via multi-homing only (NET-005).
-      paths:
-        - containers/misp-suricata-sync/**
-        - config/wazuh_cluster/**
-        - config/wazuh_dashboard/**
-        - config/wazuh_indexer/**
-      # misp-suricata-sync Dockerfile -> dockerfile; config/* uncovered.
-      surfaces: [dockerfile]
-    - key: observability-plane
-      name: Observability Plane
-      description: OpenTelemetry collector, Tempo, Grafana, and the aptl web API/UI experiment-observability surface.
-      paths:
-        - config/otel/**
-        - web/**
-        - src/aptl/api/**
-      # web/** (ts/svelte) + src/aptl/api (python) -> application; web/Dockerfile* ->
-      # dockerfile; config/otel uncovered.
-      surfaces: [application, dockerfile]

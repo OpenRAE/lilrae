@@ -128,8 +128,6 @@ class TestExperimentSettings:
             "sonnet",
             "claude-sonnet-4-5",
             "claude-haiku-4-5@latest",
-            "gpt-4o",
-            "gpt-5.2-codex",
             "bad model",
             "bad\nmodel",
             "x" * 129,
@@ -168,6 +166,16 @@ class TestExperimentSettings:
 
         with pytest.raises(ValidationError):
             ExperimentSettings(participant_models={provider: model})
+
+    @pytest.mark.parametrize(("provider", "model"), [
+        ("codex", "gpt-5.2-codex"), ("codex", "gpt-4o"),
+        ("claude", "claude-sonnet-4-5"), ("claude", "claude-sonnet-5-5"),
+        ("opencode", "openrouter/author/model:free"),
+    ])
+    def test_current_model_ids_do_not_require_snapshot_shaped_names(self, provider, model):
+        from aptl.core.config import ExperimentSettings
+
+        assert ExperimentSettings(participant_models={provider: model}).participant_models.model_for(provider) == model
 
     @pytest.mark.parametrize(
         "model",
@@ -253,7 +261,7 @@ class TestExperimentSettings:
 
 
 _GRANT = {
-    "pack": "techvault",
+    "pack": "fixture-range",
     "consumer": "webapp",
     "variable": "DB_PASSWORD",
     "source": {"kind": "process-environment", "variable": "LAB_DB_PASSWORD"},
@@ -292,7 +300,7 @@ class TestEnvironmentGrants:
         config = DeploymentConfig(environment_grants=[{**_GRANT, "source": source}])
         grant = config.environment_grants[0]
 
-        assert grant.key == ("techvault", "webapp", "DB_PASSWORD")
+        assert grant.key == ("fixture-range", "webapp", "DB_PASSWORD")
         assert grant.source_identity == identity
 
     @pytest.mark.parametrize(
@@ -302,7 +310,7 @@ class TestEnvironmentGrants:
             {"source": {"kind": "process-environment", "variable": "lab-db"}},
             {"source": {"kind": "process-environment"}},
             {"variable": "DB-PASSWORD"},
-            {"pack": "../techvault"},
+            {"pack": "../fixture-range"},
             {"consumer": ""},
             {"value": "s3cret"},
         ],

@@ -23,9 +23,9 @@ the design record of its packages.
 
 2. **Foundation layer.** Each package is a component of the `foundation`
    layer of `architecture/model.yaml`, with no LilRAE concept. A package uses
-   only the standard library, the modules of ADR-065, and other foundation
+   only the standard library, the modules of ADR-070, and other foundation
    packages. `tools/cmd/archcheck` enforces the layer. The `go-arch-lint`
-   item of #1557 refers to the checker that ADR-065 replaced.
+   item of #1557 refers to the checker that ADR-070 replaced.
 3. **Scheme ownership.** Foundation implements the generic schemes: RFC 8785,
    the sorted JSON forms of Python, strict JSON decoding, the SHA-256
    spellings, and the timestamp forms. Their vectors are `rfc8785`,
@@ -37,7 +37,7 @@ the design record of its packages.
 4. **Compatibility encoders are not readers.** Some vectors record that the
    Python encoders write `NaN` and `Infinity`. The compatibility encoder of
    such a scheme writes the same bytes. A first-party reader stays strict, as
-   ADR-065 states, and rejects those constants.
+   ADR-070 states, and rejects those constants.
 5. **Effects behind small interfaces.** The clock, file access, process runs,
    and HTTP have interfaces that the consumer defines, and fakes in tests.
    Real platform behavior has real tests: files, locks, and processes on

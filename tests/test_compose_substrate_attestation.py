@@ -100,17 +100,30 @@ def test_a_container_honoring_the_spec_matches():
     assert _mismatch(_realized(spec), spec) is None
 
 
-def test_a_plain_provider_substrate_with_its_measured_grant_matches():
-    spec = BaseContainerSpec(
+def _samba_provider_spec() -> BaseContainerSpec:
+    return BaseContainerSpec(
         node_address="provision.node.ad",
         container_name="aptl-ad",
         image_ref="aptl/generic-samba-ad-base:latest",
         runs_services=False,
         use_image_command=True,
-        backend_run_capabilities=("SYS_ADMIN",),
     )
 
+
+def test_a_plain_provider_substrate_without_added_capabilities_matches():
+    spec = _samba_provider_spec()
+
     assert _mismatch(_realized(spec), spec) is None
+
+
+def test_a_provider_container_with_the_retired_samba_grant_is_refused():
+    """A warm lab's Samba container from before #976 still holds SYS_ADMIN."""
+
+    spec = _samba_provider_spec()
+    info = _realized(spec)
+    info["HostConfig"]["CapAdd"] = ["SYS_ADMIN"]
+
+    assert _mismatch(info, spec) is not None
 
 
 def test_the_retired_privileged_recipe_is_refused():
