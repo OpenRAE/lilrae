@@ -173,9 +173,18 @@ capability in Go.
 
 ## Preflights
 
+- [Issue #1747 Configuration Design](issue-1747-go-config-design.md)
+- [Issue #1559 Configuration, State, and Key Material Design](issue-1559-go-config-state-keys-design.md)
+- [Issue #1559 Configuration and Trust Boundaries (CLI-007)](issue-1559-config-trust-preflight.md)
+- [Issue #1559 Strict Configuration Validation (CLI-002)](issue-1559-strict-config-preflight.md)
+- [Issue #1559 INF-005 Certificate Generation](issue-1559-inf-005-preflight.md)
+- [Issue #1559 Wazuh TLS Preflight](issue-1559-wazuh-tls-preflight.md)
+- [Issue #1559 SEC-005 Credential Isolation](issue-1559-sec-005-credential-isolation-preflight.md)
+- [Issue #1559 Configuration, Environment, State, and Keys](issue-1559-config-state-keys-preflight.md)
 - [Issue #1605 Contained Files Design](issue-1605-securefile-design.md)
 - [Issue #1606 Clock and Deadline Waits Design](issue-1606-clock-wait-design.md)
 - [Issue #1604 Canonical Forms and Digests Design](issue-1604-canonical-digest-design.md)
+- [Issue #1559 Environment Credentials (INF-006)](issue-1559-env-credentials-preflight.md)
 - [Issue #1557 Go Foundation Preflight](issue-1557-go-foundation-preflight.md)
 - [Issue #1557 Go Foundation Design](issue-1557-go-foundation-design.md)
 - [Issue #1556 RAES Go Boundary Preflight](issue-1556-raes-go-boundary-preflight.md)

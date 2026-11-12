@@ -3,7 +3,7 @@ module github.com/OpenRAE/lilrae/conformance
 // The conformance suite is a module of its own: it holds test files only,
 // and its tests need an installed lilrae binary. Thus go test ./... and the
 // mutation gate in the product module do not run it.
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/itchyny/gojq v0.12.19

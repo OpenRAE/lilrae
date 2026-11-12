@@ -70,8 +70,9 @@ flowchart LR
 1. **Separate tool modules.** golangci-lint has a module of its own (ADR-065).
    The gate fixtures have a module of their own, because Gremlins sets each
    mutant timeout from the test time of the whole module.
-2. **Patched release in the go directive.** Each `go.mod` sets `go 1.27.3`, so
-   CI installs the patched release, and `GOTOOLCHAIN=local` keeps it.
+2. **Patched release in the go directive.** Each `go.mod` sets the newest
+   patched release, for example `go 1.27.4`. CI installs that release, and
+   `GOTOOLCHAIN=local` keeps it.
 3. **Host tool binaries.** `go-gates.sh` builds the pinned tools for the host
    once per run. It runs golangci-lint for `linux`, `darwin`, and `windows`.
 4. **No packages is a reported state.** A module without packages gets

@@ -8,6 +8,31 @@ accepted
 
 2026-05-18
 
+## Current scope and Go port interpretation
+
+[ADR-063](adr-063-remove-thehive-and-cortex.md) retires TheHive and Cortex.
+References below to those products describe historical consumers, not a
+requirement to restore them. SEC-006 covers the retained MISP and Shuffle
+consumers. One SOC CA does not replace Wazuh's separate INF-005 authority.
+
+For Go, [ADR-065](adr-065-go-implementation-and-engineering-standards.md)
+replaces the Python and TypeScript mechanisms named below. Issue #1559 owns
+the lab CA contract and one certificate verification boundary using
+`crypto/x509`. Generation, reuse checks, deployment validation, and desktop
+identity checks must use that boundary without losing their distinct policies.
+Ordinary HTTPS handshakes retain standard `crypto/tls` verification through
+`internal/httpclient`; do not add a parallel handshake verifier. Keep the
+desktop check of the exact issued leaf in addition to chain and hostname
+verification. Renewal eligibility remains separate from current validity.
+
+Issue #1570 owns service-specific generation and delivery integration.
+Admitted pack outputs and authored hosts supply certificate requests through
+`derive_soc_service_certs` today. The fallback registry is not scenario
+authority. Keep subjects, SANs, formats, and output protection explicit at the
+owner boundary; do not copy product or scenario dispatch into foundation.
+The [#1559 preflight](../architecture/issue-1559-config-state-keys-preflight.md)
+records the cross-cutting obligations and compatibility limits.
+
 ## Context
 
 SEC-006 requires MISP, TheHive, Cortex, and Shuffle to serve certificates

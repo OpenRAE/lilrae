@@ -108,6 +108,15 @@ nav:
     - "Issue #1604 Canonical Forms and Digests Design": architecture/issue-1604-canonical-digest-design.md
     - "Issue #1606 Clock and Deadline Waits Design": architecture/issue-1606-clock-wait-design.md
     - "Issue #1605 Contained Files Design": architecture/issue-1605-securefile-design.md
+    - "Issue #1559 Configuration and Trust Boundaries Preflight": architecture/issue-1559-config-trust-preflight.md
+    - "Issue #1559 Configuration, Environment, State, and Keys Preflight": architecture/issue-1559-config-state-keys-preflight.md
+    - "Issue #1559 Strict Configuration Validation Preflight": architecture/issue-1559-strict-config-preflight.md
+    - "Issue #1559 Environment Credentials Preflight": architecture/issue-1559-env-credentials-preflight.md
+    - "Issue #1559 SEC-005 Credential Isolation Preflight": architecture/issue-1559-sec-005-credential-isolation-preflight.md
+    - "Issue #1559 INF-005 Certificate Generation Preflight": architecture/issue-1559-inf-005-preflight.md
+    - "Issue #1559 Wazuh TLS Preflight": architecture/issue-1559-wazuh-tls-preflight.md
+    - "Issue #1559 Configuration, State, and Key Material Design": architecture/issue-1559-go-config-state-keys-design.md
+    - "Issue #1747 Configuration Design": architecture/issue-1747-go-config-design.md
     - "Issue #1510 Code Quality Architecture Preflight": architecture/issue-1510-code-quality-preflight.md
     - "Issue #1510 Code Quality Architecture Design": architecture/issue-1510-code-quality-design.md
     - "Issue #1372 Capture Spec Version Preflight": architecture/issue-1372-capture-spec-version-preflight.md
