@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import shutil
 import subprocess
@@ -112,13 +113,49 @@ def _replace_rule_keeping_comment(
     assert replaced.returncode == 0, replaced.stderr
 
 
-def _kernel_listing(table: str) -> str:
-    """Return the kernel listing of an owned table for a failure message."""
+def _kernel_listing(table: str, ruleset: str) -> str:
+    """Return the kernel listing of an owned table and the nft check result."""
 
-    return "\n".join(
+    listing = "\n".join(
         _nft("-j", "list", "table", family, table).stdout or family + ": absent"
         for family in ("inet", "bridge")
     )
+    check = subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "-i",
+            "--network",
+            "host",
+            "--cap-drop=ALL",
+            "--cap-add=NET_ADMIN",
+            "--security-opt=no-new-privileges",
+            "--entrypoint",
+            "nft",
+            DEFAULT_BOUNDARY_HELPER_IMAGE,
+            "-c",
+            "-f",
+            "-",
+        ],
+        input=ruleset,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    return f"{listing}\nnft check: {check.returncode} {check.stderr}"
+
+
+def _rendered_ruleset(policy: SeatProtectionBoundarySpec) -> str:
+    """Render the policy with the checked-in helper for a failure message."""
+
+    path = Path(__file__).parents[1] / "containers/network-boundary-helper/helper.py"
+    spec = importlib.util.spec_from_file_location("boundary_helper", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.render_ruleset(policy.details(), existing_families=())
 
 
 def _docker_available() -> bool:
@@ -618,7 +655,7 @@ def test_seat_protection_readback_matches_the_kernel_and_detects_drift() -> None
         assert created.returncode == 0, created.stderr
         table = _table_name(policy.owner, policy.authority)
         result = backend.realize_boundary(policy)
-        assert result.success is True, _kernel_listing(table)
+        assert result.success is True, _kernel_listing(table, _rendered_ruleset(policy))
         assert helper("observe").returncode == 0
 
         marker = f"seat-protection/default/{bridge}"
