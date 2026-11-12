@@ -6,9 +6,11 @@ APTL lab (e.g., vm.max_map_count for OpenSearch/Wazuh Indexer).
 
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 
 from aptl.core import hostenv
 from aptl.utils.logging import get_logger
+from aptl.utils.probe_execution import run_bounded_probe_command
 
 log = get_logger("sysreqs")
 
@@ -180,13 +182,20 @@ def _run_max_map_count_sysctl(
 ) -> subprocess.CompletedProcess | SysReqResult:
     """Run sysctl or return a not-applicable result when it is unavailable."""
     try:
+        bounded = run_bounded_probe_command(
+            ["sysctl", "vm.max_map_count"], cwd=Path.cwd(), timeout=15
+        )
+        if bounded is not None:
+            return bounded
         return subprocess.run(
             ["sysctl", "vm.max_map_count"],
             capture_output=True,
             text=True,
         )
     except OSError:
-        return _not_applicable_result(minimum, "sysctl command not found or inaccessible")
+        return _not_applicable_result(
+            minimum, "sysctl command not found or inaccessible"
+        )
 
 
 def _evaluate_sysctl_result(
@@ -216,9 +225,14 @@ def _failed_sysctl_result(stderr: str, minimum: int) -> SysReqResult:
     error_msg = stderr.strip() or "sysctl command failed"
     if _sysctl_not_applicable(error_msg):
         return _not_applicable_result(
-            minimum, "vm.max_map_count check not applicable: key unavailable on this host"
+            minimum,
+            "vm.max_map_count check not applicable: key unavailable on this host",
         )
-    error = "sysctl permission denied" if "permission denied" in error_msg.lower() else "sysctl command failed"
+    error = (
+        "sysctl permission denied"
+        if "permission denied" in error_msg.lower()
+        else "sysctl command failed"
+    )
     log.error("%s", error)
     return SysReqResult(
         passed=False,

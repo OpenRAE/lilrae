@@ -13,7 +13,7 @@ import pytest
 
 pytest.importorskip("raes", reason="RAES SDL not installed")
 
-from raes import parse_sdl, parse_sdl_file  # noqa: E402
+from raes import parse_sdl  # noqa: E402
 
 from aptl.api.scenario_projection import (  # noqa: E402
     build_scenario_detail,
@@ -109,11 +109,8 @@ class TestBlockProjection:
         terminals = [b for b in detail.blocks if b.type == "terminal"]
         assert [t.container for t in terminals] == ["ssh-target"]
 
-    def test_infra_only_scenario_emits_no_objective_step_or_siem_blocks(self, tmp_path):
-        from tests.helpers import techvault_scenario_path
-
-        scenario = parse_sdl_file(techvault_scenario_path(tmp_path))
-        detail = build_scenario_detail(_entry("techvault-operational"), scenario)
+    def test_infra_only_scenario_emits_no_objective_step_or_siem_blocks(self):
+        detail = build_scenario_detail(_entry(), parse_sdl(EDGE_SDL))
         types = set(_block_types(detail))
         assert "objective" not in types
         assert "step" not in types

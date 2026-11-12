@@ -1,3 +1,5 @@
+To get started and run a scenario with LilRÆ, see [Run Your First Lab](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/quick-start.md).
+
 [![Quality gate](https://sonarcloud.io/api/project_badges/quality_gate?project=Brad-Edwards_aptl&token=4dd88be3421d6d030a4615b86ac8ab0e3c9eb4d3)](https://sonarcloud.io/summary/new_code?id=Brad-Edwards_aptl)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/OpenRAE/lilrae/badge)](https://scorecard.dev/viewer/?uri=github.com/OpenRAE/lilrae)
 
@@ -164,6 +166,7 @@ The published site is the canonical user manual:
 - [Run your first lab](docs/getting-started/quick-start.md)
 - [Troubleshooting](docs/troubleshooting/index.md)
 - [Architecture and historical records](docs/architecture/index.md)
+- [Design-check tools](docs/architecture/design-checks.md)
 - [OpenSSF Best Practices assessment](docs/security/openssf-best-practices.md)
 
 The README is the GitHub and package-index gateway, not a second copy of the
@@ -176,9 +179,9 @@ manual.
 - [Report a vulnerability privately](https://github.com/OpenRAE/lilrae/security/advisories/new)
 - [Review the OpenSSF Best Practices assessment](docs/security/openssf-best-practices.md)
 
-Do not report suspected vulnerabilities through a public issue. The
-[security policy](SECURITY.md) describes scope and the private fallback contact
-path.
+Do not put vulnerability details in a public issue, pull request, or
+discussion. The [security policy](SECURITY.md) describes scope and the private
+fallback contact path.
 
 ## Ethics And Disclaimer
 

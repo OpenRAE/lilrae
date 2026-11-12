@@ -9,7 +9,7 @@ from aptl.core.deployment._compose_ownership_override import OwnershipConflictEr
 from aptl.core.deployment.errors import BackendTimeoutError
 from aptl.core.deployment.lilrae_native_evidence import (
     confirm_native_absence,
-    record_cleanup,
+    retire_after_cleanup,
 )
 from aptl.core.ephemeral_containers import (
     EphemeralContainer,
@@ -62,7 +62,7 @@ class ComposeProjectCleanupMixin(object):
                 if not self._raw_container_inspect(receipt.native_id):
                     if not confirm_native_absence(self, receipt):
                         raise OwnershipConflictError("container absence is unverified")
-                    record_cleanup(ownership, receipt, cause="already-absent")
+                    retire_after_cleanup(ownership, receipt, cause="already-absent")
                     continue
                 native_id = self._resolve_owned_container_id(receipt.native_id)
                 command = remove_container_command(
@@ -73,7 +73,7 @@ class ComposeProjectCleanupMixin(object):
                 elif not confirm_native_absence(self, receipt):
                     failures.append("failed to verify receipt-owned container removal")
                 else:
-                    record_cleanup(ownership, receipt, cause="after-remove")
+                    retire_after_cleanup(ownership, receipt, cause="after-remove")
             return failures
         except OwnershipConflictError, BackendTimeoutError, OSError, ValueError, BufferError:
             return ["failed to establish container cleanup authority"]
@@ -99,12 +99,11 @@ class ComposeProjectCleanupMixin(object):
                 if not confirm_native_absence(self, receipt):
                     failures.append("failed to verify receipt-owned volume removal")
                     continue
-                record_cleanup(
+                retire_after_cleanup(
                     ownership,
                     receipt,
                     cause="after-remove" if removed else "already-absent",
                 )
-                ownership.retire_deleted_volume(receipt)
             return failures
         except OwnershipConflictError, BackendTimeoutError, OSError, ValueError, BufferError:
             return ["failed to establish volume cleanup authority"]
@@ -143,7 +142,7 @@ class ComposeProjectCleanupMixin(object):
                     timeout=60,
                 )
                 if not removed.returncode and confirm_native_absence(self, receipt):
-                    record_cleanup(ownership, receipt, cause="after-remove")
+                    retire_after_cleanup(ownership, receipt, cause="after-remove")
             except OwnershipConflictError, BackendTimeoutError, OSError, ValueError, BufferError:
                 continue
         self._remove_recorded_children(

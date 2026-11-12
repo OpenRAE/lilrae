@@ -1,5 +1,5 @@
 <script lang="ts">
-	import StatusBadge from '$lib/components/kit/StatusBadge.svelte';
+	import StatusBadge from '#lib/components/kit/StatusBadge.svelte';
 
 	interface Props {
 		running: boolean;

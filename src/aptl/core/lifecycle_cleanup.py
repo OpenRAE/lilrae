@@ -28,7 +28,12 @@ from aptl.core.startup_reset_state import (
     load_pending_cleanup,
 )
 from aptl.utils.logging import get_logger
-from aptl.utils.pathsafe import PathContainmentError, remove_contained_nofollow
+from aptl.utils.pathsafe import (
+    REASON_NOT_FOUND,
+    PathContainmentError,
+    remove_contained_nofollow,
+    remove_tree_contained_nofollow,
+)
 
 log = get_logger("lifecycle-cleanup")
 
@@ -38,6 +43,8 @@ log = get_logger("lifecycle-cleanup")
 WAZUH_ENROLLMENT_BASELINE_RELPATH = Path(
     ".aptl/realization/wazuh-agent-identity/baseline.json"
 )
+#: The same identities, retained per admitted trial for capture sources.
+WAZUH_TRIAL_ENROLLMENT_DIR = Path(".aptl/realization/wazuh-agent-identity/trials")
 
 REASON_HOST_STATE_UNSAFE = "host-state-unsafe"
 REASON_HOST_STATE_UNAVAILABLE = "host-state-unavailable"
@@ -81,11 +88,16 @@ class CleanupReport:
 
 
 def clear_wazuh_enrollment_baseline(project_dir: Path) -> None:
-    """Remove the enrollment baseline under the lab project, if present."""
+    """Remove the enrollment baseline and trial records, if present."""
 
     try:
         remove_contained_nofollow(project_dir, WAZUH_ENROLLMENT_BASELINE_RELPATH)
+        remove_tree_contained_nofollow(project_dir, WAZUH_TRIAL_ENROLLMENT_DIR)
+    except FileNotFoundError:
+        pass
     except PathContainmentError as exc:
+        if exc.reason == REASON_NOT_FOUND:
+            return
         raise CleanupActionError(REASON_HOST_STATE_UNSAFE) from exc
     except OSError as exc:
         raise CleanupActionError(REASON_HOST_STATE_UNAVAILABLE) from exc
@@ -239,6 +251,7 @@ def docker_teardown_failed_message(
 __all__ = [
     "RETRY_COMMAND",
     "WAZUH_ENROLLMENT_BASELINE_RELPATH",
+    "WAZUH_TRIAL_ENROLLMENT_DIR",
     "CleanupActionError",
     "CleanupReport",
     "PendingCleanupFailure",

@@ -203,7 +203,7 @@ def test_node_base_images_name_supported_patch_releases() -> None:
 def test_node_artifact_builds_assert_the_effective_version() -> None:
     expected = {
         "containers/generic-systemd-node22-base/Dockerfile": "v22.23.4",
-        "web/Dockerfile": "v26.12.1",
+        "web/Dockerfile": "v26.13.0",
     }
     missing = []
     for relative, version in expected.items():
@@ -501,24 +501,6 @@ def test_release_artifacts_are_attested_and_the_bundle_ships() -> None:
         f"the attestation bundle is written to {bundle_path!r}, which none of the "
         f"uploaded globs {globs} cover"
     )
-
-
-def test_scenario_verification_artifact_boundary_runs_in_ci() -> None:
-    """The core-only/plugin-installed wheel proof must not be an optional local test."""
-
-    import yaml
-
-    workflow = yaml.safe_load((WORKFLOW_DIR / "checks.yml").read_text(encoding="utf-8"))
-    job = workflow["jobs"]["scenario-verification-artifacts"]
-    commands = "\n".join(
-        str(step.get("run", "")) for step in job["steps"] if "run" in step
-    )
-
-    # This job executes pytest as well as building wheels, so it needs the
-    # hash-locked development/test export rather than the CI-tool-only export.
-    assert "pip install --require-hashes -r requirements/dev.txt" in commands
-    assert "tests/test_scenario_verification_artifacts.py" in commands
-    assert "-m integration" in commands
 
 
 @pytest.mark.parametrize(

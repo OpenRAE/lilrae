@@ -88,9 +88,8 @@ def test_admit_and_realize_base_container_scenario_on_real_docker(tmp_path):
     # the init-capable generic substrate, which the backend builds from the
     # Dockerfile its own project dir ships (issue #1006). Stage that context
     # exactly as a real lab directory holds it.
-    _stage_build_context(
-        "containers/generic-systemd-base-debian/Dockerfile", tmp_path
-    )
+    _stage_build_context("containers/generic-systemd-base-debian/Dockerfile", tmp_path)
+    _stage_build_context("containers/operator-access-proxy/Dockerfile", tmp_path)
     container = "aptl-smoke-box"
     subprocess.run(["docker", "rm", "-f", container], capture_output=True, text=True)
 
@@ -121,6 +120,14 @@ def test_admit_and_realize_base_container_scenario_on_real_docker(tmp_path):
     try:
         result = backend.realize(spec, scenario_root=bundle.root)
         assert result.success, result.error
+        # Docker drops direct publications on internal-only networks. The
+        # owned relay must prove its target and preserve the declared host port.
+        published = backend.node_publication_bindings("aptl-smoke-box")
+        assert published["2022/tcp"] == [{"HostIp": "127.0.0.1", "HostPort": "32022"}]
+        import socket
+
+        with socket.create_connection(("127.0.0.1", 32022), timeout=5) as connection:
+            assert connection.recv(256).startswith(b"SSH-")
         # Observe actual endpoints independently of the reconcile return code.
         from aptl.core.deployment._compose_realization_networks import (
             _node_network_attachments,
@@ -137,7 +144,7 @@ def test_admit_and_realize_base_container_scenario_on_real_docker(tmp_path):
             endpoints = backend.container_inspect(node.container_name)[
                 "NetworkSettings"
             ]["Networks"]
-            assert set(desired).issubset(endpoints)
+            assert set(desired) == set(endpoints)
             for name, attachment in desired.items():
                 assert endpoints[name]["IPAddress"]
                 if attachment.ipv4_address:
@@ -180,18 +187,5 @@ def test_admit_and_realize_base_container_scenario_on_real_docker(tmp_path):
         assert listeners is not None
         assert 2022 in {port for _protocol, _address, port in listeners.sockets}
     finally:
-        subprocess.run(
-            ["docker", "rm", "-f", realized_container_name(backend, container)],
-            capture_output=True,
-            text=True,
-        )
-        subprocess.run(
-            [
-                "docker",
-                "network",
-                "rm",
-                f"{realized_project_name(backend)}_aptl-smoke",
-            ],
-            capture_output=True,
-            text=True,
-        )
+        cleaned = backend.stop([], remove_volumes=True)
+        assert cleaned.success, cleaned.error

@@ -42,7 +42,7 @@ class TestWebServe:
         import os
 
         with patch(
-            "aptl.cli.web.get_web_asset_root",
+            "aptl.api.deps.get_web_asset_root",
             return_value=Path("/fake/web/build"),
         ):
             yield
@@ -195,7 +195,7 @@ class TestWebServeWebRoot:
         # Patch get_web_asset_root so it returns None when explicit dir has no index.
         # The real fallback would search other candidates; we isolate just this path.
         with patch(
-            "aptl.cli.web.get_web_asset_root",
+            "aptl.api.deps.get_web_asset_root",
             return_value=None,
         ):
             result = runner.invoke(app, ["--web-root", str(empty_dir)])
@@ -211,7 +211,7 @@ class TestWebServeWebRoot:
         from aptl.cli.web import app
 
         with patch(
-            "aptl.cli.web.get_web_asset_root",
+            "aptl.api.deps.get_web_asset_root",
             return_value=None,
         ):
             result = runner.invoke(app, [])
@@ -226,7 +226,7 @@ class TestWebServeWebRoot:
         from aptl.cli.web import app
 
         with patch(
-            "aptl.cli.web.get_web_asset_root",
+            "aptl.api.deps.get_web_asset_root",
             return_value=None,
         ):
             result = runner.invoke(app, ["--api-only"])

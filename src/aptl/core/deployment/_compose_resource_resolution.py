@@ -12,7 +12,9 @@ from aptl.core.deployment._compose_resource_ownership import (
     WorkspaceOwnership,
 )
 from aptl.core.deployment.errors import BackendSeedError, BackendTimeoutError
+from aptl.core.deployment._cleanup_budget import cleanup_command_timeout
 from aptl.core.ephemeral_containers import remove_container_command
+from aptl.core.deployment.observation import DeploymentObservationContext
 
 if TYPE_CHECKING:
     import subprocess
@@ -29,6 +31,18 @@ _CONTAINER_INSPECT_RETRY_DELAYS = (0.2, 0.5, 1.0)
 
 class ComposeResourceResolutionMixin:
     """Resolve daemon-native resources only through durable receipts."""
+
+    def _bind_realization_attempt(
+        self, observation_context: DeploymentObservationContext | None
+    ) -> DeploymentObservationContext:
+        """Bind workspace ownership and selected attempt before preflight."""
+        observation_context = observation_context or DeploymentObservationContext()
+        attempt_id = observation_context.attempt_id or self._resource_attempt_id
+        ownership = self._ensure_resource_ownership()
+        self._ensure_resource_ownership(
+            attempt_id=attempt_id or ownership.new_attempt_id()
+        )
+        return observation_context
 
     def _load_resource_ownership(self) -> WorkspaceOwnership | None:
         """Load an existing workspace scope without publishing new state."""
@@ -98,7 +112,8 @@ class ComposeResourceResolutionMixin:
         verified: tuple[str, ...] = ()
         for attempt, delay in enumerate((0, *_CONTAINER_INSPECT_RETRY_DELAYS)):
             if delay:
-                time.sleep(delay)
+                time.sleep(cleanup_command_timeout(delay))
+                cleanup_command_timeout(0)
             try:
                 verified = tuple(
                     receipt.native_id
@@ -106,6 +121,7 @@ class ComposeResourceResolutionMixin:
                     if self._container_receipt_is_current(ownership, receipt)
                 )
             except BackendTimeoutError:
+                cleanup_command_timeout(0)
                 if attempt == len(_CONTAINER_INSPECT_RETRY_DELAYS):
                     raise
                 continue

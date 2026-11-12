@@ -1,5 +1,13 @@
 # Issue #1510 Code Quality Architecture Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1510-code-quality-preflight.md).
+Its last recorded file change before this rewrite was `01675661a2a0`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 Issue #1510 is the delivery contract under SYS-009. This note records design
 constraints for its implementation, not an implementation plan or an accepted ADR.
 It changes no production code, checks, configuration, or public behavior.

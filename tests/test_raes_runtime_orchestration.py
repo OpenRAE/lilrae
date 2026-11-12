@@ -989,7 +989,7 @@ def test_authority_attestation_survives_a_holder_without_a_docker_cli(
 
     The in-container `docker info` probe corroborates that the holder's socket
     reaches the admitted daemon. Real holders talk to the socket over the Docker
-    API and ship no CLI at all -- Shuffle's orborus is one, so every TechVault
+    API and ship no CLI at all -- Shuffle's orborus is one, so every range
     boot failed attestation with exit 127, "executable file not found".
 
     The boundary itself is established host-side and still is: the mount is

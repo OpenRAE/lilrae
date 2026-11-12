@@ -225,7 +225,7 @@ def test_missing_configured_release_never_uses_installed_identity(tmp_path):
 
     config = AptlConfig(
         scenario={
-            "identity": "techvault",
+            "identity": "fixture-range",
             "pack_directory": "releases/missing",
         }
     )

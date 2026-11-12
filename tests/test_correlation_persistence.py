@@ -31,7 +31,7 @@ from aptl.core.experiment.errors import AdmissionRejection
 from aptl.core.exporter import export_local
 from aptl.core.runstore import LocalRunStore
 
-_PARTICIPANT_ADDRESS = "participant.behavior.techvault.kali-victim-ssh-probe"
+_PARTICIPANT_ADDRESS = "participant.behavior.fixture.kali-victim-ssh-probe"
 
 
 def _behavior_event(*, event_type: str, timestamp: str, episode_id: str, action_instance_id: str, **overrides):
@@ -72,7 +72,7 @@ def _write_run_archive(
 ) -> None:
     store.create_run(run_id)
     episode_id = "episode-persist-1"
-    action_id = "participant.behavior.techvault.kali-victim-ssh-probe.persist1"
+    action_id = "participant.behavior.fixture.kali-victim-ssh-probe.persist1"
     attempted = _behavior_event(
         event_type="action_attempted",
         timestamp="2026-01-01T00:00:00Z",
@@ -92,7 +92,7 @@ def _write_run_archive(
         "participant_episode_history": {},
         "participant_behavior_history": {_PARTICIPANT_ADDRESS: [attempted, observed]},
         "evaluation_results": {
-            "evaluation.objective.techvault.foothold": {
+            "evaluation.objective.fixture.foothold": {
                 "outcome": "succeeded",
                 "started_at": "2026-01-01T00:00:01Z",
                 "updated_at": "2026-01-01T00:00:06Z",

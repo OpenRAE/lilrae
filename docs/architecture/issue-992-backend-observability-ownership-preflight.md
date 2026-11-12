@@ -1,5 +1,13 @@
 # Issue #992 Backend Observability Ownership Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-992-backend-observability-ownership-preflight.md).
+Its last recorded file change before this rewrite was `78c016ad5adc`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note is the architecture preflight for issue #992. It is guidance, not an
 implementation plan. ADR-012 owns OpenTelemetry deployment and exposure,
 ADR-029 owns secret handling and redaction, ADR-048 owns scenario realization,
@@ -362,6 +370,11 @@ later scenario can otherwise inherit stale authority.
 | Telemetry/evidence | Apply the exact `redact_sensitive` or `redact_secrets` handler before any retained copy, bound payloads and pagination, hash retained bytes, record clocks/source pipeline/observer effect/redaction and all loss, and enforce `run_lifetime` for CAS blobs plus temporary/sidecar/MCP/source copies. Validate canonical run/attempt/session identifiers at every language/process boundary. Enforce `CaptureVisibility` again at run-reference, bundle-export, API, Grafana/Tempo, and participant projections; a hidden label is not an access-control boundary. |
 
 ## Compatibility Cutover Guardrail
+
+The [#1017 retirement preflight](issue-1017-techvault-bridge-retirement-preflight.md)
+records the current release assessment and removal boundaries. The release
+numbers and temporary permissions below describe the original bridge; they do
+not authorize extending it or certify a later release for its removal.
 
 OpenRAE/env-packs#338 has merged. `raes-env-packs==6.0.0` removes the three
 observability nodes and the obsolete schema-readback requirement and carries

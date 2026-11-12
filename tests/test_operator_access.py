@@ -1,6 +1,6 @@
 """Declared operator interactive access must actually be reachable.
 
-TechVault declares SSH access for its red and blue operators
+A scenario declares SSH access for its red and blue operators
 (`agents.*.interactive_access`). RAES carries that in the participant model, not
 the provisioning plan, so the deployment never saw it: no relay started, the
 nodes sit on internal networks, and host-run clients pointed at a port nothing
@@ -289,7 +289,7 @@ _OPERATOR_KEY = (
 def test_declared_identity_without_a_delivered_key_is_authorized(monkeypatch, tmp_path):
     """Declared access with no usable credential is not access.
 
-    TechVault declares SSH access to the SOC workstation but delivers no key for
+    A scenario declares SSH access to the SOC workstation but delivers no key for
     its `analyst` identity, so the backend installs the operator's public key
     for exactly that user.
     """

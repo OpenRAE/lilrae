@@ -2,7 +2,8 @@
 
 ## Reporting a Vulnerability
 
-Do not report suspected vulnerabilities through public GitHub issues.
+Do not put vulnerability details in public GitHub issues, pull requests, or
+discussions.
 
 Report privately through GitHub private vulnerability reporting:
 
@@ -47,5 +48,5 @@ Reports are reviewed as time permits, with priority given to reproducible
 issues that affect current code, host safety, control-plane secrets, published
 packages, or documented workflows.
 
-Please avoid publishing exploit details until there has been reasonable time to
-triage and prepare a fix or mitigation.
+Do not publish exploit details until the maintainer can triage the report and
+prepare a fix or mitigation.

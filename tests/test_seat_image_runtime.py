@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 import rfc8785
 
-from aptl.appliance.policy import full_techvault_boundary_policy
+from tests.seat_policy_fixture import protected_seat_policy
 from aptl.appliance.seat import image as seat_image
 from aptl.appliance.seat.image import SeatDiskDescriptor, SeatImageReference
 from aptl.appliance.seat.image_selection import SeatImageSelection
@@ -106,7 +106,7 @@ def test_guest_services_use_verified_launch_policy(
     from aptl.appliance import guest_services
     from aptl.appliance.seat.vm import DEFAULT_QEMU_GUEST_ADDRESS
 
-    policy = full_techvault_boundary_policy()
+    policy = protected_seat_policy()
     policy_bytes = rfc8785.dumps(policy.model_dump(mode="json"))
     descriptor = SeatLaunchDescriptor(
         schema_version="aptl.appliance-launch/v2",

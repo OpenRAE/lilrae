@@ -111,11 +111,14 @@ class ComposeNetworkOperationsMixin:
         return LabResult(success=True, message="disconnected")
 
     def remove_project_networks(self) -> list[str]:
-        """Remove only freshly verified receipt-owned networks."""
+        """Remove only freshly verified receipt-owned networks.
+
+        A network proven absent keeps its receipt only in the attempt evidence.
+        """
 
         from aptl.core.deployment.lilrae_native_evidence import (
             confirm_native_absence,
-            record_cleanup,
+            retire_after_cleanup,
         )
 
         failures: list[str] = []
@@ -127,7 +130,7 @@ class ComposeNetworkOperationsMixin:
                 if not self.host_inspect_network(receipt.native_id):
                     if not confirm_native_absence(self, receipt):
                         raise OwnershipConflictError("network absence is unverified")
-                    record_cleanup(ownership, receipt, cause="already-absent")
+                    retire_after_cleanup(ownership, receipt, cause="already-absent")
                     continue
                 network_id = self._resolve_owned_network_id(receipt.native_id)
                 result = self._run(
@@ -139,7 +142,7 @@ class ComposeNetworkOperationsMixin:
                 elif not confirm_native_absence(self, receipt):
                     failures.append("Failed to verify receipt-owned network removal")
                 else:
-                    record_cleanup(ownership, receipt, cause="after-remove")
+                    retire_after_cleanup(ownership, receipt, cause="after-remove")
         except (
             BackendTimeoutError,
             OwnershipConflictError,
@@ -148,4 +151,10 @@ class ComposeNetworkOperationsMixin:
             BufferError,
         ):
             failures.append("Failed to establish network cleanup authority")
+        if not failures:
+            from aptl.core.deployment._compose_native_boundary import (
+                cleanup_native_policy,
+            )
+
+            failures.extend(cleanup_native_policy(self))
         return failures

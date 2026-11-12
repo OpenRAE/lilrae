@@ -47,7 +47,6 @@ def _registration() -> CollectorRegistration:
         supports_redaction=True,
         integrity_modes=frozenset({"sha256-digest"}),
         sealing_modes=frozenset({"digest"}),
-        supports_chain_of_custody=False,
         supports_retention=True,
         supports_loss_disclosure=True,
         visibility_class=CaptureVisibility.EVALUATOR_ONLY,

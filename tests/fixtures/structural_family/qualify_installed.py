@@ -32,6 +32,19 @@ from aptl.backends.scenario_family import (  # noqa: E402
     require_family_capabilities,
 )
 from aptl.core.scenario_bundle import env_pack_bundle  # noqa: E402
+from aptl.backends.raes import admit_raes_scenario  # noqa: E402
+from aptl.backends.raes_start_model import (  # noqa: E402
+    ScenarioAdmissionRun,
+    ScenarioAdmissionSource,
+)
+from aptl.core.config import AptlConfig  # noqa: E402
+from aptl.core.deployment._compose_runtime_materialization import (  # noqa: E402
+    ComposeRuntimeMaterializationMixin,
+)
+from aptl.core.deployment._compose_node_generation import render_realization_compose  # noqa: E402
+from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations  # noqa: E402
+from aptl.backends.scenario_trial_archive import archive_family_trial  # noqa: E402
+from aptl.core.runstore import LocalRunStore  # noqa: E402
 from aptl.validation.scenario_verification import (  # noqa: E402
     ScenarioIdentity,
     VerificationContext,
@@ -141,6 +154,77 @@ def _reject_unsupported_factorial_profile(helper, work: Path) -> None:
     raise AssertionError("unsupported factorial profile was admitted")
 
 
+def _realize_entries(bundle, experiment, plan) -> None:
+    """Exercise installed admission, lowering and scoped startup on every entry."""
+
+    states = []
+    for entry_id, entry in plan.entries.items():
+        admitted = admit_raes_scenario(
+            bundle.root,
+            AptlConfig(),
+            ComposeRuntimeMaterializationMixin(),
+            source=ScenarioAdmissionSource(bundle),
+            run=ScenarioAdmissionRun(
+                trial=FamilyTrialInput(plan, entry_id, experiment.family)
+            ),
+        )
+        trial = admitted.bundle.trial
+        assert trial.provenance.run_id == entry.run_id
+        assert (
+            admitted.execution_plan.provisioning.materialization_source.run_id
+            == entry.run_id
+        )
+        assert admitted.execution_plan.provisioning.instantiation_id == entry_id
+        nodes = {node.name: node for node in admitted.realization.nodes}
+        assert set(nodes) == set(trial.scenario.nodes)
+        present = "sensor-9" in nodes
+        if present:
+            assert [
+                item.service_listener_id
+                for item in nodes["sensor-9"].runtime.service_listeners
+            ] == ["active"]
+        spec = admitted.realization.deployment_spec(["lab"])
+        document = render_realization_compose(spec)
+        assert set(document["services"]) == set(trial.scenario.nodes)
+        (content,) = spec.content
+        assert content.inline_text == trial.scenario.content["logging-config"].text
+        assert content.inline_text in {"loglevel notice\n", "loglevel debug\n"}
+        errors = [item for item in admitted.execution_plan.diagnostics if item.is_error]
+        if present:
+            # This fixture has no native observer for the exact runtime defaults
+            # in its selected listener inventory. RAES owns that decision; since
+            # RAES 11 admits projected runtime snapshots (rae#1904), any refusal
+            # it still reports must use one of these owner codes.
+            assert all(
+                item.code
+                in {
+                    "realization.unsupported-exact-requirement",
+                    "realization.authority-bound-unavailable",
+                }
+                for item in errors
+            ), [(item.code, item.message) for item in errors]
+        else:
+            assert errors == [], [(item.code, item.message) for item in errors]
+            assert admitted.runtime_materialization_failure is None
+        operations = AdmittedRuntimeOperations(object(), spec.nodes)
+        if not present:
+            _refused(
+                lambda: operations.container_restart("sensor-9"),
+                "runtime-node-not-admitted",
+            )
+        store = LocalRunStore(bundle.root.parent / "trial-runs")
+        archive_family_trial(store, trial)
+        assert (
+            store.get_run_path(entry.run_id) / "trial/instantiated-snapshot.json"
+        ).read_bytes() == trial.snapshot
+        states.append((present, content.inline_text))
+    assert set(states) == {
+        (present, mode)
+        for present in (True, False)
+        for mode in ("loglevel notice\n", "loglevel debug\n")
+    }
+
+
 def main() -> None:
     for module in (aptl, adapter):
         assert Path(module.__file__).is_relative_to(INSTALLED), module.__file__
@@ -153,6 +237,8 @@ def main() -> None:
     (experiment,) = load_pack_experiments(bundle.root)
     plan = helper.compile_plan(experiment, FIXTURE)
     _qualify_entries(bundle, experiment, plan)
+    if MODE == "consistent":
+        _realize_entries(bundle, experiment, plan)
     _reject_unsupported_factorial_profile(helper, work)
     # The public route needs no concrete RAES reference backend and no
     # LilRAE-owned experiment plan.

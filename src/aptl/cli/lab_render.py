@@ -109,6 +109,10 @@ def emit_execution_boundary_summary(
     )
     if boundary.docker_version:
         typer.echo(f"  selected Docker Engine: {boundary.docker_version}")
+    if boundary.host_containment == "native-docker":
+        typer.echo(
+            f"  range egress: {boundary.range_egress_policy}; range-to-host access: {boundary.range_host_access_policy}"
+        )
     if boundary.host_containment != "native-docker":
         typer.echo("  host containment: unverified for this selected profile")
 
@@ -181,7 +185,7 @@ def _binding_to_resolved_port(
     """Turn one docker port binding into a ResolvedPort, or None if unusable."""
     try:
         host_port = int(binding.get("HostPort", 0))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     if host_port == 0:
         return None
@@ -364,7 +368,9 @@ def _emit_dashboard_access(
 ) -> None:
     """Print the dashboard address only when a published port is supported."""
 
-    if _published_access_port(port, caller_reported_no_ports, observed, active_services):
+    if _published_access_port(
+        port, caller_reported_no_ports, observed, active_services
+    ):
         if remote:
             typer.echo(f"  Wazuh Dashboard: remote Docker host port {port} (HTTPS)")
         else:
@@ -383,7 +389,9 @@ def _emit_grafana_access(
 ) -> None:
     """Print Grafana access only when the selected host publishes its port."""
 
-    if _published_access_port(port, caller_reported_no_ports, observed, active_services):
+    if _published_access_port(
+        port, caller_reported_no_ports, observed, active_services
+    ):
         if remote:
             typer.echo(f"  Grafana: remote Docker host port {port} (HTTP)")
         else:
@@ -407,10 +415,10 @@ def emit_lab_access_summary(
     resolved_ports, observed = published_access_ports(project_dir, resolved_ports)
     if active_services is None:
         active_services = live_services(project_dir)
-    remote = (
-        execution_boundary is not None
-        and execution_boundary.transport in {"remote-ssh", "remote-tcp"}
-    )
+    remote = execution_boundary is not None and execution_boundary.transport in {
+        "remote-ssh",
+        "remote-tcp",
+    }
     env_path = project_dir / ".env"
     dashboard_port = _resolved_port(
         resolved_ports, _WAZUH_DASHBOARD_SVC, _WAZUH_DASHBOARD_DEFAULT

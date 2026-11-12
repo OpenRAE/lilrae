@@ -1,5 +1,11 @@
 # Concurrent participant execution
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/concurrent-participant-execution.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 ## Ownership and composition
 
 RAES owns scheduling, action admission, ordering, and accepted state.
@@ -10,26 +16,33 @@ Participants do not receive a manager, deployment client, or peer credentials.
 The backend accepts explicit implementation bindings before scenario admission.
 Each binding names one participant, implementation, observation boundary, and exact action-to-target relation.
 The binding includes a bounded native executor and independent participant configuration.
+
 The manifest describes these installed bindings, not arbitrary capabilities requested by SDL.
 Missing bindings fail admission before execution.
 The first supported autonomous policy is RAES v1 with ordered selection.
+
 Additional policy profiles require separate qualification.
-RAES 7 batches participants within one authored execution policy.
+The original RAES 10.2 integration batches participants within one authored execution policy.
 The representative red/blue scenario therefore uses one shared task-invocation policy.
+
 Each participant still has its own installed executor, tools, model, and prompt.
 The shared policy names one implementation manifest.
 That reference must resolve to the same manifest for both participants.
+
 Independent configurations can select different models and prompt artifacts within that implementation.
 Two unrelated implementation manifests cannot share that reference.
 Separate policies do not imply overlapping execution in this version.
+
 Policy lifecycle controls affect all participants in that policy scope.
 
 Dynamic composition remains under ADR-051 route 3.
 Each node uses a verified substrate plus authored software and configuration.
 Docker Compose is the transport for the resulting deployment.
+
 Participant bindings use compiled target addresses, not image names or fixed container names.
 Scenario parameter resolution and family trial admission precede realization.
 Participant concurrency does not change artifact selection or permit a fallback image.
+
 Parameterized package and local-account declarations use the same guest readback as literal declarations.
 The manifest now admits those two constrained requirement kinds.
 Other parameterized concerns remain subject to their existing capability checks.
@@ -39,23 +52,30 @@ Other parameterized concerns remain subject to their existing capability checks.
 Bindings use participant identity, not the red or blue role as a unique key.
 Each participant has its own model, prompt, execution limits, and process context.
 Two participants can use the same harness with different prompts.
+
 Changing one prompt does not change the other participant's configuration.
 RAES configuration results bind configuration to the implementation and participant.
 The existing configuration registry owns typed target validation.
+
 Prompt commitments identify the exact delivered bytes.
 Prompt contents and credentials are excluded from public diagnostics.
 
 OpenCode is an explicit harness choice.
+See [managed OpenCode participants](../reference/opencode-participants.md) for installation, pinned build identity, route controls, and invocation.
 No Claude Code installation is required for an OpenCode binding.
+
 The existing managed-agent interface remains available for other installed harnesses.
 Each invocation uses a private working directory and explicit environment.
 OpenCode receives its prompt on standard input and returns JSON events.
+
 Its configuration disables ambient project instructions, plugins, automatic updates, and unselected tools.
 Tool inventory is checked during installation, before native action dispatch.
 Provider endpoints and credentials come from the operator's admitted configuration.
+
 The adapter does not select a new external service.
 Fresh process contexts prevent history from crossing trial boundaries.
 The model identifier records the requested provider/model pair.
+
 It does not prove which model the provider actually served.
 
 ## Execution and failure
@@ -76,15 +96,19 @@ The backend does not repeat native work to repair an unknown result.
 Cancellation stops new native work and signals the selected invocation.
 The process runner drains and terminates its owned process group.
 Cancellation does not imply rollback of earlier tool effects.
+
 Participant cancellation leaves other participant invocations running.
 Trial cancellation signals all owned invocations.
 `run_participant_workload` waits for RAES settlement and native cleanup before returning to `ExperimentExecutor`.
+
 The existing experiment owner maps the returned signal and seals evidence.
 An explicit task evaluator supplies the verdict and result summaries after worker cleanup.
 The workload preserves that verdict, including a failed evaluation after successful process execution.
+
 An absent or invalid verdict produces evaluator failure instead of a completed trial.
 The workload checks installed configurations against `PlannedTrial.participant_configurations` before dispatch.
 Native cancellation is a trusted host operation on this target.
+
 It is not an advertised RAES lifecycle-control operation or a new participant tool.
 Escaped descendants and remote tool processes need their own cleanup evidence.
 The backend must not claim their termination from local process cleanup alone.
@@ -126,17 +150,29 @@ flowchart LR
 
 Process supervision is not an operating-system sandbox.
 Runtime bindings are trusted host inputs; participant outputs are untrusted.
-Individual MCP-call admission remains the separate #1418 boundary.
-This design does not claim that a session-level action records each tool call.
+Individual MCP calls use the [participant action boundary](participant-action-enforcement.md).
+
+Tool-enabled bindings require an exact installed mapping and the invocation's scoped tool session.
+The common MCP server gates SSH and API handlers before dispatch.
+RAES commits each accepted tool history alongside its enclosing invocation.
+
+An invocation without installed tool bindings makes no per-tool history claim.
+Whole-policy admission also requires scoped capability support.
+Each participant retains only its admitted tools.
+
+The [scoped-tool design](issue-1646-scoped-tool-affordances-design.md) defines the declaration and qualification.
+
 
 ## Existing architecture and verification
 
 ADR-035 and ADR-046 retain portable participant semantics in RAES.
 ADR-050 retains one terminal trial and evidence finalization owner.
 ADR-051 retains artifact satisfaction and dynamic composition ownership.
+
 No new architecture decision replaces these contracts.
 Executable policy remains in RAES admission and existing host validation.
 No independent policy engine or scheduler is introduced.
+
 Typed bindings and the runtime manifest express the architecture in code.
 
 The representative red/blue scenario qualifies concurrency without depending on unfinished RPT authoring.
@@ -147,16 +183,8 @@ CI owns full suites and installed-lab qualification.
 
 ## Integration and qualification limits
 
-Create a fresh target and installed bindings for each trial.
-Use `opencode_manifest` to declare the implementation's configuration targets.
-Use RAES configuration realization with `OpenCodeConfigurationValidator` and an admitted model domain.
-Resolve prompt artifacts through the caller's approved artifact boundary.
-`configured_opencode_executor` checks the prompt reference, exact UTF-8 digest, model, and timeout.
-Bind the resulting configuration digest in the participant implementation selection.
-Pass the bindings through `ScenarioAdmissionSource.autonomous_bindings` to `admit_raes_scenario`.
-`OpenCodeOptions` holds the admitted launch settings; `OpenCodeToolProfile` holds the verified MCP inputs.
-For experiments, call `run_participant_workload` from the existing workload callback with the admitted target, plan, and task evaluator.
-The caller retains the existing capture and evidence configuration.
+The [participant integration guide](../reference/participant-trial-integration.md) describes assembly of exact installed bindings.
+Configuration realization precedes dispatch; an executor cannot substitute another prompt, model, or timeout.
 
 The initial capability uses v1 ordered-cycle policies and a simulated, stepped clock with barrier synchronization.
 It supports at most eight simultaneous native actions.
@@ -176,14 +204,15 @@ Its existing runtime declarations use generic composition; the engine does not r
 | --- | --- | --- |
 | #1419 | OpenCode typed model, prompt reference, prompt-byte digest, and timeout targets; model-domain validation | Complete manifest publication and prompt-asset resolution for every installed participant implementation |
 | #1420 | Trial-to-executor configuration equality, independent prompt delivery, and fresh invocation contexts | Operator and study assembly across all harnesses, complete actual-delivery evidence, and installed experiment qualification |
-| #1418 | No individual MCP-call admission claim | Admission and evidence for each tool call through RAES |
+| #1418 | Scoped tool sessions, common MCP enforcement, and retained red/blue action history | Released composition limits and installed-provider qualification are stated in the enforcement design |
 | #894 | Generic composition remains available; parameterized packages and local accounts pass the same readback checks | Composed kit publication and qualification |
 
-These issues are not fully absorbed and are not closure candidates on this evidence.
+The #1418 delivery uses the enforcement design's acceptance evidence.
+The other issues retain the acceptance surfaces shown above.
 
 ## References
 
-- RAES 7.0.0: installed `raes_backend_protocols.protocols`, `participant_execution_runtime`, and `participant_configuration`.
+- RAES 10.2.0: installed `raes_backend_protocols.protocols`, `participant_execution_runtime`, and `participant_configuration`.
 - [RAES execution architecture](https://github.com/OpenRAE/rae/blob/main/specs/formal/participant-semantics/autonomous-execution.md): admission, lifecycle, and scheduler ownership.
 - [Docker Compose application model](https://docs.docker.com/compose/intro/compose-application-model/): services, networks, volumes, and configuration.
 - [Python 3.12 futures](https://docs.python.org/3.12/library/concurrent.futures.html): cancellation and executor shutdown.

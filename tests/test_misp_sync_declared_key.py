@@ -1,6 +1,6 @@
 """The MISP sync agent presents the key the scenario declares (#1273).
 
-TechVault declares the sync identity as a ``key`` account on the MISP node with
+A scenario declares the sync identity as a ``key`` account on the MISP node with
 an authored ``secret_fixture`` value. The agent pulls from MISP's authored
 canonical URL, so the backend maps that host to the single declared key, writes
 it to a ``0600`` file the agent configuration names, and never puts it in the
@@ -22,7 +22,7 @@ from aptl.core.deployment.realization import (
 )
 from aptl.services.misp_suricata_sync.config import ServiceConfig
 
-_KEY = "7ea54cbe19564f9893940770bbc659f890726557"
+_KEY = "0123456789abcdef0123456789abcdef01234567"
 
 
 def _misp_node(address="provision.node.misp"):

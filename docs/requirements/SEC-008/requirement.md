@@ -11,6 +11,13 @@ updated_at: 2026-09-20T00:00:00Z
 
 # SEC-008: Platform Safety Pull Request Gates
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/SEC-008/requirement.md).
+
+
 ## Statement
 
 Pull requests to `dev` shall require the existing pre-commit, control-plane test, MCP

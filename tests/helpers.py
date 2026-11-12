@@ -457,22 +457,6 @@ def wait_for_alert(
     pytest.fail(f"Alert not found within {timeout}s: {json.dumps(query, indent=2)}")
 
 
-# --------------------------------------------------------------------------- #
-# Default TechVault scenario (issue #875): tests that parse, plan, or realize
-# the full acquired pack resolve its staged SDL through this helper.
-# --------------------------------------------------------------------------- #
-def techvault_scenario_bundle(staging_root: Path):
-    """Stage the acquired TechVault env-pack beneath ``staging_root``."""
-    from aptl.core.scenario_bundle import env_pack_bundle
-
-    return env_pack_bundle(Path(staging_root) / ".aptl" / "staged-packs", "techvault")
-
-
-def techvault_scenario_path(staging_root: Path) -> Path:
-    """Return the staged SDL path of the acquired TechVault pack (#875)."""
-    return techvault_scenario_bundle(staging_root).sdl_path
-
-
 def docker_ps_inventory_row(
     name: str,
     image: str = "victim:latest",

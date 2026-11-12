@@ -16,9 +16,15 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Protocol
 
-from aptl.core.lab_types import LabResult, LabStatus
+from aptl.core.appliance_boundary import (
+    ApplianceBoundaryBinding,
+    ApplianceBoundaryPolicy,
+)
 from aptl.core.deployment.backend_container_ops import ContainerOpsBackend
 from aptl.core.deployment.backend_host_inventory import HostInventoryBackend
+from aptl.core.deployment.boundary import BoundaryEnforcementSpec
+from aptl.core.deployment.lilrae_recorded_inventory import RecordedInventorySnapshot
+from aptl.core.deployment.observation import DeploymentObservationContext
 from aptl.core.deployment.realization import (
     DeploymentAccountRealization,
     DeploymentContentRealization,
@@ -26,13 +32,7 @@ from aptl.core.deployment.realization import (
     DeploymentNodeRealization,
     DeploymentRealizationSpec,
 )
-from aptl.core.deployment.boundary import BoundaryEnforcementSpec
-from aptl.core.deployment.observation import DeploymentObservationContext
-from aptl.core.deployment.lilrae_recorded_inventory import RecordedInventorySnapshot
-from aptl.core.appliance_boundary import (
-    ApplianceBoundaryBinding,
-    ApplianceBoundaryPolicy,
-)
+from aptl.core.lab_types import LabResult, LabStatus
 from aptl.core.seed_spec import NamedVolumeSeed
 
 # Imported from ``aptl.core.lab_types`` (the leaf module) rather than
@@ -124,6 +124,12 @@ class DeploymentBackend(HostInventoryBackend, ContainerOpsBackend, Protocol):
     ) -> LabResult:
         """Read-only qualification that must precede artifact mutation."""
 
+        ...
+
+    def verify_required_service_readiness(
+        self, realization: DeploymentRealizationSpec
+    ) -> bool:
+        """Read required service readiness through the ordinary startup owners."""
         ...
 
     def realize_boundary(self, policy: BoundaryEnforcementSpec) -> LabResult:
@@ -255,7 +261,10 @@ class DeploymentBackend(HostInventoryBackend, ContainerOpsBackend, Protocol):
         ...
 
     def container_image_digest(
-        self, container_name: str, *, expected_ref: str | None = None,
+        self,
+        container_name: str,
+        *,
+        expected_ref: str | None = None,
         expected_config_id: str | None = None,
     ) -> str | None:
         """Return the manifest digest of the image backing one container.

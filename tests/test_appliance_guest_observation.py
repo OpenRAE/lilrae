@@ -37,7 +37,7 @@ from aptl.core.deployment.realization import (
     DeploymentNetworkRealization,
     DeploymentRealizationSpec,
 )
-from aptl.appliance.policy import full_techvault_boundary_policy
+from tests.seat_policy_fixture import protected_seat_policy
 from aptl.core.ephemeral_containers import EphemeralContainer
 from tests.test_compose_platform_boundary import _binding, _inspect, _network, _policy
 
@@ -393,7 +393,7 @@ def test_raes_probe_paths_cover_allow_and_default_deny_node_rules() -> None:
 
 
 def test_seat_probes_cover_each_network_family_and_protected_component() -> None:
-    policy = full_techvault_boundary_policy()
+    policy = protected_seat_policy()
     realization = DeploymentRealizationSpec(
         profiles=(),
         nodes=(),
@@ -478,7 +478,7 @@ def test_seat_probes_cover_each_network_family_and_protected_component() -> None
 
 
 def test_seat_probes_cover_every_port_in_a_permitted_flow() -> None:
-    payload = full_techvault_boundary_policy().model_dump(mode="json")
+    payload = protected_seat_policy().model_dump(mode="json")
     payload["permitted_host_flows"] = [
         {
             "source": "ordinary-range-workload",
@@ -489,7 +489,7 @@ def test_seat_probes_cover_every_port_in_a_permitted_flow() -> None:
             "probe_identity": "reviewed-management",
         }
     ]
-    policy = type(full_techvault_boundary_policy()).model_validate(payload)
+    policy = type(protected_seat_policy()).model_validate(payload)
     realization = DeploymentRealizationSpec(
         profiles=(),
         nodes=(),
@@ -733,7 +733,7 @@ def test_docker_authority_holders_are_bound_to_admitted_live_container() -> None
     protected = _authority_holders(
         backend=backend,
         realization=realization,
-        policy=full_techvault_boundary_policy(),
+        policy=protected_seat_policy(),
         containers=(container,),
         daemon_id="daemon-42",
     )

@@ -10,16 +10,20 @@ accepted
 
 ## Released-contract successor boundary (issue #1465)
 
-For adoption under [issue #1465's preflight](../architecture/issue-1465-released-experiment-tuple-preflight.md),
-released RAE structural compilation, sealed public trial plans/entries,
-participant selections and the shared experiment runtime supersede the local
-trial-plan projection, allocation/seed/identity algorithms and experiment loop
-described below. A LilRAE wrapper retains bounded authorized resolution,
+Issue #1465 adopts released structural compilation, sealed public plans/entries, participant selections, and the shared runtime. These supersede the local plan, allocation, seed, identity, and loop designs below. A LilRAE wrapper retains bounded authorized resolution,
 apparatus admission, backend integration and persistence; it must not become a
 second compiler or runtime controller. Public identities are preserved, with
 attempt lineage reconciled against ADR-050 and the released producer contracts.
 This is an adoption guardrail, not a claim that the migration has shipped.
 All parser, security, no-mutation and storage boundaries remain applicable.
+
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [run Reference](../reference/experiment-runs.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
 
 ## Context
 
@@ -28,10 +32,7 @@ RAES `experiment-authoring-input-v1`. The authoring input references a RAES
 `experiment-task-v1`, capture specifications, and scenario material, then asks
 the apparatus to turn a bounded allocation into stable executable trials.
 
-The architectural risk is not the allocation loop. It is creating a second
-experiment language, resolving untrusted references after the lab has already
-changed, or letting an admission-only code path bypass the controls already
-used by scenario startup and run capture.
+The architectural risk is not the allocation loop. The risks include another experiment language, late untrusted resolution, and admission paths that bypass startup or capture controls.
 
 The repository already owns the relevant boundaries:
 
@@ -66,13 +67,7 @@ scenario. Experiment admission cannot simply be added inside
 Add one experiment-controller composition boundary above lab lifecycle. It has
 two distinct phases:
 
-1. **Admission** reads bounded inputs, resolves and pins every referenced
-   artifact, invokes RAES validation and planning APIs, checks APTL apparatus
-   policy, and produces canonical immutable trial-plan bytes. Admission may use
-   bounded temporary staging and persist its final journal, but it must not
-   hydrate `.env`, generate credentials or certificates, render service config,
-   pull images, invoke collectors, call `DeploymentBackend`, start a session, or
-   otherwise mutate the range.
+1. **Admission** reads bounded inputs and pins references. It invokes RAES validation/planning, checks apparatus policy, and produces canonical immutable plan bytes. Admission may stage bounded temporary inputs and persist its journal. It must not load runtime secrets, generate credentials/certificates, render configuration, acquire images, collect evidence, deploy, or start sessions.
 2. **Execution** is downstream work. It receives an admitted plan and delegates
    each trial's scenario to the existing `RuntimeManager` and lab lifecycle. It
    must not re-resolve references, reinterpret the allocation, or mint a new run
@@ -80,16 +75,11 @@ two distinct phases:
 
 Admission is all-or-nothing across the complete allocation. No trial may start
 when any source, condition, capture requirement, stochastic control, apparatus
-constraint, or planned scenario fails admission. A retry after an operational
-backend failure may reuse the exact admitted bytes; it must not parse or plan a
-new input, matching the existing admitted-plan retry rule in `raes.py`.
+constraint, or planned scenario fails admission. An operational retry may reuse only the exact admitted bytes. It must not parse or plan another input, preserving the existing `raes.py` retry rule.
 
 The controller is a coordinator, not another runtime manager. Do not split it
 into speculative repository, service, provider, DTO, and policy hierarchies.
-Its dependencies should be explicit inputs: RAES public loaders/models and
-reference processor, the canonical processor and backend manifests, an
-authorized artifact resolver, an admission policy with resource limits, and
-the existing `RunStorageBackend`. Deployment is not an admission dependency.
+Dependencies should be explicit: RAES loaders/models and processor, canonical manifests, authorized resolution, bounded admission policy, and the existing `RunStorageBackend`. Deployment is not an admission dependency.
 
 ### RAES contracts remain authoritative
 
@@ -125,11 +115,7 @@ RAES models. Task and capture artifacts likewise use only their published
 serialization format and exported RAES model; do not silently accept a second
 YAML/JSON dialect.
 
-APTL performs only joins and apparatus policy that require multiple already
-validated artifacts: reference identity/version equality, unique resolution,
-task/scenario agreement, capture-scope compatibility, condition parameter
-target resolution, supported allocation/control policy, and conjunction of the
-task's apparatus constraints with the authoring input's apparatus intent.
+LilRAE adds cross-artifact joins and apparatus policy after validation. These cover identity/version, unique resolution, task/scenario agreement, capture scope, parameter targets, controls, and combined apparatus constraints.
 These checks must operate on RAES fields; they must not restate those fields in
 local Pydantic or dataclass mirrors.
 
@@ -149,9 +135,7 @@ backend manifest authority explicitly allows and requires them.
 ### Authorized artifact resolution
 
 Experiment references are capabilities, not paths or commands. The default
-resolver is offline and project-contained. It accepts only explicitly
-supported locator forms and returns one bounded byte stream plus normalized
-locator metadata; it never returns an executable object or a path to reopen.
+resolver is offline and project-contained. It accepts only supported locators and returns bounded bytes with normalized metadata. It must not return executable objects or paths for later reopening.
 
 For project files, build on the containment rule in
 `scenario_catalog._resolve_project_file`, strengthened for untrusted experiment
@@ -176,17 +160,10 @@ inputs:
 
 RAES SDL imports are a second resolver surface. `parse_sdl(content, path=...)`
 delegates imports to RAES file/OCI resolution and reopens local import files.
-Initial admission therefore rejects scenarios with imports unless the
-authorized resolver has first materialized the complete digest-pinned,
-size-bounded transitive graph into a private staging tree and RAES parses only
-that tree with its import lock verified. Never let an admitted root switch from
+Imports require an authorized, complete, digest-pinned, size-bounded graph in private staging. RAES must parse only that tree and verify its import lock; otherwise admission refuses. Never let an admitted root switch from
 the controller resolver to ambient RAES import discovery.
 
-Network, OCI, or registry fetching is disabled by default. A future remote
-resolver is a separately authorized implementation of the same narrow
-resolver contract, parameterized by allowed scheme/authority, offline mode,
-timeouts, redirect policy, maximum bytes, authentication source, and digest
-requirement. It must reject redirects to unauthorized authorities and must not
+Network, OCI, or registry fetching is disabled by default. Remote resolution needs separate authorization through the same narrow contract. Its policy bounds scheme/authority, offline behavior, timeouts, redirects, bytes, authentication, and required digests. It must reject redirects to unauthorized authorities and must not
 take credentials from the experiment document. Do not fall back from a failed
 remote resolution to an ambient filesystem search, current working directory,
 `PATH`, environment variable, or package import.
@@ -199,23 +176,15 @@ manifest references and digests, compatibility declarations, required
 capabilities, and contract versions against the canonical RAES processor
 manifest and `create_aptl_manifest()` payload.
 
-Scenario-specific feasibility remains with `RuntimeManager.plan()`. Docker or
-Compose must not be probed directly during admission, and config flags must not
-be treated as proof of a capability the manifest or planner rejects.
+Scenario-specific feasibility remains with `RuntimeManager.plan()`. Admission must not probe Docker or Compose. Configuration flags cannot prove capabilities refused by the manifest or planner.
 
 For admission, use the equivalent planning-only RAES reference-processor API.
-`RuntimeManager.plan()` remains the execution-side incumbent, but constructing
-APTL's runtime target pulls in `AptlConfig` and a `DeploymentBackend`, which
-would violate the admission dependency boundary even if a no-op backend were
-passed.
+`RuntimeManager.plan()` remains the execution owner. Constructing that runtime target imports configuration and deployment dependencies, so even a no-op backend violates the admission boundary.
 
 Capture admission needs one code-owned mapping from RAES capture requirement
 terms to existing APTL capture owners (`collectors.py`, MCP/Kali capture,
 runtime snapshots, orchestration/evaluation history). Admission and later
-execution must share that mapping. Unknown capture kinds, channels, media types,
-sealing/redaction requirements, or retention/integrity guarantees fail closed;
-they never become arbitrary collector names, imports, backend method names, or
-shell commands. The mapping describes support only. It does not replace the
+execution must share that mapping. Unsupported capture kinds, channels, media, sealing, redaction, retention, or integrity must fail admission. They cannot select arbitrary collectors, imports, methods, or shell commands. The mapping describes support only. It does not replace the
 RAES capture-spec model.
 
 Participant implementation/provider selection remains behind the RAES
@@ -226,13 +195,7 @@ entry point, executable, image, environment variable, or provider method.
 ### Deterministic immutable trial plan
 
 The v3 trial plan is an APTL internal execution journal, not a portable RAES
-experiment, task, study, run, apparatus, capture, or analysis contract. It may
-carry only the data needed to bind execution back to the admitted RAES graph:
-source identities and digests, canonical condition/factor assignments,
-resolved RAES binding provenance, atomic participant-configuration results, an
-approved non-secret apparatus projection, stochastic controls, episode
-controls, capture-spec references, ordering coordinates, and stable planned
-trial IDs. Eventual portable run and apparatus records use RAES contracts;
+experiment, task, study, run, apparatus, capture, or analysis contract. It carries execution joins only: source identity/digests, assignments, provenance, participant configuration, safe apparatus, stochastic/episode controls, capture references, ordering, and planned IDs. Eventual portable run and apparatus records use RAES contracts;
 they must not serialize this journal as if it were `experiment-run-v1`.
 
 Expansion obeys these rules:
@@ -247,10 +210,7 @@ Expansion obeys these rules:
   Free-form text is never evaluated or silently approximated. Unknown or
   under-specified controls fail admission.
 - Explicit condition bindings use RAES
-  `experiment-binding-descriptors-v1`. Scenario targets resolve only to
-  declared parameter variation points; participant targets resolve only
-  through the selected implementation manifest's configuration registry; and
-  apparatus targets resolve only through APTL's closed code-owned registry.
+  `experiment-binding-descriptors-v1`. Scenario targets use declared parameter variation points. Participant targets use their selected manifest registry. Apparatus targets use the closed native registry.
   Missing targets, canonical alias collisions, conflicting values, unsafe
   literals, and incomplete scenario variation sets are fatal.
 - A seed or randomized order is derived with a documented, domain-separated
@@ -263,9 +223,7 @@ Expansion obeys these rules:
   paths, temporary paths, log text, and mutable runtime state. They normalize
   digest case and sort semantically unordered maps/sets. Authored lists whose
   order is meaningful remain ordered.
-- Planned-trial IDs are a filesystem-safe prefix plus a full or collision-safe
-  cryptographic digest of the versioned identity domain, source-set digest,
-  condition ID (or flat sentinel), and replication ordinal. The same admitted
+- Planned IDs combine a safe prefix with a cryptographic digest. The versioned identity includes source digest, condition or flat sentinel, and replication ordinal. The same admitted
   inputs and policy version produce the same IDs on every supported host.
 
 The in-memory plan is immutable after construction. No downstream caller may
@@ -291,11 +249,7 @@ The existing `LocalRunStore.write_json()` performs lexical path validation and
 redaction, but it is overwrite-capable, follows existing symlink components,
 and emits presentation JSON rather than canonical bytes.
 Immutability therefore requires a narrow create-once canonical JSON operation
-on the existing run-store protocol, not a second experiment repository. That
-operation applies the shared secret policy as an invariant check, canonicalizes
-once, writes atomically with create-exclusive semantics, and treats an
-identical existing payload as an idempotent success while rejecting different
-bytes. `write_file()` and `copy_file()` are not acceptable for structured plans
+on the existing run-store protocol, not a second experiment repository. The operation enforces secret classification and canonicalizes once. Atomic exclusive creation accepts identical existing bytes and rejects conflicting bytes. `write_file()` and `copy_file()` are not acceptable for structured plans
 because they bypass structural redaction.
 
 The create-once operation must preserve semantic bytes: admission rejects a
@@ -345,12 +299,12 @@ duplicate those incumbents.
 
 | Layer | Required behavior |
 | --- | --- |
-| Auth surface | Core admission performs no authentication. A local CLI caller is the current trusted operator boundary. Any future `/api` admission route must inherit the API-wide `verify_token` dependency and BFF Host/CSRF/session gates before resolving paths, enforce request-size limits before body parsing, use a bounded Pydantic request projection, and never accept credentials in a URL. |
+| Auth surface | Core admission performs no authentication. A local CLI caller is the current trusted operator boundary. A future admission API must authenticate and enforce BFF Host, CSRF, and session checks before resolving paths. It needs pre-parse size limits and a bounded typed request. URLs must not carry credentials. |
 | Input shape | Bound the root bytes before `parse_experiment_spec`; use RAES closed-world models and validators for all RAES payloads. Reject unknown versions and malformed/duplicate or ambiguous bindings rather than coercing them into a local shape. |
 | Semantic validation | Use RAES model validators, canonical digest APIs, associated-artifact validation, and reference-processor planning diagnostics. Local checks are parser resource/ambiguity hardening, cross-artifact identity joins, and explicit apparatus policy only. |
 | Artifact resolution | Use the injected authorized resolver, no-follow contained opens, one-handle hash/parse, digest and size verification, aggregate limits, offline default, and no ambient lookup. No input controls imports, commands, collectors, backend methods, environment names, or filesystem roots. |
 | Participant manifests | Resolve selected implementation manifests only from checksum-validated `role="manifest"` entries in the experiment's associated artifact set. Match exact parsed identity and schema to the RAES binding descriptor; reject missing or duplicate owners. |
-| Secret handling | Treat the whole experiment graph as untrusted. Reject secret-shaped scalar content and parameter name/value pairs using the taxonomy owned by `aptl.utils.redaction` before plan construction; never rely on later redaction to make executable data safe. `redact()` is currently a transformation, not a yes/no validator, so expose/reuse classification in that same module rather than copying its private token/regex tables or silently changing admitted values. Keep control-plane secrets out of source artifacts and locators. |
+| Secret handling | Treat the whole experiment graph as untrusted. Reject secret-shaped scalars and parameter pairs through `aptl.utils.redaction` classification before plan construction. Later redaction cannot make executable input safe. `redact()` transforms values rather than validates acceptance. Shared classification must stay in that module; callers must not copy private patterns or silently change admitted values. Keep control-plane secrets out of source artifacts and locators. |
 | Config shape | Non-secret admission limits or resolver policy that become durable settings must be strict `AptlConfig` fields with real consumers. The experiment document cannot add config keys or override deployment provider/project identity. |
 | Environment binding | Admission must not call `.env` hydration or construct `EnvVars`. Experiment parameters cannot name or read environment variables. Runtime secrets remain in `EnvVars`, placeholder validation, and generated config after admission succeeds. |
 | Apparatus capability | Compare both task and spec constraints with canonical manifest payloads and RAES planner diagnostics. Unknown contract/capability/capture terms fail closed before `_LAB_START_STEPS`. |
@@ -391,10 +345,7 @@ shared capture-capability mapping. Future ordering methods, stochastic
 controls, or capture owners extend those bounded mappings. They do not edit
 RAES source models, dispatch by scenario name, or add arbitrary plugin loading.
 
-If RAES publishes a portable trial-plan or admission-diagnostic contract later,
-the controller should replace the corresponding internal projection at the
-RAES namespace while keeping APTL-only resolver and persistence evidence under
-the backend journal namespace.
+A later public RAES plan or diagnostic replaces the corresponding internal portable projection. Native resolver and storage evidence should remain in the backend journal namespace.
 
 ## Testing contract
 
@@ -405,14 +356,8 @@ Implementation must prove the boundary without creating a new test harness:
 - Unit tests cover cross-artifact identity joins, apparatus/capture capability
   decisions, exact mutation ordering, redacted diagnostics, canonical bytes,
   create-once persistence, and stable IDs.
-- Property-based tests under the existing `fuzz` marker cover traversal and
-  symlink inputs (including pre-existing run-store symlinks), resource limits,
-  duplicate YAML/JSON keys, secret-shaped values, map/list order,
-  condition/replication counts, digest changes, ID uniqueness, and repeated
-  admission determinism.
-- Contract tests assert that every planned trial resolves to exactly one task,
-  one scenario snapshot, one condition or flat sentinel, one stochastic-control
-  set, one episode-control set, and the admitted capture-spec references.
+- Existing `fuzz` checks cover paths/symlinks, bounds, duplicate keys, secrets, ordering, condition counts, digests, unique IDs, and deterministic repeated admission. Run-store symlinks are included.
+- Each planned trial must join exactly one task, snapshot, condition or sentinel, stochastic-control set, episode-control set, and admitted capture-reference set.
 - Mutation-spy tests prove that rejected admission makes no
   `DeploymentBackend`, hydration, credential, certificate, Compose, session,
   collector, or run-execution call.
@@ -433,9 +378,7 @@ version authority used by the fixtures and public APIs.
 - `parse_experiment_spec` is the public schema loader, but callers still need a
   byte limit and duplicate-key preflight before passing text to it. Do not use
   `load_experiment_spec` on an unbounded attacker-controlled file.
-- `parse_sdl_file` and SDL import expansion reopen paths. Hashing a resolver
-  handle and then parsing the original path is a TOCTOU bug; imported scenarios
-  need a fully authorized staged graph or must be rejected.
+- `parse_sdl_file` and SDL import expansion reopen paths. Hashing a resolver handle before reopening the original path creates a time-of-check/time-of-use gap. Imports need an authorized staged graph or refusal.
 - RAES task and capture references deliberately do not carry digest/path fields
   in their typed reference models. Pin resolved byte digests in the internal
   admission journal or a RAES associated-artifact binding; do not add forbidden
@@ -461,10 +404,7 @@ version authority used by the fixtures and public APIs.
   structural redaction.
 - At the locked RAES surface, the published reference processor manifest names
   only `stub` as a compatible backend while APTL names
-  `raes-reference-processor` as compatible. Strict mutual apparatus-manifest
-  compatibility cannot be fabricated by patching either payload locally; fail
-  closed until the canonical RAES declaration and the requested task
-  constraints are mutually satisfiable.
+  `raes-reference-processor` as compatible. Local payload patches cannot manufacture apparatus compatibility. Admission refuses until canonical RAES declarations and task constraints are mutually satisfiable.
 - `create_aptl_manifest().observation` is currently `None`, and the existing
   collectors are best-effort primitives that often collapse failure into an
   empty result. Do not admit a capture requirement merely because a collector
@@ -474,9 +414,7 @@ version authority used by the fixtures and public APIs.
 - `render_raes_diagnostics()` currently labels every failure as a RAES runtime
   handoff failure. Reuse its formatting logic only after making the safe stage
   label explicit; do not emit misleading admission errors.
-- A plan generated with timestamps, absolute paths, Python set/dict traversal,
-  `random`, or UUIDs can look stable in one test process and still drift across
-  hosts or retries.
+- Timestamps, absolute paths, unordered collection traversal, randomness, or UUIDs can make identities vary across hosts and retries. One apparently stable test process cannot establish determinism.
 - Admission-time Docker probes would make results host-state-dependent and
   would bypass both the manifest truth surface and the no-mutation boundary.
 

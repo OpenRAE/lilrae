@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { generateToolHandlers, resolveCaptureContainer, errorMessage } from '../src/tools/handlers.js';
+import { generateToolHandlers, errorMessage } from '../src/tools/handlers.js';
+import { resolveCaptureContainer } from '../src/tools/session-capture.js';
 import { CommandTimeoutError } from '../src/ssh.js';
 import { harvestSession } from '../src/captures.js';
 

@@ -1794,7 +1794,6 @@ def _covering_registration() -> CollectorRegistration:
         supports_redaction=True,
         integrity_modes=frozenset({"sha256-digest"}),
         sealing_modes=frozenset({"digest"}),
-        supports_chain_of_custody=False,
         supports_retention=True,
         redaction_policies=frozenset({"redact_secrets"}),
         retention_policies=frozenset(

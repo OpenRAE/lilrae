@@ -1,9 +1,21 @@
 """Run the public CLI with original-family imports unavailable in CI."""
 
 import importlib.abc
+from importlib import metadata
 import json
 from pathlib import Path
 import sys
+
+
+def installed_adapter_packages():
+    """Return the installed packages that provide out-of-core ``aptl.*`` entry points."""
+    packages = {
+        entry_point.value.split(':', 1)[0].split('.', 1)[0]
+        for distribution in metadata.distributions()
+        for entry_point in distribution.entry_points
+        if entry_point.group.startswith('aptl.')
+    }
+    return sorted(packages - {'aptl'})
 
 
 class RejectFamilyImports(importlib.abc.MetaPathFinder):
@@ -12,7 +24,7 @@ class RejectFamilyImports(importlib.abc.MetaPathFinder):
     def __init__(self):
         ledger = Path(__file__).resolve().parents[2] / '.gc/pack-ownership.json'
         owned = json.loads(ledger.read_text())['owned_paths']
-        self.blocked = ('aptl_techvault', *(
+        self.blocked = (*installed_adapter_packages(), *(
             row['path'].removeprefix('src/').removesuffix('.py').replace('/', '.')
             for row in owned
         ))

@@ -10,79 +10,104 @@ accepted
 
 ## Context
 
-The migration from AWS to Docker ([ADR-001](adr-001-docker-compose-deployment.md)) required replacing the SIEM. APTL v1.x used IBM qRadar Community Edition, and Splunk Enterprise was briefly supported as an alternative (v1.1.0).
+The move from AWS to Docker required a different SIEM under [ADR-001](adr-001-docker-compose-deployment.md).
+APTL v1.x used IBM qRadar Community Edition.
+Version 1.1.0 also supported Splunk Enterprise through Terraform.
+The comparisons below record the selection context, not current vendor terms.
 
 ### qRadar Community Edition
 
-- 5,000 EPS (events per second) hard limit
-- 30-day trial license requiring renewal
-- 5GB ISO requiring manual transfer to the instance
-- 1-2 hour installation process
-- Not available as a Docker image—requires a full VM
-- Excellent detection capabilities but operationally heavy for a personal lab
+The recorded limits were 5,000 events per second and a renewable 30-day trial.
+Installation needed a manually transferred 5 GB ISO and 1–2 hours.
+The product needed a VM rather than a Docker image.
+Its detection functions were useful, but its installation was too costly for the intended personal lab.
 
 ### Splunk Enterprise
 
-- Supported via Terraform in v1.1.0 on a c5.4xlarge instance
-- Commercial licensing: free tier limited to 500MB/day ingestion
-- Excellent UI and search capabilities (SPL)
-- Docker images available but licensing is complex for lab use
-- SIEM selection was via `siem_type` variable in `terraform.tfvars`
+The Terraform option used a c5.4xlarge instance.
+The recorded free ingestion allowance was 500 MB per day.
+Splunk supplied its UI and SPL search, and Docker images were available.
+License administration still complicated lab use.
+`siem_type` in `terraform.tfvars` selected the old SIEM.
 
 ### Requirements for v2.0
 
-- Must run as Docker containers (not a VM)
-- Open-source with no licensing limits for lab use
-- Agent-based monitoring (for host-level visibility on victim containers)
-- Syslog collection (for network-level log forwarding from all containers)
-- OpenSearch/Elasticsearch-based indexing (for rich query capabilities)
-- Web dashboard for investigation
-- Active community and rule ecosystem
-- Reasonable resource footprint (target: <4GB RAM for full SIEM stack)
+The replacement had these requirements:
+
+- Docker containers instead of a required VM.
+- Open-source software without lab license limits.
+- Agent monitoring for host observations.
+- Syslog collection for container application logs.
+- OpenSearch or Elasticsearch indexing and a web investigation interface.
+- An active community and rule ecosystem.
+- A target below 4 GB RAM for the complete SIEM stack.
 
 ## Decision
 
-Adopt **Wazuh** (Manager + Indexer + Dashboard) as the SIEM platform for APTL.
+Use Wazuh Manager, Indexer, and Dashboard as the SIEM.
+The decision supports host observations, application logs, indexed queries, and a web interface without a trial clock.
 
 ### Wazuh Architecture
 
-- **Wazuh Manager** (`aptl-wazuh-manager`, 172.20.0.10): Log processing, rule evaluation, alert generation, API server (port 55000). Multi-homed across security, DMZ, and internal networks to collect logs from all zones.
-- **Wazuh Indexer** (`aptl-wazuh-indexer`, 172.20.0.12): OpenSearch-based data storage. Stores alerts, archives, and FIM data. Exposed on port 9200 for direct queries.
-- **Wazuh Dashboard** (`aptl-wazuh-dashboard`, 172.20.0.11): OpenSearch Dashboards with Wazuh plugin. Web UI on port 443 (mapped from 5601).
+| Component | Recorded identity | Responsibility |
+| --- | --- | --- |
+| Manager | `aptl-wazuh-manager`, `172.20.0.10`, API 55000 | Process logs, evaluate rules, produce alerts, and collect across security, DMZ, and internal attachments |
+| Indexer | `aptl-wazuh-indexer`, `172.20.0.12`, API 9200 | Store alerts, archives, and FIM data through OpenSearch |
+| Dashboard | `aptl-wazuh-dashboard`, `172.20.0.11`, host 443 to container 5601 | Provide OpenSearch Dashboards with the Wazuh plugin |
+
+The [root topology reference](../reference/compose-topology.md) states current compatibility declarations and exposure limits.
+The [Wazuh reference](../components/wazuh-siem.md) describes maintained use.
+A historical placement is not a guarantee for every admitted scenario.
 
 ### Dual Log Collection
 
-Wazuh supports both collection methods APTL needs:
+Agent traffic uses TCP 1514.
+The original design placed agents on victim and reverse-engineering containers for FIM, rootkit detection, auditing, and process observations.
+Syslog uses UDP 514.
+The design used rsyslog for web, database, authentication, and SOC application logs without an agent on every container.
 
-1. **Agent-based** (port 1514/tcp): Wazuh agents installed on victim and reverse engineering containers provide host-level visibility—file integrity monitoring, rootkit detection, system call auditing, process monitoring.
-2. **Syslog forwarding** (port 514/udp): All containers forward application logs via rsyslog. This captures web server logs, database queries, authentication events, and SOC tool outputs without requiring an agent on every container.
-
-> **Update (ADR-020, 2026-05-02):** Agent placement on the five service-target containers (`webapp`, `fileshare`, `ad`, `dns`, `db`) was reworked in #248. Four of them now run `wazuh-agent` **in-process** so active-response can install `iptables` rules in the target's own namespace; `db` keeps its sidecar as a carve-out for the postgres-on-alpine case. The default for any future container is in-process—see [ADR-020](adr-020-wazuh-agents-in-process-vs-sidecar.md).
+The 2026-05-02 ADR-020 update records the #248 placement change.
+It named `webapp`, `fileshare`, `ad`, `dns`, and `db` as five service targets.
+Four used in-process agents so active response could apply iptables rules in the target namespace.
+The PostgreSQL-on-Alpine `db` target kept a sidecar exception.
+[ADR-020](adr-020-wazuh-agents-in-process-vs-sidecar.md) defines that decision and its later amendments.
+These counts describe that update, not the current universal agent inventory.
 
 ### Version Pinning
 
-All Wazuh components are pinned to version 4.12.0 to prevent agent/manager version mismatches that caused failures in earlier versions (see CHANGELOG v3.0.13).
+The decision pinned the Wazuh components to 4.12.0.
+Earlier mismatched agent and manager versions caused failures, recorded under CHANGELOG v3.0.13.
+Current root Compose images still declare 4.12.0.
+An installed scenario's declarations and qualified dependency set remain separate contracts.
 
 ## Consequences
 
 ### Positive
 
-- **Zero licensing cost**: Fully open-source (GPLv2). No EPS limits, no trial periods.
-- **Docker-native**: Official images (`wazuh/wazuh-manager:4.12.0`, etc.) with Docker Compose support
-- **Dual collection**: Agent + syslog covers both host and network telemetry
-- **OpenSearch backend**: Rich query language, compatible with MCP indexer server for AI agent queries
-- **Active rules ecosystem**: Community rules, Sigma rule conversion, custom rule support. APTL adds custom rules for Falco, Kali red team activity, AD, web app, Suricata, and database events.
-- **API server**: REST API on port 55000 enables programmatic rule creation and management via MCP
+- The selected GPLv2 software removed the earlier EPS and trial-license limits.
+- Official Docker images supported the local deployment model.
+- Agent and syslog paths supplied complementary observations.
+- OpenSearch queries supported the MCP Indexer integration.
+- Community rules, Sigma conversion, and custom rules supported detection work.
+- The original custom-rule scope included Falco, Kali, AD, web, Suricata, and database events.
+- The API on 55000 supported programmatic management through MCP.
+
+The historical rule scope does not prove that each source is present in the current pack.
+The admitted scenario and collection configuration determine that evidence.
 
 ### Negative
 
-- **Three containers for SIEM alone**: Manager + Indexer + Dashboard consume ~4GB RAM combined. The Indexer alone needs 2GB for its OpenSearch JVM heap.
-- **Complex SSL certificate management**: All inter-component communication is TLS-encrypted, requiring certificate generation and distribution at startup
-- **Wazuh-specific rule syntax**: Not the industry standard. Sigma rules must be converted. Detection engineers familiar with Splunk SPL or qRadar AQL face a learning curve.
-- **Dashboard limitations**: The Wazuh Dashboard (OpenSearch Dashboards fork) is less polished than Splunk's UI or qRadar's offense management
+- The design needed three SIEM containers and estimated about 4 GB RAM in total.
+- The old record assigned 2 GB to the Indexer heap.
+- Current root Compose instead declares a 1 GB initial and maximum JVM heap with a 2 GB container limit.
+- Inter-component TLS requires certificate generation and distribution.
+- Wazuh rule syntax requires different knowledge from Splunk SPL or qRadar AQL.
+- Sigma rules require conversion, and the Dashboard has different investigation functions from the earlier alternatives.
 
 ### Risks
 
-- Wazuh version upgrades can break agent compatibility—strict version pinning mitigates this but requires manual upgrades
-- OpenSearch/Elasticsearch fork divergence may cause compatibility issues with third-party tools expecting standard Elasticsearch APIs
-- The SOC stack integration ([ADR-008](adr-008-soc-stack-integration.md)) adds significant load to the Wazuh Manager for alert forwarding to MISP, TheHive, and Shuffle
+Version upgrades can break agent compatibility.
+Pinning reduces accidental drift but requires deliberate upgrades.
+OpenSearch and Elasticsearch differences can affect third-party API clients.
+The added SOC integrations also increase Manager workload.
+[ADR-063](adr-063-remove-thehive-and-cortex.md) removes the earlier TheHive integration from current TechVault delivery.

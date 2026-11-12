@@ -239,12 +239,15 @@ def test_shared_volume_creation_waits_for_ownership_receipt(tmp_path: Path) -> N
     assert len(ownership.receipts("volume")) == 1
 
 
-def _seed_backend_with_stale_receipt(tmp_path: Path, inspect_stderr: str):
+def _seed_backend_with_stale_receipt(
+    tmp_path: Path, inspect_stderr: str, *, listed: bool = False
+):
     """Leave a receipt from an earlier attempt whose volume no longer exists."""
 
     backend = DockerComposeBackend(tmp_path)
     ownership = backend._ensure_resource_ownership(attempt_id="run-old")
     backend._docker_daemon_id = "daemon-a"
+    backend._current_docker_daemon_id = lambda: "daemon-a"
     volume = f"{ownership.project_name}_shared"
     ownership.record(
         ResourceReceipt(
@@ -270,6 +273,10 @@ def _seed_backend_with_stale_receipt(tmp_path: Path, inspect_stderr: str):
             if labels is None:
                 return subprocess.CompletedProcess(command, 1, "", inspect_stderr)
             return subprocess.CompletedProcess(command, 0, json.dumps(labels), "")
+        if command[:3] == ["docker", "volume", "ls"]:
+            return subprocess.CompletedProcess(
+                command, 0, f"{volume}\n" if listed else "", ""
+            )
         assert command[:3] == ["docker", "volume", "create"]
         creates.append(command)
         state["labels"] = {
@@ -305,6 +312,29 @@ def test_seed_volume_retires_a_receipt_whose_volume_was_removed(
     assert len(creates) == 1
     (receipt,) = ownership.receipts("volume")
     assert receipt.attempt_id == "run-new"
+    roles = [role for role, _ in backend.native_evidence_artifacts("run-old")]
+    assert roles == ["native-resource-receipt/v1", "native-cleanup/v1"]
+
+
+def test_seed_volume_keeps_a_receipt_that_the_daemon_still_lists(
+    tmp_path: Path,
+) -> None:
+    """An inspect error alone does not retire a receipt the listing still shows."""
+
+    from aptl.core.deployment.errors import BackendSeedError
+
+    backend, ownership, creates = _seed_backend_with_stale_receipt(
+        tmp_path,
+        "Error response from daemon: get x: no such volume",
+        listed=True,
+    )
+
+    with pytest.raises(BackendSeedError):
+        backend._ensure_labeled_project_volume("shared")
+
+    assert creates == []
+    (receipt,) = ownership.receipts("volume")
+    assert receipt.attempt_id == "run-old"
 
 
 def test_seed_volume_keeps_a_receipt_when_absence_is_not_proven(

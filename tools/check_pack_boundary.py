@@ -12,9 +12,10 @@ the owners and their facts without a fixed string list:
 
 It scans the generic paths in :data:`COVERED` and reports each match by path
 and fact kind, never by value. #1273 covers the participant desktop, the rule
-tools, and the account providers, including the generic core directory. #1553
-adds the Go source of the ADR-065 layout, where a pack identifier is also a
-finding.
+tools, and the account providers, including the generic core directory. #1700
+covers the tests of generic code; tests of the adapter or the released pack
+live in :data:`ADAPTER_TESTS`, which the check does not scan. #1553 adds the
+Go source of the ADR-065 layout, where a pack identifier is also a finding.
 
 Usage: ``python tools/check_pack_boundary.py [root] [--pack-directory ID=PATH]``
 """
@@ -37,6 +38,8 @@ COVERED = (
     "appliance/guest/**/*",
     "mcp/*/docker-lab-config.json",
     "src/aptl/**/*",
+    "tests/**/*",
+    "web/tests/**/*",
     "*.go",
     "cmd/**/*.go",
     "internal/**/*.go",
@@ -44,6 +47,10 @@ COVERED = (
     "conformance/**/*.go",
     "tools/**/*.go",
 )
+#: The test subtree for the adapter and the released-pack contract (#1700).
+ADAPTER_TESTS = "tests/techvault/"
+#: Paths where the pack identifier itself is also a forbidden fact.
+_IDENTIFIER_PATHS = ("src/aptl/", "tests/", "web/tests/")
 _CORE_PACKAGE = "aptl"
 _MIN_SECRET_LENGTH = 6
 
@@ -152,6 +159,7 @@ def covered_files(root: Path, patterns: Iterable[str] = COVERED) -> list[Path]:
     return sorted(
         path for path in found
         if path.is_file() and not path.is_symlink() and "__pycache__" not in path.parts
+        and not path.relative_to(root).as_posix().startswith(ADAPTER_TESTS)
     )
 
 
@@ -184,8 +192,8 @@ def findings(
 
 
 def _checks_identifiers(relative: str) -> bool:
-    """Generic Python and Go code must not name an owner pack or its modules."""
-    return relative.startswith("src/aptl/") or relative.endswith(".go")
+    """Generic Python code, its tests, and Go code must not name an owner pack."""
+    return relative.startswith(_IDENTIFIER_PATHS) or relative.endswith(".go")
 
 
 def ownership_exceptions(root: Path) -> dict[tuple[str, str, str], int]:

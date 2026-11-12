@@ -1,3 +1,4 @@
+import { knownToolFailure } from './lilrae-tool-outcome.js';
 
 
 import { existsSync, readFileSync } from 'fs';
@@ -306,18 +307,18 @@ export async function loadLabConfig(configPath: string): Promise<LabConfig> {
  */
 export function getTargetCredentials(config: LabConfig): { sshKey: string; username: string; port: number; target: string } {
   if (!config.containers) {
-    throw new Error('SSH containers not configured - use API tools instead');
+    throw knownToolFailure(new Error('SSH containers not configured - use API tools instead'));
   }
 
   const configKey = config.server.configKey;
   const container = config.containers[configKey];
 
   if (!container) {
-    throw new Error(`Container '${configKey}' not found in configuration`);
+    throw knownToolFailure(new Error(`Container '${configKey}' not found in configuration`));
   }
 
   if (!container.enabled) {
-    throw new Error(`${config.server.targetName} instance is not enabled`);
+    throw knownToolFailure(new Error(`${config.server.targetName} instance is not enabled`));
   }
 
   return {

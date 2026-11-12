@@ -3,6 +3,7 @@ import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import { LabConfig } from './config.js';
 import { resolveApiRequestUrl } from './endpoint-url.js';
+import { knownToolFailure, toolAbortSignal } from './lilrae-tool-outcome.js';
 
 export interface HTTPError extends Error {
   statusCode?: number;
@@ -35,7 +36,7 @@ export class HTTPClient {
 
   constructor(private config: LabConfig['api']) {
     if (!config) {
-      throw new Error('API configuration is required');
+      throw knownToolFailure(new Error('API configuration is required'));
     }
     this.caAgent = buildCaAgent(config);
   }
@@ -53,26 +54,26 @@ export class HTTPClient {
     switch (auth.type) {
       case 'basic':
         if (!auth.username || !auth.password) {
-          throw new Error('Username and password required for basic auth');
+          throw knownToolFailure(new Error('Username and password required for basic auth'));
         }
         const basicAuth = Buffer.from(`${auth.username}:${auth.password}`).toString('base64');
         return { 'Authorization': `Basic ${basicAuth}` };
 
       case 'bearer':
         if (!auth.token) {
-          throw new Error('Token required for bearer auth');
+          throw knownToolFailure(new Error('Token required for bearer auth'));
         }
         return { 'Authorization': `Bearer ${auth.token}` };
 
       case 'apikey':
         if (!auth.apiKey || !auth.header) {
-          throw new Error('API key and header name required for API key auth');
+          throw knownToolFailure(new Error('API key and header name required for API key auth'));
         }
         return { [auth.header]: auth.apiKey };
 
       case 'custom':
         if (!auth.header || !auth.token) {
-          throw new Error('Header name and token required for custom auth');
+          throw knownToolFailure(new Error('Header name and token required for custom auth'));
         }
         return { [auth.header]: auth.token };
 
@@ -102,7 +103,7 @@ export class HTTPClient {
     }
 
     if (!auth.username || !auth.password || !auth.auth_url) {
-      throw new Error('wazuh-jwt requires username, password, auth_url');
+      throw knownToolFailure(new Error('wazuh-jwt requires username, password, auth_url'));
     }
 
     const basicAuth = Buffer.from(`${auth.username}:${auth.password}`).toString('base64');
@@ -123,6 +124,7 @@ export class HTTPClient {
         `wazuh-jwt: no token in auth response (status ${tokenResp.status})`,
       );
       error.statusCode = tokenResp.status;
+      knownToolFailure(error);
       error.response = parsed;
       throw error;
     }
@@ -145,6 +147,7 @@ export class HTTPClient {
       const parsed = new URL(url);
       const transport = parsed.protocol === 'https:' ? https : http;
       const reqOpts: https.RequestOptions = {
+        signal: toolAbortSignal(),
         hostname: parsed.hostname,
         port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
         path: parsed.pathname + parsed.search,
@@ -174,9 +177,10 @@ export class HTTPClient {
   }
 
   /**
-   * Append query-string params to a URL. Mirrors the inline branch the
-   * original makeRequest used; extracted so the orchestrator stays under
-   * its cognitive-complexity budget.
+   * Append query-string params to an absolute URL. The endpoint may already
+   * carry a query string (`/_search?size=1`) or a fragment, so the params
+   * join the existing query with `&` and go before any fragment. The
+   * endpoint's own query text is kept as written.
    */
   private appendParams(url: string, params: Record<string, any> | undefined): string {
     if (!params) return url;
@@ -187,7 +191,11 @@ export class HTTPClient {
       }
     });
     const qs = searchParams.toString();
-    return qs ? `${url}?${qs}` : url;
+    if (!qs) return url;
+    const target = new URL(url);
+    const existing = target.search.slice(1);
+    target.search = existing ? `${existing}&${qs}` : qs;
+    return target.href;
   }
 
   /**
@@ -230,7 +238,9 @@ export class HTTPClient {
         method,
         headers,
         body: bodyStr,
-        signal: controller.signal,
+        signal: toolAbortSignal()
+          ? AbortSignal.any([controller.signal, toolAbortSignal()!])
+          : controller.signal,
       });
       return await this.parseResponse(response, responseType);
     } catch (error) {
@@ -256,6 +266,7 @@ export class HTTPClient {
       responseType?: 'json' | 'text';
     } = {}
   ): Promise<HTTPResponse> {
+    toolAbortSignal()?.throwIfAborted();
     const { baseUrl = '', timeout = 30000, verify_ssl = true, default_headers = {} } = this.config!;
 
     // Resolve against configured baseUrl and reject cross-origin destinations before auth.
@@ -264,6 +275,7 @@ export class HTTPClient {
 
     // Build headers (await for wazuh-jwt path, no-op for others)
     const authHeaders = await this.getAuthHeadersAsync();
+    toolAbortSignal()?.throwIfAborted();
     // `Accept: application/json` is required for JSON APIs that content-negotiate
     // their responses: MISP, for one, HTTP 302-redirects a POST (e.g.
     // /attributes/add) to its web UI when the client does not explicitly accept
@@ -314,7 +326,7 @@ export class HTTPClient {
     const error = new Error(`HTTP ${status}: ${statusText}`) as HTTPError;
     error.statusCode = status;
     error.response = body;
-    return error;
+    return knownToolFailure(error);
   }
 
   /**
@@ -340,6 +352,7 @@ export class HTTPClient {
       const bodyStr = serializeAgentBody(options.body);
 
       const reqOptions: https.RequestOptions = {
+        signal: toolAbortSignal(),
         hostname: parsed.hostname,
         port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
         path: parsed.pathname + parsed.search,
@@ -467,7 +480,7 @@ function buildCaAgent(config: NonNullable<LabConfig['api']>): https.Agent | null
     ca = readFileSync(caPath);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    throw new Error(`ca_cert_path "${caPath}" not readable: ${reason}`);
+    throw knownToolFailure(new Error(`ca_cert_path "${caPath}" not readable: ${reason}`));
   }
   return new https.Agent({ ca, rejectUnauthorized: true });
 }

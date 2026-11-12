@@ -1,5 +1,13 @@
 # Issue #1367: Distribution Cutover Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1367-distribution-cutover-preflight.md).
+Its last recorded file change before this rewrite was `0796c7fcaec1`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 The supplied #1367 issue is the contract; no GRC workflow platform requirement is
 attached. This note supplements the [parent preflight](issue-1234-pypi-transition-preflight.md),
 whose cross-cutting guardrails remain applicable. It is design guidance, not
