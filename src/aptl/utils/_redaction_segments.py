@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import bisect
 from collections.abc import Callable
 import re
 
@@ -15,24 +16,8 @@ SubReplacer = Callable[[re.Match[str]], str]
 ReplacerFactory = Callable[[InSegPredicate], SubReplacer]
 SegmentTest = re.Pattern[str] | tuple[re.Pattern[str], ...]
 
-
-def _advance_quote_state(state: dict[str, bool], ch: str) -> bool:
-    """Update single/double-quote and escape state for one character.
-
-    Returns ``True`` when the caller should treat this position as inside
-    a quoted run / escape and therefore not a segment separator.
-    """
-    if state["escaped"]:
-        state["escaped"] = False
-    elif ch == "\\":
-        state["escaped"] = True
-    elif not state["in_double"] and ch == "'":
-        state["in_single"] = not state["in_single"]
-    elif not state["in_single"] and ch == '"':
-        state["in_double"] = not state["in_double"]
-    else:
-        return state["in_single"] or state["in_double"]
-    return True
+# The characters that change the quote, escape, or segment state.
+_SEGMENT_SPECIAL_RE = re.compile(r"[\\'\"|;&]")
 
 
 def _ampersand_step(command: str, i: int) -> int:
@@ -58,64 +43,76 @@ def _split_top_level_segments(command: str) -> list[tuple[int, int]]:
     re-join the slices with the original separator characters intact;
     the previous ``for ... enumerate`` loop revisited the second ``&``,
     which the reconstructor would emit as a stray ``&`` between segments.
+
+    The scan visits only the characters that can change the state: a
+    backslash escapes the next character, also inside quotes, and quotes
+    toggle as in the shell. Thus the cost is linear and small on long text.
     """
     segments: list[tuple[int, int]] = []
     start = 0
-    state: dict[str, bool] = {"in_single": False, "in_double": False, "escaped": False}
-    n = len(command)
-    i = 0
-    while i < n:
-        ch = command[i]
-        if _advance_quote_state(state, ch):
-            i += 1
+    in_single = in_double = False
+    next_free = 0
+    for match in _SEGMENT_SPECIAL_RE.finditer(command):
+        i = match.start()
+        if i < next_free:
             continue
-        if ch in ("|", ";"):
+        ch = command[i]
+        if ch == "\\":
+            next_free = i + 2
+        elif ch == "'" and not in_double:
+            in_single = not in_single
+        elif ch == '"' and not in_single:
+            in_double = not in_double
+        elif in_single or in_double:
+            continue
+        elif ch in "|;":
             segments.append((start, i))
             start = i + 1
-            i += 1
-            continue
-        if ch == "&":
+        else:
             advance = _ampersand_step(command, i)
             if advance > 0:
                 segments.append((start, i))
-                start = i + advance
-                i += advance
-                continue
-        i += 1
-    segments.append((start, n))
+                start = next_free = i + advance
+    segments.append((start, len(command)))
     return segments
 
 
+def _segment_hits(text: str, segment_test: SegmentTest) -> bool:
+    """Whether any tool-family pattern of ``segment_test`` matches ``text``."""
+    tests = segment_test if isinstance(segment_test, tuple) else (segment_test,)
+    return any(t.search(text) for t in tests)
+
+
 def _segment_predicate(
-    command: str, segment_test: SegmentTest
+    command: str, segment_test: SegmentTest, context: str = ""
 ) -> InSegPredicate:
     """Build an ``offset -> bool`` predicate over precomputed segments.
 
     ``segment_test`` is either a compiled regex (the segment matches if
     the regex searches successfully) or a tuple of regexes (matches if
     *any* hits — split this way to keep each regex under Sonar's
-    regex-complexity threshold).
+    regex-complexity threshold). ``context`` is the leading token of the
+    command that ``command`` is an argument of, for example the tool of an
+    argv list. When it names a tool of the family, every segment matches.
     """
     segments = _split_top_level_segments(command)
-    tests = segment_test if isinstance(segment_test, tuple) else (segment_test,)
+    context_hit = bool(context) and _segment_hits(context, segment_test)
+    flags = [
+        context_hit or _segment_hits(command[s:e], segment_test)
+        for s, e in segments
+    ]
 
-    def hit(text: str) -> bool:
-        """Whether any tool-family pattern matches the segment."""
-        return any(t.search(text) for t in tests)
-
-    flags = [hit(command[s:e]) for (s, e) in segments]
+    starts = [s for s, _ in segments]
 
     def in_flagged_segment(offset: int) -> bool:
         """Whether the offset belongs to a credential-bearing segment."""
-        for idx, (s, e) in enumerate(segments):
-            if s <= offset < e:
-                return flags[idx]
-        return False
+        idx = bisect.bisect_right(starts, offset) - 1
+        return idx >= 0 and offset < segments[idx][1] and flags[idx]
 
     return in_flagged_segment
 
 
-def _unquote_options_in_credential_segments(command: str) -> str:
+def _unquote_options_in_credential_segments(command: str, context: str = "") -> str:
     """Strip surrounding quotes from ``'-X'`` / ``"-X"`` option tokens —
     but only inside segments that name a credential-bearing tool.
 
@@ -125,12 +122,14 @@ def _unquote_options_in_credential_segments(command: str) -> str:
     it were a password). Scoping the strip to credential-bearing
     segments keeps the original `hydra '-p' hunter2` parity (hydra's
     segment unquotes, the per-flag matcher fires) while leaving
-    non-credential text intact.
+    non-credential text intact. ``context`` has the meaning that
+    :func:`_segment_predicate` gives it.
     """
     if "'" not in command and '"' not in command:
         # Cheap fast path; most commands have no quotes.
         return command
     segments = _split_top_level_segments(command)
+    context_hit = bool(context) and _segment_hits(context, _ANY_CREDENTIAL_TOOL_REGEXES)
     out_parts: list[str] = []
     last_end = 0
     for s, e in segments:
@@ -138,7 +137,7 @@ def _unquote_options_in_credential_segments(command: str) -> str:
             # Preserve the separator characters (``&&``/``||``/``;``/``|``/``&``).
             out_parts.append(command[last_end:s])
         seg = command[s:e]
-        if any(t.search(seg) for t in _ANY_CREDENTIAL_TOOL_REGEXES):
+        if context_hit or _segment_hits(seg, _ANY_CREDENTIAL_TOOL_REGEXES):
             seg = _QUOTED_OPTION_TOKEN_RE.sub(r"\2", seg)
         out_parts.append(seg)
         last_end = e
@@ -151,6 +150,7 @@ def _segment_aware_sub_chain(
     command: str,
     segment_test: SegmentTest,
     passes: list[tuple[re.Pattern[str], ReplacerFactory]],
+    context: str = "",
 ) -> str:
     """Run a sequence of segment-aware substitutions safely.
 
@@ -166,9 +166,34 @@ def _segment_aware_sub_chain(
 
     ``passes`` is a list of ``(pattern, replacer_factory)`` where
     ``replacer_factory(in_seg)`` returns the ``re.sub`` callback.
+    ``context`` has the meaning that :func:`_segment_predicate` gives it.
     """
     out = command
+    scanned: str | None = None
+    in_seg: InSegPredicate = _lazy_segment_predicate("", segment_test, context)
     for pattern, factory in passes:
-        in_seg = _segment_predicate(out, segment_test)
+        # The predicate is a function of the text alone: build it again only
+        # after a pass changed the text.
+        if out is not scanned:
+            in_seg = _lazy_segment_predicate(out, segment_test, context)
+            scanned = out
         out = pattern.sub(factory(in_seg), out)
     return out
+
+
+def _lazy_segment_predicate(
+    command: str, segment_test: SegmentTest, context: str
+) -> InSegPredicate:
+    """Return :func:`_segment_predicate` built at its first call.
+
+    Most text has no flag match, so no segment scan is necessary.
+    """
+    built: list[InSegPredicate] = []
+
+    def in_seg(offset: int) -> bool:
+        """Whether the offset belongs to a credential-bearing segment."""
+        if not built:
+            built.append(_segment_predicate(command, segment_test, context))
+        return built[0](offset)
+
+    return in_seg

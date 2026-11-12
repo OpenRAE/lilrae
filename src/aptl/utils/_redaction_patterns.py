@@ -49,8 +49,14 @@ _BARE_BEARER_RE = re.compile(rf"({_KEY_LB}bearer\s+){_VALUE_PATTERN}", re.IGNORE
 # style (long CLI flags). The `[\w-]*` prefixes allow compound flag
 # names like `--client-secret`; regex backtracking finds the embedded
 # sensitive token.
+# A match starts only where a run of `[\w-]` characters starts, and group 1
+# keeps the run text before its first `--`. A start at a later `--` of the
+# same run cannot match when the first `--` does not, so the output is the
+# same as for `--[\w-]*...` alone. Without this anchor the regex re-scanned
+# the run from every `--` in it, which is quadratic on long dash runs.
 _CLI_FLAG_RE = re.compile(
-    rf"(--[\w-]*{_SENSITIVE_KEY_PATTERN}{_KEY_RB}\s+){_VALUE_PATTERN}",
+    rf"((?<![\w-])(?:\w|-(?!-))*--[\w-]*{_SENSITIVE_KEY_PATTERN}{_KEY_RB}\s+)"
+    rf"{_VALUE_PATTERN}",
     re.IGNORECASE,
 )
 # Cookie / Set-Cookie header: redact the entire body so multi-segment
@@ -160,6 +166,12 @@ _IMPACKET_TOOL_REGEXES: tuple["re.Pattern[str]", ...] = (
         r"(^|[\s|;&])(?:[\w./-]+/)?(secretsdump\.py|getuserspns\.py|getnpusers\.py|ntlmrelayx\.py)(?:\s|$)",
         re.IGNORECASE,
     ),
+)
+# Tools whose ``-hashes`` / ``--hashes`` option carries an NTLM hash: the
+# ``-H`` hash tools and the impacket family.
+_HASHES_FLAG_TOOL_REGEXES: tuple["re.Pattern[str]", ...] = (
+    _HASH_TOOLS_RE,
+    *_IMPACKET_TOOL_REGEXES,
 )
 # Tools where the short flags ``-u`` / ``-U`` carry a username (often
 # paired with an embedded password — Basic-auth ``user:pass`` for HTTP
@@ -283,4 +295,6 @@ _IMPACKET_POSITIONAL_BARE = re.compile(
 )
 
 _URL_PREFIX_RE = re.compile(r"^(?:https?|ftp|ldap|ldaps|smb|smbs)://", re.IGNORECASE)
-_PORT_LIKE_RE = re.compile(r"^\d{1,5}(?:[,-]\d{1,5})*$")
+# ASCII digits only: a port is never written in other scripts, so a value in
+# other digits is a password and is masked.
+_PORT_LIKE_RE = re.compile(r"^[0-9]{1,5}(?:[,-][0-9]{1,5})*$")

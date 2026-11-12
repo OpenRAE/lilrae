@@ -12,6 +12,7 @@ import {
   redactShortPasswordFlag,
   redactBasicAuthUser,
   experimentNoRedactActive,
+  commandScanWindows,
 } from '../src/redaction.js';
 
 describe('redact - sensitive scalars', () => {
@@ -878,6 +879,39 @@ describe('redactor defense-in-depth bounds (issue #386, ARCH-386-01)', () => {
     expect(ms).toBeLessThan(BUDGET_MS);
     expect(out).not.toContain('password=hunter2');
     expect(out).toContain(`password=${REDACTED}`);
+  });
+
+  it('a long dash run is linear, not ReDoS', () => {
+    // The long-flag matcher re-scanned a dash run from each `--` in it:
+    // seconds below the 64 KiB scan window, against milliseconds when linear.
+    const payload = '-'.repeat(65000);
+    let out = '';
+    expect(elapsedMs(() => {
+      out = redact(payload) as string;
+    })).toBeLessThan(500);
+    expect(out).toBe(payload);
+  });
+
+  it('oversized input still runs the command-flag passes', () => {
+    const payload = ('x'.repeat(100) + '\n').repeat(2000) + 'hydra -l admin -p 1234 ssh://host';
+    let out = '';
+    expect(elapsedMs(() => {
+      out = redact(payload) as string;
+    })).toBeLessThan(BUDGET_MS);
+    expect(out.endsWith(`hydra -l admin -p ${REDACTED} ssh://host`)).toBe(true);
+  });
+
+  it('command scan windows count code points and cover the text', () => {
+    const max = 64 * 1024;
+    const text = 'y'.repeat(max - 10) + '\n' + 'z'.repeat(max + 5) + ' tail';
+    const windows = commandScanWindows(text);
+    expect(windows[0]).toBe('y'.repeat(max - 10) + '\n');
+    expect(windows[1]).toBe('z'.repeat(max));
+    expect(windows.join('')).toBe(text);
+    // A supplementary-plane character is one code point but two UTF-16 units.
+    const astral = '\u{1F600}'.repeat(max) + 'x';
+    expect(commandScanWindows(astral)).toEqual(['\u{1F600}'.repeat(max), 'x']);
+    expect(commandScanWindows('')).toEqual([]);
   });
 
   it('deeply nested object fails closed without a stack overflow', () => {
