@@ -1028,3 +1028,18 @@ def test_numeric_model_limits_and_usage_are_safe_but_secret_replacements_are_not
     declaration = {"target_id": name, "value_type": "integer", "allowed_value_kinds": ["literal"], "sensitivity": "internal"}
     assert redact({name: declaration}) == {name: declaration}
     assert redact({name: {**declaration, "api_key": "private-credential"}}) == {name: "[REDACTED]"}
+
+
+def test_opencode_per_call_token_usage_is_kept_but_any_other_tokens_value_is_redacted():
+    from aptl.utils.redaction import redact
+
+    usage = {"input": 1200, "output": 85, "reasoning": 40, "total": 1325, "cache": {"read": 900, "write": 0}}
+    assert redact({"tokens": usage}) == {"tokens": usage}
+    for value in (
+        "ghp_private-credential",
+        {**usage, "api_key": "private-credential"},
+        {**usage, "cache": {"read": "private-credential"}},
+        {"input": -1},
+        {"input": True},
+    ):
+        assert redact({"tokens": value}) == {"tokens": "[REDACTED]"}
