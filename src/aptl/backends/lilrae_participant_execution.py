@@ -13,6 +13,9 @@ from raes_contracts.contracts import (
     ParticipantActionResultModel,
     ParticipantTemporalRuntimeContextModel,
 )
+from raes_contracts.contracts.participant_temporal import (
+    ParticipantTemporalEvidenceModel,
+)
 from raes_contracts.contracts.participant_action_admission import (
     ParticipantActionAdmissionRequest,
 )
@@ -81,8 +84,10 @@ class LilraeParticipantExecution:
         return self._trial_bounds
 
     def install_before_dispatch(
-        self, bindings: tuple[LilraeParticipantBinding, ...],
-        *, trial_bounds: TrialParticipantBounds | None = None,
+        self,
+        bindings: tuple[LilraeParticipantBinding, ...],
+        *,
+        trial_bounds: TrialParticipantBounds | None = None,
     ) -> None:
         """Replace only executor instances within the already admitted offer."""
         candidate = LilraeParticipantExecution(bindings)
@@ -302,12 +307,18 @@ class LilraeParticipantExecution:
                     episode_id,
                     "backend_error",
                     "Participant invocation was cancelled.",
+                    end_observed=True,
                 )
             else:
                 if not isinstance(output, str) or len(output) > 128_000:
                     raise ValueError("invalid native output")
                 outcome = self._outcome(
-                    request, snapshot, episode_id, None, redact(output)
+                    request,
+                    snapshot,
+                    episode_id,
+                    None,
+                    redact(output),
+                    end_observed=True,
                 )
         except AgentExecutionError as exc:
             outcome = self._failure_outcome(request, snapshot, episode_id, exc, event)
@@ -343,8 +354,12 @@ class LilraeParticipantExecution:
             request.execution_generation,
         ):
             raise ValueError("participant tool port mismatch")
-        session = LilraeToolSession(port, item.tool_bindings, event,
-            evidence_sink=getattr(item.executor, "tool_evidence_sink", None))
+        session = LilraeToolSession(
+            port,
+            item.tool_bindings,
+            event,
+            evidence_sink=getattr(item.executor, "tool_evidence_sink", None),
+        )
         try:
             return item.executor.invoke_with_tools(
                 request.action_instance_id, event, session
@@ -367,7 +382,12 @@ class LilraeParticipantExecution:
                     "timeout" if error.reason == REASON_TIMEOUT else "backend_error"
                 )
                 return self._outcome(
-                    request, snapshot, episode_id, failure, error.stable_summary()
+                    request,
+                    snapshot,
+                    episode_id,
+                    failure,
+                    error.stable_summary(),
+                    end_observed=True,
                 )
         elif event.is_set() and str(error) == REASON_CANCELLED:
             return self._outcome(
@@ -429,12 +449,36 @@ class LilraeParticipantExecution:
             and request.implementation_selection == item.implementation_selection
             and tuple(request.target_addresses)
             == item.execution_binding.target_addresses
-            and bool(request.temporal_contexts)
-            and {context.temporal_contract_id for context in request.temporal_contexts}
-            == set(item.execution_binding.constraint_refs)
+            and LilraeParticipantExecution._temporal_matches(item, request)
             and request.execution_scope_ref is not None
             and request.execution_generation is not None
         )
+
+    @staticmethod
+    def _temporal_matches(
+        item: LilraeParticipantBinding, request: ParticipantActionAdmissionRequest
+    ) -> bool:
+        """Match bound guarantees by their constraint and content identity."""
+        contexts = request.temporal_contexts
+        if not contexts:
+            return False
+        offer = item.execution_binding
+        bound = tuple(
+            context.shared_time.binding
+            for context in contexts
+            if context.shared_time is not None
+        )
+        if bound:
+            return (
+                len(bound) == len(contexts)
+                and {binding.constraint_address for binding in bound}
+                <= set(offer.constraint_refs)
+                and {binding.contract_digest for binding in bound}
+                == set(offer.temporal_contract_digests)
+            )
+        return not offer.temporal_contract_digests and {
+            context.temporal_contract_id for context in contexts
+        } == set(offer.constraint_refs)
 
     @staticmethod
     def _outcome(
@@ -443,7 +487,33 @@ class LilraeParticipantExecution:
         episode_id: str,
         failure: str | None,
         observation: str,
+        *,
+        end_observed: bool = False,
     ) -> ParticipantNativeActionExecution:
+        # The stepped clock stays at the admitted coordinate during this call.
+        # This observes native completion, not elapsed wall time or rollback.
+        proofs = []
+        evidence_refs = (
+            request.evidence_refs or request.observation_boundary_evidence_refs
+        )
+        if end_observed and snapshot.time_model_state is not None:
+            for context in request.temporal_contexts:
+                bound = context.shared_time
+                if bound is None or bound.binding.event_point != "end":
+                    continue
+                clock = snapshot.time_model_state.clocks.get(
+                    bound.binding.clock_address
+                )
+                if clock is not None and evidence_refs:
+                    proofs.append(
+                        ParticipantTemporalEvidenceModel(
+                            context=bound,
+                            observation_boundary_address=request.observation_boundary_address,
+                            event_point="end",
+                            coordinate=clock.coordinate,
+                            evidence_refs=evidence_refs,
+                        )
+                    )
         result = ParticipantActionResultModel(
             status="failed" if failure else "succeeded",
             failure_class=failure,
@@ -456,6 +526,7 @@ class LilraeParticipantExecution:
             else "unavailable",
             observations=[observation],
             evidence_refs=list(request.evidence_refs),
+            temporal_evidence=proofs,
         )
         # Native outcome failure is distinct from failure to admit its record.
         return ParticipantNativeActionExecution(
