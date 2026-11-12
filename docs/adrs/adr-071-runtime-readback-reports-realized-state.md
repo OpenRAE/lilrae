@@ -65,7 +65,8 @@ The [design](../architecture/issue-1017-native-runtime-attestation-design.md) gi
 ### Fixed image declarations (2026-11-12 amendment)
 
 An installed adapter may report a fixed image preset with the RAE `driver-reported` source.
-It must bind that preset to the observed immutable container image identity and the admitted source family.
+It must bind that preset to the observed image identity and the admitted source family.
+The backend must pin the immutable image used to create the worker.
 The report describes the known preset; it does not claim native configuration readback.
 Core readers retain their declared sources and cannot be overridden by a weaker adapter report.
 Live readiness, experimental measurements, and objective verdicts require their own native observations.
