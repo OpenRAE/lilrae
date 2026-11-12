@@ -250,8 +250,8 @@ func checkLength(value string, minimum, maximum int) error {
 }
 
 // isPythonSpace reports whether str.strip of Python removes r. Python also
-// strips the separators U+001C to U+001F, which unicode.IsSpace does not
-// include.
+// strips the separators U+001C to U+001F, which the IsSpace function of the
+// unicode package does not include.
 func isPythonSpace(r rune) bool {
 	return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f)
 }

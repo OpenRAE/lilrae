@@ -51,9 +51,10 @@ type Lab struct {
 }
 
 // Containers holds the selection from the operator groups of the admitted
-// scenario. A nil Profiles is unset, and an empty Profiles selects no group.
+// scenario. A nil Profiles is unset and marshals as null, and an empty list
+// selects no group.
 type Containers struct {
-	Profiles []string `json:"profiles,format:emitnull"`
+	Profiles *[]string `json:"profiles"`
 }
 
 // Deployment selects the deployment backend. EnvironmentGrants are the
@@ -175,8 +176,9 @@ func Find(dir string) (string, bool) {
 }
 
 // Load reads and validates the configuration file at path. It reads at most
-// MaxFileSize bytes. A missing file is an error that matches
-// [fs.ErrNotExist]. Each error names the file and holds no configured value.
+// MaxFileSize bytes. The error for a missing file matches the ErrNotExist
+// error of the fs package. Each error names the file and holds no configured
+// value.
 func Load(path string) (Config, error) {
 	data, err := readBounded(path)
 	if err != nil {

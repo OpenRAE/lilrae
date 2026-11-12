@@ -318,7 +318,7 @@ func encodeObject(ms []member) (jsontext.Value, error) {
 	return append(out, '}'), nil
 }
 
-// Files is the file access that MigrateFile needs. A *securefile.Dir that is
+// Files is the file access that MigrateFile needs. A securefile Dir that is
 // open at the project directory implements it, and it does not follow links.
 type Files interface {
 	Open(name string) (*os.File, error)

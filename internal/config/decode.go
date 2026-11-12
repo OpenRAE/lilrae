@@ -82,7 +82,7 @@ func decodeLab(o *object) Lab {
 func decodeContainers(o *object) Containers {
 	var c Containers
 	if profiles, ok := o.optStrings("profiles"); ok {
-		c.Profiles = profiles
+		c.Profiles = &profiles
 		o.check("profiles", checkProfiles(profiles))
 	}
 	o.finish()

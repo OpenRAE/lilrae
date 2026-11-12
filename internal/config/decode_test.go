@@ -56,7 +56,7 @@ func TestDecodeFullConfiguration(t *testing.T) {
 	}`
 	want := Config{
 		Lab:        Lab{Name: "lab-1", NetworkSubnet: "10.0.0.0/16"},
-		Containers: Containers{Profiles: []string{"wazuh", "soc"}},
+		Containers: Containers{Profiles: &[]string{"wazuh", "soc"}},
 		Deployment: Deployment{
 			Provider: "ssh-compose", ProjectName: "lab_1", SSHHost: new("h"),
 			SSHUser: new("u"), SSHKey: new("k"), SSHPort: 2222, RemoteDir: new("/r"),
@@ -99,7 +99,7 @@ func TestDecodePresenceRules(t *testing.T) {
 		{"absent profiles are unset", `{"containers": {}}`, func(c Config) bool { return c.Containers.Profiles == nil }},
 		{"null profiles are unset", `{"containers": {"profiles": null}}`, func(c Config) bool { return c.Containers.Profiles == nil }},
 		{"empty profiles select no group", `{"containers": {"profiles": []}}`, func(c Config) bool {
-			return c.Containers.Profiles != nil && len(c.Containers.Profiles) == 0
+			return c.Containers.Profiles != nil && len(*c.Containers.Profiles) == 0
 		}},
 		{"null policy is unset", `{"lifecycle_policy": null}`, func(c Config) bool { return c.LifecyclePolicy == nil }},
 		{"empty policy has defaults", `{"lifecycle_policy": {}}`, func(c Config) bool {
