@@ -209,7 +209,7 @@ def test_acquire_native_evidence_persists_only_immediate_native_bindings(
         acquisition.NativeEvidenceRequest(
             plan=plan,
             backend=object(),
-            realization=object(),
+            realization=SimpleNamespace(nodes=(), generated_artifacts=()),
             project_dir=tmp_path,
             environment={
                 "INDEXER_USERNAME": "admin",
@@ -257,7 +257,7 @@ def test_acquire_native_evidence_fails_when_a_required_source_is_unavailable(
         acquisition.NativeEvidenceRequest(
             plan=plan,
             backend=object(),
-            realization=object(),
+            realization=SimpleNamespace(nodes=(), generated_artifacts=()),
             project_dir=tmp_path,
             environment={
                 "INDEXER_USERNAME": "admin",

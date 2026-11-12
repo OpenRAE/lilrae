@@ -1,5 +1,13 @@
 # Issues 852 And 940 Dev-To-Main Promotion Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-852-devmain-promotion-preflight.md).
+Its last recorded file change before this rewrite was `2f296e56f3b4`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note fixes the design boundaries for standardizing the `dev` to `main`
 promotion and for recognizing that exact branch pair in repository-side PR
 policy. It is architecture guidance, not an implementation plan.

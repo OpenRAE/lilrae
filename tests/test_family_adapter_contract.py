@@ -158,6 +158,66 @@ def test_family_retry_operations_keep_admitted_aliases_and_hide_environment():
         operations.container_restart("outside")
 
 
+def test_inspection_projects_only_network_addresses_and_aliases():
+    from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+
+    networks = {
+        "range": {
+            "IPAddress": "172.20.0.135",
+            "Aliases": ["misp", "x" * 300, 7],
+            "Gateway": "172.20.0.1",
+            "MacAddress": "02:42:ac:14:00:87",
+            "DriverOpts": {"secret": "driver-canary"},
+        },
+        "spoofed": {"IPAddress": "not-an-address", "Aliases": "misp"},
+    }
+    backend = SimpleNamespace(
+        container_inspect=lambda name: {
+            "State": {"Status": "running"},
+            "Config": {"Env": ["TOKEN=credential-canary"]},
+            "Mounts": [{"Source": "/host/mount-canary"}],
+            "NetworkSettings": {"Networks": networks, "Ports": {"80/tcp": []}},
+        }
+    )
+    node = SimpleNamespace(name="misp", container_name="aptl-misp", aliases=())
+    info = AdmittedRuntimeOperations(backend, (node,)).container_inspect("aptl-misp")
+
+    projected = info["NetworkSettings"]["Networks"]
+    assert projected["range"] == {"IPAddress": "172.20.0.135", "Aliases": ["misp"]}
+    # An invalid address or alias list is dropped, not repaired.
+    assert projected["spoofed"] == {}
+    assert set(info["NetworkSettings"]) == {"Networks"}
+    text = str(info)
+    for canary in ("credential-canary", "mount-canary", "driver-canary", "02:42"):
+        assert canary not in text
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"bad\nname": {"IPAddress": "10.0.0.2"}},
+        {7: {"IPAddress": "10.0.0.2"}},
+        {f"extra-{index}": {"IPAddress": "10.0.0.2"} for index in range(16)},
+    ],
+)
+def test_an_attachment_set_that_cannot_be_shown_whole_is_withheld(extra):
+    """A partial set could turn two attachments into one unique attachment."""
+
+    from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+
+    networks = {
+        "range": {"IPAddress": "172.20.0.135", "Aliases": ["misp"]},
+        **extra,
+    }
+    backend = SimpleNamespace(
+        container_inspect=lambda name: {"NetworkSettings": {"Networks": networks}}
+    )
+    node = SimpleNamespace(name="misp", container_name="aptl-misp", aliases=())
+    operations = AdmittedRuntimeOperations(backend, (node,))
+
+    assert "NetworkSettings" not in operations.container_inspect("aptl-misp")
+
+
 def test_family_native_capture_uses_trial_entry_identity(
     monkeypatch, family_input, tmp_path
 ):

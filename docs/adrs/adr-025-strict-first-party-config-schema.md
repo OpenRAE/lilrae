@@ -8,22 +8,26 @@ accepted
 
 2026-05-05
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [configuration Reference](../reference/project-configuration.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 APTL's checked-in `aptl.json` is first-party project configuration consumed by
 the Python control plane described in [ADR-007](adr-007-python-cli-control-plane.md).
-The canonical loading path is `aptl.core.config.load_config`, which parses JSON
-and validates it into `AptlConfig` and nested Pydantic models before CLI,
-deployment, lab lifecycle, run storage, and API code use it.
+`aptl.core.config.load_config` parses JSON into `AptlConfig` and nested Pydantic models. CLI, deployment, lifecycle, storage, and API consumers use that boundary.
 
 The nested models already reject unknown keys with `ConfigDict(extra="forbid")`,
 but the top-level `AptlConfig` has allowed unknown sections. That has let dead
 top-level sections live in `aptl.json` without any runtime consumer, and it would
 also let spelling mistakes pass validation.
 
-This differs from external payload models, such as third-party MISP API records,
-where ignoring provider-owned extra fields can be correct because APTL does not
-own the upstream schema.
+External payloads have another owner. Ignoring additional fields can be correct for provider-owned MISP records because LilRAE does not define that schema.
 
 ## Decision
 
@@ -31,9 +35,7 @@ Treat `aptl.json` as a strict first-party schema at every level.
 
 - Top-level `AptlConfig` and nested first-party config models should reject
   unknown keys through Pydantic validation.
-- A top-level section may be present in checked-in `aptl.json` only when it has
-  an explicit Pydantic model field and at least one runtime consumer or documented
-  owner in the control plane.
+- A first-party top-level section needs an explicit Pydantic field. It also needs a runtime consumer or documented control-plane owner before inclusion in checked-in `aptl.json`.
 - Future config additions must enter through `src/aptl/core/config.py` first,
   then be consumed by the relevant domain boundary (`core/lab.py`,
   `core/deployment`, run storage, API response schema, or another existing
@@ -63,9 +65,7 @@ Treat `aptl.json` as a strict first-party schema at every level.
 
 ### Risks
 
-- API paths that load config should continue to surface validation failures
-  clearly; adding strictness without preserving the existing loading boundary
-  could produce inconsistent CLI/API behavior.
+- API consumers should preserve clear configuration failures through the existing loader. Strict validation must not create inconsistent CLI and API behavior.
 - Do not confuse first-party `aptl.json` strictness with external API payload
   handling. Provider-owned records may still need tolerant models at ingestion
   boundaries.

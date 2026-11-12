@@ -37,7 +37,9 @@ theme:
 plugins:
   - search
   - git-revision-date-localized:
-      enable_creation_date: true
+      # Merge-only file additions can lack a creation commit in git log.
+      # Show revision dates without inventing a build-time creation date.
+      enable_creation_date: false
       # Page dates are best-effort, not a build gate: fall back to the
       # build date (instead of failing `mkdocs build --strict`) when git
       # history is unavailable for a page — uncommitted files, shallow
@@ -101,6 +103,9 @@ nav:
     - Compose a participant workbench: components/workbench-composition.md
     - Run the web control plane: reference/web-proxy.md
     - Write documentation: contributing-documentation.md
+    - Connect trial readiness: reference/trial-readiness-integration.md
+    - Compose participant trials: reference/participant-trial-integration.md
+    - Verify participant actions: reference/verify-participant-actions.md
     - Overview: getting-started/index.md
     - Prerequisites: getting-started/prerequisites.md
     - Install LilRAE: getting-started/installation.md
@@ -118,6 +123,13 @@ nav:
       - Review participant handout: workshop/arsenal-2026/handout.md
       - Review and repeat QA: workshop/arsenal-2026/qa.md
   - Reference:
+    - Root Compose declarations: reference/compose-topology.md
+    - Design-check contracts: reference/design-check-tools.md
+    - Containment interface: reference/containment-interface.md
+    - Containment case ledger: security/containment-case-ledger.md
+    - ADR format: reference/architecture-decisions.md
+    - Web component kit: reference/web-component-kit.md
+    - Architecture source checks: reviews/1667-architecture-source-checks.md
     - Host requirements: getting-started/host-requirements.md
     - Installation compatibility: getting-started/installation-reference.md
     - Pack installation: getting-started/pack-reference.md
@@ -171,6 +183,68 @@ nav:
       - "TechVault RAES Live Validation Preflight": raes/techvault-live-validation-preflight.md
       - "TechVault Static Validation Preflight": raes/techvault-static-validation-preflight.md
     - Historical V1 boundary: components/appliance-boundary-history.md
+    - Historical architecture records:
+      - Documentation rewrite preflight: architecture/issue-1667-documentation-preflight.md
+      - Original SOC runtime design: specs/soc-feature-spec.md
+      - Web design preflight: specs/web-gui-design-preflight.md
+      - Seat access preflight: specs/1178-vm-seat-access-preflight.md
+      - Native request observation assessment: architecture/issue-1420-request-observation-decision.md
+      - Participant architecture assessment: architecture/participant-tool-admission.md
+      - "Issue #1707 Admitted Participant Smoke Providers": architecture/issue-1707-participant-smoke-provider-preflight.md
+      - "Issue #1705 TechVault Capture Context": architecture/issue-1705-techvault-capture-context-preflight.md
+      - "Issue #1705 TechVault Capture Context Design": architecture/issue-1705-techvault-capture-context-design.md
+      - "Issue #1689 Native Acquisition Phase": architecture/issue-1689-native-acquisition-phase-preflight.md
+      - "Issue #1584 Go Cutover Branch Preflight": architecture/issue-1584-go-cutover-preflight.md
+      - "Issue #1510 Code Quality Architecture Preflight": architecture/issue-1510-code-quality-preflight.md
+      - "Issue #1372 Capture Spec Version Preflight": architecture/issue-1372-capture-spec-version-preflight.md
+      - "Issue #1121 Pack Boundary Preflight": architecture/issue-1121-pack-boundary-preflight.md
+      - "Issue #1130 Runtime Realization Attestation Preflight": architecture/issue-1130-runtime-realization-attestation-preflight.md
+      - "Issue #1413 Configured Pack Source Preflight": architecture/issue-1413-configured-pack-source-preflight.md
+      - DEP-008 Self-Contained Lab Assets Preflight: architecture/dep-008-self-contained-lab-assets-preflight.md
+      - RNG-001 Ephemeral Environments Preflight: architecture/rng-001-ephemeral-environments-preflight.md
+      - DEP-003 Ephemeral Lifecycle Policy Preflight: architecture/dep-003-ephemeral-lifecycle-preflight.md
+      - GRC Boundary Surface Vocabulary Preflight: architecture/grc-boundary-surface-vocabulary-preflight.md
+      - "Issue #958 Execution Boundary Preflight": architecture/issue-958-execution-boundary-preflight.md
+      - "Issue #851 First-Time User Documentation Preflight": architecture/issue-851-first-time-user-docs-preflight.md
+      - "Issue #557 Participant Implementation Binding Preflight": architecture/issue-557-participant-implementation-binding-preflight.md
+      - "Issue #821 In-Appliance Participant Workbench Preflight": architecture/issue-821-participant-workbench-preflight.md
+      - "Issue #823 Versioned Disposable Lab Appliance Preflight": architecture/issue-823-versioned-disposable-appliance-preflight.md
+      - "Issue #1022 Appliance Seat Delivery Preflight": architecture/issue-1022-appliance-seat-delivery-preflight.md
+      - "Issue #1127 Seat Component Protection Preflight": architecture/issue-1127-seat-component-protection-preflight.md
+      - "Issue #1186 Seat Privilege Preflight": architecture/issue-1186-seat-privilege-preflight.md
+      - "Issue #845 RAES Hard-Rename Preflight": architecture/issue-845-raes-hard-rename-preflight.md
+      - "Issue #934 APTL-To-LilRAE Rename Boundary Preflight": architecture/issue-934-rename-boundary-preflight.md
+      - "Issue #592 Scenario-Pack Terminology Preflight": architecture/issue-592-scenario-pack-terminology-preflight.md
+      - "Issue #591 Scenario-Pack Capture Asset Ownership Preflight": architecture/issue-591-scenario-pack-capture-asset-ownership-preflight.md
+      - "Issue #866 TechVault Component Realization Preflight": architecture/issue-866-techvault-realization-contract-preflight.md
+      - "Issue #874 Scenario-Bundle Realization Roots Preflight": architecture/issue-874-scenario-bundle-realization-roots-preflight.md
+      - "Issue #878 Scenario Verification Plugin Seam Preflight": architecture/issue-878-scenario-verification-plugin-seam-preflight.md
+      - "Issue #905 Lab Lifecycle Robustness Preflight": architecture/issue-905-lab-lifecycle-robustness-preflight.md
+      - "Issue #1000 Partial Boot And Manual Release QA Preflight": architecture/issue-1000-manual-release-qa-preflight.md
+      - "Issue #1002 Wazuh API TLS Warm-Up Preflight": architecture/issue-1002-wazuh-api-tls-warmup-preflight.md
+      - "Issue #949 Orborus Control Authority Preflight": architecture/issue-949-orborus-control-authority-preflight.md
+      - "Issue #974 Shuffle Worker Docker And Image Realization Preflight": architecture/issue-974-shuffle-worker-docker-images-preflight.md
+      - "Issue #976 Service Capability Preflight": architecture/issue-976-service-capability-preflight.md
+      - "Issue #976 Samba NT ACL Store Design": architecture/issue-976-samba-acl-store-design.md
+      - "Issue #951 Fresh Env-Pack Start Preflight": architecture/issue-951-fresh-env-pack-start-preflight.md
+      - "Issue #952 Failed-Start Recovery Preflight": architecture/issue-952-start-failure-recovery-preflight.md
+      - "Issue #964 Backend Resource Ownership Preflight": architecture/issue-964-backend-resource-ownership-preflight.md
+      - "Issue #969 Platform Safety Gates Preflight": architecture/issue-969-platform-safety-gates-preflight.md
+      - "Issue #985 Owned Lab Fixture Preflight": architecture/issue-985-owned-lab-fixture-preflight.md
+      - "Issue #993 Boot Realization Regressions Preflight": architecture/issue-993-boot-realization-regressions-preflight.md
+      - "Issue #992 Backend Observability Ownership Preflight": architecture/issue-992-backend-observability-ownership-preflight.md
+      - "Issue #1017 TechVault Bridge Retirement Preflight": architecture/issue-1017-techvault-bridge-retirement-preflight.md
+      - "Issue #1603 Released RAES Dependencies": architecture/issue-1603-raes-11-module-locations-preflight.md
+      - "Issue #753 Readiness Preflight": architecture/exp-011-resource-readiness-preflight.md
+    - LilRAE Readiness Review:
+      - Assessment: reviews/962-lilrae-readiness/README.md
+      - Migration Inventory: reviews/962-lilrae-readiness/migration-inventory.md
+      - Existing Issues: reviews/962-lilrae-readiness/backlog-disposition.md
+      - Existing ADRs: reviews/962-lilrae-readiness/adr-disposition.md
+      - Agent Sandboxing: reviews/962-lilrae-readiness/agent-sandboxing.md
+      - Delivery Plan: reviews/962-lilrae-readiness/delivery-plan.md
+      - Upstream update: reviews/962-lilrae-readiness/upstream-update.md
+      - Evidence: reviews/962-lilrae-readiness/evidence/README.md
   - Development:
     - Coding Standards: CODING_STANDARDS.md
   - Explanation:
@@ -181,69 +255,31 @@ nav:
     - Execution boundaries: getting-started/execution-boundaries.md
     - Scenario environment and Docker authority: getting-started/environment-bindings.md
     - Overview: architecture/index.md
+    - Documentation authority: architecture/documentation-boundaries.md
+    - Trial serving: architecture/trial-serving.md
+    - Interrupted trial recovery: architecture/interrupted-trial-recovery.md
+    - Concurrent participants: architecture/concurrent-participant-execution.md
+    - Participant action enforcement: architecture/participant-action-enforcement.md
+    - Participant request manifests: architecture/participant-request-manifests.md
+    - Trial participant configuration: architecture/trial-participant-configuration.md
+    - Family adapters: architecture/family-adapter-contract.md
+    - Managed OpenCode: architecture/managed-opencode.md
+    - Shared containment wrapper: architecture/containment-wrapper.md
+    - CI verification: architecture/ci-verification.md
     - Design-check tools: architecture/design-checks.md
-    - "Issue #1707 Admitted Participant Smoke Providers": architecture/issue-1707-participant-smoke-provider-preflight.md
-    - "Issue #1689 Native Acquisition Phase": architecture/issue-1689-native-acquisition-phase-preflight.md
-    - "Issue #1584 Go Cutover Branch Preflight": architecture/issue-1584-go-cutover-preflight.md
-    - "Issue #1510 Code Quality Architecture Preflight": architecture/issue-1510-code-quality-preflight.md
     - "Issue #1510 Code Quality Architecture Design": architecture/issue-1510-code-quality-design.md
-    - "Issue #1372 Capture Spec Version Preflight": architecture/issue-1372-capture-spec-version-preflight.md
     - "Issue #1372 Capture Spec Version Design": architecture/issue-1372-capture-spec-version-design.md
-    - "Issue #1121 Pack Boundary Preflight": architecture/issue-1121-pack-boundary-preflight.md
     - Pack Boundary: architecture/pack-boundary-design.md
-    - "Issue #1130 Runtime Realization Attestation Preflight": architecture/issue-1130-runtime-realization-attestation-preflight.md
     - "Owned Descendant Reporting Design": architecture/issue-1130-owned-descendant-reporting-design.md
-    - "Issue #1413 Configured Pack Source Preflight": architecture/issue-1413-configured-pack-source-preflight.md
     - Networking: architecture/networking.md
     - Enterprise Infrastructure: architecture/enterprise-infrastructure.md
-    - DEP-008 Self-Contained Lab Assets Preflight: architecture/dep-008-self-contained-lab-assets-preflight.md
-    - RNG-001 Ephemeral Environments Preflight: architecture/rng-001-ephemeral-environments-preflight.md
-    - DEP-003 Ephemeral Lifecycle Policy Preflight: architecture/dep-003-ephemeral-lifecycle-preflight.md
-    - GRC Boundary Surface Vocabulary Preflight: architecture/grc-boundary-surface-vocabulary-preflight.md
-    - "Issue #958 Execution Boundary Preflight": architecture/issue-958-execution-boundary-preflight.md
     - Native Docker Range Network Policy: architecture/issue-968-native-network-policy.md
-    - "Issue #851 First-Time User Documentation Preflight": architecture/issue-851-first-time-user-docs-preflight.md
-    - "Issue #557 Participant Implementation Binding Preflight": architecture/issue-557-participant-implementation-binding-preflight.md
-    - "Issue #821 In-Appliance Participant Workbench Preflight": architecture/issue-821-participant-workbench-preflight.md
-    - "Issue #823 Versioned Disposable Lab Appliance Preflight": architecture/issue-823-versioned-disposable-appliance-preflight.md
-    - "Issue #1022 Appliance Seat Delivery Preflight": architecture/issue-1022-appliance-seat-delivery-preflight.md
-    - "Issue #1127 Seat Component Protection Preflight": architecture/issue-1127-seat-component-protection-preflight.md
     - "Issue #1127 Seat Component Protection Design": architecture/issue-1127-seat-component-protection-design.md
-    - "Issue #1186 Seat Privilege Preflight": architecture/issue-1186-seat-privilege-preflight.md
-    - "Issue #845 RAES Hard-Rename Preflight": architecture/issue-845-raes-hard-rename-preflight.md
-    - "Issue #934 APTL-To-LilRAE Rename Boundary Preflight": architecture/issue-934-rename-boundary-preflight.md
-    - "Issue #592 Scenario-Pack Terminology Preflight": architecture/issue-592-scenario-pack-terminology-preflight.md
-    - "Issue #591 Scenario-Pack Capture Asset Ownership Preflight": architecture/issue-591-scenario-pack-capture-asset-ownership-preflight.md
-    - "Issue #866 TechVault Component Realization Preflight": architecture/issue-866-techvault-realization-contract-preflight.md
-    - "Issue #874 Scenario-Bundle Realization Roots Preflight": architecture/issue-874-scenario-bundle-realization-roots-preflight.md
-    - "Issue #878 Scenario Verification Plugin Seam Preflight": architecture/issue-878-scenario-verification-plugin-seam-preflight.md
-    - "Issue #905 Lab Lifecycle Robustness Preflight": architecture/issue-905-lab-lifecycle-robustness-preflight.md
-    - "Issue #1000 Partial Boot And Manual Release QA Preflight": architecture/issue-1000-manual-release-qa-preflight.md
-    - "Issue #1002 Wazuh API TLS Warm-Up Preflight": architecture/issue-1002-wazuh-api-tls-warmup-preflight.md
-    - "Issue #949 Orborus Control Authority Preflight": architecture/issue-949-orborus-control-authority-preflight.md
-    - "Issue #974 Shuffle Worker Docker And Image Realization Preflight": architecture/issue-974-shuffle-worker-docker-images-preflight.md
-    - "Issue #951 Fresh Env-Pack Start Preflight": architecture/issue-951-fresh-env-pack-start-preflight.md
-    - "Issue #952 Failed-Start Recovery Preflight": architecture/issue-952-start-failure-recovery-preflight.md
-    - "Issue #964 Backend Resource Ownership Preflight": architecture/issue-964-backend-resource-ownership-preflight.md
-    - "Issue #969 Platform Safety Gates Preflight": architecture/issue-969-platform-safety-gates-preflight.md
-    - "Issue #985 Owned Lab Fixture Preflight": architecture/issue-985-owned-lab-fixture-preflight.md
-    - "Issue #993 Boot Realization Regressions Preflight": architecture/issue-993-boot-realization-regressions-preflight.md
-    - "Issue #992 Backend Observability Ownership Preflight": architecture/issue-992-backend-observability-ownership-preflight.md
-    - "Issue #1017 TechVault Bridge Retirement Preflight": architecture/issue-1017-techvault-bridge-retirement-preflight.md
     - "Issue #1017 Native Runtime Attestation Design": architecture/issue-1017-native-runtime-attestation-design.md
-    - "Issue #1603 Released RAES Dependencies": architecture/issue-1603-raes-11-module-locations-preflight.md
     - "Issue #1603 Released Module Adoption Design": architecture/issue-1603-released-module-design.md
     - Required Trial Readiness: architecture/exp-011-resource-readiness-design.md
-    - "Issue #753 Readiness Preflight": architecture/exp-011-resource-readiness-preflight.md
-    - LilRAE Readiness Review:
-      - Assessment: reviews/962-lilrae-readiness/README.md
-      - Migration Inventory: reviews/962-lilrae-readiness/migration-inventory.md
-      - Existing Issues: reviews/962-lilrae-readiness/backlog-disposition.md
-      - Existing ADRs: reviews/962-lilrae-readiness/adr-disposition.md
-      - Agent Sandboxing: reviews/962-lilrae-readiness/agent-sandboxing.md
-      - Delivery Plan: reviews/962-lilrae-readiness/delivery-plan.md
-      - Upstream update: reviews/962-lilrae-readiness/upstream-update.md
-      - Evidence: reviews/962-lilrae-readiness/evidence/README.md
+    - Web GUI Design Specification: specs/web-gui-design.md
+    - Web Component Kit: specs/web-component-kit.md
   - Testing:
     - Participant Request Qualification: testing/participant-request-1419-qualification.md
     - Platform Pull-Request Gates: testing/platform-pr-gates.md
@@ -263,10 +299,6 @@ nav:
     - TechVault OSINT Readiness: reference/techvault-osint-readiness.md
     - Experiment Runs: reference/experiment-runs.md
     - Portable Evidence Bundle Export: reference/evidence-bundle-export.md
-    - SOC Feature Spec: specs/soc-feature-spec.md
-    - Web GUI Design Specification: specs/web-gui-design.md
-    - Web GUI Design Preflight Guardrails: specs/web-gui-design-preflight.md
-    - Web Component Kit: specs/web-component-kit.md
   - Decisions:
     - Index: adrs/README.md
     - ADR-000 Use ADRs: adrs/adr-000-use-adrs.md
@@ -335,6 +367,8 @@ nav:
     - ADR-064 Layered Architecture and Code Conventions: adrs/adr-064-layered-architecture-and-code-conventions.md
     - ADR-066 Runtime Readback Reports Realized State: adrs/adr-066-runtime-readback-reports-realized-state.md
     - ADR-067 Admitted Participant Smoke Providers: adrs/adr-067-admitted-participant-smoke-providers.md
+    - ADR-068 Merge Queue for the dev Branch: adrs/adr-068-dev-merge-queue.md
+    - ADR-069 Shared Containment Wrapper: adrs/adr-069-shared-containment-wrapper.md
 
 extra:
   social:

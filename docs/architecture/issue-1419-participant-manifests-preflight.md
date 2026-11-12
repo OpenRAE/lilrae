@@ -1,5 +1,13 @@
 # Issue #1419: Participant configuration manifests preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1419-participant-manifests-preflight.md).
+Its last recorded file change before this rewrite was `ece3505c919e`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note fixes boundaries for publishing installed participant manifests; it
 is not an implementation plan or evidence that the providers are qualified.
 The supplied issue contract includes managed OpenCode alongside supported

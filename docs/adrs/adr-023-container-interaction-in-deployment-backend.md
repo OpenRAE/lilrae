@@ -8,6 +8,14 @@ accepted
 
 2026-05-03
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [CLI Reference](../reference/cli.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 [ADR-013](adr-013-deployment-abstraction.md) introduced the
@@ -21,12 +29,7 @@ list`, `aptl container shell`, `aptl container logs`) and ships them
 alongside the long-stubbed `aptl config show`/`aptl config validate`.
 
 The CLI commands need a single uniform path that works against both the
-local `DockerComposeBackend` and the SSH-remote `SSHComposeBackend`. The
-SSH backend already centralises `DOCKER_HOST=ssh://` env injection inside
-its `_run` override, so any container-interaction methods added to the
-Protocol pick up SSH-aware execution for free; the alternative (letting
-the CLI shell out to raw `docker compose` itself) would route around the
-backend entirely and silently break SSH-remote deployments.
+local `DockerComposeBackend` and the SSH-remote `SSHComposeBackend`. The SSH backend already owns `DOCKER_HOST=ssh://` injection. Protocol methods reuse that selected daemon. Direct CLI Compose calls would bypass the backend and break remote deployment.
 
 Three core helpers were already issuing raw `docker exec` / `docker
 inspect` calls outside the backend: `core/snapshot.py` (`docker exec` ×4
@@ -39,9 +42,7 @@ meant to eliminate.
 ### Alternatives considered
 
 1. **Sibling Protocol** (`ContainerBackend`) decoupled from
-   `DeploymentBackend`. Cleaner separation of concerns, but every caller
-   (CLI, snapshot, flags, collectors) would have to instantiate and thread
-   *two* backends and ensure they target the same Docker daemon. Buys
+   `DeploymentBackend`. Separate backends would improve separation but burden every caller. CLI, snapshots, flags, and collectors would need two objects bound to the same daemon. Buys
    nothing in practice; the SSH-remote case explicitly requires the same
    transport for both. Rejected.
 2. **Generic `run_docker(args)` method** instead of named methods. Smaller
@@ -60,11 +61,7 @@ meant to eliminate.
 Extend the existing `DeploymentBackend` Protocol with **eleven** new
 methods: seven for container interaction (CLI surface) and four for
 host inventory (snapshot capture). Both `DockerComposeBackend` and
-`SSHComposeBackend` implement them. The SSH backend overrides only one
-helper (`_subprocess_kwargs`) which threads `DOCKER_HOST=ssh://…` into
-both captured (`_run`) and streaming (`_run_streaming`) execution paths
-through a single env-construction site, instead of duplicating the
-override across both methods.
+`SSHComposeBackend` implement them. The SSH backend uses `_subprocess_kwargs` for captured `_run` and streaming `_run_streaming` paths. This keeps `DOCKER_HOST=ssh://…` environment construction in one owner.
 
 ```python
 class DeploymentBackend(Protocol):
@@ -113,18 +110,12 @@ Implementation rules:
   `container_list` output. `DOCKER_HOST=ssh://…` is honoured uniformly by
   both `docker` and `docker compose` CLIs, so SSH-remote works without
   per-method special handling.
-- `container_shell` with `shell=None` **probes bash non-interactively**
-  via `docker exec <name> /bin/bash -c true` first; if that exits 0 it
-  launches an interactive `bash` TTY, if it exits 126/127 it falls back
-  to `/bin/sh`, otherwise it surfaces the probe error code. The probe
+- `container_shell` with `shell=None` first probes `docker exec <name> /bin/bash -c true`. Exit 0 selects interactive bash. Exit 126 or 127 selects `/bin/sh`. Other probe errors propagate. The probe
   is required so the user's own `exit 126`/`exit 127` from inside an
-  interactive shell isn't misread as "bash is missing." An explicit
+  interactive shell is not misread as "bash is missing." An explicit
   `--shell` skips the probe entirely.
 - The host inventory methods replace what would otherwise be a generic
-  `host_run(args)` argv-passthrough escape hatch. Typed methods keep the
-  Protocol Docker-shape-agnostic so a future non-Docker backend (for example,
-  Podman, Kubernetes, Nomad) can implement them in its own terms instead
-  of having to emulate Docker CLI behaviour. Snapshot capture
+  `host_run(args)` argv-passthrough escape hatch. Typed Protocol methods avoid Docker-specific result shapes. Another backend can implement its own transport without reproducing Docker CLI output. Snapshot capture
   (`core/snapshot.py`) is the only consumer today: `_get_software_versions`
   uses `host_versions`, `_get_container_snapshots` uses
   `host_list_lab_containers` (plus per-container `container_inspect` for
@@ -146,7 +137,7 @@ container `exec`/`inspect`/`logs` through the Protocol. Truly host-level
 calls (`docker version`, `docker compose version`, `docker ps -a --filter
 name=aptl-` for project-wide enumeration, `docker network ls/inspect`)
 remain raw subprocess calls—they target the daemon itself, not specific
-containers, and don't fit the Protocol's container-interaction model.
+containers, and do not fit the Protocol's container-interaction model.
 
 ## Consequences
 
@@ -177,10 +168,7 @@ containers, and don't fit the Protocol's container-interaction model.
   overrides only the two `_run*` helpers and inherits the rest from
   `DockerComposeBackend`.
 - **Two log methods (`container_logs` / `container_logs_capture`).**
-  Streaming and captured semantics genuinely differ; collapsing them
-  into a single method would have required either a `capture` flag with
-  a union return type or a buffer-and-return approach that defeats
-  streaming's purpose.
+  Captured and streaming operations have different result contracts. One method would require a union return type or buffering that defeats streaming.
 
 ### Risks
 
@@ -189,7 +177,7 @@ containers, and don't fit the Protocol's container-interaction model.
   (the CLI table renderer) will silently lose columns. Same risk as
   `status()` had pre-CLI-004; out of scope to address here.
 - **`/bin/bash` → `/bin/sh` fallback shells too eagerly.** If a user
-  intends bash but it's missing, they'll land in sh instead of getting
+  intends bash but it is missing, they will land in sh instead of getting
   a clear error. Acceptable: sh is functional and the user can rerun
   with `--shell /bin/bash` to see the explicit failure.
 

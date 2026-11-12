@@ -1,4 +1,4 @@
-"""The released TechVault AD node carries only its provider capability (#1700)."""
+"""The released TechVault AD node adds no capability (#1700, #976)."""
 
 from __future__ import annotations
 
@@ -15,16 +15,16 @@ def rendered_techvault(released_techvault_realization):
     return released_techvault_realization
 
 
-def test_the_realized_ad_node_carries_only_the_provider_capability(
+def test_the_realized_ad_node_adds_no_capability(
     rendered_techvault, tmp_path
 ):
-    """`ad` in Compose is a scale-to-zero stub; the grant lives on the provider.
+    """`ad` in Compose is a scale-to-zero stub; the Samba provider realizes it.
 
     So the check drives the pinned pack's realized `ad` node through the
     materializer to the base container it starts, and renders that
-    container's `docker run` command (#954). The Samba provider adds
-    SYS_ADMIN and nothing else, the scenario authors no capability of its
-    own, and no security option or namespace flag comes with it.
+    container's `docker run` command (#954). The Samba provider adds no
+    capability (#976), the scenario authors none of its own, and no security
+    option or namespace flag comes with it.
     """
 
     ad = next(node for node in rendered_techvault.nodes if node.name == "ad")
@@ -42,5 +42,5 @@ def test_the_realized_ad_node_carries_only_the_provider_capability(
     added = [argv[index + 1] for index, flag in enumerate(argv) if flag == "--cap-add"]
     added += [flag.split("=", 1)[1] for flag in argv if flag.startswith("--cap-add=")]
     assert ad.runtime is None or ad.runtime.linux_capabilities is None
-    assert added == ["SYS_ADMIN"]
+    assert added == []
     assert not {flag.split("=", 1)[0] for flag in argv} & _PRIVILEGE_FLAGS, argv

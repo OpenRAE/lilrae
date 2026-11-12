@@ -9,6 +9,25 @@ This file is maintained by [release-please](https://github.com/googleapis/releas
 from Conventional Commit messages; release sections are generated on release,
 not hand-edited in PRs.
 
+## [10.1.0](https://github.com/OpenRAE/lilrae/compare/v10.0.0...v10.1.0) (2026-11-07)
+
+
+### Features
+
+* expose native acquisition phase to scenario evidence sources ([6defa85](https://github.com/OpenRAE/lilrae/commit/6defa852f0cf99688846ed9d5367e26de6da34ef))
+* expose native acquisition phase to scenario evidence sources ([ce5fa71](https://github.com/OpenRAE/lilrae/commit/ce5fa71c5b8bb834705cfef8629bf5726c3804d8))
+* pass admitted inventory and targets to participant smoke providers ([1378edb](https://github.com/OpenRAE/lilrae/commit/1378edbe639e75ef8adb778ef292d8dc12738eb1))
+* pass admitted inventory and targets to participant smoke providers ([4a9b11b](https://github.com/OpenRAE/lilrae/commit/4a9b11b2799cdc7d310ce5394141225f3ea0f222))
+
+
+### Bug Fixes
+
+* let Vertex trial participants use the host's attached service account ([fd0194c](https://github.com/OpenRAE/lilrae/commit/fd0194c6aec04040ad29c6c34bfcd9e0f75ea283))
+* let Vertex trial participants use the host's attached service account ([2bcc5c7](https://github.com/OpenRAE/lilrae/commit/2bcc5c718a5750eaf72c2b3146b633b63d07bc9b))
+* let Vertex trial participants use the host's attached service account ([#1709](https://github.com/OpenRAE/lilrae/issues/1709)) ([3efa841](https://github.com/OpenRAE/lilrae/commit/3efa841a70b53ed984d0a5887125cc321b206978))
+* let Vertex trial participants use the host's attached service account ([#1709](https://github.com/OpenRAE/lilrae/issues/1709)) ([d5efdec](https://github.com/OpenRAE/lilrae/commit/d5efdec6e2f8048e96683ea78caae7832b276d92))
+* retain preparation failure evidence without an observer-effect string ([c4c125c](https://github.com/OpenRAE/lilrae/commit/c4c125cd13d9aeb1c5b2d2f34bbb0f4e83cc3bf1))
+
 ## [10.0.0](https://github.com/OpenRAE/lilrae/compare/v9.3.0...v10.0.0) (2026-11-07)
 
 

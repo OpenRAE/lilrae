@@ -51,6 +51,7 @@ from aptl.workbench.process import (
     BoundedProcessError,
     BoundedProcessRunner,
     ProcessRequest,
+    run_request,
 )
 from aptl.workbench.profiles import profile_for, verify_profile_tool_inventory
 from aptl.workbench.opencode_evidence import (
@@ -451,7 +452,7 @@ class LilraeOpenCodeExecutor:
                     request, failure_stdout_observer=state.retain_partial
                 )
             else:
-                state.result = request.run_with(self._runner)
+                state.result = run_request(request, self._runner)
         except BoundedProcessError as exc:
             state.error = exc
             raise

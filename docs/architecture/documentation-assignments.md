@@ -3,7 +3,9 @@
 ## Revision and use
 
 This register covers the tracked documentation at `4bdb79b6da25f90129de72be124eeba23dd480c9`.
-It also includes documentation added by issues #1664 and #1665.
+It also includes documentation added by issues #1664, #1665, and #1667.
+Issue #1667 preserves active requirement contracts without changing their lifecycle status.
+
 Each page has one delivery owner and a default reader purpose.
 The section table refines mixed pages. Unlisted sections inherit the page purpose.
 Delivery owners also own pages split from their assigned content.
@@ -20,6 +22,8 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 
 | Path | Issue | Reader purpose |
 | --- | --- | --- |
+| `docs/architecture/issue-1705-techvault-capture-context-preflight.md` | #1705 | Explanation |
+| `docs/architecture/issue-1705-techvault-capture-context-design.md` | #1705 | Explanation |
 | `.claude/skills/gh-workflow-monitor/SKILL.md` | #1668 | How-to guide |
 | `.claude/skills/ship/SKILL.md` | #1668 | How-to guide |
 | `.claude/skills/stage/SKILL.md` | #1668 | How-to guide |
@@ -127,6 +131,7 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 | `docs/adrs/adr-064-layered-architecture-and-code-conventions.md` | #1667 | Explanation |
 | `docs/adrs/adr-065-executable-participant-action-boundaries.md` | #1667 | Explanation |
 | `docs/adrs/adr-066-runtime-readback-reports-realized-state.md` | #1667 | Explanation |
+| `docs/adrs/adr-069-shared-containment-wrapper.md` | #1467 | Explanation |
 | `docs/architecture/ci-verification.md` | #1667 | Explanation |
 | `docs/architecture/concurrent-participant-execution.md` | #1667 | Explanation |
 | `docs/architecture/dep-003-ephemeral-lifecycle-preflight.md` | #1667 | Reference (source record) |
@@ -183,7 +188,7 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 | `docs/architecture/issue-1414-rpt-family-adapter-preflight.md` | #1667 | Reference (source record) |
 | `docs/architecture/issue-1418-participant-tool-admission-preflight.md` | #1667 | Reference (source record) |
 | `docs/architecture/issue-1419-participant-manifests-preflight.md` | #1667 | Reference (source record) |
-| `docs/architecture/issue-1420-request-observation-decision.md` | #1667 | Explanation |
+| `docs/architecture/issue-1420-request-observation-decision.md` | #1667 | Reference (source record) |
 | `docs/architecture/issue-1420-trial-participant-configuration-preflight.md` | #1667 | Reference (source record) |
 | `docs/architecture/issue-1421-capture-design.md` | #1667 | Explanation |
 | `docs/architecture/issue-1421-rpt-capture-preflight.md` | #1667 | Reference (source record) |
@@ -205,6 +210,7 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 | `docs/architecture/issue-1603-released-module-design.md` | #1667 | Explanation |
 | `docs/architecture/issue-1646-scoped-tool-affordances-design.md` | #1667 | Explanation |
 | `docs/architecture/issue-1646-scoped-tool-affordances-preflight.md` | #1667 | Reference (source record) |
+| `docs/architecture/issue-1667-documentation-preflight.md` | #1667 | Reference (source record) |
 | `docs/architecture/issue-420-concurrent-participants-preflight.md` | #1667 | Reference (source record) |
 | `docs/architecture/issue-435-declared-cleanup-design.md` | #1667 | Explanation |
 | `docs/architecture/issue-435-declared-cleanup-preflight.md` | #1667 | Reference (source record) |
@@ -258,13 +264,14 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 | `docs/architecture/issue-985-owned-lab-fixture-preflight.md` | #1667 | Reference (source record) |
 | `docs/architecture/issue-992-backend-observability-ownership-preflight.md` | #1667 | Reference (source record) |
 | `docs/architecture/issue-993-boot-realization-regressions-preflight.md` | #1667 | Reference (source record) |
+| `docs/architecture/containment-wrapper.md` | #1467 | Explanation |
 | `docs/architecture/managed-opencode.md` | #1667 | Explanation |
 | `docs/architecture/networking.md` | #1667 | Explanation |
 | `docs/architecture/obs-002-correlation-identity-clock-preflight.md` | #1667 | Reference (source record) |
 | `docs/architecture/pack-boundary-design.md` | #1667 | Explanation |
 | `docs/architecture/participant-action-enforcement.md` | #1667 | Explanation |
 | `docs/architecture/participant-request-manifests.md` | #1667 | Explanation |
-| `docs/architecture/participant-tool-admission.md` | #1667 | Explanation |
+| `docs/architecture/participant-tool-admission.md` | #1667 | Reference (source record) |
 | `docs/architecture/rep-003-run-scoped-provenance-preflight.md` | #1667 | Reference (source record) |
 | `docs/architecture/rng-001-ephemeral-environments-preflight.md` | #1667 | Reference (source record) |
 | `docs/architecture/trial-participant-configuration.md` | #1667 | Explanation |
@@ -515,10 +522,11 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 | `docs/sdl/techvault-curated-variants.md` | #1666 | How-to guide |
 | `docs/sdl/testing.md` | #1666 | How-to guide |
 | `docs/sdl/validation.md` | #1666 | How-to guide |
+| `docs/security/containment-case-ledger.md` | #1467 | Reference |
 | `docs/security/openssf-best-practices.md` | #1668 | How-to guide |
 | `docs/source-image-catalog.md` | #1666 | Reference |
 | `docs/specs/1178-vm-seat-access-preflight.md` | #1667 | Reference (source record) |
-| `docs/specs/soc-feature-spec.md` | #1667 | Explanation |
+| `docs/specs/soc-feature-spec.md` | #1667 | Reference (source record) |
 | `docs/specs/web-component-kit.md` | #1667 | Explanation |
 | `docs/specs/web-gui-design-preflight.md` | #1667 | Reference (source record) |
 | `docs/specs/web-gui-design.md` | #1667 | Explanation |
@@ -591,6 +599,16 @@ The page purposes guide the later rewrites. Preserve existing URLs and heading l
 | `docs/components/kali-operations.md` | #1666 | How-to guide |
 | `docs/reference/source-image-maintenance.md` | #1666 | How-to guide |
 | `docs/reference/windows-endpoint.md` | #1666 | Reference |
+| `docs/architecture/documentation-boundaries.md` | #1667 | Explanation |
+| `docs/reference/architecture-decisions.md` | #1667 | Reference |
+| `docs/reference/compose-topology.md` | #1667 | Reference |
+| `docs/reference/containment-interface.md` | #1467 | Reference |
+| `docs/reference/design-check-tools.md` | #1667 | Reference |
+| `docs/reference/web-component-kit.md` | #1667 | Reference |
+| `docs/reference/trial-readiness-integration.md` | #1667 | How-to guide |
+| `docs/reference/participant-trial-integration.md` | #1667 | How-to guide |
+| `docs/reference/verify-participant-actions.md` | #1667 | How-to guide |
+| `docs/reviews/1667-architecture-source-checks.md` | #1667 | Reference |
 
 ## Mixed sections
 
@@ -628,7 +646,7 @@ These exact headings refine the page assignments. Keep the other headings and li
 | `containers/windows-victim/README.md` | MCP Integration | #1666 | How-to guide |
 | `docs/adrs/README.md` | Format | #1667 | Explanation |
 | `docs/adrs/README.md` | Principles | #1667 | Explanation |
-| `docs/adrs/README.md` | Index | #1667 | Explanation |
+| `docs/adrs/README.md` | Index | #1667 | Reference |
 | `docs/components/appliance-boundary.md` | Protected Seat Materialization | #1666 | Reference |
 | `docs/components/appliance-boundary.md` | Historical V1 Materialization | #1666 | Reference |
 | `docs/components/appliance-boundary.md` | Historical V1 Participant Workbench | #1666 | Reference |
@@ -1818,7 +1836,6 @@ Edit generated prose at these maintained sources, then use the existing generato
 | `src/aptl_techvault/evidence/__init__.py` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |
 | `src/aptl_techvault/evidence/proposition_truth.py` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |
 | `src/aptl_techvault/evidence/techvault.py` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |
-| `src/aptl_techvault/evidence/techvault_enrollment_baseline.py` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |
 | `src/aptl_techvault/evidence/techvault_manager_alerts.py` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |
 | `src/aptl_techvault/evidence/techvault_misp_readiness.py` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |
 | `src/aptl_techvault/evidence/techvault_native.py` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |
@@ -1889,7 +1906,8 @@ Edit generated prose at these maintained sources, then use the existing generato
 | `web/tests/routes/scenario-workbench.test.ts` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |
 | `web/vitest.config.ts` | #1668 | Reference: docstrings, help text, schema descriptions, or API comments |
 
-| `tools/install-ste.sh` | #1668 | Reference: pinned tool source, release, license, and checksum comments |
+| `tools/install-doc-tools.sh` | #1686 | Reference: package pin, source revision, license, and checksum boundary |
+| `tools/install-ste.sh` | #1668 | Reference: shared-package installation entry point |
 | `tools/ste-lint.sh` | #1668 | Reference: explicit-path command usage |
 
 ## Non-Markdown source records

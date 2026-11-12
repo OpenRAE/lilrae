@@ -1,9 +1,8 @@
 # Contributing to APTL
 
 APTL is an active purple-team lab and autonomous cyber-operations research
-project. Contributions are useful when they make the lab safer, more
-reproducible, easier to operate, easier to test, or more precise for scenario
-authors and agent integrations.
+project. Contributions can make the lab safer, more reproducible, easier to operate, or easier to test.
+They can also improve precision for scenario authors and agent integrations.
 
 ## Before Opening a Pull Request
 
@@ -111,6 +110,7 @@ macOS and Windows run focused portability tests and CLI smoke commands.
 Changed inputs select relevant jobs; unknown paths select all checks.
 Weekly, manual, and release-tag qualification select the full retained checks.
 Superseded PR jobs are cancelled, while an active lab boot completes teardown.
+
 Full lab startup on macOS and Windows remains an operator qualification.
 See [CI verification](docs/architecture/ci-verification.md) for routing and budgets.
 
@@ -124,7 +124,8 @@ Start with the reader's task. Select Tutorial, How-to guide, Reference, or
 Explanation. Verify rewritten claims against code and configuration.
 Preserve facts, conditions, obligations, commands, identifiers, and useful URLs.
 
-Use the shared user-level `documentation` skill in Claude Code or Codex.
+Use the shared `documentation` skill from the pinned doc-tools package in Claude Code or Codex.
+Existing user-level installations remain usable during migration.
 Do not commit a copy of that skill into this repository.
 Follow the [documentation guide](docs/contributing-documentation.md) for
 STE writing steps, explicit-path checks, migration assignments, and CI gates.
@@ -134,9 +135,8 @@ Record source paths, revision, checks, and corrected differences in the PR.
 
 APTL intentionally runs vulnerable services and gives agents access to
 penetration-testing tools. Keep contributions bounded to authorized lab use.
-Do not include real credentials, production secrets, private target data, or
-instructions for using the project against systems you do not own or have
-permission to test.
+Do not include real credentials, production secrets, or private target data.
+Do not include instructions for systems unless you own them or have permission to test them.
 
 The repository contains intentional test credentials for lab functionality.
 Those are not production secrets. New credentials should be dummy values unless
@@ -145,9 +145,8 @@ the design explicitly renders or generates them at runtime.
 ## Host Privilege Escalation
 
 Host-side APTL code must not silently escalate privileges. Do not add `sudo -n`,
-passwordless-sudo assumptions, or hidden sudo repair paths. If a host action
-truly needs elevated privileges, either prompt for explicit consent before
-running it or stop and print the exact command for the user to run. Scenario
+passwordless-sudo assumptions, or hidden sudo repair paths. If a host action needs elevated privileges, prompt for explicit consent before running it.
+Alternatively, stop and print the exact command for the user to run. Scenario
 containers may still model sudo behavior as lab content; that is separate from
 operator host escalation.
 

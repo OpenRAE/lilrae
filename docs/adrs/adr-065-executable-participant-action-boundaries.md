@@ -4,6 +4,14 @@
 
 Proposed for the #1418 delivery PR.
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [action-boundary explanation](../architecture/participant-action-enforcement.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 Participant tool calls cross authoring, controller, runtime, native execution, and evidence boundaries.
@@ -43,9 +51,11 @@ The management process and installed adapters remain trusted; local IPC supplies
 ADR-003 retains common MCP dispatch ownership.
 ADR-029 retains secret-handling rules.
 ADR-035 retains RAES as the semantic authority.
+
 ADR-050 retains terminal archival ownership.
 ADR-064 supplies the transitive layer and convention checks.
 Shared tool contracts, action state, errors, and result redaction belong to Core.
+
 The session and carrier belong to the RAES adapter.
 The completed modules are enrolled in the repository layer check.
 This decision changes none of those owners.

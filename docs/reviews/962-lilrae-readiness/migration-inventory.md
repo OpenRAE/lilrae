@@ -1,5 +1,13 @@
 # Ownership and Rename Inventory
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/reviews/962-lilrae-readiness/migration-inventory.md).
+Its last recorded file change before this rewrite was `cdccff41ccb3`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This is a proposed ownership cut at the review baseline. It does not divide
 APTL from LilRAE: those names identify one product across a rename. The
 [tracked-file ledger](tracked-file-inventory.tsv) assigns every existing path

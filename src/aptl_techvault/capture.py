@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from aptl.backends.scenario_capture import (
     EXTENSION_API_VERSION,
+    CaptureSourceContext,
     ScenarioCaptureContext,
     ScenarioCaptureContribution,
 )
+from aptl.core.evidence.adapters.sources import WindowedSource
 from aptl_techvault.capture_registrations import BUILTIN_REGISTRATIONS
 from aptl_techvault.evidence.proposition_truth import native_evidence_result
 from aptl_techvault.evidence.techvault_native import TechVaultNativeEvidenceOwner
@@ -50,16 +54,14 @@ class TechVaultCaptureRuntimeAdapter:
     """Narrow executable operations paired with admitted declarations."""
 
     @staticmethod
-    def native_sources(request: object) -> object:
-        environment = request.environment
+    def native_sources(context: CaptureSourceContext) -> Mapping[str, WindowedSource]:
+        """Build the TechVault sources from the admitted capture context."""
+
         owner = TechVaultNativeEvidenceOwner(
-            backend=request.backend,
-            realization=request.realization,
-            project_dir=request.project_dir,
-            indexer_auth=(
-                environment.get("INDEXER_USERNAME", ""),
-                environment.get("INDEXER_PASSWORD", ""),
-            ),
+            operations=context.operations,
+            realization=context.realization,
+            retain_enrollment_ids=context.retain_enrollment_ids,
+            may_prepare=context.may_prepare,
         )
         return owner.sources()
 

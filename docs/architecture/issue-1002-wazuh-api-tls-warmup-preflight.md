@@ -1,5 +1,13 @@
 # Issue #1002 Wazuh API TLS Warm-Up Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1002-wazuh-api-tls-warmup-preflight.md).
+Its last recorded file change before this rewrite was `29bc37efea39`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note fixes the architecture boundary for issue #1002. It is guidance, not
 an implementation plan, and it does not change startup behavior. No new ADR is
 needed: ADR-029 owns secret-safe process and diagnostic handling, ADR-030 owns

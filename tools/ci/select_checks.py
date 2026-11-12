@@ -90,6 +90,11 @@ def changed_paths(event: dict, event_name: str) -> list[str] | None:
     if event_name == "pull_request":
         base = event["pull_request"]["base"]["sha"]
         revision = base + "...HEAD"
+    elif event_name == "merge_group":
+        # The group holds the queued pull requests ahead of this one, so the
+        # diff against the queue base covers every change that the group merges.
+        base = event["merge_group"]["base_sha"]
+        revision = base + "...HEAD"
     elif event_name == "push":
         base = event.get("before", "")
         revision = base + "..HEAD"

@@ -1,5 +1,13 @@
 # Issue #1593: Go cutover dependency updates and weekly Checks
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1593-go-cutover-schedules-preflight.md).
+Its last recorded file change before this rewrite was `5913199f82f6`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This is a temporary routing change for milestone 44, delivered through `dev`
 and activated when it reaches `main`. It needs no new ADR or product component.
 The supplied issue is the delivery contract; this note sets boundaries, not an

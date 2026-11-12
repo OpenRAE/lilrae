@@ -8,6 +8,14 @@ accepted
 
 2026-05-10
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [configuration Reference](../reference/project-configuration.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 Issue #200 changes the ownership model for service configuration at lab
@@ -43,27 +51,14 @@ Checked-in files under `config/` are source-owned baselines or templates.
 Startup must not mutate them in place to inject runtime credentials or other
 generated runtime state.
 
-Credentialized service configuration and generated runtime artifacts must be
-rendered or seeded to a dedicated generated output location, preferably under
-the ignored project state tree (`.aptl/`), or from an explicit template asset
-into that output location. Containers that need the generated file should
-consume the generated artifact via the existing Docker Compose ownership path,
-with read-only mounts where the service supports them.
+Secret-bearing configuration must use a dedicated generated location, preferably ignored `.aptl/` state. A source template can supply that output without becoming mutable runtime state. Containers should consume generated artifacts through the existing Compose ownership path. Mounts should be read-only when the service supports that mode.
 
-Rendering APIs must keep the existing boundary shape: accept the project root
-and canonical project-relative inputs, construct known paths internally, resolve
-symlinks, and reject paths that escape their allowed root before any I/O. The
-same rule applies to generated output paths. Do not add arbitrary caller-owned
+Rendering APIs accept a project root and canonical relative inputs. They construct known paths and resolve symlinks. They reject paths outside the allowed root before I/O. Do not add arbitrary caller-owned
 file targets.
 
 Secret-bearing generated directories must be created with restrictive
 permissions (`0700` directories), written atomically, and left out of version
-control. The generated *files* default to `0600`, but when a file is
-bind-mounted into a container whose process may run under a UID that does not
-match the host UID that ran `aptl lab start` (for example the Wazuh Dashboard image's
-non-root user), the file is widened to `0644` so the container can read it—the
-owner-only parent directory remains the host-side access control, and the file
-still never reaches the repo because `.aptl/` is gitignored. Logging and
+control. Generated files default to `0600`. A bind-mounted file can need `0644` when its container process uses another UID, as the Dashboard does. The owner-only parent directory still restricts host access. Ignored `.aptl/` output does not enter version control. Logging and
 returned errors may include artifact labels and paths, but must not include
 secret values.
 
@@ -84,14 +79,9 @@ the red-team capture file) with `0700` directories, an atomic rename, and a
 `0644` file mode (so the Wazuh Dashboard's non-root process can read its
 bind-mounted config). The renderer also rejects a zero-match substitution and
 any symlink in the `.aptl/config/...` path chain (escape *or* back into a
-tracked file). `core.lab._step_sync_credentials` runs before
-`_step_check_bind_mounts` and `_step_start_containers`, so the rendered files
-exist by the time Docker Compose binds them, and a render failure aborts lab
-start rather than leaving a stale copy in place. `aptl lab start` is the
-supported entrypoint; a bare `docker compose up` against a fresh checkout will
-not find the rendered mounts—the same property the gitignored
-`config/wazuh_indexer_ssl_certs/*` certificate mounts already have, so the
-manual / CI deployment docs route through `aptl lab start`. The other ~18
+tracked file). `core.lab._step_sync_credentials` runs before `_step_check_bind_mounts` and `_step_start_containers`. Rendering therefore precedes mounting. A render failure stops startup rather than preserving a stale usable copy.
+
+`aptl lab start` is the supported original entry point. Bare Compose startup in a fresh checkout lacks rendered mounts and generated certificates. The maintained deployment guide uses the supported CLI. The other ~18
 `config/wazuh_cluster/*` mounts (rules, decoders, certs, helper scripts) are not
 credentialized and stay on `config/`.
 
@@ -109,23 +99,15 @@ source-owned baselines only:
 | `config/suricata/rules/misp/misp-sha256.list` | `.aptl/suricata/rules/misp/misp-sha256.list` | `suricata` / `misp-suricata-sync` → `/var/lib/suricata/rules/misp/misp-sha256.list` |
 
 `aptl lab start` seeds those baselines into `.aptl/suricata/rules/misp/` before
-bind-mount validation and container startup. Suricata mounts the generated
-directory read-write because its image entrypoint chowns the rules tree before
-starting; `misp-suricata-sync` mounts the same generated directory read-write
-and continues to write `RULES_OUT_PATH=/var/lib/suricata/rules/misp/misp-iocs.rules`.
+bind-mount validation and container startup. Suricata needs a writable generated directory because its entry point changes ownership. `misp-suricata-sync` shares that output and writes `RULES_OUT_PATH=/var/lib/suricata/rules/misp/misp-iocs.rules`.
 The writable target is generated state under `.aptl/`, not checked-in `config/`.
-The in-container path remains under Suricata's `default-rule-path`, so
-`misp/misp-iocs.rules` and the hash-list sidecars keep resolving through
-Suricata's normal relative-path lookup while a lab start no longer dirties
-checked-in `config/`.
+The path remains below Suricata's `default-rule-path`. Relative lookup still resolves the generated rules and hash lists without modifying source `config/` files.
 
 ## Guardrails
 
 - Reuse `load_dotenv`, `env_vars_from_dict`, `EnvVars`, and
   `find_placeholder_env_values` for every value rendered from `.env`.
-- Reuse `AptlConfig` if a new runtime-config output knob is needed; do not add
-  unvalidated ad hoc environment parsing unless it follows the strict parser
-  pattern used by `misp_suricata_sync.config`.
+- New runtime configuration should extend `AptlConfig`. Separate environment parsing must follow the existing strict `misp_suricata_sync.config` pattern rather than accept unchecked values.
 - Keep lab-start orchestration in `core.lab` as a flat sequence of
   `_step_*` functions returning `LabResult | None`.
 - Preserve `PathContainmentError` semantics for security-boundary failures:
@@ -161,9 +143,7 @@ checked-in `config/`.
 ## Extensibility
 
 The seam is the generated-artifact root plus per-service relative output names.
-One future service should be addable by registering another template/source and
-generated relative path, not by hardcoding a second one-off writer or changing
-the source `config/` ownership model again.
+Another service should register its source template and generated relative path. It should not need a separate writer or change ownership of source `config/`.
 
 ## Non-Goals
 

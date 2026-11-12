@@ -54,6 +54,43 @@ def test_scheduled_and_dispatched_checks_select_all_lanes():
         assert all(module.select_lanes(paths or [], full=paths is None).values())
 
 
+def _git(repo, *args):
+    import subprocess
+
+    return subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", *args],
+        cwd=repo, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+
+
+def test_merge_group_selects_every_queued_change_since_the_queue_base(
+    tmp_path, monkeypatch
+):
+    """A merge group carries the pull requests ahead of it (ADR-068)."""
+    module = selector()
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "ci")
+    _git(tmp_path, "config", "user.email", "ci@example.invalid")
+    (tmp_path / "README.md").write_text("base\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "base")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    for path in ("docs/ahead.md", "src/aptl/queued.py"):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text("change\n")
+        _git(tmp_path, "add", ".")
+        _git(tmp_path, "commit", "-qm", path)
+    monkeypatch.chdir(tmp_path)
+
+    paths = module.changed_paths({"merge_group": {"base_sha": base}}, "merge_group")
+
+    assert sorted(paths) == ["docs/ahead.md", "src/aptl/queued.py"]
+    assert module.select_lanes(paths)["python"]
+    assert module.changed_paths(
+        {"merge_group": {"base_sha": "not-a-sha"}}, "merge_group"
+    ) is None
+
+
 def test_every_dockerfile_selects_the_iac_gate():
     select = selector().select_lanes
     for path in (

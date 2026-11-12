@@ -1,5 +1,11 @@
 # Issue #1422: Wazuh Dashboard Owner-Declared Config Design
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1422-wazuh-dashboard-owned-config-design.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 This design delivers the owner-declared Wazuh Dashboard config files to a
 non-root image. It refines the
 [preflight](issue-1422-wazuh-dashboard-config-readability-preflight.md).
