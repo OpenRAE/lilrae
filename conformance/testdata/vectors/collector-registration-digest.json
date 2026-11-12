@@ -33,7 +33,6 @@
         "sealing_modes": [
           "none"
         ],
-        "supports_chain_of_custody": false,
         "supports_retention": true,
         "supports_loss_disclosure": true,
         "visibility_class": "participant-visible",
@@ -50,7 +49,7 @@
         ]
       },
       "expect": {
-        "text": "sha256:0d3ba7258a441a9da1bc21e0681d39df283548fd799fd3749cab458b9d514105"
+        "text": "sha256:d2494cd351df52861c4b6c720072895e4a8645a786f5a5dd3d521597bf664887"
       }
     },
     {
@@ -82,7 +81,6 @@
         "sealing_modes": [
           "none"
         ],
-        "supports_chain_of_custody": false,
         "supports_retention": true,
         "supports_loss_disclosure": true,
         "visibility_class": "participant-visible",
@@ -100,7 +98,7 @@
       },
       "note": "sets are sorted before hashing",
       "expect": {
-        "text": "sha256:0d3ba7258a441a9da1bc21e0681d39df283548fd799fd3749cab458b9d514105"
+        "text": "sha256:d2494cd351df52861c4b6c720072895e4a8645a786f5a5dd3d521597bf664887"
       }
     }
   ]

@@ -533,9 +533,8 @@ def _native_cleanup(case_input: dict) -> dict[str, object]:
             workspace_id=ownership.workspace_id, project_name=ownership.project_name, **case_input["receipt"]
         )
         ownership.record(receipt)
-        with (
-            patch.object(lilrae_native_evidence, "datetime", _pinned_datetime(datetime.fromisoformat(case_input["recorded_at"]))),
-            patch.object(lilrae_native_evidence, "uuid4", return_value=SimpleNamespace(hex=case_input["uuid_hex"])),
+        with patch.object(
+            lilrae_native_evidence, "datetime", _pinned_datetime(datetime.fromisoformat(case_input["recorded_at"]))
         ):
             try:
                 lilrae_native_evidence.record_cleanup(ownership, receipt, cause=case_input["cause"])

@@ -33,7 +33,7 @@
       ],
       "note": "the current code decodes the RFC 8785 bytes as ASCII and fails (#1598); the vector changes when go-cutover takes the fix",
       "expect": {
-        "reject": "serialize"
+        "text": "[{\"ref_id\":\"capteur-é\"}]"
       }
     }
   ]
