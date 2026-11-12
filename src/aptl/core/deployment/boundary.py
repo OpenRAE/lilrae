@@ -344,6 +344,7 @@ class SeatPermittedFlow:
     def __post_init__(self) -> None:
         if (
             not self.ports
+            or self.ports != tuple(sorted(self.ports))
             or len(self.ports) != len(set(self.ports))
             or any(not 0 < port <= 65535 for port in self.ports)
             or not self.purpose

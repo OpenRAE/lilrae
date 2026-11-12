@@ -1,4 +1,4 @@
-# ADR-066: Runtime Readback Reports Realized State
+# ADR-071: Runtime Readback Reports Realized State
 
 ## Status
 

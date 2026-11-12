@@ -1,8 +1,15 @@
 # Scoped tool tested candidate
 
+This historical Reference preserves the issue’s recorded candidate and qualification limits.
+Its commands and observations do not authorize workstation execution or qualify a later release.
+Use [Verify a change](index.md) for current test boundaries.
+
+
+
 This record identifies the tested contract candidate for issue #1646.
 It is available for consumer authoring validation.
 The Git tree identifies the full source snapshot before this evidence record was added.
+
 The delivery commit will carry the same production bytes.
 The qualification applies to the local wheel below, not to a later release rebuild.
 
@@ -26,17 +33,21 @@ The qualification applies to the local wheel below, not to a later release rebui
 All 51 selected tests passed with the locked RAE 10.6.0 tuple.
 All 18 scoped-tool and composition tests passed with RAE 10.6.1.
 Both installed runs produced the artifact hash above.
+
 The public target manifest passed capability admission without replacement or augmentation.
 Participant and role selectors passed in both completion orders.
 Each participant dispatched its own tool and failed to dispatch its peer's tool.
+
 Unsupported composition, false claims, capacity overflow, and installed mismatches retained refusal.
 Removing the scoped feature caused four regression failures.
 Removing participant membership from the installed relation check caused the peer-binding regression to fail.
+
 Both mutations were restored before qualification.
 
 Native MCP handlers, prompts, and configuration are synthetic local fixtures.
 No external MCP artifact, harness executable, provider request, or credential is part of this tuple.
 No live provider, OS isolation, or installed-lab provisioning claim follows from these checks.
+
 The [qualification method](scoped-tools-1646-qualification.md) gives the exact test commands and limits.
 
 The [machine-readable record](scoped-tools-1646-candidate.json) pins the artifact and compatibility identities.
@@ -50,5 +61,6 @@ uv run --frozen --group build --no-default-groups --extra dev --extra web \
 The verifier archives the exact recorded Git tree and builds that source in a private temporary directory.
 It compares the wheel hash, installed capability bytes, dependency tuple, and contract digests with the machine-readable record.
 It also executes both selector forms and completion orders against that installed artifact.
+
 The source snapshot is retained by the `qualification-1646-source` Git tag.
 Later source changes cannot change this candidate's qualification input.

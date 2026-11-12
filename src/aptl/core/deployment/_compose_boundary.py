@@ -17,10 +17,11 @@ from aptl.core.lab_types import LabResult
 #: The tag is the helper's wire-contract version, not a build counter. The
 #: helper is rebuilt only when ``docker image inspect`` misses it, so any change
 #: to the policy JSON it consumes - notably the ``authority`` value, renamed
-#: ``raes`` -> ``raes`` with the RAES migration - MUST bump this tag. Leaving it
+#: ``aces`` -> ``raes`` with the RAES migration - MUST bump this tag. Leaving it
 #: pinned would pair a cached older helper with newer APTL code and fail every
 #: boundary mutation closed on hosts that already built the previous image.
-DEFAULT_BOUNDARY_HELPER_IMAGE = "aptl-network-boundary-helper:7"
+#: An enforcement fix that a cached helper must not hide also bumps the tag.
+DEFAULT_BOUNDARY_HELPER_IMAGE = "aptl-network-boundary-helper:8"
 _BOUNDARY_TIMEOUT = 30
 
 

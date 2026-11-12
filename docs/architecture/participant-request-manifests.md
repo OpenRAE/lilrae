@@ -160,7 +160,7 @@ Policy-as-code uses closed profiles, native RAES validation and shared redaction
 Architecture-as-code uses ADR-064's module map and the existing participant architecture model.
 No new deployment, scheduling, containment or authority plane is needed.
 
-ADR-047, ADR-052, ADR-064 and ADR-065 continue to govern these boundaries.
+ADR-047, ADR-052, ADR-064 and ADR-070 continue to govern these boundaries.
 The issue-862 non-goal is superseded only for admitted model and context factors.
 
 The MCP consumer uses patched development tools for verification.

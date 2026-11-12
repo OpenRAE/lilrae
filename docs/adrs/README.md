@@ -87,8 +87,8 @@ A proposal remains proposed until a recorded decision changes its status.
 | [062](adr-062-lilrae-name-and-naming-convention.md) | LilRAE Name and Naming Convention for New Code | superseded in part by ADR-064 | 2026-10-05 |
 | [063](adr-063-remove-thehive-and-cortex.md) | Remove TheHive and Cortex from the TechVault SOC Stack | accepted | 2026-10-30 |
 | [064](adr-064-layered-architecture-and-code-conventions.md) | Layered Architecture and Code Conventions | accepted | 2026-10-31 |
-| [065](adr-065-executable-participant-action-boundaries.md) | Executable Participant Action Boundaries | Proposed for the #1418 delivery PR. | 2026-10-31 |
-| [066](adr-066-runtime-readback-reports-realized-state.md) | Runtime Readback Reports Realized State | accepted | 2026-10-31 |
 | [067](adr-067-admitted-participant-smoke-providers.md) | Admitted Participant Smoke Providers | accepted | 2026-11-07 |
 | [068](adr-068-dev-merge-queue.md) | Merge Queue for the dev Branch | accepted | 2026-11-11 |
 | [069](adr-069-shared-containment-wrapper.md) | Shared Containment Wrapper | accepted | 2026-11-10 |
+| [070](adr-070-executable-participant-action-boundaries.md) | Executable Participant Action Boundaries | Proposed for the #1418 delivery PR. | 2026-10-31 |
+| [071](adr-071-runtime-readback-reports-realized-state.md) | Runtime Readback Reports Realized State | accepted | 2026-10-31 |

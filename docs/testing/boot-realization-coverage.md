@@ -1,30 +1,23 @@
 # Boot realization coverage
 
-APTL publishes a `realization-envelope-v1` disclosure naming every realization
-concern it claims to realize and observe
-(`src/aptl/backends/raes_realization_envelope.py`). This page maps those claims
-to the tests that hold them, and states plainly which the small installed-wheel
-boot gate does **not** cover.
+This Reference maps the `realization-envelope-v1` claims to their verification owners.
+`src/aptl/backends/raes_realization_envelope.py` owns the disclosure.
+The table is maintained by hand; it is not another capability registry.
+Issue #1126 tracks derived coverage.
 
-It is short and maintained by hand. Deriving coverage automatically from the
-envelope is tracked in issue #1126; this table must not grow into a second
-capability registry.
+The clean-install job uses the product-neutral [lab fixture pack](lab-fixture-pack.md).
+It selects the SDL by explicit path, so the boot proves installed lifecycle behavior rather than pack admission.
+Unit tests separately prove admission through the production resolver.
 
-The **Clean-install lab boot and teardown (DEP-008)** job starts the one
-product-neutral scenario,
-`tests/fixtures/packs/materialization-envelope/sdl/materialization-envelope.sdl.yaml`.
-It is the scenario of APTL's owned [lab fixture pack](lab-fixture-pack.md),
-which the unit suite admits through the same resolver as a released pack. The
-job itself selects the SDL by explicit path, so it covers the installed
-lifecycle, not pack admission.
+The shared scenario has one causal chain:
 
-Since issue #993 that scenario carries a single causal chain: inline content
-moves the SSH daemon off its package default port, the declared service unit
-starts the daemon, the declared listener binds the moved port, and that port is
-published on an exact loopback host binding. A content placement that silently
-did not happen therefore fails the listener, the port and the endpoint checks
-with it. `scripts/ci/assert_boot_realization.py` makes every one of those
-checks observe an effect in the running lab rather than a declaration.
+1. Inline content moves the SSH daemon from its package-default port.
+2. The declared service unit starts it.
+3. The declared listener binds the moved port.
+4. An exact loopback host binding publishes that port.
+
+`scripts/ci/assert_boot_realization.py` observes effects in the running lab.
+A failed placement therefore fails the listener, publication, and endpoint checks.
 
 ## Advertised concerns
 
@@ -49,15 +42,14 @@ checks observe an effect in the running lab rather than a declaration.
 | Declared service listeners | Boot gate, live, read from outside the container's trust boundary. Focused: `tests/test_declared_listener_readiness.py`, `tests/test_proc_net_listeners.py` |
 | Host-published ports | Boot gate, live: the exact declared loopback tuple, no wider binding, and a real connection. Focused: `tests/test_compose_port_realization.py`, `tests/test_docker_compose_port_bindings.py` |
 | Orchestrator `workflows` | Boot gate, live: one end-only workflow driven to a terminal RAES state with history, parsed with the contract model. Focused: `tests/test_raes_orchestrator.py`, `tests/test_workflow_engine.py` |
-| Lifecycle and teardown | Boot gate: `aptl lab stop --volumes` plus the independent absence proof in `scripts/ci/assert_project_teardown.py`, scoped to the project and diffed against a pre-start daemon baseline for anonymous volumes and helper containers. Focused: `tests/test_assert_project_teardown.py`, `tests/test_ephemeral_containers.py`, and `tests/test_container_lifecycle_policy.py`, which fails on any helper or container removal that bypasses the shared policy. A helper stranded by a killed `aptl` process is removed by `aptl lab stop` and `lab kill` through its lab-project label; `tests/test_stranded_helper_cleanup.py` |
+| Lifecycle and teardown | Boot gate: `lilrae lab stop --volumes` plus the independent absence proof in `scripts/ci/assert_project_teardown.py`, scoped to the project and diffed against a pre-start daemon baseline for anonymous volumes and helper containers. Focused: `tests/test_assert_project_teardown.py`, `tests/test_ephemeral_containers.py`, and `tests/test_container_lifecycle_policy.py`, which fails on any helper or container removal that bypasses the shared policy. A helper stranded by a killed `lilrae` process is removed by `lilrae lab stop` and `lab kill` through its lab-project label; `tests/test_stranded_helper_cleanup.py` |
 | The gate's own failure modes | `tests/test_boot_realization_gate.py`, where every check fails closed without Docker |
 
 ## Declared dimensions APTL does not read back
 
-SEM-218 forbids a silent approximation, so APTL refuses to corroborate a
-declared dimension it cannot observe, and the RAES handoff then fails the whole
-lab start rather than reporting a realized range. Two consequences worth
-knowing before extending the fixture:
+SEM-218 forbids silent approximation.
+LilRAE refuses a dimension it cannot observe, and the RAES handoff fails lab start.
+These shape restrictions apply to the fixture:
 
 - A service unit may declare only the dimensions the service manager is asked
   for: load, enabled and active state. `unit_type`, `unit_file_path`,
@@ -85,21 +77,18 @@ the generic admission contract the shared fixture already covers. Restore live
 coverage when a scenario actually declares a `rhel` service node, and prove it
 through that scenario's own gate rather than a second generic fixture.
 
-These are honest gaps in observation, not defects in the gate. Widening them
-means teaching the backend to read the dimension back, which is outside this
-page's scope.
+Supporting another dimension requires backend readback and its verification evidence.
 
 ## Explicitly outside the small boot
 
-The boot gate is deliberately one small scenario. It does not cover generated
-artifacts, persistent volumes, service search-index materialization, forwarding
-agents, dependency manifests, software components, identity authorities,
-participants, `runtime.orchestration_authorities` (a host-root-equivalent
-Docker authority surface governed by ADR-055), remote Docker endpoints, or
-non-Linux hosts. Focused unit and integration suites remain authoritative for
-those, and full-range qualification is tracked in APTL #870 and #685 and in
-OpenRAE/lilrae #1214, #1219, and #1220.
+The small boot does not cover these surfaces:
 
-Adding the next regression should add one field to the shared scenario and one
-effect assertion to the verifier, not a second boot job and not a second
-scenario.
+- Generated artifacts, persistent volumes, search-index materialization, and forwarding agents.
+- Dependency manifests, software components, identity authorities, and participants.
+- `runtime.orchestration_authorities`, the host-root-equivalent Docker authority governed by ADR-055.
+- Remote Docker endpoints and non-Linux hosts.
+
+Focused unit and integration suites remain their verification owners.
+Issues #870, #685, #1214, #1219, and #1220 track full-range qualification.
+
+Follow [fixture maintenance](lab-fixture-pack.md#changing-the-pack) when adding a realization regression.

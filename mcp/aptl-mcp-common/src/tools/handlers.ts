@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { knownToolFailure, markToolFailure } from '../lilrae-tool-outcome.js';
 
 
@@ -218,7 +219,7 @@ const baseHandlers: Record<string, ToolHandler> = {
       if (session_id !== undefined) {
         assertSessionIdContract(session_id);
       }
-      const finalSessionId = session_id || `session_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      const finalSessionId = session_id || `session_${Date.now()}_${randomBytes(4).toString('hex')}`;
       const credentials = getTargetCredentials(labConfig);
 
       const session = await sshManager.createSession(
@@ -275,7 +276,7 @@ const baseHandlers: Record<string, ToolHandler> = {
       if (session_id !== undefined) {
         assertSessionIdContract(session_id);
       }
-      const finalSessionId = session_id || `bg_session_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      const finalSessionId = session_id || `bg_session_${Date.now()}_${randomBytes(4).toString('hex')}`;
       const credentials = getTargetCredentials(labConfig);
 
       const session = await sshManager.createSession(
