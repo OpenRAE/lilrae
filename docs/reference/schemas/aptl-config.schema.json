@@ -4,6 +4,26 @@
   "title": "aptl.json",
   "description": "The durable, non-secret configuration of a LilRAE project. Each object rejects unknown fields. A field with a default can be absent. The schema checks the structure; lilrae config validate also checks the values and the deployment settings.",
   "$defs": {
+    "AttachedServiceAccountSource": {
+      "additionalProperties": false,
+      "description": "Select the host's attached Google service account; no key material exists.\n\nThe participant gets short-lived tokens from the metadata server. Use it\nonly on a host whose attached account has invocation-only Vertex AI access.",
+      "properties": {
+        "kind": {
+          "const": "attached-service-account",
+          "type": "string"
+        },
+        "project": {
+          "maxLength": 30,
+          "minLength": 6,
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "project"
+      ],
+      "type": "object"
+    },
     "ContainerSettings": {
       "additionalProperties": false,
       "description": "Optional selection from the admitted scenario's operator groups.",
@@ -29,6 +49,12 @@
       "additionalProperties": false,
       "description": "Configuration for deployment backend selection.\n\nControls which deployment backend is used for lab lifecycle\noperations (start, stop, status, kill).  Defaults to local\nDocker Compose.",
       "properties": {
+        "range_egress_allowances": {
+          "items": {
+            "$ref": "#/$defs/RangeEgressAllowance"
+          },
+          "type": "array"
+        },
         "provider": {
           "default": "docker-compose",
           "type": "string"
@@ -154,6 +180,26 @@
         },
         "participant_credential_sources": {
           "$ref": "#/$defs/InstalledParticipantCredentialSources"
+        },
+        "participant_serving_providers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "maxProperties": 64,
+          "type": "object"
+        },
+        "opencode_executable": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "minLength": 2,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "type": "object"
@@ -183,6 +229,42 @@
             }
           ],
           "default": null
+        },
+        "opencode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProcessEnvironmentCredentialSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "vertex": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "attached-service-account": "#/$defs/AttachedServiceAccountSource",
+                  "process-environment": "#/$defs/ProcessEnvironmentCredentialSource"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ProcessEnvironmentCredentialSource"
+                },
+                {
+                  "$ref": "#/$defs/AttachedServiceAccountSource"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "type": "object"
@@ -204,6 +286,18 @@
           "default": null
         },
         "codex": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "opencode": {
           "anyOf": [
             {
               "maxLength": 128,
@@ -306,6 +400,34 @@
       ],
       "type": "object"
     },
+    "McpPolicy": {
+      "additionalProperties": false,
+      "description": "Operator ceiling; scenario packs cannot supply this configuration.",
+      "properties": {
+        "allowed_servers": {
+          "default": [
+            "aptl-red",
+            "aptl-indexer",
+            "aptl-wazuh",
+            "aptl-network",
+            "aptl-soar",
+            "aptl-threatintel"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "required_servers": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "ProcessEnvironmentCredentialSource": {
       "additionalProperties": false,
       "description": "Select one exact parent-process variable without storing its value.",
@@ -343,6 +465,33 @@
       "required": [
         "kind",
         "variable"
+      ],
+      "type": "object"
+    },
+    "RangeEgressAllowance": {
+      "additionalProperties": false,
+      "description": "Operator-declared exact external destination and transport port.",
+      "properties": {
+        "destination": {
+          "type": "string"
+        },
+        "protocol": {
+          "enum": [
+            "tcp",
+            "udp"
+          ],
+          "type": "string"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "destination",
+        "protocol",
+        "port"
       ],
       "type": "object"
     },
@@ -476,6 +625,7 @@
     "deployment": {
       "$ref": "#/$defs/DeploymentConfig",
       "default": {
+        "range_egress_allowances": [],
         "provider": "docker-compose",
         "project_name": "aptl",
         "ssh_host": null,
@@ -521,12 +671,17 @@
         "participant_action_timeout_seconds": 120,
         "participant_models": {
           "claude": null,
-          "codex": null
+          "codex": null,
+          "opencode": null
         },
         "participant_credential_sources": {
           "claude": null,
-          "codex": null
-        }
+          "codex": null,
+          "opencode": null,
+          "vertex": null
+        },
+        "participant_serving_providers": {},
+        "opencode_executable": null
       }
     },
     "seat": {
@@ -534,6 +689,20 @@
       "default": {
         "image": null,
         "public_key": null
+      }
+    },
+    "mcp": {
+      "$ref": "#/$defs/McpPolicy",
+      "default": {
+        "allowed_servers": [
+          "aptl-red",
+          "aptl-indexer",
+          "aptl-wazuh",
+          "aptl-network",
+          "aptl-soar",
+          "aptl-threatintel"
+        ],
+        "required_servers": []
       }
     }
   },

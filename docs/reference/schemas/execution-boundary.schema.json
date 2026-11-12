@@ -19,6 +19,9 @@
     "host_os": {"enum": ["linux", "macos", "windows", "unknown"]},
     "host_kernel": {"type": "string", "maxLength": 80},
     "docker_version": {"type": "string", "maxLength": 80},
+    "range_egress_policy": {"enum": ["unverified", "default-deny"]},
+    "range_host_access_policy": {"enum": ["unverified", "deny"]},
+    "range_policy_digest": {"type": "string", "pattern": "^(sha256:[0-9a-f]{64})?$"},
     "containment_verified": {"type": "boolean"},
     "profile_ref": {"type": "string", "maxLength": 80},
     "evidence_refs": {"type": "array", "items": {"type": "string"}}
