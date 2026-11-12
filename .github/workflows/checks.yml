@@ -299,6 +299,14 @@ jobs:
         run: |
           docker info > /dev/null
           python -m pytest -q -m integration tests/test_native_range_policy_integration.py
+      # The helper compares each owned rule with the kernel's listing (#1742).
+      # Only a real kernel and nft can prove that listing form. The module is
+      # integration-marked, so the runs above deselect it. The probe stops the
+      # step if Docker is missing, so the tests cannot pass by a skip.
+      - name: Appliance boundary enforcement and readback through Docker
+        run: |
+          docker info > /dev/null
+          python -m pytest -q -m integration tests/test_appliance_boundary_integration.py
       # The Samba provider runs without SYS_ADMIN (#976). Only a real domain
       # provision proves that. The step builds both Samba images first, so the
       # tests cannot pass by a skip for a missing image.

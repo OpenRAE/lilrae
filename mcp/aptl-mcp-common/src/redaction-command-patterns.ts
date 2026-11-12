@@ -1,4 +1,6 @@
 /** Credential patterns for shell redaction; mirror Python's pattern module. */
+import { ImpacketTargetPattern } from './redaction-targets.js';
+
 export const REDACTED = '[REDACTED]';
 
 // Per-segment tool detection. Originally a single big alternation
@@ -64,8 +66,9 @@ export const NTLM_HASH_ATTACHED_UNQUOTED = /(^|\s|\|)-H([^\s='"](?:\\.|[^\s'"\\]
 // dash, full word; long form `--hashes` is also valid). Without
 // these patterns a command like
 // `psexec.py alice@dc -hashes :8846f7eaee8fb117` leaked the NT hash
-// through redaction. Scoped to impacket tool segments only via
-// HASH_TOOLS_RE to avoid over-redacting unrelated `--hashes` flags.
+// through redaction. Scoped to segments that name a hash tool or an
+// impacket tool (HASHES_FLAG_TOOL_REGEXES) to avoid over-redacting
+// unrelated `--hashes` flags.
 // Test-quality review cycle 1 finding-1 surfaced the missing
 // assertion that exposed this pre-existing bug.
 export const NTLM_HASHES_DQUOTE = /(^|\s|\|)(--?hashes)(\s+|=)("(?:[^"\\]|\\.)*")/g;
@@ -117,61 +120,50 @@ export const URL_PREFIX_RE = /^(?:https?|ftp|ldap|ldaps|smb|smbs):\/\//i;
 //              whitespace in passwords MUST quote.
 //   - dquot:   `user:"VALUE"@host`          — quoted value (any char).
 //   - squot:   `user:'VALUE'@host`          — single-quoted.
-// Split into per-value-form patterns to keep each regex under Sonar's
-// regex-complexity threshold (S5843). The combined form was ~28; each
-// split form is ~15-18.
-//
-// DQUOTE / SQUOTE use the unrolled-loop quoted-string form
-// (`[^Q\\]*(?:\\.[^Q\\]*)*`) instead of the alternation form
-// (`(?:[^Q\\]|\\.)*`). Both match the same language, but the unrolled
-// form has no inner alternation so the regex engine cannot pick
-// between two alternatives that could match the same character —
-// eliminating the ReDoS risk at the engine level (Sonar S5852).
-//
-// BARE uses exclusive alternatives `\\.|[^\\@\s]` instead of `\\.|\S`.
-// `\S` overlaps with `\\.` (both can match the leading backslash of an
-// escape), creating ambiguous backtracking; `[^\\@\s]` excludes the
-// backslash so the alternatives are mutually exclusive. `@` is also
-// excluded so the pattern stops at the host separator without needing
-// laziness, which removes another backtracking source.
-// A leading token-boundary lookbehind `(?<![\w\\/.:@-])` eliminates the
-// O(n^2) ReDoS these patterns exhibited (ARCH-386-01 / redact-01): without
-// it the engine re-tried the match at every offset inside a long flag-like
-// token (`hydra --aaaa…` or `aaaa:bbbb` with no `@`), each attempt scanning
-// the rest of the token. The lookbehind forbids starting a match in the
-// middle of a target token, collapsing attempts from O(n) offsets to
-// O(tokens), while still allowing a match to begin after whitespace,
-// `;`/`|`/`&`, `=`, or a quote — exactly where an impacket positional target
-// legitimately starts. Zero-width and non-capturing, so groups 1/2/3 stay
-// user/value/host. Mirrors `redaction.py`; parity is verified by the shared
-// golden corpus.
-export const IMPACKET_POSITIONAL_DQUOTE = /(?<![\w\\/.:@-])([\w\\/.-]+):"([^"\\]*(?:\\.[^"\\]*)*)"@([\w.-]+)(?=\s|$|[;|&])/g;
-export const IMPACKET_POSITIONAL_SQUOTE = /(?<![\w\\/.:@-])([\w\\/.-]+):'([^'\\]*(?:\\.[^'\\]*)*)'@([\w.-]+)(?=\s|$|[;|&])/g;
-export const IMPACKET_POSITIONAL_BARE = /(?<![\w\\/.:@-])([\w\\/.-]+):((?:\\.|[^\\@\s])+)@([\w.-]+)(?=\s|$|[;|&])/g;
+// `ImpacketTargetPattern` gives the matches of the former lookbehind regexes
+// in linear time (ARCH-386-01); the replacer still receives user, value,
+// host, and offset in the order of the regex groups.
+export const IMPACKET_POSITIONAL_DQUOTE = new ImpacketTargetPattern('"');
+export const IMPACKET_POSITIONAL_SQUOTE = new ImpacketTargetPattern("'");
+export const IMPACKET_POSITIONAL_BARE = new ImpacketTargetPattern('');
 
 export const IMPACKET_TOOL_REGEXES: readonly RegExp[] = [
   /(^|[\s|;&])(?:[\w./-]+\/)?(impacket-[\w-]+)(?:\s|$)/i,
   /(^|[\s|;&])(?:[\w./-]+\/)?(psexec\.py|smbexec\.py|wmiexec\.py|dcomexec\.py|atexec\.py)(?:\s|$)/i,
   /(^|[\s|;&])(?:[\w./-]+\/)?(secretsdump\.py|getuserspns\.py|getnpusers\.py|ntlmrelayx\.py)(?:\s|$)/i,
 ];
+// Tools whose `-hashes` / `--hashes` option carries an NTLM hash: the
+// `-H` hash tools and the impacket family.
+export const HASHES_FLAG_TOOL_REGEXES: readonly RegExp[] = [HASH_TOOLS_RE, ...IMPACKET_TOOL_REGEXES];
+
 export interface ArgvCredentialModes {
   cred: boolean;
   hash: boolean;
+  hashes: boolean;
   ldap: boolean;
   basic: boolean;
 }
 
+/** The test that the value element after an argv flag must pass to be masked. */
+export type ArgvValueTest = 'always' | 'notPortOutsideCredentialTool' | 'credentialPair';
+
 export interface ArgvShortFlagRule {
-  mode: keyof ArgvCredentialModes;
   flags: ReadonlySet<string>;
-  contentGated: boolean;
+  /** The mode that scopes the flag; `null` applies it in every argv. */
+  mode: keyof ArgvCredentialModes | null;
+  test: ArgvValueTest;
 }
 
+// Each entry gives an argv `[flag, value]` pair the result that the
+// string-mode redactor gives `flag value` in a segment of the leading tool.
+// Keeping this as data keeps `argvShortFlagSkipIndices` under the
+// cognitive-complexity ceiling.
 export const ARGV_SHORT_FLAG_RULES: readonly ArgvShortFlagRule[] = [
-  { mode: 'cred', flags: new Set(['-p']), contentGated: false },
-  { mode: 'hash', flags: new Set(['-H']), contentGated: false },
-  { mode: 'ldap', flags: new Set(['-w']), contentGated: false },
-  // Basic-auth `-u`/`-U` keeps the same content gate as the string-mode
-  // redactor: bare usernames stay visible, only credential pairs mask.
-  { mode: 'basic', flags: new Set(['-u', '-U']), contentGated: true },
+  { flags: new Set(['-p']), mode: null, test: 'notPortOutsideCredentialTool' },
+  { flags: new Set(['-H']), mode: 'hash', test: 'always' },
+  { flags: new Set(['-hashes', '--hashes']), mode: 'hashes', test: 'always' },
+  { flags: new Set(['-w']), mode: 'ldap', test: 'always' },
+  // Bare usernames stay visible; only credential pairs mask.
+  { flags: new Set(['-u', '-U']), mode: 'basic', test: 'credentialPair' },
+  { flags: new Set(['--user']), mode: null, test: 'credentialPair' },
 ];

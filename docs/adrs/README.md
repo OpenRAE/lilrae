@@ -89,8 +89,8 @@ A proposal remains proposed until a recorded decision changes its status.
 | [064](adr-064-layered-architecture-and-code-conventions.md) | Layered Architecture and Code Conventions | superseded in part by ADR-065 | 2026-10-31 |
 | [065](adr-065-go-implementation-and-engineering-standards.md) | Go Implementation, Architecture Model, and Engineering Standards | superseded in part by ADR-066 | 2026-10-31 |
 | [066](adr-066-descriptor-walk-for-contained-files.md) | Descriptor Walk for Contained Files on Unix | accepted | 2026-11-01 |
-| [065](adr-065-executable-participant-action-boundaries.md) | Executable Participant Action Boundaries | Proposed for the #1418 delivery PR. | 2026-10-31 |
-| [066](adr-066-runtime-readback-reports-realized-state.md) | Runtime Readback Reports Realized State | accepted | 2026-10-31 |
 | [067](adr-067-admitted-participant-smoke-providers.md) | Admitted Participant Smoke Providers | accepted | 2026-11-07 |
 | [068](adr-068-dev-merge-queue.md) | Merge Queue for the dev Branch | accepted | 2026-11-11 |
 | [069](adr-069-shared-containment-wrapper.md) | Shared Containment Wrapper | accepted | 2026-11-10 |
+| [070](adr-070-executable-participant-action-boundaries.md) | Executable Participant Action Boundaries | Proposed for the #1418 delivery PR. | 2026-10-31 |
+| [071](adr-071-runtime-readback-reports-realized-state.md) | Runtime Readback Reports Realized State | accepted | 2026-10-31 |

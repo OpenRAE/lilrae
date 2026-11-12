@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from typing import Any
 
 from ._redaction_patterns import (
@@ -21,9 +22,11 @@ from ._redaction_patterns import (
     _COOKIE_HEADER_RE,
     _CREDENTIAL_TOOL_REGEXES,
     _HASH_TOOLS_RE,
+    _HASHES_FLAG_TOOL_REGEXES,
     _LDAP_TOOL_RE,
     _redact_pem_blocks,
     _SENSITIVE_KV_RE,
+    _redact_key_value,
     _URL_USERINFO_RE,
     _redact_authorization,
 )
@@ -32,7 +35,9 @@ from ._redaction_grants import erase_granted_secrets
 
 from ._redaction_shell import (
     _basic_auth_value_is_credential,
+    _is_port_like,
     _redact_command_flags,
+    _strip_quotes,
 )
 
 # Defense-in-depth bounds for the redactor itself (issue #386, ARCH-386-01).
@@ -43,10 +48,11 @@ from ._redaction_shell import (
 #
 # ``_MAX_SCAN_LEN`` bounds the polynomial-backtracking command-flag passes:
 # the ``--<word>*<sensitive>`` flag matcher and the per-segment shell scanners
-# backtrack ~O(n^2) on long flag-like tokens. Strings longer than this skip
-# those passes (the linear key/value/header/PEM/bearer/URL passes still run),
-# so CPU stays bounded. 64 KiB is far above any real command line while keeping
-# the worst case trivial.
+# backtrack ~O(n^2) on long flag-like tokens. A longer string is scanned in
+# windows of at most this many characters (see ``_command_scan_windows``), so
+# the work stays linear in the length and every part of the string is scanned.
+# 64 KiB is far above any real command line while keeping the worst case
+# trivial.
 _MAX_SCAN_LEN = 64 * 1024
 # ``_MAX_DEPTH`` bounds recursion through nested dicts / lists / JSON-in-strings
 # so a deeply nested artifact collapses to a bounded marker instead of raising
@@ -216,13 +222,53 @@ def _safe_model_count(name: str, value: object) -> bool:
     )
 
 
-def _redact_string(value: str, depth: int = 0) -> str:
+def _command_scan_windows(text: str) -> list[tuple[int, int]]:
+    """Split ``text`` into ``(start, end)`` windows for the command-flag passes.
+
+    A window holds at most ``_MAX_SCAN_LEN`` characters. A window that does
+    not reach the end of ``text`` ends after its last newline; with no newline,
+    after its last space; with neither, at the length limit. Thus most windows
+    hold whole lines. Mirror any change in ``redaction.ts``.
+    """
+    windows: list[tuple[int, int]] = []
+    start = 0
+    n = len(text)
+    while start < n:
+        end = min(start + _MAX_SCAN_LEN, n)
+        if end < n:
+            cut = text.rfind("\n", start, end)
+            if cut < 0:
+                cut = text.rfind(" ", start, end)
+            if cut >= 0:
+                end = cut + 1
+        windows.append((start, end))
+        start = end
+    return windows
+
+
+def _redact_command_text(value: str, context: str = "") -> str:
+    """Run the long-flag matcher and the tool-context-aware command passes.
+
+    Each window of ``_command_scan_windows`` is scanned on its own, so the
+    polynomial-backtracking passes stay bounded on long input (ARCH-386-01)
+    and no part of the input skips them. ``context`` is the leading token of
+    the command that ``value`` is an argument of (see ``_redact_command_flags``).
+    """
+    parts: list[str] = []
+    for start, end in _command_scan_windows(value):
+        window = _CLI_FLAG_RE.sub(rf"\1{REDACTED}", value[start:end])
+        parts.append(_redact_command_flags(window, context))
+    return "".join(parts)
+
+
+def _redact_string(value: str, depth: int = 0, context: str = "") -> str:
     """Redact inline credentials from a plain string.
 
     A JSON-encoded payload is parsed and recursively redacted (carrying
     ``depth`` so the recursion stays bounded); otherwise the string is scanned
-    by the linear key/value/header passes plus the length-gated command-flag
-    passes.
+    by the linear key/value/header passes plus the windowed command-flag
+    passes. ``context`` is the leading token of the argv list that holds the
+    string, or empty.
     """
     # Try JSON.parse first — payloads like '{"password":"x"}' and the MCP
     # `content[].text` envelope (which wraps the real result in a JSON
@@ -247,69 +293,73 @@ def _redact_string(value: str, depth: int = 0) -> str:
     # Cookie before SENSITIVE_KV so the full header body is masked in one
     # pass (otherwise SENSITIVE_KV stops at `;` and leaves later segments).
     out = _COOKIE_HEADER_RE.sub(rf"\1{REDACTED}\3", out)
-    out = _SENSITIVE_KV_RE.sub(rf"\1{REDACTED}\3", out)
+    out = _SENSITIVE_KV_RE.sub(_redact_key_value, out)
     out = _BARE_BEARER_RE.sub(rf"\1{REDACTED}", out)
     out = _URL_USERINFO_RE.sub(rf"\1{REDACTED}\2", out)
-    # Polynomial-backtracking passes (the `--<word>*<sensitive>` long-flag
-    # matcher and the tool-context-aware short-flag chain) are bounded by
-    # length to cap worst-case CPU at the secret boundary (ARCH-386-01).
-    # Oversized strings skip them; the linear passes above already masked the
-    # key/value/header/PEM/bearer/URL secret shapes. Run last so the simpler
-    # kv/flag patterns have first claim on overlapping shapes.
-    if len(out) <= _MAX_SCAN_LEN:
-        out = _CLI_FLAG_RE.sub(rf"\1{REDACTED}", out)
-        out = _redact_command_flags(out)
-    return out
+    # The polynomial-backtracking passes run last so the simpler kv/flag
+    # patterns have first claim on overlapping shapes.
+    return _redact_command_text(out, context)
 
 
 def _argv_credential_modes(leading: str) -> dict[str, bool]:
     """Classify an argv leading token by which credential-flag families
-    apply. Empty / unknown returns all-False (the array is not treated
-    as an argv for short-flag purposes)."""
+    apply. Empty / unknown returns all-False."""
     return {
         "cred": any(t.search(leading) for t in _CREDENTIAL_TOOL_REGEXES),
         "hash": bool(_HASH_TOOLS_RE.search(leading)),
+        "hashes": any(t.search(leading) for t in _HASHES_FLAG_TOOL_REGEXES),
         "ldap": bool(_LDAP_TOOL_RE.search(leading)),
         "basic": any(t.search(leading) for t in _BASIC_AUTH_SHORT_TOOLS_REGEXES),
     }
 
 
-# Mode → (set of short flags it owns) → does the value need a content gate?
-# Keeping this as data instead of an if/elif chain keeps
-# ``_argv_short_flag_skip_indices`` under the cognitive-complexity ceiling.
-_ARGV_SHORT_FLAG_RULES: tuple[tuple[str, frozenset[str], bool], ...] = (
-    ("cred", frozenset({"-p"}), False),
-    ("hash", frozenset({"-H"}), False),
-    ("ldap", frozenset({"-w"}), False),
-    # Basic-auth `-u`/`-U` keeps the same content gate as the string-mode
-    # redactor: bare usernames stay visible, only credential pairs mask.
-    ("basic", frozenset({"-u", "-U"}), True),
+def _always(_value: str, _modes: dict[str, bool]) -> bool:
+    """Mask every value of the flag."""
+    return True
+
+
+def _not_a_port_outside_credential_tool(value: str, modes: dict[str, bool]) -> bool:
+    """Mask a ``-p`` value unless it is a port spec of a non-credential tool."""
+    return modes["cred"] or not _is_port_like(_strip_quotes(value))
+
+
+def _credential_pair(value: str, _modes: dict[str, bool]) -> bool:
+    """Mask only a credential pair: bare usernames and URLs stay visible."""
+    return _basic_auth_value_is_credential(value)
+
+
+# Flag element → the mode that scopes it (``None``: every argv) → the test
+# that the following value element must pass to be masked. Each entry
+# gives an argv ``[flag, value]`` pair the result that the string-mode
+# redactor gives ``flag value`` in a segment of the leading tool. Keeping
+# this as data keeps ``_argv_short_flag_skip_indices`` under the
+# cognitive-complexity ceiling.
+_ARGV_SHORT_FLAG_RULES: tuple[
+    tuple[frozenset[str], str | None, Callable[[str, dict[str, bool]], bool]], ...
+] = (
+    (frozenset({"-p"}), None, _not_a_port_outside_credential_tool),
+    (frozenset({"-H"}), "hash", _always),
+    (frozenset({"-hashes", "--hashes"}), "hashes", _always),
+    (frozenset({"-w"}), "ldap", _always),
+    (frozenset({"-u", "-U"}), "basic", _credential_pair),
+    (frozenset({"--user"}), None, _credential_pair),
 )
 
 
 def _is_argv_short_flag_target(flag: str, value: str, modes: dict[str, bool]) -> bool:
     """Decide whether ``value`` (the element following ``flag``) should be
-    redacted as a short-flag credential value, per ``modes``."""
-    for mode, flags, content_gated in _ARGV_SHORT_FLAG_RULES:
-        if not modes[mode] or flag not in flags:
+    redacted as a flag credential value, per ``modes``."""
+    for flags, mode, should_mask in _ARGV_SHORT_FLAG_RULES:
+        if flag not in flags or (mode is not None and not modes[mode]):
             continue
-        if content_gated:
-            return _basic_auth_value_is_credential(value)
-        return True
+        return should_mask(value, modes)
     return False
 
 
 def _argv_short_flag_skip_indices(items: list, modes: dict[str, bool]) -> set[int]:
-    """Indices in ``items`` whose value should be redacted as a short-flag
-    credential, given the modes derived from the argv leading token.
-
-    Mirrors the per-segment string-mode short-flag rules — ``-p`` for
-    credential tools, ``-H`` for hash tools, ``-w`` for LDAP tools,
-    ``-u``/``-U`` for basic-auth tools (with the bare-username carve-out).
-    """
+    """Indices in ``items`` whose value should be redacted as a flag
+    credential, given the modes derived from the argv leading token."""
     skip: set[int] = set()
-    if not any(modes.values()):
-        return skip
     for i in range(len(items) - 1):
         flag = items[i]
         value = items[i + 1]
@@ -328,7 +378,7 @@ def _argv_leading_modes(items_list: list[Any]) -> dict[str, bool]:
     """
     leading = items_list[0] if items_list and isinstance(items_list[0], str) else ""
     if not leading:
-        return {"cred": False, "hash": False, "ldap": False, "basic": False}
+        return {"cred": False, "hash": False, "hashes": False, "ldap": False, "basic": False}
     return _argv_credential_modes(leading)
 
 
@@ -345,17 +395,18 @@ def _is_long_flag_value_pair(item: object, idx: int, items_list: list[Any]) -> b
 
 def _redact_list(items: list[Any] | tuple[Any, ...], depth: int = 0) -> list[Any]:
     """Redact each element of a list/tuple, with argv-aware short-flag handling."""
-    # Argv-shape detection: when the leading token is a credential-family
-    # tool, mark indices whose values should be redacted as short-flag
-    # credentials (`-p`/`-H`/`-w`/`-u`/`-U`). Without this, a structured
-    # ``args = ["hydra", "-p", "hunter2", ...]`` payload bypasses the
-    # short-flag redactors that only run on scalar command strings
-    # (ADR-029 / codex review cycle 3, finding 2).
+    # Argv-shape detection: a structured ``args = ["hydra", "-p", "hunter2"]``
+    # payload must get the result of the scalar command string (ADR-029 /
+    # codex review cycle 3, finding 2). Flag and value pairs use the rule
+    # table; each later string element is scanned in the shell context of
+    # the leading token, which catches attached forms, ``=`` forms, and
+    # impacket targets.
     out: list[Any] = []
     skip_next = False
     items_list = list(items)
     modes = _argv_leading_modes(items_list)
     short_flag_skip = _argv_short_flag_skip_indices(items_list, modes)
+    context = items_list[0] if items_list and isinstance(items_list[0], str) else ""
     for idx, item in enumerate(items_list):
         if skip_next:
             out.append(REDACTED)
@@ -364,7 +415,10 @@ def _redact_list(items: list[Any] | tuple[Any, ...], depth: int = 0) -> list[Any
         if idx in short_flag_skip:
             out.append(REDACTED)
             continue
-        out.append(_redact(item, depth + 1))
+        if idx > 0 and isinstance(item, str) and depth + 1 < _MAX_DEPTH:
+            out.append(_redact_string(item, depth + 1, context))
+        else:
+            out.append(_redact(item, depth + 1))
         # Pair-form CLI args: ["--password", "hunter2"]. If this string is a
         # long-flag whose name is sensitive AND the next element is a plain
         # string, redact the next element as the value-of-flag.

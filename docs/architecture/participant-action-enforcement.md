@@ -6,7 +6,7 @@ Version-specific examples and qualification statements keep their original scope
 This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
 
 
-Status: implementation design for #1418, under ADR-065.
+Status: implementation design for #1418, under ADR-070.
 
 ## Purpose and ownership
 

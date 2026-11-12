@@ -38,9 +38,11 @@ import {
   IMPACKET_POSITIONAL_SQUOTE,
   IMPACKET_POSITIONAL_BARE,
   IMPACKET_TOOL_REGEXES,
+  HASHES_FLAG_TOOL_REGEXES,
   ARGV_SHORT_FLAG_RULES,
 } from './redaction-command-patterns.js';
-import type { ArgvCredentialModes } from './redaction-command-patterns.js';
+import type { ArgvCredentialModes, ArgvValueTest } from './redaction-command-patterns.js';
+import { ImpacketTargetPattern } from './redaction-targets.js';
 
 // `&&` / `||` / `&` / `;` / `|` boundaries split a command line into
 // independent shell segments (used for per-segment credential-tool
@@ -160,17 +162,19 @@ function segmentHasAnyCredentialTool(segment: string): boolean {
  * a password). Scoping the strip to credential-bearing segments
  * keeps the original `hydra '-p' hunter2` parity (hydra's segment
  * unquotes, the per-flag matcher fires) while leaving non-credential
- * text intact.
+ * text intact. `context` has the meaning that `buildSegmentPredicate`
+ * gives it.
  */
-export function unquoteOptionsInCredentialSegments(command: string): string {
+export function unquoteOptionsInCredentialSegments(command: string, context = ''): string {
   if (!command.includes("'") && !command.includes('"')) return command;
   const segments = splitTopLevelSegments(command);
+  const contextHit = context !== '' && segmentHasAnyCredentialTool(context);
   const parts: string[] = [];
   let lastEnd = 0;
   for (const { start, end } of segments) {
     if (start > lastEnd) parts.push(command.slice(lastEnd, start));
     let seg = command.slice(start, end);
-    if (segmentHasAnyCredentialTool(seg)) {
+    if (contextHit || segmentHasAnyCredentialTool(seg)) {
       seg = seg.replace(QUOTED_OPTION_TOKEN_RE, '$2');
     }
     parts.push(seg);
@@ -205,19 +209,42 @@ function stripQuotes(value: string): string {
  * and could mis-classify matches into the wrong segment (e.g. a long
  * hydra password before `&& nmap -p 22` would shift the port match
  * leftwards into the hydra segment and mask `22`). Recompute per pass
- * via `segmentAwareReplace` instead.
+ * via `segmentAwareReplace` instead. `context` is the leading token of
+ * the command that `command` is an argument of, for example the tool of
+ * an argv list. When it names a tool of the family, every segment matches.
  */
 function buildSegmentPredicate(
   command: string,
   hasTool: (segment: string) => boolean,
+  context: string,
 ): (offset: number) => boolean {
   const segments = splitTopLevelSegments(command);
-  const flags = segments.map((s) => hasTool(command.slice(s.start, s.end)));
+  const contextHit = context !== '' && hasTool(context);
+  const flags = segments.map((s) => contextHit || hasTool(command.slice(s.start, s.end)));
   return (offset: number): boolean => {
-    for (let idx = 0; idx < segments.length; idx++) {
-      if (offset >= segments[idx].start && offset < segments[idx].end) return flags[idx];
+    // Binary search: the segments are ordered and do not overlap.
+    let lo = 0;
+    let hi = segments.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (offset < segments[mid].start) hi = mid - 1;
+      else if (offset >= segments[mid].end) lo = mid + 1;
+      else return flags[mid];
     }
     return false;
+  };
+}
+
+/** Return `buildSegmentPredicate` built at its first call: most text has no flag match. */
+function lazySegmentPredicate(
+  command: string,
+  hasTool: (segment: string) => boolean,
+  context: string,
+): (offset: number) => boolean {
+  let built: ((offset: number) => boolean) | undefined;
+  return (offset: number): boolean => {
+    built ??= buildSegmentPredicate(command, hasTool, context);
+    return built(offset);
   };
 }
 
@@ -232,15 +259,31 @@ function buildSegmentPredicate(
  * `replacerFactory(inSeg)` returns the actual `String.replace` callback;
  * the factory closes over the freshly-computed predicate for that pass.
  */
+type Replacer = (...args: unknown[]) => string;
+
+/** Replace each match of `pattern`, giving `replacer` the arguments of a regex replacer. */
+function replaceMatches(text: string, pattern: RegExp | ImpacketTargetPattern, replacer: Replacer): string {
+  if (pattern instanceof RegExp) return text.replace(pattern, replacer as Parameters<typeof text.replace>[1]);
+  return pattern.replace(text, (t) => replacer(t.match, t.user, t.value, t.host, t.offset));
+}
+
 function segmentAwareReplace(
   command: string,
   hasTool: (segment: string) => boolean,
-  passes: ReadonlyArray<[RegExp, (inSeg: (offset: number) => boolean) => (...args: unknown[]) => string]>,
+  passes: ReadonlyArray<[RegExp | ImpacketTargetPattern, (inSeg: (offset: number) => boolean) => Replacer]>,
+  context: string,
 ): string {
   let out = command;
+  let scanned: string | undefined;
+  let inSeg = lazySegmentPredicate(out, hasTool, context);
   for (const [pattern, factory] of passes) {
-    const inSeg = buildSegmentPredicate(out, hasTool);
-    out = out.replace(pattern, factory(inSeg) as Parameters<typeof out.replace>[1]);
+    // The predicate is a function of the text alone: build it again only
+    // after a pass changed the text.
+    if (out !== scanned) {
+      inSeg = lazySegmentPredicate(out, hasTool, context);
+      scanned = out;
+    }
+    out = replaceMatches(out, pattern, factory(inSeg));
   }
   return out;
 }
@@ -260,7 +303,7 @@ function segmentAwareReplace(
  * (`-p<value>`) shell forms; preserves leading whitespace/pipe so the
  * surrounding context isn't broken.
  */
-export function redactShortPasswordFlag(command: string): string {
+export function redactShortPasswordFlag(command: string, context = ''): string {
   const makeReplaceSpaced = (inCred: (offset: number) => boolean) =>
     (...args: unknown[]): string => {
       const lead = args[1] as string;
@@ -291,14 +334,18 @@ export function redactShortPasswordFlag(command: string): string {
     [SHORT_P_ATTACHED_DQUOTE, makeReplaceAttached],
     [SHORT_P_ATTACHED_SQUOTE, makeReplaceAttached],
     [SHORT_P_ATTACHED_UNQUOTED, makeReplaceAttached],
-  ]);
+  ], context);
 }
 
 function segmentHasHashTool(segment: string): boolean {
   return HASH_TOOLS_RE.test(segment);
 }
 
-export function redactNtlmHashFlag(command: string): string {
+function segmentHasHashesFlagTool(segment: string): boolean {
+  return HASHES_FLAG_TOOL_REGEXES.some((re) => re.test(segment));
+}
+
+export function redactNtlmHashFlag(command: string, context = ''): string {
   const makeReplaceSpaced = (inSeg: (offset: number) => boolean) =>
     (...args: unknown[]): string => {
       const match = args[0] as string;
@@ -326,22 +373,24 @@ export function redactNtlmHashFlag(command: string): string {
       const offset = args[5] as number;
       return inSeg(offset) ? `${lead}${flag}${sep}${REDACTED}` : match;
     };
-  return segmentAwareReplace(command, segmentHasHashTool, [
+  const out = segmentAwareReplace(command, segmentHasHashTool, [
     [NTLM_HASH_DQUOTE, makeReplaceSpaced],
     [NTLM_HASH_SQUOTE, makeReplaceSpaced],
     [NTLM_HASH_UNQUOTED, makeReplaceSpaced],
     [NTLM_HASH_ATTACHED_DQUOTE, makeReplaceAttached],
     [NTLM_HASH_ATTACHED_SQUOTE, makeReplaceAttached],
     [NTLM_HASH_ATTACHED_UNQUOTED, makeReplaceAttached],
+  ], context);
+  return segmentAwareReplace(out, segmentHasHashesFlagTool, [
     [NTLM_HASHES_DQUOTE, makeReplaceHashes],
     [NTLM_HASHES_SQUOTE, makeReplaceHashes],
     [NTLM_HASHES_UNQUOTED, makeReplaceHashes],
-  ]);
+  ], context);
 }
 function segmentHasLdapTool(segment: string): boolean {
   return LDAP_TOOL_RE.test(segment);
 }
-export function redactLdapPasswordFlag(command: string): string {
+export function redactLdapPasswordFlag(command: string, context = ''): string {
   const makeReplaceSpaced = (inSeg: (offset: number) => boolean) =>
     (...args: unknown[]): string => {
       const match = args[0] as string;
@@ -364,7 +413,7 @@ export function redactLdapPasswordFlag(command: string): string {
     [LDAP_W_ATTACHED_DQUOTE, makeReplaceAttached],
     [LDAP_W_ATTACHED_SQUOTE, makeReplaceAttached],
     [LDAP_W_ATTACHED_UNQUOTED, makeReplaceAttached],
-  ]);
+  ], context);
 }
 
 function basicAuthValueIsCredential(value: string): boolean {
@@ -373,7 +422,7 @@ function basicAuthValueIsCredential(value: string): boolean {
   return stripped.includes('%') || stripped.includes(':');
 }
 
-export function redactBasicAuthUser(command: string): string {
+export function redactBasicAuthUser(command: string, context = ''): string {
   // Long `--user` is content-only — overwhelmingly auth-bearing across
   // tools. Short `-u`/`-U` are tool-scoped to avoid `date -u +%Y:%m`,
   // `grep -u alice:other file`, etc., where those flags don't carry
@@ -410,13 +459,13 @@ export function redactBasicAuthUser(command: string): string {
     [BASIC_AUTH_USER_ATTACHED_DQUOTE, makeReplaceAttached],
     [BASIC_AUTH_USER_ATTACHED_SQUOTE, makeReplaceAttached],
     [BASIC_AUTH_USER_ATTACHED_UNQUOTED, makeReplaceAttached],
-  ]);
+  ], context);
 }
 function segmentHasImpacketTool(segment: string): boolean {
   return IMPACKET_TOOL_REGEXES.some((re) => re.test(segment));
 }
 
-export function redactImpacketPositionalAuth(command: string): string {
+export function redactImpacketPositionalAuth(command: string, context = ''): string {
   const makeReplace = (inSeg: (offset: number) => boolean) =>
     (...args: unknown[]): string => {
       const match = args[0] as string;
@@ -429,31 +478,34 @@ export function redactImpacketPositionalAuth(command: string): string {
     [IMPACKET_POSITIONAL_DQUOTE, makeReplace],
     [IMPACKET_POSITIONAL_SQUOTE, makeReplace],
     [IMPACKET_POSITIONAL_BARE, makeReplace],
-  ]);
+  ], context);
 }
 
 export function argvCredentialModes(leading: string): ArgvCredentialModes {
-  if (!leading) return { cred: false, hash: false, ldap: false, basic: false };
+  if (!leading) return { cred: false, hash: false, hashes: false, ldap: false, basic: false };
   return {
     cred: segmentHasCredentialTool(leading),
     hash: segmentHasHashTool(leading),
+    hashes: segmentHasHashesFlagTool(leading),
     ldap: segmentHasLdapTool(leading),
     basic: segmentHasBasicAuthShortTool(leading),
   };
 }
 
-// Mode → set of short flags it owns → does the value need a content
-// gate? Keeping this as data instead of an if/else chain keeps
-// `argvShortFlagSkipIndices` under the cognitive-complexity ceiling.
+function argvValueShouldMask(test: ArgvValueTest, value: string, modes: ArgvCredentialModes): boolean {
+  if (test === 'credentialPair') return basicAuthValueIsCredential(value);
+  if (test === 'notPortOutsideCredentialTool') return modes.cred || !isPortLikeValue(stripQuotes(value));
+  return true;
+}
 
 function isArgvShortFlagTarget(
   flag: string,
   value: string,
   modes: ArgvCredentialModes,
 ): boolean {
-  for (const { mode, flags, contentGated } of ARGV_SHORT_FLAG_RULES) {
-    if (!modes[mode] || !flags.has(flag)) continue;
-    return contentGated ? basicAuthValueIsCredential(value) : true;
+  for (const { flags, mode, test } of ARGV_SHORT_FLAG_RULES) {
+    if (!flags.has(flag) || (mode !== null && !modes[mode])) continue;
+    return argvValueShouldMask(test, value, modes);
   }
   return false;
 }
@@ -463,7 +515,6 @@ export function argvShortFlagSkipIndices(
   modes: ArgvCredentialModes,
 ): Set<number> {
   const skip = new Set<number>();
-  if (!modes.cred && !modes.hash && !modes.ldap && !modes.basic) return skip;
   for (let i = 0; i + 1 < items.length; i++) {
     const flag = items[i];
     const value = items[i + 1];
@@ -471,4 +522,24 @@ export function argvShortFlagSkipIndices(
     if (isArgvShortFlagTarget(flag, value, modes)) skip.add(i + 1);
   }
   return skip;
+}
+
+/**
+ * Apply the tool-context-aware command-line redactors in order.
+ *
+ * The leading segment-scoped quote-strip unquotes `'-X'`/`"-X"` option
+ * tokens only within credential-bearing segments, so `hydra '-p' hunter2`
+ * triggers the per-flag matcher while `echo '-p' hunter2` is preserved
+ * verbatim. `context` is the leading token of the command that `value` is
+ * an argument of, for example the tool of an argv list; it scopes every
+ * shell segment.
+ */
+export function redactCommandFlags(value: string, context = ''): string {
+  let out = unquoteOptionsInCredentialSegments(value, context);
+  out = redactShortPasswordFlag(out, context);
+  out = redactNtlmHashFlag(out, context);
+  out = redactLdapPasswordFlag(out, context);
+  out = redactBasicAuthUser(out, context);
+  out = redactImpacketPositionalAuth(out, context);
+  return out;
 }

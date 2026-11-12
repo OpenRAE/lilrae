@@ -24,6 +24,7 @@ from ._redaction_patterns import (
     _BASIC_AUTH_USER_SQUOTE,
     _BASIC_AUTH_USER_UNQUOTED,
     _CREDENTIAL_TOOL_REGEXES,
+    _HASHES_FLAG_TOOL_REGEXES,
     _HASH_TOOLS_RE,
     _IMPACKET_POSITIONAL_BARE,
     _IMPACKET_POSITIONAL_DQUOTE,
@@ -81,7 +82,7 @@ def _is_port_like(stripped: str) -> bool:
     return bool(_PORT_LIKE_RE.fullmatch(stripped))
 
 
-def _redact_short_password_flag(command: str) -> str:
+def _redact_short_password_flag(command: str, context: str = "") -> str:
     """Mask short ``-p <value>`` credential flags.
 
     Numeric values stay visible (so ``nmap -p 22``, ``nmap -p 22,80``,
@@ -125,10 +126,11 @@ def _redact_short_password_flag(command: str) -> str:
             (_SHORT_P_ATTACHED_SQUOTE, make_repl_attached),
             (_SHORT_P_ATTACHED_UNQUOTED, make_repl_attached),
         ],
+        context,
     )
 
 
-def _redact_ntlm_hash_flag(command: str) -> str:
+def _redact_ntlm_hash_flag(command: str, context: str = "") -> str:
     """Mask ``-H <hash>`` only inside a segment that names a hash-using tool
     (crackmapexec / cme / nxc / impacket *.py / evil-winrm). ``curl -H
     'X-Foo: bar'`` is left alone."""
@@ -164,10 +166,11 @@ def _redact_ntlm_hash_flag(command: str) -> str:
             (_NTLM_HASH_ATTACHED_SQUOTE, make_repl_attached),
             (_NTLM_HASH_ATTACHED_UNQUOTED, make_repl_attached),
         ],
+        context,
     )
 
-    # Impacket-specific `-hashes :HASH` / `--hashes <LM>:<NT>` form.
-    # Scoped to segments where an impacket *.py tool appears so we
+    # Impacket-style `-hashes :HASH` / `--hashes <LM>:<NT>` form.
+    # Scoped to segments that name a hash tool or an impacket tool so we
     # don't over-redact unrelated `--hashes` flags. Preserves the
     # flag literal (`m.group(2)` is `-hashes` or `--hashes`) and
     # only masks the value (group 4).
@@ -176,7 +179,7 @@ def _redact_ntlm_hash_flag(command: str) -> str:
         """Build a `re.sub` replacer that masks `-hashes <value>` /
         `--hashes <value>` only when ``in_seg(match.start())`` is
         true (the match falls inside a command segment that names
-        an impacket tool).
+        a hash tool or an impacket tool).
         """
         def repl(m: "re.Match[str]") -> str:
             """Mask the value; preserve the flag literal and leading separator."""
@@ -185,23 +188,20 @@ def _redact_ntlm_hash_flag(command: str) -> str:
             return f"{m.group(1)}{m.group(2)}{m.group(3)}{REDACTED}"
         return repl
 
-    impacket_pred_re = re.compile(
-        "|".join(p.pattern for p in _IMPACKET_TOOL_REGEXES),
-        re.IGNORECASE,
-    )
     out = _segment_aware_sub_chain(
         out,
-        impacket_pred_re,
+        _HASHES_FLAG_TOOL_REGEXES,
         [
             (_NTLM_HASHES_DQUOTE, make_repl_hashes),
             (_NTLM_HASHES_SQUOTE, make_repl_hashes),
             (_NTLM_HASHES_UNQUOTED, make_repl_hashes),
         ],
+        context,
     )
     return out
 
 
-def _redact_ldap_password_flag(command: str) -> str:
+def _redact_ldap_password_flag(command: str, context: str = "") -> str:
     """Mask ``-w <password>`` (LDAP simple bind) only inside a segment that
     names an ``ldap*`` tool. ``hydra -w wordlist.txt`` (wordlist, not a
     password) is left alone."""
@@ -237,6 +237,7 @@ def _redact_ldap_password_flag(command: str) -> str:
             (_LDAP_W_ATTACHED_SQUOTE, make_repl_attached),
             (_LDAP_W_ATTACHED_UNQUOTED, make_repl_attached),
         ],
+        context,
     )
 
 
@@ -250,7 +251,7 @@ def _basic_auth_value_is_credential(value: str) -> bool:
     return "%" in stripped or ":" in stripped
 
 
-def _redact_basic_auth_user(command: str) -> str:
+def _redact_basic_auth_user(command: str, context: str = "") -> str:
     """Mask ``--user``/``-u``/``-U`` when the value is a credential pair.
 
     The long ``--user`` form is content-based — overwhelmingly auth
@@ -302,10 +303,11 @@ def _redact_basic_auth_user(command: str) -> str:
             (_BASIC_AUTH_USER_ATTACHED_SQUOTE, make_repl_attached),
             (_BASIC_AUTH_USER_ATTACHED_UNQUOTED, make_repl_attached),
         ],
+        context,
     )
 
 
-def _redact_impacket_positional_auth(command: str) -> str:
+def _redact_impacket_positional_auth(command: str, context: str = "") -> str:
     """Mask the password in an impacket positional ``user:password@host``
     target (``psexec.py corp/alice:pw@dc``) — only inside a segment that
     names an impacket-family tool, so a ``user:token@host`` elsewhere is
@@ -329,10 +331,11 @@ def _redact_impacket_positional_auth(command: str) -> str:
             (_IMPACKET_POSITIONAL_SQUOTE, make_repl),
             (_IMPACKET_POSITIONAL_BARE, make_repl),
         ],
+        context,
     )
 
 
-def _redact_command_flags(value: str) -> str:
+def _redact_command_flags(value: str, context: str = "") -> str:
     """Apply the tool-context-aware command-line redactors in order.
 
     Runs after the simple key/value patterns so the cheaper shapes have
@@ -340,12 +343,14 @@ def _redact_command_flags(value: str) -> str:
     The leading segment-scoped quote-strip unquotes ``'-X'``/``"-X"``
     option tokens *only* within credential-bearing segments so
     ``hydra '-p' hunter2`` still triggers the per-flag matcher while
-    ``echo '-p' hunter2`` is preserved verbatim.
+    ``echo '-p' hunter2`` is preserved verbatim. ``context`` is the
+    leading token of the command that ``value`` is an argument of, for
+    example the tool of an argv list; it scopes every shell segment.
     """
-    out = _unquote_options_in_credential_segments(value)
-    out = _redact_short_password_flag(out)
-    out = _redact_ntlm_hash_flag(out)
-    out = _redact_ldap_password_flag(out)
-    out = _redact_basic_auth_user(out)
-    out = _redact_impacket_positional_auth(out)
+    out = _unquote_options_in_credential_segments(value, context)
+    out = _redact_short_password_flag(out, context)
+    out = _redact_ntlm_hash_flag(out, context)
+    out = _redact_ldap_password_flag(out, context)
+    out = _redact_basic_auth_user(out, context)
+    out = _redact_impacket_positional_auth(out, context)
     return out
