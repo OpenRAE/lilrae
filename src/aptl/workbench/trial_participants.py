@@ -17,9 +17,11 @@ from raes_contracts.trial_unit import TrialUnitRequest
 from raes_runtime.runtime_trial_decisions import TrialAttemptDecision
 from raes_contracts.timestamps import utc_now
 
-from aptl.core.config import ProcessEnvironmentCredentialSource
+from aptl.core.config import (
+    AttachedServiceAccountSource,
+    ProcessEnvironmentCredentialSource,
+)
 from aptl.core.trial_participants import TrialParticipantBounds
-from aptl.core._credential_sources import AttachedServiceAccountSource
 from aptl.core.opencode import OpenCodeTrialScope, OpenRouterRoute, ParticipantRoute, VertexRoute
 from aptl.core.participant_requests import (
     ParticipantRequest,

@@ -30,6 +30,7 @@ from aptl.utils.logging import get_logger
 
 __all__ = [
     "AptlConfig",
+    "AttachedServiceAccountSource",
     "ContainerSettings",
     "DeploymentConfig",
     "EnvironmentGrant",
