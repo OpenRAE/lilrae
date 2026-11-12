@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"path/filepath"
 )
@@ -155,8 +156,12 @@ func Default() Config {
 	}
 }
 
+// defaultNetworkSubnet is the lab network subnet when aptl.json sets no
+// lab.network_subnet. It is the default of the Python model.
+var defaultNetworkSubnet = netip.PrefixFrom(netip.AddrFrom4([4]byte{172, 20, 0, 0}), 16)
+
 func defaultLab() Lab {
-	return Lab{Name: "aptl", NetworkSubnet: "172.20.0.0/16"}
+	return Lab{Name: "aptl", NetworkSubnet: defaultNetworkSubnet.String()}
 }
 
 func defaultDeployment() Deployment {
