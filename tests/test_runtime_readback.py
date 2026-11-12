@@ -135,3 +135,27 @@ def test_product_capability_requires_the_admitted_reader():
     )
     with pytest.raises(ValueError, match="source-conflict"):
         adapter_runtime_concern_sources(rejected_input_1)
+
+
+@pytest.mark.parametrize("source", tuple(ObservationStrength))
+@pytest.mark.parametrize(
+    "kind", ["runtime-software-components", "runtime-environment"]
+)
+def test_image_software_reports_keep_their_declared_source(kind, source):
+    provider = SimpleNamespace(
+        observed_runtime_concerns={kind: source}, observe_runtime=lambda *_: {}
+    )
+    allowed = (
+        {ObservationStrength.DRIVER_REPORTED, ObservationStrength.GUEST_OBSERVED}
+        if kind == "runtime-software-components"
+        else {ObservationStrength.DAEMON_OBSERVED}
+    )
+    if source not in allowed:
+        with pytest.raises(ValueError):
+            adapter_runtime_concern_sources(provider)
+        return
+    sources = adapter_runtime_concern_sources(provider)
+    manifest = create_aptl_manifest(runtime_concern_sources=sources)
+    assert manifest.realization_support[0].observation_capabilities[
+        kind
+    ].observation_strength is source

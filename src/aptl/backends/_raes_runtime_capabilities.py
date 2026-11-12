@@ -65,6 +65,11 @@ def adapter_runtime_concern_sources(
         if (
             kind in CORE_RUNTIME_CONCERN_SOURCES
             and selected != CORE_RUNTIME_CONCERN_SOURCES[kind]
+            # Installed image adapters may declare their baked software inventory.
+            and not (
+                kind == "runtime-software-components"
+                and selected is ObservationStrength.DRIVER_REPORTED
+            )
         ):
             raise ValueError("runtime-reader-source-conflict")
         result[kind] = selected
