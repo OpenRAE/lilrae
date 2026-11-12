@@ -80,7 +80,7 @@ The installed TechVault adapters admit exact pack versions and content digests.
 Their qualification moves to the published 7.2.2 TechVault and study identities.
 Exact pack admission remains separate from runtime readback.
 
-[ADR-066](../adrs/adr-066-runtime-readback-reports-realized-state.md) requires observations from the running implementation.
+[ADR-071](../adrs/adr-071-runtime-readback-reports-realized-state.md) requires observations from the running implementation.
 The #1017 migration removed the local projection digest and ordering bridge.
 This change preserves that removal and its native readback interfaces.
 
