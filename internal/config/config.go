@@ -156,12 +156,11 @@ func Default() Config {
 	}
 }
 
-// defaultNetworkSubnet is the lab network subnet when aptl.json sets no
-// lab.network_subnet. It is the default of the Python model.
-var defaultNetworkSubnet = netip.PrefixFrom(netip.AddrFrom4([4]byte{172, 20, 0, 0}), 16)
-
+// defaultLab returns the lab defaults. The subnet is the default of the
+// Python model, and lab.network_subnet in aptl.json replaces it.
 func defaultLab() Lab {
-	return Lab{Name: "aptl", NetworkSubnet: defaultNetworkSubnet.String()}
+	subnet := netip.PrefixFrom(netip.AddrFrom4([4]byte{172, 20, 0, 0}), 16)
+	return Lab{Name: "aptl", NetworkSubnet: subnet.String()}
 }
 
 func defaultDeployment() Deployment {
