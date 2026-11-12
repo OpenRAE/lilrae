@@ -130,8 +130,8 @@ A requirement's front matter determines lifecycle state; Reference classificatio
 | [`docs/adrs/adr-062-lilrae-name-and-naming-convention.md`](../adrs/adr-062-lilrae-name-and-naming-convention.md) | #1667 | Explanation | Decisions | Earlier reader routes |
 | [`docs/adrs/adr-063-remove-thehive-and-cortex.md`](../adrs/adr-063-remove-thehive-and-cortex.md) | #1667 | Explanation | Decisions | Earlier reader routes |
 | [`docs/adrs/adr-064-layered-architecture-and-code-conventions.md`](../adrs/adr-064-layered-architecture-and-code-conventions.md) | #1667 | Explanation | Decisions | Earlier reader routes |
-| [`docs/adrs/adr-065-executable-participant-action-boundaries.md`](../adrs/adr-065-executable-participant-action-boundaries.md) | #1667 | Explanation | Repository entry | Earlier reader routes |
-| [`docs/adrs/adr-066-runtime-readback-reports-realized-state.md`](../adrs/adr-066-runtime-readback-reports-realized-state.md) | #1667 | Explanation | Decisions | Earlier reader routes |
+| [`docs/adrs/adr-070-executable-participant-action-boundaries.md`](../adrs/adr-070-executable-participant-action-boundaries.md) | #1667 | Explanation | Repository entry | Earlier reader routes |
+| [`docs/adrs/adr-071-runtime-readback-reports-realized-state.md`](../adrs/adr-071-runtime-readback-reports-realized-state.md) | #1667 | Explanation | Decisions | Earlier reader routes |
 | [`docs/adrs/adr-067-admitted-participant-smoke-providers.md`](../adrs/adr-067-admitted-participant-smoke-providers.md) | #1668 | Explanation | Decisions | Source interfaces |
 | [`docs/adrs/adr-068-dev-merge-queue.md`](../adrs/adr-068-dev-merge-queue.md) | #1668 | Explanation | Decisions | Source interfaces |
 | [`docs/adrs/adr-069-shared-containment-wrapper.md`](../adrs/adr-069-shared-containment-wrapper.md) | #1467 | Explanation | Decisions | Source interfaces |
