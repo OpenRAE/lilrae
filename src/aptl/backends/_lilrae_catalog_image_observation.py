@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from aptl.core.deployment._docker_image_identity import _IMAGE_ID
+from aptl.core.docker_ids import is_image_id
 
 if TYPE_CHECKING:
     from aptl.backends._raes_observation_helpers import ObservedResource
@@ -74,7 +74,7 @@ def _observed_image_identity(
     )
     if completed:
         return completed
-    if not isinstance(config, str) or not _IMAGE_ID.fullmatch(config):
+    if not is_image_id(config):
         return None, None
     return config, backend.container_image_digest(
         container, expected_ref=image_ref, expected_config_id=config
@@ -94,11 +94,7 @@ def _completed_image_identity(
     identity = observation_context.completed_selected_image_identity(
         container, image_ref
     )
-    if (
-        identity is None
-        or not isinstance(identity[0], str)
-        or not _IMAGE_ID.fullmatch(identity[0])
-    ):
+    if identity is None or not is_image_id(identity[0]):
         return None
     # An unreadable image ID does not prove absence. A reappearing live
     # container must not inherit a completed container's identity receipt.

@@ -13,7 +13,6 @@ the remote daemon and behave identically to local Docker Compose.
 """
 
 import hashlib
-import re
 import sys
 import time
 from collections.abc import Mapping, Sequence
@@ -21,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from aptl.core.deployment.errors import BackendTimeoutError
+from aptl.core.docker_ids import is_container_id, is_image_id
 from aptl.core.snapshot_models import (
     ContainerSnapshot,
     NetworkSnapshot,
@@ -136,10 +136,6 @@ def _get_software_versions(
     return versions
 
 
-# Docker's forms of a full container ID and of an image ID; nothing else counts.
-_CONTAINER_ID = re.compile(r"[0-9a-f]{64}")
-_IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}")
-
 _HEALTH_MARKERS = (
     ("(healthy)", "healthy"),
     ("(unhealthy)", "unhealthy"),
@@ -190,13 +186,12 @@ def _inspected_identity(
     """
     container_id = info.get("Id")
     listed = str(row.get("id", ""))
-    proven = isinstance(container_id, str) and _CONTAINER_ID.fullmatch(container_id)
-    if not (proven and listed and container_id.startswith(listed)):
+    if not (
+        is_container_id(container_id) and listed and container_id.startswith(listed)
+    ):
         return "", ""
     image_id = info.get("Image")
-    if not isinstance(image_id, str) or not _IMAGE_ID.fullmatch(image_id):
-        image_id = ""
-    return container_id, image_id
+    return container_id, image_id if is_image_id(image_id) else ""
 
 
 def _inspected_restart_policy(info: Mapping[str, Any]) -> str:

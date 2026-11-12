@@ -262,7 +262,7 @@ snapshot, and `lilrae lab status --output <file>` writes one to a file with mode
 | `software.raes_version` | Installed `raes` package version |
 | `containers[]` | One entry for each container the project owns, in any state |
 | `containers[].name` | Container name |
-| `containers[].container_id` | Full 64-hex ID of this container instance, read from backend inspection. Empty when the inspected container is not the one the project inventory listed |
+| `containers[].container_id` | Full 64-hex ID of this container instance, read from backend inspection. Empty when that inspection does not prove it is the container the project inventory listed |
 | `containers[].image` | Image reference from `docker ps`, usually the tag the container was created from |
 | `containers[].image_id` | The daemon's `sha256:` ID of the image this container runs, from the same inspection. Empty when that inspection does not prove it |
 | `containers[].image_digest` | Immutable registry digest of the image, which the run record copies into `container_image_digests`. Snapshot capture does not set it, so it is empty ([#1340](https://github.com/OpenRAE/lilrae/issues/1340)) |
