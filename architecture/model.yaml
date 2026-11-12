@@ -128,6 +128,12 @@ components:
     packages: [internal/filelock]
     uses: [deadline-wait]
     modules: [golang.org/x/sys]
+  - name: configuration
+    layer: core
+    responsibility: Decodes, validates, finds, and migrates the aptl.json project configuration.
+    packages: [internal/config]
+    uses: [canonical-forms, secure-file]
+    test_modules: [github.com/google/go-cmp]
   - name: conformance-suite
     layer: tools
     responsibility: Runs the black-box contract cases against an installed lilrae binary.

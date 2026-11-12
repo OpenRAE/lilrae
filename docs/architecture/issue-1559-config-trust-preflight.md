@@ -1,16 +1,19 @@
 # Issue #1559: Configuration and trust boundaries preflight
 
-This note covers CLI-007 within Go port 08 at revision `f573683d1`.
+This note covers CLI-007 within Go port 08, including its #1747 split (08a).
+The #1747 review used revision `5c8cb566a`; the original review used `f573683d1`.
 It records architecture constraints, not an implementation plan or a completed Go design.
 The Python command already implements CLI-007.
-Port 08 supplies shared loading; port 10 owns the Go `config` commands.
+The [#1559 split design](issue-1559-go-config-state-keys-design.md) assigns shared configuration behavior to 08a and commands to port 10.
 No new ADR is needed: ADR-025, ADR-029, ADR-034, ADR-040, ADR-052, ADR-055, ADR-065, and ADR-066 govern these boundaries.
 
 ## Decisions and compatibility
 
 Keep one typed, non-secret configuration model and one defaulting and validation authority for all Go consumers.
 Configuration values and predicates belong in core; file loading belongs outside core, using foundation file access.
-Entry code owns rendering, exit statuses, and transport-specific error conversion.
+08a owns the resolved configuration representation and its reusable serialization for `json.config-show`.
+Port 10 owns command registration, options, terminal layout, stream writes, exit statuses, and transport-specific error conversion.
+Do not introduce an inspection DTO or a second field/default list between the model and its serialization.
 Application code owns mutation ordering and lifecycle ownership.
 Do not reproduce Python modules, private re-exports, or its import graph as Go packages.
 
@@ -18,8 +21,8 @@ The inspection flow is:
 
 ```text
 selected project directory -> discovery -> file read -> JSON syntax gate
-  -> typed defaults and configuration validation -> resolved configuration
-  -> port 10 presentation -> stdout
+  -> typed defaults and configuration validation -> shared resolved representation
+  -> port 10 text/JSON presentation -> stdout
 safe failure category and field location -> entry error conversion -> stderr
 ```
 
@@ -37,6 +40,9 @@ An invalid configuration must fail before project creation, hydration, locks tha
   For example, omitted `lab` uses its default, but `lab: {}` fails because its `name` is required.
   Preserve `containers.profiles: null` versus `[]`, nullable sections, list order, strict fields, coercions, and normalized values.
   A Go zero value or `omitempty` is not a substitute for these rules.
+  Resolved JSON includes all eight sections: `lab`, `containers`, `deployment`, `scenario`, `run_storage`, `lifecycle_policy`, `experiment`, and `seat`.
+  Preserve null fields, empty arrays, false values, numeric types, and nested source objects; do not let nil-slice encoding change their shapes.
+  In particular, default `containers.profiles` is null, default `deployment.environment_grants` is `[]`, and absent `lifecycle_policy` resolves to null.
 - `config show` validates through the loader; `config validate` additionally checks deployment construction settings without contacting the backend.
   Do not add that construction step, startup readiness, certificate checks, or installed-model availability checks to inspection.
   Preserve checks that belong to operation admission separately from pure configuration predicates.
@@ -48,6 +54,40 @@ An invalid configuration must fail before project creation, hydration, locks tha
   Nested values also appear in the tables; avoid Go map iteration and language-dependent value formatting.
   Preserve field coverage and stable ordering through an explicit presentation boundary in port 10.
   JSON whitespace and terminal layout need not become digest or persistence contracts.
+  Preserve configured relative paths as values; inspection does not expand paths, interpolate variables, or replace profile nulls with admitted scenario groups.
+
+## Issue #1747 security and output guardrails
+
+The reference schema also accepts authored input with omitted defaults.
+Schema acceptance alone therefore cannot prove complete resolved output; compare values and presence against the shared model's resolved contract.
+Keep schema alignment within `docs/reference/schemas/aptl-config.schema.json`; do not add a resolved-output runtime schema or a JSON Schema default inserter.
+
+The existing redactor masks values under names containing `credential` or `key`, including `participant_credential_sources` and `ssh_key`.
+Blindly redacting the resolved object would replace valid descriptor objects with strings and change the config-show contract.
+ADR-029 instead keeps this model non-secret: inspection can show source names and key paths, but must never acquire their contents.
+Do not weaken the shared redactor's classification to accommodate inspection.
+Errors, logs, and evidence still use the canonical redaction boundary; raw config dumps must not become telemetry or provenance.
+Permissive string fields cannot prove arbitrary operator-authored text contains no secrets.
+A newly identified secret-bearing accepted input needs an explicit contract decision, rather than a command-local filter or a schema-changing redaction workaround.
+
+Treat terminal output as an interpreter boundary as well as a disclosure boundary.
+08a preserves the validated values; port 10 must render user strings as data, without terminal control or markup interpretation.
+JSON encoding escapes control characters; text rendering needs the equivalent display protection without changing the stored model.
+Nested objects and lists need deterministic rendering, independent of Go map order and default struct formatting.
+Serialize successfully before publishing a success payload, and propagate output-write failures; decoder or validation failures leave stdout empty.
+
+Before code, the delivery design must name and justify a config byte ceiling, enforced before an unbounded read or allocation.
+`internal/canonical.DecodeStrict` has no input limit and does not enforce known config members or insert defaults.
+Typed decoding must reject exact-name mismatches and unknown members, including nested descriptor members.
+Reuse that strict reader without converting its generic numbers through float64 to fill typed fields.
+Record Python scalar coercions and deliberate Go rejections separately from parity cases, as the [strict-config preflight](issue-1559-strict-config-preflight.md) requires.
+No fixed byte ceiling or complete coercion disposition has been established by this preflight.
+
+08a owns migration conversion and safe file replacement; #1748 owns the lifecycle root and lock policy it depends on.
+Keep conversion usable without filesystem effects, and preserve the canonical lock across the explicit migration transaction.
+This ownership dependency does not authorize migration on load or an 08a-local lock/root implementation.
+The split orders 08a first, so the delivery design must reconcile this dependency before mutating Go migration can claim parity.
+`internal/filelock` supplies the locking mechanism; it does not supply project-root selection, the lock path, or transaction ownership.
 
 ## Cross-cutting passage and canonical owners
 
@@ -70,9 +110,9 @@ Python paths below are relative to `src/aptl/`; they identify behavioral owners,
 | Evidence and identity | `core/provenance/providers/config_identity.py::safe_config_projection`, descriptor digest methods, `LocalRunStore`, and the shared serialization vectors. Local inspection output is not an archival DTO or a configuration identity. Provenance excludes paths and locators that inspection can display. Preserve `credential-descriptor-digest` and `ssh-key-fingerprint` vectors and their framing; do not hash rendered tables or substitute a file hash. |
 
 Windows requires particular care.
-The current `internal/securefile` mode operations do not establish private ACLs; its documentation says so.
+Ordinary `internal/securefile` mode operations do not establish private Windows ACLs; its documentation says so.
 `core/ssh.py::_harden_private_key_windows` provides a separate OpenSSH ACL contract.
-Port 08 must retain and qualify that protection through the existing platform boundary, rather than claiming `0600` supplies it.
+The current Go `securefile.Dir.RestrictToOwner` is that protection's platform boundary; port 08 must qualify it rather than duplicate it or claim `0600` suffices.
 Keep inherited project ACL behavior where that is the existing contract.
 Linux and macOS no-follow checks and Windows reparse checks require real handle-based evidence, not cross-compilation alone.
 Keep authored-template containment distinct from generated-output no-follow policy; `credentials._resolve_within_project` permits contained template links.
@@ -123,6 +163,11 @@ Use small consumer-owned effect interfaces, not a generic project service, crede
 Reuse `tests/test_config.py`, `tests/test_cli_config.py`, config-migration tests, environment-binding tests, and existing env, credentials, lifecycle, CA, and SSH tests.
 The black-box anchors are `conformance/testdata/cases/config.txtar`, `options-config.txtar`, the reference config schema, and `conformance-inventory.md`.
 The current config case checks schema acceptance and a text field; it does not prove every default, discovery distinction, or no-effects invariant.
+Required evidence includes `{}` versus `lab: {}`, null versus empty profiles, descriptor round-trips, normalized schedules, and stable nested rendering.
+It must also cover selected-directory versus ancestor discovery, missing/unreadable/malformed input, safe field errors, byte-limit boundaries, and no credential acquisition or writes.
+Use current fields for type rejection: the existing CLI test's retired `containers.wazuh` field only demonstrates unknown-member rejection.
+The redaction case covers invalid typed inputs, but does not exercise custom-validator messages or attacker-controlled unknown member names.
+Those cases need canary checks on both streams without echoing the canary in failure diagnostics.
 Port 08 needs shared contract vectors for its library behavior; port 10 needs command parity against the same resolved values.
 Conformance additions run against the Python release before Go; bug regressions separately fail on the base revision.
 Use synthetic material, temporary project roots, real TLS/SSH peers, and native platform checks; retain mutation, race, and fuzz gates.
@@ -141,6 +186,7 @@ Whole-repository architecture, full suites, mutation, coverage, and installed-la
 Retain Python traceability and add Go `IMPLEMENTS` and `TESTS` links during delivery; do not mark CLI-007 complete from a loader-only port.
 
 Non-goals are implementation, a command in port 08, automatic migration, credential hydration during reads, new configuration fields, and new authentication or error frameworks.
+08a also excludes lifecycle root/lock policy (#1748), credential acquisition (#1749), and Go package work for certificates or SSH keys.
 Also excluded are scenario/pack semantics, service-specific credentials, readiness redesign, new persistence layouts, user documentation, distribution changes, and Python behavior changes.
 Use the released RAES and env-packs Go APIs for their semantics; a missing API is a dependency blocker, not permission to duplicate it.
 Target `go-cutover`; nothing ships before port 31.

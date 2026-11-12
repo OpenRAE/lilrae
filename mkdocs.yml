@@ -116,6 +116,7 @@ nav:
     - "Issue #1559 INF-005 Certificate Generation Preflight": architecture/issue-1559-inf-005-preflight.md
     - "Issue #1559 Wazuh TLS Preflight": architecture/issue-1559-wazuh-tls-preflight.md
     - "Issue #1559 Configuration, State, and Key Material Design": architecture/issue-1559-go-config-state-keys-design.md
+    - "Issue #1747 Configuration Design": architecture/issue-1747-go-config-design.md
     - "Issue #1510 Code Quality Architecture Preflight": architecture/issue-1510-code-quality-preflight.md
     - "Issue #1510 Code Quality Architecture Design": architecture/issue-1510-code-quality-design.md
     - "Issue #1372 Capture Spec Version Preflight": architecture/issue-1372-capture-spec-version-preflight.md

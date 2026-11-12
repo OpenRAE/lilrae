@@ -13,10 +13,10 @@ The front matter of that note is the design record of its packages.
 
    | Sub-issue | Concern | Contracts | Requirements |
    | --- | --- | --- | --- |
-   | 08a | `aptl.json`: strict decoding, defaults, semantic checks, discovery, migration, and the credential source descriptors | `file.aptl-json`, `json.config-show`, `cli.config.migrate`, and the `compose-project-name` and `credential-descriptor-digest` vectors | CLI-002, CLI-007 |
-   | 08b | The `.aptl/` state layout and its file modes, the lifecycle locks, the lifecycle project root, and the workspace identity record | `file.project-state` and `file.workspace-ownership` | SYS-009 |
+   | 08a | `aptl.json`: strict decoding, defaults, semantic checks, discovery, migration, and the credential source descriptors | `file.aptl-json`, `json.config-show`, `cli.config.migrate`, and the `compose-project-name` vector | CLI-002, CLI-007 |
+   | 08b | The `.aptl/` state layout and its file modes, the lifecycle locks, and the lifecycle project root | `file.project-state` | SYS-009 |
    | 08c | `.env` files, generated values, placeholder checks, credential sources, and grants | The `.env` rules of ADR-029 and ADR-052 | INF-006, SEC-005 |
-   | 08d | One certificate verification path, the SOC CA and its service certificates, and the Wazuh certificate bundle checks | ADR-034 | INF-005, SEC-004, SEC-006 |
+   | 08d | One certificate verification path, and the SOC CA and its service certificates | ADR-034 | SEC-006 |
    | 08e | SSH key pairs, `authorized_keys`, host key pins, and the SSH client | ADR-040 and the `ssh-key-fingerprint` vector | SYS-009 |
 
 2. **Order.** 08a starts first. 08b starts after 08a. 08c, 08d, and 08e start
@@ -40,24 +40,25 @@ The front matter of that note is the design record of its packages.
    environment as a fallback.
 7. **Verification purpose is explicit.** The one verification path takes the
    roots, the time, the key usage, and the expected names from its caller.
-   Wazuh root aliases and provenance, the SOC names, and the exact issued leaf
-   of the desktop check stay separate caller policies. Renewal eligibility is
+   Wazuh root aliases and provenance (Go port 19), the SOC names (08d), and
+   the exact issued leaf of the desktop check (Go port 22) stay separate
+   caller policies. Renewal eligibility is
    not current validity. TLS handshakes stay in `internal/httpclient`.
 8. **Wazuh moves to Go port 19.** The Wazuh certificate generator runs a
    container, and Wazuh is service-specific. Go port 19 (#1570) runs the
    generator, reclaims the old certificate directory, and passes the
-   `cert-generator-project-name` vector. Go port 19 also owns
-   the Wazuh credential fields and the rendered Wazuh configuration files.
-   08d verifies the Wazuh bundle that the generator writes.
+   `cert-generator-project-name` vector. Go port 19 also owns the Wazuh
+   bundle rules, the Wazuh credential fields, and the rendered Wazuh
+   configuration files. It delivers INF-005 and SEC-004.
 9. **Requirement corrections.** INF-006 and SEC-005 say that all credentials
    live only in `.env` and reach Compose only through substitution. The
    current design also uses explicit credential sources and private
    environment files for each service. 08c corrects the two statements. The
    correction keeps the rule that no operator secret enters version control.
-10. **Workspace identity.** The workspace identity record is project state, so
-    08b owns it. Go port 09 reads it to name Docker resources and keeps the
-    resource receipts. 08b updates the coverage of `file.workspace-ownership`
-    in the conformance inventory.
+10. **Each item goes to its consumer.** The workspace identity record stays
+    with Go port 09, as the conformance inventory states. The credential
+    descriptor digest goes to Go port 11, and the recovery command text goes
+    to Go port 23.
 11. **Native SSH keys.** The Python release runs `ssh-keygen -t ed25519`. 08e
     makes the same key type and file formats with `golang.org/x/crypto/ssh`,
     so it needs no process runner.

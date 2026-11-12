@@ -16,6 +16,9 @@ the diagram differs from the model. Do not edit the diagram by hand.
 <!-- Generated from architecture/model.yaml by archcheck diagram. Do not edit. -->
 ```mermaid
 flowchart TB
+    subgraph layer_core[core]
+        component_configuration[configuration]
+    end
     subgraph layer_foundation[foundation]
         component_canonical_forms[canonical-forms]
         component_digest[digest]
@@ -63,5 +66,7 @@ flowchart TB
     component_git -. test .-> component_git_test_support
     component_git_test_support -. test .-> component_git
     component_file_lock --> component_deadline_wait
+    component_configuration --> component_canonical_forms
+    component_configuration --> component_secure_file
 ```
 <!-- End of the generated diagram. -->

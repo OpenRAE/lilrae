@@ -173,6 +173,7 @@ capability in Go.
 
 ## Preflights
 
+- [Issue #1747 Configuration Design](issue-1747-go-config-design.md)
 - [Issue #1559 Configuration, State, and Key Material Design](issue-1559-go-config-state-keys-design.md)
 - [Issue #1559 Configuration and Trust Boundaries (CLI-007)](issue-1559-config-trust-preflight.md)
 - [Issue #1559 Strict Configuration Validation (CLI-002)](issue-1559-strict-config-preflight.md)
