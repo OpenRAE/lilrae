@@ -10,6 +10,7 @@ expected bytes, because a vector can hold a synthetic secret.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import math
 import re
@@ -36,9 +37,6 @@ from aptl.backends._raes_participant_execution import _ParticipantDeliveryExecut
 from aptl.backends.raes_participant_apparatus import canonical_mapping_digest
 from aptl.backends.raes_participant_control_evidence import selection_fingerprint
 from aptl.backends.raes_participant_execution_support import mapping_digest
-from aptl.backends.raes_participant_fixture_core import (
-    _mapping_digest as fixture_mapping_digest,
-)
 from aptl.core import continuity
 from aptl.core._credential_sources import ProcessEnvironmentCredentialSource
 from aptl.core.appliance_boundary import ApplianceBoundaryPolicy
@@ -428,7 +426,6 @@ SCHEMES: dict[str, Callable[[object], dict[str, object]]] = {
     "artifact-profile-digest": _text(raes_artifact_mechanisms._profile_digest),
     "participant-selection-fingerprint": _text(selection_fingerprint),
     "governed-arguments-digest": _text(mapping_digest),
-    "participant-workflow-digest": _text(fixture_mapping_digest),
     "boundary-policy-digest": _boundary_policy_digest,
     "correlation-content-signature": _text(_content_signature),
     "apparatus-mapping-digest": _rfc8785_digest(canonical_mapping_digest),
@@ -456,6 +453,24 @@ SCHEMES: dict[str, Callable[[object], dict[str, object]]] = {
     "parquet-canonical-json": _parquet_canonical_json,
     **OWNER_SCHEMES,
 }
+
+
+def _adapter_schemes() -> dict[str, Callable[[object], dict[str, object]]]:
+    """Return the schemes that the test package of each pack adapter binds.
+
+    Generic tests name no pack (#1700), so the harness finds these modules by
+    their path: ``tests/<adapter>/serialization_owner_schemes.py``.
+    """
+    schemes: dict[str, Callable[[object], dict[str, object]]] = {}
+    for path in sorted((ROOT / "tests").glob("*/serialization_owner_schemes.py")):
+        module = importlib.import_module(f"tests.{path.parent.name}.serialization_owner_schemes")
+        duplicates = set(module.OWNER_SCHEMES) & (set(SCHEMES) | set(schemes))
+        assert not duplicates, f"{path.parent.name} binds a scheme twice"
+        schemes.update(module.OWNER_SCHEMES)
+    return schemes
+
+
+SCHEMES.update(_adapter_schemes())
 
 
 def _corpus_files() -> list[Path]:
