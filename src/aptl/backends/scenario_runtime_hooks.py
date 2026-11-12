@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import re
-
 from collections.abc import Sequence, Mapping
 from subprocess import CompletedProcess, TimeoutExpired
 from typing import TYPE_CHECKING, Protocol
@@ -277,9 +275,6 @@ class AdmittedRuntimeOperations:
                 if isinstance(value, bool):
                     state[key] = value
             result = {"State": state}
-            image = info.get("Image")
-            if isinstance(image, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", image):
-                result["Image"] = image
             for owner, key, destination in (
                 (raw_state, "ExitCode", state),
                 (info, "RestartCount", result),
