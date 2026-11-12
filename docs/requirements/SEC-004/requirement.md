@@ -1,12 +1,12 @@
 ---
 id: SEC-004
 title: "TLS Between Wazuh Components"
-status: ACTIVE
+status: DEPRECATED
 type: NON_FUNCTIONAL
 priority: SHOULD
 wave: 1
 created_at: 2026-03-20T06:10:10.173444Z
-updated_at: 2026-03-20T06:18:11.648972Z
+updated_at: 2026-11-12T07:31:45.000000Z
 ---
 
 # SEC-004: TLS Between Wazuh Components

@@ -21,7 +21,8 @@
       "password": "${INDEXER_PASSWORD}"
     },
     "timeout": 30000,
-    "verify_ssl": false,
+    "verify_ssl": true,
+    "ca_cert_path": "../../config/wazuh_indexer_ssl_certs/root-ca.pem",
     "default_headers": {
       "Content-Type": "application/json"
     }
@@ -35,7 +36,6 @@
         "username": "${INDEXER_USERNAME}",
         "password": "${INDEXER_PASSWORD}"
       },
-      "verify_ssl": false,
       "body": {
         "query": {
           "match_all": {}
@@ -59,7 +59,6 @@
         "username": "${INDEXER_USERNAME}",
         "password": "${INDEXER_PASSWORD}"
       },
-      "verify_ssl": false,
       "body": {
         "query": {
           "match_all": {}
@@ -85,7 +84,6 @@
         "password": "${API_PASSWORD}",
         "auth_url": "https://localhost:${APTL_HP_WAZUH_MANAGER_55000}/security/user/authenticate"
       },
-      "verify_ssl": false,
       "path_param_patterns": {
         "filename": "[A-Za-z0-9][A-Za-z0-9_.-]{0,250}\\.xml"
       },

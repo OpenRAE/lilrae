@@ -21,7 +21,8 @@
       "password": "${INDEXER_PASSWORD}"
     },
     "timeout": 30000,
-    "verify_ssl": false,
+    "verify_ssl": true,
+    "ca_cert_path": "../../config/wazuh_indexer_ssl_certs/root-ca.pem",
     "default_headers": {
       "Content-Type": "application/json"
     }
@@ -35,7 +36,6 @@
         "username": "${INDEXER_USERNAME}",
         "password": "${INDEXER_PASSWORD}"
       },
-      "verify_ssl": false,
       "params": {
         "index": "wazuh-alerts-4.x-*"
       },
@@ -64,7 +64,6 @@
         "password": "${API_PASSWORD}",
         "auth_url": "https://localhost:${APTL_HP_WAZUH_MANAGER_55000}/security/user/authenticate"
       },
-      "verify_ssl": false,
       "path_param_patterns": {
         "filename": "[A-Za-z0-9][A-Za-z0-9_.-]{0,250}\\.xml"
       },
@@ -97,7 +96,6 @@
         "password": "${API_PASSWORD}",
         "auth_url": "https://localhost:${APTL_HP_WAZUH_MANAGER_55000}/security/user/authenticate"
       },
-      "verify_ssl": false,
       "description": "Restart the Wazuh Manager so freshly-uploaded rules take effect. Returns once the restart command is accepted; the manager will be temporarily unavailable for ~30-90s as daemons cycle. No body required."
     },
     "get_rule_file": {
@@ -109,7 +107,6 @@
         "password": "${API_PASSWORD}",
         "auth_url": "https://localhost:${APTL_HP_WAZUH_MANAGER_55000}/security/user/authenticate"
       },
-      "verify_ssl": false,
       "response_type": "text",
       "max_result_tokens": null,
       "path_param_patterns": {

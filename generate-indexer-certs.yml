@@ -27,6 +27,10 @@ services:
     # actually reached by. Hostname verification stays enabled; the certificate
     # is made correct rather than the check weakened. The vendored tool and its
     # pinned digest are untouched.
+    #
+    # Host-run clients (the MCP servers and the readiness probes) reach the
+    # indexer and the manager API through their loopback publications, so
+    # those two certificates also name localhost and 127.0.0.1 (#1767).
     working_dir: /tmp
     environment:
       - HOME=/tmp
@@ -42,7 +46,11 @@ services:
         bash ./wazuh-certs-tool.sh -A
         for role in indexer manager dashboard; do
           cn="wazuh.$${role}"
-          printf 'authorityKeyIdentifier=keyid,issuer\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,nonRepudiation,keyEncipherment,dataEncipherment\nsubjectAltName=DNS:wazuh.%s,DNS:wazuh-%s,DNS:aptl-wazuh-%s\n' "$${role}" "$${role}" "$${role}" > "/tmp/$${cn}-san.cnf"
+          host_names=""
+          if [ "$${role}" != dashboard ]; then
+            host_names=",DNS:localhost,IP:127.0.0.1"
+          fi
+          printf 'authorityKeyIdentifier=keyid,issuer\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,nonRepudiation,keyEncipherment,dataEncipherment\nsubjectAltName=DNS:wazuh.%s,DNS:wazuh-%s,DNS:aptl-wazuh-%s%s\n' "$${role}" "$${role}" "$${role}" "$${host_names}" > "/tmp/$${cn}-san.cnf"
           openssl req -new -key "./wazuh-certificates/$${cn}-key.pem" -subj "/C=US/L=California/O=Wazuh/OU=Wazuh/CN=$${cn}" -out "/tmp/$${cn}.csr"
           openssl x509 -req -in "/tmp/$${cn}.csr" -CA ./wazuh-certificates/root-ca.pem -CAkey ./wazuh-certificates/root-ca.key -CAcreateserial -sha256 -days 3650 -out "./wazuh-certificates/$${cn}.pem" -extfile "/tmp/$${cn}-san.cnf"
         done

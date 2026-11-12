@@ -113,8 +113,9 @@ as `[REDACTED]`.
 `Execution boundary:` line. It carries its own `schema_version`,
 `aptl.execution-boundary/v1`, and `transport`, `override_source`,
 `daemon_runtime`, `host_containment`, `observation_status`, `host_os`,
-`host_kernel`, `docker_version`, `containment_verified`, `profile_ref`, and
-`evidence_refs`.
+`host_kernel`, `docker_version`, `range_egress_policy`,
+`range_host_access_policy`, `range_policy_digest`, `containment_verified`,
+`profile_ref`, and `evidence_refs`.
 
 `published_ports` lists the host ports the text access summary reads. When the lab operates, they are the bindings Docker reports, and
 `published_ports_observed` is `true`. When Docker reports none, the list is

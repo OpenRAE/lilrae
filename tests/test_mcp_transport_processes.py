@@ -426,6 +426,8 @@ def test_blue_indexer_process_queries_controlled_https_service(transport):
             "1",
             "-subj",
             "/CN=localhost",
+            "-addext",
+            "subjectAltName=DNS:localhost,IP:127.0.0.1",
             "-keyout",
             str(root / "https.key"),
             "-out",
@@ -455,9 +457,21 @@ def test_blue_indexer_process_queries_controlled_https_service(transport):
         known_hosts=transport.clients / "known_hosts",
         username=pwd.getpwuid(os.getuid()).pw_name,
     )
+    # The indexer MCP verifies TLS against the lab Wazuh CA beside its package
+    # (SEC-009). Run a copy of the package so that the test CA stays in tmp.
+    package = root / "mcp" / "mcp-indexer"
+    package.mkdir(parents=True)
+    source = REPO / "mcp" / "mcp-indexer"
+    shutil.copytree(source / "build", package / "build")
+    for name in ("package.json", "docker-lab-config.json"):
+        shutil.copyfile(source / name, package / name)
+    (package / "node_modules").symlink_to(source / "node_modules")
+    lab_ca = root / "config" / "wazuh_indexer_ssl_certs" / "root-ca.pem"
+    lab_ca.parent.mkdir(parents=True)
+    shutil.copyfile(root / "https.crt", lab_ca)
     processes = json.loads((root / "processes.json").read_text())
     process_config = processes.pop("aptl-red")
-    process_config["argv"][1] = str(REPO / "mcp/mcp-indexer/build/index.js")
+    process_config["argv"][1] = str(package / "build/index.js")
     process_config["env"].update(
         {
             "APTL_HP_WAZUH_INDEXER_9200": str(upstream.server_port),

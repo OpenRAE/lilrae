@@ -201,14 +201,11 @@ function runPredefinedQuery(
   if (queryConfig.auth) {
     // Create temporary HTTP client with query-specific auth.
     // SEC-006 / ADR-034 § Gotchas: both `verify_ssl` and
-    // `ca_cert_path` must inherit from the top-level api config
-    // when the query does not override them. Treating
-    // `queryConfig.verify_ssl !== false` as the verify decision
-    // forced verification on whenever a query had its own auth
-    // block but no explicit `verify_ssl`, which silently broke the
-    // documented local-debug override at the api level and made
-    // every predefined query repeat the flag. Explicit query
-    // override first, then fall back to the api setting.
+    // `ca_cert_path` inherit from the top-level api config when the
+    // query does not override them, so a query with its own auth
+    // block keeps the api CA. Explicit query override first, then
+    // the api setting. SEC-009: the HTTPClient refuses
+    // `verify_ssl: false`.
     const queryAPIConfig = {
       baseUrl: '', // Not used since we have full URL
       auth: queryConfig.auth,

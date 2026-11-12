@@ -55,6 +55,7 @@ from aptl.core.deployment.realization import (
 )
 from aptl.core.env import EnvVars
 from aptl.core.lab_types import LabResult
+from aptl.core.certs import wazuh_root_ca
 from aptl.core.services import probe_indexer_api, probe_manager_api
 from aptl.utils.logging import get_logger
 
@@ -345,7 +346,10 @@ class ComposeStatefulReadinessMixin:
     ) -> _ServiceObservation:
         """Attest the declared indexer service and its native facts."""
 
-        probe = probe_indexer_api(url, env.indexer_username, env.indexer_password)
+        ca_cert_path = str(wazuh_root_ca(self._project_dir))
+        probe = probe_indexer_api(
+            url, env.indexer_username, env.indexer_password, ca_cert_path=ca_cert_path
+        )
         if not probe.ready:
             return self._unready_observation(service, url, container, probe)
         facts = observe_indexer_declared_facts(
@@ -353,6 +357,7 @@ class ComposeStatefulReadinessMixin:
             env.indexer_username,
             env.indexer_password,
             _declared_indexer(node),
+            ca_cert_path=ca_cert_path,
         )
         failed = [fact for fact in facts if fact["status"] != "matched"]
         if failed:
@@ -380,7 +385,12 @@ class ComposeStatefulReadinessMixin:
     ) -> _ServiceObservation:
         """Attest the declared manager service and enabled components."""
 
-        probe = probe_manager_api(url, env.api_username, env.api_password)
+        probe = probe_manager_api(
+            url,
+            env.api_username,
+            env.api_password,
+            ca_cert_path=str(wazuh_root_ca(self._project_dir)),
+        )
         if not probe.ready:
             return self._unready_observation(service, url, container, probe)
         facts = (
