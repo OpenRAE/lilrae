@@ -107,6 +107,8 @@ in `docs/architecture/issue-880-techvault-env-pack-consumption-preflight.md`,
 `docs/getting-started/installation.md`, `docs/getting-started/quick-start.md`, and
 `docs/sdl/complex-scenarios.md`.
 
+| Contributor reconciliation, 2026-11-12 | `docs/reference/documentation-toolchain.md`, `docs/reference/parser-boundaries.md`, `docs/reference/release-contract.md`, `docs/reviews/1668-contributor-source-checks.md`, `docs/security/update-assessment.md`, `docs/testing/index.md` | Keep scenario content, runtime ownership, source records, and current interface descriptions distinct. |
+
 ## Required incumbent boundaries
 
 This is a documentation-only change. It adds no security, configuration,

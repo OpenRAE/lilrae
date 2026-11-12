@@ -1,31 +1,21 @@
-"""Prove the installed-wheel boot actually realized what its scenario declares.
+"""Verify native effects from the installed-wheel boot scenario.
 
-The clean-install gate used to observe one package, one account and one
-directory. Every realization defect that reached a running lab in the meantime
-lived somewhere else: content that never landed, a service unit that was never
-enabled, a listener that bound the package default instead of the authored
-port, a host publication that did not match the declaration, and a workflow
-that was registered but never driven (issue #993).
+Issue #993 replaced package, account, and directory checks with a causal chain.
+Inline content changes the SSH daemon port.
+The declared unit starts it, its listener binds that port, and an exact loopback binding publishes it.
+A failed placement therefore fails the listener, port tuple, and connection probe.
+The gate also verifies a driven workflow's persisted state.
 
-This asserts one *causal* chain, so no check can pass vacuously: the scenario's
-inline content moves the SSH daemon's port, the declared unit starts it, the
-declared listener binds the moved port, and that port is published on the exact
-loopback binding the scenario wrote. Break the content and the listener, the
-port tuple and the connection probe all fail with it.
+The installed package supplies identities and query rules.
+The workspace Compose project and admitted ``aptl.node.address`` label identify the container.
+The backend reads listeners outside the container's trust boundary.
+The RAES workflow model parses the persisted run.
+Names, images, filenames, and daemon-wide searches do not establish ownership.
 
-Like ``assert_project_teardown.py`` this runs against the *installed* package
-and reuses its identities and query rules rather than restating them: the
-workspace-owned Compose project plus the admitted ``aptl.node.address`` label
-resolve the container, the backend's own listener reader observes sockets from
-outside the container's trust boundary, and RAES's workflow contract model
-parses the persisted run. A bare container name, an image, a filename or a
-daemon-wide search is never the authority.
-
-The decision is a pure function over observed facts
-(``boot_realization_failures``) so the gate's own failure modes are unit
-tested without Docker; only the gathering below touches the daemon. Output
-carries safe identifiers and expected/observed non-secret state — never content
-bodies, inspect payloads, environment or tracebacks.
+``boot_realization_failures`` evaluates observations without Docker.
+Only the observation-gathering functions contact the daemon.
+Output contains safe identifiers and expected/observed non-secret state.
+It excludes content bodies, inspect payloads, environment values, and tracebacks.
 """
 
 from __future__ import annotations

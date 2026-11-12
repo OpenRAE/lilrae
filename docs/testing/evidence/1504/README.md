@@ -13,9 +13,11 @@ They contain no credentials, raw model output, or tenant data.
 The smoke result came from the SSH-run process on that VM.
 Its original payload did not include a hostname or a signed host attestation.
 The candidate wheel was tested before the later failure-evidence fixes in this PR.
+
 Those fixes use offline installed-wheel tests; the live smoke was not repeated.
 Later refactors group the managed entry inputs and separate event validation helpers.
 Credential acquisition and route enforcement retain the same owners and controls.
+
 The result reports no text completion and does not retain the exact supervised failure reason.
 The process can retry internally, so the HTTP request count is unknown.
 No artifact asserts a full experimental run or release qualification.

@@ -139,7 +139,7 @@ jobs:
           tests/test_hosted_seat_helper.py tests/test_stage_hosted_seat_payload.py
       - name: Vale prose lint (full lintable corpus, ADR-038)
         run: bash tools/vale-lint-all.sh
-      - name: STE corpus report (legacy findings are advisory)
+      - name: STE corpus report (includes preserved source records)
         run: |
           git ls-files -z '*.md' | xargs -0 -r bash tools/ste-lint.sh --fail-over -1 --format github
       - name: STE rewritten pages (no selected findings)

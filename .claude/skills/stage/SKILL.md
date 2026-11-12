@@ -6,31 +6,31 @@ disable-model-invocation: true
 
 # Stage Changes
 
+Use this workflow to prepare the intended files for a commit.
+
 ## Step 1: Identify Changed Files
 
-1. Run `git status` to see all changed and untracked files.
-2. Exclude from staging: .env files, credentials, secrets, large binaries.
+1. Run `git status` to inspect changed and untracked paths.
+2. Exclude `.env` files, credentials, secrets, and large binaries.
 
 ## Step 2: Stage Files
 
-1. `git add` all relevant changed files.
+Use `git add` with the intended paths.
 
 ## Step 3: Pre-commit Loop
 
-Run up to 5 iterations:
+Run at most five iterations:
 
-1. Run `pre-commit run` against the staged files. Never use `--all-files`
-   locally; CI/CD owns whole-tree checks.
+1. Run `pre-commit run` on staged files.
 2. If it passes, proceed to Step 4.
-3. If it fails:
-   - Read the failure output.
-   - Fix the issues.
-   - Re-stage any modified files with `git add`.
-   - Go back to step 1.
-4. If still failing after 5 attempts, report the failure details to the user and stop.
+3. If it fails, read the output and fix each failure.
+4. Stage the corrections and repeat the check.
+
+Do not use `--all-files` locally. CI owns whole-tree checks.
+If the fifth attempt fails, report the failures and stop.
 
 ## Step 4: Report
 
-- List what is staged: `git diff --cached --name-only`
-- Confirm pre-commit passes.
-- "All files staged and pre-commit clean. Ready for commit."
+Show staged paths with `git diff --cached --name-only`.
+Confirm the observed pre-commit result.
+Only after success, report that the files are staged and ready for commit.

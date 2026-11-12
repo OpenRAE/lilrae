@@ -1,119 +1,109 @@
 ---
 name: wave-issue-coverage
-description: For each DRAFT requirement in a given Ground Control wave (or all waves), ensure a GitHub issue covers it and is bidirectionally linked. Use when the user asks to "cover wave N requirements with issues", "back-fill issues for draft requirements", or similar. Requires the Ground Control MCP and `gh` CLI.
+description: Ensure each DRAFT requirement in a selected wave has a linked GitHub delivery issue. Requires Ground Control MCP and gh.
 ---
 
-# Wave Issue Coverage
+# Cover a requirement wave with issues
 
-Back-fill GitHub issue coverage for DRAFT Ground Control requirements in a given wave.
+Use this workflow when the user requests issue coverage for a wave.
+Process requirements sequentially. Do not delegate or run parallel writes.
 
 ## Inputs
 
-- **wave**: integer wave number (e.g. `1`, `2`, `3`) OR the literal string `all`
-  - `all` → process every wave that has DRAFT requirements, smallest wave first
+Accept a wave number or `all`.
+For `all`, process waves from the lowest number to the highest.
 
 ## Preconditions
 
-1. Read `.ground-control.yaml` at the repo root via `gc_get_repo_ground_control_context` to obtain:
-   - `project` — Ground Control project identifier
-   - `github_repo` — `owner/repo` for `gh` calls
-   These values are passed to every MCP and `gh` call in this workflow. Do not hard-code them.
-2. The GC MCP server (`mcp__ground-control__*`) must be available.
-3. `gh auth status` must be authenticated with write access to `github_repo`.
+1. Read `.ground-control.yaml` with `gc_get_repo_ground_control_context`.
+2. Use its `project` and `github_repo` values for repository operations.
+3. Confirm the Ground Control MCP tools are available.
+4. Confirm `gh auth status` reports access to that repository.
+5. Read the repository's issue instructions and requirement-file format.
 
 ## Workflow
 
 ### 1. Resolve the requirement list
 
-Call `gc_list_requirements` with `project=<project>`, `status=DRAFT`, `size=200`, and:
-- `wave=<N>` if a single wave was given, OR
-- no `wave` filter if `all` was given (then group results by wave and process oldest wave first).
-
-Capture the full list of `(uid, id, title, requirement_type, priority, wave)` tuples. This is the work list.
+Read `docs/requirements/<UID>/requirement.md` files.
+Select files whose front matter has `status: DRAFT` and the requested `wave`.
+Keep each exact UID, title, type, priority, wave, and path.
+Do not synthesize a UID or substitute an internal database identifier.
+The requirement files and their `## Traceability` sections are authoritative.
 
 ### 2. Choose progress tracker
 
-Pick based on the size of the work list:
+For at most 25 requirements, use the client's task tracker when available.
+For larger lists, use a checkbox file under `/tmp/wave-issue-coverage-<wave>-<timestamp>.md`.
+If the client has a task tracker, link that file from one active progress task.
+Update the tracker after each requirement.
 
-| Count | Tracker |
-|---|---|
-| ≤ 25 | `TaskCreate` — one task per requirement, processed in order |
-| > 25 | A temp file at `/tmp/wave-issue-coverage-<wave>-<timestamp>.md` with a checkbox per requirement; update inline as each completes |
+### 3. Process sequentially; DO NOT parallelize
 
-For the temp-file path, use a single in-progress `TaskCreate` task ("Process wave N coverage — see temp file") so the user still sees forward motion in their TaskList.
+For each requirement:
 
-### 3. Process sequentially — DO NOT parallelize
+1. Read its `## Traceability` section for `GITHUB_ISSUE` links.
+2. Search GitHub for the exact UID:
 
-For each requirement, in order:
+   ```shell
+   gh issue list --repo <github_repo> --state all --search "<UID> in:title,body" --json number,title,state
+   ```
 
-1. **Check existing GC traceability**
-   `gc_get_traceability` with the requirement UUID. Note any existing `GITHUB_ISSUE` artifact links.
+3. If there is no UID match, search one to three strong terms from the requirement.
+4. Read each candidate issue and determine which clauses it covers.
+5. Reuse an issue that covers the requirement. Do not create duplicate delivery work.
+6. If coverage is partial, preserve its link and create a separate issue with explicit remaining acceptance criteria.
+7. If no issue covers the work, use `gc_create_github_issue` with the exact UID, project, and repository path.
+8. Inspect any returned `traceability_error`. A created issue alone does not prove the link succeeded.
+9. Add missing requirement scope with `gc_update_issue_requirements`, `operation="add"`, and the exact UID.
+10. Do not edit the issue's Requirements section with `gh issue edit`.
+11. For a DRAFT requirement, record the missing issue link as `DOCUMENTS` in the requirement's `## Traceability` section.
+12. Preserve existing links and lifecycle status. Deliver requirement-file edits through the repository's normal reviewed PR workflow.
+13. Apply labels as described below.
+14. Read back both the issue scope and requirement link before marking the item complete.
 
-2. **Search GitHub for the UID**
-   `gh issue list --repo <github_repo> --state all --search "<UID> in:title,body" --json number,title,state`
+A link uses the repository's existing format:
 
-3. **Search GitHub for topic overlap (only if no UID match)**
-   Run a small number of focused keyword searches drawn from the requirement title/statement. The goal is to catch issues that pre-date the UID convention or were filed under a different name. Pick the strongest 1–3 keywords; do not flood with searches.
+```text
+- DOCUMENTS → GITHUB_ISSUE `#<number>` (<issue title>)
+```
 
-4. **Decide coverage**
-   - **Issue found that fully or substantially covers the requirement** → link it and update its body (step 5).
-   - **Issue found that partially covers** → link it (step 5) AND create a new issue for the remaining scope (step 6).
-   - **No relevant issue** → create a new issue (step 6).
+### 4. Apply labels
 
-5. **Link existing issue + update body**
-   - If GC has no link to the issue yet, call `gc_create_traceability_link` with `link_type=DOCUMENTS` (DRAFT requirements reject `IMPLEMENTS` — see Notes).
-   - Read the current issue body; if it does not already have a `## Requirements` section, prepend one:
-     ```markdown
-     ## Requirements
+Add `requirement` and `wave-<N>` to each issue handled by this workflow.
+If needed, create the wave label:
 
-     - <UID> — <Requirement Title>
-     ```
-     If it has one but the UID is missing, add the bullet to the existing list. Save via `gh issue edit <n> --body-file <tempfile>`.
-   - Apply labels (step 7).
+```shell
+gh label create wave-<N> --repo <github_repo> --description "Wave <N> requirement" --color B60205
+```
 
-6. **Create new issue**
-   - Call `gc_create_github_issue` with `uid=<UID>`, `project=<project>`, `repo=<github_repo>`, `extra_body="## Requirements\n\n- <UID> — <Title>"`, and `labels=[...]` (step 7 list).
-   - The MCP tool will return a warning that the auto-link failed because the requirement is DRAFT (it tries `IMPLEMENTS`). Manually create the link with `gc_create_traceability_link` using `link_type=DOCUMENTS`.
+Add one to three relevant labels from the repository's existing labels.
+Do not create topic labels. Preserve labels already present.
+Do not use tracking, epic, or umbrella issues; use milestones to group work.
+Use GitHub's blocking API for dependencies.
 
-7. **Tag the issue**
-   Every issue touched or created in this workflow must carry, at minimum:
-   - `requirement`
-   - `wave-<N>` (the requirement's wave; create the label if it does not exist via `gh label create wave-<N> --description "Wave <N> requirement" --color B60205`)
+### 5. Report back
 
-   Plus 1–3 topic-specific labels chosen from the repo's existing label set. Pick conservatively; do not invent new topic labels. Common picks:
-   - GC-D* (GitHub integration) → `integrations`, `backend`
-   - GC-E* (traceability semantics) → `domain`, `backend`
-   - GC-L* (MCP tools) → `mcp-grc`, `api`
-   - GC-C* (analysis / quality gates) → `quality`, `ci-cd`
-   - GC-Q* (web UI) → `frontend`, `ui`
-   - GC-O* (workflow / agents) → `agents`, `workflow`, `documentation`
-   - GC-P* (platform / security) → `security` or `auth`
-   - TC-* (test management) → `testing`, plus `data-model` / `domain` / `frontend` as fits
-
-   Apply with `gh issue edit <n> --add-label "a,b,c"`. If a pre-existing issue already has labels, add to them; do not strip.
-
-8. **Mark the task / temp-file row complete** and move to the next requirement. Never advance two requirements in parallel.
-
-### 4. Report back
-
-Single short summary: how many requirements processed, how many already had coverage, how many issues created. Do NOT enumerate everything done — the user will read the TaskList or temp file if they want detail.
+Report the requirement count, existing coverage count, and created issue count.
+State any link or publication failure that prevents complete coverage.
+Do not report a local requirement edit as merged traceability.
 
 ## Notes
 
-- **DRAFT requirements + IMPLEMENTS link**: `gc_create_traceability_link` with `link_type=IMPLEMENTS` rejects DRAFT requirements with `422`. Always use `DOCUMENTS` for issue → DRAFT links. This matches what `gc_create_github_issue` is *trying* to do but the auto-link inside that tool currently uses `IMPLEMENTS` and silently warns; do the link yourself.
-- **Issue body `## Requirements` section**: per `docs/DEVELOPMENT_WORKFLOW.md`, the `/implement` skill parses this section. Format must be a markdown H2 named exactly `## Requirements` followed by a bulleted list, each bullet starting with the UID. This is what makes the issue routable through `/implement` later.
-- **Sequential, not parallel**: the tooling will let you fan out, but the user has explicitly asked for serial processing every time. Honor it.
-- **Don't invent labels**: if a topic label doesn't exist in `gh label list`, skip it rather than creating it. The only label this skill creates is `wave-<N>` when missing.
-- **Idempotency**: re-running this skill on the same wave should be a no-op for already-covered requirements. The presence of a `GITHUB_ISSUE` traceability link AND a `## Requirements` section listing the UID AND `requirement` + `wave-<N>` labels means there is nothing to do; move on.
+`gc_create_github_issue` selects `DOCUMENTS` for non-ACTIVE requirements.
+Its returned traceability result determines whether manual repair is needed.
+DRAFT status does not authorize an `IMPLEMENTS` claim.
 
-## Quick reference — MCP calls
+Only `gc_update_issue_requirements` writes an existing issue's Requirements section.
+Removing scope needs the user's explicit decision; this workflow only adds scope.
+
+## Quick reference; MCP calls
 
 ```text
 gc_get_repo_ground_control_context(repo_path=<absolute repo path>)
-gc_list_requirements(project, status="DRAFT", wave=<N>, size=200)
-gc_get_traceability(id=<requirement UUID>)
-gc_create_github_issue(uid, project, repo, extra_body, labels)
-gc_create_traceability_link(requirement_id, artifact_type="GITHUB_ISSUE",
-                            artifact_identifier="#<n>", artifact_title,
-                            artifact_url, link_type="DOCUMENTS")
+gc_create_github_issue(uid=<exact UID>, project=<project>, repo_path=<repo path>)
+gc_update_issue_requirements(repo_path=<repo path>, issue_number=<number>, operation="add", requirement_uids=[<exact UID>])
 ```
+
+Before using a tool, check its current input schema.
+Do not call retired requirement-list or backend traceability tools.
