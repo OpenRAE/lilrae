@@ -79,8 +79,8 @@ docs/adrs/adr-061-gateless-vm-seat-access.md
 docs/adrs/adr-062-lilrae-name-and-naming-convention.md
 docs/adrs/adr-063-remove-thehive-and-cortex.md
 docs/adrs/adr-064-layered-architecture-and-code-conventions.md
-docs/adrs/adr-065-executable-participant-action-boundaries.md
-docs/adrs/adr-066-runtime-readback-reports-realized-state.md
+docs/adrs/adr-070-executable-participant-action-boundaries.md
+docs/adrs/adr-071-runtime-readback-reports-realized-state.md
 docs/adrs/adr-067-admitted-participant-smoke-providers.md
 docs/adrs/adr-068-dev-merge-queue.md
 docs/adrs/adr-069-shared-containment-wrapper.md
