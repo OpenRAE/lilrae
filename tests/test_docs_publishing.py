@@ -24,6 +24,8 @@ def test_reader_routes_keep_real_pages_and_home() -> None:
         for entry in entries:
             for target in entry.values():
                 if isinstance(target, str):
+                    if "://" in target:
+                        continue
                     assert (ROOT / "docs" / target).is_file(), target
                 else:
                     check_targets(target)

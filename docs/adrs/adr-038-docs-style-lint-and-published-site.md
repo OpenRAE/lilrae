@@ -181,6 +181,30 @@ Package checksum rejection, inner checksum rejection, prose outcomes, and litera
 The extraction issue [OpenRAE/bigrae#2803](https://github.com/OpenRAE/bigrae/issues/2803) is the recorded GitHub blocker.
 The RAE consumer change is independent.
 
+## Amendment: Contributor reconciliation and maintained prose
+
+Issue [#1668](https://github.com/OpenRAE/lilrae/issues/1668) completes the contributor rewrite and page reconciliation.
+The [documentation inventory](../architecture/documentation-assignments.md) records final routes and source-check groups.
+It replaces temporary delivery assignments while retaining their provenance and historical source links.
+
+Vale now checks maintained root and hidden agent guidance through the existing configuration and corpus wrapper.
+Only `AptlProject.WorkflowPlatformName` is disabled for agent contracts, which must name their tools precisely.
+Their other prose rules remain enabled.
+Generated `CHANGELOG.md` and `changelog.d/` records remain excluded.
+Exact evidence, licenses, notices, directives, and fixtures remain source records.
+
+`.ste-required.txt` retains the strict gate for rewritten maintained prose.
+The corpus report remains informational because it includes preserved source bodies.
+Changed descriptions around those bodies use explicit passage checks.
+Neither tool result certifies full STE conformance.
+
+Local pre-commit remains staged hygiene and secret detection only.
+CI retains strict MkDocs, corpus checks, and documentation correspondence tests.
+Behavior tests remain limited to CI or an approved isolated VM.
+No tool pin, publisher, runtime boundary, permission, or merge approval changes.
+The canonical site URL comes from `mkdocs.yml`; older publisher URLs above describe their decision dates.
+The [toolchain Reference](../reference/documentation-toolchain.md) gives current package and cache facts.
+
 ## Consequences
 
 - Changed Markdown must pass the selected Google error rules. CI examines the full applicable corpus to catch drift and integration differences.
@@ -190,8 +214,8 @@ The RAE consumer change is independent.
 - The two public hosts cannot acquire source-level content drift because both
   consume the same tree, configuration, and locked documentation dependencies.
   A host outage can still make one rendering temporarily stale.
-- Contributors get one new local dependency, installed automatically
-  and verified by checksum on first commit that touches markdown.
+- Explicit writing checks install verified local dependencies when needed.
+  Local commits do not install or run prose tools.
 - The Google style is a US-English, developer-docs voice. Where it
   conflicts with deliberate house usage the fix is a tracked rule in
   `AptlProject/`, not a per-file waiver.

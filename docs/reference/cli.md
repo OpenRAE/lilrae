@@ -12,8 +12,8 @@ lilrae <command> <subcommand> --help
 ```
 
 The `aptl` command is a deprecated alias of `lilrae`. It runs the same
-commands and writes one deprecation notice to stderr. LilRAE 10.0.0 removes
-it. See [Move from the aptl command](../getting-started/installation.md#move-from-the-aptl-command).
+commands and writes one deprecation notice to stderr.
+The candidate still registers it despite the planned 10.0.0 removal target. See [Move from the aptl command](../getting-started/installation.md#move-from-the-aptl-command).
 
 ## Command Groups
 

@@ -1,12 +1,12 @@
-"""Deprecation notice for the legacy ``aptl`` command names.
+"""Deprecation notices for the registered legacy command aliases.
 
-The ADR-062 successor clause for issue #1402 makes ``lilrae`` and
-``lilrae-misp-suricata-sync`` the primary commands. ``aptl`` and
-``aptl-misp-suricata-sync`` stay as aliases until the removal release (#1403).
-An alias writes one fixed line to stderr per invocation and then runs the same
-implementation, so stdout and the exit status do not change.
+``lilrae`` and ``lilrae-misp-suricata-sync`` are the primary package scripts.
+The package also registers ``aptl`` and ``aptl-misp-suricata-sync`` for compatibility.
+Their removal is tracked by issue #1403.
+Each alias writes one fixed stderr line before running the shared implementation.
+The notice preserves stdout and the implementation's exit status.
 
-This module imports nothing heavy: the sync daemon uses it too.
+The module avoids heavy imports because the sync daemon also imports it.
 """
 
 from __future__ import annotations

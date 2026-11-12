@@ -18,7 +18,7 @@ export default defineConfig({
 			// Svelte inject inline styles (not a script-execution vector).
 			// `connect-src 'self'` covers same-origin fetch, the SSE stream, and the
 			// terminal WebSocket. Delivered as a <meta> tag for the prerendered SPA
-			// shell, so it applies behind both `aptl web serve` and the Caddy proxy.
+			// shell, so it applies behind both `lilrae web serve` and the Caddy proxy.
 			csp: {
 				mode: 'hash',
 				directives: {
