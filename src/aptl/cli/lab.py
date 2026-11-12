@@ -458,6 +458,7 @@ def _report_trial_result(
             attempt,
             scenario_path=scenario_path,
             scenario_sha256=result.scenario_sha256,
+            started=result.trial_runtime,
             progress=_start_progress(output_json),
         )
     except (OSError, RuntimeError, ValueError) as exc:

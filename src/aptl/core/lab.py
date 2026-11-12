@@ -2086,12 +2086,20 @@ def _load_admitted_start_surface(
         ctx.run_store, ctx.run_id = _resolve_run_target(ctx)
         from aptl.backends.raes_start_model import ScenarioAdmissionRun
 
+        from raes_contracts.contracts import ExperimentCaptureSpecModel
+
+        capture_specs = (
+            tuple(ExperimentCaptureSpecModel.model_validate(spec) for spec in ctx.trial.unit.material["capture_specs"].values())
+            if ctx.trial is not None and ctx.trial.unit is not None and ctx.trial.unit.material is not None
+            else ()
+        )
+
         admitted, surface = admit_start_surface(
             ctx.project_dir,
             ctx.config,
             ctx.backend,
             scenario_path=ctx.scenario_path,
-            run=ScenarioAdmissionRun(run_id=ctx.run_id, trial=trial),
+            run=ScenarioAdmissionRun(run_id=ctx.run_id, trial=trial, trial_capture_specs=capture_specs),
             **admission_kwargs,
         )
     except AdmissionRejection as exc:
@@ -4809,9 +4817,27 @@ def _orchestrate_lab_start_owned(
     )
     try:
         result = _run_lab_start_steps(ctx, after_start)
+        result = _bind_trial_start(ctx, result)
+        if ctx.trial is not None and result.run_id is not None:
+            from aptl.backends.raes_start_model import StartedTrialRuntime
+
+            if (
+                ctx.admitted_start is None
+                or ctx.run_runtime is None
+                or ctx.run_store is None
+            ):
+                raise RuntimeError("the admitted trial runtime is unavailable")
+            result.trial_runtime = StartedTrialRuntime(
+                ctx.admitted_start,
+                ctx.run_runtime,
+                ctx.backend,
+                ctx.run_store,
+                tuple(getattr(ctx.native_evidence_acquisition, "records", ())),
+            )
+            ctx.run_runtime = None  # Ownership passes to the trial CLI.
     finally:
         _close_run_runtime(ctx)
-    return _bind_trial_start(ctx, result)
+    return result
 
 
 def _bind_trial_start(ctx: _LabStartContext, result: LabResult) -> LabResult:

@@ -15,7 +15,8 @@ from aptl.core.trial_attempt import TrialAttempt, parse_trial_attempt
 from aptl.core.trial_control import TrialControl
 from aptl.core.trial_record import TRIAL_RECORD_RELPATH, seal_trial_record
 from aptl.core.trial_sdl import DeclaredParticipant
-from aptl.workbench.trial_run import DeclaredTrial, run_declared_trial
+from aptl.workbench.trial_run import DeclaredTrial
+from tests.native_trial_runtime import run_native_trial as run_declared_trial
 
 _PARTICIPANTS = (
     DeclaredParticipant(
@@ -231,5 +232,5 @@ def test_the_shared_episode_end_cancels_both_participants_and_completes_the_tria
         poll_seconds=0.05,
     )
     assert record.terminal_cause == "completed"
-    assert {item.status for item in record.participants} == {"completed"}
-    assert all(item.failure is None for item in record.participants)
+    assert {item.status for item in record.participants} == {"cancelled"}
+    assert all(item.failure for item in record.participants)

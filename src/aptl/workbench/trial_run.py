@@ -59,58 +59,124 @@ class _Outcome:
     failure: str | None = None
 
 
+class _RecordedInvocation:
+    """Record the native call; selection, concurrency and tools remain RAE-owned."""
+
+    def __init__(self, invocation, outcome, clock, native, stop_peer):
+        self.invocation, self.outcome, self.clock = invocation, outcome, clock
+        self.native, self.stop_peer = native, stop_peer
+
+    @property
+    def configuration_result(self):
+        return getattr(self.invocation, "configuration_result", None)
+
+    @property
+    def tool_inventory(self):
+        return getattr(self.invocation, "tool_inventory", frozenset())
+
+    @property
+    def timeout_seconds(self):
+        return self.invocation.timeout_seconds
+
+    def _call(self, operation):
+        self.outcome.started_at = _timestamp(self.clock())
+        try:
+            self.outcome.output = operation()
+            return self.outcome.output
+        except Exception as exc:
+            self.outcome.failure = redact(str(exc)) or type(exc).__name__
+            if self.stop_peer:
+                self.native.cancel()
+            raise
+        finally:
+            self.outcome.ended_at = _timestamp(self.clock())
+
+    def __call__(self, action_id, cancellation):
+        return self._call(lambda: self.invocation(action_id, cancellation))
+
+    def invoke_with_tools(self, action_id, cancellation, tools):
+        return self._call(
+            lambda: self.invocation.invoke_with_tools(action_id, cancellation, tools)
+        )
+
+
 def run_declared_trial(
     trial: DeclaredTrial,
     *,
+    runtime,
+    native,
+    policy,
     invocations: Mapping[str, ParticipantInvocation],
     evidence: Mapping[str, Mapping[str, object]],
     stop_requested: Callable[[], bool],
     store: LocalRunStore,
     clock: Clock,
-    poll_seconds: float = 1.0,
+    poll_seconds: float = 0.2,
 ) -> TrialRecord:
-    """Start every participant and stop them at the episode end, the deadline, or on request.
+    """Release one admitted native scheduler batch after participant and capture readiness."""
+    from dataclasses import replace
 
-    The episode end is the trial's normal end: a participant cancelled there completed.
-
-    The returned record is not sealed. The caller drains credentials and
-    capture first, records their cleanup, and then seals the run.
-    """
     participants = trial.participants
     if not participants or {item.address for item in participants} != set(invocations):
         raise ValueError("every declared trial participant needs one invocation")
-    started_at = _timestamp(clock())
-    cancellation = Event()
+    if trial.episode_seconds is None or trial.episode_seconds < 1:
+        raise ValueError("the admitted trial has no bounded episode")
     outcomes = {item.address: _Outcome() for item in participants}
-    threads = [
-        threading.Thread(
-            target=_invoke,
-            args=(
-                trial.attempt,
-                item,
-                invocations[item.address],
-                cancellation,
-                outcomes[item.address],
-                clock,
-            ),
-            name=f"trial-{item.agent}",
-            daemon=True,
+    installed = []
+    for binding in native.bindings:
+        address = (
+            "agents."
+            + binding.implementation_selection.participant_address.removeprefix(
+                "participant.behavior."
+            )
         )
-        for item in participants
-    ]
-    for thread in threads:
-        thread.start()
-    episode_end = (
-        None
-        if trial.episode_seconds is None
-        else clock() + timedelta(seconds=trial.episode_seconds)
-    )
-    cause = _supervise(
-        threads, trial.attempt, stop_requested, clock, poll_seconds, episode_end
-    )
-    cancellation.set()
-    for thread in threads:
-        thread.join(_DRAIN_SECONDS)
+        installed.append(
+            replace(
+                binding,
+                executor=_RecordedInvocation(
+                    invocations[address],
+                    outcomes[address],
+                    clock,
+                    native,
+                    policy.failure_policy == "stop",
+                ),
+            )
+        )
+    native.install_before_dispatch(tuple(installed))
+    started = clock()
+    episode_end = started + timedelta(seconds=trial.episode_seconds)
+    ended = Event()
+    cause = ["completed"]
+
+    def watch_stop():
+        # This supervises one native operation; the RAE scheduler dispatches roles.
+        while not ended.wait(poll_seconds):
+            now = clock()
+            if stop_requested():
+                cause[0] = "stopped"
+            elif now >= trial.attempt.deadline:
+                cause[0] = "deadline"
+            elif now >= episode_end:
+                cause[0] = _EPISODE_END
+            else:
+                continue
+            native.cancel()
+            return
+
+    watcher = threading.Thread(target=watch_stop, name="trial-stop", daemon=True)
+    watcher.start()
+    try:
+        result = runtime.advance_time(policy.clock_address, ticks=1)
+        if not result.success and cause[0] == "completed":
+            cause[0] = "failed"
+    finally:
+        ended.set()
+        watcher.join()
+        native.cancel()
+        if not native.drain(_DRAIN_SECONDS):
+            raise RuntimeError(
+                "native participants did not stop before capture finalization"
+            )
     records = tuple(
         _participant_record(
             store,
@@ -119,91 +185,23 @@ def run_declared_trial(
             invocations[item.address].prompt_sha256,
             outcomes[item.address],
             evidence.get(item.address, {}),
-            cause,
+            cause[0],
         )
         for item in participants
     )
-    if cause == _EPISODE_END:
-        cause = "completed"
-    if cause == "completed" and any(item.status == "failed" for item in records):
-        cause = "failed"
+    terminal = "completed" if cause[0] == _EPISODE_END else cause[0]
+    if terminal == "completed" and any(item.status == "failed" for item in records):
+        terminal = "failed"
     return TrialRecord(
         run_id=trial.attempt.run_id,
         attempt_id=trial.attempt.attempt_id,
         scenario_sha256=trial.scenario_sha256,
         deadline=_timestamp(trial.attempt.deadline),
-        started_at=started_at,
+        started_at=_timestamp(started),
         ended_at=_timestamp(clock()),
-        terminal_cause=cause,
+        terminal_cause=terminal,
         participants=records,
     )
-
-
-def _supervise(
-    threads: list[threading.Thread],
-    attempt: TrialAttempt,
-    stop_requested: Callable[[], bool],
-    clock: Clock,
-    poll_seconds: float,
-    episode_end: datetime | None,
-) -> str:
-    """Wait for every participant, the episode end, the deadline, or a stop request."""
-    cause = None
-    while cause is None and any(thread.is_alive() for thread in threads):
-        cause = _stop_cause(attempt, stop_requested(), clock(), episode_end)
-        if cause is None:
-            _join_slice(threads, attempt, clock(), poll_seconds, episode_end)
-    return cause or "completed"
-
-
-def _stop_cause(
-    attempt: TrialAttempt,
-    stop_requested: bool,
-    now: datetime,
-    episode_end: datetime | None,
-) -> str | None:
-    """Return why the trial stops now, or ``None`` while it keeps running."""
-    if stop_requested:
-        return "stopped"
-    if now >= attempt.deadline:
-        return "deadline"
-    return _EPISODE_END if episode_end is not None and now >= episode_end else None
-
-
-def _join_slice(
-    threads: list[threading.Thread],
-    attempt: TrialAttempt,
-    now: datetime,
-    poll_seconds: float,
-    episode_end: datetime | None,
-) -> None:
-    """Wait one poll interval, never past the deadline or the episode end."""
-    remaining = (attempt.deadline - now).total_seconds()
-    if episode_end is not None:
-        remaining = min(remaining, max((episode_end - now).total_seconds(), 0.0))
-    for thread in threads:
-        thread.join(min(poll_seconds, remaining) / max(len(threads), 1))
-
-
-def _invoke(
-    attempt: TrialAttempt,
-    participant: DeclaredParticipant,
-    invocation: ParticipantInvocation,
-    cancellation: Event,
-    outcome: _Outcome,
-    clock: Clock,
-) -> None:
-    """Run one invocation and keep its output or failure, never its credentials."""
-    outcome.started_at = _timestamp(clock())
-    try:
-        outcome.output = invocation(
-            f"{attempt.attempt_id}-{participant.agent}", cancellation
-        )
-    except Exception as exc:
-        # A participant failure is a recorded outcome, not a trial failure.
-        outcome.failure = redact(str(exc)) or type(exc).__name__
-    finally:
-        outcome.ended_at = _timestamp(clock())
 
 
 def _participant_record(
@@ -245,11 +243,9 @@ def _status(outcome: _Outcome, cause: str) -> str:
     """Classify one participant from its outcome and the trial's end."""
     if outcome.started_at is None:
         return "not-started"
-    if (outcome.failure is None and outcome.output is not None) or (
-        cause == _EPISODE_END and outcome.ended_at is not None
-    ):
+    if outcome.failure is None and outcome.output is not None:
         return "completed"
-    return "cancelled" if cause in {"deadline", "stopped"} else "failed"
+    return "cancelled" if cause in {"deadline", "stopped", _EPISODE_END} else "failed"
 
 
 def _timestamp(value: datetime) -> str:

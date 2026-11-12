@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import tempfile
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import AbstractContextManager, ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import asdict, dataclass, field, is_dataclass
-from datetime import datetime
 from pathlib import Path
 from types import MappingProxyType
 
@@ -18,18 +16,14 @@ from raes import Scenario
 from raes_contracts.contracts import ParticipantControlContextAssetModel
 
 from aptl.core.config import (
-    AttachedServiceAccountSource,
     ExperimentSettings,
-    ProcessEnvironmentCredentialSource,
 )
 from aptl.core.mcp_policy import ProfileId, WorkbenchConfigurationError, profile_for
 from aptl.core.opencode import (
+    OpenCodeTrialScope,
     SUPPORTED_OPENCODE_BUILD,
     OpenCodeBuild,
     OpenCodeInvocationEvidence,
-    OpenRouterRoute,
-    ParticipantRoute,
-    VertexRoute,
 )
 from aptl.core.participant_requests import decode_context_asset
 from aptl.core.trial_attempt import TrialAttempt
@@ -42,7 +36,6 @@ from aptl.workbench.lilrae_opencode import (
     OpenCodeOptions,
     OpenCodeToolProfile,
 )
-from aptl.workbench.participant_source_binding import ProcessEnvironmentCredentialResolver
 from aptl.workbench.process import CancellableProcessRunner
 
 __all__ = [
@@ -55,10 +48,6 @@ __all__ = [
 ]
 
 AssetReader = Callable[[ParticipantControlContextAssetModel], bytes]
-_OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1"
-_MAX_INVOCATION_SECONDS = 3600.0
-_PROJECT = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
-_NOT_SERVICE_ACCOUNT_KEY = "the Vertex AI credential is not a service account key"
 
 
 @dataclass(frozen=True)
@@ -71,13 +60,9 @@ class TrialLaunchSettings:
     source_environment: Mapping[str, str] = field(repr=False)
     mcp_config: Path | None = None
     server_ids: tuple[str, ...] = ()
-    max_output_tokens: int = 32768
     build: OpenCodeBuild = SUPPORTED_OPENCODE_BUILD
     runner: CancellableProcessRunner | None = None
     inventory_probe: InventoryProbe = probe_mcp_server
-    #: The approved OpenRouter gateway. ``OpenRouterRoute`` admits only the live
-    #: URL or an explicit loopback fake provider for qualification.
-    openrouter_endpoint: str = _OPENROUTER_ENDPOINT
 
 
 def participant_prompt(
@@ -88,7 +73,9 @@ def participant_prompt(
     for key in participant.context_assets:
         asset = scenario.control_context_assets.get(key)
         if asset is None:
-            raise ValueError(f"trial participant {participant.address} names a missing prompt")
+            raise ValueError(
+                f"trial participant {participant.address} names a missing prompt"
+            )
         parts.append(decode_context_asset(asset, read_asset(asset)))
     return "".join(parts)
 
@@ -98,7 +85,9 @@ def participant_tool_servers(role: str, server_ids: tuple[str, ...]) -> tuple[st
     try:
         return profile_for(role, server_ids=server_ids).server_ids
     except WorkbenchConfigurationError as exc:
-        raise ValueError(f"trial participant role {role!r} has no tool profile") from exc
+        raise ValueError(
+            f"trial participant role {role!r} has no tool profile"
+        ) from exc
 
 
 def invocation_fields(evidence: OpenCodeInvocationEvidence) -> dict[str, object]:
@@ -116,145 +105,91 @@ def trial_executors(
     participants: tuple[DeclaredParticipant, ...],
     *,
     attempt: TrialAttempt,
+    bindings: Mapping[str, object],
     settings: TrialLaunchSettings,
     read_asset: AssetReader,
     evidence_sink: Callable[[str, OpenCodeInvocationEvidence], None],
     transcript_sink: Callable[[str, Mapping[str, object]], None] | None = None,
 ) -> Iterator[Mapping[str, LilraeOpenCodeExecutor]]:
-    """Yield one executor per participant address; remove credentials on exit."""
-    run_id, deadline = attempt.run_id, attempt.deadline
-    resolver = ProcessEnvironmentCredentialResolver(settings.source_environment)
+    """Use the existing managed native adapter for each sealed participant request."""
+    from aptl.workbench.opencode_bootstrap import (
+        OpenCodeParticipantRequest,
+        managed_opencode_executor,
+    )
+    from aptl.workbench.trial_participants import participant_route
+
+    if attempt.unit is None:
+        raise ValueError("native trial execution requires its admitted plan entry")
     with ExitStack() as stack:
         executors = {}
         for participant in participants:
-            prompt = participant_prompt(scenario, participant, read_asset)
-            route, environment = stack.enter_context(
-                _provider(participant.model, settings, resolver, run_id)
+            binding = bindings[participant.address]
+            pending = binding.executor
+            request = pending.request
+            if (
+                request is None
+                or pending.request_binding is None
+                or request.profile.assistant_turn_limit is None
+            ):
+                raise ValueError(
+                    "the installed native participant has no sealed request or turn bound"
+                )
+            if (
+                participant_prompt(scenario, participant, read_asset) != request.prompt
+                or participant.model != request.profile.model
+            ):
+                raise ValueError(
+                    "the trial prompt or model differs from its admitted request"
+                )
+            source = settings.experiment.participant_credential_sources.source_for(
+                "vertex" if request.profile.gateway == "google-vertex" else "opencode"
             )
-            tools = _tool_profile(participant, settings, stack)
-            executor = LilraeOpenCodeExecutor(
-                options=OpenCodeOptions(
-                    executable=settings.executable,
-                    work_root=settings.work_root,
-                    environment=environment,
-                    max_output_tokens=settings.max_output_tokens,
-                    runner=settings.runner,
-                    tools=tools,
-                    build=settings.build,
-                    route=route,
-                    evidence_sink=_address_sink(evidence_sink, participant.address),
-                    transcript_sink=_address_sink(transcript_sink, participant.address)
-                    if transcript_sink is not None
-                    else None,
-                    deadline=deadline,
-                    tool_governance="allowlist",
+            options = OpenCodeOptions(
+                executable=settings.executable,
+                work_root=settings.work_root,
+                max_output_tokens=request.profile.output_limit.value,
+                runner=settings.runner,
+                tools=_tool_profile(participant, settings, stack),
+                build=settings.build,
+                route=participant_route(request.profile, source),
+                evidence_sink=_address_sink(evidence_sink, participant.address),
+                transcript_sink=_address_sink(transcript_sink, participant.address)
+                if transcript_sink
+                else None,
+                deadline=attempt.deadline,
+                request=request,
+                request_binding=pending.request_binding,
+                max_steps=request.profile.assistant_turn_limit.value,
+                trial_scope=OpenCodeTrialScope(
+                    attempt.run_id, attempt.attempt_id, attempt.unit.plan_entry_id
                 ),
-                model=participant.model,
-                prompt=prompt,
-                timeout_seconds=_timeout(deadline),
+                native_history_required=True,
+                request_observation_required=True,
             )
-            stack.callback(executor.close)
+            executor, _ = stack.enter_context(
+                managed_opencode_executor(
+                    options=options,
+                    request=OpenCodeParticipantRequest(
+                        pending.configuration_result,
+                        binding.implementation_manifest,
+                        request.prompt,
+                        request.prompt_ref,
+                        frozenset({request.profile.model}),
+                    ),
+                    run_id=attempt.run_id,
+                    credential_source=source,
+                    source_environment=settings.source_environment,
+                    timeout_seconds=binding.execution_binding.timeout_seconds,
+                )
+            )
             executors[participant.address] = executor
         yield MappingProxyType(executors)
 
 
-def _timeout(deadline: datetime) -> float:
-    """Bound one invocation; the executor also stops at the trial deadline."""
-    remaining = (deadline - datetime.now(deadline.tzinfo)).total_seconds()
-    return max(1.0, min(_MAX_INVOCATION_SECONDS, remaining))
-
-
-def _address_sink[T](sink: Callable[[str, T], None], address: str) -> Callable[[T], None]:
-    """Bind one participant address to the shared evidence sink."""
+def _address_sink[T](
+    sink: Callable[[str, T], None], address: str
+) -> Callable[[T], None]:
     return lambda evidence: sink(address, evidence)
-
-
-@contextmanager
-def _openrouter(
-    model: str,
-    settings: TrialLaunchSettings,
-    resolver: ProcessEnvironmentCredentialResolver,
-    run_id: str,
-) -> Iterator[tuple[ParticipantRoute, Mapping[str, str]]]:
-    """Route one model through the approved OpenRouter serving provider."""
-    provider = settings.experiment.participant_serving_providers.get(model)
-    if provider is None:
-        raise ValueError(f"model {model} has no approved serving provider")
-    route = OpenRouterRoute(endpoint=settings.openrouter_endpoint, serving_provider=provider)
-    source = settings.experiment.participant_credential_sources.source_for("opencode")
-    if not isinstance(source, ProcessEnvironmentCredentialSource):
-        raise ValueError("the OpenRouter credential source must be a process environment variable")
-    credentials, _ = resolver.acquire(
-        "opencode", run_id, source=source, delivery_alias="OPENROUTER_API_KEY"
-    )
-    try:
-        yield route, credentials
-    finally:
-        credentials.clear()
-
-
-@contextmanager
-def _vertex(
-    model: str,
-    settings: TrialLaunchSettings,
-    resolver: ProcessEnvironmentCredentialResolver,
-    run_id: str,
-) -> Iterator[tuple[ParticipantRoute, Mapping[str, str]]]:
-    """Give one Vertex AI participant a private key file, or the host's attached account."""
-    source = settings.experiment.participant_credential_sources.source_for("vertex")
-    if isinstance(source, AttachedServiceAccountSource):
-        # Tokens come from the metadata server; no key exists to deliver or remove.
-        yield VertexRoute(source.project), {"GOOGLE_CLOUD_PROJECT": source.project}
-        return
-    credentials, _ = resolver.acquire("vertex", run_id, source=source, delivery_alias="key")
-    directory = Path(tempfile.mkdtemp(prefix="lilrae-vertex-", dir=settings.work_root))
-    try:
-        project = _key_project(credentials["key"])
-        key = directory / "credentials.json"
-        create_exclusive_nofollow(directory, key.name, credentials["key"].encode())
-        os.chmod(key, 0o600)
-        yield VertexRoute(project), {
-            "GOOGLE_APPLICATION_CREDENTIALS": str(key),
-            "GOOGLE_CLOUD_PROJECT": project,
-            "METADATA_SERVER_DETECTION": "none",
-        }
-    finally:
-        credentials.clear()
-        shutil.rmtree(directory, ignore_errors=True)
-
-
-def _key_project(key: str) -> str:
-    """Read the service account project without echoing key content."""
-    try:
-        document = json.loads(key)
-    except json.JSONDecodeError:
-        raise ValueError(_NOT_SERVICE_ACCOUNT_KEY) from None
-    if not isinstance(document, dict):
-        raise ValueError(_NOT_SERVICE_ACCOUNT_KEY)
-    project = document.get("project_id")
-    if (
-        document.get("type") != "service_account"
-        or not isinstance(project, str)
-        or not _PROJECT.fullmatch(project)
-    ):
-        raise ValueError(_NOT_SERVICE_ACCOUNT_KEY)
-    return project
-
-
-_PROVIDERS = {"openrouter/": _openrouter, "google-vertex/": _vertex}
-
-
-def _provider(
-    model: str,
-    settings: TrialLaunchSettings,
-    resolver: ProcessEnvironmentCredentialResolver,
-    run_id: str,
-) -> AbstractContextManager[tuple[ParticipantRoute, Mapping[str, str]]]:
-    """Select the model's gateway by its provider prefix."""
-    for prefix, launcher in _PROVIDERS.items():
-        if model.startswith(prefix):
-            return launcher(model, settings, resolver, run_id)
-    raise ValueError(f"model {model} has no supported provider")
 
 
 def _tool_profile(
@@ -267,11 +202,15 @@ def _tool_profile(
     if not selected:
         return None
     document = json.loads(settings.mcp_config.read_text(encoding="utf-8"))
-    servers = {name: _server_entry(document["mcpServers"][name], settings) for name in selected}
+    servers = {
+        name: _server_entry(document["mcpServers"][name], settings) for name in selected
+    }
     directory = Path(tempfile.mkdtemp(prefix="lilrae-tools-", dir=settings.work_root))
     stack.callback(shutil.rmtree, directory, True)
     path = directory / "mcp.json"
-    create_exclusive_nofollow(directory, path.name, json.dumps({"mcpServers": servers}).encode())
+    create_exclusive_nofollow(
+        directory, path.name, json.dumps({"mcpServers": servers}).encode()
+    )
     os.chmod(path, 0o600)
     return OpenCodeToolProfile(
         profile=ProfileId(participant.role),
@@ -281,7 +220,9 @@ def _tool_profile(
     )
 
 
-def _server_entry(entry: Mapping[str, object], settings: TrialLaunchSettings) -> dict[str, object]:
+def _server_entry(
+    entry: Mapping[str, object], settings: TrialLaunchSettings
+) -> dict[str, object]:
     """Resolve the run's MCP entry into the executor's strict absolute shape."""
     command = shutil.which(str(entry["command"]))
     if command is None:
@@ -291,7 +232,9 @@ def _server_entry(entry: Mapping[str, object], settings: TrialLaunchSettings) ->
     return {
         "command": str(Path(command).resolve()),
         "args": args,
-        "env": {str(key): str(value) for key, value in dict(entry.get("env", {})).items()},
+        "env": {
+            str(key): str(value) for key, value in dict(entry.get("env", {})).items()
+        },
     }
 
 

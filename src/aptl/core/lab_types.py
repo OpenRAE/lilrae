@@ -110,7 +110,9 @@ def _count(number: int, noun: str) -> str:
 def describe_project_runtime(container_count: int, network_count: int) -> str:
     """Name project runtime counts for an operator, such as ``3 containers``."""
 
-    return f"{_count(container_count, 'container')} and {_count(network_count, 'network')}"
+    return (
+        f"{_count(container_count, 'container')} and {_count(network_count, 'network')}"
+    )
 
 
 @dataclass(frozen=True)
@@ -173,6 +175,8 @@ class LabResult:
     # A trial start's run ID and admitted SDL digest (#1670); ``None`` otherwise.
     run_id: str | None = None
     scenario_sha256: str | None = None
+    # The trial CLI owns this already-admitted runtime until capture and seal.
+    trial_runtime: object | None = field(default=None, repr=False, compare=False)
     # The selected daemon observed during this exact startup attempt. A missing
     # observation is rendered explicitly as unknown, including on early failure.
     execution_boundary: ExecutionBoundaryObservation | None = None

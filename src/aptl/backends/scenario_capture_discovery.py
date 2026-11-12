@@ -101,7 +101,7 @@ def _validate_contribution(value: object) -> ScenarioCaptureContribution:
         raise ScenarioCaptureProviderError("provider-result-invalid")
     try:
         registry = CollectorRegistry(value.registrations)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         raise ScenarioCaptureProviderError("provider-result-invalid") from None
     ids = frozenset(item.registration_id for item in registry.registrations)
     _validate_capture_bindings(value, ids)
@@ -114,6 +114,7 @@ def _validate_contribution(value: object) -> ScenarioCaptureContribution:
         runtime_adapter=value.runtime_adapter,
         proposition_interpreter=value.proposition_interpreter,
         generated_output_refs=value.generated_output_refs,
+        measurement_registration_ids=value.measurement_registration_ids,
     )
 
 
@@ -125,6 +126,8 @@ def _validate_capture_bindings(
     if (
         not isinstance(value.native_registration_ids, frozenset)
         or not value.native_registration_ids.issubset(ids)
+        or not isinstance(value.measurement_registration_ids, frozenset)
+        or not value.measurement_registration_ids.issubset(ids)
         or not isinstance(value.runtime_environment_keys, tuple)
         or len(set(value.runtime_environment_keys))
         != len(value.runtime_environment_keys)
@@ -191,7 +194,9 @@ def resolve_scenario_capture(
     return _resolve_installed_capture(context)
 
 
-def _resolve_installed_capture(context: ScenarioCaptureContext) -> ResolvedScenarioCapture:
+def _resolve_installed_capture(
+    context: ScenarioCaptureContext,
+) -> ResolvedScenarioCapture:
     """Resolve the ordinary exact-pack capture adapter without family input."""
 
     selector = f"{context.pack.pack_id}.{context.backend.target_name}"
@@ -235,9 +240,10 @@ def _validate_family_runtime(
 ) -> None:
     """Require callable runtime hooks for the declared capture capabilities."""
 
-    if contribution.native_registration_ids and not callable(
-        getattr(contribution.runtime_adapter, "native_sources", None)
-    ):
+    if (
+        contribution.native_registration_ids
+        or contribution.measurement_registration_ids
+    ) and not callable(getattr(contribution.runtime_adapter, "native_sources", None)):
         raise ValueError("family-provider-result-invalid")
     if contribution.proposition_interpreter is not None and not callable(
         contribution.proposition_interpreter
@@ -330,7 +336,7 @@ def _resolve_family_capture_receipt(
             adapter["distribution_version"],
             adapter["provider_id"],
         )
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         raise ValueError("active authority family adapter invalid") from None
 
 

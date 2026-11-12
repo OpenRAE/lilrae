@@ -44,7 +44,7 @@ CORE_RUNTIME_CONCERN_SOURCES = {
 def adapter_runtime_concern_sources(
     provider: object | None,
 ) -> dict[str, ObservationStrength]:
-    """Admit only explicit independent-readback declarations from installed code."""
+    """Admit explicit evidence-source declarations from installed code."""
 
     from raes_processor.semantics.realization import CONCERN_PAYLOAD_PATH
 
@@ -56,6 +56,7 @@ def adapter_runtime_concern_sources(
     result = {}
     for kind, source in sources.items():
         if kind not in CONCERN_PAYLOAD_PATH or source not in {
+            ObservationStrength.DRIVER_REPORTED,
             ObservationStrength.DAEMON_OBSERVED,
             ObservationStrength.GUEST_OBSERVED,
         }:

@@ -1241,6 +1241,7 @@ def test_family_capture_sources_contain_callback_failures():
             contribution=SimpleNamespace(
                 runtime_environment_keys=(),
                 native_registration_ids=frozenset({"example.events"}),
+                measurement_registration_ids=frozenset(),
             ),
         ),
     )

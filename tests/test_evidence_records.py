@@ -160,3 +160,26 @@ class TestLossDisclosure:
     def test_lossless_participant_visible_record_has_none(self):
         record = _record(redaction_state="none", loss_disclosure=None)
         assert record.raw_content.loss_disclosure is None
+
+
+def test_acquisition_carries_typed_false_observation_without_changing_it():
+    from dataclasses import replace
+    outcome = replace(_outcome(), source_pipeline={"typed_description": {
+        "schema_version": "realization-description/v1",
+        "description_id": "measured-boolean", "description_version": "1.0.0",
+        "semantic_profile": "recursive-realization-constraint/v1",
+        "authored_ref": {"ref_kind": "capture-spec", "ref_id": "cap-1", "ref_version": "1.0.0", "ref_digest": "sha256:" + "a" * 64},
+        "provenance": {
+            "observer_ref": {"ref_kind": "backend", "ref_id": "native-probe", "ref_version": "1.0.0"},
+            "recorded_at": "2026-07-20T00:00:05Z", "basis": "observed", "window_ref": "run-window",
+            "evidence_refs": [{"ref_kind": "evidence", "ref_id": "source-1"}],
+        },
+        "facts": [{"fact_id": "healthy", "subject": "/healthy", "state": "known",
+                   "value": {"kind": "literal", "origin": "backend", "value": False}}],
+        "coverage": [{"subject": "/healthy", "kind": "collection", "universe": "probe/v1",
+                      "profile": "native-probe/v1", "status": "complete", "fact_ids": ["healthy"]}],
+    }})
+    record = _record(outcome=outcome)
+    description = record.typed_description.model_dump(mode="json")
+    assert description["facts"][0]["value"]["value"] is False
+    assert ExperimentEvidenceRecordModel.model_validate_json(record.model_dump_json(exclude_none=True)) == record

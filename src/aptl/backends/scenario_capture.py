@@ -86,18 +86,6 @@ class ScenarioCaptureRuntimeAdapter(Protocol):
     ) -> None: ...
 
 
-@dataclass(frozen=True)
-class TrialEndCaptureContext:
-    """Admitted container operations for the data a trial leaves behind.
-
-    A runtime adapter may define ``trial_end_capture(context)``. The trial
-    runner calls it after every participant ended and before the seal. It
-    returns file names and bytes that the runner keeps under ``trial/soc/``.
-    """
-
-    operations: ScenarioRuntimeOperations = field(repr=False)
-
-
 class ScenarioPropositionInterpreter(Protocol):
     """Interpret retained records for one exact proposition and polarity."""
 
@@ -224,7 +212,14 @@ def family_capture_sources(
     if (
         not isinstance(sources, Mapping)
         or len(sources) > 256
-        or not set(sources).issubset(contribution.native_registration_ids)
+        or not set(sources).issubset(
+            contribution.native_registration_ids
+            | (
+                contribution.measurement_registration_ids
+                if not context.may_prepare
+                else frozenset()
+            )
+        )
         or any(
             not isinstance(source, WindowedSource) or not callable(source.fetch)
             for source in sources.values()
@@ -326,6 +321,8 @@ class ScenarioCaptureContribution:
         default=None, repr=False, compare=False
     )
     generated_output_refs: tuple[GeneratedOutputReference, ...] = ()
+    #: Sources collected only during trial measurement, after startup preparation.
+    measurement_registration_ids: frozenset[str] = frozenset()
 
 
 class ScenarioCaptureProvider(Protocol):
@@ -370,7 +367,6 @@ __all__ = [
     "ResolvedScenarioCapture",
     "ScenarioCaptureContext",
     "ScenarioCaptureContribution",
-    "TrialEndCaptureContext",
     "ScenarioCaptureProvider",
     "CaptureSourceContext",
     "ScenarioCaptureRuntimeAdapter",

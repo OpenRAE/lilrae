@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+import rfc8785
+from raes_contracts.contracts import ExperimentEvidenceRecordModel
 
 from aptl.core.archival import DiscoveryIndex, IndexEntry, SealedArtifactSpec
 from aptl.core.archival.layout import RUN_MANIFEST_RELPATH, SEAL_MARKER_RELPATH
@@ -25,6 +27,10 @@ from aptl.core.archival.seal import (
     build_seal_marker,
 )
 from aptl.core.runstore import LocalRunStore
+from aptl.core.evidence.coordinator import AcquisitionResult
+from aptl.core.evidence.outcomes import SUCCESS_STATUSES
+from aptl.core.experiment.capture_plan import CapturePlan
+from aptl.utils.pathsafe import PathContainmentError, open_contained_nofollow
 
 __all__ = [
     "TRIAL_RECORD_RELPATH",
@@ -32,6 +38,7 @@ __all__ = [
     "TrialParticipantRecord",
     "TrialRecord",
     "seal_trial_record",
+    "retain_trial_capture",
 ]
 
 TRIAL_RECORD_SCHEMA = "lilrae-trial-record/v1"
@@ -48,7 +55,7 @@ _CAPTURE_PREFIXES = ("trial/transcripts/", "trial/soc/", "trial/audit/")
 TerminalCause = Literal["completed", "deadline", "stopped", "failed"]
 ParticipantStatus = Literal["completed", "cancelled", "failed", "not-started"]
 
-# The seal records the real terminal state; LilRAE does not evaluate outcomes.
+# Execution status and evaluator outcome remain separate facts.
 _RUN_STATUS = {
     "completed": "completed",
     "deadline": "aborted",
@@ -91,44 +98,133 @@ class TrialRecord(BaseModel):
     participants: tuple[TrialParticipantRecord, ...]
     #: Each cleanup step and its result, for example ``provider_access: removed``.
     cleanup: dict[str, str] = Field(default_factory=dict)
+    capture_plan_id: str | None = Field(
+        default=None, pattern=r"^capture-plan-[a-f0-9]{64}$"
+    )
+    outcome_status: Literal[
+        "succeeded", "failed", "partial", "inconclusive", "not-evaluated"
+    ] = "not-evaluated"
+
+
+def retain_trial_capture(
+    store: LocalRunStore,
+    record: TrialRecord,
+    plan: CapturePlan,
+    result: AcquisitionResult,
+) -> TrialRecord:
+    """Retain the admitted demands and their original acquisition reports."""
+    if result.scope is None or (
+        result.scope.run_id != record.run_id
+        or result.scope.attempt_id != record.attempt_id
+    ):
+        raise ValueError("trial capture belongs to another attempt")
+    store.create_run_json_once(
+        record.run_id,
+        f"evidence/capture-plans/{plan.plan_id}.json",
+        json.loads(plan.canonical_bytes),
+    )
+    store.create_run_json_once(
+        record.run_id,
+        "trial/capture.json",
+        {
+            "plan_id": plan.plan_id,
+            "run_id": record.run_id,
+            "attempt_id": record.attempt_id,
+            "reports": [
+                {
+                    "requirement_id": item.requirement_id,
+                    "status": item.status.value,
+                    "evidence_record_id": item.evidence_record_id,
+                }
+                for item in result.reports
+            ],
+        },
+    )
+    return record.model_copy(update={"capture_plan_id": plan.plan_id})
 
 
 def required_data_gaps(run_dir: Path, record: TrialRecord) -> list[str]:
-    """Name each piece of trial data that a complete trial must leave in its run.
-
-    Every participant ends normally and leaves its raw chat; the host audit log
-    and each trial-end capture source report ``captured``.
-    """
-    gaps = [
-        f"participant {item.address} ended {item.status}"
-        for item in record.participants
-        if item.status != "completed"
-    ]
-    gaps += [
-        f"raw chat of {item.address} is missing"
-        for item in record.participants
-        if not (run_dir / f"trial/transcripts/{item.address}.json").is_file()
-    ]
-    if _captured_status(run_dir / "trial/audit/status.json") != "captured":
-        gaps.append("the host audit log was not captured")
-    soc = run_dir / "trial/soc/manifest.json"
-    if soc.is_file():
-        sources = json.loads(soc.read_text(encoding="utf-8"))
-        gaps += [
-            f"trial-end source {name} was not captured"
-            for name, item in sorted(sources.items())
-            if item.get("status") != "captured"
+    """Compare the admitted capture demands with retained acquisition outcomes."""
+    if record.capture_plan_id is None:
+        return ["the trial has no retained capture plan and acquisition reports"]
+    try:
+        plan = _capture_json(
+            run_dir, f"evidence/capture-plans/{record.capture_plan_id}.json"
+        )
+        capture = _capture_json(run_dir, "trial/capture.json")
+        expected = "capture-plan-" + hashlib.sha256(rfc8785.dumps(plan)).hexdigest()
+        if record.capture_plan_id != expected or (
+            capture["plan_id"],
+            capture["run_id"],
+            capture["attempt_id"],
+        ) != (expected, record.run_id, record.attempt_id):
+            raise ValueError("capture identity differs")
+        demands = {item["demand"]["demand_id"] for item in plan["bindings"]}
+        if not demands or len(demands) != len(plan["bindings"]):
+            raise ValueError("capture requirements are empty or ambiguous")
+        reports = {item["requirement_id"]: item for item in capture["reports"]}
+        if len(reports) != len(capture["reports"]) or set(reports) != demands:
+            raise ValueError("capture requirement set differs")
+        success = {status.value for status in SUCCESS_STATUSES}
+        return [
+            f"required capture {name} was not retained successfully"
+            for name, item in sorted(reports.items())
+            if item["status"] not in success
+            or not _capture_record_present(
+                run_dir, record, name, item["evidence_record_id"]
+            )
         ]
-    return gaps
+    except OSError, ValueError, KeyError, TypeError, PathContainmentError:
+        return [
+            "the trial capture plan or acquisition reports are unavailable or inconsistent"
+        ]
 
 
-def _captured_status(path: Path) -> object:
-    """Return a capture status file's ``status``; an absent file has none."""
-    return (
-        json.loads(path.read_text(encoding="utf-8")).get("status")
-        if path.is_file()
-        else None
-    )
+def _capture_json(run_dir: Path, path: str) -> dict:
+    """Read one bounded capture carrier without following links."""
+    with open_contained_nofollow(run_dir, path) as source:
+        data = source.read(4 * 1024 * 1024 + 1)
+    if len(data) > 4 * 1024 * 1024:
+        raise ValueError("capture carrier exceeds the bound")
+    return json.loads(data)
+
+
+def _capture_record_present(
+    run_dir: Path, trial: TrialRecord, requirement: str, record_id: object
+) -> bool:
+    """Verify the acquisition record's identity and original content checksum."""
+    if (
+        not isinstance(record_id, str)
+        or not record_id
+        or Path(record_id).name != record_id
+    ):
+        return False
+    try:
+        evidence = ExperimentEvidenceRecordModel.model_validate(
+            _capture_json(run_dir, f"evidence/records/{record_id}.json")
+        )
+        content = evidence.raw_content
+        if (
+            evidence.evidence_record_id != record_id
+            or evidence.run_ref.ref_id != trial.run_id
+            or evidence.capture_spec_ref.ref_id != trial.capture_plan_id
+            or evidence.capture_requirement_ref != requirement
+            or not any(
+                ref.ref_id == f"attempt:{trial.attempt_id}"
+                for ref in evidence.source_refs
+            )
+            or content.content_uri is None
+            or content.content_checksum is None
+            or content.content_checksum.algorithm != "sha256"
+        ):
+            return False
+        with open_contained_nofollow(run_dir, content.content_uri) as source:
+            return (
+                hashlib.file_digest(source, "sha256").hexdigest()
+                == content.content_checksum.value
+            )
+    except OSError, ValueError, TypeError, PathContainmentError:
+        return False
 
 
 def seal_trial_record(
@@ -172,7 +268,7 @@ def seal_trial_record(
                 run_id=run_id,
                 run_version=_RUN_VERSION,
                 run_status=_RUN_STATUS[record.terminal_cause],
-                outcome_status="not-evaluated",
+                outcome_status=record.outcome_status,
                 run_record_digest=digest,
                 inventory=inventory,
                 contract_versions=[TRIAL_RECORD_SCHEMA],

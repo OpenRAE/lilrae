@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import shutil
 import signal
 from collections.abc import Callable, Iterator, Mapping
@@ -12,12 +11,9 @@ from pathlib import Path
 import os
 from typing import TYPE_CHECKING
 
-from raes import parse_sdl_file
 from raes_contracts.contracts import ParticipantControlContextAssetModel
 from raes_env_packs import resolve_pack_artifact
 
-from aptl.backends._raes_admission_helpers import bind_trial_unit
-from aptl.backends._raes_scenario_resolution import resolve_scenario_bundle
 from aptl.core.config import (
     AptlConfig,
     AttachedServiceAccountSource,
@@ -28,14 +24,21 @@ from aptl.core.lab import finalize_trial_capture
 from aptl.core.mcp_policy import configured_server_ids
 from aptl.core.opencode import OpenCodeInvocationEvidence
 from aptl.core.runstore import LocalRunStore
+from aptl.utils.redaction import redact
 from aptl.utils.logging import get_logger
 from aptl.core.trial_attempt import TrialAttempt
 from aptl.core.trial_control import TrialControl
-from aptl.core.trial_record import TrialRecord, seal_trial_record
+from aptl.core.trial_record import TrialRecord, retain_trial_capture, seal_trial_record
+from aptl.backends.raes_start_model import StartedTrialRuntime
+from aptl.backends.raes_evidence_acquisition import NativeEvidenceRequest
+from aptl.core.evidence.trial_sources import (
+    SESSION_REGISTRATION,
+    AUDIT_REGISTRATION,
+    participant_session_source,
+    host_audit_source,
+)
 from aptl.core.trial_sdl import (
-    TrialDeclarationError,
     admitted_participants,
-    declared_participants,
 )
 from aptl.workbench.trial_launch import (
     TrialLaunchSettings,
@@ -45,10 +48,8 @@ from aptl.workbench.trial_launch import (
 from aptl.workbench.trial_run import DeclaredTrial, run_declared_trial
 
 if TYPE_CHECKING:
-    from raes import Scenario
-    from raes.scenario import InstantiatedScenario
 
-    from aptl.core.scenario_bundle import ScenarioBundle
+    pass
 
 log = get_logger("lab_trial")
 
@@ -75,26 +76,30 @@ def run_lab_trial(
     scenario_path: Path | None,
     scenario_sha256: str,
     progress: Callable[[str], None],
+    started: StartedTrialRuntime | None = None,
 ) -> TrialRecord:
     """Run the declared participants on the started lab and seal the run.
 
     The trial refuses an SDL whose digest differs from the one startup admitted.
     """
+    if not isinstance(started, StartedTrialRuntime):
+        raise ValueError(
+            "a trial requires the runtime that admitted and started its lab"
+        )
     root = project_dir.resolve()
-    config_path = find_config(root)
-    if config_path is None:
-        raise ValueError("aptl.json is required for a trial")
-    config = load_config(config_path)
     control = TrialControl(root)
-    control.begin(attempt)
     try:
+        config = started.admitted.target.provisioner.config
+        control.begin(attempt)
         record, gaps = _run_and_drain(
-            root, config, config_path, attempt, scenario_path, scenario_sha256, progress
+            root, config, attempt, scenario_sha256, progress, started
         )
         cleanup = {**record.cleanup, "transcripts": finalize_trial_capture(root)}
+        if cleanup["transcripts"] == "failed":
+            gaps = (*gaps, "required shell transcript finalization failed")
         record = record.model_copy(update={"cleanup": cleanup})
         seal_trial_record(
-            LocalRunStore(_run_store_base(config_path.parent, config)),
+            started.run_store,
             record,
             gaps=gaps,
         )
@@ -103,8 +108,11 @@ def run_lab_trial(
         )
         return record
     finally:
-        shutil.rmtree(root / _WORK_DIR, ignore_errors=True)
-        control.release(attempt)
+        try:
+            started.runtime.close()
+        finally:
+            shutil.rmtree(root / _WORK_DIR, ignore_errors=True)
+            control.release(attempt)
 
 
 def trial_summary(record: TrialRecord) -> dict[str, object]:
@@ -124,153 +132,178 @@ def trial_summary(record: TrialRecord) -> dict[str, object]:
 def _run_and_drain(
     root: Path,
     config: AptlConfig,
-    config_path: Path,
     attempt: TrialAttempt,
-    scenario_path: Path | None,
     scenario_sha256: str,
     progress: Callable[[str], None],
+    started: StartedTrialRuntime,
 ) -> tuple[TrialRecord, tuple[str, ...]]:
-    """Run every participant, then remove its credentials; also return trial data gaps."""
-    bundle = resolve_scenario_bundle(root, scenario_path, config)
-    try:
-        scenario, digest, configurations, bound = _trial_scenario(
-            bundle, config, attempt
-        )
-        if digest != scenario_sha256:
-            raise RuntimeError(
-                "the trial SDL differs from the SDL that startup admitted"
-            )
-        participants = (
-            admitted_participants(scenario, configurations)
-            if configurations is not None
-            else declared_participants(scenario)
-        )
-        if not participants:
-            raise TrialDeclarationError(
-                "the trial SDL declares no model-bearing participant"
-            )
-        evidence: dict[str, dict[str, object]] = {}
+    """Use the exact startup owner for native scheduling, acquisition and evaluation."""
+    admitted = started.admitted
+    trial = admitted.bundle.trial
+    plan = admitted.trial_capture_plan
+    if trial is None or trial.snapshot_digest != scenario_sha256 or plan is None:
+        raise ValueError("the admitted trial or its measurement plan is unavailable")
+    scenario = trial.scenario
+    participants = admitted_participants(
+        scenario, trial.participant_configuration_results
+    )
+    native = admitted.target.participant_runtime.autonomous_execution
+    policies = [
+        spec.autonomous_execution
+        for spec in admitted.execution_plan.model.behavior_specifications.values()
+        if spec.autonomous_execution is not None
+    ]
+    if len(policies) != 1:
+        raise ValueError("this trial requires one native participant release policy")
+    policy = policies[0]
+    bindings = {
+        "agents."
+        + binding.implementation_selection.participant_address.removeprefix(
+            "participant.behavior."
+        ): binding
+        for binding in native.bindings
+    }
+    durations = {
+        binding.execution_binding.timeout_seconds for binding in native.bindings
+    }
+    if len(durations) != 1:
+        raise ValueError("the participants must share the admitted episode bound")
+    store = started.run_store
+    if not isinstance(store, LocalRunStore):
+        raise ValueError("the installed trial requires its local evidence store")
+    evidence, sessions, records = {}, {}, []
 
-        def sink(address: str, item: OpenCodeInvocationEvidence) -> None:
-            """Keep the latest allowlisted invocation facts of one participant."""
-            evidence[address] = invocation_fields(item)
+    def sink(address: str, item: OpenCodeInvocationEvidence) -> None:
+        evidence[address] = invocation_fields(item)
 
-        store = LocalRunStore(_run_store_base(config_path.parent, config))
+    def transcript_sink(address: str, session: Mapping[str, object]) -> None:
+        sessions[address] = session
 
-        def transcript_sink(address: str, session: Mapping[str, object]) -> None:
-            """Retain one participant's redacted raw chat in the run before its seal."""
-            store.create_run_json_once(
-                attempt.run_id, f"trial/transcripts/{address}.json", session
-            )
+    def read_asset(asset: ParticipantControlContextAssetModel) -> bytes:
+        return resolve_pack_artifact(
+            str(admitted.bundle.root), asset.content.artifact_id
+        ).data
 
-        def read_asset(asset: ParticipantControlContextAssetModel) -> bytes:
-            """Read one prompt asset from the scenario pack by its artifact ID."""
-            return resolve_pack_artifact(
-                str(bundle.root), asset.content.artifact_id
-            ).data
-
-        progress(f"Starting {len(participants)} trial participants.")
-        with (
-            _termination_stops() as terminated,
-            trial_executors(
-                scenario,
-                participants,
-                attempt=attempt,
-                settings=_launch_settings(root, config, attempt),
-                read_asset=read_asset,
-                evidence_sink=sink,
-                transcript_sink=transcript_sink,
-            ) as executors,
-        ):
-            control = TrialControl(root)
-            record = run_declared_trial(
-                DeclaredTrial(
-                    attempt,
-                    scenario_sha256,
-                    participants,
-                    config.experiment.trial_episode_seconds,
-                ),
-                invocations=executors,
-                evidence=evidence,
-                stop_requested=lambda: terminated.is_set() or control.stop_requested(),
-                store=store,
-                clock=lambda: datetime.now(UTC),
-            )
-        gaps: tuple[str, ...] = ()
-        try:
-            _retain_trial_end_data(root, config, bound, scenario, store, record)
-        except Exception as exc:
-            # Trial-end data never blocks the seal; the seal lists the gap.
-            log.warning("trial-end data was not retained: %s", type(exc).__name__)
-            gaps = (f"trial-end data capture failed: {type(exc).__name__}",)
-        cleanup = {"provider_access": "removed"}
-        # An attached account has no delivered key to remove; record that it was used.
-        if isinstance(
-            config.experiment.participant_credential_sources.vertex,
-            AttachedServiceAccountSource,
-        ) and any(item.model.startswith("google-vertex/") for item in participants):
-            cleanup["vertex_access"] = "attached-service-account"
-        return record.model_copy(update={"cleanup": cleanup}), gaps
-    finally:
-        bundle.close()
-
-
-def _trial_scenario(
-    bundle: ScenarioBundle, config: AptlConfig, attempt: TrialAttempt
-) -> tuple[object, str, tuple | None, object]:
-    """Return the scenario, its digest, any admitted configurations and the bound bundle.
-
-    An admitted plan entry runs its instantiated snapshot with its participant
-    configurations; otherwise the SDL file runs with its authored participants.
-    """
-    if attempt.unit is not None:
-        bound = bind_trial_unit(bundle, config, attempt)
-        trial = bound.trial
-        assert trial is not None
-        return (
-            trial.scenario,
-            trial.snapshot_digest,
-            tuple(trial.participant_configuration_results),
-            bound,
-        )
-    digest = "sha256:" + hashlib.sha256(bundle.sdl_path.read_bytes()).hexdigest()
-    return parse_sdl_file(bundle.sdl_path), digest, None, bundle
-
-
-def _retain_trial_end_data(
-    root: Path,
-    config: AptlConfig,
-    bound: ScenarioBundle,
-    scenario: Scenario | InstantiatedScenario,
-    store: LocalRunStore,
-    record: TrialRecord,
-) -> None:
-    """Keep the scenario's product dump and the host audit log before the seal."""
-    from aptl.backends._raes_admission_helpers import resolve_admission_adapters
-    from aptl.backends.trial_end_capture import retain_host_audit, retain_soc_dump
     from aptl.core.env import load_dotenv
-    from aptl.core.lab import _configured_backend
 
-    adapter = backend = None
-    try:
-        _, capture = resolve_admission_adapters(bound, config, None)
-        adapter = capture.contribution.runtime_adapter if capture is not None else None
-        backend, _failure = _configured_backend(root, config, command="trial")
-    except Exception as exc:
-        # A missing adapter is recorded, never fatal to the seal.
-        log.warning("trial-end capture adapter is unavailable: %s", type(exc).__name__)
-    env_path = root / ".env"
-    retain_soc_dump(
-        store,
-        record.run_id,
-        adapter=adapter,
-        backend=backend,
-        node_names=tuple(getattr(scenario, "nodes", {}) or {}),
-        environment=load_dotenv(env_path) if env_path.is_file() else {},
+    environment = load_dotenv(root / ".env")
+    request = NativeEvidenceRequest(
+        plan=plan,
+        backend=started.backend,
+        realization=admitted.realization,
+        project_dir=root,
+        environment=environment,
+        run_store=store,
+        run_id=attempt.run_id,
+        capture_selection=admitted.capture_selection,
     )
-    retain_host_audit(
-        store, record.run_id, started_at=record.started_at, ended_at=record.ended_at
+    progress(f"Preparing {len(participants)} native trial participants.")
+    with (
+        _termination_stops() as terminated,
+        trial_executors(
+            scenario,
+            participants,
+            attempt=attempt,
+            bindings=bindings,
+            settings=_launch_settings(root, config, attempt),
+            read_asset=read_asset,
+            evidence_sink=sink,
+            transcript_sink=transcript_sink,
+        ) as executors,
+    ):
+        control = TrialControl(root)
+
+        def execute():
+            records.append(
+                run_declared_trial(
+                    DeclaredTrial(
+                        attempt, scenario_sha256, participants, durations.pop()
+                    ),
+                    runtime=started.runtime,
+                    native=native,
+                    policy=policy,
+                    invocations=executors,
+                    evidence=evidence,
+                    stop_requested=lambda: (
+                        terminated.is_set() or control.stop_requested()
+                    ),
+                    store=store,
+                    clock=lambda: datetime.now(UTC),
+                )
+            )
+            observer = getattr(
+                admitted.capture_selection.contribution.runtime_adapter,
+                "observe_trial_end",
+                None,
+            )
+            if callable(observer):
+                observer(records[0].started_at, records[0].ended_at)
+
+        capture = started.runtime.collect_evidence(
+            request,
+            attempt_id=attempt.attempt_id,
+            sources={
+                SESSION_REGISTRATION: participant_session_source(
+                    sessions, tuple(bindings)
+                ),
+                AUDIT_REGISTRATION: host_audit_source(),
+            },
+            trial_body=execute,
+        )
+    if len(records) != 1:
+        raise RuntimeError(
+            "required capture refused the trial before participant release"
+        )
+    record = retain_trial_capture(store, records[0], plan, capture)
+    from aptl.backends.raes_evaluator import refresh_evidence_truth
+    from aptl.backends.raes_repro import runtime_snapshot_record_payload
+
+    refresh_evidence_truth(
+        target=admitted.target,
+        execution_plan=admitted.execution_plan,
+        snapshot=started.runtime.snapshot,
+        evidence_records=(*started.initial_evidence, *capture.records),
+        runtime_manager=started.runtime,
     )
+    snapshot = started.runtime.snapshot
+    objectives = {
+        address: value
+        for address, value in snapshot.evaluation_results.items()
+        if address.startswith("evaluation.objective.")
+    }
+    store.create_run_json_once(
+        attempt.run_id,
+        "trial/evaluation.json",
+        {
+            "objectives": objectives,
+            "proposition_truth_results": dict(snapshot.proposition_truth_results),
+        },
+    )
+    store.create_run_json_once(
+        attempt.run_id,
+        "trial/evaluated-runtime.json",
+        {
+            "redaction_policy": "redact_secrets",
+            "snapshot": redact(runtime_snapshot_record_payload(snapshot)),
+        },
+    )
+    values = [item.get("passed") for item in objectives.values()]
+    status = (
+        "inconclusive"
+        if not values or any(value is None for value in values)
+        else "succeeded"
+        if all(values)
+        else "partial"
+        if any(values)
+        else "failed"
+    )
+    cleanup = {"provider_access": "removed"}
+    if isinstance(
+        config.experiment.participant_credential_sources.vertex,
+        AttachedServiceAccountSource,
+    ):
+        cleanup["vertex_access"] = "attached-service-account"
+    return record.model_copy(update={"cleanup": cleanup, "outcome_status": status}), ()
 
 
 @contextmanager

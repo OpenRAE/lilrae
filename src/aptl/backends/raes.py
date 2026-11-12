@@ -227,6 +227,16 @@ def admit_raes_scenario(
     scenario, parameters, capture_plan = prepare_admission_scenario(
         bundle, parameters, capture_selection, parser=parse_sdl_file
     )
+    bindings = selected.autonomous_bindings
+    factory = getattr(startup_selection.provider, "trial_participant_bindings", None)
+    if bundle.trial is not None and not bindings and callable(factory):
+        bindings = factory(bundle, family=admission_run.trial.family)
+        from aptl.core.participant_binding import LilraeParticipantBinding
+
+        if not isinstance(bindings, tuple) or not all(
+            isinstance(item, LilraeParticipantBinding) for item in bindings
+        ):
+            raise ValueError("installed trial participant bindings are invalid")
     from aptl.core.mcp_policy import select_scenario_servers
 
     mcp_server_ids = select_scenario_servers(scenario, config.mcp)
@@ -251,7 +261,7 @@ def admit_raes_scenario(
         backend=backend,
         bundle=bundle,
         options=RuntimeTargetOptions(
-            autonomous_bindings=selected.autonomous_bindings,
+            autonomous_bindings=bindings,
             artifact_availability=availability,
             capture_plan=capture_plan,
             observability_scope=observability_scope_decision(scenario),
@@ -263,6 +273,21 @@ def admit_raes_scenario(
             ),
         ),
     )
+    from aptl.core.experiment.capture_plan import admit_capture_demands
+
+    from raes_processor.capture_admission import compile_capture_spec_demands
+
+    measurement_demands = compile_capture_spec_demands(admission_run.trial_capture_specs)
+    trial_capture_plan = (
+        admit_capture_demands(
+            measurement_demands,
+            source_identity=capture_plan.source_identity,
+            registry=capture_selection.registry,
+        )
+        if measurement_demands and capture_selection is not None
+        else None
+    )
+    target.provisioner.trial_capture_plan = trial_capture_plan
     # Planning needs no runtime owner. The one runtime for the run is created
     # for apply and kept for the whole interaction (OpenRAE/rae#1660).
     execution_plan = plan_aptl_scenario(
@@ -296,13 +321,16 @@ def admit_raes_scenario(
     participant_delivery_plan = bind_admitted_participant_runtime(
         target, execution_plan, bundle, config, realization, scenario, capture_plan
     )
-    participant_delivery_plan = replace(participant_delivery_plan, mcp_server_ids=mcp_server_ids)
+    participant_delivery_plan = replace(
+        participant_delivery_plan, mcp_server_ids=mcp_server_ids
+    )
     return AdmittedScenarioStart(
         bundle=bundle,
         target=target,
         execution_plan=execution_plan,
         realization=realization,
         capture_plan=capture_plan,
+        trial_capture_plan=trial_capture_plan,
         runtime_materialization_failure=materialization_failure,
         startup_selection=startup_selection,
         capture_selection=capture_selection,

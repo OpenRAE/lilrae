@@ -253,11 +253,13 @@ def _add_native_sources(
     """Preserve healthy participant sources if the native source factory fails."""
     from aptl.backends.scenario_capture import family_capture_sources
 
-    if request.capture_selection.contribution.native_registration_ids:
+    contribution = request.capture_selection.contribution
+    if (
+        contribution.native_registration_ids
+        or contribution.measurement_registration_ids
+    ):
         try:
-            native = family_capture_sources(
-                request, phase=AcquisitionPhase.MEASUREMENT
-            )
+            native = family_capture_sources(request, phase=AcquisitionPhase.MEASUREMENT)
         except RuntimeError:
             native = {}
         if set(native) & set(combined):
