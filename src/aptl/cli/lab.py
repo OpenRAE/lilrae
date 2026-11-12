@@ -785,7 +785,7 @@ def validate_live(
         help="Skip the data-destruction confirmation prompt.",
     ),
 ) -> None:
-    """Run the live RAES validation gate.
+    """Run the live RAES validation gate (DESTRUCTIVE by default).
 
     By default, stop the lab with volumes and boot it through the public path.
     Use ``--skip-clean-boot`` to validate the running lab without that destruction.
