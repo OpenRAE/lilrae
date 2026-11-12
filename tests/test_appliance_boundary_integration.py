@@ -576,7 +576,7 @@ def _seat_policy(bridge: str) -> SeatProtectionBoundarySpec:
                 source="ordinary-range-workload",
                 destination="management-control",
                 protocol="tcp",
-                ports=(9443, 8443),
+                ports=(8443, 9443),
                 purpose="reviewed management callback",
                 probe_identity="reviewed-management-callback",
             ),
