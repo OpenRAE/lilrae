@@ -112,6 +112,15 @@ def _replace_rule_keeping_comment(
     assert replaced.returncode == 0, replaced.stderr
 
 
+def _kernel_listing(table: str) -> str:
+    """Return the kernel listing of an owned table for a failure message."""
+
+    return "\n".join(
+        _nft("-j", "list", "table", family, table).stdout or family + ": absent"
+        for family in ("inet", "bridge")
+    )
+
+
 def _docker_available() -> bool:
     return (
         shutil.which("docker") is not None and _run(["docker", "info"]).returncode == 0
@@ -607,12 +616,14 @@ def test_seat_protection_readback_matches_the_kernel_and_detects_drift() -> None
             ]
         )
         assert created.returncode == 0, created.stderr
-        assert backend.realize_boundary(policy).success is True
+        table = _table_name(policy.owner, policy.authority)
+        result = backend.realize_boundary(policy)
+        assert result.success is True, _kernel_listing(table)
         assert helper("observe").returncode == 0
 
         marker = f"seat-protection/default/{bridge}"
         _replace_rule_keeping_comment(
-            _table_name(policy.owner, policy.authority),
+            table,
             "aptl-rule=" + hashlib.sha256(marker.encode()).hexdigest()[:24],
             f"iifname {bridge} accept",
             chain="host_input",
