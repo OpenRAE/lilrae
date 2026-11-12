@@ -214,7 +214,7 @@ def test_aptl_catalog_language_stays_product_owned() -> None:
         sentence.strip()
         for sentence in re.split(r"(?<=[.!?])\s+", scenario_section)
         if re.search(r"\bcatalog\b", sentence, re.IGNORECASE)
-        and "aptl" not in sentence.lower()
+        and not re.search(r"\b(?:APTL|LilRAE)\b", sentence, re.IGNORECASE)
     ]
 
     assert not unqualified_catalog_sentences

@@ -1,64 +1,36 @@
-# Property-Based Parser Regression Tests
+# Add parser property tests
 
-This note captures the repo-level guardrails for property-based tests that
-exercise parser-style boundaries such as credentials rendering, `.env`
-loading, strict first-party config validation, and redaction. The former
-APTL-local SDL parser fuzz suite was removed after the ADR-035 RAES cutover.
+Use this guide for parsers that accept operator-authored or untrusted strings.
+Examples include credential rendering, environment parsing, strict configuration, redaction, and scenario-path resolution.
+The former local SDL parser suite was removed after the ADR-035 RAES cutover.
 
 ## Scope
 
-Property-based tests are appropriate for code that accepts attacker-controlled
-or operator-authored strings and then parses, normalizes, validates, redacts,
-or renders them. Current canonical candidates include:
-
-- `aptl.core.credentials.sync_dashboard_config()` and
-  `aptl.core.credentials.sync_manager_config()`
-- `aptl.core.env.load_dotenv()` and `env_vars_from_dict()`
-- `aptl.core.config.load_config()` / `AptlConfig`
-- `aptl.utils.redaction.redact()`
-- RAES scenario-path resolution in `aptl.core.scenario_catalog`
+1. Identify the parsing or rendering boundary.
+2. Find its canonical owner in the [parser boundary reference](../reference/parser-boundaries.md).
+3. Keep known security-regression tests. Use property tests to explore additional inputs.
+4. Run tests only in CI or an approved isolated VM.
 
 ## Guardrails
 
-- Mark property-based tests with `pytest.mark.fuzz`; default `pytest` skips
-  them via `pyproject.toml`, and `pytest -m fuzz` is the canonical manual run.
-- Use Hypothesis deadlines on parser/performance regression tests so pathological
-  regex or string-walk behavior fails as a test, not as a hung job.
-- Assert bounded, classified outcomes: a fuzzed parser either returns a valid
-  value/artifact or raises the existing public error type for that boundary.
-  Do not accept unhandled `TypeError`, `KeyError`, `AttributeError`, runaway
-  CPU, partial writes, or silent stale output.
-- Keep fuzz fixtures synthetic and local. Do not read real `.env` files, emit
-  real secrets, call Docker, start services, or cross process/network boundaries.
-- Reuse existing path layout helpers and canonical source/rendered locations
-  when testing credential rendering; do not add caller-controlled output paths
-  just to make tests easier.
-- When generated inputs include secret-shaped values, assert through artifact
-  structure and redaction outcomes rather than logging or snapshotting raw
-  generated secrets.
+- Mark each property test with `pytest.mark.fuzz`.
+- Select the exact path and `-m fuzz`, as described in [Verify a change](index.md#run-targeted-tests-in-an-approved-environment).
+- Set Hypothesis deadlines for parser or performance regressions.
+- Require either a valid result or the boundary's existing public error type.
+- Reject unhandled `TypeError`, `KeyError`, or `AttributeError`, excessive CPU use, partial writes, and stale output.
+- Use synthetic inputs. Do not read real `.env` files or expose generated secrets.
+- Do not call Docker, start services, or cross process or network boundaries from these parser tests.
+- Reuse canonical path helpers and source/rendered locations.
+- Do not add caller-controlled output paths just for tests.
+- For secret-shaped inputs, assert structure and redaction results instead of recording raw values.
 
 ## Boundary Ownership
 
-- Strict durable config shape belongs to `AptlConfig` and Pydantic validation.
-  Tests should not create a second config schema or duplicate allowed profile
-  names.
-- `.env` parsing and required variable checks belong to `aptl.core.env`.
-  Tests should exercise that boundary directly instead of parsing `.env`
-  syntax in helper code.
-- Credential rendering belongs to `aptl.core.credentials`: project-root
-  containment, no-symlink generated paths, XML/YAML escaping, atomic writes,
-  and `CredentialRenderError` / `PathContainmentError` semantics remain part
-  of the contract.
-- Serialization-boundary secret handling belongs to `aptl.utils.redaction`
-  and ADR-029. New parser tests must not introduce a parallel secret taxonomy.
-- RAES SDL parse failures must stay inside RAES-owned public error types and
-  must be redacted before APTL surfaces them in CLI diagnostics.
+Use the [canonical parser owners](../reference/parser-boundaries.md).
+Exercise those owners directly. Do not add another schema, parser, or secret taxonomy in test helpers.
+Keep RAES errors within its public types and redact diagnostics before CLI output.
 
 ## Non-Goals
 
-- Do not use property tests to redesign parser APIs, exception hierarchies,
-  config ownership, or generated artifact locations.
-- Do not make fuzz tests part of the default suite unless the repo-wide
-  `pytest` marker policy changes first.
-- Do not replace targeted unit tests for known security regressions; property
-  tests are additional coverage for input-space exploration.
+Do not redesign parser APIs, error hierarchies, configuration ownership, or artifact locations through property tests.
+Keep fuzz tests outside default selection unless the repository marker policy changes first.
