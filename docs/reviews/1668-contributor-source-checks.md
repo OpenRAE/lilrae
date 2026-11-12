@@ -48,6 +48,7 @@ No new generator, checker, skill, or documentation service is introduced.
 The source inventory records locations and reader purposes.
 It does not certify every internal comment against the STE dictionary or establish runtime qualification.
 Source review concentrates on documented contracts and text exposed through supported interfaces.
+
 The live-gate help retains its exact reviewed pack-specific line for the existing ownership ledger.
 It also retains the `DESTRUCTIVE` warning marker before the detailed cleanup conditions.
 The advisory-report test selects the configured report command, independently of its display name.
