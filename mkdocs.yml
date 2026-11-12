@@ -105,6 +105,9 @@ nav:
     - "Issue #1556 RAES Go Boundary Preflight": architecture/issue-1556-raes-go-boundary-preflight.md
     - "Issue #1557 Go Foundation Preflight": architecture/issue-1557-go-foundation-preflight.md
     - "Issue #1557 Go Foundation Design": architecture/issue-1557-go-foundation-design.md
+    - "Issue #1566 Container Helpers Preflight": architecture/issue-1566-container-helpers-preflight.md
+    - "Issue #1566 SAF-002 Egress Preflight": architecture/issue-1566-egress-preflight.md
+    - "Issue #1566 Capture and Evidence Preflight": architecture/issue-1566-capture-evidence-preflight.md
     - "Issue #1604 Canonical Forms and Digests Design": architecture/issue-1604-canonical-digest-design.md
     - "Issue #1606 Clock and Deadline Waits Design": architecture/issue-1606-clock-wait-design.md
     - "Issue #1605 Contained Files Design": architecture/issue-1605-securefile-design.md

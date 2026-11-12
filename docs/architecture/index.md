@@ -173,6 +173,9 @@ capability in Go.
 
 ## Preflights
 
+- [Issue #1566 Container Helpers Preflight](issue-1566-container-helpers-preflight.md)
+- [Issue #1566 SAF-002 Egress Preflight](issue-1566-egress-preflight.md)
+- [Issue #1566 Capture and Evidence Preflight](issue-1566-capture-evidence-preflight.md)
 - [Issue #1605 Contained Files Design](issue-1605-securefile-design.md)
 - [Issue #1606 Clock and Deadline Waits Design](issue-1606-clock-wait-design.md)
 - [Issue #1604 Canonical Forms and Digests Design](issue-1604-canonical-digest-design.md)

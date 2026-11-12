@@ -28,6 +28,16 @@ APTL v2.0 through v3.x used a flat Docker network where all containers could rea
 
 ## Decision
 
+NET-005 preserves network-membership isolation and multi-homed intermediary
+paths. The topology and address tables below record the original lab design.
+They are not a fixed network count or allocation for every scenario.
+[ADR-051](adr-051-component-level-raes-realization.md) governs admitted
+scenario realization. Signed appliance containment has separate authorities;
+see the [appliance boundary](../components/appliance-boundary.md) and
+[#1566 preflight](../architecture/issue-1566-container-helpers-preflight.md).
+Multi-homing permits an intermediary path; it does not itself enable packet
+forwarding or override admitted ACLs.
+
 Create **four Docker bridge networks** that model enterprise network zones:
 
 ### Network Layout
