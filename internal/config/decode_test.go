@@ -189,6 +189,8 @@ func TestDecodeSemanticChecks(t *testing.T) {
 		{"lower-case process variable", `{"experiment": {"participant_credential_sources": {"codex": {"kind": "process-environment", "variable": "key"}}}}`, "experiment.participant_credential_sources.codex.variable"},
 		{"project file source for a participant", `{"experiment": {"participant_credential_sources": {"codex": {"kind": "project-env-file", "variable": "KEY"}}}}`, "experiment.participant_credential_sources.codex.kind"},
 		{"empty scenario identity", `{"scenario": {"identity": "  "}}`, "scenario.identity"},
+		{"identity after a byte that Python keeps", `{"scenario": {"identity": "\u001btv"}}`, "scenario.identity"},
+		{"blank scenario root", `{"scenario": {"root": " ", "source": "project-tree"}}`, "scenario.root"},
 		{"scenario identity path", `{"scenario": {"identity": "a/b"}}`, "scenario.identity"},
 		{"absolute scenario root", `{"scenario": {"root": "/x", "source": "project-tree"}}`, "scenario.root"},
 		{"escaping scenario root", `{"scenario": {"root": "a/../..", "source": "project-tree"}}`, "scenario.root"},
@@ -331,4 +333,15 @@ func profileList(n int) string {
 
 func grant(pack string) string {
 	return `{"pack": "` + pack + `", "consumer": "c", "variable": "v", "source": {"kind": "project-env-file", "variable": "v"}}`
+}
+
+func TestDecodeStripsPythonWhitespace(t *testing.T) {
+	t.Parallel()
+	got, err := Decode([]byte(`{"scenario": {"identity": "\u001ctv\u001f", "root": "\u001ca/b\u001f", "source": "project-tree"}}`))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if *got.Scenario.Identity != "tv" || *got.Scenario.Root != "a/b" {
+		t.Errorf("scenario = %q, %q; want tv, a/b", *got.Scenario.Identity, *got.Scenario.Root)
+	}
 }

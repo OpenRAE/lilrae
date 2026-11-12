@@ -99,13 +99,13 @@ func (o *object) take(name string) (any, bool) {
 // the member is absent or holds an error.
 func (o *object) value(name string, required bool) (any, bool) {
 	v, present := o.take(name)
-	switch {
-	case !present:
+	if !present {
 		if required {
 			o.fail(name, ruleRequired)
 		}
 		return nil, false
-	case v == nil:
+	}
+	if v == nil {
 		o.fail(name, ruleNull)
 		return nil, false
 	}

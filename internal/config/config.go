@@ -215,8 +215,13 @@ func readLimited(file *os.File) (data []byte, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("read configuration: %w", err)
 	}
-	if len(data) > MaxFileSize {
+	if tooLarge(data) {
 		return nil, errTooLarge
 	}
 	return data, nil
+}
+
+// tooLarge reports whether data is larger than MaxFileSize.
+func tooLarge(data []byte) bool {
+	return len(data) > MaxFileSize
 }

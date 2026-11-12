@@ -15,7 +15,7 @@ import (
 )
 
 // BackupName is the name of the backup that MigrateFile writes once.
-const BackupName = FileName + ".bak"
+const BackupName = "aptl.json.bak"
 
 // legacyFlags are the historical topology booleans of containers and their
 // defaults, in the order of the Python release. They are schema history, not
@@ -55,7 +55,7 @@ var (
 // output keeps the member order of data, with an indent of four spaces and a
 // final line feed. Input and output larger than MaxFileSize are errors.
 func Migrate(data []byte, identity *string) (out []byte, changed bool, err error) {
-	if len(data) > MaxFileSize {
+	if tooLarge(data) {
 		return nil, false, errTooLarge
 	}
 	tree, err := canonical.DecodeStrict(data)
@@ -80,7 +80,7 @@ func Migrate(data []byte, identity *string) (out []byte, changed bool, err error
 	if out, err = applyToBytes(data, c); err != nil {
 		return nil, false, err
 	}
-	if len(out) > MaxFileSize {
+	if tooLarge(out) {
 		return nil, false, errTooLarge
 	}
 	return out, true, nil
@@ -189,8 +189,7 @@ func enabledProfiles(containers map[string]any, flags []legacyFlag) ([]string, e
 
 // applyToTree returns a copy of root with the changes set.
 func applyToTree(root map[string]any, c changes) map[string]any {
-	out := make(map[string]any, len(root)+2)
-	maps.Copy(out, root)
+	out := maps.Clone(root)
 	if c.identity != nil {
 		scenario := map[string]any{}
 		if s, ok := root["scenario"].(map[string]any); ok {

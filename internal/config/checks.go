@@ -84,10 +84,9 @@ func checkGrantIdentity(value string) error {
 	return nil
 }
 
+// checkGrantVariable checks a grant variable. The pattern limits it to 128
+// characters.
 func checkGrantVariable(value string) error {
-	if err := checkLength(value, 1, 128); err != nil {
-		return err
-	}
 	if !environmentNamePattern.MatchString(value) {
 		return errors.New("environment grant variable is invalid")
 	}
@@ -102,11 +101,8 @@ func checkKind(kind string, kinds []string) error {
 }
 
 // checkSourceVariable checks the variable locator of a source of a known
-// kind.
+// kind. Each pattern limits it to 128 characters.
 func checkSourceVariable(kind, variable string) error {
-	if err := checkLength(variable, 1, 128); err != nil {
-		return err
-	}
 	pattern := environmentNamePattern
 	if kind == SourceProcessEnvironment {
 		pattern = processVariablePattern
@@ -143,12 +139,13 @@ func checkScenarioIdentity(value string) (string, error) {
 
 func checkScenarioRoot(value string) (string, error) {
 	clean := strings.TrimFunc(value, isPythonSpace)
-	switch {
-	case clean == "":
+	if clean == "" {
 		return "", errors.New("scenario root must not be empty")
-	case strings.ContainsRune(clean, 0):
+	}
+	if strings.ContainsRune(clean, 0) {
 		return "", errors.New("scenario root must not contain a NUL byte")
-	case strings.HasPrefix(clean, "/") || slices.Contains(strings.Split(clean, "/"), ".."):
+	}
+	if strings.HasPrefix(clean, "/") || slices.Contains(strings.Split(clean, "/"), "..") {
 		return "", errors.New("scenario root must be a relative path contained by the project")
 	}
 	return clean, nil
