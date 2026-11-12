@@ -24,3 +24,13 @@ build/
 web/node_modules
 web/.svelte-kit
 web/tests
+# Operator secrets of a lab project (ADR-029). Docker sends the build context
+# to the daemon, so keep these paths out of each root-context build.
+.env
+.env.*
+!.env.example
+.aptl/
+keys/
+config/soc_certs/
+config/wazuh_indexer_ssl_certs/
+config/lab-ssh/

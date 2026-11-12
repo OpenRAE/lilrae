@@ -2,7 +2,7 @@
 
 Helpers used by multiple subcommand modules — typically the
 ``find_config`` + ``load_config`` + ``typer.Exit`` boilerplate that every
-``aptl <subcommand>`` runs at the start.
+``lilrae <subcommand>`` runs at the start.
 
 Keep this module thin: only put helpers here that are genuinely shared
 across CLI surfaces. Subcommand-specific logic stays in the respective

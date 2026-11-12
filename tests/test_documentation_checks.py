@@ -153,7 +153,8 @@ def test_ci_corpus_command_keeps_findings_advisory(tmp_path: Path) -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/checks.yml").read_text())
     step = next(
         step for step in workflow["jobs"]["docs"]["steps"]
-        if step.get("name") == "STE corpus report (legacy findings are advisory)"
+        if "git ls-files" in step.get("run", "")
+        and "tools/ste-lint.sh" in step.get("run", "")
     )
     command = shlex.split(step["run"])
     command = command[command.index("bash"):]

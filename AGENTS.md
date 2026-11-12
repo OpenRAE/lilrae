@@ -1,7 +1,6 @@
 # Agent Instructions
 
-This repository (APTL — Advanced Purple Team Lab) uses Ground Control for
-requirements management and workflow automation.
+LilRAE uses Ground Control for requirements and workflow automation.
 
 ## Execution boundary
 
@@ -15,11 +14,10 @@ use targeted test paths; full suites remain CI-only.
 
 This repo's Ground Control project id, workflow commands, SonarCloud
 settings, and plan rules live in `.ground-control.yaml` at repo root
-(with larger rule files under `.gc/`). Agents read it via the
-`gc_get_repo_ground_control_context` MCP tool, which returns the full
-workflow config in a single call.
+(with larger rule files under `.gc/`).
+Read them with `gc_get_repo_ground_control_context`. The MCP tool returns the workflow configuration.
 
-Key facts encoded there today:
+Read these configured values:
 
 - Ground Control project: `aptl`
 - GitHub repo: `OpenRAE/lilrae`
@@ -33,11 +31,9 @@ Key facts encoded there today:
 
 ## Skill Installation
 
-The canonical agent-neutral implement and review-tests skills are
-maintained in the Ground Control repo at `skills/implement/SKILL.md`
-and `skills/review-tests/SKILL.md`. They are installed at the **user
-level** — not committed per-repo — by running, from a Ground Control
-checkout:
+Install the canonical implement and review-tests skills at the user level.
+Their sources are `skills/implement/SKILL.md` and `skills/review-tests/SKILL.md` in Ground Control.
+From an approved Ground Control checkout, run:
 
 ```bash
 bin/install-skills.sh
@@ -48,31 +44,25 @@ That script symlinks the canonical skills into:
 - `~/.claude/skills/` (Claude Code)
 - `~/.codex/prompts/` (Codex)
 
-Both Claude and Codex therefore read the same source-of-truth SKILL.md.
-Re-run the script after pulling Ground Control to refresh. Use `--copy`
-on hosts without symlink support and `--no-codex` if Codex is not
-installed locally.
+Both clients read the same canonical files.
+After updating Ground Control, rerun the installer.
+Use `--copy` when symlinks are unavailable.
+Use `--no-codex` when Codex is not installed.
 
-This repo intentionally does **not** ship `.claude/skills/implement/`
-or `.claude/skills/review-tests/` — those were per-repo duplicates
-superseded by Ground Control PR #792. Other repo-local skills under
-`.claude/skills/` (e.g. `ship`, `stage`, `gh-workflow-monitor`,
-`wave-issue-coverage`) remain in place because they are aptl-specific
-or not yet promoted to the agent-neutral set.
+Do not restore the repository copies removed by Ground Control PR #792.
+Keep the existing `ship`, `stage`, `gh-workflow-monitor`, and `wave-issue-coverage` skills under `.claude/skills/`.
 
 ## RAES Asset Inventory Capture Skill
 
-The asset inventory capture methodology and reusable capture tooling are
-maintained in the RAES repo. Agents working APTL inventory issues should
-install the RAES skill at the user level from a RAES checkout:
+For inventory work, use the RAES methodology and capture tools.
+Install its user-level skill from an approved RAES checkout:
 
 ```bash
 bin/install-raes-inventory-skill.sh --raes-repo ../raes
 ```
 
-Set `RAES_REPO=../raes2` or pass `--raes-repo <path>` when the local RAES
-checkout uses a different directory name. The installer symlinks the RAES
-skill into:
+For another checkout path, set `RAES_REPO=../raes2` or pass `--raes-repo <path>`.
+The installer creates these skill links:
 
 - `~/.claude/skills/raes-asset-inventory-capture`
 - `~/.codex/skills/raes-asset-inventory-capture`
@@ -83,28 +73,19 @@ capturing evidence or encoding inventory results for APTL.
 
 ## Ground Control Overview
 
-Ground Control is the requirements / traceability / workflow system this
-repo plans against. Agents interact with it through MCP tools
-(`gc_*`), which provide:
-
-- **Requirements** — fetch by UID, list by project / wave / status,
-  inspect history and diffs.
-- **Traceability** — create `IMPLEMENTS` and `TESTS` links between
-  requirements and code / test artifacts so coverage is queryable.
-- **Status transitions** — move requirements through their lifecycle
-  (e.g. `DRAFT` → `IN_PROGRESS` → `IMPLEMENTED` → `VERIFIED`) using
-  the workflow rules defined in Ground Control.
-- **Repo context** — `gc_get_repo_ground_control_context` returns this
-  repo's `.ground-control.yaml` configuration in one call.
+Read requirements in `docs/requirements/<UID>/requirement.md`.
+Use their front matter for lifecycle state and their `## Traceability` sections for artifact links.
+Use Git history for earlier revisions.
+Ground Control MCP tools enforce workflow records and publication boundaries.
+Check each tool's current schema before use. Do not assume retired backend tools remain available.
 
 ## Workflow
 
-The `/implement` skill (installed at user level — see above) drives the
+The `/implement` skill (installed at user level; see above) drives the
 end-to-end loop. Summary for agents working in this repo:
 
-1. **Fetch the requirement.** Use `gc_get_requirement` with the full
-   UID exactly as it exists in Ground Control. Do not synthesize or
-   rewrite requirement prefixes.
+1. **Read the requirement.** Read its exact UID path under `docs/requirements/`.
+   Do not synthesize or rewrite requirement prefixes.
 2. **Plan.** Apply `.gc/plan-rules.md`. Select evidence for changed behavior
    and risk. Existing tests can be sufficient; new tests are not required for
    every edit. Delete redundant or obsolete cases. Shared MCP changes select
@@ -117,19 +98,17 @@ end-to-end loop. Summary for agents working in this repo:
    `pre-commit run` for rapid hygiene and secret scanning. Do not run bare
    `pytest`, package-wide `npm test`, `pre-commit run --all-files`, or other
    full/whole-tree gates locally; CI/CD owns those runs.
-5. **Create traceability.** Create `IMPLEMENTS` and `TESTS`
-   traceability links from the requirement to the code / test
-   artifacts that satisfy it.
-6. **Transition status.** Move the requirement to the next workflow
-   state via `gc_transition_status` once the work is complete and
-   linked.
+5. **Create traceability.** Follow `/implement` to record `IMPLEMENTS` and `TESTS` links in the requirement file.
+6. **Transition status.** Follow the configured lifecycle rules through `/implement`.
+   Include status and traceability edits in the delivery PR before publication.
+   Do not claim local edits are merged requirement state.
 
 ## Workflow Notes
 
 ### Documentation
 
 Use the shared `documentation` skill from the pinned doc-tools package for documentation changes.
-Existing user-level installations remain usable during migration.
+Existing user-level installations remain supported.
 Follow `docs/contributing-documentation.md` for supported client setup.
 `bash tools/install-doc-tools.sh` installs the reviewed package; do not copy its tools or skill here.
 
@@ -137,7 +116,7 @@ Select a Diataxis purpose from the reader's task. Verify technical claims
 against code, configuration, and supported interfaces. Preserve technical meaning.
 
 Follow [the documentation guide](docs/contributing-documentation.md) for
-STE limits, explicit-path checks, source records, and migration assignments.
+STE limits, explicit-path checks, and source records.
 Record source paths, revision, checks, and corrected differences in the PR.
 Keep the skill outside repository version control. Keep routine edits small.
 
@@ -154,8 +133,4 @@ Keep the skill outside repository version control. Keep routine edits small.
   Do not rely on agent-specific user-level hooks as the only
   enforcement layer.
 - Skipping tests or pre-existing problems as "not my scope" is not
-  acceptable — surface them to the user (per repo `CLAUDE.md`).
-
-<!-- TODO: document any aptl-specific `make`-style entry points or a
-     dedicated `/ship` workflow once they are promoted into the
-     agent-neutral skill set. -->
+  acceptable; surface them to the user (per repo `CLAUDE.md`).

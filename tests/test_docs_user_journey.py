@@ -182,6 +182,11 @@ def test_split_operator_pages_are_reachable_from_reader_navigation() -> None:
     """Every split page has a reader route; source archives remain separate."""
     routes = reader_routes()
     assert {
+        "reference/release-contract.md",
+        "reference/parser-boundaries.md",
+        "testing/platform-pr-gates.md",
+        "testing/boot-realization-coverage.md",
+        "security/openssf-best-practices.md",
         "getting-started/host-requirements.md",
         "getting-started/installation-reference.md",
         "getting-started/pack-reference.md",
@@ -196,6 +201,13 @@ def test_split_operator_pages_are_reachable_from_reader_navigation() -> None:
         "workshop/hosted-backup-reference.md",
     } <= routes["Reference"]
     assert {
+        "testing/index.md",
+        "testing/smoke-test-plan.md",
+        "testing/property-based-parser-tests.md",
+        "testing/lab-fixture-pack.md",
+        "security/update-assessment.md",
+        "releasing.md",
+        "CODING_STANDARDS.md",
         "workshop/setup.md",
         "troubleshooting/search-index-backup.md",
         "sdl/index.md",
@@ -232,7 +244,8 @@ def test_split_operator_pages_are_reachable_from_reader_navigation() -> None:
         "sdl/runtime-architecture.md",
     } <= routes["Explanation"]
     for target in set().union(*routes.values()):
-        assert (DOCS / target).is_file(), target
+        if "://" not in target:
+            assert (DOCS / target).is_file(), target
 
     split_pages = {
         "reference/appliance-seat-launcher.md": "reference/appliance-seat-operations.md",

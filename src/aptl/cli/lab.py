@@ -795,12 +795,14 @@ def validate_live(
         help="Skip the data-destruction confirmation prompt.",
     ),
 ) -> None:
-    """Run the live RAES validation gate (boots the lab end-to-end; DESTRUCTIVE).
+    """Run the live RAES validation gate (DESTRUCTIVE by default).
 
+    By default, stop the lab with volumes and boot it through the public path.
+    Use ``--skip-clean-boot`` to validate the running lab without that destruction.
     Proves a fresh TechVault lab is realized from the interpreted RAES model
-    through the public start path and captures operational + provenance evidence
-    in the run archive. Intended for maintainers / a documented CI runner — not
-    fast CI: it needs Docker, the SOC stack's resources, and minutes of startup.
+    through the public start path. The gate records operational and provenance evidence.
+    Run only in CI or an explicitly approved, isolated test VM.
+    It requires Docker, adequate SOC-stack resources, and startup time.
     """
     from aptl.cli._common import resolve_config_for_cli, resolve_run_store
     from aptl.core.runstore import _validate_id

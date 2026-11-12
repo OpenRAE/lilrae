@@ -1,102 +1,53 @@
 # LilRAE (formerly APTL)
 
-!!! note "APTL is now LilRAE"
+LilRAE runs a local purple-team lab for human operators and AI agents.
+The released package supplies the CLI and lab assets. Docker runs the selected scenario.
 
-    The Advanced Purple Team Lab (APTL) repository moved to
-    [OpenRAE/lilrae](https://github.com/OpenRAE/lilrae) and was renamed. It is
-    the same project, with the same source, history, features, and issue
-    tracker. You install the `lilrae` package and run the `lilrae` command.
-    The `aptl` command is a deprecated alias that LilRAE 10.0.0 removes; see
-    [Move from the aptl command](getting-started/installation.md#move-from-the-aptl-command).
-    Existing configuration, state directories, and runtime identifiers keep
-    their `aptl` names. Where current pages still say APTL, they mean LilRAE.
-    See [ADR-062](adrs/adr-062-lilrae-name-and-naming-convention.md).
+!!! warning "Use an authorized, rebuildable environment"
 
-    `aptl-labs` 7.0.0 was the last `aptl-labs` release. Releases publish to
-    PyPI as `lilrae` from version 8.0.0. To change packages, follow
-    [Move from aptl-labs to lilrae](getting-started/installation.md#move-from-aptl-labs-to-lilrae).
+    LilRAE starts vulnerable services and gives agents penetration-testing tools.
+    Keep unrelated credentials elsewhere. Use only systems you are authorized to test.
+    Read the [execution boundaries](getting-started/execution-boundaries.md) before starting.
 
-LilRAE is a local purple-team lab where human operators and AI agents exercise
-red- and blue-team workflows against an intentionally vulnerable enterprise
-range. The released Python package supplies the CLI and materializes the lab
-assets; Docker runs the selected scenario on your chosen engine.
+| Reader need | Route |
+| --- | --- |
+| Learn through an exercise | [Tutorials: first lab](getting-started/quick-start.md) or [workshop](workshop/walkthrough.md) |
+| Complete a task | [How-to guides: installation](getting-started/installation.md), [recovery](troubleshooting/index.md), or [documentation](contributing-documentation.md) |
+| Look up exact facts | [Reference: CLI](reference/cli.md), [MCP](reference/mcp.md), or [web](reference/web.md) |
+| Understand reasons and relationships | [Explanation: architecture](architecture/index.md) and [execution boundaries](getting-started/execution-boundaries.md) |
 
-!!! warning "Use a dedicated, rebuildable environment"
-
-    LilRAE starts vulnerable services and gives agent tooling access to
-    penetration-testing capabilities. Use a dedicated host or the stronger
-    disposable [appliance seat](reference/appliance-seat-launcher.md), keep
-    unrelated credentials elsewhere, and use LilRAE only on systems you are
-    authorized to test.
+For older installations, use the [package migration guide](getting-started/installation.md#move-from-aptl-labs-to-lilrae).
 
 ## Run Your First Lab
 
-Follow these tasks in order. The path uses the released package and does not
-require a source checkout or an architecture record.
+The [first-lab tutorial](getting-started/quick-start.md) owns the complete exercise.
+Use these links to return to a task:
 
-1. [Check prerequisites](getting-started/prerequisites.md) for Docker, Python,
-   host resources, and the required command-line tools.
-2. [Install LilRAE](getting-started/installation.md) with pipx and create a lab
-   project from the assets in the release.
-3. [Choose a scenario](getting-started/quick-start.md#choose-a-scenario) from
-   the catalog provided by the installed environment pack.
-4. [Start and verify the lab](getting-started/quick-start.md#start-and-verify-the-lab)
-   through the CLI readiness checks.
-5. [Inspect the running lab](getting-started/quick-start.md#inspect-the-running-lab)
-   for realized containers, URLs, remapped ports, usernames, and credential
-   locations.
-6. [Generate safe test activity](getting-started/quick-start.md#generate-safe-test-activity)
-   inside the authorized range.
-7. [Inspect results](getting-started/quick-start.md#inspect-results) in the
-   realized services and APTL run records.
-8. [Troubleshoot](troubleshooting/index.md) with project-scoped diagnostics and
-   recovery steps.
-9. [Stop or reset the lab](getting-started/quick-start.md#stop-or-reset-the-lab)
-   when the session ends.
-
-The shortest installation and start sequence is:
-
-```shell
-pipx install lilrae
-lilrae lab init my-lab
-cd my-lab
-lilrae lab start --scenario techvault
-```
-
-Startup creates project-local runtime files, validates the selected scenario,
-realizes its topology, waits for required services, and prints a structured
-result. A running container alone does not mean the lab is ready.
+- [Check prerequisites](getting-started/prerequisites.md).
+- [Install LilRAE](getting-started/installation.md).
+- [Choose a scenario](getting-started/quick-start.md#choose-a-scenario).
+- [Start and verify the lab](getting-started/quick-start.md#start-and-verify-the-lab).
+- [Inspect the running lab](getting-started/quick-start.md#inspect-the-running-lab).
+- [Generate safe test activity](getting-started/quick-start.md#generate-safe-test-activity).
+- [Inspect results](getting-started/quick-start.md#inspect-results).
+- [Troubleshoot](troubleshooting/index.md).
+- [Stop or reset the lab](getting-started/quick-start.md#stop-or-reset-the-lab).
 
 ## Supported Interfaces
 
-- [CLI reference](reference/cli.md): lab lifecycle, configuration, containers,
-  runs, web, appliance, and participant-seat commands.
-- [MCP reference](reference/mcp.md): generated client configuration, server
-  availability, fully qualified tools, and credential handling.
-- [Web reference](reference/web.md): the local operator UI, its supported API,
-  one-time login flow, and safe exposure boundary.
-
-The operator UI, intentionally vulnerable target applications, and SOC product
-interfaces are different surfaces. Use `lilrae lab info` to discover the URLs
-that exist for the current scenario rather than relying on fixed ports. Wazuh
-values reported from `.env` are scenario credentials, not APTL control-plane
-logins.
+Use the [CLI](reference/cli.md), [MCP](reference/mcp.md), and [web](reference/web.md) references.
+Discover current endpoints with `lilrae lab info`.
+The operator UI, target applications, and SOC interfaces are separate surfaces.
 
 ## Help And Project Policies
 
-- [Get support](https://github.com/OpenRAE/lilrae/blob/dev/SUPPORT.md) for a
-  reproducible problem or focused usage question.
-- [Contribute](https://github.com/OpenRAE/lilrae/blob/dev/CONTRIBUTING.md) a
-  fix or improvement against the `dev` branch.
+- [Get support](https://github.com/OpenRAE/lilrae/blob/dev/SUPPORT.md).
+- [Contribute](https://github.com/OpenRAE/lilrae/blob/dev/CONTRIBUTING.md).
 - [Report a vulnerability privately](https://github.com/OpenRAE/lilrae/security/advisories/new).
-  Do not disclose suspected vulnerabilities in a public issue.
-- [Review the OpenSSF Best Practices assessment](security/openssf-best-practices.md)
-  and the evidence behind the project's self-certification.
+- Review the [OpenSSF assessment](security/openssf-best-practices.md).
 
 ## Design And Historical Records
 
-The task guides above are sufficient to operate a first lab. For implementation
-context, see the [architecture overview](architecture/index.md),
-[architecture decisions](adrs/README.md), [scenario authoring boundary](sdl/index.md),
-and [release qualification plan](testing/smoke-test-plan.md). These records
-remain available without sitting in the first-time path.
+Use the [architecture overview](architecture/index.md) and [decision index](adrs/README.md) for design context.
+Use the [documentation inventory](architecture/documentation-assignments.md) to find source and historical records.
+Follow [release qualification](testing/smoke-test-plan.md) when checking a release candidate.

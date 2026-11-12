@@ -1,20 +1,16 @@
-"""APTL's owned lab-machinery fixture pack (issue #985).
+"""Owned fixture pack for generic lab-machinery tests (issue #985).
 
-Core tests of the generic lab machinery -- pack admission, content resolution,
-realization and the live gate -- use this small pack instead of a released
-pack, so an unrelated pack release cannot break them. The pack lives in
-``tests/fixtures/packs/`` and is admitted through the production resolver
-(:func:`aptl.core.scenario_bundle.env_pack_bundle`), which runs env-packs' own
-``validate_pack`` and content-manifest gates exactly as for a released pack.
+Core admission, content, realization, and live-gate tests use this small pack.
+They do not depend on a released pack's changing content.
+The production resolver admits it from ``tests/fixtures/packs/``.
+That resolver runs env-packs' ``validate_pack`` and content-manifest gates.
 
-Deliberately import-safe: unlike ``tests.helpers`` it reads no project ``.env``
-and runs no lab script, so a test module may import it at collection time.
-Artifact digests are computed from the checked-in bytes rather than read from
-the pack's manifest, so a test comparing a resolved digest to one of these
-compares two independent observations. See ``docs/testing/lab-fixture-pack.md``
-for how the pack is maintained.
+This module reads no project ``.env`` and runs no lab script at import time.
+Test collection can import it without loading credentials.
+Artifact digests come from checked-in bytes, independently of the pack manifest.
+See ``docs/testing/lab-fixture-pack.md`` for maintenance instructions.
 
-Named without a ``test_`` prefix so pytest does not collect it.
+The filename lacks a ``test_`` prefix, so pytest does not collect it.
 """
 
 from __future__ import annotations

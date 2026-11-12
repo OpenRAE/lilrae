@@ -1,10 +1,17 @@
 # OpenCode candidate qualification for issue #1504
 
+This historical Reference preserves the issue’s recorded candidate and qualification limits.
+Its commands and observations do not authorize workstation execution or qualify a later release.
+Use [Verify a change](index.md) for current test boundaries.
+
+
+
 ## Boundary
 
 Issue #1504 ends at PR merge after candidate testing and review.
 Release publication and scientific control qualification are downstream work.
 The operator approved actual Docker lab tests only on the issue-owned GCP VM.
+
 The operator limited live model use to a frugal connectivity and invocation-trigger smoke.
 
 ## Installed candidate and GCP identity
@@ -38,15 +45,18 @@ It did not reuse or modify the BigRAE tenant.
 The installed CLI materialized a fresh lab project.
 It started the product-neutral `materialization-envelope` scenario through the public lab-start path.
 The result reported `ok: true` and `outcome: ready`.
+
 The generated smoke container was running.
 The public lab-stop path removed the deployment and volumes and reported `ok: true`.
 
 The final candidate is also tested through installed-wheel automation.
 Later failure-metadata changes are verified by the offline installed tests below.
 The delivery branch later merged `dev`, which updates LilRAE to 9.0.0 and RAES to 10.5.0.
+
 The final dependency synchronization raises the RAES floor to 10.6.0.
 Installed-wheel qualification uses those current dependencies and their public module paths.
 The historical smoke artifacts retain their original 8.2.0 and 10.2.0 identities.
+
 This lifecycle result is not a scientific experiment result.
 
 ## Bounded live trigger smoke
@@ -54,6 +64,7 @@ This lifecycle result is not a scientific experiment result.
 The credential loader selected the approved value opaquely.
 It sent only that selected value over SSH stdin to the installed process.
 No credential value appeared in command arguments, public evidence, or model prompts.
+
 The runtime used the existing configured-source resolver and ephemeral broker.
 
 | Item | Observation |
@@ -79,6 +90,7 @@ The runtime used the existing configured-source resolver and ephemeral broker.
 This evidence proves bounded provider invocation and available usage reporting.
 It does not establish a completed answer, scientific trial, or experiment-model qualification.
 The pinned CLI can retry transient failures internally; the live HTTP request count was not observed.
+
 No further live model invocation was made.
 
 ## Offline installed verification
@@ -86,21 +98,26 @@ No further live model invocation was made.
 `tests/test_opencode_transport.py` installs the candidate wheel outside the checkout.
 It reads the model and credential reference from a separate project's configuration.
 It uses the real pinned launcher against a local fake provider for success and authentication failure.
+
 The emitted requests enforce the exact model, route, output cap, and fallback denial.
 The fixed session title prevents the auxiliary title-generation request.
 
 `tests/test_opencode_installed_actions.py` uses the installed package, real RAES scheduler, pinned launcher, MCP SDK, and common admission carrier.
 Deterministic native counters prove authorized effects for both roles.
 Negative cases cover unapproved arguments and built-in host-shell attempts.
+
 Hostile parent configuration, plugins, saved credentials, and history use local canaries.
 Failure cases cover timeout, in-flight cancellation, malformed provider output, and private-context teardown failure.
 Transport teardown faults follow both a successful model response and a supervised timeout.
+
 They retain failed evidence, report uncertain transport cleanup, and retain the process cleanup result.
 The runtime retains an indeterminate operation for incomplete cleanup proof.
 Timeout and cancellation combined with directory cleanup failure retain captured-output counts, stdout commitments, and process cleanup proof.
+
 An output fault injects a failed terminal event before the real launcher's stop event.
 The parser rejects that sequence and retains the failed finish and safe partial evidence.
 A fresh subsequent trial verifies clean sessions and successful admitted effects after each failure case.
+
 Available partial session and usage facts are retained without exposing raw provider output.
 
 These tests require no actual Docker lab or external model.
@@ -111,4 +128,5 @@ Full suites, all MCP consumers, and coverage remain CI/CD checks.
 The issue-owned VM and its boot disk were deleted after the smoke.
 The two issue-owned firewall rules, subnet, and network were deleted.
 Subsequent project queries returned no matching VM, disk, network, or firewall rules.
+
 Pre-existing project and tenant resources were not cleanup targets.

@@ -26,8 +26,8 @@ Keep evidence, generated records, license text, and third-party notices intact.
 Edit maintained generator prose at its source.
 
 Record source paths, revision, checks, and corrected differences in the PR.
-Use the [migration assignments](architecture/documentation-assignments.md)
-to find the delivery issue. Newly added documentation also needs an owner.
+Use the [documentation inventory](architecture/documentation-assignments.md) for page purposes, routes, and source records.
+Add a route and source check when introducing a page.
 
 ## Write the change
 
@@ -57,30 +57,15 @@ The first command prints the installed package directory.
 The second checks an explicit page and installs the package's pinned ste-cli when needed.
 No personal skill installation is needed for writing checks.
 
-LilRAE pins [doc-tools v0.1.0](https://github.com/OpenRAE/doc-tools/releases/tag/v0.1.0).
-Its source revision is `97866fad14d7fbb0d6752788ebdc5ae4f235573a`.
-The archive SHA-256 is:
-
-```text
-125104c0cc535698d1cc9bba3e57883bdf9d87db6da346ff583967c4ce42de6c
-```
-
-`tools/install-doc-tools.sh` verifies that digest before extraction or execution.
-The archive installs under `.tools/doc-tools/0.1.0/`.
-The package separately verifies the ste-cli archive before installing its binary.
-A failed download or checksum stops the check.
-The package and binary caches remain trusted after installation.
-
-The package uses the MIT license. Keep its `LICENSE`, `THIRD_PARTY_NOTICES.md`, and `skills/documentation/LICENSE` intact.
-Those notices identify the LilRAE, RAE, ste-cli, and skill guidance sources.
-See the [package reference](https://github.com/OpenRAE/doc-tools/blob/v0.1.0/docs/reference.md) for platform checksums and source revisions.
+Use the [toolchain Reference](reference/documentation-toolchain.md) for the package pin, checksums, license, and cache boundary.
+Keep package and third-party notices intact.
 
 ## Install the documentation skill
 
 The package supplies the existing shared `documentation` skill.
 It supports reader-purpose selection, code verification, and meaning preservation.
 Do not commit a copy here.
-Existing user-level installations remain usable during migration.
+Existing user-level installations remain supported.
 Tool setup does not change personal skills or client settings.
 
 For a new Claude Code installation, register the verified local marketplace from the repository root:
@@ -132,7 +117,7 @@ The [package installation guide](https://github.com/OpenRAE/doc-tools/blob/v0.1.
 1. Read the package release notes and `SHA256SUMS`.
 2. Check the source revision and license notices.
 3. Update the version and digest together in `tools/install-doc-tools.sh`.
-4. Update the source record and client commit references in this guide and ADR-038.
+4. Update the [toolchain Reference](reference/documentation-toolchain.md), client commit references, and ADR-038.
 5. Install into the new version directory. Keep the previous directory.
 6. Run writing checks on explicit changed pages.
 7. Run targeted documentation integration tests in CI or an approved isolated VM.
@@ -166,9 +151,9 @@ Inspect findings. Correct real problems. Preserve accurate technical text when
 a finding is wrong. Document a narrow exception when necessary.
 The checker assists review. It does not establish full STE conformance.
 
-CI reports selected STE findings across tracked Markdown during migration.
-Legacy findings do not fail this report. Rewritten pages listed in
-`.ste-required.txt` must pass. Add pages to that list as each rewrite ships.
+CI reports selected STE findings across tracked Markdown, including preserved source records.
+This corpus report is informational. Maintained rewritten pages in `.ste-required.txt` must pass.
+Add new maintained prose pages to that list.
 For a partial rewrite, check the rewritten passage through standard input:
 
 ```shell
